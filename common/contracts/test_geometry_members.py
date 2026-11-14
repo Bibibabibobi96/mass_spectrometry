@@ -73,13 +73,13 @@ class GeometryMemberTests(unittest.TestCase):
             assembly_geometry_members(missing)
         changed=copy.deepcopy(snapshot)
         changed['components_resolved']['oatof']['geometry_mm']['detector_radius'] += 5
-        with self.assertRaisesRegex(ContractError,'source design documents'):
+        with self.assertRaisesRegex(ContractError,'resolved design or interface differs from its explicit source'):
             assembly_geometry_members(changed)
 
     def test_rf_source_radius_cannot_reuse_stale_resolved_rods(self):
         snapshot = real_snapshot()
         snapshot['components_source']['multipole']['geometry_mm']['inscribed_radius_r0'] += 1.
-        with self.assertRaisesRegex(ContractError, 'RF resolved design differs'):
+        with self.assertRaisesRegex(ContractError, 'RF resolved design or interface differs'):
             assembly_geometry_members(snapshot)
 
     def test_rf_recompiled_source_preserves_explicit_provenance(self):
@@ -99,7 +99,7 @@ class GeometryMemberTests(unittest.TestCase):
         changed = snapshot['components_resolved']['multipole']
         changed['drive']['phase_rad'] += .1
         changed['resolved_sha256'] = resolved_design_sha256(changed)
-        with self.assertRaisesRegex(ContractError, 'RF resolved design differs'):
+        with self.assertRaisesRegex(ContractError, 'RF resolved design or interface differs'):
             assembly_geometry_members(snapshot)
 
     def test_explicit_local_scope_retains_parent_but_exports_only_selected_instance(self):

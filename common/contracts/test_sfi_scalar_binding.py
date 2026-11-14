@@ -182,5 +182,5 @@ class SfiScalarAdmissionTests(unittest.TestCase):
         changed=copy.deepcopy(self.snapshot);changed['components_source']['multipole']['geometry_mm']['inscribed_radius_r0']+=1.
         other=self.publish('different-source','geometry_artifact',{'projection':self.projection},{'backend':'comsol','scope':'geometry_only','native_reopen_verified':True},{'execution_request':{'role':'run_artifact_workflow_request','payload':{'action':'build_comsol_geometry','assembly':changed,'projection':self.projection}}})
         self.geometry_ref=other
-        with self.assertRaisesRegex(ValueError, 'RF resolved design differs from its explicit source request'):
+        with self.assertRaisesRegex(ValueError, 'RF resolved design or interface differs from explicit source'):
             self.resolve()

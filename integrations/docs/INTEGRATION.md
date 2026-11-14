@@ -76,6 +76,17 @@ external-provider cold execution remains open. The RF and TOF worker freezers
 must carry the registry and consume their selected provider's declared closure;
 missing frozen dependencies never fall back to the author tree.
 
+Registry CI `43623576163` failed eight assertions in six existing negative-test
+parents. Provider-local error wording required corresponding assertion updates;
+one failure also exposed boolean `True` being accepted as integer version 1.
+The same real-provider probe reproduced that resolved-version defect in OA, IP
+and dual-cone, and in the dual-cone source version. Their local validators now
+reject those types while retaining full source/geometry/interface checks. RF and
+MR already refused the probe. The original six parents and the six-provider
+positive/negative regression passed on the integrated successor, within a
+25-parent focused suite (44.047 seconds). This closes the reproduced local
+failures, not the historical failed CI record or final Repository acceptance.
+
 Frontend aperture discretization and its frozen declarations now use the installed
 SIMION backend directly; the former common aperture module bridge is retired.
 The one- and three-instance structural IOB seeds now belong to the existing

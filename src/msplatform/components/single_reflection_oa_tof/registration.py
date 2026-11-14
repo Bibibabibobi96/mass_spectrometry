@@ -9,6 +9,8 @@ def resolve(design, profile):
 
 def validate(source, resolved, interface):
     expected, canonical = resolve(source, interface.get('geometry_profile_id'))
+    if type(resolved.get('schema_version')) is not int or resolved.get('schema_version') != expected.get('schema_version'):
+        raise ContractError('TOF resolved design version differs from its explicit source')
     if canonical != interface or expected != resolved:
         raise ContractError('single_reflection_oa_tof: resolved design or interface differs from its explicit source')
 

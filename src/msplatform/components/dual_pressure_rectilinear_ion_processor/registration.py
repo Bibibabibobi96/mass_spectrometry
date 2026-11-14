@@ -10,6 +10,8 @@ def resolve(design, profile):
 
 def validate(source,resolved,interface):
     expected,canonical=resolve(source,interface.get('geometry_profile_id'))
+    if type(resolved.get('schema_version')) is not int or resolved.get('schema_version') != expected.get('schema_version'):
+        raise ContractError('IP resolved design version differs from its explicit source')
     if expected!=resolved or canonical!=interface:
         raise ContractError('IP resolved design or interface differs from explicit source')
 

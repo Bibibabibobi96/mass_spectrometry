@@ -131,7 +131,7 @@ class DualConeCadTests(unittest.TestCase):
             self.assertEqual(transform.translation_mm, (12, -7, 31))
         before = copy.deepcopy(value)
         value['components_source']['interface']['geometry_mm']['first_cone']['aperture_diameter_mm'] += .1
-        with self.assertRaisesRegex(ValueError, 'differs from its explicit source'):
+        with self.assertRaisesRegex(ValueError, 'differs from explicit source'):
             assembly_geometry_members(value)
         self.assertEqual(before['components_resolved'], value['components_resolved'])
 

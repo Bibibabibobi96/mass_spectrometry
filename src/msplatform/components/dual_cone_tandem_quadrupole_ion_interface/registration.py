@@ -11,8 +11,10 @@ def resolve(design,profile):
 def validate(source,resolved,interface):
     from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.geometry import resolve_geometry
     from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.assembly_interface import build_assembly_interface
+    if type(resolved.get('schema_version')) is not int or resolved.get('schema_version') != 1:
+        raise ContractError('dual-cone resolved design version differs from its explicit source')
     canonical=build_assembly_interface(resolved,geometry_profile_id=interface.get('geometry_profile_id'))
-    if (source.get('role')!='dual_cone_tandem_quadrupole_geometry_baseline' or source.get('schema_version')!=1
+    if (source.get('role')!='dual_cone_tandem_quadrupole_geometry_baseline' or type(source.get('schema_version')) is not int or source.get('schema_version')!=1
             or source.get('project_id')!='dual_cone_tandem_quadrupole_ion_interface'
             or resolve_geometry(dict(source))!=resolved or canonical!=interface):
         raise ContractError('dual-cone resolved geometry or interface differs from explicit source')

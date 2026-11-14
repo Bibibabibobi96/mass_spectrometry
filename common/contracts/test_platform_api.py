@@ -911,12 +911,12 @@ class PlatformApiTests(unittest.TestCase):
             with self.subTest(version=version), self.assertRaisesRegex(ContractError, "TOF resolved design version"):
                 _from_provider("single_reflection_oa_tof", invalid, components["oatof"].assembly_interface,
                                source_design=components["oatof"].source_design)
-        with self.assertRaisesRegex(ContractError, "requires its explicit source design"):
+        with self.assertRaisesRegex(ContractError, "provider design, interface and source must be mappings"):
             _from_provider("single_reflection_oa_tof", components["oatof"].resolved_design,
                            components["oatof"].assembly_interface, source_design=None)
         stale_tof = components["oatof"].resolved_design
         stale_tof["validation_target"]["mass_amu"] += 1
-        with self.assertRaisesRegex(ContractError, "differs from its source design documents"):
+        with self.assertRaisesRegex(ContractError, "resolved design or interface differs from its explicit source"):
             _from_provider("single_reflection_oa_tof", stale_tof,
                            components["oatof"].assembly_interface,
                            source_design=components["oatof"].source_design)
