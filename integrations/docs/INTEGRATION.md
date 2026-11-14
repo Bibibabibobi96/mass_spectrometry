@@ -400,6 +400,34 @@ host leases were released, capacity leases and aliases are absent, and the
 owners remain pinned. These are saved-solution exports, not actual Fly callbacks,
 gradient-support qualification, field/grid convergence or a full-flight result.
 
+Six further public exports on `727137c3` use 0.025-mm and 0.0125-mm pitch
+without changing the physical model, saved FEM solution or four observation
+coordinates. Each half-grid has 396 valid nodes and each quarter-grid 540, with
+zero masked nodes, conductor fills or Compute calls. All six writers exited zero
+and released their host/capacity leases. The following
+[native static comparison](../../../artifacts/projects/instrument_assembly/runs/20261114_150348__analysis__simion__scalar-grid-af70950d0cfd/summary.json)
+uses the existing SIMION scalar adapter and sampling compiler, with no Fly,
+Refine, Compute or PA save. Six native operations each returned four finite,
+coordinate-matched rows; the managed owner confirmed writer exits and completed
+successfully with unchanged checkout, HEAD, index and source guards.
+
+| Basis | Export pitches compared (mm) | Maximum absolute potential difference (V) | Maximum vector field difference (V/mm) |
+|---|---|---|---|
+| Carrier | 0.05 / 0.025 and 0.025 / 0.0125 | 0 | 0 |
+| RF reference | 0.05 / 0.025 | 1.08831e-20 | 5.53434e-30 |
+| RF reference | 0.025 / 0.0125 | 2.72560e-21 | 2.09178e-30 |
+| Pulse delta | 0.05 / 0.025 | 0.00139997035 | 4.71321e-13 |
+| Pulse delta | 0.025 / 0.0125 | 0.000350613691 | 7.24614e-13 |
+
+At the original detector-front vacuum point the sampled pulse-delta field is
+approximately `[-0.701752, 0.0267354, -126.465636] V/mm`; it is not a zero filled
+for a non-frontend slot. This is a static query of the common-domain exported
+solution, not the old IOB's effective field or an actual Fly callback. These
+four-point differences describe export-grid sensitivity only: the FEM mesh and
+outer domain were not refined, full flight support was not sampled, and no
+field-coupling, trajectory or scientific accuracy qualification is granted.
+The original point, historical error and chosen physical geometry remain intact.
+
 Software coverage includes signed world coordinates, frozen source protection, coordinate
 witness refusal, real PA header/length checks and legacy-writer records without
 retention metadata. The [first managed export attempt](../../../artifacts/projects/instrument_assembly/runs/20261114_053746__analysis__comsol__assembly-scalar-4732015d3b94/summary.json)
