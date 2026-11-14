@@ -162,7 +162,9 @@ Both targeted ordinary-install arms on `76c7f605` checked static operating-field
 planning and the 22-group MR drive with 577 source-joined runtime members per arm,
 fresh site-packages and author-tree access denied. This is planning evidence,
 not full installation or native qualification. The successor API correction below
-still requires installation evidence for its changed resource bytes.
+was subsequently checked by both targeted ordinary-install arms: 577 identical
+runtime members per arm, static planning and 22-group MR drive, source guards
+unchanged. This does not replace the full ordinary-install parent.
 
 The first public native model/field attempt on `76c7f605` prepared the model in
 `20261115_071941__build__simion__model-502cae342ab4`, then completed Refine,
@@ -176,7 +178,28 @@ adapter uses it too (reviewed 2026-11-15). Both new readers now use that propert
 with finite/range and encoding-bound checks intact. Seventeen focused tests passed
 in 2.247 seconds, including API doubles exposing only the supported property and
 refusing absent, nonnumeric or overflowing values. Native successor validation
-remains open; no header default or physical tolerance was substituted.
+is recorded below; no header default or physical tolerance was substituted.
+
+On `fcdda173`, the corrected public native attempt published model
+`20261115_073814__build__simion__model-ac01b60586b6`, standalone field
+`20261115_073843__sim__simion__fields-a021fd860187` and trajectory
+`20261115_073930__sim__simion__track-970a06efea84` in 109.438 seconds.
+All 11 native operations exited zero; all writers stopped and host/capacity
+leases released. A fresh Python process reopened the field before Fly. The
+readable collection contains all 100 original IDs. This is a controlled normally
+registered static toy Assembly, not retained-instrument or accuracy qualification.
+
+Independent inspection found all 100 `other_actions` deadline-request states
+0.000515–0.0100 microseconds later than the corresponding native `terminate`
+states. The former are not proof of accepted terminal states or arrival at the
+deadline. New collection now calls them `request_boundary`, classifies explicit
+requests as `programmatic_deadline_stop` and keeps native terminals separate;
+IP–MR contact/unknown and accepted-cut semantics remain intact. Twelve focused
+tests passed in 58.145 seconds. Read-only replay of the actual retained log kept
+all native terminals, canonical events, mother and clock records exactly intact
+while reporting 100 request boundaries. Original run bytes and classifications
+were not rewritten. The native callback-state ordering cause remains unestablished;
+no tolerance, stopping physics or source was changed.
 
 A normally registered two-instance toy built actual geometry through three public
 native operations in run

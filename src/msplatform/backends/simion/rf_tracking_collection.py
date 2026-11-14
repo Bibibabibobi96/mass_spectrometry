@@ -131,8 +131,8 @@ def collect_rf_tracking_logs(log_paths,*,source_rows,source_provenance,flight,ba
         terminal=terminals[pid]
         if terminal['instrument_time_us']<births[pid]['instrument_time_us']:raise ValueError('RF terminal precedes actual start')
         if terminal['reason']=='deadline':
-            if pid not in ends or ends[pid]['instrument_time_us']<deadlines[pid]:raise ValueError('RF deadline censor lacks accepted endpoint evidence')
-            category=('unknown_native_terminal' if pid in contacts else 'programmatic_deadline_stop') if ip_mr else 'censored_at_absolute_deadline'
+            if pid not in ends or ends[pid]['instrument_time_us']<deadlines[pid]:raise ValueError('RF deadline stop lacks request boundary evidence')
+            category='unknown_native_terminal' if ip_mr and pid in contacts else 'programmatic_deadline_stop'
         elif terminal['reason']=='accepted_cut':
             if pid not in cuts:raise ValueError('RF cut terminal lacks actual accepted-step plane evidence')
             if cuts[pid]['event_instrument_time_us']>deadlines[pid]:raise ValueError('RF accepted cut exceeds original deadline')
@@ -140,9 +140,11 @@ def collect_rf_tracking_logs(log_paths,*,source_rows,source_provenance,flight,ba
         else:
             if pid in cuts or pid in ends:raise ValueError('RF unknown terminal conflicts with explicit stopped endpoint')
             category='unknown_native_terminal'
-        endpoint=ends[pid] if terminal['reason']=='deadline' else cuts.get(pid)
-        outcomes.append(dict(particle_id=pid,category=category,instance_id=terminal['instance'],accepted_endpoint=copy.deepcopy(endpoint),
-            terminal_instrument_time_us=terminal['instrument_time_us']))
+        outcome=dict(particle_id=pid,category=category,instance_id=terminal['instance'],
+            terminal_instrument_time_us=terminal['instrument_time_us'])
+        if terminal['reason']=='deadline':outcome['request_boundary']=copy.deepcopy(ends[pid])
+        else:outcome['accepted_endpoint']=copy.deepcopy(cuts.get(pid))
+        outcomes.append(outcome)
     result=dict(native_complete=True,native_dynamics=dynamics,canonical_events=events,native_terminals=[terminals[pid] for pid in ordered],
         native_shared_states=shared,native_pulse_states=[],
         census=dict(role='rf_full_mother_census',execution_particle_ids=ordered,mother_particle_ids=copy.deepcopy(source_provenance['mother_particle_ids']),
@@ -169,8 +171,6 @@ def collect_rf_tracking_logs(log_paths,*,source_rows,source_provenance,flight,ba
             row['terminal_splat']=None
             row['terminal_splat_availability']='not_read'
             row['native_preaction_contact']=contacts.get(row['particle_id'])
-            if row['category']=='programmatic_deadline_stop' or (row['particle_id'] in contacts and row['particle_id'] in ends):
-                row['request_boundary']=row.pop('accepted_endpoint')
     if observation is not None:result['plane_observations']=observation
     if policy is not None:result.update(propagation_stop=policy,propagation_scope='segmented_upstream',observation_complete=observation['status']=='complete')
     return result

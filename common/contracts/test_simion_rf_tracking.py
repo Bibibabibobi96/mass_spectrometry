@@ -146,7 +146,7 @@ local function callback(name) current=name;segment[name]();current='load' end
             self.assertEqual([r['particle_id']for r in collection['native_terminals']],[7,91])
             self.assertEqual(collection['native_terminals'][1]['instance'],0)
             self.assertTrue(all('raw_ion_splat'not in r for r in collection['canonical_events']))
-            self.assertEqual([r['category']for r in collection['census']['terminal_taxonomy']['particle_outcomes']],['unknown_native_terminal','censored_at_absolute_deadline'])
+            self.assertEqual([r['category']for r in collection['census']['terminal_taxonomy']['particle_outcomes']],['unknown_native_terminal','programmatic_deadline_stop'])
             self.assertFalse(collection['census']['unknown_is_loss'])
     @unittest.skipUnless(LUA.is_file(),'plain Lua interpreter unavailable')
     def test_rf_cold_verifier_uses_rf_guarantees_without_tof_priority_probes(self):
@@ -491,7 +491,7 @@ simion={wb={instances={item}},pas={open=function() return {close=function()end} 
             row.update({'v'+axis+'_mm_per_us':state['velocity_'+axis+'_m_s']/1000 for axis in 'xyz'})
             lines.append('RF_NATIVE_STATE_V1: '+json.dumps(row))
             if ion==2:
-                endpoint=dict(row,event='deadline_endpoint',reason='absolute_deadline',instrument_time_us=6.25)
+                endpoint=dict(row,event='deadline_endpoint',reason='absolute_deadline',instrument_time_us=6.25,x_mm=123.0)
                 lines.append('RF_NATIVE_STATE_V1: '+json.dumps(endpoint))
             terminal=dict(row,event='terminal',reason='unknown' if ion==1 else 'deadline',instrument_time_us=2. if ion==1 else 6.24)
             lines.append('RF_NATIVE_STATE_V1: '+json.dumps(terminal))
@@ -501,9 +501,32 @@ simion={wb={instances={item}},pas={open=function() return {close=function()end} 
             args=dict(source_rows={r['particle_id']:r for r in plan['rows']},source_provenance=plan['source_provenance'],flight=plan['flight'],
                 batches=[dict(source_row_range=[1,2],expected_particle_ids=[7,91],build_metadata=controls['build_metadata'])])
             result=collect_rf_tracking_logs([path],**args)
-            self.assertEqual([r['category'] for r in result['census']['terminal_taxonomy']['particle_outcomes']],['unknown_native_terminal','censored_at_absolute_deadline'])
+            self.assertEqual([r['category'] for r in result['census']['terminal_taxonomy']['particle_outcomes']],['unknown_native_terminal','programmatic_deadline_stop'])
             self.assertFalse(result['census']['unknown_is_loss'])
-            self.assertEqual(result['census']['terminal_taxonomy']['particle_outcomes'][1]['accepted_endpoint']['instrument_time_us'],6.25)
+            self.assertEqual(result['census']['terminal_taxonomy']['particle_outcomes'][1]['request_boundary']['instrument_time_us'],6.25)
+            outcome=result['census']['terminal_taxonomy']['particle_outcomes'][1]
+            self.assertNotIn('accepted_endpoint',outcome)
+            self.assertEqual(outcome['request_boundary']['x_mm'],123.0)
+            self.assertEqual(result['native_terminals'][1]['instrument_time_us'],6.24)
+            self.assertNotEqual(result['native_terminals'][1]['x_mm'],123.0)
+            self.assertEqual([r['event'] for r in result['canonical_events'] if r['particle_id']==91],
+                             ['source_release','deadline_endpoint','terminal'])
+            self.assertEqual(result['original_mother']['clock_records'],plan['source_provenance']['clock_records'])
+            for replacement_endpoint in (None,dict(endpoint,instrument_time_us=6.24)):
+                changed=[line for line in lines if line != 'RF_NATIVE_STATE_V1: '+json.dumps(endpoint)]
+                if replacement_endpoint is not None:
+                    index=changed.index('RF_NATIVE_STATE_V1: '+json.dumps(terminal))
+                    changed.insert(index,'RF_NATIVE_STATE_V1: '+json.dumps(replacement_endpoint))
+                path.write_text('\n'.join(changed)+'\n')
+                with self.subTest(request=replacement_endpoint),self.assertRaisesRegex(ValueError,'request boundary evidence'):
+                    collect_rf_tracking_logs([path],**args)
+            path.write_text('\n'.join(lines)+'\n')
+            static_args=dict(args,flight=dict(plan['flight'],tracking_kind='static_world'))
+            static_result=collect_rf_tracking_logs([path],**static_args)
+            static_outcome=static_result['census']['terminal_taxonomy']['particle_outcomes'][1]
+            self.assertEqual(static_outcome['category'],'programmatic_deadline_stop')
+            self.assertEqual(static_outcome['request_boundary']['instrument_time_us'],6.25)
+            self.assertNotIn('accepted_endpoint',static_outcome)
             self.assertEqual(result['original_mother']['mother_records'],plan['source_provenance']['mother_records'])
             self.assertEqual([r['charge_state'] for r in result['native_terminals']],[1,-2])
             for control in [dict(grouped=1,repulsion='none',relativity=0),
