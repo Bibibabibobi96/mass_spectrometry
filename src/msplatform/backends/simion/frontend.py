@@ -108,7 +108,7 @@ def frontend_accelerator_operating_voltages(oatof: dict, geometry: dict) -> dict
     from msplatform.components.single_reflection_oa_tof.electrode_topology import (
         build_electrode_topology, resolve_frontend_field_domain,
     )
-    from msplatform.backends.simion.electrode_contract import _physical_voltage_value
+    from msplatform.contracts.electrode_sources import physical_voltage_value
 
     plan = geometry['composition_plan']
     if plan.get('schema_version') != 5:
@@ -123,7 +123,7 @@ def frontend_accelerator_operating_voltages(oatof: dict, geometry: dict) -> dict
     frontend_electrode_maps(geometry)
     topology = build_electrode_topology(oatof, **options)
     mapping = geometry['electrode_bindings'][downstream]
-    values = {mapping[row['electrode_group_id']]: _physical_voltage_value(topology, row['voltage_source']['pointer'])
+    values = {mapping[row['electrode_group_id']]: physical_voltage_value(topology, row['voltage_source']['pointer'])
               for row in topology['groups'] if row['electrode_group_id'] in domain['electrode_group_ids']}
     if values[mapping['common_ground']] != 0.:
         raise ValueError('OA field design requires the provider shield to be grounded')

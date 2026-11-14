@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-import math
-from typing import Any, Mapping, Iterable
+from typing import Any, Mapping
 
 from msplatform.backends.simion.rf_geometry import physical_electrode_view
+from msplatform.components.rf_multipole.drive import (
+    scientific_multipole_drive as _component_multipole_drive,
+    multipole_voltage_rows,
+)
 
 
 ROD_ELECTRODE_IDS = tuple(range(1, 9))
@@ -18,21 +21,6 @@ THREE_ZONE_BARE_PA_PLUS_MODEL_ID = "three_zone_linear_ring_bare_octupole_pa_plus
 PA_PLUS_FIELD_LOADING_POLICY_ID = "octupole_common_differential_pa_plus_v2"
 
 
-def _physical_voltage_value(document: dict, pointer: str) -> float:
-    value: object = document
-    for token in pointer.split('/')[1:]:
-        token = token.replace('~1', '/').replace('~0', '~')
-        if isinstance(value, dict) and token in value:
-            value = value[token]
-        elif isinstance(value, list) and token.isdecimal() and int(token) < len(value):
-            value = value[int(token)]
-        else:
-            raise ValueError(f'physical electrode voltage source is missing: {pointer}')
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
-        raise ValueError(f'physical electrode voltage source is not finite: {pointer}')
-    return float(value)
-
-
 def physical_multipole_voltages(resolved: dict, mapping: dict[int, int]) -> tuple[dict[int, float], dict[int, int]]:
     """Resolve one provider's static volts and RF groups into bound solver IDs."""
     view = physical_electrode_view(resolved)
@@ -40,7 +28,7 @@ def physical_multipole_voltages(resolved: dict, mapping: dict[int, int]) -> tupl
     if set(mapping) != expected:
         raise ValueError(f'physical electrode binding differs from provider-native groups: '
                          f'missing={sorted(expected - set(mapping))}, extra={sorted(set(mapping) - expected)}')
-    return _multipole_voltage_rows(resolved, ((mapping[row['native_electrode_id']], row['voltage_source']) for row in view))
+    return multipole_voltage_rows(resolved, ((mapping[row['native_electrode_id']], row['voltage_source']) for row in view))
 
 
 def scientific_multipole_voltages(
@@ -56,47 +44,13 @@ def scientific_multipole_voltages(
 
     topology = build_electrode_topology(resolved)
     validated = build_simion_electrode_map(resolved, topology, requested_native_ids=mapping)
-    return _multipole_voltage_rows(resolved, ((validated[row['electrode_group_id']], row['voltage_source']) for row in topology))
+    return multipole_voltage_rows(resolved, ((validated[row['electrode_group_id']], row['voltage_source']) for row in topology))
 
 
 def scientific_multipole_drive(resolved: dict, mapping: dict[str, int]) -> dict[str, dict]:
-    """Project the provider's real physical RF/DC sources, without flight numerics."""
-    from msplatform.components.rf_multipole.electrode_topology import build_electrode_topology
-
-    scientific_multipole_voltages(resolved, mapping)  # Authenticate exact topology/native coverage.
-    result = {}
-    for row in build_electrode_topology(resolved):
-        source = row['voltage_source']
-        if source['kind'] == 'static':
-            value = dict(kind='static', voltage_v=_physical_voltage_value(resolved, source['pointer']))
-        else:
-            drive = resolved['drive']
-            polarity = 1 if source['rf_group'] == 1 else -1
-            value = dict(kind='rf', common_mode_v=_physical_voltage_value(resolved, source['common_mode_pointer']),
-                dc_v=polarity * _physical_voltage_value(resolved, source['dc_amplitude_pointer']), polarity=polarity,
-                waveform=drive['waveform'], frequency_hz=drive['frequency_Hz'], phase_rad=drive['phase_rad'],
-                rf_amplitude_v=drive['rf_amplitude_V_zero_to_peak_per_group'])
-        result[row['electrode_group_id']] = value
-    return result
-
-
-def _multipole_voltage_rows(
-    resolved: dict, rows: Iterable[tuple[int, dict]],
-) -> tuple[dict[int, float], dict[int, int]]:
-    """Apply the one existing common/DC/polarity calculation in its original order."""
-    carrier, groups = {}, {}
-    for solver, source in rows:
-        if source['kind'] == 'static':
-            carrier[solver] = _physical_voltage_value(resolved, source['pointer'])
-        elif source['kind'] == 'rf_drive':
-            common = _physical_voltage_value(resolved, source['common_mode_pointer'])
-            dc = _physical_voltage_value(resolved, source['dc_amplitude_pointer'])
-            group = source['rf_group']
-            carrier[solver] = common + (dc if group == 1 else -dc)
-            groups[solver] = group
-        else:
-            raise ValueError('physical electrode voltage source kind is unsupported')
-    return carrier, groups
+    """Validate native coverage and project the component-owned scientific drive."""
+    scientific_multipole_voltages(resolved, mapping)
+    return _component_multipole_drive(resolved)
 
 
 def scientific_multipole_rod_pieces(resolved: dict) -> list[dict]:

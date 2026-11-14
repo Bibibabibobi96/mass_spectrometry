@@ -17,7 +17,8 @@ from msplatform.components.single_reflection_oa_tof.accelerator_geometry import 
 from msplatform.components.single_reflection_oa_tof.electrode_topology import build_electrode_topology
 from .artifacts import CompiledPreparedModel
 from .compiler import CompiledSimionGeometry, _content_sha256
-from .electrode_contract import _physical_voltage_value, scientific_multipole_drive
+from msplatform.contracts.electrode_sources import physical_voltage_value
+from .electrode_contract import scientific_multipole_drive
 from .frontend import frontend_electrode_maps, native_frontend_instances
 from .source import lua_value
 from .tof_geometry import resolve_physical_geometry
@@ -113,7 +114,7 @@ def project_resolved_drive(compiled: CompiledSimionGeometry, components_resolved
     groups[tof] = {}
     for row in topology['groups']:
         group = row['electrode_group_id']
-        voltage = _physical_voltage_value(topology, row['voltage_source']['pointer'])
+        voltage = physical_voltage_value(topology, row['voltage_source']['pointer'])
         groups[tof][group] = (dict(kind='pulse', off_voltage_v=0., on_voltage_v=voltage)
                              if group in frontend and group != 'common_ground'
                              else dict(kind='static', voltage_v=voltage))

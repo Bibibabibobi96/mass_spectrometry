@@ -58,6 +58,12 @@ process-local: durable installed discovery and external-provider replay in a
 cold frozen worker remain open. Registration does not implement an unsupported
 geometry primitive, field boundary, drive, collision law or tracking backend.
 
+RF scientific group drives and carrier coefficients are projected by
+`components.rf_multipole.drive` from the canonical provider sources. SIMION
+retains native electrode-map validation; RF, TOF and frontend consumers share
+the neutral finite-voltage lookup in `contracts.electrode_sources`. Native
+numbering does not define scientific polarity, amplitude or phase.
+
 根 `pyproject.toml` 是发行边界的唯一声明：发行实际 `msplatform` 实现及显式schema／例子／GEM／PS资源，
 不把整个`common`或项目树、测试和商业载荷打进wheel。旧入口仅单向转发到新实现；冻结快照使用
 自身的源码和资源，不以当前安装补齐旧快照。迁移阶段与退役期限见[路线图](../docs/ROADMAP.md#科学核心与平台边界迁移)。
