@@ -320,7 +320,7 @@ Source and real-owner synthetic tests cover failure evidence, cold reopening,
 borrowed-product publication and tampering refusal before process launch. They
 do not replace native evidence. The normal post-fix Compute/reopen pair has not
 been repeated merely to relabel the failed carrier run. Dynamic RF/pulse bases,
-native scalar export, SFI coupling, convergence, continuous flight, ordinary installation
+SFI coupling, convergence, continuous flight, latest-consumer ordinary installation
 and full Repository/performance acceptance remain open.
 
 The public [saved Assembly scalar stage](../../common/comsol/README.md#saved-assembly-scalar-export)
@@ -333,9 +333,39 @@ failed before any native operation because that historical writer record lacked
 `retention_role`; its failed manifest and source remain unchanged. The consumer
 now classifies only the four small source records as required evidence, retaining
 their byte identities and the borrowed model's native role. A corrected-source
-attempt is separately managed; no native scalar-export acceptance is claimed yet.
+attempt, `20261114_054430__analysis__comsol__assembly-scalar-9cc52a771a46`,
+subsequently completed with stopped writers and released host/capacity leases.
+The 3x3x3 grid at 0.05 mm pitch contains 27 valid FEM samples, zero invalid
+nodes and zero conductor-filled nodes; both PA headers and all payload nodes
+were independently checked. All sampled potentials are zero. The saved solution
+readback reports 5,830,174 DOFs; interpolation took 7.868 seconds, distinct from
+the 15,999.085-second command wall dominated by resource waiting. No Compute or
+model save was requested. This small-grid export is not mesh convergence,
+dynamic-basis, field-coupling or trajectory qualification.
 The controlled grid retains the original `detector_parent_vacuum` point and does
 not alter geometry or replace the historical errors.
+
+The two-slot carrier/metal priority diagnostic
+`20261114_050802__analysis__simion__priority-03ce86f44705` was interrupted under
+the user's exact-child authorization after PID, creation time, executable, IOB
+and owner ancestry were verified. Inputs, IOB, logs and partial outputs were
+preserved; only its SIMION child was stopped. The unchanged owner reports FAILED
+from the observed exit, while the separate interruption receipt records the
+authorized interruption without rewriting that terminal. Writer exit and both
+host/capacity releases were confirmed.
+
+The bounded successors `20261114_103104__analysis__simion__priority-0240f1653a2c`
+and `20261114_105346__analysis__simion__priority-721c93cb48b0` retained all three
+births and both PA geometries, flushed observations and used an exact-child
+120-second watchdog trigger. Both returned INTERRUPTED with stopped writers;
+the latter retained unchanged source identities over 151.688 seconds including
+setup and cleanup. Particle 1's timeout callback occurred at 1 microsecond,
+despite its 0.01-microsecond threshold; no terminate callback was recorded.
+The passive second trace observed completed particle-2 callback pairs through
+x = 0.43 mm and t = 0.0018 microseconds. Its 128-callback logging cap prevents
+locating a later stall. These runs do not prove metal crossing, field priority
+correctness or a native root cause, and do not change the original SFI points
+or errors. No owner or unrelated process was stopped.
 
 Optional scalar conductor support now uses canonical solid interiors and frozen
 Dirichlet voltages, preserving valid sampled bytes and leaving unsupported or
@@ -344,9 +374,21 @@ report remain distinct. The integrated source batch passed 42 parent tests
 (96 successful records, no skips) in 62.248 seconds with source identities fixed.
 It includes the real managed owner with an inert child for default/filled output,
 late invalid-mask failure and support-source tamper; it does not run COMSOL.
-The installed probe is prepared but not yet accepted for this successor. Native
+The scalar-support probe passed both ordinary installation arms at `269e3665`,
+within the 949.662-second complete installation parent, with authored build
+records joined to that clean commit. This does not cover later RF-IP consumers. Native
 conductor support, complete domain coverage and field/trajectory qualification
 remain open; no historical error or physical geometry was changed.
+
+Remote [Changed run 43540202263](https://github.com/Bibibabibobi96/mass_spectrometry/actions/runs/43540202263)
+on `269e3665` failed the actual scientific-core boundary parent: the fixed
+support-source loop used an unresolved dynamic import and the newly extracted
+neutral `shape_query` module was not declared as component infrastructure.
+The downloaded artifact and pure-checker reproduction identify all seven
+findings. The same CI installation parent passed in 1006.219 seconds, but that
+does not turn the overall Changed result green; Repository was skipped. A
+repair and actual failed-parent rerun remain required, separately from the
+latest-consumer installation and complete Repository/performance acceptance.
 
 The full [ordinary-installation parent](../../common/contracts/test_installed_scientific_core.py)
 passed on candidate `812c20f3` plus test source
@@ -940,6 +982,46 @@ IP阶段恢复的原`-MultipoleIpRunId`须指成功封存准备，当前请求�
 完整MP／IP／MR父plan可派生IP／MR局部范围；同一完整IP接口同时发布guide_inlet与extraction_exit。
 MR-local几何、原IP→MR直接位姿和唯一clock保持，不按锚点反算放置。真实115429准备已完成81粒子源的
 IOB保存／独立重开及接口场审计；审计完成不等于物理匹配或边缘场截断资格。
+
+### Approved IP–MR pose preflight
+
+The approved layout keeps IP and upstream poses fixed and translates the entire
+selected MR analyzer by world z = +6.8 mm. No IP cut, shield edit or internal
+component change is authorized. A fresh source-only preflight re-resolved both
+canonical components, checked unchanged source bytes/designs, and verified
+opposed port normals with a 1.000000000000001 mm gap. That historical 1 mm
+choice is a layout basis, not an optimized or physically qualified spacing.
+The 39 physical-member records produced 14 conservative bounding-box overlap
+candidates. The subsequent locked CadQuery 2.8.0 / OCP 7.9.3.1.1 check built all
+39 canonical solids and checked all 360 cross-instance pairs, with unchanged
+source identities and a released heavy GATE (180.602 seconds execution).
+Nine member pairs have positive solid intersection volumes and zero distance:
+
+| IP member | MR intersecting member |
+|---|---|
+| `lp_side_upper`, `lp_side_lower` | each intersects `prism_electrodes/1` and `prism_ground_shields/1` |
+| `lp_outer_auxiliary` | `prism_electrodes/1` and `prism_ground_shields/1` |
+| `exit_lens` | `prism_electrodes/1` |
+| `lp_commonmode_shield` | `prism_electrodes/1` and `prism_ground_shields/1` |
+
+Individual solid-pair common volumes range from 0.515622 to 54 cubic mm;
+compound entries are not summed or represented as union-overlap volume.
+Independent source review found no double pose application or concrete member
+mapping error. The first wrapper attempt failed before CAD because PowerShell's
+automatic argument variable hid the command arguments; its failure is retained.
+The corrected wrapper used the same snapshot and unchanged diagnostic code.
+The port gap therefore does not establish surrounding-metal clearance. Physical
+validation of this layout is held pending a design decision; no component is
+trimmed and no alternative placement is silently selected. Applicable field
+domains and observation bindings remain open. MR-attached observation coordinates translate
+with MR; IP/upstream and world-fixed observations do not move implicitly.
+
+The current MR adapter emits the complete analyzer, with OA geometry retained
+as matching authority and a real OA instantiated separately when selected.
+The checked IP–MR pair contains no OA metal and is not an OA+MR or full upstream
+instrument qualification. The original recipe and upstream pose are preserved;
+its old measured-state handoff and local PA domain are not new continuous-field
+evidence. No OA is synthesized to resolve this scope distinction.
 
 ## 已准备IP→MR联合飞行
 
