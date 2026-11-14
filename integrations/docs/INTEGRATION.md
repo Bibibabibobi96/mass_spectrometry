@@ -1159,7 +1159,9 @@ This permits the provisional IP–MR geometry case to proceed, not an upstream
 multipole, full-field, insulation, native flight or convergence qualification.
 LP80 fields and trajectories are not reused as LP60 results. The public mixed
 geometry compiler and geometry-only native plan now support IP–MR and optional
-complete RF–IP–MR. Native construction, model, field and tracking acceptance remain open.
+complete RF–IP–MR. The model-stage successor binds the actual IP schedule, MR
+voltage authority, optional RF groups and one explicit clock to all local assets.
+Its native validation, common fields and tracking acceptance remain open.
 The user selected the simplest existing supported complete upstream instance,
 without adding historical shells, endcaps or plates. The selected bare octupole
 request is the versioned `rf_oatof_functional_v1` multipole already consumed by
@@ -1185,8 +1187,57 @@ seconds (152.334 guarded wall), with the full source and checkout unchanged.
 They cover all canonical members and source identities, actual three/four-slot
 plans, Lua IOB build/reopen with inert native APIs, malformed asset/count refusals
 and preserved RF–IP/OA–MR behavior. These local PA assets are unsolved geometry,
-not a coupled field. Public model/field/tracking execution remains explicitly
-unsupported until its actual implementation; no native solver ran in this check.
+not a coupled field. This geometry-stage check preceded model-stage implementation;
+no native solver ran in it. Field and tracking execution still refuse this role
+until a real common-field binding and continuous Program are implemented.
+
+The same complete 71-member source was then built and cold-reopened by the existing
+public COMSOL geometry stage on `260c354d`, run
+`20261114_174918__build__comsol__geometry-66619bbb1369`. Both native reports retain
+45 scientific groups and 460 geometry domains, with zero physics, mesh, study
+and solver nodes. The full source structures match the CAD precheck; original
+inputs and source/checkout guards remained unchanged. Both native writers exited,
+host leases were released and the 34,335,533-byte run is ready and pinned with
+no remaining capacity commitment. This proves geometry build/cold reopen on that
+source version, not the later SIMION model stage, a solved BVP or flight.
+
+The source-free SIMION model successor uses the same preparation owner and real
+drive consumer for three/four local assets. It binds the complete IP schedule,
+22 MR scientific groups and optional eight-group RF instance to one clock.
+Native target/readback and wrong-domain, missing-witness and clock refusals are
+covered by inert software tests; native SIMION construction and ordinary
+installation of this successor remain unverified. The interim geometry-only
+model refusal test was replaced by these implemented-stage checks; field-mode
+refusals remain. No assertion about physical geometry was removed.
+
+Model reconstruction exposed input-dictionary ordering in MR shield and OA drive
+rows. Both now follow canonical physical group order. Exact complete-document
+and identity comparison remains in place. The initial 42-parent batch retained
+two basis errors; its 19-parent successor retained 17 successes, an OA roundtrip
+failure and one missing-explicit-Lua skip. The final three-parent check passed
+the exact OA roundtrip, permuted targets and the formerly skipped IP Lua consumer
+in 69.984 test seconds (75.317 guarded), with no skips and unchanged sources.
+Lua was resolved from its pinned PATH provider. These are separate source epochs,
+not a full 42-parent acceptance on the final version. Their records are retained
+in workspace `.tools/phase04-codex-takeover-20261109/v87-ip-mr-model-focused-agent7-r1`
+and `v87-ip-mr-model-reconstruction-agent8-r1` / `v87-ip-mr-model-reconstruction-agent8-r2`.
+
+`backends.comsol.ip_mr_scalar_basis.project_ip_mr_scalar_basis` projects explicit
+stationary requests from the same model and full canonical Assembly: one carrier,
+15 unit-voltage IP responses and one optional full-amplitude RF response. IP
+coefficients reference the existing model-drive evaluator; no second schedule
+formula is introduced. The basis tests passed after the canonical shield-order
+fix, including valid outer-box variation and source/clock/geometry refusals.
+These requests are not solved fields or a tracking FieldBundle.
+
+The separate public COMSOL carrier model was built and cold-reopened on `260c354d`,
+run `20261114_180828__build__comsol__assembly-model-523860b85edf`. Both readbacks
+match all 45 requested group voltages, vacuum permittivity, zero exterior potential
+and the explicit coarse mesh controls, with zero Compute and no stored solution.
+IP voltages are zero only in this mathematical carrier; this is not the physical
+IP drive or a complete response family. Native writers and capacity leases were
+released and source/input guards matched. Field solving, full continuous flight,
+collision coverage at PA overlaps and numerical convergence remain open.
 
 The explicit LP60/80 provider regression passed all four focused tests. Its
 public Changed check passed six stages in 358.313 seconds with unchanged source

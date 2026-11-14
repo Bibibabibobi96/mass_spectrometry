@@ -1464,6 +1464,10 @@
               {
                 "regex": "^src/msplatform/(?:api\\.py|assembly/|examples/|components/|backends/simion/)",
                 "reason": "installed_stage_api_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/comsol/ip_mr_scalar_basis.py",
+                "reason": "ip_mr_scalar_basis_consumer_changed"
               }
             ],
             "modules": [
@@ -1472,6 +1476,9 @@
               "common/contracts/test_simion_geometry_compiler.py",
               "common/contracts/test_joint_geometry_plan.py",
               "common/contracts/test_ip_mr_geometry.py",
+              "common/contracts/test_ip_mr_model.py",
+              "common/contracts/test_ip_mr_native_model.py",
+              "common/contracts/test_ip_mr_scalar_basis.py",
               "common/contracts/test_joint_ip_model.py",
               "common/contracts/test_oa_mr_model.py",
               "common/contracts/test_rf_oa_geometry_iob.py",

@@ -42,6 +42,13 @@ class OaMrModelTests(unittest.TestCase):
         geometry = geometry or self.compiled
         return compile_prepared_model(geometry, geometry.components_resolved, drive=self.drive if drive is None else drive, physics=RF_PHYSICS)
 
+    def test_saved_model_recompiles_with_identical_rows_and_identity(self):
+        saved=require_prepared_model(self.compiled_model())
+        geometry=model_geometry(self.compiled_model())
+        rebuilt=compile_prepared_model(geometry,geometry.components_resolved,
+            drive=saved['drive'],physics=saved['physics'])
+        self.assertEqual(require_prepared_model(rebuilt),saved)
+
     def test_complete_binding_and_permuted_targets(self):
         doc = require_prepared_model(self.compiled_model())
         self.assertEqual(doc['source_status'], 'not_requested')

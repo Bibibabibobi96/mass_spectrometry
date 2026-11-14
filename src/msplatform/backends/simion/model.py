@@ -238,30 +238,17 @@ def _validate_oa_drive(drive: Mapping[str, Any], mappings: Mapping) -> None:
     _validate_timing(drive, requires_pulse=pulsed)
 
 
-def _compile_rf_ip_model(compiled: CompiledSimionGeometry, components: Mapping[str, dict], *,
-                         drive: Mapping[str, Any], physics: Mapping[str, Any]) -> CompiledPreparedModel:
-    """Bind one explicit joint schedule to the exact public zero-epoch clock."""
+def _validated_ip_schedule(schedule, clock, compiled, components, selected, ip):
+    """Validate the actual IP source, operating point, clock and schedule."""
     from msplatform.contracts.clock import require_same_clock
     from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import select_legacy_physical_design
     from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
 
-    geometry = compiled.frontend_geometry
-    plan, maps = geometry['composition_plan'], geometry['electrode_bindings']
-    selected = plan['scope']['instance_ids']
-    rf = [n for n in selected if plan['components'][n]['project_id'] == 'rf_multipole_ion_optics']
-    ip = [n for n in selected if plan['components'][n]['project_id'] == 'dual_pressure_rectilinear_ion_processor']
-    if len(selected) != 2 or len(rf) != 1 or len(ip) != 1 or set(components) != set(selected):
-        raise ValueError('joint model requires exact RF and IP providers')
-    rf, ip = rf[0], ip[0]
-    if not isinstance(physics, Mapping) or dict(physics) != RF_IP_PHYSICS or geometry.get('boundary') != 'grounded_pa_faces':
-        raise ValueError('RF–IP model requires its actual grounded-face BVP')
-    _exact(drive, {'groups', 'clock', 'ip_schedule'}, 'RF–IP drive')
-    _validate_timing(drive, requires_pulse=False)
-    schedule = drive['ip_schedule']
+    plan = compiled.frontend_geometry['composition_plan']
     _exact(schedule, {'baseline', 'native_operating_point', 'clock'}, 'IP schedule authority')
     _exact(schedule['clock'], {'clock_epoch_id', 'authority_sha256'}, 'IP schedule clock')
     require_same_clock(ClockIdentity(**dict(schedule['clock'])), ClockIdentity(
-        drive['clock']['clock_epoch_id'], drive['clock']['authority_sha256']))
+        clock['clock_epoch_id'], clock['authority_sha256']))
     baseline, point = schedule['baseline'], schedule['native_operating_point']
     if type(baseline['clock']['epoch_us']) not in (int, float) or baseline['clock']['epoch_us'] != 0:
         raise ValueError('IP schedule requires the existing zero instrument epoch')
@@ -289,6 +276,26 @@ def _compile_rf_ip_model(compiled: CompiledSimionGeometry, components: Mapping[s
             baseline['electric']['guide_rf_peak_to_peak_v'], 'IP guide RF amplitude') <= 0:
         raise ValueError('IP RF and guide amplitudes must be positive')
     timing = derive_native_timing(baseline)
+    return dict(baseline=copy.deepcopy(baseline), native_operating_point=copy.deepcopy(point),
+                native_timing=timing, clock=copy.deepcopy(schedule['clock']))
+
+
+def _compile_rf_ip_model(compiled: CompiledSimionGeometry, components: Mapping[str, dict], *,
+                         drive: Mapping[str, Any], physics: Mapping[str, Any]) -> CompiledPreparedModel:
+    """Bind one explicit joint schedule to the exact public zero-epoch clock."""
+    geometry = compiled.frontend_geometry
+    plan, maps = geometry['composition_plan'], geometry['electrode_bindings']
+    selected = plan['scope']['instance_ids']
+    rf = [n for n in selected if plan['components'][n]['project_id'] == 'rf_multipole_ion_optics']
+    ip = [n for n in selected if plan['components'][n]['project_id'] == 'dual_pressure_rectilinear_ion_processor']
+    if len(selected) != 2 or len(rf) != 1 or len(ip) != 1 or set(components) != set(selected):
+        raise ValueError('joint model requires exact RF and IP providers')
+    rf, ip = rf[0], ip[0]
+    if not isinstance(physics, Mapping) or dict(physics) != RF_IP_PHYSICS or geometry.get('boundary') != 'grounded_pa_faces':
+        raise ValueError('RF–IP model requires its actual grounded-face BVP')
+    _exact(drive, {'groups', 'clock', 'ip_schedule'}, 'RF–IP drive')
+    _validate_timing(drive, requires_pulse=False)
+    frozen = _validated_ip_schedule(drive['ip_schedule'], drive['clock'], compiled, components, selected, ip)
     expected = {rf: scientific_multipole_drive(components[rf], maps[rf])}
     _validate_groups(drive['groups'], expected)
     electrodes = components[ip]['projection']['electrodes']
@@ -302,8 +309,6 @@ def _compile_rf_ip_model(compiled: CompiledSimionGeometry, components: Mapping[s
              for row in electrodes]
     if len({row['native_targets'][0]['electrode_id'] for row in rows}) != len(rows):
         raise ValueError('RF–IP model native labels are ambiguous')
-    frozen = dict(baseline=copy.deepcopy(baseline), native_operating_point=copy.deepcopy(point),
-                  native_timing=timing, clock=copy.deepcopy(schedule['clock']))
     full_drive = dict(groups=copy.deepcopy(drive['groups']), clock=copy.deepcopy(drive['clock']), ip_schedule=frozen)
     document = dict(schema_version=1, role='compiled_prepared_simion_model', field_status='not_solved',
                     source_status='not_requested', native_frame_id=plan['assembly_frame_id'],
@@ -316,6 +321,9 @@ def _compile_rf_ip_model(compiled: CompiledSimionGeometry, components: Mapping[s
 def compile_prepared_model(compiled: CompiledSimionGeometry, components_resolved: Mapping[str, dict], *,
                            drive: Mapping[str, Any], physics: Mapping[str, Any]) -> CompiledPreparedModel:
     """Return a complete physical-drive snapshot, not a solved/published artifact."""
+    if compiled.frontend_geometry.get('role') == 'simion_ip_mr_complete_geometry':
+        from .ip_model import compile_ip_mr_model
+        return compile_ip_mr_model(compiled, components_resolved, drive=drive, physics=physics)
     if compiled.frontend_geometry.get('role') == 'simion_oa_mr_complete_geometry':
         from .mr_model import compile_oa_mr_model
         return compile_oa_mr_model(compiled, components_resolved, drive=drive, physics=physics)
@@ -424,6 +432,8 @@ def render_model_configuration(model: CompiledPreparedModel) -> str:
 def model_geometry(model: CompiledPreparedModel, *, downstream_drive: bool = False) -> CompiledSimionGeometry:
     """Restore the typed geometry view from the verified portable JSON snapshot."""
     document = require_prepared_model(model)
+    if downstream_drive and document['geometry']['frontend_geometry'].get('role') == 'simion_ip_mr_complete_geometry':
+        raise ValueError('IP–MR continuous tracking is not supported')
     if downstream_drive and document['geometry']['frontend_geometry'].get('role') == 'simion_oa_mr_complete_geometry':
         raise ValueError('OA–MR continuous tracking is not supported')
     if downstream_drive and document['geometry']['frontend_geometry'].get('role') == 'simion_rf_ip_geometry':

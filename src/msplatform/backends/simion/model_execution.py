@@ -49,7 +49,7 @@ def _clock_reference(document: dict, reference: Mapping[str, Any]) -> Path:
     authority = (root/pointer).resolve()
     if authority != Path(reference['authority']['path']).resolve() or not authority.is_relative_to(root.resolve()):
         raise ValueError('model epoch record differs from the actual contract authority path')
-    if 'geometry' in document and document['geometry']['frontend_geometry'].get('role') == 'simion_rf_ip_geometry':
+    if 'geometry' in document and document['geometry']['frontend_geometry'].get('role') in {'simion_rf_ip_geometry', 'simion_ip_mr_complete_geometry'}:
         value = json.loads(authority.read_text(encoding='utf-8-sig')).get('instrument_time_us')
         if type(value) not in (int, float) or value != 0:
             raise ValueError('RF–IP model requires the existing zero instrument epoch')
@@ -119,7 +119,7 @@ def execute_model(session: RunSession, *, model, geometry_reference: Mapping[str
     native_sources = geometry.metadata.get('native_assets')
     if not isinstance(native_sources, Mapping):
         raise ValueError('published geometry lacks explicit native asset bindings')
-    independent_component = document['geometry']['frontend_geometry'].get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry', 'simion_rf_ip_geometry', 'simion_oa_mr_complete_geometry'}
+    independent_component = document['geometry']['frontend_geometry'].get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry', 'simion_rf_ip_geometry', 'simion_oa_mr_complete_geometry', 'simion_ip_mr_complete_geometry'}
     for domain, names in native_sources.items():
         expected = ({'raw_geometry', 'fractional_surface', 'surface_witnesses'} if independent_component else
                     {'raw_geometry', 'fractional_surface'} if domain in {'flight_tube', 'detector'} else {'raw_geometry'})
@@ -183,7 +183,7 @@ def _execute_model_preparation(session: RunSession, *, model, assets: Mapping[st
         return value
 
     sources = {name: native_resource_path(name) for name in MODEL_RESOURCES}
-    if document['geometry']['frontend_geometry'].get('role') == 'simion_rf_ip_geometry':
+    if document['geometry']['frontend_geometry'].get('role') in {'simion_rf_ip_geometry', 'simion_ip_mr_complete_geometry'}:
         sources['native_drive.lua'] = native_resource_path('native_drive.lua')
     sources['native_run_path.lua'] = resource_path('native_run_path.lua')
     model_path = owned(session.input_dir/'compiled_model.json', 'required_evidence')
@@ -240,7 +240,7 @@ def _execute_model_preparation(session: RunSession, *, model, assets: Mapping[st
     freeze_file(Path(seed['source_record']['path']), Path(seed['destination']))
     records['structural_seed'] = bind('model_structural_seed', Path(seed['destination']))
     seed_parent = Path(seed['destination']).parent
-    count = (len(assets) if document['geometry']['frontend_geometry'].get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry', 'simion_rf_ip_geometry', 'simion_oa_mr_complete_geometry'}
+    count = (len(assets) if document['geometry']['frontend_geometry'].get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry', 'simion_rf_ip_geometry', 'simion_oa_mr_complete_geometry', 'simion_ip_mr_complete_geometry'}
              else 4 + int('entrance_refinement' in assets))
     for index in range(1, count+1):
         owned(seed_parent/f'iob_seed_placeholder_{index:02d}.pa0', 'solver_native_binary')

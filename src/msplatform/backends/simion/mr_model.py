@@ -15,10 +15,40 @@ from .artifacts import CompiledPreparedModel
 from .compiler import CompiledSimionGeometry, _content_sha256
 
 
+def _validated_mr_voltages(authority: Mapping[str, Any], resolved: dict, mapping: Mapping) -> dict:
+    """Validate the actual candidate and project every MR scientific voltage."""
+    from .model import _exact, _finite
+
+    _exact(authority, {'source', 'candidate', 'mirror_voltages_v', 'detector_voltage_v', 'mirror_shield_voltages_v'}, 'MR authority')
+    voltage = candidate_authority(authority['source'], authority['candidate'], mirror_voltages_v=authority['mirror_voltages_v'])
+    shields = authority['mirror_shield_voltages_v']
+    _exact(shields, {'positive_mirror_ground_shield','negative_mirror_ground_shield'}, 'MR mirror shields')
+    rows = _component_electrodes(resolved)
+    groups = _scientific_groups(resolved, rows)
+    values = {}
+    if len(groups) != len(rows) + 2:
+        raise ValueError('MR physical groups differ from the two explicit shields')
+    for electrode, group in zip(rows, groups[:-2], strict=True):
+        physical_id = electrode['component_electrode_id']; name = group['electrode_group_id']
+        if group['role'] == 'detector':
+            values[name] = _finite(authority['detector_voltage_v'], 'MR detector voltage')
+        elif 1 <= physical_id <= 20:
+            values[name] = _finite(voltage['analyzer_electrode_voltages_v'][physical_id-1], name)
+        else:
+            raise ValueError(f'no declared analyzer voltage for {name}')
+    # Physical group order must survive JSON key sorting on a saved model.
+    for group in groups[-2:]:
+        name = group['electrode_group_id']
+        values[name] = _finite(shields[name], name)
+    if set(values) != set(mapping):
+        raise ValueError('MR voltage authority does not cover exact scientific groups')
+    return values
+
+
 def compile_oa_mr_model(compiled: CompiledSimionGeometry, components: Mapping[str, dict], *,
                         drive: Mapping[str, Any], physics: Mapping[str, Any]) -> CompiledPreparedModel:
     """Bind explicit OA waveform and MR physical voltages to three actual assets."""
-    from .model import RF_PHYSICS, _exact, _finite, _validate_oa_drive
+    from .model import RF_PHYSICS, _exact, _validate_oa_drive
 
     if not isinstance(compiled, CompiledSimionGeometry):
         raise TypeError('OA–MR requires compiled SIMION geometry')
@@ -44,31 +74,12 @@ def compile_oa_mr_model(compiled: CompiledSimionGeometry, components: Mapping[st
     mappings = geo['electrode_bindings']
     _validate_oa_drive(dict(groups={oa: drive['oa_groups']}, clock=drive['clock'], pulse=drive['pulse']),
                        {oa: mappings[oa]})
-    authority = drive['mr_authority']
-    _exact(authority, {'source', 'candidate', 'mirror_voltages_v', 'detector_voltage_v', 'mirror_shield_voltages_v'}, 'MR authority')
-    voltage = candidate_authority(authority['source'], authority['candidate'], mirror_voltages_v=authority['mirror_voltages_v'])
-    shields = authority['mirror_shield_voltages_v']
-    _exact(shields, {'positive_mirror_ground_shield','negative_mirror_ground_shield'}, 'MR mirror shields')
-    rows = _component_electrodes(components[mr])
-    groups = _scientific_groups(components[mr], rows)
-    values = {}
-    if len(groups) != len(rows) + 2:
-        raise ValueError('MR physical groups differ from the two explicit shields')
-    for electrode, group in zip(rows, groups[:-2], strict=True):
-        physical_id = electrode['component_electrode_id']; name = group['electrode_group_id']
-        if group['role'] == 'detector':
-            values[name] = _finite(authority['detector_voltage_v'], 'MR detector voltage')
-        elif 1 <= physical_id <= 20:
-            values[name] = _finite(voltage['analyzer_electrode_voltages_v'][physical_id-1], name)
-        else:
-            raise ValueError(f'no declared analyzer voltage for {name}')
-    for name, value in shields.items():
-        values[name] = _finite(value, name)
-    if set(values) != set(mappings[mr]):
-        raise ValueError('MR voltage authority does not cover exact scientific groups')
+    values = _validated_mr_voltages(drive['mr_authority'], components[mr], mappings[mr])
+    oa_group_ids = [row['electrode_group_id'] for row in plan['components'][oa]['component_electrodes']]
     native_rows = [dict(instance_id=oa, electrode_group_id=group,
-                        native_targets=[dict(domain=oa, electrode_id=mappings[oa][group])], **copy.deepcopy(value))
-                   for group, value in drive['oa_groups'].items()]
+                        native_targets=[dict(domain=oa, electrode_id=mappings[oa][group])],
+                        **copy.deepcopy(drive['oa_groups'][group]))
+                   for group in oa_group_ids]
     native_rows.extend(dict(instance_id=mr, electrode_group_id=group,
                             native_targets=[dict(domain=mr+('_detector' if group == 'detector' else '_analyzer'),
                                                  electrode_id=mappings[mr][group])], kind='static', voltage_v=value)

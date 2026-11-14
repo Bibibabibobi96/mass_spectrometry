@@ -41,8 +41,11 @@ def load_field_model(reference: Mapping | OpenedArtifact) -> FieldModelSource:
     document = json.loads(source.data_path('compiled_model').read_text(encoding='utf-8-sig'))
     model = CompiledPreparedModel(json.dumps(document, allow_nan=False))
     document = require_prepared_model(model)
-    if document['geometry']['frontend_geometry'].get('role') == 'simion_oa_mr_complete_geometry':
+    role = document['geometry']['frontend_geometry'].get('role')
+    if role == 'simion_oa_mr_complete_geometry':
         raise ValueError('OA–MR field solve is not supported')
+    if role == 'simion_ip_mr_complete_geometry':
+        raise ValueError('IP–MR field solve requires an implemented common-field binding')
     clock = dict(contract=data_record(source, 'clock_authority'), authority=data_record(source, 'instrument_epoch'))
     clock['data_root'] = str(Path(clock['contract']['path']).parent)
     _clock_reference(document, clock)

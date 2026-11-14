@@ -113,15 +113,19 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
     values = json.loads(source.data_path("compiled_geometry").read_text(encoding="utf-8-sig"))
     values["downstream_specs"] = tuple(values["downstream_specs"])
     compiled = CompiledSimionGeometry(**values)
-    if compiled.frontend_geometry.get("role") in {"simion_rf_oa_geometry", "simion_ip_mr_complete_geometry"}:
+    if compiled.frontend_geometry.get("role") == "simion_rf_oa_geometry":
         raise ContractError("joint geometry has no supported prepared model yet")
     joint_oa_mr = compiled.frontend_geometry.get("role") == "simion_oa_mr_complete_geometry"
     joint_ip = compiled.frontend_geometry.get("role") == "simion_rf_ip_geometry"
+    joint_ip_mr = compiled.frontend_geometry.get("role") == "simion_ip_mr_complete_geometry"
+    ip_mr_has_rf = joint_ip_mr and any(row["project_id"] == "rf_multipole_ion_optics"
+        for name, row in compiled.frontend_geometry["composition_plan"]["components"].items()
+        if name in compiled.frontend_geometry["composition_plan"]["scope"]["instance_ids"])
     independent_rf = compiled.frontend_geometry.get("role") == "simion_independent_rf_geometry"
     independent_oa = compiled.frontend_geometry.get("role") == "simion_independent_oa_geometry"
-    independent_component = independent_rf or independent_oa or joint_ip or joint_oa_mr
-    required = {"clock", "clock_authority"} | ({"oa_groups", "mr_authority", "pulse"} if joint_oa_mr else set()) | ({"groups"} if independent_oa or joint_ip else set()) | ({"ip_schedule"} if joint_ip else set()) | (set() if independent_component else {"pulse"})
-    if (not required <= drive.keys() or set(drive) - required - (set() if joint_oa_mr else {"groups"}) - ({"pulse"} if independent_oa else set())
+    independent_component = independent_rf or independent_oa or joint_ip or joint_oa_mr or joint_ip_mr
+    required = {"clock", "clock_authority"} | ({"oa_groups", "mr_authority", "pulse"} if joint_oa_mr else set()) | ({"groups"} if independent_oa or joint_ip or ip_mr_has_rf else set()) | ({"ip_schedule"} if joint_ip or joint_ip_mr else set()) | ({"mr_authority"} if joint_ip_mr else set()) | (set() if independent_component else {"pulse"})
+    if (not required <= drive.keys() or set(drive) - required - (set() if joint_oa_mr or joint_ip_mr else {"groups"}) - ({"pulse"} if independent_oa else set())
             or not isinstance(drive["clock"], Mapping)
             or set(drive["clock"]) != {"phase_reference_instrument_time_us"}):
         raise ContractError("model drive requires its actual clock/groups and declared pulse contract")
@@ -145,10 +149,10 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
     contract = json.loads(contract_path.read_text(encoding="utf-8-sig"))
     epoch_record = file_record((data_root / contract["authority"]["path"]).resolve(), "required_evidence")
     clock_reference = dict(contract=contract_record, authority=epoch_record, data_root=str(data_root))
-    if joint_ip:
+    if joint_ip or joint_ip_mr:
         epoch = json.loads((data_root / contract["authority"]["path"]).read_text(encoding="utf-8-sig"))
         if type(epoch.get("instrument_time_us")) not in (int, float) or epoch["instrument_time_us"] != 0:
-            raise ContractError("RF–IP requires the existing zero instrument epoch")
+            raise ContractError("IP schedule requires the existing zero instrument epoch")
     selected = compiled.frontend_geometry["composition_plan"]["scope"]["instance_ids"]
     components = {name: compiled.components_resolved[name] for name in selected}
     clock = dict(clock_epoch_id=validation["clock_epoch_id"], authority_sha256=validation["authority_sha256"],
@@ -156,6 +160,10 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
     if joint_oa_mr:
         expanded = dict(oa_groups=copy.deepcopy(drive["oa_groups"]),
             mr_authority=copy.deepcopy(drive["mr_authority"]), pulse=copy.deepcopy(drive["pulse"]), clock=clock)
+    elif joint_ip_mr:
+        expanded = dict(clock=clock, ip_schedule=copy.deepcopy(drive["ip_schedule"]),
+            mr_authority=copy.deepcopy(drive["mr_authority"]),
+            **({"groups": copy.deepcopy(drive["groups"])} if ip_mr_has_rf else {}))
     elif joint_ip:
         expanded = dict(groups=copy.deepcopy(drive["groups"]), clock=clock,
             ip_schedule=copy.deepcopy(drive["ip_schedule"]))

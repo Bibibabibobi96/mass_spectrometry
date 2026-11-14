@@ -160,6 +160,8 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
     """
     document = require_prepared_model(model)
     raw_geometry = model_geometry(model).frontend_geometry
+    if raw_geometry.get('role') == 'simion_ip_mr_complete_geometry':
+        raise ValueError('IP–MR tracking requires an implemented common-field binding')
     joint_ip = raw_geometry.get('role') == 'simion_rf_ip_geometry'
     independent_component = raw_geometry.get('role') in {'simion_independent_rf_geometry','simion_independent_oa_geometry'} or joint_ip
     if joint_ip:

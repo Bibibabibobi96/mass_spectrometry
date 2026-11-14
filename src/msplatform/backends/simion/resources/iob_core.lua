@@ -20,7 +20,7 @@ local joint_rf_oa=spec.role=='rf_oa_geometry_iob_build'
 local joint_oa_mr=spec.role=='oa_mr_geometry_iob_build'
 local joint_ip_mr=spec.role=='ip_mr_geometry_iob_build'
 local independent_component=spec.role=='independent_rf_geometry_iob_build' or independent_oa or tracking_role or dual_cone or joint_rf_ip or joint_oa_mr or joint_rf_oa or joint_ip_mr
-assert(not joint_ip_mr or mode=='build_geometry' or mode=='verify_geometry','IP–MR geometry only; model and fields unsupported')
+assert(not joint_ip_mr or mode=='build_geometry' or mode=='verify_geometry' or model_only,'IP–MR fields and tracking workbench unsupported')
 assert(not joint_rf_oa or mode=='build_geometry' or mode=='verify_geometry','RF-OA geometry only; model and fields unsupported')
 assert(not joint_oa_mr or mode=='build_geometry' or mode=='verify_geometry' or model_only,'OA–MR fields and tracking workbench unsupported')
 assert(not joint_rf_ip or mode=='build_geometry' or mode=='verify_geometry' or mode=='build_model' or mode=='verify_model','RF–IP tracking and fields workbench unsupported')

@@ -4,8 +4,6 @@ import json
 import subprocess
 import tempfile
 import unittest
-from types import SimpleNamespace
-from unittest.mock import patch
 from importlib.resources import files
 from pathlib import Path
 
@@ -14,7 +12,7 @@ from msplatform.components.catalog import resolve_component
 from msplatform.backends.simion.mr_compiler import compile_complete_mr_geometry, _polygon_mirror_witness
 from msplatform.backends.simion.compiler import _content_sha256
 from msplatform.backends.simion.operations import compile_geometry
-from msplatform.backends.simion.native_plans import plan_geometry_build, plan_model_preparation
+from msplatform.backends.simion.native_plans import plan_geometry_build
 from msplatform.backends.simion.resources import structural_seed_path
 from msplatform.io.manifest_records import file_record
 from msplatform.backends.simion.resources import native_resource_path
@@ -22,13 +20,6 @@ from msplatform.backends.simion.source import lua_value
 from common.contracts.test_dual_cone_iob import HARNESS, LUA
 from msplatform.components.geometry_members import assembly_geometry_members
 class IpMrGeometryTests(unittest.TestCase):
-    def test_native_model_plan_refuses_geometry_only_role(self):
-        geometry=SimpleNamespace(frontend_geometry={'role':'simion_ip_mr_complete_geometry'})
-        with patch('msplatform.backends.simion.model.model_geometry',return_value=geometry):
-            with self.assertRaisesRegex(ValueError,'prepared model is not supported'):
-                plan_model_preparation(object(),geometry_assets={},run_directory=Path('C:/ip_mr_geometry_test'),
-                                       seed_record={},native_path_resource=Path('C:/ip_mr_geometry_test/path.lua'))
-
     @unittest.skipUnless(LUA.is_file(), 'plain Lua unavailable; no native fallback')
     def test_ip_mr_lua_geometry_roles_and_refusals(self):
         for count in (3,4):
@@ -66,7 +57,9 @@ class IpMrGeometryTests(unittest.TestCase):
                 refused=call('verify_geometry',invalid);self.assertNotEqual(refused.returncode,0);self.assertIn('identities must be unique',refused.stderr)
                 invalid=copy.deepcopy(spec);invalid['instances']=invalid['instances'][:2]
                 refused=call('verify_geometry',invalid);self.assertNotEqual(refused.returncode,0);self.assertIn('three or four',refused.stderr)
-                refused=call('build_model',spec,failure='direct');self.assertNotEqual(refused.returncode,0);self.assertIn('geometry only',refused.stderr)
+                for mode in ('build_fields','verify_fields'):
+                    refused=call(mode,spec,failure='direct');self.assertNotEqual(refused.returncode,0)
+                    self.assertIn('fields and tracking workbench unsupported',refused.stderr)
 
     def assert_geometry_plan(self, geometry, count):
         root=Path('C:/ip_mr_geometry_test')

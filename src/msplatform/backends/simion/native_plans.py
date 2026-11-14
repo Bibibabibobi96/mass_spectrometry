@@ -315,11 +315,9 @@ def plan_model_preparation(model, *, geometry_assets: Mapping[str, dict], run_di
     from .model import model_geometry, render_model_configuration
 
     compiled = model_geometry(model)
-    if compiled.frontend_geometry.get('role') == 'simion_ip_mr_complete_geometry':
-        raise ValueError('IP–MR prepared model is not supported yet')
     root = _native_ascii(run_directory)
-    joint_ip = compiled.frontend_geometry.get('role') == 'simion_rf_ip_geometry'
-    independent_component = compiled.frontend_geometry.get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry', 'simion_rf_ip_geometry', 'simion_oa_mr_complete_geometry'}
+    joint_ip = compiled.frontend_geometry.get('role') in {'simion_rf_ip_geometry', 'simion_ip_mr_complete_geometry'}
+    independent_component = compiled.frontend_geometry.get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry', 'simion_rf_ip_geometry', 'simion_oa_mr_complete_geometry', 'simion_ip_mr_complete_geometry'}
     expected = (set(compiled.frontend_geometry['numerical_domains']) if independent_component else
                 {'flight_tube', 'reflectron', 'detector', *compiled.frontend_geometry['numerical_domains']})
     if set(geometry_assets) != expected:
@@ -363,7 +361,7 @@ def plan_model_preparation(model, *, geometry_assets: Mapping[str, dict], run_di
     native_operations = tuple(_operation(mode, 'prepare', ['lua', str(native_resource_path('build_model_iob.lua')),
         str(spec_path), mode, str(_native_ascii(native_path_resource))],
         [str(root/'simion/geometry/geometry.iob'), str(root/'simion/geometry/geometry.fly2')] if mode == 'build_model' else [str(readback)],
-        ('OA_MR_MODEL_' if compiled.frontend_geometry.get('role') == 'simion_oa_mr_complete_geometry' else 'RF_IP_MODEL_' if joint_ip else 'INDEPENDENT_OA_MODEL_' if compiled.frontend_geometry.get('role') == 'simion_independent_oa_geometry' else 'INDEPENDENT_RF_MODEL_' if independent_component else 'SINGLE_REFLECTION_MODEL_') + ('BUILD' if mode == 'build_model' else 'READBACK') + '=PASS')
+        ('IP_MR_MODEL_' if compiled.frontend_geometry.get('role') == 'simion_ip_mr_complete_geometry' else 'OA_MR_MODEL_' if compiled.frontend_geometry.get('role') == 'simion_oa_mr_complete_geometry' else 'RF_IP_MODEL_' if joint_ip else 'INDEPENDENT_OA_MODEL_' if compiled.frontend_geometry.get('role') == 'simion_independent_oa_geometry' else 'INDEPENDENT_RF_MODEL_' if independent_component else 'SINGLE_REFLECTION_MODEL_') + ('BUILD' if mode == 'build_model' else 'READBACK') + '=PASS')
         for mode in ('build_model', 'verify_model'))
     materialization = dict(operation_id='materialize_geometry', role='GATE', stage='prepare',
         action='explicit_geometry_payload_callback', outputs=[row['destination'] for row in copies])
