@@ -90,8 +90,7 @@ rebuild. The existing managed artifact/replay/tamper test now exercises this
 consumer rather than duplicating its owner calls. The fixed affected batch passed
 41 parents and 69 subtests in 341.661 seconds, with source unchanged and no skips.
 Its native leaf is inert; the design-to-field call sequence is tested at the public
-stage boundaries. Ordinary installation of this new consumer/admission successor,
-real coupled fields and HS1 flight remain pending. The old segmented preparation
+stage boundaries. Real coupled fields and HS1 flight remain pending. The old segmented preparation
 entry remains until its actual continuous replacement is natively validated.
 
 The installation harness now prepares a separate inert RF-IP field fixture for
@@ -103,8 +102,17 @@ vendor and missing-resource refusals. Its full parent plus three installation
 isolation checks passed in 31.410 seconds with unchanged sources; the subsequent
 timing-only probe edit passed all three isolation checks in 0.350 seconds.
 Fixture construction and installed owner spans have explicit section timings.
-Both ordinary wheel/sdist arms for this successor remain pending; synthetic
-field assets do not establish native fields, HS1 flight or scientific qualification.
+The complete ordinary wheel/sdist parent then passed on clean `101b70b8` in
+933.064 seconds, with source guard unchanged and GATE released. Independent
+verification joined all 575 authored build records to that commit and five
+generated metadata records to the retained sdist, and checked all three archive
+hashes. Both arms emitted the actual installed RF-IP owner success marker.
+Their RF-IP owner spans were 24.730 and 23.754 seconds; the independent author
+field fixtures took 2.627 and 2.344 seconds. The full method remains 33.064
+seconds above 900 seconds, before outer admission/cleanup. This is not a
+same-scope speedup comparison with older candidates. Synthetic field assets do
+not establish native fields, HS1 flight or scientific qualification; full
+Repository and applicable native acceptance remain open.
 
 The preceding fixed candidate `269e3665` passed both ordinary wheel and
 sdist-rebuilt-wheel consumers in 949.662 seconds. All 560 authored build-source
@@ -405,8 +413,9 @@ remain rejected. The actual failed parent, full boundary module and scalar
 source/managed-owner regressions passed 41 parents and 162 subtests in 44.717
 seconds on the integrated repair, with frozen source identities and released
 GATE. Missing module and missing source file remain separate pre-native
-refusals. This focused rerun does not replace a successful full Changed run,
-latest-consumer installation or complete Repository/performance acceptance.
+refusals. This focused rerun does not replace a successful full Changed run or
+complete Repository/performance acceptance. The later ordinary installation on
+`101b70b8` is recorded separately above.
 
 The full [ordinary-installation parent](../../common/contracts/test_installed_scientific_core.py)
 passed on candidate `812c20f3` plus test source
