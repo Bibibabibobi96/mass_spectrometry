@@ -118,10 +118,18 @@ the managed tests are explicitly inert OS processes. The deliberate exit-7 Refin
 retains failed evidence, publishes no field product and releases its writers and
 source/capacity protection. An earlier private test failed because it expected a
 cross-root lease where same-root protected paths were used; that failed receipt
-remains separate from the corrected successful test. An ordinary-install probe now
-also requires the registered Assembly's static model, field/tracking planning,
-packaged Program resources and outside-domain refusal. That new probe and native
-static execution remain unverified until their separate acceptance runs.
+remains separate from the corrected successful test. Both targeted ordinary-install
+arms on `c49aced1` passed the registered Assembly's static model, field/tracking
+planning, packaged Program resources and outside-domain refusal, plus the installed
+22-group MR drive projection. Each arm joined 576 runtime members to the frozen
+source with author-tree imports/reads denied. These are planning checks, not the
+full installation parent or native static execution. The latter also has an
+implementation boundary: the reused producer publishes a fractional PA family,
+while current standalone exporters reject enhanced `.pa-surf` inputs. A faithful
+standalone export and cold reopen must be established before claiming that native
+route. No published family was opened in this investigation and no private family
+copy/alias workaround was adopted. Existing RF/OA family behavior remains a
+separately unqualified native boundary, not a demonstrated corruption result.
 
 A normally registered test component entered an unlisted two-instance Assembly,
 public compilation and the existing managed geometry owner. Fresh-process explicit

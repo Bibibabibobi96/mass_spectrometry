@@ -39,8 +39,11 @@ Both existing OA-MR and IP-MR model consumers use that projection; SIMION retain
 exact native-group coverage and target binding checks. Six actual integrated model
 parents passed in 98.152 seconds with unchanged sources, including signed voltages,
 missing mappings and native-label permutations. No geometry or voltage policy was
-changed. The provider declares its complete package as a frozen source closure;
-installed/frozen inclusion of this new module and native execution remain unverified.
+changed. Targeted direct-wheel and sdist-rebuilt consumers on `c49aced1` imported
+the installed module and passed its 22-group projection with author-tree reads
+denied; 576 runtime members matched the frozen source in each arm. The provider
+declares its complete package as a frozen source closure; applicable frozen-worker
+execution, native qualification and complete MR acceptance remain open.
 Joint-flight and IP/prism preparation now read structural IOB containers from the installed SIMION
 resource owner. Frozen dependency declarations follow that same owner while retaining the original
 template bytes and PA placeholders; opt-in native tests remain separately reported.
