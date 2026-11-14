@@ -8,9 +8,12 @@ from types import SimpleNamespace
 from pathlib import Path
 import json
 import os
+import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from contextlib import ExitStack
 
 import numpy as np
@@ -360,13 +363,20 @@ class IdealSourceComparisonTests(unittest.TestCase):
     def test_frozen_package_matches_the_already_bound_scientific_source(self):
         from msplatform.execution.inputs import freeze_file
         from msplatform.execution.resources import resource_path
-        for mutate in (False, True):
+        for mutate in (False, True, "missing_executor"):
             with self.subTest(mutate=mutate), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 provider = root / "provider/msplatform"
                 provider.mkdir(parents=True)
                 (provider / "__init__.py").write_text("", encoding="utf-8")
-                source = provider / "selected_science.py"
+                for relative in ("analysis", "contracts", "execution", "io", "components/orthogonal_accelerator",
+                                 "components/single_reflection_oa_tof", "components/rf_multipole", "workflows/oa_tof_design"):
+                    package = provider / relative
+                    package.mkdir(parents=True, exist_ok=True)
+                    (package / "__init__.py").write_text("", encoding="utf-8")
+                for relative in ("components/catalog.py", "components/model.py"):
+                    (provider / relative).write_text("", encoding="utf-8")
+                source = provider / "components/single_reflection_oa_tof/selected_science.py"
                 source.write_text("VALUE = 1\n", encoding="utf-8")
                 executor = provider / "execution/resources/frozen_python_package.ps1"
                 executor.parent.mkdir(parents=True)
@@ -375,8 +385,10 @@ class IdealSourceComparisonTests(unittest.TestCase):
                 for name in ("inputs", "results", "logs"):
                     (run / name).mkdir(parents=True)
                 frozen = {"selected_science": freeze_file(source, run / "inputs/science.py")}
-                if mutate:
+                if mutate is True:
                     source.write_text("VALUE = 2\n", encoding="utf-8")
+                elif mutate == "missing_executor":
+                    executor.unlink()
                 records = {}
                 run_config = run / "run_config.json"
                 run_config.write_text(json.dumps({"numerical_input_sha256":
@@ -395,7 +407,11 @@ class IdealSourceComparisonTests(unittest.TestCase):
                     add_inputs=records.update)
                 with patch.object(run_comparison, "_source_package_root", return_value=provider), \
                         patch.object(run_comparison, "_invoke_worker", side_effect=AssertionError("preparation cannot launch")) as invoke:
-                    if mutate:
+                    if mutate == "missing_executor":
+                        with self.assertRaisesRegex(FileNotFoundError, "Required frozen Python executor missing"):
+                            run_comparison._freeze_worker_package(session, frozen, seed=73,
+                                identity="explicit-preparation-fixture", resume_from=None, max_workers=None)
+                    elif mutate:
                         with self.assertRaisesRegex(ValueError, "scientific role differs from selected package member: selected_science"):
                             run_comparison._freeze_worker_package(session, frozen, seed=73,
                                 identity="explicit-preparation-fixture", resume_from=None, max_workers=None)
@@ -404,9 +420,98 @@ class IdealSourceComparisonTests(unittest.TestCase):
                         request, _ = run_comparison._freeze_worker_package(session, frozen, seed=73,
                             identity="explicit-preparation-fixture", resume_from=None, max_workers=None)
                         self.assertTrue(request.is_file())
-                        self.assertEqual((run / "inputs/analysis_code/msplatform/selected_science.py").read_bytes(),
+                        self.assertEqual((run / "inputs/analysis_code/msplatform/components/single_reflection_oa_tof/selected_science.py").read_bytes(),
                                          Path(frozen["selected_science"]["path"]).read_bytes())
                     invoke.assert_not_called()
+
+    def test_selected_tof_package_isolated_executor_rejects_missing_module_and_resource(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run = root / "run"
+            for name in ("inputs", "results", "logs"):
+                (run / name).mkdir(parents=True)
+            run_config = run / "run_config.json"
+            run_config.write_text(json.dumps({"numerical_input_sha256": {}}), encoding="utf-8")
+            records = {}
+            session = SimpleNamespace(input_dir=run / "inputs", result_dir=run / "results",
+                log_dir=run / "logs", run_dir=run, artifact_run_dir=run, run_config=run_config, capacity_session={},
+                context=SimpleNamespace(python_executable=Path(sys.executable)),
+                declare_file=lambda path, role: Path(path),
+                add_input=lambda name, record: records.update({name: record}), add_inputs=records.update)
+            request, guards = run_comparison._freeze_worker_package(session, {}, seed=73,
+                identity="selected-closure-test", resume_from=None, max_workers=None)
+            package = json.loads(Path(records["analysis_package"]["path"]).read_text(encoding="utf-8"))
+            selected = {entry["relative_path"]: entry for entry in package["files"]}
+            module = "msplatform/workflows/oa_tof_design/numerical_case.py"
+            resource = "msplatform/execution/resources/frozen_python_package.ps1"
+            self.assertIn(module, selected)
+            self.assertIn(resource, selected)
+            self.assertIn("msplatform/components/rf_multipole/grounded_shield.py", selected)
+            self.assertNotIn("msplatform/backends/simion/ip_geometry.py", selected)
+            executor = Path(selected[resource]["path"])
+            driver = root / "probe.ps1"
+            driver.write_text("""param($Executor,$Package,$Python,$Forbidden)
+$ErrorActionPreference = 'Stop'
+. $Executor
+$p = Get-Content -LiteralPath $Package -Raw -Encoding UTF8 | ConvertFrom-Json
+$r = Invoke-IsolatedFrozenPythonModule -Python $Python -Package $p `
+  -Module 'msplatform.workflows.oa_tof_design.source_comparison' -Arguments @('--help') `
+  -RequiredModuleNames @('msplatform.workflows.oa_tof_design.numerical_case') `
+  -ForbiddenRoots @($Forbidden) -ProbeOnly
+$r | ConvertTo-Json -Depth 20 -Compress
+""", encoding="utf-8")
+            powershell = shutil.which("pwsh")
+            self.assertIsNotNone(powershell, "the actual frozen executor requires pwsh")
+            package_path = Path(records["analysis_package"]["path"])
+            provider = run_comparison._source_package_root()
+            command = [powershell, "-NoProfile", "-NonInteractive", "-File", str(driver),
+                       str(executor), str(package_path), sys.executable, str(provider.parent)]
+            positive = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=60)
+            self.assertEqual(positive.returncode, 0, positive.stderr)
+            observation = json.loads(positive.stdout)
+            origins = {row["name"]: Path(row["origin"]).resolve() for row in observation["frozen_modules"]}
+            self.assertEqual(origins["msplatform.workflows.oa_tof_design.numerical_case"],
+                             (run / "inputs/analysis_code" / module).resolve())
+            session.run_process = Mock()
+            original_executor = executor.read_bytes()
+            try:
+                executor.unlink()
+                with self.assertRaisesRegex(AssertionError, "manifest frozen TOF input .* is missing"):
+                    run_comparison._invoke_worker(session, request, guards, {})
+                session.run_process.assert_not_called()
+                executor.write_bytes(bytes([original_executor[0] ^ 1]) + original_executor[1:])
+                self.assertEqual(executor.stat().st_size, len(original_executor))
+                with self.assertRaisesRegex(AssertionError, "manifest frozen TOF input .* SHA-256 changed"):
+                    run_comparison._invoke_worker(session, request, guards, {})
+                session.run_process.assert_not_called()
+            finally:
+                executor.write_bytes(original_executor)
+            # Preserve a complete author provider while removing the selected copy.
+            # Excluding the missing entry from the test receipt forces the actual
+            # isolated module-origin probe to refuse an ambient installation too.
+            target = Path(selected[module]["path"])
+            target.unlink()
+            missing = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=60)
+            self.assertNotEqual(missing.returncode, 0)
+            self.assertIn("Frozen Python dependency is missing", missing.stderr)
+            package["files"] = [row for row in package["files"] if row["relative_path"] != module]
+            package_path.write_text(json.dumps(package), encoding="utf-8")
+            no_fallback = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=60)
+            self.assertNotEqual(no_fallback.returncode, 0)
+            self.assertIn("required frozen module has no file origin", no_fallback.stderr)
+            self.assertNotIn('"modules":', no_fallback.stdout)
+            isolated = ("import importlib,pathlib,sys; "
+                "sys.path.insert(0,sys.argv[1]); "
+                "sys.path=[p for p in sys.path if not p or not pathlib.Path(p).resolve().is_relative_to(pathlib.Path(sys.argv[2]).resolve())]; "
+                "sys.meta_path=[f for f in sys.meta_path if not getattr(f,'__module__','').startswith('__editable__')]; "
+                "importlib.import_module('msplatform.workflows.oa_tof_design.numerical_case')")
+            cold = subprocess.run([sys.executable, "-I", "-B", "-c", isolated,
+                str(run / "inputs/analysis_code"), str(provider.parent)], cwd=root, capture_output=True,
+                text=True, encoding="utf-8", timeout=60)
+            self.assertNotEqual(cold.returncode, 0)
+            self.assertIn("ModuleNotFoundError: No module named 'msplatform.workflows.oa_tof_design.numerical_case'", cold.stderr)
+            self.assertTrue(provider.is_dir())
+            self.assertTrue(request.is_file())
 
     def test_worker_rejects_environment_or_numerical_role_mismatch_before_science(self):
         from msplatform.io.manifest_records import file_record

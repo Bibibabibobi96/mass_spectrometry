@@ -469,8 +469,17 @@ def _freeze_worker_package(session: Any, frozen: dict[str, dict], *, seed: int,
     """Use the existing provider enumerator, copier and isolated module executor."""
     from msplatform.execution.inputs import enumerate_python_sources, freeze_python_package
     provider = _source_package_root()
-    selected = enumerate_python_sources(provider.parent, package_roots=[provider.name],
-        provider_root=provider.name, resource_suffixes=(".json", ".ps1", ".lua", ".m", ".gem", ".iob"))
+    # Freeze the actual TOF scientific/owner closure, including the shared
+    # component initializer's explicit catalog and model imports.  The same
+    # enumerator still owns parent initializers and declared resource files.
+    selected = enumerate_python_sources(provider.parent, package_roots=[
+        "msplatform/analysis", "msplatform/contracts", "msplatform/execution", "msplatform/io",
+        "msplatform/components/orthogonal_accelerator", "msplatform/components/single_reflection_oa_tof",
+        "msplatform/components/rf_multipole",
+        "msplatform/workflows/oa_tof_design",
+    ], module_paths=["msplatform/components/catalog.py", "msplatform/components/model.py"],
+        provider_root=provider.name, resource_suffixes=(".json", ".ps1", ".lua", ".m", ".gem", ".iob"),
+        require_python_source=True)
     code_root = session.artifact_run_dir / "inputs/analysis_code"
     package = freeze_python_package(provider.parent, code_root, relative_paths=selected)
     guards = []

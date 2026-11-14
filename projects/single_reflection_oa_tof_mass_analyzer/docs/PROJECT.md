@@ -164,6 +164,23 @@ identity, a generic source waiver or complete historical execution equivalence.
 Software, ordinary installation and native qualification require their own evidence;
 this solver-free workflow grants no commercial/native or Formal qualification.
 
+The TOF worker now selects its actual analysis/contracts/execution/I/O and TOF/OA/RF
+provider closure through the existing package freezer, instead of copying unrelated
+backends and components into every run. Per-run copies, declared resources, source
+joins and pre/post execution guards remain. Missing or modified executor resources
+and absent numerical modules still fail before science; no author-tree fallback is
+allowed. A single sequential source-overlay comparison on the same host, inputs,
+seeds and concurrency passed basic, resume, single-candidate, fixed-length and slope
+cases for both versions: 152.558427 seconds before and 97.175327 seconds after.
+All 17 result CSV files matched byte-for-byte, and both source inventories remained
+unchanged. This is one software comparison, not an installed-package or full-gate
+speed claim. The complete affected module passed all 26 tests and 24 subtests in
+77.561 seconds. Ordinary wheel/sdist acceptance of the combined MR/IP successor
+and this closure change passed in 1000.732170 seconds, with both installation arms
+and source/HEAD/status/index guards unchanged. This broader successor is not the
+same source as the preceding 1130-second installation, so those totals are not a
+controlled speed comparison. The full Repository and 15-minute targets remain open.
+
 质量谱树外重分析的冻结检查按实际科学核心schema完整集合及逐文件字节/SHA验证，
 不以固定schema数量替代闭包；原母群/几何、坏ID与缺失核心拒绝保持。
 Candidate与质量谱冻结声明直接绑定安装SIMION aperture实现；旧公共aperture桥已退出，不改变几何或资产字节。
