@@ -115,8 +115,29 @@ needs instance/parameter/pose/connection declarations and explicit backend numer
 New primitives still require a local backend adapter. Generic prepared models,
 fields, drives/collisions and tracking are not established by this geometry slice;
 existing specialized physical adapters remain until real replacement validation.
-Ordinary installation, native geometry and durable external-provider discovery
-remain open.
+Ordinary installed pure compilation is covered below; installed managed geometry,
+native geometry and durable external-provider discovery remain open.
+
+The direct wheel and independently sdist-rebuilt wheel passed ordinary acceptance
+on production `c5db7b06` plus the three acceptance-test files. Both fresh consumers
+used actual site-packages with checkout imports/reads denied. Each passed normal
+external-provider registration and unlisted two-instance public geometry compile,
+rename/reorder equivalence and unsupported-boundary rejection. Each also passed
+published IP–MR sampled-field admission/planning and its three refusal cases;
+the new IP–MR probe intentionally intercepted the owner after planning, so it
+does not qualify installed native execution or publication. Existing installed
+RF–IP managed-owner/inert-native probes also passed in both arms.
+
+The one parent passed in 1624.392 seconds (1626.046 guarded); all 3030 source files,
+HEAD and Git status stayed unchanged and the shared GATE released. One fresh inert
+IP–MR producer was shared read-only by both arms (316.722 seconds); installed
+IP–MR admission/planning took 19.233/19.165 seconds. Fifty-three section timings
+were retained. Temporary builds used D: and the existing offline wheelhouse,
+preserving C:'s free-space floor; no capacity policy changed. Successful synthetic
+fixtures were cleaned after retaining wheels, outcomes, inventories and logs.
+This is ordinary software evidence, not commercial solver, full Repository,
+field convergence or scientific qualification. The 15-minute software target
+remains open; these timings are not a same-storage performance comparison.
 
 Frontend aperture discretization and its frozen declarations now use the installed
 SIMION backend directly; the former common aperture module bridge is retired.
@@ -1621,8 +1642,8 @@ software tests, including real owner publication, failure, OS write protection,
 between-operation tamper, incomplete source protection and explicit Lua-provider
 refusal. Earlier fixture-token and empty-product setup failures remain preserved;
 they were corrected in tests without relaxing production ownership or readers.
-Ordinary wheel/sdist acceptance and native full-size conversion/background/IOB
-remain open. Public `track` now admits this published sampled representation,
+Ordinary installed execution of the full producer/tracking owner and native
+full-size conversion/background/IOB remain open. Public `track` now admits this published sampled representation,
 revalidates its model, clock, scalar products and collision-priority evidence,
 and protects their original producers through the shared tracking owner. The
 original birth cohort uses the existing unit dispatcher, generated HS1 controls,
@@ -1644,7 +1665,7 @@ The consumer records unavailable terminal causes as unknown, preserves explicit
 preaction-contact evidence separately, and quarantines conflicting observation
 history without dropping mothers or terminals. Optional MR scientific events
 remain `not_recorded`; this is not mirror-cycle or detector qualification.
-Real full-size RF–IP–MR geometry, native continuous flight, ordinary installation,
+Real full-size RF–IP–MR geometry, native continuous flight, installed owner execution,
 recovery and final Repository/performance acceptance remain open. This test epoch
 does not qualify the available COMSOL fields or remove the storage admission block.
 

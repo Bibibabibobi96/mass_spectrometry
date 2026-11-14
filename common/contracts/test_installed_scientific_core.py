@@ -2584,6 +2584,12 @@ for case in fixture['single_reflection_workflow']:
         rf_ip_leaf = runpy.run_path(str(root / 'rf_ip_inert_leaf.py'))
         with section_timing('rf_ip_continuous_owner', sys.argv[2]):
             rf_ip_probe['run'](fixture['rf_ip_inert_fixtures'][int(sys.argv[2])], rf_ip_leaf['inert_native_leaf'])
+        ip_mr_probe=runpy.run_path(str(root/'installed_ip_mr_tracking_probe.py'))
+        with section_timing('ip_mr_sampled_public_planning',sys.argv[2]):
+            ip_mr_probe['run'](dict(fixture['ip_mr_installed_fixture'],arm=sys.argv[2]))
+        generic_probe=runpy.run_path(str(root/'installed_generic_geometry_probe.py'))
+        with section_timing('registered_generic_geometry',sys.argv[2]):
+            generic_probe['run'](root)
     assert receipt['particle_count'] == case['particle_count']
     projected = prepared_run/'inputs/projected_source.csv'
     assert hashlib.sha256(projected.read_bytes()).hexdigest() == case['projected_sha256']
@@ -7432,6 +7438,27 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                 rf_ip_fixtures.append(rf_ip_author['make_installed_fixture'](rf_ip_root))
                 print('INSTALLED_SECTION_TIMING=' + json.dumps(dict(section='rf_ip_inert_field_fixture',
                     case=str(index), elapsed_ns=time.perf_counter_ns()-rf_ip_started, exception=False)), flush=True)
+            # One freshly published inert sampled producer is shared read-only by both installed arms.
+            from functools import partial
+            from unittest.mock import patch
+            from common.contracts.test_support import ip_mr_sampled_field_fixture as ip_mr_fixture
+            from msplatform.backends.simion.ip_mr_field_execution import execute_ip_mr_sampled_fields
+            from msplatform.execution.owner import run_managed_stage
+            from msplatform.execution.completion import no_particle_batch_completion_api
+            from msplatform.io.manifest_records import file_record
+            from projects.dual_pressure_rectilinear_ion_processor.tests.test_functional import HS1_SOURCE_FIXTURE
+            ip_mr_source=source/'common/contracts/test_support/ip_mr_sampled_field_fixture.py'
+            self.assertEqual(Path(ip_mr_fixture.__file__).read_bytes(),ip_mr_source.read_bytes())
+            ip_mr_root=root/'ip-mr-shared-inert-producer';ip_mr_started=time.perf_counter_ns()
+            with patch.dict(os.environ,{'MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN':''}), ip_mr_fixture.build_sampled_field_fixture(ip_mr_root) as selected:
+                ids=selected['expected_operation_ids'];limits=dict(wall_clock_seconds=120,transient_run_directory_bytes=16777216,process_tree_working_set_bytes=536870912,minimum_system_available_memory_bytes=1,compact_final_retained_bytes=16777216,automatic_retry_count=0)
+                with ip_mr_fixture.inert_native_leaf([]):
+                    published=run_managed_stage(selected['context'],descriptor=dict(project='instrument_assembly',mode='sim',software=[]),run_id='20261114_000102__test__python__installed-sampled-fields',payload={'action':'solve_fields','model':selected['model_reference']},committed_new_bytes=16777216,commitment_inputs=[selected['budget']],retention=selected['retention'],expected_operation_ids=ids,operation_dependencies={name:[ids[i-1]] for i,name in enumerate(ids) if i},action=partial(execute_ip_mr_sampled_fields,model_reference=selected['model_reference'],scalar_field_basis=selected['scalar_field_basis'],priority_evidence=selected['priority_evidence'],limits=limits),action_record=file_record(Path(execute_ip_mr_sampled_fields.__code__.co_filename),'required_evidence'),source_references=selected['prepared']['source_references'],completion_api=no_particle_batch_completion_api)
+                vendor=ip_mr_root/'installed_hs1_vendor.lua';vendor.write_text(HS1_SOURCE_FIXTURE,encoding='utf8',newline='\n')
+                ctx=selected['context']
+                ip_mr_installed_fixture=dict(reference={'manifest':published['manifest'],'product_id':'fields'},vendor_path=str(vendor),
+                    context={name:str(getattr(ctx,name)) for name in ('workspace','powershell_executable','host_state_path','capacity_policy_path','stage_policy_path')})
+            print('INSTALLED_SECTION_TIMING='+json.dumps(dict(section='ip_mr_shared_sampled_producer',case='both_arms',elapsed_ns=time.perf_counter_ns()-ip_mr_started,exception=False)),flush=True)
             fixture = root / 'fixture.json'
             fixture.write_text(json.dumps(dict(repo_root=str(REPO_ROOT),
                                               author_source_roots=[str(REPO_ROOT)],
@@ -7448,6 +7475,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               single_reflection_workflow=self.single_reflection_workflow_probe_fixture(root),
                                               multipole_ip_request=self.multipole_ip_probe_fixture(),
                                               rf_ip_inert_fixtures=rf_ip_fixtures,
+                                              ip_mr_installed_fixture=ip_mr_installed_fixture,
                                               sfi_scalar_owner_fixtures=sfi_scalar_fixtures,
                                               gas_field_reference=self.gas_field_probe_fixture(root),
                                               tof_mass_spectrum_inputs=dict(mode=str(tof_spectrum_mode), comsol_dir=str(tof_spectrum_comsol), simion=str(tof_spectrum_simion), geometry=str(tof_spectrum_geometry)),
@@ -7525,6 +7553,13 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             rf_continuation_source = source / 'common/contracts/test_support/installed_rf_continuation_probe.py'
             shutil.copyfile(rf_continuation_source, root / 'installed_rf_continuation_probe.py')
             self.assertEqual((root / 'installed_rf_continuation_probe.py').read_bytes(), rf_continuation_source.read_bytes())
+            for name,destination in (('installed_generic_geometry_probe.py','installed_generic_geometry_probe.py'),('registered_component.py','installed_registered_component.py')):
+                selected=source/'common/contracts/test_support'/name
+                shutil.copyfile(selected,root/destination)
+                self.assertEqual((root/destination).read_bytes(),selected.read_bytes())
+            ip_mr_probe_source=source/'common/contracts/test_support/installed_ip_mr_tracking_probe.py'
+            shutil.copyfile(ip_mr_probe_source,root/'installed_ip_mr_tracking_probe.py')
+            self.assertEqual((root/'installed_ip_mr_tracking_probe.py').read_bytes(),ip_mr_probe_source.read_bytes())
             for name in ('rf_ip_installed_probe.py', 'rf_ip_inert_leaf.py'):
                 selected = source / 'common/contracts/test_support' / name
                 shutil.copyfile(selected, root / name)
@@ -7571,6 +7606,8 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                 result = self.run_command([consumer_python, '-I', str(probe_path), str(fixture), str(index)],
                                           cwd=root, environment=probe_environment, timeout=900)
                 self.assertIn('INSTALLED_RF_IP_CONTINUOUS_OWNER=PASS native=INERT ids=7,91', result)
+                self.assertIn('INSTALLED_IP_MR_PUBLIC_ADMISSION=PASS basis=17 priority=5 negatives=3 owner=planning_only',result)
+                self.assertIn('INSTALLED_GENERIC_REGISTERED_GEOMETRY=PASS instances=2 renamed=1 capability_rejected=1 pure_compile=1',result)
                 print('INSTALLED_CORE_EVIDENCE=' + result.strip())
                 observation = self.run_command([consumer_python, '-I', '-B', str(root / 'installed_observation_probe.py'),
                     str(root / 'installed_observation_fixture.json'),
@@ -7608,6 +7645,10 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                     'common/contracts/test_support/rf_ip_inert_field.py',
                     'common/contracts/test_support/rf_ip_inert_leaf.py',
                     'common/contracts/test_support/rf_ip_installed_probe.py',
+                    'common/contracts/test_support/installed_ip_mr_tracking_probe.py',
+                    'common/contracts/test_support/installed_generic_geometry_probe.py',
+                    'common/contracts/test_support/registered_component.py',
+                    'common/contracts/test_support/ip_mr_sampled_field_fixture.py',
                     'common/contracts/test_rf_ip_composed.py',
                     'common/contracts/test_joint_ip_model.py',
                     'common/contracts/test_simion_rf_fields.py',
