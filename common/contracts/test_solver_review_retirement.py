@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import io
 import json
@@ -93,6 +94,18 @@ $global:calls|ConvertTo-Json -Compress
         self._check_wrapper("finalize_fail", enabled=True,
                             expected=["enter", "retire", "finalize", "exit"], error="do not repeat deletion")
 
+    def test_gui_selected_wrapper_forwards_scope_and_reseals(self) -> None:
+        self._check_wrapper("gui_subset", enabled=True, expected=["enter", "retire", "reseal", "exit"])
+        self._check_wrapper("gui_retire_fail", enabled=True, expected=["enter", "retire", "exit"],
+                            error="retirement failed with exit code 7")
+        self._check_wrapper("gui_reseal_fail", enabled=True, expected=["enter", "retire", "reseal", "exit"],
+                            error="do not repeat deletion")
+
+    def test_gui_wrapper_rejects_runtime_and_repair_mixes_before_lease(self) -> None:
+        for mode in ("gui_runtime", "gui_repair", "gui_no_stopped"):
+            with self.subTest(mode=mode):
+                self._check_wrapper(mode, enabled=True, expected=[], error="requires")
+
     def test_whatif_under_non_utf8_parent_console(self) -> None:
         self._check_wrapper("whatif", enabled=True, expected=[], legacy_console=True)
 
@@ -128,11 +141,15 @@ function python {
       $global:calls.Add('reseal')
     }else{$global:calls.Add('finalize')}
     '{"status":"ready"}'
-    $global:LASTEXITCODE = $(if ($Mode -eq 'finalize_fail') {9} else {0})
+    $global:LASTEXITCODE = $(if ($Mode -in @('finalize_fail','gui_reseal_fail')) {9} else {0})
   } else {
     if($Mode -eq 'subset' -and ($args -notcontains '--selected-heavy-path' -or $args -notcontains 'simion/analyzer.pa0')) {throw 'subset selection was not forwarded'}
+    if($Mode -in @('gui_subset','gui_retire_fail','gui_reseal_fail')) {
+      foreach($required in @('--prepared-gui-checkpoint','--confirm-writing-stopped','--selected-heavy-path','simion/processor.pa#','simion/processor.pa0','--apply')) {if($args -notcontains $required){throw "GUI argument missing: $required"}}
+      if($args -contains '--runtime-checkpoint'){throw 'GUI was passed as runtime checkpoint'}
+    }
     $global:calls.Add('retire'); '{"lifecycle_status":"completed_experiment_payload_retired"}'
-    $global:LASTEXITCODE = $(if ($Mode -eq 'retire_fail') {7} else {0})
+    $global:LASTEXITCODE = $(if ($Mode -in @('retire_fail','gui_retire_fail')) {7} else {0})
   }
 }
 $params = @{ArtifactRoot=$Root; RepositoryRoot=$Root; TargetRun=$Root;
@@ -141,6 +158,10 @@ if ($Mode -ne 'plan') { $params.Apply = $true }
 if ($Mode -eq 'whatif') { $params.WhatIf = $true }
 if ($Mode -eq 'checkpoint') { $params.RuntimeCheckpoint='frozen.json'; $params.ConfirmWritingStopped=$true }
 if ($Mode -eq 'subset') { $params.SelectedHeavyPaths=@('simion/analyzer.pa0') }
+if ($Mode -like 'gui_*') { $params.PreparedGuiCheckpoint=$true; $params.ConfirmWritingStopped=$true; $params.SelectedHeavyPaths=@('simion/processor.pa#','simion/processor.pa0') }
+if ($Mode -eq 'gui_runtime') { $params.RuntimeCheckpoint='frozen.json' }
+if ($Mode -eq 'gui_repair') { $params.RepairPreservedFile='simion/processor.pa0';$params.RepairEvidenceRun='audit';$params.ExpectedManifestSha256='m';$params.ExpectedRetirementSha256='r' }
+if ($Mode -eq 'gui_no_stopped') { $params.ConfirmWritingStopped=$false }
 $failed = $false; $message = ''; $output = @()
 try { $output = @(& (Join-Path $Root 'contracts/invoke_solver_review_retirement.ps1') @params) }
 catch { $failed=$true; $message=$_.Exception.Message }
@@ -819,6 +840,87 @@ function Exit-HostExecutionLease { param($Lease) }
                         inputs={key: record(Path(value)) for key, value in config["inputs"].items()},
                         outputs=[record(run / "summary.json")])
         (run / "run_manifest.json").write_text(json.dumps(manifest))
+
+    def _gui_with_surface(self) -> None:
+        self._prepared_gui(self.target)
+        surface = self.target / "simion/processor.pa-surf"
+        surface.write_bytes(b"frozen surface")
+        manifest_path = self.target / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["outputs"].append({"path": str(surface), "exists": True,
+                                    "bytes": surface.stat().st_size, "sha256": _sha(surface)})
+        manifest_path.write_text(json.dumps(manifest))
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_prepared_gui_selected_scope_preserves_surface_and_other_responses(self, _scan: mock.Mock) -> None:
+        self._gui_with_surface()
+        selected = ["simion/processor.pa#", "simion/processor.pa0"]
+        retained = ["simion/processor.pa1", "simion/processor.pa2", "simion/processor.pa-surf",
+                    "simion/processor.iob", "simion/processor.gem", "summary.json", "run_manifest.json", "run_config.json"]
+        before = {name: (self.target / name).read_bytes() for name in retained}
+        plan = self._owner_plan(prepared_gui_checkpoint=True, writing_stopped=True, selected_heavy_paths=selected)
+        self.assertEqual(sorted(row["path"] for row in plan["removed_files"]), sorted(selected))
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(plan)
+        self.assertEqual(verify_retirement(self.target)["target_terminal_status"], "checkpoint")
+        self.assertEqual(before, {name: (self.target / name).read_bytes() for name in retained})
+        self.assertTrue(all(not (self.target / name).exists() for name in selected))
+        with self.assertRaisesRegex(RetirementError, "target already has a completed retirement receipt"):
+            self._owner_plan(prepared_gui_checkpoint=True, writing_stopped=True, selected_heavy_paths=["simion/processor.pa1"])
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_prepared_gui_selected_pending_resume_and_scope_refusals(self, _scan: mock.Mock) -> None:
+        self._gui_with_surface()
+        selected = ["simion/processor.pa#", "simion/processor.pa0"]
+        options = dict(prepared_gui_checkpoint=True, writing_stopped=True, selected_heavy_paths=selected)
+        for bad in ([], ["simion/processor.iob"], ["../escape.pa0"], [selected[0], selected[0]]):
+            with self.subTest(bad=bad), self.assertRaises(RetirementError):
+                self._owner_plan(prepared_gui_checkpoint=True, writing_stopped=True, selected_heavy_paths=bad)
+        plan = self._owner_plan(**options)
+        (self.target / selected[0]).unlink()
+        (self.target / "solver_review_retirement_receipt.json").write_text(json.dumps({
+            **plan, "role": "solver_review_retirement_receipt", "lifecycle_status": "retirement_pending"}))
+        with self.assertRaisesRegex(RetirementError, "selected heavy scope changed"):
+            self._owner_plan(prepared_gui_checkpoint=True, writing_stopped=True, selected_heavy_paths=[selected[1]])
+        resumed = self._owner_plan(**options)
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(resumed)
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+        self.assertTrue((self.target / "simion/processor.pa-surf").is_file())
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_prepared_gui_selected_rechecks_plan_and_guards(self, _scan: mock.Mock) -> None:
+        self._gui_with_surface()
+        options = dict(prepared_gui_checkpoint=True, writing_stopped=True, selected_heavy_paths=["simion/processor.pa0"])
+        plan = self._owner_plan(**options)
+        changed = copy.deepcopy(plan)
+        changed["selected_heavy_paths"] = ["simion/processor.pa1"]
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            with self.assertRaises(RetirementError):
+                apply_retirement(changed)
+            create_capacity_protection_lease(self.artifacts, lease_id="gui-selected-protected", owner="test",
+                                             ttl_seconds=3600, protected_paths=[self.target])
+            with self.assertRaisesRegex(RetirementError, "protection lease"):
+                apply_retirement(plan)
+        self.assertTrue((self.target / "simion/processor.pa0").is_file())
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_prepared_gui_selected_active_consumer_and_unflown_guards(self, _scan: mock.Mock) -> None:
+        self._gui_with_surface()
+        selected = ["simion/processor.pa0"]
+        with self.assertRaises(RetirementError):
+            self._owner_plan(prepared_gui_checkpoint=True, selected_heavy_paths=selected)
+        with self.assertRaises(RetirementError):
+            plan_retirement(self.artifacts, self.repo, self.target, owner="wrong", owner_abandonment_reason="test",
+                prepared_gui_checkpoint=True, writing_stopped=True, selected_heavy_paths=selected)
+        plan = self._owner_plan(prepared_gui_checkpoint=True, writing_stopped=True, selected_heavy_paths=selected)
+        consumer = self.runs / "selected_live_consumer"
+        consumer.mkdir()
+        (consumer / "run_config.json").write_text(json.dumps({"field": str(self.target / selected[0])}))
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            with self.assertRaisesRegex(RetirementError, "active references"):
+                apply_retirement(plan)
+        self.assertTrue((self.target / selected[0]).is_file())
 
     def _gui_plan(self, **kwargs: object) -> dict[str, object]:
         return plan_retirement(self.artifacts, self.repo, self.target, self.replacement,

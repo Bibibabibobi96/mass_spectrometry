@@ -8,6 +8,7 @@ param(
   [string]$Owner='',
   [string]$OwnerAbandonmentReason='',
   [string]$RuntimeCheckpoint='',
+  [switch]$PreparedGuiCheckpoint,
   [switch]$ConfirmWritingStopped,
   [string[]]$ApprovedStoppedConsumers=@(),
   [string[]]$CompatibilityInputRoles=@(),
@@ -29,7 +30,7 @@ $arguments = @('-m','msplatform.execution.solver_review_retirement','--artifact-
 if($RepairPreservedFile){
   if(-not$Owner.Trim()-or-not$ConfirmWritingStopped-or-not$RepairEvidenceRun-or
      -not$ExpectedManifestSha256-or-not$ExpectedRetirementSha256-or$ReplacementRun-or
-     $CompatibilityAssertion-or$OwnerAbandonmentReason-or$RuntimeCheckpoint-or
+     $CompatibilityAssertion-or$OwnerAbandonmentReason-or$RuntimeCheckpoint-or$PreparedGuiCheckpoint-or
      $ApprovedStoppedConsumers.Count-or$CompatibilityInputRoles.Count-or$CompatibilityInputRoleMaps.Count-or$SelectedHeavyPaths.Count){
     throw 'Preserved payload repair requires owner, stopped-writing confirmation, audit run and original SHA identities; retirement options are forbidden.'
   }
@@ -78,7 +79,12 @@ if ($Owner -or $OwnerAbandonmentReason) {
 foreach ($role in $CompatibilityInputRoles) { $arguments += @('--compatibility-input-role',$role) }
 foreach ($mapping in $CompatibilityInputRoleMaps) { $arguments += @('--compatibility-input-role-map',$mapping) }
 foreach ($path in $SelectedHeavyPaths) { $arguments += @('--selected-heavy-path',$path) }
-if ($RuntimeCheckpoint -or $ConfirmWritingStopped) {
+if ($PreparedGuiCheckpoint) {
+  if (-not $Owner.Trim() -or -not $OwnerAbandonmentReason.Trim() -or $RuntimeCheckpoint -or -not $ConfirmWritingStopped) {
+    throw 'Prepared GUI retirement requires owner, abandonment reason and stopped-writing confirmation without a runtime checkpoint.'
+  }
+  $arguments += @('--prepared-gui-checkpoint','--confirm-writing-stopped')
+} elseif ($RuntimeCheckpoint -or $ConfirmWritingStopped) {
   if (-not $Owner.Trim() -or -not $OwnerAbandonmentReason.Trim() -or -not $RuntimeCheckpoint -or -not $ConfirmWritingStopped) {
     throw 'Stopped runtime retirement requires owner, abandonment reason, checkpoint and stopped-writing confirmation.'
   }

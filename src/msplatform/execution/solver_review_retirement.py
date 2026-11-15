@@ -903,7 +903,7 @@ def plan_retirement(
     runtime_mode = runtime_checkpoint_path is not None
     gui_mode = prepared_gui_checkpoint
     selected = _selected_heavy_paths(selected_heavy_paths)
-    if selected is not None and (not owner_mode or runtime_mode or gui_mode):
+    if selected is not None and (not owner_mode or runtime_mode):
         raise RetirementError("selected heavy scope requires ordinary owner completion")
     if gui_mode and (runtime_mode or not writing_stopped):
         raise RetirementError("prepared GUI retirement requires explicit scope and confirmed stopped writing")
@@ -1107,7 +1107,7 @@ def apply_retirement(plan: dict[str, Any]) -> dict[str, Any]:
                 or plan.get("selected_heavy_paths") is None or runtime_checkpoint_path is not None or gui_mode):
             raise RetirementError("later retirement batches require ordinary owner selected heavy scope")
         if (_selected_heavy_paths(plan.get("selected_heavy_paths")) is not None
-                and (plan.get("retirement_mode") != "completed_experiment" or runtime_checkpoint_path is not None or gui_mode)):
+                and (plan.get("retirement_mode") != "completed_experiment" or runtime_checkpoint_path is not None)):
             raise RetirementError("selected heavy scope requires ordinary owner completion")
         leases = protection._load_capacity_protection_leases_unlocked(artifact_root)
         approved_consumers = _verify_stopped_consumers(plan, target, _leases=leases)
@@ -1270,7 +1270,7 @@ def _apply_retirement_locked(plan: dict[str, Any]) -> dict[str, Any]:
         if inventory != planned_inventory:
             raise RetirementError("completed experiment inventory changed before apply")
         selected = _selected_heavy_paths(plan.get("selected_heavy_paths"))
-        if selected is not None and (not owner_mode or runtime_mode or gui_mode):
+        if selected is not None and (not owner_mode or runtime_mode):
             raise RetirementError("selected heavy scope requires ordinary owner completion")
         old_missing = [item for item in plan["removed_files"] if item.get("already_removed_before_resume")]
         _selected_heavy_records(old_missing + inventory, selected)
@@ -1630,7 +1630,7 @@ def _verify_retirement_receipt(
     runtime_mode = runtime_checkpoint_path is not None
     gui_mode = _prepared_gui_scope(receipt)
     selected = _selected_heavy_paths(receipt.get("selected_heavy_paths"))
-    if selected is not None and (not owner_mode or runtime_mode or gui_mode):
+    if selected is not None and (not owner_mode or runtime_mode):
         raise RetirementError("selected heavy scope requires ordinary owner completion")
     allowed_statuses = {"checkpoint"} if runtime_mode or gui_mode else (
         {"success", "failed", "interrupted"} if owner_mode else {"success", "failed"})
@@ -1695,7 +1695,7 @@ def _verify_retirement_receipt(
         _selected_heavy_records(receipt["removed_files"], selected)
         if sorted(item["path"] for item in receipt["removed_files"]) != selected:
             raise RetirementError("retired payload differs from selected heavy scope")
-        state = _load_run(run_dir, allowed_statuses=allowed_statuses)
+        state = _load_run(run_dir, allowed_statuses=allowed_statuses, prepared_gui_checkpoint=gui_mode)
         records = _manifest_records(state, retired_paths=retired_paths, inherit_heavy_identity=True,
                                     consumed_paths=consumed_paths)
         for item in removed_records:

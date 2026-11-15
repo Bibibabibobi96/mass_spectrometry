@@ -503,6 +503,17 @@ MR原生场provider、IP私有GUI准备和oaTOF跨求解器诊断在同次完整
 验证按收据链核对历次合法移除与当前剩余文件；容量只在公共锁内按实际剩余库存（含全部收据）更新一次。
 原manifest、科学终态及旧收据不改写；runtime、prepared GUI和supersession退役仍使用原单批合同。
 
+For an unflown prepared GUI checkpoint, the owner may select an exact heavy-file
+subset in its first retirement batch. The public wrapper exposes
+`-PreparedGuiCheckpoint -ConfirmWritingStopped`, together with an explicit owner,
+abandonment reason and `-SelectedHeavyPaths`. The existing checkpoint, input,
+lease and consumer checks still apply; later GUI batches remain unsupported.
+Unselected surfaces, responses, IOBs and research results remain in place. This
+operation does not prove recoverability or preserve immediate GUI replay. A
+verified recovery source and explicit restore-before-open instructions must be
+established separately. Completed retirement verification rejects retired paths
+that reappear; restoration uses a separately prepared and rebound workbench.
+
 历史元数据消费者可调用同一`verify_retirement(run_dir, consumed_paths=[...])`，显式列出仍保留的规范run-relative路径。
 投影仍检查收据链、owner、终态、准确退役成员及其不存在事实，只核验实际消费的保留文件字节，
 结果标记`scope=consumer_projection`；省略参数仍执行完整验证。空、重复、非规范或已退役路径拒绝。
