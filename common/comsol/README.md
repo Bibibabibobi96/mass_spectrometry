@@ -191,7 +191,7 @@ This is analytic conductor support, not an additional FEM observation.
 The canonical query supports IP boxes and x-axis cylinders, and extruded
 concave polygons with their declared Boolean holes. MR observations use the
 same polygon membership calculation. A prepared query copies the selected
-members and validates fixed polygons and poses once per fill; conservative
+members and validates fixed polygons, IP primitive parameters and poses once per fill; conservative
 polygon bounds avoid unnecessary exact queries. It does not cache across
 runs or turn boundary/unknown nodes into conductor samples. Sampling and
 classification time must still be measured on the actual selected grid;

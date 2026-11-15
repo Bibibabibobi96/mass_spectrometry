@@ -211,3 +211,41 @@ class PreparedQueryTests(unittest.TestCase):
                         for z in vals:
                             point=(x,y,z)
                             self.assertEqual(prepared(point),query.query_members([member],point,frame_id='world'),point)
+
+    def test_prepared_ip_nested_cached_validation_pose_and_snapshot(self):
+        from unittest.mock import patch
+        from msplatform.contracts.rigid_transform import FramedPosition, RigidTransform
+        pose={'schema_version':1,'role':'rigid_transform','from_frame_id':'local','to_frame_id':'world',
+              'rotation':[[0,0,-1],[1,0,0],[0,-1,0]],'translation_mm':[10,-225,3]}
+        for offset in (0., 1e12):
+            member_pose=copy.deepcopy(pose)
+            transform=RigidTransform.from_contract(member_pose)
+            box={'kind':'ip_box','min_mm':[-2,offset-2,-2],'max_mm':[2,offset+2,2]}
+            cyl={'kind':'ip_cylinder_x','x_min_mm':-3,'x_max_mm':3,
+                 'center_y_mm':offset,'center_z_mm':0.,'radius_mm':1.}
+            shape={'kind':'difference','base':{'kind':'union','parts':[box,copy.deepcopy(box)]},'tools':[cyl]}
+            member={'instance_id':'i','member_id':'nested','electrode_group_id':'g','transform':member_pose,'shape':shape}
+            known=[((0.,offset+1.5,0.),'interior'),((0.,offset+2.,0.),'boundary'),((0.,offset+3.,0.),'outside')]
+            for local,status in known:
+                world=transform.transform_position(FramedPosition('local',local)).coordinates_mm
+                self.assertEqual(query.query_members([member],world,frame_id='world')['status'],status)
+            with patch.object(query,'_canonical_box_bounds',wraps=query._canonical_box_bounds) as boxes, \
+                 patch.object(query,'_ip_x_cylinder_as_rod',wraps=query._ip_x_cylinder_as_rod) as cylinders:
+                prepared=query.prepare_member_query([member],frame_id='world')
+                self.assertEqual(boxes.call_count,2);self.assertEqual(cylinders.call_count,1)
+                values=[offset-2,math.nextafter(offset-1,-math.inf),offset-1,
+                        math.nextafter(offset-1,math.inf),offset,offset+1,offset+2,offset+3]
+                worlds=[transform.transform_position(FramedPosition('local',(x,y,0.))).coordinates_mm
+                        for x in (-2.,0.,2.) for y in values]
+                observed=[prepared(point) for point in worlds]
+                self.assertEqual(boxes.call_count,2);self.assertEqual(cylinders.call_count,1)
+            expected=[query.query_members([member],point,frame_id='world') for point in worlds]
+            self.assertEqual(observed,expected)
+            member['shape']['base']['parts'][0]['min_mm'][0]=999
+            member['shape']['tools'][0]['radius_mm']=999
+            member['transform']['translation_mm'][0]=999
+            self.assertEqual([prepared(point) for point in worlds],observed)
+        for bad in ({'kind':'ip_box','min_mm':[1,0,0],'max_mm':[0,1,1]},
+                    {'kind':'ip_cylinder_x','x_min_mm':0,'x_max_mm':1,'center_y_mm':0,'center_z_mm':0,'radius_mm':0}):
+            member={'instance_id':'i','member_id':'bad','electrode_group_id':'g','transform':pose,'shape':bad}
+            with self.assertRaises(ValueError):query.prepare_member_query([member],frame_id='world')

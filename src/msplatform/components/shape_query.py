@@ -114,7 +114,7 @@ def _canonical_polygon(shape: Mapping) -> tuple[Sequence[float], list[list[float
                 raise ValueError('self-intersecting polygon')
     return bounds, points
 
-def _shape_relation(shape: Mapping, point: Sequence[float], *, _polygons=None) -> str:
+def _shape_relation(shape: Mapping, point: Sequence[float], *, _prepared_shapes=None) -> str:
     """Classify one point as interior, boundary, outside, or unsupported.
 
     Boundary includes ideal sheets and Boolean cut faces. This low-level query
@@ -129,15 +129,15 @@ def _shape_relation(shape: Mapping, point: Sequence[float], *, _polygons=None) -
             parts = shape.get('parts')
             if not isinstance(parts, (list, tuple)) or not parts:
                 raise ValueError('union requires parts')
-            relations = [_shape_relation(part, point, _polygons=_polygons) for part in parts]
+            relations = [_shape_relation(part, point, _prepared_shapes=_prepared_shapes) for part in parts]
             if 'unsupported' in relations: return 'unsupported'
             if 'interior' in relations: return 'interior'
             return 'boundary' if 'boundary' in relations else 'outside'
-        base = _shape_relation(shape['base'], point, _polygons=_polygons)
+        base = _shape_relation(shape['base'], point, _prepared_shapes=_prepared_shapes)
         tools = shape.get('tools')
         if not isinstance(tools, (list, tuple)) or not tools:
             raise ValueError('difference requires tools')
-        relations = [_shape_relation(part, point, _polygons=_polygons) for part in tools]
+        relations = [_shape_relation(part, point, _prepared_shapes=_prepared_shapes) for part in tools]
         if base == 'unsupported' or 'unsupported' in relations: return 'unsupported'
         if base == 'outside' or 'interior' in relations: return 'outside'
         if base == 'boundary' or 'boundary' in relations: return 'boundary'
@@ -155,16 +155,16 @@ def _shape_relation(shape: Mapping, point: Sequence[float], *, _polygons=None) -
         if any(lo == hi for lo, hi in oa_witness_extent(shape)): return 'boundary'
         return 'interior' if oa_witness_contains(shape, point) else 'boundary'
     if kind == 'ip_cylinder_x':
-        return _shape_relation(_ip_x_cylinder_as_rod(shape), (point[1],point[2],point[0]), _polygons=_polygons)
+        return _shape_relation(_ip_x_cylinder_as_rod(shape) if _prepared_shapes is None else _prepared_shapes[id(shape)], (point[1],point[2],point[0]), _prepared_shapes=_prepared_shapes)
     if kind == 'ip_box':
-        bounds = _canonical_box_bounds(shape)
+        bounds = _canonical_box_bounds(shape) if _prepared_shapes is None else _prepared_shapes[id(shape)]
         if any(point[i] < lo or point[i] > hi for i, (lo, hi) in enumerate(bounds)): return 'outside'
         return 'boundary' if any(point[i] in (lo, hi) for i, (lo, hi) in enumerate(bounds)) else 'interior'
     if kind == 'extruded_yz_polygon':
-        if _polygons is None:
+        if _prepared_shapes is None:
             bounds, vertices = _canonical_polygon(shape)
         else:
-            bounds, vertices, extrema, vertex_scale = _polygons[id(shape)]
+            bounds, vertices, extrema, vertex_scale = _prepared_shapes[id(shape)]
             scale = max(1., vertex_scale, *(abs(v) for v in point), *(abs(v) for v in bounds))
             slack = 64*math.ulp(scale)
             if (point[1] < extrema[0]-slack or point[1] > extrema[1]+slack or
@@ -190,7 +190,7 @@ def _shape_relation(shape: Mapping, point: Sequence[float], *, _polygons=None) -
     return 'unsupported'
 
 
-def _roundoff_near_surface(shape: Mapping, point: Sequence[float], error: Sequence[float], *, _polygons=None) -> bool:
+def _roundoff_near_surface(shape: Mapping, point: Sequence[float], error: Sequence[float], *, _prepared_shapes=None) -> bool:
     """Conservatively retain points close to arithmetic surfaces as ambiguous.
 
     The caller supplies per-axis inverse-transform roundoff bounds. Additional
@@ -199,14 +199,15 @@ def _roundoff_near_surface(shape: Mapping, point: Sequence[float], error: Sequen
     """
     kind = shape['kind']
     if kind == 'difference':
-        return _roundoff_near_surface(shape['base'], point, error, _polygons=_polygons) or any(
-            _roundoff_near_surface(tool, point, error, _polygons=_polygons) for tool in shape['tools'])
+        return _roundoff_near_surface(shape['base'], point, error, _prepared_shapes=_prepared_shapes) or any(
+            _roundoff_near_surface(tool, point, error, _prepared_shapes=_prepared_shapes) for tool in shape['tools'])
     if kind == 'union':
-        return any(_roundoff_near_surface(part, point, error, _polygons=_polygons) for part in shape['parts'])
+        return any(_roundoff_near_surface(part, point, error, _prepared_shapes=_prepared_shapes) for part in shape['parts'])
     if kind == 'ip_cylinder_x':
-        return _roundoff_near_surface(_ip_x_cylinder_as_rod(shape), (point[1],point[2],point[0]), (error[1],error[2],error[0]), _polygons=_polygons)
+        return _roundoff_near_surface(_ip_x_cylinder_as_rod(shape) if _prepared_shapes is None else _prepared_shapes[id(shape)], (point[1],point[2],point[0]), (error[1],error[2],error[0]), _prepared_shapes=_prepared_shapes)
     if kind in {'box', 'ip_box'}:
-        bounds = oa_witness_extent(shape) if kind == 'box' else _canonical_box_bounds(shape)
+        bounds = (oa_witness_extent(shape) if kind == 'box' else
+                  _canonical_box_bounds(shape) if _prepared_shapes is None else _prepared_shapes[id(shape)])
         margin = [error[i] + 8*math.ulp(max(1., abs(point[i]), abs(lo), abs(hi)))
                   for i, (lo, hi) in enumerate(bounds)]
         if any(point[i] < lo-margin[i] or point[i] > hi+margin[i]
@@ -215,18 +216,18 @@ def _roundoff_near_surface(shape: Mapping, point: Sequence[float], error: Sequen
         return any(abs(point[i]-lo) <= margin[i] or abs(point[i]-hi) <= margin[i]
                    for i, (lo, hi) in enumerate(bounds))
     if kind == 'extruded_yz_polygon':
-        if _polygons is None:
+        if _prepared_shapes is None:
             bounds, vertices = _canonical_polygon(shape)
             scale = max(1., *(abs(v) for v in point), *(abs(v) for p in vertices for v in p), *(abs(v) for v in bounds))
         else:
-            bounds, vertices, extrema, vertex_scale = _polygons[id(shape)]
+            bounds, vertices, extrema, vertex_scale = _prepared_shapes[id(shape)]
             scale = max(1., *(abs(v) for v in point), vertex_scale, *(abs(v) for v in bounds))
         # Bounds cover inverse-pose error and floating arithmetic in the shared edge-distance calculation.
         slack = 64*math.ulp(scale)
         xerror = error[0] + slack
         if point[0] < bounds[0]-xerror or point[0] > bounds[1]+xerror: return False
         planar_error = math.hypot(error[1],error[2]) + slack
-        if _polygons is not None:
+        if _prepared_shapes is not None:
             margin = planar_error + 8*math.ulp(scale)
             if (point[1] < extrema[0]-margin or point[1] > extrema[1]+margin or
                     point[2] < extrema[2]-margin or point[2] > extrema[3]+margin):
@@ -253,7 +254,7 @@ def _roundoff_near_surface(shape: Mapping, point: Sequence[float], error: Sequen
             or abs(point[2]-lo) <= axial_error or abs(point[2]-hi) <= axial_error)
 
 
-def _query_members(members: Sequence[Mapping], point: Sequence[float], *, frame_id: str, _polygons=None, _poses=None) -> dict:
+def _query_members(members: Sequence[Mapping], point: Sequence[float], *, frame_id: str, _prepared_shapes=None, _poses=None) -> dict:
     """Classify canonical members in their supplied assembly frame and pose.
 
     An unsupported shape is not treated as empty. Distinct simultaneously
@@ -274,7 +275,7 @@ def _query_members(members: Sequence[Mapping], point: Sequence[float], *, frame_
             if pose_key not in local_cache:
                 local_cache[pose_key] = [inverse.transform_position(position), None]
             local = local_cache[pose_key][0]
-        relation = _shape_relation(member['shape'], local.coordinates_mm, _polygons=_polygons)
+        relation = _shape_relation(member['shape'], local.coordinates_mm, _prepared_shapes=_prepared_shapes)
         if relation != 'unsupported':
             # Bound the inverse rotation/translation arithmetic conservatively.
             # Each output coordinate has two three-term dot products; 64 ULPs
@@ -304,7 +305,7 @@ def _query_members(members: Sequence[Mapping], point: Sequence[float], *, frame_
                     local_cache[pose_key][1] = error
             else:
                 error = cached_error
-            if _roundoff_near_surface(member['shape'], local.coordinates_mm, error, _polygons=_polygons):
+            if _roundoff_near_surface(member['shape'], local.coordinates_mm, error, _prepared_shapes=_prepared_shapes):
                 relation = 'boundary'
         key = (member['instance_id'], member['electrode_group_id'])
         if relation == 'interior': inside.add(key)
@@ -318,11 +319,11 @@ def _query_members(members: Sequence[Mapping], point: Sequence[float], *, frame_
 
 
 def prepare_member_query(members: Sequence[Mapping], *, frame_id: str):
-    """Snapshot members and validate fixed polygons once for repeated queries."""
+    """Snapshot members and validate fixed shapes once for repeated queries."""
     if not isinstance(frame_id, str) or not frame_id:
         raise ValueError('explicit assembly frame is required')
     frozen = copy.deepcopy(members)
-    polygons = {}
+    prepared_shapes = {}
     poses = {}
     unique_poses = {}
     def prepare(shape):
@@ -332,7 +333,11 @@ def prepare_member_query(members: Sequence[Mapping], *, frame_id: str):
             extrema = (min(p[0] for p in vertices), max(p[0] for p in vertices),
                        min(p[1] for p in vertices), max(p[1] for p in vertices))
             vertex_scale = max(abs(value) for p in vertices for value in p)
-            polygons[id(shape)] = (bounds, vertices, extrema, vertex_scale)
+            prepared_shapes[id(shape)] = (bounds, vertices, extrema, vertex_scale)
+        elif kind == 'ip_box':
+            prepared_shapes[id(shape)] = _canonical_box_bounds(shape)
+        elif kind == 'ip_cylinder_x':
+            prepared_shapes[id(shape)] = _ip_x_cylinder_as_rod(shape)
         elif kind == 'union':
             for part in shape['parts']: prepare(part)
         elif kind == 'difference':
@@ -349,7 +354,7 @@ def prepare_member_query(members: Sequence[Mapping], *, frame_id: str):
             unique_poses[key] = (key, transform, transform.inverse(), defect + 64*math.ulp(1.))
         poses[id(member)] = unique_poses[key]
     def query(point):
-        return _query_members(frozen, point, frame_id=frame_id, _polygons=polygons, _poses=poses)
+        return _query_members(frozen, point, frame_id=frame_id, _prepared_shapes=prepared_shapes, _poses=poses)
     return query
 
 
