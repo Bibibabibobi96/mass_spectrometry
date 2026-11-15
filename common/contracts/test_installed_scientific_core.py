@@ -2642,7 +2642,7 @@ for case in fixture['single_reflection_workflow']:
             print('INSTALLED_OFFLINE_SCALAR_SUPPORT=PASS labels=reused native=0 qualification=none',flush=True)
         generic_probe=runpy.run_path(str(root/'installed_generic_geometry_probe.py'))
         with section_timing('registered_generic_geometry',sys.argv[2]):
-            generic_probe['run'](root)
+            generic_probe['run'](root, fixture['scalar_adapter']['executable'])
     assert receipt['particle_count'] == case['particle_count']
     projected = prepared_run/'inputs/projected_source.csv'
     assert hashlib.sha256(projected.read_bytes()).hexdigest() == case['projected_sha256']
@@ -7669,6 +7669,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                 self.assertIn('INSTALLED_IP_MR_PUBLIC_ADMISSION=PASS basis=17 priority=5 negatives=3 owner=planning_only',result)
                 self.assertIn('INSTALLED_GENERIC_REGISTERED_GEOMETRY=PASS instances=2 renamed=1 capability_rejected=1 pure_compile=1',result)
                 self.assertIn('INSTALLED_GENERIC_STATIC_PLANNING=PASS groups=2 births=2 outside_refused=1 native=none',result)
+                self.assertIn('INSTALLED_GENERIC_DYNAMIC=PASS model=rf_pulse basis=compiled lua=api_stub missing_resource=refused restored=1 native=none', result)
                 print('INSTALLED_CORE_EVIDENCE=' + result.strip())
                 observation = self.run_command([consumer_python, '-I', '-B', str(root / 'installed_observation_probe.py'),
                     str(root / 'installed_observation_fixture.json'),

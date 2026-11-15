@@ -153,23 +153,8 @@ class TrackingUnitOwnerTests(unittest.TestCase):
                 calls.append((session.run_id,name))
                 kwargs.update(arguments=payload(session,name,kwargs['arguments']),executable=Path(sys.executable),role='GATE',stage='unclassified')
                 return actual_single(session,name,**kwargs)
-            def group(session,specs,**kwargs):
-                failed='failed' in session.run_id
-                prepared=[]
-                for spec in specs:
-                    item=dict(spec);name=item['operation_id']
-                    item.update(executable=Path(sys.executable),arguments=payload(session,name,item['arguments'],partial_log=failed and name.endswith('0002')))
-                    prepared.append(item)
-                if failed:prepared.sort(key=lambda row:{3:0,1:1,2:2,4:3}[row['scheduler_batch']['index']])
-                kwargs.update(role='GATE',stage='unclassified')
-                try:return actual_group(session,prepared,**kwargs)
-                finally:
-                    # Hashtable observation keys are not a completion order.
-                    # The original dispatcher keeps actual chronological attempts.
-                    saved=session.log_dir/'group_tracking_fly.process.json'
-                    if saved.exists():
-                        for attempt in json.loads(saved.read_text())['attempts']:
-                            calls.append((session.run_id,attempt['operation_id']))
+            from common.contracts.test_support.grouped_tracking_fixture import grouped_inert_transport
+            group=grouped_inert_transport(actual_group,payload,calls)
             def dispatch(*args,**kwargs):
                 value=actual_plan(*args,**kwargs)
                 value['estimation']=dict(kind='exact_resource_profile',per_process_memory_budget_bytes=1024**2,

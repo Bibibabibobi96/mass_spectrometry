@@ -25,7 +25,7 @@ class GenericScalarTrackingManagedTests(unittest.TestCase):
     def test_derived_window_tracking_live_leases_and_failure(self):
         self._exercise(True)
 
-    def _exercise(self, derived):
+    def _exercise(self, derived, recovery_callback=None):
         case = fixture.GenericScalarTests(methodName="runTest")
         case.setUp()
         self.addCleanup(case.doCleanups)
@@ -387,6 +387,9 @@ class GenericScalarTrackingManagedTests(unittest.TestCase):
                 self.assertEqual([row[0] for row in tracking_checks[-3:]],
                                  ['build_tracking_iob', 'verify_tracking_iob', 'track_fly'])
                 self.assertTrue(all(row[1:] == (6, len(expected_track_paths)) for row in tracking_checks))
+                if recovery_callback is not None:
+                    recovery_callback(field, packet, propagation, numerics, context, tracking_refs,
+                                      expected_track_paths, inert, original, directory)
                 tracking_refs.clear()
                 from msplatform.execution.capacity_protection import load_capacity_protection_leases
                 self.assertEqual(load_capacity_protection_leases(context.workspace/'artifacts')['audit'], [])

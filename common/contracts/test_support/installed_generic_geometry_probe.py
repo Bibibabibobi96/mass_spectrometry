@@ -6,7 +6,149 @@ import sysconfig
 from pathlib import Path
 
 
-def run(root):
+def run_dynamic(root, product, compiled, packet, clocks, propagation, lua_provider):
+    """Exercise installed neutral RF/pulse basis and Program with inert Lua APIs."""
+    import subprocess
+    import sysconfig
+    from msplatform.backends.comsol import assembly_geometry, assembly_electrostatic_model
+    from msplatform.backends.simion import (model, generic_scalar_binding, neutral_sampled_field,
+        rf_tracking_program, tracking_execution, tracking_units, tracking_collection, resources)
+    from msplatform.backends.simion.source import lua_value
+
+    from msplatform.io.manifest_records import verify_record
+    assert isinstance(lua_provider, dict), 'pinned Lua provider record required'
+    verify_record('installed generic Lua provider before execution', lua_provider)
+    lua = Path(lua_provider['path']).resolve(strict=True)
+
+    purelib = Path(sysconfig.get_paths()['purelib']).resolve()
+    for module in (assembly_geometry, assembly_electrostatic_model, model, generic_scalar_binding,
+                   neutral_sampled_field, rf_tracking_program, tracking_execution, tracking_units,
+                   tracking_collection, resources):
+        assert Path(module.__file__).resolve().is_relative_to(purelib), module.__file__
+    names = ('model_drive.lua', 'rf_drive.lua', 'rf_tracking.lua', 'single_flight_pulse_hook.lua',
+             'voltage_waveforms.lua', 'scalar_field_adapter.lua', 'generic_scalar_field.lua')
+    paths = {name: resources.native_resource_path(name).resolve(strict=True) for name in names}
+    assert all(path.is_relative_to(purelib) for path in paths.values())
+    native_sources = {name: path.read_text(encoding='utf8') for name, path in paths.items()}
+    snapshot = dict(composition_plan=product.composition_plan, components_resolved=product.components_resolved,
+                    components_source=product.components_source)
+    projection = assembly_geometry.project_assembly_geometry(snapshot,
+        outer_box_mm={'min': [-100.0]*3, 'max': [100.0]*3})
+    start = float(packet['rows'][0]['instrument_time_us'])
+    drive = dict(clock=dict(packet['clock'], phase_reference_instrument_time_us=0.0),
+        pulse=dict(mode='timed', time_us=start+0.2, width_us=0.5), groups={
+            'first': {'body': dict(kind='rf', waveform='sine', frequency_hz=1e6, phase_rad=0.0,
+                rf_amplitude_v=3.0, polarity=1, common_mode_v=2.0, dc_v=0.0)},
+            'second': {'body': dict(kind='pulse', off_voltage_v=-2.0, on_voltage_v=5.0)}})
+    dynamic = model.compile_prepared_model(compiled, product.components_resolved, drive=drive, physics=model.RF_PHYSICS)
+    document = model.require_prepared_model(dynamic)
+    vectors = {'one': {'first': 1.0, 'second': 0.0}, 'two': {'first': 0.0, 'second': 1.0}}
+    samples = {}
+    weights = {}
+    bases = {}
+    grid = dict(origin_mm=[-1.0]*3, pitch_mm=[1.0]*3, dimensions=[3]*3)
+    for name, vector in vectors.items():
+        request = dict(group_voltages=[dict(instance_id=row['instance_id'],
+            electrode_group_id=row['electrode_group_id'], voltage_v=vector[row['instance_id']])
+            for row in projection['electrode_groups']], relative_permittivity=1.0,
+            exterior=dict(kind='potential', voltage_v=0.0),
+            mesh=dict(global_automatic_level=9, electrode_hmax_mm=5.0), study=dict(kind='stationary'))
+        request = assembly_electrostatic_model.validate_request(projection, request)
+        rows = [dict(instance_id=instance, electrode_group_id='body', weight=value)
+                for instance, value in vector.items()]
+        samples[name] = dict(request=request, weights=rows)
+        weights[name] = rows
+        bases[name] = dict(grid=grid, records={
+            'field_v': {'path': str(Path(root)/('generic_'+name+'_v.pa'))},
+            'field_valid': {'path': str(Path(root)/('generic_'+name+'_mask.pa'))}},
+            ideal_sheet_projection=[])
+    terms = generic_scalar_binding.compile_linear_terms(projection, drive, samples)
+    assert set(terms['terms']) == {'carrier', 'pulse', 'rf_0'}
+    missing = {'two': samples['two']}
+    try:
+        generic_scalar_binding.compile_linear_terms(projection, drive, missing)
+    except ValueError as error:
+        assert 'span' in str(error), error
+    else:
+        raise AssertionError('incomplete generic basis was accepted')
+    admission = dict(role='generic_linear_scalar_admission', schema_version=1,
+        model_identity_sha256=document['model_identity_sha256'], bases=bases, weights=weights)
+    numerics = dict(maximum_step_us=.01, trajectory_quality=5, grouped=0, rf_steps_per_period=20)
+    plan = tracking_execution.plan_tracking_execution(dynamic, particles=packet, clock_records=clocks,
+        propagation=propagation, observations=dict(plane_observations=[]), numerics=numerics)
+    # The real public sampled FieldBundle admission is deliberately not fabricated here.
+    plan['flight']['tracking_kind'] = 'neutral_sampled'
+    rendered = rf_tracking_program.render_rf_controls(dynamic, plan, assets={}, native_sources=native_sources,
+        scalar_bindings=admission, slot_domains=[None, 'world'])
+    changed = copy.deepcopy(admission)
+    changed['model_identity_sha256'] = '0'*64
+    try:
+        rf_tracking_program.render_rf_controls(dynamic, plan, assets={}, native_sources=native_sources,
+            scalar_bindings=changed, slot_domains=[None, 'world'])
+    except ValueError as error:
+        assert 'matching admitted' in str(error), error
+    else:
+        raise AssertionError('mismatched sampled model was accepted')
+    prefix = r"""
+segment={};simion={pas={},experimental={},wb={instances={}}}
+function simion.workbench_program() end
+function simion.early_access() end
+local calls=0;local invalid=false
+function simion.pas:open(path)
+ local mask=path:find('_mask',1,true)~=nil
+ return {path=path,symmetry='3dplanar',nx=3,ny=3,nz=3,dx_mm=1,dy_mm=1,dz_mm=1,
+ potential=function()if mask and invalid and path:find('_one_',1,true) then return 0 end return 1 end}
+end
+simion.experimental.field_array=function(args)return {efield=function()
+ calls=calls+1;return args.V.path:find('_one_',1,true) and 1 or 2,0,0 end} end
+ion_number=1;ion_time_of_flight=0;ion_instance=1;ion_px_mm=0;ion_py_mm=0;ion_pz_mm=0
+ion_vx_mm=0;ion_vy_mm=0;ion_vz_mm=0;ion_mass=100;ion_charge=1;ion_splat=0;ion_time_step=.001
+local inst={scale=1,pa={dx_mm=1,dy_mm=1,dz_mm=1},wb_to_pa_orient=function(self,x,y,z)return x,y,z end}
+simion.wb.instances[1]=inst;simion.wb.instances[2]=inst
+"""
+    suffix = r"""
+assert(segment.fast_adjust==nil,'raw collision PA must not be fast-adjusted')
+local start=START
+for _,dt in ipairs({0,.25,.75}) do
+ ion_time_of_flight=dt
+ local t=start+dt; local pulse=(dt>=.2 and dt<.7) and 5 or -2
+ local expected=-((2+3*math.sin(2*math.pi*t))+2*pulse)
+ for slot=1,2 do ion_instance=slot;calls=0;segment.efield_adjust()
+  assert(calls==2 and math.abs(ion_dvoltsx_gu-expected)<1e-9,'sampled RF/pulse value differs') end
+end
+local phase=(2*math.pi+math.asin(-2/3))/(2*math.pi)
+local zero=phase+math.ceil(start-phase)
+ion_time_of_flight=zero-start;invalid=true
+local ok,err=pcall(segment.efield_adjust)
+assert(not ok and err:find('V_SUPPORT_UNKNOWN',1,true),'zero coefficient hid missing support')
+print('INSTALLED_GENERIC_RF_PULSE_LUA=PASS slots=2 invalid_mask=refused fast_adjust=none native=none')
+""".replace('START', lua_value(start))
+    script = Path(root)/'installed_generic_dynamic_program.lua'
+    script.write_text(prefix+rendered['program']+suffix, encoding='utf8', newline='\n')
+    result = subprocess.run([str(lua), str(script)], cwd=Path(root), capture_output=True,
+                            text=True, encoding='utf8', timeout=30, check=False)
+    verify_record('installed generic Lua provider after execution', lua_provider)
+    assert result.returncode == 0, result.stdout+result.stderr
+    assert 'INSTALLED_GENERIC_RF_PULSE_LUA=PASS' in result.stdout, result.stdout
+    resource = paths['generic_scalar_field.lua']
+    original = resource.read_bytes()
+    hidden = resource.with_name(resource.name+'.probe-hidden')
+    assert not hidden.exists()
+    resource.rename(hidden)
+    try:
+        try:
+            resources.native_resource_path('generic_scalar_field.lua')
+        except FileNotFoundError:
+            pass
+        else:
+            raise AssertionError('missing installed scalar resource was accepted')
+    finally:
+        hidden.rename(resource)
+    assert resource.read_bytes() == original
+    print('INSTALLED_GENERIC_DYNAMIC=PASS model=rf_pulse basis=compiled lua=api_stub missing_resource=refused restored=1 native=none', flush=True)
+
+
+def run(root, lua_provider):
     from msplatform import assembly, components
     from msplatform.backends import simion
     from msplatform.backends.simion import generic_geometry
@@ -88,5 +230,6 @@ def run(root):
     try: tracking_execution.plan_tracking_execution(prepared,**dict(options,particles=outside))
     except ValueError as exc: assert 'outside' in str(exc),exc
     else: raise AssertionError('outside-domain original birth was accepted')
+    run_dynamic(root, product, compiled, packet, clocks, propagation, lua_provider)
     print('INSTALLED_GENERIC_STATIC_PLANNING=PASS groups=2 births=2 outside_refused=1 native=none',flush=True)
     print('INSTALLED_GENERIC_REGISTERED_GEOMETRY=PASS instances=2 renamed=1 capability_rejected=1 pure_compile=1',flush=True)
