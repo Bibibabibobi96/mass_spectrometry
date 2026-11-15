@@ -203,4 +203,53 @@ binding.ideal_sheet_projection=""" + _lua_value(rectangle) + """; marked=0; adap
                                 cwd=root, timeout=30, check=False)
         self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
 
-if __name__ == '__main__': unittest.main()
+
+class ScalarRepresentationPreflightTests(unittest.TestCase):
+    def test_partial_alignment_and_ordered_overlap(self):
+        from msplatform.backends.simion.scalar_sample_binding import preflight_scalar_representation
+        sheet=member(dict(kind='box',center_mm=[0.,0.,.5],size_mm=[2.,2.,0.]))
+        projection=dict(assembly_frame_id='world',members=[sheet])
+        base=dict(frame_id='world',origin_mm=[-4.,-4.,-4.],pitch_mm=[1.,1.,1.],dimensions=[11,11,11])
+        aligned=dict(frame_id='world',origin_mm=[-4.,-4.,-4.5],pitch_mm=[1.,1.,1.],dimensions=[11,11,11])
+        windows=[dict(name='first',active_box_mm=[[-1.,1.]]*3,grid=aligned),dict(name='second',active_box_mm=[[-.5,.5]]*3,grid=aligned)]
+        with self.assertRaisesRegex(ValueError,'not aligned'):preflight_scalar_representation(projection,base,windows,allow_partial_sheets=False)
+        result=preflight_scalar_representation(projection,base,windows,allow_partial_sheets=True)
+        self.assertEqual([x['name'] for x in result['levels']],['base','first','second'])
+        self.assertIn('unsupported_bounds_mm',result['levels'][0]['ideal_sheet_projection'][0])
+        self.assertTrue(all(x['k']==5 for x in result['levels'][1]['ideal_sheet_projection']))
+        self.assertEqual(result['scope'],'representation_only_no_mask_or_trajectory_claim')
+
+    def test_invalid_grid_policy_shape_and_halo(self):
+        import copy
+        from msplatform.backends.simion.scalar_sample_binding import preflight_scalar_representation
+        sheet=member(dict(kind='box',center_mm=[0.,0.,0.],size_mm=[2.,2.,0.]))
+        projection=dict(assembly_frame_id='world',members=[sheet]);grid=dict(frame_id='world',origin_mm=[-4.,-4.,-4.],pitch_mm=[1.,1.,1.],dimensions=[11,11,11])
+        window=dict(name='a',active_box_mm=[[-1.,1.]]*3,grid=grid)
+        for key,value in [('frame_id','other'),('pitch_mm',[1.,0.,1.]),('origin_mm',[float('nan'),0.,0.]),('dimensions',[11,11,1])]:
+            bad=copy.deepcopy(grid);bad[key]=value
+            with self.subTest(key=key),self.assertRaises(ValueError):preflight_scalar_representation(projection,bad,[],allow_partial_sheets=True)
+        with self.assertRaises(ValueError):preflight_scalar_representation(projection,grid,[],allow_partial_sheets='yes')
+        bad=copy.deepcopy(window);bad['active_box_mm']=[[-4.,1.],[-1.,1.],[-1.,1.]]
+        with self.assertRaisesRegex(ValueError,'halo'):preflight_scalar_representation(projection,grid,[bad],allow_partial_sheets=True)
+        with self.assertRaisesRegex(ValueError,'unique'):preflight_scalar_representation(projection,grid,[window,window],allow_partial_sheets=True)
+        unsupported=copy.deepcopy(projection);unsupported['members'][0]['shape']={'kind':'unsupported'}
+        with self.assertRaises(ValueError):preflight_scalar_representation(unsupported,grid,[],allow_partial_sheets=True)
+
+
+    def test_disjoint_unsupported_orientation_and_two_node_capability(self):
+        import copy
+        from msplatform.backends.simion.scalar_sample_binding import preflight_scalar_representation
+        grid=dict(frame_id='world',origin_mm=[-4.,-4.,-4.],pitch_mm=[1.,1.,1.],dimensions=[11,11,11])
+        sheet=member(dict(kind='box',center_mm=[100.,0.,0.],size_mm=[0.,2.,2.]))
+        projection=dict(assembly_frame_id='world',members=[sheet])
+        result=preflight_scalar_representation(projection,grid,[],allow_partial_sheets=True)
+        self.assertEqual(result['levels'][0]['ideal_sheet_projection'],[])
+        intersect=copy.deepcopy(projection);intersect['members'][0]['shape']['center_mm'][0]=0.
+        with self.assertRaisesRegex(ValueError,'orientation'):preflight_scalar_representation(intersect,grid,[],allow_partial_sheets=True)
+        small=dict(frame_id='world',origin_mm=[0.,0.,0.],pitch_mm=[1.,1.,1.],dimensions=[3,3,2])
+        report=preflight_scalar_representation(dict(assembly_frame_id='world',members=[]),small,[],allow_partial_sheets=True)
+        self.assertFalse(report['levels'][0]['any_supported_stencil'])
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -219,6 +219,58 @@ def verify_scalar_sample(reference: Mapping[str, Any] | OpenedArtifact,
     return binding
 
 
+def _validate_window_halo(grid: Mapping[str, Any], box: Any, label: str) -> None:
+    """Apply the existing adapter halo rule to an already validated grid and box."""
+    for i, (lo, hi) in enumerate(box):
+        qlo=(lo-grid['origin_mm'][i])/grid['pitch_mm'][i]
+        qhi=(hi-grid['origin_mm'][i])/grid['pitch_mm'][i]
+        if math.floor(qlo)-1 < 0 or math.ceil(qhi)+1 >= grid['dimensions'][i]:
+            raise ValueError('scalar refinement active box lacks support halo: ' + label)
+
+
+def _validate_representation_grid(projection: Mapping[str, Any], grid: Mapping[str, Any]) -> None:
+    if not isinstance(grid, Mapping) or grid.get('frame_id') != projection.get('assembly_frame_id') or not isinstance(grid.get('frame_id'), str) or not grid['frame_id']:
+        raise ValueError('scalar representation grid frame differs')
+    for key in ('origin_mm', 'pitch_mm', 'dimensions'):
+        if not isinstance(grid.get(key), (list, tuple)) or len(grid[key]) != 3:
+            raise ValueError('scalar representation grid requires three axes')
+    if any(type(x) not in (int,float) or not math.isfinite(x) for x in grid['origin_mm']):
+        raise ValueError('scalar representation origin must be finite')
+    if any(type(x) not in (int,float) or not math.isfinite(x) or x <= 0 for x in grid['pitch_mm']):
+        raise ValueError('scalar representation pitch must be finite and positive')
+    if any(type(x) is not int or x < 2 for x in grid['dimensions']):
+        raise ValueError('scalar representation dimensions must be integer and at least two')
+
+
+def preflight_scalar_representation(projection: Mapping[str, Any], base_grid: Mapping[str, Any],
+                                    windows: list[Mapping[str, Any]], *, allow_partial_sheets: bool) -> dict[str, Any]:
+    """Report planned sheet representation and ordered halo; no mask or flight claim."""
+    if type(allow_partial_sheets) is not bool: raise ValueError('explicit partial sheet policy required')
+    if not isinstance(projection, Mapping) or not isinstance(projection.get('members'), list):
+        raise ValueError('canonical projection members required')
+    if not isinstance(windows, list): raise ValueError('ordered scalar refinement windows must be a list')
+    _validate_representation_grid(projection,base_grid)
+    def sheet_rows(grid):
+        try:
+            return _ideal_sheet_projection(projection,grid,allow_partial=allow_partial_sheets)
+        except (KeyError, TypeError) as exc:
+            raise ValueError('malformed or unsupported canonical sheet bounds') from exc
+    def capabilities(grid):
+        return dict(any_supported_stencil=all(n >= 3 for n in grid['dimensions']))
+    levels=[dict(name='base',ideal_sheet_projection=sheet_rows(base_grid),**capabilities(base_grid))]
+    names=set()
+    for window in windows:
+        if not isinstance(window,Mapping) or set(window)!={'name','active_box_mm','grid'}:raise ValueError('planned window requires name, active box and grid')
+        name=window['name'];box=window['active_box_mm'];grid=window['grid']
+        if not isinstance(name,str) or not name.strip() or name in names:raise ValueError('scalar refinement window names must be nonempty and unique')
+        names.add(name)
+        if (not isinstance(box,(list,tuple)) or len(box)!=3 or any(not isinstance(axis,(list,tuple)) or len(axis)!=2 or any(type(x) not in (int,float) or not math.isfinite(x) for x in axis) or axis[0]>=axis[1] for axis in box)):
+            raise ValueError('scalar refinement active box must contain three finite ordered intervals')
+        _validate_representation_grid(projection,grid);_validate_window_halo(grid,box,name)
+        levels.append(dict(name=name,active_box_mm=copy.deepcopy(box),ideal_sheet_projection=sheet_rows(grid),**capabilities(grid)))
+    return dict(scope='representation_only_no_mask_or_trajectory_claim',allow_partial_sheets=allow_partial_sheets,levels=levels)
+
+
 def attach_refinement_windows(bindings: dict[str, Any], refinement_windows: list[Mapping[str, Any]] | None, *,
                               admit_level: Callable[[Any], dict[str, Any]]) -> None:
     """Apply the existing ordered named windows to every admitted basis."""
@@ -245,10 +297,6 @@ def attach_refinement_windows(bindings: dict[str, Any], refinement_windows: list
             if any(left[k] != right[k] for k in ('bytes', 'sha256')):
                 raise ValueError('scalar refinement source workpoint differs: ' + name)
             grid = level['grid']
-            for i, (lo, hi) in enumerate(box):
-                qlo=(lo-grid['origin_mm'][i])/grid['pitch_mm'][i]
-                qhi=(hi-grid['origin_mm'][i])/grid['pitch_mm'][i]
-                if math.floor(qlo)-1 < 0 or math.ceil(qhi)+1 >= grid['dimensions'][i]:
-                    raise ValueError('scalar refinement active box lacks support halo: ' + label)
+            _validate_window_halo(grid,box,label)
             level.update(name=label, active_box_mm=copy.deepcopy(box))
             base.setdefault('refinement_windows', []).append(level)

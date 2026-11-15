@@ -170,12 +170,24 @@ SFI axial scalar products are published and original birth
 stencils are supported. Guarded partial sheet support passed 30 portable and two
 managed owner/recovery parents with unchanged source hashes; managed leaves were
 inert. The original aligned grid1 carrier stencil is valid at its canonical center.
-Four other sheets require aligned local sampling windows before flight; those
-exports and native window behavior remain unverified. No sheet or physical component
+Four other sheets now have twelve published aligned window samples from frozen
+`d3c33854`; native window behavior remains unverified. No sheet or physical component
 was moved, and the new SFI flight has not started. Full original-source collections, final
 same-candidate acceptance and the 15-minute target remain open;
 field accuracy and convergence are not prerequisites for the current functional
 pipeline, and missing actual support cannot be replaced with zero.
+
+The shared SIMION scalar representation preflight now reports canonical sheet
+alignment, guarded unsupported bounds and ordered-window halos before sampling,
+without changing the analysis-only COMSOL export contract. It shares the actual
+admission arithmetic rather than a workflow-specific copy. Thirteen integrated
+software parents passed (6.949 s), and the no-execute caller consumed the actual
+selected SFI projection. It does not predict sampled masks, particle paths or
+native acceptance. The window completion receipts show stopped writers and
+released leases. Eleven native logs contain an observation-scope warning despite empty
+limit-warning arrays, so their sampled memory peaks are not complete peak proof.
+Current SFI Fly remains pending. The controlled RF attempt and ordinary installed
+parent are running on frozen `ddd9d1a7`; their outcomes are not yet acceptance.
 
 The registered-component consumer regression now covers an explicit connected
 Assembly with renamed instances and a changed physical width through the same

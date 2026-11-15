@@ -821,6 +821,18 @@ snapped, no unknown value is filled, and collision geometry is unchanged. This u
 the existing support envelope as an operating contract, not a universal interpolation
 proof. Native window coverage and full-cohort flight require separate validation.
 
+`scalar_sample_binding.preflight_scalar_representation` accepts the canonical
+projection, an explicit base grid and ordered window grids before sampling.
+It reuses the actual sheet projector and artifact admission's halo calculation,
+reports unrepresented bounds under an explicit partial-sheet policy, and permits
+overlapping windows in their declared order. A two-node axis is reported as
+unable to contain the adapter's stencil; this does not narrow COMSOL's separate
+export format. The check reads no mask or PA and predicts no trajectory. A
+SIMION consumer can call it before export; analysis-only exports need not do so.
+Actual artifact lineage, sampled validity and runtime support still require
+their existing checks. Thirteen integrated software parents and a no-execute
+preflight against the selected SFI projection passed; no native claim follows.
+
 `solve_fields(..., scalar_field_basis=..., reuse_collision_geometry=...)` can
 publish a newly admitted IP–MR scalar basis while borrowing the verified original
 collision producer. Prepared-model records, clock/epoch, native priority and the
