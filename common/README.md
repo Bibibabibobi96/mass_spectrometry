@@ -64,6 +64,14 @@ and an explicit joint connection. It retains missing-port and unsupported-bounda
 negative cases. Its inert process leaves establish software wiring, not native
 field or trajectory qualification.
 
+A second software witness uses two complete canonical bare RF components,
+including all 64 rod members and their 16 scientific groups. The second instance
+changes rod radius from 2.0 to 1.8 mm and uses a distinct drive amplitude; a 1 mm
+port connection, renamed instances and reversed declarations use the same public
+geometry, model, sampled-field and tracking mechanisms. Its zero-potential sample
+fixture and inert native leaves establish software composition and rejection
+behavior, not native propagation or physical field validity.
+
 The admitted IP–MR scalar path now uses the existing generic weighted composer:
 its carrier, actual scheduled scientific groups and admitted RF reference become
 explicit coefficient descriptors. It shares only identical admitted masks and

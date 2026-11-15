@@ -230,6 +230,19 @@ and shared host-gate release. Both existing default renamed consumers also passe
 negative cases. This inert software witness does not close native, installation,
 Repository or performance acceptance.
 
+The canonical-component witness now adds two complete bare RF instances with
+64 rods and 16 scientific groups, distinct 2.0/1.8 mm rod radii, independent
+amplitudes and a 1 mm port connection. Rename/reorder, parameter propagation,
+invalid ports, actual overlap, missing drives and birth-field coverage are tested
+through the existing public geometry/model/field/tracking stages. Its samples
+and process leaves are inert, so this is software composition evidence.
+The 172-parent guarded candidate recorded 170 passes and two exact selector-set
+failures. Adding the actual new frozen-input consumer to the expected set retained
+the equality and negative assertions; both failed parents and six targeted
+selector cases then passed with matching source guards. The 172-parent batch
+was not rerun or relabeled. Its 1117.501 s concurrent elapsed time is not an
+isolated performance benchmark or the final 15-minute/Repository acceptance.
+
 V8.7 is the active P4 scope. Its single goal continues the existing task branch and preserves
 all retained scientific, installation, recovery and performance obligations. Eight domain
 baselines share the existing stages and execution owner; they are not eight new runners.

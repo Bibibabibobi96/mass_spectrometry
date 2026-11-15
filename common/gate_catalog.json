@@ -2017,11 +2017,20 @@
                 "reason": "generic_sampled_comsol_source_changed"
               },
               {
-                "regex": "^common/contracts/(?:test_(?:generic_dynamic_model|generic_scalar_binding|generic_scalar_managed|generic_scalar_tracking_managed|generic_scalar_tracking_renamed|generic_scalar_tracking_recovery|generic_scalar_derived_tracking_managed|neutral_sampled_iob|neutral_sampled_renamed_managed|scalar_pa_reinit|sfi_scalar_binding|static_world_model|dual_cone_iob)|test_support/(?:generic_other_provider|generic_scalar_renamed|grouped_tracking_fixture))\\.py$",
+                "regex": "^src/msplatform/components/rf_multipole/(?:__init__|registration|compile_design_request|axial_acceleration|connector_geometry|interface_geometry|round_rod_geometry|assembly_interface|electrode_topology|geometry_members|drive)\\.py$",
+                "reason": "canonical_rf_assembly_provider_changed"
+              },
+              {
+                "exact": "src/msplatform/examples/rf_oatof_functional_v1.json",
+                "reason": "canonical_rf_assembly_request_changed"
+              },
+              {
+                "regex": "^common/contracts/(?:test_(?:canonical_rf_free_assembly|simion_rf_tracking|generic_dynamic_model|generic_scalar_binding|generic_scalar_managed|generic_scalar_tracking_managed|generic_scalar_tracking_renamed|generic_scalar_tracking_recovery|generic_scalar_derived_tracking_managed|neutral_sampled_iob|neutral_sampled_renamed_managed|scalar_pa_reinit|sfi_scalar_binding|static_world_model|dual_cone_iob)|test_support/(?:canonical_rf_fixture|generic_scalar_owner_harness|sfi_scalar_owner_fixture|generic_other_provider|generic_scalar_renamed|grouped_tracking_fixture))\\.py$",
                 "reason": "generic_sampled_fixture_or_consumer_changed"
               }
             ],
             "modules": [
+              "common/contracts/test_canonical_rf_free_assembly.py",
               "common/contracts/test_generic_dynamic_model.py",
               "common/contracts/test_generic_scalar_binding.py",
               "common/contracts/test_generic_scalar_managed.py",

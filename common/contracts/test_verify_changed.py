@@ -28,6 +28,7 @@ FROZEN_INPUT_CONTRACT_TESTS = {
         "test_process_family_identity.py", "test_python_dependency_contract.py",
         "test_scientific_core_boundaries.py",
         "test_execution_module_sources.py", "test_dual_cone_iob.py",
+        "test_canonical_rf_free_assembly.py",
         "test_generic_dynamic_model.py", "test_generic_scalar_binding.py",
         "test_generic_scalar_derived_tracking_managed.py", "test_generic_scalar_managed.py",
         "test_generic_scalar_tracking_managed.py", "test_generic_scalar_tracking_recovery.py",
