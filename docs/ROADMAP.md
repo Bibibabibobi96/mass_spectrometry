@@ -141,11 +141,24 @@ its shared-ledger Changed result and complete MR resource module are recorded in
 [the current integration state](../integrations/docs/INTEGRATION.md#当前边界).
 RF–IP–MR native flight currently stops on explicit invalid scalar support; a
 same-solution native probe preserves the original invalid node and shows valid
-local support at the actual particle query. RF-body export/collision reuse and
-SFI axial support proceed through the existing public stages. Full original-source
-collections, final same-candidate acceptance and the 15-minute target remain open;
+local support at the actual particle query. RF-body carrier, RF reference and five
+IP workpoints are published; the sixth IP workpoint was refused before native
+execution by the unchanged free-space floor. Collision-only reuse remains a private
+candidate. All three SFI axial scalar products are published and original birth
+stencils are supported, but public admission rejects off-grid ideal sheets; the
+new SFI flight has not started. Full original-source collections, final
+same-candidate acceptance and the 15-minute target remain open;
 field accuracy and convergence are not prerequisites for the current functional
 pipeline, and missing actual support cannot be replaced with zero.
+
+The registered-component consumer regression now covers an explicit connected
+Assembly with renamed instances and a changed physical width through the same
+public managed sampled-field/tracking path. The original and connected parents
+passed together (2 parents, no skips, 316.366 s) with unchanged test-source hashes
+and shared host-gate release. Both existing default renamed consumers also passed
+(2 parents, no skips, 256.948 s). Missing ports and unsupported boundaries remain
+negative cases. This inert software witness does not close native, installation,
+Repository or performance acceptance.
 
 V8.7 is the active P4 scope. Its single goal continues the existing task branch and preserves
 all retained scientific, installation, recovery and performance obligations. Eight domain

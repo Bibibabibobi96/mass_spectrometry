@@ -58,6 +58,12 @@ process-local: durable installed discovery and external-provider replay in a
 cold frozen worker remain open. Registration does not implement an unsupported
 geometry primitive, field boundary, drive, collision law or tracking backend.
 
+The connected registered-provider regression also exercises the public managed
+model, sampled-field and tracking chain with renamed instances, a changed width
+and an explicit joint connection. It retains missing-port and unsupported-boundary
+negative cases. Its inert process leaves establish software wiring, not native
+field or trajectory qualification.
+
 RF scientific group drives and carrier coefficients are projected by
 `components.rf_multipole.drive` from the canonical provider sources. SIMION
 retains native electrode-map validation; RF, TOF and frontend consumers share

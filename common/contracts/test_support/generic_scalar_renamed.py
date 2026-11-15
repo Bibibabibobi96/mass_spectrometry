@@ -24,11 +24,19 @@ class GenericScalarTests(unittest.TestCase):
         for item in recipe["instances"]:
             item["instance_id"] = {"first": "z_first", "second": "a_second"}[item["instance_id"]]
         recipe["instances"].reverse()
+        if getattr(self, "connected_case", False):
+            second_row = next(row for row in recipe["instances"] if row["instance_id"] == "a_second")
+            second_row["transform"]["rotation"] = [[1, 0, 0], [0, -1, 0], [0, 0, -1]]
+            second_row["transform"]["translation_mm"] = [0, 0, 5]
+            recipe["connections"] = [dict(
+                connection_id="toy_link", upstream=dict(instance_id="z_first", port_id="out"),
+                downstream=dict(instance_id="a_second", port_id="out"), gap_mm=2,
+                coupling_mode="monolithic_joint_solve")]
         first = components.resolve_component(
             {"provider_id": "toy_registered", "design": {"width_mm": 2}}
         )
         second = components.resolve_component(
-            {"provider_id": "toy_other", "design": {"width_mm": 3}}
+            {"provider_id": "toy_other", "design": {"width_mm": 4 if getattr(self, "connected_case", False) else 3}}
         )
         self.assembly = assembly.assemble(recipe, {"z_first": first, "a_second": second})
         self.snapshot = dict(
@@ -86,6 +94,9 @@ class GenericScalarTests(unittest.TestCase):
             ],
             void_witnesses=[[0, 0, 0]],
         )
+        if getattr(self, "connected_case", False):
+            numerics["domain"]["maximum_mm"][2] = 10
+            numerics["metal_witnesses"][1]["gu"] = [5, 5, 10]
         compiled = compile_geometry(self.assembly, numerics=numerics)
         self.model = compile_prepared_model(
             compiled,
@@ -198,6 +209,12 @@ class GenericScalarTests(unittest.TestCase):
         from msplatform.backends.simion.model import render_model_configuration
         from msplatform.backends.simion.resources import native_resource_path
         from msplatform.backends.simion.source import lua_value
+
+        if getattr(self, "connected_case", False):
+            geometry = self.model.document["geometry"]["frontend_geometry"]
+            snapshot = geometry["source_snapshot"]
+            self.assertEqual(snapshot["components_resolved"]["a_second"]["width_mm"], 4)
+            self.assertEqual(snapshot["composition_plan"]["recipe"]["connections"][0]["connection_id"], "toy_link")
 
         admitted = admit_linear_samples(
             assembly=self.assembly,
