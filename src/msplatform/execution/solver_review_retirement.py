@@ -7,6 +7,7 @@ retirement receipt becomes the only valid verifier for the reduced run.
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import os
@@ -723,6 +724,185 @@ def _freeze_stopped_consumers(
     return sorted(result, key=lambda item: item["run_path"])
 
 
+
+def _freeze_closed_diagnostic_consumers(
+    paths: Iterable[Path], authorities: dict[str, dict[str, Any]], artifact_root: Path,
+    target: Path, owner: str, *, _leases: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Bind explicitly abandoned, capacity-sealed diagnostic checkpoints."""
+    from msplatform.execution.run_capacity_lifecycle import resolve_consumed_run_capacity_owner
+
+    if not isinstance(authorities, dict):
+        raise RetirementError("closed consumer authorities must be an explicit mapping")
+    leases = _leases if _leases is not None else protection.load_capacity_protection_leases(artifact_root)
+    result = []
+    seen = set()
+    for supplied in paths:
+        run = _under(supplied, artifact_root)
+        if (run in seen or run == target or supplied.is_symlink() or not run.is_dir()
+                or run.parent != artifact_root / "projects" / owner / "runs"):
+            raise RetirementError("closed consumer must be a unique same-owner project run")
+        seen.add(run)
+        authority = authorities.get(str(run))
+        required = {"manifest", "closure", "workflow_result", "process_receipt", "usage",
+                    "execution_request", "capacity_session", "completion", "writing_stopped", "abandonment_reason"}
+        if (not isinstance(authority, dict) or set(authority) != required
+                or authority["writing_stopped"] is not True
+                or not isinstance(authority["abandonment_reason"], str)
+                or not authority["abandonment_reason"].strip()):
+            raise RetirementError("closed consumer needs explicit stopped-owner evidence and reason")
+        if protection.path_is_protected(run, leases["protected_paths"]):
+            raise RetirementError("closed consumer has an active protection lease")
+        _assert_runtime_retirement_unprotected(artifact_root, run)
+        try:
+            if record_path(authority["manifest"]) != run / "run_manifest.json":
+                raise ValueError("consumer manifest path differs")
+            resolved = resolve_consumed_run_capacity_owner(authority["manifest"],
+                stopped_receipt_record=authority["closure"], consumer_artifact_root=artifact_root)
+            if Path(resolved["run_directory"]) != run or Path(resolved["artifact_root"]) != artifact_root:
+                raise ValueError("consumer capacity owner differs")
+            closure = _json(record_path(authority["closure"]))
+            role = closure.get("role")
+            if role == "capacity_only_administrative_closure" and "schema_version" not in closure:
+                raw_inventory = closure.get("files_before")
+            elif (role == "capacity_only_stopped_diagnostic" and type(closure.get("schema_version")) is int
+                  and closure["schema_version"] == 1):
+                raw_inventory = closure.get("before_inventory")
+            else:
+                raise ValueError("consumer closure has no supported administrative inventory")
+            if not isinstance(raw_inventory, dict):
+                raise ValueError("consumer closure inventory differs")
+            inventory = {}
+            for path, identity in raw_inventory.items():
+                if not isinstance(path, str):
+                    raise ValueError("consumer closure inventory path differs")
+                canonical = path.replace("\\", "/")
+                if (not canonical or canonical.startswith("/") or ":" in canonical
+                        or posixpath.normpath(canonical) != canonical or ".." in canonical.split("/")
+                        or canonical.casefold() in inventory):
+                    raise ValueError("consumer closure inventory path differs")
+                if isinstance(identity, list) and len(identity) == 2:
+                    size, digest = identity
+                elif isinstance(identity, dict):
+                    size, digest = identity.get("bytes"), identity.get("sha256")
+                else:
+                    raise ValueError("consumer closure inventory identity differs")
+                if type(size) is not int or size < 0 or not isinstance(digest, str):
+                    raise ValueError("consumer closure inventory identity differs")
+                inventory[canonical.casefold()] = (size, digest.upper())
+            sealed = closure["seal"]
+            if sealed["ledger_entry"].get("consumers"):
+                raise ValueError("consumer capacity range has active consumers")
+            manifest = _json(run / "run_manifest.json")
+            config = _json(run / "run_config.json")
+            summary = _json(run / "summary.json")
+            if (manifest.get("status") != "checkpoint" or summary.get("status") != "checkpoint"
+                    or manifest.get("run_id") != run.name or config.get("run_id") != run.name
+                    or config.get("project") != owner or manifest.get("project") != owner):
+                raise ValueError("consumer checkpoint identity differs")
+            summaries = [record for record in manifest.get("outputs", [])
+                         if record_path(record, base_dir=run) == run / "summary.json"]
+            if len(summaries) != 1:
+                raise ValueError("consumer summary is not bound by checkpoint")
+            verify_record("closed consumer checkpoint summary", summaries[0], base_dir=run)
+            expected_paths = {
+                "workflow_result": artifact_root / "projects" / owner / "scratch" / "workflow_results" / run.name / "result.json",
+                "process_receipt": run / "logs" / "operation_0001.process.json",
+                "usage": run / "logs" / "operation_0001.usage.json",
+                "execution_request": run / "inputs" / "execution_request.json",
+                "capacity_session": run / "logs" / "capacity_session.json",
+            }
+            for key, expected in expected_paths.items():
+                if record_path(authority[key]) != expected:
+                    raise ValueError("consumer evidence path differs: " + key)
+                verify_record("closed consumer " + key, authority[key])
+            workflow = _json(expected_paths["workflow_result"])
+            process = _json(expected_paths["process_receipt"])
+            usage = _json(expected_paths["usage"])
+            request = _json(expected_paths["execution_request"])
+            session = _json(expected_paths["capacity_session"])
+            released = closure.get("lease_release") if role == "capacity_only_administrative_closure" else closure.get("release")
+            if (session.get("role") != "artifact_workflow_capacity_session"
+                    or session.get("owner") != f"run-artifact-workflow:{owner}:{run.name}"
+                    or session.get("source_protection_leases") != []
+                    or not isinstance(released, dict)
+                    or released.get("role") != "artifact_capacity_protection_lease_deletion"
+                    or released.get("deleted") is not True or released.get("lease_id") != session.get("lease_id")):
+                raise ValueError("consumer capacity-session release differs")
+            if (workflow.get("status") != "failed" or workflow.get("stage") != "finalization"
+                    or workflow.get("writers_confirmed") is not True
+                    or Path(workflow.get("run_directory", "")).resolve() != run
+                    or Path(workflow.get("execution_request", "")).resolve() != expected_paths["execution_request"]
+                    or len(request.get("expected_operation_ids", [])) != 1):
+                raise ValueError("consumer workflow writer confirmation differs")
+            observation = process["observation"]; release = process["host_release"]
+            last = usage["last_process_observation"]; sample = last["sample"]
+            pid = observation["root_process_id"]; birth = observation["root_process_started_at_utc_ticks"]
+            start = usage["process_start"]
+            if (process.get("error") is not None or type(observation.get("exit_code")) is not int
+                    or Path(observation.get("usage_path", "")).resolve() != expected_paths["usage"]
+                    or type(pid) is not int or pid <= 0 or type(birth) is not int or birth <= 0
+                    or start.get("root_process_id") != pid or start.get("root_process_started_at_utc_ticks") != birth
+                    or last.get("root_process_id") != pid or last.get("root_process_started_at_utc_ticks") != birth
+                    or last.get("root_exit_confirmed") is not True
+                    or last.get("wait_phase") != "immutable_drain_confirmed_empty"
+                    or sample.get("ancestry_complete") is not True or sample.get("active_process_ids")
+                    or sample.get("unknown_ancestry_process_ids")
+                    or release.get("inherited") is not False or release.get("error") is not None
+                    or not isinstance(release.get("token"), str) or not release["token"]
+                    or release.get("result") != {"status": "released", "token": release["token"]}):
+                raise ValueError("consumer writer or drain remains unknown")
+            completion_path = run / "results" / "execution_completion.json"
+            if authority["completion"] is None:
+                if completion_path.exists():
+                    raise ValueError("consumer completion appeared")
+            else:
+                if record_path(authority["completion"]) != completion_path:
+                    raise ValueError("consumer completion path differs")
+                verify_record("closed consumer completion", authority["completion"])
+                completion = _json(completion_path)
+                if (completion.get("role") != "run_artifact_workflow_completion"
+                        or completion.get("run_id") != run.name or completion.get("project") != owner
+                        or completion.get("status") not in {"success", "failed"}
+                        or record_path(completion["execution_request"]) != expected_paths["execution_request"]):
+                    raise ValueError("consumer completion identity differs")
+                verify_record("consumer completion request", completion["execution_request"])
+                from msplatform.execution.owner import validate_writer_completion
+                writers = completion["writer_completion"]
+                validate_writer_completion(writers_stopped=workflow["writers_confirmed"],
+                    expected_operation_ids=tuple(request["expected_operation_ids"]),
+                    operations=writers["operations"], resource_releases=writers["resource_releases"])
+                if (len(writers["operations"]) != 1 or len(writers["resource_releases"]) != 1
+                        or writers["operations"][0]["observation"].get("process_id") != pid
+                        or writers["operations"][0]["observation"].get("process_started_at_utc_ticks") != birth
+                        or writers["operations"][0]["observation"].get("returncode") != observation.get("exit_code")
+                        or writers["resource_releases"][0]["completion_receipt"].get("host_release") != release):
+                    raise ValueError("consumer completion and process receipt differ")
+            bound_records = [authority["manifest"], sealed["run_config"], summaries[0],
+                             authority["execution_request"], authority["process_receipt"], authority["usage"],
+                             authority["capacity_session"]]
+            if authority["completion"] is not None:
+                bound_records.append(authority["completion"])
+            for record in bound_records:
+                path = record_path(record, base_dir=run)
+                try:
+                    relative = path.relative_to(run).as_posix().casefold()
+                except ValueError as exc:
+                    raise ValueError("consumer evidence is outside its run") from exc
+                if inventory.get(relative) != (record["bytes"], str(record["sha256"]).upper()):
+                    raise ValueError("consumer closure inventory differs from supplied evidence")
+            if not (structured_target_references(config, target, target.name)
+                    | structured_target_references(manifest, target, target.name)):
+                raise ValueError("closed consumer does not reference this target")
+        except (AssertionError, KeyError, OSError, TypeError, ValueError) as exc:
+            raise RetirementError("closed consumer evidence differs: " + str(exc)) from exc
+        result.append({"run_path": str(run), "run_id": run.name, "owner": owner,
+                       "mode": "capacity_sealed_owner_abandoned", "authority": copy.deepcopy(authority),
+                       "config": copy.deepcopy(sealed["run_config"]), "summary": copy.deepcopy(summaries[0])})
+    if set(authorities) != {str(run) for run in seen}:
+        raise RetirementError("closed consumer authority scope differs")
+    return sorted(result, key=lambda item: item["run_path"])
+
 def _verify_stopped_consumers(
     document: dict[str, Any], target: Path, *, _leases: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
@@ -733,7 +913,17 @@ def _verify_stopped_consumers(
     if not approved:
         return []
     if _runtime_scope_path(document, target) is None:
-        raise RetirementError("stopped consumer approval is limited to stopped runtime retirement")
+        if (document.get("retirement_mode") != "completed_experiment"
+                or not document.get("failed_payload_equivalence") or not document.get("selected_heavy_paths")
+                or any(not isinstance(row, dict) or row.get("mode") != "capacity_sealed_owner_abandoned" for row in approved)):
+            raise RetirementError("stopped consumer approval is limited to supported owner scope")
+        paths = [Path(row["run_path"]) for row in approved]
+        authorities = {row["run_path"]: row["authority"] for row in approved}
+        refreshed = _freeze_closed_diagnostic_consumers(paths, authorities, Path(document["artifact_root"]),
+                                                         target, document["owner"], _leases=_leases)
+        if refreshed != approved:
+            raise RetirementError("approved closed consumer evidence changed")
+        return refreshed
     if any(not isinstance(item, dict) or not isinstance(item.get("run_path"), str) for item in approved):
         raise RetirementError("approved stopped consumer record is invalid")
     refreshed = _freeze_stopped_consumers(
@@ -1029,6 +1219,7 @@ def plan_retirement(
     prepared_gui_checkpoint: bool = False,
     selected_heavy_paths: Iterable[str] | None = None,
     failed_equivalence_members: dict[str, dict[str, Any]] | None = None,
+    approved_stopped_consumer_closures: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Plan supersession or owner-approved completion; retain all small evidence."""
     owner_mode = bool(owner or owner_abandonment_reason)
@@ -1043,9 +1234,13 @@ def plan_retirement(
     if gui_mode and (runtime_mode or not writing_stopped):
         raise RetirementError("prepared GUI retirement requires explicit scope and confirmed stopped writing")
     approved_stopped_consumers = tuple(approved_stopped_consumers)
-    if approved_stopped_consumers and not (owner_mode and runtime_mode and writing_stopped):
-        raise RetirementError("stopped consumer approval requires the confirmed owner runtime scope")
-    if (runtime_mode and (not owner_mode or not writing_stopped)) or (writing_stopped and not (runtime_mode or gui_mode)):
+    closed_mode = approved_stopped_consumer_closures is not None
+    if closed_mode and (not approved_stopped_consumers or failed_equivalence_members is None
+                        or not owner_mode or runtime_mode or gui_mode or not writing_stopped):
+        raise RetirementError("closed consumer approval requires confirmed selected failed equivalence scope")
+    if approved_stopped_consumers and not (owner_mode and (runtime_mode or closed_mode) and writing_stopped):
+        raise RetirementError("stopped consumer approval requires the confirmed owner scope")
+    if (runtime_mode and (not owner_mode or not writing_stopped)) or (writing_stopped and not (runtime_mode or gui_mode or closed_mode)):
         raise RetirementError("runtime retirement requires explicit owner completion and confirmed stopped writing")
     compatibility_input_roles = tuple(compatibility_input_roles)
     compatibility_input_role_mappings = tuple(compatibility_input_role_mappings)
@@ -1062,8 +1257,9 @@ def plan_retirement(
     replacement_run = _under(replacement_run, artifact_root) if replacement_run else None
     if target_run == replacement_run:
         raise RetirementError("target and replacement must differ")
-    approved_consumers = _freeze_stopped_consumers(
-        approved_stopped_consumers, artifact_root, target_run, owner.strip())
+    approved_consumers = (_freeze_closed_diagnostic_consumers(approved_stopped_consumers,
+        approved_stopped_consumer_closures, artifact_root, target_run, owner.strip()) if closed_mode else
+        _freeze_stopped_consumers(approved_stopped_consumers, artifact_root, target_run, owner.strip()))
     receipt_path, batch, history = select_retirement_receipt(target_run, next_batch=True)
     prior_retired = _prior_retired_paths(history, target_run)
     if batch is not None:

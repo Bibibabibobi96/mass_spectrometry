@@ -1238,3 +1238,9 @@ not a universal bitwise-hypot guarantee across builds or scientific qualificatio
 rounding and overflow behavior. Python, actual generated Lua and the existing
 numeric SDS projection share the tested query classifications; no epsilon,
 collision, RNG, stepping or domain expansion is introduced.
+
+Selected failed-payload equivalence retirement can also record explicitly abandoned,
+capacity-sealed stopped diagnostic consumers. It verifies supplied closure, owner,
+writer, lease and inventory evidence again before apply, resume and verification;
+checkpoint and failure history remain unchanged. The focused tests use temporary
+ledgers and do not establish native solver or actual retirement qualification.

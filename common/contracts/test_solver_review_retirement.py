@@ -722,6 +722,265 @@ function Exit-HostExecutionLease { param($Lease) }
         with self.assertRaisesRegex(RetirementError, "keeper published artifact or member differs"):
             self._failed_equivalence_plan(entries, selection)
 
+    def _closed_diagnostic_fixture(self, suffix, *, with_completion):
+        run = self._run("20260104_00000" + suffix + "__test__simion__diagnostic", "2026-01-04T00:00:00Z", status="checkpoint")
+        def record(path):
+            return dict(path=str(path), exists=True, bytes=path.stat().st_size, sha256=_sha(path))
+        manifest_path = run / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["role"] = "simulation_run_manifest"
+        manifest_path.write_text(json.dumps(manifest))
+        config_path = run / "run_config.json"
+        config = json.loads(config_path.read_text())
+        config["inputs"]["source_geometry"] = str(self.target / "simion/analyzer.pa0")
+        config["capacity_ledger_lifecycle"] = dict(schema_version=1, enabled=True,
+            artifact_root=str(self.artifacts), light_evidence_budget_bytes=26214400)
+        config_path.write_text(json.dumps(config))
+        request = run / "inputs/execution_request.json"
+        request.parent.mkdir()
+        request.write_text(json.dumps(dict(expected_operation_ids=["probe"])))
+        release = dict(inherited=False, token="host-token-" + suffix, error=None,
+                       result=dict(status="released", token="host-token-" + suffix))
+        process = run / "logs/operation_0001.process.json"
+        process.parent.mkdir()
+        usage = run / "logs/operation_0001.usage.json"
+        process.write_text(json.dumps(dict(observation=dict(root_process_id=123,
+            root_process_started_at_utc_ticks=456, exit_code=0, usage_path=str(usage)), host_release=release, error=None)))
+        usage.write_text(json.dumps(dict(process_start=dict(root_process_id=123, root_process_started_at_utc_ticks=456),
+            last_process_observation=dict(root_process_id=123,
+            root_process_started_at_utc_ticks=456, root_exit_confirmed=True,
+            wait_phase="immutable_drain_confirmed_empty", sample=dict(ancestry_complete=True,
+            active_process_ids=[], unknown_ancestry_process_ids=[])))))
+        completion_path = run / "results/execution_completion.json"
+        completion_record = None
+        if with_completion:
+            completion_path.parent.mkdir()
+            completion_path.write_text(json.dumps(dict(role="run_artifact_workflow_completion",
+                run_id=run.name, project="p", status="success", execution_request=record(request),
+                writer_completion=dict(operations=[dict(operation_id="probe", observation=dict(
+                    exit_confirmed=True, returncode=0, process_id=123, process_started_at_utc_ticks=456),
+                    resource_release_id="host-1")], resource_releases=[dict(release_id="host-1",
+                    completion_receipt=dict(host_release=release))]))))
+            completion_record = record(completion_path)
+        workflow = self.artifacts / "projects/p/scratch/workflow_results" / run.name / "result.json"
+        workflow.parent.mkdir(parents=True)
+        workflow.write_text(json.dumps(dict(status="failed", stage="finalization", writers_confirmed=True,
+            run_directory=str(run), execution_request=str(request))))
+        from msplatform.execution.capacity_protection import delete_capacity_protection_lease
+        session = run / "logs/capacity_session.json"
+        lease_id = "workflow-fixture-" + suffix
+        session.write_text(json.dumps(dict(role="artifact_workflow_capacity_session", status="active",
+            owner="run-artifact-workflow:p:" + run.name, lease_id=lease_id, source_protection_leases=[])))
+        create_capacity_protection_lease(self.artifacts, lease_id=lease_id, ttl_seconds=600,
+            owner="run-artifact-workflow:p:" + run.name, protected_paths=[run], committed_new_bytes=0)
+        release_receipt = delete_capacity_protection_lease(self.artifacts, lease_id=lease_id)
+        register_writing(self.artifacts, config_path)
+        closure = seal_checkpoint(self.artifacts, config_path, owner="p", writing_stopped=True,
+                                  retain_payload=True, retention_reason="closed diagnostic fixture")
+        closure_path = self.root / ("closure-" + suffix + ".json")
+        inventory = {item.relative_to(run).as_posix(): record(item) for item in run.rglob("*") if item.is_file()}
+        if with_completion:
+            wrapper = dict(schema_version=1, role="capacity_only_stopped_diagnostic", status="capacity_sealed",
+                run_directory=str(run), seal=closure, release=release_receipt, before_inventory={key: dict(bytes=value["bytes"], sha256=value["sha256"]) for key, value in inventory.items()})
+        else:
+            wrapper = dict(role="capacity_only_administrative_closure", status="capacity_sealed",
+                run_directory=str(run), seal=closure, lease_release=release_receipt, files_before={key.replace("/", "\\"): [value["bytes"], value["sha256"]] for key, value in inventory.items()})
+        closure_path.write_text(json.dumps(wrapper))
+        authority = dict(manifest=record(manifest_path), closure=record(closure_path),
+            workflow_result=record(workflow), process_receipt=record(process), usage=record(usage),
+            execution_request=record(request), capacity_session=record(session), completion=completion_record, writing_stopped=True,
+            abandonment_reason="owner abandoned completed read-only diagnostic")
+        return run, authority
+
+    def _closed_diagnostic_plan(self, selection, consumers):
+        with mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[]):
+            return self._owner_plan(selected_heavy_paths=list(selection), failed_equivalence_members=selection,
+                approved_stopped_consumers=list(consumers),
+                approved_stopped_consumer_closures={str(run): authority for run, authority in consumers.items()},
+                writing_stopped=True)
+
+    def test_closed_diagnostic_selected_equivalence_real_ledger(self):
+        source, _, _, selection = self._real_failed_equivalence_fixture()
+        a, aa = self._closed_diagnostic_fixture("1", with_completion=False)
+        b, bb = self._closed_diagnostic_fixture("2", with_completion=True)
+        original = [(run / "run_manifest.json").read_bytes() for run in (a, b)]
+        plan = self._closed_diagnostic_plan(selection, {a: aa, b: bb})
+        self.assertEqual(len(plan["approved_stopped_consumers"]), 2)
+        aa["abandonment_reason"] = "caller mutation after planning"
+        self.assertNotEqual(plan["approved_stopped_consumers"][0]["authority"]["abandonment_reason"],
+                            aa["abandonment_reason"])
+        self._protect_keeper()
+        self._real_failed_apply(plan)
+        self.assertFalse(source.exists())
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+        self.assertEqual([(run / "run_manifest.json").read_bytes() for run in (a, b)], original)
+
+    def test_closed_diagnostic_rejects_unknown_writer_and_changed_evidence(self):
+        _, _, _, selection = self._real_failed_equivalence_fixture()
+        run, authority = self._closed_diagnostic_fixture("1", with_completion=False)
+        usage_path = Path(authority["usage"]["path"])
+        usage = json.loads(usage_path.read_text())
+        usage["last_process_observation"]["sample"]["ancestry_complete"] = False
+        usage_path.write_text(json.dumps(usage))
+        authority["usage"].update(bytes=usage_path.stat().st_size, sha256=_sha(usage_path))
+        closure_path = Path(authority["closure"]["path"])
+        wrapper = json.loads(closure_path.read_text())
+        wrapper["files_before"]["logs\\operation_0001.usage.json"] = [usage_path.stat().st_size, _sha(usage_path)]
+        closure_path.write_text(json.dumps(wrapper))
+        authority["closure"].update(bytes=closure_path.stat().st_size, sha256=_sha(closure_path))
+        with self.assertRaisesRegex(RetirementError, "writer or drain remains unknown"):
+            self._closed_diagnostic_plan(selection, {run: authority})
+        authority["usage"]["sha256"] = "0" * 64
+        with self.assertRaisesRegex(RetirementError, "closed consumer evidence differs"):
+            self._closed_diagnostic_plan(selection, {run: authority})
+
+    def test_closed_diagnostic_rejects_consumer_lease_and_scope_creep(self):
+        _, _, _, selection = self._real_failed_equivalence_fixture()
+        run, authority = self._closed_diagnostic_fixture("1", with_completion=False)
+        create_capacity_protection_lease(self.artifacts, lease_id="diagnostic", ttl_seconds=600,
+            owner="reader", protected_paths=[run], committed_new_bytes=0)
+        with self.assertRaisesRegex(RetirementError, "active protection lease"):
+            self._closed_diagnostic_plan(selection, {run: authority})
+        with self.assertRaisesRegex(RetirementError, "selected failed equivalence scope"):
+            self._owner_plan(approved_stopped_consumers=[run],
+                approved_stopped_consumer_closures={str(run): authority}, writing_stopped=True)
+
+    def test_closed_diagnostic_pending_rechecks_owner_decision(self):
+        source, _, _, selection = self._real_failed_equivalence_fixture()
+        run, authority = self._closed_diagnostic_fixture("1", with_completion=False)
+        plan = self._closed_diagnostic_plan(selection, {run: authority})
+        self._protect_keeper()
+        def interrupted(root, records, **kwargs):
+            (root / records[0]["path"]).unlink()
+            raise ValueError("synthetic interrupted delete")
+            yield
+        with mock.patch("msplatform.execution.solver_review_retirement.remove_recorded_files", interrupted):
+            with self.assertRaisesRegex(RetirementError, "synthetic interrupted delete"):
+                self._real_failed_apply(plan)
+        changed = copy.deepcopy(authority)
+        changed["abandonment_reason"] = "different owner decision"
+        with self.assertRaisesRegex(RetirementError, "stopped consumer list or identity changed"):
+            self._closed_diagnostic_plan(selection, {run: changed})
+        resumed = self._closed_diagnostic_plan(selection, {run: authority})
+        self._real_failed_apply(resumed)
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+        self.assertFalse(source.exists())
+
+    def test_closed_diagnostic_rejects_changed_closure_config_summary_and_process(self):
+        _, _, _, selection = self._real_failed_equivalence_fixture()
+        run, authority = self._closed_diagnostic_fixture("1", with_completion=False)
+        paths = [Path(authority["closure"]["path"]), run / "run_config.json", run / "summary.json",
+                 Path(authority["process_receipt"]["path"])]
+        for path in paths:
+            original = path.read_bytes()
+            with self.subTest(path=path.name):
+                path.write_bytes(original + b" ")
+                with self.assertRaisesRegex(RetirementError, "closed consumer evidence differs"):
+                    self._closed_diagnostic_plan(selection, {run: authority})
+                path.write_bytes(original)
+        closure_path = Path(authority["closure"]["path"])
+        original = closure_path.read_bytes()
+        closure_path.unlink()
+        with self.assertRaisesRegex(RetirementError, "closed consumer evidence differs"):
+            self._closed_diagnostic_plan(selection, {run: authority})
+        closure_path.write_bytes(original)
+
+    def test_closed_diagnostic_rechecks_gui_and_new_consumer_before_apply(self):
+        source, _, _, selection = self._real_failed_equivalence_fixture()
+        run, authority = self._closed_diagnostic_fixture("1", with_completion=False)
+        plan = self._closed_diagnostic_plan(selection, {run: authority})
+        self._protect_keeper()
+        review = self.artifacts / "projects/p/reviews/current_diagnostic"
+        review.mkdir(parents=True)
+        receipt = review / "inspection_receipt.json"
+        receipt.write_text(json.dumps(dict(status="ready", source_run=run.name)))
+        with self.assertRaisesRegex(RetirementError, "current GUI"):
+            self._real_failed_apply(plan)
+        receipt.unlink()
+        active = self.runs / "20260105_000000__test__simion__other"
+        active.mkdir()
+        (active / "run_config.json").write_text(json.dumps({"inputs": {"source": str(source)}}))
+        with self.assertRaisesRegex(RetirementError, "active references"):
+            self._real_failed_apply(plan)
+        self.assertTrue(source.exists())
+
+    def test_closed_diagnostic_refuses_mismatched_completion_writer(self):
+        _, _, _, selection = self._real_failed_equivalence_fixture()
+        run, authority = self._closed_diagnostic_fixture("1", with_completion=True)
+        completion = Path(authority["completion"]["path"])
+        data = json.loads(completion.read_text())
+        data["writer_completion"]["operations"][0]["observation"]["exit_confirmed"] = False
+        completion.write_text(json.dumps(data))
+        authority["completion"].update(bytes=completion.stat().st_size, sha256=_sha(completion))
+        with self.assertRaisesRegex(RetirementError, "closed consumer evidence differs"):
+            self._closed_diagnostic_plan(selection, {run: authority})
+
+    def test_closed_diagnostic_rejects_wrapper_identity_and_inventory_mutations(self):
+        _, _, _, selection = self._real_failed_equivalence_fixture()
+        run, authority = self._closed_diagnostic_fixture("1", with_completion=True)
+        closure_path = Path(authority["closure"]["path"])
+        original = json.loads(closure_path.read_text())
+        def bad_role(value): value["role"] = "unrecognized"
+        def bad_version(value): value["schema_version"] = True
+        def bad_outer_run(value): value["run_directory"] = str(self.target)
+        def bad_seal_run(value): value["seal"]["run_directory"] = str(self.target)
+        def bad_config(value): value["seal"]["run_config"]["sha256"] = "0" * 64
+        def bad_inventory(value): value["before_inventory"]["logs/operation_0001.usage.json"]["sha256"] = "0" * 64
+        def bad_consumer(value): value["seal"]["ledger_entry"]["consumers"] = ["projects/p/runs/active"]
+        for change in (bad_role, bad_version, bad_outer_run, bad_seal_run, bad_config, bad_inventory, bad_consumer):
+            with self.subTest(change=change.__name__):
+                value = copy.deepcopy(original)
+                change(value)
+                closure_path.write_text(json.dumps(value))
+                authority["closure"].update(bytes=closure_path.stat().st_size, sha256=_sha(closure_path))
+                with self.assertRaisesRegex(RetirementError, "closed consumer evidence differs"):
+                    self._closed_diagnostic_plan(selection, {run: authority})
+
+    def test_direct_public_stopped_receipt_remains_supported(self):
+        from msplatform.execution.run_capacity_lifecycle import resolve_consumed_run_capacity_owner
+        self._real_failed_equivalence_fixture()
+        run, authority = self._closed_diagnostic_fixture("1", with_completion=False)
+        direct = seal_checkpoint(self.artifacts, run / "run_config.json", owner="p", writing_stopped=True,
+                                 retain_payload=True, retention_reason="closed diagnostic fixture")
+        direct_path = self.root / "direct-owner-receipt.json"
+        direct_path.write_text(json.dumps(direct))
+        direct_record = dict(path=str(direct_path), exists=True, bytes=direct_path.stat().st_size,
+                             sha256=_sha(direct_path))
+        resolved = resolve_consumed_run_capacity_owner(authority["manifest"],
+            stopped_receipt_record=direct_record, consumer_artifact_root=self.artifacts)
+        self.assertEqual(resolved["run_directory"], str(run))
+
+    def test_closed_diagnostic_legacy_inventory_and_missing_record_refused(self):
+        _, _, _, selection = self._real_failed_equivalence_fixture()
+        run, authority = self._closed_diagnostic_fixture("1", with_completion=False)
+        closure_path = Path(authority["closure"]["path"])
+        closure = json.loads(closure_path.read_text())
+        closure["files_before"]["logs\\operation_0001.usage.json"][1] = "0" * 64
+        closure_path.write_text(json.dumps(closure))
+        authority["closure"].update(bytes=closure_path.stat().st_size, sha256=_sha(closure_path))
+        with self.assertRaisesRegex(RetirementError, "inventory differs"):
+            self._closed_diagnostic_plan(selection, {run: authority})
+        authority.pop("usage")
+        with self.assertRaisesRegex(RetirementError, "explicit stopped-owner evidence"):
+            self._closed_diagnostic_plan(selection, {run: authority})
+
+    def test_closed_diagnostic_rechecks_consumer_lease_and_evidence_after_plan(self):
+        source, _, _, selection = self._real_failed_equivalence_fixture()
+        run, authority = self._closed_diagnostic_fixture("1", with_completion=False)
+        plan = self._closed_diagnostic_plan(selection, {run: authority})
+        self._protect_keeper()
+        create_capacity_protection_lease(self.artifacts, lease_id="diagnostic", ttl_seconds=600,
+            owner="reader", protected_paths=[run], committed_new_bytes=0)
+        with self.assertRaisesRegex(RetirementError, "active protection lease"):
+            self._real_failed_apply(plan)
+        from msplatform.execution.capacity_protection import delete_capacity_protection_lease
+        delete_capacity_protection_lease(self.artifacts, lease_id="diagnostic")
+        usage = Path(authority["usage"]["path"])
+        usage.write_bytes(usage.read_bytes() + b" ")
+        with self.assertRaisesRegex(RetirementError, "closed consumer evidence differs"):
+            self._real_failed_apply(plan)
+        self.assertTrue(source.exists())
+
     def _owner_plan(self, **kwargs: object) -> dict[str, object]:
         return plan_retirement(
             self.artifacts, self.repo, self.target, owner="p",

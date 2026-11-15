@@ -405,6 +405,19 @@ def resolve_consumed_run_capacity_owner(manifest_record: dict[str, Any], *,
             raise ValueError("checkpoint source requires its explicit stopped payload receipt")
         verify_record("source stopped payload receipt", stopped_receipt_record)
         stopped = _load_json(record_path(stopped_receipt_record), "source stopped payload receipt")
+        # Two retained administrative envelopes bind the original seal directly.
+        # The first is an explicitly recognized legacy role without a version;
+        # neither path searches for or manufactures a separate receipt.
+        role = stopped.get("role")
+        if role in {"capacity_only_administrative_closure", "capacity_only_stopped_diagnostic"}:
+            valid_version = ((role == "capacity_only_administrative_closure" and "schema_version" not in stopped)
+                             or (role == "capacity_only_stopped_diagnostic" and type(stopped.get("schema_version")) is int
+                                 and stopped["schema_version"] == 1))
+            if (not valid_version or stopped.get("status") != "capacity_sealed"
+                    or Path(stopped.get("run_directory", "")).resolve() != manifest_path.parent
+                    or not isinstance(stopped.get("seal"), dict)):
+                raise ValueError("source administrative stopped payload envelope differs")
+            stopped = stopped["seal"]
         if (stopped.get("schema_version") != 1 or stopped.get("role") != "run_capacity_lifecycle_receipt"
                 or stopped.get("action") != "seal_stopped_payload" or stopped.get("status") != "ready"
                 or stopped.get("run_status") != "checkpoint"
