@@ -1936,6 +1936,7 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
     def test_catalog_import_roots_preserve_and_restore_pythonpath(self) -> None:
         with tempfile.TemporaryDirectory(prefix="changed_import_environment_") as directory:
             root = Path(directory)
+            (root / "src").mkdir()
             names = ("owner first", "owner second", "existing first", "existing second")
             for index, name in enumerate(names):
                 path = root / name
@@ -1946,11 +1947,12 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
                 for include_roots in (False, True):
                     for exit_code in (0, 7):
                         with self.subTest(inherited=inherited, roots=include_roots, exit_code=exit_code):
-                            expected = inherited
+                            paths = [str(root / "src")]
                             if include_roots:
-                                expected = os.pathsep.join(str(root / name) for name in names[:2])
-                                if inherited is not None:
-                                    expected += os.pathsep + inherited
+                                paths.extend(str(root / name) for name in names[:2])
+                            if inherited is not None:
+                                paths.append(inherited)
+                            expected = os.pathsep.join(paths)
                             probe = ["import os, sys", f"assert os.environ.get('PYTHONPATH') == {expected!r}"]
                             if include_roots:
                                 probe.extend(["import import_root_0, import_root_1, import_precedence",
@@ -1985,6 +1987,81 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
                             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                             self.assertIn("IMPORT_ROOTS_OBSERVED", result.stdout)
                             self.assertIn("PYTHONPATH_RESTORED", result.stdout)
+
+    def test_catalog_source_import_prefers_selected_checkout(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="gate_selected_checkout_") as directory:
+            root = Path(directory)
+            selected, foreign = root / "selected", root / "foreign"
+            for checkout, value in ((selected, "selected"), (foreign, "foreign")):
+                package = checkout / "src" / "gate_probe_package"
+                package.mkdir(parents=True)
+                (package / "__init__.py").write_text(f"VALUE = {value!r}\n", encoding="utf-8")
+            probe = (
+                "import gate_probe_package as package; from pathlib import Path; "
+                f"assert package.VALUE == 'selected'; assert Path(package.__file__).resolve().is_relative_to({str(selected / 'src')!r}); "
+                "print('SELECTED_SOURCE_ORIGIN')"
+            )
+            script = (
+                ". " + powershell_literal(REPO_ROOT / "common/gate_catalog_support.ps1") + "; "
+                "[Environment]::SetEnvironmentVariable('PYTHONPATH'," + powershell_literal(foreign / "src") + ",'Process'); "
+                "$command=[pscustomobject]@{runner='python';arguments=@('-c'," + powershell_literal(probe) + ")}; "
+                "Invoke-GateCatalogCommand -Command $command -RepoRoot " + powershell_literal(selected) +
+                " -PythonExe " + powershell_literal(sys.executable)
+            )
+            result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=root,
+                                    capture_output=True, text=True, encoding="utf-8", timeout=30,
+                                    env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("SELECTED_SOURCE_ORIGIN", result.stdout)
+            (selected / "probe.ps1").write_text(
+                "param([string]$PythonExe)\n& $PythonExe -c " + powershell_literal(probe) + "\n",
+                encoding="utf-8",
+            )
+            ps_script = (
+                ". " + powershell_literal(REPO_ROOT / "common/gate_catalog_support.ps1") + "; "
+                "[Environment]::SetEnvironmentVariable('PYTHONPATH'," + powershell_literal(foreign / "src") + ",'Process'); "
+                "$command=[pscustomobject]@{runner='powershell';script='probe.ps1';parameters=[pscustomobject]@{PythonExe=" +
+                powershell_literal(sys.executable) + "}}; Invoke-GateCatalogCommand -Command $command -RepoRoot " +
+                powershell_literal(selected) + " -PythonExe " + powershell_literal(sys.executable) + "; "
+                "if ([Environment]::GetEnvironmentVariable('PYTHONPATH','Process') -cne " +
+                powershell_literal(foreign / "src") + ") { throw 'PYTHONPATH was not restored' }"
+            )
+            ps_result = subprocess.run(["pwsh", "-NoProfile", "-Command", ps_script], cwd=root,
+                                       capture_output=True, text=True, encoding="utf-8", timeout=30,
+                                       env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+            self.assertEqual(ps_result.returncode, 0, ps_result.stdout + ps_result.stderr)
+            self.assertIn("SELECTED_SOURCE_ORIGIN", ps_result.stdout)
+            for failure, action, expected_error in (
+                ("native", "& $PythonExe -c 'import sys; sys.exit(7)'", "Gate catalog command failed with exit code 7."),
+                ("throw", "throw 'STAGE_THROW_SENTINEL'", "STAGE_THROW_SENTINEL"),
+            ):
+                with self.subTest(powershell_failure=failure):
+                    (selected / "probe.ps1").write_text(
+                        "param([string]$PythonExe)\n& $PythonExe -c " + powershell_literal(probe) +
+                        "\n" + action + "\n", encoding="utf-8",
+                    )
+                    failure_script = (
+                        ". " + powershell_literal(REPO_ROOT / "common/gate_catalog_support.ps1") + "; "
+                        "[Environment]::SetEnvironmentVariable('PYTHONPATH'," + powershell_literal(foreign / "src") + ",'Process'); "
+                        "$command=[pscustomobject]@{runner='powershell';script='probe.ps1';parameters=[pscustomobject]@{PythonExe=" +
+                        powershell_literal(sys.executable) + "}}; $caught=$null; try { Invoke-GateCatalogCommand -Command $command -RepoRoot " +
+                        powershell_literal(selected) + " -PythonExe " + powershell_literal(sys.executable) +
+                        " } catch { $caught=$_.Exception.Message }; if ($caught -cne " + powershell_literal(expected_error) +
+                        ") { throw ('Wrong failure: ' + $caught) }; if ([Environment]::GetEnvironmentVariable('PYTHONPATH','Process') -cne " +
+                        powershell_literal(foreign / "src") + ") { throw 'PYTHONPATH was not restored' }; Write-Output 'FAILURE_RESTORED'"
+                    )
+                    failed = subprocess.run(["pwsh", "-NoProfile", "-Command", failure_script], cwd=root,
+                                            capture_output=True, text=True, encoding="utf-8", timeout=30,
+                                            env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+                    self.assertEqual(failed.returncode, 0, failed.stdout + failed.stderr)
+                    self.assertIn("SELECTED_SOURCE_ORIGIN", failed.stdout)
+                    self.assertIn("FAILURE_RESTORED", failed.stdout)
+            isolated = subprocess.run(
+                [sys.executable, "-I", "-c", "import importlib.util; assert importlib.util.find_spec('gate_probe_package') is None"],
+                cwd=selected, env=dict(os.environ, PYTHONPATH=str(selected / "src")),
+                capture_output=True, text=True, encoding="utf-8", timeout=30,
+            )
+            self.assertEqual(isolated.returncode, 0, isolated.stdout + isolated.stderr)
 
     def test_exact_selection_retains_existing_discovery_imports_in_real_dispatch(self) -> None:
         with tempfile.TemporaryDirectory(prefix="changed_existing_imports_") as directory:

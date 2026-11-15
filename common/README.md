@@ -551,6 +551,15 @@ setuptools65.5.0/wheel0.38.4与已核对离线依赖；原wheel和sdist重建whe
 公开门禁先解析本次 Python，内部阶段先校验冻结请求，再用该解释器加载主机资源上下文；
 调用结束恢复原 `SIMULATION_PYTHON_EXE`。旧环境值不能覆盖显式解释器或使只读规划提前失败。
 
+Source-gate Python and PowerShell commands put the selected checkout's `src`
+first on their process-local `PYTHONPATH`, followed by declared discovery roots
+and inherited entries. This prevents an explicitly supplied interpreter's foreign
+editable installation from supplying older platform modules. The original
+environment is restored on success, nonzero child exit and script exceptions.
+Ordinary wheel/sdist acceptance keeps its isolated `python -I`, source-offline
+and installed-origin checks; this development binding does not qualify an
+installed package.
+
 公共 workflow 的纯软件 PowerShell 夹具统一使用已有 ACK／Job 归属入口：启动脚本取得归属后才执行，
 90 秒测试硬超时后清理本夹具子树并有限排空输出，保留原超时、原始输出与次要诊断错误。
 这关闭了仅结束 PowerShell、遗留子 Python 持有管道而无限等待的默认分支；不改变商业求解器的告警与退出策略。

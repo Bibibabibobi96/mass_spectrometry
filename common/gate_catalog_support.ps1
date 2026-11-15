@@ -606,17 +606,19 @@ function Invoke-GateCatalogCommand {
             $hasPythonPathRoots = $null -ne $Command.PSObject.Properties['python_path_roots']
             $originalPythonPath = [Environment]::GetEnvironmentVariable('PYTHONPATH', 'Process')
             try {
+                # Source gate children must import the selected checkout even
+                # when the supplied interpreter has another editable install.
+                $pythonSearchPath = @([IO.Path]::GetFullPath((Join-Path $RepoRoot 'src')))
                 if ($hasPythonPathRoots) {
-                    # Explicit unittest modules retain the import roots that
-                    # unittest discover previously supplied through start_dir.
-                    $pythonSearchPath = @($Command.python_path_roots | ForEach-Object {
+                    # Preserve the discovery roots used by explicit unittest modules.
+                    $pythonSearchPath += @($Command.python_path_roots | ForEach-Object {
                         [IO.Path]::GetFullPath((Join-Path $RepoRoot ([string]$_)))
                     })
-                    if ($null -ne $originalPythonPath) { $pythonSearchPath += $originalPythonPath }
-                    [Environment]::SetEnvironmentVariable(
-                        'PYTHONPATH', ($pythonSearchPath -join [IO.Path]::PathSeparator), 'Process'
-                    )
                 }
+                if ($null -ne $originalPythonPath) { $pythonSearchPath += $originalPythonPath }
+                [Environment]::SetEnvironmentVariable(
+                    'PYTHONPATH', ($pythonSearchPath -join [IO.Path]::PathSeparator), 'Process'
+                )
                 $argumentFile = $null
                 try {
                     if ($arguments.Count -gt 3 -and ($arguments[0..2] -join '|') -eq '-m|ruff|check') {
@@ -644,12 +646,10 @@ function Invoke-GateCatalogCommand {
                     if ($argumentFile) { Remove-Item -LiteralPath $argumentFile }
                 }
             } finally {
-                if ($hasPythonPathRoots) {
-                    if ($null -eq $originalPythonPath) {
-                        [Environment]::SetEnvironmentVariable('PYTHONPATH', [NullString]::Value, 'Process')
-                    } else {
-                        [Environment]::SetEnvironmentVariable('PYTHONPATH', $originalPythonPath, 'Process')
-                    }
+                if ($null -eq $originalPythonPath) {
+                    [Environment]::SetEnvironmentVariable('PYTHONPATH', [NullString]::Value, 'Process')
+                } else {
+                    [Environment]::SetEnvironmentVariable('PYTHONPATH', $originalPythonPath, 'Process')
                 }
             }
         } else {
@@ -664,7 +664,21 @@ function Invoke-GateCatalogCommand {
                     $parameters[$property.Name] = $value
                 }
             }
-            & $scriptPath @parameters
+            $originalPythonPath = [Environment]::GetEnvironmentVariable('PYTHONPATH', 'Process')
+            try {
+                $pythonSearchPath = @([IO.Path]::GetFullPath((Join-Path $RepoRoot 'src')))
+                if ($null -ne $originalPythonPath) { $pythonSearchPath += $originalPythonPath }
+                [Environment]::SetEnvironmentVariable(
+                    'PYTHONPATH', ($pythonSearchPath -join [IO.Path]::PathSeparator), 'Process'
+                )
+                & $scriptPath @parameters
+            } finally {
+                if ($null -eq $originalPythonPath) {
+                    [Environment]::SetEnvironmentVariable('PYTHONPATH', [NullString]::Value, 'Process')
+                } else {
+                    [Environment]::SetEnvironmentVariable('PYTHONPATH', $originalPythonPath, 'Process')
+                }
+            }
         }
         if ($LASTEXITCODE -ne 0) {
             throw "Gate catalog command failed with exit code $LASTEXITCODE."
