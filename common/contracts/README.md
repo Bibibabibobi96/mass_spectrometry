@@ -4,6 +4,16 @@
 单位是否完整；Python语义层判断项目选择、能力成熟度、模式、指标、设计变量和约束是否成立。
 二者不能互相取代。
 
+The generic collision-geometry fixtures use a normally registered complete Assembly,
+then isolate the physical-member boundary for shape and witness checks. The inert
+native-child fixture emits the existing exhaustive-empty surface-state metadata for
+the actual compiled grid instead of malformed placeholder bytes. Both full modules
+passed ten tests without skips in 25.657 seconds on the repaired candidate; source
+and index guards matched and the GATE was released. This covers the six newly
+identified CI failures and retains source tampering, vacuum/boundary refusal,
+registration, rename/order and parameter-propagation checks. It does not qualify a
+native solver, ordinary installation or the full Repository scope.
+
 Batch-process regression coverage uses real inert child processes. The unmodified
 SIMION-role fixture checks actual formal replanning, failure cancellation, input
 guards and lease release without assuming that resource policy permits overlap.

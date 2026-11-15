@@ -59,7 +59,14 @@ class RegisteredCollisionGeometryTests(unittest.TestCase):
                 operation=next(row for row in plan.operations if row['operation_id']==operation_id)
                 code='from pathlib import Path\n'
                 for path in operation['outputs']:
-                    code+=f'Path({path!r}).write_bytes(b"INERT TEST BYTES")\n'
+                    if path.endswith('_surface_state.json'):
+                        dimensions=compiled.frontend_geometry['dimensions']
+                        pitch=compiled.frontend_geometry['pitch_mm']
+                        state=dict(schema_version=1,mode='empty',grid=dimensions,pitch=[pitch]*3,
+                                   scanned_nodes=dimensions[0]*dimensions[1]*dimensions[2],offset_nodes=0)
+                        code+=f'Path({path!r}).write_text({json.dumps(state)!r},encoding="utf8")\n'
+                    else:
+                        code+=f'Path({path!r}).write_bytes(b"INERT TEST BYTES")\n'
                 code+='print('+repr(operation['success_marker'])+')\n'
                 return original(session,operation_id,executable=Path(sys.executable),arguments=['-I','-B','-c',code],role='GATE',stage='inert_geometry',limits=kwargs['limits'],immutable_input_records=kwargs.get('immutable_input_records',()))
             with patch.object(RunSession,'run_process',new=inert):

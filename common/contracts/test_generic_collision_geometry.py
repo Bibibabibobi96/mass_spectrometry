@@ -11,15 +11,22 @@ from msplatform.backends.simion.resources import STRUCTURAL_SEEDS
 class GenericCollisionGeometryTests(unittest.TestCase):
     def setUp(self):
         self.member=dict(instance_id='item', electrode_group_id='body', member_id='solid', source_refs=['/size'], representation_role='physical_solid',shape=dict(kind='box',center_mm=[0,0,0],size_mm=[2,2,2]), transform=dict(schema_version=1,role='rigid_transform',from_frame_id='local',to_frame_id='world',rotation=[[1,0,0],[0,1,0],[0,0,1]],translation_mm=[0,0,0]))
-        self.assembly=SimpleNamespace(composition_plan=dict(recipe=dict(assembly_frame_id='world'),scope=dict(instance_ids=['item']),components=dict(item={'project_id':'example'})),components_resolved={'item':{'size':2}},components_source={'item':{'size':2}})
+        from common.contracts.test_support.registered_component import ensure_registered
+        from msplatform import assembly, components
+        ensure_registered()
+        component=components.resolve_component({'provider_id':'toy_registered','design':{'width_mm':2}})
+        pose=dict(self.member['transform'],from_frame_id='toy_local')
+        self.member['transform']=pose
+        recipe=dict(schema_version=1,role='assembly_recipe',integration_id='toy_integration',recipe_id='toy_recipe',assembly_frame_id='world',position_tolerance_mm=1e-6,angular_tolerance_rad=1e-6,instances=[dict(instance_id='item',project_id='toy_registered',transform=pose)],connections=[])
+        self.assembly=assembly.assemble(recipe,{'item':component})
         self.numerics=dict(representation='neutral_world_collision',domain=dict(frame_id='world',minimum_mm=[-5,-5,-5],maximum_mm=[5,5,5]),pitch_mm=1,boundary='native_zero_neumann',metal_witnesses=[dict(instance_id='item',electrode_group_id='body',gu=[5,5,5])],void_witnesses=[[0,0,0]])
     def compile(self, numerics=None):
         with patch('msplatform.backends.simion.assembly_geometry.assembly_geometry_members',return_value=[copy.deepcopy(self.member)]), patch('msplatform.backends.simion.generic_geometry.assembly_geometry_members',return_value=[copy.deepcopy(self.member)]):
             return generic_geometry.compile_generic_collision_geometry(self.assembly,numerics=numerics or self.numerics)
     def test_snapshot_plan_and_immutable_input(self):
         before=copy.deepcopy(self.assembly); result=self.compile(); self.assertEqual(before,self.assembly)
-        self.assembly.components_source['item']['size']=7
-        self.assertEqual(result.frontend_geometry['source_snapshot']['components_source']['item']['size'],2)
+        self.assembly.components_source['item']['width_mm']=7
+        self.assertEqual(result.frontend_geometry['source_snapshot']['components_source']['item']['width_mm'],2)
         seed=dict(path=str(Path.cwd()/'seed.iob'),bytes=STRUCTURAL_SEEDS[1][0],sha256=STRUCTURAL_SEEDS[1][1])
         root=Path.cwd()/'generic-plan-test'
         with patch('msplatform.backends.simion.assembly_geometry.assembly_geometry_members',return_value=[copy.deepcopy(self.member)]), patch('msplatform.backends.simion.generic_geometry.assembly_geometry_members',return_value=[copy.deepcopy(self.member)]):
