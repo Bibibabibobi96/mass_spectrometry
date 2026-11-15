@@ -102,5 +102,8 @@ class GenericCollisionGeometryTests(unittest.TestCase):
         request=dict(self.numerics,metal_witnesses=[dict(instance_id='item',electrode_group_id='body',gu=[6,5,5])],void_witnesses=[[5,5,5]])
         result=self.compile(request)
         self.assertEqual([row['metal'] for row in result.frontend_geometry['physical_samples']],[True,False])
+        self.assertIn('surface=fractional',result.frontend_gems['world'])
+        self.assertIn('notin { ',result.frontend_gems['world'])
+        self.assertNotIn('notin_inside_or_on',result.frontend_gems['world'])
         with self.assertRaisesRegex(ValueError,'outside'): self.compile(dict(request,void_witnesses=[[6,5,5]]))
         with self.assertRaisesRegex(ValueError,'inside'): self.compile(dict(request,metal_witnesses=[dict(instance_id='item',electrode_group_id='body',gu=[5,5,5])]))

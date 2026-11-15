@@ -238,8 +238,18 @@ joins avoid reading unused MPH payloads while retaining sample/solution owner
 protection. The combined successor passed 19 software parents in 439.807 s with
 all source identities unchanged, including actual managed producer/lease checks
 and old/new callback comparisons. The preceding test-helper Path typing error
-remains a failed record. Native replacement validation and neutral public
-IP-schedule model/basis admission are still open; no fixed provider geometry or
+remains a failed record. Neutral public IP-schedule model/basis admission now
+uses the complete canonical IP primitive source, authenticated schedule/clock,
+actual keyed electrode groups and the existing weighted composer. Nine focused
+parents passed in 13.921 s. The public managed build/model/field/tracking parent
+passed in 235.738 s with unchanged Python/Lua sources and released host gate;
+it includes wrong-clock/refusal, sparse original IDs, failed-child and input
+protection checks. Its synthetic fields and inert native leaves are software
+evidence only. The preceding mismatched-clock fixture failure is retained and
+was corrected by constructing a new synthetic source under the model authority;
+the production clock check is unchanged. Generic HS1, multiple independent
+timelines, installed consumption, successful recovery and complete native IP
+geometry/flight validation remain open. No canonical physical design or
 scientific group identity was removed. A separate 30,000-trial native sensitivity
 probe supports a narrower RF interpolation-support hypothesis but is finite
 evidence, so the production support guard remains unchanged.

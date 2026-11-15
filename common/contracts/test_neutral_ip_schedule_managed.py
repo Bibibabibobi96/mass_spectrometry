@@ -1,0 +1,118 @@
+"""Canonical IP public owner chain; all native leaves and samples are inert."""
+import copy
+import json
+import os
+import struct
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from common.contracts import test_neutral_ip_primitives as ip_fixture
+from common.contracts.test_ip_mr_tracking_producer_admission import retained_on_failure
+from common.contracts.test_sfi_scalar_binding import SfiScalarAdmissionTests, SOLUTION
+from common.contracts.test_support.sfi_scalar_owner_fixture import make_context, publish_fixture
+from common.contracts.test_support.generic_scalar_owner_harness import make_inert
+from msplatform.backends.comsol.assembly_geometry import project_assembly_geometry
+from msplatform.backends.comsol.assembly_electrostatic_model import validate_request
+from msplatform.backends.simion import operations
+from msplatform.backends.simion.model import RF_PHYSICS
+from msplatform.backends.simion.standalone_pa_composition import PaHeader
+from msplatform.execution.run_session import RunSession
+from msplatform.results.artifacts import open_artifact
+
+ROOT=Path(__file__).resolve().parents[2]
+
+@unittest.skipUnless(os.name=='nt','Windows owner required')
+class CanonicalNeutralScheduleManagedTests(unittest.TestCase):
+ @patch.dict(os.environ,{'MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN':''})
+ def test_public_schedule_field_and_original_birth_tracking(self):
+  ip_fixture.CanonicalIpNeutralTests.setUpClass();case=ip_fixture.CanonicalIpNeutralTests(methodName='runTest');assembly=case.assembly
+  large=case.compile_complete(assembly);g=large.frontend_geometry;offset=[9960,7745,9990]
+  witnesses=[dict(instance_id=x['instance_id'],electrode_group_id=x['electrode_group_id'],gu=[n-d for n,d in zip(x['gu'],offset,strict=True)]) for x in g['metal_witnesses']]
+  frame=assembly.composition_plan['assembly_frame_id'];num=dict(representation='neutral_world_collision',domain=dict(frame_id=frame,minimum_mm=[-4,-225.5,-1],maximum_mm=[4,-34,7]),pitch_mm=.1,boundary='native_zero_neumann',metal_witnesses=witnesses,void_witnesses=[[0,0,0],[40,1907,40]])
+  compiled=operations.compile_geometry(assembly,numerics=num)
+  snapshot=dict(composition_plan=assembly.composition_plan,components_resolved=assembly.components_resolved,components_source=assembly.components_source)
+  projection=project_assembly_geometry(snapshot,outer_box_mm={'min':[-1000]*3,'max':[1000]*3})
+  groups=[(row['instance_id'],row['electrode_group_id']) for row in projection['electrode_groups']]
+  electrodes=assembly.components_resolved['ion_processor']['projection']['electrodes']
+  rows={e['name']:dict(kind='ip_schedule',schedule_index=e['electrode_id']) for e in electrodes}
+  point=json.loads((ROOT/'projects/dual_pressure_rectilinear_ion_processor/config/native_operating_point.json').read_text(encoding='utf8'))
+  with retained_on_failure() as directory:
+   context,budget,retention=make_context(Path(directory));policy=json.loads(context.stage_policy_path.read_text(encoding='utf8'))
+   for stage in ('build_geometry','prepare_model','solve_fields'):
+    policy['stages'][stage]=copy.deepcopy(policy['stages']['track'])
+    policy['stages'][stage]['limits']['transient_run_directory_bytes']=536870912
+    policy['stages'][stage]['limits']['compact_final_retained_bytes']=536870912
+   policy['stages']['solve_fields']['limits']['reserved_run_payload_bytes']=268435456
+   context.stage_policy_path.write_text(json.dumps(policy),encoding='utf8')
+   fixture=SfiScalarAdmissionTests(methodName='runTest');fixture.projection=projection;fixture.snapshot=snapshot
+   fixture.publish=lambda name,kind,data,metadata,inputs=None,linked=None:publish_fixture(context,budget,retention,name=name,kind=kind,data=data,metadata=metadata,inputs=inputs,linked=linked)
+   geometry=fixture.make_geometry();samples={};operator=dict(relative_permittivity=1.,exterior={'kind':'potential','voltage_v':0.},mesh={'global_automatic_level':9,'electrode_hmax_mm':5.},study={'kind':'stationary'})
+   grid=dict(frame_id=frame,origin_mm=[-12.,-400.,-9.],pitch_mm=[6.,100.,6.],dimensions=[5,5,5],block_points=125,study_tag='std1',solution_tag='sol1',dataset_tag='dset1',point_count=125,maximum_mm=[12.,0.,15.],coordinate_sanity_mm=1e-6)
+   header=PaHeader(-2,1,10000.,5,5,5,1<<28,6.,100.,6.).pack();zero=header+bytes(1000);valid=header+struct.pack('<125d',*([1.]*125))
+   for index,key in enumerate(groups):
+    request=validate_request(projection,dict(group_voltages=[dict(instance_id=i,electrode_group_id=k,voltage_v=float((i,k)==key)) for i,k in groups],**operator))
+    data=dict(projection=projection,request=request,geometry_validation={'position_mm':1e-6},reopen_geometry={'vacuum_domains':[1]},reopen_solution={'solution':SOLUTION},model=b'inert fixture model')
+    solution_ref=fixture.publish('ip-solution-'+str(index),'field_solution',data,dict(backend='comsol',scope='single_stationary_workpoint',field_status='solved',native_reopen_verified=True,solution=SOLUTION))
+    source=open_artifact(solution_ref,expected_kind='field_solution')
+    report=dict(status='success',scope='assembly_world_scalar_samples',field_qualification=False,compute_calls=0,filled_conductor_count=0,coordinate_mapping='world_identity',model_path=str(source.data_path('model')),vacuum_domains=[1],fem_valid=125,invalid_count=0,solution_readback=SOLUTION,coordinate_witness={'status':'insufficient','index':0,'requested_mm':[],'actual_mm':[],'geometry_length_unit':'mm'},**grid)
+    sample_data=dict(projection=projection,grid=grid,request=request,reopen_solution={'solution':SOLUTION},geometry_validation={'position_mm':1e-6},reopen_geometry={'vacuum_domains':[1]},report=report,field_v=zero,field_valid=valid)
+    ref=fixture.publish('ip-sample-'+str(index),'scalar_field_samples',sample_data,dict(backend='comsol',scope='assembly_world_scalar_samples',field_status='sampled',frame_id=frame),linked={'field_solution_manifest':solution_ref['manifest'],'field_solution_model':source.data_records['model']})
+    samples[str(index)]=dict(reference=ref,request=request,weights=[dict(instance_id=i,electrode_group_id=k,weight=float((i,k)==key)) for i,k in groups])
+   original=RunSession.run_process;calls=[];field_guards=[];tracking_guards=[];fail_verify=[False];live_refs=[];live_checks=[]
+   inert=make_inert(self,compiled,original,calls,field_guards,tracking_guards,fail_verify,live_refs,live_checks,directory,context)
+   from msplatform.io.file_identity import file_sha256
+   identity=dict(clock_epoch_id='instrument_clock_epoch_v1',authority_sha256=file_sha256(ROOT/'src/msplatform/examples/instrument_epoch_v1.json'))
+   drive=dict(groups={'ion_processor':rows},clock={'phase_reference_instrument_time_us':0.},clock_authority={'example_resource':'instrument_clock_authority_v1.json'},ip_schedule=dict(baseline=assembly.components_source['ion_processor']['baseline'],native_operating_point=point,clock=identity))
+   fail_fly=[False]
+   def guarded_inert(session,operation_id,*,immutable_input_records=(),**kwargs):
+    if fail_fly[0] and operation_id=='track_fly':
+     return original(session,operation_id,executable=Path(__import__('sys').executable),arguments=['-I','-B','-c','raise SystemExit(7)'],role='GATE',stage='inert_failed_fly',limits=kwargs['limits'],immutable_input_records=immutable_input_records)
+    return inert(session,operation_id,immutable_input_records=immutable_input_records,**kwargs)
+   with patch.object(RunSession,'run_process',new=guarded_inert):
+    built=operations.build_geometry(compiled,context=context)
+    model=operations.prepare_model(built,drive=drive,physics=RF_PHYSICS,context=context)
+    field=operations.solve_fields(model,numerics={},context=context,scalar_field_basis=dict(geometry_artifact=geometry,operator=operator,samples=samples))
+    from common.contracts.test_simion_rf_tracking import rf_tracking_case
+    from common.contracts.test_component_particle_state import valid_row
+    from msplatform.assembly.handoff import HandoffMother
+    from msplatform.backends.simion.source import project_source_states
+    from msplatform.contracts.clock import ClockIdentity
+    from msplatform.contracts.particle_physics import kinetic_energy_ev, mass_to_charge_th
+    from msplatform.io.manifest_records import file_record
+    _,_,_,_,propagation,numerics=rf_tracking_case()
+    rows=[];records={}
+    for pid,mass,charge,weight in [(7,100.,1,2.5),(91,200.,-2,4.)]:
+     row=valid_row(pid)
+     row.update(parent_particle_id=None,source_component_id='ion_processor',target_component_id='ion_processor',frame_id='dual_pressure_ion_processor_local_v1',
+      clock_epoch_id=identity['clock_epoch_id'],state_event='source_birth',instrument_time_us=1.25,
+      lineage_birth_time_us=1.25,particle_birth_time_us=1.25,lineage_age_us=0.,particle_age_us=0.,last_component_elapsed_time_us=0.,
+      species_id='species_'+str(pid),mass_amu=mass,charge_state=charge,mass_to_charge_Th=mass_to_charge_th(mass,charge),particle_weight=weight,
+      phase_reference_id=None,phase_rad=None,kinetic_energy_eV=kinetic_energy_ev(mass,*[row['velocity_'+axis+'_m_s'] for axis in 'xyz']))
+     rows.append(row);records[pid]=dict(row,source_component_entry_time_us=1.25)
+    fates=[dict(particle_id=pid,category='released') for pid in records]
+    clock_records={name:file_record(ROOT/'src/msplatform/examples'/filename,'required_evidence') for name,filename in
+     [('clock_authority','instrument_clock_authority_v1.json'),('instrument_epoch','instrument_epoch_v1.json')]}
+    project_source_states(rows,mother=HandoffMother(records,fates),clock=ClockIdentity(**identity),state_kind='source_birth',clock_records=clock_records)
+    packet=dict(schema_version=1,role='canonical_release_realization',state_kind='source_birth',rows=rows,
+     mother=dict(records=records,fates=fates),clock=identity,realization=dict(spec=dict(particle_count=2)))
+    wrong_clock=copy.deepcopy(packet);wrong_clock['clock']['authority_sha256']='0'*64
+    with patch('msplatform.execution.owner.run_managed_stage') as blocked:
+     with self.assertRaisesRegex(ValueError,'handoff clock epoch or authority differs'):
+      operations.track(field,wrong_clock,propagation=propagation,observations={'plane_observations':[]},numerics=numerics,context=context)
+     blocked.assert_not_called()
+    with patch('msplatform.execution.owner.run_managed_stage') as blocked:
+     with self.assertRaises(ValueError):operations.track(field,packet,propagation=propagation,observations={'plane_observations':[]},numerics=numerics,context=context,recovery_reference={'path':'relative'})
+     blocked.assert_not_called()
+    trajectory=operations.track(field,packet,propagation=propagation,observations={'plane_observations':[]},numerics=numerics,context=context)
+    from msplatform.execution.processes import ProcessExecutionError
+    fail_fly[0]=True
+    with self.assertRaises(ProcessExecutionError):operations.track(field,packet,propagation=propagation,observations={'plane_observations':[]},numerics=numerics,context=context)
+   collection=json.loads(trajectory.data_path('collection').read_text(encoding='utf8'))
+   self.assertEqual([r['particle_id'] for r in collection['native_terminals']],[7,91]);self.assertEqual(len(collection['original_mother']['mother_records']),2)
+   self.assertEqual(calls[-2:],['build_tracking_iob','verify_tracking_iob'])
+   self.assertEqual(len(tracking_guards),5)
+   selected_paths={str(open_artifact(row['reference'],expected_kind='scalar_field_samples').data_path(key).resolve()) for row in samples.values() for key in ('field_v','field_valid','grid')}
+   for guard in tracking_guards:self.assertTrue(selected_paths <= guard)
+   from msplatform.execution.capacity_protection import load_capacity_protection_leases
+   self.assertEqual(load_capacity_protection_leases(context.workspace/'artifacts')['audit'],[])

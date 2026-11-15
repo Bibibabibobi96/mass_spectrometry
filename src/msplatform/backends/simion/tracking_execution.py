@@ -266,7 +266,10 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
         raise ValueError('tracking absolute deadline is nonfinite')
     if any(deadlines[row['particle_id']] <= row['instrument_time_us'] for row in rows):
         raise ValueError('tracking absolute deadline is not later than each actual start')
-    rf = any(row['kind']=='rf' for row in document['native_drive_rows'])
+    has_ip_schedule = any(row['kind']=='ip_schedule' for row in document['native_drive_rows'])
+    if static_world and has_ip_schedule and not neutral_sampled:
+        raise ValueError('scheduled neutral model requires published sampled field')
+    rf = any(row['kind']=='rf' for row in document['native_drive_rows']) or has_ip_schedule
     keys = {'maximum_step_us','trajectory_quality',*({'rf_steps_per_period'} if rf else set())}
     if independent_component and isinstance(numerics,Mapping) and 'grouped' in numerics:
         keys.add('grouped')
@@ -283,6 +286,7 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
         flight = validate_rf_flight(flight_input,requires_rf=rf)
         if raw_geometry['role']=='simion_independent_oa_geometry':flight['tracking_kind']='independent_oa'
         if static_world:flight['tracking_kind']='neutral_sampled' if neutral_sampled else 'static_world'
+        if static_world and has_ip_schedule:flight['has_ip_schedule']=True
         if joint_ip: flight['tracking_kind']='rf_ip'
         if ip_mr: flight['tracking_kind']='ip_mr'
     else:
@@ -1079,6 +1083,7 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
             resource_names=('build_tracking_iob.lua','iob_core.lua','model_drive.lua','rf_drive.lua','rf_tracking.lua')
             if plan['flight']['tracking_kind'] in {'independent_oa','neutral_sampled'}:resource_names+=('single_flight_pulse_hook.lua','voltage_waveforms.lua')
             if plan['flight']['tracking_kind'] in {'rf_ip','ip_mr'}:resource_names+=('single_flight_pulse_hook.lua','voltage_waveforms.lua','native_drive.lua','collision_hs1_gas.lua','rf_ip_gas_selection.lua','rf_ip_tracking_hs1.lua')
+            if plan['flight'].get('has_ip_schedule'):resource_names+=('native_drive.lua',)
         if plan.get('scalar_field_basis') is not None:
             resource_names += ('scalar_field_adapter.lua', 'generic_scalar_field.lua' if plan['flight'].get('tracking_kind') in {'ip_mr', 'neutral_sampled'} else 'sfi_scalar_field.lua')
         frozen = {}

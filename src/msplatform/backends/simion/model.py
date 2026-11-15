@@ -245,7 +245,9 @@ def _validated_ip_schedule(schedule, clock, compiled, components, selected, ip):
     from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import select_legacy_physical_design
     from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
 
-    plan = compiled.frontend_geometry['composition_plan']
+    neutral = compiled.frontend_geometry.get('role') == 'simion_neutral_world_collision_geometry'
+    snapshot = compiled.frontend_geometry['source_snapshot'] if neutral else None
+    plan = snapshot['composition_plan'] if neutral else compiled.frontend_geometry['composition_plan']
     _exact(schedule, {'baseline', 'native_operating_point', 'clock'}, 'IP schedule authority')
     _exact(schedule['clock'], {'clock_epoch_id', 'authority_sha256'}, 'IP schedule clock')
     require_same_clock(ClockIdentity(**dict(schedule['clock'])), ClockIdentity(
@@ -258,12 +260,21 @@ def _validated_ip_schedule(schedule, clock, compiled, components, selected, ip):
         raise ValueError('IP schedule requires its explicit selected geometry authority')
     actual = select_legacy_physical_design(baseline, selection_grid_mm=choice['native_grid_mm'],
                                           auxiliary_segments=choice['native_aux_segments'])
-    if actual != components[ip] or _content_sha256({'baseline':baseline}) != compiled.provider_content_identities[ip]['source_content_sha256']:
-        raise ValueError('IP schedule baseline differs from selected physical authority')
-    for name in selected:
-        identity = compiled.provider_content_identities[name]
-        if identity['resolved_content_sha256'] != _content_sha256(components[name]) or identity['component_interface_sha256'] != _content_sha256(plan['components'][name]):
-            raise ValueError('joint model provider identity differs')
+    if neutral:
+        if actual != components[ip] or _content_sha256({'baseline': baseline}) != _content_sha256(snapshot['components_source'][ip]):
+            raise ValueError('IP schedule baseline differs from selected physical authority')
+        for name in selected:
+            value = {'source': snapshot['components_source'][name], 'resolved': components[name],
+                     'interface': plan['components'][name]}
+            if compiled.provider_content_identities[name] != {'content_sha256': _content_sha256(value)}:
+                raise ValueError('joint model provider identity differs')
+    else:
+        if actual != components[ip] or _content_sha256({'baseline':baseline}) != compiled.provider_content_identities[ip]['source_content_sha256']:
+            raise ValueError('IP schedule baseline differs from selected physical authority')
+        for name in selected:
+            identity = compiled.provider_content_identities[name]
+            if identity['resolved_content_sha256'] != _content_sha256(components[name]) or identity['component_interface_sha256'] != _content_sha256(plan['components'][name]):
+                raise ValueError('joint model provider identity differs')
     point_fields = set('schema_version capture_hp_offset_v capture_lp_offset_v guide_offset_v hp_aux_capture_relative_v hp_aux_transfer_relative_v hp_transfer_offset_v lp_outer_relative_v lp_inner_relative_v entrance_lens_v end_lens_relative_v extraction_push_relative_v extraction_pull_relative_v extraction_shield_relative_v lift_v'.split())
     _exact(point, point_fields, 'IP native operating point')
     if type(point['schema_version']) is not int or point['schema_version'] != 1:
@@ -349,12 +360,32 @@ def _finish_static_world_model(compiled, components, *, drive, physics):
         raise ValueError('static world model providers differ from the source snapshot')
     if not isinstance(physics, Mapping) or dict(physics) != RF_PHYSICS:
         raise ValueError('static world model requires linear zero-Neumann physics')
-    if not isinstance(drive, Mapping) or not {'groups','clock'} <= set(drive) or set(drive)-{'groups','clock','pulse'}:
+    if not isinstance(drive, Mapping) or not {'groups','clock'} <= set(drive) or set(drive)-{'groups','clock','pulse','ip_schedule'}:
         raise ValueError('world model drive requires explicit groups and clock')
     if not isinstance(drive['groups'], Mapping): raise ValueError('world model groups must be a mapping')
     rows_all = [row for group in drive['groups'].values() if isinstance(group, Mapping) for row in group.values()]
-    dynamic = any(isinstance(row, Mapping) and row.get('kind') in {'rf','pulse'} for row in rows_all)
+    dynamic = any(isinstance(row, Mapping) and row.get('kind') in {'rf','pulse','ip_schedule'} for row in rows_all)
     has_pulse = any(isinstance(row, Mapping) and row.get('kind') == 'pulse' for row in rows_all)
+    scheduled = {instance for instance, group in drive['groups'].items() if isinstance(group, Mapping)
+                 and any(isinstance(row, Mapping) and row.get('kind') == 'ip_schedule' for row in group.values())}
+    if bool(scheduled) != ('ip_schedule' in drive) or len(scheduled) > 1:
+        raise ValueError('one explicit canonical IP schedule authority required')
+    if scheduled:
+        ip = next(iter(scheduled))
+        schedule_input = copy.deepcopy(drive['ip_schedule'])
+        supplied_timing = schedule_input.pop('native_timing', None)
+        frozen_schedule = _validated_ip_schedule(schedule_input, drive['clock'], compiled, components,
+            geometry['source_snapshot']['composition_plan']['scope']['instance_ids'], ip)
+        if supplied_timing is not None and supplied_timing != frozen_schedule['native_timing']:
+            raise ValueError('IP schedule native timing differs')
+        electrodes = components[ip]['projection']['electrodes']
+        expected = {row['name']: row['electrode_id'] for row in electrodes}
+        actual = {name: row.get('schedule_index') for name, row in drive['groups'][ip].items()
+                  if isinstance(row, Mapping) and row.get('kind') == 'ip_schedule'}
+        if (len(expected) != len(electrodes) or actual != expected
+                or any(type(index) is not int for index in actual.values())
+                or len(set(expected.values())) != len(expected)):
+            raise ValueError('IP schedule groups or indices differ from selected physical authority')
     if has_pulse != ('pulse' in drive): raise ValueError('pulse timing must match world drive groups')
     _validate_timing(drive, requires_pulse=has_pulse, static_only=not dynamic)
     mapping = geometry['electrode_mapping']
@@ -370,7 +401,8 @@ def _finish_static_world_model(compiled, components, *, drive, physics):
             if not isinstance(value, Mapping): raise ValueError('world group drive must be a mapping')
             kind = value.get('kind')
             fields = {'static': {'kind','voltage_v'}, 'pulse': {'kind','off_voltage_v','on_voltage_v'},
-                      'rf': {'kind','waveform','frequency_hz','phase_rad','rf_amplitude_v','polarity','common_mode_v','dc_v'}}
+                      'rf': {'kind','waveform','frequency_hz','phase_rad','rf_amplitude_v','polarity','common_mode_v','dc_v'},
+                      'ip_schedule': {'kind','schedule_index'}}
             if kind not in fields: raise ValueError('unsupported world group drive kind')
             _exact(value, fields[kind], 'world group voltage')
             for key in fields[kind]-{'kind','waveform'}: _finite(value[key], 'world '+key)
@@ -378,9 +410,11 @@ def _finish_static_world_model(compiled, components, *, drive, physics):
                 raise ValueError('unsupported RF waveform, frequency, amplitude or polarity')
             rows.append(dict(instance_id=instance, electrode_group_id=group,
                 native_targets=[dict(domain='world', electrode_id=electrode)], **copy.deepcopy(dict(value))))
+    normalized_drive = copy.deepcopy(dict(drive))
+    if scheduled: normalized_drive['ip_schedule'] = frozen_schedule
     document = dict(schema_version=1, role='compiled_prepared_simion_model', field_status='not_solved',
         source_status='not_requested', native_frame_id=geometry['domain']['frame_id'], geometry=asdict(compiled),
-        components_resolved=copy.deepcopy(dict(components)), drive=copy.deepcopy(dict(drive)),
+        components_resolved=copy.deepcopy(dict(components)), drive=normalized_drive,
         physics=copy.deepcopy(dict(physics)), native_drive_rows=rows)
     document = json.loads(json.dumps(document, sort_keys=True, allow_nan=False))
     document['model_identity_sha256'] = _content_sha256(document)

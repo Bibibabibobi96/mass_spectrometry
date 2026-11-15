@@ -104,7 +104,7 @@ function hs.segment.tstep_adjust() steps=steps+1 end
 local pressures={}
 function hs.segment.other_actions() actions=actions+1;pressures[#pressures+1]=hs.pressure() end
 local gas={sample=function(x) return {status=x>0 and 'gas' or 'vacuum',pressure_pa=x>0 and 2 or 0,temperature_k=300,bulk_velocity_m_s={0,0,0}} end}
-local binder=assert(loadfile(arg[2]))();local wave={cap_before_edge=function(t,dt,e)return math.min(dt,e-t) end}
+local binder=assert(loadfile(arg[2]))();local wave=assert(loadfile(arg[3]))()
 local conf={baseline={gas={mass_amu=28,temperature_k=300,cross_section_m2=2e-18,mean_free_path_mm=-1}},
  numerics={seed=40,hs1_steps_per_mfp=20},query_frame_id='ip',schedule_edges_us={1}}
 ion_px_mm,ion_py_mm,ion_pz_mm=0,0,0;ion_time_step=.5;ion_number=1
@@ -122,7 +122,8 @@ assert(#seeds==6 and seeds[1]==41 and seeds[2]==40 and seeds[3]==41 and seeds[4]
 assert(base.run==1 and base.actions==2 and base.terminal==2)
 print('RF_IP_HS1_LIFECYCLE=PASS')
 """,encoding='utf-8')
-            result=subprocess.run([str(LUA),str(script),str(root/'composition.lua'),str(BINDING)],cwd=root,
+            result=subprocess.run([str(LUA),str(script),str(root/'composition.lua'),str(BINDING),
+                str(ROOT/'src/msplatform/backends/simion/resources/voltage_waveforms.lua')],cwd=root,
                 capture_output=True,text=True,encoding='utf-8',timeout=30)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
             self.assertIn('RF_IP_HS1_LIFECYCLE=PASS',result.stdout)

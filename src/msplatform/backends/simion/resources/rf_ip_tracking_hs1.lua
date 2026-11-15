@@ -44,9 +44,7 @@ function M.install(hs,gas,binder,config,clock,particle_id,waveforms)
   function segment.tstep_adjust()
     activate();hs.segment.tstep_adjust();original_step()
     local time=clock()
-    for _,edge in ipairs(config.schedule_edges_us) do
-      if edge>time then ion_time_step=waveforms.cap_before_edge(time,ion_time_step,edge) end
-    end
+    ion_time_step=waveforms.cap_before_edges(time,ion_time_step,config.schedule_edges_us)
   end
   function segment.other_actions()
     activate();hs.segment.other_actions();original_actions()

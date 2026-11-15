@@ -7,6 +7,13 @@ function waveforms.cap_before_edge(time_us, current_dt_us, edge_us)
   return current_dt_us
 end
 
+function waveforms.cap_before_edges(time_us, current_dt_us, edges)
+  for _, edge in ipairs(edges) do
+    if edge > time_us then current_dt_us = waveforms.cap_before_edge(time_us, current_dt_us, edge) end
+  end
+  return current_dt_us
+end
+
 -- Half-open ideal pulse; the caller owns the clock and validated edges.
 function waveforms.rectangular_gate(time_us, on_us, off_us)
   if time_us < on_us then return false, on_us end

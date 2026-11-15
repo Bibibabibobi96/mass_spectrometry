@@ -78,7 +78,15 @@ explicit coefficient descriptors. It shares only identical admitted masks and
 retains per-query support checks, including zero-weight terms. A single RF basis
 cannot cover incompatible waveform signatures. Frozen resources and whole-unit
 recovery fingerprint the same selected composer. This consolidates the runtime;
-neutral public model/basis admission of IP schedules remains a separate gap.
+neutral public model/basis admission now accepts the selected canonical IP
+schedule through actual keyed scientific groups and its authenticated clock.
+The complete canonical IP geometry uses the same primitive owners through the
+neutral renderer. Nine focused tests and the public managed build/model/field/
+tracking parent passed, including wrong-clock refusal, original sparse particle
+IDs, a failed inert child and lease cleanup. These are software results using
+synthetic scalar samples and inert native leaves. Generic HS1, multiple
+independent timelines, ordinary installed consumption and complete native IP
+geometry/flight validation remain open.
 Tracking joins saved-solution provenance through its authenticated small manifest
 and the sample's exact solution record, without rereading an unused MPH payload.
 The existing owner still protects both sampled data and its solution producer.

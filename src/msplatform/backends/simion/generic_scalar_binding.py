@@ -25,7 +25,7 @@ def compile_linear_terms(projection, drive, samples):
     if (
         not isinstance(drive, Mapping)
         or not {"groups", "clock"} <= set(drive)
-        or set(drive) - {"groups", "clock", "pulse"}
+        or set(drive) - {"groups", "clock", "pulse", "ip_schedule"}
     ):
         raise ValueError("explicit groups and clock required")
     groups = drive["groups"]
@@ -33,6 +33,7 @@ def compile_linear_terms(projection, drive, samples):
         raise ValueError("nonempty group drives required")
     fields = {
         "static": {"kind", "voltage_v"},
+        "ip_schedule": {"kind", "schedule_index"},
         "pulse": {"kind", "off_voltage_v", "on_voltage_v"},
         "rf": {
             "kind",
@@ -75,6 +76,10 @@ def compile_linear_terms(projection, drive, samples):
                 or row["rf_amplitude_v"] < 0
             ):
                 raise ValueError("unsupported RF waveform, frequency or amplitude")
+    scheduled = [(i, g) for i, values in groups.items() for g, row in values.items()
+                 if row["kind"] == "ip_schedule"]
+    if bool(scheduled) != ("ip_schedule" in drive):
+        raise ValueError("canonical IP schedule authority required")
     pulse = any(
         row["kind"] == "pulse" for values in groups.values() for row in values.values()
     )
@@ -99,11 +104,12 @@ def compile_linear_terms(projection, drive, samples):
         ["carrier"]
         + (["pulse"] if pulse else [])
         + ["rf_" + str(i) for i in range(len(sigs))]
+        + ["schedule_" + str(i) for i in range(len(scheduled))]
     )
     vectors = {name: {} for name in names}
     for key, row in rows.items():
         kind = row["kind"]
-        if kind not in ("static", "pulse", "rf"):
+        if kind not in ("static", "pulse", "rf", "ip_schedule"):
             raise ValueError("unsupported drive kind")
         if kind == "rf" and row["polarity"] not in (-1, 1):
             raise ValueError("RF polarity must be signed")
@@ -112,7 +118,7 @@ def compile_linear_terms(projection, drive, samples):
             if kind == "static"
             else row["off_voltage_v"]
             if kind == "pulse"
-            else row["common_mode_v"] + row["dc_v"]
+            else row["common_mode_v"] + row["dc_v"] if kind == "rf" else 0.0
         )
         if pulse:
             vectors["pulse"][key] = (
@@ -125,6 +131,10 @@ def compile_linear_terms(projection, drive, samples):
                 and (row["waveform"], row["frequency_hz"], row["phase_rad"]) == sig
                 else 0.0
             )
+    # Existing IP field construction uses an independently driven unit response
+    # per canonical scheduled group. This proves a conservative full span.
+    for i, scheduled_key in enumerate(scheduled):
+        vectors["schedule_" + str(i)] = {key: float(key == scheduled_key) for key in keys}
     if any(
         not math.isfinite(value)
         for vector in vectors.values()

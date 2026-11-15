@@ -74,6 +74,7 @@ def tracking_applicability(plan):
         if plan['flight']['tracking_kind'] in {'rf_ip','ip_mr'}:
             names+=('single_flight_pulse_hook.lua','voltage_waveforms.lua','native_drive.lua',
                     'collision_hs1_gas.lua','rf_ip_gas_selection.lua','rf_ip_tracking_hs1.lua')
+    if plan['flight'].get('has_ip_schedule'): names += ('native_drive.lua',)
     if plan.get('scalar_field_basis') is not None:
         names += ('scalar_field_adapter.lua', 'generic_scalar_field.lua' if plan['flight'].get('tracking_kind') in {'ip_mr', 'neutral_sampled'} else 'sfi_scalar_field.lua')
     resources = {name:hashlib.sha256(native_resource_path(name).read_bytes()).hexdigest() for name in names}

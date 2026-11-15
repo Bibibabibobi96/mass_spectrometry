@@ -2469,6 +2469,29 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
 
 
 
+    def test_neutral_ip_geometry_and_schedule_select_real_consumers(self) -> None:
+        expected = {
+            'common/contracts/test_neutral_ip_primitives.py',
+            'common/contracts/test_neutral_ip_schedule.py',
+            'common/contracts/test_neutral_ip_schedule_span.py',
+            'common/contracts/test_neutral_ip_schedule_managed.py',
+        }
+        paths = [
+            'src/msplatform/backends/simion/assembly_geometry.py',
+            'src/msplatform/backends/simion/generic_scalar_binding.py',
+            'src/msplatform/backends/simion/resources/native_drive.lua',
+            'src/msplatform/components/dual_pressure_rectilinear_ion_processor/timing.py',
+            'common/contracts/test_support/ip_mr_lp60_requests.json',
+            'common/contracts/test_neutral_ip_schedule_managed.py',
+        ]
+        selections = self.selections(REPO_ROOT, [dict(stage='common_contracts', paths=[path]) for path in paths])
+        for path, selected in zip(paths, selections, strict=True):
+            with self.subTest(path=path):
+                self.assertTrue(expected <= set(selected['Modules']))
+                self.assertEqual(len(selected['Modules']), len(set(selected['Modules'])))
+        unrelated = self.selections(REPO_ROOT, [dict(stage='common_contracts', paths=['src/msplatform/analysis/peak_metrics.py'])])[0]
+        self.assertFalse(expected & set(unrelated['Modules']))
+
     def test_rf_ip_consumer_and_birth_admission_select_actual_consumers(self) -> None:
         source = 'src/msplatform/workflows/multipole_ip/continuous.py'
         backend = 'src/msplatform/backends/simion/tracking_execution.py'

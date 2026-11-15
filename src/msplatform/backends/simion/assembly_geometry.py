@@ -41,6 +41,40 @@ def _world_primitive(shape: Mapping[str, Any], transform: RigidTransform, roundi
         kind = 'cylinder'
     if any(sum(abs(x) for x in row) != 1 or any(x not in (-1, 0, 1) for x in row) for row in rotation):
         raise ValueError('GEM pose requires a signed axis-permutation rotation')
+    if kind in {'ip_box', 'ip_cylinder_x'}:
+        from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import shape_bounds
+        from .ip_geometry import _primitive
+        local = {'shape': kind[3:], **{key: value for key, value in shape.items() if key != 'kind'}}
+        local_lo, local_hi = shape_bounds(local)
+        center = [(a+b)/2 for a,b in zip(local_lo,local_hi,strict=True)]
+        size = [b-a for a,b in zip(local_lo,local_hi,strict=True)]
+        if kind == 'ip_cylinder_x':
+            center = [(local['x_min_mm']+local['x_max_mm'])/2,local['center_y_mm'],local['center_z_mm']]
+            size = [local['x_max_mm']-local['x_min_mm'],2*local['radius_mm'],2*local['radius_mm']]
+        if any(value <= 0 for value in size): raise ValueError('GEM physical primitive requires positive extents')
+        world = [sum(rotation[i][j]*center[j] for j in range(3))+transform.translation_mm[i] for i in range(3)]
+        span = [sum(abs(rotation[i][j])*size[j] for j in range(3)) for i in range(3)]
+        lower=[];upper=[]
+        for i in range(3):
+            j=next(j for j in range(3) if rotation[i][j])
+            endpoints=[rotation[i][j]*value+transform.translation_mm[i] for value in (local_lo[j],local_hi[j])]
+            lower.append(min(endpoints));upper.append(max(endpoints))
+        if kind == 'ip_box':
+            _record_rounding(world+span, rounding)
+            return _primitive(dict(shape='box',min_mm=lower,max_mm=upper)),lower,upper
+        radius = local['radius_mm']; axis = next(i for i in range(3) if abs(rotation[i][0]) == 1)
+        height = local_hi[0]-local_lo[0]
+        if axis == 0:
+            _record_rounding([lower[0],upper[0],world[1],world[2],radius], rounding)
+            return _primitive(dict(shape='cylinder_x',x_min_mm=lower[0],x_max_mm=upper[0],
+                center_y_mm=world[1],center_z_mm=world[2],radius_mm=radius)),lower,upper
+        top = list(world); top[axis] += height/2
+        _record_rounding(top+[radius,height], rounding)
+        if axis == 2:
+            return cylinder_z(top[0],top[1],top[2],radius,height),lower,upper
+        primitive = ('locate(' + ','.join(format_number(v) for v in top) + ') { rotate_x(-90) { '
+                     + cylinder_z(0.,0.,0.,radius,height) + ' } }')
+        return primitive,lower,upper
     center = _vector(shape.get('center_mm'), 'primitive center')
     world = [sum(rotation[i][j]*center[j] for j in range(3))+transform.translation_mm[i] for i in range(3)]
     if kind == 'box':
@@ -149,7 +183,7 @@ def _render_assembly_members_gem(assembly: Mapping[str, Any], members, *, domain
         lines.append('  e('+str(row['native_id'])+') {')
         for primitive,cuts in groups[key]:
             lines.append('    fill {');lines.append('      within { '+primitive+' }')
-            lines.extend('      notin_inside_or_on { '+cut+' }' for cut in cuts);lines.append('    }')
+            lines.extend('      notin { '+cut+' }' for cut in cuts);lines.append('    }')
         lines.append('  }')
     if boundary=='grounded_faces':
         box={a+s:v for a,l,h in zip('xyz',lo,hi,strict=True) for s,v in (('_min',l),('_max',h))}
