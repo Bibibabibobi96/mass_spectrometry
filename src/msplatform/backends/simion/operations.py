@@ -478,7 +478,10 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
         scalar_manifests = {}
         for entry in admitted['bases'].values():
             for level in [entry, *entry.get('refinement_windows', [])]:
-                for manifest in (level['reference']['manifest'], level['field_solution_reference']['manifest']):
+                manifests = [level['reference']['manifest'], level['field_solution_reference']['manifest']]
+                if level.get('original_samples_reference') is not None:
+                    manifests.append(level['original_samples_reference']['manifest'])
+                for manifest in manifests:
                     key = os.path.normcase(str(Path(manifest['path']).resolve()))
                     identity = (manifest['bytes'], manifest['sha256'], manifest.get('retention_role'))
                     if key in scalar_manifests:

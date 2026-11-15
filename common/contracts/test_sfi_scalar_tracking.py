@@ -257,3 +257,41 @@ assert(math.abs(ion_dvoltsx_gu-1)<1e-12 and math.abs(ion_dvoltsy_gu-2)<1e-12 and
                     path.write_bytes(before)
             collection = json.loads(result.data_path('collection').read_text(encoding='utf-8'))
             self.assertEqual(collection['original_mother']['mother_particle_ids'],selected['expected_particle_ids'])
+
+    def test_public_track_leases_verified_original_samples(self):
+        from common.contracts import test_simion_tracking_execution as tracking_fixture
+        from msplatform.backends.simion import operations
+        from msplatform.execution.terminal_publication import publish_terminal_state
+        from msplatform.io.manifest_records import file_record
+        from msplatform.results.artifacts import open_artifact
+        raw_ref=self.basis_case.sample_refs['carrier']
+        raw=open_artifact(raw_ref,expected_kind='scalar_field_samples')
+        root=self.basis_case.root/'derived';root.mkdir()
+        borrowed={key:dict(value) for key,value in raw.data_records.items() if key not in ('field_v','field_valid')}
+        borrowed['sampled_field_v']=dict(raw.data_records['field_v'])
+        borrowed['sampled_field_valid']=dict(raw.data_records['field_valid'])
+        data=dict(borrowed);outputs=[]
+        for key in ('field_v','field_valid'):
+            path=root/(key+'.pa');path.write_bytes(raw.data_path(key).read_bytes());data[key]=file_record(path);outputs.append(data[key])
+        metadata=dict(raw.metadata,derivation='offline_from_published_raw_samples',original_samples_reference=raw.reference)
+        manifest=dict(schema_version=2,role='simulation_run_manifest',run_id='derived',project='instrument_assembly',mode='test_only',status='success',
+            inputs=borrowed,outputs=outputs,products={'product':dict(schema_version=1,kind='scalar_field_samples',status='complete',metadata=metadata,data=data)})
+        publish_terminal_state(root,{'status':'success'},manifest)
+        derived={'manifest':file_record(root/'run_manifest.json'),'product_id':'product'}
+        samples=dict(self.basis_case.sample_refs,carrier=derived)
+        case=tracking_fixture.TrackingExecutionPlanTests(methodName='runTest');case.setUp();self.addCleanup(case.doCleanups)
+        public_root=self.basis_case.root/'lease_public';public_root.mkdir()
+        source,session_type,_=tracking_fixture.tracking_action_fixture(case,public_root);session=session_type()
+        stage={'limits':{'transient_run_directory_bytes':1},'artifact_retention':{}}
+        with patch('msplatform.execution.stage_policy.read_stage_policy',return_value=(stage,{})), \
+             patch('msplatform.execution.owner.run_managed_stage',return_value={'manifest':{}}) as owner, \
+             patch('msplatform.results.artifacts.open_artifact',return_value='published'):
+            operations.track(source,case.packet,propagation=case.policy,observations={'plane_observations':[]},
+                numerics=case.numerics,context=session.context,scalar_field_basis=dict(geometry_artifact=self.basis_case.geometry_ref,samples=samples))
+        selected=owner.call_args.kwargs['payload']['scalar_field_basis']['bases']['carrier']
+        self.assertEqual(selected['original_samples_reference'],raw.reference)
+        references=owner.call_args.kwargs['source_references']
+        paths=[Path(row['manifest_record']['path']).resolve() for row in references]
+        self.assertIn(raw.manifest_location.resolve(),paths)
+        self.assertIn((root/'run_manifest.json').resolve(),paths)
+        self.assertIn(Path(selected['field_solution_reference']['manifest']['path']).resolve(),paths)

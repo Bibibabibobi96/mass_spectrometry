@@ -103,6 +103,43 @@ def _small_product(reference: Mapping[str, Any] | OpenedArtifact, kind: str, nam
         verify_record(name, record, base_dir=path.parent)
     return owner, product, path
 
+def original_sample_source(item: OpenedArtifact) -> OpenedArtifact | None:
+    """Verify the flattened raw producer for an explicitly derived sample."""
+    meta = item.metadata
+    derived = meta.get('derivation') == 'offline_from_published_raw_samples'
+    reference = meta.get('original_samples_reference')
+    if not derived:
+        if reference is not None: raise ValueError('original source reference requires derived samples')
+        return None
+    if reference is None: raise ValueError('derived samples require original source reference')
+    original = open_artifact(reference, expected_kind='scalar_field_samples')
+    if original.producer.get('status') != 'success':
+        raise ValueError('original samples producer must be successful')
+    if (original.metadata.get('derivation') is not None
+            or original.metadata.get('original_samples_reference') is not None):
+        raise ValueError('original samples source must be flattened')
+    raw = ('sampled_field_v', 'sampled_field_valid')
+    if not all(k in original.data_records for k in raw):
+        if any(k in original.data_records for k in raw) or original.metadata.get('conductor_support_policy') is not None:
+            raise ValueError('original samples have incomplete raw pair')
+        raw = ('field_v', 'field_valid')
+    pairs = [('sampled_field_v', raw[0]), ('sampled_field_valid', raw[1])]
+    names = ('grid','projection','request','geometry_validation','reopen_geometry',
+             'reopen_solution','report','field_solution_manifest')
+    pairs += [(name, name) for name in names]
+    for name in ('writer', 'writer_manifest'):
+        if name in item.data_records or name in original.data_records:
+            pairs.append((name, name))
+    for selected, source in pairs:
+        if selected not in item.data_records or source not in original.data_records:
+            raise ValueError('derived sample source record missing: ' + selected)
+        a, b = item.data_records[selected], original.data_records[source]
+        if (any(a.get(key) != b.get(key) for key in ('bytes','sha256','retention_role'))
+                or item.data_path(selected).resolve(strict=True) != original.data_path(source).resolve(strict=True)):
+            raise ValueError('derived sample source record differs: ' + selected)
+    return original
+
+
 def verify_scalar_sample(reference: Mapping[str, Any] | OpenedArtifact,
                          projection: Mapping[str, Any], *,
                          check_workpoint: Callable[[dict[str, Any]], None],
@@ -110,6 +147,7 @@ def verify_scalar_sample(reference: Mapping[str, Any] | OpenedArtifact,
     """Verify one public export and its cold-reopened source, without reading the MPH."""
     item = open_artifact(reference, expected_kind='scalar_field_samples')
     meta = item.metadata
+    original = original_sample_source(item)
     if (item.producer.get('status') != 'success' or meta.get('backend') != 'comsol'
             or meta.get('scope') != 'assembly_world_scalar_samples' or meta.get('field_status') != 'sampled'):
         raise ValueError('successful public world scalar samples required')
@@ -137,7 +175,8 @@ def verify_scalar_sample(reference: Mapping[str, Any] | OpenedArtifact,
     model_record = validate_file_record(source['data']['model'], 'source native model')
     if model_record not in [*owner['inputs'].values(), *owner['outputs']]:
         raise ValueError('solution model identity not bound to producer')
-    if _read(item.manifest_location)['inputs']['field_solution_model'] != model_record:
+    native_owner = original if original is not None else item
+    if _read(native_owner.manifest_location)['inputs']['field_solution_model'] != model_record:
         raise ValueError('scalar export native model identity differs')
     _check_report(_read(item.data_path('report')), grid=grid,
         baseline=_read(item.data_path('reopen_geometry')), solution_identity=solution,
@@ -167,8 +206,11 @@ def verify_scalar_sample(reference: Mapping[str, Any] | OpenedArtifact,
                 raise ValueError('scalar conductor support lineage differs: ' + key)
     selected_reference = ({'manifest': dict(item.reference['manifest'], path=str(item.manifest_location)),
                            'product_id': item.product_id} if resolve_reference else item.reference)
-    return dict(reference=selected_reference, field_solution_reference=source_ref, grid=geometry, records=records,
-                ideal_sheet_projection=_ideal_sheet_projection(projection, geometry))
+    binding = dict(reference=selected_reference, field_solution_reference=source_ref, grid=geometry, records=records,
+                   ideal_sheet_projection=_ideal_sheet_projection(projection, geometry))
+    if original is not None:
+        binding['original_samples_reference'] = original.reference
+    return binding
 
 
 def attach_refinement_windows(bindings: dict[str, Any], refinement_windows: list[Mapping[str, Any]] | None, *,

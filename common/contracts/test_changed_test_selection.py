@@ -2491,7 +2491,9 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
                  'src/msplatform/backends/comsol/matlab/sample_scalar_grid_blocks.m']
         selected = self.selections(REPO_ROOT, [dict(stage='common_contracts', paths=[path]) for path in paths])
         fill = {'common/contracts/test_assembly_scalar_fill.py', 'common/contracts/test_scalar_pa_fill.py',
-                'common/contracts/test_assembly_scalar_owner_fill.py'}
+                'common/contracts/test_assembly_scalar_owner_fill.py',
+                'common/contracts/test_prepared_scalar_support.py',
+                'common/contracts/test_offline_scalar_managed.py'}
         self.assertTrue((fill | {'common/contracts/test_shape_query.py', 'common/contracts/test_oa_geometry_compiler.py',
                                  'common/contracts/test_installed_scientific_core.py'}) <= set(selected[0]['Modules']))
         self.assertTrue((fill | {'common/contracts/test_installed_scientific_core.py'}) <= set(selected[1]['Modules']))
@@ -2538,7 +2540,8 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
             'src/msplatform/backends/simion/ip_mr_field_execution.py',
             'src/msplatform/backends/simion/native_io.py', transport)]
         selected = self.selections(REPO_ROOT, cases)
-        self.assertTrue({transport, 'common/contracts/test_ip_mr_sampled_field_execution.py',
+        self.assertTrue({transport, 'common/contracts/test_ip_mr_fixture_mask.py',
+                         'common/contracts/test_ip_mr_sampled_field_execution.py',
                          'common/contracts/test_installed_scientific_core.py'} <= set(selected[0]['Modules']))
         self.assertFalse(selected[0]['CompleteOwner'])
         for row in selected[1:3]:

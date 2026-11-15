@@ -116,10 +116,38 @@ def resolve_model_source_manifests(source: Any) -> tuple[dict[str, Any], dict[st
         raise ValueError('borrowed model is not an exact failed producer output')
     return current, origin
 
-def export_world_scalar(solution: Any, *, grid: Mapping[str, Any], writer_manifest: Mapping[str, Any], context: Any, fill_conductor_interiors: bool = False) -> Any:
-    """Export one verified stationary workpoint; optionally fill strict conductor interiors."""
+def _classification_grid_identity(grid: Mapping[str, Any]) -> dict[str, Any]:
+    """Return only coordinates that determine a classified grid node."""
+    return {key: grid[key] for key in ('frame_id', 'origin_mm', 'pitch_mm', 'dimensions', 'point_count')}
+
+
+def export_world_scalar(solution: Any, *, grid: Mapping[str, Any], writer_manifest: Mapping[str, Any], context: Any, fill_conductor_interiors: bool = False,
+                        publish_prepared_support: bool = False, prepared_support: Any = None) -> Any:
+    """Export one verified workpoint, optionally filling strict conductor interiors.
+
+    ``publish_prepared_support`` publishes reusable interior labels; an explicit
+    ``prepared_support`` reference reuses labels only after identity checks.
+    Neither option qualifies the physical field or trajectory.
+    """
     if type(fill_conductor_interiors) is not bool:
         raise ValueError('fill_conductor_interiors must be an explicit boolean')
+    if type(publish_prepared_support) is not bool:
+        raise ValueError('publish_prepared_support must be boolean')
+    if (publish_prepared_support or prepared_support is not None) and not fill_conductor_interiors:
+        raise ValueError('prepared support requires explicit conductor fill')
+    if publish_prepared_support and prepared_support is not None:
+        raise ValueError('cannot publish and consume prepared support together')
+    support_source = None
+    if prepared_support is not None:
+        support_source = open_artifact(prepared_support, expected_kind='scalar_field_samples')
+        if support_source.producer.get('status') != 'success':
+            raise ValueError('prepared support producer must be successful')
+        for key in ('prepared_support_labels', 'conductor_support', 'sampled_field_valid', 'projection', 'grid'):
+            support_source.data_path(key)
+    support_original = None
+    if support_source is not None:
+        from msplatform.backends.simion.scalar_sample_binding import original_sample_source
+        support_original = original_sample_source(support_source)
     source = open_artifact(solution, expected_kind='field_solution')
     metadata = source.metadata
     if (metadata.get('backend') != 'comsol' or metadata.get('scope') != 'single_stationary_workpoint'
@@ -154,14 +182,20 @@ def export_world_scalar(solution: Any, *, grid: Mapping[str, Any], writer_manife
     source_refs = [{'manifest_record': reference}]
     if origin is not None:
         source_refs.append({'manifest_record': origin})
+    if support_source is not None:
+        source_refs.append({'manifest_record': support_source.reference['manifest']})
+        if support_original is not None: source_refs.append({'manifest_record': support_original.reference['manifest']})
     result = run_managed_stage(context, descriptor=dict(project='instrument_assembly', mode='world_scalar_export', software=['COMSOL', 'MATLAB']),
         run_id=datetime.now().strftime('%Y%m%d_%H%M%S') + '__analysis__comsol__assembly-scalar-' + uuid4().hex[:12],
-        payload=dict(action='export_assembly_world_scalar', grid=resolved, stage_policy=stage, fill_conductor_interiors=fill_conductor_interiors),
+        payload=dict(action='export_assembly_world_scalar', grid=resolved, stage_policy=stage, fill_conductor_interiors=fill_conductor_interiors,
+                     publish_prepared_support=publish_prepared_support,
+                     prepared_support=(support_source.reference if support_source is not None else None)),
         committed_new_bytes=stage['limits']['transient_run_directory_bytes'], commitment_inputs=[authority],
         retention=stage['artifact_retention'], source_references=source_refs,
         expected_operation_ids=('export_world_scalar',), operation_dependencies={},
         action=partial(execute_export, source=source, manifest_record=reference, grid=resolved,
-                       baseline=baseline, solution_identity=dict(observed), writer_authority=writer_authority, writer=writer, limits=stage['limits'], origin_manifest=origin, fill_conductor_interiors=fill_conductor_interiors),
+                       baseline=baseline, solution_identity=dict(observed), writer_authority=writer_authority, writer=writer, limits=stage['limits'], origin_manifest=origin, fill_conductor_interiors=fill_conductor_interiors,
+                       publish_prepared_support=publish_prepared_support, support_source=support_source, support_original=support_original),
         action_record=file_record(Path(__file__).resolve(), 'required_evidence'), use_short_execution_path=True,
         completion_api=no_particle_batch_completion_api)
     return open_artifact({'manifest': result['manifest'], 'product_id': 'samples'}, expected_kind='scalar_field_samples')
@@ -171,7 +205,9 @@ def execute_export(session: Any, *, source: Any, manifest_record: Mapping[str, A
                    baseline: Mapping[str, Any], solution_identity: Mapping[str, Any], writer_authority: Mapping[str, Any],
                    writer: Mapping[str, Any], limits: Mapping[str, Any],
                    origin_manifest: Mapping[str, Any] | None = None,
-                   fill_conductor_interiors: bool = False) -> dict[str, Any]:
+                   fill_conductor_interiors: bool = False,
+                   publish_prepared_support: bool = False, support_source: Any = None,
+                   support_original: Any = None) -> dict[str, Any]:
     """Freeze small authorities and guard the borrowed saved model during export."""
     if session.expected_operation_ids != ('export_world_scalar',):
         raise ValueError('scalar export requires exactly one saved-solution operation')
@@ -210,6 +246,18 @@ def execute_export(session: Any, *, source: Any, manifest_record: Mapping[str, A
         request = json.loads(Path(frozen['request']['path']).read_text(encoding='utf-8-sig'))
         InvalidNodeClassifier(projection, request, grid)
         support_code = _freeze_support_sources(session)
+    support_guards = []
+    if support_original is not None:
+        session.add_input('prepared_support_original_manifest', support_original.reference['manifest'])
+        support_guards.append(support_original.reference['manifest'])
+    if support_source is not None:
+        support_manifest = support_source.reference['manifest']
+        session.add_input('prepared_support_manifest', support_manifest)
+        support_guards.append(support_manifest)
+        for key in ('prepared_support_labels', 'conductor_support', 'sampled_field_valid', 'projection', 'grid'):
+            record = dict(support_source.data_records[key], path=str(support_source.data_locations[key]))
+            session.add_input('prepared_support_' + key, record)
+            support_guards.append(record)
     session.add_input('pa_writer_source_manifest', dict(writer_authority, retention_role='required_evidence'))
     session.add_input('pa_writer_source', dict(writer, retention_role='required_evidence'))
     manifest_copy = session.declare_file(session.input_dir / 'writer' / 'source-manifest.json', 'required_evidence')
@@ -243,7 +291,7 @@ def execute_export(session: Any, *, source: Any, manifest_record: Mapping[str, A
         'fid=fopen(' + matlab_text(report) + ",'w','n','UTF-8');\n"
         "assert(fid>=0); cleanup=onCleanup(@() fclose(fid)); fprintf(fid,'%s',jsonencode(result));\n",
         encoding='utf-8', newline='\n')
-    guards = [*sources, *frozen.values(), *origin_guard, manifest_frozen, writer_copy, grid_record, file_record(task, 'required_evidence'), model, *support_code]
+    guards = [*sources, *frozen.values(), *origin_guard, manifest_frozen, writer_copy, grid_record, file_record(task, 'required_evidence'), model, *support_code, *support_guards]
     host = json.dumps({name: str(getattr(session.context, name)) for name in ('workspace', 'python_executable', 'host_state_path', 'policy_path')})
     args = ['-NoProfile', '-File', str(launcher), '-HostContextJson', host, '-WorkingDirectory', str(session.run_dir),
         '-ComsolLauncherPath', str(session.context.tools['comsol_launcher']), '-MatlabRootPath', str(session.context.tools['matlab_root']),
@@ -269,52 +317,285 @@ def execute_export(session: Any, *, source: Any, manifest_record: Mapping[str, A
     _check_report(row, grid=grid, baseline=baseline, solution_identity=solution_identity, model=Path(source.data_locations['model']))
     for path in outputs:
         _validate_scalar_pa(path, grid)
-    published_outputs = list(outputs)
-    support_record = None
-    if fill_conductor_interiors:
-        support_path = session.declare_file(session.result_dir / 'scalar_conductor_support.json', 'required_evidence')
-        filled = [session.declare_file(output_dir / name, 'solver_native_binary') for name in ('field_v_filled.pa', 'field_valid_filled.pa')]
-        try:
-            for record in support_code: verify_record('scalar support code before fill', record)
-            from msplatform.backends.comsol.assembly_scalar_fill import fill_invalid_scalar_pa
-            primary = None
-            try:
-                support = fill_invalid_scalar_pa(*outputs, *filled, projection=projection, request=request, grid=grid, chunk_nodes=grid['block_points'])
-            except BaseException as failure:
-                primary = failure
-                raise
-            finally:
-                try:
-                    for record in support_code: verify_record('scalar support code after fill', record)
-                except BaseException as failure:
-                    if primary is None: raise
-                    primary.add_note('scalar support post-check failed: ' + repr(failure))
-            for path in filled: _validate_scalar_pa(path, grid)
-            write_json_atomic(support_path, dict(schema_version=1, role='assembly_scalar_conductor_support',
-                grid=grid_record, projection=frozen['projection'], request=frozen['request'],
-                field_solution_manifest=manifest_record, result=support))
-            support_record = file_record(support_path, 'required_evidence')
-            published_outputs = filled
-        except BaseException as error:
-            prior = list(getattr(error, 'failure_output_paths', ()))
-            error.failure_output_paths = [*prior, *(path for path in [*outputs, *filled, report, support_path] if path.is_file())]
-            raise
+    published_outputs, support_record, raw_mask_record, labels_path, support_path = _postprocess_scalar(
+        session, outputs=outputs, output_dir=output_dir, grid=grid, projection=projection if fill_conductor_interiors else {},
+        request=request if fill_conductor_interiors else {}, frozen=frozen, grid_record=grid_record,
+        manifest_record=manifest_record, row=row, support_code=support_code, support_guards=support_guards,
+        support_source=support_source, fill_conductor_interiors=fill_conductor_interiors,
+        publish_prepared_support=publish_prepared_support, failure_report=report)
     records = dict(field_v=file_record(published_outputs[0], 'solver_native_binary'), field_valid=file_record(published_outputs[1], 'solver_native_binary'),
                    grid=grid_record, field_solution_manifest=manifest_record, writer=writer_copy, writer_manifest=manifest_frozen,
                    projection=frozen['projection'], request=frozen['request'], geometry_validation=frozen['geometry_validation'], reopen_geometry=frozen['reopen_geometry'],
                    reopen_solution=frozen['reopen_solution'], report=file_record(report, 'required_evidence'))
     if support_record is not None:
         records.update(sampled_field_v=file_record(outputs[0], 'solver_native_binary'),
-                       sampled_field_valid=file_record(outputs[1], 'solver_native_binary'), conductor_support=support_record)
+                       sampled_field_valid=raw_mask_record, conductor_support=support_record)
+        if labels_path is not None:
+            records['prepared_support_labels'] = file_record(labels_path, 'required_evidence')
     metadata = dict(backend='comsol', scope='assembly_world_scalar_samples', field_status='sampled',
                     scientific_qualification='not_granted', frame_id=grid['frame_id'], compute_calls_requested=0)
     if support_record is not None:
         metadata['conductor_support_policy'] = 'unique_dirichlet_solid_interiors'
     result_paths = [*outputs, *([*published_outputs, support_path] if support_record is not None else []), report]
+    if support_record is not None and labels_path is not None: result_paths.append(labels_path)
     return dict(status='success', summary=metadata, output_paths=list(map(str, result_paths)),
         required_output_paths=list(map(str, result_paths)), retention_preserve_paths=[],
         manifest_extra_fields=dict(products=dict(samples=dict(schema_version=1, kind='scalar_field_samples',
             status='complete', metadata=metadata, data=records))))
+
+
+def _published_solution_readback(reopen: Mapping[str, Any], grid: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Validate the nested readback already emitted by the stationary owner."""
+    solution = reopen.get('solution') if isinstance(reopen, Mapping) else None
+    if not isinstance(solution, Mapping): raise ValueError('published nested solution readback is required')
+    validate_solution_readback(solution, study_tag=grid['study_tag'],
+                               solution_tag=grid['solution_tag'], dataset_tag=grid['dataset_tag'])
+    return solution
+
+
+def derive_world_scalar_support(samples: Any, *, context: Any,
+                                publish_prepared_support: bool = False,
+                                prepared_support: Any = None) -> Any:
+    """Derive strict-interior fill from an existing published raw samples product.
+
+    No solver is started and no physical field or trajectory is qualified.
+    The original sampled files and report remain protected producer inputs.
+    """
+    if type(publish_prepared_support) is not bool:
+        raise ValueError('publish_prepared_support must be boolean')
+    if publish_prepared_support and prepared_support is not None:
+        raise ValueError('cannot publish and consume prepared support together')
+    source = open_artifact(samples, expected_kind='scalar_field_samples')
+    if source.producer.get('status') != 'success':
+        raise ValueError('source samples producer must be successful')
+    from msplatform.backends.simion.scalar_sample_binding import original_sample_source
+    original = original_sample_source(source) or source
+    if (source.metadata.get('backend') != 'comsol'
+            or source.metadata.get('scope') != 'assembly_world_scalar_samples'
+            or source.metadata.get('field_status') != 'sampled'):
+        raise ContractError('published Assembly world scalar samples required')
+    raw_names = ('sampled_field_v', 'sampled_field_valid')
+    if any(name in source.data_records for name in raw_names):
+        if not all(name in source.data_records for name in raw_names):
+            raise ValueError('incomplete published original raw sample pair')
+    else:
+        if source.metadata.get('conductor_support_policy') is not None:
+            raise ValueError('filled samples lack the original raw pair')
+        raw_names = ('field_v', 'field_valid')
+    required = ('grid', 'projection', 'request', 'geometry_validation', 'reopen_geometry',
+                'reopen_solution', 'report', 'field_solution_manifest')
+    writer_names = ('writer', 'writer_manifest')
+    if any(name in source.data_records for name in writer_names):
+        if not all(name in source.data_records for name in writer_names):
+            raise ValueError('incomplete published writer provenance')
+        required += writer_names
+    for name in (*raw_names, *required): source.data_path(name)
+    grid = json.loads(source.data_path('grid').read_text(encoding='utf-8-sig'))
+    projection = json.loads(source.data_path('projection').read_text(encoding='utf-8-sig'))
+    request = json.loads(source.data_path('request').read_text(encoding='utf-8-sig'))
+    reopen = json.loads(source.data_path('reopen_solution').read_text(encoding='utf-8-sig'))
+    solution = _published_solution_readback(reopen, grid)
+    keys = ('frame_id', 'origin_mm', 'pitch_mm', 'dimensions', 'block_points',
+            'study_tag', 'solution_tag', 'dataset_tag')
+    validated = validate_grid({key: grid[key] for key in keys}, projection, solution)
+    if any(validated[key] != grid[key] for key in (*keys, 'point_count')):
+        raise ValueError('published scalar grid is inconsistent')
+    from msplatform.backends.comsol.assembly_scalar_fill import InvalidNodeClassifier
+    InvalidNodeClassifier(projection, request, grid)
+    report = json.loads(source.data_path('report').read_text(encoding='utf-8-sig'))
+    def count(name):
+        value = report.get(name)
+        if type(value) not in (int, float) or not math.isfinite(value) or value < 0 or int(value) != value:
+            raise ValueError('published raw report count is invalid: ' + name)
+        return int(value)
+    invalid = count('invalid_count'); valid = count('fem_valid')
+    if (invalid + valid != grid['point_count'] or report.get('status') != 'success'
+            or report.get('scope') != 'assembly_world_scalar_samples'
+            or report.get('field_qualification') is not False or type(report.get('compute_calls')) is not int
+            or report['compute_calls'] != 0):
+        raise ValueError('published raw report accounting or scope differs')
+    validate_solution_readback(report.get('solution_readback'), study_tag=grid['study_tag'],
+                               solution_tag=grid['solution_tag'], dataset_tag=grid['dataset_tag'])
+    support_source = None
+    if prepared_support is not None:
+        support_source = open_artifact(prepared_support, expected_kind='scalar_field_samples')
+        if support_source.producer.get('status') != 'success':
+            raise ValueError('prepared support producer must be successful')
+        for name in ('prepared_support_labels', 'conductor_support', 'sampled_field_valid', 'projection', 'grid'):
+            support_source.data_path(name)
+    stage, authority = read_stage_policy(context, 'export_assembly_world_scalar', required_roles=('solver_native_binary',))
+    if stage.get('runtime'): raise ContractError('scalar derivation has no implicit runtime overrides')
+    refs = [{'manifest_record': source.reference['manifest']}]
+    if original.reference != source.reference: refs.append({'manifest_record': original.reference['manifest']})
+    support_original = original_sample_source(support_source) if support_source is not None else None
+    if support_source is not None: refs.append({'manifest_record': support_source.reference['manifest']})
+    if support_original is not None: refs.append({'manifest_record': support_original.reference['manifest']})
+    result = run_managed_stage(context, descriptor=dict(project='instrument_assembly', mode='world_scalar_derive', software=['Python']),
+        run_id=datetime.now().strftime('%Y%m%d_%H%M%S') + '__analysis__cross__assembly-scalar-derive-' + uuid4().hex[:12],
+        payload=dict(action='derive_world_scalar_support', source=source.reference, stage_policy=stage,
+                     publish_prepared_support=publish_prepared_support,
+                     prepared_support=(support_source.reference if support_source is not None else None)),
+        committed_new_bytes=stage['limits']['transient_run_directory_bytes'], commitment_inputs=[authority],
+        retention=stage['artifact_retention'], source_references=refs, expected_operation_ids=(), operation_dependencies={},
+        action=partial(_execute_scalar_derivation, source=source, raw_names=raw_names, required=required,
+                       grid=grid, projection=projection, request=request, report=dict(report, invalid_count=invalid),
+                       support_source=support_source, support_original=support_original, original=original,
+                       publish_prepared_support=publish_prepared_support),
+        action_record=file_record(Path(__file__).resolve(), 'required_evidence'),
+        completion_api=no_particle_batch_completion_api)
+    return open_artifact({'manifest': result['manifest'], 'product_id': 'samples'}, expected_kind='scalar_field_samples')
+
+
+def _execute_scalar_derivation(session: Any, *, source: Any, raw_names: tuple[str, str], required: tuple[str, ...],
+                               grid: Mapping[str, Any], projection: Mapping[str, Any], request: Mapping[str, Any],
+                               report: Mapping[str, Any], support_source: Any, publish_prepared_support: bool,
+                               original: Any = None, support_original: Any = None):
+    """Borrow verified source records; only newly derived files belong to this run."""
+    if session.expected_operation_ids != ():
+        raise ValueError('scalar derivation does not start native operations')
+    original = original or source
+    guards = [source.reference['manifest']]
+    session.add_input('raw_samples_manifest', source.reference['manifest'])
+    if original.reference != source.reference:
+        guards.append(original.reference['manifest'])
+        session.add_input('original_raw_samples_manifest', original.reference['manifest'])
+    records = {}
+    for name in (*raw_names, *required):
+        record = dict(source.data_records[name], path=str(source.data_locations[name]))
+        session.add_input('raw_samples_' + name, record)
+        records[name] = record
+        guards.append(record)
+    support_guards = []
+    if support_original is not None:
+        support_guards.append(support_original.reference['manifest'])
+        session.add_input('prepared_support_original_manifest', support_original.reference['manifest'])
+    if support_source is not None:
+        support_guards.append(support_source.reference['manifest'])
+        session.add_input('prepared_support_manifest', support_source.reference['manifest'])
+        for name in ('prepared_support_labels', 'conductor_support', 'sampled_field_valid', 'projection', 'grid'):
+            record = dict(support_source.data_records[name], path=str(support_source.data_locations[name]))
+            session.add_input('prepared_support_' + name, record)
+            support_guards.append(record)
+    support_code = _freeze_support_sources(session)
+    for record in (*guards, *support_guards): verify_record('scalar derivation source before fill', record)
+    outputs = [Path(source.data_locations[name]) for name in raw_names]
+    for path in outputs: _validate_scalar_pa(path, grid)
+    output_dir = session.run_dir / 'scalar'; output_dir.mkdir()
+    primary = None
+    try:
+        filled, support_record, _, labels, support_path = _postprocess_scalar(
+            session, outputs=outputs, output_dir=output_dir, grid=grid, projection=projection, request=request,
+            frozen={'projection': records['projection'], 'request': records['request']}, grid_record=records['grid'],
+            manifest_record=records['field_solution_manifest'], row=report, support_code=support_code,
+            support_guards=support_guards, support_source=support_source, fill_conductor_interiors=True,
+            publish_prepared_support=publish_prepared_support, raw_mask_record=records[raw_names[1]], owned_raw=False)
+    except BaseException as error:
+        primary = error
+        raise
+    finally:
+        try:
+            for record in (*guards, *support_guards): verify_record('scalar derivation source after fill', record)
+        except BaseException as error:
+            if primary is None: raise
+            primary.add_note('scalar derivation input guard: ' + repr(error))
+    data = {name: records[name] for name in required}
+    data.update(field_v=file_record(filled[0], 'solver_native_binary'), field_valid=file_record(filled[1], 'solver_native_binary'),
+                sampled_field_v=records[raw_names[0]], sampled_field_valid=records[raw_names[1]], conductor_support=support_record)
+    if labels is not None: data['prepared_support_labels'] = file_record(labels, 'required_evidence')
+    report_path = session.declare_file(session.result_dir / 'scalar_derivation.json', 'required_evidence')
+    write_json_atomic(report_path, dict(schema_version=1, role='assembly_scalar_offline_derivation',
+        source_samples=source.reference, native_operations=0, compute_calls=0, scientific_qualification='not_granted'))
+    data['derivation_report'] = file_record(report_path, 'required_evidence')
+    metadata = dict(source.metadata, conductor_support_policy='unique_dirichlet_solid_interiors',
+                    derivation='offline_from_published_raw_samples', original_samples_reference=original.reference,
+                    native_operations_requested=0, compute_calls_requested=0)
+    owned = [*filled, support_path, report_path, *([labels] if labels is not None else [])]
+    return dict(status='success', summary=metadata, output_paths=list(map(str, owned)),
+        required_output_paths=list(map(str, owned)), retention_preserve_paths=[],
+        manifest_extra_fields=dict(products=dict(samples=dict(schema_version=1, kind='scalar_field_samples',
+            status='complete', metadata=metadata, data=data))))
+
+
+def _postprocess_scalar(session: Any, *, outputs: list[Path], output_dir: Path, grid: Mapping[str, Any],
+                        projection: Mapping[str, Any], request: Mapping[str, Any], frozen: Mapping[str, Any],
+                        grid_record: Mapping[str, Any], manifest_record: Mapping[str, Any], row: Mapping[str, Any],
+                        support_code: list, support_guards: list, support_source: Any,
+                        fill_conductor_interiors: bool, publish_prepared_support: bool,
+                        raw_mask_record: Mapping[str, Any] | None = None, owned_raw: bool = True,
+                        failure_report: Path | None = None):
+    """Apply one shared strict-interior postprocess to owned or borrowed raw samples."""
+    published_outputs = list(outputs)
+    support_record = None
+    labels_path = None
+    support_path = None
+    if fill_conductor_interiors:
+        support_path = session.declare_file(session.result_dir / 'scalar_conductor_support.json', 'required_evidence')
+        filled = [session.declare_file(output_dir / name, 'solver_native_binary') for name in ('field_v_filled.pa', 'field_valid_filled.pa')]
+        labels_path = (session.declare_file(session.result_dir / 'scalar_conductor_labels.csv', 'required_evidence')
+                       if publish_prepared_support else None)
+        try:
+            raw_mask_record = dict(raw_mask_record) if raw_mask_record is not None else file_record(outputs[1], 'solver_native_binary')
+            if support_source is not None:
+                for record in support_guards: verify_record('prepared support before use', record)
+                prior = json.loads(support_source.data_path('conductor_support').read_text(encoding='utf-8-sig'))
+                expected = prior.get('prepared_identity')
+                if (not isinstance(expected, Mapping)
+                        or expected.get('projection_sha256') != support_source.data_records['projection']['sha256']
+                        or expected.get('raw_mask_sha256') != support_source.data_records['sampled_field_valid']['sha256']
+                        or expected.get('grid') != _classification_grid_identity(json.loads(support_source.data_path('grid').read_text(encoding='utf-8-sig')))):
+                    raise ValueError('prepared support identity differs from source records')
+                current = dict(projection_sha256=frozen['projection']['sha256'], grid=_classification_grid_identity(grid),
+                               raw_mask_sha256=raw_mask_record['sha256'],
+                               support_code_sha256=[r['sha256'] for r in support_code[::2]],
+                               groups=sorted([list((r['instance_id'], r['electrode_group_id'])) for r in projection['electrode_groups']]))
+                if expected != current:
+                    raise ValueError('prepared support geometry/grid/mask/query identity differs')
+            for record in support_code: verify_record('scalar support code before fill', record)
+            from msplatform.backends.comsol.assembly_scalar_fill import fill_invalid_scalar_pa
+            primary = None
+            try:
+                support = fill_invalid_scalar_pa(*outputs, *filled, projection=projection, request=request, grid=grid, chunk_nodes=grid['block_points'],
+                    write_labels_path=labels_path, read_labels_path=(support_source.data_path('prepared_support_labels') if support_source is not None else None))
+            except BaseException as failure:
+                primary = failure
+                raise
+            finally:
+                try:
+                    for record in [*support_code, *support_guards]: verify_record('scalar support code and inputs after fill', record)
+                except BaseException as failure:
+                    if primary is None: raise
+                    primary.add_note('scalar support post-check failed: ' + repr(failure))
+            for path in filled: _validate_scalar_pa(path, grid)
+            if support_source is None:
+                counts = support['classifications']
+                if sum(counts.values()) != row['invalid_count'] or counts.get('interior', 0) != support['filled_conductor_count']:
+                    raise ValueError('scalar support raw mask accounting differs')
+            if support_source is not None:
+                counts = prior.get('result', {}).get('classifications')
+                if (not isinstance(counts, Mapping) or any(
+                        not isinstance(key, str) or type(value) is not int or value < 0
+                        for key, value in counts.items())
+                        or sum(counts.values()) != row['invalid_count']
+                        or counts.get('interior', 0) != support['filled_conductor_count']):
+                    raise ValueError('prepared support classification accounting differs')
+                support['classifications'] = dict(counts)
+                support['prepared_support_manifest'] = support_source.reference['manifest']
+            prepared_identity = None
+            if labels_path is not None:
+                prepared_identity = dict(projection_sha256=frozen['projection']['sha256'], grid=_classification_grid_identity(grid),
+                    raw_mask_sha256=raw_mask_record['sha256'],
+                    support_code_sha256=[r['sha256'] for r in support_code[::2]],
+                    groups=sorted([list((r['instance_id'], r['electrode_group_id'])) for r in projection['electrode_groups']]))
+            write_json_atomic(support_path, dict(schema_version=1, role='assembly_scalar_conductor_support',
+                grid=grid_record, projection=frozen['projection'], request=frozen['request'],
+                field_solution_manifest=manifest_record, result=support, prepared_identity=prepared_identity))
+            support_record = file_record(support_path, 'required_evidence')
+            published_outputs = filled
+        except BaseException as error:
+            prior = list(getattr(error, 'failure_output_paths', ()))
+            error.failure_output_paths = [*prior, *(path for path in [*(outputs if owned_raw else []), *filled, support_path, *([failure_report] if owned_raw and failure_report is not None else []), *([labels_path] if labels_path is not None else [])] if path.is_file())]
+            raise
+    return published_outputs, support_record, raw_mask_record, labels_path, support_path
 
 
 def _freeze_support_sources(session: Any) -> list[dict[str, Any]]:

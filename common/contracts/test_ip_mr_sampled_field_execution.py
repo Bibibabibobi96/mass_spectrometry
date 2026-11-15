@@ -1,5 +1,6 @@
 """Real managed field owner; native child replaced with inert process only."""
 import os
+import copy
 import json
 from pathlib import Path
 import tempfile
@@ -89,3 +90,57 @@ class SampledFieldExecutionTests(unittest.TestCase):
             with patch.object(subject,'prepare_ip_mr_field_inputs',side_effect=inject),fixture.inert_native_leaf(observed):
                 with self.assertRaisesRegex(ValueError,'no active owner protection'):launch('20261114_000106__test__python__collision-unprotected')
             self.assertEqual(observed,[])
+
+            # Reuse the same already-published 17 samples for the derived carrier.
+            from msplatform.backends.comsol.assembly_field_export import derive_world_scalar_support
+            from msplatform.backends.simion.ip_mr_field_execution import prepare_ip_mr_field_inputs
+            from msplatform.backends.simion.ip_mr_tracking_admission import admit_ip_mr_tracking_fields, protect_ip_mr_tracking_fields
+            from msplatform.execution.capacity_protection import load_capacity_protection_leases, path_is_protected
+            context=selected['context'];policy=context.stage_policy_path
+            stage=json.loads(policy.read_text(encoding='utf8'));stage['stages']['export_assembly_world_scalar']={
+                'limits':dict(stage['stages']['track']['limits']),'artifact_retention':dict(selected['retention'])}
+            policy.write_text(json.dumps(stage),encoding='utf8')
+            selection=copy.deepcopy(selected['scalar_field_basis']);raw_ref=selection['samples']['carrier']
+            raw=open_artifact(raw_ref,expected_kind='scalar_field_samples')
+            preserved={name:raw.data_path(name).read_bytes() for name in ('field_v','field_valid','report')}
+            derived=derive_world_scalar_support(raw_ref,context=context,publish_prepared_support=True)
+            self.assertEqual(derived.metadata['original_samples_reference'],raw.reference)
+            selection['samples']['carrier']=derived.reference
+            derived_plan=prepare_ip_mr_field_inputs(selected['model_reference'],scalar_field_basis=selection,
+                priority_evidence=selected['priority_evidence'],output_directory=Path(tmp)/'derived-preflight')
+            original_path=raw.manifest_location.resolve()
+            self.assertTrue(any(Path(x['manifest_record']['path']).resolve()==original_path for x in derived_plan['source_references']))
+            derived_ids=derived_plan['expected_operation_ids'];derived_observed=[];lease_checks=[]
+            def check_derived_field(_operation):
+                view=load_capacity_protection_leases(context.workspace/'artifacts')
+                self.assertTrue(path_is_protected(original_path,view['protected_paths']));lease_checks.append('field')
+            with fixture.inert_native_leaf(derived_observed,after_operation=check_derived_field):
+                derived_result=run_managed_stage(context,descriptor=dict(project='instrument_assembly',mode='sim',software=[]),
+                    run_id='20261114_000108__test__python__derived-fields',
+                    payload={'action':'solve_fields','model':selected['model_reference']},
+                    committed_new_bytes=16777216,commitment_inputs=[selected['budget']],retention=selected['retention'],
+                    expected_operation_ids=derived_ids,operation_dependencies={name:[derived_ids[i-1]] for i,name in enumerate(derived_ids) if i},
+                    action=partial(execute_ip_mr_sampled_fields,model_reference=selected['model_reference'],
+                        scalar_field_basis=selection,priority_evidence=selected['priority_evidence'],limits=limits),
+                    action_record=file_record(Path(subject.__file__),'required_evidence'),
+                    source_references=derived_plan['source_references'],completion_api=no_particle_batch_completion_api)
+            self.assertEqual(derived_observed,list(derived_ids))
+            derived_fields=open_artifact({'manifest':derived_result['manifest'],'product_id':'fields'},expected_kind='field_bundle')
+            admission=admit_ip_mr_tracking_fields(derived_fields.reference)
+            self.assertEqual(len(admission['basis']['bases']),17)
+            self.assertTrue(any(Path(x['path']).resolve()==original_path for x in admission['source_manifests']))
+            def check_tracking(session):
+                view=load_capacity_protection_leases(context.workspace/'artifacts')
+                self.assertTrue(path_is_protected(original_path,view['protected_paths']))
+                protect_ip_mr_tracking_fields(session,admission);lease_checks.append('track')
+                return dict(status='success',summary={},output_paths=[],required_output_paths=[],retention_preserve_paths=[],manifest_extra_fields={})
+            unique={str(Path(x['path']).resolve()):x for x in admission['source_manifests']}
+            run_managed_stage(context,descriptor=dict(project='instrument_assembly',mode='test',software=[]),
+                run_id='20261114_000109__test__python__derived-track-protection',payload={'action':'sampled_protection'},
+                committed_new_bytes=16777216,commitment_inputs=[selected['budget']],retention=selected['retention'],
+                expected_operation_ids=(),operation_dependencies={},action=check_tracking,
+                action_record=file_record(Path(__file__),'required_evidence'),
+                source_references=[dict(manifest_record=x) for x in unique.values()],completion_api=no_particle_batch_completion_api)
+            self.assertEqual(lease_checks.count('field'),len(derived_ids));self.assertEqual(lease_checks.count('track'),1)
+            self.assertEqual(preserved,{name:raw.data_path(name).read_bytes() for name in preserved})
+            self.assertEqual(load_capacity_protection_leases(context.workspace/'artifacts')['audit'],[])

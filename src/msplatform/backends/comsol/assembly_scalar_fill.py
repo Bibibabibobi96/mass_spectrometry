@@ -116,7 +116,9 @@ class InvalidNodeClassifier:
 def fill_invalid_scalar_pa(potential_path: str | Path, mask_path: str | Path,
                            output_potential_path: str | Path, output_mask_path: str | Path,
                            *, projection: Mapping[str, Any], request: Mapping[str, Any],
-                           grid: Mapping[str, Any], chunk_nodes: int = 65536) -> dict[str, Any]:
+                           grid: Mapping[str, Any], chunk_nodes: int = 65536,
+                           write_labels_path: str | Path | None = None,
+                           read_labels_path: str | Path | None = None) -> dict[str, Any]:
     """Fill strict conductor interiors into two new scalar PAs; caller guards inputs.
 
     Grid positions/pitches are in mm and group potentials in volts; chunk size is
@@ -126,6 +128,7 @@ def fill_invalid_scalar_pa(potential_path: str | Path, mask_path: str | Path,
     The PA pair is not a field qualification or a native geometry change.
     """
     import os
+    import csv
     from dataclasses import replace
     from pathlib import Path
     from contextlib import ExitStack
@@ -151,7 +154,11 @@ def fill_invalid_scalar_pa(potential_path: str | Path, mask_path: str | Path,
             raise ValueError('output parent must exist')
     if os.path.samefile(paths[0], paths[1]):
         raise ValueError('input paths refer to the same file')
+    if write_labels_path is not None and read_labels_path is not None:
+        raise ValueError('cannot write and read labels together')
     classifier = InvalidNodeClassifier(projection, request, grid)
+    group_keys = sorted(classifier._voltages)
+    group_ordinals = {key: index for index, key in enumerate(group_keys)}
     hp, hm = [collision_pa_header(p) for p in paths[:2]]
     if any(h.mode != -2 or h.symmetry != 1 or h.raw_mirror != COLLISION_NOTREFINABLE_FLAG for h in (hp,hm)):
         raise ValueError('expected non-refinable 3D planar scalar PAs')
@@ -165,6 +172,31 @@ def fill_invalid_scalar_pa(potential_path: str | Path, mask_path: str | Path,
     if hm.max_voltage < 1:
         raise ValueError('mask range cannot encode one')
     with ExitStack() as stack:
+        label_writer = None
+        label_reader = None
+        next_label = None
+        previous_label = 0
+        if write_labels_path is not None:
+            label_file = stack.enter_context(Path(write_labels_path).open('x', encoding='utf-8', newline=''))
+            label_writer = csv.writer(label_file, lineterminator='\n')
+            label_writer.writerow(('index', 'group_ordinal'))
+        if read_labels_path is not None:
+            label_file = stack.enter_context(Path(read_labels_path).open('r', encoding='utf-8', newline=''))
+            label_reader = csv.reader(label_file)
+            if next(label_reader, None) != ['index', 'group_ordinal']:
+                raise ValueError('prepared support CSV header differs')
+            def read_label():
+                nonlocal previous_label
+                row = next(label_reader, None)
+                if row is None: return None
+                if (len(row) != 2 or any(not x.isascii() or not x.isdecimal() or str(int(x)) != x for x in row)):
+                    raise ValueError('invalid prepared support label')
+                index, ordinal = map(int, row)
+                if not previous_label < index <= hp.node_count or not 0 <= ordinal < len(group_keys):
+                    raise ValueError('prepared support labels must be ordered and in range')
+                previous_label = index
+                return index, ordinal
+            next_label = read_label()
         source_p, source_m = [stack.enter_context(p.open('rb')) for p in paths[:2]]
         dest_p, dest_m = [stack.enter_context(p.open('xb')) for p in paths[2:]]
         for src,dst in ((source_p,dest_p),(source_m,dest_m)):
@@ -185,15 +217,35 @@ def fill_invalid_scalar_pa(potential_path: str | Path, mask_path: str | Path,
                     index=offset+int(local)+1; n=index-1
                     ijk=(n%nx,(n//nx)%ny,n//(nx*ny))
                     yield {'index':index,'world_mm':[origin[a]+pitch[a]*ijk[a] for a in range(3)]}
-            for row in classifier.classify(nodes()):
+            if label_reader is None:
+                decisions = classifier.classify(nodes())
+            else:
+                def prepared_decisions():
+                    nonlocal next_label
+                    while next_label is not None and next_label[0] <= offset + count:
+                        index, ordinal = next_label
+                        local = index - offset - 1
+                        if local < 0 or mask[local] != 0:
+                            raise ValueError('prepared label points to a valid or earlier node')
+                        yield {'index': index, 'classification': 'interior',
+                               'group': group_keys[ordinal], 'voltage_v': classifier._voltages[group_keys[ordinal]]}
+                        next_label = read_label()
+                decisions = prepared_decisions()
+            for row in decisions:
                 if row['classification']=='interior':
                     j=row['index']-offset-1
                     maximum=max(maximum,abs(row['voltage_v']))
                     if not math.isfinite(2*maximum):raise ValueError('filled voltage encoding range overflows')
                     values[j]=row['voltage_v'];mask[j]=1.;filled+=1
+                    if label_writer is not None:
+                        label_writer.writerow((row['index'], group_ordinals[row['group']]))
             values.astype('<f8',copy=False).tofile(dest_p)
             mask.astype('<f8',copy=False).tofile(dest_m)
             offset+=count
+        if next_label is not None:
+            raise ValueError('prepared label extends beyond grid')
+        if label_writer is not None:
+            label_file.flush(); os.fsync(label_file.fileno())
         dest_p.seek(0);dest_p.write(replace(hp,max_voltage=maximum).pack())
         for dst in (dest_p,dest_m):dst.flush();os.fsync(dst.fileno())
     return {'status':'success','filled_conductor_count':filled,'classifications':dict(classifier.counts),

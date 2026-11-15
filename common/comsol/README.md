@@ -217,8 +217,31 @@ model/solution/grid validators and missing-sampler refusal from site-packages.
 The optional support path has focused source and managed inert-child coverage;
 its resource/validator probe also passed both ordinary installation arms, as
 recorded in the [integration evidence](../../integrations/docs/INTEGRATION.md#依赖冻结与门禁).
-Native conductor support and complete installed native-stage execution remain
-separate, open requirements.
+Complete installed native-stage execution and continuous flight remain separate,
+open requirements.
+
+For explicit classification reuse, `export_world_scalar` accepts
+`publish_prepared_support=True` when filling. It publishes ordered conductor-node
+labels alongside their geometry, physical grid, raw-mask and query-code identities.
+A subsequent filled export can select that samples ArtifactRef through
+`prepared_support=...`. It still samples its own solution and validates its complete
+finite voltage vector; mismatched masks or identities fail without fallback.
+The map supplies only proven conductor interiors. Boundary, outside and unknown
+nodes retain their invalid status and accounting.
+
+`derive_world_scalar_support(samples_ref, context=context,
+publish_prepared_support=True)` performs the same postprocess on an already
+published raw sample pair, with no COMSOL tool or MPH read. It uses the existing
+`export_assembly_world_scalar` engineering policy; no native operation is declared.
+Alternatively, pass `prepared_support=map_ref` to consume an explicit map.
+Publishing and consuming a map in one call are mutually exclusive.
+The derived product borrows the original raw pair and small provenance records,
+owns only its new outputs, and records a verified flattened original-producer
+reference. Managed derivation, reuse and the SFI/IP–MR field/tracking consumers
+protect the necessary original owner as well as the selected product. This
+avoids copying a large raw field and does not make capacity protection transitive
+for unrelated product types. Failed derivations preserve owned partial evidence;
+they never adopt or retire borrowed inputs.
 
 ## 正式启动入口
 

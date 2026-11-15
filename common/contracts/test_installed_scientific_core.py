@@ -2587,6 +2587,59 @@ for case in fixture['single_reflection_workflow']:
         ip_mr_probe=runpy.run_path(str(root/'installed_ip_mr_tracking_probe.py'))
         with section_timing('ip_mr_sampled_public_planning',sys.argv[2]):
             ip_mr_probe['run'](dict(fixture['ip_mr_installed_fixture'],arm=sys.argv[2]))
+        # Exercise the installed offline owner twice using the same published raw carrier.
+        with section_timing('offline_scalar_support',sys.argv[2]):
+            from msplatform.backends.comsol import assembly_field_export as offline_export, assembly_scalar_fill as offline_fill
+            from msplatform.execution.context import ExecutionContext as OfflineContext
+            from msplatform.execution.resources import resource_path as offline_resource
+            from msplatform.execution.run_session import RunSession as OfflineSession
+            from msplatform.results.artifacts import open_artifact as offline_open
+            from unittest.mock import patch as offline_patch
+            for offline_module in (offline_export,offline_fill):
+                assert pathlib.Path(offline_module.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_paths()['purelib']).resolve())
+            entry=fixture['ip_mr_installed_fixture']; settings=entry['context']
+            no_mph=[True]
+            def reject_mph(event,args):
+                if no_mph[0] and event=='open' and args and isinstance(args[0],(str,bytes)):
+                    if pathlib.Path(os.fsdecode(args[0])).suffix.lower()=='.mph':
+                        raise AssertionError('offline derivation opened an MPH')
+            sys.addaudithook(reject_mph)
+            source=offline_open(entry['raw_scalar_reference'],expected_kind='scalar_field_samples')
+            raw_names=('field_v','field_valid')
+            raw_before={name:hashlib.sha256(source.data_path(name).read_bytes()).hexdigest() for name in raw_names}
+            offline_context=OfflineContext(workspace=pathlib.Path(settings['workspace'])/('offline-scalar-'+sys.argv[2]),
+                python_executable=pathlib.Path(sys.executable),powershell_executable=pathlib.Path(settings['powershell_executable']),
+                tools={},host_state_path=pathlib.Path(settings['host_state_path']),
+                policy_path=offline_resource('host_resource_policy.json'),
+                capacity_policy_path=pathlib.Path(settings['capacity_policy_path']),
+                stage_policy_path=pathlib.Path(entry['offline_stage_policy_path']))
+            try:
+                with offline_patch.object(OfflineSession,'run_process',side_effect=AssertionError('native process forbidden')):
+                    first=offline_export.derive_world_scalar_support(entry['raw_scalar_reference'],context=offline_context,publish_prepared_support=True)
+                    second=offline_export.derive_world_scalar_support(entry['raw_scalar_reference'],context=offline_context,prepared_support=first.reference)
+                first=offline_open(first.reference,expected_kind='scalar_field_samples')
+                second=offline_open(second.reference,expected_kind='scalar_field_samples')
+                assert first.data_path('prepared_support_labels').is_file()
+                first_support=json.loads(first.data_path('conductor_support').read_text(encoding='utf8'))
+                second_support=json.loads(second.data_path('conductor_support').read_text(encoding='utf8'))
+                assert first_support['prepared_identity']
+                # The shared carrier fixture is all-valid; this checks delivery, not fill mathematics.
+                raw_report=json.loads(source.data_path('report').read_text(encoding='utf8'))
+                assert raw_report['fem_valid']==27 and raw_report['invalid_count']==0
+                assert first_support['result']['filled_conductor_count']==0
+                assert second_support['result']['prepared_support_manifest']['sha256']==first.reference['manifest']['sha256']
+                for name in ('field_v','field_valid'):
+                    assert first.data_path(name).read_bytes()==second.data_path(name).read_bytes()
+                    assert second.data_records['sampled_'+name]['sha256']==source.data_records[name]['sha256']
+                    assert hashlib.sha256(source.data_path(name).read_bytes()).hexdigest()==raw_before[name]
+                for artifact in (first,second):
+                    assert artifact.metadata['original_samples_reference']==source.reference
+                    report=json.loads(artifact.data_path('derivation_report').read_text(encoding='utf8'))
+                    assert report['source_samples']==source.reference
+                    assert report['native_operations']==0 and report['compute_calls']==0
+            finally:
+                no_mph[0]=False
+            print('INSTALLED_OFFLINE_SCALAR_SUPPORT=PASS labels=reused native=0 qualification=none',flush=True)
         generic_probe=runpy.run_path(str(root/'installed_generic_geometry_probe.py'))
         with section_timing('registered_generic_geometry',sys.argv[2]):
             generic_probe['run'](root)
@@ -7456,7 +7509,14 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                     published=run_managed_stage(selected['context'],descriptor=dict(project='instrument_assembly',mode='sim',software=[]),run_id='20261114_000102__test__python__installed-sampled-fields',payload={'action':'solve_fields','model':selected['model_reference']},committed_new_bytes=16777216,commitment_inputs=[selected['budget']],retention=selected['retention'],expected_operation_ids=ids,operation_dependencies={name:[ids[i-1]] for i,name in enumerate(ids) if i},action=partial(execute_ip_mr_sampled_fields,model_reference=selected['model_reference'],scalar_field_basis=selected['scalar_field_basis'],priority_evidence=selected['priority_evidence'],limits=limits),action_record=file_record(Path(execute_ip_mr_sampled_fields.__code__.co_filename),'required_evidence'),source_references=selected['prepared']['source_references'],completion_api=no_particle_batch_completion_api)
                 vendor=ip_mr_root/'installed_hs1_vendor.lua';vendor.write_text(HS1_SOURCE_FIXTURE,encoding='utf8',newline='\n')
                 ctx=selected['context']
+                # The same actual raw carrier product serves both installed arms.
+                offline_policy=json.loads(ctx.stage_policy_path.read_text(encoding='utf8'))
+                offline_policy['stages']['export_assembly_world_scalar']=copy.deepcopy(offline_policy['stages']['track'])
+                offline_stage=ip_mr_root/'offline_scalar_stage.json'
+                offline_stage.write_text(json.dumps(offline_policy),encoding='utf8',newline='\n')
                 ip_mr_installed_fixture=dict(reference={'manifest':published['manifest'],'product_id':'fields'},vendor_path=str(vendor),
+                    raw_scalar_reference=selected['scalar_field_basis']['samples']['carrier'],
+                    offline_stage_policy_path=str(offline_stage),
                     context={name:str(getattr(ctx,name)) for name in ('workspace','powershell_executable','host_state_path','capacity_policy_path','stage_policy_path')})
             print('INSTALLED_SECTION_TIMING='+json.dumps(dict(section='ip_mr_shared_sampled_producer',case='both_arms',elapsed_ns=time.perf_counter_ns()-ip_mr_started,exception=False)),flush=True)
             fixture = root / 'fixture.json'

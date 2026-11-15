@@ -1671,6 +1671,38 @@ matched. A separate source-derived 71-member Assembly witness reproduced the
 saved carrier's complete 45-group voltage request exactly. This is coarse
 carrier sampling, not a complete dynamic basis or valid IP derivative stencil.
 
+The successor carrier export on source `9743836b`,
+`20261115_121750__analysis__comsol__assembly-scalar-8c99a7166963`, published a
+separate filled product successfully. Public scalar admission and an independent
+whole-array check accepted all 5,312,307 nodes: the 3,769,772 FEM-valid values
+were bitwise unchanged, 1,541,340 strict conductor-interior nodes gained analytic
+support, and 1,192 boundary plus 3 outside nodes remained invalid. The owner exited
+with code zero, its 3,044-file source guard matched, and capacity finalized ready
+and pinned at 171,198,272 bytes with its own lease released. Sampling requested no
+Compute. A timed 30.262-second postprocess observation advanced 65,536 nodes with
+30.281 CPU-seconds and 1 MiB each of process reads/writes; it supports a CPU-bound
+classification diagnosis for that interval, not a function-level or full-grid
+throughput result.
+
+Two further raw, unfilled carrier exports from the same saved solution completed
+on that same guarded source: RF–IP connection
+`20261115_141356__analysis__comsol__assembly-scalar-63d4cdfe77a1` has 3,935,875 nodes,
+3,372,868 FEM-valid and 563,007 invalid; IP–MR connection
+`20261115_141638__analysis__comsol__assembly-scalar-11f82f42b18f` has 2,404,075 nodes,
+1,561,717 FEM-valid and 842,358 invalid. Both requested zero Compute and reported
+verified world-coordinate witnesses. Their masks still require the applicable
+support check; raw storage zeros are not field data.
+
+A sparse check of the published coarse carrier supports all 100 original birth
+gradient stencils (5,200 FEM and 1,200 analytic node occurrences). The fixed RF
+exit and IP inlet probes each still meet one invalid boundary node on this grid;
+their positions and errors are retained. Connection-window support, the remaining
+response workpoints, the complete FieldBundle and original-particle continuous
+flight remain open. These exports do not establish convergence or physical
+performance. Task evidence is retained under
+`.tools/phase04-codex-takeover-20261109/v87-carrier-progress-root-r2` and
+`v87-carrier-coarse-sparse-agent12-r2`.
+
 `resolve_ip_mr_scalar_basis` admits sixteen explicit published scalar products,
 or seventeen with external RF, against the actual source-derived basis planner.
 SFI and IP–MR share the same per-sample lineage, cold-readback, PA/mask header and

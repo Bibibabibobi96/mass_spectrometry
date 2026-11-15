@@ -110,6 +110,8 @@ def prepare_ip_mr_field_inputs(model_reference: Mapping[str, Any], *, scalar_fie
     for row in binding['bases'].values():
         for level in [row,*row.get('refinement_windows',[])]:
             references.extend((level['reference']['manifest'],level['field_solution_reference']['manifest']))
+            if level.get('original_samples_reference') is not None:
+                references.append(level['original_samples_reference']['manifest'])
             guards.extend(level['records'].values())
             small_names=('projection','request','report','reopen_geometry','reopen_solution',
                          'geometry_validation','field_solution_manifest')

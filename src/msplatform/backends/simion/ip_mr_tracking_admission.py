@@ -11,6 +11,7 @@ from msplatform.results.artifacts import OpenedArtifact, open_artifact
 from .artifacts import CompiledPreparedModel
 from .ip_mr_field_execution import _priority_projection
 from .model import require_prepared_model
+from .scalar_sample_binding import original_sample_source
 from .rf_tracking_program import _ip_mr_bindings
 
 
@@ -83,6 +84,12 @@ def admit_ip_mr_tracking_fields(reference: Mapping[str, Any] | OpenedArtifact) -
                 if Path(record['path']).resolve(strict=True) != sample.data_path(key).resolve(strict=True):
                     raise ValueError('sampled basis relocation is not qualified')
             references.extend((sample.reference['manifest'], solution.reference['manifest']))
+            original = original_sample_source(sample)
+            expected_original = level.get('original_samples_reference')
+            if expected_original != (original.reference if original is not None else None):
+                raise ValueError('sample original producer reference differs')
+            if original is not None:
+                references.append(original.reference['manifest'])
     return dict(source=source, prepared_reference=prepared.reference, model=model, basis=basis, priority=policy, world_domain=world,
                 world_frame_id=document['native_frame_id'],
                 immutable_input_records=[row[1] for row in unique.values()], source_manifests=references)

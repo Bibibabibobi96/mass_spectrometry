@@ -4,6 +4,7 @@ import copy
 import json
 import pathlib
 import shutil
+import struct
 import sys
 from contextlib import contextmanager
 from dataclasses import asdict
@@ -110,13 +111,15 @@ def sample(case,name,request):
     artifact=open_artifact(source,expected_kind='field_solution')
     grid=dict(frame_id=case.projection['assembly_frame_id'],origin_mm=[-400.]*3,pitch_mm=[500.]*3,dimensions=[3]*3,
               block_points=4,study_tag='std1',solution_tag='sol1',dataset_tag='dset1',point_count=27,maximum_mm=[600.]*3,coordinate_sanity_mm=1e-6)
-    pa=PaHeader(-2,1,10000.,3,3,3,1<<28,500.,500.,500.).pack()+bytes(27*8)
+    header=PaHeader(-2,1,10000.,3,3,3,1<<28,500.,500.,500.).pack()
+    pa=header+bytes(27*8)
+    valid=header+struct.pack('<27d',*([1.]*27))
     report=dict(status='success',scope='assembly_world_scalar_samples',field_qualification=False,compute_calls=0,
         filled_conductor_count=0,coordinate_mapping='world_identity',model_path=str(artifact.data_path('model')),
         vacuum_domains=[1],fem_valid=27,invalid_count=0,solution_readback=sf.SOLUTION,
         coordinate_witness={'status':'insufficient','index':0,'requested_mm':[],'actual_mm':[],'geometry_length_unit':'mm'},**grid)
     data=dict(projection=case.projection,grid=grid,request=request,reopen_solution={'solution':sf.SOLUTION},
-        geometry_validation={'position_mm':1e-6},reopen_geometry={'vacuum_domains':[1]},report=report,field_v=pa,field_valid=pa)
+        geometry_validation={'position_mm':1e-6},reopen_geometry={'vacuum_domains':[1]},report=report,field_v=pa,field_valid=valid)
     return case.publish(name,'scalar_field_samples',data,dict(backend='comsol',scope='assembly_world_scalar_samples',field_status='sampled',frame_id=grid['frame_id']),
         linked={'field_solution_manifest':source['manifest'],'field_solution_model':artifact.data_records['model']})
 

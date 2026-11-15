@@ -1414,6 +1414,8 @@
               "common/contracts/test_shape_query.py",
               "common/contracts/test_assembly_scalar_fill.py",
               "common/contracts/test_scalar_pa_fill.py",
+              "common/contracts/test_prepared_scalar_support.py",
+              "common/contracts/test_offline_scalar_managed.py",
               "common/contracts/test_assembly_scalar_owner_fill.py"
             ],
             "dependency_profile": "locked"
@@ -1428,6 +1430,8 @@
             "modules": [
               "common/contracts/test_assembly_scalar_fill.py",
               "common/contracts/test_scalar_pa_fill.py",
+              "common/contracts/test_prepared_scalar_support.py",
+              "common/contracts/test_offline_scalar_managed.py",
               "common/contracts/test_assembly_scalar_owner_fill.py"
             ],
             "dependency_profile": "locked"
@@ -1446,6 +1450,8 @@
             "modules": [
               "common/contracts/test_comsol_world_scalar_contract.py",
               "common/contracts/test_comsol_world_scalar_managed.py",
+              "common/contracts/test_prepared_scalar_support.py",
+              "common/contracts/test_offline_scalar_managed.py",
               "common/contracts/test_assembly_scalar_owner_fill.py",
               "common/contracts/test_installed_scientific_core.py"
             ],
@@ -2011,6 +2017,7 @@
               }
             ],
             "modules": [
+              "common/contracts/test_ip_mr_fixture_mask.py",
               "common/contracts/test_ip_mr_inert_transport.py",
               "common/contracts/test_ip_mr_sampled_field_execution.py",
               "common/contracts/test_installed_scientific_core.py"
