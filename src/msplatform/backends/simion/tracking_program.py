@@ -121,6 +121,11 @@ def _instrument_common_scalar(program: str, basis: dict, adapter: str, composer:
     """Install the admitted world-scalar composition after existing region effects."""
     if not isinstance(adapter, str) or not isinstance(composer, str):
         raise ValueError('frozen scalar runtime sources required')
+    def mask_identity(grid, record):
+        if not all(key in record for key in ('sha256', 'bytes')) or not grid.get('frame_id'):
+            return {}
+        return {'mask_identity': dict(sha256=record['sha256'], bytes=record['bytes'], frame_id=grid['frame_id'])}
+
     bindings = {}
     for name in ('carrier', 'rf_reference', 'pulse_delta'):
         item = basis['bases'][name]
@@ -128,13 +133,15 @@ def _instrument_common_scalar(program: str, basis: dict, adapter: str, composer:
         bindings[name] = dict(mode='comsol_static_scalar_v', scalar_pa=records['field_v']['path'],
                               valid_pa=records['field_valid']['path'], origin_mm=grid['origin_mm'],
                               pitch_mm=grid['pitch_mm'], dimensions=grid['dimensions'],
-                              ideal_sheet_projection=item['ideal_sheet_projection'])
+                              ideal_sheet_projection=item['ideal_sheet_projection'],
+                              **mask_identity(grid, records['field_valid']))
         if item.get('refinement_windows'):
             bindings[name]['refinement_windows'] = [dict(
                 name=level['name'], active_box_mm=level['active_box_mm'], mode='comsol_static_scalar_v',
                 scalar_pa=level['records']['field_v']['path'], valid_pa=level['records']['field_valid']['path'],
                 origin_mm=level['grid']['origin_mm'], pitch_mm=level['grid']['pitch_mm'],
-                dimensions=level['grid']['dimensions'], ideal_sheet_projection=level['ideal_sheet_projection'])
+                dimensions=level['grid']['dimensions'], ideal_sheet_projection=level['ideal_sheet_projection'],
+                **mask_identity(level['grid'], level['records']['field_valid']))
                 for level in item['refinement_windows']]
     rf = dict(basis['rf'], phase_reference_instrument_time_us=basis['clock']['phase_reference_instrument_time_us'])
     declarations = ('local single_flight_scalar_adapter=(function()\n' + adapter + '\nend)()\n'

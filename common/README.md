@@ -83,6 +83,15 @@ Tracking joins saved-solution provenance through its authenticated small manifes
 and the sample's exact solution record, without rereading an unused MPH payload.
 The existing owner still protects both sampled data and its solution producer.
 
+The three SFI scalar workpoints now use the same admitted identity pool for their
+validity masks and a fresh support-check cache for each query. Voltage arrays stay
+independent. Mask bytes, frame, origin, pitch and dimensions must match for sharing;
+different grids or masks remain separate, and zero RF/pulse coefficients do not
+bypass support validation. The published-basis software replay used 20 scalar
+opens, including five masks, instead of 30 distinct paths. This is not a measured
+native memory peak. Failure messages put particle, elapsed time and selected
+instance before long paths so native log truncation retains the diagnostic state.
+
 RF scientific group drives and carrier coefficients are projected by
 `components.rf_multipole.drive` from the canonical provider sources. SIMION
 retains native electrode-map validation; RF, TOF and frontend consumers share

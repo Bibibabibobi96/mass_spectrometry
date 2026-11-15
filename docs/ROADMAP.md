@@ -195,9 +195,32 @@ Nine actual Lua-backed sheet/preflight tests passed with unchanged source hashes
 The diagnostic successor `track-cbdfe35d5ce4` then retained the actual failed
 query [-172.86423154693139, -2.8705124235016704, -15.96149287919809] mm,
 base x support indices -1..2 in a 286-node axis. Its error line was truncated
-before particle/time identity; the 37 splats are not detector hits. Writers and
+before particle/time identity; the 37 splats are not detector hits. The subsequent
+message ordering puts particle/time/instance ahead of long paths and passed an
+actual Lua regression with 700-character paths. Writers and
 leases closed. The point is inside the saved BVP box and outside canonical
-solids, but its saved FEM value and a sufficient replacement export remain open.
+solids. Three saved-solution raw probes subsequently returned 486 valid nodes
+and no invalid nodes across that point and eight nominal query-domain anchors;
+this is not whole-domain coverage. Their writers and leases closed, while each
+stdout separately retained an observation-scope warning.
+The unchanged full geometry now has an explicitly selected 2 mm base grid
+[-364,-364,-66] to [364,364,886] mm, with 365x365x477 nodes and an extra
+callback buffer. The four existing aligned windows remain first and the old
+1 mm base becomes a fifth window. The reflector planes stay aligned; the three
+partial OA sheets remain covered by the fine data. This is functional sampling,
+not field convergence or precision qualification. Public raw export followed by
+the existing protected offline derivation keeps each stage within the unchanged
+2 GiB file accounting without copying original samples. The first carrier raw
+product `assembly-scalar-70de323e2961` is published (zero Compute); classification
+and the remaining workpoints are in progress. Unknown vacuum stays invalid.
+
+The SFI composer now shares masks only by their admitted byte/grid identity,
+keeps all three voltage fields independent and checks support even at zero
+coefficients. The integrated mask-sharing epoch passed 21 software parents and
+an actual-source published-basis replay (20 opens, five masks); PA objects in
+that replay were mocked. The final diagnostic-ordering epoch passed 13 targeted
+parents with unchanged source identities. Native memory/flight and final ordinary
+installation/Repository acceptance of this successor remain open.
 RF attempt `track-8e687cab0c61` failed on an unknown RF-body support node at
 [4, -305.75, 1.75] mm. Its sampled Fly peak was 8,222,646,272 bytes, below
 8 GiB for that short failed attempt, not a full-flight peak guarantee. A saved-FEM

@@ -13,17 +13,19 @@ function composer.new(adapter, rf_kernel, pulse, bindings, rf)
   -- A unit amplitude and scale therefore produce a dimensionless waveform.
   local wave = rf_kernel.compile_physical{waveform=rf.waveform, frequency_hz=rf.frequency_hz,
     phase_rad=rf.phase_rad, rf_amplitude_v=1, rf_scale=1}
-  local carrier = adapter(bindings.carrier)
-  local reference = adapter(bindings.rf_reference)
-  local delta = adapter(bindings.pulse_delta)
+  local sharing = {}
+  local carrier = adapter(bindings.carrier,nil,sharing)
+  local reference = adapter(bindings.rf_reference,nil,sharing)
+  local delta = adapter(bindings.pulse_delta,nil,sharing)
   assert(type(carrier) == 'function' and type(reference) == 'function' and type(delta) == 'function',
     'scalar adapter must return query functions')
   local function sample(instance, x, y, z, instrument_time_us)
     assert(instance ~= nil, 'selected instance required')
     -- Query all supports even when a subsequent coefficient is zero.
-    local cx,cy,cz = carrier(instance,x,y,z)
-    local rx,ry,rz = reference(instance,x,y,z)
-    local px,py,pz = delta(instance,x,y,z)
+    local support = {}
+    local cx,cy,cz = carrier(instance,x,y,z,support)
+    local rx,ry,rz = reference(instance,x,y,z,support)
+    local px,py,pz = delta(instance,x,y,z,support)
     local coefficient = wave.differential_at(instrument_time_us)
     local active = pulse.is_active_at(instrument_time_us) and 1 or 0
     return cx + coefficient*rx + active*px,

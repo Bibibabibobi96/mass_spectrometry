@@ -269,8 +269,8 @@ local function load_field(binding, shared_mask, reuse_workbench, sharing)
         local q = local_mm[a]/pitch[a]
         lo[a], hi[a] = math.floor(q)-1, math.ceil(q)+1
         if not (lo[a] >= 0 and hi[a] < size[a]) then
-          error(string.format('NUMERICAL_COVERAGE_FAILURE V_SUPPORT_BOX_OUTSIDE world=(%.17g,%.17g,%.17g) level=%s axis=%d lo=%d hi=%d dimension=%d scalar=%s mask=%s ion=%s elapsed_us=%s',
-            x,y,z,tostring(binding.name or 'base'),a,lo[a],hi[a],size[a],tostring(binding.scalar_pa),tostring(binding.valid_pa),tostring(ion_number),tostring(ion_time_of_flight)))
+          error(string.format('NUMERICAL_COVERAGE_FAILURE V_SUPPORT_BOX_OUTSIDE world=(%.17g,%.17g,%.17g) level=%s axis=%d lo=%d hi=%d dimension=%d ion=%s elapsed_us=%s ion_instance=%s scalar=%s mask=%s',
+            x,y,z,tostring(binding.name or 'base'),a,lo[a],hi[a],size[a],tostring(ion_number),tostring(ion_time_of_flight),tostring(ion_instance),tostring(binding.scalar_pa),tostring(binding.valid_pa)))
         end
       end
     end
@@ -284,16 +284,16 @@ local function load_field(binding, shared_mask, reuse_workbench, sharing)
         if upper < box[a][1] or lower > box[a][2] then intersects=false; break end
       end
       if intersects then
-        error(string.format('NUMERICAL_COVERAGE_FAILURE V_UNREPRESENTED_SHEET world=(%.17g,%.17g,%.17g) level=%s instance=%s group=%s member=%s scalar=%s mask=%s ion=%s elapsed_us=%s',
-          x,y,z,tostring(binding.name or 'base'),tostring(sheet.instance_id),tostring(sheet.electrode_group_id),tostring(sheet.member_id),tostring(binding.scalar_pa),tostring(binding.valid_pa),tostring(ion_number),tostring(ion_time_of_flight)))
+        error(string.format('NUMERICAL_COVERAGE_FAILURE V_UNREPRESENTED_SHEET world=(%.17g,%.17g,%.17g) level=%s ion=%s elapsed_us=%s ion_instance=%s instance=%s group=%s member=%s scalar=%s mask=%s',
+          x,y,z,tostring(binding.name or 'base'),tostring(ion_number),tostring(ion_time_of_flight),tostring(ion_instance),tostring(sheet.instance_id),tostring(sheet.electrode_group_id),tostring(sheet.member_id),tostring(binding.scalar_pa),tostring(binding.valid_pa)))
       end
     end
     -- Existing measured support envelope, without extrapolation or fill-zero.
     for k=lo[3],hi[3] do for j=lo[2],hi[2] do for i=lo[1],hi[1] do
       if not shared then
         if mask:potential(i,j,k) ~= 1 then
-          error(string.format('NUMERICAL_COVERAGE_FAILURE V_SUPPORT_UNKNOWN world=(%.17g,%.17g,%.17g) node=(%d,%d,%d) level=%s mask=%s ion=%s elapsed_us=%s',
-            x,y,z,i,j,k,tostring(binding.name or 'base'),tostring(binding.valid_pa),tostring(ion_number),tostring(ion_time_of_flight)))
+          error(string.format('NUMERICAL_COVERAGE_FAILURE V_SUPPORT_UNKNOWN world=(%.17g,%.17g,%.17g) node=(%d,%d,%d) level=%s ion=%s elapsed_us=%s ion_instance=%s mask=%s',
+            x,y,z,i,j,k,tostring(binding.name or 'base'),tostring(ion_number),tostring(ion_time_of_flight),tostring(ion_instance),tostring(binding.valid_pa)))
         end
       end
       local v = pa:potential(i,j,k)
