@@ -17,71 +17,72 @@ successfully through 12 native build/reopen operations, with zero Refine,
 Compute and Fly. It preserves the selected model, scalar sources and collision
 geometry; scalar coverage and scientific qualification are not granted.
 
-The original 100-source tracking attempt `track-27a67896934c` failed before any
-native operation on a missing detector-surface key; the `bde9` correction handles
-the actual empty-surface evidence. The fresh `track-d71e9a4e7331` built and cold
-reopened its tracking IOB successfully, then Fly exited 1 with `too many PAs in
-memory` and zero splats (operation exits 0, 0, 1). Source guards and process drains
-closed. This is a failed flight, not a 100-particle result or field qualification;
-the PA-memory correction subsequently passed a real synthetic 107-PA probe over
-four factory initializations and 51 queries per initialization. The next original
-N100 attempt, `track-7e1acbfc6e55` on `3bf046bd`, passed build and cold reopen,
-then Fly failed after one splat with `interleaved particle stream is unsupported`.
-All writers drained, host leases released and source guards matched; no collection
-was published. The exact retained HS1 import overwrote four tracking callbacks.
-The successor preserves those callbacks across import and retains the existing
-explicit HS1 composition, sequential-stream checks and original-ID seeds. Its
-generated-Program regression and four shared RF–IP/HS1 consumer modules passed
-seven tests with zero skips in 110.938 guarded seconds, unchanged source and a
-released GATE. Corrected native flight remains unverified.
+The original-source native attempts retain their individual failures: missing
+empty-surface evidence (`track-27a67896934c`), PA memory exhaustion
+(`track-d71e9a4e7331`), and HS1 callback/sequential-state failures
+(`track-7e1acbfc6e55`, `track-418a32b3b9ad`). The actual empty-surface,
+shared-PA, callback import and deferred-terminate repairs have their scoped
+software/native mechanism evidence in the corresponding run records and Git
+history. None of those failures or tiny synthetic probes is a completed N100
+instrument result.
 
-The fresh `track-418a32b3b9ad` on `35ca7e69` recorded all 100 original births
-but stopped after the first contact on the same sequential-state guard; no
-terminal collection was published. The native owner closed with unchanged
-source and stopped writers. The [official trajectory flow](https://simion.com/info/_images/fig-prg-flow.pdf)
-defers every per-ion terminate callback until all ions have splatted. A real
-two-ion zero-field diagnostic, `20261115_211940__analysis__simion__deferred-terminate-369fd1f7a59b`,
-confirmed both initializes, both first-step callbacks and only then both native
-terminates, with global callbacks enabled and grouped mode disabled. It used
-one tiny synthetic workbench, no HS1, no production fields and zero Refine or
-Compute; its source guard and owner closure passed. The successor permits first
-activation of each new ion while rejecting a return to an earlier integration
-stream. It retains actual deferred terminal collection and original-ID seeding;
-seven focused tests across the generated Program and shared RF–IP/HS1 consumers
-passed with zero skips in 106.515 guarded seconds and unchanged source. The
-corrected full N100 attempt still remains unverified.
+On frozen `a1e7e2c0`, the original N100 `20261115_213330__sim__simion__track-4c1f6982849a` attempt passed IOB build
+and cold verification, then failed Fly on `V_SUPPORT_UNKNOWN`. The fresh
+`20261115_222325__analysis__simion__coverage-diagnostic-187ba805d369`
+again returned operation exits 0, 0, 1 and captured ion 4 at absolute time
+22.762081869169585 us, world [-2.1111652872581432, -261.83903219846405,
+-0.021531246168074433] mm. Its coarse derivative stencil includes an invalid
+raw node at [-2.5, -262.5, -5] mm. The mask is zero in all 17 coarse workpoints;
+the stored scalar zero is not valid potential. The node is outside the canonical
+conductors and inside the outer box; its raw no-data mechanism remains unresolved.
+Source snapshots match, writers stopped and all three host leases released.
+No complete terminal collection was published.
 
-The generic sampled RF/pulse software candidate passed 28 focused parents; its
-separate grouped recovery checks passed seven parents with inert native leaves.
-The ordinary wheel and rebuilt-sdist parent passed on `a5c1fbad` in 1,371.187 s;
-the full ordinary parent including the new generic dynamic installed probe passed
-on frozen `3bf046bd` in 1,358.281 s, with 3,070 source files unchanged and the GATE
-released. This qualifies that source epoch, not the callback-repair successor. Full current
-Repository, native functional completion, scientific precision and convergence,
-and the original 15-minute target remain open. The 700 GiB managed target and
-295 GiB free-space floor remain unchanged. Evidence is retained under workspace
-`.tools/phase04-codex-takeover-20261109/v87-neutral-cumulative-focused-agent11-r1`,
-`v87-neutral-recovery-focused-agent8-r1` and `v87-neutral-original-installed-agent11-r1`,
-and the named run manifests and logs.
+The independent same-solution, no-Compute two-grid native export
+`20261115_232632__analysis__comsol__assembly-scalar-7e871b8f1836` reproduced
+the invalid original node (17/27 nearby samples valid). The exact particle query
+and all 27 of its local 0.1-mm samples are valid; the query potential is
+-0.0001394433886775327 V. This establishes local sampled support, not a corrected
+coarse field, cause, full trajectory or precision. Original coordinates and raw
+invalids remain preserved. A complete RF-body sampling window and explicit
+reuse of unchanged collision geometry are being prepared through the same public
+stages. No unknown vacuum or boundary is filled to pass tracking. Functional
+pipeline completion is the current priority; convergence and accuracy studies
+are not prerequisites, while actual required field support remains mandatory.
 
-The earlier `a5c1fbad` Changed run `43706871590` failed required generic Lua
-tests on environment-only discovery, a non-neutral dispatch test with an
-incomplete model fixture, and the scientific dependency check on a dynamic
-registered-source import. The successor uses the existing explicit-Lua/PATH
-discovery contract without adding skips and restores the actual fixture shape.
-Registered source freezing now resolves declared Python source paths through
-execution instead of importing each target in the backend. The existing exact
-file guards and frozen copies remain; dotted-name lookup may import its parent
-package, as documented by the source resolver. Arbitrary dynamic imports remain
-rejected by the unchanged scientific boundary. All eight original failing parents
-and the source/frozen-input/boundary regressions passed in a 40-test, zero-skip
-PATH-only Lua run (714.797 guarded seconds), including the four actual managed
-field/tracking consumers. The two selector regressions then passed with their
-missing/unknown/full-selection negatives after the expected real consumer set
-was updated; direct public routes select 24 modules for execution inputs and two
-for the new source-resolution test. Source guards and GATE release passed.
-The historical failed CI run remains failed; final Repository, ordinary
-installation of this successor and remote successor CI remain unverified.
+The SFI common-domain carrier's wider axial export uses the existing complete
+77-member geometry and saved solution, with no Compute. Its native export has
+completed; conductor-support postprocessing is still in progress. It is not yet
+a published scalar basis or a completed original-source flight. RF and pulse
+exports must independently pass actual mask, voltage and provenance admission.
+
+The complete ordinary installation module on frozen `e3618a8a` passed all 11
+parents, including the original independent direct-wheel and rebuilt-sdist
+outside-checkout parent (2238.635811 s). The same frozen Repository command
+ended FAIL: 49 PASS, 2 FAIL and 12 NOT_APPLICABLE stages; summary wall time
+4965.032920 s and outer command 4967.499601 s. All source bytes and HEAD matched.
+The two failures were the RF process-family fixture and MR scalar-adapter
+resource origin. The gate-only successor fixes the fixture's dynamic birth-time
+scope and the MR entry's checkout `src` selection. Its actual shared-ledger
+Changed run passed eight selected stages in 254.944410 s; the separate complete
+static-field-binding module passed 102 parents / 311 successful records, including
+the original resource-origin and missing-resource test. These close the reproduced
+defects, not the historical failed Repository run or final whole-P4 acceptance.
+The earlier successor Changed run used a worktree-relative resource ledger and is
+retained with that limitation; it is not the shared-ledger qualification.
+
+The scheduler successor `d3c33854` excludes ordinary nonheavy GATE CPU declarations
+from native reservation totals while retaining live CPU/headroom, native/heavy
+reservations, memory, I/O and exclusivity checks. Its 73-test module and six-stage
+scheduler/adapter Owner gate passed. The concurrent controller/source-origin
+qualification is recorded separately; neither timing above is an isolated
+performance comparison. The original 15-minute software target remains unmet.
+Final same-candidate Repository/installation, complete retained continuous chains,
+applicable native acceptance and remaining P4 requirements stay open. The
+700 GiB managed target and 295 GiB free-space floor are unchanged. Exact logs,
+source guards, summaries and scoped readbacks remain under workspace
+`.tools/phase04-codex-takeover-20261109` and the named published run manifests;
+no software result grants field, convergence or scientific qualification.
 
 The user withdrew the complete cooled feature in V8.5. Its dedicated source,
 resources, requests and tests are retired rather than renamed or disabled. IP HP/LP,

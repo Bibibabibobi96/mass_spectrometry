@@ -927,10 +927,11 @@ foreach($scenario in @('success','child_failure','postprocess_denied','receipt_u
         command = f". '{support}';" + r"""
 $birth=[datetime]::new(2026,10,28,0,0,0,[DateTimeKind]::Utc)
 $script:events=[Collections.Generic.List[string]]::new()
+$script:testBirth=$birth
 function New-TestProcess($Id,$Working,$Private,$Cpu,$Path) {
  $p=[pscustomobject]@{Id=$Id;WorkingSet64=$Working;PrivateMemorySize64=$Private;
    TotalProcessorTime=[timespan]::FromTicks($Cpu);Path=$Path}
- $p|Add-Member ScriptProperty StartTime {$script:events.Add('birth');$birth}
+ $p|Add-Member ScriptProperty StartTime {$script:events.Add('birth');$script:testBirth}
  $p
 }
 $root=New-TestProcess 101 10 30 7 ''

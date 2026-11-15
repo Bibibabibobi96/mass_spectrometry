@@ -133,11 +133,19 @@ they do not execute the installed native owners. Native scalar acceptance
 and the dynamic/common-field chain remain open.
 Changed r3 remains FAILED on its exact detector Lua fixture; `1379ff97` repairs that
 test, and its exact rerun plus the four originally blocked checks passed separately.
-The later complete Repository command on frozen `b90ac498` passed; its exact
-counts, skips and 2,977.466696-second public wall time are recorded in the
-integration status. Common-field coupling, named continuous chains, final P4
-candidate acceptance and performance remain open; software success does not
-close B03 or the full goal.
+The retained `b90ac498` complete Repository success remains bound to that source.
+The later frozen `e3618a8a` run passed ordinary wheel/sdist installation but ended
+Repository FAIL (49 PASS, 2 FAIL, 12 NA; 4967.499601 s outer wall). The gate-only
+successor reran and corrected both original defects through actual consumers;
+its shared-ledger Changed result and complete MR resource module are recorded in
+[the current integration state](../integrations/docs/INTEGRATION.md#当前边界).
+RF–IP–MR native flight currently stops on explicit invalid scalar support; a
+same-solution native probe preserves the original invalid node and shows valid
+local support at the actual particle query. RF-body export/collision reuse and
+SFI axial support proceed through the existing public stages. Full original-source
+collections, final same-candidate acceptance and the 15-minute target remain open;
+field accuracy and convergence are not prerequisites for the current functional
+pipeline, and missing actual support cannot be replaced with zero.
 
 V8.7 is the active P4 scope. Its single goal continues the existing task branch and preserves
 all retained scientific, installation, recovery and performance obligations. Eight domain

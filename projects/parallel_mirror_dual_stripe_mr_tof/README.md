@@ -52,6 +52,10 @@ execution profile。软件验证从仓库根使用`common/verify.ps1 -Scope Chan
 [`verify_project.ps1`](verify_project.ps1)承接目录选出的项目职责：内部`Core`保留固定合同并合并所选模块，
 `Static`承接完整软件集合或显式分片。摘要只证明实际执行范围，不赋予求解或科学资格。
 
+The project software gate selects this checkout's `src` and repository root for its Python child,
+including when the Python 3.11 executable belongs to another environment. It restores the caller's
+`PYTHONPATH` after success or failure; an unrelated editable installation cannot replace selected resources.
+
 ## 历史补充索引
 
 [历史索引](docs/history/README.md)集中列出已冻结实验、迁移和旧方案；需要追溯证据时按需进入。

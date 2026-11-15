@@ -35,7 +35,7 @@ try {
   if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
     throw "Python 3.11 runtime missing: $python"
   }
-  $env:PYTHONPATH = $repoRoot
+  $env:PYTHONPATH = @((Join-Path $repoRoot 'src'), $repoRoot) -join [IO.Path]::PathSeparator
   $env:PYTHONDONTWRITEBYTECODE = '1'
   Remove-Item Env:SIMION_EXE -ErrorAction SilentlyContinue
 
