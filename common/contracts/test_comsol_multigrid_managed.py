@@ -7,7 +7,7 @@ from common.contracts import test_comsol_world_scalar_managed as base
 from common.contracts import test_execution_runtime as runtime_fixture
 from common.contracts.test_assembly_scalar_fill import fixture
 from msplatform.backends.comsol import assembly_field_export as subject
-from msplatform.backends.simion.standalone_pa_composition import PaHeader
+from msplatform.backends.simion.standalone_pa_composition import HEADER, PaHeader
 from msplatform.execution.owner import run_managed_stage
 from msplatform.execution.run_session import RunSession
 from msplatform.execution.inputs import freeze_file
@@ -30,9 +30,8 @@ class ScalarMultiGridManagedTests(unittest.TestCase):
    before={name:source.data_path(name).read_bytes() for name in ('projection','request','model')}
    _,_,grid=fixture();grid.update(block_points=7,study_tag='std1',solution_tag='sol1',dataset_tag='dset1');grid.pop('point_count')
    grids={n:dict(grid,origin_mm=[-2+0.5*i,-1,-1]) for i,n in enumerate(('one','two','three'))}
-   writer=root/'writer.m';writer.write_bytes(b'inert');wm=root/'writer.json';wm.write_text('{}');wr=file_record(writer,'required_evidence');wmr=file_record(wm,'required_evidence')
-   hp=PaHeader(-2,1,200.,5,3,3,1<<28,1.,1.,1.);hm=PaHeader(-2,1,1.,5,3,3,1<<28,1.,1.,1.)
-   potential=hp.pack()+struct.pack('<45d',-0.,*([0.]*44));mask=hm.pack()+struct.pack('<45d',1.,*([0.]*44))
+   header=PaHeader(-2,1,1.,5,3,3,1<<28,1.,1.,1.).pack()
+   potential=bytes(HEADER.size)+struct.pack('<45d',-0.,*([0.]*44));mask=bytes(HEADER.size)+struct.pack('<45d',1.,*([0.]*44))
    actual=RunSession.run_process;mode={'fail':False};observed=[]
    def transport(session,operation_id,**kw):
     self.assertEqual((operation_id,kw['role'],kw['stage']),('export_world_scalar','COMSOL','solver'))
@@ -40,21 +39,30 @@ class ScalarMultiGridManagedTests(unittest.TestCase):
     control=session.declare_file(session.input_dir/'test_control.json','required_evidence');control.write_text(json.dumps({'batch_spec':str(session.input_dir/'world-grid-batch.json'),'potential_hex':potential.hex(),'mask_hex':mask.hex(),'model':str(source.data_locations['model']),'solution':base.SOLUTION,'batch_report':str(session.result_dir/'export_world_scalar_batch.json'),'bootstrap':str(session.log_dir/'export_world_scalar.bootstrap.log'),'completion':str(session.log_dir/'export_world_scalar.launcher.json'),'run_id':session.run_id,'fail_second':mode['fail']}),encoding='utf8');control_record=file_record(control,'required_evidence');session.add_input('inert_control',control_record)
     observed.append(operation_id)
     return actual(session,operation_id,executable=Path(sys.executable),arguments=['-I','-B',str(leaf),str(control)],role='GATE',stage='inert_multigrid',limits=kw['limits'],immutable_input_records=[*kw['immutable_input_records'],leaf_record,control_record])
-   with patch.object(subject,'resolve_published_writer',return_value=(wmr,wr)),patch.object(RunSession,'run_process',new=transport):
-    products=subject.export_world_scalar_grids(source.reference,grids=grids,writer_manifest=wmr,context=context)
+   with patch.object(RunSession,'run_process',new=transport):
+    products=subject.export_world_scalar_grids(source.reference,grids=grids,context=context)
     self.assertEqual(set(products),set(grids));self.assertEqual(observed,['export_world_scalar'])
     for name,item in products.items():
      reopened=open_artifact(item.reference,expected_kind='scalar_field_samples');self.assertEqual(reopened.metadata['compute_calls_requested'],0)
-     self.assertEqual(reopened.data_path('field_v').read_bytes(),potential);self.assertEqual(reopened.data_path('field_valid').read_bytes(),mask)
+     self.assertEqual(reopened.data_path('field_v').read_bytes(),header+potential[HEADER.size:]);self.assertEqual(reopened.data_path('field_valid').read_bytes(),header+mask[HEADER.size:])
      row=json.loads(reopened.data_path('report').read_text(encoding='utf8'));self.assertEqual(row['origin_mm'],grids[name]['origin_mm']);self.assertEqual(row['compute_calls'],0)
     mode['fail']=True
-    with self.assertRaises(ProcessExecutionError):subject.export_world_scalar_grids(source.reference,grids=grids,writer_manifest=wmr,context=context)
+    with self.assertRaises(ProcessExecutionError):subject.export_world_scalar_grids(source.reference,grids=grids,context=context)
     mode['fail']=False
     with patch.object(subject,'declare_runtime_files',side_effect=ValueError('injected diagnostic cleanup failure')):
      with self.assertRaisesRegex(ValueError,'injected diagnostic cleanup failure'):
-      subject.export_world_scalar_grids(source.reference,grids=grids,writer_manifest=wmr,context=context)
-   runs=list((context.workspace/'artifacts/projects/instrument_assembly/runs').glob('*assembly-scalar-*/run_manifest.json'));self.assertEqual(len(runs),3)
-   docs=[json.loads(p.read_text(encoding='utf-8-sig')) for p in runs];self.assertCountEqual([x['status'] for x in docs],['success','failed','failed'])
+      subject.export_world_scalar_grids(source.reference,grids=grids,context=context)
+    calls=[];actual_finalize=subject.finalize_scalar_pair
+    def fail_second(*args,**kwargs):
+     calls.append(True)
+     if len(calls)==2:raise OSError('injected second header finalization failure')
+     return actual_finalize(*args,**kwargs)
+    with patch.object(subject,'finalize_scalar_pair',side_effect=fail_second):
+     with self.assertRaisesRegex(OSError,'injected second header finalization failure'):
+      subject.export_world_scalar_grids(source.reference,grids=grids,context=context)
+    self.assertEqual(len(calls),2)
+   runs=list((context.workspace/'artifacts/projects/instrument_assembly/runs').glob('*assembly-scalar-*/run_manifest.json'));self.assertEqual(len(runs),4)
+   docs=[json.loads(p.read_text(encoding='utf-8-sig')) for p in runs];self.assertCountEqual([x['status'] for x in docs],['success','failed','failed','failed'])
    for path,doc in zip(runs,docs,strict=True):
     completion=json.loads((path.parent/'results/execution_completion.json').read_text(encoding='utf-8-sig'))['writer_completion'];self.assertEqual(len(completion['operations']),1);self.assertTrue(completion['operations'][0]['observation']['exit_confirmed']);self.assertEqual(completion['resource_releases'][0]['completion_receipt']['host_release']['result']['status'],'released')
     if doc['status']=='failed':
@@ -70,4 +78,4 @@ class ScalarMultiGridManagedTests(unittest.TestCase):
        for leaf in ('field_v.pa','field_valid.pa'):self.assertIn(str((path.parent/'scalar'/name/leaf).resolve()),output_paths)
      else:self.assertFalse((path.parent/'results/export_world_scalar_three.json').exists())
    self.assertEqual(before,{name:source.data_path(name).read_bytes() for name in before});self.assertEqual(load_capacity_protection_leases(context.workspace/'artifacts')['audit'],[])
-   print('MULTIGRID_MANAGED_RECEIPT='+json.dumps({'products':len(products),'real_child_operations':len(observed),'statuses':['success','failed','failed'],'source_unchanged':True,'lease_audit':[],'native_solver':False}),flush=True)
+   print('MULTIGRID_MANAGED_RECEIPT='+json.dumps({'products':len(products),'real_child_operations':len(observed),'statuses':['success','failed','failed','failed'],'source_unchanged':True,'lease_audit':[],'native_solver':False}),flush=True)

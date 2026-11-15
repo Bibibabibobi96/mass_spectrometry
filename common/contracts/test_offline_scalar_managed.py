@@ -6,7 +6,7 @@ from msplatform.backends.comsol import assembly_field_export as subject, native_
 from common.contracts import test_comsol_world_scalar_managed as base
 from common.contracts import test_execution_runtime as execution_fixture
 from common.contracts.test_assembly_scalar_fill import fixture
-from msplatform.backends.simion.standalone_pa_composition import PaHeader
+from msplatform.backends.simion.standalone_pa_composition import HEADER
 from msplatform.execution.owner import run_managed_stage
 from msplatform.execution.run_session import RunSession
 from msplatform.execution.completion import no_particle_batch_completion_api
@@ -40,10 +40,9 @@ class SupportOwner(unittest.TestCase):
     return open_artifact({'manifest':result['manifest'],'product_id':'solution'},expected_kind='field_solution')
    source1=create_source(1);source2=create_source(2)
    _,_,grid=fixture();grid.update(block_points=7,study_tag='std1',solution_tag='sol1',dataset_tag='dset1');grid.pop('point_count')
-   hp=PaHeader(-2,1,200.,5,3,3,1<<28,1.,1.,1.);hm=PaHeader(-2,1,1.,5,3,3,1<<28,1.,1.,1.);sample=root/'potential.pa';valid=root/'valid.pa';sample.write_bytes(hp.pack()+struct.pack('<45d',-0.,*([0.]*44)));valid.write_bytes(hm.pack()+struct.pack('<45d',1.,*([0.]*44)))
-   writer=root/'writer.m';writer.write_bytes(b'inert');wm=root/'writer.json';wm.write_text('{}');wr=file_record(writer,'required_evidence');wmr=file_record(wm,'required_evidence')
+   sample=root/'potential.pa';valid=root/'valid.pa';sample.write_bytes(bytes(HEADER.size)+struct.pack('<45d',-0.,*([0.]*44)));valid.write_bytes(bytes(HEADER.size)+struct.pack('<45d',1.,*([0.]*44)))
    def control(source,changed=False):
-    if changed:valid.write_bytes(hm.pack()+struct.pack('<45d',*([1.]*44),0.))
+    if changed:valid.write_bytes(bytes(HEADER.size)+struct.pack('<45d',*([1.]*44),0.))
     resolved=subject.validate_grid(grid,json.loads(source.data_path('projection').read_text()),base.SOLUTION);resolved['coordinate_sanity_mm']=1e-6
     n=44 if not changed else 1
     row=dict(resolved,status='success',scope='assembly_world_scalar_samples',field_qualification=False,compute_calls=0,filled_conductor_count=0,coordinate_mapping='world_identity',model_path=str(source.data_path('model')),vacuum_domains=[1],fem_valid=45-n,invalid_count=n,solution_readback=base.SOLUTION,coordinate_witness={'status':'insufficient','index':0,'requested_mm':[],'actual_mm':[],'geometry_length_unit':'mm'})
@@ -56,10 +55,10 @@ class SupportOwner(unittest.TestCase):
     if first is not None:
      view=load_capacity_protection_leases(context.workspace/'artifacts');self.assertTrue(path_is_protected(first.manifest_location,view['protected_paths']));live_leases.append(view['audit'])
     kwargs.update(role='GATE',stage='assembly_scalar_inert_transport');return real(session,operation_id,**kwargs)
-   with patch.object(subject,'freeze_native_sources',side_effect=sources),patch.object(RunSession,'run_process',new=transport),patch.object(subject,'resolve_published_writer',return_value=(wmr,wr)):
-    control(source1);raw1=subject.export_world_scalar(source1,grid=grid,writer_manifest=wmr,context=context,fill_conductor_interiors=False)
-    control(source2);raw2=subject.export_world_scalar(source2,grid=grid,writer_manifest=wmr,context=context,fill_conductor_interiors=False)
-    control(source2,True);raw3=subject.export_world_scalar(source2,grid=grid,writer_manifest=wmr,context=context,fill_conductor_interiors=False)
+   with patch.object(subject,'freeze_native_sources',side_effect=sources),patch.object(RunSession,'run_process',new=transport):
+    control(source1);raw1=subject.export_world_scalar(source1,grid=grid,context=context,fill_conductor_interiors=False)
+    control(source2);raw2=subject.export_world_scalar(source2,grid=grid,context=context,fill_conductor_interiors=False)
+    control(source2,True);raw3=subject.export_world_scalar(source2,grid=grid,context=context,fill_conductor_interiors=False)
    offline=replace(context,tools={})
    original={k:raw1.data_path(k).read_bytes() for k in ('field_v','field_valid','report')}
    actual_postprocess=subject._postprocess_scalar

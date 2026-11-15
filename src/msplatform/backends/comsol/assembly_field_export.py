@@ -11,6 +11,8 @@ from typing import Any
 from uuid import uuid4
 
 from msplatform.backends.comsol.assembly_field_solution import validate_solution_readback
+from msplatform.backends.simion.scalar_pa_payload import finalize_scalar_pair
+from msplatform.backends.simion.standalone_pa_composition import HEADER
 from msplatform.backends.comsol.native_execution import (
     declare_runtime_files, freeze_native_sources, matlab_text, require_launcher_completion,
 )
@@ -24,8 +26,6 @@ from msplatform.io.manifest_records import (
     file_record, require_completed_terminal_publication, validate_file_record, verify_record,
 )
 from msplatform.results.artifacts import open_artifact
-
-_REVIEWED_ADAPTED_WRITER_SHA256 = '2B5F211548D22F8D06B4BAAB88E85FF292A271E7E217877D96C1734A25C89A5B'
 
 _NATIVE_SOURCES = ('comsolstartup.m', 'export_assembly_world_scalar_field.m',
                    'sample_scalar_grid_blocks.m', 'read_assembly_stationary_solution.m')
@@ -59,32 +59,6 @@ def validate_grid(grid: Mapping[str, Any], projection: Mapping[str, Any], soluti
         raise ValueError('scalar grid extends outside the explicitly selected solution geometry')
     return dict(grid, origin_mm=list(origin), pitch_mm=list(pitch), dimensions=list(dimensions),
                 maximum_mm=maximum, point_count=math.prod(dimensions))
-
-
-def resolve_published_writer(manifest_record: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Verify the existing published adapted PA writer without an installed-path fallback."""
-    authority = validate_file_record(manifest_record, 'PA writer source manifest')
-    path = Path(authority['path'])
-    if not path.is_absolute():
-        raise ValueError('PA writer source manifest path must be explicit and absolute')
-    verify_record('PA writer source manifest', authority)
-    require_completed_terminal_publication(path)
-    published = json.loads(path.read_text(encoding='utf-8-sig'))
-    if (not isinstance(published, dict) or published.get('role') != 'simulation_run_manifest'
-            or published.get('project') != 'parallel_mirror_dual_stripe_mr_tof'
-            or published.get('status') != 'success' or not isinstance(published.get('inputs'), dict)):
-        raise ValueError('PA writer requires a successful published corridor export manifest')
-    matches = [value for value in published['inputs'].values() if isinstance(value, Mapping)
-               and isinstance(value.get('path'), str) and Path(value['path']).name.lower() == 'simion_pa_save.m']
-    if len(matches) != 1:
-        raise ValueError('published corridor export must bind exactly one PA writer')
-    record = validate_file_record(matches[0], 'published adapted PA writer')
-    if record['sha256'].upper() != _REVIEWED_ADAPTED_WRITER_SHA256:
-        raise ValueError('published PA writer is not the reviewed adapted source')
-    local = path.parent / 'inputs' / 'simion_pa_save.m'
-    relocated = dict(record, path=str(local.resolve()))
-    verify_record('published adapted PA writer', relocated)
-    return authority, relocated
 
 
 def resolve_model_source_manifests(source: Any) -> tuple[dict[str, Any], dict[str, Any] | None]:
@@ -121,17 +95,17 @@ def _classification_grid_identity(grid: Mapping[str, Any]) -> dict[str, Any]:
     return {key: grid[key] for key in ('frame_id', 'origin_mm', 'pitch_mm', 'dimensions', 'point_count')}
 
 
-def export_world_scalar(solution: Any, *, grid: Mapping[str, Any], writer_manifest: Mapping[str, Any], context: Any,
+def export_world_scalar(solution: Any, *, grid: Mapping[str, Any], context: Any,
                         fill_conductor_interiors: bool = False, publish_prepared_support: bool = False,
                         prepared_support: Any = None) -> Any:
     """Export a single verified saved workpoint on one explicit grid."""
-    return _export_world_scalar(solution, grid=grid, writer_manifest=writer_manifest, context=context,
+    return _export_world_scalar(solution, grid=grid, context=context,
         fill_conductor_interiors=fill_conductor_interiors, publish_prepared_support=publish_prepared_support,
         prepared_support=prepared_support)
 
 
 def export_world_scalar_grids(solution: Any, *, grids: Mapping[str, Mapping[str, Any]],
-                              writer_manifest: Mapping[str, Any], context: Any) -> dict[str, Any]:
+                              context: Any) -> dict[str, Any]:
     """Export named raw scalar grids with one saved-model load and no Compute."""
     import re
     if not isinstance(grids, Mapping) or not grids:
@@ -142,10 +116,10 @@ def export_world_scalar_grids(solution: Any, *, grids: Mapping[str, Mapping[str,
     if len(names) != len(grids) or len(set(names)) != len(names):
         raise ValueError('grid names must be unique')
     return _export_world_scalar(solution, grid=next(iter(grids.values())), grids=grids,
-                                writer_manifest=writer_manifest, context=context)
+                                context=context)
 
 
-def _export_world_scalar(solution: Any, *, grid: Mapping[str, Any], writer_manifest: Mapping[str, Any], context: Any, fill_conductor_interiors: bool = False,
+def _export_world_scalar(solution: Any, *, grid: Mapping[str, Any], context: Any, fill_conductor_interiors: bool = False,
                         publish_prepared_support: bool = False, prepared_support: Any = None, grids: Mapping[str, Any] | None = None) -> Any:
     """Export one verified workpoint, optionally filling strict conductor interiors.
 
@@ -198,7 +172,6 @@ def _export_world_scalar(solution: Any, *, grid: Mapping[str, Any], writer_manif
     resolved['coordinate_sanity_mm'] = position_sanity
     if resolved_grids is not None:
         for value in resolved_grids.values(): value['coordinate_sanity_mm'] = position_sanity
-    writer_authority, writer = resolve_published_writer(writer_manifest)
     for name in ('comsol_launcher', 'matlab_root'):
         path = context.tools.get(name)
         if path is None or not (path.is_dir() if name == 'matlab_root' else path.is_file()):
@@ -207,7 +180,7 @@ def _export_world_scalar(solution: Any, *, grid: Mapping[str, Any], writer_manif
     if stage.get('runtime'):
         raise ContractError('COMSOL scalar export has no implicit runtime overrides')
     if resolved_grids is not None:
-        minimum = sum(2 * (56 + 8 * value['point_count']) for value in resolved_grids.values())
+        minimum = sum(2 * (HEADER.size + 8 * value['point_count']) for value in resolved_grids.values())
         if any(minimum > stage['limits'][key] for key in ('transient_run_directory_bytes','compact_final_retained_bytes')):
             raise ValueError('named grid raw output minimum exceeds configured stage limits')
     reference, origin = resolve_model_source_manifests(source)
@@ -229,7 +202,7 @@ def _export_world_scalar(solution: Any, *, grid: Mapping[str, Any], writer_manif
         retention=stage['artifact_retention'], source_references=source_refs,
         expected_operation_ids=('export_world_scalar',), operation_dependencies={},
         action=partial(execute_export, source=source, manifest_record=reference, grid=resolved,
-                       baseline=baseline, solution_identity=dict(observed), writer_authority=writer_authority, writer=writer, limits=stage['limits'], origin_manifest=origin, fill_conductor_interiors=fill_conductor_interiors,
+                       baseline=baseline, solution_identity=dict(observed), limits=stage['limits'], origin_manifest=origin, fill_conductor_interiors=fill_conductor_interiors,
                        publish_prepared_support=publish_prepared_support, support_source=support_source, support_original=support_original, grids=resolved_grids),
         action_record=file_record(Path(__file__).resolve(), 'required_evidence'), use_short_execution_path=True,
         completion_api=no_particle_batch_completion_api)
@@ -240,8 +213,7 @@ def _export_world_scalar(solution: Any, *, grid: Mapping[str, Any], writer_manif
 
 
 def execute_export(session: Any, *, source: Any, manifest_record: Mapping[str, Any], grid: Mapping[str, Any],
-                   baseline: Mapping[str, Any], solution_identity: Mapping[str, Any], writer_authority: Mapping[str, Any],
-                   writer: Mapping[str, Any], limits: Mapping[str, Any],
+                   baseline: Mapping[str, Any], solution_identity: Mapping[str, Any], limits: Mapping[str, Any],
                    origin_manifest: Mapping[str, Any] | None = None,
                    fill_conductor_interiors: bool = False,
                    publish_prepared_support: bool = False, support_source: Any = None,
@@ -296,22 +268,7 @@ def execute_export(session: Any, *, source: Any, manifest_record: Mapping[str, A
             record = dict(support_source.data_records[key], path=str(support_source.data_locations[key]))
             session.add_input('prepared_support_' + key, record)
             support_guards.append(record)
-    session.add_input('pa_writer_source_manifest', dict(writer_authority, retention_role='required_evidence'))
-    session.add_input('pa_writer_source', dict(writer, retention_role='required_evidence'))
-    manifest_copy = session.declare_file(session.input_dir / 'writer' / 'source-manifest.json', 'required_evidence')
-    manifest_copy.parent.mkdir(parents=True, exist_ok=True)
-    freeze_file(Path(writer_authority['path']), manifest_copy)
-    manifest_frozen = file_record(manifest_copy, 'required_evidence')
-    if any(manifest_frozen[key] != writer_authority[key] for key in ('bytes', 'sha256')):
-        raise ValueError('frozen PA writer authority differs')
-    session.add_input('pa_writer_authority', manifest_frozen)
-    writer_path = session.declare_file(session.input_dir / 'writer' / 'simion_pa_save.m', 'required_evidence')
-    writer_path.parent.mkdir(parents=True, exist_ok=True)
-    freeze_file(Path(writer['path']), writer_path)
-    writer_copy = file_record(writer_path, 'required_evidence')
-    if any(writer_copy[key] != writer[key] for key in ('bytes', 'sha256')):
-        raise ValueError('frozen PA writer differs from explicit source identity')
-    session.add_input('pa_writer', writer_copy)
+    encoder_code = _freeze_pa_encoder_sources(session)
     output_dir = session.run_dir / 'scalar'; output_dir.mkdir()
     batch = {}
     batch_guards = []
@@ -345,12 +302,19 @@ def execute_export(session: Any, *, source: Any, manifest_record: Mapping[str, A
     runtime = session.run_dir / 'comsol_runtime' / 'export_world_scalar'; runtime.mkdir(parents=True)
     matlab = launcher.parent.parent / 'matlab'
     call = 'export_assembly_world_scalar_field(' + ','.join(map(matlab_text, (source.data_locations['model'],
-        frozen['projection']['path'], frozen['reopen_geometry']['path'], grid_path, writer_path, output_dir))) + ')'
+        frozen['projection']['path'], frozen['reopen_geometry']['path'], grid_path))) + ',' + str(HEADER.size) + ',' + matlab_text(output_dir) + ')'
     task.write_text('addpath(' + matlab_text(matlab) + ');\nresult=' + call + ';\n'
         'fid=fopen(' + matlab_text(report) + ",'w','n','UTF-8');\n"
         "assert(fid>=0); cleanup=onCleanup(@() fclose(fid)); fprintf(fid,'%s',jsonencode(result));\n",
         encoding='utf-8', newline='\n')
-    guards = [*sources, *frozen.values(), *origin_guard, manifest_frozen, writer_copy, grid_record, *batch_guards, file_record(task, 'required_evidence'), model, *support_code, *support_guards]
+    guards = [*sources, *frozen.values(), *origin_guard, *encoder_code, grid_record, *batch_guards, file_record(task, 'required_evidence'), model, *support_code, *support_guards]
+    unique_guards = {}
+    for record in guards:
+        key = Path(record['path']).resolve(strict=True)
+        if key in unique_guards and unique_guards[key] != record:
+            raise ValueError('conflicting immutable source records: ' + record['path'])
+        unique_guards[key] = record
+    guards = list(unique_guards.values())
     host = json.dumps({name: str(getattr(session.context, name)) for name in ('workspace', 'python_executable', 'host_state_path', 'policy_path')})
     args = ['-NoProfile', '-File', str(launcher), '-HostContextJson', host, '-WorkingDirectory', str(session.run_dir),
         '-ComsolLauncherPath', str(session.context.tools['comsol_launcher']), '-MatlabRootPath', str(session.context.tools['matlab_root']),
@@ -362,20 +326,18 @@ def execute_export(session: Any, *, source: Any, manifest_record: Mapping[str, A
                             role='COMSOL', stage='solver', limits=limits, immutable_input_records=guards)
     except BaseException as error:
         primary = error
-        if grids is not None:
-            prior = list(getattr(error, 'failure_output_paths', ()))
-            candidates = [*outputs, report, *(item['report'] for item in batch.values())]
-            error.failure_output_paths = [*prior, *(path for path in candidates if path.is_file())]
+        prior = list(getattr(error, 'failure_output_paths', ()))
+        candidates = [*outputs, report, *(item['report'] for item in batch.values())]
+        error.failure_output_paths = [*prior, *(path for path in candidates if path.is_file())]
         raise
     finally:
         try:
             declare_runtime_files(session, runtime, bootstrap=bootstrap)
         except BaseException as error:
             if primary is None:
-                if grids is not None:
-                    prior = list(getattr(error, 'failure_output_paths', ()))
-                    candidates = [*outputs, report, *(item['report'] for item in batch.values())]
-                    error.failure_output_paths = [*prior, *(path for path in candidates if path.is_file())]
+                prior = list(getattr(error, 'failure_output_paths', ()))
+                candidates = [*outputs, report, *(item['report'] for item in batch.values())]
+                error.failure_output_paths = [*prior, *(path for path in candidates if path.is_file())]
                 raise
             primary.add_note('COMSOL diagnostic preservation failed: ' + repr(error))
     try:
@@ -383,10 +345,9 @@ def execute_export(session: Any, *, source: Any, manifest_record: Mapping[str, A
         if 'STATUS=PASS' not in bootstrap.read_text(encoding='utf-8-sig'):
             raise ValueError('COMSOL scalar export bootstrap failed')
     except BaseException as error:
-        if grids is not None:
-            prior = list(getattr(error, 'failure_output_paths', ()))
-            candidates = [*outputs, report, *(item['report'] for item in batch.values())]
-            error.failure_output_paths = [*prior, *(path for path in candidates if path.is_file())]
+        prior = list(getattr(error, 'failure_output_paths', ()))
+        candidates = [*outputs, report, *(item['report'] for item in batch.values())]
+        error.failure_output_paths = [*prior, *(path for path in candidates if path.is_file())]
         raise
     if grids is not None:
         try:
@@ -400,10 +361,11 @@ def execute_export(session: Any, *, source: Any, manifest_record: Mapping[str, A
             for name, item in batch.items():
                 row = json.loads(item['report'].read_text(encoding='utf-8-sig'))
                 _check_report(row, grid=item['grid'], baseline=baseline, solution_identity=solution_identity, model=Path(source.data_locations['model']))
+                _finalize_scalar_outputs(item['outputs'], item['grid'], encoder_code)
                 for path in item['outputs']: _validate_scalar_pa(path, item['grid'])
                 records = dict(field_v=file_record(item['outputs'][0], 'solver_native_binary'),
                     field_valid=file_record(item['outputs'][1], 'solver_native_binary'), grid=item['grid_record'],
-                    field_solution_manifest=manifest_record, writer=writer_copy, writer_manifest=manifest_frozen,
+                    field_solution_manifest=manifest_record,
                     projection=frozen['projection'], request=frozen['request'], geometry_validation=frozen['geometry_validation'],
                     reopen_geometry=frozen['reopen_geometry'], reopen_solution=frozen['reopen_solution'],
                     report=file_record(item['report'], 'required_evidence'))
@@ -420,10 +382,16 @@ def execute_export(session: Any, *, source: Any, manifest_record: Mapping[str, A
             candidates = [*outputs, report, *(item['report'] for item in batch.values())]
             error.failure_output_paths = [*prior, *(path for path in candidates if path.is_file())]
             raise
-    row = json.loads(report.read_text(encoding='utf-8-sig'))
-    _check_report(row, grid=grid, baseline=baseline, solution_identity=solution_identity, model=Path(source.data_locations['model']))
-    for path in outputs:
-        _validate_scalar_pa(path, grid)
+    try:
+        row = json.loads(report.read_text(encoding='utf-8-sig'))
+        _check_report(row, grid=grid, baseline=baseline, solution_identity=solution_identity, model=Path(source.data_locations['model']))
+        _finalize_scalar_outputs(outputs, grid, encoder_code)
+        for path in outputs:
+            _validate_scalar_pa(path, grid)
+    except BaseException as error:
+        prior = list(getattr(error, 'failure_output_paths', ()))
+        error.failure_output_paths = [*prior, *(path for path in [*outputs, report] if path.is_file())]
+        raise
     published_outputs, support_record, raw_mask_record, labels_path, support_path = _postprocess_scalar(
         session, outputs=outputs, output_dir=output_dir, grid=grid, projection=projection if fill_conductor_interiors else {},
         request=request if fill_conductor_interiors else {}, frozen=frozen, grid_record=grid_record,
@@ -431,7 +399,7 @@ def execute_export(session: Any, *, source: Any, manifest_record: Mapping[str, A
         support_source=support_source, fill_conductor_interiors=fill_conductor_interiors,
         publish_prepared_support=publish_prepared_support, failure_report=report)
     records = dict(field_v=file_record(published_outputs[0], 'solver_native_binary'), field_valid=file_record(published_outputs[1], 'solver_native_binary'),
-                   grid=grid_record, field_solution_manifest=manifest_record, writer=writer_copy, writer_manifest=manifest_frozen,
+                   grid=grid_record, field_solution_manifest=manifest_record,
                    projection=frozen['projection'], request=frozen['request'], geometry_validation=frozen['geometry_validation'], reopen_geometry=frozen['reopen_geometry'],
                    reopen_solution=frozen['reopen_solution'], report=file_record(report, 'required_evidence'))
     if support_record is not None:
@@ -703,6 +671,43 @@ def _postprocess_scalar(session: Any, *, outputs: list[Path], output_dir: Path, 
             error.failure_output_paths = [*prior, *(path for path in [*(outputs if owned_raw else []), *filled, support_path, *([failure_report] if owned_raw and failure_report is not None else []), *([labels_path] if labels_path is not None else [])] if path.is_file())]
             raise
     return published_outputs, support_record, raw_mask_record, labels_path, support_path
+
+
+def _freeze_pa_encoder_sources(session: Any) -> list[dict[str, Any]]:
+    """Bind actual executed encoder and its existing header authorities."""
+    from msplatform.backends.simion import scalar_pa_payload, standalone_pa_composition, collision_overlay
+    records=[]
+    for index,module in enumerate((scalar_pa_payload,standalone_pa_composition,collision_overlay)):
+        src=Path(module.__file__).resolve(strict=True)
+        if src.suffix!='.py' or not src.is_file():
+            raise ValueError('scalar PA encoder source is unavailable: '+module.__name__)
+        original=file_record(src,'required_evidence');verify_record('scalar PA encoder original',original)
+        target=session.declare_file(session.input_dir/'scalar_pa_encoder'/str(index)/src.name,'required_evidence')
+        target.parent.mkdir(parents=True,exist_ok=True);freeze_file(src,target)
+        frozen=file_record(target,'required_evidence')
+        if any(original[key]!=frozen[key] for key in ('bytes','sha256')):
+            raise ValueError('scalar PA encoder frozen source differs: '+module.__name__)
+        verify_record('scalar PA encoder frozen',frozen)
+        session.add_input('scalar_pa_encoder_original_'+str(index),original)
+        session.add_input('scalar_pa_encoder_frozen_'+str(index),frozen)
+        records.extend((original,frozen))
+    return records
+
+
+def _finalize_scalar_outputs(outputs: list[Path], grid: Mapping[str, Any], code: list[dict[str, Any]]) -> None:
+    for record in code: verify_record('scalar PA encoder before finalization',record)
+    primary=None
+    try:
+        finalize_scalar_pair(outputs[0],outputs[1],grid)
+    except BaseException as error:
+        primary=error
+        raise
+    finally:
+        try:
+            for record in code: verify_record('scalar PA encoder after finalization',record)
+        except BaseException as error:
+            if primary is None: raise
+            primary.add_note('scalar PA encoder source verification failed: '+repr(error))
 
 
 def _freeze_support_sources(session: Any) -> list[dict[str, Any]]:

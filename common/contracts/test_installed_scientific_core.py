@@ -1448,6 +1448,38 @@ try:
 finally:
     asm_held.rename(asm_helper)
 assert asm_helper.read_bytes() == asm_helper_bytes
+# Exercise the installed scalar encoder and its physical missing-module refusal.
+import struct
+from msplatform.backends.simion import scalar_pa_payload as asm_encoder
+from msplatform.backends.simion.standalone_pa_composition import HEADER as asm_header
+from msplatform.backends.simion.collision_overlay import collision_pa_header as asm_read_header
+asm_encoder_path = pathlib.Path(asm_encoder.__file__).resolve()
+assert asm_encoder_path == asm_pure / 'msplatform/backends/simion/scalar_pa_payload.py'
+asm_encoder_bytes = asm_encoder_path.read_bytes()
+asm_v = root / 'assembly_installed_scalar.pa'
+asm_mask = root / 'assembly_installed_mask.pa'
+asm_values = struct.pack('<27d', *([-0.0] + [float(i) for i in range(1, 27)]))
+asm_valid = struct.pack('<27d', *([1.0] * 27))
+asm_v.write_bytes(bytes(asm_header.size) + asm_values)
+asm_mask.write_bytes(bytes(asm_header.size) + asm_valid)
+asm_encoder.finalize_scalar_pair(asm_v, asm_mask,
+    {'dimensions':[3,3,3], 'pitch_mm':[1,1,1], 'point_count':27})
+assert asm_v.read_bytes()[asm_header.size:] == asm_values
+assert asm_mask.read_bytes()[asm_header.size:] == asm_valid
+assert asm_read_header(asm_v).max_voltage == 26.0
+asm_encoder_held = asm_encoder_path.with_suffix('.py.encoder-held')
+assert not asm_encoder_held.exists(); asm_encoder_path.rename(asm_encoder_held)
+try:
+    asm_encoder_child = cmesh_child[:cmesh_child.index('import msplatform.backends.comsol.resources')]
+    asm_encoder_child += "\nimport msplatform.backends.simion.scalar_pa_payload\n"
+    asm_encoder_missing = subprocess.run([sys.executable,'-I','-B','-X','utf8','-c',asm_encoder_child,
+        json.dumps([str(source) for source in blocked_source_roots])],
+        cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+    assert asm_encoder_missing.returncode != 0 and not asm_encoder_missing.stdout, asm_encoder_missing.stderr
+    assert "No module named 'msplatform.backends.simion.scalar_pa_payload'" in asm_encoder_missing.stderr
+finally:
+    asm_encoder_held.rename(asm_encoder_path)
+assert asm_encoder_path.read_bytes() == asm_encoder_bytes
 # The Wehnelt task report resource is independently byte-pinned; the shared
 # cold lookup probe denies author trees and checks physical missing-file refusal.
 wehnelt_report_name = 'write_wehnelt_build_only_report.m'

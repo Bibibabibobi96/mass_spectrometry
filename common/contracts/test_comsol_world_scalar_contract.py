@@ -73,7 +73,7 @@ class WorldScalarTests(unittest.TestCase):
                 historical_writer={key:value for key,value in writer_record.items() if key != 'retention_role'}
                 inputs={};calls=[]
                 def add_input(name, record):
-                    if name in ('field_solution_manifest', 'borrowed_model_origin_manifest', 'pa_writer_source_manifest', 'pa_writer_source'):
+                    if name in ('field_solution_manifest', 'borrowed_model_origin_manifest'):
                         self.assertEqual(record['retention_role'], 'required_evidence')
                     inputs[name]=record
                 session=SimpleNamespace(expected_operation_ids=('export_world_scalar',),input_dir=root/'inputs',result_dir=root/'results',log_dir=root/'logs',run_dir=root,context=context,run_id='inert',declare_file=lambda path,role:path,add_input=add_input)
@@ -81,7 +81,7 @@ class WorldScalarTests(unittest.TestCase):
                     calls.append((operation,kwargs))
                     for name in ('field_v.pa','field_valid.pa'):
                         data = -1. if name == 'field_v.pa' else 0.
-                        header = struct.pack('<iidiiiiddd', -2, 1, 1., 3, 3, 3, 1 << 28, 1., 1., 1.)
+                        header = bytes(subject.HEADER.size)
                         (root/'scalar'/name).write_bytes(header + struct.pack('<27d', *([data] * 27)))
                     (root/'logs/export_world_scalar.bootstrap.log').write_text('STATUS=PASS',encoding='utf8')
                     row=dict(grid,status='success',scope='assembly_world_scalar_samples',field_qualification=False,compute_calls=int(unexpected_compute),filled_conductor_count=0,coordinate_mapping='world_identity',coordinate_witness={'status':'verified','index':1,'requested_mm':[-1,-1,-1],'actual_mm':[-1,-1,-1],'geometry_length_unit':'mm'},model_path=str(original['model']),vacuum_domains=[1],fem_valid=20,invalid_count=7,solution_readback=self.solution)
@@ -90,10 +90,10 @@ class WorldScalarTests(unittest.TestCase):
                 with patch.object(subject,'freeze_native_sources',return_value=(root/'native/launcher.ps1',[])),patch.object(subject,'declare_runtime_files'),patch.object(subject,'require_launcher_completion'),patch.object(subject,'_validate_scalar_pa',wraps=subject._validate_scalar_pa) as checked:
                     if unexpected_compute:
                         with self.assertRaisesRegex(ValueError,'report differs'):
-                            subject.execute_export(session,source=source,manifest_record=historical_writer,grid=grid,baseline={'vacuum_domains':[1]},solution_identity=self.solution,writer_authority=historical_writer,writer=historical_writer,limits={})
+                            subject.execute_export(session,source=source,manifest_record=historical_writer,grid=grid,baseline={'vacuum_domains':[1]},solution_identity=self.solution,limits={})
                     else:
-                        result=subject.execute_export(session,source=source,manifest_record=historical_writer,grid=grid,baseline={'vacuum_domains':[1]},solution_identity=self.solution,writer_authority=historical_writer,writer=historical_writer,limits={},origin_manifest=historical_writer)
-                        for name in ('field_solution_manifest', 'borrowed_model_origin_manifest', 'pa_writer_source_manifest', 'pa_writer_source'):
+                        result=subject.execute_export(session,source=source,manifest_record=historical_writer,grid=grid,baseline={'vacuum_domains':[1]},solution_identity=self.solution,limits={},origin_manifest=historical_writer)
+                        for name in ('field_solution_manifest', 'borrowed_model_origin_manifest'):
                             self.assertEqual(inputs[name], writer_record)
                         self.assertEqual(inputs['field_solution_model'], source.data_records['model'])
                         self.assertNotIn('retention_role', historical_writer)
@@ -129,39 +129,6 @@ class WorldScalarTests(unittest.TestCase):
             path.write_bytes(b'')
             with self.assertRaises(ValueError):subject._validate_scalar_pa(path,grid)
 
-    def test_published_writer_authority_rejects_missing_tamper_and_unreviewed(self):
-        import hashlib
-        import json
-        import tempfile
-        from unittest.mock import patch
-        from msplatform.io.manifest_records import file_record
-        with tempfile.TemporaryDirectory() as temporary:
-            root=Path(temporary);(root/'inputs').mkdir();writer=root/'inputs/simion_pa_save.m';writer.write_bytes(b'example adapted source')
-            record=file_record(writer,'required_evidence')
-            manifest=root/'run_manifest.json'
-            def write_manifest(inputs, **changes):
-                value={'role':'simulation_run_manifest','project':'parallel_mirror_dual_stripe_mr_tof','status':'success','inputs':inputs}
-                value.update(changes);manifest.write_text(json.dumps(value),encoding='utf8')
-                return file_record(manifest,'required_evidence')
-            authority=write_manifest({'writer':record})
-            with patch.object(subject,'_REVIEWED_ADAPTED_WRITER_SHA256',hashlib.sha256(writer.read_bytes()).hexdigest().upper()):
-                accepted,selected=subject.resolve_published_writer(authority)
-                self.assertEqual(accepted,authority);self.assertEqual(selected['sha256'],record['sha256'])
-                tampered=bytearray(writer.read_bytes());tampered[0]^=1;writer.write_bytes(tampered)
-                with self.assertRaisesRegex(AssertionError,'SHA-256 changed'):subject.resolve_published_writer(authority)
-                writer.write_bytes(b'example adapted source')
-                writer.unlink()
-                with self.assertRaisesRegex(AssertionError,'missing'):subject.resolve_published_writer(authority)
-                writer.write_bytes(b'example adapted source')
-                with patch.object(subject,'_REVIEWED_ADAPTED_WRITER_SHA256','0'*64),self.assertRaisesRegex(ValueError,'not the reviewed'):
-                    subject.resolve_published_writer(authority)
-                duplicate=write_manifest({'writer':record,'another':record})
-                with self.assertRaisesRegex(ValueError,'exactly one'):subject.resolve_published_writer(duplicate)
-                failed=write_manifest({'writer':record},status='failed')
-                with self.assertRaisesRegex(ValueError,'successful published'):subject.resolve_published_writer(failed)
-                authority=write_manifest({'writer':record})
-                journal=root/'.run_terminal_publication.json';journal.write_text('{}',encoding='utf8')
-                with self.assertRaisesRegex(ValueError,'terminal publication is incomplete'):subject.resolve_published_writer(authority)
 
 class SourceProtectionTests(unittest.TestCase):
     def test_owned_and_borrowed_model_source_references_and_failures(self):
@@ -201,9 +168,9 @@ class SourceProtectionTests(unittest.TestCase):
             def owner(*args,**kwargs):
                 captured.append(kwargs);raise OwnerReached()
             def invoke(source):
-                with patch.object(subject,'open_artifact',return_value=source),patch.object(subject,'resolve_published_writer',return_value=({},{})),patch.object(subject,'read_stage_policy',return_value=({'limits':{'transient_run_directory_bytes':1},'artifact_retention':{}},{})),patch.object(subject,'run_managed_stage',side_effect=owner):
+                with patch.object(subject,'open_artifact',return_value=source),patch.object(subject,'read_stage_policy',return_value=({'limits':{'transient_run_directory_bytes':1},'artifact_retention':{}},{})),patch.object(subject,'run_managed_stage',side_effect=owner):
                     with self.assertRaises(OwnerReached):
-                        subject.export_world_scalar({},grid=grid,writer_manifest={},context=context)
+                        subject.export_world_scalar({},grid=grid,context=context)
             owned=source_for({'inputs':{},'outputs':[model_record]})
             invoke(owned)
             self.assertEqual(len(captured[-1]['source_references']),1)

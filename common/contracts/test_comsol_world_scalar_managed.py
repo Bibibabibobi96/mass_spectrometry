@@ -11,7 +11,7 @@ from unittest.mock import patch
 from common.contracts import test_execution_runtime as execution_fixture
 from common.contracts.test_assembly_scalar_fill import fixture
 from msplatform.backends.comsol import assembly_field_export as subject, native_execution
-from msplatform.backends.simion.standalone_pa_composition import PaHeader
+from msplatform.backends.simion.standalone_pa_composition import HEADER
 from msplatform.execution.completion import no_particle_batch_completion_api
 from msplatform.execution.inputs import freeze_file
 from msplatform.execution.owner import run_managed_stage
@@ -46,10 +46,9 @@ class ManagedScalarOwnerTests(unittest.TestCase):
                 source_result=run_managed_stage(context,**args);source=open_artifact({'manifest':source_result['manifest'],'product_id':'solution'},expected_kind='field_solution')
                 original={n:source.data_path(n).read_bytes() for n in ('model','request','projection')}
                 _,_,grid=fixture();grid.update(block_points=7,study_tag='std1',solution_tag='sol1',dataset_tag='dset1');grid.pop('point_count')
-                hp=PaHeader(-2,1,200.,5,3,3,1<<28,1.,1.,1.);hm=PaHeader(-2,1,1.,5,3,3,1<<28,1.,1.,1.)
                 values=[0.]*45;values[0]=-0.;mask=[0.]*45;mask[0]=1.
                 if case=='late_failure':mask[-1]=.5
-                sample=root/'potential.pa';valid=root/'valid.pa';sample.write_bytes(hp.pack()+b''.join(struct.pack('<d',x) for x in values));valid.write_bytes(hm.pack()+b''.join(struct.pack('<d',x) for x in mask))
+                sample=root/'potential.pa';valid=root/'valid.pa';sample.write_bytes(bytes(HEADER.size)+b''.join(struct.pack('<d',x) for x in values));valid.write_bytes(bytes(HEADER.size)+b''.join(struct.pack('<d',x) for x in mask))
                 resolved=subject.validate_grid(grid,json.loads(source.data_path('projection').read_text()),SOLUTION);resolved['coordinate_sanity_mm']=1e-6
                 report=dict(resolved,status='success',scope='assembly_world_scalar_samples',field_qualification=False,compute_calls=0,filled_conductor_count=0,coordinate_mapping='world_identity',model_path=str(source.data_path('model')),vacuum_domains=[1],fem_valid=1,invalid_count=44,solution_readback=SOLUTION,coordinate_witness={'status':'insufficient','index':0,'requested_mm':[],'actual_mm':[],'geometry_length_unit':'mm'})
                 report_path=root/'report.json';report_path.write_text(json.dumps(report),encoding='utf-8')
@@ -64,36 +63,38 @@ class ManagedScalarOwnerTests(unittest.TestCase):
                 def transport(session,operation_id,**kwargs):
                     self.assertEqual((operation_id,kwargs['role'],kwargs['stage']),('export_world_scalar','COMSOL','solver'))
                     self.assertEqual(Path(kwargs['arguments'][2]).resolve(),(session.input_dir/'native_sources/inert_scalar_launcher.ps1').resolve())
+                    records=kwargs['immutable_input_records']
+                    keys=[str(Path(record['path']).resolve()).casefold() for record in records]
+                    self.assertEqual(len(keys),len(set(keys)))
+                    if case=='true':
+                        self.assertTrue(any('scalar_pa_encoder' in path for path in keys))
+                        self.assertTrue(any('scalar_support' in path for path in keys))
                     kwargs.update(role='GATE',stage='assembly_scalar_inert_transport')
                     return original_run(session,operation_id,**kwargs)
-                writer=root/'synthetic_simion_pa_save.m';writer.write_bytes(b'inert writer; never executed')
-                writer_manifest=root/'synthetic-writer-manifest.json';writer_manifest.write_text('{"synthetic":true}',encoding='utf-8')
-                writer_record=file_record(writer,'required_evidence');writer_manifest_record=file_record(writer_manifest,'required_evidence')
-                with patch.object(subject,'freeze_native_sources',side_effect=sources),patch.object(RunSession,'run_process',new=transport),patch.object(subject,'resolve_published_writer',return_value=(writer_manifest_record,writer_record)):
+                with patch.object(subject,'freeze_native_sources',side_effect=sources),patch.object(RunSession,'run_process',new=transport):
                     if case in ('true','false'):
-                        product=subject.export_world_scalar(source,grid=grid,writer_manifest=writer_manifest_record,context=context,fill_conductor_interiors=case=='true')
+                        product=subject.export_world_scalar(source,grid=grid,context=context,fill_conductor_interiors=case=='true')
                         run_dir=product.manifest_location.parent;manifest=json.loads(product.manifest_location.read_text(encoding='utf-8-sig'));self.assertEqual(manifest['status'],'success')
                         self.assertEqual('conductor_support' in product.data_records,case=='true')
                         if case=='true':
                             self.assertEqual(struct.unpack_from('<d',product.data_path('field_v').read_bytes(),56+8*21)[0],-100.)
-                            self.assertEqual(product.data_path('sampled_field_v').read_bytes(),sample.read_bytes())
+                            self.assertEqual(product.data_path('sampled_field_v').read_bytes()[HEADER.size:],sample.read_bytes()[HEADER.size:])
                     else:
-                        with self.assertRaises(Exception) as caught:subject.export_world_scalar(source,grid=grid,writer_manifest=writer_manifest_record,context=context,fill_conductor_interiors=True)
-                        self.assertRegex(str(caught.exception),'(?i)(binary|immutable|denied|access|exit|changed)')
+                        with self.assertRaises(Exception) as caught:subject.export_world_scalar(source,grid=grid,context=context,fill_conductor_interiors=True)
+                        self.assertRegex(str(caught.exception),'(?i)(binary|immutable|denied|access|exit|changed|zero or one)')
                         manifests=list((context.workspace/'artifacts/projects/instrument_assembly/runs').glob('*assembly-scalar*/run_manifest.json'));self.assertEqual(len(manifests),1)
                         run_dir=manifests[0].parent;manifest=json.loads(manifests[0].read_text(encoding='utf-8-sig'));self.assertEqual(manifest['status'],'failed');self.assertNotIn('samples',manifest.get('products',{}))
                         if case=='late_failure':
                             partial=run_dir/'scalar/field_v_filled.pa'
-                            self.assertTrue(partial.is_file())
+                            self.assertFalse(partial.exists())
                             self.assertEqual((run_dir/'scalar/field_v.pa').read_bytes(),sample.read_bytes())
                             self.assertEqual((run_dir/'scalar/field_valid.pa').read_bytes(),valid.read_bytes())
-                            actual=file_record(partial,'solver_native_binary')
-                            self.assertEqual(sum(r==actual for r in manifest['outputs']),1)
+                            self.assertTrue((run_dir/'results/export_world_scalar.json').is_file())
                             result_path=context.workspace/'artifacts/projects/instrument_assembly/scratch/workflow_results'/run_dir.name/'result.json'
                             owner_result=json.loads(result_path.read_text(encoding='utf-8-sig'))
                             self.assertEqual(owner_result['status'],'failed')
-                            self.assertIn('scalar mask must be binary',owner_result['exception']['message'])
-                            self.assertIn('scalar mask must be binary',str(caught.exception))
+                            self.assertIn('scalar validity payload must contain only zero or one',owner_result['exception']['message'])
+                            self.assertIn('scalar validity payload must contain only zero or one',str(caught.exception))
                 completion=json.loads((run_dir/'results/execution_completion.json').read_text(encoding='utf-8-sig'))
                 self.assertEqual([x['operation_id'] for x in completion['writer_completion']['operations']],['export_world_scalar'])
                 release=completion['writer_completion']['resource_releases'][0]['completion_receipt']['host_release']

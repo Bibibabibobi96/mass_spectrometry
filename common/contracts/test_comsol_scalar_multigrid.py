@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 from common.contracts import test_assembly_scalar_owner_fill as fixtures
 from msplatform.backends.comsol import assembly_field_export as subject
-from msplatform.backends.simion.standalone_pa_composition import PaHeader
+from msplatform.backends.simion.standalone_pa_composition import HEADER
 from msplatform.io.manifest_records import verify_record
 
 class ScalarMultiGridTests(unittest.TestCase):
@@ -20,11 +20,10 @@ class ScalarMultiGridTests(unittest.TestCase):
             spec=json.loads((f.root/'inputs/world-grid-batch.json').read_text(encoding='utf8'))
             for index,entry in enumerate(spec['entries']):
                 g=json.loads(Path(entry['grid_path']).read_text(encoding='utf8'))
-                hp=PaHeader(-2,1,200.,5,3,3,1<<28,1,1,1);hm=PaHeader(-2,1,1.,5,3,3,1<<28,1,1,1)
                 vals=[0.]*45;vals[0]=-0.;mask=[0.]*45;mask[0]=1.
                 if index==1 and mode=='fail_second':raise ValueError('second grid failed')
-                for name,h,data in [('field_v.pa',hp,vals),('field_valid.pa',hm,mask)]:
-                    (Path(entry['output_directory'])/name).write_bytes(h.pack()+struct.pack('<45d',*data))
+                for name,data in [('field_v.pa',vals),('field_valid.pa',mask)]:
+                    (Path(entry['output_directory'])/name).write_bytes(bytes(HEADER.size)+struct.pack('<45d',*data))
                 report=dict(g,status='success',scope='assembly_world_scalar_samples',field_qualification=False,compute_calls=0,filled_conductor_count=0,coordinate_mapping='world_identity',model_path=str(f.source.data_locations['model']),vacuum_domains=[1],fem_valid=1,invalid_count=44,solution_readback=f.solution,coordinate_witness={'status':'insufficient','index':0,'requested_mm':[],'actual_mm':[],'geometry_length_unit':'mm'})
                 Path(entry['report_path']).write_text(json.dumps(report),encoding='utf8')
                 if index==0 and mode=='tamper':
@@ -35,7 +34,7 @@ class ScalarMultiGridTests(unittest.TestCase):
         f.session.run_process=native
         cleanup_error=ValueError('diagnostic preservation failed') if mode=='cleanup_failure' else None
         with patch.object(subject,'freeze_native_sources',return_value=(f.root/'native/launcher.ps1',[])),patch.object(subject,'declare_runtime_files',side_effect=cleanup_error),patch.object(subject,'require_launcher_completion'):
-            return subject.execute_export(f.session,source=f.source,manifest_record={'path':'synthetic'},grid=f.grid,baseline={'vacuum_domains':[1]},solution_identity=f.solution,writer_authority=f.writer_record,writer=f.writer_record,limits={},grids={name:dict(f.grid,origin_mm=[-2+index,-1,-1]) for index,name in enumerate(('one','two','three'))})
+            return subject.execute_export(f.session,source=f.source,manifest_record={'path':'synthetic'},grid=f.grid,baseline={'vacuum_domains':[1]},solution_identity=f.solution,limits={},grids={name:dict(f.grid,origin_mm=[-2+index,-1,-1]) for index,name in enumerate(('one','two','three'))})
     def test_one_process_three_products_match_single(self):
         references=[]
         for index in range(3):
@@ -70,7 +69,7 @@ class ScalarMultiGridTests(unittest.TestCase):
     def test_bad_names_refuse_before_source_open(self):
         for value in ({}, {'Bad/name':{}}):
             with self.subTest(value=value),patch.object(subject,'open_artifact',side_effect=AssertionError('should not open')):
-                with self.assertRaises(ValueError):subject.export_world_scalar_grids({},grids=value,writer_manifest={},context=None)
+                with self.assertRaises(ValueError):subject.export_world_scalar_grids({},grids=value,context=None)
 
     def test_duplicate_mapping_names_refused(self):
         from collections.abc import Mapping
@@ -80,7 +79,7 @@ class ScalarMultiGridTests(unittest.TestCase):
             def __getitem__(self,key):return {}
         with patch.object(subject,'open_artifact',side_effect=AssertionError('should not open')):
             with self.assertRaisesRegex(ValueError,'unique'):
-                subject.export_world_scalar_grids({},grids=Duplicate(),writer_manifest={},context=None)
+                subject.export_world_scalar_grids({},grids=Duplicate(),context=None)
     def test_public_named_products_and_capacity_refusal(self):
         f=self.prepare();f.projection['outer_box_mm']={'min':[-10,-10,-10],'max':[10,10,10]}
         f.source.data_locations['projection'].write_text(json.dumps(f.projection),encoding='utf8')
@@ -89,12 +88,12 @@ class ScalarMultiGridTests(unittest.TestCase):
         base={key:value for key,value in f.grid.items() if key not in ('point_count','coordinate_sanity_mm')}
         grids={name:dict(base,origin_mm=[-2+i,-1,-1]) for i,name in enumerate(('one','two','three','four'))}
         stage={'limits':{'transient_run_directory_bytes':1000000,'compact_final_retained_bytes':1000000},'artifact_retention':{}}
-        with patch.object(subject,'open_artifact',side_effect=[f.source,'one-product','two-product','three-product','four-product']),patch.object(subject,'resolve_published_writer',return_value=(f.writer_record,f.writer_record)),patch.object(subject,'read_stage_policy',return_value=(stage,{})),patch.object(subject,'resolve_model_source_manifests',return_value=({'path':'source'},None)),patch.object(subject,'run_managed_stage',return_value={'manifest':{}}) as owner:
-            actual=subject.export_world_scalar_grids({},grids=grids,writer_manifest={},context=f.context)
+        with patch.object(subject,'open_artifact',side_effect=[f.source,'one-product','two-product','three-product','four-product']),patch.object(subject,'read_stage_policy',return_value=(stage,{})),patch.object(subject,'resolve_model_source_manifests',return_value=({'path':'source'},None)),patch.object(subject,'run_managed_stage',return_value={'manifest':{}}) as owner:
+            actual=subject.export_world_scalar_grids({},grids=grids,context=f.context)
         self.assertEqual(actual,{'one':'one-product','two':'two-product','three':'three-product','four':'four-product'})
         self.assertEqual(owner.call_args.kwargs['expected_operation_ids'],('export_world_scalar',))
         self.assertEqual(list(owner.call_args.kwargs['payload']['grids']),['one','two','three','four'])
         stage['limits']['transient_run_directory_bytes']=1
-        with patch.object(subject,'open_artifact',return_value=f.source),patch.object(subject,'resolve_published_writer',return_value=(f.writer_record,f.writer_record)),patch.object(subject,'read_stage_policy',return_value=(stage,{})),patch.object(subject,'run_managed_stage') as owner:
-            with self.assertRaisesRegex(ValueError,'minimum'):subject.export_world_scalar_grids({},grids=grids,writer_manifest={},context=f.context)
+        with patch.object(subject,'open_artifact',return_value=f.source),patch.object(subject,'read_stage_policy',return_value=(stage,{})),patch.object(subject,'run_managed_stage') as owner:
+            with self.assertRaisesRegex(ValueError,'minimum'):subject.export_world_scalar_grids({},grids=grids,context=f.context)
             owner.assert_not_called()

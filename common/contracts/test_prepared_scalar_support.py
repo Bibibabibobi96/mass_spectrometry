@@ -38,7 +38,7 @@ class PreparedSupportOwnerTests(unittest.TestCase):
         a=fixtures.ScalarOwnerFillTests('test_false_keeps_raw_export'); a.setUp(); self.addCleanup(a.doCleanups)
         def call(f, **kwargs):
             with patch.object(owner,'freeze_native_sources',return_value=(f.root/'native/launcher.ps1',[])),patch.object(owner,'declare_runtime_files'),patch.object(owner,'require_launcher_completion'):
-                return owner.execute_export(f.session,source=f.source,manifest_record={'path':'synthetic'},grid=f.grid,baseline={'vacuum_domains':[1]},solution_identity=f.solution,writer_authority=f.writer_record,writer=f.writer_record,limits={},fill_conductor_interiors=True,**kwargs)
+                return owner.execute_export(f.session,source=f.source,manifest_record={'path':'synthetic'},grid=f.grid,baseline={'vacuum_domains':[1]},solution_identity=f.solution,limits={},fill_conductor_interiors=True,**kwargs)
         first=call(a,publish_prepared_support=True)['manifest_extra_fields']['products']['samples']['data']
         manifest=a.root/'producer.json';manifest.write_text('{}',encoding='utf-8')
         source=SimpleNamespace(reference={'manifest':file_record(manifest,'required_evidence')},data_records=first,data_locations={k:Path(v['path']) for k,v in first.items()},data_path=lambda key:Path(first[key]['path']))
@@ -109,13 +109,13 @@ class OfflineScalarDerivationTests(unittest.TestCase):
         producer=fixtures.ScalarOwnerFillTests('test_false_keeps_raw_export');producer.setUp();self.addCleanup(producer.doCleanups)
         input_manifest=producer.root/'input-manifest.json';input_manifest.write_text('{}',encoding='utf-8')
         with patch.object(owner,'freeze_native_sources',return_value=(producer.root/'native/launcher.ps1',[])),patch.object(owner,'declare_runtime_files'),patch.object(owner,'require_launcher_completion'):
-            result=owner.execute_export(producer.session,source=producer.source,manifest_record=file_record(input_manifest,'required_evidence'),grid=producer.grid,baseline={'vacuum_domains':[1]},solution_identity=producer.solution,writer_authority=producer.writer_record,writer=producer.writer_record,limits={},fill_conductor_interiors=False)['manifest_extra_fields']['products']['samples']
+            result=owner.execute_export(producer.session,source=producer.source,manifest_record=file_record(input_manifest,'required_evidence'),grid=producer.grid,baseline={'vacuum_domains':[1]},solution_identity=producer.solution,limits={},fill_conductor_interiors=False)['manifest_extra_fields']['products']['samples']
         data=result['data'];manifest=producer.root/'sample-manifest.json';manifest.write_text('{}',encoding='utf-8')
         source=SimpleNamespace(reference={'manifest':file_record(manifest,'required_evidence')},metadata=result['metadata'],data_records=data,data_locations={k:Path(v['path']) for k,v in data.items()},data_path=lambda key:Path(data[key]['path']))
         consumer=fixtures.ScalarOwnerFillTests('test_false_keeps_raw_export');consumer.setUp();self.addCleanup(consumer.doCleanups)
         consumer.session.expected_operation_ids=()
         before={k:source.data_path(k).read_bytes() for k in ('field_v','field_valid','report')}
-        required=('grid','projection','request','geometry_validation','reopen_geometry','reopen_solution','report','field_solution_manifest','writer','writer_manifest')
+        required=('grid','projection','request','geometry_validation','reopen_geometry','reopen_solution','report','field_solution_manifest')
         grid=json.loads(source.data_path('grid').read_text(encoding='utf-8'));projection=json.loads(source.data_path('projection').read_text(encoding='utf-8'));request=json.loads(source.data_path('request').read_text(encoding='utf-8'));report=json.loads(source.data_path('report').read_text(encoding='utf-8'))
         with patch.object(consumer.session,'run_process',side_effect=AssertionError('native forbidden')):
             derived=owner._execute_scalar_derivation(consumer.session,source=source,raw_names=('field_v','field_valid'),required=required,grid=grid,projection=projection,request=request,report=report,support_source=None,publish_prepared_support=True)
@@ -131,6 +131,33 @@ class OfflineScalarDerivationTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError,'changed'):
             owner._execute_scalar_derivation(third.session,source=broken,raw_names=('field_v','field_valid'),required=required,grid=grid,projection=projection,request=request,report=report,support_source=None,publish_prepared_support=True)
         self.assertEqual(before,{k:source.data_path(k).read_bytes() for k in before})
+
+    def test_historical_writer_pair_missing_and_tamper_refuse(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from msplatform.backends.comsol import assembly_field_export as owner
+        from msplatform.io.manifest_records import file_record, verify_record
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);names=('field_v','field_valid','grid','projection','request',
+                'geometry_validation','reopen_geometry','reopen_solution','report','field_solution_manifest',
+                'writer','writer_manifest')
+            records={}
+            for name in names:
+                path=root/(name+'.dat');path.write_bytes(name.encode());records[name]=file_record(path,'required_evidence')
+            source=SimpleNamespace(producer={'status':'success'},metadata={'backend':'comsol',
+                'scope':'assembly_world_scalar_samples','field_status':'sampled'},data_records=records)
+            def data_path(name):
+                verify_record(name,source.data_records[name]);return Path(source.data_records[name]['path'])
+            source.data_path=data_path
+            with patch.object(owner,'open_artifact',return_value=source):
+                for missing in ('writer','writer_manifest'):
+                    saved=source.data_records.pop(missing)
+                    with self.subTest(missing=missing),self.assertRaisesRegex(ValueError,'incomplete published writer provenance'):
+                        owner.derive_world_scalar_support({},context=None)
+                    source.data_records[missing]=saved
+                Path(records['writer']['path']).write_bytes(b'change')
+                with self.assertRaisesRegex(AssertionError,'SHA-256 changed'):
+                    owner.derive_world_scalar_support({},context=None)
 
     def test_nested_solution_readback_required(self):
         from msplatform.backends.comsol.assembly_field_export import _published_solution_readback
@@ -166,4 +193,4 @@ class OriginalSourceStatusTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'source samples producer must be successful'):
                 owner.derive_world_scalar_support({},context=None)
             with self.assertRaisesRegex(ValueError,'prepared support producer must be successful'):
-                owner.export_world_scalar({},grid={},writer_manifest={},context=None,fill_conductor_interiors=True,prepared_support={})
+                owner.export_world_scalar({},grid={},context=None,fill_conductor_interiors=True,prepared_support={})

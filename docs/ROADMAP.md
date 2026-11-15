@@ -130,7 +130,14 @@ geometry/model/solution evidence and its limits are recorded in the
 does not qualify the later model, field or scalar stages. The later ordinary
 installation resource/validator probes are separately scoped in that state page;
 they do not execute the installed native owners. Native scalar acceptance
-and the dynamic/common-field chain remain open.
+and the dynamic/common-field chain remain open. The Assembly scalar exporter
+now owns PA encoding in the installed package and no longer imports a historical
+MR run's writer. It reuses the existing header authority, validates raw finite
+payloads and binary masks, and preserves failed raw outputs and reports. The
+first integrated epoch exposed duplicate immutable-source guards; the corrected
+epoch passed 41 pure/managed parents (108.786 s), including the original failed
+owner and second-grid finalization failure. Native format and ordinary installed
+acceptance of this successor remain open; frozen old export callers are unchanged.
 Changed r3 remains FAILED on its exact detector Lua fixture; `1379ff97` repairs that
 test, and its exact rerun plus the four originally blocked checks passed separately.
 The retained `b90ac498` complete Repository success remains bound to that source.

@@ -160,14 +160,25 @@ model producer, and use the existing immutable-input guard during consumption.
 ### Saved Assembly scalar export
 
 `msplatform.backends.comsol.assembly_field_export.export_world_scalar` consumes a
-verified `field_solution`, an explicit world grid, a published adapted PA-writer
-manifest and an execution context with `export_assembly_world_scalar` policy.
+verified `field_solution`, an explicit world grid and an execution context with
+`export_assembly_world_scalar` policy.
 The grid declares the Assembly frame, origin and pitches in mm, dimensions,
 sampling block size, and the stored study/solution/dataset tags. It must lie
 inside the saved model's explicit numerical domain; it does not alter component
-geometry or select a mesh automatically. The writer reference must resolve the
-reviewed, manifest-bound adapted `simion_pa_save.m`; there is no installed-path
-or latest-run fallback.
+geometry or select a mesh automatically. The installed exporter owns PA
+serialization through `backends.simion.scalar_pa_payload`, reusing the existing
+`PaHeader` format authority. It no longer requires a historical run's writer.
+MATLAB writes owner-private x-fastest little-endian double payloads; Python
+validates both lengths, finite values and binary masks before writing headers.
+Potential payload bits, including signed zero, remain unchanged. Both encoder
+and conductor-support sources stay frozen and guarded; identical original
+process guards are deduplicated, with conflicting records rejected. Old sample
+products retain their explicit historical writer pair and validation rules.
+
+The corrected integrated suite passed 41 pure and managed-owner parents in
+108.786 s, including the two-plane grid and partial/failure preservation. These
+managed leaves are inert. Native MATLAB/COMSOL production, SIMION format readback
+and ordinary installed acceptance of this writer remain open.
 
 The stage cold-loads the existing solution and samples scalar potential in V
 only in its declared vacuum selection. It requests no Compute, model save or
