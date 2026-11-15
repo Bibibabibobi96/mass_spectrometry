@@ -129,8 +129,12 @@ geometry/model/solution evidence and its limits are recorded in the
 [integration state](../integrations/docs/INTEGRATION.md); ordinary installed geometry
 does not qualify the later model, field or scalar stages. The later ordinary
 installation resource/validator probes are separately scoped in that state page;
-they do not execute the installed native owners. Native scalar acceptance
-and the dynamic/common-field chain remain open. The Assembly scalar exporter
+they do not execute the installed native owners. Native scalar exports and a
+later original-N100 SFI attempt have executed; all SFI terminal causes remain
+unconfirmed and there were no detector arrivals. Complete continuous-chain,
+ordinary installed native and final same-candidate acceptance remain open; the
+current integration state records the exact native runs and limitations.
+The Assembly scalar exporter
 now owns PA encoding in the installed package and no longer imports a historical
 MR run's writer. It reuses the existing header authority, validates raw finite
 payloads and binary masks, and preserves failed raw outputs and reports. The

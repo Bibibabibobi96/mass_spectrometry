@@ -1670,6 +1670,37 @@ inputs, coordinates/units, usable field coverage and collision geometry. Field
 convergence, mesh optimization and accuracy qualification are separate work, not
 preconditions for this functional attempt; no physical accuracy is granted by it.
 
+At frozen `2bae0f7a`, the expanded SFI scalar domain and its original fine windows
+completed a new original-N100 public attempt in
+[run 4ce1a73d5ac4](../../../artifacts/projects/instrument_assembly/runs/20261116_065039__sim__simion__track-4ce1a73d5ac4/run_manifest.json).
+Its three native operations (IOB build, cold verification and Fly) exited zero;
+all 100 source releases and terminal records were collected, with 27 first-grid
+and one intermediate-grid forward crossings, two pre-pulse observations and no
+detector crossing. All terminal causes remain `unknown_termination`; a cached
+pre-action splat is not relabeled as confirmed contact when its exact terminal
+clock/state does not match. This is a real executed attempt and readable complete
+mother collection, not evidence of all-component traversal, transmission,
+terminal-cause closure, convergence or physical accuracy. The sampled peak
+working set was 6,399,647,744 bytes; process drains, lease release and all 3,073
+source records were verified unchanged. Existing 700/295 GiB limits remained.
+
+The expanded carrier classification took approximately 63 minutes between its
+lease and support-file timestamps; this is an observation, not an isolated
+performance measurement or budget pass. RF and pulse reused the same verified
+classification identities while retaining separate voltage arrays. Remaining
+invalid vacuum/boundary nodes were preserved. Five coarse outside-invalid nodes
+were covered by the existing fine window with valid actual query stencils;
+that finite check does not qualify arbitrary trajectories or coupled fields.
+
+The complete canonical LP60 IP geometry also built and cold-reopened through
+the public native owner in
+[run cb6f9bdaa83a](../../../artifacts/projects/instrument_assembly/runs/20261116_061824__build__simion__geometry-cb6f9bdaa83a/run_manifest.json):
+15 scientific groups, 394 canonical primitive terms, 81×1916×81 grid and actual
+metal/void witnesses. Three native operations exited zero and released their
+leases. This includes no Refine, field solve, Fly or GUI qualification. The
+RF–IP–MR continuous attempt remains open while its regional response exports
+are prepared; the original invalid scalar node and failed run remain evidence.
+
 On frozen `4438170a`, the public `load_recorded_release` and SIMION `track`
 stages completed the original 100-birth SFI attempt in
 [run d7538122462e](../../../artifacts/projects/instrument_assembly/runs/20261115_011608__sim__simion__track-d7538122462e/run_manifest.json).
