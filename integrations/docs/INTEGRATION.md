@@ -8,6 +8,34 @@ Current scope is P4 V8.7 (2026-11-12); historical evidence keeps its original ve
 
 ## 当前边界
 
+The current RF–IP–MR functional case keeps the user-selected complete bare RF,
+LP60 IP (center 170 mm and declared rigid pose), identity-pose MR and approved
+finite IP bath plus explicit outer vacuum; no OA is added. The requested absolute
+flight deadline is 8,000 us. The common sampled
+FieldBundle `20261115_182932__sim__simion__fields-500c6185ab11` was published
+successfully through 12 native build/reopen operations, with zero Refine,
+Compute and Fly. It preserves the selected model, scalar sources and collision
+geometry; scalar coverage and scientific qualification are not granted.
+
+The original 100-source tracking attempt `track-27a67896934c` failed before any
+native operation on a missing detector-surface key; the `bde9` correction handles
+the actual empty-surface evidence. The fresh `track-d71e9a4e7331` built and cold
+reopened its tracking IOB successfully, then Fly exited 1 with `too many PAs in
+memory` and zero splats (operation exits 0, 0, 1). Source guards and process drains
+closed. This is a failed flight, not a 100-particle result or field qualification;
+the PA-memory issue remains open.
+
+The generic sampled RF/pulse software candidate passed 28 focused parents; its
+separate grouped recovery checks passed seven parents with inert native leaves.
+The ordinary wheel and rebuilt-sdist parent passed on `a5c1fbad` in 1,371.187 s;
+the new generic dynamic installed probe on `11fa1735` remains unrun. Full current
+Repository, native functional completion, scientific precision and convergence,
+and the original 15-minute target remain open. The 700 GiB managed target and
+295 GiB free-space floor remain unchanged. Evidence is retained under workspace
+`.tools/phase04-codex-takeover-20261109/v87-neutral-cumulative-focused-agent11-r1`,
+`v87-neutral-recovery-focused-agent8-r1` and `v87-neutral-original-installed-agent11-r1`,
+and the named run manifests and logs.
+
 The user withdrew the complete cooled feature in V8.5. Its dedicated source,
 resources, requests and tests are retired rather than renamed or disabled. IP HP/LP,
 HS1, dual-cone/SDS, single-reflection, paired and multipole-IP remain in scope.
@@ -70,8 +98,8 @@ A normally registered test component enters the existing Assembly, STEP planning
 and COMSOL geometry projection without adding a central dispatch branch.
 Two instances with different parameters and renamed/reordered declarations retain
 the same world geometry; invalid ports, source changes and unsupported shapes
-remain rejected. This establishes neutral geometry extensibility, not generic
-SIMION field/tracking support. Custom registration is process-local; durable
+remain rejected. This establishes neutral geometry extensibility; later sampled-field software
+coverage is scoped separately below. Custom registration is process-local; durable
 external-provider cold execution remains open. The RF and TOF worker freezers
 must carry the registry and consume their selected provider's declared closure;
 missing frozen dependencies never fall back to the author tree.
@@ -134,7 +162,7 @@ workpoints and altered/missing assets refuse; no published family is opened.
 Tracking protects only the operating PA, surface and witness, uses the existing
 one-slot workbench and original-birth collector, and installs no Fast Adjust
 callback for this static representation. RF/OA/IP dynamics keep their separate
-existing paths; this does not grant generic RF, pulse, gas or space-charge support.
+existing paths; this static evidence alone does not grant generic RF, pulse, gas or space-charge support.
 The previous fractional static family remains readable as historical data but
 cannot enter new static tracking as an operating field.
 
@@ -1937,10 +1965,10 @@ The read-only capacity snapshot at 2026-11-14 21:30:12 UTC has calibrated reside
 bytes. Against the unchanged 700-GiB target, 295-GiB floor and proposed 12-GiB RF
 geometry reservation, arithmetic shortfalls are 8,144,013,660 bytes of managed
 capacity and 8,761,651,200 bytes of free space. This is a snapshot, not owner
-admission. The two historical duplicate PA replay paths await the user's explicit
-retirement decision; protected MR GUI arrays and all scientific assets remain.
-RF geometry has not passed admission, and any eventual attempt must recalculate
-through the normal owner under the same limits.
+admission. At that snapshot RF geometry had not passed admission; the later
+published field and failed flight are recorded in the current boundary above.
+Subsequent authorized exact-file dispositions preserve their separate receipts;
+any further attempt must use normal owner admission under the same limits.
 
 The public SIMION `solve_fields` stage now accepts an explicit
 `scalar_field_basis` for the selected complete RF–IP–MR model. It admits the
@@ -1986,9 +2014,9 @@ The consumer records unavailable terminal causes as unknown, preserves explicit
 preaction-contact evidence separately, and quarantines conflicting observation
 history without dropping mothers or terminals. Optional MR scientific events
 remain `not_recorded`; this is not mirror-cycle or detector qualification.
-Real full-size RF–IP–MR geometry, native continuous flight, installed owner execution,
-recovery and final Repository/performance acceptance remain open. This test epoch
-does not qualify the available COMSOL fields or remove the storage admission block.
+The later full-size RF–IP–MR sampled field and failed native-flight observations are
+recorded in the current boundary above. This earlier software epoch does not qualify
+the COMSOL fields, native collision coverage or final Repository/performance acceptance.
 
 Within one IP–MR scalar admission call, canonical geometry/operator projection and
 the expected response plan are now constructed once and reused by that call's

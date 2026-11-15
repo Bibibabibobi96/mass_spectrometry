@@ -2012,7 +2012,7 @@
                 "reason": "generic_sampled_comsol_source_changed"
               },
               {
-                "regex": "^common/contracts/(?:test_(?:generic_dynamic_model|generic_scalar_binding|generic_scalar_managed|generic_scalar_tracking_managed|generic_scalar_tracking_renamed|generic_scalar_tracking_recovery|generic_scalar_derived_tracking_managed|neutral_sampled_iob|neutral_sampled_renamed_managed|sfi_scalar_binding|static_world_model|dual_cone_iob)|test_support/(?:generic_other_provider|generic_scalar_renamed|grouped_tracking_fixture))\\.py$",
+                "regex": "^common/contracts/(?:test_(?:generic_dynamic_model|generic_scalar_binding|generic_scalar_managed|generic_scalar_tracking_managed|generic_scalar_tracking_renamed|generic_scalar_tracking_recovery|generic_scalar_derived_tracking_managed|neutral_sampled_iob|neutral_sampled_renamed_managed|scalar_pa_reinit|sfi_scalar_binding|static_world_model|dual_cone_iob)|test_support/(?:generic_other_provider|generic_scalar_renamed|grouped_tracking_fixture))\\.py$",
                 "reason": "generic_sampled_fixture_or_consumer_changed"
               }
             ],
@@ -2024,6 +2024,7 @@
               "common/contracts/test_generic_scalar_tracking_managed.py",
               "common/contracts/test_generic_scalar_tracking_renamed.py",
               "common/contracts/test_generic_scalar_tracking_recovery.py",
+              "common/contracts/test_scalar_pa_reinit.py",
               "common/contracts/test_simion_tracking_units.py",
               "common/contracts/test_generic_scalar_derived_tracking_managed.py",
               "common/contracts/test_neutral_sampled_iob.py",

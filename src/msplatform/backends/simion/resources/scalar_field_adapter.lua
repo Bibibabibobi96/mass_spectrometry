@@ -146,8 +146,27 @@ local function load_field(binding, shared_mask, reuse_workbench)
     assert(type(pitch[a]) == 'number' and pitch[a] == pitch[a]
       and pitch[a] > 0 and pitch[a] < math.huge, 'invalid scalar axis spacing')
   end
-  local pa = assert(simion.pas:open(binding.scalar_pa))
-  local mask = shared_mask or assert(simion.pas:open(binding.valid_pa))
+  -- Reuse only an existing same-path scalar array with the exact frozen grid.
+  -- SIMION owns these objects; do not close, save or replace workbench PAs.
+  -- https://simion.com/info/lua_simion.pas.html
+  local function existing_or_open(path, allow_reuse)
+    for index=1,#simion.pas do
+      local candidate=simion.pas[index]
+      if allow_reuse and type(binding.dimensions)=='table' and #binding.dimensions==3
+        and candidate and candidate.saved==true and type(candidate.path)=='string'
+        and candidate.path:gsub('\\','/'):lower()==path:gsub('\\','/'):lower()
+        and candidate.symmetry=='3dplanar'
+        and candidate.nx==binding.dimensions[1] and candidate.ny==binding.dimensions[2]
+        and candidate.nz==binding.dimensions[3]
+        and candidate.dx_mm==pitch[1] and candidate.dy_mm==pitch[2] and candidate.dz_mm==pitch[3] then
+        return candidate
+      end
+    end
+    return assert(simion.pas:open(path))
+  end
+  local sheets=assert(binding.ideal_sheet_projection, 'missing frozen OA sheet projection')
+  local pa = existing_or_open(binding.scalar_pa, #sheets==0)
+  local mask = shared_mask or existing_or_open(binding.valid_pa, true)
   assert(pa.symmetry == '3dplanar' and mask.symmetry == '3dplanar', 'scalar field cannot use PA mirrors')
   assert(pa.nx == mask.nx and pa.ny == mask.ny and pa.nz == mask.nz, 'V/mask dimensions differ')
   assert(pa.dx_mm == pitch[1] and pa.dy_mm == pitch[2] and pa.dz_mm == pitch[3], 'scalar pitch differs')

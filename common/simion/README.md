@@ -801,6 +801,17 @@ The public tracking API can carry an explicit recorded-birth producer authority 
 
 ### Scalar field adjustment coordinates
 
+Scalar PA loading can reuse a matching existing SIMION PA only while its
+`saved` flag is true. Voltage reuse also requires an empty ideal-sheet
+projection; projections that add in-memory electrode markers retain independent
+voltage objects. Bindings without explicit grid dimensions retain the original
+loading path; the existing response combination still shares its verified
+read-only mask. This uses the documented indexed
+[PA container](https://simion.com/info/lua_simion.pas.html), not a second cache.
+The installed 8.2.0.11 synthetic probe confirmed that electrode and potential
+setters clear `saved`; the 51-binding repeated-load regression uses Lua API
+doubles. Full-bundle native flight remains a separate acceptance requirement.
+
 The sampled IP–MR tracking consumer retains each collision asset's actual
 fractional surface companion and/or verified surface-state record. An empty
 surface-state proof does not require a fabricated `.pa-surf` file. Admission

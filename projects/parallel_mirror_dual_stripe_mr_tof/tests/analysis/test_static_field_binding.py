@@ -46,7 +46,7 @@ class ScalarAdapterResourceTest(unittest.TestCase):
         self.assertEqual(selected.resolve(), provider.parent / "resources/scalar_field_adapter.lua")
         authority = REPO_ROOT / "src/msplatform/backends/simion/resources/scalar_field_adapter.lua"
         self.assertEqual(selected.read_bytes(), authority.read_bytes())
-        self.assertEqual(hashlib.sha256(selected.read_bytes()).hexdigest(), "4190ce7477cb8b3375e71091d7c096169616446f05f0334f66778557ec29aad3")
+        self.assertEqual(hashlib.sha256(selected.read_bytes()).hexdigest(), "db1bec828102216f826a43160ff7db9aa63049b0fd8eac86e2c3ef761852b5cd")
         self.assertFalse((REPO_ROOT / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua").exists())
         with tempfile.TemporaryDirectory() as directory:
             package = Path(directory)
@@ -57,7 +57,7 @@ class ScalarAdapterResourceTest(unittest.TestCase):
 
 
     def test_actual_adapter_world_to_local_gradient(self):
-        lua = Path(shutil.which("lua") or shutil.which("lua5.1") or "")
+        lua = Path(os.environ.get("SIMION_LUA_EXE") or shutil.which("lua") or shutil.which("lua5.1") or "")
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable")
         adapter = REPO_ROOT / "src/msplatform/backends/simion/resources/scalar_field_adapter.lua"

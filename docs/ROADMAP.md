@@ -245,7 +245,20 @@ A fresh COMSOL sequence completed its native solve and saved the 4.5-mm MPH, but
 its owner failed on MATLAB two-row JSON expansion. Strict retained-receipt checks
 passed without altering that failure. Fresh field sampling must explicitly read
 `dset2 -> sfi_fresh`; BVP, convergence and full-flight claims remain open.
-The user retained the 700 GiB capacity target. Public-owner retirement of one
+The current complete bare RF–LP60 IP–MR case has a published sampled FieldBundle
+from twelve native build/reopen operations without Refine, Compute or Fly. Its
+original N100 tracking attempt initially failed before native work on the empty
+detector-surface key, corrected in `bde9`; a fresh IOB build and cold reopen then
+passed, but Fly failed with `too many PAs in memory` and zero splats. There is no
+accepted full-cohort trajectory result. Generic RF/pulse software passed 28 focused
+parents and seven recovery parents; the ordinary two-arm parent passed on `a5c1fbad`
+in 1,371.187 s, while the `11fa1735` dynamic installed probe is unrun. Precision,
+convergence, complete Repository, native flight and the 15-minute target remain open.
+The approved gas choice and original cohort stay bound to their explicit requests;
+no additional component geometry is implied. Details and evidence are in the
+[integration state](../integrations/docs/INTEGRATION.md#当前边界).
+
+The user retained the 700 GiB capacity target and 295 GiB free-space floor. Public-owner retirement of one
 obsolete n3 raw PA, with its other 180 files preserved, allowed the detector
 diagnostic through admission. Its first preparation operation then failed on a
 published-workbench source companion, before Fly. The structural-seed repair
