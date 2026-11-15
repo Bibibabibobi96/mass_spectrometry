@@ -194,7 +194,7 @@ class GenericScalarTests(unittest.TestCase):
             self.samples[name] = dict(reference=ref, request=request, weights=coeff)
 
     def test_actual_lua_model_and_scalar_adapter(self):
-        import os, subprocess
+        import os, shutil, subprocess
         from msplatform.backends.simion.model import render_model_configuration
         from msplatform.backends.simion.resources import native_resource_path
         from msplatform.backends.simion.source import lua_value
@@ -228,6 +228,9 @@ class GenericScalarTests(unittest.TestCase):
             model_identity_sha256=admitted["model_identity_sha256"],
             bases=bases,
         )
+        lua = os.environ.get("SIMION_LUA_EXE") or shutil.which("lua") or shutil.which("lua5.1")
+        if not lua:
+            raise FileNotFoundError("required standalone Lua executable unavailable")
         resources = native_resource_path("model_drive.lua").parent
         composer = (
             Path(__file__).resolve().parents[3]
@@ -268,7 +271,7 @@ print('GENERIC_SCALAR=PASS')
             path.write_text(script, encoding="utf8")
             result = subprocess.run(
                 [
-                    os.environ["SIMION_LUA_EXE"],
+                    lua,
                     str(path),
                     str(resources),
                     str(config),

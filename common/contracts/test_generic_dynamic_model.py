@@ -2,6 +2,7 @@
 
 import copy
 import os
+import shutil
 import pathlib
 import subprocess
 import tempfile
@@ -112,7 +113,9 @@ class DynamicWorldTests(unittest.TestCase):
         )
 
     def test_drive_actual_lua_and_reordered_names(self):
-        lua = os.environ["SIMION_LUA_EXE"]
+        lua = os.environ.get("SIMION_LUA_EXE") or shutil.which("lua") or shutil.which("lua5.1")
+        if not lua:
+            raise FileNotFoundError("required standalone Lua executable unavailable")
         for rename in (False, True):
             model, _, _, _, names = self.model(rename)
             with tempfile.TemporaryDirectory() as directory:

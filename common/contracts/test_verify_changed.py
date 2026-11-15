@@ -27,6 +27,13 @@ FROZEN_INPUT_CONTRACT_TESTS = {
         "test_immutable_input_process.py", "test_installed_scientific_core.py",
         "test_process_family_identity.py", "test_python_dependency_contract.py",
         "test_scientific_core_boundaries.py",
+        "test_execution_module_sources.py", "test_dual_cone_iob.py",
+        "test_generic_dynamic_model.py", "test_generic_scalar_binding.py",
+        "test_generic_scalar_derived_tracking_managed.py", "test_generic_scalar_managed.py",
+        "test_generic_scalar_tracking_managed.py", "test_generic_scalar_tracking_recovery.py",
+        "test_generic_scalar_tracking_renamed.py", "test_neutral_sampled_iob.py",
+        "test_neutral_sampled_renamed_managed.py", "test_scalar_pa_reinit.py",
+        "test_sfi_scalar_binding.py", "test_simion_tracking_units.py", "test_static_world_model.py",
     )
 }
 

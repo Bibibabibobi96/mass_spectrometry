@@ -48,6 +48,25 @@ and the original 15-minute target remain open. The 700 GiB managed target and
 `v87-neutral-recovery-focused-agent8-r1` and `v87-neutral-original-installed-agent11-r1`,
 and the named run manifests and logs.
 
+The earlier `a5c1fbad` Changed run `43706871590` failed required generic Lua
+tests on environment-only discovery, a non-neutral dispatch test with an
+incomplete model fixture, and the scientific dependency check on a dynamic
+registered-source import. The successor uses the existing explicit-Lua/PATH
+discovery contract without adding skips and restores the actual fixture shape.
+Registered source freezing now resolves declared Python source paths through
+execution instead of importing each target in the backend. The existing exact
+file guards and frozen copies remain; dotted-name lookup may import its parent
+package, as documented by the source resolver. Arbitrary dynamic imports remain
+rejected by the unchanged scientific boundary. All eight original failing parents
+and the source/frozen-input/boundary regressions passed in a 40-test, zero-skip
+PATH-only Lua run (714.797 guarded seconds), including the four actual managed
+field/tracking consumers. The two selector regressions then passed with their
+missing/unknown/full-selection negatives after the expected real consumer set
+was updated; direct public routes select 24 modules for execution inputs and two
+for the new source-resolution test. Source guards and GATE release passed.
+The historical failed CI run remains failed; final Repository, ordinary
+installation of this successor and remote successor CI remain unverified.
+
 The user withdrew the complete cooled feature in V8.5. Its dedicated source,
 resources, requests and tests are retired rather than renamed or disabled. IP HP/LP,
 HS1, dual-cone/SDS, single-reflection, paired and multipole-IP remain in scope.

@@ -92,21 +92,22 @@ def _resolve_neutral_sampled_inputs(model_reference: Mapping[str, Any], *, selec
                 expected_operation_ids=('collision_build_01','collision_verify_01','background_build','background_verify','collision_iob_build','collision_iob_verify'))
 
 
-def neutral_source_modules(model_value: Any) -> list[Any]:
+def neutral_source_paths(model_value: Any) -> dict[str, Path]:
     """Resolve the existing registered source closure for neutral field consumers."""
-    import importlib
+    from msplatform.execution import inputs as execution_inputs
+    from msplatform.execution.inputs import resolve_python_module_sources
     from . import neutral_sampled_field, ip_mr_collision_lineage, generic_scalar_binding, scalar_sample_binding, field_closure, native_surface_state, model, assembly_geometry, collision_overlay
     from msplatform.backends.comsol import assembly_geometry as comsol_geometry, assembly_electrostatic_model, assembly_field_export, assembly_field_solution
     from msplatform.components import shape_query, geometry_members, registry, catalog
     from msplatform.assembly import model as assembly_model, resolve_assembly
     from msplatform.contracts import rigid_transform
-    modules=[neutral_sampled_field,ip_mr_collision_lineage,generic_scalar_binding,scalar_sample_binding,field_closure,native_surface_state,model,assembly_geometry,collision_overlay,comsol_geometry,assembly_electrostatic_model,assembly_field_export,assembly_field_solution,shape_query,geometry_members,registry,catalog,assembly_model,resolve_assembly,rigid_transform]
+    modules=[neutral_sampled_field,ip_mr_collision_lineage,generic_scalar_binding,scalar_sample_binding,field_closure,native_surface_state,model,assembly_geometry,collision_overlay,comsol_geometry,assembly_electrostatic_model,assembly_field_export,assembly_field_solution,shape_query,geometry_members,registry,catalog,assembly_model,resolve_assembly,rigid_transform,execution_inputs]
+    paths={module.__name__:Path(module.__file__).resolve(strict=True) for module in modules}
     snapshot=model_value.document['geometry']['frontend_geometry']['source_snapshot']
     for name in snapshot['composition_plan']['scope']['instance_ids']:
         descriptor=project_descriptor(snapshot['composition_plan']['components'][name]['project_id'])
-        modules.extend(importlib.import_module(path) for path in descriptor.source_closure)
-    modules=list({module.__name__:module for module in modules}.values())
-    return modules
+        paths.update(resolve_python_module_sources(descriptor.source_closure))
+    return paths
 
 
 def execute_neutral_sampled_fields(session: RunSession, *, model_reference: Mapping[str, Any], selection: Mapping[str, Any], limits: Mapping[str, Any], allow_asynchronous_io: bool | None = None) -> dict[str, Any]:
@@ -134,10 +135,10 @@ def execute_neutral_sampled_fields(session: RunSession, *, model_reference: Mapp
         if path.exists() or path.is_symlink():raise FileExistsError('neutral field destination exists: '+str(path))
         path.parent.mkdir(parents=True,exist_ok=True);session.declare_file(path,role);return path
     def project(path):return project_run_path(str(path),session.artifact_run_dir,session.run_dir)
-    modules=neutral_source_modules(plan['model'])
+    modules=neutral_source_paths(plan['model'])
     guards=[]
-    for module in modules:
-        path=Path(module.__file__).resolve(strict=True);original=file_record(path,'required_evidence');name=module.__name__.replace('.','_');target=owned(session.input_dir/'native_sources'/(name+'.py'),'required_evidence');freeze_file(path,target);copied=file_record(session.canonical_path(target),'required_evidence')
+    for module_name,path in modules.items():
+        original=file_record(path,'required_evidence');name=module_name.replace('.','_');target=owned(session.input_dir/'native_sources'/(name+'.py'),'required_evidence');freeze_file(path,target);copied=file_record(session.canonical_path(target),'required_evidence')
         if any(original[k]!=copied[k] for k in ('bytes','sha256')):raise ValueError('frozen neutral source differs: '+name)
         session.add_input('neutral_code_'+name,copied);guards.extend((original,copied))
     names=('raw_collision_pa.lua','create_numerical_background.lua','reopen_numerical_background.lua','build_geometry_iob.lua','iob_core.lua')

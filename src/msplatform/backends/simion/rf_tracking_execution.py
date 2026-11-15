@@ -99,9 +99,9 @@ def admit_neutral_sampled_tracking_fields(reference: Mapping[str, Any]) -> dict[
     records.append(dict(request_record, path=str(request_path)))
     for row in records:
         verify_record('neutral sampled tracking input', row)
-    from .neutral_sampled_field import neutral_source_modules
-    code_records = {module.__name__: file_record(Path(module.__file__).resolve(strict=True), 'required_evidence')
-                    for module in neutral_source_modules(planned['model'])}
+    from .neutral_sampled_field import neutral_source_paths
+    code_records = {name: file_record(path, 'required_evidence')
+                    for name, path in neutral_source_paths(planned['model']).items()}
     return dict(source=source, model=planned['model'], basis=planned['binding'], plan=planned,
                 code_records=code_records, immutable_input_records=records,
                 source_manifests=[row['manifest_record'] for row in planned['source_references']])

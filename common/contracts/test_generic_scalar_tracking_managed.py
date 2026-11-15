@@ -3,6 +3,7 @@
 import copy
 import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -338,7 +339,10 @@ print('NEUTRAL_SAMPLED_GENERATED_PROGRAM=PASS')
 '''
                 script = Path(directory)/'actual_program_test.lua'
                 script.write_text(prefix+program+suffix, encoding='utf8')
-                checked = subprocess.run([os.environ['SIMION_LUA_EXE'], str(script)], cwd=Path(directory),
+                lua = os.environ.get('SIMION_LUA_EXE') or shutil.which('lua') or shutil.which('lua5.1')
+                if not lua:
+                    raise FileNotFoundError('required standalone Lua executable unavailable')
+                checked = subprocess.run([lua, str(script)], cwd=Path(directory),
                     capture_output=True, text=True, encoding='utf8', timeout=30, check=False)
                 self.assertEqual(checked.returncode, 0, checked.stdout+checked.stderr)
                 self.assertIn('NEUTRAL_SAMPLED_GENERATED_PROGRAM=PASS', checked.stdout)

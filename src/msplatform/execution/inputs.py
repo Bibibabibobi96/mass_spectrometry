@@ -238,3 +238,27 @@ def python_import_roots(source_root: Path) -> list[str]:
     if not actual.is_dir() or not actual.is_relative_to(root):
         raise ValueError("Python src import root escapes its source tree or is not a directory")
     return [str(actual), str(root)]
+
+
+def resolve_python_module_sources(names: Sequence[str]) -> dict[str, Path]:
+    """Locate explicit module sources without executing the target module.
+
+    As with Python find_spec, resolving a dotted name may import its parent
+    package. The requested target itself is not imported by this function.
+    """
+    import importlib.util
+
+    if isinstance(names, (str, bytes)) or not isinstance(names, Sequence):
+        raise ValueError("module names must be an explicit sequence")
+    result = {}
+    for name in names:
+        if not isinstance(name, str) or not name or any(not part.isidentifier() for part in name.split(".")):
+            raise ValueError("qualified Python module name required")
+        spec = importlib.util.find_spec(name)
+        if spec is None or not spec.origin or Path(spec.origin).suffix.lower() != ".py":
+            raise ValueError("Python source module is unavailable: " + name)
+        path = Path(spec.origin).resolve(strict=True)
+        if not path.is_file():
+            raise ValueError("Python source module is unavailable: " + name)
+        result[name] = path
+    return result

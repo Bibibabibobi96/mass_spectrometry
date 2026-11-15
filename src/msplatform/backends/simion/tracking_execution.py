@@ -922,21 +922,17 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
     neutral_code_guards = []
     if neutral_admission is not None:
         from . import rf_tracking_execution, rf_tracking_program, rf_tracking_collection, tracking_units, tracking_collection
-        from .neutral_sampled_field import neutral_source_modules
+        from .neutral_sampled_field import neutral_source_paths
         from msplatform.io.manifest_records import verify_record
-        modules = neutral_source_modules(model) + [rf_tracking_execution, rf_tracking_program,
-            rf_tracking_collection, tracking_units, tracking_collection]
-        seen = set()
-        for module in modules:
-            if module.__name__ in seen:
-                continue
-            seen.add(module.__name__)
-            path = Path(module.__file__).resolve(strict=True)
+        modules = neutral_source_paths(model)
+        modules.update({module.__name__: Path(module.__file__).resolve(strict=True) for module in
+            (rf_tracking_execution, rf_tracking_program, rf_tracking_collection, tracking_units, tracking_collection)})
+        for module_name, path in modules.items():
             original = file_record(path, 'required_evidence')
-            if module.__name__ in neutral_admission['code_records'] and any(
-                    original[key] != neutral_admission['code_records'][module.__name__][key] for key in ('bytes', 'sha256')):
-                raise ValueError('neutral tracking source changed since admission: '+module.__name__)
-            name = module.__name__.replace('.', '_')
+            if module_name in neutral_admission['code_records'] and any(
+                    original[key] != neutral_admission['code_records'][module_name][key] for key in ('bytes', 'sha256')):
+                raise ValueError('neutral tracking source changed since admission: '+module_name)
+            name = module_name.replace('.', '_')
             copied = small('neutral_tracking_code_'+name,
                 session.input_dir/'native_sources'/(name+'.py'), source_path=path)
             verify_record('neutral tracking original source after freezing', original)

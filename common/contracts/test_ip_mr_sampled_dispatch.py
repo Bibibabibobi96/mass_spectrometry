@@ -80,7 +80,7 @@ class SampledDispatchTests(unittest.TestCase):
             owner.assert_not_called()
 
     def test_original_branch_unchanged(self):
-        source=SimpleNamespace(artifact=SimpleNamespace(reference={'manifest':{'path':'model-manifest'},'product_id':'model'}),model=object())
+        source=SimpleNamespace(artifact=SimpleNamespace(reference={'manifest':{'path':'model-manifest'},'product_id':'model'}),model=SimpleNamespace(document={'geometry':{'frontend_geometry':{'role':'simion_independent_rf_geometry'}}}))
         graph=dict(expected_operation_ids=('existing_operation',),operation_dependencies={})
         with patch('msplatform.backends.simion.field_closure.load_field_model',return_value=source), patch('msplatform.backends.simion.field_execution.plan_fields_execution',return_value=graph), patch('msplatform.execution.owner.run_managed_stage',return_value={'manifest':self.product['manifest']}) as owner, patch.object(subject.artifact_reader,'open_artifact',side_effect=self.opened_field):
             subject.solve_fields(self.model,numerics={'existing':1},context=self.context)
