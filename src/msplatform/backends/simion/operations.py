@@ -223,10 +223,15 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
 def solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mapping[str, Any],
                  context: ExecutionContext,
                  reuse_fields: OpenedArtifact | Mapping[str, Any] | None = None,
-                 scalar_field_basis: Mapping[str, Any] | None = None) -> OpenedArtifact:
+                 scalar_field_basis: Mapping[str, Any] | None = None,
+                 reuse_collision_geometry: OpenedArtifact | Mapping[str, Any] | None = None) -> OpenedArtifact:
     """Explicitly solve an unsolved model, without source sampling or flight.
 
     Optional reuse names one published field product, never a latest lookup.
+    With an explicit sampled scalar basis, reuse_collision_geometry borrows only
+    verified collision assets from their original producer. The new scalar basis
+    is independently admitted and both producers remain protected; this is not
+    reuse of the previous electric field or a native solve.
     The backend validates the actual spatial operator before reusing downstream
     data; the new field product retains the current model's drive and clock.
     """
@@ -244,6 +249,8 @@ def solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mapping
 
     if not isinstance(numerics, Mapping):
         raise ContractError("solve_fields requires explicit field numerics")
+    if reuse_collision_geometry is not None and scalar_field_basis is None:
+        raise ContractError('collision geometry reuse requires an explicit sampled scalar basis')
     if "simion" not in context.tools or not context.tools["simion"].is_file():
         raise ContractError("solve_fields requires an explicit available SIMION executable")
     stage, policy_record = read_stage_policy(context, "solve_fields", required_roles=("solver_native_binary",))
@@ -259,7 +266,7 @@ def solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mapping
         candidate_model = CompiledPreparedModel(candidate.data_path('compiled_model').read_text(encoding='utf8'))
         if require_prepared_model(candidate_model)['geometry']['frontend_geometry'].get('role') == 'simion_neutral_world_collision_geometry':
             from msplatform.backends.simion.neutral_sampled_field import prepare_neutral_sampled_inputs, execute_neutral_sampled_fields
-            if reuse_fields is not None or numerics: raise ContractError('neutral sampled fields require explicit samples and empty field numerics')
+            if reuse_fields is not None or reuse_collision_geometry is not None or numerics: raise ContractError('neutral sampled fields require explicit samples and empty field numerics')
             if not isinstance(scalar_field_basis, Mapping) or set(scalar_field_basis)-{'geometry_artifact','operator','samples','refinement_windows'} or not {'geometry_artifact','operator','samples'} <= set(scalar_field_basis):
                 raise ContractError('neutral sampled fields require geometry, operator and explicit weighted samples')
             def ref(value):
@@ -321,6 +328,29 @@ def solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mapping
                 samples={key:reference(value) for key,value in window['samples'].items()})
                 for window in windows]
         selected_model=reference(model)
+        if reuse_collision_geometry is not None:
+            from msplatform.backends.simion.ip_mr_field_execution import prepare_reused_ip_mr_collisions, execute_reused_ip_mr_collisions
+            reuse_reference=reference(reuse_collision_geometry)
+            prepared=prepare_reused_ip_mr_collisions(selected_model,scalar_field_basis=selection,
+                priority_evidence=evidence,reuse_reference=reuse_reference,
+                output_directory=context.execution_root/'sampled-fields-plan/simion/collision')
+            unique={}
+            for item in prepared['source_references']:
+                record=item['manifest_record'];key=os.path.normcase(str(Path(record['path']).resolve()))
+                if key in unique and unique[key]['manifest_record']!=record:raise ContractError('conflicting source manifest identity')
+                unique[key]=item
+            result=run_managed_stage(context,
+                descriptor=dict(project='instrument_assembly',mode='fields_only',software=['SIMION']),
+                run_id=datetime.now().strftime('%Y%m%d_%H%M%S')+'__sim__simion__fields-'+uuid4().hex[:12],
+                payload=dict(action='solve_fields',model=prepared['prepared_source'],numerics={},reuse_fields=None,
+                    reuse_collision_geometry=reuse_reference,scalar_field_basis=dict(selection,collision_priority_evidence=evidence),stage_policy=stage),
+                committed_new_bytes=stage['limits']['transient_run_directory_bytes'],commitment_inputs=[policy_record],
+                retention=stage['artifact_retention'],expected_operation_ids=(),operation_dependencies={},
+                action=partial(execute_reused_ip_mr_collisions,model_reference=selected_model,scalar_field_basis=selection,
+                    priority_evidence=evidence,reuse_reference=reuse_reference),
+                action_record=file_record(Path(execute_reused_ip_mr_collisions.__code__.co_filename).resolve(),'required_evidence'),
+                source_references=list(unique.values()),use_short_execution_path=True,completion_api=lambda:native_completion)
+            return artifact_reader.open_artifact({'manifest':result['manifest'],'product_id':'fields'},expected_kind='field_bundle')
         planning_root=context.execution_root/'sampled-fields-plan'
         prepared=prepare_ip_mr_field_inputs(selected_model,scalar_field_basis=selection,
             priority_evidence=evidence,output_directory=planning_root/'simion/collision')

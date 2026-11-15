@@ -65,7 +65,7 @@ class SampledDispatchTests(unittest.TestCase):
 
     def test_bad_selection_before_owner(self):
         with patch('msplatform.execution.owner.run_managed_stage') as owner:
-            for options in (dict(numerics={'refine':1},scalar_field_basis=self.selection),dict(numerics={},scalar_field_basis=self.selection,reuse_fields={'invalid':True}),dict(numerics={},scalar_field_basis={'samples':{}}),dict(numerics={},scalar_field_basis=dict(self.selection,samples=[])),dict(numerics={},scalar_field_basis=dict(self.selection,collision_priority_evidence={})),dict(numerics={},scalar_field_basis=dict(self.selection,refinement_windows=[{'samples':[]}]))):
+            for options in (dict(numerics={},reuse_collision_geometry={'invalid':True}),dict(numerics={'refine':1},scalar_field_basis=self.selection),dict(numerics={},scalar_field_basis=self.selection,reuse_fields={'invalid':True}),dict(numerics={},scalar_field_basis={'samples':{}}),dict(numerics={},scalar_field_basis=dict(self.selection,samples=[])),dict(numerics={},scalar_field_basis=dict(self.selection,collision_priority_evidence={})),dict(numerics={},scalar_field_basis=dict(self.selection,refinement_windows=[{'samples':[]}]))):
                 with self.subTest(options=options),self.assertRaises(ContractError):subject.solve_fields(self.model,context=self.context,**options)
             owner.assert_not_called()
 

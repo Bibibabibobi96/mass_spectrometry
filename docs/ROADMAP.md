@@ -143,8 +143,13 @@ RF–IP–MR native flight currently stops on explicit invalid scalar support; a
 same-solution native probe preserves the original invalid node and shows valid
 local support at the actual particle query. RF-body carrier, RF reference and five
 IP workpoints are published; the sixth IP workpoint was refused before native
-execution by the unchanged free-space floor. Collision-only reuse remains a private
-candidate. All three SFI axial scalar products are published and original birth
+execution by the unchanged free-space floor. Collision-only reuse now uses the
+existing public field owner without duplicating native collision files. Actual
+source validation passed all five focused parents (980.366 s), including public
+dispatch, zero-operation publication, original-producer protection and tracking
+admission; the toy product's 507,396 logical bytes matched its ledger. Production
+native reuse and final installation/Repository acceptance remain open. All three
+SFI axial scalar products are published and original birth
 stencils are supported, but public admission rejects off-grid ideal sheets; the
 new SFI flight has not started. Full original-source collections, final
 same-candidate acceptance and the 15-minute target remain open;

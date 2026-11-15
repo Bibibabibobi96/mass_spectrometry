@@ -812,6 +812,15 @@ The installed 8.2.0.11 synthetic probe confirmed that electrode and potential
 setters clear `saved`; the 51-binding repeated-load regression uses Lua API
 doubles. Full-bundle native flight remains a separate acceptance requirement.
 
+`solve_fields(..., scalar_field_basis=..., reuse_collision_geometry=...)` can
+publish a newly admitted IP–MR scalar basis while borrowing the verified original
+collision producer. Prepared-model records, clock/epoch, native priority and the
+complete collision record closure must match. New samples are validated separately;
+the original collision files remain at their original paths and are protected by
+the field and tracking owners. This path performs no native operations and does
+not copy the PA family. It does not reuse the previous scalar field or relax the
+declared stage budget. Other field paths retain their existing reuse rules.
+
 The sampled IP–MR tracking consumer retains each collision asset's actual
 fractional surface companion and/or verified surface-state record. An empty
 surface-state proof does not require a fabricated `.pa-surf` file. Admission

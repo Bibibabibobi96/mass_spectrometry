@@ -126,7 +126,84 @@ class SampledFieldExecutionTests(unittest.TestCase):
                     source_references=derived_plan['source_references'],completion_api=no_particle_batch_completion_api)
             self.assertEqual(derived_observed,list(derived_ids))
             derived_fields=open_artifact({'manifest':derived_result['manifest'],'product_id':'fields'},expected_kind='field_bundle')
-            admission=admit_ip_mr_tracking_fields(derived_fields.reference)
+            from msplatform.backends.simion.ip_mr_field_execution import prepare_reused_ip_mr_collisions
+            reuse_plan=prepare_reused_ip_mr_collisions(selected['model_reference'],scalar_field_basis=selection,
+                priority_evidence=selected['priority_evidence'],reuse_reference=derived_fields.reference,
+                output_directory=Path(tmp)/'reuse-preflight')
+            relative_reference={'manifest':dict(derived_fields.reference['manifest'],path='run_manifest.json'),'product_id':'fields'}
+            def resolve_relative(record,base):
+                return derived_fields.manifest_location if record['path']=='run_manifest.json' else Path(record['path'])
+            relative_opened=open_artifact(relative_reference,expected_kind='field_bundle',resolver=resolve_relative)
+            relative_plan=prepare_reused_ip_mr_collisions(selected['model_reference'],scalar_field_basis=selection,
+                priority_evidence=selected['priority_evidence'],reuse_reference=relative_opened,
+                output_directory=Path(tmp)/'relative-reuse-preflight')
+            self.assertEqual(relative_plan['collision_producer_reference'],derived_fields.reference)
+            for key in ('compiled_model','clock_authority','instrument_epoch'):
+                changed_plan=copy.deepcopy(reuse_plan)
+                changed_plan['prepared_records'][key]['sha256']='0'*64
+                with self.subTest(changed_prepared_record=key), patch.object(subject,'prepare_ip_mr_field_inputs',return_value=changed_plan):
+                    with self.assertRaisesRegex(ValueError,'prepared record differs'):
+                        prepare_reused_ip_mr_collisions(selected['model_reference'],scalar_field_basis=selection,
+                            priority_evidence=selected['priority_evidence'],reuse_reference=derived_fields.reference,
+                            output_directory=Path(tmp)/'changed-prepared-preflight')
+            missing_reference=copy.deepcopy(derived_fields.reference)
+            missing_reference['manifest']['path']=str(Path(tmp)/'missing-producer.json')
+            with self.assertRaises((AssertionError,FileNotFoundError,ValueError)):
+                prepare_reused_ip_mr_collisions(selected['model_reference'],scalar_field_basis=selection,
+                    priority_evidence=selected['priority_evidence'],reuse_reference=missing_reference,
+                    output_directory=Path(tmp)/'missing-reuse-preflight')
+            bad_reference=copy.deepcopy(derived_fields.reference)
+            bad_reference['manifest']['sha256']='0'*64
+            with self.assertRaisesRegex(AssertionError, 'SHA-256 changed'):
+                prepare_reused_ip_mr_collisions(selected['model_reference'],scalar_field_basis=selection,
+                    priority_evidence=selected['priority_evidence'],reuse_reference=bad_reference,
+                    output_directory=Path(tmp)/'bad-reuse-preflight')
+            bad_evidence=copy.deepcopy(selected['priority_evidence'])
+            bad_evidence['boxes_record']['sha256']='0'*64
+            with self.assertRaisesRegex(AssertionError, 'SHA-256 changed'):
+                prepare_reused_ip_mr_collisions(selected['model_reference'],scalar_field_basis=selection,
+                    priority_evidence=bad_evidence,reuse_reference=derived_fields.reference,
+                    output_directory=Path(tmp)/'bad-priority-preflight')
+            from msplatform.backends.simion import model_execution, operations
+            from msplatform.execution.capacity_ledger import load_capacity_ledger
+            solve_stage=copy.deepcopy(stage['stages']['track'])
+            solve_stage['limits']['reserved_run_payload_bytes']=solve_stage['limits']['transient_run_directory_bytes']
+            stage['stages']['solve_fields']=solve_stage
+            policy.write_text(json.dumps(stage),encoding='utf8')
+            reuse_operations=[];collision_lease=[]
+            original_protected_source=model_execution._protected_source
+            def observe_protected_source(session,manifest,**kwargs):
+                result=original_protected_source(session,manifest,**kwargs)
+                if Path(manifest['path']).resolve()==derived_fields.manifest_location.resolve():
+                    view=load_capacity_protection_leases(context.workspace/'artifacts')
+                    self.assertTrue(path_is_protected(derived_fields.manifest_location.resolve(),view['protected_paths']))
+                    collision_lease.append(True)
+                return result
+            public_selection=dict(selection,collision_priority_evidence=selected['priority_evidence'])
+            with fixture.inert_native_leaf(reuse_operations), patch.object(model_execution,'_protected_source',side_effect=observe_protected_source):
+                reused=operations.solve_fields(selected['model_reference'],numerics={},context=context,
+                    scalar_field_basis=public_selection,reuse_collision_geometry=derived_fields.reference)
+            self.assertEqual(reuse_operations,[]);self.assertTrue(collision_lease)
+            reuse_run=reused.manifest_location.parent
+            completion=json.loads((reuse_run/'results/execution_completion.json').read_text(encoding='utf-8-sig'))
+            self.assertEqual(completion['writer_completion']['operations'],[])
+            self.assertEqual(completion['writer_completion']['resource_releases'],[])
+            ledger=load_capacity_ledger(context.workspace/'artifacts')
+            relative_run=reuse_run.relative_to(context.workspace/'artifacts').as_posix()
+            rows=[row for row in ledger['objects'] if row['path']==relative_run]
+            self.assertEqual(len(rows),1);self.assertEqual(rows[0]['status'],'ready')
+            logical=sum(path.stat().st_size for path in reuse_run.rglob('*') if path.is_file())
+            self.assertGreater(logical,0);self.assertGreater(rows[0]['bytes'],0)
+            print('COLLISION_REUSE_PUBLIC_ACCOUNTING='+json.dumps({'logical_file_bytes':logical,
+                'ledger_bytes':rows[0]['bytes'],'native_operations':len(reuse_operations)},sort_keys=True),flush=True)
+            self.assertEqual(reused.metadata['collision_producer_reference'],derived_fields.reference)
+            for key in set(derived_fields.data_records)-{'sampled_basis','compiled_model','clock_authority','instrument_epoch'}:
+                self.assertEqual(reused.data_records[key],derived_fields.data_records[key])
+            self.assertNotEqual(reused.data_path('sampled_basis'),derived_fields.data_path('sampled_basis'))
+            admission=admit_ip_mr_tracking_fields(reused.reference)
+            self.assertEqual(admission['collision_reference'],derived_fields.reference)
+            self.assertIn(str(derived_fields.manifest_location.resolve()),[str(Path(x['path']).resolve()) for x in admission['source_manifests']])
+
             self.assertEqual(len(admission['basis']['bases']),17)
             self.assertTrue(any(Path(x['path']).resolve()==original_path for x in admission['source_manifests']))
             def check_tracking(session):

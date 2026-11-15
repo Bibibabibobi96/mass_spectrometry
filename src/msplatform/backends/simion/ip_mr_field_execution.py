@@ -332,3 +332,103 @@ def execute_ip_mr_sampled_fields(session, *, model_reference: Mapping[str, Any],
     return dict(status='success',summary=metadata,output_paths=outputs,required_output_paths=outputs,
         retention_preserve_paths=[],manifest_extra_fields={'products':{'fields':dict(schema_version=1,
         kind='field_bundle',status='complete',metadata=metadata,data=records)}})
+
+
+def prepare_reused_ip_mr_collisions(model_reference, *, scalar_field_basis, priority_evidence, reuse_reference, output_directory):
+    """Admit a fresh basis while borrowing one verified collision producer."""
+    from msplatform.results.artifacts import open_artifact
+    from .model import require_prepared_model
+    normalized_evidence={name:dict(record,retention_role='required_evidence')
+                         for name,record in priority_evidence.items()}
+    plan = prepare_ip_mr_field_inputs(model_reference, scalar_field_basis=scalar_field_basis,
+                                      priority_evidence=normalized_evidence, output_directory=output_directory)
+    previous = open_artifact(reuse_reference, expected_kind='field_bundle')
+    previous_reference = previous.reference
+    previous_reference['manifest']['path'] = str(previous.manifest_location)
+    producer_reference = previous.metadata.get('collision_producer_reference', previous_reference)
+    producer = previous if producer_reference == previous_reference else open_artifact(producer_reference, expected_kind='field_bundle')
+    producer_reference = producer.reference
+    producer_reference['manifest']['path'] = str(producer.manifest_location)
+    expected_representation = 'assembly_sampled_basis_with_collision_geometry'
+    for source in (previous, producer):
+        if (source.producer['status'] != 'success' or source.metadata.get('backend') != 'simion'
+                or source.metadata.get('field_representation') != expected_representation
+                or source.metadata.get('field_status') != 'available'
+                or source.metadata.get('source_status') != 'not_requested'):
+            raise ValueError('collision reuse requires successful sampled field producers')
+        manifest=_read(source.manifest_location)
+        producer_request=manifest['inputs']['execution_request']
+        verify_record('collision producer request',producer_request,base_dir=source.manifest_location.parent)
+        request_path=record_path(producer_request,base_dir=source.manifest_location.parent)
+        request=_read(request_path)
+        if request.get('role')!='run_artifact_workflow_request' or request['payload'].get('action')!='solve_fields':
+            raise ValueError('collision producer workflow request differs')
+    if producer.metadata.get('collision_producer_reference') is not None:
+        raise ValueError('collision producer must be the original native producer')
+    document = require_prepared_model(plan['model'])
+    for source in (previous, producer):
+        if (source.metadata.get('model_identity_sha256') != document['model_identity_sha256']
+                or source.metadata.get('clock') != document['drive']['clock']):
+            raise ValueError('collision reuse prepared model or clock differs')
+        for key in ('compiled_model','clock_authority','instrument_epoch'):
+            selected=plan['prepared_records'][key]; existing=source.data_records[key]
+            if any(str(selected[k]).lower()!=str(existing[k]).lower() for k in ('bytes','sha256')):
+                raise ValueError('collision reuse prepared record differs: '+key)
+        policy=_read(source.data_locations['collision_priority'])
+        if plan['priority_projection']['verified_priority'] != policy:
+            raise ValueError('collision reuse priority or background grid differs')
+    excluded = {'compiled_model', 'clock_authority', 'instrument_epoch', 'sampled_basis'}
+    keys = set(producer.data_records) - excluded
+    required={'collision_priority','collision_iob_spec','zero_particle_format_control','collision_audits','background','workbench'}
+    roles=plan['priority_projection']['roles']
+    for name in (roles['rf'],roles['ip'],roles['analyzer'],roles['detector']):
+        required.update((name+'_collision',name+'_witness'))
+        if name+'_surface' not in keys and name+'_surface_state' not in keys:
+            raise ValueError('collision reuse requires surface evidence: '+name)
+    if not required <= keys:
+        raise ValueError('collision reuse required records are missing')
+    if keys != set(previous.data_records) - excluded:
+        raise ValueError('collision reuse record closure differs')
+    for key in keys:
+        previous_record = dict(previous.data_records[key], path=str(previous.data_locations[key]))
+        producer_record = dict(producer.data_records[key], path=str(producer.data_locations[key]))
+        if previous_record != producer_record:
+            raise ValueError('collision reuse producer record differs: ' + key)
+    plan['collision_producer_reference'] = producer_reference
+    plan['collision_source_records'] = {key: dict(producer.data_records[key],
+        path=str(producer.data_locations[key])) for key in keys}
+    plan['collision_metadata'] = producer.metadata
+    plan['source_references'].extend([{'manifest_record':previous_reference['manifest']},
+                                      {'manifest_record':producer_reference['manifest']}])
+    return plan
+
+
+def execute_reused_ip_mr_collisions(session, *, model_reference, scalar_field_basis, priority_evidence, reuse_reference):
+    """Publish an independently admitted basis using protected original collisions."""
+    from .model_execution import _protected_source
+    from msplatform.io.manifest_records import file_record
+    plan=prepare_reused_ip_mr_collisions(model_reference,scalar_field_basis=scalar_field_basis,
+        priority_evidence=priority_evidence,reuse_reference=reuse_reference,
+        output_directory=session.artifact_run_dir/'simion/collision')
+    if session.expected_operation_ids != ():
+        raise ValueError('collision reuse requires no native operations')
+    for ref in plan['source_references']:
+        _protected_source(session,ref['manifest_record'])
+    _protected_source(session,plan['prepared_source']['manifest'],required_paths=[record['path'] for record in plan['immutable_input_records']])
+    _protected_source(session,plan['collision_producer_reference']['manifest'],required_paths=[record['path'] for record in plan['collision_source_records'].values()])
+    records={key:plan['prepared_records'][key] for key in ('compiled_model','clock_authority','instrument_epoch')}
+    records.update(plan['collision_source_records'])
+    for key,record in records.items():
+        verify_record('collision reuse '+key,record);session.add_input('reuse_'+key,record)
+    for i,record in enumerate(plan['immutable_input_records']):
+        verify_record('new basis input',record);session.add_input('basis_source_'+str(i),record)
+    basis=session.declare_file(session.input_dir/'sampled_basis.json','required_evidence')
+    basis.write_text(json.dumps(plan['binding'],allow_nan=False,indent=2)+'\n',encoding='utf8')
+    records['sampled_basis']=file_record(session.canonical_path(basis),'required_evidence')
+    session.add_input('sampled_basis',records['sampled_basis'])
+    metadata=copy.deepcopy(plan['collision_metadata'])
+    metadata['collision_producer_reference']=plan['collision_producer_reference']
+    metadata.update(refine_calls=0,compute_calls=0,fly_calls=0,scalar_coverage='not_qualified')
+    return dict(status='success',summary=metadata,output_paths=[str(session.canonical_path(basis))],
+        required_output_paths=[str(session.canonical_path(basis))],retention_preserve_paths=[],
+        manifest_extra_fields={'products':{'fields':dict(schema_version=1,kind='field_bundle',status='complete',metadata=metadata,data=records)}})

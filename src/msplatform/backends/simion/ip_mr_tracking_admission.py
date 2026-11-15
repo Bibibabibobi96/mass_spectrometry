@@ -62,6 +62,26 @@ def admit_ip_mr_tracking_fields(reference: Mapping[str, Any] | OpenedArtifact) -
         if name + '_surface' in source.data_records: keys.append(name + '_surface')
         if name + '_surface_state' in source.data_records: keys.append(name + '_surface_state')
         if name + '_surface' not in source.data_records and name + '_surface_state' not in source.data_records: raise ValueError('collision surface evidence missing')
+    collision_reference = meta.get('collision_producer_reference')
+    collision_source = None
+    if collision_reference is not None:
+        collision_source = open_artifact(collision_reference, expected_kind='field_bundle')
+        if (collision_source.producer['status'] != 'success'
+                or collision_source.metadata.get('field_representation') != 'assembly_sampled_basis_with_collision_geometry'
+                or collision_source.metadata.get('collision_producer_reference') is not None):
+            raise ValueError('collision producer must be the successful original sampled field')
+        if (collision_source.metadata.get('model_identity_sha256') != meta.get('model_identity_sha256')
+                or collision_source.metadata.get('clock') != meta.get('clock')):
+            raise ValueError('collision producer model or clock differs')
+        excluded = {'compiled_model', 'clock_authority', 'instrument_epoch', 'sampled_basis'}
+        selected = set(source.data_records) - excluded
+        if selected != set(collision_source.data_records) - excluded:
+            raise ValueError('collision producer record closure differs')
+        for key in selected:
+            selected_record = dict(source.data_records[key], path=str(source.data_locations[key]))
+            producer_record = dict(collision_source.data_records[key], path=str(collision_source.data_locations[key]))
+            if selected_record != producer_record:
+                raise ValueError('collision producer record differs: ' + key)
     records = [dict(source.data_records[key], path=str(source.data_path(key))) for key in keys]
     records.extend(copy.deepcopy(sample_records))
     unique = {}
@@ -73,6 +93,8 @@ def admit_ip_mr_tracking_fields(reference: Mapping[str, Any] | OpenedArtifact) -
             raise ValueError('conflicting tracking input identities')
         unique[path] = (identity, dict(record, path=path))
     references = [source.reference['manifest'], prepared.reference['manifest'], basis['geometry_reference']['manifest']]
+    if collision_source is not None:
+        references.append(collision_source.reference['manifest'])
     for item in basis['bases'].values():
         for level in [item, *item.get('refinement_windows', [])]:
             sample = open_artifact(level['reference'], expected_kind='scalar_field_samples')
@@ -90,7 +112,7 @@ def admit_ip_mr_tracking_fields(reference: Mapping[str, Any] | OpenedArtifact) -
                 raise ValueError('sample original producer reference differs')
             if original is not None:
                 references.append(original.reference['manifest'])
-    return dict(source=source, prepared_reference=prepared.reference, model=model, basis=basis, priority=policy, world_domain=world,
+    return dict(source=source, collision_reference=collision_reference, prepared_reference=prepared.reference, model=model, basis=basis, priority=policy, world_domain=world,
                 world_frame_id=document['native_frame_id'],
                 immutable_input_records=[row[1] for row in unique.values()], source_manifests=references)
 
@@ -101,6 +123,8 @@ def protect_ip_mr_tracking_fields(session: Any, admission: Mapping[str, Any]) ->
     source = admission['source']
     owned = [str(source.data_path(key)) for key in source.data_records]
     _protected_source(session, source.reference['manifest'], required_paths=owned)
+    if admission.get('collision_reference') is not None:
+        _protected_source(session, admission['collision_reference']['manifest'])
     basis = admission['basis']
     _protected_source(session, admission['prepared_reference']['manifest'])
     _protected_source(session, basis['geometry_reference']['manifest'],
