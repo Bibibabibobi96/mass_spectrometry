@@ -2513,6 +2513,23 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
         oa = self.selections(REPO_ROOT, [dict(stage='instrument_assembly_integration',
             paths=['src/msplatform/backends/simion/oa_compiler.py'])])[0]
         self.assertIn('integrations/tests/test_rf_oa_compiler.py', oa['Modules'])
+        mr = self.selections(REPO_ROOT, [dict(
+            stage='parallel_mirror_dual_stripe_mr_tof_static', paths=[paths[0]])])[0]
+        self.assertCountEqual(mr['Modules'], [
+            MR + '/tests/analysis/test_mr_compiler.py',
+            MR + '/tests/analysis/test_two_prism_simion_trial.py',
+            MR + '/tests/analysis/test_loss_acceptance_diagnostics.py',
+            MR + '/tests/analysis/test_prepared_joint_diagnostics.py',
+        ])
+        script = (
+            '. ' + powershell_literal(REPO_ROOT / 'common/gate_catalog_support.ps1') + '; '
+            "$r=@(Read-GateCatalog -RepoRoot $PWD.Path|Where-Object stage -eq "
+            "'parallel_mirror_dual_stripe_mr_tof_static')[0]; "
+            "if(-not(Get-ChangedRouteReason -Route $r -Paths @('" + paths[0] + "'))){throw 'missing MR shape route'}"
+        )
+        result = subprocess.run(['pwsh', '-NoProfile', '-Command', script], cwd=REPO_ROOT,
+                                capture_output=True, text=True, encoding='utf-8', timeout=60)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_shared_geometry_changes_select_cad_and_comsol_consumers(self) -> None:
         paths = ["src/msplatform/components/geometry_members.py",

@@ -84,4 +84,130 @@ class ShapeQueryTests(unittest.TestCase):
         self.assertEqual(query.query_members([member,other],(10,2,2),frame_id='world')['status'],'unsupported')
         with self.assertRaises(ValueError):query.query_members([member],(10,2,2),frame_id='wrong')
 
+    def test_ip_box_and_concave_extrusion_relations(self):
+        box={'kind':'ip_box','min_mm':[-1,-2,-3],'max_mm':[1,2,3]}
+        for point,expected in [((0,0,0),'interior'),((1,0,0),'boundary'),((1.01,0,0),'outside')]:
+            with self.subTest(point=point): self.assertEqual(query.shape_relation(box,point),expected)
+        poly={'kind':'extruded_yz_polygon','x':[-1,1],'polygon_yz_mm':[[0,0],[4,0],[4,1],[1,1],[1,4],[0,4]]}
+        for point,expected in [((0,.5,3),'interior'),((0,3,3),'outside'),((0,1,3),'boundary'),((1,.5,3),'boundary'),((2,.5,3),'outside')]:
+            with self.subTest(point=point): self.assertEqual(query.shape_relation(poly,point),expected)
+        for bad in ({'kind':'ip_box','min_mm':[1,0,0],'max_mm':[0,1,1]},
+                    {'kind':'extruded_yz_polygon','x':[1,0],'polygon_yz_mm':[[0,0],[1,0],[0,1]]},
+                    {'kind':'extruded_yz_polygon','x':[0,1],'polygon_yz_mm':[[0,0],[1,0],[1,float('nan')]]},
+                    {'kind':'extruded_yz_polygon','x':[0,1],'polygon_yz_mm':[[0,0],[4,3],[0,4],[3,0]]}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError): query.shape_relation(bad,(0,0,0))
+
+    def test_extrusion_pose_boundary_unknown_and_overlap(self):
+        from msplatform.contracts.rigid_transform import FramedPosition, RigidTransform
+        pose={'schema_version':1,'role':'rigid_transform','from_frame_id':'local','to_frame_id':'world','rotation':[[0,-1,0],[1,0,0],[0,0,1]],'translation_mm':[10,2,3]}
+        shape={'kind':'extruded_yz_polygon','x':[-1,1],'polygon_yz_mm':[[0,0],[4,0],[4,1],[1,1],[1,4],[0,4]]}
+        member={'instance_id':'mr','member_id':'p','electrode_group_id':'a','shape':shape,'transform':pose}
+        transform=RigidTransform.from_contract(pose)
+        for point,status in [((0,.5,3),'interior'),((0,1,3),'boundary'),((0,3,3),'outside')]:
+            world=transform.transform_position(FramedPosition('local',point))
+            self.assertEqual(query.query_members([member],world.coordinates_mm,frame_id='world')['status'],status)
+        other=copy.deepcopy(member);other['electrode_group_id']='b'
+        world=transform.transform_position(FramedPosition('local',(0,.5,3)))
+        with self.assertRaisesRegex(ValueError,'different electrode groups'):query.query_members([member,other],world.coordinates_mm,frame_id='world')
+        other['shape']={'kind':'unknown'}
+        self.assertEqual(query.query_members([member,other],world.coordinates_mm,frame_id='world')['status'],'unsupported')
+
+    def test_shared_mr_polygon_membership_preserves_existing_wrapper(self):
+        from msplatform.backends.simion.mrtof_observations import _polygon_membership, _polygon_contains, _strict_polygon_hole
+        poly=[[0,0],[4,0],[4,1],[1,1],[1,4],[0,4]]
+        for point in ((.5,3),(3,3),(1,3),(0,0)):
+            self.assertEqual(_polygon_membership(point,poly),query.polygon_membership(point,poly))
+        self.assertTrue(_polygon_contains((1.01,3),poly,.02))
+        self.assertFalse(_polygon_contains((1.01,3),poly,.005))
+        self.assertTrue(_strict_polygon_hole((.5,3),poly,.01))
+        self.assertFalse(_strict_polygon_hole((1,3),poly,.01))
+
+    def test_ip_x_cylinder_endcaps_pose_and_bore(self):
+        from msplatform.contracts.rigid_transform import FramedPosition, RigidTransform
+        cyl={'kind':'ip_cylinder_x','x_min_mm':0,'x_max_mm':29,'center_y_mm':2.6,'center_z_mm':0.,'radius_mm':.6}
+        for point,status in [((10,2.6,0),'interior'),((0,2.6,0),'boundary'),((10,2.6,.6),'boundary'),((10,0,0),'outside')]:
+            with self.subTest(point=point): self.assertEqual(query.shape_relation(cyl,point),status)
+        lens={'kind':'difference','base':{'kind':'ip_box','min_mm':[29.5,-3,-3],'max_mm':[30,3,3]},'tools':[{'kind':'ip_cylinder_x','x_min_mm':29.4,'x_max_mm':30.1,'center_y_mm':0,'center_z_mm':0,'radius_mm':1.0}]}
+        self.assertEqual(query.shape_relation(lens,(29.75,0,0)),'outside')
+        self.assertEqual(query.shape_relation(lens,(29.75,2,0)),'interior')
+        self.assertEqual(query.shape_relation(lens,(29.75,1,0)),'boundary')
+        for change in ({'radius_mm':0},{'x_min_mm':30},{'center_y_mm':float('nan')}):
+            bad=dict(cyl,**change)
+            with self.subTest(change=change),self.assertRaises(ValueError):query.shape_relation(bad,(10,0,0))
+        pose={'schema_version':1,'role':'rigid_transform','from_frame_id':'local','to_frame_id':'world','rotation':[[0,0,-1],[1,0,0],[0,-1,0]],'translation_mm':[0,-225,3]}
+        member={'instance_id':'ip','member_id':'guide','electrode_group_id':'g','shape':cyl,'transform':pose}
+        transform=RigidTransform.from_contract(pose)
+        for point,status in [((10,2.6,0),'interior'),((0,2.6,0),'boundary'),((10,0,0),'outside')]:
+            world=transform.transform_position(FramedPosition('local',point));self.assertEqual(query.query_members([member],world.coordinates_mm,frame_id='world')['status'],status)
+
 if __name__=='__main__':unittest.main()
+
+
+class PreparedQueryTests(unittest.TestCase):
+    def test_parity_pose_concavity_boundaries_and_snapshot(self):
+        pose={'schema_version':1,'role':'rigid_transform','from_frame_id':'local','to_frame_id':'world',
+              'rotation':[[0,-1,0],[1,0,0],[0,0,1]],'translation_mm':[10,2,-3]}
+        shape={'kind':'extruded_yz_polygon','x':[-1,1],
+               'polygon_yz_mm':[[0,0],[4,0],[4,1],[1,1],[1,4],[0,4]]}
+        member={'instance_id':'i','member_id':'m','electrode_group_id':'g','shape':shape,'transform':pose}
+        from msplatform.contracts.rigid_transform import RigidTransform, FramedPosition
+        transform=RigidTransform.from_contract(pose); prepared=query.prepare_member_query([member],frame_id='world')
+        points=[(0,.5,3),(0,3,3),(0,1,3),(1,.5,3),
+                (math.nextafter(1.,-math.inf),.5,3),(math.nextafter(1.,math.inf),.5,3)]
+        for p in points:
+            world=transform.transform_position(FramedPosition('local',p)).coordinates_mm
+            self.assertEqual(prepared(world),query.query_members([member],world,frame_id='world'))
+        world=transform.transform_position(FramedPosition('local',points[0])).coordinates_mm
+        expected=prepared(world); member['shape']['polygon_yz_mm'][0][0]=999
+        member['transform']['translation_mm'][0]=999
+        self.assertEqual(prepared(world),expected)
+
+    def test_unsupported_overlap_and_invalid_geometry(self):
+        pose={'schema_version':1,'role':'rigid_transform','from_frame_id':'local','to_frame_id':'world',
+              'rotation':[[1,0,0],[0,1,0],[0,0,1]],'translation_mm':[0,0,0]}
+        member={'instance_id':'i','member_id':'m','electrode_group_id':'g','transform':pose,
+                'shape':{'kind':'ip_box','min_mm':[-1,-1,-1],'max_mm':[1,1,1]}}
+        other=copy.deepcopy(member);other['member_id']='u';other['shape']={'kind':'unknown'}
+        self.assertEqual(query.prepare_member_query([member,other],frame_id='world')((0,0,0)),
+                         query.query_members([member,other],(0,0,0),frame_id='world'))
+        other=copy.deepcopy(member);other['electrode_group_id']='other'
+        with self.assertRaisesRegex(ValueError,'different electrode groups'):
+            query.prepare_member_query([member,other],frame_id='world')((0,0,0))
+        bad=copy.deepcopy(member);bad['shape']={'kind':'extruded_yz_polygon','x':[0,1],
+                  'polygon_yz_mm':[[0,0],[4,3],[0,4],[3,0]]}
+        with self.assertRaises(ValueError):query.prepare_member_query([bad],frame_id='world')
+
+    def test_shared_pose_parity_orthogonal_defect_and_frame(self):
+        pose={'schema_version':1,'role':'rigid_transform','from_frame_id':'local','to_frame_id':'world',
+              'rotation':[[1-4e-13,0,0],[0,1,0],[0,0,1]],'translation_mm':[10,2,-3]}
+        base={'instance_id':'i','member_id':'a','electrode_group_id':'g','transform':pose,
+              'shape':{'kind':'ip_box','min_mm':[-1,-1,-1],'max_mm':[1,1,1]}}
+        second=copy.deepcopy(base);second['member_id']='b';second['shape']['min_mm']=[5,5,5];second['shape']['max_mm']=[6,6,6]
+        third=copy.deepcopy(second);third['member_id']='c';third['transform']['translation_mm'][1]=3
+        members=[base,second,third];prepared=query.prepare_member_query(members,frame_id='world')
+        for x in (math.nextafter(11.,-math.inf),11.,math.nextafter(11.,math.inf),10.,12.):
+            point=(x,2.,-3.)
+            self.assertEqual(prepared(point),query.query_members(members,point,frame_id='world'))
+        self.assertEqual(prepared((10.,2.,-3.)),query.query_members(members,(10.,2.,-3.),frame_id='world'))
+        self.assertEqual(prepared((100.,200.,300.)),query.query_members(members,(100.,200.,300.),frame_id='world'))
+        with self.assertRaises(ValueError):query.prepare_member_query(members,frame_id='wrong')((10.,2.,-3.))
+
+    def test_prepared_polygon_bounds_concave_hole_and_large_coordinates(self):
+        pose={'schema_version':1,'role':'rigid_transform','from_frame_id':'local','to_frame_id':'world',
+              'rotation':[[1,0,0],[0,1,0],[0,0,1]],'translation_mm':[0,0,0]}
+        for offset in (0., 1e12):
+            polygon={'kind':'extruded_yz_polygon','x':[-1,1],
+                     'polygon_yz_mm':[[offset,offset],[offset+4,offset],[offset+4,offset+1],
+                                      [offset+1,offset+1],[offset+1,offset+4],[offset,offset+4]]}
+            base={'kind':'ip_box','min_mm':[-2,offset-2,offset-2],
+                  'max_mm':[2,offset+2,offset+2]}
+            for shape in (polygon,{'kind':'difference','base':base,'tools':[polygon]}):
+                member={'instance_id':'i','member_id':'p','electrode_group_id':'g','transform':pose,'shape':shape}
+                prepared=query.prepare_member_query([member],frame_id='world')
+                vals=[offset-2,math.nextafter(offset,-math.inf),offset,math.nextafter(offset,math.inf),
+                      offset+0.5,offset+1,offset+3,offset+4,math.nextafter(offset+4,math.inf),offset+20]
+                for x in (-1.,0.,1.,2.):
+                    for y in vals:
+                        for z in vals:
+                            point=(x,y,z)
+                            self.assertEqual(prepared(point),query.query_members([member],point,frame_id='world'),point)

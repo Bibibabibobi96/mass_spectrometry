@@ -1,14 +1,13 @@
 """Classify only invalid scalar-grid nodes against explicit Assembly geometry."""
 from __future__ import annotations
 
-import copy
 import math
 from collections import Counter
 from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
 from typing import Any
 
-from msplatform.components.shape_query import query_members
+from msplatform.components.shape_query import prepare_member_query
 
 
 def _sheet_is_zero_thickness(shape: Mapping[str, Any]) -> bool:
@@ -82,7 +81,7 @@ class InvalidNodeClassifier:
                 raise ValueError('ideal surface is not represented as zero thickness')
         if actual_members != declared_members:
             raise ValueError('scientific group member coverage differs')
-        self._members = tuple(copy.deepcopy(members)); self._voltages = values; self._frame = frame
+        self._query = prepare_member_query(members, frame_id=frame); self._voltages = values; self._frame = frame
         self._dimensions = tuple(dimensions); self._origin = tuple(origin); self._pitch = tuple(pitch)
         self._count = grid['point_count']; self.counts: Counter[str] = Counter()
 
@@ -105,7 +104,7 @@ class InvalidNodeClassifier:
             if tuple(world) != expected:
                 raise ValueError('invalid node coordinate differs from its grid index')
             previous = index
-            decision = query_members(self._members, world, frame_id=self._frame)
+            decision = self._query(world)
             status = decision['status']; self.counts[status] += 1
             if status == 'interior':
                 yield {'index': index, 'classification': status, 'group': decision['group'],
