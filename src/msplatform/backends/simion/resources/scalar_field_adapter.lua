@@ -188,7 +188,23 @@ local function load_field(binding, shared_mask, reuse_workbench)
   -- The independent workbench collision PAs are untouched; never save this PA.
   -- Authority: frozen OA ideal_sheet_mm projected by static_field_binding.py.
   local marked, skipped, maximum_roundoff_v = 0, 0, 0
+  local unsupported = {}
   for _,sheet in ipairs(assert(binding.ideal_sheet_projection, 'missing frozen OA sheet projection')) do
+    if sheet.unsupported_bounds_mm ~= nil then
+      assert(sheet.k==nil and sheet.i_min==nil and sheet.i_max==nil and sheet.j_min==nil and sheet.j_max==nil
+        and type(sheet.instance_id)=='string' and sheet.instance_id~=''
+        and type(sheet.electrode_group_id)=='string' and sheet.electrode_group_id~=''
+        and type(sheet.member_id)=='string' and sheet.member_id~='', 'invalid unsupported sheet identity')
+      local box = sheet.unsupported_bounds_mm
+      assert(type(box)=='table' and #box==3, 'invalid unsupported sheet bounds')
+      for a=1,3 do
+        assert(type(box[a])=='table' and #box[a]==2 and type(box[a][1])=='number'
+          and type(box[a][2])=='number' and box[a][1]==box[a][1] and box[a][2]==box[a][2]
+          and math.abs(box[a][1])<math.huge and math.abs(box[a][2])<math.huge
+          and box[a][1]<=box[a][2], 'invalid unsupported sheet bounds')
+      end
+      unsupported[#unsupported+1] = box
+    else
     assert(sheet.k >= 0 and sheet.k < pa.nz and sheet.i_min >= 0 and sheet.i_max < pa.nx
       and sheet.j_min >= 0 and sheet.j_max < pa.ny, 'OA sheet projection outside scalar grid')
     for j=sheet.j_min,sheet.j_max do for i=sheet.i_min,sheet.i_max do
@@ -207,6 +223,7 @@ local function load_field(binding, shared_mask, reuse_workbench)
         marked = marked + 1
       else skipped = skipped + 1 end
     end end
+    end
   end
   print('MRTOF_SCALAR_SHEET_MARKERS marked='..marked..' invalid_skipped='..skipped
     ..' maximum_encoding_roundoff_v='..string.format('%.17g',maximum_roundoff_v)..' no_save=true')
@@ -225,6 +242,16 @@ local function load_field(binding, shared_mask, reuse_workbench)
         lo[a], hi[a] = math.floor(q)-1, math.ceil(q)+1
         assert(lo[a] >= 0 and hi[a] < size[a], 'NUMERICAL_COVERAGE_FAILURE V_SUPPORT_BOX_OUTSIDE')
       end
+    end
+    -- The existing support envelope must not intersect an unrepresented sheet.
+    for _,box in ipairs(unsupported) do
+      local intersects = true
+      for a=1,3 do
+        local lower=binding.origin_mm[a]+lo[a]*pitch[a]
+        local upper=binding.origin_mm[a]+hi[a]*pitch[a]
+        if upper < box[a][1] or lower > box[a][2] then intersects=false; break end
+      end
+      assert(not intersects, 'NUMERICAL_COVERAGE_FAILURE V_UNREPRESENTED_SHEET')
     end
     -- Existing measured support envelope, without extrapolation or fill-zero.
     for k=lo[3],hi[3] do for j=lo[2],hi[2] do for i=lo[1],hi[1] do

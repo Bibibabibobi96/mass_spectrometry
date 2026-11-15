@@ -14,7 +14,7 @@ from msplatform.components.shape_query import shape_relation
 from msplatform.io.manifest_records import record_path, require_completed_terminal_publication, validate_file_record, verify_record
 from msplatform.results.artifacts import OpenedArtifact, open_artifact
 
-def _ideal_sheet_projection(projection: Mapping[str, Any], grid: Mapping[str, Any]) -> list[dict[str, Any]]:
+def _ideal_sheet_projection(projection: Mapping[str, Any], grid: Mapping[str, Any], *, allow_partial: bool = False) -> list[dict[str, Any]]:
     """Project canonical world-XY sheets to exact grid-node runs; never snap a plane."""
     origin, pitch, dims = grid['origin_mm'], grid['pitch_mm'], grid['dimensions']
     rows = []
@@ -38,7 +38,13 @@ def _ideal_sheet_projection(projection: Mapping[str, Any], grid: Mapping[str, An
         q = (lo[2]-origin[2])/pitch[2]
         k = round(q)
         if lo[2] != hi[2] or not 0 <= k < dims[2] or origin[2]+k*pitch[2] != lo[2]:
-            raise ValueError('intersecting ideal sheet is not aligned with scalar grid')
+            if not allow_partial:
+                raise ValueError('intersecting ideal sheet is not aligned with scalar grid')
+            # Conservative bounds retain the true canonical plane; never snap it.
+            rows.append(dict(instance_id=member['instance_id'], electrode_group_id=member['electrode_group_id'],
+                             member_id=member['member_id'], unsupported_bounds_mm=[
+                                 [math.nextafter(lo[a], -math.inf), math.nextafter(hi[a], math.inf)] for a in range(3)]))
+            continue
         # Quotient rounding can place a node exactly on an edge just outside
         # ceil/floor bounds. Include its neighbours and let shape_relation
         # decide from the actual reconstructed world-node coordinates.
@@ -143,7 +149,7 @@ def original_sample_source(item: OpenedArtifact) -> OpenedArtifact | None:
 def verify_scalar_sample(reference: Mapping[str, Any] | OpenedArtifact,
                          projection: Mapping[str, Any], *,
                          check_workpoint: Callable[[dict[str, Any]], None],
-                         resolve_reference: bool = False) -> dict[str, Any]:
+                         resolve_reference: bool = False, allow_partial_sheets: bool = False) -> dict[str, Any]:
     """Verify one public export and its cold-reopened source, without reading the MPH."""
     item = open_artifact(reference, expected_kind='scalar_field_samples')
     meta = item.metadata
@@ -207,7 +213,7 @@ def verify_scalar_sample(reference: Mapping[str, Any] | OpenedArtifact,
     selected_reference = ({'manifest': dict(item.reference['manifest'], path=str(item.manifest_location)),
                            'product_id': item.product_id} if resolve_reference else item.reference)
     binding = dict(reference=selected_reference, field_solution_reference=source_ref, grid=geometry, records=records,
-                   ideal_sheet_projection=_ideal_sheet_projection(projection, geometry))
+                   ideal_sheet_projection=_ideal_sheet_projection(projection, geometry, allow_partial=allow_partial_sheets))
     if original is not None:
         binding['original_samples_reference'] = original.reference
     return binding

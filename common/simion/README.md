@@ -812,6 +812,15 @@ The installed 8.2.0.11 synthetic probe confirmed that electrode and potential
 setters clear `saved`; the 51-binding repeated-load regression uses Lua API
 doubles. Full-bundle native flight remains a separate acceptance requirement.
 
+SFI scalar admission can retain an off-grid canonical ideal sheet as an explicit
+unsupported region. Exact aligned markers remain unchanged; other consumers
+retain strict admission. Before either field or potential evaluation, the selected
+base or refinement evaluator rejects a guarded stencil intersecting an unrepresented
+sheet. Existing aligned refinement windows can supply those queries; no plane is
+snapped, no unknown value is filled, and collision geometry is unchanged. This uses
+the existing support envelope as an operating contract, not a universal interpolation
+proof. Native window coverage and full-cohort flight require separate validation.
+
 `solve_fields(..., scalar_field_basis=..., reuse_collision_geometry=...)` can
 publish a newly admitted IP–MR scalar basis while borrowing the verified original
 collision producer. Prepared-model records, clock/epoch, native priority and the

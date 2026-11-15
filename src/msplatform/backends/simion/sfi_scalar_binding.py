@@ -93,7 +93,7 @@ def resolve_sfi_scalar_basis(*, model: Any, geometry: Mapping[str, Any], field_d
             other['exterior'] = {'kind': exterior['kind']}
             if shared_request is not None and shared_request != other: raise ValueError('scalar BVP operator or mesh differs')
             shared_request = other
-        bindings[name] = verify_scalar_sample(samples[name], projection, check_workpoint=check_workpoint)
+        bindings[name] = verify_scalar_sample(samples[name], projection, check_workpoint=check_workpoint, allow_partial_sheets=True)
     attach_refinement_windows(bindings, refinement_windows, admit_level=lambda level: resolve_sfi_scalar_basis(
         model=model, geometry=geometry, field_design=field_design, flight=flight,
         geometry_artifact=geometry_artifact, samples=level))

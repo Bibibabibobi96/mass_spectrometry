@@ -61,6 +61,106 @@ class SheetTests(unittest.TestCase):
         self.assertEqual([(r['j_min'],r['i_min'],r['i_max'],r['k']) for r in sideways_y],
                          [(j,2,6,3) for j in range(3,6)])
 
+    def test_partial_sheet_routing_and_guard(self):
+        local_grid = dict(origin_mm=[-4.,-4.,-4.], pitch_mm=[1.,1.,1.], dimensions=[11,11,11])
+        sheet = member(dict(kind='box', center_mm=[0.,0.,.5], size_mm=[2.,2.,0.]))
+        with self.assertRaisesRegex(ValueError, 'not aligned'):
+            _ideal_sheet_projection({'members':[sheet]}, local_grid)
+        unsupported = _ideal_sheet_projection({'members':[sheet]}, local_grid, allow_partial=True)
+        self.assertEqual(len(unsupported), 1)
+        self.assertEqual(unsupported[0]['member_id'], 'sheet')
+        self.assertLess(unsupported[0]['unsupported_bounds_mm'][2][0], .5)
+        self.assertGreater(unsupported[0]['unsupported_bounds_mm'][2][1], .5)
+        window_grid = dict(origin_mm=[-4.,-4.,-4.5], pitch_mm=[1.,1.,1.], dimensions=[11,11,11])
+        aligned = _ideal_sheet_projection({'members':[sheet]}, window_grid)
+        self.assertTrue(aligned)
+        self.assertTrue(all(row['k'] == 5 for row in aligned))
+        record = {'field_v': {'path': 'v'}, 'field_valid': {'path': 'mask'}}
+        basis = {'bases': {n: {'grid': local_grid, 'records': record, 'ideal_sheet_projection': unsupported}
+                           for n in ('carrier', 'rf_reference', 'pulse_delta')},
+                 'rf': {'waveform':'sine','frequency_hz':1.,'phase_rad':0.},
+                 'clock': {'phase_reference_instrument_time_us':0.}}
+        template = 'local single_flight_trace_path=\n    single_flight_frontend=single_flight_frontend_component.new\n  if instance==nil then return end\n  end\nend\nfunction segment.instance_adjust()'
+        self.assertEqual(_instrument_common_scalar(template, basis, '', '', False).count('unsupported_bounds_mm='), 3)
+        if not LUA.is_file(): self.skipTest('plain Lua unavailable')
+        adapter = native_resource_path('scalar_field_adapter.lua').read_text(encoding='utf-8')
+        binding = dict(mode='comsol_static_scalar_v', scalar_pa='base', valid_pa='mask', **local_grid,
+                       ideal_sheet_projection=unsupported,
+                       refinement_windows=[dict(name='sheet', active_box_mm=[[-1.,1.],[-1.,1.],[-1.,1.]],
+                           mode='comsol_static_scalar_v', scalar_pa='window', valid_pa='mask', **window_grid,
+                           ideal_sheet_projection=aligned)])
+        lua = """simion={pas={},experimental={}}; function simion.early_access() end
+local invalid=false; local evaluations=0
+function simion.pas:open(path) return {symmetry='3dplanar',nx=11,ny=11,nz=11,dx_mm=1,dy_mm=1,dz_mm=1,debug_max_voltage=100,
+ potential=function(self,i,j,k) if path=='mask' and invalid then return 0 end return path=='mask' and 1 or 7 end,
+ potential_vc=function() evaluations=evaluations+1; return 7 end, electrode=function() end} end
+simion.experimental.field_array=function() return {efield=function() evaluations=evaluations+1; return 1,2,3 end} end
+local adapter=(function()
+""" + adapter + "\nend)()\nlocal binding=" + _lua_value(binding) + """
+local f=adapter(binding,'raw_sample'); assert(f(0,0,3)==7); assert(f(0,0,1)==7)
+local before=evaluations; local ok,err=pcall(f,0,0,1.01)
+assert(not ok and string.find(err,'V_UNREPRESENTED_SHEET') and evaluations==before)
+invalid=true; before=evaluations; ok,err=pcall(f,0,0,0)
+assert(not ok and string.find(err,'V_SUPPORT_UNKNOWN') and evaluations==before)
+invalid=false; binding.ideal_sheet_projection[1].unsupported_bounds_mm[3][1]=0/0
+ok,err=pcall(adapter,binding,'raw_sample'); assert(not ok and string.find(err,'invalid unsupported sheet bounds'))
+"""
+        result = subprocess.run([str(LUA), '-'], input=lua, text=True, capture_output=True,
+                                cwd=root, timeout=30, check=False)
+        self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+
+    def test_composed_three_basis_and_shared_mask_support(self):
+        if not LUA.is_file(): self.skipTest('plain Lua unavailable')
+        adapter = native_resource_path('scalar_field_adapter.lua').read_text(encoding='utf-8')
+        composer = native_resource_path('sfi_scalar_field.lua').read_text(encoding='utf-8')
+        common = dict(mode='comsol_static_scalar_v', valid_pa='mask',
+                      origin_mm=[-4.,-4.,-4.], pitch_mm=[1.,1.,1.], dimensions=[11,11,11])
+        sheet = member(dict(kind='box', center_mm=[0.,0.,.5], size_mm=[2.,2.,0.]))
+        unsupported = _ideal_sheet_projection({'members':[sheet]}, common, allow_partial=True)
+        window_grid = dict(origin_mm=[-4.,-4.,-4.5], pitch_mm=[1.,1.,1.], dimensions=[11,11,11])
+        aligned = _ideal_sheet_projection({'members':[sheet]}, window_grid)
+        terms = []
+        for index in range(3):
+            terms.append(dict(common, scalar_pa='base'+str(index), coefficient=1.,
+                ideal_sheet_projection=unsupported if index==2 else [],
+                refinement_windows=[dict(name='sheet', active_box_mm=[[-1.,1.],[-1.,1.],[-1.,1.]],
+                    mode='comsol_static_scalar_v',scalar_pa='win'+str(index), valid_pa='windowmask',
+                    **window_grid,ideal_sheet_projection=aligned)]))
+        binding = dict(response_terms=terms)
+        sfi = {name:{key:value for key,value in term.items() if key!='coefficient'}
+               for name,term in zip(('carrier','rf_reference','pulse_delta'),terms,strict=True)}
+        lua = """simion={pas={},experimental={}}; function simion.early_access() end
+local invalid=false; local evals=0; local maskopens=0
+function simion.pas:open(path)
+ if path=='mask' or path=='windowmask' then maskopens=maskopens+1 end
+ return {symmetry='3dplanar',nx=11,ny=11,nz=11,dx_mm=1,dy_mm=1,dz_mm=1,debug_max_voltage=100,
+ potential=function(self,i,j,k) if path=='mask' or path=='windowmask' then return invalid and 0 or 1 end return 7 end,
+ potential_vc=function() evals=evals+1; return 7 end,electrode=function() end}
+end
+simion.experimental.field_array=function() return {efield=function() evals=evals+1; return 1,2,3 end} end
+local adapter=(function()
+""" + adapter + "\nend)()\nlocal composer=(function()\n" + composer + "\nend)()\nlocal binding=" + _lua_value(binding) + "\nlocal bindings=" + _lua_value(sfi) + """
+local combined=adapter(binding,'raw_sample'); assert(maskopens==2)
+local v,ex,ey,ez=combined(0,0,1); assert(v==21 and ex==3 and ey==6 and ez==9)
+local before=evals; local ok,err=pcall(combined,0,0,1.01)
+assert(not ok and string.find(err,'V_UNREPRESENTED_SHEET') and evals==before+4)
+invalid=true;before=evals;ok,err=pcall(combined,0,0,0)
+assert(not ok and string.find(err,'V_SUPPORT_UNKNOWN') and evals==before)
+invalid=false
+local inst={scale=1,pa={dx_mm=1,dy_mm=1,dz_mm=1},wb_to_pa_orient=function(self,x,y,z)return x,y,z end}
+local kernel={compile_physical=function() return {differential_at=function() return 0 end} end}
+local pulse={is_active_at=function() return false end}
+local actual=composer.new(adapter,kernel,pulse,bindings,{phase_reference_instrument_time_us=0})
+local x,y,z=actual(inst,0,0,1,0); assert(x==-1 and y==-2 and z==-3)
+before=evals;ok,err=pcall(actual,inst,0,0,1.01,0)
+assert(not ok and string.find(err,'V_UNREPRESENTED_SHEET') and evals==before+2)
+invalid=true;before=evals;ok,err=pcall(actual,inst,0,0,0,0)
+assert(not ok and string.find(err,'V_SUPPORT_UNKNOWN') and evals==before)
+"""
+        result = subprocess.run([str(LUA), '-'], input=lua, text=True, capture_output=True,
+                                cwd=root, timeout=30, check=False)
+        self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+
     def test_program_serializes_each_sheet_table(self):
         record = {'field_v': {'path': 'v'}, 'field_valid': {'path': 'mask'}}
         basis = {'bases': {n: {'grid': grid, 'records': record, 'ideal_sheet_projection': []}

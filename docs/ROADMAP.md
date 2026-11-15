@@ -150,8 +150,12 @@ dispatch, zero-operation publication, original-producer protection and tracking
 admission; the toy product's 507,396 logical bytes matched its ledger. Production
 native reuse and final installation/Repository acceptance remain open. All three
 SFI axial scalar products are published and original birth
-stencils are supported, but public admission rejects off-grid ideal sheets; the
-new SFI flight has not started. Full original-source collections, final
+stencils are supported. Guarded partial sheet support passed 30 portable and two
+managed owner/recovery parents with unchanged source hashes; managed leaves were
+inert. The original aligned grid1 carrier stencil is valid at its canonical center.
+Four other sheets require aligned local sampling windows before flight; those
+exports and native window behavior remain unverified. No sheet or physical component
+was moved, and the new SFI flight has not started. Full original-source collections, final
 same-candidate acceptance and the 15-minute target remain open;
 field accuracy and convergence are not prerequisites for the current functional
 pipeline, and missing actual support cannot be replaced with zero.
