@@ -2,6 +2,7 @@
 
 import json
 import os
+import subprocess
 from pathlib import Path
 import shutil
 import sys
@@ -27,6 +28,30 @@ class NeutralSampledRecoveryTests(unittest.TestCase):
         self.addCleanup(case.doCleanups)
         case._exercise(True, self._recovery)
 
+    def test_fresh_process_explicit_provider_registration_and_recovery(self):
+        case = fixture.GenericScalarTrackingManagedTests(methodName='runTest')
+        self.addCleanup(case.doCleanups)
+        case._exercise(True, self._cold_recovery)
+
+    def _cold_recovery(self, field, packet, propagation, numerics, context, refs, expected_paths, inert, actual_single, directory):
+        del inert, actual_single
+        transport = Path(directory) / 'cold_recovery_input.json'
+        names = ('workspace', 'python_executable', 'powershell_executable', 'host_state_path',
+                 'policy_path', 'execution_root', 'capacity_policy_path', 'stage_policy_path')
+        context_data = {name: str(getattr(context, name)) for name in names}
+        context_data['tools'] = {name: str(path) for name, path in context.tools.items()}
+        payload = dict(field=field.reference, packet=packet, propagation=propagation, numerics=numerics,
+                       context=context_data, refs=refs, expected_paths=sorted(expected_paths), directory=directory)
+        transport.write_text(json.dumps(payload, allow_nan=False), encoding='utf8')
+        repo = Path(__file__).resolve().parents[2]
+        script = ("import sys;sys.path[:0]=" + repr([str(repo / 'src'), str(repo)]) + ";"
+                  "from common.contracts.test_generic_scalar_tracking_recovery import cold_recovery_child;"
+                  "cold_recovery_child(sys.argv[1],sys.argv[2])")
+        process = subprocess.run([sys.executable, '-I', '-B', '-c', script, str(transport), str(repo)],
+                                 cwd=directory, capture_output=True, text=True, encoding='utf8', timeout=600)
+        self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+        self.assertIn('COLD_REGISTERED_RECOVERY=PASS', process.stdout)
+
     def _recovery(self, field, packet, propagation, numerics, context, refs, expected_paths, inert, actual_single, directory):
         root = Path(directory)
         copied = root / 'recovery_ps'
@@ -50,6 +75,7 @@ class NeutralSampledRecoveryTests(unittest.TestCase):
                 self.assertTrue(path_is_protected(Path(ref['manifest']['path']), view['protected_paths']))
             actual = {str(Path(row['path']).resolve()) for row in records}
             self.assertTrue(expected_paths <= actual)
+            self.assertTrue(globals().get('COLD_PROVIDER_PATHS', set()) <= actual)
             checks.append(len(refs))
         def single(session, operation_id, *, immutable_input_records=(), **kwargs):
             if '__unit_' not in operation_id:
@@ -151,3 +177,50 @@ class NeutralSampledRecoveryTests(unittest.TestCase):
             self.assertEqual(collection['clock_epoch_id'], packet['clock']['clock_epoch_id'])
             self.assertTrue(checks and all(value == len(refs) for value in checks))
         self.assertEqual(load_capacity_protection_leases(context.workspace / 'artifacts')['audit'], [])
+
+
+def cold_recovery_child(transport, repo):
+    """Fresh interpreter: actual references and context cross only JSON wire."""
+    from msplatform.contracts.machine_contracts import ContractError
+    from msplatform.execution.context import ExecutionContext
+    from msplatform.components.registry import project_descriptor
+    import msplatform
+    root = Path(repo).resolve()
+    if not Path(msplatform.__file__).resolve().is_relative_to(root / 'src'):
+        raise AssertionError('unexpected installed source origin')
+    payload = json.loads(Path(transport).read_text(encoding='utf8'))
+    context = ExecutionContext(**payload['context'])
+    records = payload['packet']['mother']['records']
+    restored = {int(key): value for key, value in records.items()}
+    if len(restored) != len(records) or any(str(key) != original for key, original in zip(restored, records, strict=True)):
+        raise ValueError('mother identifier JSON transport differs')
+    payload['packet']['mother']['records'] = restored
+    field = open_artifact(payload['field'], expected_kind='field_bundle')
+    try:
+        operations.track(field, payload['packet'], propagation=payload['propagation'],
+                         observations=dict(plane_observations=[]), numerics=payload['numerics'],
+                         context=context, unit_size=1)
+    except ContractError as error:
+        if str(error) not in {'unsupported component project: toy_registered',
+                              'unsupported component project: toy_other'}:
+            raise
+    else:
+        raise AssertionError('unregistered provider unexpectedly admitted')
+    from common.contracts.test_support import registered_component, generic_other_provider
+    registered_component.ensure_registered()
+    generic_other_provider.ensure_registered()
+    from msplatform.execution.inputs import resolve_python_module_sources
+    provider_paths = set()
+    for project in ('toy_registered', 'toy_other'):
+        descriptor = project_descriptor(project)
+        if not descriptor.source_closure:
+            raise AssertionError('provider source closure missing')
+        provider_paths.update(str(path.resolve()) for path in resolve_python_module_sources(descriptor.source_closure).values())
+    globals()['COLD_PROVIDER_PATHS'] = provider_paths
+    def unexpected(*args, **kwargs):
+        raise AssertionError('unexpected non-unit inert operation')
+    case = NeutralSampledRecoveryTests(methodName='runTest')
+    case._recovery(field, payload['packet'], payload['propagation'], payload['numerics'], context,
+                   payload['refs'], set(payload['expected_paths']), unexpected, RunSession.run_process,
+                   payload['directory'])
+    print('COLD_REGISTERED_RECOVERY=PASS', flush=True)

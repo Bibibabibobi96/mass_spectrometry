@@ -53,9 +53,15 @@ The descriptor supplies source resolution and validation, complete physical
 members, ports through the canonical interface, and a declared source package
 closure. Assembly traverses these callbacks without a new catalog or member
 dispatch branch. The TOF worker freezes its selected provider's declared closure
-through the existing package freezer. Custom registration is currently
-process-local: durable installed discovery and external-provider replay in a
-cold frozen worker remain open. Registration does not implement an unsupported
+through the existing package freezer. Custom registration is process-local:
+each fresh scientific caller explicitly registers the descriptors before
+reconstructing their components. The cold-process regression transports actual
+published references and context through JSON, refuses an unregistered provider,
+then registers it normally and exercises public whole-unit failure/recovery with
+the declared provider sources protected. Its one parent passed in 284.062 s with
+inert native leaves. This proves the source-mode explicit-registration path, not
+automatic plugin discovery or ordinary installed external-provider replay.
+Registration does not implement an unsupported
 geometry primitive, field boundary, drive, collision law or tracking backend.
 
 The connected registered-provider regression also exercises the public managed
