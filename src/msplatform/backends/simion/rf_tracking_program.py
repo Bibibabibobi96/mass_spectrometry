@@ -61,12 +61,18 @@ def _ip_mr_bindings(document, admission):
     if set(bases)!=expected:
         raise ValueError('admitted scalar basis coverage differs from model')
     records=[]
+    def mask_identity(grid, record):
+        # Optional for legacy/inert bindings; actual admission supplies all fields.
+        if not all(key in record for key in ('sha256','bytes')) or not grid.get('frame_id'):
+            return {}
+        return {'mask_identity': dict(sha256=record['sha256'], bytes=record['bytes'], frame_id=grid['frame_id'])}
     def binding(name):
         item=bases[name];grid=item['grid'];selected=item['records']
         records.extend(copy.deepcopy(list(selected.values())))
         projected = dict(mode='comsol_static_scalar_v',scalar_pa=selected['field_v']['path'],
             valid_pa=selected['field_valid']['path'],origin_mm=grid['origin_mm'],pitch_mm=grid['pitch_mm'],
-            dimensions=grid['dimensions'],ideal_sheet_projection=item['ideal_sheet_projection'])
+            dimensions=grid['dimensions'],ideal_sheet_projection=item['ideal_sheet_projection'],
+            **mask_identity(grid, selected['field_valid']))
         if item.get('refinement_windows'):
             projected['refinement_windows'] = []
             for level in item['refinement_windows']:
@@ -76,7 +82,8 @@ def _ip_mr_bindings(document, admission):
                     name=level['name'], active_box_mm=level['active_box_mm'], mode='comsol_static_scalar_v',
                     scalar_pa=window_records['field_v']['path'], valid_pa=window_records['field_valid']['path'],
                     origin_mm=window_grid['origin_mm'], pitch_mm=window_grid['pitch_mm'],
-                    dimensions=window_grid['dimensions'], ideal_sheet_projection=level['ideal_sheet_projection']))
+                    dimensions=window_grid['dimensions'], ideal_sheet_projection=level['ideal_sheet_projection'],
+                    **mask_identity(window_grid, window_records['field_valid'])))
         return projected
     result=dict(carrier=binding('carrier'),ip_unit_volt=[dict(instance_id=row['instance_id'],
         electrode_group_id=row['electrode_group_id'],binding=binding('ip_'+str(row['schedule_index']))) for row in rows])

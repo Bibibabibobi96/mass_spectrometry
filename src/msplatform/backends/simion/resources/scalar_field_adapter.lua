@@ -138,7 +138,7 @@ local function load_native_field(binding, reuse_workbench)
   return field
 end
 
-local function load_field(binding, shared_mask, reuse_workbench)
+local function load_field(binding, shared_mask, reuse_workbench, sharing)
   if binding.mode == 'native_static_pa' then return load_native_field(binding, reuse_workbench) end
   local pitch = binding.pitch_mm
   assert(type(pitch) == 'table' and #pitch == 3, 'pitch_mm must be [dx,dy,dz]')
@@ -166,7 +166,29 @@ local function load_field(binding, shared_mask, reuse_workbench)
   end
   local sheets=assert(binding.ideal_sheet_projection, 'missing frozen OA sheet projection')
   local pa = existing_or_open(binding.scalar_pa, #sheets==0)
-  local mask = shared_mask or existing_or_open(binding.valid_pa, true)
+  local mask = shared_mask
+  local id = binding.mask_identity
+  if not mask and sharing and id then
+    assert(type(id)=='table' and type(id.sha256)=='string' and #id.sha256==64
+      and id.sha256:match('^[0-9a-fA-F]+$') and type(id.bytes)=='number'
+      and id.bytes>0 and id.bytes==math.floor(id.bytes) and type(id.frame_id)=='string'
+      and id.frame_id~='', 'invalid admitted mask identity')
+    local function same(entry)
+      if entry.sha256~=id.sha256:lower() or entry.bytes~=id.bytes or entry.frame_id~=id.frame_id then return false end
+      for a=1,3 do
+        if entry.origin[a]~=binding.origin_mm[a] or entry.pitch[a]~=pitch[a]
+          or entry.dimensions[a]~=binding.dimensions[a] then return false end
+      end
+      return true
+    end
+    for _,entry in ipairs(sharing) do if same(entry) then mask=entry.mask;break end end
+    if not mask then
+      mask=existing_or_open(binding.valid_pa, false)
+      sharing[#sharing+1]={sha256=id.sha256:lower(),bytes=id.bytes,frame_id=id.frame_id,
+        origin={unpack(binding.origin_mm)},pitch={unpack(pitch)},dimensions={unpack(binding.dimensions)},mask=mask}
+    end
+  end
+  mask = mask or existing_or_open(binding.valid_pa, true)
   assert(pa.symmetry == '3dplanar' and mask.symmetry == '3dplanar', 'scalar field cannot use PA mirrors')
   assert(pa.nx == mask.nx and pa.ny == mask.ny and pa.nz == mask.nz, 'V/mask dimensions differ')
   assert(pa.dx_mm == pitch[1] and pa.dy_mm == pitch[2] and pa.dz_mm == pitch[3], 'scalar pitch differs')
@@ -229,7 +251,13 @@ local function load_field(binding, shared_mask, reuse_workbench)
     ..' maximum_encoding_roundoff_v='..string.format('%.17g',maximum_roundoff_v)..' no_save=true')
   local fa = simion.experimental.field_array{V=pa, type='V', antimirror=''}
   local function field(x, y, z, sample_potential, support)
-    local shared = support and support.mask == mask
+    local shared = support and support.mask == mask and support.x==x and support.y==y and support.z==z
+    if shared then
+      for a=1,3 do
+        if support.origin[a]~=binding.origin_mm[a] or support.pitch[a]~=pitch[a]
+          or support.dimensions[a]~=binding.dimensions[a] then shared=false; break end
+      end
+    end
     local local_mm,lo,hi
     if shared then
       local_mm,lo,hi = support.local_mm,support.lo,support.hi
@@ -256,13 +284,19 @@ local function load_field(binding, shared_mask, reuse_workbench)
     -- Existing measured support envelope, without extrapolation or fill-zero.
     for k=lo[3],hi[3] do for j=lo[2],hi[2] do for i=lo[1],hi[1] do
       if not shared then
-        assert(mask:potential(i,j,k) == 1, 'NUMERICAL_COVERAGE_FAILURE V_SUPPORT_UNKNOWN')
+        if mask:potential(i,j,k) ~= 1 then
+          error(string.format('NUMERICAL_COVERAGE_FAILURE V_SUPPORT_UNKNOWN world=(%.17g,%.17g,%.17g) node=(%d,%d,%d) level=%s mask=%s ion=%s elapsed_us=%s',
+            x,y,z,i,j,k,tostring(binding.name or 'base'),tostring(binding.valid_pa),tostring(ion_number),tostring(ion_time_of_flight)))
+        end
       end
       local v = pa:potential(i,j,k)
       assert(v == v and math.abs(v) < math.huge, 'NUMERICAL_COVERAGE_FAILURE V_SUPPORT_NONFINITE')
     end end end
     if support and not shared then
       support.mask,support.local_mm,support.lo,support.hi = mask,local_mm,lo,hi
+      support.x,support.y,support.z=x,y,z
+      support.origin={unpack(binding.origin_mm)};support.pitch={unpack(pitch)}
+      support.dimensions={unpack(binding.dimensions)}
     end
     if sample_potential then
       -- Official potential_vc uses grid units; field_array.efield uses mm.
@@ -276,9 +310,9 @@ local function load_field(binding, shared_mask, reuse_workbench)
   return field,mask
 end
 
-local function load_routed_field(binding, shared_masks)
+local function load_routed_field(binding, shared_masks, sharing)
   local masks = shared_masks or {}
-  local base,mask = load_field(binding,masks[1],true)
+  local base,mask = load_field(binding,masks[1],true,sharing)
   masks[1] = mask
   local windows = {}
   if binding.refinement_windows ~= nil then
@@ -316,7 +350,7 @@ local function load_routed_field(binding, shared_masks)
       if shadowed then
         print('MRTOF_NATIVE_PA_LOAD skip_shadowed=true name='..window.name..' covered_by='..shadowed)
       else
-        local window_field,window_mask = load_field(window,masks[index+1])
+        local window_field,window_mask = load_field(window,masks[index+1],false,sharing)
         masks[index+1] = window_mask
         windows[#windows+1] = {box=window.active_box_mm,field=window_field,name=window.name,
           native=window.mode=='native_static_pa'}
@@ -342,7 +376,7 @@ local function load_routed_field(binding, shared_masks)
   return field,masks
 end
 
-local function expose(field, mode)
+local function expose(field, mode, external_support)
   assert(mode == nil or mode == 'raw_sample', 'unsupported scalar query mode')
   if mode == 'raw_sample' then
     -- Verification only: same E/support/routes, plus interpolated scalar V.
@@ -351,7 +385,7 @@ local function expose(field, mode)
       return v,ex,ey,ez
     end
   end
-  return function(inst,x,y,z)
+  return function(inst,x,y,z,support)
     assert(inst, 'selected instance required')
     local scale=inst.scale
     local dx,dy,dz=inst.pa.dx_mm,inst.pa.dy_mm,inst.pa.dz_mm
@@ -359,15 +393,15 @@ local function expose(field, mode)
       and type(dx)=='number' and dx==dx and dx>0 and dx<math.huge
       and type(dy)=='number' and dy==dy and dy>0 and dy<math.huge
       and type(dz)=='number' and dz==dz and dz>0 and dz<math.huge, 'invalid instance scale or pitch')
-    local ex,ey,ez=field(x,y,z)
+    local ex,ey,ez=field(x,y,z,false,external_support and support or nil)
     local lx,ly,lz=inst:wb_to_pa_orient(ex,ey,ez)
     return -lx*dx*scale,-ly*dy*scale,-lz*dz*scale
   end
 end
 
-return function(binding, mode)
+return function(binding, mode, sharing)
   if binding.response_terms == nil then
-    return expose(load_routed_field(binding),mode)
+    return expose(load_routed_field(binding,nil,sharing),mode,sharing~=nil)
   end
   assert(type(binding.response_terms) == 'table' and #binding.response_terms >= 2
     and #binding.response_terms <= 5, 'PS response combination requires baseline and one to four axes')

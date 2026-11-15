@@ -141,14 +141,24 @@ its shared-ledger Changed result and complete MR resource module are recorded in
 [the current integration state](../integrations/docs/INTEGRATION.md#当前边界).
 RF–IP–MR native flight currently stops on explicit invalid scalar support; a
 same-solution native probe preserves the original invalid node and shows valid
-local support at the actual particle query. RF-body carrier, RF reference and five
-IP workpoints are published; the sixth IP workpoint was refused before native
-execution by the unchanged free-space floor. Collision-only reuse now uses the
+local support at the actual particle query. All seventeen RF-body workpoints are
+now published after the separately authorized historical retirement; the original
+sixth-workpoint capacity refusal remains recorded. Collision-only reuse uses the
 existing public field owner without duplicating native collision files. Actual
 source validation passed all five focused parents (980.366 s), including public
 dispatch, zero-operation publication, original-producer protection and tracking
 admission; the toy product's 507,396 logical bytes matched its ledger. Production
-native reuse and final installation/Repository acceptance remain open. All three
+reuse published a real new FieldBundle with zero native operations. Its N=100
+flight failed on unknown support after source initialization, with no terminal
+collection; the exact failing query was not recorded. Verify/Fly working-set
+warnings are separate observations, not the demonstrated failure cause. The
+next composer shares only admitted byte-identical masks on identical grids and
+adds failure-only query context. Thirteen integrated software parents passed in
+61.102 s; native memory use and the next flight remain unverified. The original
+ordinary wheel/sdist parent passed on frozen `cf361af2` in 1310.785 s with all
+3071 source identities unchanged; this concurrent run is not an isolated
+performance benchmark or acceptance of this later composer. Final same-candidate
+installation/Repository acceptance remains open. All three
 SFI axial scalar products are published and original birth
 stencils are supported. Guarded partial sheet support passed 30 portable and two
 managed owner/recovery parents with unchanged source hashes; managed leaves were

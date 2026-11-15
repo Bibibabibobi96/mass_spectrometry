@@ -848,6 +848,15 @@ commute. The unchanged `raw_sample` mode returns `(V, Ex, Ey, Ez)` in the declar
 world frame. Current Program and adapter must be frozen together; old complete
 frozen pairs are not rewritten.
 
+The IP–MR composer can share immutable validity arrays within one composition
+when admitted SHA-256, byte count, frame, origin, pitch and dimensions all match.
+Potential arrays and all frozen source records remain independent. Each callback
+gets fresh support state; every basis still checks finite potential values,
+including zero-coefficient terms. Unknown-mask failures report world coordinates,
+node, selected level, path and available native ion/elapsed time only on failure.
+Thirteen integrated runtime/serializer parents passed without skips in 61.102 s;
+native memory savings, complete flight and installed qualification remain open.
+
 The [official field-array documentation](https://simion.com/info/lua_simion.experimental.field_array.html)
 describes the experimental helper's opposite operation order. The installed
 SIMION 2020 controlled rotated-anisotropic N=1 calibration reproduced its force

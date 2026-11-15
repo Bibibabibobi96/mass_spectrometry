@@ -31,7 +31,8 @@ function composer.new(adapter,model_consumer,rf_kernel,bindings)
     end
   end
   assert(count==15,'actual model must contain fifteen IP groups')
-  local carrier=adapter(bindings.carrier)
+  local sharing={}
+  local carrier=adapter(bindings.carrier,nil,sharing)
   assert(type(carrier)=='function','carrier scalar query required')
   local units,seen={},{}
   for index,row in ipairs(bindings.ip_unit_volt) do
@@ -40,7 +41,7 @@ function composer.new(adapter,model_consumer,rf_kernel,bindings)
     seen[row.instance_id]=seen[row.instance_id] or {}
     assert(not seen[row.instance_id][row.electrode_group_id],'duplicate IP unit binding')
     seen[row.instance_id][row.electrode_group_id]=true
-    local query=adapter(row.binding);assert(type(query)=='function','IP scalar query required')
+    local query=adapter(row.binding,nil,sharing);assert(type(query)=='function','IP scalar query required')
     units[index]={instance_id=row.instance_id,electrode_group_id=row.electrode_group_id,query=query}
   end
   assert(#units==15,'all fifteen IP unit bindings required')
@@ -64,7 +65,7 @@ function composer.new(adapter,model_consumer,rf_kernel,bindings)
       and s.phase_rad==rf_signature.phase_rad,'RF reference signature differs from actual model')
     wave=rf_kernel.compile_physical{waveform=s.waveform,frequency_hz=s.frequency_hz,
       phase_rad=s.phase_rad,rf_amplitude_v=1,rf_scale=1}
-    reference=adapter(bindings.rf_reference.binding)
+    reference=adapter(bindings.rf_reference.binding,nil,sharing)
     assert(type(reference)=='function','RF scalar query required')
   end
   return function(instance,x,y,z,instrument_time_us)
@@ -80,17 +81,18 @@ function composer.new(adapter,model_consumer,rf_kernel,bindings)
         values[row.instance_id][row.electrode_group_id]=finite(row.voltage_v,'IP group voltage')
       end
     end
-    local cx,cy,cz=carrier(instance,x,y,z)
+    local support={} -- Never reuse coordinates across particle/query callbacks.
+    local cx,cy,cz=carrier(instance,x,y,z,support)
     for _,unit in ipairs(units) do
       local group_values=values[unit.instance_id]
       assert(group_values and group_values[unit.electrode_group_id]~=nil,'missing evaluated IP group')
       local value=group_values[unit.electrode_group_id]
       -- Query every support even if its physical coefficient is zero.
-      local ex,ey,ez=unit.query(instance,x,y,z)
+      local ex,ey,ez=unit.query(instance,x,y,z,support)
       cx,cy,cz=cx+value*ex,cy+value*ey,cz+value*ez
     end
     if reference then
-      local ex,ey,ez=reference(instance,x,y,z)
+      local ex,ey,ez=reference(instance,x,y,z,support)
       local coefficient=finite(wave.differential_at(instrument_time_us),'RF waveform')
       cx,cy,cz=cx+coefficient*ex,cy+coefficient*ey,cz+coefficient*ez
     end

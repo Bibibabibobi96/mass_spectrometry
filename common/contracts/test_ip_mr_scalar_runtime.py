@@ -21,6 +21,65 @@ class IpMrScalarRuntimeTests(unittest.TestCase):
             with self.assertRaisesRegex(FileNotFoundError,'ip_mr_scalar_field.lua'):
                 native_resource_path('ip_mr_scalar_field.lua')
 
+    def test_verified_mask_sharing_and_query_context(self):
+        adapter = native_resource_path('scalar_field_adapter.lua').read_text(encoding='utf8')
+        composer = native_resource_path('ip_mr_scalar_field.lua').read_text(encoding='utf8')
+        script = r"""
+simion={pas={},experimental={}};function simion.early_access()end
+local masks,fields=0,0; local invalid=false; local badvalue=false
+function simion.pas:open(path)
+ local mask=path:match('mask')~=nil
+ if mask then masks=masks+1 else fields=fields+1 end
+ return {symmetry='3dplanar',nx=9,ny=9,nz=9,dx_mm=1,dy_mm=1,dz_mm=1,debug_max_voltage=100,
+  potential=function(self,i,j,k) if mask then if invalid and i==5 then return 0 end return 1 end if badvalue and path=='value3' then return math.huge end return 7 end,
+  potential_vc=function() return 7 end, electrode=function() end}
+end
+simion.experimental.field_array=function()return {efield=function()return 1,2,3 end}end
+local adapter=(function()
+"""+adapter+"\nend)()\nlocal composer=(function()\n"+composer+"""
+end)()
+local groups={}; local units={}
+local function binding(n)
+ return {mode='comsol_static_scalar_v',scalar_pa='value'..n,valid_pa='mask'..n,
+  origin_mm={-4,-4,-4},pitch_mm={1,1,1},dimensions={9,9,9},ideal_sheet_projection={},
+  mask_identity={sha256=string.rep('a',64),bytes=5888,frame_id='world'}}
+end
+for i=1,15 do groups[i]={instance_id='ip',electrode_group_id='g'..i,kind='ip_schedule'}
+ units[i]={instance_id='ip',electrode_group_id='g'..i,binding=binding(i)} end
+groups[16]={kind='rf',waveform='cosine',frequency_hz=1,phase_rad=0}
+local model={describe=function()return {schema_version=1,role='simion_model_drive',groups=groups,
+ clock={phase_reference_instrument_time_us=0}}end,
+ evaluate_at=function()local t={};for i=1,15 do t[i]={instance_id='ip',electrode_group_id='g'..i,voltage_v=(i==1 and 2 or 0)}end;return t end}
+local rf={compile_physical=function()return {differential_at=function()return 0 end}end}
+local b={carrier=binding(0),ip_unit_volt=units,rf_reference={binding=binding(16),
+ signature={waveform='cosine',frequency_hz=1,phase_rad=0,phase_reference_instrument_time_us=0}}}
+local sample=composer.new(adapter,model,rf,b); assert(masks==1 and fields==17)
+local inst={scale=1,pa={dx_mm=1,dy_mm=1,dz_mm=1},wb_to_pa_orient=function(self,x,y,z)return x,y,z end}
+local x,y,z=sample(inst,-1,0,0,0);assert(x==-3 and y==-6 and z==-9)
+invalid=true;ion_number=42;ion_time_of_flight=.25
+local ok,err=pcall(sample,inst,0,0,0,0); assert(not ok and string.find(err,'V_SUPPORT_UNKNOWN',1,true)
+ and string.find(err,'world=(0,0,0)',1,true) and string.find(err,'node=(5,',1,true)
+ and string.find(err,'level=base',1,true) and string.find(err,'mask=mask0',1,true)
+ and string.find(err,'ion=42',1,true) and string.find(err,'elapsed_us=0.25',1,true))
+invalid=false;badvalue=true
+ok,err=pcall(sample,inst,-1,0,0,0);assert(not ok and string.find(err,'V_SUPPORT_NONFINITE',1,true))
+badvalue=false
+local sharing={};local a=binding('a');local aa=adapter(a,nil,sharing)
+local changed=binding('b');changed.mask_identity.sha256=string.rep('b',64);local bb=adapter(changed,nil,sharing)
+local grid=binding('c');grid.origin_mm={-3,-4,-4};local cc=adapter(grid,nil,sharing)
+assert(#sharing==3 and masks==4)
+local samepath=binding('a');samepath.mask_identity.sha256=string.rep('c',64);adapter(samepath,nil,sharing)
+assert(#sharing==4 and masks==5)
+local size=binding('size');size.mask_identity.bytes=5889;adapter(size,nil,sharing)
+local frame=binding('frame');frame.mask_identity.frame_id='other';adapter(frame,nil,sharing)
+assert(#sharing==6 and masks==7)
+local noid=binding('legacy');noid.mask_identity=nil;adapter(noid);assert(masks==8)
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'test.lua';path.write_text(script,encoding='utf8')
+            result=subprocess.run([str(LUA),str(path)],cwd=directory,capture_output=True,text=True,encoding='utf8',timeout=30)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+
     def test_actual_model_drive_edges_and_all_supports(self):
         fixture=json.loads((ROOT/'common/contracts/test_support/ip_mr_lp60_requests.json').read_text(encoding='utf8'))
         baseline=fixture['component_requests']['ion_processor']['design']['baseline']
