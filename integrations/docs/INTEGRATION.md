@@ -50,11 +50,18 @@ stages. No unknown vacuum or boundary is filled to pass tracking. Functional
 pipeline completion is the current priority; convergence and accuracy studies
 are not prerequisites, while actual required field support remains mandatory.
 
-The SFI common-domain carrier's wider axial export uses the existing complete
-77-member geometry and saved solution, with no Compute. Its native export has
-completed; conductor-support postprocessing is still in progress. It is not yet
-a published scalar basis or a completed original-source flight. RF and pulse
-exports must independently pass actual mask, voltage and provenance admission.
+The SFI common-domain carrier, RF and pulse axial exports and twelve aligned
+sheet-window products are published from the unchanged complete 77-member
+geometry and saved solutions, with no Compute. A bounded native probe read
+324 potential/field queries successfully across the 100 original births and
+eight specified sheet-neighborhood points; it does not establish whole-path
+coverage or precision. N100 attempt `20261116_035721__sim__simion__track-e666c69c9722`
+then failed on `V_SUPPORT_BOX_OUTSIDE` after 37 native splats. All three
+operations stopped and released their leases; no complete collection was published.
+The exact failing query is unknown. Shared failure messages now include position,
+level, grid bounds, source paths and particle/time context, preserving the original
+support predicates. Nine Lua-backed regression parents passed; native validation
+of this diagnostic successor remains open. No physical sheet or component moved.
 
 The complete ordinary installation module on frozen `e3618a8a` passed all 11
 parents, including the original independent direct-wheel and rebuilt-sdist

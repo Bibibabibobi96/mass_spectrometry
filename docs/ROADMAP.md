@@ -186,8 +186,22 @@ selected SFI projection. It does not predict sampled masks, particle paths or
 native acceptance. The window completion receipts show stopped writers and
 released leases. Eleven native logs contain an observation-scope warning despite empty
 limit-warning arrays, so their sampled memory peaks are not complete peak proof.
-Current SFI Fly remains pending. The controlled RF attempt and ordinary installed
-parent are running on frozen `ddd9d1a7`; their outcomes are not yet acceptance.
+The subsequent SFI N100 attempt `track-e666c69c9722` on frozen `ddd9d1a7`
+failed on `V_SUPPORT_BOX_OUTSIDE` after 37 native splats; these are not 37
+detector hits or a complete collection. Its exact failed query was not recorded.
+The shared adapter now adds failure-only world position, selected level, grid
+bounds, source paths and particle/time context, without changing support checks.
+Nine actual Lua-backed sheet/preflight tests passed with unchanged source hashes;
+the next native failure-context check remains open.
+RF attempt `track-8e687cab0c61` failed on an unknown RF-body support node at
+[4, -305.75, 1.75] mm. Its sampled Fly peak was 8,222,646,272 bytes, below
+8 GiB for that short failed attempt, not a full-flight peak guarantee. A saved-FEM
+two-point export reproduced the invalid node while the actual particle query
+was valid. The new writer's first values and headers also passed native SIMION
+cold readback; this does not establish full field or trajectory validity.
+The ordinary direct-wheel/sdist parent on `ddd9d1a7` passed in 1480.577 s with
+all 3073 source identities unchanged. It ran concurrently with native work and
+is not an isolated performance measurement or final same-candidate acceptance.
 
 The registered-component consumer regression now covers an explicit connected
 Assembly with renamed instances and a changed physical width through the same

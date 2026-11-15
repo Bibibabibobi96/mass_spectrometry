@@ -98,8 +98,11 @@ simion.experimental.field_array=function() return {efield=function() evaluations
 local adapter=(function()
 """ + adapter + "\nend)()\nlocal binding=" + _lua_value(binding) + """
 local f=adapter(binding,'raw_sample'); assert(f(0,0,3)==7); assert(f(0,0,1)==7)
+ion_number=47; ion_time_of_flight=12.5
 local before=evaluations; local ok,err=pcall(f,0,0,1.01)
-assert(not ok and string.find(err,'V_UNREPRESENTED_SHEET') and evaluations==before)
+assert(not ok and string.find(err,'V_UNREPRESENTED_SHEET') and string.find(err,'world=',1,true) and string.find(err,'level=base',1,true) and string.find(err,'member=sheet',1,true) and string.find(err,'ion=47',1,true) and string.find(err,'elapsed_us=12.5',1,true) and string.find(err,'scalar=base',1,true) and evaluations==before)
+before=evaluations; ok,err=pcall(f,20,0,3)
+assert(not ok and string.find(err,'V_SUPPORT_BOX_OUTSIDE') and string.find(err,'axis=1',1,true) and string.find(err,'dimension=11',1,true) and string.find(err,'world=(20,0,3)',1,true) and string.find(err,'ion=47',1,true) and string.find(err,'mask=mask',1,true) and evaluations==before)
 invalid=true; before=evaluations; ok,err=pcall(f,0,0,0)
 assert(not ok and string.find(err,'V_SUPPORT_UNKNOWN') and evaluations==before)
 invalid=false; binding.ideal_sheet_projection[1].unsupported_bounds_mm[3][1]=0/0

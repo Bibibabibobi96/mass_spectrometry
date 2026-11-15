@@ -225,7 +225,7 @@ local function load_field(binding, shared_mask, reuse_workbench, sharing)
           and math.abs(box[a][1])<math.huge and math.abs(box[a][2])<math.huge
           and box[a][1]<=box[a][2], 'invalid unsupported sheet bounds')
       end
-      unsupported[#unsupported+1] = box
+      unsupported[#unsupported+1] = sheet
     else
     assert(sheet.k >= 0 and sheet.k < pa.nz and sheet.i_min >= 0 and sheet.i_max < pa.nx
       and sheet.j_min >= 0 and sheet.j_max < pa.ny, 'OA sheet projection outside scalar grid')
@@ -268,18 +268,25 @@ local function load_field(binding, shared_mask, reuse_workbench, sharing)
       for a=1,3 do
         local q = local_mm[a]/pitch[a]
         lo[a], hi[a] = math.floor(q)-1, math.ceil(q)+1
-        assert(lo[a] >= 0 and hi[a] < size[a], 'NUMERICAL_COVERAGE_FAILURE V_SUPPORT_BOX_OUTSIDE')
+        if not (lo[a] >= 0 and hi[a] < size[a]) then
+          error(string.format('NUMERICAL_COVERAGE_FAILURE V_SUPPORT_BOX_OUTSIDE world=(%.17g,%.17g,%.17g) level=%s axis=%d lo=%d hi=%d dimension=%d scalar=%s mask=%s ion=%s elapsed_us=%s',
+            x,y,z,tostring(binding.name or 'base'),a,lo[a],hi[a],size[a],tostring(binding.scalar_pa),tostring(binding.valid_pa),tostring(ion_number),tostring(ion_time_of_flight)))
+        end
       end
     end
     -- The existing support envelope must not intersect an unrepresented sheet.
-    for _,box in ipairs(unsupported) do
+    for _,sheet in ipairs(unsupported) do
+      local box = sheet.unsupported_bounds_mm
       local intersects = true
       for a=1,3 do
         local lower=binding.origin_mm[a]+lo[a]*pitch[a]
         local upper=binding.origin_mm[a]+hi[a]*pitch[a]
         if upper < box[a][1] or lower > box[a][2] then intersects=false; break end
       end
-      assert(not intersects, 'NUMERICAL_COVERAGE_FAILURE V_UNREPRESENTED_SHEET')
+      if intersects then
+        error(string.format('NUMERICAL_COVERAGE_FAILURE V_UNREPRESENTED_SHEET world=(%.17g,%.17g,%.17g) level=%s instance=%s group=%s member=%s scalar=%s mask=%s ion=%s elapsed_us=%s',
+          x,y,z,tostring(binding.name or 'base'),tostring(sheet.instance_id),tostring(sheet.electrode_group_id),tostring(sheet.member_id),tostring(binding.scalar_pa),tostring(binding.valid_pa),tostring(ion_number),tostring(ion_time_of_flight)))
+      end
     end
     -- Existing measured support envelope, without extrapolation or fill-zero.
     for k=lo[3],hi[3] do for j=lo[2],hi[2] do for i=lo[1],hi[1] do
