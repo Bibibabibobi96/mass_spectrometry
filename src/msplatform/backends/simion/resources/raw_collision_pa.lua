@@ -16,7 +16,20 @@ end
 local function nonempty(path)
  local f=assert(io.open(path,'rb'),'required input missing: '..path);local n=assert(f:seek('end'));f:close();assert(n>0,'required input empty: '..path)
 end
-nonempty(source);nonempty(source_base..'.pa-surf')
+nonempty(source)
+local empty=false
+local state_path=arg[5]
+local state_grid=nil
+if state_path then
+ local state=assert(io.open(native_path(state_path),'rb'),'surface state missing');local text=state:read('*a');state:close()
+ local surface_mode,nx,ny,nz,dx,dy,dz,scanned,offsets=text:match('^%s*{%s*"schema_version":1,"mode":"(%a+)","grid":%[(%d+),(%d+),(%d+)%],"pitch":%[([^,]+),([^,]+),([^%]]+)%],"scanned_nodes":([^,]+),"offset_nodes":([^}]+)}%s*$')
+ assert(surface_mode=='present' or surface_mode=='empty','invalid surface state')
+ state_grid={tonumber(nx),tonumber(ny),tonumber(nz),tonumber(dx),tonumber(dy),tonumber(dz)}
+ empty=surface_mode=='empty'
+ if empty then assert(tonumber(scanned)==state_grid[1]*state_grid[2]*state_grid[3] and tonumber(offsets)==0,'invalid empty surface proof')
+ else assert(scanned=='null' and offsets=='null','present state overclaims scan') end
+end
+if empty then assert(not exists(source_base..'.pa-surf'),'empty source has unexpected companion') else nonempty(source_base..'.pa-surf') end
 for _,suffix in ipairs({'.wgem','.lua','.fly2','.ion','.con','.rec','.pa0'}) do
  assert(not exists(source_base..suffix),'raw geometry companion forbidden: '..suffix)
 end
@@ -30,12 +43,13 @@ end
 if mode=='build' then
  assert(not exists(output) and not exists(output_base..'.pa-surf'),'collision destination already exists')
 else
- nonempty(output);nonempty(output_base..'.pa-surf')
+ nonempty(output);if empty then assert(not exists(output_base..'.pa-surf'),'empty output has unexpected companion') else nonempty(output_base..'.pa-surf') end
 end
 simion.pas:close()
 local src=assert(simion.pas:open(source),'cannot open raw geometry PA')
 assert(src.symmetry=='3dplanar' and src.potential_type=='electric','raw geometry must be 3D planar electric')
 local dimensions={src.nx,src.ny,src.nz};local pitch={src.dx_mm,src.dy_mm,src.dz_mm}
+if state_grid then for i=1,3 do assert(dimensions[i]==state_grid[i] and pitch[i]==state_grid[i+3],'surface state/grid differs') end end
 for i=1,3 do assert(type(dimensions[i])=='number' and dimensions[i]>=3 and dimensions[i]==math.floor(dimensions[i]),'invalid dimensions');assert(type(pitch[i])=='number' and pitch[i]>0 and pitch[i]<math.huge,'invalid pitch') end
 local count,metal_count,surface_count=0,0,0
 local function finite(x)return type(x)=='number' and x==x and math.abs(x)<math.huge end
@@ -68,9 +82,9 @@ for x,y,z in src:points() do
  count=count+1;if metal then metal_count=metal_count+1 end
 end
 assert(count==dimensions[1]*dimensions[2]*dimensions[3],'collision node traversal count differs')
-assert(metal_count>0 and surface_count>0,'physical metal and fractional surface evidence required')
+assert(metal_count>0 and (empty and surface_count==0 or not empty and surface_count>0),'physical metal and fractional surface evidence required')
 if mode=='build' then out:save(output) end
 out:close();src:close()
-nonempty(output);nonempty(output_base..'.pa-surf')
+nonempty(output);if empty then assert(not exists(output_base..'.pa-surf'),'empty output has unexpected companion') else nonempty(output_base..'.pa-surf') end
 print(string.format('RAW_COLLISION_%s=PASS nodes=%d metal_nodes=%d surface_nodes=%d FIELD_STATUS=not_solved REFINE=False FLY=False',mode:upper(),count,metal_count,surface_count))
 io.stdout:flush()

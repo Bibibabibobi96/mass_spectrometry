@@ -70,8 +70,10 @@ def prepare_ip_mr_field_inputs(model_reference: Mapping[str, Any], *, scalar_fie
     plan=plan_collision_conversions(source.model,geometry_reference,output_directory=output_directory)
     for task in plan['tasks']:
         owned=source.native_assets[task['role']]
-        actual={'raw_geometry':owned['raw_record'],'fractional_surface':owned['surface_records'][0],
-                'surface_witnesses':owned['witness_record']}
+        actual={'raw_geometry':owned['raw_record'],'surface_witnesses':owned['witness_record']}
+        if owned['surface_records']: actual['fractional_surface']=owned['surface_records'][0]
+        if 'state_record' in owned: actual['surface_state']=owned['state_record']
+        if set(actual)!=set(task['source_records']):raise ValueError('model-owned collision surface closure differs')
         for label,record in actual.items():
             expected=task['source_records'][label]
             if any(str(record[k]).upper()!=str(expected[k]).upper() for k in ('bytes','sha256')):
@@ -204,10 +206,10 @@ def execute_ip_mr_sampled_fields(session, *, model_reference: Mapping[str, Any],
     resources={name:native_resource_path(name) for name in native_names}
     resources['native_run_path.lua']=resource_path('native_run_path.lua')
     from . import (ip_mr_field_execution, ip_mr_collision_lineage, ip_mr_collision_priority,
-                   ip_mr_scalar_binding, scalar_sample_binding, field_closure)
+                   ip_mr_scalar_binding, scalar_sample_binding, field_closure, native_surface_state)
     code_guards=[]
     for module in (ip_mr_field_execution, ip_mr_collision_lineage, ip_mr_collision_priority,
-                   ip_mr_scalar_binding, scalar_sample_binding, field_closure):
+                   ip_mr_scalar_binding, scalar_sample_binding, field_closure, native_surface_state):
         name=module.__name__.rsplit('.',1)[-1]
         path=Path(module.__file__).resolve(strict=True)
         original=file_record(path,'required_evidence')
@@ -255,15 +257,18 @@ def execute_ip_mr_sampled_fields(session, *, model_reference: Mapping[str, Any],
         guards=[*task['source_records'].values(),resource_records['raw_collision_pa.lua'],resource_records['native_run_path.lua']]
         base=['lua',project(resource_records['raw_collision_pa.lua']['path'])]
         tail=[project(task['raw_path']),project(target),project(resource_records['native_run_path.lua']['path'])]
+        state=task['source_records'].get('surface_state')
+        if state: tail.append(project(state['path']))
         built=run(task['build_operation'],[*base,'build',*tail],'RAW_COLLISION_BUILD=PASS',guards)
         out=file_record(session.canonical_path(target),'solver_native_binary')
-        surf=file_record(session.canonical_path(surface),'solver_native_binary')
-        verified=run(task['verify_operation'],[*base,'verify',*tail],'RAW_COLLISION_VERIFY=PASS',[*guards,out,surf])
+        surf=file_record(session.canonical_path(surface),'solver_native_binary') if surface.is_file() else None
+        verified=run(task['verify_operation'],[*base,'verify',*tail],'RAW_COLLISION_VERIFY=PASS',[*guards,out,*([surf] if surf else [])])
         audit=collision_conversion_result(plan['geometry_plan'],task,output_record=out,surface_record=surf,
             build_log_record=built,verify_log_record=verified,converter_record=resource_records['raw_collision_pa.lua'])
         audits.append(audit)
-        collision_records[task['role']]=dict(pa=out,fractional_surface=surf,
-            surface_witnesses=task['source_records']['surface_witnesses'])
+        collision_records[task['role']]=dict(pa=out,surface_witnesses=task['source_records']['surface_witnesses'])
+        if surf: collision_records[task['role']]['fractional_surface']=surf
+        if state: collision_records[task['role']]['surface_state']=state
 
     background=owned(owned_root/'simion/collision/background.pa','solver_native_binary')
     background.parent.mkdir(parents=True,exist_ok=True)
@@ -311,7 +316,9 @@ def execute_ip_mr_sampled_fields(session, *, model_reference: Mapping[str, Any],
                    background=bg,workbench=iob_record)
     for name,asset in collision_records.items():
         if name!=background_id:
-            records[name+'_collision']=asset['pa'];records[name+'_surface']=asset['fractional_surface'];records[name+'_witness']=asset['surface_witnesses']
+            records[name+'_collision']=asset['pa'];records[name+'_witness']=asset['surface_witnesses']
+            if 'fractional_surface' in asset: records[name+'_surface']=asset['fractional_surface']
+            if 'surface_state' in asset: records[name+'_surface_state']=asset['surface_state']
     document=require_prepared_model(plan['model'])
     metadata=dict(backend='simion',field_status='available',source_status='not_requested',
         model_identity_sha256=document['model_identity_sha256'],clock=copy.deepcopy(document['drive']['clock']),
@@ -319,7 +326,7 @@ def execute_ip_mr_sampled_fields(session, *, model_reference: Mapping[str, Any],
         refine_calls=0,compute_calls=0,fly_calls=0,scientific_qualification='not_granted',
         scalar_coverage='not_qualified',native_collision_qualification='not_granted')
     outputs=[str(session.canonical_path(path)) for path in [background,iob,iob.with_suffix('.fly2'),audit_path,
-        *(Path(row['output_path']) for row in tasks),*(Path(row['output_path']).with_suffix('.pa-surf') for row in tasks)]]
+        *(Path(row['output_path']) for row in tasks),*(Path(row['output_path']).with_suffix('.pa-surf') for row in tasks if Path(row['output_path']).with_suffix('.pa-surf').is_file())]]
     return dict(status='success',summary=metadata,output_paths=outputs,required_output_paths=outputs,
         retention_preserve_paths=[],manifest_extra_fields={'products':{'fields':dict(schema_version=1,
         kind='field_bundle',status='complete',metadata=metadata,data=records)}})

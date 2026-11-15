@@ -172,7 +172,7 @@ if independent_component and (not tracking_role or sampled_tracking) then
         if file then file:close();error('collision PA forbids response family') end
       end
     end
-    local keys=collision_iob and row.role==spec.collision_roles.background and {'path'} or {'path','fractional_surface','surface_witnesses'}
+    local keys=collision_iob and row.role==spec.collision_roles.background and {'path'} or row.surface_state and {'path','surface_state','surface_witnesses'} or {'path','fractional_surface','surface_witnesses'}
     for _,key in ipairs(keys) do
       local file=assert(io.open(assert(row[key]),'rb'),'RF geometry input missing before IOB load: '..key)
       assert(file:seek('end')>0,'RF geometry input empty: '..key);file:close()
@@ -247,8 +247,26 @@ local function verify_fractional_component(item,row)
       return
     end
   end
-  local surface=assert(io.open(row.fractional_surface,'rb'),'fractional companion missing before IOB load')
-  assert(surface:seek('end')>0);surface:close()
+  local empty=false
+  if row.surface_state then
+    local file=assert(io.open(row.surface_state,'rb'),'fractional surface state missing')
+    local state=file:read('*a');file:close()
+    local mode,nx,ny,nz,dx,dy,dz,scanned,offsets=state:match('^%s*{%s*"schema_version":1,"mode":"(%a+)","grid":%[(%d+),(%d+),(%d+)%],"pitch":%[([^,]+),([^,]+),([^%]]+)%],"scanned_nodes":([^,]+),"offset_nodes":([^}]+)}%s*$')
+    assert(mode and tonumber(nx)==item.pa.nx and tonumber(ny)==item.pa.ny and tonumber(nz)==item.pa.nz and tonumber(dx)==item.pa.dx_mm and tonumber(dy)==item.pa.dy_mm and tonumber(dz)==item.pa.dz_mm,'fractional surface state/grid differs')
+    assert(mode=='present' or mode=='empty','invalid fractional surface state')
+    empty=mode=='empty'
+    if empty then
+      assert(tonumber(scanned)==item.pa.nx*item.pa.ny*item.pa.nz and tonumber(offsets)==0,'empty fractional surface count differs')
+      local unexpected=io.open(row.fractional_surface,'rb');assert(not unexpected,'empty surface has unexpected companion')
+      local count=0
+      for x,y,z in item.pa:points() do local sx,sy,sz=item.pa:surface_info(x,y,z);assert(sx==nil and sy==nil and sz==nil,'empty surface contains offsets');count=count+1 end
+      assert(count==item.pa.nx*item.pa.ny*item.pa.nz,'empty surface node count differs')
+    else assert(scanned=='null' and offsets=='null','present state overclaims scan') end
+  end
+  if not empty then
+    local surface=assert(io.open(row.fractional_surface,'rb'),'fractional companion missing before IOB load')
+    assert(surface:seek('end')>0);surface:close()
+  end
   local witnesses=assert(io.open(row.surface_witnesses,'rb'))
   local checked=0
   for line in witnesses:lines() do

@@ -61,17 +61,21 @@ def build_geometry(compiled: CompiledSimionGeometry, *, context: ExecutionContex
         native_path_resource=planning_root / "inputs/native_sources/native_run_path.lua")
     ids = tuple(row["operation_id"] for row in plan.operations)
     source = file_record(Path(execute_geometry.__code__.co_filename).resolve(), "required_evidence")
+    surface_validator = None
+    if snapshot.frontend_geometry.get("role") == "simion_ip_mr_complete_geometry":
+        from . import native_surface_state
+        surface_validator = file_record(Path(native_surface_state.__file__).resolve(), "required_evidence")
     result = run_managed_stage(context, descriptor=dict(project="instrument_assembly", mode="geometry_only", software=["SIMION"]),
         run_id=datetime.now().strftime("%Y%m%d_%H%M%S") + "__build__simion__geometry-" + uuid4().hex[:12],
         payload=dict(action="build_geometry", compiled_geometry=asdict(snapshot), stage_policy=stage),
         committed_new_bytes=stage["limits"]["transient_run_directory_bytes"],
-        commitment_inputs=[authority], retention=stage["artifact_retention"],
+        commitment_inputs=[authority, *([surface_validator] if surface_validator else [])], retention=stage["artifact_retention"],
         expected_operation_ids=ids,
         operation_dependencies={name: [ids[index-1]] for index, name in enumerate(ids) if index},
         action=partial(execute_geometry, compiled=snapshot, seed_record=seed, limits=stage["limits"],
-            allow_asynchronous_io=runtime.get("simion_allow_asynchronous_io")),
+            allow_asynchronous_io=runtime.get("simion_allow_asynchronous_io"), surface_validator_record=surface_validator),
         action_record=source,
-        expected_relative_paths=[str(Path(path).relative_to(planning_root)) for path in plan.declared_outputs],
+        expected_relative_paths=[str(Path(path).relative_to(planning_root)) for path in (*plan.declared_outputs, *(row["optional_surface"] for row in plan.operations if "optional_surface" in row))],
         use_short_execution_path=True, completion_api=lambda: native_completion)
     return artifact_reader.open_artifact({"manifest": result["manifest"], "product_id": "geometry"}, expected_kind="geometry_artifact")
 
@@ -280,7 +284,8 @@ def solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mapping
             lower_bound+=PaHeader(-2,1,1.0,grid['nx'],grid['ny'],grid['nz'],0,
                                   grid['dx_mm'],grid['dy_mm'],grid['dz_mm']).file_bytes
         lower_bound+=sum(task['source_records']['fractional_surface']['bytes']
-                         for task in prepared['geometry_plan']['tasks'])
+                         for task in prepared['geometry_plan']['tasks']
+                         if 'fractional_surface' in task['source_records'])
         limits=stage['limits']
         if (limits['reserved_run_payload_bytes'] < lower_bound or
                 limits['transient_run_directory_bytes'] < lower_bound):

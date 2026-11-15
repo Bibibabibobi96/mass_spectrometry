@@ -1,5 +1,6 @@
 """Five-slot IOB Lua readback against inert API doubles; no native claim."""
 import copy
+import json
 import os
 import shutil
 import pathlib
@@ -25,6 +26,7 @@ class CollisionIobTests(unittest.TestCase):
    spec=dict(schema_version=1,role='ip_mr_collision_iob_build',collision_roles=dict(zip(('background','rf','ip','analyzer','detector'),names)),instances=rows,seed_iob=str(seed),output_iob=str(out),empty_particle_control=str(control),bootstrap_paths=[str(root/f'iob_seed_placeholder_{i:02d}.pa0') for i in range(1,6)])
    code=(HARNESS.replace("electrode_numbers=spec.instances[1].response_ids}","electrode_numbers={},refinable=false}")
     .replace('function result:point(x,y,z)return 1,x==0 end',"function result:point(x,y,z)if (self.path or self.filename or ''):find('vacuum',1,true) then if failure=='background' then return 0,true end;return 0,false end;return 1,x==0 end\n function result:points()local i=-1;return function() i=i+1;if i<27 then return i%3,math.floor(i/3)%3,math.floor(i/9) end end end")
+    .replace("function result:surface_info()if failure=='surface' then return .5,nil,nil end;return .25,nil,nil end", 'function result:surface_info()if (self.path or self.filename or ""):find("detector",1,true) and failure:find("empty",1,true) then if failure=="empty_nonzero" then return .5,nil,nil end;return nil,nil,nil end;if failure=="surface" then return .5,nil,nil end;return .25,nil,nil end')
     .replace('getmetatable(instances).__len=function()return 1 end','getmetatable(instances).__len=function()return #spec.instances end')
     .replace(" local row=spec.instances[1]\n local path=mode:match('^verify')and row.path or spec.bootstrap_paths[1]", " for i,row in ipairs(spec.instances) do\n local path=mode:match('^verify')and row.path or spec.bootstrap_paths[i]")
     .replace(' slots[1]=item\nend'," if failure=='foreign_path' and i==3 then item.pa.path=item.pa.path..'.foreign' end\n slots[i]=item\n end\nend")
@@ -43,5 +45,24 @@ class CollisionIobTests(unittest.TestCase):
    p=run('verify_geometry',spec,'foreign_path');self.assertNotEqual(p.returncode,0);self.assertIn('saved PA path differs',p.stderr)
    p=run('verify_geometry',spec,'background');self.assertNotEqual(p.returncode,0);self.assertIn('only zero vacuum nodes',p.stderr)
    p=run('verify_geometry',spec,'surface');self.assertNotEqual(p.returncode,0);self.assertIn('fractional surface readback differs',p.stderr)
+   out.unlink(missing_ok=True);out.with_suffix('.fly2').unlink(missing_ok=True)
+   detector=spec['instances'][4];Path=pathlib.Path
+   state=root/'detector_surface_state.json';side=Path(detector['fractional_surface']);side.unlink()
+   Path(detector['surface_witnesses']).write_text('0,0,0,nil,nil,nil\n')
+   detector['surface_state']=str(state)
+   proof=dict(schema_version=1,mode='empty',grid=[3,3,3],pitch=[1,1,1],scanned_nodes=27,offset_nodes=0)
+   state.write_text(json.dumps(proof,separators=(',',':')))
+   for mode in ('build_geometry','verify_geometry'):
+    result=run(mode,spec,'empty');self.assertEqual(result.returncode,0,result.stderr)
+   result=run('verify_geometry',spec,'empty_nonzero');self.assertNotEqual(result.returncode,0)
+   proof['grid']=[4,3,3];state.write_text(json.dumps(proof,separators=(',',':')))
+   result=run('verify_geometry',spec,'empty');self.assertNotEqual(result.returncode,0)
+   proof['grid']=[3,3,3];proof['offset_nodes']=1;state.write_text(json.dumps(proof,separators=(',',':')))
+   result=run('verify_geometry',spec,'empty');self.assertNotEqual(result.returncode,0)
+   proof['offset_nodes']=0
+   state.unlink();result=run('verify_geometry',spec,'empty');self.assertNotEqual(result.returncode,0)
+   proof['grid']=[3,3,3];state.write_text(json.dumps(proof,separators=(',',':')));side.write_bytes(b'unexpected')
+   result=run('verify_geometry',spec,'empty');self.assertNotEqual(result.returncode,0)
+   detector.pop('surface_state');side.write_bytes(b'inert');Path(detector['surface_witnesses']).write_text('0,0,0,.25,nil,nil\n')
    bad=copy.deepcopy(spec);bad['collision_roles']['rf']='foreign'
    p=run('verify_geometry',bad);self.assertNotEqual(p.returncode,0);self.assertIn('actual slot order differs',p.stderr)

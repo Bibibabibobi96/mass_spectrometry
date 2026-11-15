@@ -216,9 +216,11 @@ def plan_ip_mr_tracking_workbench(compiled: Any, *, admission: Mapping[str, Any]
         return dict(source.data_records[key], path=str(source.data_path(key)))
     assets = {roles['background']: {'pa': record('background')}}
     for name in (roles['rf'], roles['ip'], roles['analyzer'], roles['detector']):
-        assets[name] = {'pa': record(name + '_collision'),
-                        'fractional_surface': record(name + '_surface'),
-                        'surface_witnesses': record(name + '_witness')}
+        assets[name] = {'pa': record(name + '_collision'), 'surface_witnesses': record(name + '_witness')}
+        if name + '_surface' in source.data_records: assets[name]['fractional_surface'] = record(name + '_surface')
+        if name + '_surface_state' in source.data_records: assets[name]['surface_state'] = record(name + '_surface_state')
+        if 'fractional_surface' not in assets[name] and 'surface_state' not in assets[name]:
+            raise ValueError('collision surface evidence missing')
     evidence = dict(zip(('boxes_record', 'clearance_record', 'source_record'),
                         policy['evidence_records'], strict=True))
     seed_record = file_record(structural_seed_path(5), 'required_evidence')

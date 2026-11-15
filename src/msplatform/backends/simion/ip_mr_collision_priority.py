@@ -152,6 +152,8 @@ def project_ip_mr_collision_iob(geometry: CompiledSimionGeometry, *, instances: 
     for row in policy['instances']:
         name=row['role']; supplied=asset_records[name]
         keys={'pa'} if name==policy['roles']['background'] else {'pa','fractional_surface','surface_witnesses'}
+        if name!=policy['roles']['background'] and 'surface_state' in supplied:
+            keys={'pa','surface_witnesses','surface_state'} | ({'fractional_surface'} if 'fractional_surface' in supplied else set())
         if set(supplied)!=keys:raise ValueError('collision PA and witness record closure differs')
         row=copy.deepcopy(row)
         for key in sorted(keys):
@@ -162,6 +164,8 @@ def project_ip_mr_collision_iob(geometry: CompiledSimionGeometry, *, instances: 
             row['path' if key=='pa' else key]=str(path)
         if Path(row['path']).suffix.lower()!='.pa':raise ValueError('collision input requires an ordinary .pa')
         if name!=policy['roles']['background']:
+            if 'fractional_surface' not in row and 'surface_state' in row:
+                row['fractional_surface']=str(Path(row['path']).with_suffix('.pa-surf'))
             if Path(row['fractional_surface'])!=Path(row['path']).with_suffix('.pa-surf'):
                 raise ValueError('collision fractional companion must match the PA stem')
             row['physical_samples']=copy.deepcopy(geometry.frontend_geometry['raw_physical_samples'][name])

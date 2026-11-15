@@ -48,8 +48,19 @@ for _,sample in ipairs(samples) do
   assert(metal==expected and (not expected or potential==sample.electrode_id),'raw physical electrode sample differs: '..sample.label)
 end
 if spec.fractional_surface then
-  local companion=assert(io.open(spec.fractional_surface,'rb'),'fractional surface companion missing')
-  assert(companion:seek('end')>0,'fractional surface companion empty');companion:close()
+  local companion=io.open(spec.fractional_surface,'rb')
+  local empty=companion==nil
+  if companion then assert(companion:seek('end')>0,'fractional surface companion empty');companion:close() end
+  local scanned,offsets=0,0
+  if empty then
+    assert(spec.surface_state,'fractional surface companion missing')
+    for x,y,z in pa:points() do
+      local sx,sy,sz=pa:surface_info(x,y,z)
+      scanned=scanned+1
+      if sx~=nil or sy~=nil or sz~=nil then offsets=offsets+1 end
+    end
+    assert(scanned==pa.nx*pa.ny*pa.nz and offsets==0,'missing companion with nonempty or incomplete fractional surface')
+  end
   local output=assert(io.open(spec.surface_witnesses,'wb'))
   local witnessed=0
   for _,sample in ipairs(samples) do
@@ -75,6 +86,14 @@ if spec.fractional_surface then
     end
   end
   assert(witnessed>0);assert(output:close())
+  if spec.surface_state then
+    local report=assert(io.open(spec.surface_state,'wb'))
+    local scan_value=empty and tostring(scanned) or 'null'
+    local offset_value=empty and '0' or 'null'
+    assert(report:write(string.format('{"schema_version":1,"mode":"%s","grid":[%d,%d,%d],"pitch":[%.17g,%.17g,%.17g],"scanned_nodes":%s,"offset_nodes":%s}\n',
+      empty and 'empty' or 'present',pa.nx,pa.ny,pa.nz,pa.dx_mm,pa.dy_mm,pa.dz_mm,scan_value,offset_value)))
+    assert(report:close())
+  end
 end
 pa:close()
 print('BUILD_GEOMETRY=PASS ROLE='..spec.domain_id)

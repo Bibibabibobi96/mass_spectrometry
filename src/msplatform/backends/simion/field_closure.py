@@ -65,6 +65,8 @@ def load_field_model(reference: Mapping | OpenedArtifact, *, field_representatio
     for domain, keys in bindings.items():
         fields = ({'raw_geometry', 'fractional_surface', 'surface_witnesses'} if independent_component else
                   {'raw_geometry', 'fractional_surface'} if domain in {'flight_tube', 'detector'} else {'raw_geometry'})
+        if sampled and 'surface_state' in keys:
+            fields = (fields | {'surface_state'}) if 'fractional_surface' in keys else ((fields - {'fractional_surface'}) | {'surface_state'})
         if set(keys) != fields or any(key in consumed for key in keys.values()):
             raise ValueError('prepared model native closure is incomplete or ambiguous')
         consumed.update(keys.values())
@@ -72,6 +74,8 @@ def load_field_model(reference: Mapping | OpenedArtifact, *, field_representatio
             surface_records=[data_record(source, keys['fractional_surface'])] if 'fractional_surface' in keys else [])
         if independent_component:
             assets[domain]['witness_record'] = data_record(source, keys['surface_witnesses'])
+        if 'surface_state' in keys:
+            assets[domain]['state_record'] = data_record(source, keys['surface_state'])
     return FieldModelSource(source, model, assets, clock)
 
 

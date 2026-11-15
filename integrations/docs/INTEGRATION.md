@@ -1399,6 +1399,28 @@ its heavy GATE. Its full author requests and pair evidence are in workspace
 This confirms this selected layout only; common field domains, attached
 source/gas/observations and continuous native propagation still require validation.
 
+The full native geometry attempt
+`20261115_091114__build__simion__geometry-9eeeebe2e00b` passed the unchanged
+700/295 GiB capacity policy. IP and MR raw generation completed; the detector
+PA was saved, then the unconditional fractional-companion check failed before
+the RF build, Refine or Fly. No physical geometry or grid was changed to address
+that failure.
+
+A separate cold native observation,
+`20261115_093606__test__simion__detector-surface-cold-read-0836f6ed`, found zero
+offset-bearing nodes among all 74,984 detector nodes, with 51,005 metal nodes
+and all six physical faces present. Its independent offset control had 108
+offset-bearing nodes and a 1,812-byte companion. The native operation exited 0;
+the diagnostic caller's invalid retention-preserve selection prevented terminal
+publication. Its unchanged checkpoint, completion, logs and raw results remain
+capacity-sealed and pinned; this is not a published successful workflow.
+The full-geometry failure and the diagnostic's publication failure remain open
+records. The new
+[surface-state contract](../../common/simion/README.md#native-fractional-surface-state)
+has focused software coverage, with final composed native geometry/model and
+continuous-flight acceptance still pending. These observations grant no field,
+convergence, transmission or instrument-performance qualification.
+
 The public geometry integration passed eight focused software tests in 147.066
 seconds (152.334 guarded wall), with the full source and checkout unchanged.
 They cover all canonical members and source identities, actual three/four-slot

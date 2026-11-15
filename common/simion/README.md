@@ -85,6 +85,26 @@ contract remains; it does not itself certify a compiled PA or authorize Fly.
 或网格敏感性验证。本层不选择PA/IOB和物理参数；商业进程仍由项目 runner 经公共主机调度和冻结预算准入，
 独立粒子批次的并发再由本层调度器决定。
 
+### Native fractional-surface state
+
+The complete IP–MR geometry path records a producer-owned `surface_state` for
+each raw asset. A present state requires the real nonempty companion. An empty
+state requires an exhaustive cold PA read with zero offsets and no companion;
+it does not remove metal, electrode-group or boundary-witness checks. Model,
+collision conversion and tracking carry that record with the producer's raw PA,
+grid and successful operation receipts. Missing surface data without this proof
+is rejected. Present assets do not acquire an additional exhaustive scan.
+The shared Python validator source is bound to the geometry admission and
+included in the field owner's existing frozen-source guards.
+
+SIMION 2020's installed `docs/simion.chm`, `lua_simion.pas.html` documents nil
+offsets as no enhancement data. The native aligned-detector/control observation
+and its publication limits are recorded in the
+[current integration case](../../integrations/docs/INTEGRATION.md#current-lp60-ipmr-geometry-case).
+This representation contract does not establish field coupling, mesh convergence
+or trajectory accuracy. Generic neutral-world field support is a separate
+consumer slice until its complete state propagation has been verified.
+
 所有新建SIMION Workbench必须从[`assets/iob_instance_seeds/`](assets/iob_instance_seeds/README.md)
 中与实际PA实例数一致的干净GUI种子派生。该公共目录提供1--10槽连续容器和唯一占位PA；派生器必须替换每一个槽，
 不得创建空槽或保留占位实例。种子只用于生成运行目录或正式交付目录中的派生IOB，绝不原地修改。

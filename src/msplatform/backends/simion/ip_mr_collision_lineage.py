@@ -82,19 +82,36 @@ def plan_collision_conversions(model: Any, geometry_reference: Mapping[str, Any]
     tasks = []
     for index, role in enumerate(sorted(assets), 1):
         member = assets[role]
-        expected = {label: role+'_'+label for label in ('raw_geometry','fractional_surface','surface_witnesses')}
+        labels = ['raw_geometry','surface_witnesses']
+        if 'surface_state' in member: labels.append('surface_state')
+        if 'fractional_surface' in member: labels.append('fractional_surface')
+        if 'surface_state' not in member and 'fractional_surface' not in member: raise ValueError('missing surface evidence')
+        expected = {label: role+'_'+label for label in labels}
         if (member != expected or any(key not in records for key in expected.values())
                 or any(records[key] not in manifest['outputs'] for key in expected.values())):
             raise ValueError('published native geometry asset closure differs')
         located = {label: Path(paths[key]) for label, key in expected.items()}
         selected = {label: dict(copy.deepcopy(records[key]), path=str(located[label]))
                     for label, key in expected.items()}
-        raw, surface = located['raw_geometry'], located['fractional_surface']
+        raw = located['raw_geometry']; surface = located.get('fractional_surface')
+        if 'surface_state' in located:
+            state=json.loads(located['surface_state'].read_text(encoding='utf8'))
+            domain=compiled.frontend_geometry['numerical_domains'][role]
+            dimensions=[domain['dimensions']['n'+axis] for axis in 'xyz']
+            pitch=[domain['cell_mm_xyz'][axis] for axis in 'xyz']
+            from .native_surface_state import validate_native_surface_state
+            native_grid=dict(zip(('nx','ny','nz'),dimensions,strict=True), **dict(zip(('dx_mm','dy_mm','dz_mm'),pitch,strict=True)))
+            validate_native_surface_state(state,grid=native_grid,surface_present=surface is not None)
         operation=by_operation.get('geometry_'+role)
-        if (operation is None or [located[key].resolve() for key in ('raw_geometry','fractional_surface','surface_witnesses')]
-                != [Path(path).resolve() for path in operation['outputs']]):
+        if operation is None: raise ValueError('geometry role differs from its actual planned operation outputs')
+        outputs=operation['outputs']
+        if 'optional_surface' in operation:
+            expected_paths={'raw_geometry':outputs[0], 'surface_witnesses':outputs[1], 'surface_state':outputs[2], 'fractional_surface':operation['optional_surface']}
+        else:
+            expected_paths=dict(zip(('raw_geometry','fractional_surface','surface_witnesses'),outputs,strict=True))
+        if any(path.resolve()!=Path(expected_paths[key]).resolve() for key,path in located.items()):
             raise ValueError('geometry role differs from its actual planned operation outputs')
-        if raw.suffix.lower() != '.pa#' or surface != raw.with_suffix('.pa-surf'):
+        if raw.suffix.lower() != '.pa#' or (surface is not None and surface != raw.with_suffix('.pa-surf')):
             raise ValueError('published raw PA and fractional companion stems differ')
         target = output / f'collision_{index:02d}.pa'
         if target.exists() or target.with_suffix('.pa-surf').exists():
@@ -117,7 +134,7 @@ def plan_collision_conversions(model: Any, geometry_reference: Mapping[str, Any]
 
 
 def collision_conversion_result(plan: Mapping[str, Any], task: Mapping[str, Any], *,
-                                output_record: Mapping[str, Any], surface_record: Mapping[str, Any],
+                                output_record: Mapping[str, Any], surface_record: Mapping[str, Any] | None,
                                 build_log_record: Mapping[str, Any], verify_log_record: Mapping[str, Any],
                                 converter_record: Mapping[str, Any]) -> dict[str, Any]:
     """Bind an owner's verified full-node audit logs to exact inputs and outputs.
@@ -133,13 +150,19 @@ def collision_conversion_result(plan: Mapping[str, Any], task: Mapping[str, Any]
     verify_record('collision converter',dict(converter_record))
     for label, record in task['source_records'].items():
         verify_record('conversion source '+label, dict(record))
-    for label, record in [('output', output_record), ('surface', surface_record),
+    for label, record in [('output', output_record), *([('surface', surface_record)] if surface_record is not None else []),
                           ('build log', build_log_record), ('verify log', verify_log_record)]:
         verify_record('conversion '+label, dict(record))
     target=Path(task['output_path']).resolve()
     if (Path(output_record['path']).resolve()!=target
-            or Path(surface_record['path']).resolve()!=target.with_suffix('.pa-surf')):
+            or (surface_record is not None and Path(surface_record['path']).resolve()!=target.with_suffix('.pa-surf'))):
         raise ValueError('converted output belongs to a different planned task')
+    state_record=task['source_records'].get('surface_state')
+    state=json.loads(Path(state_record['path']).read_text(encoding='utf8')) if state_record else None
+    empty=state is not None and state.get('mode')=='empty'
+    if empty != (surface_record is None): raise ValueError('converted surface representation differs from source state')
+    if empty and (state.get('offset_nodes')!=0 or state.get('scanned_nodes')!=state['grid'][0]*state['grid'][1]*state['grid'][2]):
+        raise ValueError('empty source surface proof differs')
     import re
     pattern=r'RAW_COLLISION_(BUILD|VERIFY)=PASS nodes=(\d+) metal_nodes=(\d+) surface_nodes=(\d+) FIELD_STATUS=not_solved REFINE=False FLY=False'
     counts=[]
@@ -149,14 +172,15 @@ def collision_conversion_result(plan: Mapping[str, Any], task: Mapping[str, Any]
         if len(matches)!=1 or matches[0] is None or matches[0].group(1)!=mode:
             raise ValueError('exact native collision conversion marker required')
         values=tuple(int(x) for x in matches[0].groups()[1:])
-        if min(values)<=0 or values[1]>values[0] or values[2]>values[0]:
+        if values[0]<=0 or values[1]<=0 or values[1]>values[0] or values[2]>values[0] or (values[2]!=0 if empty else values[2]<=0):
             raise ValueError('invalid native collision node counts')
         counts.append(values)
+    if empty and counts[0][0]!=state['scanned_nodes']: raise ValueError('conversion node count differs from source proof')
     if counts[0]!=counts[1]:
         raise ValueError('build and cold verification node counts differ')
     return dict(role=task['role'],geometry_reference=copy.deepcopy(plan['geometry_reference']),
         compiled_geometry_record=copy.deepcopy(plan['compiled_geometry_record']),
         source_records=copy.deepcopy(task['source_records']),output_record=dict(output_record),
-        surface_record=dict(surface_record),build_log_record=dict(build_log_record),
+        surface_record=dict(surface_record) if surface_record is not None else None,build_log_record=dict(build_log_record),
         verify_log_record=dict(verify_log_record),converter_record=dict(converter_record),nodes=counts[0][0],metal_nodes=counts[0][1],
         surface_nodes=counts[0][2],native_process_receipts='owner_required')

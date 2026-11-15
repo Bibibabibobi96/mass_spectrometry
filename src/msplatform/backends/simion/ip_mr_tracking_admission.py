@@ -57,7 +57,10 @@ def admit_ip_mr_tracking_fields(reference: Mapping[str, Any] | OpenedArtifact) -
             'collision_priority', 'collision_iob_spec', 'zero_particle_format_control',
             'collision_audits', 'background', 'workbench']
     for name in (roles['rf'], roles['ip'], roles['analyzer'], roles['detector']):
-        keys.extend((name + '_collision', name + '_surface', name + '_witness'))
+        keys.extend((name + '_collision', name + '_witness'))
+        if name + '_surface' in source.data_records: keys.append(name + '_surface')
+        if name + '_surface_state' in source.data_records: keys.append(name + '_surface_state')
+        if name + '_surface' not in source.data_records and name + '_surface_state' not in source.data_records: raise ValueError('collision surface evidence missing')
     records = [dict(source.data_records[key], path=str(source.data_path(key))) for key in keys]
     records.extend(copy.deepcopy(sample_records))
     unique = {}

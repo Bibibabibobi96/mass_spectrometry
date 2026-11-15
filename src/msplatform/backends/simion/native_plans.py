@@ -256,12 +256,17 @@ def _plan_joint_geometry_build(compiled, root, seed_record, path_resource):
         surface, witnesses = raw.with_suffix(".pa-surf"), root/"results"/(name+"_surface.csv")
         gem, audit = root/"inputs"/(name+".gem"), root/"inputs"/(name+"_build.lua")
         materializations[str(gem)] = compiled.frontend_gems[name]
-        materializations[str(audit)] = "return "+lua_value(dict(schema_version=1, role="simion_frontend_raw_geometry",
-            domain_id=name, gem=str(gem), output=str(raw), grid=grid, physical_samples=rows,
-            fractional_surface=str(surface), surface_witnesses=str(witnesses)))+"\n"
-        operations.append(_operation("geometry_"+name, "prepare",
+        state = root/"results"/(name+"_surface_state.json") if ip_mr else None
+        audit_fields=dict(schema_version=1, role="simion_frontend_raw_geometry", domain_id=name,
+            gem=str(gem), output=str(raw), grid=grid, physical_samples=rows,
+            fractional_surface=str(surface), surface_witnesses=str(witnesses))
+        if state is not None: audit_fields['surface_state']=str(state)
+        materializations[str(audit)] = "return "+lua_value(audit_fields)+"\n"
+        operation=_operation("geometry_"+name, "prepare",
             ["lua", str(native_resource_path("build_frontend_geometry.lua")), str(audit)],
-            [str(raw), str(surface), str(witnesses)], "BUILD_GEOMETRY=PASS ROLE="+name))
+            [str(raw), str(witnesses), str(state)] if ip_mr else [str(raw), str(surface), str(witnesses)], "BUILD_GEOMETRY=PASS ROLE="+name)
+        if ip_mr: operation['optional_surface']=str(surface)
+        operations.append(operation)
         if single_parent:
             rotation = [[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]]
             placement = dict(**{a+"_mm":domain["instance_origin_mm"][a] for a in "xyz"},
@@ -270,9 +275,11 @@ def _plan_joint_geometry_build(compiled, root, seed_record, path_resource):
             transform = geometry["asset_poses"][name]
             rotation = transform["rotation"]
             placement = rigid_iob_placement(transform, origin_mm=[domain["instance_origin_mm"][a] for a in "xyz"])
-        instances.append(dict(role=name, instance_index=index, priority_number=index, path=str(raw),
+        instance=dict(role=name, instance_index=index, priority_number=index, path=str(raw),
             fractional_surface=str(surface), surface_witnesses=str(witnesses), grid=grid,
-            physical_samples=rows, rotation=rotation, placement=placement))
+            physical_samples=rows, rotation=rotation, placement=placement)
+        if state is not None: instance['surface_state']=str(state)
+        instances.append(instance)
     control = root/"inputs/no_particles.fly2"
     materializations[str(control)] = render_restart_fly2([])
     seed = root/"simion/geometry/iob_seed"/(str(count)+"_instance_seed.iob")
@@ -366,14 +373,23 @@ def plan_model_preparation(model, *, geometry_assets: Mapping[str, dict], run_di
             continue
         domain = operation['operation_id'].removeprefix('geometry_')
         rows = geometry_assets[domain]
-        if set(rows) != ({'raw_record', 'surface_records', 'witness_record'} if independent_component else {'raw_record', 'surface_records'}):
+        expected_keys = ({'raw_record', 'surface_records', 'witness_record'} if independent_component else {'raw_record', 'surface_records'})
+        stateful = 'state_record' in rows and compiled.frontend_geometry.get('role') == 'simion_ip_mr_complete_geometry'
+        if set(rows) != (expected_keys | {'state_record'} if stateful else expected_keys):
             raise ValueError('model geometry requires explicit raw and surface records')
-        records = [rows['raw_record'], *rows['surface_records'], *([rows['witness_record']] if independent_component else [])]
-        if len(records) != len(operation['outputs']):
+        if stateful:
+            if len(rows['surface_records']) > 1: raise ValueError('ambiguous fractional surface')
+            records = [rows['raw_record'], rows['witness_record'], rows['state_record'], *rows['surface_records']]
+            destinations = [*operation['outputs'], *([operation['optional_surface']] if rows['surface_records'] else [])]
+        else:
+            records = [rows['raw_record'], *rows['surface_records'], *([rows['witness_record']] if independent_component else [])]
+            destinations = ([operation['outputs'][0], operation['optional_surface'], operation['outputs'][1]]
+                            if 'optional_surface' in operation else operation['outputs'])
+        if len(records) != len(destinations):
             raise ValueError('model geometry fractional surface closure differs')
-        for record, destination in zip(records, operation['outputs'], strict=True):
+        for record, destination in zip(records, destinations, strict=True):
             source = _absolute(Path(record['path']))
-            suffix = '.csv' if destination.endswith('.csv') else '.pa#' if destination.endswith('.pa#') else '.pa-surf'
+            suffix = '.csv' if destination.endswith('.csv') else '.json' if destination.endswith('.json') else '.pa#' if destination.endswith('.pa#') else '.pa-surf'
             if not str(source).lower().endswith(suffix) or type(record.get('bytes')) is not int or record['bytes'] <= 0:
                 raise ValueError('model geometry must preserve positive raw/surface representation')
             _require_sha256(record.get('sha256'), 'model raw geometry')
@@ -391,9 +407,13 @@ def plan_model_preparation(model, *, geometry_assets: Mapping[str, dict], run_di
     if not original.startswith('return '):
         raise ValueError('canonical IOB specification representation differs')
     empty_control = root/'inputs/no_particles.fly2'
+    legacy_state_overrides = ''
+    if compiled.frontend_geometry.get('role') == 'simion_ip_mr_complete_geometry':
+        geometry_names = [op['operation_id'].removeprefix('geometry_') for op in projection.operations if op['operation_id'].startswith('geometry_')]
+        legacy_state_overrides = ''.join('\nspec.instances['+str(index)+'].surface_state=nil' for index,name in enumerate(geometry_names,1) if 'state_record' not in geometry_assets[name])
     materializations = {str(empty_control): projection.materializations[str(empty_control)],
         str(configuration): render_model_configuration(model),
-        str(spec_path): 'local spec=' + original.removeprefix('return ') + ('\nspec.role=\"neutral_world_model_iob_build\"' if static_world else '') + '\nspec.model=' + lua_value(native) + '\nreturn spec\n'}
+        str(spec_path): 'local spec=' + original.removeprefix('return ') + ('\nspec.role=\"neutral_world_model_iob_build\"' if static_world else '') + legacy_state_overrides + '\nspec.model=' + lua_value(native) + '\nreturn spec\n'}
     native_operations = tuple(_operation(mode, 'prepare', ['lua', str(native_resource_path('build_model_iob.lua')),
         str(spec_path), mode, str(_native_ascii(native_path_resource))],
         [str(root/'simion/geometry/geometry.iob'), str(root/'simion/geometry/geometry.fly2')] if mode == 'build_model' else [str(readback)],

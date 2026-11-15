@@ -123,7 +123,11 @@ def execute_model(session: RunSession, *, model, geometry_reference: Mapping[str
     for domain, names in native_sources.items():
         expected = ({'raw_geometry', 'fractional_surface', 'surface_witnesses'} if independent_component else
                     {'raw_geometry', 'fractional_surface'} if domain in {'flight_tube', 'detector'} else {'raw_geometry'})
-        if set(names) != expected:
+        ip_mr = document['geometry']['frontend_geometry'].get('role') == 'simion_ip_mr_complete_geometry'
+        if ip_mr and 'surface_state' in names:
+            if set(names) not in (expected | {'surface_state'}, (expected - {'fractional_surface'}) | {'surface_state'}):
+                raise ValueError('published model geometry surface closure differs')
+        elif set(names) != expected:
             raise ValueError('published model geometry surface closure differs')
         if any(name not in geometry.data_records for name in names.values()):
             raise ValueError('published geometry native asset binding names an undeclared data record')
@@ -131,13 +135,16 @@ def execute_model(session: RunSession, *, model, geometry_reference: Mapping[str
         surfaces = [dict(geometry.data_records[names['fractional_surface']],
             path=str(geometry.data_path(names['fractional_surface'])))] if 'fractional_surface' in names else []
         assets[domain] = dict(raw_record=raw, surface_records=surfaces)
+        if 'surface_state' in names:
+            assets[domain]['state_record'] = dict(geometry.data_records[names['surface_state']], path=str(geometry.data_path(names['surface_state'])))
         if independent_component:
             assets[domain]['witness_record'] = dict(geometry.data_records[names['surface_witnesses']],
                 path=str(geometry.data_path(names['surface_witnesses'])))
     _protected_source(session, manifest_record, required_paths=[compiled_path,
         *(row['raw_record']['path'] for row in assets.values()),
         *(record['path'] for row in assets.values() for record in row['surface_records']),
-        *(row['witness_record']['path'] for row in assets.values() if 'witness_record' in row)])
+        *(row['witness_record']['path'] for row in assets.values() if 'witness_record' in row),
+        *(row['state_record']['path'] for row in assets.values() if 'state_record' in row)])
     return _execute_model_preparation(session, model=model, assets=assets, source_manifest_record=manifest_record,
         clock_authority_reference=clock_authority_reference, seed_record=seed_record, limits=limits,
         materialize_geometry=materialize_geometry, materializer_record=materializer_record,
@@ -164,7 +171,8 @@ def _execute_model_preparation(session: RunSession, *, model, assets: Mapping[st
     for domain, row in assets.items():
         for label, record in [('raw_geometry', row['raw_record']),
                 *(('fractional_surface', record) for record in row['surface_records']),
-                *([('surface_witnesses', row['witness_record'])] if 'witness_record' in row else [])]:
+                *([('surface_witnesses', row['witness_record'])] if 'witness_record' in row else []),
+                *([('surface_state', row['state_record'])] if 'state_record' in row else [])]:
             identity = (Path(record['path']).resolve(), record['bytes'], str(record['sha256']).upper())
             if identity in source_members:
                 raise ValueError('published geometry member binding is ambiguous across domains')
@@ -196,9 +204,9 @@ def _execute_model_preparation(session: RunSession, *, model, assets: Mapping[st
         raise ValueError('model clock contract and epoch destinations collide')
     all_destinations = [model_path, provenance, callback_source, clock_contract, clock_epoch,
         *(owned(path, 'required_evidence') for path in plan.materializations),
-        *(owned(row['destination'], 'required_evidence' if index == 0 or str(row['destination']).endswith('.csv') else 'solver_native_binary')
+        *(owned(row['destination'], 'required_evidence' if index == 0 or str(row['destination']).endswith(('.csv', '_surface_state.json')) else 'solver_native_binary')
           for index, row in enumerate(plan.input_copies)),
-        *(owned(path, 'required_evidence' if str(path).endswith(('.txt', '.fly2', '.csv')) else 'solver_native_binary') for path in plan.declared_outputs),
+        *(owned(path, 'required_evidence' if str(path).endswith(('.txt', '.fly2', '.csv', '_surface_state.json')) else 'solver_native_binary') for path in plan.declared_outputs),
         *(owned(frozen/name, 'required_evidence') for name in sources)]
     # Copied raw files are also declared outputs; this is deliberate, not an
     # authorization to overwrite an already existing destination.
@@ -272,7 +280,7 @@ def _execute_model_preparation(session: RunSession, *, model, assets: Mapping[st
         key = 'geometry_'+str(index)
         records[key] = dict(path=str(session.canonical_path(path)), exists=True,
             bytes=actual['bytes'], sha256=str(actual['sha256']).upper(),
-            retention_role='required_evidence' if label == 'surface_witnesses' else 'solver_native_binary')
+            retention_role='required_evidence' if label in {'surface_witnesses', 'surface_state'} else 'solver_native_binary')
         native_assets[domain][label] = key
     if source_members:
         raise ValueError('materialized geometry omitted a declared native member binding')
