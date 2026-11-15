@@ -33,7 +33,21 @@ for _,asset in ipairs(spec.assets) do
     end
     checked=checked+1
   end
-  witnesses:close();assert(checked>0,'RF fractional witness input empty')
+  witnesses:close()
+  local mode=asset.surface_mode or 'present'
+  assert(mode=='present' or mode=='empty','unknown RF surface mode')
+  assert(checked>0,'RF fractional witness input empty')
+  if mode=='empty' then
+    local sidecar=io.open(asset.carrier_path:gsub('%.pa0$','.pa-surf'),'rb')
+    assert(not sidecar,'empty RF surface forbids companion')
+    local scanned=0
+    for x,y,z in pa:points() do
+      local sx,sy,sz=pa:surface_info(x,y,z)
+      assert(sx==nil and sy==nil and sz==nil,'empty RF surface contains an offset')
+      scanned=scanned+1
+    end
+    assert(scanned==pa.nx*pa.ny*pa.nz,'empty RF surface scan incomplete')
+  end
   local node_rows={}
   for _,sample in ipairs(asset.physical_samples) do
     local voltage,metal=pa:point(unpack(sample.gu))

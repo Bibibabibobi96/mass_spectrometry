@@ -95,6 +95,58 @@ class StaticWorldModelTests(unittest.TestCase):
         self.assertIn('NEUTRAL_WORLD_MODEL_BUILD=PASS',plan.operations[1]['success_marker'])
         with self.assertRaises(ValueError):plan_model_preparation(model,geometry_assets={},run_directory=base,seed_record=seed,native_path_resource=base/'native.lua')
 
+    def test_neutral_geometry_and_model_plan_propagate_surface_state(self):
+        from pathlib import Path
+        from msplatform.backends.simion.native_plans import plan_geometry_build, plan_model_preparation
+        from msplatform.backends.simion.resources import STRUCTURAL_SEEDS
+        model=compile_prepared_model(self.compiled,self.assembly.components_resolved,drive=self.drive,physics=RF_PHYSICS)
+        root=Path.cwd()/'neutral-state-plan'
+        seed=dict(path=str(root/'seed.iob'),bytes=STRUCTURAL_SEEDS[1][0],sha256=STRUCTURAL_SEEDS[1][1])
+        geometry=plan_geometry_build(self.compiled,run_directory=root,seed_record=seed,native_path_resource=root/'path.lua')
+        op=geometry.operations[0]
+        self.assertTrue(op['optional_surface'].endswith('world.pa-surf'))
+        self.assertEqual([Path(x).name for x in op['outputs']],['world.pa#','world_surface.csv','world_surface_state.json'])
+        self.assertIn('surface_state',geometry.materializations[str(root/'inputs/geometry_iob.lua')])
+        def record(name):return dict(path=str(root/name),bytes=1,sha256='a'*64)
+        empty={'world':dict(raw_record=record('raw.pa#'),surface_records=[],witness_record=record('w.csv'),state_record=record('state.json'))}
+        plan=plan_model_preparation(model,geometry_assets=empty,run_directory=root,seed_record=seed,native_path_resource=root/'path.lua')
+        self.assertEqual({Path(row['destination']).name for row in plan.input_copies},
+                         {'1_instance_seed.iob','world.pa#','world_surface.csv','world_surface_state.json'})
+        self.assertIn('surface_state',plan.materializations[str(root/'inputs/geometry_iob.lua')])
+        old={'world':dict(raw_record=record('raw.pa#'),surface_records=[record('raw.pa-surf')],witness_record=record('w.csv'))}
+        plan=plan_model_preparation(model,geometry_assets=old,run_directory=root,seed_record=seed,native_path_resource=root/'path.lua')
+        self.assertIn('spec.instances[1].surface_state=nil',plan.materializations[str(root/'inputs/geometry_iob.lua')])
+        invalid=copy.deepcopy(empty);invalid['world']['surface_records']=[record('a.pa-surf'),record('b.pa-surf')]
+        with self.assertRaisesRegex(ValueError,'ambiguous fractional surface'):
+            plan_model_preparation(model,geometry_assets=invalid,run_directory=root,seed_record=seed,native_path_resource=root/'path.lua')
+
+    def test_static_empty_surface_tracking_plan_binds_proof(self):
+        import json, tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        from msplatform.backends.simion.rf_tracking_execution import plan_rf_tracking_workbench
+        from msplatform.io.manifest_records import file_record
+        labels=sorted(row['native_id'] for row in self.compiled.frontend_geometry['electrode_mapping'])
+        grid=self.compiled.frontend_geometry
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory); carrier=root/'world.pa';carrier.write_bytes(b'fixture')
+            witness=root/'world.csv';witness.write_text('1,1,1,nil,nil,nil\n')
+            dims=grid['dimensions'];pitch=grid['pitch_mm']
+            state=root/'state.json';state.write_text(json.dumps(dict(schema_version=1,mode='empty',grid=dims,pitch=[pitch]*3,
+                scanned_nodes=dims[0]*dims[1]*dims[2],offset_nodes=0)))
+            assets={'world':dict(carrier_record=file_record(carrier),witness_record=file_record(witness),state_record=file_record(state))}
+            values=[dict(electrode_id=n,voltage_v=0) for n in labels]
+            args=dict(carriers=assets,run_directory=root,program='-- test',native_source_rows=[dict()],native_path_resource=root/'native.lua',
+                      program_metadata=dict(static_operating_voltages=values))
+            with patch('msplatform.backends.simion.rf_tracking_execution.render_restart_fly2',return_value='particles{}'):
+                plan=plan_rf_tracking_workbench(self.compiled,**args)
+            spec=plan.materializations[str(root/'inputs/tracking_iob.lua')]
+            self.assertIn('.surface_state=',spec);self.assertIn(str(state).replace('\\','\\\\'),spec)
+            self.assertIn('.fractional_surface=',spec)
+            state.write_text('tampered')
+            with self.assertRaises((ValueError,AssertionError)):
+                plan_rf_tracking_workbench(self.compiled,**args)
+
     def test_original_birth_tracking_plan_and_program(self):
         from pathlib import Path
         from common.contracts.test_simion_rf_tracking import rf_tracking_case
@@ -118,6 +170,13 @@ class StaticWorldModelTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'outside the explicit field domain'):
             plan_tracking_execution(model,particles=outside,clock_records=clocks,propagation=policy,observations=dict(plane_observations=[]),numerics=numerics)
         controls=render_rf_controls(model,plan,assets={},native_sources={})
+        state_asset=dict(carrier_record={'path':'world.pa'},witness_record={'path':'witness.csv'},state_record={'path':'state.json'})
+        state_controls=render_rf_controls(model,plan,assets={'world':state_asset},native_sources={})
+        self.assertEqual(state_controls['immutable_input_records'],list(state_asset.values()))
+        present_asset=dict(state_asset,surface_record={'path':'world.pa-surf'})
+        present_controls=render_rf_controls(model,plan,assets={'world':present_asset},native_sources={})
+        self.assertEqual({r['path'] for r in present_controls['immutable_input_records']},
+                         {'world.pa','witness.csv','state.json','world.pa-surf'})
         program=controls['program']
         self.assertIn('world',program);self.assertIn('1.25',program);self.assertIn('12.5',program)
         from msplatform.backends.simion.rf_tracking_execution import plan_rf_tracking_workbench

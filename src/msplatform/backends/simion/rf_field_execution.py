@@ -111,7 +111,7 @@ def rf_spatial_identity(source, *, numerics, tool_identity, auditor_identity) ->
     geometry = model_geometry(source.model).frontend_geometry
     records = lambda rows: [dict(bytes=r['bytes'], sha256=str(r['sha256']).upper()) for r in rows]
     result = dict(schema_version=1, role=_field_contract(geometry)[1],
-        raw_geometry={name: records([row['raw_record'], *row['surface_records']])
+        raw_geometry={name: records([row['raw_record'], *row['surface_records'], *([row['state_record']] if 'state_record' in row else [])])
                       for name, row in source.native_assets.items()},
         numerical_domains=_field_domains(geometry), electrode_bindings=(geometry['electrode_mapping'] if geometry.get('role') == 'simion_neutral_world_collision_geometry' else geometry['electrode_bindings']),
         physics=require_prepared_model(source.model)['physics'], numerics=dict(numerics),
@@ -184,12 +184,15 @@ def require_rf_reuse(reference, *, identity, geometry):
 
 
 def execute_rf_fields(session, *, source, numerics, limits, materialize_geometry, materializer_record,
-                      allow_asynchronous_io=None, reuse_fields_reference=None):
+                      allow_asynchronous_io=None, reuse_fields_reference=None, surface_validator_record=None):
     """Refine fresh raw geometry or audit the protected original fractional family."""
     if model_geometry(source.model).frontend_geometry.get('role') == 'simion_neutral_world_collision_geometry':
         return _execute_static_world_fields(session, source=source, numerics=numerics, limits=limits,
             materialize_geometry=materialize_geometry, materializer_record=materializer_record,
-            allow_asynchronous_io=allow_asynchronous_io, reuse_fields_reference=reuse_fields_reference)
+            allow_asynchronous_io=allow_asynchronous_io, reuse_fields_reference=reuse_fields_reference,
+            surface_validator_record=surface_validator_record)
+    if surface_validator_record is not None:
+        raise ValueError("unexpected static surface validator record")
     from .field_execution import _copy_records
     _require_materializer(materialize_geometry, materializer_record)
     graph = plan_rf_fields(source.model, numerics=numerics, reuse_fields_reference=reuse_fields_reference)
@@ -202,7 +205,7 @@ def execute_rf_fields(session, *, source, numerics, limits, materialize_geometry
         raise TypeError('RF asynchronous I/O control must be boolean or None')
     _protected_source(session, source.artifact.reference['manifest'], required_paths=[
         record['path'] for row in source.native_assets.values()
-        for record in [row['raw_record'], *row['surface_records'], row['witness_record']]])
+        for record in [row['raw_record'], *row['surface_records'], row['witness_record'], *([row['state_record']] if 'state_record' in row else [])]])
     document = require_prepared_model(source.model)
     geometry = model_geometry(source.model).frontend_geometry
     records = {}
@@ -380,6 +383,24 @@ def static_world_operating_identity(source: FieldModelSource, *, numerics: Mappi
     return dict(result, identity_sha256=canonical_json_sha256(result))
 
 
+def _static_surface_mode(state_record, surface_record, grid):
+    """Verify an explicit producer surface state, or an older present-only asset."""
+    from msplatform.io.manifest_records import verify_record
+    from .native_surface_state import validate_native_surface_state
+    present = surface_record is not None
+    if present:
+        verify_record('static fractional surface', surface_record)
+        if surface_record['bytes'] <= 0:
+            raise ValueError('static fractional surface is empty')
+    if state_record is None:
+        if not present:
+            raise ValueError('static surface state or fractional surface is required')
+        return 'present'
+    with guarded_file_identity(state_record['path'], expected_bytes=state_record['bytes'], expected_sha256=state_record['sha256']):
+        state = json.loads(Path(state_record['path']).read_text(encoding='utf-8-sig'))
+    return validate_native_surface_state(state, grid=grid, surface_present=present)
+
+
 def require_static_world_reuse(reference: Mapping, *, identity: Mapping,
                               geometry: Mapping) -> tuple[OpenedArtifact, OpenedArtifact, dict]:
     """Validate the original immutable standalone operating PA and its provenance."""
@@ -404,17 +425,31 @@ def require_static_world_reuse(reference: Mapping, *, identity: Mapping,
         if not isinstance(bindings, Mapping) or set(bindings) != {'world'}:
             raise ValueError('static standalone requires exactly one world asset')
         keys = bindings['world']
-        if not isinstance(keys, Mapping) or set(keys) != {'operating', 'surface', 'surface_witnesses'}:
+        if (not isinstance(keys, Mapping) or not {'operating', 'surface_witnesses'} <= set(keys)
+                or set(keys) - {'operating', 'surface', 'surface_witnesses', 'surface_state'}):
             raise ValueError('static standalone asset binding is incomplete')
         operating = data_record(artifact, keys['operating'])
-        surface = data_record(artifact, keys['surface'])
+        surface = data_record(artifact, keys['surface']) if 'surface' in keys else None
+        state = data_record(artifact, keys['surface_state']) if 'surface_state' in keys else None
         witness = data_record(artifact, keys['surface_witnesses'])
         path = Path(operating['path'])
-        if path.suffix.lower() != '.pa' or Path(surface['path']) != path.with_suffix('.pa-surf'):
+        if path.suffix.lower() != '.pa' or (surface is not None and Path(surface['path']) != path.with_suffix('.pa-surf')):
             raise ValueError('static standalone operating PA or surface path differs')
-        if len({str(Path(record['path']).resolve()) for record in (operating, surface, witness)}) != 3:
+        if state is not None:
+            domain = _field_domains(geometry)['world']
+            grid = dict(domain['dimensions'], **{'d'+axis+'_mm': domain['cell_mm_xyz'][axis] for axis in 'xyz'})
+            mode = _static_surface_mode(state, surface, grid)
+            if mode=='empty' and path.with_suffix('.pa-surf').exists():
+                raise ValueError('empty static surface unexpectedly has a companion')
+        elif surface is None:
+            raise ValueError('static surface state or fractional surface is required')
+        records = [operating, witness, *([surface] if surface is not None else []), *([state] if state is not None else [])]
+        if len({str(Path(record['path']).resolve()) for record in records}) != len(records):
             raise ValueError('static standalone asset paths must be distinct')
-        return {'world': dict(carrier_record=operating, surface_record=surface, witness_record=witness)}
+        result = dict(carrier_record=operating, witness_record=witness)
+        if surface is not None: result['surface_record'] = surface
+        if state is not None: result['state_record'] = state
+        return {'world': result}
 
     assets = validate(selected)
     original = selected.metadata.get('operating_producer_reference')
@@ -444,7 +479,7 @@ def require_static_world_reuse(reference: Mapping, *, identity: Mapping,
 
 
 def _execute_static_world_fields_inner(session, *, source, numerics, limits, materialize_geometry,
-                                 materializer_record, allow_asynchronous_io, reuse_fields_reference):
+                                 materializer_record, allow_asynchronous_io, reuse_fields_reference, surface_validator_record):
     """Produce or reuse one workpoint-bound standalone PA within the existing owner."""
     from .field_execution import _copy_records
     _require_materializer(materialize_geometry, materializer_record)
@@ -458,7 +493,7 @@ def _execute_static_world_fields_inner(session, *, source, numerics, limits, mat
         raise TypeError('SIMION asynchronous I/O control must be boolean or None')
     _protected_source(session, source.artifact.reference['manifest'], required_paths=[
         record['path'] for row in source.native_assets.values()
-        for record in [row['raw_record'], *row['surface_records'], row['witness_record']]])
+        for record in [row['raw_record'], *row['surface_records'], row['witness_record'], *([row['state_record']] if 'state_record' in row else [])]])
     document = require_prepared_model(source.model)
     geometry = model_geometry(source.model).frontend_geometry
     voltages = static_world_voltage_vector(source.model)
@@ -478,6 +513,19 @@ def _execute_static_world_fields_inner(session, *, source, numerics, limits, mat
         session.add_input(name, record)
         records[name] = record
         return path
+
+    from . import native_surface_state
+    from msplatform.io.manifest_records import verify_record
+    actual_validator = Path(native_surface_state.__file__).resolve(strict=True)
+    if not isinstance(surface_validator_record, Mapping) or Path(surface_validator_record.get('path', '')).resolve() != actual_validator:
+        raise ValueError('static surface validator source differs from admitted record')
+    verify_record('static surface validator source', dict(surface_validator_record))
+    with guarded_file_identity(actual_validator, expected_bytes=surface_validator_record['bytes'],
+                               expected_sha256=surface_validator_record['sha256']):
+        frozen_validator = small('native_surface_state', session.input_dir/'native_sources/native_surface_state.py',
+                                 source_path=actual_validator)
+        verify_record('frozen static surface validator', dict(surface_validator_record, path=str(session.canonical_path(frozen_validator))))
+    validator_guards = [dict(surface_validator_record), records['native_surface_state']]
 
     resources = {}
     for name, resource in (('refiner', 'refine_rf_field_family.lua'),
@@ -516,7 +564,7 @@ def _execute_static_world_fields_inner(session, *, source, numerics, limits, mat
                                      *map(str, args)], allow_asynchronous_io=allow_asynchronous_io)
         session.run_process(operation, executable=executable, arguments=argv[1:], role='SIMION',
                             stage='inspect' if operation.startswith('audit') else 'pa_refine',
-                            limits=limits, immutable_input_records=list(guards))
+                            limits=limits, immutable_input_records=[*guards, *validator_guards])
         ordinal = session.expected_operation_ids.index(operation)+1
         return (session.log_dir/f'operation_{ordinal:04d}.stdout.log').read_bytes()
 
@@ -535,9 +583,29 @@ def _execute_static_world_fields_inner(session, *, source, numerics, limits, mat
         source_asset = source.native_assets['world']
         raw = family_dir/'world.pa#'
         family_dir.mkdir(parents=True, exist_ok=False)
-        copies = [dict(source_record=record, destination=str(path)) for record, path in
-                  ((source_asset['raw_record'], raw), (source_asset['surface_records'][0], raw.with_suffix('.pa-surf')))]
+        source_surfaces = source_asset['surface_records']
+        if len(source_surfaces) > 1: raise ValueError('static world requires at most one fractional surface')
+        grid_domain = _field_domains(geometry)['world']
+        expected_grid = dict(grid_domain['dimensions'], **{'d'+axis+'_mm': grid_domain['cell_mm_xyz'][axis] for axis in 'xyz'})
+        source_state = source_asset.get('state_record')
+        if source_surfaces and Path(source_surfaces[0]['path']) != Path(source_asset['raw_record']['path']).with_suffix('.pa-surf'):
+            raise ValueError('static source surface must be the raw PA sibling')
+        surface_mode = _static_surface_mode(source_state, source_surfaces[0] if source_surfaces else None, expected_grid)
+        if surface_mode=='empty' and Path(source_asset['raw_record']['path']).with_suffix('.pa-surf').exists():
+            raise ValueError('empty source surface unexpectedly has a companion')
+        copy_rows = [(source_asset['raw_record'], raw)]
+        if source_surfaces: copy_rows.append((source_surfaces[0], raw.with_suffix('.pa-surf')))
+        copies = [dict(source_record=record, destination=str(path)) for record, path in copy_rows]
         _copy_records(session, copies, callback=materialize_geometry, operation_id='materialize_geometry')
+        if source_state is not None:
+            with guarded_file_identity(source_state['path'], expected_bytes=source_state['bytes'], expected_sha256=source_state['sha256']):
+                frozen_state = small('world_surface_state', session.run_dir/'results/world_surface_state.json', source_path=source_state['path'])
+                from msplatform.io.manifest_records import verify_record
+                verify_record('frozen original surface state', dict(source_state, path=str(session.canonical_path(frozen_state))))
+        else:
+            state = dict(schema_version=1, mode='present', grid=[expected_grid[k] for k in ('nx','ny','nz')],
+                         pitch=[expected_grid[k] for k in ('dx_mm','dy_mm','dz_mm')], scanned_nodes=None, offset_nodes=None)
+            small('world_surface_state', session.run_dir/'results/world_surface_state.json', text=json.dumps(state,separators=(',',':'))+'\n')
         original_witness = source_asset['witness_record']
         with guarded_file_identity(original_witness['path'], expected_bytes=original_witness['bytes'],
                                    expected_sha256=original_witness['sha256']):
@@ -547,7 +615,7 @@ def _execute_static_world_fields_inner(session, *, source, numerics, limits, mat
             verify_record('frozen original surface witness',
                           dict(original_witness, path=str(session.canonical_path(witness))))
         labels = _domain_labels(geometry, 'world')
-        paths = [raw.with_suffix(suffix) for suffix in ['.pa#', '.pa0', '.pa-surf', *('.pa'+str(eid) for eid in labels)]]
+        paths = [raw.with_suffix(suffix) for suffix in ['.pa#', '.pa0', *(['.pa-surf'] if surface_mode=='present' else []), *('.pa'+str(eid) for eid in labels)]]
         if any(path.exists() for path in paths if path.suffix not in {'.pa#', '.pa-surf'}):
             raise FileExistsError('static Refine refuses preexisting response files')
         for path in paths:
@@ -568,11 +636,11 @@ def _execute_static_world_fields_inner(session, *, source, numerics, limits, mat
         family_output = session.declare_file(session.run_dir/'results/static_family_audit.json', 'required_evidence')
         family_spec = dict(assets=[dict(domain_id='world', carrier_path=str(paths[1]),
             family_paths=[str(path) for path in paths], response_ids=labels, grid=grid,
-            physical_samples=geometry['physical_samples'], surface_witnesses=str(witness))], output=str(family_output))
+            physical_samples=geometry['physical_samples'], surface_witnesses=str(witness), surface_mode=surface_mode)], output=str(family_output))
         family_input = small('family_audit_spec', session.input_dir/'family_audit.lua',
                              text='return '+lua_value(family_spec)+'\n')
         if b'INDEPENDENT_RF_FIELDS_READBACK=PASS' not in run('audit_family', resources['family_auditor'],
-                [family_input], family+[records['world_surface_witnesses'],
+                [family_input], family+[records['world_surface_witnesses'], records['world_surface_state'],
                                        records['family_auditor'], records['family_audit_spec']]):
             raise ValueError('static family audit completion marker is absent')
         report = json.loads(family_output.read_text(encoding='utf-8'))
@@ -585,17 +653,18 @@ def _execute_static_world_fields_inner(session, *, source, numerics, limits, mat
         operating = family_dir/'world_operating.pa'
         surface = operating.with_suffix('.pa-surf')
         session.declare_file(operating, 'solver_native_binary')
-        session.declare_file(surface, 'solver_native_binary')
+        if surface_mode=='present': session.declare_file(surface, 'solver_native_binary')
         if operating.exists() or surface.exists():
             raise FileExistsError('static operating output already exists')
         if b'DETACHED_STANDALONE_PA_EXPORT=PASS' not in run('export_operating', resources['exporter'],
                 [paths[1], operating, workpoint], [records['static_workpoint'], records['exporter']]):
             raise ValueError('static operating export completion marker is absent')
         asset = dict(carrier_record=file_record(session.canonical_path(operating), 'solver_native_binary'),
-                     surface_record=file_record(session.canonical_path(surface), 'solver_native_binary'),
-                     witness_record=records['world_surface_witnesses'])
+                     witness_record=records['world_surface_witnesses'], state_record=records['world_surface_state'])
+        if surface_mode=='present': asset['surface_record'] = file_record(session.canonical_path(surface), 'solver_native_binary')
+        elif surface.exists(): raise ValueError('empty static surface unexpectedly produced a companion')
         if any(not row['exists'] or row['bytes'] <= 0 for row in asset.values()):
-            raise ValueError('static operating PA or surface is missing')
+            raise ValueError('static operating PA or surface evidence is missing')
 
     grid = _field_domains(geometry)['world']
     grid = dict(grid['dimensions'], **{'d'+axis+'_mm': grid['cell_mm_xyz'][axis] for axis in 'xyz'})
@@ -603,8 +672,10 @@ def _execute_static_world_fields_inner(session, *, source, numerics, limits, mat
     samples = [dict(row, **({'expected_voltage_v': values[row['electrode_id']]} if row['metal'] else {}))
                for row in geometry['physical_samples']]
     audit_path = session.declare_file(session.run_dir/'results/static_operating_audit.json', 'required_evidence')
+    surface = asset.get('surface_record')
+    surface_mode = _static_surface_mode(asset.get('state_record'), surface, grid)
     audit = dict(assets=[dict(domain_id='world', carrier_path=asset['carrier_record']['path'],
-        surface_path=asset['surface_record']['path'], grid=grid, physical_samples=samples,
+        surface_path=str(Path(asset['carrier_record']['path']).with_suffix('.pa-surf')), surface_mode=surface_mode, grid=grid, physical_samples=samples,
         surface_witnesses=asset['witness_record']['path'], sample_points_gu=[[0.5, 0.5, 0.5]])], output=str(audit_path))
     audit_spec = small('operating_audit_spec', session.input_dir/'operating_audit.lua',
                        text='return '+lua_value(audit)+'\n')
@@ -617,18 +688,20 @@ def _execute_static_world_fields_inner(session, *, source, numerics, limits, mat
             or report.get('checked_domains') != ['world']):
         raise ValueError('static operating cold audit differs from world scope')
     records['field_audit'] = file_record(session.canonical_path(audit_path), 'required_evidence')
+    for record in validator_guards: verify_record('static surface validator after field action', record)
     if producer is not None:
         records['field_native_receipts'] = data_record(producer, 'field_native_receipts')
     else:
         small('field_native_receipts', session.input_dir/'field_native_receipts.json',
               value=[row for row in session.operations if row['operation_id'] in
                      {'refine_world', 'audit_family', 'export_operating', 'audit_fields'}])
-    records.update(world_operating=asset['carrier_record'], world_surface=asset['surface_record'],
-                   world_surface_witnesses=asset['witness_record'])
+    records.update(world_operating=asset['carrier_record'], world_surface_witnesses=asset['witness_record'])
+    binding = dict(operating='world_operating', surface_witnesses='world_surface_witnesses')
+    if surface is not None: records['world_surface']=surface; binding['surface']='world_surface'
+    if 'state_record' in asset: records['world_surface_state']=asset['state_record']; binding['surface_state']='world_surface_state'
     metadata = dict(backend='simion', field_status='available', source_status='not_requested',
         field_representation=STATIC_WORLD_OPERATING_REPRESENTATION, spatial_identity=identity,
-        native_assets={'world': dict(operating='world_operating', surface='world_surface',
-                                     surface_witnesses='world_surface_witnesses')},
+        native_assets={'world': binding},
         model_identity_sha256=document['model_identity_sha256'], clock=document['drive']['clock'],
         fields_reused=producer is not None, refine_calls=0 if producer else 1, sampled_particles=0,
         fly_calls=0, gui_calls=0, scientific_qualification='not_granted', relocation_qualification='not_assessed',

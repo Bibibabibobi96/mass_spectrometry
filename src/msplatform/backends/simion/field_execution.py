@@ -102,7 +102,8 @@ def _copy_records(session, copies: list[dict], *, callback: Callable, operation_
 def execute_fields(session, *, model_reference: Mapping, numerics: dict, limits: Mapping,
                    materialize_geometry: Callable, materializer_record: Mapping,
                    allow_asynchronous_io: bool | None = None,
-                   reuse_fields_reference: Mapping | None = None) -> dict[str, Any]:
+                   reuse_fields_reference: Mapping | None = None,
+                   surface_validator_record: Mapping | None = None) -> dict[str, Any]:
     """Solve only explicit model fields and publish their owned source-free data closure.
 
     This action returns the original owner's six completion keys. It never
@@ -126,7 +127,10 @@ def execute_fields(session, *, model_reference: Mapping, numerics: dict, limits:
         from .rf_field_execution import execute_rf_fields
         return execute_rf_fields(session, source=source, numerics=numerics, limits=limits,
             materialize_geometry=materialize_geometry, materializer_record=materializer_record,
-            allow_asynchronous_io=allow_asynchronous_io, reuse_fields_reference=reuse_fields_reference)
+            allow_asynchronous_io=allow_asynchronous_io, reuse_fields_reference=reuse_fields_reference,
+            surface_validator_record=surface_validator_record)
+    if surface_validator_record is not None:
+        raise ValueError("unexpected static surface validator record")
     model, document = source.model, require_prepared_model(source.model)
     graph = plan_fields_execution(model, numerics=numerics, reuse_fields_reference=reuse_fields_reference)
     if tuple(graph['expected_operation_ids']) != session.expected_operation_ids:

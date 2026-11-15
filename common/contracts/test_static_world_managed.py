@@ -40,6 +40,12 @@ def retained_on_failure():
 @unittest.skipUnless(os.name == 'nt', 'actual Windows process guard required')
 class StaticWorldManagedTests(unittest.TestCase):
     def test_public_chain_and_failed_refine(self):
+        self._exercise_public_chain(False)
+
+    def test_public_empty_surface_chain_and_failed_refine(self):
+        self._exercise_public_chain(True)
+
+    def _exercise_public_chain(self, empty_surface):
         case=static_fixture.StaticWorldModelTests();case.setUp()
         compiled=operations.compile_geometry(case.assembly,numerics=case.numerics)
         _,_,packet,_,propagation,numerics=rf_tracking_case()
@@ -62,7 +68,17 @@ class StaticWorldManagedTests(unittest.TestCase):
                 seed=file_record(structural_seed_path(1),'required_evidence')
                 plan=plan_geometry_build(compiled,run_directory=run,seed_record=seed,native_path_resource=session.input_dir/'native_sources/native_run_path.lua')
                 op=next(row for row in plan.operations if row['operation_id']==operation_id)
-                for path in op['outputs']:code+='p=Path('+repr(path)+');p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(b"INERT_ONLY")\n'
+                for path in op['outputs']:
+                    if path.endswith('_surface_state.json'):
+                        dims=compiled.frontend_geometry['dimensions'];pitch=compiled.frontend_geometry['pitch_mm']
+                        state=dict(schema_version=1,mode='empty' if empty_surface else 'present',grid=dims,pitch=[pitch]*3,
+                                   scanned_nodes=dims[0]*dims[1]*dims[2] if empty_surface else None,offset_nodes=0 if empty_surface else None)
+                        code+='p=Path('+repr(path)+');p.parent.mkdir(parents=True,exist_ok=True);p.write_text('+repr(json.dumps(state,separators=(',',':')))+'+"\\n",encoding="utf8")\n'
+                    else:
+                        value=b'1,1,1,nil,nil,nil\n' if path.endswith('_surface.csv') and empty_surface else b'INERT_ONLY'
+                        code+='p=Path('+repr(path)+');p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes('+repr(value)+')\n'
+                if not empty_surface:
+                    code+='p=Path('+repr(op['optional_surface'])+');p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(b"INERT_SURFACE")\n'
                 code+='print('+repr(op['success_marker'])+')\n'
             elif operation_id in ('build_geometry','verify_geometry'):
                 if operation_id=='build_geometry':
@@ -95,9 +111,13 @@ class StaticWorldManagedTests(unittest.TestCase):
                 self.assertEqual(workpoint.name,'static_workpoint.lua');self.assertTrue(workpoint.is_file())
                 self.assertNotIn(str(session.canonical_path(source)),guards)
                 exporter=session.input_dir/'native_sources/export_detached_standalone_pa.lua'
-                self.assertEqual(set(guards),{str(session.canonical_path(workpoint)),str(session.canonical_path(exporter))})
+                from msplatform.backends.simion import native_surface_state
+                validator=Path(native_surface_state.__file__).resolve()
+                frozen_validator=session.input_dir/'native_sources/native_surface_state.py'
+                self.assertEqual(set(guards),{str(session.canonical_path(workpoint)),str(session.canonical_path(exporter)),
+                                              str(validator),str(session.canonical_path(frozen_validator))})
                 export_requests.append((str(source),str(output),workpoint.read_text(encoding='utf-8')))
-                for path in (output,output.with_suffix('.pa-surf')):
+                for path in ((output,) if empty_surface else (output,output.with_suffix('.pa-surf'))):
                     code+='p=Path('+repr(str(path))+');p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(b"INERT_STANDALONE_NOT_NATIVE")\n'
                 code+='print("DETACHED_STANDALONE_PA_EXPORT=PASS")\n'
             elif operation_id=='audit_fields':
@@ -139,8 +159,11 @@ class StaticWorldManagedTests(unittest.TestCase):
                 self.assertEqual(readback['fixture'],'INERT_ONLY');self.assertEqual(readback['groups'],document['native_drive_rows']);self.assertEqual(readback['clock'],document['drive']['clock'])
                 field=operations.solve_fields(model,numerics=dict(refine_policy='vendor_default'),context=context)
                 self.assertEqual(field.metadata['field_representation'],'producer_owned_static_world_standalone_operating_pa')
-                self.assertEqual(field.metadata['native_assets'],{'world':dict(operating='world_operating',surface='world_surface',surface_witnesses='world_surface_witnesses')})
-                native_names=('world_operating','world_surface','world_surface_witnesses')
+                expected_binding=dict(operating='world_operating',surface_witnesses='world_surface_witnesses',surface_state='world_surface_state')
+                if not empty_surface:expected_binding['surface']='world_surface'
+                self.assertEqual(field.metadata['native_assets'],{'world':expected_binding})
+                native_names=('world_operating','world_surface_witnesses','world_surface_state') + (() if empty_surface else ('world_surface',))
+                if empty_surface:self.assertFalse((field.manifest_location.parent/'simion/fields/world/world_operating.pa-surf').exists())
                 native_paths={str(field.data_path(name)) for name in native_names}
                 original={name:field.data_path(name).read_bytes() for name in native_names}
                 self.assertEqual(field.metadata['spatial_identity']['voltages'],sorted((dict(electrode_id=row['native_targets'][0]['electrode_id'],voltage_v=row['voltage_v']) for row in document['native_drive_rows']),key=lambda row:row['electrode_id']))

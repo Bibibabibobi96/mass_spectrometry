@@ -9,7 +9,7 @@ from typing import Any
 
 from msplatform.components.geometry_members import assembly_geometry_members
 from msplatform.components.shape_query import query_members
-from .assembly_geometry import render_assembly_gem
+from .assembly_geometry import _render_assembly_members_gem
 from .compiler import CompiledSimionGeometry
 
 
@@ -23,8 +23,23 @@ def compile_generic_collision_geometry(assembly: Any, *, numerics: Mapping[str, 
     snapshot = dict(composition_plan=copy.deepcopy(assembly.composition_plan),
                     components_resolved=copy.deepcopy(assembly.components_resolved),
                     components_source=copy.deepcopy(assembly.components_source))
-    rendered = render_assembly_gem(snapshot, domain=numerics['domain'], pitch_mm=numerics['pitch_mm'], boundary=numerics['boundary'])
     members = assembly_geometry_members(snapshot)
+    return _compile_generic_from_members(snapshot, numerics=numerics, members=members)
+
+
+def _compile_generic_from_members(snapshot, *, numerics, members):
+    """Rebuild an explicit projection; caller must establish member authority."""
+    from msplatform.assembly.resolve_assembly import compile_assembly_layout
+    required = {'representation', 'domain', 'pitch_mm', 'boundary', 'metal_witnesses', 'void_witnesses'}
+    if (not isinstance(numerics, Mapping) or set(numerics) != required
+            or numerics['representation'] != 'neutral_world_collision'
+            or numerics['boundary'] != 'native_zero_neumann'):
+        raise ValueError('neutral member projection requires explicit supported world numerics')
+    plan = snapshot['composition_plan']
+    if compile_assembly_layout(plan['recipe'], plan['components'], local_scope=plan.get('local_scope')) != plan:
+        raise ValueError('neutral source layout differs from its canonical plan')
+    rendered = _render_assembly_members_gem(snapshot, members, domain=numerics['domain'],
+                                            pitch_mm=numerics['pitch_mm'], boundary=numerics['boundary'])
     domain = rendered['domain']; pitch = rendered['pitch_mm']
     ids = {(row['instance_id'], row['electrode_group_id']): row['native_id'] for row in rendered['electrode_mapping']}
     def classify(gu):
@@ -64,3 +79,46 @@ def compile_generic_collision_geometry(assembly: Any, *, numerics: Mapping[str, 
             separators=(',', ':'), ensure_ascii=False, allow_nan=False).encode('utf-8')).hexdigest()}
     return CompiledSimionGeometry(frontend_gems={'world': rendered['gem']}, frontend_geometry=geometry,
         downstream_specs=(), provider_content_identities=identities, components_resolved=snapshot['components_resolved'])
+
+
+def _neutral_numerics(geometry):
+    return dict(representation='neutral_world_collision', domain=geometry['domain'],
+                pitch_mm=geometry['pitch_mm'], boundary=geometry['boundary'],
+                metal_witnesses=geometry['metal_witnesses'], void_witnesses=geometry['void_witnesses'])
+
+
+def seal_neutral_geometry_for_publication(compiled):
+    """Revalidate caller input, then bind the actual complete provider member projection."""
+    from dataclasses import replace
+    from types import SimpleNamespace
+    geometry = compiled.frontend_geometry
+    if 'producer_validated_members' in geometry:
+        raise ValueError('caller-supplied neutral producer projection is forbidden')
+    snapshot = geometry['source_snapshot']
+    rebuilt = compile_generic_collision_geometry(SimpleNamespace(**copy.deepcopy(snapshot)),
+                                                  numerics=_neutral_numerics(geometry))
+    if rebuilt != compiled:
+        raise ValueError('neutral geometry differs from its canonical source before build')
+    members = list(assembly_geometry_members(copy.deepcopy(snapshot)))
+    if _compile_generic_from_members(copy.deepcopy(snapshot), numerics=_neutral_numerics(geometry),
+                                     members=copy.deepcopy(members)) != compiled:
+        raise ValueError('neutral producer members differ from its validated compiled geometry')
+    return replace(compiled, frontend_geometry=dict(copy.deepcopy(geometry),
+        producer_validated_members=dict(schema_version=1, members=members)))
+
+
+def validate_published_neutral_geometry(compiled):
+    """Verify a producer-sealed projection without loading provider callbacks."""
+    from dataclasses import replace
+    geometry = compiled.frontend_geometry
+    proof = geometry.get('producer_validated_members')
+    if (not isinstance(proof, Mapping) or set(proof) != {'schema_version', 'members'}
+            or type(proof['schema_version']) is not int or proof['schema_version'] != 1
+            or not isinstance(proof['members'], list) or not proof['members']):
+        raise ValueError('published neutral member projection is missing or invalid')
+    plain = copy.deepcopy(geometry)
+    plain.pop('producer_validated_members')
+    rebuilt = _compile_generic_from_members(copy.deepcopy(plain['source_snapshot']),
+        numerics=_neutral_numerics(plain), members=copy.deepcopy(proof['members']))
+    if rebuilt != replace(compiled, frontend_geometry=plain):
+        raise ValueError('published neutral member projection differs from compiled geometry')

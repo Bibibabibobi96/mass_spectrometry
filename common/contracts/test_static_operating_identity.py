@@ -218,7 +218,7 @@ class StaticOperatingGuardRegressionTests(unittest.TestCase):
                  and isinstance(node.args[0], ast.Constant)}
         expected = {
             'refine_world': "[records['refiner'], records['world_refine_spec']]",
-            'audit_family': "family + [records['world_surface_witnesses'], records['family_auditor'], records['family_audit_spec']]",
+            'audit_family': "family + [records['world_surface_witnesses'], records['world_surface_state'], records['family_auditor'], records['family_audit_spec']]",
             'export_operating': "[records['static_workpoint'], records['exporter']]",
             'audit_fields': "[*asset.values(), records['operating_auditor'], records['operating_audit_spec']]",
         }
@@ -227,6 +227,9 @@ class StaticOperatingGuardRegressionTests(unittest.TestCase):
             with self.subTest(operation=operation):
                 self.assertEqual(ast.unparse(calls[operation].args[3]), guards)
         self.assertNotIn('family', ast.unparse(calls['export_operating'].args[3]))
+        native_calls=[node for node in ast.walk(tree) if isinstance(node,ast.Call) and isinstance(node.func,ast.Attribute) and node.func.attr=='run_process']
+        self.assertEqual(len(native_calls),1)
+        self.assertEqual(ast.unparse(next(k.value for k in native_calls[0].keywords if k.arg=='immutable_input_records')), '[*guards, *validator_guards]')
 
     @unittest.skipUnless(__import__('os').name == 'nt', 'Windows identity guard required')
     def test_original_witness_mutation_before_copy_is_refused(self):
@@ -234,7 +237,7 @@ class StaticOperatingGuardRegressionTests(unittest.TestCase):
         from pathlib import Path
         from unittest.mock import patch
         from msplatform.io.manifest_records import file_record
-        from msplatform.backends.simion import field_execution
+        from msplatform.backends.simion import field_execution, native_surface_state
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -243,7 +246,9 @@ class StaticOperatingGuardRegressionTests(unittest.TestCase):
             original = file_record(witness, 'required_evidence')
             sample = root / 'small.txt'
             sample.write_bytes(b'fixture')
-            asset = {'raw_record': file_record(sample), 'surface_records': [file_record(sample)],
+            raw = root/'source.pa#'; raw.write_bytes(b'raw')
+            surface = root/'source.pa-surf'; surface.write_bytes(b'surface')
+            asset = {'raw_record': file_record(raw), 'surface_records': [file_record(surface)],
                      'witness_record': original}
             source = SimpleNamespace(model=object(), native_assets={'world': asset},
                 artifact=SimpleNamespace(reference={'manifest': file_record(sample)}),
@@ -274,14 +279,84 @@ class StaticOperatingGuardRegressionTests(unittest.TestCase):
                  patch.object(field, 'plan_rf_fields', return_value=graph), \
                  patch.object(field, '_protected_source'), \
                  patch.object(field, 'require_prepared_model', return_value={}), \
-                 patch.object(field, 'model_geometry', return_value=SimpleNamespace(frontend_geometry={})), \
+                 patch.object(field, 'model_geometry', return_value=SimpleNamespace(frontend_geometry=dict(role='simion_neutral_world_collision_geometry',dimensions=[3,3,3],pitch_mm=1))), \
                  patch.object(field, 'static_world_voltage_vector', return_value=[]), \
                  patch.object(field, 'native_resource_path', return_value=sample), \
                  patch.object(field, '_clock_reference', return_value='epoch.json'), \
                  patch.object(field, 'static_world_operating_identity', return_value={}), \
                  patch.object(field_execution, '_copy_records', side_effect=mutate_before_witness_copy):
+                validator=file_record(Path(native_surface_state.__file__))
+                with self.assertRaises(AssertionError):
+                    field._execute_static_world_fields_inner(Session(), source=source, numerics={},
+                        limits={'reserved_run_payload_bytes': 1}, materialize_geometry=object(),
+                        materializer_record={}, allow_asynchronous_io=False, reuse_fields_reference=None,
+                        surface_validator_record=dict(validator,sha256='0'*64))
                 with self.assertRaisesRegex(ValueError, 'guarded file SHA-256 does not match the file record'):
                     field._execute_static_world_fields_inner(Session(), source=source, numerics={},
                         limits={'reserved_run_payload_bytes': 1}, materialize_geometry=object(),
-                        materializer_record={}, allow_asynchronous_io=False, reuse_fields_reference=None)
+                        materializer_record={}, allow_asynchronous_io=False, reuse_fields_reference=None,
+                        surface_validator_record=validator)
             self.assertFalse((Session.run_dir / 'results/world_surface.csv').exists())
+
+
+class StaticSurfaceStateTests(unittest.TestCase):
+    def test_empty_present_legacy_and_invalid_state(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from msplatform.io.manifest_records import file_record
+        grid=dict(nx=3,ny=3,nz=3,dx_mm=1,dy_mm=1,dz_mm=1)
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);state=root/'state.json';surface=root/'world.pa-surf'
+            empty=dict(schema_version=1,mode='empty',grid=[3,3,3],pitch=[1,1,1],scanned_nodes=27,offset_nodes=0)
+            def write(value):
+                state.write_text(json.dumps(value),encoding='utf8');return file_record(state)
+            record=write(empty)
+            self.assertEqual(field._static_surface_mode(record,None,grid),'empty')
+            with self.assertRaisesRegex(ValueError,'surface state or fractional surface'):
+                field._static_surface_mode(None,None,grid)
+            for change in (dict(scanned_nodes=26),dict(offset_nodes=1),dict(grid=[3,3,4]),dict(pitch=[1,1,2])):
+                with self.subTest(change=change),self.assertRaises(ValueError):
+                    field._static_surface_mode(write(dict(empty,**change)),None,grid)
+            record=write(empty);state.write_text('tampered',encoding='utf8')
+            with self.assertRaises(ValueError):field._static_surface_mode(record,None,grid)
+            surface.write_bytes(b'present');surface_record=file_record(surface)
+            self.assertEqual(field._static_surface_mode(None,surface_record,grid),'present')
+            present=dict(empty,mode='present',scanned_nodes=None,offset_nodes=None)
+            self.assertEqual(field._static_surface_mode(write(present),surface_record,grid),'present')
+            with self.assertRaises(ValueError):field._static_surface_mode(write(present),None,grid)
+            with self.assertRaises(ValueError):field._static_surface_mode(write(empty),surface_record,grid)
+
+    def test_real_published_empty_field_and_tampered_state_refuse(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from msplatform.execution.terminal_publication import publish_terminal_state
+        from msplatform.io.manifest_records import file_record
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            state=dict(schema_version=1,mode='empty',grid=[3,3,3],pitch=[1,1,1],scanned_nodes=27,offset_nodes=0)
+            receipts=[dict(operation_id=op,observation=dict(exit_confirmed=True,returncode=0,process_id=10,process_started_at_utc_ticks=20)) for op in ('refine_world','audit_family','export_operating','audit_fields')]
+            content={'operating':('world.pa',b'ordinary PA fixture'), 'surface_state':('state.json',json.dumps(state).encode()),
+                     'surface_witnesses':('witness.csv',b'1,1,1,nil,nil,nil\n'), 'field_native_receipts':('receipts.json',json.dumps(receipts).encode()),
+                     'field_audit':('audit.json',json.dumps(dict(role='simion_static_operating_field_audit',status='success',checked_domains=['world'])).encode())}
+            records={}
+            for name,(filename,value) in content.items():
+                path=root/filename;path.write_bytes(value);records[name]=file_record(path,'required_evidence')
+            identity=dict(schema_version=1,role='simion_static_world_operating_identity',spatial_operator={},voltages=[])
+            identity['identity_sha256']=field.canonical_json_sha256(identity)
+            metadata=dict(backend='simion',field_status='available',field_representation=field.STATIC_WORLD_OPERATING_REPRESENTATION,
+                spatial_identity=identity,native_assets={'world':dict(operating='operating',surface_state='surface_state',surface_witnesses='surface_witnesses')})
+            manifest=dict(schema_version=2,role='simulation_run_manifest',run_id='inert-empty',project='software_fixture',mode='test',status='success',inputs={},
+                outputs=list(records.values()),products={'fields':dict(schema_version=1,kind='field_bundle',status='complete',metadata=metadata,data=records)})
+            publish_terminal_state(root,{'status':'success'},manifest)
+            reference=dict(manifest=file_record(root/'run_manifest.json'),product_id='fields')
+            geometry=dict(role='simion_neutral_world_collision_geometry',dimensions=[3,3,3],pitch_mm=1,domain=dict(minimum_mm=[0,0,0]))
+            _,_,assets=field.require_static_world_reuse(reference,identity=identity,geometry=geometry)
+            self.assertEqual(set(assets['world']),{'carrier_record','state_record','witness_record'})
+            (root/'world.pa-surf').write_bytes(b'unexpected')
+            with self.assertRaisesRegex(ValueError,'unexpectedly has a companion'):
+                field.require_static_world_reuse(reference,identity=identity,geometry=geometry)
+            (root/'world.pa-surf').unlink()
+            (root/'state.json').write_text('tampered',encoding='utf8')
+            with self.assertRaises(AssertionError):field.require_static_world_reuse(reference,identity=identity,geometry=geometry)

@@ -29,7 +29,7 @@ def execute_rf_tracking(session,*,source,model,document,**options):
                 or canonical_json_sha256({key:identity[key] for key in identity if key!='identity_sha256'})!=identity['identity_sha256']):
             raise ValueError('static operating workpoint identity differs from the prepared model')
         selected,producer,assets=require_static_world_reuse(source.reference,identity=source.metadata['spatial_identity'],geometry=geometry)
-        borrowed=[record for row in assets.values() for record in (row['carrier_record'],row['surface_record'],row['witness_record'])]
+        borrowed=[record for row in assets.values() for record in [row['carrier_record'],row['witness_record'], *([row['surface_record']] if 'surface_record' in row else []), *([row['state_record']] if 'state_record' in row else [])]]
     else:
         selected,producer,assets=require_rf_reuse(source.reference,identity=source.metadata['spatial_identity'],geometry=geometry)
         borrowed=[record for row in assets.values() for record in [*row['family_records'],row['witness_record']]]
@@ -62,10 +62,20 @@ def plan_rf_tracking_workbench(compiled,*,carriers,run_directory,program,native_
         asset=carriers[name]
         if static_world:
             import math
-            if set(asset)!={'carrier_record','surface_record','witness_record'}:
-                raise ValueError('static operating field requires exact operating, surface and witness records')
-            surface=asset['surface_record']; carrier=Path(asset['carrier_record']['path'])
-            if carrier.suffix.lower()!='.pa' or carrier.with_suffix('.pa-surf') != Path(surface['path']):
+            if (not {'carrier_record','witness_record'} <= set(asset)
+                    or set(asset)-{'carrier_record','surface_record','witness_record','state_record'}):
+                raise ValueError('static operating field requires exact operating and surface evidence records')
+            from .rf_field_execution import _static_surface_mode, _field_domains
+            surface=asset.get('surface_record'); carrier=Path(asset['carrier_record']['path'])
+            mode='present'
+            if 'state_record' in asset:
+                domain=_field_domains(compiled.frontend_geometry)['world']
+                grid=dict(domain['dimensions'], **{'d'+axis+'_mm':domain['cell_mm_xyz'][axis] for axis in 'xyz'})
+                mode=_static_surface_mode(asset['state_record'],surface,grid)
+            elif surface is None:
+                raise ValueError('static surface state or fractional surface is required')
+            if (carrier.suffix.lower()!='.pa' or (surface is not None and carrier.with_suffix('.pa-surf') != Path(surface['path']))
+                    or (mode=='empty' and carrier.with_suffix('.pa-surf').exists())):
                 raise ValueError('static operating PA and fractional surface must be matching standalone siblings')
             values=program_metadata.get('static_operating_voltages') if isinstance(program_metadata,Mapping) else None
             labels=sorted(row['native_id'] for row in compiled.frontend_geometry['electrode_mapping'])
@@ -78,7 +88,10 @@ def plan_rf_tracking_workbench(compiled,*,carriers,run_directory,program,native_
         else:
             surface=next(row for row in asset['family_records'] if row['path'].endswith('.pa-surf'))
         text+='spec.instances['+str(index)+'].path='+lua_value(asset['carrier_record']['path'])+'\n'
-        text+='spec.instances['+str(index)+'].fractional_surface='+lua_value(surface['path'])+'\n'
+        surface_path = str(carrier.with_suffix('.pa-surf')) if static_world and surface is None else surface['path']
+        text+='spec.instances['+str(index)+'].fractional_surface='+lua_value(surface_path)+'\n'
+        if static_world:
+            text+='spec.instances['+str(index)+'].surface_state='+lua_value(asset['state_record']['path'] if 'state_record' in asset else None)+'\n'
         text+='spec.instances['+str(index)+'].surface_witnesses='+lua_value(asset['witness_record']['path'])+'\n'
         mappings=compiled.frontend_geometry.get('electrode_bindings', {})
         labels=sorted(row['native_id'] for row in compiled.frontend_geometry['electrode_mapping']) if static_world else sorted({value for group in mappings.values() for value in group.values()}) if joint else sorted(set(mappings[name].values()))

@@ -256,5 +256,5 @@ def render_rf_controls(model: Any, plan: Mapping[str, Any], *, assets: Mapping[s
              for row in document['native_drive_rows']), key=lambda row:row['electrode_id'])
     if oa:metadata.update(component_kind='orthogonal_accelerator',field_domain_coupling='independent_component_domains',native_state_wire_format='legacy_shared_RF_NATIVE_STATE_V1')
     return dict(program=program,build_metadata=metadata,carriers=assets,response_fields=[],
-        immutable_input_records=([record for row in assets.values() for record in (row['carrier_record'],row['surface_record'],row['witness_record'])]
+        immutable_input_records=([record for row in assets.values() for record in [row['carrier_record'],row['witness_record'], *([row['surface_record']] if 'surface_record' in row else []), *([row['state_record']] if 'state_record' in row else [])]]
             if static_world else [record for row in assets.values() for record in [*row['family_records'],row['witness_record']]])+(scalar_records if ip_mr else []),flight=plan['flight'])

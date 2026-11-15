@@ -65,7 +65,7 @@ def load_field_model(reference: Mapping | OpenedArtifact, *, field_representatio
     for domain, keys in bindings.items():
         fields = ({'raw_geometry', 'fractional_surface', 'surface_witnesses'} if independent_component else
                   {'raw_geometry', 'fractional_surface'} if domain in {'flight_tube', 'detector'} else {'raw_geometry'})
-        if sampled and 'surface_state' in keys:
+        if (sampled or geometry.get('role') == 'simion_neutral_world_collision_geometry') and 'surface_state' in keys:
             fields = (fields | {'surface_state'}) if 'fractional_surface' in keys else ((fields - {'fractional_surface'}) | {'surface_state'})
         if set(keys) != fields or any(key in consumed for key in keys.values()):
             raise ValueError('prepared model native closure is incomplete or ambiguous')

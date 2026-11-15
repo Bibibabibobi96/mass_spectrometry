@@ -51,6 +51,9 @@ def build_geometry(compiled: CompiledSimionGeometry, *, context: ExecutionContex
                 and type(runtime["simion_allow_asynchronous_io"]) is not bool)):
         raise ContractError("SIMION geometry runtime only accepts explicit boolean simion_allow_asynchronous_io")
     snapshot = CompiledSimionGeometry(**asdict(compiled))
+    if snapshot.frontend_geometry.get("role") == "simion_neutral_world_collision_geometry":
+        from .generic_geometry import seal_neutral_geometry_for_publication
+        snapshot = seal_neutral_geometry_for_publication(snapshot)
     count = (len(snapshot.frontend_gems) if snapshot.frontend_geometry.get("role") in {"simion_independent_rf_geometry", "simion_independent_oa_geometry", "simion_rf_ip_geometry", "simion_oa_mr_complete_geometry", "simion_ip_mr_complete_geometry", "simion_rf_oa_geometry", "simion_neutral_world_collision_geometry"}
              else 4 + int("entrance_refinement" in snapshot.frontend_geometry["numerical_domains"]))
     seed = file_record(structural_seed_path(count), "required_evidence")
@@ -62,7 +65,7 @@ def build_geometry(compiled: CompiledSimionGeometry, *, context: ExecutionContex
     ids = tuple(row["operation_id"] for row in plan.operations)
     source = file_record(Path(execute_geometry.__code__.co_filename).resolve(), "required_evidence")
     surface_validator = None
-    if snapshot.frontend_geometry.get("role") == "simion_ip_mr_complete_geometry":
+    if snapshot.frontend_geometry.get("role") in {"simion_ip_mr_complete_geometry", "simion_neutral_world_collision_geometry"}:
         from . import native_surface_state
         surface_validator = file_record(Path(native_surface_state.__file__).resolve(), "required_evidence")
     result = run_managed_stage(context, descriptor=dict(project="instrument_assembly", mode="geometry_only", software=["SIMION"]),
@@ -182,7 +185,18 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
             **({} if independent_rf else dict(pulse=drive["pulse"])))
     if "groups" in drive:
         expanded["groups"] = copy.deepcopy(drive["groups"])
-    model = compile_prepared_model(compiled, components, drive=expanded, physics=physics)
+    if static_world and 'producer_validated_members' in compiled.frontend_geometry:
+        if (source.producer.get('status') != 'success' or source.producer.get('mode') != 'geometry_only'
+                or source.producer.get('project') != 'instrument_assembly'
+                or source.metadata.get('backend') != 'simion'
+                or source.metadata.get('geometry_materialized') is not True
+                or source.metadata.get('field_status') != 'not_solved'
+                or source.metadata.get('source_status') != 'not_requested'):
+            raise ContractError('neutral producer projection requires a successful published geometry owner')
+        from .model import _compile_static_world_published_model
+        model = _compile_static_world_published_model(compiled, components, drive=expanded, physics=physics)
+    else:
+        model = compile_prepared_model(compiled, components, drive=expanded, physics=physics)
     seed = file_record(structural_seed_path(len(compiled.frontend_gems) if independent_component else 4 + int(
         "entrance_refinement" in compiled.frontend_geometry["numerical_domains"])), "required_evidence")
     ids = ("materialize_geometry", "build_model", "verify_model")
@@ -327,19 +341,24 @@ def solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mapping
             original = reused.metadata.get("operating_producer_reference", reused.reference)
             references.append({"manifest_record": original["manifest"]})
     graph = plan_fields_execution(source.model, numerics=selected_numerics, reuse_fields_reference=reuse_reference)
+    surface_validator = None
+    if source.model.document['geometry']['frontend_geometry'].get('role') == 'simion_neutral_world_collision_geometry':
+        from . import native_surface_state
+        surface_validator = file_record(Path(native_surface_state.__file__).resolve(), 'required_evidence')
     result = run_managed_stage(context,
         descriptor=dict(project="instrument_assembly", mode="fields_only", software=["SIMION"]),
         run_id=datetime.now().strftime("%Y%m%d_%H%M%S") + "__sim__simion__fields-" + uuid4().hex[:12],
         payload=dict(action="solve_fields", model=source.artifact.reference, numerics=selected_numerics,
                      reuse_fields=reuse_reference, stage_policy=stage),
         committed_new_bytes=stage["limits"]["transient_run_directory_bytes"],
-        commitment_inputs=[policy_record], retention=stage["artifact_retention"],
+        commitment_inputs=[policy_record, *([surface_validator] if surface_validator else [])], retention=stage["artifact_retention"],
         expected_operation_ids=tuple(graph["expected_operation_ids"]),
         operation_dependencies=graph["operation_dependencies"],
         action=partial(execute_fields, model_reference=source.artifact.reference, numerics=selected_numerics,
             limits=stage["limits"], materialize_geometry=partial(materialize_payloads, limits=stage["limits"]),
             materializer_record=file_record(Path(materialize_payloads.__code__.co_filename).resolve(), "required_evidence"),
-            allow_asynchronous_io=runtime.get("simion_allow_asynchronous_io"), reuse_fields_reference=reuse_reference),
+            allow_asynchronous_io=runtime.get("simion_allow_asynchronous_io"), reuse_fields_reference=reuse_reference,
+            surface_validator_record=surface_validator),
         action_record=file_record(Path(execute_fields.__code__.co_filename).resolve(), "required_evidence"),
         source_references=references, use_short_execution_path=True, completion_api=lambda: native_completion)
     return artifact_reader.open_artifact({"manifest": result["manifest"], "product_id": "fields"}, expected_kind="field_bundle")

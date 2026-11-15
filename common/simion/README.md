@@ -102,8 +102,17 @@ offsets as no enhancement data. The native aligned-detector/control observation
 and its publication limits are recorded in the
 [current integration case](../../integrations/docs/INTEGRATION.md#current-lp60-ipmr-geometry-case).
 This representation contract does not establish field coupling, mesh convergence
-or trajectory accuracy. Generic neutral-world field support is a separate
-consumer slice until its complete state propagation has been verified.
+or trajectory accuracy. Neutral-world geometry, models, static operating fields
+and saved-field tracking now carry the same state. Focused owner tests cover
+present and empty data, reuse, tampering and failed-operation cleanup with inert
+native leaves; their native and ordinary-install acceptance remains open.
+
+New neutral-world geometry publication validates the registered providers and
+records their complete member projection. Cold model preparation verifies that
+published projection, GEM, layout, groups and witnesses without re-registering
+the provider factory. It does not accept a caller-supplied validation marker.
+Older published geometry without that projection still requires its provider;
+it is not silently converted or granted provider-free recovery.
 For nonempty-file checks, native Lua consumers read one byte rather than seek to
 EOF. A read-only SIMION 2020 observation on the retained 3,172,638,272-byte MR
 raw PA returned `-1` from `seek('end')` while both first-byte reads succeeded;

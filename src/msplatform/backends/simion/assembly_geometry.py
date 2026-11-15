@@ -99,6 +99,13 @@ def _pieces(shape: Mapping[str, Any], transform: RigidTransform, rounding: list[
 
 def render_assembly_gem(assembly: Mapping[str, Any], *, domain: Mapping[str, Any], pitch_mm: float,
                         boundary: str) -> dict[str, Any]:
+    """Render the actual source-validated provider members."""
+    members = assembly_geometry_members(assembly)
+    return _render_assembly_members_gem(assembly, members, domain=domain, pitch_mm=pitch_mm, boundary=boundary)
+
+
+def _render_assembly_members_gem(assembly: Mapping[str, Any], members, *, domain: Mapping[str, Any],
+                                 pitch_mm: float, boundary: str) -> dict[str, Any]:
     """Render a source-validated neutral Assembly, without a native process.
 
     Only signed-permutation boxes and cylinders are admitted. Distinct
@@ -119,7 +126,7 @@ def render_assembly_gem(assembly: Mapping[str, Any], *, domain: Mapping[str, Any
         counts.append(int(cells)+1)
     rounding: list[dict[str, Any]] = []
     _record_rounding(lo+hi+[-x for x in lo]+[pitch], rounding)
-    members=assembly_geometry_members(assembly)
+
     if not members: raise ValueError('GEM requires at least one physical member')
     groups={};witness=[];all_boxes=[]
     for member in members:

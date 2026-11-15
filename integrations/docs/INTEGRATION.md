@@ -1429,8 +1429,34 @@ read-only file-I/O observation, `20261115_110610__analysis__simion__lua-seek-542
 reproduced a negative end-seek result on the 3.17 GB MR PA while first-byte reads
 succeeded. The smaller IP control returned its correct size. Its native operation
 exited zero; the diagnostic wrapper's missing completion field failed publication.
-The corrected nonempty check still needs the next full native geometry/IOB run.
-Neither attempt performed Refine or Fly.
+Neither failed attempt performed Refine or Fly. The diagnostic's capacity-only
+closure released its original reservation and pinned all 13 unchanged files;
+its failed workflow result was not converted to success.
+
+On commit `15716dcce022fe5615a87d69bb8298a6688a48de`, the corrected complete
+geometry and driven unsolved model were published successfully:
+
+| Stage | Run | Native operations | Owner wall seconds | Final retained bytes |
+|---|---|---:|---:|---:|
+| Geometry and cold IOB reopen | `20261115_111715__build__simion__geometry-2ec1933e0437` | 6 | 167.938 | 4,575,227,085 |
+| Model materialization and cold drive readback | `20261115_112330__build__simion__model-c37b95b8ef78` | 3 | 115.437 | 4,576,599,256 |
+
+All nine process receipts report exit zero and released host leases; both owners
+confirmed stopped writers, released capacity sessions and retained their source
+snapshots unchanged. Model readback verified 45 scientific drive groups. Maximum
+sampled directory bytes were 4,575,144,827 and 4,576,516,843 respectively;
+maximum observed process-tree working sets were 4,834,856,960 and 4,945,453,056
+bytes. These sampled observations are not exact continuous peak measurements.
+The approved stage limits and global 700/295 GiB policy were unchanged.
+
+No field solve, source release or Fly occurred in these stages. The 17 retained
+COMSOL workpoints share the selected canonical Assembly, but only the earlier
+coarse carrier scalar export is currently established. Its mask has unsupported
+interpolation cells at the source and connection probes. Missing response
+exports and defined sampling support remain prerequisites for this functional
+tracking attempt; convergence and instrument-performance qualification are not
+claimed. A new original N=100 packet has been sampled from the declared RF
+example seed and sparse IDs, but has not yet flown through this Assembly.
 
 The public geometry integration passed eight focused software tests in 147.066
 seconds (152.334 guarded wall), with the full source and checkout unchanged.

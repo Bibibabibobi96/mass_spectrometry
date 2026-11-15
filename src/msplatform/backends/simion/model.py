@@ -333,6 +333,20 @@ def _compile_static_world_model(compiled, components, *, drive, physics):
         void_witnesses=geometry['void_witnesses']))
     if rebuilt != compiled:
         raise ValueError('static world geometry differs from its canonical source snapshot')
+    return _finish_static_world_model(compiled, components, drive=drive, physics=physics)
+
+
+def _compile_static_world_published_model(compiled, components, *, drive, physics):
+    """Consume a producer-validated projection after the public artifact check."""
+    from .generic_geometry import validate_published_neutral_geometry
+    validate_published_neutral_geometry(compiled)
+    return _finish_static_world_model(compiled, components, drive=drive, physics=physics)
+
+
+def _finish_static_world_model(compiled, components, *, drive, physics):
+    geometry = compiled.frontend_geometry
+    if components != geometry['source_snapshot']['components_resolved']:
+        raise ValueError('static world model providers differ from the source snapshot')
     if not isinstance(physics, Mapping) or dict(physics) != RF_PHYSICS:
         raise ValueError('static world model requires linear zero-Neumann physics')
     _exact(drive, {'groups', 'clock'}, 'static world model drive')

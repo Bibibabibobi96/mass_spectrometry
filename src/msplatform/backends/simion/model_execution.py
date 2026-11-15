@@ -124,7 +124,7 @@ def execute_model(session: RunSession, *, model, geometry_reference: Mapping[str
         expected = ({'raw_geometry', 'fractional_surface', 'surface_witnesses'} if independent_component else
                     {'raw_geometry', 'fractional_surface'} if domain in {'flight_tube', 'detector'} else {'raw_geometry'})
         ip_mr = document['geometry']['frontend_geometry'].get('role') == 'simion_ip_mr_complete_geometry'
-        if ip_mr and 'surface_state' in names:
+        if (ip_mr or document['geometry']['frontend_geometry'].get('role') == 'simion_neutral_world_collision_geometry') and 'surface_state' in names:
             if set(names) not in (expected | {'surface_state'}, (expected - {'fractional_surface'}) | {'surface_state'}):
                 raise ValueError('published model geometry surface closure differs')
         elif set(names) != expected:

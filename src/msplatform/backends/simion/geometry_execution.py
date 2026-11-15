@@ -42,7 +42,7 @@ def execute_geometry(session: RunSession, *, compiled: CompiledSimionGeometry,
     names = GEOMETRY_RESOURCES[:4] if independent_rf else GEOMETRY_RESOURCES
     sources = {name: native_resource_path(name) for name in names}
     sources["native_run_path.lua"] = resource_path("native_run_path.lua")
-    if compiled.frontend_geometry.get("role") == "simion_ip_mr_complete_geometry":
+    if compiled.frontend_geometry.get("role") in {"simion_ip_mr_complete_geometry", "simion_neutral_world_collision_geometry"}:
         from . import native_surface_state
         actual = file_record(Path(native_surface_state.__file__).resolve(), "required_evidence")
         if surface_validator_record is None or any(actual[key] != surface_validator_record[key] for key in ("path", "bytes", "sha256")):
@@ -148,9 +148,13 @@ def execute_geometry(session: RunSession, *, compiled: CompiledSimionGeometry,
             raw, witness, state_path = map(Path, operation["outputs"])
             state = json.loads(state_path.read_text(encoding="utf8"))
             role = operation["operation_id"].removeprefix("geometry_")
-            domain = compiled.frontend_geometry["numerical_domains"][role]
-            grid = [domain["dimensions"]["n" + axis] for axis in "xyz"]
-            pitch = [domain["cell_mm_xyz"][axis] for axis in "xyz"]
+            if compiled.frontend_geometry.get("role") == "simion_neutral_world_collision_geometry":
+                grid = compiled.frontend_geometry["dimensions"]
+                pitch = [compiled.frontend_geometry["pitch_mm"]] * 3
+            else:
+                domain = compiled.frontend_geometry["numerical_domains"][role]
+                grid = [domain["dimensions"]["n" + axis] for axis in "xyz"]
+                pitch = [domain["cell_mm_xyz"][axis] for axis in "xyz"]
             surface = optional_surfaces[operation["operation_id"]]
             from .native_surface_state import validate_native_surface_state
             native_grid=dict(zip(('nx','ny','nz'),grid,strict=True), **dict(zip(('dx_mm','dy_mm','dz_mm'),pitch,strict=True)))
