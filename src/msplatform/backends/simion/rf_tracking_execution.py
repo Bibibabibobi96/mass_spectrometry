@@ -43,6 +43,147 @@ def execute_rf_tracking(session,*,source,model,document,**options):
         borrowed=borrowed,original_clock=clocks,relative_epoch=relative,**options)
 
 
+
+def admit_neutral_sampled_tracking_fields(reference: Mapping[str, Any]) -> dict[str, Any]:
+    """Revalidate the actual field producer and its complete sampled source closure."""
+    import copy
+    import json
+    from msplatform.results.artifacts import open_artifact
+    from msplatform.io.manifest_records import record_path, verify_record
+    from .neutral_sampled_field import verify_neutral_sampled_inputs
+
+    source = open_artifact(reference, expected_kind='field_bundle')
+    if source.metadata.get('field_representation') != 'neutral_sampled_basis_with_collision_geometry':
+        raise ValueError('published neutral sampled FieldBundle required')
+    manifest = json.loads(source.manifest_location.read_text(encoding='utf-8-sig'))
+    request_record = manifest['inputs']['execution_request']
+    verify_record('neutral sampled field request', request_record, base_dir=source.manifest_location.parent)
+    request_path = record_path(request_record, base_dir=source.manifest_location.parent)
+    request = json.loads(request_path.read_text(encoding='utf-8-sig'))
+    payload = request['payload']
+    if request.get('role') != 'run_artifact_workflow_request' or payload.get('action') != 'solve_fields':
+        raise ValueError('neutral sampled field producer request differs')
+    planned = verify_neutral_sampled_inputs(payload['model'], selection=payload['scalar_field_basis'])
+    if json.loads(source.data_path('sampled_basis').read_text(encoding='utf-8-sig')) != planned['binding']:
+        raise ValueError('published neutral sampled basis differs from producer sources')
+    audit = json.loads(source.data_path('collision_audit').read_text(encoding='utf-8-sig'))
+    task = planned['geometry_plan']['tasks'][0]
+    if (audit.get('role') != task['role'] or audit.get('source_records') != task['source_records']
+            or audit.get('geometry_reference') != planned['geometry_plan']['geometry_reference']
+            or audit.get('compiled_geometry_record') != planned['geometry_plan']['compiled_geometry_record']):
+        raise ValueError('published collision audit differs from geometry lineage')
+    for label, key in (('output_record', 'collision'), ('surface_record', 'collision_surface')):
+        selected = audit.get(label)
+        if key not in source.data_records:
+            if selected is not None:
+                raise ValueError('collision audit declares an unpublished '+label)
+            continue
+        actual = source.data_records[key]
+        if (not isinstance(selected, dict) or any(str(selected[k]).lower() != str(actual[k]).lower() for k in ('bytes', 'sha256'))
+                or Path(selected['path']).resolve(strict=True) != source.data_path(key).resolve(strict=True)):
+            raise ValueError('collision audit differs from published '+key)
+    document = planned['model'].document
+    if (source.metadata.get('model_identity_sha256') != document['model_identity_sha256']
+            or source.metadata.get('clock') != document['drive']['clock']):
+        raise ValueError('neutral sampled field model or clock differs')
+    for key in ('compiled_model', 'clock_authority', 'instrument_epoch'):
+        expected, actual = planned['prepared_records'][key], source.data_records[key]
+        if any(str(expected[k]).lower() != str(actual[k]).lower() for k in ('bytes', 'sha256')):
+            raise ValueError('neutral sampled prepared record differs: ' + key)
+    keys = ['compiled_model', 'clock_authority', 'instrument_epoch', 'sampled_basis',
+            'background', 'collision', 'workbench', 'zero_particle_format_control', 'collision_audit']
+    if 'collision_surface' in source.data_records:
+        keys.append('collision_surface')
+    records = [dict(source.data_records[k], path=str(source.data_path(k))) for k in keys]
+    records.extend(copy.deepcopy(planned['immutable_input_records']))
+    records.append(dict(request_record, path=str(request_path)))
+    for row in records:
+        verify_record('neutral sampled tracking input', row)
+    from .neutral_sampled_field import neutral_source_modules
+    code_records = {module.__name__: file_record(Path(module.__file__).resolve(strict=True), 'required_evidence')
+                    for module in neutral_source_modules(planned['model'])}
+    return dict(source=source, model=planned['model'], basis=planned['binding'], plan=planned,
+                code_records=code_records, immutable_input_records=records,
+                source_manifests=[row['manifest_record'] for row in planned['source_references']])
+
+def execute_neutral_sampled_tracking(session: Any, *, source: Any, model: CompiledPreparedModel,
+                                     document: Mapping[str, Any], **options: Any) -> dict[str, Any]:
+    """Rebind the published sampled field inside the existing tracking owner."""
+    from .tracking_execution import _artifact_record, _execute_tracking_bound_source
+    admission = admit_neutral_sampled_tracking_fields(source.reference)
+    if admission['model'].document != model.document:
+        raise ValueError('neutral sampled field model changed after admission')
+    for record in admission['source_manifests']:
+        _protected_source(session, record)
+    _protected_source(session, source.reference['manifest'])
+    for index, record in enumerate(admission['immutable_input_records']):
+        session.add_input('neutral_sampled_field_input_'+str(index), record)
+    clocks = dict(contract=_artifact_record(source, 'clock_authority'), authority=_artifact_record(source, 'instrument_epoch'))
+    clocks['data_root'] = str(Path(clocks['contract']['path']).parent)
+    relative = _clock_reference(document, clocks)
+    compiled = model_geometry(model)
+    geometry = dict(compiled.frontend_geometry, native_frame_id=document['native_frame_id'])
+    return _execute_tracking_bound_source(session, source=source, model=model, document=document,
+        compiled=compiled, geometry=geometry, design=None, stored_bank=None, frontend={}, downstream={},
+        field_workbench=None, borrowed=admission['immutable_input_records'], original_clock=clocks,
+        relative_epoch=relative, neutral_admission=admission, **options)
+
+
+def plan_neutral_sampled_tracking_workbench(compiled: Any, *, admission: Mapping[str, Any],
+        run_directory: Path, program: str, native_source_rows: list[Mapping[str, Any]],
+        native_path_resource: Path) -> NativeStagePlan:
+    """Build the same background/world priority slots with a fresh flight Program."""
+    import json
+    from .source import lua_value, render_restart_fly2
+    if not native_source_rows or not program:
+        raise ValueError('neutral sampled tracking requires original births and Program')
+    root = Path(run_directory)
+    source, basis, plan = admission['source'], admission['basis'], admission['plan']
+    geometry = compiled.frontend_geometry
+    task = plan['geometry_plan']['tasks'][0]
+    dimensions, origin, pitch = geometry['dimensions'], geometry['domain']['minimum_mm'], geometry['pitch_mm']
+    grid = dict(zip(('nx', 'ny', 'nz'), dimensions, strict=True), dx_mm=pitch, dy_mm=pitch, dz_mm=pitch)
+    placement = dict(x_mm=origin[0], y_mm=origin[1], z_mm=origin[2], az_deg=0., el_deg=0., rt_deg=0., scale=1.)
+    rotation = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+    def record(key):
+        return dict(source.data_records[key], path=str(source.data_path(key)))
+    background, collision = record('background'), record('collision')
+    if 'collision_surface' in source.data_records:
+        if Path(record('collision_surface')['path']).resolve() != Path(collision['path']).with_suffix('.pa-surf').resolve():
+            raise ValueError('collision surface must be the published adjacent companion')
+    elif 'surface_state' not in task['source_records']:
+        raise ValueError('collision surface state or companion required')
+    first = dict(role='background', instance_index=1, priority_number=1, path=background['path'],
+                 grid=grid, rotation=rotation, placement=placement)
+    second = dict(role='world', instance_index=2, priority_number=2, path=collision['path'],
+                  grid=grid, rotation=rotation, placement=placement, physical_samples=geometry['physical_samples'],
+                  electrode_witness_ids=geometry['electrode_witness_ids'],
+                  surface_witnesses=task['source_records']['surface_witnesses']['path'],
+                  fractional_surface=str(Path(collision['path']).with_suffix('.pa-surf')))
+    if 'surface_state' in task['source_records']:
+        second['surface_state'] = task['source_records']['surface_state']['path']
+    seed_record = file_record(structural_seed_path(2), 'required_evidence')
+    seed, output = root/'inputs/structural_seed/2_instance_seed.iob', root/'simion/tracking/instrument.iob'
+    binding, spec_path = root/'inputs/sampled_basis.json', root/'inputs/tracking_iob.lua'
+    bootstraps = tuple(str(seed.parent/f'iob_seed_placeholder_{i:02d}.pa0') for i in range(1, 3))
+    spec = dict(schema_version=1, role='neutral_sampled_tracking_iob',
+        field_representation='neutral_sampled_basis_with_collision_geometry', scalar_binding=str(binding),
+        collision_roles=dict(background='background', world='world'), instances=[first, second],
+        seed_iob=str(seed), output_iob=str(output), response_fields=[], bootstrap_paths=list(bootstraps))
+    materials = {str(spec_path): 'return '+lua_value(spec)+'\n',
+        str(binding): json.dumps(basis, ensure_ascii=False, allow_nan=False, indent=2)+'\n',
+        str(output.with_suffix('.lua')): program,
+        str(output.with_suffix('.fly2')): render_restart_fly2(native_source_rows)}
+    wrapper = native_resource_path('build_tracking_iob.lua')
+    ops = tuple(dict(operation_id=name, role='SIMION', stage='prepare',
+        arguments=['--nogui', '--noprompt', 'lua', str(wrapper), str(spec_path), mode, str(native_path_resource)],
+        outputs=[str(output), *bootstraps] if mode=='build' else [], success_marker=marker)
+        for name, mode, marker in [('build_tracking_iob', 'build', 'NEUTRAL_SAMPLED_TRACKING_IOB=PASS'),
+            ('verify_tracking_iob', 'verify', 'NEUTRAL_SAMPLED_TRACKING_IOB_REOPEN=PASS')])
+    return NativeStagePlan(materials, (dict(source_record=seed_record, destination=str(seed)),), ops,
+                           (str(output), *bootstraps))
+
+
 def plan_rf_tracking_workbench(compiled,*,carriers,run_directory,program,native_source_rows,native_path_resource,program_metadata=None):
     root=Path(run_directory)
     joint=compiled.frontend_geometry.get('role')=='simion_rf_ip_geometry'

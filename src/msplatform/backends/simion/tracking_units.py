@@ -68,27 +68,27 @@ def tracking_applicability(plan):
     from msplatform.execution.resources import resource_path
     names = ('build_tracking_iob.lua','iob_core.lua','oatof_analyzer_component.lua',
              'single_flight_pulse_hook.lua','single_flight_frontend_hook.lua','rf_drive.lua','voltage_waveforms.lua')
-    if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa','rf_ip','ip_mr','static_world'}:
+    if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa','rf_ip','ip_mr','static_world','neutral_sampled'}:
         names=('build_tracking_iob.lua','iob_core.lua','model_drive.lua','rf_drive.lua','rf_tracking.lua')
-        if plan['flight']['tracking_kind']=='independent_oa':names+=('single_flight_pulse_hook.lua','voltage_waveforms.lua')
+        if plan['flight']['tracking_kind'] in {'independent_oa','neutral_sampled'}:names+=('single_flight_pulse_hook.lua','voltage_waveforms.lua')
         if plan['flight']['tracking_kind'] in {'rf_ip','ip_mr'}:
             names+=('single_flight_pulse_hook.lua','voltage_waveforms.lua','native_drive.lua',
                     'collision_hs1_gas.lua','rf_ip_gas_selection.lua','rf_ip_tracking_hs1.lua')
     if plan.get('scalar_field_basis') is not None:
-        names += ('scalar_field_adapter.lua', 'ip_mr_scalar_field.lua' if plan['flight'].get('tracking_kind') == 'ip_mr' else 'sfi_scalar_field.lua')
+        names += ('scalar_field_adapter.lua', 'ip_mr_scalar_field.lua' if plan['flight'].get('tracking_kind') == 'ip_mr' else 'generic_scalar_field.lua' if plan['flight'].get('tracking_kind') == 'neutral_sampled' else 'sfi_scalar_field.lua')
     resources = {name:hashlib.sha256(native_resource_path(name).read_bytes()).hexdigest() for name in names}
     resources['native_run_path.lua'] = hashlib.sha256(resource_path('native_run_path.lua').read_bytes()).hexdigest()
     resources['tracking_program.py'] = hashlib.sha256(Path(tracking_program.__file__).read_bytes()).hexdigest()
     if plan.get('scalar_field_basis') is not None:
-        scalar_modules = ('ip_mr_tracking_admission.py', 'ip_mr_scalar_binding.py', 'scalar_sample_binding.py', 'ip_mr_collision_priority.py') if plan['flight'].get('tracking_kind') == 'ip_mr' else ('sfi_scalar_binding.py', 'tracking_field_observation.py')
+        scalar_modules = ('ip_mr_tracking_admission.py', 'ip_mr_scalar_binding.py', 'scalar_sample_binding.py', 'ip_mr_collision_priority.py') if plan['flight'].get('tracking_kind') == 'ip_mr' else ('generic_scalar_binding.py', 'scalar_sample_binding.py', 'neutral_sampled_field.py', 'ip_mr_collision_lineage.py') if plan['flight'].get('tracking_kind') == 'neutral_sampled' else ('sfi_scalar_binding.py', 'tracking_field_observation.py')
         for name in scalar_modules:
             resources[name] = hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
     resources['tracking_execution.py'] = hashlib.sha256(Path(__file__).with_name('tracking_execution.py').read_bytes()).hexdigest()
     resources['tracking_units.py'] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
-    if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa','rf_ip','ip_mr','static_world'}:
+    if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa','rf_ip','ip_mr','static_world','neutral_sampled'}:
         for name in ('rf_tracking_program.py','rf_tracking_execution.py','rf_tracking_collection.py'):
             resources[name]=hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
-    if plan['flight'].get('tracking_kind') in {'rf_ip','ip_mr'}:
+    if plan['flight'].get('tracking_kind') in {'rf_ip','ip_mr','neutral_sampled'}:
         resources['tracking_collection.py'] = hashlib.sha256(Path(__file__).with_name('tracking_collection.py').read_bytes()).hexdigest()
     fields = ('source_realization','field_manifest_identity','model_identity_sha256','rows','native_source_rows','source_provenance',
               'absolute_deadlines_us_by_particle_id','flight','propagation','observations','numerics')
@@ -99,6 +99,8 @@ def tracking_applicability(plan):
         value['collision_priority'] = copy.deepcopy(plan['collision_priority'])
     if plan.get('scalar_field_basis') is not None:
         value['scalar_field_basis'] = copy.deepcopy(plan['scalar_field_basis'])
+    if plan['flight'].get('tracking_kind') == 'neutral_sampled':
+        value['neutral_source_identity'] = copy.deepcopy(plan['neutral_source_identity'])
     clocks = value['source_provenance']['clock_records']
     for key in ('clock_authority','instrument_epoch'):
         clocks[key].pop('path',None)

@@ -349,8 +349,14 @@ def _finish_static_world_model(compiled, components, *, drive, physics):
         raise ValueError('static world model providers differ from the source snapshot')
     if not isinstance(physics, Mapping) or dict(physics) != RF_PHYSICS:
         raise ValueError('static world model requires linear zero-Neumann physics')
-    _exact(drive, {'groups', 'clock'}, 'static world model drive')
-    _validate_timing(drive, requires_pulse=False, static_only=True)
+    if not isinstance(drive, Mapping) or not {'groups','clock'} <= set(drive) or set(drive)-{'groups','clock','pulse'}:
+        raise ValueError('world model drive requires explicit groups and clock')
+    if not isinstance(drive['groups'], Mapping): raise ValueError('world model groups must be a mapping')
+    rows_all = [row for group in drive['groups'].values() if isinstance(group, Mapping) for row in group.values()]
+    dynamic = any(isinstance(row, Mapping) and row.get('kind') in {'rf','pulse'} for row in rows_all)
+    has_pulse = any(isinstance(row, Mapping) and row.get('kind') == 'pulse' for row in rows_all)
+    if has_pulse != ('pulse' in drive): raise ValueError('pulse timing must match world drive groups')
+    _validate_timing(drive, requires_pulse=has_pulse, static_only=not dynamic)
     mapping = geometry['electrode_mapping']
     groups = {}
     for row in mapping:
@@ -361,10 +367,15 @@ def _finish_static_world_model(compiled, components, *, drive, physics):
         _exact(drive['groups'][instance], set(bindings), 'static world drive groups')
         for group, electrode in bindings.items():
             value = drive['groups'][instance][group]
-            _exact(value, {'kind', 'voltage_v'}, 'static world voltage')
-            if value['kind'] != 'static':
-                raise ValueError('static world drive accepts static voltages only')
-            _finite(value['voltage_v'], 'static world voltage')
+            if not isinstance(value, Mapping): raise ValueError('world group drive must be a mapping')
+            kind = value.get('kind')
+            fields = {'static': {'kind','voltage_v'}, 'pulse': {'kind','off_voltage_v','on_voltage_v'},
+                      'rf': {'kind','waveform','frequency_hz','phase_rad','rf_amplitude_v','polarity','common_mode_v','dc_v'}}
+            if kind not in fields: raise ValueError('unsupported world group drive kind')
+            _exact(value, fields[kind], 'world group voltage')
+            for key in fields[kind]-{'kind','waveform'}: _finite(value[key], 'world '+key)
+            if kind == 'rf' and (value['waveform'] not in {'sine','cosine'} or value['frequency_hz'] <= 0 or value['rf_amplitude_v'] < 0 or value['polarity'] not in {-1,1}):
+                raise ValueError('unsupported RF waveform, frequency, amplitude or polarity')
             rows.append(dict(instance_id=instance, electrode_group_id=group,
                 native_targets=[dict(domain='world', electrode_id=electrode)], **copy.deepcopy(dict(value))))
     document = dict(schema_version=1, role='compiled_prepared_simion_model', field_status='not_solved',

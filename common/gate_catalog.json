@@ -1996,6 +1996,44 @@
           {
             "matches": [
               {
+                "regex": "^src/msplatform/backends/simion/(?:generic_geometry|assembly_geometry|model|field_execution|field_closure|generic_scalar_binding|neutral_sampled_field|operations|rf_tracking_execution|rf_tracking_program|rf_tracking_collection|tracking_execution|tracking_collection|tracking_units|resources|native_plans|ip_mr_collision_lineage|scalar_sample_binding|native_surface_state|collision_overlay|source|standalone_pa_composition)\\.py$",
+                "reason": "generic_sampled_simion_consumer_changed"
+              },
+              {
+                "regex": "^src/msplatform/backends/simion/resources/(?:generic_scalar_field|scalar_field_adapter|model_drive|rf_drive|rf_tracking|single_flight_pulse_hook|voltage_waveforms|iob_core|build_tracking_iob|build_geometry_iob|raw_collision_pa|create_numerical_background|reopen_numerical_background)\\.lua$",
+                "reason": "generic_sampled_runtime_changed"
+              },
+              {
+                "regex": "^src/msplatform/(?:components/(?:registry|catalog|geometry_members|shape_query)|assembly/(?:model|resolve_assembly)|contracts/rigid_transform)\\.py$",
+                "reason": "generic_registered_geometry_source_changed"
+              },
+              {
+                "regex": "^src/msplatform/backends/comsol/(?:assembly_geometry|assembly_electrostatic_model|assembly_field_solution|assembly_field_export)\\.py$",
+                "reason": "generic_sampled_comsol_source_changed"
+              },
+              {
+                "regex": "^common/contracts/(?:test_(?:generic_dynamic_model|generic_scalar_binding|generic_scalar_managed|generic_scalar_tracking_managed|generic_scalar_tracking_renamed|generic_scalar_derived_tracking_managed|neutral_sampled_iob|neutral_sampled_renamed_managed|sfi_scalar_binding|static_world_model|dual_cone_iob)|test_support/(?:generic_other_provider|generic_scalar_renamed))\\.py$",
+                "reason": "generic_sampled_fixture_or_consumer_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_generic_dynamic_model.py",
+              "common/contracts/test_generic_scalar_binding.py",
+              "common/contracts/test_generic_scalar_managed.py",
+              "common/contracts/test_neutral_sampled_renamed_managed.py",
+              "common/contracts/test_generic_scalar_tracking_managed.py",
+              "common/contracts/test_generic_scalar_tracking_renamed.py",
+              "common/contracts/test_generic_scalar_derived_tracking_managed.py",
+              "common/contracts/test_neutral_sampled_iob.py",
+              "common/contracts/test_sfi_scalar_binding.py",
+              "common/contracts/test_static_world_model.py",
+              "common/contracts/test_dual_cone_iob.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
                 "regex": "^src/msplatform/backends/simion/(?:ip_mr_(?:field_execution|collision_lineage|collision_priority|scalar_binding)|field_closure|operations|resources)\\.py$",
                 "reason": "sampled_ip_mr_field_consumer_changed"
               },

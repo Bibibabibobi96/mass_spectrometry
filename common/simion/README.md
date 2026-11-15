@@ -126,6 +126,38 @@ change does not replace manifest byte counts, hashes, PA-header checks or native
 geometry audits. The diagnostic operation exited zero, but its caller omitted
 a required completion field and failed publication; its failed record is retained.
 
+### Registered neutral-world sampled tracking
+
+The public `compile_geometry`/`build_geometry` route accepts an explicitly
+registered Assembly with a `neutral_world_collision` domain and supported
+member shapes and poses. `prepare_model` binds every scientific group to the
+existing static, RF or pulse drive and clock. `solve_fields` accepts an explicit
+`scalar_field_basis`: the published geometry, operator and sample products,
+with keyed voltage vectors and linear weights that span the configured drive;
+a separate unit sample per group is not required. Ordered optional refinement
+windows retain their explicit bounds and required gradient halo. The published
+FieldBundle owns that admitted basis, a world collision PA and numerical
+background; `track` reads that binding rather than accepting a replacement.
+
+The generated Program evaluates group voltages through the existing model-drive
+and clock consumer, uses the published scalar support on every required query
+(including a zero coefficient), and preserves the original birth cohort and
+public terminal collection. Tracking uses the two declared background/world
+collision slots and does not Fast Adjust the collision PA. Selected sample,
+window, original producer and source-closure identities are protected by the
+existing owner and process guards; frozen code copies record provenance while
+the actual source origins are also guarded. Unsupported member shapes, poses,
+missing coverage or inconsistent identities fail at their existing boundaries.
+
+This neutral sampled route currently accepts explicit collision-free,
+nonrelativistic external-field dynamics; generic gas and space charge are not
+implemented on this route. Existing component-specific HS1 and SDS paths retain
+their separate contracts. Managed-owner tests with inert native children and
+portable Lua doubles exercise the registered two-provider RF/pulse chain,
+renaming, ordered windows and failure cleanup. They do not establish real
+SIMION execution, ordinary installed-package acceptance, whole-unit recovery,
+field accuracy or numerical qualification; those checks remain open.
+
 所有新建SIMION Workbench必须从[`assets/iob_instance_seeds/`](assets/iob_instance_seeds/README.md)
 中与实际PA实例数一致的干净GUI种子派生。该公共目录提供1--10槽连续容器和唯一占位PA；派生器必须替换每一个槽，
 不得创建空槽或保留占位实例。种子只用于生成运行目录或正式交付目录中的派生IOB，绝不原地修改。

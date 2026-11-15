@@ -134,7 +134,7 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
     independent_oa = compiled.frontend_geometry.get("role") == "simion_independent_oa_geometry"
     independent_component = independent_rf or independent_oa or joint_ip or joint_oa_mr or joint_ip_mr or static_world
     required = {"clock", "clock_authority"} | ({"oa_groups", "mr_authority", "pulse"} if joint_oa_mr else set()) | ({"groups"} if independent_oa or joint_ip or ip_mr_has_rf or static_world else set()) | ({"ip_schedule"} if joint_ip or joint_ip_mr else set()) | ({"mr_authority"} if joint_ip_mr else set()) | (set() if independent_component else {"pulse"})
-    if (not required <= drive.keys() or set(drive) - required - (set() if joint_oa_mr or joint_ip_mr else {"groups"}) - ({"pulse"} if independent_oa else set())
+    if (not required <= drive.keys() or set(drive) - required - (set() if joint_oa_mr or joint_ip_mr else {"groups"}) - ({"pulse"} if independent_oa or static_world else set())
             or not isinstance(drive["clock"], Mapping)
             or set(drive["clock"]) != {"phase_reference_instrument_time_us"}):
         raise ContractError("model drive requires its actual clock/groups and declared pulse contract")
@@ -252,6 +252,42 @@ def solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mapping
             or ("simion_allow_asynchronous_io" in runtime and type(runtime["simion_allow_asynchronous_io"]) is not bool)):
         raise ContractError("SIMION field runtime only accepts explicit boolean simion_allow_asynchronous_io")
     if scalar_field_basis is not None:
+        # Representation is selected from the actual published model, never a provider name.
+        from msplatform.backends.simion.artifacts import CompiledPreparedModel
+        from msplatform.backends.simion.model import require_prepared_model
+        candidate = model if isinstance(model, OpenedArtifact) else artifact_reader.open_artifact(model, expected_kind='prepared_model')
+        candidate_model = CompiledPreparedModel(candidate.data_path('compiled_model').read_text(encoding='utf8'))
+        if require_prepared_model(candidate_model)['geometry']['frontend_geometry'].get('role') == 'simion_neutral_world_collision_geometry':
+            from msplatform.backends.simion.neutral_sampled_field import prepare_neutral_sampled_inputs, execute_neutral_sampled_fields
+            if reuse_fields is not None or numerics: raise ContractError('neutral sampled fields require explicit samples and empty field numerics')
+            if not isinstance(scalar_field_basis, Mapping) or set(scalar_field_basis)-{'geometry_artifact','operator','samples','refinement_windows'} or not {'geometry_artifact','operator','samples'} <= set(scalar_field_basis):
+                raise ContractError('neutral sampled fields require geometry, operator and explicit weighted samples')
+            def ref(value):
+                if not isinstance(value,OpenedArtifact):return copy.deepcopy(value)
+                result=value.reference;result['manifest']=dict(result['manifest'],path=str(value.manifest_location));return result
+            selection=copy.deepcopy(dict(scalar_field_basis));selection['geometry_artifact']=ref(scalar_field_basis['geometry_artifact'])
+            for name,row in selection['samples'].items():row['reference']=ref(scalar_field_basis['samples'][name]['reference'])
+            for window in selection.get('refinement_windows',[]):
+                for name,value in window['samples'].items():window['samples'][name]=ref(value)
+            selected_model=ref(model);planning_root=context.execution_root/'neutral-sampled-fields-plan'
+            planned=prepare_neutral_sampled_inputs(selected_model,selection=selection,output_directory=planning_root/'simion/collision')
+            from msplatform.backends.simion.standalone_pa_composition import PaHeader
+            geometry=planned['model'].document['geometry']['frontend_geometry'];dims=geometry['dimensions'];pitch=geometry['pitch_mm']
+            lower=2*PaHeader(-2,1,1.0,*dims,0,pitch,pitch,pitch).file_bytes
+            task=planned['geometry_plan']['tasks'][0]
+            if 'fractional_surface' in task['source_records']:lower+=task['source_records']['fractional_surface']['bytes']
+            limits=stage['limits']
+            if limits['reserved_run_payload_bytes'] < lower or limits['transient_run_directory_bytes'] < lower:
+                raise ContractError(f'neutral collision output lower bound {lower} bytes exceeds declared reservation or transient limit')
+            ids=planned['expected_operation_ids'];relative=[str(Path(task['output_path']).relative_to(planning_root)),str(Path(task['output_path']).with_suffix('.pa-surf').relative_to(planning_root)),'simion/collision/background.pa','simion/collision/collision.iob','simion/collision/collision.fly2']
+            result=run_managed_stage(context,descriptor=dict(project='instrument_assembly',mode='fields_only',software=['SIMION']),
+                run_id=datetime.now().strftime('%Y%m%d_%H%M%S')+'__sim__simion__fields-'+uuid4().hex[:12],
+                payload=dict(action='solve_fields',model=planned['prepared_source'],numerics={},reuse_fields=None,scalar_field_basis=selection,stage_policy=stage),
+                committed_new_bytes=limits['transient_run_directory_bytes'],commitment_inputs=[policy_record],retention=stage['artifact_retention'],
+                expected_operation_ids=ids,operation_dependencies={name:[ids[index-1]] for index,name in enumerate(ids) if index},
+                action=partial(execute_neutral_sampled_fields,model_reference=planned['prepared_source'],selection=selection,limits=limits,allow_asynchronous_io=runtime.get('simion_allow_asynchronous_io')),
+                action_record=file_record(Path(execute_neutral_sampled_fields.__code__.co_filename).resolve(),'required_evidence'),source_references=planned['source_references'],expected_relative_paths=relative,use_short_execution_path=True,completion_api=lambda:native_completion)
+            return artifact_reader.open_artifact({'manifest':result['manifest'],'product_id':'fields'},expected_kind='field_bundle')
         from msplatform.backends.simion.ip_mr_field_execution import prepare_ip_mr_field_inputs, execute_ip_mr_sampled_fields
         if reuse_fields is not None:
             raise ContractError('sampled scalar fields cannot be combined with field reuse')
@@ -414,8 +450,15 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
     document = require_prepared_model(model)
     if meta.get("model_identity_sha256") != document["model_identity_sha256"] or meta.get("clock") != document["drive"]["clock"]:
         raise ContractError("tracking field model/clock identity differs")
+    sampled_neutral = meta.get('field_representation') == 'neutral_sampled_basis_with_collision_geometry'
+    neutral_admission = None
+    if sampled_neutral:
+        if scalar_field_basis is not None:
+            raise ContractError('neutral sampled tracking uses the basis published in its FieldBundle')
+        from msplatform.backends.simion.rf_tracking_execution import admit_neutral_sampled_tracking_fields
+        neutral_admission = admit_neutral_sampled_tracking_fields(source.reference)
     if (document['geometry']['frontend_geometry'].get('role') == 'simion_neutral_world_collision_geometry'
-            and meta.get('field_representation') != 'producer_owned_static_world_standalone_operating_pa'):
+            and meta.get('field_representation') not in {'producer_owned_static_world_standalone_operating_pa', 'neutral_sampled_basis_with_collision_geometry'}):
         raise ContractError('static world tracking requires its published standalone operating field; fractional families must be finalized before publication')
     sampled_ip_mr = meta.get('field_representation') == 'assembly_sampled_basis_with_collision_geometry'
     ip_mr_admission = None
@@ -443,14 +486,15 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
                     observations=observations, numerics=numerics, unit_size=unit_size,
                     field_manifest_record=source.reference["manifest"],
                     **({'birth_source_authority': birth_authority} if birth_authority is not None else {}), hs1_request=hs1_request,
-                    **({'ip_mr_field_reference': source.reference} if sampled_ip_mr else {}))
+                    **({'ip_mr_field_reference': source.reference} if sampled_ip_mr else {}),
+                    **({'neutral_sampled_field_reference': source.reference} if sampled_neutral else {}))
     graph = plan_tracking_execution(model, **planning)
     if scalar_field_basis is not None:
         if isinstance(packet, HandoffResult) or hs1_request is not None:
             raise ContractError('scalar basis requires an original-birth SFI flight')
         from msplatform.backends.simion.tracking_execution import _resolve_scalar_basis
         graph['scalar_field_basis'] = _resolve_scalar_basis(source, model, graph, scalar_field_basis)
-    planned_applicability = tracking_applicability(graph) if hs1_request is not None or scalar_field_basis is not None else None
+    planned_applicability = tracking_applicability(graph) if hs1_request is not None or scalar_field_basis is not None or sampled_neutral else None
     if recovery is not None:
         inspected = inspect_tracking_recovery(graph, recovery)
         graph = plan_tracking_execution(model, **planning, reused_unit_keys=inspected["reused_unit_keys"])
@@ -458,9 +502,10 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
             graph['scalar_field_basis'] = _resolve_scalar_basis(source, model, graph, scalar_field_basis)
     predecessor = None
     references = [{"manifest_record": source.reference["manifest"]}]
-    if ip_mr_admission is not None:
+    if ip_mr_admission is not None or neutral_admission is not None:
         selected_manifests = {}
-        for record in (source.reference['manifest'], *ip_mr_admission['source_manifests']):
+        selected_admission = ip_mr_admission if ip_mr_admission is not None else neutral_admission
+        for record in (source.reference['manifest'], *selected_admission['source_manifests']):
             key = os.path.normcase(str(Path(record['path']).resolve()))
             identity = (record['bytes'], str(record['sha256']).lower())
             if key in selected_manifests:

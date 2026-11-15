@@ -30,6 +30,10 @@ def plan_fields_execution(model, *, numerics: dict, reuse_fields_reference=None)
     closure, and builds/reopens the new run's field workbench. It is not whole-run
     zero-native reuse. Reference validation belongs to the admitted action.
     """
+    document = require_prepared_model(model)
+    if (model_geometry(model).frontend_geometry.get('role') == 'simion_neutral_world_collision_geometry'
+            and any(row['kind'] != 'static' for row in document['native_drive_rows'])):
+        raise ValueError('dynamic neutral-world fields require a separately admitted scalar basis')
     if model_geometry(model).frontend_geometry.get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry', 'simion_rf_ip_geometry', 'simion_neutral_world_collision_geometry'}:
         from .rf_field_execution import plan_rf_fields
         return plan_rf_fields(model, numerics=numerics, reuse_fields_reference=reuse_fields_reference)

@@ -19,6 +19,21 @@ def plan_collision_conversions(model: Any, geometry_reference: Mapping[str, Any]
     The owner supplies a fresh private run output directory and registers the
     returned geometry reference as a protected source. No PA is created here.
     """
+    return _plan_collision_conversions(model, geometry_reference, output_directory=output_directory, neutral=False)
+
+
+def plan_neutral_collision_conversions(model: Any, geometry_reference: Mapping[str, Any], *,
+                                       output_directory: Path) -> dict[str, Any]:
+    """Use the same published-source checks for one neutral world collision asset."""
+    return _plan_collision_conversions(model, geometry_reference, output_directory=output_directory, neutral=True)
+
+
+def verify_neutral_collision_sources(model: Any, geometry_reference: Mapping[str, Any]) -> dict[str, Any]:
+    """Verify published neutral geometry and writer lineage without planning outputs."""
+    return _verified_collision_sources(model, geometry_reference, neutral=True)
+
+
+def _verified_collision_sources(model, geometry_reference, *, neutral):
     source = open_artifact(geometry_reference, expected_kind='geometry_artifact')
     if (source.producer['status'] != 'success' or source.producer['mode'] != 'geometry_only'
             or source.metadata.get('backend') != 'simion'
@@ -26,27 +41,29 @@ def plan_collision_conversions(model: Any, geometry_reference: Mapping[str, Any]
             or source.metadata.get('field_status') != 'not_solved'):
         raise ValueError('successful SIMION geometry producer required')
     compiled = model_geometry(model)
-    if compiled.frontend_geometry.get('role') != 'simion_ip_mr_complete_geometry':
-        raise ValueError('complete selected RF/IP/MR geometry required')
+    expected_role = 'simion_neutral_world_collision_geometry' if neutral else 'simion_ip_mr_complete_geometry'
+    if compiled.frontend_geometry.get('role') != expected_role:
+        raise ValueError('collision geometry representation differs')
     actual = json.loads(source.data_path('compiled_geometry').read_text(encoding='utf8'))
     # JSON canonicalizes the dataclass downstream tuple to a list.
     if actual != json.loads(json.dumps(asdict(compiled), allow_nan=False)):
         raise ValueError('published compiled geometry differs from prepared model')
     assets = source.metadata.get('native_assets')
-    components = compiled.frontend_geometry.get('asset_components')
-    if (not isinstance(assets, dict) or not isinstance(components, dict)
-            or set(assets) != set(compiled.frontend_gems) or set(assets) != set(components)
-            or len(assets) != 4):
-        raise ValueError('exact four physical geometry assets required')
-    scope = compiled.frontend_geometry['composition_plan']['scope']['instance_ids']
-    projects = compiled.frontend_geometry['composition_plan']['components']
-    if sum(projects[name]['project_id'] == 'rf_multipole_ion_optics' for name in scope) != 1:
-        raise ValueError('selected five-slot case requires exactly one RF component')
+    if neutral:
+        if not isinstance(assets, dict) or set(assets) != {'world'} or set(compiled.frontend_gems) != {'world'}:
+            raise ValueError('one declared neutral world collision asset required')
+    else:
+        components = compiled.frontend_geometry.get('asset_components')
+        if (not isinstance(assets, dict) or not isinstance(components, dict)
+                or set(assets) != set(compiled.frontend_gems) or set(assets) != set(components)
+                or len(assets) != 4):
+            raise ValueError('exact four physical geometry assets required')
+        scope = compiled.frontend_geometry['composition_plan']['scope']['instance_ids']
+        projects = compiled.frontend_geometry['composition_plan']['components']
+        if sum(projects[name]['project_id'] == 'rf_multipole_ion_optics' for name in scope) != 1:
+            raise ValueError('selected five-slot case requires exactly one RF component')
     if source.metadata.get('provider_content_identities') != compiled.provider_content_identities:
         raise ValueError('geometry producer component source identities differ')
-    output = Path(output_directory)
-    if not output.is_absolute():
-        raise ValueError('explicit absolute run output directory required')
     records = source.data_records
     paths = source.data_locations
     verify_record('geometry source manifest',dict(source.reference['manifest'],path=str(source.manifest_location)))
@@ -96,9 +113,13 @@ def plan_collision_conversions(model: Any, geometry_reference: Mapping[str, Any]
         raw = located['raw_geometry']; surface = located.get('fractional_surface')
         if 'surface_state' in located:
             state=json.loads(located['surface_state'].read_text(encoding='utf8'))
-            domain=compiled.frontend_geometry['numerical_domains'][role]
-            dimensions=[domain['dimensions']['n'+axis] for axis in 'xyz']
-            pitch=[domain['cell_mm_xyz'][axis] for axis in 'xyz']
+            if neutral:
+                dimensions=compiled.frontend_geometry['dimensions']
+                pitch=[compiled.frontend_geometry['pitch_mm']]*3
+            else:
+                domain=compiled.frontend_geometry['numerical_domains'][role]
+                dimensions=[domain['dimensions']['n'+axis] for axis in 'xyz']
+                pitch=[domain['cell_mm_xyz'][axis] for axis in 'xyz']
             from .native_surface_state import validate_native_surface_state
             native_grid=dict(zip(('nx','ny','nz'),dimensions,strict=True), **dict(zip(('dx_mm','dy_mm','dz_mm'),pitch,strict=True)))
             validate_native_surface_state(state,grid=native_grid,surface_present=surface is not None)
@@ -113,15 +134,7 @@ def plan_collision_conversions(model: Any, geometry_reference: Mapping[str, Any]
             raise ValueError('geometry role differs from its actual planned operation outputs')
         if raw.suffix.lower() != '.pa#' or (surface is not None and surface != raw.with_suffix('.pa-surf')):
             raise ValueError('published raw PA and fractional companion stems differ')
-        target = output / f'collision_{index:02d}.pa'
-        if target.exists() or target.with_suffix('.pa-surf').exists():
-            raise FileExistsError('collision conversion destinations must be fresh')
-        tasks.append(dict(role=role, source_records=selected,
-            raw_path=str(raw), output_path=str(target),
-            build_operation=f'collision_build_{index:02d}', verify_operation=f'collision_verify_{index:02d}',
-            operations=[dict(operation_id=f'collision_build_{index:02d}',mode='build',depends_on=[]),
-                        dict(operation_id=f'collision_verify_{index:02d}',mode='verify',
-                             depends_on=[f'collision_build_{index:02d}'])]))
+        tasks.append(dict(role=role, source_records=selected, raw_path=str(raw)))
     reference=source.reference
     compiled_record=dict(records['compiled_geometry'],path=str(paths['compiled_geometry']))
     guards=[dict(reference['manifest']),compiled_record,seed,completion_record]
@@ -131,6 +144,22 @@ def plan_collision_conversions(model: Any, geometry_reference: Mapping[str, Any]
         compiled_geometry_record=compiled_record, geometry_completion_record=completion_record,
         immutable_input_records=guards,
         provider_content_identities=copy.deepcopy(compiled.provider_content_identities), tasks=tasks)
+
+
+def _plan_collision_conversions(model, geometry_reference, *, output_directory, neutral):
+    output = Path(output_directory)
+    if not output.is_absolute():
+        raise ValueError('explicit absolute run output directory required')
+    plan = _verified_collision_sources(model, geometry_reference, neutral=neutral)
+    for index, task in enumerate(plan['tasks'], 1):
+        target = output / f'collision_{index:02d}.pa'
+        if target.exists() or target.with_suffix('.pa-surf').exists():
+            raise FileExistsError('collision conversion destinations must be fresh')
+        build, verify = f'collision_build_{index:02d}', f'collision_verify_{index:02d}'
+        task.update(output_path=str(target), build_operation=build, verify_operation=verify,
+            operations=[dict(operation_id=build, mode='build', depends_on=[]),
+                        dict(operation_id=verify, mode='verify', depends_on=[build])])
+    return plan
 
 
 def collision_conversion_result(plan: Mapping[str, Any], task: Mapping[str, Any], *,

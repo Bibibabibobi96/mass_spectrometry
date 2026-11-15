@@ -157,7 +157,7 @@ def _resolve_scalar_basis(source, model, plan, selection):
 
 def plan_tracking_execution(model, *, particles, clock_records: Mapping, propagation: Mapping,
                             observations: Mapping, numerics: Mapping, unit_size=None,
-                            reused_unit_keys=(), field_manifest_record=None, birth_source_authority=None, hs1_request=None, ip_mr_field_reference=None) -> dict:
+                            reused_unit_keys=(), field_manifest_record=None, birth_source_authority=None, hs1_request=None, ip_mr_field_reference=None, neutral_sampled_field_reference=None) -> dict:
     """Validate the complete cohort and an explicit ordinal unit partition.
 
     The shared dispatcher controls real concurrency; units fix replay boundaries. Handoff producer
@@ -168,6 +168,16 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
     ip_mr = raw_geometry.get('role') == 'simion_ip_mr_complete_geometry'
     joint_ip = raw_geometry.get('role') == 'simion_rf_ip_geometry'
     static_world = raw_geometry.get('role') == 'simion_neutral_world_collision_geometry'
+    neutral_sampled = neutral_sampled_field_reference is not None
+    if neutral_sampled:
+        if not static_world:
+            raise ValueError('neutral sampled field requires its world collision geometry')
+        from .rf_tracking_execution import admit_neutral_sampled_tracking_fields
+        neutral_admission = admit_neutral_sampled_tracking_fields(neutral_sampled_field_reference)
+        if require_prepared_model(neutral_admission['model']) != document:
+            raise ValueError('neutral sampled field and model differ')
+        if field_manifest_record is not None and any(str(field_manifest_record[k]).lower() != str(neutral_admission['source'].reference['manifest'][k]).lower() for k in ('bytes', 'sha256')):
+            raise ValueError('neutral sampled field manifest differs')
     if ip_mr:
         if ip_mr_field_reference is None:
             raise ValueError('IP–MR tracking requires a published common-field binding')
@@ -272,7 +282,7 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
         from .rf_tracking_program import validate_rf_flight
         flight = validate_rf_flight(flight_input,requires_rf=rf)
         if raw_geometry['role']=='simion_independent_oa_geometry':flight['tracking_kind']='independent_oa'
-        if static_world:flight['tracking_kind']='static_world'
+        if static_world:flight['tracking_kind']='neutral_sampled' if neutral_sampled else 'static_world'
         if joint_ip: flight['tracking_kind']='rf_ip'
         if ip_mr: flight['tracking_kind']='ip_mr'
     else:
@@ -298,6 +308,10 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
         native_requested=bool(rows))
     if ip_mr and (isinstance(particles,HandoffResult) or propagation['scope'] != 'continuous_assembly'):
         raise ValueError('IP–MR requires one continuous original-birth cohort')
+    if neutral_sampled:
+        result['scalar_field_basis'] = copy.deepcopy(neutral_admission['basis'])
+        result['neutral_source_identity'] = {name: {key: record[key] for key in ('bytes', 'sha256')}
+            for name, record in neutral_admission['code_records'].items()}
     if ip_mr:
         result['scalar_field_basis'] = copy.deepcopy(admission['basis'])
         result['collision_priority'] = copy.deepcopy(admission['priority'])
@@ -318,12 +332,15 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
 
 def plan_tracking_workbench(compiled, *, field_design, components_resolved, carriers,
                              response_fields, field_workbench_record, run_directory,
-                             program, native_source_rows, native_path_resource, ip_mr_admission=None, program_metadata=None) -> NativeStagePlan:
+                             program, native_source_rows, native_path_resource, ip_mr_admission=None, neutral_admission=None, program_metadata=None) -> NativeStagePlan:
     """Reuse the sole full solved-slot projection, changing only control transport.
 
     The verified structural seed supplies private bootstrap slots; published
     field records remain protected inputs and supply every solved carrier.
     """
+    if neutral_admission is not None:
+        from .rf_tracking_execution import plan_neutral_sampled_tracking_workbench
+        return plan_neutral_sampled_tracking_workbench(compiled, admission=neutral_admission, run_directory=run_directory, program=program, native_source_rows=native_source_rows, native_path_resource=native_path_resource)
     if compiled.frontend_geometry.get('role') == 'simion_ip_mr_complete_geometry':
         if ip_mr_admission is None:
             raise ValueError('verified sampled IP–MR FieldBundle admission required')
@@ -381,6 +398,9 @@ def _render_tracking_controls(model, plan: dict, *, field_design: dict, stored_b
     The caller obtains frontend_records from FieldBundle domain/member data keys
     and downstream_assets from the unique full-family closure validator.
     """
+    if plan['flight'].get('tracking_kind') == 'neutral_sampled':
+        from .rf_tracking_program import render_rf_controls
+        return render_rf_controls(model, plan, assets=frontend_records, native_sources=native_sources, scalar_bindings=plan['scalar_field_basis'], slot_domains=[None, 'world'])
     if plan['flight'].get('tracking_kind') == 'ip_mr':
         from .rf_tracking_program import render_rf_controls
         policy = plan['collision_priority']
@@ -610,7 +630,7 @@ def _collect_unit_field_observation(plan, batches, logs, render_unit):
 def _execute_tracking_units(session, *, model, plan, design, stored_bank, frontend, downstream, source,
                             compiled, field_workbench, borrowed, frozen, native_path, sources,
                             resource_names, small, records, limits, allow_asynchronous_io,
-                            recovery, dispatch_profiles, executable_identity, ip_mr_admission=None):
+                            recovery, dispatch_profiles, executable_identity, ip_mr_admission=None, neutral_admission=None):
     """Prepare whole units, dispatch actual Fly operations, then collect once."""
     import json
     from msplatform.io.manifest_records import file_record,verify_record
@@ -643,7 +663,7 @@ def _execute_tracking_units(session, *, model, plan, design, stored_bank, fronte
             continue
         subset = slice_tracking_plan(plan,unit)
         controls = _render_tracking_controls(model,subset,field_design=design,stored_bank=stored_bank,
-            frontend_records=frontend,downstream_assets=downstream,downstream_receipt=None if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa','rf_ip','ip_mr','static_world'} else _artifact_record(source,'downstream_audit'),
+            frontend_records=frontend,downstream_assets=downstream,downstream_receipt=None if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa','rf_ip','ip_mr','static_world','neutral_sampled'} else _artifact_record(source,'downstream_audit'),
             native_sources=sources)
         row['build_metadata'] = controls['build_metadata']
         batches.append(dict(source_row_range=unit['source_row_range'],expected_particle_ids=unit['expected_particle_ids'],
@@ -653,7 +673,7 @@ def _execute_tracking_units(session, *, model, plan, design, stored_bank, fronte
             carriers=controls['carriers'],response_fields=controls['response_fields'],field_workbench_record=field_workbench,
             run_directory=root,program=controls['program'],native_source_rows=subset['native_source_rows'],
             native_path_resource=session.input_dir/'native_sources/native_run_path.lua',
-            ip_mr_admission=ip_mr_admission, program_metadata=controls['build_metadata'])
+            ip_mr_admission=ip_mr_admission, neutral_admission=neutral_admission, program_metadata=controls['build_metadata'])
         control_records = {}
         for number,(path,text) in enumerate(native_plan.materializations.items(),1):
             name = 'tracking_control_'+str(number) if plan['unit_size'] is None else 'tracking_control__'+key+'_'+str(number)
@@ -666,7 +686,7 @@ def _execute_tracking_units(session, *, model, plan, design, stored_bank, fronte
         for generated in native_plan.declared_outputs[1:]:
             session.declare_file(generated,'solver_native_binary')
         control_guards = [control_records[str(root/'inputs/tracking_iob.lua')]]
-        if plan['flight'].get('tracking_kind') == 'ip_mr':
+        if plan['flight'].get('tracking_kind') in {'ip_mr', 'neutral_sampled'}:
             control_guards.append(control_records[str(root/'inputs/sampled_basis.json')])
         immutable = _unique_inputs([*borrowed,*controls['immutable_input_records'],*seed_records,*frozen.values(),native_path,*control_guards])
         for operation,name in zip(native_plan.operations,unit['operation_ids'][:2],strict=True):
@@ -760,7 +780,7 @@ def _execute_tracking_units(session, *, model, plan, design, stored_bank, fronte
         def render_unit(unit):
             subset=slice_tracking_plan(plan,unit)
             return _render_tracking_controls(model,subset,field_design=design,stored_bank=stored_bank,
-                frontend_records=frontend,downstream_assets=downstream,downstream_receipt=None if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa','rf_ip','ip_mr','static_world'} else _artifact_record(source,'downstream_audit'),
+                frontend_records=frontend,downstream_assets=downstream,downstream_receipt=None if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa','rf_ip','ip_mr','static_world','neutral_sampled'} else _artifact_record(source,'downstream_audit'),
                 native_sources=sources)['build_metadata'].get('native_field_observation')
         observed=_collect_unit_field_observation(plan,batches,[Path(records[key]['path']) for key in stdout_keys],render_unit)
         collection['native_field_observation']=observed
@@ -799,8 +819,13 @@ def execute_tracking(session, *, fields_reference, particles, propagation, obser
         raise ValueError('FieldBundle model/clock identity differs')
     geometry_role = model_geometry(model).frontend_geometry.get('role')
     if (geometry_role == 'simion_neutral_world_collision_geometry'
-            and meta.get('field_representation') != 'producer_owned_static_world_standalone_operating_pa'):
+            and meta.get('field_representation') not in {'producer_owned_static_world_standalone_operating_pa', 'neutral_sampled_basis_with_collision_geometry'}):
         raise ValueError('static world tracking requires its published standalone operating field')
+    if meta.get('field_representation') == 'neutral_sampled_basis_with_collision_geometry':
+        if scalar_field_basis is not None or expected_scalar_basis is not None:
+            raise ValueError('neutral sampled field already owns its scalar basis')
+        from .rf_tracking_execution import execute_neutral_sampled_tracking
+        return execute_neutral_sampled_tracking(session, source=source, model=model, document=document, particles=particles, propagation=propagation, observations=observations, numerics=numerics, limits=limits, source_reference=source_reference, allow_asynchronous_io=allow_asynchronous_io, unit_size=unit_size, recovery_reference=recovery_reference, dispatch_profiles=dispatch_profiles, birth_source_authority=birth_source_authority, hs1_request=hs1_request, expected_tracking_applicability=expected_tracking_applicability)
     sampled_ip_mr = meta.get('field_representation') == 'assembly_sampled_basis_with_collision_geometry'
     if sampled_ip_mr:
         if geometry_role != 'simion_ip_mr_complete_geometry':
@@ -870,7 +895,7 @@ def execute_tracking(session, *, fields_reference, particles, propagation, obser
 def _execute_tracking_bound_source(session,*,source,model,document,compiled,geometry,design,stored_bank,
         frontend,downstream,field_workbench,borrowed,original_clock,relative_epoch,particles,propagation,observations,
         numerics,limits,source_reference,allow_asynchronous_io,unit_size,recovery_reference,dispatch_profiles,birth_source_authority=None,hs1_request=None,expected_tracking_applicability=None,
-        scalar_field_basis=None,expected_scalar_basis=None,ip_mr_admission=None):
+        scalar_field_basis=None,expected_scalar_basis=None,ip_mr_admission=None,neutral_admission=None):
     """The same unit runner and result publisher for verified TOF/RF source bindings."""
     import json
     from dataclasses import asdict
@@ -894,13 +919,41 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
         records[name] = record
         return record
 
+    neutral_code_guards = []
+    if neutral_admission is not None:
+        from . import rf_tracking_execution, rf_tracking_program, rf_tracking_collection, tracking_units, tracking_collection
+        from .neutral_sampled_field import neutral_source_modules
+        from msplatform.io.manifest_records import verify_record
+        modules = neutral_source_modules(model) + [rf_tracking_execution, rf_tracking_program,
+            rf_tracking_collection, tracking_units, tracking_collection]
+        seen = set()
+        for module in modules:
+            if module.__name__ in seen:
+                continue
+            seen.add(module.__name__)
+            path = Path(module.__file__).resolve(strict=True)
+            original = file_record(path, 'required_evidence')
+            if module.__name__ in neutral_admission['code_records'] and any(
+                    original[key] != neutral_admission['code_records'][module.__name__][key] for key in ('bytes', 'sha256')):
+                raise ValueError('neutral tracking source changed since admission: '+module.__name__)
+            name = module.__name__.replace('.', '_')
+            copied = small('neutral_tracking_code_'+name,
+                session.input_dir/'native_sources'/(name+'.py'), source_path=path)
+            verify_record('neutral tracking original source after freezing', original)
+            if any(original[k] != copied[k] for k in ('bytes', 'sha256')):
+                raise ValueError('neutral tracking source copy differs: '+name)
+            neutral_code_guards.extend((original, copied))
+        borrowed = [*borrowed, *neutral_code_guards]
     clocks = dict(clock_authority=small('clock_authority',session.input_dir/'clock/clock_authority.json',source_path=original_clock['contract']['path']),
         instrument_epoch=small('instrument_epoch',session.input_dir/'clock'/relative_epoch,source_path=original_clock['authority']['path']))
     _clock_reference(document,dict(contract=clocks['clock_authority'],authority=clocks['instrument_epoch'],data_root=str(session.input_dir/'clock')))
     plan = plan_tracking_execution(model,particles=particles,clock_records=clocks,propagation=propagation,observations=observations,
         numerics=numerics,unit_size=unit_size,field_manifest_record=source.reference['manifest'],
         birth_source_authority=birth_source_authority,hs1_request=hs1_request,
-        **({'ip_mr_field_reference':source.reference} if ip_mr_admission is not None else {}))
+        **({'ip_mr_field_reference':source.reference} if ip_mr_admission is not None else {}),
+        **({'neutral_sampled_field_reference':source.reference} if neutral_admission is not None else {}))
+    if neutral_admission is not None and plan['scalar_field_basis'] != neutral_admission['basis']:
+        raise ValueError('neutral sampled field admission changed after planning')
     if ip_mr_admission is not None:
         if plan['scalar_field_basis'] != ip_mr_admission['basis'] or plan['collision_priority'] != ip_mr_admission['priority']:
             raise ValueError('sampled IP–MR admission changed after planning')
@@ -1008,7 +1061,7 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
     small('propagation',session.input_dir/'propagation.json',value=plan['propagation'])
     small('observations',session.input_dir/'observations.json',value=plan['observations'])
     small('tracking_numerics',session.input_dir/'tracking_numerics.json',value=plan['numerics'])
-    if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa','rf_ip','ip_mr','static_world'}:
+    if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa','rf_ip','ip_mr','static_world','neutral_sampled'}:
         import inspect
         from . import rf_tracking_execution,rf_tracking_program,rf_tracking_collection
         for module in (rf_tracking_execution,rf_tracking_program,rf_tracking_collection):
@@ -1026,24 +1079,24 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
     else:
         resource_names = ('build_tracking_iob.lua','iob_core.lua','oatof_analyzer_component.lua',
             'single_flight_pulse_hook.lua','single_flight_frontend_hook.lua','rf_drive.lua','voltage_waveforms.lua')
-        if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa','rf_ip','ip_mr','static_world'}:
+        if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa','rf_ip','ip_mr','static_world','neutral_sampled'}:
             resource_names=('build_tracking_iob.lua','iob_core.lua','model_drive.lua','rf_drive.lua','rf_tracking.lua')
-            if plan['flight']['tracking_kind']=='independent_oa':resource_names+=('single_flight_pulse_hook.lua','voltage_waveforms.lua')
+            if plan['flight']['tracking_kind'] in {'independent_oa','neutral_sampled'}:resource_names+=('single_flight_pulse_hook.lua','voltage_waveforms.lua')
             if plan['flight']['tracking_kind'] in {'rf_ip','ip_mr'}:resource_names+=('single_flight_pulse_hook.lua','voltage_waveforms.lua','native_drive.lua','collision_hs1_gas.lua','rf_ip_gas_selection.lua','rf_ip_tracking_hs1.lua')
         if plan.get('scalar_field_basis') is not None:
-            resource_names += ('scalar_field_adapter.lua', 'ip_mr_scalar_field.lua' if plan['flight'].get('tracking_kind') == 'ip_mr' else 'sfi_scalar_field.lua')
+            resource_names += ('scalar_field_adapter.lua', 'ip_mr_scalar_field.lua' if plan['flight'].get('tracking_kind') == 'ip_mr' else 'generic_scalar_field.lua' if plan['flight'].get('tracking_kind') == 'neutral_sampled' else 'sfi_scalar_field.lua')
         frozen = {}
         for name in resource_names:
             frozen[name] = small('resource_'+name,session.input_dir/'native_sources'/name,source_path=native_resource_path(name))
         frozen.update(hs1_frozen)
         native_path = small('resource_native_run_path.lua',session.input_dir/'native_sources/native_run_path.lua',source_path=resource_path('native_run_path.lua'))
-        if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa','rf_ip','ip_mr','static_world'}:
+        if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa','rf_ip','ip_mr','static_world','neutral_sampled'}:
             sources={name:Path(frozen[name]['path']).read_text(encoding='utf-8-sig') for name in resource_names if name not in {'build_tracking_iob.lua','iob_core.lua'}}
         else:
             names = dict(analyzer_component_source='oatof_analyzer_component.lua',pulse_hook_source='single_flight_pulse_hook.lua',
                 frontend_hook_source='single_flight_frontend_hook.lua',rf_drive_kernel_source='rf_drive.lua',voltage_waveforms_source='voltage_waveforms.lua')
             sources = {key:Path(frozen[value]['path']).read_text(encoding='utf-8-sig') for key,value in names.items()}
-        if plan.get('scalar_field_basis') is not None and plan['flight'].get('tracking_kind') != 'ip_mr':
+        if plan.get('scalar_field_basis') is not None and plan['flight'].get('tracking_kind') not in {'ip_mr', 'neutral_sampled'}:
             sources['scalar_adapter_source'] = Path(frozen['scalar_field_adapter.lua']['path']).read_text(encoding='utf-8-sig')
             sources['scalar_composer_source'] = Path(frozen['sfi_scalar_field.lua']['path']).read_text(encoding='utf-8-sig')
         sources['native_path_source'] = Path(native_path['path']).read_text(encoding='utf-8-sig')
@@ -1052,7 +1105,11 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
             compiled=compiled,field_workbench=field_workbench,borrowed=borrowed,frozen=frozen,
             native_path=native_path,sources=sources,resource_names=resource_names,small=small,
             records=records,limits=limits,allow_asynchronous_io=allow_asynchronous_io,
-            recovery=recovery,dispatch_profiles=dispatch_profiles,executable_identity=executable_identity,ip_mr_admission=ip_mr_admission)
+            recovery=recovery,dispatch_profiles=dispatch_profiles,executable_identity=executable_identity,ip_mr_admission=ip_mr_admission,neutral_admission=neutral_admission)
+    if neutral_code_guards:
+        from msplatform.io.manifest_records import verify_record
+        for record in neutral_code_guards:
+            verify_record('neutral tracking source before publication', record)
     collection.update(schema_version=1,role='simion_tracking_collection',clock_epoch_id=document['drive']['clock']['clock_epoch_id'],
         field_reference=source.reference,model_identity_sha256=document['model_identity_sha256'],
         source_provenance_record=records['source_provenance'],propagation=plan['propagation'],

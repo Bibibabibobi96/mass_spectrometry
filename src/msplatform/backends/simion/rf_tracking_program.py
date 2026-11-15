@@ -86,6 +86,35 @@ def _ip_mr_bindings(document, admission):
         result['rf_reference']=dict(binding=binding('rf_reference'),signature=signature)
     return result,records
 
+def _neutral_sampled_bindings(document: Mapping[str, Any], admission: Mapping[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Project the verified published neutral basis into the shared scalar adapter."""
+    if (admission.get('role') != 'generic_linear_scalar_admission'
+            or admission.get('model_identity_sha256') != document['model_identity_sha256']):
+        raise ValueError('matching admitted generic scalar basis required')
+    bases, weights = admission['bases'], admission['weights']
+    if not bases or set(bases) != set(weights):
+        raise ValueError('generic scalar basis and weights differ')
+    records = []
+    def project(item: Mapping[str, Any]) -> dict[str, Any]:
+        grid, selected = item['grid'], item['records']
+        records.extend(copy.deepcopy(list(selected.values())))
+        result = dict(mode='comsol_static_scalar_v', scalar_pa=selected['field_v']['path'],
+                      valid_pa=selected['field_valid']['path'], origin_mm=grid['origin_mm'],
+                      pitch_mm=grid['pitch_mm'], dimensions=grid['dimensions'],
+                      ideal_sheet_projection=item['ideal_sheet_projection'])
+        if item.get('refinement_windows'):
+            result['refinement_windows'] = []
+            for level in item['refinement_windows']:
+                window = project(level)
+                window.update(name=level['name'], active_box_mm=level['active_box_mm'])
+                result['refinement_windows'].append(window)
+        return result
+    result = dict(model_identity_sha256=document['model_identity_sha256'], bases=[
+        dict(binding=project(item), weights=copy.deepcopy(weights[name]))
+        for name, item in bases.items()])
+    return result, records
+
+
 def _ip_mr_priority_program(policy: Mapping[str, Any], slot_domains: list[str | None]) -> str:
     """Compose the admitted collision policy into this Program's native hook."""
     from .ip_mr_collision_priority import render_ip_mr_instance_adjust
@@ -117,6 +146,7 @@ def render_rf_controls(model: Any, plan: Mapping[str, Any], *, assets: Mapping[s
     kind=plan['flight'].get('tracking_kind')
     ip_mr=kind=='ip_mr'
     static_world=kind=='static_world'
+    neutral_sampled=kind=='neutral_sampled'
     joint=kind in {'rf_ip','ip_mr'}
     priority=plan.get('collision_priority')
     if priority is not None and not ip_mr:
@@ -138,9 +168,16 @@ def render_rf_controls(model: Any, plan: Mapping[str, Any], *, assets: Mapping[s
             raise ValueError('IP–MR HS1 requires explicit IP RF step resolution')
         composer_bindings,scalar_records=_ip_mr_bindings(document,scalar_bindings)
         names=copy.deepcopy(slot_domains)
+    elif neutral_sampled:
+        if geometry.get('role') != 'simion_neutral_world_collision_geometry' or slot_domains != [None, 'world']:
+            raise ValueError('neutral sampled tracking requires background then world collision slots')
+        if not isinstance(scalar_bindings, dict) or not {'scalar_field_adapter.lua', 'generic_scalar_field.lua'} <= native_sources.keys():
+            raise ValueError('frozen neutral scalar binding and resources required')
+        composer_bindings, scalar_records = _neutral_sampled_bindings(document, scalar_bindings)
+        names = copy.deepcopy(slot_domains)
     else:
         if scalar_bindings is not None or slot_domains is not None:
-            raise ValueError('IP–MR inputs require IP–MR tracking')
+            raise ValueError('sampled inputs require matching tracking representation')
         names=['world'] if geometry.get('role')=='simion_neutral_world_collision_geometry' else ['parent'] if joint else geometry['composition_plan']['scope']['instance_ids']
     ids=[row['particle_id'] for row in plan['rows']]
     if not ids:raise ValueError('zero RF cohort has no Program')
@@ -150,7 +187,9 @@ def render_rf_controls(model: Any, plan: Mapping[str, Any], *, assets: Mapping[s
     prefix+='local rf_model_config=(function()\n'+config+'\nend)()\n'
     prefix+='local rf_kernel=(function()\n'+resource('rf_drive.lua')+'\nend)()\n'
     oa=plan['flight'].get('tracking_kind')=='independent_oa'
-    if oa or joint:
+    def rf_model_has_pulse(doc):
+        return any(row['kind'] == 'pulse' for row in doc['native_drive_rows'])
+    if oa or joint or (neutral_sampled and rf_model_has_pulse(document)):
         prefix+='local oa_pulse_hook=(function()\n'+resource('single_flight_pulse_hook.lua')+'\nend)()\n'
         prefix+='local oa_waveforms=(function()\n'+resource('voltage_waveforms.lua')+'\nend)()\n'
         ip_native=",(function(...)\n"+resource('native_drive.lua')+"\nend)" if joint else ''
@@ -168,7 +207,7 @@ def render_rf_controls(model: Any, plan: Mapping[str, Any], *, assets: Mapping[s
         prefix+='for _,row in ipairs(rf_model_config.groups) do if row.kind=="rf" then local value=rf_kernel.new_differential{waveform=row.waveform,frequency_hz=row.frequency_hz,phase_rad=row.phase_rad,rf_amplitude_v=row.rf_amplitude_v,rf_scale=1,rf_steps_per_period='+lua_value(plan['flight']['rf_steps_per_period'])+'}; rf_step_cap_us=math.min(rf_step_cap_us,value.timestep_cap_us) end end\n'
     prefix+='local rf_trajectory_quality='+lua_value(plan['flight']['trajectory_quality'])+'\n'
     prefix+='local rf_grouped='+lua_value(plan['flight'].get('grouped'))+'\n'
-    prefix+='local rf_static_operating='+lua_value(static_world)+'\n'
+    prefix+='local rf_static_operating='+lua_value(static_world or neutral_sampled)+'\n'
     if ip_mr:prefix+='local rf_committed_observations=true\n'
     program=prefix+resource('rf_tracking.lua')
     if ip_mr:
@@ -181,6 +220,12 @@ def render_rf_controls(model: Any, plan: Mapping[str, Any], *, assets: Mapping[s
             program+=_ip_mr_priority_program(priority,slot_domains)
         program+="function segment.efield_adjust()\n  local instance=assert(simion.wb.instances[ion_instance],'selected instance required')\n"
         program+='  ion_dvoltsx_gu,ion_dvoltsy_gu,ion_dvoltsz_gu=ip_mr_scalar(instance,ion_px_mm,ion_py_mm,ion_pz_mm,single_flight_instrument_time_us())\nend\n'
+    if neutral_sampled:
+        program += '\nlocal neutral_scalar_adapter=(function()\n'+resource('scalar_field_adapter.lua')+'\nend)()\n'
+        program += 'local neutral_scalar_module=(function()\n'+resource('generic_scalar_field.lua')+'\nend)()\n'
+        program += 'local neutral_scalar=neutral_scalar_module.new(neutral_scalar_adapter,rf_consumer,'+lua_value(composer_bindings)+')\n'
+        program += "function segment.efield_adjust()\n  local instance=assert(simion.wb.instances[ion_instance],'selected instance required')\n"
+        program += '  ion_dvoltsx_gu,ion_dvoltsy_gu,ion_dvoltsz_gu=neutral_scalar(instance,ion_px_mm,ion_py_mm,ion_pz_mm,single_flight_instrument_time_us())\nend\n'
     if joint:
         options=plan['hs1']
         if set(options)!={'vendor_path','bath_path','outer_path','query_frame_id','numerics'}:
@@ -239,7 +284,7 @@ def render_rf_controls(model: Any, plan: Mapping[str, Any], *, assets: Mapping[s
         program += 'local static_world_max=' + lua_value(domain['maximum_mm']) + '\n'
         program += "local function require_static_world_coverage()\n"
         program += "  local position={ion_px_mm,ion_py_mm,ion_pz_mm}\n"
-        program += "  local valid=ion_instance==1\n"
+        program += "  local valid=" + ('ion_instance==1 or ion_instance==2' if neutral_sampled else 'ion_instance==1') + "\n"
         program += "  for i=1,3 do valid=valid and position[i]>=static_world_min[i] and position[i]<=static_world_max[i] end\n"
         program += "  if not valid then error(string.format('STATIC_WORLD_FIELD_COVERAGE_MISSING particle=%.0f time_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g slot=%s',single_flight_canonical_particle_id(),single_flight_instrument_time_us(),position[1],position[2],position[3],tostring(ion_instance))) end\nend\n"
         for callback in ('initialize', 'other_actions', 'terminate'):
@@ -256,5 +301,5 @@ def render_rf_controls(model: Any, plan: Mapping[str, Any], *, assets: Mapping[s
              for row in document['native_drive_rows']), key=lambda row:row['electrode_id'])
     if oa:metadata.update(component_kind='orthogonal_accelerator',field_domain_coupling='independent_component_domains',native_state_wire_format='legacy_shared_RF_NATIVE_STATE_V1')
     return dict(program=program,build_metadata=metadata,carriers=assets,response_fields=[],
-        immutable_input_records=([record for row in assets.values() for record in [row['carrier_record'],row['witness_record'], *([row['surface_record']] if 'surface_record' in row else []), *([row['state_record']] if 'state_record' in row else [])]]
-            if static_world else [record for row in assets.values() for record in [*row['family_records'],row['witness_record']]])+(scalar_records if ip_mr else []),flight=plan['flight'])
+        immutable_input_records=([] if neutral_sampled else [record for row in assets.values() for record in [row['carrier_record'],row['witness_record'], *([row['surface_record']] if 'surface_record' in row else []), *([row['state_record']] if 'state_record' in row else [])]]
+            if static_world else [record for row in assets.values() for record in [*row['family_records'],row['witness_record']]])+(scalar_records if ip_mr or neutral_sampled else []),flight=plan['flight'])
