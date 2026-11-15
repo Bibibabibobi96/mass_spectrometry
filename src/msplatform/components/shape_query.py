@@ -254,7 +254,19 @@ def _roundoff_near_surface(shape: Mapping, point: Sequence[float], error: Sequen
             or abs(point[2]-lo) <= axial_error or abs(point[2]-hi) <= axial_error)
 
 
-def _query_members(members: Sequence[Mapping], point: Sequence[float], *, frame_id: str, _prepared_shapes=None, _poses=None) -> dict:
+def _outside_surface_bounds(bounds, point, error):
+    """Prove separation from every enclosed IP-box surface."""
+    for i, (lo, hi) in enumerate(bounds):
+        coordinate = point[i]
+        margin = error[i] + 8*math.ulp(max(1., abs(coordinate), abs(lo), abs(hi)))
+        lower = math.nextafter(lo-margin, -math.inf)
+        upper = math.nextafter(hi+margin, math.inf)
+        if math.isfinite(margin) and (coordinate < lower or coordinate > upper):
+            return True
+    return False
+
+
+def _query_members(members: Sequence[Mapping], point: Sequence[float], *, frame_id: str, _prepared_shapes=None, _poses=None, _surface_bounds=None) -> dict:
     """Classify canonical members in their supplied assembly frame and pose.
 
     An unsupported shape is not treated as empty. Distinct simultaneously
@@ -275,6 +287,16 @@ def _query_members(members: Sequence[Mapping], point: Sequence[float], *, frame_
             if pose_key not in local_cache:
                 local_cache[pose_key] = [inverse.transform_position(position), None]
             local = local_cache[pose_key][0]
+        # Reuse the already computed uncertainty for this shared pose.  A fully
+        # validated box tree entirely outside its all-child envelope is outside,
+        # including every Boolean tool and every uncertainty surface.
+        bounds = None if _surface_bounds is None else _surface_bounds.get(id(member['shape']))
+        cached_error = None if _poses is None else local_cache[pose_key][1]
+        if (bounds is not None and cached_error is not None
+                and _outside_surface_bounds(bounds, local.coordinates_mm, cached_error)):
+            # Preserve identity access and its failures for outside members.
+            member['instance_id'], member['electrode_group_id']
+            continue
         relation = _shape_relation(member['shape'], local.coordinates_mm, _prepared_shapes=_prepared_shapes)
         if relation != 'unsupported':
             # Bound the inverse rotation/translation arithmetic conservatively.
@@ -305,7 +327,10 @@ def _query_members(members: Sequence[Mapping], point: Sequence[float], *, frame_
                     local_cache[pose_key][1] = error
             else:
                 error = cached_error
-            if _roundoff_near_surface(member['shape'], local.coordinates_mm, error, _prepared_shapes=_prepared_shapes):
+            bounds = None if _surface_bounds is None else _surface_bounds.get(id(member['shape']))
+            outside_all_surfaces = (relation == 'outside' and bounds is not None
+                                    and _outside_surface_bounds(bounds, local.coordinates_mm, error))
+            if not outside_all_surfaces and _roundoff_near_surface(member['shape'], local.coordinates_mm, error, _prepared_shapes=_prepared_shapes):
                 relation = 'boundary'
         key = (member['instance_id'], member['electrode_group_id'])
         if relation == 'interior': inside.add(key)
@@ -326,6 +351,7 @@ def prepare_member_query(members: Sequence[Mapping], *, frame_id: str):
     prepared_shapes = {}
     poses = {}
     unique_poses = {}
+    surface_bounds = {}
     def prepare(shape):
         kind = shape.get('kind')
         if kind == 'extruded_yz_polygon':
@@ -343,8 +369,33 @@ def prepare_member_query(members: Sequence[Mapping], *, frame_id: str):
         elif kind == 'difference':
             prepare(shape['base'])
             for part in shape['tools']: prepare(part)
+    def box_surface_bounds(shape):
+        # Only fully validated IP-box trees have a finite, conservative envelope.
+        # Include every Boolean child: tools can affect uncertainty outside the base.
+        kind = shape.get('kind')
+        if kind == 'ip_box':
+            return prepared_shapes[id(shape)]
+        if kind == 'union':
+            children = shape.get('parts')
+        elif kind == 'difference':
+            tools = shape.get('tools')
+            if not isinstance(tools, (list, tuple)) or not tools or 'base' not in shape:
+                return None
+            children = [shape['base'], *tools]
+        else:
+            return None
+        if not isinstance(children, (list, tuple)) or not children:
+            return None
+        envelopes = [box_surface_bounds(child) for child in children]
+        if any(value is None for value in envelopes):
+            return None
+        return [(min(value[i][0] for value in envelopes), max(value[i][1] for value in envelopes))
+                for i in range(3)]
     for member in frozen:
         prepare(member['shape'])
+        bounds = box_surface_bounds(member['shape'])
+        if bounds is not None:
+            surface_bounds[id(member['shape'])] = bounds
         key = json.dumps(member['transform'], sort_keys=True, separators=(',', ':'), allow_nan=False)
         if key not in unique_poses:
             transform = RigidTransform.from_contract(member['transform'])
@@ -354,7 +405,7 @@ def prepare_member_query(members: Sequence[Mapping], *, frame_id: str):
             unique_poses[key] = (key, transform, transform.inverse(), defect + 64*math.ulp(1.))
         poses[id(member)] = unique_poses[key]
     def query(point):
-        return _query_members(frozen, point, frame_id=frame_id, _prepared_shapes=prepared_shapes, _poses=poses)
+        return _query_members(frozen, point, frame_id=frame_id, _prepared_shapes=prepared_shapes, _poses=poses, _surface_bounds=surface_bounds)
     return query
 
 

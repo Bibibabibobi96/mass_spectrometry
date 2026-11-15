@@ -5,11 +5,54 @@ import copy
 import itertools
 import math
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from msplatform.components import shape_query as query
 
 class ShapeQueryTests(unittest.TestCase):
+    def test_prepared_box_surface_culling_preserves_uncertainty_and_conflicts(self):
+        pose={'schema_version':1,'role':'rigid_transform','from_frame_id':'local','to_frame_id':'world',
+              'rotation':[[0,-1,0],[1,0,0],[0,0,1]],'translation_mm':[1000000,-2000000,3]}
+        box=lambda lo,hi: {'kind':'ip_box','min_mm':lo,'max_mm':hi}
+        shape={'kind':'difference','base':box([-2,-2,-2],[2,2,2]),
+               'tools':[box([10,-1,-1],[12,1,1])]}
+        member={'instance_id':'i','member_id':'a','electrode_group_id':'g','shape':shape,'transform':pose}
+        sentinel=copy.deepcopy(member);sentinel['member_id']='sentinel';sentinel['electrode_group_id']='sentinel'
+        sentinel['shape']=box([1000,1000,1000],[1001,1001,1001])
+        members=[sentinel,member]
+        prepared=query.prepare_member_query(members,frame_id='world')
+        for local_x in (-20,-2,math.nextafter(2.,math.inf),2.,10.,math.nextafter(10.,math.inf),12.,30.,1e12):
+            point=(1000000.,-2000000.+local_x,3.)
+            with self.subTest(local_x=local_x):
+                self.assertEqual(prepared(point),query.query_members(members,point,frame_id='world'))
+        for direction in (-math.inf, math.inf):
+            point=(1000000.,math.nextafter(-1999990.,direction),3.)
+            self.assertEqual(prepared(point),query.query_members(members,point,frame_id='world'))
+        unknown=copy.deepcopy(member);unknown['member_id']='unknown';unknown['shape']={'kind':'unknown'}
+        q=query.prepare_member_query([member,unknown],frame_id='world')
+        self.assertEqual(q((1000000.,-2000000.,3.))['status'],'unsupported')
+        other=copy.deepcopy(member);other['member_id']='b';other['electrode_group_id']='other'
+        q=query.prepare_member_query([member,other],frame_id='world')
+        with self.assertRaisesRegex(ValueError,'different electrode groups'):
+            q((1000000.,-2000000.,3.))
+
+    def test_prepared_box_culling_skips_both_recursions_only_after_pose_error(self):
+        pose={'schema_version':1,'role':'rigid_transform','from_frame_id':'local','to_frame_id':'world',
+              'rotation':[[1,0,0],[0,1,0],[0,0,1]],'translation_mm':[0,0,0]}
+        box=lambda x: {'kind':'ip_box','min_mm':[x,-1,-1],'max_mm':[x+1,1,1]}
+        a={'instance_id':'i','member_id':'a','electrode_group_id':'a','shape':box(10),'transform':pose}
+        b={'instance_id':'i','member_id':'b','electrode_group_id':'b',
+           'shape':{'kind':'difference','base':box(20),'tools':[box(30)]},'transform':pose}
+        expected=query.query_members([a,b],(0,0,0),frame_id='world')
+        prepared=query.prepare_member_query([a,b],frame_id='world')
+        with mock.patch.object(query,'_shape_relation',wraps=query._shape_relation) as relation:
+            self.assertEqual(prepared((0,0,0)),expected)
+            self.assertEqual(relation.call_count,1)
+        del b['electrode_group_id']
+        malformed=query.prepare_member_query([a,b],frame_id='world')
+        with self.assertRaises(KeyError): malformed((0,0,0))
+
     def test_oa_witness_frozen_source_parity(self):
         fixture = json.loads((Path(__file__).parent / 'fixtures/oa_witness_parity.json').read_text(encoding='utf-8'))
         bits = fixture['expected_bits']
