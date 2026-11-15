@@ -194,17 +194,20 @@ for ion=1,2 do
  ion_number=ion;ion_instance=1;ion_splat=0;ion_time_of_flight=0;ion_mass=100;ion_charge=1
  ion_px_mm=1;ion_py_mm=1;ion_pz_mm=1;ion_vx_mm=.001;ion_vy_mm=.002;ion_vz_mm=.003
  segment.initialize()
- ion_time_of_flight=.5;ion_px_mm=2;segment.other_actions()
- if ion==1 then
-  ion_number=2;local ok,why=pcall(segment.tstep_adjust)
-  assert(not ok and tostring(why):find('interleaved particle stream is unsupported',1,true))
-  ion_number=1
- end
+end
+for ion=1,2 do
+ ion_number=ion;ion_instance=1;ion_splat=0;ion_time_of_flight=.5;ion_px_mm=2
+ segment.tstep_adjust();segment.other_actions()
+end
+ion_number=1;local ok,why=pcall(segment.tstep_adjust)
+assert(not ok and tostring(why):find('interleaved particle stream is unsupported',1,true))
+for ion=1,2 do
+ ion_number=ion;ion_instance=1;ion_splat=ion==1 and 0 or 1
  if ion==1 then assert(ion_splat==0);ion_time_of_flight=0;ion_px_mm=1
  else assert(ion_splat==1);ion_time_of_flight=.4;ion_px_mm=1.8 end
  segment.terminate()
 end
-assert(seeds[#seeds-1]==46 and seeds[#seeds]==130,'original particle seed streams differ')
+assert(seeds[#seeds-1]==46 and seeds[#seeds]==130,'original particle HS1 seed differs')
 print('status,Fly completed. 2 splats')
 """
             actual=root/'ip_mr_collect.lua';actual.write_text(prefix+rendered['program']+continuation,encoding='utf8')

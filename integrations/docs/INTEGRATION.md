@@ -35,6 +35,22 @@ generated-Program regression and four shared RF–IP/HS1 consumer modules passed
 seven tests with zero skips in 110.938 guarded seconds, unchanged source and a
 released GATE. Corrected native flight remains unverified.
 
+The fresh `track-418a32b3b9ad` on `35ca7e69` recorded all 100 original births
+but stopped after the first contact on the same sequential-state guard; no
+terminal collection was published. The native owner closed with unchanged
+source and stopped writers. The [official trajectory flow](https://simion.com/info/_images/fig-prg-flow.pdf)
+defers every per-ion terminate callback until all ions have splatted. A real
+two-ion zero-field diagnostic, `20261115_211940__analysis__simion__deferred-terminate-369fd1f7a59b`,
+confirmed both initializes, both first-step callbacks and only then both native
+terminates, with global callbacks enabled and grouped mode disabled. It used
+one tiny synthetic workbench, no HS1, no production fields and zero Refine or
+Compute; its source guard and owner closure passed. The successor permits first
+activation of each new ion while rejecting a return to an earlier integration
+stream. It retains actual deferred terminal collection and original-ID seeding;
+seven focused tests across the generated Program and shared RF–IP/HS1 consumers
+passed with zero skips in 106.515 guarded seconds and unchanged source. The
+corrected full N100 attempt still remains unverified.
+
 The generic sampled RF/pulse software candidate passed 28 focused parents; its
 separate grouped recovery checks passed seven parents with inert native leaves.
 The ordinary wheel and rebuilt-sdist parent passed on `a5c1fbad` in 1,371.187 s;

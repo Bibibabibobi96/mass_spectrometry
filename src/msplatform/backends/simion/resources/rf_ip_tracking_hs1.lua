@@ -6,7 +6,7 @@ function M.install(hs,gas,binder,config,clock,particle_id,waveforms)
   assert(type(config)=='table' and type(config.baseline)=='table' and type(config.numerics)=='table','explicit HS1 controls required')
   local b,n=config.baseline,config.numerics
   local local_gas=binder.bind(hs,gas,function() return ion_px_mm,ion_py_mm,ion_pz_mm end,assert(config.query_frame_id))
-  local active,done=nil,{}
+  local active,done,activated=nil,{},{}
   local function reset()
     hs.reset_run_state()
     adjustable _gas_mass_amu=b.gas.mass_amu
@@ -32,11 +32,14 @@ function M.install(hs,gas,binder,config,clock,particle_id,waveforms)
     assert(not done[ion_number],'terminated particle cannot reactivate HS1')
     if active==ion_number then return end
     assert(sim_grouped==0,'HS1 requires sequential particle processing')
-    assert(not active or done[active],'interleaved particle stream is unsupported')
-    reset();seed(n.seed+particle_id()-1);active=ion_number
+    -- SIMION defers terminate until every ion has splatted. A new ion may
+    -- start first, but a previous integration stream must never resume.
+    -- https://simion.com/info/_images/fig-prg-flow.pdf (8.2, 2026-11-15)
+    assert(not activated[ion_number],'interleaved particle stream is unsupported')
+    reset();seed(n.seed+particle_id()-1);active=ion_number;activated[ion_number]=true
   end
   function segment.initialize_run()
-    original_run();active=nil;done={};sim_grouped=0;sim_rerun_flym=0;reset();seed(n.seed)
+    original_run();active=nil;done={};activated={};sim_grouped=0;sim_rerun_flym=0;reset();seed(n.seed)
   end
   function segment.tstep_adjust()
     activate();hs.segment.tstep_adjust();original_step()

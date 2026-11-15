@@ -253,7 +253,11 @@ passed, but Fly failed with `too many PAs in memory` and zero splats. The adapte
 correction passed its real 107-PA reinitialization probe; the next original N100
 attempt on `3bf046bd` passed build/reopen and failed in HS1 callback composition
 after one splat. Its imported vendor replaced tracking callbacks; the successor
-preserves them without changing collision equations or particle seeds. Corrected
+preserves them without changing collision equations or particle seeds. Its next
+attempt recorded all 100 original births but exposed a guard that incorrectly
+required immediate per-ion termination. The official deferred callback order was
+confirmed in a two-ion native diagnostic; the successor retains actual native
+terminals and rejects resuming an earlier integration stream. Corrected full
 native flight remains unverified, and no accepted full-cohort trajectory exists.
 Generic RF/pulse software passed 28 focused parents and seven recovery parents;
 the ordinary two-arm parent including the dynamic probe passed on frozen

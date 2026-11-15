@@ -113,12 +113,13 @@ assert(loadfile(arg[1]))().install(hs,gas,binder,conf,function() return t end,fu
 segment.initialize_run();segment.tstep_adjust();assert(ion_time_step==.25)
 segment.other_actions();ion_px_mm=1;segment.other_actions();ion_px_mm=0;segment.tstep_adjust();assert(init==2 and steps==2 and actions==2)
 assert(pressures[1]==0 and pressures[2]==2)
-ion_number=2;id=101;local before_interleave=#seeds;assert(not pcall(segment.tstep_adjust));assert(#seeds==before_interleave)
-ion_number=1;id=7
-assert(#seeds==4 and seeds[1]==41 and seeds[2]==40 and seeds[3]==41 and seeds[4]==46)
-segment.terminate();local before=#seeds;assert(not pcall(segment.tstep_adjust));assert(#seeds==before)
+-- All tracking callbacks finish before any terminate callback.
 ion_number=2;id=101;segment.tstep_adjust();assert(init==3 and seeds[#seeds]==140)
-assert(base.run==1 and base.actions==2 and base.terminal==1)
+local before_interleave=#seeds;ion_number=1;id=7;assert(not pcall(segment.tstep_adjust));assert(#seeds==before_interleave)
+ion_number=1;segment.terminate();local before=#seeds;assert(not pcall(segment.tstep_adjust));assert(#seeds==before)
+ion_number=2;segment.terminate();assert(not pcall(segment.tstep_adjust));assert(#seeds==before)
+assert(#seeds==6 and seeds[1]==41 and seeds[2]==40 and seeds[3]==41 and seeds[4]==46 and seeds[5]==41 and seeds[6]==140)
+assert(base.run==1 and base.actions==2 and base.terminal==2)
 print('RF_IP_HS1_LIFECYCLE=PASS')
 """,encoding='utf-8')
             result=subprocess.run([str(LUA),str(script),str(root/'composition.lua'),str(BINDING)],cwd=root,
