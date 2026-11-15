@@ -28,7 +28,7 @@ assert(not collision_iob or sampled_tracking or mode=='build_geometry' or mode==
 assert(not sampled_tracking or ((mode=='build' or mode=='verify') and spec.field_representation=='assembly_sampled_basis_with_collision_geometry'), 'sampled tracking requires its explicit field representation')
 if sampled_tracking then
   local file=assert(io.open(assert(spec.scalar_binding),'rb'),'sampled tracking scalar binding missing')
-  assert(file:seek('end')>0,'sampled tracking scalar binding empty');file:close()
+  local first=file:read(1);file:close();assert(first~=nil,'sampled tracking scalar binding empty')
 end
 local independent_component=spec.role=='independent_rf_geometry_iob_build' or independent_oa or tracking_role or dual_cone or joint_rf_ip or joint_oa_mr or joint_rf_oa or joint_ip_mr or collision_iob or generic_collision or generic_model
 assert(not joint_ip_mr or mode=='build_geometry' or mode=='verify_geometry' or model_only,'IP–MR fields and tracking workbench unsupported')
@@ -132,7 +132,7 @@ if model_only then
     assert(row.path:match('%.pa#$'),'unsolved model requires the actual raw PA representation')
     reject_companions(row.path:gsub('%.pa#$',''))
     local file=assert(io.open(row.path,'rb'),'model geometry PA is missing before workbench load: '..row.path)
-    assert(file:seek('end')>0,'model geometry PA is empty');file:close()
+    local first=file:read(1);file:close();assert(first~=nil,'model geometry PA is empty')
   end
   for _,key in ipairs({'configuration','consumer','rf_drive','pulse_hook','waveforms'}) do
     local file=assert(io.open(assert(spec.model[key]),'rb'),'model consumer resource missing: '..key)
@@ -175,7 +175,7 @@ if independent_component and (not tracking_role or sampled_tracking) then
     local keys=collision_iob and row.role==spec.collision_roles.background and {'path'} or row.surface_state and {'path','surface_state','surface_witnesses'} or {'path','fractional_surface','surface_witnesses'}
     for _,key in ipairs(keys) do
       local file=assert(io.open(assert(row[key]),'rb'),'RF geometry input missing before IOB load: '..key)
-      assert(file:seek('end')>0,'RF geometry input empty: '..key);file:close()
+      local first=file:read(1);file:close();assert(first~=nil,'RF geometry input empty: '..key..' ('..row[key]..')')
     end
   end
 end
@@ -265,7 +265,7 @@ local function verify_fractional_component(item,row)
   end
   if not empty then
     local surface=assert(io.open(row.fractional_surface,'rb'),'fractional companion missing before IOB load')
-    assert(surface:seek('end')>0);surface:close()
+    local first=surface:read(1);surface:close();assert(first~=nil)
   end
   local witnesses=assert(io.open(row.surface_witnesses,'rb'))
   local checked=0

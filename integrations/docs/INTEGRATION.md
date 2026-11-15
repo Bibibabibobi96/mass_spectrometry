@@ -1420,6 +1420,17 @@ records. The new
 has focused software coverage, with final composed native geometry/model and
 continuous-flight acceptance still pending. These observations grant no field,
 convergence, transmission or instrument-performance qualification.
+The successor `20261115_105830__build__simion__geometry-9ff375a104e4`
+completed all four raw geometry operations, including the detector's empty
+surface proof. IOB construction then failed at the nonempty-file guard before
+native loading. All native writers exited, and the owner retained FAILED status
+and sealed 4,575,155,043 bytes with its capacity session released. A separate
+read-only file-I/O observation, `20261115_110610__analysis__simion__lua-seek-5428fa608c69`,
+reproduced a negative end-seek result on the 3.17 GB MR PA while first-byte reads
+succeeded. The smaller IP control returned its correct size. Its native operation
+exited zero; the diagnostic wrapper's missing completion field failed publication.
+The corrected nonempty check still needs the next full native geometry/IOB run.
+Neither attempt performed Refine or Fly.
 
 The public geometry integration passed eight focused software tests in 147.066
 seconds (152.334 guarded wall), with the full source and checkout unchanged.

@@ -9,7 +9,7 @@ end
 for _,asset in ipairs(spec.assets) do
   for _,path in ipairs(asset.family_paths) do
     local file=assert(io.open(path,'rb'),'RF family member missing')
-    assert(file:seek('end')>0,'RF family member empty');file:close()
+    local first=file:read(1);file:close();assert(first~=nil,'RF family member empty')
   end
   simion.pas:close()
   local pa=assert(simion.pas:open(asset.carrier_path))

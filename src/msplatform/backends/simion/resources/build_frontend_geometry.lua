@@ -50,7 +50,7 @@ end
 if spec.fractional_surface then
   local companion=io.open(spec.fractional_surface,'rb')
   local empty=companion==nil
-  if companion then assert(companion:seek('end')>0,'fractional surface companion empty');companion:close() end
+  if companion then local first=companion:read(1);companion:close();assert(first~=nil,'fractional surface companion empty') end
   local scanned,offsets=0,0
   if empty then
     assert(spec.surface_state,'fractional surface companion missing')

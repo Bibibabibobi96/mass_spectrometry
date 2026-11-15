@@ -32,12 +32,30 @@ class CollisionIobTests(unittest.TestCase):
     .replace(' slots[1]=item\nend'," if failure=='foreign_path' and i==3 then item.pa.path=item.pa.path..'.foreign' end\n slots[i]=item\n end\nend")
     .replace("arg={arg[1],mode,arg[5]}","arg={arg[1],mode,arg[5]}")
     .replace("arg[3]..'/iob_core.lua'", "arg[3]..'/iob_core.lua'"))
+   # Model a readable file whose end-position query overflows native Lua's offset.
+   code = r'''local real_open=io.open
+local emulate=arg[3]=='negative_seek'
+io.open=function(path, mode)
+ local f,err=real_open(path,mode)
+ if f and emulate and mode=='rb' and path:match('rf%.pa$') then
+  return {read=function(_, ...) return f:read(...) end,
+          close=function(_) return f:close() end,
+          seek=function(_) return -1 end}
+ end
+ return f,err
+end
+''' + code
    script=root/'harness.lua';script.write_text(code);request=root/'spec.lua'
    def run(mode,value,failure='valid'):
     request.write_text('return '+lua_value(value),encoding='utf8')
     return subprocess.run([str(lua),str(script),str(request),mode,failure,'unused',str(native_resource_path('iob_core.lua').parent)],cwd=root,capture_output=True,text=True,encoding='utf8',timeout=30)
    for mode,marker in [('build_geometry','IP_MR_COLLISION_IOB=PASS'),('verify_geometry','IP_MR_COLLISION_IOB_REOPEN=PASS')]:
     p=run(mode,spec);self.assertEqual(p.returncode,0,p.stderr);self.assertIn(marker,p.stdout)
+   result=run('verify_geometry',spec,'negative_seek');self.assertEqual(result.returncode,0,result.stderr)
+   rf=pathlib.Path(rows[1]['path']);rf.write_bytes(b'')
+   result=run('verify_geometry',spec,'negative_seek');self.assertNotEqual(result.returncode,0)
+   self.assertIn('RF geometry input empty: path',result.stderr);self.assertIn(str(rf),result.stderr)
+   rf.write_bytes(b'inert')
    bad=copy.deepcopy(spec);bad['instances'].pop(2)
    p=run('verify_geometry',bad);self.assertNotEqual(p.returncode,0);self.assertIn('requires five actual slots',p.stderr)
    bad=copy.deepcopy(spec);bad['instances'][0]['priority_number']=5

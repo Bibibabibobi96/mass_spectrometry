@@ -6,7 +6,7 @@ local spec=assert(dofile(assert(arg[1],'static operating audit spec required')))
 local function finite(v) return type(v)=='number' and v==v and math.abs(v)<math.huge end
 local function nonempty(path)
   local f=assert(io.open(path,'rb'),'required standalone input missing: '..path)
-  assert(f:seek('end')>0,'required standalone input empty');assert(f:close())
+  local first=f:read(1);assert(f:close());assert(first~=nil,'required standalone input empty')
 end
 local prior=io.open(spec.output,'rb');if prior then prior:close();error('audit output already exists') end
 assert(type(spec.assets)=='table' and #spec.assets>0,'explicit static assets required')

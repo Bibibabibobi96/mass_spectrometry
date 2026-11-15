@@ -104,6 +104,13 @@ and its publication limits are recorded in the
 This representation contract does not establish field coupling, mesh convergence
 or trajectory accuracy. Generic neutral-world field support is a separate
 consumer slice until its complete state propagation has been verified.
+For nonempty-file checks, native Lua consumers read one byte rather than seek to
+EOF. A read-only SIMION 2020 observation on the retained 3,172,638,272-byte MR
+raw PA returned `-1` from `seek('end')` while both first-byte reads succeeded;
+the 81,341,912-byte IP control returned its correct end position. This guard
+change does not replace manifest byte counts, hashes, PA-header checks or native
+geometry audits. The diagnostic operation exited zero, but its caller omitted
+a required completion field and failed publication; its failed record is retained.
 
 所有新建SIMION Workbench必须从[`assets/iob_instance_seeds/`](assets/iob_instance_seeds/README.md)
 中与实际PA实例数一致的干净GUI种子派生。该公共目录提供1--10槽连续容器和唯一占位PA；派生器必须替换每一个槽，

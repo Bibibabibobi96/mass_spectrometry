@@ -14,7 +14,7 @@ local function exists(path)
  local f=io.open(path,'rb');if f then f:close();return true end;return false
 end
 local function nonempty(path)
- local f=assert(io.open(path,'rb'),'required input missing: '..path);local n=assert(f:seek('end'));f:close();assert(n>0,'required input empty: '..path)
+ local f=assert(io.open(path,'rb'),'required input missing: '..path);local first=f:read(1);f:close();assert(first~=nil,'required input empty: '..path)
 end
 nonempty(source)
 local empty=false
