@@ -400,3 +400,39 @@ print('GENERIC_SCALAR=PASS')
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("GENERIC_SCALAR=PASS", result.stdout)
+
+
+class GenericDescriptorTests(unittest.TestCase):
+    def test_descriptor_validation_and_query_scoped_support(self):
+        import os
+        import subprocess
+        lua = os.environ['SIMION_LUA_EXE']
+        composer = Path(__file__).resolve().parents[2] / 'src/msplatform/backends/simion/resources/generic_scalar_field.lua'
+        script = r'''
+local module=assert(loadfile(arg[1]))()
+local config={role='simion_model_drive',model_identity_sha256='model',clock={phase_reference_instrument_time_us=0},
+ groups={{instance_id='part',electrode_group_id='a',kind='ip_schedule'}}}
+local consumer={describe=function() return config end,evaluate_at=function() return {{instance_id='part',electrode_group_id='a',voltage_v=0}} end}
+local shared,previous,calls=nil,nil,0
+local function adapter(binding,mode,pool)
+ if shared then assert(shared==pool) else shared=pool end
+ return function(instance,x,y,z,support)
+  calls=calls+1
+  if binding=='bad' then error('UNKNOWN_MASK') end
+  if binding=='one' then assert(support~=previous);previous=support else assert(support==previous) end
+  return 1,2,3
+ end
+end
+local binding={model_identity_sha256='model',bases={{binding='one',coefficient={kind='constant'}},
+ {binding='two',coefficient={kind='scientific_group_voltage',instance_id='part',electrode_group_id='a'}}}}
+local query=module.new(adapter,consumer,binding);query({},1,2,3,0);query({},2,2,3,1);assert(calls==4)
+binding.bases[2].binding='bad';shared=nil;query=module.new(adapter,consumer,binding)
+local ok,err=pcall(query,{},1,2,3,0);assert(not ok and err:find('UNKNOWN_MASK',1,true))
+binding.bases[2].coefficient.electrode_group_id='missing';assert(not pcall(module.new,adapter,consumer,binding))
+binding.bases[2].coefficient={kind='canonical_rf_waveform',waveform='cosine',frequency_hz=1,phase_rad=0}
+assert(not pcall(module.new,adapter,consumer,binding))
+binding.bases[2].coefficient={kind='unknown'};assert(not pcall(module.new,adapter,consumer,binding))
+binding.bases[2].coefficient={kind='constant',unexpected=true};assert(not pcall(module.new,adapter,consumer,binding))
+'''
+        result = subprocess.run([lua, '-', str(composer)], cwd=composer.parent, input=script, text=True, capture_output=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

@@ -64,6 +64,17 @@ and an explicit joint connection. It retains missing-port and unsupported-bounda
 negative cases. Its inert process leaves establish software wiring, not native
 field or trajectory qualification.
 
+The admitted IP–MR scalar path now uses the existing generic weighted composer:
+its carrier, actual scheduled scientific groups and admitted RF reference become
+explicit coefficient descriptors. It shares only identical admitted masks and
+retains per-query support checks, including zero-weight terms. A single RF basis
+cannot cover incompatible waveform signatures. Frozen resources and whole-unit
+recovery fingerprint the same selected composer. This consolidates the runtime;
+neutral public model/basis admission of IP schedules remains a separate gap.
+Tracking joins saved-solution provenance through its authenticated small manifest
+and the sample's exact solution record, without rereading an unused MPH payload.
+The existing owner still protects both sampled data and its solution producer.
+
 RF scientific group drives and carrier coefficients are projected by
 `components.rf_multipole.drive` from the canonical provider sources. SIMION
 retains native electrode-map validation; RF, TOF and frontend consumers share

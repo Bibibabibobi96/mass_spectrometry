@@ -51,6 +51,9 @@ def _ip_mr_bindings(document, admission):
     if admission.get('ip_groups')!=groups:
         raise ValueError('admitted IP group/index mapping differs from model')
     if rf:
+        signature={(row['waveform'],row['frequency_hz'],row['phase_rad']) for row in rf}
+        if len(signature)!=1:
+            raise ValueError('one admitted RF reference cannot cover multiple RF signatures')
         row=rf[0];rf_identity=dict(instance_id=row['instance_id'],waveform=row['waveform'],
             frequency_hz=row['frequency_hz'],phase_rad=row['phase_rad'],coefficient='dimensionless_rf_waveform')
         if admission.get('rf')!=rf_identity:
@@ -85,13 +88,17 @@ def _ip_mr_bindings(document, admission):
                     dimensions=window_grid['dimensions'], ideal_sheet_projection=level['ideal_sheet_projection'],
                     **mask_identity(window_grid, window_records['field_valid'])))
         return projected
-    result=dict(carrier=binding('carrier'),ip_unit_volt=[dict(instance_id=row['instance_id'],
-        electrode_group_id=row['electrode_group_id'],binding=binding('ip_'+str(row['schedule_index']))) for row in rows])
+    terms=[dict(binding=binding('carrier'),coefficient=dict(kind='constant'))]
+    for row in rows:
+        terms.append(dict(binding=binding('ip_'+str(row['schedule_index'])),coefficient=dict(
+            kind='scientific_group_voltage',instance_id=row['instance_id'],electrode_group_id=row['electrode_group_id'])))
     if rf:
-        row=rf[0];signature=dict(waveform=row['waveform'],frequency_hz=row['frequency_hz'],phase_rad=row['phase_rad'],
-            phase_reference_instrument_time_us=document['drive']['clock']['phase_reference_instrument_time_us'])
-        result['rf_reference']=dict(binding=binding('rf_reference'),signature=signature)
-    return result,records
+        row=rf[0]
+        if document['drive']['clock']['phase_reference_instrument_time_us'] != 0:
+            raise ValueError('RF phase reference must be instrument time zero')
+        terms.append(dict(binding=binding('rf_reference'),coefficient=dict(kind='canonical_rf_waveform',
+            waveform=row['waveform'],frequency_hz=row['frequency_hz'],phase_rad=row['phase_rad'])))
+    return dict(model_identity_sha256=document['model_identity_sha256'],bases=terms),records
 
 def _neutral_sampled_bindings(document: Mapping[str, Any], admission: Mapping[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Project the verified published neutral basis into the shared scalar adapter."""
@@ -169,7 +176,7 @@ def render_rf_controls(model: Any, plan: Mapping[str, Any], *, assets: Mapping[s
             raise ValueError('explicit workbench slot domains must cover each selected asset once')
         if not isinstance(scalar_bindings,dict):
             raise ValueError('explicit admitted IP–MR scalar bindings required')
-        if not {'scalar_field_adapter.lua','ip_mr_scalar_field.lua'} <= native_sources.keys():
+        if not {'scalar_field_adapter.lua','generic_scalar_field.lua'} <= native_sources.keys():
             raise ValueError('frozen IP–MR scalar resources required')
         if 'rf_steps_per_period' not in plan['flight']:
             raise ValueError('IP–MR HS1 requires explicit IP RF step resolution')
@@ -219,10 +226,10 @@ def render_rf_controls(model: Any, plan: Mapping[str, Any], *, assets: Mapping[s
     program=prefix+resource('rf_tracking.lua')
     if ip_mr:
         adapter=resource('scalar_field_adapter.lua')
-        composer=resource('ip_mr_scalar_field.lua')
+        composer=resource('generic_scalar_field.lua')
         program+='\nlocal ip_mr_scalar_adapter=(function()\n'+adapter+'\nend)()\n'
         program+='local ip_mr_scalar_module=(function()\n'+composer+'\nend)()\n'
-        program+='local ip_mr_scalar=ip_mr_scalar_module.new(ip_mr_scalar_adapter,rf_consumer,rf_kernel,'+lua_value(composer_bindings)+')\n'
+        program+='local ip_mr_scalar=ip_mr_scalar_module.new(ip_mr_scalar_adapter,rf_consumer,'+lua_value(composer_bindings)+',rf_kernel)\n'
         if priority is not None:
             program+=_ip_mr_priority_program(priority,slot_domains)
         program+="function segment.efield_adjust()\n  local instance=assert(simion.wb.instances[ion_instance],'selected instance required')\n"

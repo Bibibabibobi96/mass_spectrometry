@@ -54,7 +54,7 @@ class IpMrProgramTests(unittest.TestCase):
                              trajectory_quality=17,grouped=0),rows=[row],absolute_deadlines_us_by_particle_id={7:204.},
             hs1=hs1,observations=dict(plane_observations=[]),propagation=dict(consumed_plane_events=[],stop=None))
         resources={name:native_resource_path(name).read_text(encoding='utf8') for name in
-            ('scalar_field_adapter.lua','ip_mr_scalar_field.lua','rf_ip_tracking_hs1.lua')}
+            ('scalar_field_adapter.lua','generic_scalar_field.lua','rf_ip_tracking_hs1.lua')}
         resources['rf_ip_tracking_hs1.lua']=resources['rf_ip_tracking_hs1.lua'].replace('adjustable ','')
         return basis,names,plan,resources
 
@@ -78,6 +78,11 @@ class IpMrProgramTests(unittest.TestCase):
                     for key,record in level['records'].items(): record['path']='C:/inert/'+name+'_'+window+'_'+key
                     item['refinement_windows'].append(level)
             before=copy.deepcopy((bindings,plan,names))
+            missing_resource = dict(resources)
+            missing_resource.pop('generic_scalar_field.lua')
+            with self.assertRaisesRegex(ValueError, 'scalar resources'):
+                renderer.render_rf_controls(self.model,plan,assets={},native_sources=missing_resource,
+                    scalar_bindings=bindings,slot_domains=[*names,None])
             result=renderer.render_rf_controls(self.model,plan,assets={},native_sources=resources,
                 scalar_bindings=bindings,slot_domains=[*names,None])
             self.assertEqual((bindings,plan,names),before)
@@ -91,6 +96,22 @@ class IpMrProgramTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'group/index'):renderer.render_rf_controls(self.model,plan,assets={},native_sources=resources,scalar_bindings=changed,slot_domains=[*names,None])
             unadmitted=copy.deepcopy(bindings);unadmitted['model_identity_sha256']='0'*64
             with self.assertRaisesRegex(ValueError,'matching admitted'):renderer.render_rf_controls(self.model,plan,assets={},native_sources=resources,scalar_bindings=unadmitted,slot_domains=[*names,None])
+            if 'rf_reference' in bindings['bases']:
+                import json
+                from msplatform.backends.simion.artifacts import CompiledPreparedModel
+                from msplatform.backends.simion.compiler import _content_sha256
+                changed_document = self.model.document
+                rf_rows = [row for row in changed_document['native_drive_rows'] if row['kind'] == 'rf']
+                self.assertGreater(len(rf_rows), 1)
+                rf_rows[1]['phase_rad'] += 0.25
+                changed_document.pop('model_identity_sha256')
+                changed_document['model_identity_sha256'] = _content_sha256(changed_document)
+                changed_model = CompiledPreparedModel(json.dumps(changed_document))
+                changed_binding = copy.deepcopy(bindings)
+                changed_binding['model_identity_sha256'] = changed_document['model_identity_sha256']
+                with self.assertRaisesRegex(ValueError, 'one admitted RF reference'):
+                    renderer.render_rf_controls(changed_model,plan,assets={},native_sources=resources,
+                        scalar_bindings=changed_binding,slot_domains=[*names,None])
             self.assertTrue(LUA.is_file())
             prefix = r'''
 segment={}; simion={pas={},experimental={},wb={instances={}}}
@@ -166,6 +187,36 @@ invalid=true;local ok,err=pcall(segment.efield_adjust);assert(not ok and string.
 invalid=false;ion_instance=99;ok,err=pcall(segment.efield_adjust);assert(not ok and string.find(err,'selected instance required',1,true))
 ion_time_of_flight=0;segment.initialize_run();segment.initialize();segment.tstep_adjust();assert(seeds[#seeds]==46)
 print('IP_MR_PROGRAM_INERT_LUA=PASS')
+'''
+            # Compare the two actual composers on identical admitted bindings.
+            from msplatform.backends.simion.source import lua_value
+            terms, _ = renderer._ip_mr_bindings(self.model.document, bindings)
+            legacy = dict(carrier=terms['bases'][0]['binding'], ip_unit_volt=[])
+            for term in terms['bases'][1:]:
+                coefficient = term['coefficient']
+                if coefficient['kind'] == 'scientific_group_voltage':
+                    legacy['ip_unit_volt'].append(dict(instance_id=coefficient['instance_id'],
+                        electrode_group_id=coefficient['electrode_group_id'], binding=term['binding']))
+                else:
+                    legacy['rf_reference'] = dict(binding=term['binding'], signature=dict(
+                        waveform=coefficient['waveform'], frequency_hz=coefficient['frequency_hz'],
+                        phase_rad=coefficient['phase_rad'], phase_reference_instrument_time_us=0))
+            legacy_source = native_resource_path('ip_mr_scalar_field.lua').read_text(encoding='utf8')
+            suffix += '\nlocal legacy_module=(function()\n' + legacy_source + '\nend)()\n'
+            suffix += 'local legacy=legacy_module.new(ip_mr_scalar_adapter,rf_consumer,rf_kernel,' + lua_value(legacy) + ')\n'
+            suffix += r'''
+local schedule=rf_model_config.ip_schedule.baseline.schedule
+local points={0,1,schedule.capture_end_us,schedule.transfer_end_us,schedule.lift_end_us,schedule.terminal_us}
+for _,row in ipairs(rf_model_config.groups) do
+ if row.kind=='rf' then points[#points+1]=0.25e6/row.frequency_hz;points[#points+1]=0.5e6/row.frequency_hz;break end
+end
+for _,edge in ipairs(points) do
+ for _,time in ipairs({edge-1e-7,edge,edge+1e-7}) do
+  local a,b,c=legacy(simion.wb.instances[2],1,1,1,time)
+  local x,y,z=ip_mr_scalar(simion.wb.instances[2],1,1,1,time)
+  assert(a==x and b==y and c==z,'legacy/generic callback differs')
+ end
+end
 '''
             suffix=suffix.replace('EXPECTED_SUPPORTS',str(17 if 'rf_reference' in bindings['bases'] else 16)).replace('RF_PRESENT','true' if 'rf_reference' in bindings['bases'] else 'false').replace('BG_INDEX',str(len(names)+1))
             prefix=prefix.replace('BG_INDEX',str(len(names)+1))

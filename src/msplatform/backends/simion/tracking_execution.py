@@ -1080,7 +1080,7 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
             if plan['flight']['tracking_kind'] in {'independent_oa','neutral_sampled'}:resource_names+=('single_flight_pulse_hook.lua','voltage_waveforms.lua')
             if plan['flight']['tracking_kind'] in {'rf_ip','ip_mr'}:resource_names+=('single_flight_pulse_hook.lua','voltage_waveforms.lua','native_drive.lua','collision_hs1_gas.lua','rf_ip_gas_selection.lua','rf_ip_tracking_hs1.lua')
         if plan.get('scalar_field_basis') is not None:
-            resource_names += ('scalar_field_adapter.lua', 'ip_mr_scalar_field.lua' if plan['flight'].get('tracking_kind') == 'ip_mr' else 'generic_scalar_field.lua' if plan['flight'].get('tracking_kind') == 'neutral_sampled' else 'sfi_scalar_field.lua')
+            resource_names += ('scalar_field_adapter.lua', 'generic_scalar_field.lua' if plan['flight'].get('tracking_kind') in {'ip_mr', 'neutral_sampled'} else 'sfi_scalar_field.lua')
         frozen = {}
         for name in resource_names:
             frozen[name] = small('resource_'+name,session.input_dir/'native_sources'/name,source_path=native_resource_path(name))

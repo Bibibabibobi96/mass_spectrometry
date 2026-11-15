@@ -125,13 +125,38 @@ class SampledTrackingProducerTests(unittest.TestCase):
             from msplatform.backends.simion.rf_tracking_execution import plan_ip_mr_tracking_workbench
             from msplatform.backends.simion.model import model_geometry
             from msplatform.execution.resources import resource_path
-            admission=admit_ip_mr_tracking_fields(fields.reference)
+            from msplatform.backends.simion.ip_mr_tracking_admission import _verified_solution_manifest
+            from msplatform.backends.simion import ip_mr_tracking_admission as admission_module
+            actual_open=Path.open
+            def no_mph_open(path,*args,**kwargs):
+                if path.suffix.lower()=='.mph': raise AssertionError('tracking must not read MPH')
+                return actual_open(path,*args,**kwargs)
+            actual_artifact=admission_module.open_artifact
+            def no_solution_open(reference,*,expected_kind,**kwargs):
+                if expected_kind=='field_solution': raise AssertionError('full solution open forbidden')
+                return actual_artifact(reference,expected_kind=expected_kind,**kwargs)
+            with patch.object(Path,'open',new=no_mph_open), patch.object(admission_module,'open_artifact',side_effect=no_solution_open):
+                admission=admit_ip_mr_tracking_fields(fields.reference)
+            levels=list(admission['basis']['bases'].values())
+            sample=open_artifact(levels[0]['reference'],expected_kind='scalar_field_samples')
+            ref=levels[0]['field_solution_reference']
+            self.assertEqual(_verified_solution_manifest(sample,ref)['sha256'],ref['manifest']['sha256'])
+            with self.assertRaises((KeyError,ValueError)):
+                _verified_solution_manifest(sample,dict(ref,product_id='missing'))
+            other=next(level['field_solution_reference'] for level in levels if level['field_solution_reference']['manifest']['sha256']!=ref['manifest']['sha256'])
+            with self.assertRaisesRegex(ValueError,'solution reference differs'):
+                _verified_solution_manifest(sample,other)
             self.assertEqual(len(admission['basis']['bases']),17)
             self.assertEqual(len(admission['priority']['instances']),5)
             from msplatform.backends.simion.ip_mr_tracking_admission import protect_ip_mr_tracking_fields
             protected={}
             def protect_action(session):
                 protect_ip_mr_tracking_fields(session,admission)
+                from msplatform.execution.capacity_protection import load_capacity_protection_leases, path_is_protected
+                view=load_capacity_protection_leases(session.artifact_root)
+                for item in admission['basis']['bases'].values():
+                    for level in [item, *item.get('refinement_windows', [])]:
+                        self.assertTrue(path_is_protected(Path(level['field_solution_reference']['manifest']['path']),view['protected_paths']))
                 protected['checked']=len(admission['immutable_input_records'])
                 return dict(status='success',summary={'protected':protected['checked']},output_paths=[],required_output_paths=[],retention_preserve_paths=[],manifest_extra_fields={})
             manifests={}
@@ -164,3 +189,50 @@ class SampledTrackingProducerTests(unittest.TestCase):
             finally:
                 basis_path.write_bytes(saved)
             exercise_published_ip_mr_tracking(self,fields,selected['context'],tmp)
+
+
+class PurposeScopedSolutionManifestTests(unittest.TestCase):
+    from common.contracts.test_sfi_scalar_binding import SfiScalarAdmissionTests as _fixture
+    setUp = _fixture.setUp
+    publish = _fixture.publish
+    make_geometry = _fixture.make_geometry
+    make_sample = _fixture.make_sample
+
+    def test_missing_tampered_failed_and_wrong_kind_refuse(self):
+        import copy, json
+        from msplatform.backends.simion.ip_mr_tracking_admission import _verified_solution_manifest
+        from msplatform.io.manifest_records import file_record
+        sample = open_artifact(self.sample_refs['carrier'], expected_kind='scalar_field_samples')
+        record = dict(sample.data_records['field_solution_manifest'], path=str(sample.data_path('field_solution_manifest')))
+        ref = {'manifest': record, 'product_id':'solution'}
+        _verified_solution_manifest(sample,ref)
+        from types import SimpleNamespace
+        from msplatform.backends.simion.scalar_sample_binding import _small_product
+        from msplatform.execution.terminal_publication import publish_terminal_state
+        original_doc=json.loads(Path(record['path']).read_text(encoding='utf8'))
+        original_doc['products']['alternate']=copy.deepcopy(original_doc['products']['solution'])
+        alternate_dir=self.root/'alternate-solution-owner';alternate_dir.mkdir()
+        publish_terminal_state(alternate_dir,{'status':'success'},original_doc)
+        alternate_record=file_record(alternate_dir/'run_manifest.json')
+        alternate_ref={'manifest':alternate_record,'product_id':'alternate'}
+        _small_product(alternate_ref,'field_solution',())
+        alternate_sample=SimpleNamespace(data_records={'field_solution_manifest':alternate_record},
+            data_path=lambda key: alternate_dir/'run_manifest.json')
+        with self.assertRaisesRegex(ValueError,'solution product identity differs'):
+            _verified_solution_manifest(alternate_sample,alternate_ref)
+        with self.assertRaises((ValueError,AssertionError,KeyError)):
+            _verified_solution_manifest(sample,self.geometry_ref)
+        bad = copy.deepcopy(ref);bad['manifest']['path']=str(self.root/'missing.json')
+        with self.assertRaises((FileNotFoundError,ValueError,AssertionError)):
+            _verified_solution_manifest(sample,bad)
+        path=Path(record['path']);original=path.read_bytes()
+        try:
+            path.write_bytes(original+b' ')
+            with self.assertRaises((ValueError,AssertionError)):
+                _verified_solution_manifest(sample,ref)
+            doc=json.loads(original);doc['status']='failed';path.write_text(json.dumps(doc),encoding='utf8')
+            bad=copy.deepcopy(ref);bad['manifest']=file_record(path)
+            with self.assertRaises((ValueError,AssertionError)):
+                _verified_solution_manifest(sample,bad)
+        finally:
+            path.write_bytes(original)

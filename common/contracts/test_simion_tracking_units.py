@@ -48,6 +48,52 @@ else:
 
 
 class TrackingUnitPlanTests(unittest.TestCase):
+    def test_sampled_recovery_fingerprints_selected_generic_composer(self):
+        import hashlib
+        from msplatform.backends.simion import tracking_units
+        from msplatform.backends.simion.resources import native_resource_path
+
+        case=base_fixture.TrackingExecutionPlanTests();case.setUp()
+        plan=case.plan(unit_size=27)
+        plan['flight']['tracking_kind']='ip_mr'
+        plan['scalar_field_basis']={'explicit':'fixture'}
+        plan['hs1_identity']={'explicit':'fixture'}
+        plan['collision_priority']={'explicit':'fixture'}
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory); generic=root/'generic_scalar_field.lua';generic.write_bytes(b'fixture-composer-a')
+            names=[]
+            def selected_resource(name):
+                names.append(name)
+                return generic if name=='generic_scalar_field.lua' else native_resource_path(name)
+            with patch('msplatform.backends.simion.resources.native_resource_path',side_effect=selected_resource):
+                applicability=tracking_units.tracking_applicability(plan)
+                self.assertIn('generic_scalar_field.lua',names)
+                self.assertNotIn('ip_mr_scalar_field.lua',names)
+                manifest=root/'run_manifest.json';manifest.write_text('{}',encoding='utf-8')
+                index_path=root/'logs'/'tracking_units.json';index_path.parent.mkdir()
+                index={'schema_version':1,'role':'simion_tracking_units','applicability_sha256':applicability,
+                       'units':[{'key':unit['key']} for unit in plan['units']]}
+                index_path.write_text(json.dumps(index),encoding='utf-8')
+                hashes={index_path.resolve():hashlib.sha256(index_path.read_bytes()).hexdigest().upper()}
+                with patch.object(tracking_units,'_whole_unit_artifact_hashes',return_value=(hashes,{})):
+                    with self.assertRaisesRegex(ValueError,'lacks its frozen execution input closure'):
+                        tracking_units.inspect_tracking_recovery(plan,file_record(manifest))
+                    generic.write_bytes(b'fixture-composer-b')
+                    self.assertNotEqual(tracking_units.tracking_applicability(plan),applicability)
+                    with self.assertRaisesRegex(ValueError,'scientific applicability'):
+                        tracking_units.inspect_tracking_recovery(plan,file_record(manifest))
+
+                names.clear();plan['flight']['tracking_kind']='neutral_sampled'
+                plan['neutral_source_identity']={'explicit':'fixture'}
+                tracking_units.tracking_applicability(plan)
+                self.assertIn('generic_scalar_field.lua',names)
+                self.assertNotIn('ip_mr_scalar_field.lua',names)
+                # SFI retains its separate existing composer identity.
+                names.clear();plan['flight']['tracking_kind']='independent_rf'
+                tracking_units.tracking_applicability(plan)
+                self.assertIn('sfi_scalar_field.lua',names)
+                self.assertNotIn('generic_scalar_field.lua',names)
+
     def test_recovery_rejects_same_directory_sidecar_before_reading_manifest(self):
         with tempfile.TemporaryDirectory() as directory:
             sidecar=Path(directory)/'result.json';sidecar.write_text('{}',encoding='utf-8')

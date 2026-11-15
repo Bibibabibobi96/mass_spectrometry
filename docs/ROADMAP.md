@@ -161,7 +161,7 @@ collection; the exact failing query was not recorded. Verify/Fly working-set
 warnings are separate observations, not the demonstrated failure cause. The
 next composer shares only admitted byte-identical masks on identical grids and
 adds failure-only query context. Thirteen integrated software parents passed in
-61.102 s; native memory use and the next flight remain unverified. The original
+61.102 s; its later native memory and failure observations are recorded below. The original
 ordinary wheel/sdist parent passed on frozen `cf361af2` in 1310.785 s with all
 3071 source identities unchanged; this concurrent run is not an isolated
 performance benchmark or acceptance of this later composer. Final same-candidate
@@ -172,7 +172,7 @@ managed owner/recovery parents with unchanged source hashes; managed leaves were
 inert. The original aligned grid1 carrier stencil is valid at its canonical center.
 Four other sheets now have twelve published aligned window samples from frozen
 `d3c33854`; native window behavior remains unverified. No sheet or physical component
-was moved, and the new SFI flight has not started. Full original-source collections, final
+was moved. Subsequent failed SFI attempts are recorded below. Full original-source collections, final
 same-candidate acceptance and the 15-minute target remain open;
 field accuracy and convergence are not prerequisites for the current functional
 pipeline, and missing actual support cannot be replaced with zero.
@@ -191,8 +191,13 @@ failed on `V_SUPPORT_BOX_OUTSIDE` after 37 native splats; these are not 37
 detector hits or a complete collection. Its exact failed query was not recorded.
 The shared adapter now adds failure-only world position, selected level, grid
 bounds, source paths and particle/time context, without changing support checks.
-Nine actual Lua-backed sheet/preflight tests passed with unchanged source hashes;
-the next native failure-context check remains open.
+Nine actual Lua-backed sheet/preflight tests passed with unchanged source hashes.
+The diagnostic successor `track-cbdfe35d5ce4` then retained the actual failed
+query [-172.86423154693139, -2.8705124235016704, -15.96149287919809] mm,
+base x support indices -1..2 in a 286-node axis. Its error line was truncated
+before particle/time identity; the 37 splats are not detector hits. Writers and
+leases closed. The point is inside the saved BVP box and outside canonical
+solids, but its saved FEM value and a sufficient replacement export remain open.
 RF attempt `track-8e687cab0c61` failed on an unknown RF-body support node at
 [4, -305.75, 1.75] mm. Its sampled Fly peak was 8,222,646,272 bytes, below
 8 GiB for that short failed attempt, not a full-flight peak guarantee. A saved-FEM
@@ -202,6 +207,19 @@ cold readback; this does not establish full field or trajectory validity.
 The ordinary direct-wheel/sdist parent on `ddd9d1a7` passed in 1480.577 s with
 all 3073 source identities unchanged. It ran concurrently with native work and
 is not an isolated performance measurement or final same-candidate acceptance.
+
+The admitted IP–MR runtime now uses the existing generic scalar composer for
+carrier, actual scheduled-group rows and the admitted RF waveform, with the same
+resource identity in freezing and recovery. Purpose-scoped solution metadata
+joins avoid reading unused MPH payloads while retaining sample/solution owner
+protection. The combined successor passed 19 software parents in 439.807 s with
+all source identities unchanged, including actual managed producer/lease checks
+and old/new callback comparisons. The preceding test-helper Path typing error
+remains a failed record. Native replacement validation and neutral public
+IP-schedule model/basis admission are still open; no fixed provider geometry or
+scientific group identity was removed. A separate 30,000-trial native sensitivity
+probe supports a narrower RF interpolation-support hypothesis but is finite
+evidence, so the production support guard remains unchanged.
 
 The registered-component consumer regression now covers an explicit connected
 Assembly with renamed instances and a changed physical width through the same

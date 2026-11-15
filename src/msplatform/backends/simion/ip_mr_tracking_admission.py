@@ -11,8 +11,20 @@ from msplatform.results.artifacts import OpenedArtifact, open_artifact
 from .artifacts import CompiledPreparedModel
 from .ip_mr_field_execution import _priority_projection
 from .model import require_prepared_model
-from .scalar_sample_binding import original_sample_source
+from .scalar_sample_binding import _small_product, original_sample_source
 from .rf_tracking_program import _ip_mr_bindings
+
+
+def _verified_solution_manifest(sample: OpenedArtifact, reference: Mapping[str, Any]) -> dict[str, Any]:
+    if not isinstance(reference, Mapping) or reference.get('product_id') != 'solution':
+        raise ValueError('sampled basis solution product identity differs')
+    _, _, path = _small_product(reference, 'field_solution', ())
+    record = reference['manifest']
+    published = sample.data_records['field_solution_manifest']
+    if (any(str(record[k]).lower() != str(published[k]).lower() for k in ('bytes', 'sha256'))
+            or path.resolve(strict=True) != sample.data_path('field_solution_manifest').resolve(strict=True)):
+        raise ValueError('sampled basis solution reference differs from published sample')
+    return dict(record, path=str(path))
 
 
 def admit_ip_mr_tracking_fields(reference: Mapping[str, Any] | OpenedArtifact) -> dict[str, Any]:
@@ -98,14 +110,14 @@ def admit_ip_mr_tracking_fields(reference: Mapping[str, Any] | OpenedArtifact) -
     for item in basis['bases'].values():
         for level in [item, *item.get('refinement_windows', [])]:
             sample = open_artifact(level['reference'], expected_kind='scalar_field_samples')
-            solution = open_artifact(level['field_solution_reference'], expected_kind='field_solution')
+            solution_record = _verified_solution_manifest(sample, level['field_solution_reference'])
             for key, record in level['records'].items():
                 selected = sample.data_records[key]
                 if any(str(record[k]).lower() != str(selected[k]).lower() for k in ('bytes', 'sha256')):
                     raise ValueError('sampled basis record differs from published ' + key)
                 if Path(record['path']).resolve(strict=True) != sample.data_path(key).resolve(strict=True):
                     raise ValueError('sampled basis relocation is not qualified')
-            references.extend((sample.reference['manifest'], solution.reference['manifest']))
+            references.extend((sample.reference['manifest'], solution_record))
             original = original_sample_source(sample)
             expected_original = level.get('original_samples_reference')
             if expected_original != (original.reference if original is not None else None):
