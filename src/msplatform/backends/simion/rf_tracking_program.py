@@ -253,7 +253,7 @@ def render_rf_controls(model: Any, plan: Mapping[str, Any], *, assets: Mapping[s
         if neutral_sampled:
             program+='local neutral_schedule_edges='+lua_value(edges)+'\n'
             program+='local neutral_original_tstep=segment.tstep_adjust\nfunction segment.tstep_adjust() neutral_original_tstep(); ion_time_step=oa_waveforms.cap_before_edges(single_flight_instrument_time_us(),ion_time_step,neutral_schedule_edges) end\n'
-    if joint:
+    if joint or plan['flight'].get('has_hs1'):
         options=plan['hs1']
         if set(options)!={'vendor_path','bath_path','outer_path','query_frame_id','numerics'}:
             raise ValueError('RF-IP HS1 requires exact frozen runtime inputs')
@@ -265,8 +265,9 @@ def render_rf_controls(model: Any, plan: Mapping[str, Any], *, assets: Mapping[s
             if not isinstance(options[key],str) or not Path(options[key]).is_absolute() or not options[key].isascii():
                 raise ValueError('RF-IP HS1 frozen input paths must be absolute')
         from msplatform.contracts.rigid_transform import RigidTransform
-        composition = document['geometry']['frontend_geometry']['composition_plan']
-        ip_ids = [name for name, component in composition['components'].items()
+        source_geometry = document['geometry']['frontend_geometry']
+        composition = source_geometry['source_snapshot']['composition_plan'] if neutral_sampled else source_geometry['composition_plan']
+        ip_ids = sorted({row['instance_id'] for row in document['native_drive_rows'] if row['kind'] == 'ip_schedule'}) if neutral_sampled else [name for name, component in composition['components'].items()
                   if component['project_id'] == 'dual_pressure_rectilinear_ion_processor']
         if len(ip_ids) != 1:
             raise ValueError('RF-IP gas requires the selected IP component')

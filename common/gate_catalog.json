@@ -1997,11 +1997,11 @@
           {
             "matches": [
               {
-                "regex": "^src/msplatform/backends/simion/(?:assembly_geometry|ip_geometry|model|generic_scalar_binding|operations|rf_tracking_program|tracking_execution|tracking_units)\\.py$",
+                "regex": "^src/msplatform/backends/simion/(?:assembly_geometry|ip_geometry|model|generic_scalar_binding|operations|rf_tracking_execution|rf_tracking_program|tracking_execution|tracking_units|collision_hs1)\\.py$",
                 "reason": "neutral_ip_geometry_schedule_consumer_changed"
               },
               {
-                "regex": "^src/msplatform/backends/simion/resources/(?:native_drive|voltage_waveforms|rf_ip_tracking_hs1|model_drive|rf_tracking)\\.lua$",
+                "regex": "^src/msplatform/backends/simion/resources/(?:native_drive|voltage_waveforms|rf_ip_tracking_hs1|rf_ip_gas_selection|collision_hs1_gas|model_drive|rf_tracking)\\.lua$",
                 "reason": "neutral_ip_schedule_runtime_changed"
               },
               {
@@ -2009,7 +2009,7 @@
                 "reason": "neutral_ip_canonical_geometry_schedule_changed"
               },
               {
-                "regex": "^common/contracts/(?:test_neutral_ip_(?:primitives|schedule|schedule_span|schedule_managed)\\.py|test_support/ip_mr_lp60_requests\\.json)$",
+                "regex": "^common/contracts/(?:test_neutral_(?:ip_(?:primitives|schedule|schedule_span|schedule_managed)|hs1_(?:canonical|domain)|mr_primitives)\\.py|test_support/(?:ip_mr_lp60_requests\\.json|generic_scalar_owner_harness\\.py))$",
                 "reason": "neutral_ip_fixture_or_consumer_changed"
               }
             ],
@@ -2017,8 +2017,39 @@
               "common/contracts/test_neutral_ip_primitives.py",
               "common/contracts/test_neutral_ip_schedule.py",
               "common/contracts/test_neutral_ip_schedule_span.py",
-              "common/contracts/test_neutral_ip_schedule_managed.py"
+              "common/contracts/test_neutral_ip_schedule_managed.py",
+              "common/contracts/test_neutral_hs1_canonical.py",
+              "common/contracts/test_neutral_hs1_domain.py",
+              "common/contracts/test_neutral_mr_primitives.py"
             ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "regex": "^src/msplatform/backends/simion/(?:assembly_geometry|mr_geometry)\\.py$",
+                "reason": "neutral_mr_primitive_emitter_changed"
+              },
+              {
+                "regex": "^src/msplatform/components/(?:shape_query|geometry_members|catalog|parallel_mirror_dual_stripe_mr_tof/(?:provider|resolved_geometry|geometry_members|geometry_contract))\\.py$",
+                "reason": "neutral_mr_physical_source_changed"
+              },
+              {
+                "regex": "^common/contracts/(?:test_neutral_mr_primitives\\.py|test_support/ip_mr_lp60_requests\\.json)$",
+                "reason": "neutral_mr_primitive_fixture_changed"
+              }
+            ],
+            "modules": ["common/contracts/test_neutral_mr_primitives.py"],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "regex": "^common/contracts/(?:test_inert_tracking_grouping\\.py|test_support/generic_scalar_owner_harness\\.py)$",
+                "reason": "inert_tracking_grouping_contract_changed"
+              }
+            ],
+            "modules": ["common/contracts/test_inert_tracking_grouping.py"],
             "dependency_profile": "locked"
           },
           {

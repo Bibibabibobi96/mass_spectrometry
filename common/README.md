@@ -84,9 +84,19 @@ The complete canonical IP geometry uses the same primitive owners through the
 neutral renderer. Nine focused tests and the public managed build/model/field/
 tracking parent passed, including wrong-clock refusal, original sparse particle
 IDs, a failed inert child and lease cleanup. These are software results using
-synthetic scalar samples and inert native leaves. Generic HS1, multiple
-independent timelines, ordinary installed consumption and complete native IP
-geometry/flight validation remain open.
+synthetic scalar samples and inert native leaves. Neutral sampled tracking now
+binds the existing canonical IP HS1 adapter, including frozen vendor resources,
+the original-ID random stream and explicit outer gas coverage. Coverage includes
+every admitted active refinement window intersected with the collision domain;
+the conservative coverage box does not make invalid field masks valid. The
+managed HS1 and grouping tests passed (three parents, 319.844 s), with sparse IDs
+7/91, a window beyond the base grid, undersized outer-gas refusal, failed-child
+evidence and lease cleanup. The inert fixture now follows the requested grouping
+mode; the production terminal collector's grouping checks are unchanged.
+Multiple independent timelines, ordinary installed consumption, successful HS1
+recovery and native HS1 flight validation remain open. Separately, complete
+canonical IP native geometry built and cold-reopened successfully at `2bae0f7a`;
+that evidence includes no Refine or Fly.
 
 The neutral SIMION renderer also consumes the canonical MR polygon primitive
 through the existing polygon validator and native emitter. Sixteen focused

@@ -300,9 +300,13 @@ def _prepare_ip_hs1(model: CompiledPreparedModel, request: Mapping[str, Any], *,
     geometry = document['geometry']['frontend_geometry']
     if geometry['role'] != role:
         raise ValueError('RF-IP HS1 requires the actual selected joint model')
-    composition = geometry['composition_plan']
-    ids = [name for name, row in composition['components'].items()
-           if row['project_id'] == 'dual_pressure_rectilinear_ion_processor']
+    composition = (geometry['source_snapshot']['composition_plan']
+                   if role == 'simion_neutral_world_collision_geometry' else geometry['composition_plan'])
+    if role == 'simion_neutral_world_collision_geometry':
+        ids = sorted({row['instance_id'] for row in document['native_drive_rows'] if row['kind'] == 'ip_schedule'})
+    else:
+        ids = [name for name, row in composition['components'].items()
+               if row['project_id'] == 'dual_pressure_rectilinear_ion_processor']
     poses = [row['transform'] for row in composition['recipe']['instances']
              if len(ids) == 1 and row['instance_id'] == ids[0]]
     if len(poses) != 1:
@@ -330,7 +334,7 @@ def _prepare_ip_hs1(model: CompiledPreparedModel, request: Mapping[str, Any], *,
                     vendor_adapted_sha256=sha(adapted.encode('utf-8')),
                     bath_runtime_sha256=sha(bath.encode('utf-8')),
                     outer_runtime_sha256=sha(outside.encode('utf-8')))
-    if role == 'simion_ip_mr_complete_geometry':
+    if role in {'simion_ip_mr_complete_geometry', 'simion_neutral_world_collision_geometry'}:
         identity['common_world_domain'] = asdict(parent)
         identity['common_world_frame_id'] = common_world_frame_id
     return dict(identity=identity, vendor_record=dict(vendor), vendor_original=original,
@@ -347,6 +351,36 @@ def prepare_ip_mr_hs1(model: CompiledPreparedModel, request: Mapping[str, Any], 
     """Bind selected IP gas to the caller's verified common world query box."""
     return _prepare_ip_hs1(model, request, role='simion_ip_mr_complete_geometry',
                            common_world_domain=common_world_domain, common_world_frame_id=common_world_frame_id)
+
+def prepare_neutral_ip_hs1(model: CompiledPreparedModel, request: Mapping[str, Any], *, basis: Mapping[str, Any]) -> dict[str, Any]:
+    """Bind gas coverage to the intersection of verified scalar and collision boxes."""
+    geometry = model_geometry(model).frontend_geometry
+    grid = basis['grid']
+    domain = geometry['domain']
+    if grid['frame_id'] != domain['frame_id']:
+        raise ValueError('neutral scalar and collision frames differ')
+    # Windows are ordered by the existing router, but every active box may
+    # be selected. Their bounding union is conservative even where masks leave
+    # holes; it does not declare those holes to be valid field support.
+    base_upper = [origin + (count - 1) * pitch for origin, pitch, count in
+                  zip(grid['origin_mm'], grid['pitch_mm'], grid['dimensions'], strict=True)]
+    boxes = [(grid['origin_mm'], base_upper)]
+    for sample in basis.get('bases', {}).values():
+        for window in sample.get('refinement_windows', []):
+            if window['grid']['frame_id'] != domain['frame_id']:
+                raise ValueError('neutral refinement and collision frames differ')
+            active = window['active_box_mm']
+            boxes.append(([axis[0] for axis in active], [axis[1] for axis in active]))
+    lower = [min(box[0][i] for box in boxes) for i in range(3)]
+    upper = [max(box[1][i] for box in boxes) for i in range(3)]
+    lo = tuple(max(a, b) for a, b in zip(lower, domain['minimum_mm'], strict=True))
+    hi = tuple(min(a, b) for a, b in zip(upper, domain['maximum_mm'], strict=True))
+    if any(a >= b for a, b in zip(lo, hi, strict=True)):
+        raise ValueError('neutral scalar and collision domains do not overlap')
+    return _prepare_ip_hs1(model, request, role='simion_neutral_world_collision_geometry',
+        common_world_domain=BoxDomain(lo, hi, (True, True, True), (True, True, True)),
+        common_world_frame_id=grid['frame_id'])
+
 
 def plan_ip_mr_tracking_workbench(compiled: Any, *, admission: Mapping[str, Any],
                                 run_directory: Path, program: str,

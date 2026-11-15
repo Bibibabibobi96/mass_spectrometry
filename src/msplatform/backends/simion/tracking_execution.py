@@ -196,10 +196,16 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
     elif ip_mr_field_reference is not None:
         raise ValueError('IP–MR field reference requires IP–MR geometry')
     independent_component = raw_geometry.get('role') in {'simion_independent_rf_geometry','simion_independent_oa_geometry'} or joint_ip or ip_mr or static_world
+    neutral_hs1 = neutral_sampled and hs1_request is not None
+    if neutral_hs1:
+        if not any(row['kind'] == 'ip_schedule' for row in document['native_drive_rows']):
+            raise ValueError('neutral HS1 requires one canonical IP schedule')
+        from .rf_tracking_execution import prepare_neutral_ip_hs1
+        hs1 = prepare_neutral_ip_hs1(model, hs1_request, basis=neutral_admission['basis'])
     if joint_ip:
         from .rf_tracking_execution import prepare_rf_ip_hs1
         hs1 = prepare_rf_ip_hs1(model, hs1_request)
-    elif not ip_mr and hs1_request is not None:
+    elif not ip_mr and not neutral_hs1 and hs1_request is not None:
         raise ValueError('HS1 request is supported only for joint IP tracking')
     geometry = (dict(raw_geometry,native_frame_id=document['native_frame_id']) if independent_component else
                 model_geometry(model,downstream_drive=True).frontend_geometry)
@@ -210,7 +216,7 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
     expected = {'schema_version','scope','end_policy','consumed_plane_events','stop'}
     if independent_component:
         expected.add('dynamics')
-        if not isinstance(propagation,Mapping) or propagation.get('dynamics') != dict(kinematics='nonrelativistic',collisions='hs1' if joint_ip or ip_mr else 'none',space_charge='none'):
+        if not isinstance(propagation,Mapping) or propagation.get('dynamics') != dict(kinematics='nonrelativistic',collisions='hs1' if joint_ip or ip_mr or neutral_hs1 else 'none',space_charge='none'):
             raise ValueError('RF tracking requires explicit collision-free nonrelativistic external-field dynamics')
     if (not isinstance(propagation,Mapping) or set(propagation) != expected
             or type(propagation['schema_version']) is not int or propagation['schema_version'] != 1
@@ -287,6 +293,7 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
         if raw_geometry['role']=='simion_independent_oa_geometry':flight['tracking_kind']='independent_oa'
         if static_world:flight['tracking_kind']='neutral_sampled' if neutral_sampled else 'static_world'
         if static_world and has_ip_schedule:flight['has_ip_schedule']=True
+        if neutral_hs1:flight['has_hs1']=True
         if joint_ip: flight['tracking_kind']='rf_ip'
         if ip_mr: flight['tracking_kind']='ip_mr'
     else:
@@ -319,7 +326,7 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
     if ip_mr:
         result['scalar_field_basis'] = copy.deepcopy(admission['basis'])
         result['collision_priority'] = copy.deepcopy(admission['priority'])
-    if joint_ip or ip_mr:
+    if joint_ip or ip_mr or neutral_hs1:
         if any(type(row['particle_id']) is not int or row['particle_id'] < 1
                or hs1['identity']['numerics']['seed'] + row['particle_id'] - 1 > 2147483646 for row in rows):
             raise ValueError('RF-IP HS1 requires supported original integer particle seeds')
@@ -1000,14 +1007,16 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
                 or frozen_source['sha256'].upper() != selected['sha256'].upper()):
             raise ValueError('frozen recorded birth source differs from selected source')
     hs1_frozen = {}
-    if plan['flight'].get('tracking_kind') in {'rf_ip','ip_mr'}:
-        from .rf_tracking_execution import prepare_rf_ip_hs1, prepare_ip_mr_hs1
+    if plan['flight'].get('tracking_kind') in {'rf_ip','ip_mr'} or plan['flight'].get('has_hs1'):
+        from .rf_tracking_execution import prepare_rf_ip_hs1, prepare_ip_mr_hs1, prepare_neutral_ip_hs1
         from msplatform.io.manifest_records import verify_record
         if plan['flight']['tracking_kind'] == 'ip_mr':
             if ip_mr_admission is None:
                 raise ValueError('verified sampled IP–MR admission required')
             selected_hs1 = prepare_ip_mr_hs1(model, hs1_request, common_world_domain=ip_mr_admission['world_domain'],
                 common_world_frame_id=ip_mr_admission['world_frame_id'])
+        elif plan['flight'].get('has_hs1'):
+            selected_hs1 = prepare_neutral_ip_hs1(model, hs1_request, basis=neutral_admission['basis'])
         else:
             selected_hs1 = prepare_rf_ip_hs1(model, hs1_request)
         if selected_hs1['identity'] != plan['hs1_identity']:
@@ -1084,6 +1093,7 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
             if plan['flight']['tracking_kind'] in {'independent_oa','neutral_sampled'}:resource_names+=('single_flight_pulse_hook.lua','voltage_waveforms.lua')
             if plan['flight']['tracking_kind'] in {'rf_ip','ip_mr'}:resource_names+=('single_flight_pulse_hook.lua','voltage_waveforms.lua','native_drive.lua','collision_hs1_gas.lua','rf_ip_gas_selection.lua','rf_ip_tracking_hs1.lua')
             if plan['flight'].get('has_ip_schedule'):resource_names+=('native_drive.lua',)
+            if plan['flight'].get('has_hs1'):resource_names+=('collision_hs1_gas.lua','rf_ip_gas_selection.lua','rf_ip_tracking_hs1.lua')
         if plan.get('scalar_field_basis') is not None:
             resource_names += ('scalar_field_adapter.lua', 'generic_scalar_field.lua' if plan['flight'].get('tracking_kind') in {'ip_mr', 'neutral_sampled'} else 'sfi_scalar_field.lua')
         frozen = {}

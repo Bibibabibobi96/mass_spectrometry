@@ -75,6 +75,7 @@ def tracking_applicability(plan):
             names+=('single_flight_pulse_hook.lua','voltage_waveforms.lua','native_drive.lua',
                     'collision_hs1_gas.lua','rf_ip_gas_selection.lua','rf_ip_tracking_hs1.lua')
     if plan['flight'].get('has_ip_schedule'): names += ('native_drive.lua',)
+    if plan['flight'].get('has_hs1'): names += ('collision_hs1_gas.lua','rf_ip_gas_selection.lua','rf_ip_tracking_hs1.lua')
     if plan.get('scalar_field_basis') is not None:
         names += ('scalar_field_adapter.lua', 'generic_scalar_field.lua' if plan['flight'].get('tracking_kind') in {'ip_mr', 'neutral_sampled'} else 'sfi_scalar_field.lua')
     resources = {name:hashlib.sha256(native_resource_path(name).read_bytes()).hexdigest() for name in names}
@@ -94,7 +95,7 @@ def tracking_applicability(plan):
     fields = ('source_realization','field_manifest_identity','model_identity_sha256','rows','native_source_rows','source_provenance',
               'absolute_deadlines_us_by_particle_id','flight','propagation','observations','numerics')
     value = {key:copy.deepcopy(plan[key]) for key in fields}
-    if plan['flight'].get('tracking_kind') in {'rf_ip','ip_mr'}:
+    if plan['flight'].get('tracking_kind') in {'rf_ip','ip_mr'} or plan['flight'].get('has_hs1'):
         value['hs1_identity'] = copy.deepcopy(plan['hs1_identity'])
     if plan['flight'].get('tracking_kind') == 'ip_mr':
         value['collision_priority'] = copy.deepcopy(plan['collision_priority'])

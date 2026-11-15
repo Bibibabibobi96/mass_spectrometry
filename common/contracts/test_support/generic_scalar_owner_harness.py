@@ -7,6 +7,14 @@ from msplatform.backends.simion.resources import structural_seed_path
 from msplatform.io.manifest_records import file_record
 
 
+def inert_dynamics_code(numerics_path):
+    """Emit fixture marker from frozen numerics; unspecified keeps existing stub default."""
+    return ("numerics=json.loads(Path(" + repr(str(numerics_path)) + ").read_text(encoding='utf8'));"
+            "grouped=numerics.get('grouped',1);"
+            "assert type(grouped) is int and grouped in (0,1);"
+            "print('RF_DYNAMICS_V1: '+json.dumps(dict(grouped=grouped,repulsion='none',relativity=0,segment_global=1)))\n")
+
+
 def make_inert(self, compiled, original, calls, field_guards, tracking_guards, fail_verify, live_refs, live_checks, directory, context):
     def inert(session, operation_id, *, immutable_input_records=(), **kwargs):
         if kwargs["role"] != "SIMION":
@@ -101,7 +109,8 @@ def make_inert(self, compiled, original, calls, field_guards, tracking_guards, f
             marker = 'NEUTRAL_SAMPLED_TRACKING_IOB=PASS' if operation_id == 'build_tracking_iob' else 'NEUTRAL_SAMPLED_TRACKING_IOB_REOPEN=PASS'
             code += f'print({marker!r})\n'
         elif operation_id == 'track_fly':
-            code += 'rows=json.loads(Path('+repr(str(session.input_dir/'canonical_source_states.json'))+').read_text(encoding="utf8"));print(\'RF_DYNAMICS_V1: {"grouped":1,"repulsion":"none","relativity":0,"segment_global":1}\')\n'
+            code += 'rows=json.loads(Path('+repr(str(session.input_dir/'canonical_source_states.json'))+').read_text(encoding="utf8"))\n'
+            code += inert_dynamics_code(session.input_dir/'tracking_numerics.json')
             code += 'for ion,row in enumerate(rows,1):\n state=dict(event="source_release",reason="none",particle_id=row["particle_id"],ion=ion,instrument_time_us=row["instrument_time_us"],mass_amu=row["mass_amu"],charge_state=row["charge_state"],instance=1);state.update({a+"_mm":row["position_"+a+"_mm"] for a in "xyz"});state.update({"v"+a+"_mm_per_us":row["velocity_"+a+"_m_s"]/1000 for a in "xyz"});print("RF_NATIVE_STATE_V1: "+json.dumps(state));state.update(event="terminal",reason="unknown",instrument_time_us=2.);print("RF_NATIVE_STATE_V1: "+json.dumps(state))\nprint("status,Fly completed. 2 splats")\n'
         else:
             raise AssertionError("unexpected operation " + operation_id)

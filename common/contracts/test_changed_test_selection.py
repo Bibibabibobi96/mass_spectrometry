@@ -2482,6 +2482,7 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
             'src/msplatform/backends/simion/resources/native_drive.lua',
             'src/msplatform/components/dual_pressure_rectilinear_ion_processor/timing.py',
             'common/contracts/test_support/ip_mr_lp60_requests.json',
+            'common/contracts/test_support/generic_scalar_owner_harness.py',
             'common/contracts/test_neutral_ip_schedule_managed.py',
         ]
         selections = self.selections(REPO_ROOT, [dict(stage='common_contracts', paths=[path]) for path in paths])
@@ -2491,6 +2492,21 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
                 self.assertEqual(len(selected['Modules']), len(set(selected['Modules'])))
         unrelated = self.selections(REPO_ROOT, [dict(stage='common_contracts', paths=['src/msplatform/analysis/peak_metrics.py'])])[0]
         self.assertFalse(expected & set(unrelated['Modules']))
+
+    def test_neutral_polygon_and_inert_grouping_select_actual_consumers(self) -> None:
+        paths = [
+            'src/msplatform/backends/simion/mr_geometry.py',
+            'src/msplatform/components/shape_query.py',
+            'common/contracts/test_support/generic_scalar_owner_harness.py',
+        ]
+        selected = self.selections(REPO_ROOT, [dict(stage='common_contracts', paths=[path]) for path in paths])
+        for row in selected[:2]:
+            self.assertIn('common/contracts/test_neutral_mr_primitives.py', row['Modules'])
+        self.assertTrue({
+            'common/contracts/test_inert_tracking_grouping.py',
+            'common/contracts/test_neutral_ip_schedule_managed.py',
+            'common/contracts/test_generic_scalar_tracking_recovery.py',
+        } <= set(selected[2]['Modules']))
 
     def test_rf_ip_consumer_and_birth_admission_select_actual_consumers(self) -> None:
         source = 'src/msplatform/workflows/multipole_ip/continuous.py'
