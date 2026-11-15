@@ -1998,7 +1998,34 @@
               "common/contracts/test_ip_mr_collision_priority.py",
               "common/contracts/test_ip_mr_collision_iob.py",
               "common/contracts/test_raw_collision_pa.py",
-              "common/contracts/test_numerical_background.py"
+              "common/contracts/test_numerical_background.py",
+              "common/contracts/test_ip_mr_inert_transport.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "common/contracts/test_support/ip_mr_sampled_field_fixture.py",
+                "reason": "sampled_ip_mr_installed_fixture_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_ip_mr_inert_transport.py",
+              "common/contracts/test_ip_mr_sampled_field_execution.py",
+              "common/contracts/test_installed_scientific_core.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/backends/simion/native_io.py",
+                "reason": "sampled_ip_mr_fixture_transport_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_ip_mr_inert_transport.py"
             ],
             "dependency_profile": "locked"
           }

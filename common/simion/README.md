@@ -107,6 +107,11 @@ and saved-field tracking now carry the same state. Focused owner tests cover
 present and empty data, reuse, tampering and failed-operation cleanup with inert
 native leaves; their native and ordinary-install acceptance remains open.
 
+Legacy frontend geometry retains its actual output contracts: flight-tube and
+detector operations produce a raw PA and surface companion; reflectron and
+parent operations produce a raw PA. Publication binds every declared member
+without treating these older outputs as canonical surface-state proofs.
+
 New neutral-world geometry publication validates the registered providers and
 records their complete member projection. Cold model preparation verifies that
 published projection, GEM, layout, groups and witnesses without re-registering

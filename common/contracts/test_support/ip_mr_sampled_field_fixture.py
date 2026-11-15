@@ -40,21 +40,35 @@ def geometry_action(session, *, compiled):
                              native_path_resource=session.input_dir/'native_sources/native_run_path.lua')
     records={'compiled_geometry':compiled_record};native={};output_paths=[]
     for op in plan.operations:
-        for output in op['outputs']:
+        outputs=list(op['outputs'])
+        optional=op.get('optional_surface')
+        if optional is not None: outputs.append(optional)
+        for output in outputs:
             path=pathlib.Path(output)
-            session.declare_file(path,'required_evidence' if path.suffix in ('.csv','.fly2') else 'solver_native_binary')
+            session.declare_file(path,'required_evidence' if path.suffix in ('.csv','.fly2','.json') else 'solver_native_binary')
             path.parent.mkdir(parents=True,exist_ok=True)
         script='from pathlib import Path\n'
-        for output in op['outputs']:
-            script+='Path('+repr(output)+').write_bytes(b"INERT_SYNTHETIC_NOT_NATIVE")\n'
+        for output in outputs:
+            content=b"INERT_SYNTHETIC_NOT_NATIVE"
+            if output.endswith('_surface_state.json'):
+                role=op['operation_id'].removeprefix('geometry_')
+                domain=compiled.frontend_geometry['numerical_domains'][role]
+                state=dict(schema_version=1,mode='present',
+                    grid=[domain['dimensions']['n'+axis] for axis in 'xyz'],
+                    pitch=[domain['cell_mm_xyz'][axis] for axis in 'xyz'],
+                    scanned_nodes=None,offset_nodes=None)
+                content=json.dumps(state,allow_nan=False).encode('utf8')
+            script+='Path('+repr(output)+').write_bytes('+repr(content)+')\n'
         script+='print('+repr(op['success_marker'])+')\n'
         session.run_process(op['operation_id'],executable=pathlib.Path(sys.executable),arguments=['-I','-B','-c',script],role='GATE',stage='inert_geometry',limits=None)
         if op['operation_id'].startswith('geometry_'):
             role=op['operation_id'].removeprefix('geometry_');native[role]={}
-            for label,path in zip(('raw_geometry','fractional_surface','surface_witnesses'),op['outputs'],strict=True):
+            labels=(('raw_geometry','surface_witnesses','surface_state','fractional_surface') if optional is not None
+                    else ('raw_geometry','fractional_surface','surface_witnesses'))
+            for label,path in zip(labels,outputs,strict=True):
                 key=role+'_'+label;native[role][label]=key
-                records[key]=file_record(session.canonical_path(path),'required_evidence' if label=='surface_witnesses' else 'solver_native_binary')
-        output_paths.extend(op['outputs'])
+                records[key]=file_record(session.canonical_path(path),'required_evidence' if label in {'surface_witnesses','surface_state'} else 'solver_native_binary')
+        output_paths.extend(outputs)
     meta=dict(backend='simion',geometry_materialized=True,field_status='not_solved',source_status='not_requested',
               provider_content_identities=compiled.provider_content_identities,native_assets=native)
     return dict(status='success',summary={'fixture':'inert'},output_paths=output_paths,required_output_paths=output_paths,
@@ -75,8 +89,8 @@ def model_action(session, *, model, geometry_reference):
     for role,keys in source.metadata['native_assets'].items():
         native[role]={}
         for label,key in keys.items():
-            suffix={'raw_geometry':'.pa#','fractional_surface':'.pa-surf','surface_witnesses':'_surface.csv'}[label]
-            record=write('geometry/'+role+suffix,source.data_path(key).read_bytes(),'required_evidence' if label=='surface_witnesses' else 'solver_native_binary')
+            suffix={'raw_geometry':'.pa#','fractional_surface':'.pa-surf','surface_witnesses':'_surface.csv','surface_state':'_surface_state.json'}[label]
+            record=write('geometry/'+role+suffix,source.data_path(key).read_bytes(),'required_evidence' if label in {'surface_witnesses','surface_state'} else 'solver_native_binary')
             product_key=role+'_'+label;records[product_key]=record;native[role][label]=product_key
     meta=dict(backend='simion',drive_configured=True,geometry_materialized=True,field_status='not_solved',source_status='not_requested',native_assets=native)
     return dict(status='success',summary={'fixture':'inert'},output_paths=paths,required_output_paths=paths,retention_preserve_paths=[],
@@ -190,11 +204,17 @@ def inert_native_leaf(observed, *, failure_operation=None, child_mutate=None, af
     original=RunSession.run_process
     def inert(session,operation_id,**kwargs):
         observed.append(operation_id);args=kwargs['arguments'];script='from pathlib import Path\n'
+        if args.count('lua')!=1: raise ValueError('inert Lua transport arguments differ')
+        lua_index=args.index('lua')
         if operation_id.startswith('collision_build_'):
-            out=pathlib.Path(args[-2]);script+=f'Path({str(out)!r}).write_bytes(b"INERT_PA")\nPath({str(out.with_suffix(".pa-surf"))!r}).write_bytes(b"INERT_SURFACE")\n';marker='RAW_COLLISION_BUILD=PASS nodes=27 metal_nodes=2 surface_nodes=1 FIELD_STATUS=not_solved REFINE=False FLY=False'
+            index=lua_index+2
+            if len(args)-index not in (4,5) or args[index]!='build': raise ValueError('inert collision build arguments differ')
+            out=pathlib.Path(args[index+2])
+            if out.suffix!='.pa': raise ValueError('inert collision output is not a PA')
+            script+=f'Path({str(out)!r}).write_bytes(b"INERT_PA")\nPath({str(out.with_suffix(".pa-surf"))!r}).write_bytes(b"INERT_SURFACE")\n';marker='RAW_COLLISION_BUILD=PASS nodes=27 metal_nodes=2 surface_nodes=1 FIELD_STATUS=not_solved REFINE=False FLY=False'
         elif operation_id.startswith('collision_verify_'):marker='RAW_COLLISION_VERIFY=PASS nodes=27 metal_nodes=2 surface_nodes=1 FIELD_STATUS=not_solved REFINE=False FLY=False'
         elif operation_id=='background_build':
-            out=pathlib.Path(args[4]);script+=f'Path({str(out)!r}).write_bytes(b"INERT_BACKGROUND")\n';marker='NUMERICAL_CARRIER_REOPEN=PASS'
+            out=pathlib.Path(args[lua_index+2]);script+=f'Path({str(out)!r}).write_bytes(b"INERT_BACKGROUND")\n';marker='NUMERICAL_CARRIER_REOPEN=PASS'
         elif operation_id=='background_verify':marker='NUMERICAL_CARRIER_COLD_REOPEN=PASS'
         elif operation_id=='collision_iob_build':
             out=session.run_dir/'simion/collision/collision.iob';script+=f'Path({str(out)!r}).write_bytes(b"INERT_IOB")\nPath({str(out.with_suffix(".fly2"))!r}).write_text("particles{{coordinates=0,}}")\n';marker='IP_MR_COLLISION_IOB=PASS'

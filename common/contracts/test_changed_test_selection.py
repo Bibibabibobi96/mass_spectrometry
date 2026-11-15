@@ -2531,6 +2531,20 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
                                 capture_output=True, text=True, encoding='utf-8', timeout=60)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_sampled_field_fixture_selects_its_installed_and_inert_consumers(self) -> None:
+        transport = 'common/contracts/test_ip_mr_inert_transport.py'
+        cases = [dict(stage='common_contracts', paths=[path]) for path in (
+            'common/contracts/test_support/ip_mr_sampled_field_fixture.py',
+            'src/msplatform/backends/simion/ip_mr_field_execution.py',
+            'src/msplatform/backends/simion/native_io.py', transport)]
+        selected = self.selections(REPO_ROOT, cases)
+        self.assertTrue({transport, 'common/contracts/test_ip_mr_sampled_field_execution.py',
+                         'common/contracts/test_installed_scientific_core.py'} <= set(selected[0]['Modules']))
+        self.assertFalse(selected[0]['CompleteOwner'])
+        for row in selected[1:3]:
+            self.assertIn(transport, row['Modules'])
+        self.assertEqual(selected[3]['Modules'], [transport])
+
     def test_shared_geometry_changes_select_cad_and_comsol_consumers(self) -> None:
         paths = ["src/msplatform/components/geometry_members.py",
                  "src/msplatform/backends/comsol/assembly_geometry.py",

@@ -172,7 +172,14 @@ def execute_geometry(session: RunSession, *, compiled: CompiledSimionGeometry,
             role = operation_id.removeprefix("geometry_")
             member = {}
             paths = list(operation["outputs"])
-            labels = ("raw_geometry", "surface_witnesses", "surface_state") if operation_id in optional_surfaces else ("raw_geometry", "fractional_surface", "surface_witnesses")
+            if operation_id in optional_surfaces:
+                labels = ("raw_geometry", "surface_witnesses", "surface_state")
+            elif independent_rf:
+                labels = ("raw_geometry", "fractional_surface", "surface_witnesses")
+            elif role in {"flight_tube", "detector"}:
+                labels = ("raw_geometry", "fractional_surface")
+            else:
+                labels = ("raw_geometry",)
             if operation_id in optional_surfaces and optional_surfaces[operation_id].is_file():
                 paths.append(str(optional_surfaces[operation_id])); labels += ("fractional_surface",)
             for label, path in zip(labels, paths, strict=True):

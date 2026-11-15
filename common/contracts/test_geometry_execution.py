@@ -110,6 +110,14 @@ class GeometryExecutionTests(unittest.TestCase):
                 self.assertEqual(argv[4], "lua")
                 self.assertEqual(Path(argv[5]).parent, session.input_dir / "native_sources")
             self.assertIs(result["summary"]["requested_allow_asynchronous_io"], False)
+            product = result["manifest_extra_fields"]["products"]["geometry"]
+            expected = {"flight_tube": {"raw_geometry", "fractional_surface"},
+                        "detector": {"raw_geometry", "fractional_surface"},
+                        "reflectron": {"raw_geometry"}, "parent": {"raw_geometry"}}
+            self.assertEqual({k:set(v) for k,v in product["metadata"]["native_assets"].items()}, expected)
+            for labels in product["metadata"]["native_assets"].values():
+                for key in labels.values():
+                    verify_record(key, product["data"][key])
 
     def test_undeclared_operations_and_escape_are_rejected_before_writes(self):
         with tempfile.TemporaryDirectory() as directory:
