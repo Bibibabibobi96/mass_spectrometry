@@ -1725,6 +1725,16 @@ The source guard passed; the failed parent is not installation acceptance.
 Evidence is in workspace `v87-reuse-original-installed-parent-root-r1` and
 `v87-installed-orphan-diagnosis-agent12-r1`.
 
+The process sampler now excludes a verified live non-root identity whose birth
+predates every explicitly bound launch root, including already-retained IDs and
+fallback snapshots. Missing birth evidence does not prove exclusion; a possible
+post-root child behind a reused intermediate remains active with unknown
+ancestry. Eleven integrated process-family and actual immutable-input parents
+passed in 48.782 seconds, with 3,051 source files unchanged and the GATE released.
+Evidence is in workspace `v87-retained-ancestry-integrated-root-r1`. This fixes
+future sampling; it neither patches the live old owner nor closes that failed
+ordinary-installation epoch or proves its initial false-admission route.
+
 `resolve_ip_mr_scalar_basis` admits sixteen explicit published scalar products,
 or seventeen with external RF, against the actual source-derived basis planner.
 SFI and IP–MR share the same per-sample lineage, cold-readback, PA/mask header and

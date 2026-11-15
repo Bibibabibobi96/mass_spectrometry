@@ -131,8 +131,27 @@ function Get-ManagedSolverProcessSample {
     }
   }
   $known=[Collections.Generic.HashSet[int]]::new()
+  $beforeAllRoots=[Collections.Generic.HashSet[int]]::new()
+  # A live identity older than every explicitly bound root cannot have been
+  # created by this launch.  Missing root or child birth evidence is not proof.
+  $allRootBirthsKnown=@($RootProcessIds).Count-gt0
+  $earliestRootBirth=$null
+  foreach($rootProcessId in $RootProcessIds){
+    $rootKey=[string]$rootProcessId
+    if(-not$RootProcessStartedAtUtcTicks.ContainsKey($rootKey)){$allRootBirthsKnown=$false;break}
+    $rootBirth=[int64]$RootProcessStartedAtUtcTicks[$rootKey]
+    if($rootBirth-le0){$allRootBirthsKnown=$false;break}
+    if($null-eq$earliestRootBirth-or$rootBirth-lt$earliestRootBirth){$earliestRootBirth=$rootBirth}
+  }
   foreach($processId in @($RootProcessIds)+@($TrackedProcessIds)){
     if($processId -gt 0 -and -not $staleProcessIds.Contains([int]$processId)){
+      if($RootProcessIds-notcontains[int]$processId -and $allRootBirthsKnown -and $byId.ContainsKey([int]$processId)){
+        $birth=& $readStarted ([int]$processId)
+        if($null-ne$birth -and [int64]$birth-lt[int64]$earliestRootBirth){
+          $null=$beforeAllRoots.Add([int]$processId)
+          continue
+        }
+      }
       $null=$known.Add([int]$processId)
     }
   }
@@ -165,11 +184,21 @@ function Get-ManagedSolverProcessSample {
     while($changed){
       $changed=$false
       foreach($childId in $parentSnapshot.parents.Keys){
-        if($candidates.Contains($parentSnapshot.parents[$childId])-and$candidates.Add($childId)){$changed=$true}
+        if($beforeAllRoots.Contains([int]$childId)-or-not$candidates.Contains($parentSnapshot.parents[$childId])){continue}
+        # Filter provably older candidate identities before fallback uncertainty
+        # propagation; otherwise a stale parent-table row can poison the family.
+        if($allRootBirthsKnown -and $byId.ContainsKey([int]$childId)){
+          $birth=& $readStarted ([int]$childId)
+          if($null-ne$birth -and [int64]$birth-lt[int64]$earliestRootBirth){
+            $null=$beforeAllRoots.Add([int]$childId)
+            continue
+          }
+        }
+        if($candidates.Add($childId)){$changed=$true}
       }
     }
     foreach($process in $processes){
-      if(-not$candidates.Contains([int]$process.Id)){continue}
+      if($beforeAllRoots.Contains([int]$process.Id)-or-not$candidates.Contains([int]$process.Id)){continue}
       $started=$null
       try{$started=$process.StartTime.ToUniversalTime().Ticks.ToString('D19')}catch{
         $started=Get-HostResourceNativeProcessCreationTicks -ProcessId ([int]$process.Id)
@@ -196,10 +225,30 @@ function Get-ManagedSolverProcessSample {
     $changed=$false
     foreach($childId in @($parentByChild.Keys)){
       $parentId=[int]$parentByChild[$childId]
-      if(-not$known.Contains($parentId)-or$known.Contains([int]$childId)){continue}
+      if($beforeAllRoots.Contains([int]$childId)){continue}
+      if(-not$known.Contains($parentId)){
+        # A retained child remains possible if its old intermediate PID was
+        # reused; the new process cannot prove or disprove the old edge.
+        if($staleProcessIds.Contains($parentId) -and $known.Contains([int]$childId) -and
+           $TrackedProcessIds-contains[int]$childId -and $RootProcessIds-notcontains[int]$childId){
+          $null=$unknownAncestryProcessIds.Add([int]$childId)
+        }
+        continue
+      }
       $parentKey=[string]$parentId
       $parentBorn=if($expectedStartTicks.ContainsKey($parentKey)){$expectedStartTicks[$parentKey]}else{& $readStarted $parentId}
       $childBorn=& $readStarted ([int]$childId)
+      if($known.Contains([int]$childId)){
+        # A previously retained child is not automatically exempt from the
+        # current edge's birth-order check.  Do not discard a possible live
+        # writer: a recycled parent PID can make its true ancestry uncertain.
+        if($TrackedProcessIds-contains[int]$childId -and $RootProcessIds-notcontains[int]$childId){
+          if($null-eq$parentBorn -or $null-eq$childBorn -or [int64]$childBorn-lt[int64]$parentBorn){
+            $null=$unknownAncestryProcessIds.Add([int]$childId)
+          }
+        }
+        continue
+      }
       # A retained PPID number is not proof of ancestry: a child cannot
       # predate the known parent identity, even after that parent has exited.
       if($null-ne$parentBorn-and$null-ne$childBorn-and[int64]$childBorn-lt[int64]$parentBorn){continue}
