@@ -113,7 +113,12 @@ function hs.bound_parameters() return {gas_mass_amu=_gas_mass_amu,temperature_k=
 function hs.segment.initialize() init_count=init_count+1 end
 function hs.segment.tstep_adjust() end
 function hs.segment.other_actions() end
-function simion.import() return hs end
+function hs.segment.terminate() end
+function simion.import()
+ segment.initialize=hs.segment.initialize;segment.tstep_adjust=hs.segment.tstep_adjust
+ segment.other_actions=hs.segment.other_actions;segment.terminate=hs.segment.terminate
+ return hs
+end
 ion_number=1;ion_time_of_flight=0;ion_instance=1;ion_px_mm=1;ion_py_mm=1;ion_pz_mm=1
 ion_vx_mm=0;ion_vy_mm=0;ion_vz_mm=0;ion_mass=100;ion_charge=1;ion_splat=0;ion_time_step=.001
 simion.wb.instances[1]={scale=2,pa={dx_mm=.5,dy_mm=1,dz_mm=2},wb_to_pa_orient=function(self,x,y,z) return y,-x,z end}
@@ -190,10 +195,16 @@ for ion=1,2 do
  ion_px_mm=1;ion_py_mm=1;ion_pz_mm=1;ion_vx_mm=.001;ion_vy_mm=.002;ion_vz_mm=.003
  segment.initialize()
  ion_time_of_flight=.5;ion_px_mm=2;segment.other_actions()
+ if ion==1 then
+  ion_number=2;local ok,why=pcall(segment.tstep_adjust)
+  assert(not ok and tostring(why):find('interleaved particle stream is unsupported',1,true))
+  ion_number=1
+ end
  if ion==1 then assert(ion_splat==0);ion_time_of_flight=0;ion_px_mm=1
  else assert(ion_splat==1);ion_time_of_flight=.4;ion_px_mm=1.8 end
  segment.terminate()
 end
+assert(seeds[#seeds-1]==46 and seeds[#seeds]==130,'original particle seed streams differ')
 print('status,Fly completed. 2 splats')
 """
             actual=root/'ip_mr_collect.lua';actual.write_text(prefix+rendered['program']+continuation,encoding='utf8')

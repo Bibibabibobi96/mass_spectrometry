@@ -257,7 +257,13 @@ def render_rf_controls(model: Any, plan: Mapping[str, Any], *, assets: Mapping[s
         edges=sorted(set([baseline['schedule'][key] for key in ('capture_end_us','transfer_end_us','lift_end_us','terminal_us')]+[timing['primary_quench_us'],timing['pulse_start_us']]))
         config=dict(baseline=baseline,numerics=numerics,query_frame_id=options['query_frame_id'],schedule_edges_us=edges)
         program+='\nrf_step_cap_us=math.min(rf_step_cap_us,'+lua_value(1e6/baseline['electric']['rf_frequency_hz']/plan['flight']['rf_steps_per_period'])+')\n'
-        program+='\nlocal joint_hs=simion.import('+lua_value(options['vendor_path'])+')\n'
+        # SIMION imports can overwrite existing segment callbacks. Preserve the
+        # tracking callbacks before importing HS1, whose returned table retains
+        # its own callbacks for the explicit lifecycle composition below.
+        # https://simion.com/info/merging_segments.html (SIMION 8.1+, 2026-11-15)
+        program+='\nlocal joint_saved_segments={initialize=segment.initialize,tstep_adjust=segment.tstep_adjust,other_actions=segment.other_actions,terminate=segment.terminate}\n'
+        program+='local joint_hs=simion.import('+lua_value(options['vendor_path'])+')\n'
+        program+='segment.initialize=joint_saved_segments.initialize;segment.tstep_adjust=joint_saved_segments.tstep_adjust;segment.other_actions=joint_saved_segments.other_actions;segment.terminate=joint_saved_segments.terminate\n'
         program+='local joint_bath=assert(loadfile('+lua_value(options['bath_path'])+'))()\n'
         program+='local joint_outer=assert(loadfile('+lua_value(options['outer_path'])+'))()\n'
         program+='local joint_selector=(function()\n'+resource('rf_ip_gas_selection.lua')+'\nend)().new(joint_bath,joint_outer)\n'

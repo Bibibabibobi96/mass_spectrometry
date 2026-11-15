@@ -249,10 +249,16 @@ The current complete bare RF–LP60 IP–MR case has a published sampled FieldBu
 from twelve native build/reopen operations without Refine, Compute or Fly. Its
 original N100 tracking attempt initially failed before native work on the empty
 detector-surface key, corrected in `bde9`; a fresh IOB build and cold reopen then
-passed, but Fly failed with `too many PAs in memory` and zero splats. There is no
-accepted full-cohort trajectory result. Generic RF/pulse software passed 28 focused
-parents and seven recovery parents; the ordinary two-arm parent passed on `a5c1fbad`
-in 1,371.187 s, while the `11fa1735` dynamic installed probe is unrun. Precision,
+passed, but Fly failed with `too many PAs in memory` and zero splats. The adapter
+correction passed its real 107-PA reinitialization probe; the next original N100
+attempt on `3bf046bd` passed build/reopen and failed in HS1 callback composition
+after one splat. Its imported vendor replaced tracking callbacks; the successor
+preserves them without changing collision equations or particle seeds. Corrected
+native flight remains unverified, and no accepted full-cohort trajectory exists.
+Generic RF/pulse software passed 28 focused parents and seven recovery parents;
+the ordinary two-arm parent including the dynamic probe passed on frozen
+`3bf046bd` in 1,358.281 s, with unchanged source and released GATE. That installation
+evidence does not qualify the callback-repair successor. Precision,
 convergence, complete Repository, native flight and the 15-minute target remain open.
 The approved gas choice and original cohort stay bound to their explicit requests;
 no additional component geometry is implied. Details and evidence are in the

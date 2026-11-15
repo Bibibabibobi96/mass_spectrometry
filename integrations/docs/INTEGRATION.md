@@ -23,12 +23,24 @@ the actual empty-surface evidence. The fresh `track-d71e9a4e7331` built and cold
 reopened its tracking IOB successfully, then Fly exited 1 with `too many PAs in
 memory` and zero splats (operation exits 0, 0, 1). Source guards and process drains
 closed. This is a failed flight, not a 100-particle result or field qualification;
-the PA-memory issue remains open.
+the PA-memory correction subsequently passed a real synthetic 107-PA probe over
+four factory initializations and 51 queries per initialization. The next original
+N100 attempt, `track-7e1acbfc6e55` on `3bf046bd`, passed build and cold reopen,
+then Fly failed after one splat with `interleaved particle stream is unsupported`.
+All writers drained, host leases released and source guards matched; no collection
+was published. The exact retained HS1 import overwrote four tracking callbacks.
+The successor preserves those callbacks across import and retains the existing
+explicit HS1 composition, sequential-stream checks and original-ID seeds. Its
+generated-Program regression and four shared RF–IP/HS1 consumer modules passed
+seven tests with zero skips in 110.938 guarded seconds, unchanged source and a
+released GATE. Corrected native flight remains unverified.
 
 The generic sampled RF/pulse software candidate passed 28 focused parents; its
 separate grouped recovery checks passed seven parents with inert native leaves.
 The ordinary wheel and rebuilt-sdist parent passed on `a5c1fbad` in 1,371.187 s;
-the new generic dynamic installed probe on `11fa1735` remains unrun. Full current
+the full ordinary parent including the new generic dynamic installed probe passed
+on frozen `3bf046bd` in 1,358.281 s, with 3,070 source files unchanged and the GATE
+released. This qualifies that source epoch, not the callback-repair successor. Full current
 Repository, native functional completion, scientific precision and convergence,
 and the original 15-minute target remain open. The 700 GiB managed target and
 295 GiB free-space floor remain unchanged. Evidence is retained under workspace
