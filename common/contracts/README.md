@@ -690,6 +690,9 @@ Later retirement batches on this failed-equivalence path are refused. This API
 does not authorize loss of an unrecoverable unique payload, change the original
 failed status, or remove small configurations, logs and results. Hashing a keeper
 artifact can read its full declared closure and must be scheduled accordingly.
+Within one validation call, identical complete artifact references share that
+product read; each selected member and target still receives its own identity
+check. Nothing is cached across plan, apply or receipt verification.
 
 退役读取配置中的完整`file_record`（`path/exists/bytes/sha256`，可选`source_path`来源说明）时，
 要求其路径及身份与已验证manifest的input或output记录一致；来源说明不作为第二个消费文件。

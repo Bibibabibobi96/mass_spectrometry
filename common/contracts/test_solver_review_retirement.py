@@ -672,6 +672,56 @@ function Exit-HostExecutionLease { param($Lease) }
         self.assertEqual(keeper.read_bytes(), b"native")
         self.assertEqual(manifest_path.read_bytes(), original)
 
+    def _two_member_equivalence_fixture(self):
+        _, _, completion, manifest_file, entries, selection = self._failed_equivalence_fixture()
+        def record(path):
+            return dict(path=str(path), exists=True, bytes=path.stat().st_size, sha256=_sha(path))
+        source = self.target / "simion/accelerator.pa0"
+        config_path = self.target / "run_config.json"
+        config = json.loads(config_path.read_text())
+        config["inputs"].pop("accelerator_pa0")
+        config_path.write_text(json.dumps(config))
+        body = json.loads(completion.read_text())
+        body["file_roles"][str(source)] = "solver_native_binary"
+        completion.write_text(json.dumps(body))
+        manifest = json.loads(manifest_file.read_text())
+        manifest["run_config"] = record(config_path)
+        manifest["inputs"].pop("accelerator_pa0")
+        manifest["outputs"][1] = record(completion)
+        manifest_file.write_text(json.dumps(manifest))
+        keeper_file = self.replacement / "simion/accelerator.pa0"
+        keeper_manifest = self.replacement / "run_manifest.json"
+        km = json.loads(keeper_manifest.read_text())
+        member = record(keeper_file)
+        km["products"]["geometry"]["data"]["accelerator"] = member
+        km["outputs"].append(member)
+        keeper_manifest.write_text(json.dumps(km))
+        reference = dict(manifest=record(keeper_manifest), product_id="geometry")
+        selection["simion/analyzer.pa0"]["reference"] = copy.deepcopy(reference)
+        selection["simion/accelerator.pa0"] = dict(reference=copy.deepcopy(reference), member="accelerator")
+        return entries, selection
+
+    def test_failed_equivalence_reuses_one_published_keeper_per_call(self):
+        from msplatform.results.artifacts import open_artifact
+        entries, selection = self._two_member_equivalence_fixture()
+        with mock.patch("msplatform.results.artifacts.open_artifact", wraps=open_artifact) as opened:
+            plan = self._failed_equivalence_plan(entries, selection)
+        self.assertEqual(opened.call_count, 1)
+        self.assertEqual({row["keeper_member"] for row in plan["failed_payload_equivalence"]["files"]},
+                         {"analyzer", "accelerator"})
+
+    def test_failed_equivalence_reuse_refuses_missing_member(self):
+        entries, selection = self._two_member_equivalence_fixture()
+        selection["simion/analyzer.pa0"]["member"] = "missing"
+        with self.assertRaisesRegex(RetirementError, "keeper published artifact or member differs"):
+            self._failed_equivalence_plan(entries, selection)
+
+    def test_failed_equivalence_reuse_binds_full_reference(self):
+        entries, selection = self._two_member_equivalence_fixture()
+        selection["simion/analyzer.pa0"]["reference"]["manifest"]["sha256"] = "0" * 64
+        with self.assertRaisesRegex(RetirementError, "keeper published artifact or member differs"):
+            self._failed_equivalence_plan(entries, selection)
+
     def _owner_plan(self, **kwargs: object) -> dict[str, object]:
         return plan_retirement(
             self.artifacts, self.repo, self.target, owner="p",

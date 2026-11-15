@@ -962,6 +962,7 @@ def validate_failed_payload_equivalence(
     if not isinstance(roles, dict):
         raise RetirementError("failed completion lacks file roles")
     rows = []
+    opened_keepers = {}
     for name in selected:
         source = _under(target / name, target)
         selected_keeper = paths[name]
@@ -969,7 +970,14 @@ def validate_failed_payload_equivalence(
                 or not isinstance(selected_keeper["member"], str) or not selected_keeper["member"]):
             raise RetirementError("keeper requires explicit artifact reference and member")
         try:
-            artifact = open_artifact(selected_keeper["reference"], expected_kind="geometry_artifact")
+            # This cache lives only for this validation call.  Bind the full
+            # explicit reference, including every manifest field and product ID.
+            reference_key = json.dumps(selected_keeper["reference"], sort_keys=True,
+                                       separators=(",", ":"), allow_nan=False)
+            if reference_key not in opened_keepers:
+                opened_keepers[reference_key] = open_artifact(
+                    selected_keeper["reference"], expected_kind="geometry_artifact")
+            artifact = opened_keepers[reference_key]
             if artifact.producer.get("status") != "success" or artifact.producer.get("project") != failed["config"].get("project"):
                 raise RetirementError("keeper project or terminal status differs")
             keeper = _under(artifact.manifest_location.parent, root)
