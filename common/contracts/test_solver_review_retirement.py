@@ -16,7 +16,7 @@ from unittest import mock
 
 from common.contracts.capacity_protection import create_capacity_protection_lease
 from common.contracts.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
-from msplatform.execution.run_capacity_lifecycle import register_writing, seal_checkpoint
+from msplatform.execution.run_capacity_lifecycle import register_writing, seal_checkpoint, reseal_retired_payload
 from msplatform.execution.retention import file_record
 from msplatform.execution.solver_review_retirement import (
     LEGACY_INITIALIZATION_SUMMARY,
@@ -374,6 +374,303 @@ function Exit-HostExecutionLease { param($Lease) }
                     "formal_eligible": False, "artifact_retention": config["artifact_retention"]}
         (run / "run_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
         return run
+
+    def _failed_equivalence_fixture(self):
+        target = self.target
+        source = target / "simion/analyzer.pa0"
+        keeper = self.replacement / "simion/analyzer.pa0"
+        def record(path):
+            return dict(path=str(path), exists=True, bytes=path.stat().st_size, sha256=_sha(path))
+        config_path = target / "run_config.json"
+        config = json.loads(config_path.read_text())
+        config["inputs"].pop("analyzer_pa0")
+        config_path.write_text(json.dumps(config))
+        summary_path = target / "summary.json"
+        summary_path.write_text(json.dumps(dict(run_id=target.name, status="failed", writers_stopped=True)))
+        request = target / "request.json"
+        request.write_text(json.dumps(dict(expected_operation_ids=["geometry"])))
+        completion = target / "results/execution_completion.json"
+        completion.parent.mkdir()
+        completion.write_text(json.dumps(dict(role="run_artifact_workflow_completion", status="failed",
+            run_id=target.name, project="p", execution_request=record(request),
+            file_roles={str(source): "solver_native_binary"},
+            writer_completion=dict(operations=[dict(operation_id="geometry", observation=dict(
+                exit_confirmed=True, returncode=0, process_id=123, process_started_at_utc_ticks=1),
+                resource_release_id="host-1")], resource_releases=[dict(release_id="host-1",
+                completion_receipt=dict(host_release=dict(inherited=False, token="fixture-token", error=None,
+                    result=dict(status="released", token="fixture-token"))))]))))
+        manifest_path = target / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest.update(status="failed", run_config=record(config_path))
+        manifest["inputs"].pop("analyzer_pa0")
+        manifest["inputs"]["request"] = record(request)
+        manifest["outputs"] = [record(summary_path), record(completion)]
+        manifest_path.write_text(json.dumps(manifest))
+        km = self.replacement / "run_manifest.json"
+        kmanifest = json.loads(km.read_text())
+        keeper_record = record(keeper)
+        kmanifest.update(role="simulation_run_manifest", products={"geometry": dict(
+            schema_version=1, kind="geometry_artifact", status="complete", metadata={},
+            data={"analyzer": keeper_record})})
+        kmanifest["outputs"].append(keeper_record)
+        km.write_text(json.dumps(kmanifest))
+        entries = [dict(path=target.relative_to(self.artifacts).as_posix(), owner="p",
+            **{"class": "rebuildable_payload"}, status="ready", pin=True, bytes=1000,
+            retention_reason="owner sealed stopped payload; fixture"),
+            dict(path=self.replacement.relative_to(self.artifacts).as_posix(), owner="p",
+            **{"class": "rebuildable_payload"}, status="ready", pin=True, bytes=1000)]
+        selection = {"simion/analyzer.pa0": dict(reference=dict(manifest=record(km),
+            product_id="geometry"), member="analyzer")}
+        return source, keeper, completion, manifest_path, entries, selection
+
+    def _failed_equivalence_plan(self, entries, selection):
+        with mock.patch("msplatform.execution.capacity_ledger.load_capacity_ledger",
+                        return_value={"objects": entries}), mock.patch(
+            "msplatform.execution.solver_review_retirement._git_document_references", return_value=[]):
+            return self._owner_plan(selected_heavy_paths=list(selection), failed_equivalence_members=selection)
+
+    def test_failed_equivalence_plan_uses_published_keeper(self):
+        source, _, _, _, entries, selection = self._failed_equivalence_fixture()
+        plan = self._failed_equivalence_plan(entries, selection)
+        proof = plan["failed_payload_equivalence"]["files"][0]
+        self.assertEqual(proof["sha256"], _sha(source))
+        self.assertEqual(proof["keeper_member"], "analyzer")
+        self.assertIsNone(plan["removed_files"][0]["manifest_sha256"])
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            with self.assertRaisesRegex(RetirementError, "explicit keeper protection lease"):
+                apply_retirement(plan)
+        self.assertTrue(source.is_file())
+
+    def test_failed_equivalence_plan_refuses_foreign_keeper(self):
+        _, _, _, _, entries, selection = self._failed_equivalence_fixture()
+        entries[1]["owner"] = "foreign"
+        with self.assertRaisesRegex(RetirementError, "keeper capacity"):
+            self._failed_equivalence_plan(entries, selection)
+
+    def test_failed_equivalence_plan_refuses_unowned_target(self):
+        source, _, completion, manifest_path, entries, selection = self._failed_equivalence_fixture()
+        body = json.loads(completion.read_text())
+        body["file_roles"] = {}
+        completion.write_text(json.dumps(body))
+        manifest = json.loads(manifest_path.read_text())
+        manifest["outputs"][1].update(bytes=completion.stat().st_size, sha256=_sha(completion))
+        manifest_path.write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(RetirementError, "not an owned"):
+            self._failed_equivalence_plan(entries, selection)
+        self.assertTrue(source.is_file())
+
+    def _apply_failed_equivalence(self, plan, entries):
+        with mock.patch("msplatform.execution.capacity_ledger.load_capacity_ledger",
+                        return_value={"objects": entries}), mock.patch(
+            "msplatform.execution.solver_review_retirement._git_document_references", return_value=[]), mock.patch.dict(
+            os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            return apply_retirement(plan, keeper_lease_id="keeper", keeper_lease_owner="fixture")
+
+    def _protect_keeper(self):
+        create_capacity_protection_lease(self.artifacts, lease_id="keeper", ttl_seconds=600,
+            owner="fixture", protected_paths=[self.replacement], committed_new_bytes=0)
+
+    def test_failed_equivalence_apply_with_keeper_guard(self):
+        source, keeper, _, manifest_path, entries, selection = self._failed_equivalence_fixture()
+        original = manifest_path.read_bytes()
+        plan = self._failed_equivalence_plan(entries, selection)
+        self._protect_keeper()
+        receipt = self._apply_failed_equivalence(plan, entries)
+        self.assertEqual(receipt["lifecycle_status"], "completed_experiment_payload_retired")
+        self.assertFalse(source.exists())
+        self.assertEqual(keeper.read_bytes(), b"native")
+        self.assertEqual(manifest_path.read_bytes(), original)
+        with mock.patch("msplatform.execution.capacity_ledger.load_capacity_ledger", return_value={"objects": entries}):
+            self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+
+    def test_failed_equivalence_apply_refuses_tampered_keeper(self):
+        source, keeper, _, _, entries, selection = self._failed_equivalence_fixture()
+        plan = self._failed_equivalence_plan(entries, selection)
+        self._protect_keeper()
+        keeper.write_bytes(b"wrong!")
+        with self.assertRaises(ValueError):
+            self._apply_failed_equivalence(plan, entries)
+        self.assertTrue(source.exists())
+
+    def test_failed_equivalence_apply_refuses_active_target_lease(self):
+        source, _, _, _, entries, selection = self._failed_equivalence_fixture()
+        plan = self._failed_equivalence_plan(entries, selection)
+        self._protect_keeper()
+        create_capacity_protection_lease(self.artifacts, lease_id="target", ttl_seconds=600,
+            owner="consumer", protected_paths=[self.target], committed_new_bytes=0)
+        with self.assertRaisesRegex(RetirementError, "active capacity protection"):
+            self._apply_failed_equivalence(plan, entries)
+        self.assertTrue(source.exists())
+
+    def test_failed_equivalence_apply_refuses_changed_target(self):
+        source, _, _, _, entries, selection = self._failed_equivalence_fixture()
+        plan = self._failed_equivalence_plan(entries, selection)
+        self._protect_keeper()
+        source.write_bytes(b"unique")
+        with self.assertRaisesRegex(RetirementError, "bytes differ"):
+            self._apply_failed_equivalence(plan, entries)
+        self.assertEqual(source.read_bytes(), b"unique")
+
+    def test_failed_equivalence_apply_refuses_active_consumer(self):
+        source, _, _, _, entries, selection = self._failed_equivalence_fixture()
+        plan = self._failed_equivalence_plan(entries, selection)
+        self._protect_keeper()
+        active = self.runs / "20260103_000000__sim__simion__active"
+        active.mkdir()
+        (active / "run_config.json").write_text(json.dumps({"inputs": {"source": str(source)}}))
+        with self.assertRaisesRegex(RetirementError, "active references"):
+            self._apply_failed_equivalence(plan, entries)
+        self.assertTrue(source.exists())
+
+    def test_failed_equivalence_apply_requires_matching_keeper_lease(self):
+        source, _, _, _, entries, selection = self._failed_equivalence_fixture()
+        plan = self._failed_equivalence_plan(entries, selection)
+        with self.assertRaisesRegex(RetirementError, "keeper protection lease"):
+            self._apply_failed_equivalence(plan, entries)
+        self.assertTrue(source.exists())
+
+    def test_failed_equivalence_apply_retains_pending_after_interrupted_delete(self):
+        source, _, _, _, entries, selection = self._failed_equivalence_fixture()
+        plan = self._failed_equivalence_plan(entries, selection)
+        self._protect_keeper()
+        def interrupted(root, records, **kwargs):
+            (root / records[0]["path"]).unlink()
+            raise ValueError("synthetic interrupted delete")
+            yield
+        with mock.patch("msplatform.execution.solver_review_retirement.remove_recorded_files", interrupted):
+            with self.assertRaisesRegex(RetirementError, "synthetic interrupted delete"):
+                self._apply_failed_equivalence(plan, entries)
+        self.assertFalse(source.exists())
+        receipt = json.loads((self.target / "solver_review_retirement_receipt.json").read_text())
+        self.assertEqual(receipt["lifecycle_status"], "retirement_pending")
+        resumed = self._failed_equivalence_plan(entries, selection)
+        self.assertTrue(resumed["removed_files"][0]["already_removed_before_resume"])
+        receipt = self._apply_failed_equivalence(resumed, entries)
+        self.assertEqual(receipt["lifecycle_status"], "completed_experiment_payload_retired")
+        with mock.patch("msplatform.execution.capacity_ledger.load_capacity_ledger", return_value={"objects": entries}):
+            self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+
+    def _real_failed_equivalence_fixture(self):
+        source, keeper, completion, manifest_path, _, selection = self._failed_equivalence_fixture()
+        def record(path):
+            return dict(path=str(path), exists=True, bytes=path.stat().st_size, sha256=_sha(path))
+        for run in (self.target, self.replacement):
+            config_path = run / "run_config.json"
+            config = json.loads(config_path.read_text())
+            config["capacity_ledger_lifecycle"] = dict(schema_version=1, enabled=True,
+                artifact_root=str(self.artifacts), light_evidence_budget_bytes=26214400)
+            config_path.write_text(json.dumps(config))
+            manifest_file = run / "run_manifest.json"
+            manifest = json.loads(manifest_file.read_text())
+            manifest["run_config"] = record(config_path)
+            manifest_file.write_text(json.dumps(manifest))
+            register_writing(self.artifacts, config_path)
+            seal_checkpoint(self.artifacts, config_path, owner="p", writing_stopped=True,
+                            retain_payload=True, retention_reason="fixture closed owner")
+        selection["simion/analyzer.pa0"]["reference"]["manifest"] = record(self.replacement / "run_manifest.json")
+        return source, keeper, manifest_path, selection
+
+    def _real_failed_plan(self, selection):
+        with mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[]):
+            return self._owner_plan(selected_heavy_paths=list(selection), failed_equivalence_members=selection)
+
+    def _real_failed_apply(self, plan):
+        with mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[]), mock.patch.dict(
+                os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            return apply_retirement(plan, keeper_lease_id="keeper", keeper_lease_owner="fixture")
+
+    def test_real_ledger_failed_equivalence_apply_and_verify(self):
+        source, keeper, manifest_path, selection = self._real_failed_equivalence_fixture()
+        original = manifest_path.read_bytes()
+        plan = self._real_failed_plan(selection)
+        self._protect_keeper()
+        receipt = self._real_failed_apply(plan)
+        self.assertEqual(receipt["lifecycle_status"], "completed_experiment_payload_retired")
+        self.assertFalse(source.exists())
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+        sealed = reseal_retired_payload(self.artifacts, self.target / "run_config.json", owner="p",
+                                        writing_stopped=True)
+        self.assertEqual(sealed["status"], "ready")
+        from msplatform.execution.capacity_protection import delete_capacity_protection_lease
+        delete_capacity_protection_lease(self.artifacts, lease_id="keeper")
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+        with self.assertRaisesRegex(RetirementError, "later batches are not supported"):
+            self._real_failed_plan({"simion/accelerator.pa0": selection["simion/analyzer.pa0"]})
+        self.assertEqual(manifest_path.read_bytes(), original)
+        self.assertEqual(keeper.read_bytes(), b"native")
+        keeper.write_bytes(b"tamper")
+        with self.assertRaises((AssertionError, ValueError, OSError)):
+            verify_retirement(self.target)
+
+    def test_real_ledger_failed_equivalence_refusals(self):
+        from msplatform.execution.capacity_protection import delete_capacity_protection_lease
+        source, keeper, _, selection = self._real_failed_equivalence_fixture()
+        plan = self._real_failed_plan(selection)
+        self._protect_keeper()
+        create_capacity_protection_lease(self.artifacts, lease_id="target", ttl_seconds=600,
+            owner="consumer", protected_paths=[self.target], committed_new_bytes=0)
+        with self.assertRaisesRegex(RetirementError, "active capacity protection"):
+            self._real_failed_apply(plan)
+        delete_capacity_protection_lease(self.artifacts, lease_id="target")
+        active = self.runs / "20260103_000000__sim__simion__active"
+        active.mkdir()
+        (active / "run_config.json").write_text(json.dumps({"inputs": {"source": str(source)}}))
+        with self.assertRaisesRegex(RetirementError, "active references"):
+            self._real_failed_apply(plan)
+        (active / "run_config.json").unlink()
+        active.rmdir()
+        keeper.write_bytes(b"tamper")
+        with self.assertRaises((AssertionError, ValueError, OSError)):
+            self._real_failed_apply(plan)
+        keeper.unlink()
+        with self.assertRaises((AssertionError, ValueError, OSError)):
+            self._real_failed_apply(plan)
+        keeper.write_bytes(b"native")
+        delete_capacity_protection_lease(self.artifacts, lease_id="keeper")
+        with self.assertRaisesRegex(RetirementError, "keeper protection lease"):
+            self._real_failed_apply(plan)
+        self.assertEqual(source.read_bytes(), b"native")
+        self.assertFalse((self.target / "solver_review_retirement_receipt.json").exists())
+
+    def test_real_ledger_failed_equivalence_unknown_writer_refused(self):
+        source, _, _, selection = self._real_failed_equivalence_fixture()
+        completion = self.target / "results/execution_completion.json"
+        body = json.loads(completion.read_text())
+        body["writer_completion"]["operations"][0]["observation"]["exit_confirmed"] = False
+        completion.write_text(json.dumps(body))
+        manifest_file = self.target / "run_manifest.json"
+        manifest = json.loads(manifest_file.read_text())
+        manifest["outputs"][1].update(bytes=completion.stat().st_size, sha256=_sha(completion))
+        manifest_file.write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(RetirementError, "writer completion"):
+            self._real_failed_plan(selection)
+        self.assertTrue(source.exists())
+
+    def test_real_ledger_failed_equivalence_interrupted_resume_and_verify(self):
+        source, keeper, manifest_path, selection = self._real_failed_equivalence_fixture()
+        original = manifest_path.read_bytes()
+        plan = self._real_failed_plan(selection)
+        self._protect_keeper()
+        def interrupted(root, records, **kwargs):
+            (root / records[0]["path"]).unlink()
+            raise ValueError("synthetic interrupted delete")
+            yield
+        with mock.patch("msplatform.execution.solver_review_retirement.remove_recorded_files", interrupted):
+            with self.assertRaisesRegex(RetirementError, "synthetic interrupted delete"):
+                self._real_failed_apply(plan)
+        pending = json.loads((self.target / "solver_review_retirement_receipt.json").read_text())
+        self.assertEqual(pending["lifecycle_status"], "retirement_pending")
+        resumed = self._real_failed_plan(selection)
+        self.assertTrue(resumed["removed_files"][0]["already_removed_before_resume"])
+        self._real_failed_apply(resumed)
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+        sealed = reseal_retired_payload(self.artifacts, self.target / "run_config.json", owner="p",
+                                        writing_stopped=True)
+        self.assertEqual(sealed["status"], "ready")
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+        self.assertFalse(source.exists())
+        self.assertEqual(keeper.read_bytes(), b"native")
+        self.assertEqual(manifest_path.read_bytes(), original)
 
     def _owner_plan(self, **kwargs: object) -> dict[str, object]:
         return plan_retirement(

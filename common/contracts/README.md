@@ -674,6 +674,23 @@ plan/apply 重新核对同一选择及完整保留库存，收据沿用原格式
 未启用容量生命周期的历史范围不推断新保留决定，仍由原owner显式完成容量交接。
 所有下游引用、活动 consumer 与租约保护保持原判据，子集选择不绕过这些检查。
 
+The Python `plan_retirement` API also accepts explicit `failed_equivalence_members`
+for an exact selected subset of a failed, capacity-sealed owner. Each member names
+a published successful geometry artifact and its keeper member. Manifest-bound
+failed completion and request records must prove stopped writers and ownership;
+the actual target and pinned keeper bytes must match. This does not infer safety
+from a failed status, filename or missing reference search.
+
+`apply_retirement` requires the matching live keeper lease, guards the keeper and
+target identities, and revalidates under the existing capacity-decision lock.
+Interrupted application resumes only the same frozen subset. Completed receipt
+verification and public capacity resealing recheck the retained keeper after the
+temporary lease has expired; the keeper must remain present, pinned and ready.
+Later retirement batches on this failed-equivalence path are refused. This API
+does not authorize loss of an unrecoverable unique payload, change the original
+failed status, or remove small configurations, logs and results. Hashing a keeper
+artifact can read its full declared closure and must be scheduled accordingly.
+
 退役读取配置中的完整`file_record`（`path/exists/bytes/sha256`，可选`source_path`来源说明）时，
 要求其路径及身份与已验证manifest的input或output记录一致；来源说明不作为第二个消费文件。
 普通输入集合仍逐路径严格检查，不改写原封存配置或manifest，也不因这项解析额外扫描PA。

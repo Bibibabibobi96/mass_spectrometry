@@ -44,13 +44,15 @@ def _retention_api(session: RunSession, completion_api: Callable[[], Any] | None
         retention_policy.validate_retention)
 
 
-def _writer_completion(session: RunSession) -> dict[str, Any]:
+def validate_writer_completion(*, writers_stopped: bool, expected_operation_ids: tuple[str, ...],
+                               operations: list[dict[str, Any]],
+                               resource_releases: list[dict[str, Any]]) -> dict[str, Any]:
     """Validate actual exit/release facts before allowing retention or publication."""
-    if not session.writers_stopped:
+    if not writers_stopped:
         raise ValueError("Native writer completion is unknown; retain all protection")
     releases = {}
     tokens = set()
-    for row in session.resource_releases:
+    for row in resource_releases:
         if set(row) != {"release_id", "completion_receipt"} or row["release_id"] in releases:
             raise ValueError("Resource release identity is missing or duplicated")
         release = row["completion_receipt"]["host_release"]
@@ -63,9 +65,9 @@ def _writer_completion(session: RunSession) -> dict[str, Any]:
         tokens.add(release["token"])
         releases[row["release_id"]] = False
     operation_ids = set()
-    for row in session.operations:
+    for row in operations:
         observation = row["observation"]
-        if (row["operation_id"] in operation_ids or row["operation_id"] not in session.expected_operation_ids
+        if (row["operation_id"] in operation_ids or row["operation_id"] not in expected_operation_ids
                 or observation.get("exit_confirmed") is not True
                 or any(type(observation.get(name)) is not int for name in (
                     "returncode", "process_id", "process_started_at_utc_ticks"))
@@ -76,8 +78,14 @@ def _writer_completion(session: RunSession) -> dict[str, Any]:
         releases[row["resource_release_id"]] = True
     if any(not used for used in releases.values()):
         raise ValueError("Resource release has no corresponding started operation")
-    return dict(operations=session.operations, resource_releases=session.resource_releases)
+    return dict(operations=operations, resource_releases=resource_releases)
 
+
+
+def _writer_completion(session: RunSession) -> dict[str, Any]:
+    return validate_writer_completion(writers_stopped=session.writers_stopped,
+        expected_operation_ids=session.expected_operation_ids, operations=session.operations,
+        resource_releases=session.resource_releases)
 
 def _result(session: RunSession, **fields: Any) -> dict[str, Any]:
     value = dict(schema_version=1, role="run_artifact_workflow_result",

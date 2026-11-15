@@ -12,7 +12,7 @@ import json
 import os
 import posixpath
 import subprocess
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
@@ -749,6 +749,7 @@ def _file_inventory(
     inherit_heavy_identity: bool = False,
     runtime_checkpoint_path: Path | None = None,
     receipt_path: Path | None = None,
+    failed_equivalence: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     root: Path = run["dir"]
     records = _manifest_records(
@@ -756,6 +757,7 @@ def _file_inventory(
     )
     if runtime_checkpoint_path is not None:
         records.update(_runtime_checkpoint_members(run, runtime_checkpoint_path, records, retired_paths))
+    equivalence = {row["target_path"]: row for row in (failed_equivalence or {}).get("files", [])}
     inventory: list[dict[str, Any]] = []
     for path in sorted((item for item in root.rglob("*") if item.is_file()), key=lambda item: item.as_posix()):
         if path == (receipt_path or root / RECEIPT_NAME):
@@ -764,9 +766,12 @@ def _file_inventory(
         bytes_count = path.stat().st_size
         manifest_sha = str(record.get("sha256")).upper() if record and record.get("sha256") else None
         inherited = inherit_heavy_identity and classify_file(path, bytes_count=bytes_count) in HEAVY_ROLES
-        if inherited and not record:
+        proof = equivalence.get(path.relative_to(root).as_posix())
+        if inherited and not record and proof is None:
             raise RetirementError(f"heavy payload lacks sealed identity: {path}")
-        actual_sha = manifest_sha if inherited else file_sha256(path)
+        actual_sha = proof["sha256"] if inherited and not record else (manifest_sha if inherited else file_sha256(path))
+        if proof is not None and (proof["bytes"] != bytes_count or proof["sha256"] != actual_sha):
+            raise RetirementError(f"equivalence identity changed: {path}")
         if record and (record["bytes"] != bytes_count or manifest_sha != actual_sha):
             raise RetirementError(f"manifest identity changed: {path}")
         inventory.append({
@@ -775,7 +780,7 @@ def _file_inventory(
             "sha256": actual_sha,
             "manifest_sha256": manifest_sha,
             "manifest_identity_matches": manifest_sha is None or manifest_sha == actual_sha,
-            "identity_source": "sealed_manifest" if inherited else "computed_before_retirement",
+            "identity_source": "failed_equivalence" if inherited and not record else ("sealed_manifest" if inherited else "computed_before_retirement"),
             "manifest_role": record.get("manifest_role") if record else None,
             "retention_role": classify_file(path, bytes_count=bytes_count),
         })
@@ -877,16 +882,134 @@ def _selected_heavy_paths(value: Iterable[str] | None) -> list[str] | None:
     return sorted(paths)
 
 
-def _selected_heavy_records(inventory: list[dict[str, Any]], selected: list[str] | None) -> list[dict[str, Any]]:
+def _selected_heavy_records(inventory: list[dict[str, Any]], selected: list[str] | None,
+                            *, failed_equivalence: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     heavy = [item for item in inventory if item["retention_role"] in HEAVY_ROLES]
     if selected is None:
         return heavy
     chosen = [item for item in heavy if item["path"] in selected]
+    proved = {row["target_path"] for row in (failed_equivalence or {}).get("files", [])}
     if ({item["path"] for item in chosen} != set(selected)
-            or any(not item.get("manifest_sha256") or not item.get("manifest_role") for item in chosen)):
+            or any((not item.get("manifest_sha256") or not item.get("manifest_role"))
+                   and not (item.get("identity_source") == "failed_equivalence" and item["path"] in proved)
+                   for item in chosen)):
         raise RetirementError("selected paths must identify sealed governed heavy payload only")
     return chosen
 
+
+
+def validate_failed_payload_equivalence(
+    artifact_root: Path, target_run: Path,
+    paths: dict[str, dict[str, Any]], *, expected_proof: dict[str, Any] | None = None,
+    removed_paths: Iterable[str] = (),
+) -> dict[str, Any]:
+    """Verify explicit failed-owner payloads against published keeper outputs.
+
+    This read-only admission does not authorize or perform retirement.
+    Each target maps to an explicit published artifact reference and member key.
+    """
+    from msplatform.execution.capacity_ledger import load_capacity_ledger
+    from msplatform.execution.owner import validate_writer_completion
+    from msplatform.results.artifacts import open_artifact
+
+    root = artifact_root.resolve(strict=True)
+    target = _under(target_run, root)
+    if not isinstance(paths, dict) or not paths:
+        raise RetirementError("explicit target and keeper members are required")
+    selected = _selected_heavy_paths(paths.keys())
+    removed = set(removed_paths)
+    if not removed.issubset(selected) or (removed and expected_proof is None):
+        raise RetirementError("missing target requires frozen equivalence evidence")
+    previous = {row["target_path"]: row for row in (expected_proof or {}).get("files", [])}
+    if expected_proof is not None and set(previous) != set(selected):
+        raise RetirementError("frozen equivalence scope differs")
+    failed = _load_run(target, allowed_statuses=("failed",), label="target")
+    target_records = _manifest_records(failed, inherit_heavy_identity=True)
+    summary_path = target / "summary.json"
+    completion_path = target / "results" / "execution_completion.json"
+    if summary_path not in target_records or completion_path not in target_records:
+        raise RetirementError("failed summary or completion is not manifest-bound")
+    completion = _json(completion_path)
+    if (completion.get("role") != "run_artifact_workflow_completion"
+            or completion.get("status") != "failed"
+            or completion.get("run_id") != target.name
+            or completion.get("project") != failed["config"].get("project")
+            or failed["summary"].get("writers_stopped") is not True):
+        raise RetirementError("failed completion or stopped-writer identity differs")
+    request_record = completion.get("execution_request")
+    try:
+        request_path = record_path(request_record, base_dir=target)
+        if request_path not in target_records:
+            raise RetirementError("execution request is not manifest-bound")
+        verify_record("execution request", request_record, base_dir=target)
+        request = _json(request_path)
+        writers = completion["writer_completion"]
+        validate_writer_completion(writers_stopped=failed["summary"]["writers_stopped"],
+            expected_operation_ids=tuple(request["expected_operation_ids"]),
+            operations=writers["operations"], resource_releases=writers["resource_releases"])
+    except (KeyError, TypeError, ValueError, OSError) as exc:
+        raise RetirementError("failed writer completion or request is invalid") from exc
+    ledger = load_capacity_ledger(root)
+    relative = target.relative_to(root).as_posix()
+    entry = next((row for row in ledger["objects"] if row["path"] == relative), None) if ledger else None
+    if (entry is None or entry.get("owner") != failed["config"].get("project")
+            or entry.get("class") != "rebuildable_payload" or entry.get("status") != "ready"
+            or entry.get("pin") is not True or entry.get("consumers") or entry.get("disposition")
+            or not str(entry.get("retention_reason", "")).startswith("owner sealed stopped payload; ")
+            or type(entry.get("bytes")) is not int or entry["bytes"] <= 0):
+        raise RetirementError("failed payload lacks sealed capacity ownership")
+    roles = completion.get("file_roles")
+    if not isinstance(roles, dict):
+        raise RetirementError("failed completion lacks file roles")
+    rows = []
+    for name in selected:
+        source = _under(target / name, target)
+        selected_keeper = paths[name]
+        if (not isinstance(selected_keeper, dict) or set(selected_keeper) != {"reference", "member"}
+                or not isinstance(selected_keeper["member"], str) or not selected_keeper["member"]):
+            raise RetirementError("keeper requires explicit artifact reference and member")
+        try:
+            artifact = open_artifact(selected_keeper["reference"], expected_kind="geometry_artifact")
+            if artifact.producer.get("status") != "success" or artifact.producer.get("project") != failed["config"].get("project"):
+                raise RetirementError("keeper project or terminal status differs")
+            keeper = _under(artifact.manifest_location.parent, root)
+            retained_path = _under(artifact.data_path(selected_keeper["member"]), keeper)
+            record = artifact.data_records[selected_keeper["member"]]
+        except (KeyError, TypeError, ValueError, AssertionError, OSError) as exc:
+            raise RetirementError("keeper published artifact or member differs") from exc
+        if keeper == target or source != target / name or source.is_symlink():
+            raise RetirementError("target payload is linked or not independent")
+        if name in removed:
+            if source.exists():
+                raise RetirementError("retired target payload reappeared")
+        elif not source.is_file():
+            raise RetirementError("target payload is missing")
+        if roles.get(str(source)) != "solver_native_binary":
+            raise RetirementError("payload is not an owned native output")
+        keeper_entry = next((row for row in ledger["objects"]
+            if row["path"] == keeper.relative_to(root).as_posix()), None)
+        if (keeper_entry is None or keeper_entry.get("owner") != failed["config"].get("project")
+                or keeper_entry.get("status") != "ready" or keeper_entry.get("pin") is not True
+                or keeper_entry.get("class") != "rebuildable_payload" or keeper_entry.get("disposition")):
+            raise RetirementError("keeper capacity owner is not pinned and ready")
+        size = previous[name]["bytes"] if name in removed else source.stat().st_size
+        if classify_file(source, bytes_count=size) not in HEAVY_ROLES:
+            raise RetirementError("target is not a governed heavy payload")
+        target_sha = previous[name]["sha256"] if name in removed else file_sha256(source)
+        if record["bytes"] != size or target_sha.upper() != str(record["sha256"]).upper():
+            raise RetirementError("target and published keeper bytes differ")
+        rows.append(dict(target_path=name, keeper_reference=artifact.reference,
+            keeper_member=selected_keeper["member"], keeper_path=str(retained_path),
+            bytes=size, sha256=target_sha.upper()))
+    if not removed and sum(row["bytes"] for row in rows) > entry["bytes"]:
+        raise RetirementError("selected payload exceeds sealed capacity ownership")
+    result = dict(schema_version=1, role="failed_payload_equivalence",
+        target_run=str(target),
+        target_manifest_sha256=file_sha256(target / "run_manifest.json"),
+        completion_sha256=file_sha256(completion_path), files=rows)
+    if expected_proof is not None and result != expected_proof:
+        raise RetirementError("frozen failed equivalence evidence differs")
+    return result
 
 def plan_retirement(
     artifact_root: Path, repository_root: Path, target_run: Path, replacement_run: Path | None = None,
@@ -897,6 +1020,7 @@ def plan_retirement(
     approved_stopped_consumers: Iterable[Path] = (),
     prepared_gui_checkpoint: bool = False,
     selected_heavy_paths: Iterable[str] | None = None,
+    failed_equivalence_members: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Plan supersession or owner-approved completion; retain all small evidence."""
     owner_mode = bool(owner or owner_abandonment_reason)
@@ -905,6 +1029,9 @@ def plan_retirement(
     selected = _selected_heavy_paths(selected_heavy_paths)
     if selected is not None and (not owner_mode or runtime_mode):
         raise RetirementError("selected heavy scope requires ordinary owner completion")
+    if failed_equivalence_members is not None and (not owner_mode or runtime_mode or gui_mode or selected is None
+            or set(failed_equivalence_members) != set(selected)):
+        raise RetirementError("failed equivalence requires exact ordinary selected owner scope")
     if gui_mode and (runtime_mode or not writing_stopped):
         raise RetirementError("prepared GUI retirement requires explicit scope and confirmed stopped writing")
     approved_stopped_consumers = tuple(approved_stopped_consumers)
@@ -932,6 +1059,9 @@ def plan_retirement(
     receipt_path, batch, history = select_retirement_receipt(target_run, next_batch=True)
     prior_retired = _prior_retired_paths(history, target_run)
     if batch is not None:
+        if failed_equivalence_members is not None or any(
+                receipt.get("failed_payload_equivalence") is not None for _, receipt in history):
+            raise RetirementError("failed equivalence later batches are not supported")
         if not owner_mode or selected is None or runtime_mode or gui_mode:
             raise RetirementError("later retirement batches require ordinary owner selected heavy scope")
         _assert_previous_batch_sealed(artifact_root, target_run, history)
@@ -939,6 +1069,9 @@ def plan_retirement(
     prior_removed_missing: list[dict[str, Any]] = []
     if receipt_path.exists():
         prior = _json(receipt_path)
+        prior_proof = prior.get("failed_payload_equivalence")
+        if (prior_proof is None) != (failed_equivalence_members is None):
+            raise RetirementError("pending failed equivalence scope changed")
         if prior.get("lifecycle_status") != "retirement_pending":
             raise RetirementError("target already has a completed retirement receipt")
         prior_removed_missing = [
@@ -1003,8 +1136,12 @@ def plan_retirement(
         compatibility_input_role_mappings,
         prepared_gui_checkpoint=gui_mode,
     ) if replacement else None
+    failed_equivalence = (validate_failed_payload_equivalence(artifact_root, target_run, failed_equivalence_members,
+        expected_proof=prior.get("failed_payload_equivalence") if prior_pending_sha else None,
+        removed_paths=[item["path"] for item in prior_removed_missing])
+        if failed_equivalence_members is not None else None)
     inventory = _file_inventory(
-        target, retired_paths=prior_retired + [_under(target_run / item["path"], target_run) for item in prior_removed_missing],
+        target, failed_equivalence=failed_equivalence, retired_paths=prior_retired + [_under(target_run / item["path"], target_run) for item in prior_removed_missing],
         inherit_heavy_identity=owner_mode or gui_mode,
         runtime_checkpoint_path=runtime_checkpoint_path, receipt_path=receipt_path,
     )
@@ -1018,7 +1155,7 @@ def plan_retirement(
         _prepared_gui_inventory(target, _manifest_records(target,
             retired_paths=[_under(target_run / item["path"], target_run) for item in prior_removed_missing],
             inherit_heavy_identity=True))
-    _selected_heavy_records(prior_removed_missing + inventory, selected)
+    _selected_heavy_records(prior_removed_missing + inventory, selected, failed_equivalence=failed_equivalence)
     removed_current = [item for item in inventory if item["retention_role"] in HEAVY_ROLES
                        and (selected is None or item["path"] in selected)]
     if runtime_mode and any(item["manifest_role"] != "runtime_checkpoint_member" for item in removed_current):
@@ -1045,6 +1182,7 @@ def plan_retirement(
         "schema_version": 1,
         "role": "solver_review_retirement_plan",
         "status": "eligible",
+        **({"failed_payload_equivalence": failed_equivalence} if failed_equivalence else {}),
         "target_run_id": target_run.name,
         "target_run_path": str(target_run),
         **({"retirement_batch": batch} if batch is not None else {}),
@@ -1087,7 +1225,23 @@ def plan_retirement(
     }
 
 
-def apply_retirement(plan: dict[str, Any]) -> dict[str, Any]:
+def _require_keeper_lease(proof: dict[str, Any], leases: dict[str, Any],
+                          lease_id: str | None, owner: str | None) -> None:
+    if not lease_id or not owner:
+        raise RetirementError("failed equivalence requires an explicit keeper protection lease")
+    matches = [row for row in leases["audit"] if row.get("status") == "active"
+               and row.get("lease_id") == lease_id and row.get("owner") == owner]
+    if len(matches) != 1:
+        raise RetirementError("keeper protection lease is missing, expired, or ambiguous")
+    protected = {Path(value) for value in matches[0].get("protected_paths", [])}
+    for row in proof.get("files", []):
+        for path in (Path(row["keeper_path"]), Path(row["keeper_reference"]["manifest"]["path"])):
+            if not protection.path_is_protected(path, protected):
+                raise RetirementError("keeper protection lease does not cover its artifact")
+
+
+def apply_retirement(plan: dict[str, Any], *, keeper_lease_id: str | None = None,
+                     keeper_lease_owner: str | None = None) -> dict[str, Any]:
     if not os.environ.get("MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID"):
         raise RetirementError("apply requires the shared HostExecutionLease")
     try:
@@ -1100,6 +1254,8 @@ def apply_retirement(plan: dict[str, Any]) -> dict[str, Any]:
         if batch != plan.get("retirement_batch"):
             raise RetirementError("retirement batch head changed before apply")
         if batch is not None:
+            if any(receipt.get("failed_payload_equivalence") is not None for _, receipt in history):
+                raise RetirementError("failed equivalence later batches are not supported")
             _assert_previous_batch_sealed(artifact_root, target, history)
         runtime_checkpoint_path = _runtime_scope_path(plan, target)
         gui_mode = _prepared_gui_scope(plan)
@@ -1131,6 +1287,43 @@ def apply_retirement(plan: dict[str, Any]) -> dict[str, Any]:
                 "target gained active references before retirement decision: "
                 f"{downstream['active']}"
             )
+        proof = plan.get("failed_payload_equivalence")
+        if proof is not None:
+            if receipt_path.exists():
+                marker = _json(receipt_path)
+                if (marker.get("lifecycle_status") != "retirement_pending"
+                        or marker.get("failed_payload_equivalence") != proof
+                        or plan.get("recovery_of_pending_receipt_sha256") != file_sha256(receipt_path)):
+                    raise RetirementError("failed equivalence pending receipt changed")
+            _require_keeper_lease(proof, leases, keeper_lease_id, keeper_lease_owner)
+            from msplatform.io.file_identity import guarded_file_identity
+            with ExitStack() as guards:
+                guarded = set()
+                for row in proof.get("files", []):
+                    reference = row["keeper_reference"]
+                    manifest = reference["manifest"]
+                    for path, size, digest in (
+                        (Path(manifest["path"]), manifest["bytes"], manifest["sha256"]),
+                        (Path(row["keeper_path"]), row["bytes"], row["sha256"]),
+                    ):
+                        path = _under(path, artifact_root)
+                        if path not in guarded:
+                            guards.enter_context(guarded_file_identity(path, expected_bytes=size,
+                                                                       expected_sha256=digest))
+                            guarded.add(path)
+                    source = _under(target / row["target_path"], target)
+                    if source.exists():
+                        guards.enter_context(_payload_read_guard(source))
+                members = {row["target_path"]: {"reference": row["keeper_reference"],
+                           "member": row["keeper_member"]} for row in proof["files"]}
+                removed = [row["path"] for row in plan["removed_files"]
+                           if row.get("already_removed_before_resume")]
+                refreshed = validate_failed_payload_equivalence(artifact_root, target, members,
+                    expected_proof=proof, removed_paths=removed)
+                if refreshed != proof:
+                    raise RetirementError("failed equivalence proof changed before apply")
+                return _apply_retirement_locked(plan, _leases=leases,
+                    keeper_lease_id=keeper_lease_id, keeper_lease_owner=keeper_lease_owner)
         if receipt_path.exists():
             marker = _json(receipt_path)
             if not (
@@ -1157,7 +1350,9 @@ def apply_retirement(plan: dict[str, Any]) -> dict[str, Any]:
     return _apply_retirement_locked(plan)
 
 
-def _apply_retirement_locked(plan: dict[str, Any]) -> dict[str, Any]:
+def _apply_retirement_locked(plan: dict[str, Any], *, _leases: dict[str, Any] | None = None,
+                             keeper_lease_id: str | None = None,
+                             keeper_lease_owner: str | None = None) -> dict[str, Any]:
     owner_mode = plan.get("retirement_mode") == "completed_experiment"
     try:
         artifact_root = Path(plan["artifact_root"]).resolve()
@@ -1172,7 +1367,7 @@ def _apply_retirement_locked(plan: dict[str, Any]) -> dict[str, Any]:
     runtime_checkpoint_path = _runtime_scope_path(plan, target)
     runtime_mode = runtime_checkpoint_path is not None
     gui_mode = _prepared_gui_scope(plan)
-    approved_consumers = _verify_stopped_consumers(plan, target)
+    approved_consumers = _verify_stopped_consumers(plan, target, _leases=_leases)
     if replacement:
         manifest_paths.append(("replacement", replacement))
     for label, path in manifest_paths:
@@ -1243,7 +1438,7 @@ def _apply_retirement_locked(plan: dict[str, Any]) -> dict[str, Any]:
             "target gained active references in downstream run_config before apply: "
             f"{downstream_refs['active']}"
         )
-    leases = protection.load_capacity_protection_leases(artifact_root)
+    leases = _leases if _leases is not None else protection.load_capacity_protection_leases(artifact_root)
     if protection.path_is_protected(target, leases["protected_paths"]):
         raise RetirementError(
             "target gained an active capacity protection lease before apply"
@@ -1254,7 +1449,7 @@ def _apply_retirement_locked(plan: dict[str, Any]) -> dict[str, Any]:
     if batch != plan.get("retirement_batch"):
         raise RetirementError("retirement batch head changed before deletion")
     inventory = _file_inventory(
-        target_state, retired_paths=_prior_retired_paths(history, target) + [
+        target_state, failed_equivalence=plan.get("failed_payload_equivalence"), retired_paths=_prior_retired_paths(history, target) + [
             _under(target / item["path"], target)
             for item in plan["removed_files"] if item.get("already_removed_before_resume")
         ],
@@ -1273,7 +1468,8 @@ def _apply_retirement_locked(plan: dict[str, Any]) -> dict[str, Any]:
         if selected is not None and (not owner_mode or runtime_mode):
             raise RetirementError("selected heavy scope requires ordinary owner completion")
         old_missing = [item for item in plan["removed_files"] if item.get("already_removed_before_resume")]
-        _selected_heavy_records(old_missing + inventory, selected)
+        _selected_heavy_records(old_missing + inventory, selected,
+                                failed_equivalence=plan.get("failed_payload_equivalence"))
         expected_removed = [item for item in inventory if item["retention_role"] in HEAVY_ROLES
                             and (selected is None or item["path"] in selected)]
         actual_removed = [item for item in plan["removed_files"] if not item.get("already_removed_before_resume")]
@@ -1281,6 +1477,12 @@ def _apply_retirement_locked(plan: dict[str, Any]) -> dict[str, Any]:
             item for item in inventory if item not in expected_removed
         ]:
             raise RetirementError("completed experiment removal scope differs from inventory")
+    if plan.get("failed_payload_equivalence") is not None:
+        fresh_leases = protection._load_capacity_protection_leases_unlocked(artifact_root)
+        _require_keeper_lease(plan["failed_payload_equivalence"], fresh_leases,
+                              keeper_lease_id, keeper_lease_owner)
+        if protection.path_is_protected(target, fresh_leases["protected_paths"]):
+            raise RetirementError("target gained an active capacity protection lease before deletion")
     pending = {
         **plan,
         "role": "solver_review_retirement_receipt",
@@ -1298,6 +1500,10 @@ def _apply_retirement_locked(plan: dict[str, Any]) -> dict[str, Any]:
     removed_bytes = 0
     try:
         for item in plan["removed_files"]:
+            if plan.get("failed_payload_equivalence") is not None:
+                current_leases = protection._load_capacity_protection_leases_unlocked(artifact_root)
+                _require_keeper_lease(plan["failed_payload_equivalence"], current_leases,
+                                      keeper_lease_id, keeper_lease_owner)
             path = _under(target / item["path"], target)
             if item.get("already_removed_before_resume"):
                 if path.exists():
@@ -1692,7 +1898,26 @@ def _verify_retirement_receipt(
         ):
             raise RetirementError("retired runtime scope differs from its sealed checkpoint inventory")
     if selected is not None:
-        _selected_heavy_records(receipt["removed_files"], selected)
+        proof = receipt.get("failed_payload_equivalence")
+        if proof is not None:
+            members = {row["target_path"]: {"reference": row["keeper_reference"],
+                       "member": row["keeper_member"]} for row in proof["files"]}
+            if sorted(members) != selected:
+                raise RetirementError("failed equivalence receipt scope differs")
+            from msplatform.io.file_identity import guarded_file_identity
+            with ExitStack() as guards:
+                guarded = set()
+                for row in proof["files"]:
+                    manifest = row["keeper_reference"]["manifest"]
+                    for path, size, digest in ((Path(manifest["path"]), manifest["bytes"], manifest["sha256"]),
+                                               (Path(row["keeper_path"]), row["bytes"], row["sha256"])):
+                        path = _under(path, Path(receipt["artifact_root"]))
+                        if path not in guarded:
+                            guards.enter_context(guarded_file_identity(path, expected_bytes=size, expected_sha256=digest))
+                            guarded.add(path)
+                validate_failed_payload_equivalence(Path(receipt["artifact_root"]), run_dir, members,
+                    expected_proof=proof, removed_paths=selected)
+        _selected_heavy_records(receipt["removed_files"], selected, failed_equivalence=proof)
         if sorted(item["path"] for item in receipt["removed_files"]) != selected:
             raise RetirementError("retired payload differs from selected heavy scope")
         state = _load_run(run_dir, allowed_statuses=allowed_statuses, prepared_gui_checkpoint=gui_mode)
@@ -1700,7 +1925,11 @@ def _verify_retirement_receipt(
                                     consumed_paths=consumed_paths)
         for item in removed_records:
             record = records.get(_under(run_dir / item["path"], run_dir))
-            if not record or item["bytes"] != record["bytes"] or item["sha256"].upper() != record["sha256"].upper():
+            evidence = next((row for row in (proof or {}).get("files", []) if row["target_path"] == item["path"]), None)
+            if record is None and evidence is not None:
+                if item["bytes"] != evidence["bytes"] or item["sha256"].upper() != evidence["sha256"].upper():
+                    raise RetirementError("selected retired payload differs from equivalence evidence")
+            elif not record or item["bytes"] != record["bytes"] or item["sha256"].upper() != record["sha256"].upper():
                 raise RetirementError("selected retired payload differs from sealed manifest")
     elif consumed_paths is not None and not records:
         state = _load_run(run_dir, allowed_statuses=allowed_statuses,
