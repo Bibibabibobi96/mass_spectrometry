@@ -419,9 +419,14 @@ def execute_ip_mr_tracking(session: Any, *, source: Any, model: CompiledPrepared
     assets = {}
     for name in (roles['rf'], roles['ip'], roles['analyzer'], roles['detector']):
         pa = _artifact_record(source, name+'_collision')
-        surface = _artifact_record(source, name+'_surface')
         witness = _artifact_record(source, name+'_witness')
-        assets[name] = dict(carrier_record=pa, family_records=[pa,surface], witness_record=witness)
+        family = [pa]
+        for suffix in ('_surface', '_surface_state'):
+            if name + suffix in source.data_records:
+                family.append(_artifact_record(source, name + suffix))
+        if len(family) == 1:
+            raise ValueError('collision surface evidence missing')
+        assets[name] = dict(carrier_record=pa, family_records=family, witness_record=witness)
     clocks = dict(contract=_artifact_record(source,'clock_authority'), authority=_artifact_record(source,'instrument_epoch'))
     clocks['data_root'] = str(Path(clocks['contract']['path']).parent)
     relative = _clock_reference(document,clocks)

@@ -801,6 +801,14 @@ The public tracking API can carry an explicit recorded-birth producer authority 
 
 ### Scalar field adjustment coordinates
 
+The sampled IP–MR tracking consumer retains each collision asset's actual
+fractional surface companion and/or verified surface-state record. An empty
+surface-state proof does not require a fabricated `.pa-surf` file. Admission
+and workbench planning still verify the producer-owned evidence; missing both
+forms is rejected. The first RF–IP–MR N=100 attempt exposed an unconditional
+companion lookup before any native operation. Its failure remains recorded;
+this representation fix changes no physical geometry or field data.
+
 `scalar_field_adapter.lua` returns a closure `(instance, x_mm, y_mm, z_mm)`
 that samples the validated world field and returns PA voltage gradients. The
 Program owns assignment of `ion_dvoltsx_gu`, `ion_dvoltsy_gu` and

@@ -2034,8 +2034,12 @@
           {
             "matches": [
               {
-                "regex": "^src/msplatform/backends/simion/(?:ip_mr_(?:field_execution|collision_lineage|collision_priority|scalar_binding)|field_closure|operations|resources)\\.py$",
+                "regex": "^src/msplatform/backends/simion/(?:ip_mr_(?:field_execution|collision_lineage|collision_priority|scalar_binding|tracking_admission)|rf_tracking_execution|field_closure|operations|resources)\\.py$",
                 "reason": "sampled_ip_mr_field_consumer_changed"
+              },
+              {
+                "exact": "common/contracts/test_ip_mr_tracking_surface_inputs.py",
+                "reason": "sampled_ip_mr_surface_tracking_changed"
               },
               {
                 "regex": "^src/msplatform/backends/simion/resources/(?:raw_collision_pa|create_numerical_background|reopen_numerical_background|iob_core|build_geometry_iob)\\.lua$",
@@ -2047,6 +2051,7 @@
               "common/contracts/test_ip_mr_sampled_field_execution.py",
               "common/contracts/test_ip_mr_collision_priority.py",
               "common/contracts/test_ip_mr_collision_iob.py",
+              "common/contracts/test_ip_mr_tracking_surface_inputs.py",
               "common/contracts/test_raw_collision_pa.py",
               "common/contracts/test_numerical_background.py",
               "common/contracts/test_ip_mr_inert_transport.py"
