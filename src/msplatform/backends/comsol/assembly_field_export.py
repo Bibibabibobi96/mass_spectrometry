@@ -121,8 +121,32 @@ def _classification_grid_identity(grid: Mapping[str, Any]) -> dict[str, Any]:
     return {key: grid[key] for key in ('frame_id', 'origin_mm', 'pitch_mm', 'dimensions', 'point_count')}
 
 
-def export_world_scalar(solution: Any, *, grid: Mapping[str, Any], writer_manifest: Mapping[str, Any], context: Any, fill_conductor_interiors: bool = False,
-                        publish_prepared_support: bool = False, prepared_support: Any = None) -> Any:
+def export_world_scalar(solution: Any, *, grid: Mapping[str, Any], writer_manifest: Mapping[str, Any], context: Any,
+                        fill_conductor_interiors: bool = False, publish_prepared_support: bool = False,
+                        prepared_support: Any = None) -> Any:
+    """Export a single verified saved workpoint on one explicit grid."""
+    return _export_world_scalar(solution, grid=grid, writer_manifest=writer_manifest, context=context,
+        fill_conductor_interiors=fill_conductor_interiors, publish_prepared_support=publish_prepared_support,
+        prepared_support=prepared_support)
+
+
+def export_world_scalar_grids(solution: Any, *, grids: Mapping[str, Mapping[str, Any]],
+                              writer_manifest: Mapping[str, Any], context: Any) -> dict[str, Any]:
+    """Export named raw scalar grids with one saved-model load and no Compute."""
+    import re
+    if not isinstance(grids, Mapping) or not grids:
+        raise ValueError('at least one explicitly named scalar grid required')
+    names = list(grids)
+    if any(not isinstance(name, str) or re.fullmatch(r'[a-z][a-z0-9_]{0,39}', name) is None for name in names):
+        raise ValueError('grid names must be unique lowercase identifiers')
+    if len(names) != len(grids) or len(set(names)) != len(names):
+        raise ValueError('grid names must be unique')
+    return _export_world_scalar(solution, grid=next(iter(grids.values())), grids=grids,
+                                writer_manifest=writer_manifest, context=context)
+
+
+def _export_world_scalar(solution: Any, *, grid: Mapping[str, Any], writer_manifest: Mapping[str, Any], context: Any, fill_conductor_interiors: bool = False,
+                        publish_prepared_support: bool = False, prepared_support: Any = None, grids: Mapping[str, Any] | None = None) -> Any:
     """Export one verified workpoint, optionally filling strict conductor interiors.
 
     ``publish_prepared_support`` publishes reusable interior labels; an explicit
@@ -161,6 +185,8 @@ def export_world_scalar(solution: Any, *, grid: Mapping[str, Any], writer_manife
     projection = json.loads(source.data_path('projection').read_text(encoding='utf-8-sig'))
     baseline = json.loads(source.data_path('reopen_geometry').read_text(encoding='utf-8-sig'))
     resolved = validate_grid(grid, projection, observed)
+    resolved_grids = ({name: validate_grid(value, projection, observed) for name, value in grids.items()}
+                      if grids is not None else None)
     if fill_conductor_interiors:
         from msplatform.backends.comsol.assembly_scalar_fill import InvalidNodeClassifier
         request = json.loads(source.data_path('request').read_text(encoding='utf-8-sig'))
@@ -170,6 +196,8 @@ def export_world_scalar(solution: Any, *, grid: Mapping[str, Any], writer_manife
     if type(position_sanity) not in (int, float) or not math.isfinite(position_sanity) or position_sanity < 0:
         raise ValueError('nonnegative frozen geometry position sanity required')
     resolved['coordinate_sanity_mm'] = position_sanity
+    if resolved_grids is not None:
+        for value in resolved_grids.values(): value['coordinate_sanity_mm'] = position_sanity
     writer_authority, writer = resolve_published_writer(writer_manifest)
     for name in ('comsol_launcher', 'matlab_root'):
         path = context.tools.get(name)
@@ -178,6 +206,10 @@ def export_world_scalar(solution: Any, *, grid: Mapping[str, Any], writer_manife
     stage, authority = read_stage_policy(context, 'export_assembly_world_scalar', required_roles=('solver_native_binary',))
     if stage.get('runtime'):
         raise ContractError('COMSOL scalar export has no implicit runtime overrides')
+    if resolved_grids is not None:
+        minimum = sum(2 * (56 + 8 * value['point_count']) for value in resolved_grids.values())
+        if any(minimum > stage['limits'][key] for key in ('transient_run_directory_bytes','compact_final_retained_bytes')):
+            raise ValueError('named grid raw output minimum exceeds configured stage limits')
     reference, origin = resolve_model_source_manifests(source)
     source_refs = [{'manifest_record': reference}]
     if origin is not None:
@@ -185,19 +217,25 @@ def export_world_scalar(solution: Any, *, grid: Mapping[str, Any], writer_manife
     if support_source is not None:
         source_refs.append({'manifest_record': support_source.reference['manifest']})
         if support_original is not None: source_refs.append({'manifest_record': support_original.reference['manifest']})
+    payload = dict(action='export_assembly_world_scalar', grid=resolved, stage_policy=stage,
+                   fill_conductor_interiors=fill_conductor_interiors,
+                   publish_prepared_support=publish_prepared_support,
+                   prepared_support=(support_source.reference if support_source is not None else None))
+    if resolved_grids is not None: payload['grids'] = resolved_grids
     result = run_managed_stage(context, descriptor=dict(project='instrument_assembly', mode='world_scalar_export', software=['COMSOL', 'MATLAB']),
         run_id=datetime.now().strftime('%Y%m%d_%H%M%S') + '__analysis__comsol__assembly-scalar-' + uuid4().hex[:12],
-        payload=dict(action='export_assembly_world_scalar', grid=resolved, stage_policy=stage, fill_conductor_interiors=fill_conductor_interiors,
-                     publish_prepared_support=publish_prepared_support,
-                     prepared_support=(support_source.reference if support_source is not None else None)),
+        payload=payload,
         committed_new_bytes=stage['limits']['transient_run_directory_bytes'], commitment_inputs=[authority],
         retention=stage['artifact_retention'], source_references=source_refs,
         expected_operation_ids=('export_world_scalar',), operation_dependencies={},
         action=partial(execute_export, source=source, manifest_record=reference, grid=resolved,
                        baseline=baseline, solution_identity=dict(observed), writer_authority=writer_authority, writer=writer, limits=stage['limits'], origin_manifest=origin, fill_conductor_interiors=fill_conductor_interiors,
-                       publish_prepared_support=publish_prepared_support, support_source=support_source, support_original=support_original),
+                       publish_prepared_support=publish_prepared_support, support_source=support_source, support_original=support_original, grids=resolved_grids),
         action_record=file_record(Path(__file__).resolve(), 'required_evidence'), use_short_execution_path=True,
         completion_api=no_particle_batch_completion_api)
+    if resolved_grids is not None:
+        return {name: open_artifact({'manifest': result['manifest'], 'product_id': 'samples_' + name},
+                                    expected_kind='scalar_field_samples') for name in resolved_grids}
     return open_artifact({'manifest': result['manifest'], 'product_id': 'samples'}, expected_kind='scalar_field_samples')
 
 
@@ -207,7 +245,7 @@ def execute_export(session: Any, *, source: Any, manifest_record: Mapping[str, A
                    origin_manifest: Mapping[str, Any] | None = None,
                    fill_conductor_interiors: bool = False,
                    publish_prepared_support: bool = False, support_source: Any = None,
-                   support_original: Any = None) -> dict[str, Any]:
+                   support_original: Any = None, grids: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """Freeze small authorities and guard the borrowed saved model during export."""
     if session.expected_operation_ids != ('export_world_scalar',):
         raise ValueError('scalar export requires exactly one saved-solution operation')
@@ -274,12 +312,33 @@ def execute_export(session: Any, *, source: Any, manifest_record: Mapping[str, A
     if any(writer_copy[key] != writer[key] for key in ('bytes', 'sha256')):
         raise ValueError('frozen PA writer differs from explicit source identity')
     session.add_input('pa_writer', writer_copy)
-    grid_path = session.declare_file(session.input_dir / 'world-grid.json', 'required_evidence')
-    write_json_atomic(grid_path, dict(grid))
-    grid_record = file_record(grid_path, 'required_evidence'); session.add_input('world_grid', grid_record)
     output_dir = session.run_dir / 'scalar'; output_dir.mkdir()
-    outputs = [session.declare_file(output_dir / name, 'solver_native_binary') for name in ('field_v.pa', 'field_valid.pa')]
-    report = session.declare_file(session.result_dir / 'export_world_scalar.json', 'required_evidence')
+    batch = {}
+    batch_guards = []
+    if grids is None:
+        grid_path = session.declare_file(session.input_dir / 'world-grid.json', 'required_evidence')
+        write_json_atomic(grid_path, dict(grid))
+        grid_record = file_record(grid_path, 'required_evidence'); session.add_input('world_grid', grid_record)
+        outputs = [session.declare_file(output_dir / name, 'solver_native_binary') for name in ('field_v.pa', 'field_valid.pa')]
+        report = session.declare_file(session.result_dir / 'export_world_scalar.json', 'required_evidence')
+    else:
+        if fill_conductor_interiors or publish_prepared_support or support_source is not None:
+            raise ValueError('named grid export emits raw samples only')
+        entries = []
+        for name, value in grids.items():
+            subdir = output_dir / name; subdir.mkdir()
+            gp = session.declare_file(session.input_dir / ('world-grid-' + name + '.json'), 'required_evidence')
+            write_json_atomic(gp, dict(value)); gr = file_record(gp, 'required_evidence')
+            session.add_input('world_grid_' + name, gr); batch_guards.append(gr)
+            paths = [session.declare_file(subdir / n, 'solver_native_binary') for n in ('field_v.pa', 'field_valid.pa')]
+            rp = session.declare_file(session.result_dir / ('export_world_scalar_' + name + '.json'), 'required_evidence')
+            batch[name] = dict(grid=value, grid_record=gr, outputs=paths, report=rp)
+            entries.append(dict(grid_path=str(gp), output_directory=str(subdir), report_path=str(rp)))
+        grid_path = session.declare_file(session.input_dir / 'world-grid-batch.json', 'required_evidence')
+        write_json_atomic(grid_path, dict(role='assembly_world_scalar_grid_batch', entries=entries))
+        grid_record = file_record(grid_path, 'required_evidence'); session.add_input('world_grid_batch', grid_record)
+        outputs = [p for item in batch.values() for p in item['outputs']]
+        report = session.declare_file(session.result_dir / 'export_world_scalar_batch.json', 'required_evidence')
     bootstrap = session.declare_file(session.log_dir / 'export_world_scalar.bootstrap.log', 'required_evidence')
     completion = session.declare_file(session.log_dir / 'export_world_scalar.launcher.json', 'required_evidence')
     task = session.declare_file(session.input_dir / 'export_world_scalar.m', 'required_evidence')
@@ -291,7 +350,7 @@ def execute_export(session: Any, *, source: Any, manifest_record: Mapping[str, A
         'fid=fopen(' + matlab_text(report) + ",'w','n','UTF-8');\n"
         "assert(fid>=0); cleanup=onCleanup(@() fclose(fid)); fprintf(fid,'%s',jsonencode(result));\n",
         encoding='utf-8', newline='\n')
-    guards = [*sources, *frozen.values(), *origin_guard, manifest_frozen, writer_copy, grid_record, file_record(task, 'required_evidence'), model, *support_code, *support_guards]
+    guards = [*sources, *frozen.values(), *origin_guard, manifest_frozen, writer_copy, grid_record, *batch_guards, file_record(task, 'required_evidence'), model, *support_code, *support_guards]
     host = json.dumps({name: str(getattr(session.context, name)) for name in ('workspace', 'python_executable', 'host_state_path', 'policy_path')})
     args = ['-NoProfile', '-File', str(launcher), '-HostContextJson', host, '-WorkingDirectory', str(session.run_dir),
         '-ComsolLauncherPath', str(session.context.tools['comsol_launcher']), '-MatlabRootPath', str(session.context.tools['matlab_root']),
@@ -303,16 +362,64 @@ def execute_export(session: Any, *, source: Any, manifest_record: Mapping[str, A
                             role='COMSOL', stage='solver', limits=limits, immutable_input_records=guards)
     except BaseException as error:
         primary = error
+        if grids is not None:
+            prior = list(getattr(error, 'failure_output_paths', ()))
+            candidates = [*outputs, report, *(item['report'] for item in batch.values())]
+            error.failure_output_paths = [*prior, *(path for path in candidates if path.is_file())]
         raise
     finally:
         try:
             declare_runtime_files(session, runtime, bootstrap=bootstrap)
         except BaseException as error:
-            if primary is None: raise
+            if primary is None:
+                if grids is not None:
+                    prior = list(getattr(error, 'failure_output_paths', ()))
+                    candidates = [*outputs, report, *(item['report'] for item in batch.values())]
+                    error.failure_output_paths = [*prior, *(path for path in candidates if path.is_file())]
+                raise
             primary.add_note('COMSOL diagnostic preservation failed: ' + repr(error))
-    require_launcher_completion(completion, session.run_id)
-    if 'STATUS=PASS' not in bootstrap.read_text(encoding='utf-8-sig'):
-        raise ValueError('COMSOL scalar export bootstrap failed')
+    try:
+        require_launcher_completion(completion, session.run_id)
+        if 'STATUS=PASS' not in bootstrap.read_text(encoding='utf-8-sig'):
+            raise ValueError('COMSOL scalar export bootstrap failed')
+    except BaseException as error:
+        if grids is not None:
+            prior = list(getattr(error, 'failure_output_paths', ()))
+            candidates = [*outputs, report, *(item['report'] for item in batch.values())]
+            error.failure_output_paths = [*prior, *(path for path in candidates if path.is_file())]
+        raise
+    if grids is not None:
+        try:
+            summary = json.loads(report.read_text(encoding='utf-8-sig'))
+            if (summary.get('status') != 'success' or summary.get('scope') != 'assembly_world_scalar_grid_batch'
+                    or type(summary.get('grid_count')) is not int or summary['grid_count'] != len(batch)
+                    or type(summary.get('compute_calls')) is not int or summary['compute_calls'] != 0):
+                raise ValueError('named scalar grid batch completion differs')
+            products = {}
+            result_paths = [report]
+            for name, item in batch.items():
+                row = json.loads(item['report'].read_text(encoding='utf-8-sig'))
+                _check_report(row, grid=item['grid'], baseline=baseline, solution_identity=solution_identity, model=Path(source.data_locations['model']))
+                for path in item['outputs']: _validate_scalar_pa(path, item['grid'])
+                records = dict(field_v=file_record(item['outputs'][0], 'solver_native_binary'),
+                    field_valid=file_record(item['outputs'][1], 'solver_native_binary'), grid=item['grid_record'],
+                    field_solution_manifest=manifest_record, writer=writer_copy, writer_manifest=manifest_frozen,
+                    projection=frozen['projection'], request=frozen['request'], geometry_validation=frozen['geometry_validation'],
+                    reopen_geometry=frozen['reopen_geometry'], reopen_solution=frozen['reopen_solution'],
+                    report=file_record(item['report'], 'required_evidence'))
+                metadata = dict(backend='comsol', scope='assembly_world_scalar_samples', field_status='sampled',
+                    scientific_qualification='not_granted', frame_id=item['grid']['frame_id'], compute_calls_requested=0)
+                products['samples_' + name] = dict(schema_version=1, kind='scalar_field_samples', status='complete', metadata=metadata, data=records)
+                result_paths.extend([*item['outputs'], item['report']])
+            return dict(status='success', summary=dict(backend='comsol', scope='assembly_world_scalar_grid_batch',
+                scientific_qualification='not_granted', compute_calls_requested=0), output_paths=list(map(str, result_paths)),
+                required_output_paths=list(map(str, result_paths)), retention_preserve_paths=[],
+                manifest_extra_fields=dict(products=products))
+        except BaseException as error:
+            prior = list(getattr(error, 'failure_output_paths', ()))
+            candidates = [*outputs, report, *(item['report'] for item in batch.values())]
+            error.failure_output_paths = [*prior, *(path for path in candidates if path.is_file())]
+            raise
     row = json.loads(report.read_text(encoding='utf-8-sig'))
     _check_report(row, grid=grid, baseline=baseline, solution_identity=solution_identity, model=Path(source.data_locations['model']))
     for path in outputs:

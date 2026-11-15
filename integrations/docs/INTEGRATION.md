@@ -1703,6 +1703,28 @@ performance. Task evidence is retained under
 `.tools/phase04-codex-takeover-20261109/v87-carrier-progress-root-r2` and
 `v87-carrier-coarse-sparse-agent12-r2`.
 
+On frozen `4ed3f0c5`, offline derivation
+`20261115_150747__analysis__cross__assembly-scalar-derive-e8d58a63a4ea`
+matched both complete native-filled carrier PA hashes and classification counts.
+The separately exported RF-reference coarse raw mask had the same complete
+geometry, physical grid and raw-mask identity. Reusing those labels in
+`20261115_154826__analysis__cross__assembly-scalar-derive-87fcf2ddde6a`
+preserved all 3,769,772 FEM-valid potential bits, filled 1,541,340 conductor nodes
+with that RF request's own voltages, and left 1,195 unresolved nodes unchanged.
+The actual scalar verifier passed, no native operation or MPH open occurred,
+and all 3,048 Git-listed source files remained unchanged. The label reuse does
+not grant other workpoints or connection windows without their own identity
+checks. Evidence is retained in workspace `v87-rf-coarse-reuse-production-root-r1`.
+
+The ordinary installed parent on the same commit failed after its wheel consumer
+exceeded 900 seconds. Its offline-support probe passed in 3.388 seconds; the
+later RF L1 owner retained an unrelated, older process through a contradictory
+tracked ancestry edge. A deterministic process-sampler replay reproduces the
+retained-edge defect, but initial admission and safe finalization remain open.
+The source guard passed; the failed parent is not installation acceptance.
+Evidence is in workspace `v87-reuse-original-installed-parent-root-r1` and
+`v87-installed-orphan-diagnosis-agent12-r1`.
+
 `resolve_ip_mr_scalar_basis` admits sixteen explicit published scalar products,
 or seventeen with external RF, against the actual source-derived basis planner.
 SFI and IP–MR share the same per-sample lineage, cold-readback, PA/mask header and

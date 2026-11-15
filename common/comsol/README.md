@@ -180,6 +180,14 @@ grid before publishing `scalar_field_samples`. This is a sampled stationary
 workpoint, not a dynamic response basis, collision geometry, continuous-flight
 FieldBundle or convergence qualification.
 
+`export_world_scalar_grids` accepts an explicit mapping of names to grids and
+samples them sequentially from one cold-loaded saved solution. Each named
+`samples_<name>` product has its own grid, raw PA pair and report; these remain
+ordinary scalar samples for the same offline support derivation. It performs
+no Compute and applies no implicit conductor fill. Normal stage storage and
+memory limits still apply. A failed grid or diagnostic cleanup publishes no
+products and retains completed grid payloads and reports as failure evidence.
+
 The default remains a masked vacuum export. Explicit
 `fill_conductor_interiors=True` additionally fills only invalid nodes strictly
 inside one canonical solid conductor with its frozen Dirichlet voltage. Existing

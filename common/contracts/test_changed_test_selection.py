@@ -2488,7 +2488,8 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
         paths = ['src/msplatform/components/shape_query.py',
                  'src/msplatform/backends/comsol/assembly_scalar_fill.py',
                  'src/msplatform/backends/comsol/assembly_field_export.py',
-                 'src/msplatform/backends/comsol/matlab/sample_scalar_grid_blocks.m']
+                 'src/msplatform/backends/comsol/matlab/sample_scalar_grid_blocks.m',
+                 'src/msplatform/backends/comsol/matlab/export_assembly_world_scalar_field.m']
         selected = self.selections(REPO_ROOT, [dict(stage='common_contracts', paths=[path]) for path in paths])
         fill = {'common/contracts/test_assembly_scalar_fill.py', 'common/contracts/test_scalar_pa_fill.py',
                 'common/contracts/test_assembly_scalar_owner_fill.py',
@@ -2500,6 +2501,8 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
         for row in selected[2:]:
             self.assertTrue({'common/contracts/test_comsol_world_scalar_contract.py',
                              'common/contracts/test_comsol_world_scalar_managed.py',
+                             'common/contracts/test_comsol_scalar_multigrid.py',
+                             'common/contracts/test_comsol_multigrid_managed.py',
                              'common/contracts/test_assembly_scalar_owner_fill.py',
                              'common/contracts/test_installed_scientific_core.py'} <= set(row['Modules']))
         self.assertTrue({'common/contracts/test_python_dependency_contract.py',

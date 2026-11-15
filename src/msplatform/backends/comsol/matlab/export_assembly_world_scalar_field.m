@@ -10,10 +10,26 @@ arguments
 end
 import com.comsol.model.util.*
 projection=jsondecode(fileread(projectionPath));baseline=jsondecode(fileread(baselinePath));grid=jsondecode(fileread(gridPath));
-assert(strcmp(char(projection.assembly_frame_id),char(grid.frame_id)),'assembly:Frame','World frame differs');
 addpath(fileparts(writerPath),'-begin');
 assert(strcmpi(char(java.io.File(which('simion_pa_save')).getCanonicalPath()),char(java.io.File(writerPath).getCanonicalPath())),'assembly:Writer','Explicit PA writer origin differs');
 model=mphload(modelPath,'AssemblyWorldScalarExport');cleanupModel=onCleanup(@() ModelUtil.remove('AssemblyWorldScalarExport'));
+if isfield(grid,'role') && strcmp(char(grid.role),'assembly_world_scalar_grid_batch')
+    entries=grid.entries;
+    assert(~isempty(entries),'assembly:GridBatch','Explicit nonempty grids required');
+    for i=1:numel(entries)
+        entry=entries(i); one=jsondecode(fileread(char(entry.grid_path)));
+        value=sample_one(model,projection,baseline,one,modelPath,char(entry.output_directory));
+        write_report(char(entry.report_path),value);
+    end
+    result=struct('status','success','scope','assembly_world_scalar_grid_batch', ...
+        'grid_count',numel(entries),'compute_calls',0);
+else
+    result=sample_one(model,projection,baseline,grid,modelPath,outputDirectory);
+end
+end
+
+function result=sample_one(model,projection,baseline,grid,modelPath,outputDirectory)
+assert(strcmp(char(projection.assembly_frame_id),char(grid.frame_id)),'assembly:Frame','World frame differs');
 solution=read_assembly_stationary_solution(model,char(grid.study_tag),char(grid.solution_tag),char(grid.dataset_tag));
 vacuum=mphgetselection(model.component('comp1').physics('es').selection);
 a=double(vacuum.entities);b=double(baseline.vacuum_domains);
@@ -52,4 +68,11 @@ result=struct('status','success','scope','assembly_world_scalar_samples','field_
     'filled_conductor_count',filled,'coordinate_mapping','world_identity','compute_calls',0, ...
     'invalid_policy','masked; storage zero is not a valid sample','query_seconds',querySeconds, ...
     'coordinate_witness',witness);
+end
+
+function write_report(path,value)
+fid=fopen(path,'w','n','UTF-8');
+assert(fid>=0,'assembly:Report','Cannot create scalar report');
+cleanup=onCleanup(@() fclose(fid));
+fprintf(fid,'%s',jsonencode(value));
 end

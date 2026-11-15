@@ -1445,11 +1445,17 @@
               {
                 "exact": "src/msplatform/backends/comsol/matlab/sample_scalar_grid_blocks.m",
                 "reason": "assembly_scalar_sampler_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/comsol/matlab/export_assembly_world_scalar_field.m",
+                "reason": "assembly_scalar_exporter_changed"
               }
             ],
             "modules": [
               "common/contracts/test_comsol_world_scalar_contract.py",
               "common/contracts/test_comsol_world_scalar_managed.py",
+              "common/contracts/test_comsol_scalar_multigrid.py",
+              "common/contracts/test_comsol_multigrid_managed.py",
               "common/contracts/test_prepared_scalar_support.py",
               "common/contracts/test_offline_scalar_managed.py",
               "common/contracts/test_assembly_scalar_owner_fill.py",
