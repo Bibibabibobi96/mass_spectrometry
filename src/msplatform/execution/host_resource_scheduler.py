@@ -241,7 +241,9 @@ def _reason(candidate: dict[str, Any], records: list[dict[str, Any]], snapshot: 
         return "cpu_headroom"
     if snapshot["available_memory_bytes"] < policy["memory_admission_reserve_bytes"]:
         return "memory_pressure"
-    if not cpu_observation_only and sum(r["budget"]["cpu_cores"] for r in active) + budget["cpu_cores"] > snapshot["logical_processors"]:
+    reserved_cpu = sum(r["budget"]["cpu_cores"] for r in active
+                       if r["role"] != "GATE" or _is_heavy(r["budget"]))
+    if not cpu_observation_only and reserved_cpu + budget["cpu_cores"] > snapshot["logical_processors"]:
         return "cpu_budget_full"
     if policy["io_slots"] > 0 and sum(r["budget"]["io_slots"] for r in active) + budget["io_slots"] > policy["io_slots"]:
         return "io_budget_full"

@@ -462,6 +462,28 @@ class HostResourceSchedulerTests(unittest.TestCase):
         self.snapshot["available_memory_bytes"] = 100
         self.assertEqual(self.acquire(5, role="GATE")["reason"], "memory_pressure")
 
+    def test_native_cpu_ignores_ordinary_gate_promises_but_not_native_promises(self) -> None:
+        self.snapshot.update(logical_processors=16, total_memory_bytes=64*GIB, available_memory_bytes=60*GIB)
+        for pid in range(1, 11):
+            self.assertEqual(self.acquire(pid, budget(cpu=2), role="GATE")["status"], "acquired")
+        native = self.acquire(11, budget(cpu=2), role="SIMION")
+        self.assertEqual(native["status"], "acquired")
+        records = self.call("status")["records"]
+        gates = [row for row in records if row["role"] == "GATE" and row["status"] == "acquired"]
+        self.assertEqual(len(gates), 10)
+        self.assertEqual(sum(row["budget"]["cpu_cores"] for row in gates), 20)
+        self.assertEqual(self.acquire(12, budget(cpu=14), role="COMSOL")["status"], "acquired")
+        self.assertEqual(self.acquire(13, budget(cpu=1), role="SIMION")["reason"], "cpu_budget_full")
+
+    def test_native_cpu_still_counts_heavy_gate_and_live_pressure(self) -> None:
+        self.snapshot.update(logical_processors=4, total_memory_bytes=64*GIB, available_memory_bytes=60*GIB)
+        heavy_gate = {**budget(cpu=3), "heavy_stage": True}
+        self.assertEqual(self.acquire(1, heavy_gate, role="GATE")["status"], "acquired")
+        self.assertEqual(self.acquire(2, budget(cpu=2), role="SIMION")["reason"], "cpu_budget_full")
+        self.call("release", token="1")
+        self.snapshot["cpu_percent"] = 100
+        self.assertEqual(self.call("poll", 2, token="2")["reason"], "cpu_pressure")
+
     def test_ordinary_gate_keeps_memory_exclusive_and_heavy_constraints(self) -> None:
         self.snapshot["cpu_percent"] = 100
         self.assertEqual(self.acquire(1, budget(memory=8*GIB, exclusive=["fixture"]), role="GATE")["status"], "acquired")

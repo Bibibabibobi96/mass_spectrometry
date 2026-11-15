@@ -78,6 +78,12 @@ auto为`min(8, logical_processors)`）。普通非重型GATE记录CPU但不因�
 `-ResourceWaitTimeoutSeconds`默认1800，限定准入等待而非测试运行时间；超时取消自身等待并报告原因，
 不释放父token或杀健康owner。参数和观测范围详见[门禁编排](../common/README.md#门禁编排)。
 
+Ordinary nonheavy GATE declarations remain in ledger telemetry but contribute no
+reserved CPU cores when admitting native work. Native and heavy GATE reservations,
+actual native CPU pressure/headroom, memory, I/O and exclusive-resource checks
+remain enforced. Scheduler versions share the ledger: a transaction using this
+rule can admit an already waiting request without changing its budget or inputs.
+
 参考环境预算：owner/窄范围1–3分钟，较复杂≤5分钟，宽改动≤10分钟，完整软件范围争取15分钟。
 超预算须定位主要重复与必要成本，不靠漏测、改名或隐藏开销达标；它不是原生求解的强杀超时。
 
