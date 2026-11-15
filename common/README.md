@@ -87,6 +87,14 @@ IDs, a failed inert child and lease cleanup. These are software results using
 synthetic scalar samples and inert native leaves. Generic HS1, multiple
 independent timelines, ordinary installed consumption and complete native IP
 geometry/flight validation remain open.
+
+The neutral SIMION renderer also consumes the canonical MR polygon primitive
+through the existing polygon validator and native emitter. Sixteen focused
+MR/IP/collision parents passed. This covers primitive representation and its
+refusal cases; complete neutral MR compilation remains open because thirteen
+within-instance Boolean-solid pairs have overlapping conservative bounds and
+no admitted exact separation proof. Their geometry and the overlap guard remain
+unchanged. Native polygon parity and full MR propagation are not inferred.
 Tracking joins saved-solution provenance through its authenticated small manifest
 and the sample's exact solution record, without rereading an unused MPH payload.
 The existing owner still protects both sampled data and its solution producer.

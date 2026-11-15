@@ -41,6 +41,33 @@ def _world_primitive(shape: Mapping[str, Any], transform: RigidTransform, roundi
         kind = 'cylinder'
     if any(sum(abs(x) for x in row) != 1 or any(x not in (-1, 0, 1) for x in row) for row in rotation):
         raise ValueError('GEM pose requires a signed axis-permutation rotation')
+    if kind == 'extruded_yz_polygon':
+        from msplatform.components.shape_query import _canonical_polygon
+        from .mr_geometry import _extrude_polygon_bands, _polygon_bands
+        if set(shape) != {'kind', 'x', 'polygon_yz_mm'}:
+            raise ValueError('GEM extruded polygon requires the canonical fields')
+        bounds, vertices = _canonical_polygon(shape)
+        if abs(rotation[0][0]) != 1:
+            raise ValueError('GEM extruded yz polygon requires its x axis to remain world x')
+        local_lo = [bounds[0], min(point[0] for point in vertices), min(point[1] for point in vertices)]
+        local_hi = [bounds[1], max(point[0] for point in vertices), max(point[1] for point in vertices)]
+        x = sorted(rotation[0][0] * value + transform.translation_mm[0] for value in shape['x'])
+        polygon = [[sum(rotation[i][j] * point[j-1] for j in (1, 2))
+                    + transform.translation_mm[i] for i in (1, 2)]
+                   for point in shape['polygon_yz_mm']]
+        lower = [min(rotation[i][j] * local_lo[j] + transform.translation_mm[i],
+                     rotation[i][j] * local_hi[j] + transform.translation_mm[i])
+                 for i in range(3) for j in range(3) if rotation[i][j]]
+        upper = [max(rotation[i][j] * local_lo[j] + transform.translation_mm[i],
+                     rotation[i][j] * local_hi[j] + transform.translation_mm[i])
+                 for i in range(3) for j in range(3) if rotation[i][j]]
+        _record_rounding(x + [value for point in polygon for value in point], rounding)
+        bands = _polygon_bands(shape['polygon_yz_mm'])
+        transformed_bands = [[[sum(rotation[i][j] * point[j-1] for j in (1, 2))
+                               + transform.translation_mm[i] for i in (1, 2)]
+                              for point in band] for band in bands]
+        return ' '.join(term for band in transformed_bands
+                        for term in _extrude_polygon_bands(x, band)), lower, upper
     if kind in {'ip_box', 'ip_cylinder_x'}:
         from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import shape_bounds
         from .ip_geometry import _primitive
