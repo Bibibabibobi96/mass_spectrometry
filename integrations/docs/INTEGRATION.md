@@ -1754,6 +1754,24 @@ terminal-cause closure, convergence or physical accuracy. The sampled peak
 working set was 6,399,647,744 bytes; process drains, lease release and all 3,073
 source records were verified unchanged. Existing 700/295 GiB limits remained.
 
+The shared terminal-recording investigation subsequently used two new,
+explicit one-particle cohorts with unchanged full geometry and existing fields:
+[SFI original ID 1](../../../artifacts/projects/instrument_assembly/runs/20261116_160940__sim__simion__track-c731e4caacc4/run_manifest.json)
+and [RF–IP–MR original ID 1000003](../../../artifacts/projects/instrument_assembly/runs/20261116_154959__sim__simion__track-a884e2660313/run_manifest.json).
+Both public owners completed their build, cold verification and Fly, preserving
+the exact original birth row and genuine terminal 6D. The common recorder retains
+native run 1, grouped mode 0, native birth 0, raw TOF, source origin, callback
+sequence and available step. SFI's callback/terminal gap is 1e-9 us; the RF–IP–MR
+gap is approximately 0.0080279862991333 us. Each matches its recorded callback
+step at serialization precision, with identical paired 6D and slot. Both cases
+retain raw pre/post flag -1 and unknown physical cause; no time is rewritten and
+no terminal state is replaced by a callback. These are separate N1 mechanism
+checks, not N100 replacement, all-component traversal, detector, convergence or
+accuracy acceptance. The [shared contract](../../common/simion/README.md#shared-native-terminal-evidence)
+keeps native reason evidence, state completeness and scientific observations
+separate. The later serializer's NaN/Inf refusal is software-tested; these native
+finite-state runs do not qualify that failure path.
+
 The expanded carrier classification took approximately 63 minutes between its
 lease and support-file timestamps; this is an observation, not an isolated
 performance measurement or budget pass. RF and pulse reused the same verified

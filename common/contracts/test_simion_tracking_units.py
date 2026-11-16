@@ -25,7 +25,9 @@ from msplatform.execution.resources import resource_path
 from msplatform.execution.run_session import RunSession
 
 
-INERT = r'''
+from common.contracts.test_support.terminal_evidence_fixture import inert_wire_source
+
+INERT = inert_wire_source() + r'''
 import json,sys,time
 from pathlib import Path
 p=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
@@ -42,12 +44,27 @@ else:
         print(f'TRACE: source_release ion={ion} particle_id={pid} instrument_time_us={t:.17g} {state}')
         print(f'TRACE: handoff_terminal_raw ion={ion} instance=3 instrument_time_us={t+1:.17g} {state}')
         print(f'TRACE: non_detector_splat ion={ion} instance=3 t={t+1:.17g} {xyz} zmax=0')
+        print("\n".join(terminal_wire_lines(row,ion,p["native_run"],t+1,3)))
     if p.get('partial'):sys.exit(7)
     print(f'status,Fly completed. {len(p["rows"])} splats')
 '''
 
 
 class TrackingUnitPlanTests(unittest.TestCase):
+    def test_all_consumers_bind_shared_terminal_collection(self):
+        from msplatform.backends.simion.tracking_units import tracking_applicability
+        case=base_fixture.TrackingExecutionPlanTests();case.setUp()
+        original_read=Path.read_bytes
+        def changed_collector(path):
+            content=original_read(path)
+            return content+b'\n# changed terminal collection\n' if path.name=='tracking_collection.py' else content
+        for kind in (None,'independent_rf'):
+            plan=case.plan(unit_size=27)
+            if kind is not None:plan['flight']['tracking_kind']=kind
+            before=tracking_applicability(plan)
+            with patch.object(Path,'read_bytes',new=changed_collector):
+                self.assertNotEqual(tracking_applicability(plan),before)
+
     def test_sampled_recovery_fingerprints_selected_generic_composer(self):
         import hashlib
         from msplatform.backends.simion import tracking_units
@@ -187,7 +204,7 @@ class TrackingUnitOwnerTests(unittest.TestCase):
                 key=name.split('__')[-1];index=int(key.split('_')[-1]);low=(index-1)*25;high=index*25
                 value={'kind':'fly' if name.startswith('track_fly') else ('build' if name.startswith('build_') else 'verify')}
                 if value['kind']=='fly':
-                    value.update(rows=json.loads((session.input_dir/'canonical_source_states.json').read_text())[low:high],
+                    value.update(native_run=key,rows=json.loads((session.input_dir/'canonical_source_states.json').read_text())[low:high],
                         partial=partial_log,delay=5 if index==1 and partial_log is False and 'failed' in session.run_id else .2)
                 else:value['iob']=str(session.run_dir/'units'/key/'simion/tracking/instrument.iob')
                 target=session.declare_file(session.input_dir/(name+'.inert.json'),'required_evidence')

@@ -779,6 +779,54 @@ MR和IP正常生产者携带冻结写入器，实际分析调用同一读取器�
 IP的prepare也调用已安装的SIMION工作台种子owner冻结已选seed和显式placeholder配套，
 不另复制科学场；其冻结Python闭包同时保留实际Lua资源和已选作者配置。
 
+### Shared native terminal evidence
+
+All public Fly units install `native_terminal_recording.lua` after the selected
+scientific, field-coverage and collision hooks. It retains bounded initialize,
+latest before/after `other_actions`, and actual `terminate` snapshots. The wire
+records canonical/native particle IDs, the unit token, native `ion_run`, grouped
+mode, raw birth/TOF, the step where available, the existing instrument clock and
+6D state. Units are microseconds, millimetres and millimetres per microsecond.
+Cached callback snapshots retain capture order and are not terminal substitutes.
+The recorder does not read `ion_splat` in `terminate` or change source clocks.
+
+The common collector requires the wire when declared by a current producer,
+checks its terminal against the independently logged native terminal, and keeps
+raw stop flags, program-induced stop changes within the retained action pair,
+final-state completeness and
+scientific observations separate. It does not promote unknown causes into
+electrode hits, outside-workbench losses or detector detections. Old frozen logs
+remain explicitly without this evidence; current missing, mismatched or nonfinite
+records fail. Unavailable values are explicit nulls; numeric NaN/Inf fail rather
+than being converted into missing data. Recorder, parser and shared collector identities participate in
+whole-unit recovery applicability.
+
+The native three-control run `20261116_153108__analysis__simion__splat-controls-6e8e1030c445`
+used SIMION 2020 8.2.0.11 and nonzero births of 3/7/11 us. Last-action TOF could
+exceed subsequent terminal TOF; the controlled program stop also had a different
+terminal 6D. All three retained actual `ion_run=1` and grouped mode zero. This
+qualifies those observations, not a universal rollback rule or instrument physics.
+The separate SFI `4ce1a73d5ac4` and RF–IP–MR `f34320c4c8c2` N100 runs keep their
+original unknown causes. The source-origin clock is unchanged: public FLY2 sources
+have native birth zero, so subtracting birth cannot explain their within-ion gap.
+
+References: [SIMION time](https://simion.com/info/time.html),
+[native run and callback extensions](https://simion.com/info/workbench_program_extensions.html#ion-run),
+and [supported stopping patterns](https://simion.com/info/particle_trajectory_calculation.html#stop-particles-after-given-time).
+Online documentation is supplemental; the installed 2020 Help and pinned native
+logs establish local-version behavior. Portable callback tests, native controls,
+complete instrument runs, installation and scientific qualification remain distinct.
+
+The two flown N1 Programs contain no explicit Lua assignment to native TOF,
+birth time or position. Source velocity is restored during initialization;
+the RF–IP–MR vendor HS1 can additionally change velocity for a physical collision.
+Their final retained before/after action states are unchanged. SFI observer
+interpolation uses local shadow variables, and its commit/discard paths change
+Lua history rather than native particle state. The non-mutating toy controls
+also expose a later action clock followed by an earlier terminal clock. These
+facts support native callback/integrator state exposure in the observed cases;
+opaque native APIs and unlogged phases prevent a general rollback claim.
+
 ### Program-owned trajectory quality
 
 Modern installed tracking uses `validate_program_trajectory_quality` in `msplatform.backends.simion.tracking_program`: an explicit integer from -500 through500 is accepted; booleans, fractions and values outside that range are rejected. The RF, shared single-flight and paired-pulse Program paths consume that one validator. Their existing positive defaults, RF-period steps, time/step limits, seeds, pulse/clock and particle identity rules are unchanged.

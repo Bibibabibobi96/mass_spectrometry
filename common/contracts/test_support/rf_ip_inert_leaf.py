@@ -62,6 +62,8 @@ def inert_native_leaf(actual_process, observed):
             lines = [
                 'RF_DYNAMICS_V1: {"grouped":0,"repulsion":"none","relativity":0,"segment_global":1}'
             ]
+            from common.contracts.test_support.terminal_evidence_fixture import native_run_from_program, terminal_wire_lines
+            token = native_run_from_program(run / "simion/tracking/instrument.lua")
             for ion, row in enumerate(rows, 1):
                 state = dict(
                     event="source_release",
@@ -80,6 +82,7 @@ def inert_native_leaf(actual_process, observed):
                         for a in "xyz"
                     }
                 )
+                lines.extend(terminal_wire_lines(row, ion, token, 2.0, 1))
                 lines.extend(
                     [
                         "RF_NATIVE_STATE_V1: " + json.dumps(state),

@@ -890,7 +890,7 @@ def _validate_states(rows: list[dict], source: dict, terminals: dict, locations:
                 raise ValueError(f'{where}: invalid forward native X crossing bracket')
 
 
-def collect_tracking_logs(log_paths, *, source_rows: dict, source_provenance: dict,
+def _collect_tracking_logs(log_paths, *, source_rows: dict, source_provenance: dict,
                           flight: dict, batches: Sequence[dict]) -> dict:
     """Collect verified native logs without a checkout, payload or solver.
 
@@ -1092,3 +1092,12 @@ def collect_tracking_logs(log_paths, *, source_rows: dict, source_provenance: di
         result['original_mother'] = {key: provenance[key] for key in
             ('mother_particle_ids', 'mother_records', 'mother_fates', 'clock_authority_sha256', 'clock_records')}
     return result
+
+
+def collect_tracking_logs(log_paths, *, source_rows: dict, source_provenance: dict,
+                          flight: dict, batches: Sequence[dict]) -> dict:
+    """Collect scientific observations and independent raw terminal evidence."""
+    result = _collect_tracking_logs(log_paths, source_rows=source_rows,
+        source_provenance=source_provenance, flight=flight, batches=batches)
+    from .terminal_evidence import attach_terminal_evidence
+    return attach_terminal_evidence(result, log_paths, batches)

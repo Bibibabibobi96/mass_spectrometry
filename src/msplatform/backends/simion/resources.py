@@ -10,6 +10,7 @@ GEM_TEMPLATES = {
 }
 
 NATIVE_RESOURCES = frozenset({
+    "native_terminal_recording.lua",
     "collision_hs1_gas.lua", "collision_sds_binding.lua", "rf_ip_gas_selection.lua", "rf_ip_tracking_hs1.lua",
     "mrtof_measured_source_runtime.lua",
     "export_axis_basis.lua",

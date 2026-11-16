@@ -297,7 +297,7 @@ finally:
                 value = {'kind': kind}
                 if kind == 'fly':
                     all_rows = json.loads((session.input_dir / 'canonical_source_states.json').read_text(encoding='utf-8'))
-                    value.update(rows=all_rows[(index - 1) * 50:index * 50], partial=partial_log,
+                    value.update(native_run=key, rows=all_rows[(index - 1) * 50:index * 50], partial=partial_log,
                                  delay=2. if partial_log else .2)
                 else:
                     value['iob'] = str(session.run_dir / 'units' / key / 'simion/tracking/instrument.iob')

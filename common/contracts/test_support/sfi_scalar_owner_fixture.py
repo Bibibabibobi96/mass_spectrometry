@@ -229,7 +229,9 @@ def inert_native_leaf(actual_process, observed):
             # Read the 100-row fixture inside the inert child; embedding all
             # trace rows in -c exceeds Windows' command-line length limit.
             source_path = working / "inputs/canonical_source_states.json"
-            code = """import json,sys
+            from common.contracts.test_support.terminal_evidence_fixture import native_run_from_program, inert_wire_source
+            token=native_run_from_program(working/"simion/tracking/instrument.lua")
+            code = inert_wire_source()+"native_run="+repr(token)+"\n"+"""import json,sys
 source=json.load(open(sys.argv[1],encoding='utf-8'))
 for index,row in enumerate(source,1):
     pid,t=row['particle_id'],row['instrument_time_us']
@@ -239,6 +241,7 @@ for index,row in enumerate(source,1):
     print(f'TRACE: source_release ion={index} particle_id={pid} instrument_time_us={t:.17g} {state}')
     print(f'TRACE: handoff_terminal_raw ion={index} instance=3 instrument_time_us={t+1:.17g} {state}')
     print(f'TRACE: non_detector_splat ion={index} instance=3 t={t+1:.17g} {xyz} zmax=0')
+    print("\\n".join(terminal_wire_lines(row,index,native_run,t+1,3)))
 print(f'status,Fly completed. {len(source)} splats')
 """
         return actual_process(

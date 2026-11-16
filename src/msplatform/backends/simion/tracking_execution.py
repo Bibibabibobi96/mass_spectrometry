@@ -676,6 +676,10 @@ def _execute_tracking_units(session, *, model, plan, design, stored_bank, fronte
         controls = _render_tracking_controls(model,subset,field_design=design,stored_bank=stored_bank,
             frontend_records=frontend,downstream_assets=downstream,downstream_receipt=None if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa','rf_ip','ip_mr','static_world','neutral_sampled'} else _artifact_record(source,'downstream_audit'),
             native_sources=sources)
+        from .terminal_evidence import append_terminal_recorder
+        controls['program'] = append_terminal_recorder(controls['program'],
+            recorder_source=Path(frozen['native_terminal_recording.lua']['path']).read_text(encoding='utf-8'), native_run=key)
+        controls['build_metadata']['terminal_evidence'] = dict(schema_version=1, native_run=key)
         row['build_metadata'] = controls['build_metadata']
         batches.append(dict(source_row_range=unit['source_row_range'],expected_particle_ids=unit['expected_particle_ids'],
                             build_metadata=row['build_metadata']))
@@ -1096,6 +1100,7 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
             if plan['flight'].get('has_hs1'):resource_names+=('collision_hs1_gas.lua','rf_ip_gas_selection.lua','rf_ip_tracking_hs1.lua')
         if plan.get('scalar_field_basis') is not None:
             resource_names += ('scalar_field_adapter.lua', 'generic_scalar_field.lua' if plan['flight'].get('tracking_kind') in {'ip_mr', 'neutral_sampled'} else 'sfi_scalar_field.lua')
+        resource_names += ('native_terminal_recording.lua',)
         frozen = {}
         for name in resource_names:
             frozen[name] = small('resource_'+name,session.input_dir/'native_sources'/name,source_path=native_resource_path(name))

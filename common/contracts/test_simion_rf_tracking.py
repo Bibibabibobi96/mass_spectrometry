@@ -264,7 +264,10 @@ simion={wb={instances={item}},pas={open=function() return {close=function()end} 
                     code+="print("+repr('INDEPENDENT_RF_TRACKING_IOB=PASS' if mode=='build' else 'INDEPENDENT_RF_TRACKING_IOB_REOPEN=PASS')+")"
                 else:
                     rows=json.loads((run/'inputs/canonical_source_states.json').read_text());lines=['RF_DYNAMICS_V1: {"grouped":1,"repulsion":"none","relativity":0,"segment_global":1}']
+                    from common.contracts.test_support.terminal_evidence_fixture import native_run_from_program, terminal_wire_lines
+                    token=native_run_from_program(run/"simion/tracking/instrument.lua")
                     for ion,row in enumerate(rows,1):
+                        lines.extend(terminal_wire_lines(row,ion,token,2.,1))
                         state=dict(event='source_release',reason='none',particle_id=row['particle_id'],ion=ion,instrument_time_us=row['instrument_time_us'],
                             mass_amu=row['mass_amu'],charge_state=row['charge_state'],instance=1)
                         state.update({a+'_mm':row['position_'+a+'_mm'] for a in 'xyz'});state.update({'v'+a+'_mm_per_us':row['velocity_'+a+'_m_s']/1000 for a in 'xyz'})

@@ -239,7 +239,10 @@ end
             resources2=dict(resources,**{'rf_tracking.lua':native_resource_path('rf_tracking.lua').read_text(encoding='utf8')})
             rendered=renderer.render_rf_controls(self.model,plan2,assets={},native_sources=resources2,
                 scalar_bindings=bindings,slot_domains=[*names,None])
+            from msplatform.backends.simion.terminal_evidence import append_terminal_recorder, parse_terminal_wire
+            recorded=append_terminal_recorder(rendered['program'],recorder_source=native_resource_path('native_terminal_recording.lua').read_text(encoding='utf8'),native_run='test-ip-mr')
             continuation=r"""
+ion_run=1;ion_time_of_birth=0
 segment.initialize_run()
 for ion=1,2 do
  ion_number=ion;ion_instance=1;ion_splat=0;ion_time_of_flight=0;ion_mass=100;ion_charge=1
@@ -261,9 +264,17 @@ end
 assert(seeds[#seeds-1]==46 and seeds[#seeds]==130,'original particle HS1 seed differs')
 print('status,Fly completed. 2 splats')
 """
-            actual=root/'ip_mr_collect.lua';actual.write_text(prefix+rendered['program']+continuation,encoding='utf8')
+            actual=root/'ip_mr_collect.lua';actual.write_text(prefix+recorded+continuation,encoding='utf8')
             flown=subprocess.run([str(LUA),str(actual)],cwd=root,capture_output=True,text=True,encoding='utf8',timeout=30)
             self.assertEqual(flown.returncode,0,flown.stdout+flown.stderr)
+            for ion,pid in ((1,7),(2,91)):
+                evidence=parse_terminal_wire(flown.stdout.splitlines(),native_run='test-ip-mr',ion=ion,particle_id=pid)
+                self.assertEqual(evidence['status'],'recorded_v1')
+                terminal=next(row for row in evidence['records'] if row['event']=='terminate')
+                self.assertEqual((terminal['ion'],terminal['particle_id'],terminal['ion_run']),(ion,pid,1))
+                self.assertEqual(terminal['source_origin_us'],4.)
+                self.assertEqual(terminal['instrument_time_us'],4.+terminal['raw_tof_us'])
+                self.assertTrue(all(terminal[k] is not None for k in ('x_mm','y_mm','z_mm','vx_mm_per_us','vy_mm_per_us','vz_mm_per_us')))
             log=root/'ip_mr_collect.log';log.write_text(flown.stdout,encoding='utf8')
             provenance=dict(state_kind='source_birth',execution_particle_ids=[7,91],mother_particle_ids=[7,91],
                 mother_records=[dict(particle_id=pid,particle_birth_time_us=4.) for pid in (7,91)],

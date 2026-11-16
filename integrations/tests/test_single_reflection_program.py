@@ -1436,10 +1436,13 @@ print('LOCAL_OATOF_NO_RF=PASS')
             with self.subTest(case=case):
                 self.check_plain_lua_callbacks(False, case)
 
+    def test_generated_full_program_installs_terminal_recorder(self):
+        self.check_plain_lua_callbacks(False, 'before', terminal_recorder=True)
+
     def test_equal_time_diagnostic_observes_conflicting_pair(self):
         self.check_plain_lua_callbacks(False, reconciliation='equal_conflict')
 
-    def check_plain_lua_callbacks(self, entrance_refinement, reconciliation=None):
+    def check_plain_lua_callbacks(self, entrance_refinement, reconciliation=None, terminal_recorder=False):
         if entrance_refinement:
             folder = self.root / "fine"
             folder.mkdir()
@@ -1493,6 +1496,9 @@ print('LOCAL_OATOF_NO_RF=PASS')
         inspect = "\nsegment.inspect=function() return single_flight_instrument_time_us(),single_flight_canonical_particle_id(),single_flight_rf_drives[1].differential_at(single_flight_instrument_time_us()) end\n"
         inspect += "segment.inspect_lifecycle=function() return single_flight_particle_state,single_flight_analyzer_initialized,single_flight_previous,single_flight_reported,single_flight_standalone_dynamic_by_instance end\n"
         program += inspect
+        if terminal_recorder:
+            from msplatform.backends.simion.terminal_evidence import append_terminal_recorder
+            program=append_terminal_recorder(program,recorder_source=native_resource_path('native_terminal_recording.lua').read_text(encoding='utf8'),native_run='test-sfi')
         path = self.root/"program.lua"
         path.write_text(re.sub(r"\badjustable\s+","",program),encoding="utf-8")
         g = self.geometry
@@ -1553,6 +1559,7 @@ io.open=function(path,...)
  assert(not tostring(path):find('/unexpected/'),'native Program wrote a legacy environment output')
  return original_open(path,...)
 end
+ion_run=1;ion_time_of_birth=0
 assert(dofile(arg[1])==nil)
 segment.load()
 assert(sim_trajectory_quality==17)
@@ -1968,6 +1975,14 @@ print('NATIVE_FULL_PROGRAM=PASS')
             replay = subprocess.run([str(LUA),str(script),str(path),'reconciled_'+reconciliation,
                                      str(self.design['rf_reference_voltage_v'])],
                                     cwd=self.root,capture_output=True,text=True,timeout=30)
+            if terminal_recorder:
+                from msplatform.backends.simion.terminal_evidence import parse_terminal_wire
+                evidence=parse_terminal_wire(replay.stdout.splitlines(),native_run='test-sfi',ion=2,particle_id=77)
+                self.assertEqual(evidence['status'],'recorded_v1')
+                terminal=next(row for row in evidence['records'] if row['event']=='terminate')
+                self.assertEqual((terminal['ion'],terminal['particle_id'],terminal['ion_run']),(2,77,1))
+                self.assertEqual(terminal['instrument_time_us'],terminal['source_origin_us']+terminal['raw_tof_us'])
+                self.assertTrue(all(terminal[k] is not None for k in ('x_mm','y_mm','z_mm','vx_mm_per_us','vy_mm_per_us','vz_mm_per_us')))
             if reconciliation in ('cut','cut_contact','cut_unknown'):
                 self.assertEqual(replay.returncode,0,replay.stdout+replay.stderr)
                 self.assertNotIn('PLANE_OBSERVATION_V1:',replay.stdout)

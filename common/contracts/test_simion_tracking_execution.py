@@ -93,11 +93,14 @@ def tracking_action_fixture(self, root):
             elif operation_id=='verify_tracking_iob':text='MISSING_MARKER\n' if inner.fault=='verify_marker' else 'SINGLE_REFLECTION_IOB_REOPEN=PASS\n'
             else:
                 rows=json.loads((inner.input_dir/'canonical_source_states.json').read_text())
+                from common.contracts.test_support.terminal_evidence_fixture import native_run_from_program, terminal_wire_lines
+                token=native_run_from_program(program)
                 lines=[]
                 for ion,row in enumerate(rows,1):
                     pid,t=row['particle_id'],row['instrument_time_us']
                     state=' '.join(f'{a}_mm={row["position_"+a+"_mm"]:.17g}' for a in 'xyz')+' '+' '.join(f'v{a}_mm_per_us={row["velocity_"+a+"_m_s"]/1000:.17g}' for a in 'xyz')
                     xyz=' '.join(f'{a}={row["position_"+a+"_mm"]:.17g}' for a in 'xyz')
+                    lines.extend(terminal_wire_lines(row,ion,token,t+1,3))
                     lines.extend((f'TRACE: source_release ion={ion} particle_id={pid} instrument_time_us={t:.17g} {state}',
                         f'TRACE: handoff_terminal_raw ion={ion} instance=3 instrument_time_us={t+1:.17g} {state}',
                         f'TRACE: non_detector_splat ion={ion} instance=3 t={t+1:.17g} {xyz} zmax=0'))

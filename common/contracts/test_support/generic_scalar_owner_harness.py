@@ -111,7 +111,9 @@ def make_inert(self, compiled, original, calls, field_guards, tracking_guards, f
         elif operation_id == 'track_fly':
             code += 'rows=json.loads(Path('+repr(str(session.input_dir/'canonical_source_states.json'))+').read_text(encoding="utf8"))\n'
             code += inert_dynamics_code(session.input_dir/'tracking_numerics.json')
-            code += 'for ion,row in enumerate(rows,1):\n state=dict(event="source_release",reason="none",particle_id=row["particle_id"],ion=ion,instrument_time_us=row["instrument_time_us"],mass_amu=row["mass_amu"],charge_state=row["charge_state"],instance=1);state.update({a+"_mm":row["position_"+a+"_mm"] for a in "xyz"});state.update({"v"+a+"_mm_per_us":row["velocity_"+a+"_m_s"]/1000 for a in "xyz"});print("RF_NATIVE_STATE_V1: "+json.dumps(state));state.update(event="terminal",reason="unknown",instrument_time_us=2.);print("RF_NATIVE_STATE_V1: "+json.dumps(state))\nprint("status,Fly completed. 2 splats")\n'
+            from common.contracts.test_support.terminal_evidence_fixture import native_run_from_program, inert_wire_source
+            code += inert_wire_source()+"native_run="+repr(native_run_from_program(run/"simion/tracking/instrument.lua"))+"\n"
+            code += 'for ion,row in enumerate(rows,1):\n state=dict(event="source_release",reason="none",particle_id=row["particle_id"],ion=ion,instrument_time_us=row["instrument_time_us"],mass_amu=row["mass_amu"],charge_state=row["charge_state"],instance=1);state.update({a+"_mm":row["position_"+a+"_mm"] for a in "xyz"});state.update({"v"+a+"_mm_per_us":row["velocity_"+a+"_m_s"]/1000 for a in "xyz"});print("RF_NATIVE_STATE_V1: "+json.dumps(state));state.update(event="terminal",reason="unknown",instrument_time_us=2.);print("RF_NATIVE_STATE_V1: "+json.dumps(state));print("\\n".join(terminal_wire_lines(row,ion,native_run,2.,1)))\nprint("status,Fly completed. 2 splats")\n'
         else:
             raise AssertionError("unexpected operation " + operation_id)
         if operation_id == 'collision_build_01' and live_refs:

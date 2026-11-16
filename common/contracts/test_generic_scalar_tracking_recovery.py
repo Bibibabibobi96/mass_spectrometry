@@ -107,9 +107,13 @@ class NeutralSampledRecoveryTests(unittest.TestCase):
             code = 'import json,sys,time\nfrom pathlib import Path\n'
             code += f'Path({str(gate["ready"])!r}).write_text("ready")\n'
             code += f'while not Path({str(gate["release"])!r}).exists(): time.sleep(.05)\n'
+            from common.contracts.test_support.terminal_evidence_fixture import native_run_from_program, inert_wire_source
+            program=session.run_dir/'units'/name.split('__')[-1]/'simion/tracking/instrument.lua'
+            code += inert_wire_source()+'native_run='+repr(native_run_from_program(program))+'\n'
             code += 'r=' + repr(row) + '\n'
             code += 'print(\'RF_DYNAMICS_V1: {"grouped":1,"repulsion":"none","relativity":0,"segment_global":1}\')\n'
             code += 's=dict(event="source_release",reason="none",particle_id=r["particle_id"],ion=1,instrument_time_us=r["instrument_time_us"],mass_amu=r["mass_amu"],charge_state=r["charge_state"],instance=1);s.update({a+"_mm":r["position_"+a+"_mm"] for a in "xyz"});s.update({"v"+a+"_mm_per_us":r["velocity_"+a+"_m_s"]/1000 for a in "xyz"});print("RF_NATIVE_STATE_V1: "+json.dumps(s));s.update(event="terminal",reason="unknown",instrument_time_us=2.);print("RF_NATIVE_STATE_V1: "+json.dumps(s))\n'
+            code += 'print("\\n".join(terminal_wire_lines(r,1,native_run,2.,1)))\n'
             code += 'sys.exit(7)\n' if partial_log else 'print("status,Fly completed. 1 splats")\n'
             return ['-I','-B','-c',code]
         grouped = grouped_inert_transport(actual_group, payload, calls, is_failed=lambda _: fail[0],
