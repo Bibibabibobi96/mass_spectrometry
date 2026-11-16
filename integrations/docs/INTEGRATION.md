@@ -1915,6 +1915,11 @@ the same grid and saved solution: 5,312,307 nodes, 3,769,772 finite FEM samples,
 matched. A separate source-derived 71-member Assembly witness reproduced the
 saved carrier's complete 45-group voltage request exactly. This is coarse
 carrier sampling, not a complete dynamic basis or valid IP derivative stencil.
+2026-11-16 P4-85独立复核在当前源码运行`test_comsol_world_scalar_contract` 6项（0.530秒）全部通过，
+并以公共`open_artifact`重开上述`190503`真实产品，核验field_v／field_valid／grid三记录字节及SHA-256。
+原`export_world_scalar.json`科学记数法计数确为5,312,307／3,769,772／1,542,535，compute_calls=0；
+首次探针误把product当reference导致KeyError，随后以正确manifest/product_id入口完成验证，不记作生产失败。
+此证据关闭科学记数法计数发布问题，不提升粗网格、动态基或科学资格。
 
 The successor carrier export on source `9743836b`,
 `20261115_121750__analysis__comsol__assembly-scalar-8c99a7166963`, published a
