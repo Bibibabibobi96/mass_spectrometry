@@ -553,7 +553,7 @@ def execute_saved_fly(session, *, fields, producer, plan, request, model, limits
     )
     request["science_path"] = _document(session, "saved_model_transport_science", science)
     request["gas_science_path"] = gas.data_path("science")
-    _, values, prepared, records, sources, path_helper = _prepare_execution_inputs(
+    plan, values, prepared, records, sources, path_helper = _prepare_execution_inputs(
         session, request=request, selected_plan=plan, model_projection=model
     )
     clock_contract = fields.data_path("clock_authority")

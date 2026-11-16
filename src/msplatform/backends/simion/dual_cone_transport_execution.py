@@ -25,6 +25,13 @@ NATIVE_OPERATION_IDS = (
     "fly",
 )
 
+DUAL_CONE_TERMINAL_CALLBACKS = {
+    "particle_id": "output_particle_id",
+    "source_origin_us": "function() return ion_time_of_birth end",
+    "pipeline_clock_us": "function() return ion_time_of_birth + ion_time_of_flight end",
+    "instrument_time_us": "function() return ion_time_of_birth + ion_time_of_flight end",
+}
+
 
 def plan_transport_operations(*, resolved: Mapping, numerics: Mapping, science: Mapping, source_spec: Mapping, placement=None, source_to_device=None) -> dict:
     """Validate scientific selections and return the actual serial native graph.
@@ -209,6 +216,7 @@ def track_transport(
     immutable_input_records,
     allow_asynchronous_io=None,
     placement=None,
+    native_run=None,
 ):
     """Fly verified run-owned fields; this function cannot build or Refine."""
     from pathlib import Path
@@ -264,7 +272,7 @@ def track_transport(
     if completion.splats != source_count:
         raise ValueError("native Fly completion count differs from the complete declared source")
     offsets = numerics["workbench"]["coordinate_mapping"]["device_to_workbench_offset_mm"]
-    return _analyze_original_particle_identities(
+    metrics, transmitted = _analyze_original_particle_identities(
         Path(final_state),
         source_count=source_count,
         source_particle_ids=source_particle_ids,
@@ -272,6 +280,48 @@ def track_transport(
         axis_center_y_mm=offsets["y"] if placement is None else 0.,
         **({"position_transform": RigidTransform.from_contract(placement).inverse()} if placement is not None else {}),
     )
+    if native_run is not None:
+        if source_particle_ids is None:
+            raise ValueError("declared terminal evidence requires original source identities")
+        metrics = _reconcile_dual_cone_terminal_evidence(
+            metrics, stdout, Path(final_state), native_run=native_run, source_particle_ids=source_particle_ids
+        )
+    return metrics, transmitted
+
+
+def _reconcile_dual_cone_terminal_evidence(metrics, stdout, final_state, *, native_run, source_particle_ids):
+    """Require raw terminate facts equal to the existing scientific final CSV."""
+    import csv
+    from .terminal_evidence import COORDINATES, UNITS, collect_terminal_evidence, reconcile_terminal_evidence
+
+    recorded = collect_terminal_evidence(
+        [stdout], [dict(native_run=native_run, expected_particle_ids=source_particle_ids)], require_v1=True
+    )
+    with final_state.open(encoding="utf-8-sig", newline="") as stream:
+        rows = list(csv.DictReader(stream))
+    actual_ids = [int(row["ion_number"]) for row in rows]
+    if len(rows) != len(source_particle_ids) or sorted(actual_ids) != sorted(source_particle_ids):
+        raise ValueError("terminal evidence/final-state source cohort differs")
+    columns = dict(zip(COORDINATES, ("x_mm", "y_mm", "z_mm", "vx_mm_per_us", "vy_mm_per_us", "vz_mm_per_us"), strict=True))
+    facts = []
+    for row in rows:
+        particle_id = int(row["ion_number"])
+        evidence = recorded[particle_id]
+        phases = {record["event"]: record for record in evidence["records"]}
+        terminal = phases["terminate"]
+        for key, column in (("raw_tof_us", "time_us"), *columns.items()):
+            value = terminal[key]
+            if value is None or float(format(value, ".9g")) != float(row[column]):
+                raise ValueError(f"particle {particle_id}: terminal wire/final state differs: {key}")
+        reconciliation = reconcile_terminal_evidence(
+            terminal, phases.get("other_actions_before"), phases.get("other_actions_after")
+        )
+        facts.append(dict(particle_id=particle_id, raw=evidence, reconciliation=reconciliation))
+    metrics["terminal_evidence"] = dict(
+        schema_version=1, status="recorded_v1", units=dict(UNITS), particle_evidence=facts,
+        classification_changed=False,
+    )
+    return metrics
 
 
 def _analyze_original_particle_identities(
@@ -418,6 +468,32 @@ def _prepare_execution_inputs(session, *, request, selected_plan=None, model_pro
         session.add_input(name, row)
         records[name] = row
         return row
+
+    native_run = session.run_id + ":dual-cone"
+    plan = dict(plan)
+    plan["terminal_evidence"] = dict(schema_version=1, native_run=native_run)
+    frozen = session.input_dir / "native_sources"
+    recorder_path = session.declare_file(frozen / "native_terminal_recording.lua", "required_evidence")
+    parser_path = session.declare_file(frozen / "terminal_evidence.py", "required_evidence")
+    recorder_path.parent.mkdir(parents=True, exist_ok=True)
+    freeze_file(native_resource_path("native_terminal_recording.lua"), recorder_path)
+    from .terminal_evidence import append_terminal_recorder
+
+    freeze_file(Path(inspect.getsourcefile(append_terminal_recorder)), parser_path)
+    bind("native_terminal_recorder", recorder_path)
+    bind("native_terminal_parser", parser_path)
+    program_record = receipt["inputs"]["simion_program"]
+    program_path = Path(program_record.get("frozen_path", program_record.get("path")))
+    original_program = file_record(session.canonical_path(program_path), "required_evidence")
+    if (original_program["sha256"].upper() != program_record["sha256"].upper()
+            or original_program["bytes"] != program_record["bytes"]):
+        raise ValueError("pure prepared Program differs before terminal recorder installation")
+    recorded_program = append_terminal_recorder(
+        program_path.read_text(encoding="utf-8"), recorder_source=recorder_path.read_text(encoding="utf-8"),
+        native_run=native_run, callbacks=DUAL_CONE_TERMINAL_CALLBACKS,
+    )
+    program_path.write_text(recorded_program, encoding="utf-8", newline="\n")
+    receipt["inputs"]["simion_program"] = file_record(session.canonical_path(program_path), "required_evidence")
 
     for name, record in receipt["inputs"].items():
         if isinstance(record, dict) and ("frozen_path" in record or "path" in record):
@@ -662,6 +738,7 @@ def _fly_and_collect_transport(
         final_state=final_state,
         immutable_input_records=native_guards,
         placement=plan.get("placement"),
+        native_run=(plan.get("terminal_evidence") or {}).get("native_run"),
     )
     metrics_path = session.declare_file(session.result_dir / "terminal_plane_metrics.json", "required_evidence")
     with metrics_path.open("x", encoding="utf-8", newline="\n") as stream:
@@ -691,6 +768,8 @@ def _fly_and_collect_transport(
         saved_field_reuse="not_implemented",
         scientific_qualification="not_granted",
     )
+    if "terminal_evidence" in plan:
+        metadata["terminal_evidence"] = plan["terminal_evidence"]
     outputs = [session.canonical_path(path) for path in (final_state, metrics_path, audit)]
     outputs.extend(session.canonical_path(path) for path in prepared.rglob("*") if path.is_file())
     outputs = list(dict.fromkeys(outputs))

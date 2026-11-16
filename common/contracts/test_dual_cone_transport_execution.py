@@ -30,6 +30,21 @@ def request():
     return {name: json.loads((CONFIG / (filename + ".json")).read_text()) for name, filename in names.items()}
 
 
+def terminal_log(particle_ids, native_run, *, increment_time=False):
+    from common.contracts.test_terminal_evidence import row, wire
+
+    lines = []
+    for ion, particle_id in enumerate(particle_ids, 1):
+        elapsed = 10. + (ion - 1 if increment_time else 0)
+        values = dict(particle_id=particle_id, ion=ion, native_run=native_run, ion_run=1,
+                      raw_birth_us=3., source_origin_us=3., raw_step_us=None,
+                      x_mm=25.5, y_mm=25.5, z_mm=121.75, vx_mm_per_us=0., vy_mm_per_us=0., vz_mm_per_us=1.)
+        lines.append(wire(row("initialize", 1, **values, raw_tof_us=0., pipeline_clock_us=3., instrument_time_us=3.)))
+        lines.append(wire(row("terminate", 2, **values, raw_tof_us=elapsed,
+                              pipeline_clock_us=3. + elapsed, instrument_time_us=3. + elapsed)))
+    return lines
+
+
 class TransportPlanTests(unittest.TestCase):
     def test_nondefault_enclosure_span_is_the_compiler_authority(self):
         from msplatform.backends.simion.dual_cone_geometry import render_gem
@@ -297,6 +312,55 @@ class TrackingBoundaryTests(unittest.TestCase):
                 self.assertNotIn("refine", calls[0][1]["arguments"])
                 self.assertEqual(calls[0][1]["immutable_input_records"], arguments["immutable_input_records"])
                 self.assertEqual(calls[0][1]["environment"], {"DUAL_CONE_SIMION_RUN_CONFIG_LUA": str(root / "run.lua")})
+
+    def test_declared_terminal_evidence_reconciles_sparse_final_states_fail_closed(self):
+        from msplatform.backends.simion.dual_cone_transport_execution import track_transport
+        from common.simion.test_analyze_terminal_plane import HEADER
+
+        for scenario in ("valid", "missing", "mismatch", "nonfinite", "duplicate"):
+            with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                iob = root / "owned.iob"
+                iob.write_text("INERT_WORKBENCH_NOT_NATIVE")
+                final = root / "final.csv"
+                final.write_text(HEADER
+                    + "7,10,25.5,25.5,121.75,0,0,1,1\n"
+                    + "101,11,25.5,25.5,121.75,0,0,1,3\n")
+                session = SimpleNamespace(
+                    context=SimpleNamespace(tools={"simion": root / "simion.exe"}), artifact_run_dir=root,
+                    expected_operation_ids=("fly",), operations=[], log_dir=root,
+                    canonical_path=lambda path: Path(path).resolve(),
+                )
+
+                def run(operation, **kwargs):
+                    session.operations.append(dict(operation_id=operation, observation=dict(exit_confirmed=True, returncode=0)))
+                    lines = [] if scenario == "missing" else terminal_log([7, 101], "current-dual", increment_time=True)
+                    if scenario == "mismatch":
+                        lines[-1] = lines[-1].replace('"x_mm": 25.5', '"x_mm": 9.0')
+                    if scenario == "nonfinite":
+                        lines[-1] = lines[-1].replace('"x_mm": 25.5', '"x_mm": NaN')
+                    if scenario == "duplicate":
+                        lines.append(lines[-1])
+                    (root / "operation_0001.stdout.log").write_text(
+                        "\n".join(lines) + "\nstatus,Fly completed. 2 splats, 0.1 seconds\n"
+                    )
+
+                session.run_process = run
+                arguments = dict(workbench=iob, fly2=root / "source.fly2", run_config=root / "run.lua",
+                    numerics=request()["numerics"], source_count=2, source_particle_ids=[7, 101], limits={},
+                    final_state=final, immutable_input_records=[file_record(iob, "required_evidence")], native_run="current-dual")
+                if scenario == "valid":
+                    metrics, transmitted = track_transport(session, **arguments)
+                    self.assertEqual(metrics["terminal_code_counts"], {"1": 1, "3": 1})
+                    self.assertEqual([row["ion_number"] for row in transmitted], ["7"])
+                    evidence = metrics["terminal_evidence"]
+                    self.assertEqual(evidence["status"], "recorded_v1")
+                    self.assertEqual([row["particle_id"] for row in evidence["particle_evidence"]], [7, 101])
+                    self.assertTrue(all(row["reconciliation"]["physical_cause"] == "unknown"
+                                        for row in evidence["particle_evidence"]))
+                else:
+                    with self.assertRaises(ValueError):
+                        track_transport(session, **arguments)
 
     def test_track_refuses_an_external_published_workbench_before_launch(self):
         from msplatform.backends.simion.dual_cone_transport_execution import track_transport
@@ -591,6 +655,8 @@ class ManagedTransportTests(unittest.TestCase):
                             "textfilelib.lua",
                             "arraylib.lua",
                             "m_defs.dat",
+                            "native_terminal_recording.lua",
+                            "terminal_evidence.py",
                         ):
                             self.assertIn(name, guarded)
                         for eid in (1, 2, 3, 11, 12, 21, 22):
@@ -613,7 +679,7 @@ class ManagedTransportTests(unittest.TestCase):
                             HEADER + "".join(f"{pid},10,25.5,25.5,121.75,0,0,1,0\n" for pid in range(1, 101))
                         )
                         (result / "trajectory_samples.csv").write_text("INERT_TRAJECTORY_NOT_SCIENCE\n")
-                        stdout = "status,Fly completed. 100 splats, 0.1 seconds\n"
+                        stdout = "\n".join(terminal_log(range(1, 101), kwargs["run_id"] + ":dual-cone")) + "\nstatus,Fly completed. 100 splats, 0.1 seconds\n"
                         self.assertIn("DUAL_CONE_SIMION_RUN_CONFIG_LUA", kwargs["environment"])
                     for name in ("stdout_path", "stderr_path", "usage_path"):
                         kwargs[name].write_text(stdout if name == "stdout_path" else "{}")
@@ -743,6 +809,9 @@ class ManagedTransportTests(unittest.TestCase):
                 self.assertEqual(product.metadata["saved_field_reuse"], "not_implemented")
                 metrics = json.loads(product.data_path("metrics").read_text())
                 self.assertEqual(metrics["terminal_code_counts"], {"0": 100})
+                self.assertEqual(metrics["terminal_evidence"]["status"], "recorded_v1")
+                self.assertEqual(len(metrics["terminal_evidence"]["particle_evidence"]), 100)
+                self.assertEqual(product.metadata["terminal_evidence"]["schema_version"], 1)
                 self.assertEqual(load_capacity_protection_leases(context.workspace / "artifacts")["audit"], [])
                 self.assertFalse(any(product.manifest_location.parent.rglob("*.pa0")))
 

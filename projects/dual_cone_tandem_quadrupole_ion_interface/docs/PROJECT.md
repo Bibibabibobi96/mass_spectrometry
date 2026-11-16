@@ -1,5 +1,31 @@
 # 双锥串联四极杆离子传输接口项目状态
 
+## Dual-cone shared terminal evidence
+
+Current fresh and saved-field dual-cone preparation freezes the common native
+terminal recorder and strict parser, then appends the recorder after the
+scientific/SDS Program before the IOB companion identity is bound. Explicit
+internal callbacks retain original sparse particle IDs, native ion/run IDs,
+native birth as source origin, and birth-plus-elapsed instrument clock facts.
+No timestamp is rewritten and no terminal cause is inferred. The run token is
+declared in the internal plan and trajectory metadata.
+
+Declared current runs parse their actual Fly stdout with required v1 evidence.
+Collection compares each actual terminate snapshot's raw TOF and 6D with the
+existing final CSV at that CSV's unchanged nine-significant-digit precision.
+Missing, duplicate, nonfinite, mismatched or wrong-cohort evidence fails closed.
+SDS scientific codes and final CSV identities remain unchanged; raw callbacks,
+unknown-cause reconciliation and scientific classifications stay separate.
+Undeclared legacy direct test doubles retain their former path.
+
+The five focused terminal/recorder/dual-cone modules passed 37 tests in
+114.264 seconds, including actual appended-Program sparse IDs, all managed
+fresh/saved-field inert producers, and missing/mismatch/nonfinite/duplicate
+negatives. Two existing IP–MR recorder-consumer tests passed separately in
+59.525 seconds. Scoped Ruff and diff checks passed. No native SIMION Fly ran;
+this is software callback/parser/collection evidence only, not SDS physics,
+clock-equivalence, terminal-cause or scientific qualification.
+
 ## Original source particle identity
 
 Generated run configurations now carry the ordered native-ion to original-source

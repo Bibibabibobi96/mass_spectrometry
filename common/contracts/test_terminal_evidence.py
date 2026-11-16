@@ -129,6 +129,20 @@ class TerminalEvidenceTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 reconcile_terminal_evidence(terminal, row('other_actions_before', 2, ion_run=2))
 
+    def test_explicit_internal_callbacks_leave_legacy_binding_unchanged(self):
+        from msplatform.backends.simion.terminal_evidence import append_terminal_recorder
+
+        callbacks = dict(particle_id='original_particle_id', source_origin_us='source_birth',
+                         pipeline_clock_us='elapsed_clock', instrument_time_us='elapsed_clock')
+        actual = append_terminal_recorder('PROGRAM', recorder_source='return {}', native_run='dual', callbacks=callbacks)
+        self.assertIn('particle_id=original_particle_id', actual)
+        self.assertIn('source_origin_us=source_birth', actual)
+        legacy = append_terminal_recorder('PROGRAM', recorder_source='return {}', native_run='single')
+        self.assertIn('particle_id=single_flight_canonical_particle_id', legacy)
+        for broken in ({}, dict(callbacks, particle_id=''), dict(callbacks, extra='value')):
+            with self.subTest(broken=broken), self.assertRaises(ValueError):
+                append_terminal_recorder('', recorder_source='', native_run='dual', callbacks=broken)
+
     def test_retained_sfi_and_ip_mr_examples_remain_unknown(self):
         for terminal_time, callback_time in ((4.106731510075654, 4.106731511075654),
                                               (5.20681410792426, 5.2148420942233935)):

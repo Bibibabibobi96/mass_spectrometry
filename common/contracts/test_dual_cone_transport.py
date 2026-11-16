@@ -54,8 +54,10 @@ class MismatchTests(unittest.TestCase):
 class OriginalParticleIdentityTests(unittest.TestCase):
     def test_actual_program_preserves_sparse_ids_and_rejects_missing_mapping(self):
         from common.contracts.test_dual_cone_transport_execution import LUA, request
+        from msplatform.backends.simion.dual_cone_transport_execution import DUAL_CONE_TERMINAL_CALLBACKS
         from msplatform.backends.simion.dual_cone_transport import _render_run_config
         from msplatform.backends.simion.resources import native_resource_path
+        from msplatform.backends.simion.terminal_evidence import append_terminal_recorder, collect_terminal_evidence
 
         if not LUA.is_file():
             self.skipTest("standalone Lua 5.1 required for actual Program consumer; no native fallback")
@@ -70,6 +72,13 @@ class OriginalParticleIdentityTests(unittest.TestCase):
             config.write_text(_render_run_config(
                 mode="c0_gem_smoke", science=values["science"], numerics=values["numerics"],
                 resolved=values["resolved"], solver=solver, source_particle_ids=[11, 42, 900],
+            ), encoding="utf-8")
+            original = native_resource_path("dual_cone_gas_assisted_transport.lua")
+            program = root / "recorded-program.lua"
+            program.write_text(append_terminal_recorder(
+                original.read_text(encoding="utf-8"),
+                recorder_source=native_resource_path("native_terminal_recording.lua").read_text(encoding="utf-8"),
+                native_run="sparse-dual", callbacks=DUAL_CONE_TERMINAL_CALLBACKS,
             ), encoding="utf-8")
             harness = root / "harness.lua"
             harness.write_text(r"""local config_path=arg[1]
@@ -86,20 +95,20 @@ loadfile=function(path)
 end
 simion={workbench_program=function()end};segment={};seed=function()end;adj_elect={}
 os.getenv=function()return config_path end
-ion_time_of_flight=0;ion_time_step=1;ion_splat=0
+ion_run=1;ion_time_of_flight=0;ion_time_step=1;ion_splat=0;ion_instance=1;sim_grouped=0
 ion_px_mm=25.5;ion_py_mm=25.5;ion_pz_mm=1
 ion_vx_mm=0;ion_vy_mm=0;ion_vz_mm=0
 local file=assert(io.open(arg[2],'rb'));local body=file:read('*a');file:close()
 assert(loadstring(body:gsub('adjustable%s+',''),'@'..arg[2]))()
 segment.initialize_run()
-for ion=1,3 do ion_number=ion;segment.initialize();segment.terminate() end
+for ion=1,3 do ion_number=ion;ion_time_of_birth=ion+.5;segment.initialize();segment.terminate() end
 segment.terminate_run()
 """, encoding="utf-8")
             results = {}
             for scenario in ("missing", "valid"):
                 with self.subTest(scenario=scenario):
                     result = subprocess.run(
-                        [str(LUA), str(harness), str(config), str(native_resource_path("dual_cone_gas_assisted_transport.lua")), scenario],
+                        [str(LUA), str(harness), str(config), str(program), scenario],
                         cwd=root, capture_output=True, text=True, timeout=30,
                     )
                     results[scenario] = result
@@ -113,6 +122,14 @@ segment.terminate_run()
                 self.assertEqual([int(row["ion_number"]) for row in csv.DictReader(stream)], [11, 42, 900])
             with (results_dir / "trajectory_samples.csv").open(newline="") as stream:
                 self.assertEqual([int(row["ion_number"]) for row in csv.DictReader(stream)], [11, 11, 42, 42, 900, 900])
+            log = root / "native.log"
+            log.write_text(results["valid"].stdout, encoding="utf-8")
+            evidence = collect_terminal_evidence([log], [dict(
+                native_run="sparse-dual", expected_particle_ids=[11, 42, 900],
+            )], require_v1=True)
+            self.assertEqual(set(evidence), {11, 42, 900})
+            self.assertEqual([evidence[pid]["records"][-1]["instrument_time_us"] for pid in (11, 42, 900)], [1.5, 2.5, 3.5])
+            self.assertTrue(all(item["records"][-1]["ion_run"] == 1 for item in evidence.values()))
 
 
 SDS_HARNESS = r"""local vendor = assert(arg[1])

@@ -150,13 +150,14 @@ class ManagedIndependentStagesTests(unittest.TestCase):
                     stdout += "DUAL_CONE_TRACKING_IOB=PASS\nDUAL_CONE_TRACKING_IOB_REOPEN=PASS\n"
                 elif "fly" in args:
                     from common.simion.test_analyze_terminal_plane import HEADER
+                    from common.contracts.test_dual_cone_transport_execution import terminal_log
 
                     result = run / "transport/results"
                     (result / "particle_final_state.csv").write_text(
                         HEADER + "".join(f"{i},10,25.5,25.5,121.75,0,0,1,0\n" for i in range(1, 101))
                     )
                     (result / "trajectory_samples.csv").write_text("INERT_TRAJECTORY_NOT_NATIVE")
-                    stdout += "status,Fly completed. 100 splats, 0.1 seconds\n"
+                    stdout += "\n".join(terminal_log(range(1, 101), kwargs["run_id"] + ":dual-cone")) + "\nstatus,Fly completed. 100 splats, 0.1 seconds\n"
                     actual = {Path(row["path"]) for row in kwargs["immutable_input_records"]}
                     self.assertTrue(original_family_paths.issubset(actual))
                     self.assertFalse(any(path.is_relative_to(run) for path in original_family_paths))

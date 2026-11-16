@@ -61,22 +61,33 @@ def _snapshot(value, *, wire=False):
 UNITS = {'time': 'us', 'position': 'mm', 'velocity': 'mm/us'}
 
 
-def append_terminal_recorder(program: str, *, recorder_source: str, native_run: str) -> str:
+def append_terminal_recorder(program: str, *, recorder_source: str, native_run: str,
+                             callbacks: Mapping[str, str] | None = None) -> str:
     """Install the common recorder after all scientific and collision hooks.
 
     Public Fly sources use zero native birth and carry their absolute origin in
     the frozen row map. Preserve that existing clock; raw TOB/TOF remain separate.
+    Explicit internal callback expressions let other Programs supply their own
+    existing identities and clocks without changing the recorder or its parser.
     """
     if not isinstance(native_run, str) or not native_run:
         raise ValueError('terminal recorder requires its unit identity')
+    selected = {
+        'particle_id': 'single_flight_canonical_particle_id',
+        'source_origin_us': 'function() return single_flight_time_origin_us[single_flight_source_row_index()] end',
+        'pipeline_clock_us': 'single_flight_instrument_time_us',
+        'instrument_time_us': 'single_flight_instrument_time_us',
+    } if callbacks is None else dict(callbacks)
+    if set(selected) != {'particle_id', 'source_origin_us', 'pipeline_clock_us', 'instrument_time_us'} or any(
+            not isinstance(expression, str) or not expression.strip() for expression in selected.values()):
+        raise ValueError('terminal recorder callback expressions differ')
+    bindings = ',\n'.join('  ' + name + '=' + selected[name] for name in (
+        'particle_id', 'source_origin_us', 'pipeline_clock_us', 'instrument_time_us'))
     return program + '\nlocal public_terminal_recorder=(function()\n' + recorder_source + '''
 end)()
 public_terminal_recorder.install(segment,{
   native_run=''' + json.dumps(native_run, ensure_ascii=True) + ''',
-  particle_id=single_flight_canonical_particle_id,
-  source_origin_us=function() return single_flight_time_origin_us[single_flight_source_row_index()] end,
-  pipeline_clock_us=single_flight_instrument_time_us,
-  instrument_time_us=single_flight_instrument_time_us
+''' + bindings + '''
 })
 '''
 
