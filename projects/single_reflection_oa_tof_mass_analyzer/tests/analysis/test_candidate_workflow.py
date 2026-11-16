@@ -1912,15 +1912,30 @@ print('FROZEN_ION_CONSUMER_PASS')
 
 
     def test_formal_asset_entrypoints_preflight_before_paths_or_runs(self):
-        scripts = [
-            PROJECT_ROOT / "workflows" / "formal_reference" / "verify_geometry_contract.ps1",
-            PROJECT_ROOT / "workflows" / "mass_spectrum_candidate" / "run_mass_spectrum_candidate.ps1",
-        ]
-        for script in scripts:
-            text = script.read_text(encoding="utf-8")
-            preflight = text.index("Assert-OaTofFormalAssetsReadable")
-            first_asset = min(index for index in (text.find("formal\\"), text.find("New-Item -ItemType Directory")) if index >= 0)
-            self.assertLess(preflight, first_asset, script.name)
+        script = PROJECT_ROOT / "workflows" / "formal_reference" / "verify_geometry_contract.ps1"
+        text = script.read_text(encoding="utf-8")
+        preflight = text.index("Assert-OaTofFormalAssetsReadable")
+        first_asset = min(index for index in (text.find("formal\\"), text.find("New-Item -ItemType Directory")) if index >= 0)
+        self.assertLess(preflight, first_asset, script.name)
+
+        from msplatform.workflows import single_reflection_mass_spectrum_study as mass_study
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            paths = {name: root / (name + ".json") for name in (
+                "mode_config", "resolved_geometry", "particle_count_policy", "formal_mph",
+                "formal_asset_manifest", "comsol_task", "simion_executable", "project_config",
+                "formal_assets", "baseline", "formal_mode", "solver_numerics")}
+            paths["artifact_project_root"] = root / "artifacts"
+            for path in paths.values():
+                if path.suffix == ".json":
+                    path.write_text("{}")
+            with mock.patch.object(mass_study, "validate_formal_inputs",
+                                   side_effect=ValueError("FORMAL_REVALIDATION_REQUIRED")) as preflight, \
+                    mock.patch.object(mass_study, "run_managed_stage") as owner:
+                with self.assertRaisesRegex(ValueError, "FORMAL_REVALIDATION_REQUIRED"):
+                    mass_study.run(object(), run_id="20261117_000000__sim__cross__mass-preflight", **paths)
+            preflight.assert_called_once()
+            owner.assert_not_called()
 
         formal_cli = (
             PROJECT_ROOT
