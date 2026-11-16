@@ -64,9 +64,17 @@ local function set_electrode_voltage(id, voltage)
   adj_elect[id] = voltage
 end
 
+local function output_particle_id()
+  if config.source_particle_ids == nil then return ion_number end
+  local particle_id = config.source_particle_ids[ion_number]
+  assert(type(particle_id) == 'number' and particle_id > 0 and particle_id % 1 == 0,
+    'dual-cone source particle ID mapping is missing or invalid for ion ' .. tostring(ion_number))
+  return particle_id
+end
+
 local function emit_sample()
   trajectory_stream:write(string.format('%d,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g\n',
-    ion_number, ion_time_of_flight, ion_px_mm, ion_py_mm, ion_pz_mm,
+    output_particle_id(), ion_time_of_flight, ion_px_mm, ion_py_mm, ion_pz_mm,
     ion_vx_mm, ion_vy_mm, ion_vz_mm))
 end
 
@@ -138,7 +146,7 @@ local function emit_final(code)
   terminal_code[ion_number] = code or terminal_code[ion_number] or 0
   emit_sample()
   final_stream:write(string.format('%d,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%d\n',
-    ion_number, ion_time_of_flight, ion_px_mm, ion_py_mm, ion_pz_mm,
+    output_particle_id(), ion_time_of_flight, ion_px_mm, ion_py_mm, ion_pz_mm,
     ion_vx_mm, ion_vy_mm, ion_vz_mm, terminal_code[ion_number]))
   trajectory_stream:flush()
   final_stream:flush()

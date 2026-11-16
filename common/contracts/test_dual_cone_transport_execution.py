@@ -238,16 +238,17 @@ class TrackingBoundaryTests(unittest.TestCase):
         from msplatform.backends.simion.dual_cone_transport_execution import track_transport
         from common.simion.test_analyze_terminal_plane import HEADER
 
-        for scenario in ("valid", "unknown_writer", "missing_completion", "wrong_count", "missing_identity"):
+        for scenario in ("valid", "unknown_writer", "missing_completion", "wrong_count", "missing_identity", "sparse_valid", "id_mismatch"):
             with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 iob = root / "owned.iob"
                 iob.write_text("INERT_WORKBENCH_NOT_NATIVE")
                 final = root / "final.csv"
+                sparse = scenario in {"sparse_valid", "id_mismatch"}
                 final.write_text(
                     HEADER
-                    + "1,10,25.5,25.5,121.75,0,0,1,0\n"
-                    + ("" if scenario == "missing_identity" else "2,11,25.5,25.5,121.75,0,0,1,3\n")
+                    + ("7" if sparse else "1") + ",10,25.5,25.5,121.75,0,0,1,0\n"
+                    + ("" if scenario == "missing_identity" else ("101" if sparse else "2") + ",11,25.5,25.5,121.75,0,0,1,3\n")
                 )
                 calls = []
                 session = SimpleNamespace(
@@ -283,8 +284,9 @@ class TrackingBoundaryTests(unittest.TestCase):
                     limits={"explicit_fixture": 1},
                     final_state=final,
                     immutable_input_records=[file_record(iob, "required_evidence")],
+                    **({"source_particle_ids": [7, 102] if scenario == "id_mismatch" else [7, 101]} if sparse else {}),
                 )
-                if scenario == "valid":
+                if scenario in {"valid", "sparse_valid"}:
                     metrics, transmitted = track_transport(session, **arguments)
                     self.assertEqual(metrics["terminal_code_counts"], {"0": 1, "3": 1})
                     self.assertEqual(transmitted, [])

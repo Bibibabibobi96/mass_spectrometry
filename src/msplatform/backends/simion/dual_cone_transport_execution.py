@@ -203,6 +203,7 @@ def track_transport(
     run_config,
     numerics,
     source_count,
+    source_particle_ids=None,
     limits,
     final_state,
     immutable_input_records,
@@ -213,7 +214,6 @@ def track_transport(
     from pathlib import Path
     from .native_completion import require_one_fly_completion
     from .native_io import apply_native_io_mode
-    from msplatform.analysis.terminal_plane import analyze_terminal_plane
     from msplatform.contracts.rigid_transform import RigidTransform
 
     workbench = Path(workbench)
@@ -264,14 +264,57 @@ def track_transport(
     if completion.splats != source_count:
         raise ValueError("native Fly completion count differs from the complete declared source")
     offsets = numerics["workbench"]["coordinate_mapping"]["device_to_workbench_offset_mm"]
-    return analyze_terminal_plane(
+    return _analyze_original_particle_identities(
         Path(final_state),
         source_count=source_count,
-        pass_code=1,
+        source_particle_ids=source_particle_ids,
         axis_center_x_mm=offsets["x"] if placement is None else 0.,
         axis_center_y_mm=offsets["y"] if placement is None else 0.,
         **({"position_transform": RigidTransform.from_contract(placement).inverse()} if placement is not None else {}),
     )
+
+
+def _analyze_original_particle_identities(
+    final_state, *, source_count, source_particle_ids, axis_center_x_mm, axis_center_y_mm, position_transform=None
+):
+    """Verify the original census and retain its IDs through the shared analysis."""
+    from msplatform.analysis.terminal_plane import analyze_terminal_plane
+
+    arguments = dict(
+        source_count=source_count,
+        pass_code=1,
+        axis_center_x_mm=axis_center_x_mm,
+        axis_center_y_mm=axis_center_y_mm,
+        **({} if position_transform is None else {"position_transform": position_transform}),
+    )
+    if source_particle_ids is None:
+        return analyze_terminal_plane(final_state, **arguments)
+    if (
+        len(source_particle_ids) != source_count
+        or any(type(particle_id) is not int or particle_id < 1 for particle_id in source_particle_ids)
+        or len(set(source_particle_ids)) != source_count
+    ):
+        raise ValueError("declared source particle identities are incomplete or duplicated")
+    import csv
+    import tempfile
+    from pathlib import Path
+
+    with final_state.open(encoding="utf-8-sig", newline="") as stream:
+        reader = csv.DictReader(stream)
+        fieldnames = reader.fieldnames
+        rows = list(reader)
+    actual_ids = [int(row["ion_number"]) for row in rows]
+    if len(rows) != source_count or sorted(actual_ids) != sorted(source_particle_ids):
+        raise ValueError("SIMION final-state particle identities differ from the original source cohort")
+    with tempfile.TemporaryDirectory() as directory:
+        analysis_input = Path(directory) / "particle_final_state.csv"
+        with analysis_input.open("w", encoding="utf-8", newline="") as stream:
+            writer = csv.DictWriter(stream, fieldnames=fieldnames, lineterminator="\n")
+            writer.writeheader()
+            for native_id, row in enumerate(rows, 1):
+                writer.writerow(dict(row, ion_number=native_id))
+        metrics, _ = analyze_terminal_plane(analysis_input, **arguments)
+    return metrics, [row for row in rows if int(row["splat"]) == 1]
 
 
 def _prepare_execution_inputs(session, *, request, selected_plan=None, model_projection=None):
@@ -603,6 +646,9 @@ def _fly_and_collect_transport(
 
     final_state = session.declare_file(prepared / "results/particle_final_state.csv", "required_evidence")
     session.declare_file(prepared / "results/trajectory_samples.csv", "dense_trajectory")
+    import csv
+    with (prepared / "input/cylindrical_ion_source.csv").open(encoding="utf-8", newline="") as stream:
+        source_particle_ids = [int(row["particle_id"]) for row in csv.DictReader(stream)]
     metrics, _transmitted = track_transport(
         session,
         workbench=iob,
@@ -610,6 +656,7 @@ def _fly_and_collect_transport(
         run_config=solver / "run_config.lua",
         numerics=values["numerics"],
         source_count=plan["source_count"],
+        source_particle_ids=source_particle_ids,
         limits=limits,
         allow_asynchronous_io=allow_asynchronous_io,
         final_state=final_state,

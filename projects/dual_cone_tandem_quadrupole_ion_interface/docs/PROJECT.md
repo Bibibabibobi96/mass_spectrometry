@@ -1,5 +1,25 @@
 # 双锥串联四极杆离子传输接口项目状态
 
+## Original source particle identity
+
+Generated run configurations now carry the ordered native-ion to original-source
+particle-ID map. The actual Program uses that map only when writing trajectory
+and final-state CSV identity columns; callback bookkeeping and terminal/recovery
+behavior remain keyed by native `ion_number`. Collection requires the final
+census to equal the exact original ID set, so sparse IDs are accepted and a
+missing, extra, duplicate or substituted identity fails closed. The unchanged
+shared terminal analyzer receives a temporary contiguous analysis projection;
+the published final-state and returned transmitted rows retain original IDs.
+
+The two focused transport/execution modules passed 21 tests in 32.965 seconds,
+including actual plain-Lua sparse IDs `[11,42,900]` and missing-map rejection,
+plus collection acceptance of `[7,101]` and mismatch rejection. Sixteen adjacent
+placement, managed-stage and IOB tests also passed; two native-guard methods
+require the public GATE resource-state environment and were not valid in a
+direct unittest invocation. Scoped Ruff and diff checks passed. These are
+software wiring and inert collection checks only: no native SIMION Fly, gas
+physics change, stochastic equivalence or scientific qualification is claimed.
+
 ## Program-owned state at repeated run initialization
 
 Plain-Lua execution of the actual Program reproduced a lifecycle defect: loading

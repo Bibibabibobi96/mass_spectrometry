@@ -51,6 +51,70 @@ class MismatchTests(unittest.TestCase):
                     source_spec_path=config/"cylindrical_ion_source.json")
 
 
+class OriginalParticleIdentityTests(unittest.TestCase):
+    def test_actual_program_preserves_sparse_ids_and_rejects_missing_mapping(self):
+        from common.contracts.test_dual_cone_transport_execution import LUA, request
+        from msplatform.backends.simion.dual_cone_transport import _render_run_config
+        from msplatform.backends.simion.resources import native_resource_path
+
+        if not LUA.is_file():
+            self.skipTest("standalone Lua 5.1 required for actual Program consumer; no native fallback")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            solver = root / "prepared/solver/simion"
+            solver.mkdir(parents=True)
+            (solver.parents[1] / "results").mkdir()
+            (solver / "simion_rf_drive.lua").write_bytes(native_resource_path("rf_drive.lua").read_bytes())
+            values = request()
+            config = root / "run.lua"
+            config.write_text(_render_run_config(
+                mode="c0_gem_smoke", science=values["science"], numerics=values["numerics"],
+                resolved=values["resolved"], solver=solver, source_particle_ids=[11, 42, 900],
+            ), encoding="utf-8")
+            harness = root / "harness.lua"
+            harness.write_text(r"""local config_path=arg[1]
+local original_loadfile=loadfile
+loadfile=function(path)
+ if path==config_path then
+  return function()
+   local config=assert(original_loadfile(path))()
+   if arg[3]=='missing' then config.source_particle_ids[3]=nil end
+   return config
+  end
+ end
+ return original_loadfile(path)
+end
+simion={workbench_program=function()end};segment={};seed=function()end;adj_elect={}
+os.getenv=function()return config_path end
+ion_time_of_flight=0;ion_time_step=1;ion_splat=0
+ion_px_mm=25.5;ion_py_mm=25.5;ion_pz_mm=1
+ion_vx_mm=0;ion_vy_mm=0;ion_vz_mm=0
+local file=assert(io.open(arg[2],'rb'));local body=file:read('*a');file:close()
+assert(loadstring(body:gsub('adjustable%s+',''),'@'..arg[2]))()
+segment.initialize_run()
+for ion=1,3 do ion_number=ion;segment.initialize();segment.terminate() end
+segment.terminate_run()
+""", encoding="utf-8")
+            results = {}
+            for scenario in ("missing", "valid"):
+                with self.subTest(scenario=scenario):
+                    result = subprocess.run(
+                        [str(LUA), str(harness), str(config), str(native_resource_path("dual_cone_gas_assisted_transport.lua")), scenario],
+                        cwd=root, capture_output=True, text=True, timeout=30,
+                    )
+                    results[scenario] = result
+                    if scenario == "missing":
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertIn("source particle ID", result.stdout + result.stderr)
+            self.assertEqual(results["valid"].returncode, 0, results["valid"].stdout + results["valid"].stderr)
+            results_dir = solver.parents[1] / "results"
+            import csv
+            with (results_dir / "particle_final_state.csv").open(newline="") as stream:
+                self.assertEqual([int(row["ion_number"]) for row in csv.DictReader(stream)], [11, 42, 900])
+            with (results_dir / "trajectory_samples.csv").open(newline="") as stream:
+                self.assertEqual([int(row["ion_number"]) for row in csv.DictReader(stream)], [11, 11, 42, 42, 900, 900])
+
+
 SDS_HARNESS = r"""local vendor = assert(arg[1])
 local function load_official(path, ...)
  local f=assert(io.open(path,'rb'));local text=f:read('*a');f:close()

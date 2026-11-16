@@ -162,6 +162,7 @@ def _render_run_config(
     model_projection=None,
     placement=None,
     gas_runtime_metadata=None,
+    source_particle_ids=None,
 ) -> str:
     def stage_record(name: str) -> str:
         stage = science["electric_field"][name]
@@ -213,6 +214,9 @@ def _render_run_config(
             f"  rf_drive_kernel={_lua_string(solver / 'simion_rf_drive.lua')},",
             f"  collision_sds_lua={_lua_string(collision_lua)},",
             f"  gas_field_lua={_lua_string(gas_lua)},",
+            *([] if source_particle_ids is None else [
+                "  source_particle_ids=" + lua_value(source_particle_ids) + ",",
+            ]),
             *([] if mode != "gas_assisted_transport" else [
                 f"  collision_sds_binding_lua={_lua_string(solver / 'collision_sds_binding.lua')},",
                 f"  gas_field_frame_id={_lua_string(gas_runtime_metadata['coordinate_frame']['frame_id'])},",
@@ -600,6 +604,11 @@ def prepare_transport(
         inputs["particle_fly2"] = {"path": str(source_fly2), "sha256": file_sha256(source_fly2)}
         inputs["source_states"] = {"path": str(source_states), "sha256": file_sha256(source_states)}
 
+    source_particle_ids = [1]
+    if mode == "gas_assisted_transport":
+        with (frozen / "cylindrical_ion_source.csv").open(encoding="utf-8", newline="") as stream:
+            source_particle_ids = [int(row["particle_id"]) for row in csv.DictReader(stream)]
+
     run_config = solver / "run_config.lua"
     run_config.write_text(
         _render_run_config(
@@ -611,6 +620,7 @@ def prepare_transport(
             model_projection=model_projection,
             placement=placement,
             gas_runtime_metadata=manifest if mode == "gas_assisted_transport" else None,
+            source_particle_ids=source_particle_ids,
         ),
         encoding="utf-8",
     )
