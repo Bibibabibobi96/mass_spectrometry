@@ -37,8 +37,13 @@ class CanonicalFreeAssemblyTests(unittest.TestCase):
         snap=dict(composition_plan=overlap.composition_plan,components_resolved=overlap.components_resolved,components_source=overlap.components_source)
         self.assertEqual(len(list(assembly_geometry_members(snap))),64)
         _,nums=compile_case(*make_assembly())
-        with self.assertRaisesRegex(ValueError,'bounding boxes overlap'):
-            compile_geometry(overlap,numerics=nums)
+        import importlib.util
+        if importlib.util.find_spec('cadquery') is None:
+            with self.assertRaisesRegex(RuntimeError,'optional cad-step'):
+                compile_geometry(overlap,numerics=nums)
+        else:
+            with self.assertRaisesRegex(ValueError,'independent conductor solids overlap'):
+                compile_geometry(overlap,numerics=nums)
 
     def test_canonical_drive_model_coverage(self):
         from msplatform.components.rf_multipole.drive import scientific_multipole_drive

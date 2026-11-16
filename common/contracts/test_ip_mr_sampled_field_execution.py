@@ -214,7 +214,7 @@ class SampledFieldExecutionTests(unittest.TestCase):
                               wraps=tracking_admission._verify_original_collision_producer) as verify_producer:
                 admission=admit_ip_mr_tracking_fields(reused.reference)
             self.assertEqual(verify_producer.call_count,1)
-            self.assertEqual(len(collision_reads),3)
+            self.assertEqual(len(collision_reads),2)
             original_small=tracking_admission._small_product
             def mutated_reader(reference,kind,names):
                 owner,product,path=original_small(reference,kind,names)

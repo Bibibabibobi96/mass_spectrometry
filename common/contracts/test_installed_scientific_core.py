@@ -7639,7 +7639,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             sfi_consumer_bytes = sfi_consumer_source.read_bytes()
             shutil.copyfile(sfi_consumer_source, root / 'installed_sfi_consumer_probe.py')
             self.assertEqual((root / 'installed_sfi_consumer_probe.py').read_bytes(), sfi_consumer_bytes)
-            for name in ('installed_sfi_scalar_probe.py', 'sfi_scalar_owner_fixture.py'):
+            for name in ('installed_sfi_scalar_probe.py', 'sfi_scalar_owner_fixture.py', 'terminal_evidence_fixture.py'):
                 helper_source = source / 'common/contracts/test_support' / name
                 shutil.copyfile(helper_source, root / name)
                 self.assertEqual((root / name).read_bytes(), helper_source.read_bytes())
@@ -7749,6 +7749,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                     'common/contracts/test_support/installed_rf_continuation_probe.py',
                     'common/contracts/test_support/installed_sfi_scalar_probe.py',
                     'common/contracts/test_support/sfi_scalar_owner_fixture.py',
+                    'common/contracts/test_support/terminal_evidence_fixture.py',
                     'common/contracts/test_sfi_scalar_binding.py',
                     'common/contracts/test_simion_tracking_execution.py',
                     'integrations/tests/test_single_reflection_preparation.py',

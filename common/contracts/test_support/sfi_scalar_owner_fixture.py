@@ -229,9 +229,10 @@ def inert_native_leaf(actual_process, observed):
             # Read the 100-row fixture inside the inert child; embedding all
             # trace rows in -c exceeds Windows' command-line length limit.
             source_path = working / "inputs/canonical_source_states.json"
-            from common.contracts.test_support.terminal_evidence_fixture import native_run_from_program, inert_wire_source
-            token=native_run_from_program(working/"simion/tracking/instrument.lua")
-            code = inert_wire_source()+"native_run="+repr(token)+"\n"+"""import json,sys
+            import runpy
+            terminal_helpers = runpy.run_path(str(Path(__file__).with_name("terminal_evidence_fixture.py")))
+            token = terminal_helpers["native_run_from_program"](working / "simion/tracking/instrument.lua")
+            code = terminal_helpers["inert_wire_source"]() + "native_run=" + repr(token) + "\n" + """import json,sys
 source=json.load(open(sys.argv[1],encoding='utf-8'))
 for index,row in enumerate(source,1):
     pid,t=row['particle_id'],row['instrument_time_us']

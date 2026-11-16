@@ -71,7 +71,7 @@ def exercise_published_ip_mr_tracking(test, fields, context, tmp):
       program=(run/'simion/tracking/instrument.lua').read_text(encoding='utf8').replace('adjustable ','')
       suffix=['segment.initialize_run()']
       for i,row in enumerate(rows,1):
-       suffix.append('ion_number=%d;ion_instance=1;ion_time_of_flight=0;ion_splat=0;ion_mass=%.17g;ion_charge=%.17g'%(i,row['mass_amu'],row['charge_state']))
+       suffix.append('ion_number=%d;ion_instance=1;ion_run=1;ion_time_of_birth=0;ion_time_of_flight=0;ion_splat=0;ion_mass=%.17g;ion_charge=%.17g'%(i,row['mass_amu'],row['charge_state']))
        suffix.append(';'.join('ion_p%s_mm=%.17g'%(x,row['position_'+x+'_mm']) for x in 'xyz'))
        suffix.append(';'.join('ion_v%s_mm=%.17g'%(x,row['velocity_'+x+'_m_s']/1000) for x in 'xyz'))
        suffix.append('segment.initialize();ion_time_of_flight=.1;ion_splat=nil;segment.terminate()')
