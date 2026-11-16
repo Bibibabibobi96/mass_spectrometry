@@ -13,7 +13,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from integrations.tests.test_ip_compiler import IpCompilerTests
+from integrations.tests import test_ip_compiler as ip_fixture
 from msplatform.backends.simion import operations
 from msplatform.backends.simion.electrode_contract import scientific_multipole_drive
 from msplatform.backends.simion.model import RF_IP_PHYSICS, compile_prepared_model, require_prepared_model
@@ -25,7 +25,7 @@ ROOT=Path(__file__).resolve().parents[2]
 
 class JointIpModelTests(unittest.TestCase):
     def setUp(self):
-        fixture=IpCompilerTests();fixture.setUp()
+        fixture=ip_fixture.IpCompilerTests();fixture.setUp()
         self.compiled=operations.compile_geometry(fixture.assembly,numerics=fixture.numerics)
         self.baseline=fixture.assembly.components_source['ion_processor']['baseline']
         self.point=json.loads((ROOT/'projects/dual_pressure_rectilinear_ion_processor/config/native_operating_point.json').read_text(encoding='utf-8'))

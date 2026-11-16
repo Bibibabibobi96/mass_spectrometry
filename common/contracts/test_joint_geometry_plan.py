@@ -7,7 +7,7 @@ import tempfile
 from types import SimpleNamespace
 from pathlib import Path
 
-from integrations.tests.test_ip_compiler import IpCompilerTests
+from integrations.tests import test_ip_compiler as ip_fixture
 from msplatform.backends.simion import operations
 from msplatform.backends.simion.native_plans import plan_geometry_build
 from msplatform.backends.simion.resources import STRUCTURAL_SEEDS
@@ -15,7 +15,7 @@ from msplatform.backends.simion.resources import STRUCTURAL_SEEDS
 
 class JointGeometryPlanTests(unittest.TestCase):
     def setUp(self):
-        fixture = IpCompilerTests()
+        fixture = ip_fixture.IpCompilerTests()
         fixture.setUp()
         self.fixture = fixture
         self.compiled = operations.compile_geometry(fixture.assembly, numerics=fixture.numerics)

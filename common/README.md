@@ -712,6 +712,13 @@ setuptools65.5.0/wheel0.38.4与已核对离线依赖；原wheel和sdist重建whe
 
 ## 门禁编排
 
+Fixture-only imports in four consumer modules now use qualified module names.
+Across those consumers and their two original owners, discovery retains all
+40 unique test IDs and every consumer-owned case while collecting 40 executions
+instead of 90. The original owners retain their catalog routes. This removes
+duplicate collection; it has no isolated wall-time measurement and does not
+establish the fifteen-minute Repository target.
+
 公开门禁先解析本次 Python，内部阶段先校验冻结请求，再用该解释器加载主机资源上下文；
 调用结束恢复原 `SIMULATION_PYTHON_EXE`。旧环境值不能覆盖显式解释器或使只读规划提前失败。
 

@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from common.contracts import test_neutral_ip_primitives as ip_fixture
 from common.contracts.test_ip_mr_tracking_producer_admission import retained_on_failure
-from common.contracts.test_sfi_scalar_binding import SfiScalarAdmissionTests, SOLUTION
+from common.contracts import test_sfi_scalar_binding as scalar_fixture
 from common.contracts.test_support.sfi_scalar_owner_fixture import make_context, publish_fixture
 from common.contracts.test_support.generic_scalar_owner_harness import make_inert
 from msplatform.backends.comsol.assembly_geometry import project_assembly_geometry
@@ -45,18 +45,18 @@ class CanonicalNeutralScheduleManagedTests(unittest.TestCase):
     policy['stages'][stage]['limits']['compact_final_retained_bytes']=536870912
    policy['stages']['solve_fields']['limits']['reserved_run_payload_bytes']=268435456
    context.stage_policy_path.write_text(json.dumps(policy),encoding='utf8')
-   fixture=SfiScalarAdmissionTests(methodName='runTest');fixture.projection=projection;fixture.snapshot=snapshot
+   fixture=scalar_fixture.SfiScalarAdmissionTests(methodName='runTest');fixture.projection=projection;fixture.snapshot=snapshot
    fixture.publish=lambda name,kind,data,metadata,inputs=None,linked=None:publish_fixture(context,budget,retention,name=name,kind=kind,data=data,metadata=metadata,inputs=inputs,linked=linked)
    geometry=fixture.make_geometry();samples={};window_samples={};operator=dict(relative_permittivity=1.,exterior={'kind':'potential','voltage_v':0.},mesh={'global_automatic_level':9,'electrode_hmax_mm':5.},study={'kind':'stationary'})
    grid=dict(frame_id=frame,origin_mm=[-12.,-400.,-9.],pitch_mm=[4.,100.,6.],dimensions=[5,5,5],block_points=125,study_tag='std1',solution_tag='sol1',dataset_tag='dset1',point_count=125,maximum_mm=[4.,0.,15.],coordinate_sanity_mm=1e-6)
    header=PaHeader(-2,1,10000.,5,5,5,1<<28,4.,100.,6.).pack();zero=header+bytes(1000);valid=header+struct.pack('<125d',*([1.]*125))
    for index,key in enumerate(groups):
     request=validate_request(projection,dict(group_voltages=[dict(instance_id=i,electrode_group_id=k,voltage_v=float((i,k)==key)) for i,k in groups],**operator))
-    data=dict(projection=projection,request=request,geometry_validation={'position_mm':1e-6},reopen_geometry={'vacuum_domains':[1]},reopen_solution={'solution':SOLUTION},model=b'inert fixture model')
-    solution_ref=fixture.publish('ip-solution-'+str(index),'field_solution',data,dict(backend='comsol',scope='single_stationary_workpoint',field_status='solved',native_reopen_verified=True,solution=SOLUTION))
+    data=dict(projection=projection,request=request,geometry_validation={'position_mm':1e-6},reopen_geometry={'vacuum_domains':[1]},reopen_solution={'solution':scalar_fixture.SOLUTION},model=b'inert fixture model')
+    solution_ref=fixture.publish('ip-solution-'+str(index),'field_solution',data,dict(backend='comsol',scope='single_stationary_workpoint',field_status='solved',native_reopen_verified=True,solution=scalar_fixture.SOLUTION))
     source=open_artifact(solution_ref,expected_kind='field_solution')
-    report=dict(status='success',scope='assembly_world_scalar_samples',field_qualification=False,compute_calls=0,filled_conductor_count=0,coordinate_mapping='world_identity',model_path=str(source.data_path('model')),vacuum_domains=[1],fem_valid=125,invalid_count=0,solution_readback=SOLUTION,coordinate_witness={'status':'insufficient','index':0,'requested_mm':[],'actual_mm':[],'geometry_length_unit':'mm'},**grid)
-    sample_data=dict(projection=projection,grid=grid,request=request,reopen_solution={'solution':SOLUTION},geometry_validation={'position_mm':1e-6},reopen_geometry={'vacuum_domains':[1]},report=report,field_v=zero,field_valid=valid)
+    report=dict(status='success',scope='assembly_world_scalar_samples',field_qualification=False,compute_calls=0,filled_conductor_count=0,coordinate_mapping='world_identity',model_path=str(source.data_path('model')),vacuum_domains=[1],fem_valid=125,invalid_count=0,solution_readback=scalar_fixture.SOLUTION,coordinate_witness={'status':'insufficient','index':0,'requested_mm':[],'actual_mm':[],'geometry_length_unit':'mm'},**grid)
+    sample_data=dict(projection=projection,grid=grid,request=request,reopen_solution={'solution':scalar_fixture.SOLUTION},geometry_validation={'position_mm':1e-6},reopen_geometry={'vacuum_domains':[1]},report=report,field_v=zero,field_valid=valid)
     ref=fixture.publish('ip-sample-'+str(index),'scalar_field_samples',sample_data,dict(backend='comsol',scope='assembly_world_scalar_samples',field_status='sampled',frame_id=frame),linked={'field_solution_manifest':solution_ref['manifest'],'field_solution_model':source.data_records['model']})
     samples[str(index)]=dict(reference=ref,request=request,weights=[dict(instance_id=i,electrode_group_id=k,weight=float((i,k)==key)) for i,k in groups])
     # A separately sampled window extends beyond base x=4 into the same collision world.
