@@ -1698,8 +1698,30 @@ the public native owner in
 15 scientific groups, 394 canonical primitive terms, 81×1916×81 grid and actual
 metal/void witnesses. Three native operations exited zero and released their
 leases. This includes no Refine, field solve, Fly or GUI qualification. The
-RF–IP–MR continuous attempt remains open while its regional response exports
-are prepared; the original invalid scalar node and failed run remain evidence.
+RF–IP–MR continuous acceptance remains open. All seventeen regional responses
+are published and their bounded preflight passed; the original invalid scalar
+node and failed run remain evidence, and no whole-trajectory coverage is inferred.
+
+The later `2c91a701` public native model owner reused that complete geometry in
+[run 06c1d84b5f92](../../../artifacts/projects/instrument_assembly/runs/20261116_081615__build__simion__model-06c1d84b5f92/run_manifest.json).
+Materialization, model build and verification exited zero and released their
+leases. The frozen schedule resource, actual baseline, operating point, clock
+and 15 scientific/native group bindings matched. Native readback contains 75
+finite voltages at 0, 1500, 6000, 7500 and 7500.135135135135 µs; it does not sample
+the 7520 µs terminal time or independently establish every possible voltage.
+Sampled peak working set was 128,778,240 bytes and the run-directory peak was
+106,847,321 bytes, without warnings. All 3,086 source records were unchanged.
+This is an unsolved native model: no geometry rebuild, Refine, Compute, Fly or
+GUI validation was performed. Multi-IP native propagation remains unverified.
+
+The V18 original ordinary installation parent, at `4838d59b` plus its two recorded
+probe afterimages, passed both direct wheel and rebuilt-sdist consumers in
+1501.052 seconds (1502.875 guarded wall). Both isolated arms exercised canonical
+neutral IP geometry, all 15 scheduled groups, complete scalar span and generated
+Lua using API doubles, plus missing-resource refusal and existing generic RF/pulse
+consumers. All 3,084 source files were unchanged and the GATE was released.
+This is not the later multi-IP candidate's installation proof, native flight,
+full Repository acceptance or an isolated 15-minute performance result.
 
 On frozen `4438170a`, the public `load_recorded_release` and SIMION `track`
 stages completed the original 100-birth SFI attempt in
