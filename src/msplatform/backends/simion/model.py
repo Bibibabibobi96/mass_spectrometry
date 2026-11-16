@@ -354,20 +354,8 @@ def _compile_static_world_published_model(compiled, components, *, drive, physic
     return _finish_static_world_model(compiled, components, drive=drive, physics=physics)
 
 
-def _finish_static_world_model(compiled, components, *, drive, physics):
-    geometry = compiled.frontend_geometry
-    if components != geometry['source_snapshot']['components_resolved']:
-        raise ValueError('static world model providers differ from the source snapshot')
-    if not isinstance(physics, Mapping) or dict(physics) != RF_PHYSICS:
-        raise ValueError('static world model requires linear zero-Neumann physics')
-    if not isinstance(drive, Mapping) or not {'groups','clock'} <= set(drive) or set(drive)-{'groups','clock','pulse','ip_schedule','ip_schedules'}:
-        raise ValueError('world model drive requires explicit groups and clock')
-    if not isinstance(drive['groups'], Mapping): raise ValueError('world model groups must be a mapping')
-    rows_all = [row for group in drive['groups'].values() if isinstance(group, Mapping) for row in group.values()]
-    dynamic = any(isinstance(row, Mapping) and row.get('kind') in {'rf','pulse','ip_schedule'} for row in rows_all)
-    has_pulse = any(isinstance(row, Mapping) and row.get('kind') == 'pulse' for row in rows_all)
-    scheduled = {instance for instance, group in drive['groups'].items() if isinstance(group, Mapping)
-                 and any(isinstance(row, Mapping) and row.get('kind') == 'ip_schedule' for row in group.values())}
+def resolve_ip_schedule_authorities(drive, scheduled):
+    """Resolve the declared schedule form against actual scheduled instances."""
     single = 'ip_schedule' in drive
     multiple = 'ip_schedules' in drive
     if single and multiple:
@@ -384,6 +372,26 @@ def _finish_static_world_model(compiled, components, *, drive, physics):
         raise ValueError('explicit canonical IP schedule authority required')
     else:
         authorities = {}
+    return authorities
+
+
+def _finish_static_world_model(compiled, components, *, drive, physics):
+    geometry = compiled.frontend_geometry
+    if components != geometry['source_snapshot']['components_resolved']:
+        raise ValueError('static world model providers differ from the source snapshot')
+    if not isinstance(physics, Mapping) or dict(physics) != RF_PHYSICS:
+        raise ValueError('static world model requires linear zero-Neumann physics')
+    if not isinstance(drive, Mapping) or not {'groups','clock'} <= set(drive) or set(drive)-{'groups','clock','pulse','ip_schedule','ip_schedules'}:
+        raise ValueError('world model drive requires explicit groups and clock')
+    if not isinstance(drive['groups'], Mapping): raise ValueError('world model groups must be a mapping')
+    rows_all = [row for group in drive['groups'].values() if isinstance(group, Mapping) for row in group.values()]
+    dynamic = any(isinstance(row, Mapping) and row.get('kind') in {'rf','pulse','ip_schedule'} for row in rows_all)
+    has_pulse = any(isinstance(row, Mapping) and row.get('kind') == 'pulse' for row in rows_all)
+    scheduled = {instance for instance, group in drive['groups'].items() if isinstance(group, Mapping)
+                 and any(isinstance(row, Mapping) and row.get('kind') == 'ip_schedule' for row in group.values())}
+    single = 'ip_schedule' in drive
+    multiple = 'ip_schedules' in drive
+    authorities = resolve_ip_schedule_authorities(drive, scheduled)
     frozen_schedules = {}
     for ip, schedule in authorities.items():
         schedule_input = copy.deepcopy(schedule)

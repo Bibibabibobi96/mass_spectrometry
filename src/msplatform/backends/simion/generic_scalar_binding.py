@@ -6,7 +6,7 @@ import math
 from collections.abc import Mapping
 from msplatform.backends.comsol.assembly_geometry import project_assembly_geometry
 from msplatform.backends.comsol.assembly_electrostatic_model import validate_request
-from msplatform.backends.simion.model import _validate_timing
+from msplatform.backends.simion.model import _validate_timing, resolve_ip_schedule_authorities
 from msplatform.backends.simion.scalar_sample_binding import (
     _read,
     _small_product,
@@ -79,12 +79,10 @@ def compile_linear_terms(projection, drive, samples):
     scheduled = [(i, g) for i, values in groups.items() for g, row in values.items()
                  if row["kind"] == "ip_schedule"]
     scheduled_instances = {instance for instance, _ in scheduled}
-    single, multiple = "ip_schedule" in drive, "ip_schedules" in drive
-    if (single and multiple or single and len(scheduled_instances) != 1
-            or multiple and (not isinstance(drive["ip_schedules"], Mapping)
-                             or set(drive["ip_schedules"]) != scheduled_instances or not scheduled_instances)
-            or bool(scheduled_instances) != (single or multiple)):
-        raise ValueError("canonical IP schedule authority required")
+    try:
+        resolve_ip_schedule_authorities(drive, scheduled_instances)
+    except ValueError as exc:
+        raise ValueError("canonical IP schedule authority required") from exc
     pulse = any(
         row["kind"] == "pulse" for values in groups.values() for row in values.values()
     )

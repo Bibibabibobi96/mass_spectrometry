@@ -99,6 +99,15 @@ managed HS1 and grouping tests passed (three parents, 319.844 s), with sparse ID
 7/91, a window beyond the base grid, undersized outer-gas refusal, failed-child
 evidence and lease cleanup. The inert fixture now follows the requested grouping
 mode; the production terminal collector's grouping checks are unchanged.
+Single-IP neutral HS1 preparation resolves both `ip_schedule` and instance-keyed
+`ip_schedules` through the same authority resolver used by model and scalar-field
+admission. Both forms retain the common clock, physical schedule groups and gas
+coverage checks; they produce the same effective bath and outer-gas runtime.
+The public inert-owner regression covers both forms, sparse original IDs and
+failure handling. Multi-IP scheduled models remain supported, while this HS1
+adapter explicitly requires one selected IP placement before the tracking
+owner starts. This is software coverage, not multi-bath or native qualification.
+
 Neutral sampled models also accept instance-keyed `ip_schedules`, validated
 against each complete canonical IP and the common clock. The existing keyed
 basis span, model-drive evaluator and timestep caps consume each instance's

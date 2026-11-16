@@ -5,7 +5,7 @@ from typing import Any
 from msplatform.contracts.gas import BoxDomain, GasFieldSpec
 from msplatform.contracts.rigid_transform import RigidTransform
 from .artifacts import NativeStagePlan, CompiledPreparedModel
-from .model import model_geometry
+from .model import model_geometry, resolve_ip_schedule_authorities
 from .model_execution import _protected_source,_clock_reference
 from .native_plans import plan_geometry_build
 from .resources import structural_seed_path,native_resource_path
@@ -324,7 +324,7 @@ def _prepare_ip_hs1(model: CompiledPreparedModel, request: Mapping[str, Any], *,
         if common_world_frame_id != document['native_frame_id']:
             raise ValueError('IP-MR common world box frame differs from model')
         parent = common_world_domain
-    baseline = document['drive']['ip_schedule']['baseline']
+    baseline = resolve_ip_schedule_authorities(document['drive'], set(ids))[ids[0]]['baseline']
     bath, outside = compile_continuous_hs1_gas(baseline, bath_domain=bath_domain, outer=outer,
                                                 placement=pose, parent_domain=parent)
     def sha(data):

@@ -27,6 +27,10 @@ class NeutralCanonicalHs1Tests(unittest.TestCase):
         electrodes=assembly.components_resolved['ion_processor']['projection']['electrodes']
         drive={'clock':dict(epoch,phase_reference_instrument_time_us=0.),'ip_schedule':{'baseline':assembly.components_source['ion_processor']['baseline'],'native_operating_point':point,'clock':epoch},'groups':{'ion_processor':{e['name']:{'kind':'ip_schedule','schedule_index':e['electrode_id']} for e in electrodes}}}
         model=compile_prepared_model(geometry,assembly.components_resolved,drive=drive,physics=RF_PHYSICS)
+        import copy
+        keyed_drive=copy.deepcopy(drive)
+        keyed_drive['ip_schedules']={'ion_processor':keyed_drive.pop('ip_schedule')}
+        keyed_model=compile_prepared_model(geometry,assembly.components_resolved,drive=keyed_drive,physics=RF_PHYSICS)
         baseline=model.document['drive']['ip_schedule']['baseline']
         outer=GasFieldSpec(field_id='outer',frame_id=baseline['clock']['frame_id'],representation='uniform',composition_id='ion_processor_explicit_single_gas',composition=(GasSpecies('ion_processor_model_gas',baseline['gas']['mass_amu'],1),),domain=box((-10000,-10000,-10000),(10000,10000,10000)),source=GasSource('prescribed','test',()),uniform_state=GasState('vacuum',0,baseline['gas']['temperature_k'],(0,0,0)))
         domain=geometry.frontend_geometry['domain']
@@ -36,6 +40,10 @@ class NeutralCanonicalHs1Tests(unittest.TestCase):
             request={'bath_domain':box((0,-10,-10),(211,10,10)),'outer':outer,'vendor_record':file_record(vendor),'numerics':{'seed':42,'hs1_steps_per_mfp':20}}
             result=prepare_neutral_ip_hs1(model,request,basis={'grid':grid})
             self.assertEqual(result['identity']['numerics'],request['numerics'])
+            keyed_result=prepare_neutral_ip_hs1(keyed_model,request,basis={'grid':grid})
+            self.assertEqual(keyed_result['identity'],result['identity'])
+            self.assertEqual(keyed_result['bath_runtime'],result['bath_runtime'])
+            self.assertEqual(keyed_result['outer_runtime'],result['outer_runtime'])
             # An admitted active window beyond the base still needs explicit outer gas.
             from dataclasses import replace
             base_grid={'frame_id':domain['frame_id'],'origin_mm':[-1,-1,-1],'pitch_mm':[1,1,1],'dimensions':[3,3,3]}

@@ -33,6 +33,24 @@ class MultiIpScheduleTests(unittest.TestCase):
   drive={'groups':drives,'clock':dict(clock,phase_reference_instrument_time_us=0.),'ip_schedules':schedules}
   model=compile_prepared_model(geometry,assembly.components_resolved,drive=drive,physics=RF_PHYSICS);document=require_prepared_model(model)
   self.assertEqual(len(document['native_drive_rows']),30);self.assertEqual(set(document['drive']['ip_schedules']),set(drives))
+  from msplatform.backends.simion.rf_tracking_execution import prepare_neutral_ip_hs1
+  from msplatform.contracts.gas import BoxDomain, GasFieldSpec, GasSource, GasSpecies, GasState
+  from msplatform.io.manifest_records import file_record
+  from projects.dual_pressure_rectilinear_ion_processor.tests.test_functional import HS1_SOURCE_FIXTURE
+  from unittest.mock import patch
+  import tempfile
+  def box(lo,hi):return BoxDomain(lo,hi,(True,True,True),(True,True,True))
+  baseline=schedules['ion_processor']['baseline']
+  outer=GasFieldSpec(field_id='outer',frame_id=baseline['clock']['frame_id'],representation='uniform',composition_id='ion_processor_explicit_single_gas',composition=(GasSpecies('ion_processor_model_gas',baseline['gas']['mass_amu'],1),),domain=box((-10000,)*3,(10000,)*3),source=GasSource('prescribed','test',()),uniform_state=GasState('vacuum',0,baseline['gas']['temperature_k'],(0,0,0)))
+  domain=geometry.frontend_geometry['domain']
+  grid={'frame_id':domain['frame_id'],'origin_mm':domain['minimum_mm'],'pitch_mm':[b-a for a,b in zip(domain['minimum_mm'],domain['maximum_mm'],strict=True)],'dimensions':[2,2,2]}
+  with tempfile.TemporaryDirectory() as temp:
+   vendor=Path(temp)/'vendor.lua';vendor.write_text(HS1_SOURCE_FIXTURE,encoding='utf8')
+   request={'bath_domain':box((0,-10,-10),(211,10,10)),'outer':outer,'vendor_record':file_record(vendor),'numerics':{'seed':42,'hs1_steps_per_mfp':20}}
+   with patch('msplatform.execution.owner.run_managed_stage') as blocked:
+    with self.assertRaisesRegex(ValueError,'one selected IP placement'):
+     prepare_neutral_ip_hs1(model,request,basis={'grid':grid})
+    blocked.assert_not_called()
   for mutation in ('missing','extra','clock','mixed'):
    bad=copy.deepcopy(drive)
    if mutation=='missing':bad['ip_schedules'].pop('second_ip')

@@ -173,3 +173,17 @@ class CanonicalNeutralScheduleManagedTests(unittest.TestCase):
    for guard in tracking_guards:self.assertTrue(selected_paths <= guard)
    from msplatform.execution.capacity_protection import load_capacity_protection_leases
    self.assertEqual(load_capacity_protection_leases(context.workspace/'artifacts')['audit'],[])
+   # The public owner chain accepts the same schedule in instance-keyed form.
+   keyed_drive=copy.deepcopy(drive)
+   keyed_drive['ip_schedules']={'ion_processor':keyed_drive.pop('ip_schedule')}
+   fail_fly[0]=False
+   with patch.object(RunSession,'run_process',new=guarded_inert):
+    keyed_model=operations.prepare_model(built,drive=keyed_drive,physics=RF_PHYSICS,context=context)
+    keyed_field=operations.solve_fields(keyed_model,numerics={},context=context,scalar_field_basis=dict(geometry_artifact=geometry,operator=operator,samples=samples,refinement_windows=[dict(name='outside_base',active_box_mm=[[4.25,4.75],[-200,-150],[0,6]],samples=window_samples)]))
+    keyed_admission=admit_neutral_sampled_tracking_fields(keyed_field.reference)
+    keyed_gas=prepare_neutral_ip_hs1(keyed_admission['model'],hs1,basis=keyed_admission['basis'])
+    self.assertEqual(keyed_gas['identity'],gas['identity'])
+    keyed_trajectory=operations.track(keyed_field,packet,propagation=hs1_propagation,observations={'plane_observations':[]},numerics=dict(numerics,grouped=0),context=context,hs1_request=hs1)
+    keyed_collection=json.loads(keyed_trajectory.data_path('collection').read_text(encoding='utf8'))
+    self.assertEqual([r['particle_id'] for r in keyed_collection['native_terminals']],[7,91])
+   self.assertEqual(load_capacity_protection_leases(context.workspace/'artifacts')['audit'],[])
