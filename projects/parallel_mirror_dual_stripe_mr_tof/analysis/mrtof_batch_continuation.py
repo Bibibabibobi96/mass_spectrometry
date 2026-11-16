@@ -569,11 +569,12 @@ def _prepared_identity(path: Path) -> dict[str, Any]:
         if not isinstance(record, dict) or not isinstance(record.get("sha256"), str):
             raise ContractError(f"prepared-joint scientific identity is invalid: {key}")
         identity[key] = {"sha256": record["sha256"].upper()}
-    if "scientific_event_writer" in value:
-        record=value["scientific_event_writer"]
-        if not isinstance(record,dict) or not isinstance(record.get("sha256"),str):
-            raise ContractError("prepared-joint scientific writer identity is invalid")
-        identity["scientific_event_writer"]={"sha256":record["sha256"].upper()}
+    for key in ("scientific_event_writer", "scientific_event_reconciliation"):
+        if key in value:
+            record=value[key]
+            if not isinstance(record,dict) or not isinstance(record.get("sha256"),str):
+                raise ContractError(f"prepared-joint scientific identity is invalid: {key}")
+            identity[key]={"sha256":record["sha256"].upper()}
     return identity
 
 

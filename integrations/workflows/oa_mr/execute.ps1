@@ -1265,11 +1265,14 @@ try{
     if([IO.Path]::GetFullPath($guiOperating)-eq[IO.Path]::GetFullPath($sidecar)){throw 'GUI scientific projection must not rewrite the flight sidecar.'}
     $guiWriter=Join-Path $temporarySolverDir 'scientific_event_csv.lua'
     Copy-RequiredInput -Source ([string]$trial.scientific_event_output.csv_writer_path) -Destination $guiWriter -Label 'GUI scientific CSV writer'|Out-Null
+    $guiReconciliation=Join-Path $temporarySolverDir 'scientific_event_reconciliation.lua'
+    Copy-RequiredInput -Source ([string]$trial.scientific_event_output.reconciliation_path) -Destination $guiReconciliation -Label 'GUI scientific CSV reconciliation'|Out-Null
     $guiProjection=@'
 local directory=debug.getinfo(1,'S').source:sub(2):match('^(.*[/\\])') or './'
 t.scientific_event_output={events_path=directory..'gui_scientific_events.csv',
  trajectory_path=t.trajectory_recording_enabled and directory..'gui_scientific_trajectory.csv' or nil,
- csv_writer_path=directory..'scientific_event_csv.lua',environment_required=false,
+ csv_writer_path=directory..'scientific_event_csv.lua',
+ reconciliation_path=directory..'scientific_event_reconciliation.lua',environment_required=false,
  events_environment_variable='MRTOF_SCIENTIFIC_EVENTS_PATH',trajectory_environment_variable='MRTOF_SCIENTIFIC_TRAJECTORY_PATH'}
 return t
 '@

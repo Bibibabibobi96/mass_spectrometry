@@ -43,10 +43,20 @@ poses. Its pure consumer checks representation and refusal boundaries; actual
 COMSOL construction/selections, installed polygon execution, common fields and
 continuous flight remain open. It does not change the physical MR design.
 A controlled native diagnostic reproduced a stopping-callback observation later
-than the actual terminal state. The extracted observer and the existing wrapper
-therefore need applicable terminal reconciliation before claiming committed entry
-or mirror events; see the [integration evidence and limits](../../../integrations/docs/INTEGRATION.md#mr-observation-and-stopping-callbacks).
-The diagnostic does not change historical records or grant instrument qualification.
+than the actual terminal state. Generic pending, advancement/terminal confirmation
+and raw candidate serialization now belong to the installed SIMION resource
+`scientific_event_reconciliation.lua`, loaded only through the explicitly frozen
+`reconciliation_path`; ordinary and prepared-joint materialization bind its file
+identity with no checkout fallback. MR retains its prism, mirror/counter and
+strict detector-contact rules. Rejected/unknown candidates preserve both original
+endpoint states and callback-entry splat, while true terminal 6D/time and the full
+cohort remain unchanged. `mrtof_observations.py` retains these raw rows separately
+from accepted science, and measured population classifies an unconfirmed
+detector-stop request as unknown, not detection. Plain-Lua and original-consumer
+regressions cover immediate/delayed stops, normal termination and contact; no new
+native Fly has been run for this reconciliation, so historical records and
+instrument qualification are unchanged. See the
+[integration evidence and limits](../../../integrations/docs/INTEGRATION.md#mr-observation-and-stopping-callbacks).
 The canonical MR component now owns `drive.scientific_group_voltages`: candidate,
 mirror, detector and shield authorities determine scientific group voltages there.
 Both existing OA-MR and IP-MR model consumers use that projection; SIMION retains

@@ -329,6 +329,8 @@ class SimionEventAnalysisTest(unittest.TestCase):
             script = root / "events.lua"
             declaration = "{csv_writer_path=" + json.dumps(
                 (REPOSITORY_ROOT / "src/msplatform/backends/simion/resources/scientific_event_csv.lua").as_posix()
+            ) + ",reconciliation_path=" + json.dumps(
+                (REPOSITORY_ROOT / "src/msplatform/backends/simion/resources/scientific_event_reconciliation.lua").as_posix()
             ) + ",events_path=" + json.dumps(events.as_posix()) + "}"
             setup = "local operating_point={scientific_event_output=" + declaration + "}\n"
             setup += r"""
@@ -382,6 +384,7 @@ if true then
 assert(detected[7] and prism_stage[7]=='static_detector_complete' and ion_splat==1)
 ion_splat=0
 local state={sequence_valid=false}
+science_reconciler={record=function(kind,row,extra) write_scientific(kind,row,extra) end,finish=function() end}
 local function reject_invalid_sequence()
 """
             finish = r"""

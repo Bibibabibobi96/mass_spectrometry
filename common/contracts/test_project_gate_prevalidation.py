@@ -172,6 +172,7 @@ class ProjectGatePrevalidationTests(unittest.TestCase):
             *(f"projects/{MR}/simion/{name}" for name in (
                 "mrtof_candidate.lua", "candidate_voltage_map.lua", "mirror_cycle_counter.lua")),
             "src/msplatform/backends/simion/resources/scientific_event_csv.lua",
+            "src/msplatform/backends/simion/resources/scientific_event_reconciliation.lua",
             "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
             f"projects/{OA}/tests/simion/test_required_parameters.lua",
             f"projects/{OA}/tests/simion/test_component_focus_callbacks.lua",

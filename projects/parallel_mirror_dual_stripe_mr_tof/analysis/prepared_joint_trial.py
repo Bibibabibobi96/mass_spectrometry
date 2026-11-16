@@ -226,6 +226,8 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
         waveforms_record["continuation_source"] = waveform_provenance
     source_runtime_record = freeze_file(source_copy / "source_runtime.lua", frozen_runtime / "joint.source_runtime.lua")
     science_writer_record = freeze_file(Path(__file__).resolve().parents[3] / "src/msplatform/backends/simion/resources/scientific_event_csv.lua", frozen_runtime / "joint.scientific_event_csv.lua")
+    science_reconciliation_record = freeze_file(native_resource_path("scientific_event_reconciliation.lua"),
+        frozen_runtime / "joint.scientific_event_reconciliation.lua")
     freeze_file(Path(__file__).parents[3] / "src/msplatform/backends/simion/resources/scalar_field_adapter.lua",
                 frozen_runtime / "joint.scalar_field_adapter.lua")
     reference = runtime / "mr_reference.operating_point.lua"
@@ -244,6 +246,9 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
         native_projection(binding), numerics=numerics, field_assets_verified=True, source_identity_verified=True,
         native_path_projection=True)
     sidecar = sidecar.replace("\nreturn t\n", "\nlocal crops="+_lua(memory_crops)+"\n"
+        "t.scientific_event_output=t.scientific_event_output or {}\n"
+        "t.scientific_event_output.csv_writer_path=native_path("+_lua(str(frozen_runtime / "joint.scientific_event_csv.lua"))+")\n"
+        "t.scientific_event_output.reconciliation_path=native_path("+_lua(str(frozen_runtime / "joint.scientific_event_reconciliation.lua"))+")\n"
         "for _,window in ipairs(t.static_field.refinement_windows) do\n"
         "  window.memory_consumer_crop=crops[window.name]\nend\nreturn t\n")
     (frozen_runtime / "joint.operating_point.lua").write_text(sidecar, encoding="utf-8", newline="\n")
@@ -279,6 +284,7 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
                   flight_program=program_record,
                   source_runtime=source_runtime_record,
                   scientific_event_writer=science_writer_record,
+                  scientific_event_reconciliation=science_reconciliation_record,
                   voltage_waveforms=waveforms_record,
                   field_consumer_adapter=file_record(frozen_runtime / "joint.scalar_field_adapter.lua"),
                   memory_consumer_crops=memory_crops,
@@ -476,7 +482,8 @@ def materialize_batch(preparation_path: Path, ordinal_min: int, ordinal_max: int
     interval_lua = "nil" if interval is None else repr(interval)
     scientific_event_output = dict(events_path=str((output_directory / "events.csv").resolve()),
         trajectory_path=str((output_directory / "trajectory.csv").resolve()),
-        csv_writer_path=preparation["scientific_event_writer"]["path"], environment_required=False,
+        csv_writer_path=preparation["scientific_event_writer"]["path"],
+        reconciliation_path=preparation["scientific_event_reconciliation"]["path"], environment_required=False,
         events_environment_variable="MRTOF_SCIENTIFIC_EVENTS_PATH",trajectory_environment_variable="MRTOF_SCIENTIFIC_TRAJECTORY_PATH")
     sidecar_prefix = (
         "local directory=assert(debug.getinfo(1,'S').source:sub(2):match('^(.*[/\\\\])'))\n"
@@ -485,11 +492,11 @@ def materialize_batch(preparation_path: Path, ordinal_min: int, ordinal_max: int
     original_lua = ("native_path("+_lua(str(original.resolve()))+")" if runtime_projection else
                     json.dumps(project_native_run_path(str(original.resolve())).replace("\\", "/")))
     scientific_projection = (
-        "for _,key in ipairs({'events_path','trajectory_path','csv_writer_path'}) do "
+        "for _,key in ipairs({'events_path','trajectory_path','csv_writer_path','reconciliation_path'}) do "
         "t.scientific_event_output[key]=native_path(t.scientific_event_output[key]) end\n"
         if runtime_projection else "")
     sidecar = (sidecar_prefix+"local t=assert(loadfile("+original_lua+"))()\n"
-               "t.scientific_event_output="+_lua({key: project_native_run_path(value) if not runtime_projection and key in {"events_path", "trajectory_path", "csv_writer_path"} else value for key, value in scientific_event_output.items()})+"\n"
+               "t.scientific_event_output="+_lua({key: project_native_run_path(value) if not runtime_projection and key in {"events_path", "trajectory_path", "csv_writer_path", "reconciliation_path"} else value for key, value in scientific_event_output.items()})+"\n"
                "t.measured_source_directory="+("native_path("+_lua(str(source.resolve()))+")" if runtime_projection else json.dumps(project_native_run_path(str(source.resolve())).replace("\\", "/")))+"\n"
                "t.trajectory_recording_enabled=true\n"
                "t.trajectory_recording_mode="+json.dumps(preparation["trajectory_recording"]["mode"])+"\n"

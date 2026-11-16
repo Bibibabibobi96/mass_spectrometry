@@ -18,6 +18,7 @@ NATIVE_RESOURCES = frozenset({
     "native_drive.lua", "generic_scalar_field.lua", "scalar_field_adapter.lua", "sfi_scalar_field.lua", "ip_mr_scalar_field.lua", "compose_standalone_pa.lua",
     "dual_cone_gas_assisted_transport.lua",
     "audit_rf_field_family.lua", "refine_rf_field_family.lua", "audit_static_operating_pa.lua",
+    "export_stationary_field_samples.lua",
     "oatof_analyzer_component.lua",
     "model_drive.lua", "rf_tracking.lua",
     "build_model_iob.lua",
@@ -29,6 +30,7 @@ NATIVE_RESOURCES = frozenset({
     "gem2pa_geometry.lua", "build_frontend_geometry.lua", "build_geometry_iob.lua", "iob_core.lua", "build_iob.lua",
     "build_flight_tube_variant.lua", "build_detector_variant.lua", "build_reflectron_variant.lua",
     "export_paired_accelerator_field.lua", "paired_accelerator_pulse.lua", "scientific_event_csv.lua",
+    "scientific_event_reconciliation.lua",
 })
 
 

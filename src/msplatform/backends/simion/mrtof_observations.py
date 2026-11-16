@@ -68,6 +68,7 @@ REQUIRED_FIELDS = {
     "central_plane_directional": {"ion", "n", "direction_z", "t_us", "x_mm", "y_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
     "detector": {"ion", "t_us", "x_mm", "y_mm", "z_mm"},
     "detector_plane": {"ion", "direction_z", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
+    "observation_candidate": {"ion", "field", "status", "reason", "t_us"},
     "instance_transition": {"ion", "t_us", "instance", "x_mm", "y_mm", "z_mm"},
     "accelerator_pulse_off": {
         "ion", "t_us", "from_instance", "to_instance", "x_mm", "y_mm", "z_mm",
@@ -120,6 +121,7 @@ def _event_error(event: dict[str, Any]) -> str | None:
         return "unknown_event_or_missing_fields"
     string_fields = {
         "name", "region", "face", "trigger", "termination_kind", "reason", "localization",
+        "field", "status",
     }
     if any(type(value) not in (float, int) or not math.isfinite(value)
            for key, value in event.items()
@@ -128,6 +130,14 @@ def _event_error(event: dict[str, Any]) -> str | None:
     for key in string_fields:
         if key in event and (not isinstance(event[key], str) or not event[key]):
             return "invalid_event_identity"
+    if kind == "observation_candidate":
+        dispositions = {
+            "rejected": "terminal_precedes_candidate_event",
+            "unknown": "terminal_precedes_candidate_interval_end",
+        }
+        if (event["field"] not in REQUIRED_FIELDS or event["field"] == kind
+                or dispositions.get(event["status"]) != event["reason"]):
+            return "invalid_observation_candidate_disposition"
     if not _integer(event["ion"], minimum=1) or event["t_us"] < 0:
         return "invalid_particle_id_or_time"
     for key in (

@@ -41,7 +41,8 @@ end
 local scientific_output=assert(operating_point.scientific_event_output,'frozen scientific event output required')
 local scientific_events,scientific_trajectory
 local scientific_csv=assert(loadfile(assert(scientific_output.csv_writer_path,'frozen CSV writer path required')))()
-local scientific_columns={'kind','ion','accelerator','accelerator_fast_adjust','after_t_us','after_vy_mm_us','after_vz_mm_us','after_z_mm','before_t_us','before_vy_mm_us','before_vz_mm_us','before_z_mm','central_crossings','code','corridor','corridor_fast_adjust','direction_after','direction_before','direction_ok','direction_y','direction_z','fast_adjust','field','fraction','fractional_k','from_instance','geometry','gui_field_queries_equivalent','half_cycles','inside_aperture','instance','k','k_before','localization','n','native_splat','phase','phase_crossing_t_us','phase_crossing_y_mm','phase_period_us','phase_time_residual_us','physical_collision','projection_dt_us','raw_t_us','raw_x_mm','raw_y_mm','raw_z_mm','reason','scheduled_t_us','slow_coordinate_residual_mm','splat','status','step_span_us','t_us','termination_kind','to_instance','trigger','turns','volts','vx_mm_us','vy_mm_us','vz_mm_us','x_mm','y_mm','z_mm'}
+local scientific_reconciliation=assert(loadfile(assert(scientific_output.reconciliation_path,'frozen CSV reconciliation resource path required')))()
+local scientific_columns={'kind','ion','accelerator','accelerator_fast_adjust','after_t_us','after_vx_mm_us','after_vy_mm_us','after_vz_mm_us','after_x_mm','after_y_mm','after_z_mm','before_t_us','before_vx_mm_us','before_vy_mm_us','before_vz_mm_us','before_x_mm','before_y_mm','before_z_mm','central_crossings','code','corridor','corridor_fast_adjust','direction_after','direction_before','direction_ok','direction_y','direction_z','fast_adjust','field','fraction','fractional_k','from_instance','geometry','gui_field_queries_equivalent','half_cycles','inside_aperture','instance','k','k_before','localization','n','native_splat','phase','phase_crossing_t_us','phase_crossing_y_mm','phase_period_us','phase_time_residual_us','physical_collision','projection_dt_us','raw_t_us','raw_x_mm','raw_y_mm','raw_z_mm','reason','scheduled_t_us','slow_coordinate_residual_mm','splat','status','step_span_us','t_us','termination_kind','to_instance','trigger','turns','volts','vx_mm_us','vy_mm_us','vz_mm_us','x_mm','y_mm','z_mm'}
 local trajectory_columns={'ion','phase','t_us','x_mm','y_mm','z_mm','vx_mm_us','vy_mm_us','vz_mm_us'}
 local function initialize_scientific_output()
   local events_path,trajectory_path
@@ -66,7 +67,16 @@ local function scientific_particle_id(value)
     'scientific particle ID must be a positive safe integer')
   return string.format('%.0f',value)
 end
-local function record_scientific(kind, row, extra)
+local science_reconciler
+local deferred_science_kinds = {}
+for _,kind in ipairs({'accelerator_geometric_exit','p1_plane','prism_entry','prism_pass',
+    'pre_injection_mirror_turn','p2_low_field_crossing','p2_low_field_reference',
+    'return_p2_entry','return_p2_pass','pre_origin_positive_mirror_turn','return_positive_mirror_turn',
+    'turn','fast_turn','nonmirror_reversal','accelerator_launch_vz_zero','drift_phase_origin',
+    'drift_phase_candidate','target_k_phase_sample','drift_phase_return','target_k',
+    'slow_coordinate_y0','drift_coordinate_return','central_plane','central_plane_directional',
+    'slow_turn','detector_plane','detector'}) do deferred_science_kinds[kind]=true end
+local function write_scientific(kind, row, extra)
   assert(type(row)=='table','scientific event fields required')
   if extra then
     for key,value in pairs(extra) do
@@ -82,6 +92,10 @@ local function record_scientific(kind, row, extra)
   for i,key in ipairs(columns) do values[i]=row[key] or '' end
   writer:write(values)
   if kind=='terminal' then writer:flush();if scientific_trajectory then scientific_trajectory:flush() end end
+end
+local function record_scientific(kind, row, extra)
+  if science_reconciler then science_reconciler.record(kind,row,extra)
+  else write_scientific(kind,row,extra) end
 end
 
 -- Official SIMION initialize/other_actions/terminate callbacks expose actual
@@ -360,6 +374,20 @@ local function interpolated_sample(a, b, fraction)
     a.t_us + fraction*(b.t_us-a.t_us))
 end
 
+science_reconciler=scientific_reconciliation.new{write=write_scientific,
+  deferred_kinds=deferred_science_kinds,committed=function(item,context)
+    if item.kind=='turn' then turns[context.ion]=tonumber(item.row.n) end
+    if item.kind=='central_plane' then crossings[context.ion]=tonumber(item.row.n) end
+  end}
+
+local function begin_science_context()
+  if previous_t[ion_number]==nil then return end
+  science_reconciler.begin{ion=ion_number,native_splat=ion_splat,before=cycle_sample(
+    previous_x[ion_number],previous_y[ion_number],previous_z[ion_number],
+    previous_vx[ion_number],previous_vy[ion_number],previous_vz[ion_number],previous_t[ion_number]),
+    after=cycle_sample(ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm,instrument_time_us())}
+end
+
 local function emit_cycle_events(events)
   local has_mirror_turn = false
   for _,event in ipairs(events) do
@@ -434,21 +462,19 @@ local function emit_cycle_events(events)
       end
       record_scientific('drift_coordinate_return', {ion=scientific_particle_id(event_id()), k_before=event.k_before, fractional_k=event.fractional_k, t_us=event.t_us, x_mm=event.x_mm, y_mm=0, z_mm=event.z_mm, vx_mm_us=event.vx_mm_us, vy_mm_us=event.vy_mm_us, vz_mm_us=event.vz_mm_us}, phase_fields)
     elseif event.kind == 'central_plane' and event.stage == 'main_drift' then
-      crossings[ion_number] = (crossings[ion_number] or 0) + 1
-      local n = crossings[ion_number]
+      local n = (crossings[ion_number] or 0) + 1
       record_scientific('central_plane', {ion=scientific_particle_id(event_id()), n=string.format('%d',n), t_us=event.t_us, x_mm=event.x_mm, y_mm=event.y_mm})
       record_scientific('central_plane_directional', {ion=scientific_particle_id(event_id()), n=string.format('%d',n), direction_z=string.format('%d',event.direction), t_us=event.t_us, x_mm=event.x_mm, y_mm=event.y_mm, z_mm=event.z_mm, vx_mm_us=event.vx_mm_us, vy_mm_us=event.vy_mm_us, vz_mm_us=event.vz_mm_us})
     end
   end
   -- Flush the complete turn event group, never every integration step.
   if has_mirror_turn then io.flush() end
-  local state = cycle_counters[ion_number]:state()
-  turns[ion_number] = state.accepted_main_turns
-  return state
+  return cycle_counters[ion_number]:state()
 end
 
 function segment.initialize_run()
   initialize_scientific_output()
+  science_reconciler.reset()
   trajectory_sample_buckets = {}
   solver_birth_times = {}
   detector_native_contacts = {}
@@ -623,6 +649,8 @@ function segment.initialize()
 end
 
 function segment.other_actions()
+  science_reconciler.confirm_advance(ion_number,instrument_time_us())
+  begin_science_context()
   if accelerator_pulse_mode == 'fixed_global_time'
       and not accelerator_pulse_complete[ion_number]
       and instrument_time_us() >= accelerator_pulse_off_time_us then
@@ -645,6 +673,7 @@ function segment.other_actions()
           record_scientific('splat', {ion=scientific_particle_id(event_id()), code=1, t_us=instrument_time_us(), x_mm=ion_px_mm, y_mm=ion_py_mm, z_mm=ion_pz_mm, turns=0, central_crossings=0})
           selected_instances[ion_number] = ion_instance
           ion_splat = 1
+          science_reconciler.finish()
           return
         end
       end
@@ -672,6 +701,7 @@ function segment.other_actions()
     record_scientific('splat', {ion=scientific_particle_id(event_id()), code=2, t_us=instrument_time_us(), x_mm=ion_px_mm, y_mm=ion_py_mm, z_mm=ion_pz_mm, turns=string.format('%d',turns[ion_number] or 0), central_crossings=string.format('%d',crossings[ion_number] or 0)})
     splat_event_emitted[ion_number] = true
     ion_splat = 2
+    science_reconciler.finish()
     return
   end
   -- SIMION exposes ion_splat while stepping, but not in terminate.  Cache it
@@ -792,6 +822,7 @@ function segment.other_actions()
       -- project topology rejection, not contact with an electrode.
       record_scientific('splat', {ion=scientific_particle_id(event_id()), code=4, termination_kind='programmatic_topology_rejection', physical_collision=0, reason=rejection_reason, t_us=instrument_time_us(), x_mm=ion_px_mm, y_mm=ion_py_mm, z_mm=ion_pz_mm, turns=string.format('%d',turns[ion_number] or 0), central_crossings=string.format('%d',crossings[ion_number] or 0)})
       ion_splat = 4
+      science_reconciler.finish()
       return
     end
     if pvy * ion_vy_mm < 0 then
@@ -825,7 +856,8 @@ function segment.other_actions()
             raw_x_mm=string.format('%.17g',ion_px_mm), raw_y_mm=string.format('%.17g',ion_py_mm), raw_z_mm=string.format('%.17g',ion_pz_mm),
             projection_dt_us=string.format('%.17g',detector_time-instrument_time_us()), step_span_us=string.format('%.17g',instrument_time_us()-pt)}
         end
-        record_scientific('detector_plane', {ion=scientific_particle_id(event_id()), direction_z=string.format('%d',detector_direction), t_us=detector_time, x_mm=x, y_mm=y, z_mm=detector_z, vx_mm_us=vx, vy_mm_us=vy, vz_mm_us=vz, localization=localization}, contact_evidence)
+        local emit_detector = detector_contact and write_scientific or record_scientific
+        emit_detector('detector_plane', {ion=scientific_particle_id(event_id()), direction_z=string.format('%d',detector_direction), t_us=detector_time, x_mm=x, y_mm=y, z_mm=detector_z, vx_mm_us=vx, vy_mm_us=vy, vz_mm_us=vz, localization=localization}, contact_evidence)
         if detector_direction == -1
           and prism_stage[ion_number] == 'awaiting_static_detector'
           and not detected[ion_number]
@@ -833,7 +865,7 @@ function segment.other_actions()
           and y >= detector_box[2] and y <= detector_box[5] then
           detected[ion_number] = true
           prism_stage[ion_number] = 'static_detector_complete'
-          record_scientific('detector', {ion=scientific_particle_id(event_id()), direction_z=-1, t_us=detector_time, x_mm=x, y_mm=y, z_mm=detector_z, localization=localization}, contact_evidence)
+          emit_detector('detector', {ion=scientific_particle_id(event_id()), direction_z=-1, t_us=detector_time, x_mm=x, y_mm=y, z_mm=detector_z, localization=localization}, contact_evidence)
           splat_codes[ion_number] = 1
           splat_event_emitted[ion_number] = true
           record_scientific('splat', {ion=scientific_particle_id(event_id()), code=1, t_us=detector_time, x_mm=x, y_mm=y, z_mm=detector_z, turns=string.format('%d',turns[ion_number] or 0), central_crossings=string.format('%d',crossings[ion_number] or 0), localization=localization}, contact_evidence)
@@ -850,14 +882,21 @@ function segment.other_actions()
   -- Terminate supplies the final state; do not sample beyond it.
   -- Official stop scheduling: https://simion.com/info/trajectory_programming.html
   if ion_splat == 0 then record_trajectory_sample('step') end
+  science_reconciler.finish()
   previous_x[ion_number], previous_y[ion_number], previous_z[ion_number] = ion_px_mm, ion_py_mm, ion_pz_mm
   previous_vx[ion_number], previous_vy[ion_number], previous_vz[ion_number], previous_t[ion_number] = ion_vx_mm, ion_vy_mm, ion_vz_mm, instrument_time_us()
 end
 
 function segment.terminate()
   record_trajectory_sample('terminal')
+  local unconfirmed=science_reconciler.reconcile_terminal(ion_number,instrument_time_us())
+  local unconfirmed_detector=unconfirmed.detector~=nil
   local contact_evidence = detector_native_contacts[ion_number]
     and {native_splat=-1,localization='detector_contact_projection'} or {}
+  if unconfirmed_detector then
+    contact_evidence.status='unknown_unconfirmed_detector_stop'
+    contact_evidence.termination_kind='programmatic_stop_with_unconfirmed_crossing'
+  end
   record_scientific('terminal', {ion=scientific_particle_id(event_id()), splat=string.format('%d',splat_codes[ion_number] or 0), instance=string.format('%d',ion_instance), volts=ion_volts, t_us=instrument_time_us(), x_mm=ion_px_mm, y_mm=ion_py_mm, z_mm=ion_pz_mm, vx_mm_us=ion_vx_mm, vy_mm_us=ion_vy_mm, vz_mm_us=ion_vz_mm, turns=string.format('%d',turns[ion_number] or 0), central_crossings=string.format('%d',crossings[ion_number] or 0)}, contact_evidence)
 end
 

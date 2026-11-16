@@ -122,7 +122,9 @@ def _close_event_rows(events, completed, states):
         if particle in splats and int(splats[particle]["code"]) != code:
             raise ValueError(f"Splat and terminal codes conflict: {particle}")
         if (particle in detectors) != (code == 1):
-            raise ValueError(f"Detector and terminal codes conflict: {particle}")
+            if not (code == 1 and particle not in detectors
+                    and terminal.get("termination_kind") == "programmatic_stop_with_unconfirmed_crossing"):
+                raise ValueError(f"Detector and terminal codes conflict: {particle}")
     return events, terminals, detectors
 
 
@@ -155,6 +157,8 @@ def _population_rows(census: list[dict[str, str]], states: dict[int, dict[str, A
             terminal = terminals[particle]
             code = int(terminal["splat"])
             status = {1: "detected", 2: "timeout", -1: "loss", 4: "topology_rejected"}.get(code, "unknown")
+            if terminal.get("termination_kind") == "programmatic_stop_with_unconfirmed_crossing":
+                status = "unknown"
             row.update(handoff_instrument_time_us=handoff,
                        downstream_status=status,
                        downstream_terminal_splat=code, downstream_terminal_instrument_time_us=terminal["t_us"])

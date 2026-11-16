@@ -568,6 +568,15 @@
           ]
         },
         {
+          "id": "msplatform_simion_scientific_event_reconciliation_lua",
+          "source_repo_path": "src/msplatform/backends/simion/resources/scientific_event_reconciliation.lua",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
           "id": "msplatform_simion_build_iob_lua",
           "source_repo_path": "src/msplatform/backends/simion/resources/build_iob.lua",
           "consumers": [

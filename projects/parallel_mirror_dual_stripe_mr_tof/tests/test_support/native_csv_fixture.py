@@ -14,6 +14,7 @@ def prepare(repo: Path, root: Path) -> None:
         "program_current.mirror_cycle_counter.lua": project / "simion/mirror_cycle_counter.lua",
         "voltage_map_current.lua": project / "simion/candidate_voltage_map.lua",
         "scientific_event_csv.lua": repo / "src/msplatform/backends/simion/resources/scientific_event_csv.lua",
+        "scientific_event_reconciliation.lua": repo / "src/msplatform/backends/simion/resources/scientific_event_reconciliation.lua",
     }
     from msplatform.execution.retention import file_record
     records = {}
@@ -35,11 +36,12 @@ def prepare(repo: Path, root: Path) -> None:
  phase_origin_mirror_side=1,return_mirror_side=-1,target_drift_period_ratio=25.5,target_half_oscillation_count=51,
  trajectory_quality=8,maximum_step_us=0.002,full_path_timeout_us=0.02,
  trajectory_recording_enabled=true,trajectory_recording_mode='every_step',runtime_fast_adjust_enable=true,
- scientific_event_output={csv_writer_path=WRITER,environment_required=true,
+ scientific_event_output={csv_writer_path=WRITER,reconciliation_path=RECONCILIATION,environment_required=true,
  events_environment_variable='MRTOF_FIXTURE_EVENTS',trajectory_environment_variable='MRTOF_FIXTURE_TRAJECTORY'}
 }
 """
     point = point.replace("WRITER", json.dumps((root / "scientific_event_csv.lua").as_posix()))
+    point = point.replace("RECONCILIATION", json.dumps((root / "scientific_event_reconciliation.lua").as_posix()))
     (root / "operating_current.lua").write_text(point, encoding="utf-8", newline="\n")
     # Reuse the existing priority contract: no new role registry/instance interpretation.
     if not (root / "priority.lua").is_file():

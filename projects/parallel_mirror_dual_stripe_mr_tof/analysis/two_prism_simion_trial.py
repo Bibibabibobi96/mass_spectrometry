@@ -1979,20 +1979,25 @@ def materialize_trial(*, accelerator_geometry_authority, contract_path: Path, ac
             f"accelerator_voltages_v = {_lua_vector([0.0, *endpoint_voltages, *ring_voltages])} }}, "
         )
     scientific_directory = sidecar_path.parent.resolve()
-    writer_source = Path(__file__).resolve().parents[3] / "src/msplatform/backends/simion/resources/scientific_event_csv.lua"
+    from msplatform.backends.simion.resources import native_resource_path
+    writer_source = native_resource_path("scientific_event_csv.lua")
     writer_path = scientific_directory / "scientific_event_csv.lua"
+    reconciliation_source = native_resource_path("scientific_event_reconciliation.lua")
+    reconciliation_path = scientific_directory / "scientific_event_reconciliation.lua"
     writer_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(writer_source, writer_path)
+    shutil.copyfile(reconciliation_source, reconciliation_path)
     scientific_event_output = dict(events_path=str(scientific_directory / "mrtof_events.csv"),
         trajectory_path=str(scientific_directory / "mrtof_trajectory.csv") if trajectory_recording else None,
-        csv_writer_path=str(writer_path), environment_required=batch_scientific_event_locators,
+        csv_writer_path=str(writer_path), reconciliation_path=str(reconciliation_path),
+        environment_required=batch_scientific_event_locators,
         events_environment_variable="MRTOF_SCIENTIFIC_EVENTS_PATH",
         trajectory_environment_variable="MRTOF_SCIENTIFIC_TRAJECTORY_PATH")
     locator_path = sidecar_path.with_suffix(".obs.lua")
     def locator_value(key, value):
         if value is None: return "nil"
         if isinstance(value,bool): return str(value).lower()
-        return json.dumps(project_native_run_path(str(value)).replace(chr(92),"/") if key in {"events_path", "trajectory_path", "csv_writer_path"} else str(value),ensure_ascii=False)
+        return json.dumps(project_native_run_path(str(value)).replace(chr(92),"/") if key in {"events_path", "trajectory_path", "csv_writer_path", "reconciliation_path"} else str(value),ensure_ascii=False)
     locator_path.write_text("return {"+",".join(key+"="+locator_value(key, value) for key,value in scientific_event_output.items())+"}\n",encoding="utf-8",newline="\n")
     sidecar = (
         "-- Generated run-local finite-3D P1/P2 voltage trial; do not edit.\n"
@@ -2172,6 +2177,7 @@ def materialize_trial(*, accelerator_geometry_authority, contract_path: Path, ac
         "scientific_event_output": scientific_event_output,
         "scientific_event_locator": file_record(locator_path),
         "scientific_csv_writer": file_record(writer_path),
+        "scientific_event_reconciliation": file_record(reconciliation_path),
         "nonaccelerator_mesh_mm_per_gu": list(
             simion["component_mesh_mm_per_gu"]["analyzer"]
         ),

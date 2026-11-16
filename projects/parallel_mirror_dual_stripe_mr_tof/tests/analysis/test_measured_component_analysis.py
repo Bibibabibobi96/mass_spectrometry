@@ -251,6 +251,28 @@ class MeasuredComponentAnalysisTests(unittest.TestCase):
         self.assertEqual(report["counts"]["downstream_topology_rejected"], 1)
         self.assertEqual(report["population_partition_counts"]["not_transferred"], 1)
 
+    def test_unconfirmed_detector_stop_keeps_unknown_full_cohort(self) -> None:
+        candidate = ("MRTOF_EVENT observation_candidate ion=1 field=detector status=rejected "
+                     "reason=terminal_precedes_candidate_event native_splat=0 t_us=7600.51")
+        terminal = (_terminal(1, 1, 7600.51) +
+                    " status=unknown_unconfirmed_detector_stop "
+                    "termination_kind=programmatic_stop_with_unconfirmed_crossing")
+        self.log.write_text("\n".join((candidate, terminal, _terminal(7, 2, 7600.57),
+                                       "status,Fly completed. 2 splats")), encoding="utf-8")
+        report = self._analyze()
+        self.assertEqual(report["counts"]["detected"], 0)
+        self.assertEqual(report["counts"]["downstream_unknown"], 1)
+        self.assertEqual(report["counts"]["downstream_timeout"], 1)
+        self.assertEqual(report["counts"]["mother_source"], 3)
+        with (self.output / "particle_census.csv").open(newline="") as handle:
+            rows = list(csv.DictReader(handle))
+        self.assertEqual([row["downstream_status"] for row in rows],
+                         ["unknown", "timeout", "not_transferred"])
+        self.assertEqual(rows[0]["terminal_position_z_mm"], "3.0")
+        parsed = json.loads((self.output / "parsed_events.json").read_text(encoding="utf-8"))
+        self.assertEqual(parsed[0]["kind"], "observation_candidate")
+        self.assertEqual(parsed[0]["status"], "rejected")
+
     def test_all_one_hundred_mother_ids_are_denominator(self) -> None:
         fixture = self.fixture.fixture
         ids = [1, 7, *range(1000, 1095)]

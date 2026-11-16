@@ -771,9 +771,10 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' 
         preparation = fixture.root / "preparation.json"
         from msplatform.execution.inputs import freeze_file
         writer = freeze_file(snapshot / "src/msplatform/backends/simion/resources/scientific_event_csv.lua", runtime / "joint.scientific_event_csv.lua")
+        reconciliation = freeze_file(snapshot / "src/msplatform/backends/simion/resources/scientific_event_reconciliation.lua", runtime / "joint.scientific_event_reconciliation.lua")
         preparation.write_text(json.dumps(dict(measured_source_directory=str(fixture.output),
             frozen_runtime_directory=str(runtime), trajectory_recording=dict(mode="fixed_interval", interval_us=.1),
-            scientific_event_writer=writer)), encoding="utf-8")
+            scientific_event_writer=writer, scientific_event_reconciliation=reconciliation)), encoding="utf-8")
         batch = fixture.root / "batch"
         environment = dict(os.environ)
         environment.pop("PYTHONPATH", None)
@@ -788,7 +789,9 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' 
         self.assertEqual((batch / "joint.lua").read_bytes(), (snapshot / relative / "mrtof_candidate.lua").read_bytes())
         self.assertEqual((batch / "joint.voltage_waveforms.lua").read_bytes(), waveform.read_bytes())
         self.assertEqual((batch / "joint.scientific_event_csv.lua").read_bytes(), (snapshot / "src/msplatform/backends/simion/resources/scientific_event_csv.lua").read_bytes())
+        self.assertEqual((batch / "joint.scientific_event_reconciliation.lua").read_bytes(), (snapshot / "src/msplatform/backends/simion/resources/scientific_event_reconciliation.lua").read_bytes())
         self.assertEqual(receipt["scientific_event_output"]["csv_writer_path"], writer["path"])
+        self.assertEqual(receipt["scientific_event_output"]["reconciliation_path"], reconciliation["path"])
         missing_preparation = fixture.root / "missing_writer.json"
         incomplete = json.loads(preparation.read_text(encoding="utf-8"))
         del incomplete["scientific_event_writer"]

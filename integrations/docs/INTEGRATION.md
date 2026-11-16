@@ -1755,6 +1755,13 @@ detector-plane qualification still needs the existing explicit geometric/contact
 checks and an applicable reconciliation. Unknown acceptance must remain explicit,
 without publishing speculative scientific events or dropping mother particles.
 
+当前旧MR Program已通过显式冻结、manifest绑定路径消费安装内
+`scientific_event_reconciliation.lua`。通用callback候选组、前进／终止确认、raw rejected/unknown
+序列化及原始bracket端点归该SIMION backend资源；MR只保留prism、counter和严格探测器接触科学。
+原消费者保留raw候选、真实终态6D／时钟及完整母群，将未确认detector stop归为unknown，
+不接受推测检测。原MR／prepared-joint消费者、standalone Lua、冻结和detached materializer测试通过；
+当前资源的原生immediate／delayed／normal／contact探针仍待执行，不据此授予原生或科学资格。
+
 The current functional priority is existing compatible geometry/fields to original-birth
 public tracking and readable complete-mother results. Launch checks cover readable
 inputs, coordinates/units, usable field coverage and collision geometry. Field

@@ -26,6 +26,7 @@ local priority={schema_version=1,role='mrtof_native_corridor_iob_priority_contra
     {role='accelerator',priority_number=3},{role='detector',priority_number=4}},
   corridor_voltage_groups={{2,7},{3,8},{4,9},{5,10},{11,12},{13,14},{16},{17}}}
 local point={scientific_event_output={csv_writer_path=repo..'/src/msplatform/backends/simion/resources/scientific_event_csv.lua',
+  reconciliation_path=repo..'/src/msplatform/backends/simion/resources/scientific_event_reconciliation.lua',
   events_path=events_path,environment_required=false},mirror_voltages_v={0,-10,20,30,50},stripe_biases_v={-4,6},
   prism_voltages_v={141.3329402510257,0},
   accelerator_voltages_v={40,30,0},accelerator_ring_voltages_v={25,20,15,10,5},
@@ -64,7 +65,7 @@ local function state(z,vz,t,x,y,vy)
   ion_time_of_flight=t
 end
 local function begin(z,vz,x,y,vy)
-  records={}; segment.initialize_run(); state(z,vz,0,x,y,vy); segment.initialize()
+  records={}; terminated=false; segment.initialize_run(); state(z,vz,0,x,y,vy); segment.initialize()
 end
 local function step(z,vz,t,x,y,vy)
   local before=flush_count
@@ -89,8 +90,14 @@ local function csv_cells(line)
   assert(not quoted,'unterminated fixture CSV field')
   cells[#cells+1]=field; return cells
 end
-local function events(kind)
+local function events(kind,confirm)
   assert(output_stream and io.type(output_stream)=='file','real CSV writer not open')
+  -- Drain the last pending interval through normal callback advancement before
+  -- inspecting legacy intermediate assertions. Explicit stop tests terminate first.
+  if confirm~=false and not terminated and ion_time_of_flight then
+    ion_time_of_flight=ion_time_of_flight+1e-9
+    segment.other_actions()
+  end
   assert(output_stream:flush())
   local stream=assert(original_open(events_path,'r'))
   local columns=csv_cells(assert(stream:read('*l')))
@@ -192,7 +199,7 @@ local function contact_case(offset,y,instance,vz,stage,x,previous_z,span,code)
   set_return_stage(stage or 'awaiting_static_detector')
   state(97+offset,vz or -40,span or .001,x or 0,y or -48,-3)
   ion_instance,ion_splat,ion_volts=instance or 4,code or -1,0
-  segment.other_actions(); segment.terminate()
+  segment.other_actions(); terminated=true; segment.terminate()
   return events('detector'),events('terminal')
 end
 for _,case in ipairs({{1.063e-7,-47.7260387338},
@@ -230,6 +237,58 @@ step(96.96,-40,.002,0,-48,-3)
 local crossing=events('detector')[1]
 assert(crossing and value(crossing,'t_us')==.001 and value(crossing,'z_mm')==97)
 assert(crossing.localization=='linear_bracket' and crossing.native_splat=='')
+
+-- Immediate rollback retains raw prism candidates, not accepted science.
+begin(-4,-1); state(-6,-1,2); ion_splat=2; segment.other_actions()
+assert(#events('p1_plane',false)==0 and #events('prism_pass',false)==0)
+state(-4,-1,.5); terminated=true; segment.terminate()
+local candidates=events('observation_candidate')
+assert(#candidates==2 and candidates[1].field=='p1_plane' and candidates[2].field=='prism_pass')
+assert(candidates[1].status=='rejected' and candidates[1].reason=='terminal_precedes_candidate_event')
+assert(value(candidates[1],'before_t_us')==0 and value(candidates[1],'after_t_us')==2)
+assert(value(events('terminal')[1],'t_us')==.5 and #events('p1_plane')==0)
+
+-- A terminal at the candidate END confirms the ordinary interpolation.
+begin(-4,-1); step(-6,-1,2); terminated=true; segment.terminate()
+assert(#events('p1_plane')==1 and #events('prism_pass')==1 and #events('observation_candidate')==0)
+
+-- A later callback confirms the earlier interval before requesting a delayed stop.
+point.full_path_timeout_us=2.5
+assert(loadstring(program:gsub('\nadjustable ','\n'),'@virtual/source.lua'))()
+begin(-4,-1); step(-6,-1,2); step(-7,-1,3)
+assert(ion_splat==2 and #events('p1_plane',false)==1)
+state(-6.5,-1,2.5); terminated=true; segment.terminate()
+assert(#events('p1_plane')==1 and #events('observation_candidate')==0)
+point.full_path_timeout_us=1000
+assert(loadstring(program:gsub('\nadjustable ','\n'),'@virtual/source.lua'))()
+
+-- Counter output from an unaccepted trial interval is quarantined too.
+begin(-1,-1)
+for index=1,100 do
+  local name,upvalue=debug.getupvalue(segment.other_actions,index)
+  if name=='cycle_counters' then upvalue[1].stage='main_drift'; break end
+  assert(name~=nil,'cycle counter upvalue missing')
+end
+state(1,-1,1); ion_splat=2; segment.other_actions()
+assert(#events('central_plane',false)==0)
+state(-1,-1,0); terminated=true; segment.terminate()
+candidates=events('observation_candidate')
+assert(#candidates==2 and candidates[1].field=='central_plane'
+  and candidates[2].field=='central_plane_directional' and candidates[1].status=='rejected')
+assert(value(events('terminal')[1],'central_crossings')==0)
+
+-- A bare native collision flag does not promote a linear detector bracket.
+begin(97.04,-40,0,-48,0); set_return_stage('awaiting_static_detector')
+state(96.96,-40,.002,0,-48,-3); ion_splat=-1; segment.other_actions()
+assert(#events('detector',false)==0)
+state(97.04,-40,.0015,0,-48,0); ion_instance=4; terminated=true; segment.terminate()
+candidates=events('observation_candidate')
+assert(#candidates==2 and candidates[1].field=='detector_plane' and candidates[2].field=='detector')
+assert(candidates[1].status=='unknown' and candidates[1].reason=='terminal_precedes_candidate_interval_end'
+  and candidates[1].native_splat=='-1' and #events('detector')==0)
+local unknown_terminal=events('terminal')[1]
+assert(unknown_terminal.splat=='1' and unknown_terminal.status=='unknown_unconfirmed_detector_stop')
+assert(value(unknown_terminal,'t_us')==.0015 and value(unknown_terminal,'z_mm')==97.04)
 
 -- Dynamic prism switching is outside the active static Candidate.
 local switched_ok=pcall(function()
