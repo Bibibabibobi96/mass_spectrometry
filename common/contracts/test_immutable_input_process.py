@@ -89,6 +89,28 @@ function Write-ResourceUsage {
                         run_observed_process(context, **dict(kwargs, immutable_input_records=[broken]))
                     launch.assert_not_called()
 
+    def test_empty_arguments_launch_real_process_and_confirm_exit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            context, _, _, kwargs = self._case(root)
+            kwargs.update(executable=Path(os.environ['SystemRoot']) / 'System32' / 'hostname.exe',
+                          arguments=[], immutable_input_records=[])
+            receipt = run_observed_process(context, **kwargs)
+            self.assertEqual(receipt['observation']['exit_code'], 0)
+            self.assertTrue(kwargs['stdout_path'].read_text(encoding='utf-8').strip())
+            self.assertTrue(receipt['host_release']['inherited'])
+            self.assertGreater(receipt['observation']['root_process_id'], 0)
+            self.assertGreater(receipt['observation']['root_process_started_at_utc_ticks'], 0)
+
+    def test_explicit_empty_argument_is_preserved(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            context, _, _, kwargs = self._case(root)
+            kwargs.update(arguments=['-I', '-c', 'import sys; assert sys.argv[1:] == ["", "x y"]', '', 'x y'],
+                          immutable_input_records=[])
+            receipt = run_observed_process(context, **kwargs)
+            self.assertEqual(receipt['observation']['exit_code'], 0)
+
     def test_observation_and_wait_faults_preserve_primary_and_guard_through_natural_exit(self):
         for fault in ('observation','wait','publication'):
             with self.subTest(fault=fault), tempfile.TemporaryDirectory() as directory:

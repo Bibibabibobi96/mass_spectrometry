@@ -454,6 +454,12 @@ STEP与模板后打开自己的文档；导入完成后、进入查看等待前�
 不调用Refine／Fly、不给模型补粒子，不重新生成PA。GUI保持原进程保护直到正常退出；没有内部ACK文件。
 显式GUI调用沿原process owner传递`window_style="Normal"`并记入查看请求；其他进程仍默认`Hidden`，
 仅接受这两个精确值，不按stage名称推断可见性，也不改变进程身份、输入保护或资源释放规则。
+An empty process argument sequence now omits PowerShell's optional
+`Start-Process -ArgumentList` parameter. An explicitly empty argument (`""`)
+remains a real argument, and quoted/spaced arguments retain their serialized
+form. Real-process regressions cover no arguments, an empty/spaced pair and
+immutable input protection. This fixes the reproduced prelaunch binding error;
+it does not convert earlier unknown-writer receipts into confirmed exits.
 `open_model`策略的SIMION runtime仅接受可选布尔`simion_allow_asynchronous_io`，工具路径显式给出`simion.exe`。
 普通SDK11已取得真实SIMION可见窗口、四个PA实例以及正常关闭的证据；具体范围见集成正文，
 不能用headless读回或进程退出码推定GUI检查、场精度或Formal资格。

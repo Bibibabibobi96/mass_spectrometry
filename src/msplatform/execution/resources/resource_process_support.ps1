@@ -827,7 +827,7 @@ function Invoke-ResourceBudgetedProcess {
   param(
     [Parameter(Mandatory)][AllowNull()][pscustomobject]$Limits,[Parameter(Mandatory)][string]$RunDir,
     [Parameter(Mandatory)][string]$UsagePath,[Parameter(Mandatory)][string]$FilePath,
-    [Parameter(Mandatory)][string[]]$ArgumentList,[string]$WorkingDirectory='',
+    [Parameter(Mandatory)][AllowEmptyString()][string[]]$ArgumentList,[string]$WorkingDirectory='',
     [string]$RedirectStandardOutput='',[string]$RedirectStandardError='',[hashtable]$Environment=@{},
     [switch]$RequireImmutableInputDrain,
     [string]$WindowStyle='Hidden',
@@ -836,7 +836,8 @@ function Invoke-ResourceBudgetedProcess {
   Assert-RepositoryProcessObservationMetadata -Metadata $ProcessObservationMetadata -UsagePath $UsagePath
   if(@('Hidden','Normal')-cnotcontains$WindowStyle){throw 'window_style requires exactly Hidden or Normal'}
   $observation=New-RepositoryProcessObservation -Limits $Limits -RunDir $RunDir -UsagePath $UsagePath
-  $startArguments=@{FilePath=$FilePath;ArgumentList=$ArgumentList;PassThru=$true;WindowStyle=$WindowStyle}
+  $startArguments=@{FilePath=$FilePath;PassThru=$true;WindowStyle=$WindowStyle}
+  if(-not($ArgumentList.Count-eq 1-and$ArgumentList[0]-ceq'')){$startArguments.ArgumentList=$ArgumentList}
   if(-not[string]::IsNullOrWhiteSpace($WorkingDirectory)){$startArguments.WorkingDirectory=$WorkingDirectory}
   if(-not[string]::IsNullOrWhiteSpace($RedirectStandardOutput)){
     $startArguments.RedirectStandardOutput=$RedirectStandardOutput
