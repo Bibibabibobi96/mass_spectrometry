@@ -50,10 +50,14 @@ for _,row in ipairs(description.groups) do
   end
   if row.kind=='rf' then time(1e6/row.frequency_hz/4);time(1e6/row.frequency_hz/2) end
 end
-if config.ip_schedule then
-  local s=config.ip_schedule.baseline.schedule
-  local n=config.ip_schedule.native_timing
+local function schedule_times(schedule)
+  local s=schedule.baseline.schedule
+  local n=schedule.native_timing
   for _,value in ipairs({s.capture_end_us,s.transfer_end_us,s.lift_end_us,n.primary_quench_us,n.pulse_start_us}) do time(value) end
+end
+if config.ip_schedule then schedule_times(config.ip_schedule) end
+if config.ip_schedules then
+  for _,schedule in pairs(config.ip_schedules) do schedule_times(schedule) end
 end
 if config.pulse and config.pulse.mode=='timed' then
   time(config.pulse.time_us);time(config.pulse.time_us+config.pulse.width_us)

@@ -246,10 +246,16 @@ def render_rf_controls(model: Any, plan: Mapping[str, Any], *, assets: Mapping[s
         program += "function segment.efield_adjust()\n  local instance=assert(simion.wb.instances[ion_instance],'selected instance required')\n"
         program += '  ion_dvoltsx_gu,ion_dvoltsy_gu,ion_dvoltsz_gu=neutral_scalar(instance,ion_px_mm,ion_py_mm,ion_pz_mm,single_flight_instrument_time_us())\nend\n'
     if scheduled:
-        schedule=document['drive']['ip_schedule']
-        baseline=schedule['baseline']; timing=schedule['native_timing']
-        edges=sorted(set([baseline['schedule'][key] for key in ('capture_end_us','transfer_end_us','lift_end_us','terminal_us')]+[timing['primary_quench_us'],timing['pulse_start_us']]))
-        program+='\nrf_step_cap_us=math.min(rf_step_cap_us,'+lua_value(1e6/baseline['electric']['rf_frequency_hz']/plan['flight']['rf_steps_per_period'])+')\n'
+        schedules=(list(document['drive']['ip_schedules'].values()) if 'ip_schedules' in document['drive']
+                   else [document['drive']['ip_schedule']])
+        if len(schedules) != 1 and (joint or plan['flight'].get('has_hs1')):
+            raise ValueError('multiple IP schedules do not support HS1')
+        edges=[]
+        for schedule in schedules:
+            baseline=schedule['baseline']; timing=schedule['native_timing']
+            edges.extend([baseline['schedule'][key] for key in ('capture_end_us','transfer_end_us','lift_end_us','terminal_us')]+[timing['primary_quench_us'],timing['pulse_start_us']])
+            program+='\nrf_step_cap_us=math.min(rf_step_cap_us,'+lua_value(1e6/baseline['electric']['rf_frequency_hz']/plan['flight']['rf_steps_per_period'])+')\n'
+        edges=sorted(set(edges))
         if neutral_sampled:
             program+='local neutral_schedule_edges='+lua_value(edges)+'\n'
             program+='local neutral_original_tstep=segment.tstep_adjust\nfunction segment.tstep_adjust() neutral_original_tstep(); ion_time_step=oa_waveforms.cap_before_edges(single_flight_instrument_time_us(),ion_time_step,neutral_schedule_edges) end\n'

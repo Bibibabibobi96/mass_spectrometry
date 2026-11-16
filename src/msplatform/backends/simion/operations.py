@@ -134,7 +134,7 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
     independent_oa = compiled.frontend_geometry.get("role") == "simion_independent_oa_geometry"
     independent_component = independent_rf or independent_oa or joint_ip or joint_oa_mr or joint_ip_mr or static_world
     required = {"clock", "clock_authority"} | ({"oa_groups", "mr_authority", "pulse"} if joint_oa_mr else set()) | ({"groups"} if independent_oa or joint_ip or ip_mr_has_rf or static_world else set()) | ({"ip_schedule"} if joint_ip or joint_ip_mr else set()) | ({"mr_authority"} if joint_ip_mr else set()) | (set() if independent_component else {"pulse"})
-    if (not required <= drive.keys() or set(drive) - required - (set() if joint_oa_mr or joint_ip_mr else {"groups"}) - ({"pulse", "ip_schedule"} if static_world else {"pulse"} if independent_oa else set())
+    if (not required <= drive.keys() or set(drive) - required - (set() if joint_oa_mr or joint_ip_mr else {"groups"}) - ({"pulse", "ip_schedule", "ip_schedules"} if static_world else {"pulse"} if independent_oa else set())
             or not isinstance(drive["clock"], Mapping)
             or set(drive["clock"]) != {"phase_reference_instrument_time_us"}):
         raise ContractError("model drive requires its actual clock/groups and declared pulse contract")
@@ -158,7 +158,7 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
     contract = json.loads(contract_path.read_text(encoding="utf-8-sig"))
     epoch_record = file_record((data_root / contract["authority"]["path"]).resolve(), "required_evidence")
     clock_reference = dict(contract=contract_record, authority=epoch_record, data_root=str(data_root))
-    if joint_ip or joint_ip_mr or (static_world and "ip_schedule" in drive):
+    if joint_ip or joint_ip_mr or (static_world and ("ip_schedule" in drive or "ip_schedules" in drive)):
         epoch = json.loads((data_root / contract["authority"]["path"]).read_text(encoding="utf-8-sig"))
         if type(epoch.get("instrument_time_us")) not in (int, float) or epoch["instrument_time_us"] != 0:
             raise ContractError("IP schedule requires the existing zero instrument epoch")
@@ -180,7 +180,8 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
     elif independent_oa or static_world:
         expanded = dict(groups=copy.deepcopy(drive["groups"]), clock=clock,
             **({"pulse": copy.deepcopy(drive["pulse"])} if "pulse" in drive else {}),
-            **({"ip_schedule": copy.deepcopy(drive["ip_schedule"])} if static_world and "ip_schedule" in drive else {}))
+            **({"ip_schedule": copy.deepcopy(drive["ip_schedule"])} if static_world and "ip_schedule" in drive else {}),
+            **({"ip_schedules": copy.deepcopy(drive["ip_schedules"])} if static_world and "ip_schedules" in drive else {}))
     else:
         expanded = project_resolved_drive(compiled, components, clock=clock,
             **({} if independent_rf else dict(pulse=drive["pulse"])))

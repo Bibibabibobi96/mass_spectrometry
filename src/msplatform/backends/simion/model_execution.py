@@ -191,7 +191,8 @@ def _execute_model_preparation(session: RunSession, *, model, assets: Mapping[st
         return value
 
     sources = {name: native_resource_path(name) for name in MODEL_RESOURCES}
-    if document['geometry']['frontend_geometry'].get('role') in {'simion_rf_ip_geometry', 'simion_ip_mr_complete_geometry'}:
+    if (document['geometry']['frontend_geometry'].get('role') in {'simion_rf_ip_geometry', 'simion_ip_mr_complete_geometry'}
+            or any(row['kind'] == 'ip_schedule' for row in document['native_drive_rows'])):
         sources['native_drive.lua'] = native_resource_path('native_drive.lua')
     sources['native_run_path.lua'] = resource_path('native_run_path.lua')
     model_path = owned(session.input_dir/'compiled_model.json', 'required_evidence')

@@ -99,8 +99,18 @@ managed HS1 and grouping tests passed (three parents, 319.844 s), with sparse ID
 7/91, a window beyond the base grid, undersized outer-gas refusal, failed-child
 evidence and lease cleanup. The inert fixture now follows the requested grouping
 mode; the production terminal collector's grouping checks are unchanged.
-Multiple independent timelines, ordinary installed consumption, successful HS1
-recovery and native HS1 flight validation remain open. Separately, complete
+Neutral sampled models also accept instance-keyed `ip_schedules`, validated
+against each complete canonical IP and the common clock. The existing keyed
+basis span, model-drive evaluator and timestep caps consume each instance's
+actual groups and schedule; model preparation freezes the required native
+schedule resource by capability and readback samples every selected schedule's
+edges. Two complete IPs with different schedules, renamed/reordered declarations
+and 30 response pairs passed public geometry/model/field publication and
+field admission, alongside generated Lua and single-IP regressions (three
+parents, 257.261 s). Missing authority, wrong clock and incomplete span refuse.
+Those native leaves and scalar samples are inert software fixtures. Multiple-bath
+HS1, ordinary installed consumption, successful HS1 recovery and actual neutral
+scheduled-model/flight native validation remain open. Separately, complete
 canonical IP native geometry built and cold-reopened successfully at `2bae0f7a`;
 that evidence includes no Refine or Fly.
 

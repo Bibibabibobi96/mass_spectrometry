@@ -407,7 +407,7 @@ def plan_model_preparation(model, *, geometry_assets: Mapping[str, dict], run_di
     native = dict(configuration=str(configuration), report=str(readback),
         consumer=str(sources/'model_drive.lua'), rf_drive=str(sources/'rf_drive.lua'),
         pulse_hook=str(sources/'single_flight_pulse_hook.lua'), waveforms=str(sources/'voltage_waveforms.lua'))
-    if joint_ip:
+    if joint_ip or any(row['kind'] == 'ip_schedule' for row in model.document['native_drive_rows']):
         native['native_drive'] = str(sources/'native_drive.lua')
     original = projection.materializations[str(spec_path)]
     if not original.startswith('return '):

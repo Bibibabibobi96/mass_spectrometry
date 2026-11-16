@@ -25,7 +25,7 @@ def compile_linear_terms(projection, drive, samples):
     if (
         not isinstance(drive, Mapping)
         or not {"groups", "clock"} <= set(drive)
-        or set(drive) - {"groups", "clock", "pulse", "ip_schedule"}
+        or set(drive) - {"groups", "clock", "pulse", "ip_schedule", "ip_schedules"}
     ):
         raise ValueError("explicit groups and clock required")
     groups = drive["groups"]
@@ -78,7 +78,12 @@ def compile_linear_terms(projection, drive, samples):
                 raise ValueError("unsupported RF waveform, frequency or amplitude")
     scheduled = [(i, g) for i, values in groups.items() for g, row in values.items()
                  if row["kind"] == "ip_schedule"]
-    if bool(scheduled) != ("ip_schedule" in drive):
+    scheduled_instances = {instance for instance, _ in scheduled}
+    single, multiple = "ip_schedule" in drive, "ip_schedules" in drive
+    if (single and multiple or single and len(scheduled_instances) != 1
+            or multiple and (not isinstance(drive["ip_schedules"], Mapping)
+                             or set(drive["ip_schedules"]) != scheduled_instances or not scheduled_instances)
+            or bool(scheduled_instances) != (single or multiple)):
         raise ValueError("canonical IP schedule authority required")
     pulse = any(
         row["kind"] == "pulse" for values in groups.values() for row in values.values()

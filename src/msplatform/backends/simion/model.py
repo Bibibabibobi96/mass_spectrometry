@@ -360,7 +360,7 @@ def _finish_static_world_model(compiled, components, *, drive, physics):
         raise ValueError('static world model providers differ from the source snapshot')
     if not isinstance(physics, Mapping) or dict(physics) != RF_PHYSICS:
         raise ValueError('static world model requires linear zero-Neumann physics')
-    if not isinstance(drive, Mapping) or not {'groups','clock'} <= set(drive) or set(drive)-{'groups','clock','pulse','ip_schedule'}:
+    if not isinstance(drive, Mapping) or not {'groups','clock'} <= set(drive) or set(drive)-{'groups','clock','pulse','ip_schedule','ip_schedules'}:
         raise ValueError('world model drive requires explicit groups and clock')
     if not isinstance(drive['groups'], Mapping): raise ValueError('world model groups must be a mapping')
     rows_all = [row for group in drive['groups'].values() if isinstance(group, Mapping) for row in group.values()]
@@ -368,15 +368,29 @@ def _finish_static_world_model(compiled, components, *, drive, physics):
     has_pulse = any(isinstance(row, Mapping) and row.get('kind') == 'pulse' for row in rows_all)
     scheduled = {instance for instance, group in drive['groups'].items() if isinstance(group, Mapping)
                  and any(isinstance(row, Mapping) and row.get('kind') == 'ip_schedule' for row in group.values())}
-    if bool(scheduled) != ('ip_schedule' in drive) or len(scheduled) > 1:
-        raise ValueError('one explicit canonical IP schedule authority required')
-    if scheduled:
-        ip = next(iter(scheduled))
-        schedule_input = copy.deepcopy(drive['ip_schedule'])
+    single = 'ip_schedule' in drive
+    multiple = 'ip_schedules' in drive
+    if single and multiple:
+        raise ValueError('choose one IP schedule authority form')
+    if single:
+        if len(scheduled) != 1:
+            raise ValueError('one explicit canonical IP schedule authority required')
+        authorities = {next(iter(scheduled)): drive['ip_schedule']}
+    elif multiple:
+        if not isinstance(drive['ip_schedules'], Mapping) or set(drive['ip_schedules']) != scheduled or not scheduled:
+            raise ValueError('IP schedule authorities differ from scheduled instances')
+        authorities = drive['ip_schedules']
+    elif scheduled:
+        raise ValueError('explicit canonical IP schedule authority required')
+    else:
+        authorities = {}
+    frozen_schedules = {}
+    for ip, schedule in authorities.items():
+        schedule_input = copy.deepcopy(schedule)
         supplied_timing = schedule_input.pop('native_timing', None)
-        frozen_schedule = _validated_ip_schedule(schedule_input, drive['clock'], compiled, components,
+        frozen = _validated_ip_schedule(schedule_input, drive['clock'], compiled, components,
             geometry['source_snapshot']['composition_plan']['scope']['instance_ids'], ip)
-        if supplied_timing is not None and supplied_timing != frozen_schedule['native_timing']:
+        if supplied_timing is not None and supplied_timing != frozen['native_timing']:
             raise ValueError('IP schedule native timing differs')
         electrodes = components[ip]['projection']['electrodes']
         expected = {row['name']: row['electrode_id'] for row in electrodes}
@@ -386,6 +400,7 @@ def _finish_static_world_model(compiled, components, *, drive, physics):
                 or any(type(index) is not int for index in actual.values())
                 or len(set(expected.values())) != len(expected)):
             raise ValueError('IP schedule groups or indices differ from selected physical authority')
+        frozen_schedules[ip] = frozen
     if has_pulse != ('pulse' in drive): raise ValueError('pulse timing must match world drive groups')
     _validate_timing(drive, requires_pulse=has_pulse, static_only=not dynamic)
     mapping = geometry['electrode_mapping']
@@ -411,7 +426,8 @@ def _finish_static_world_model(compiled, components, *, drive, physics):
             rows.append(dict(instance_id=instance, electrode_group_id=group,
                 native_targets=[dict(domain='world', electrode_id=electrode)], **copy.deepcopy(dict(value))))
     normalized_drive = copy.deepcopy(dict(drive))
-    if scheduled: normalized_drive['ip_schedule'] = frozen_schedule
+    if single: normalized_drive['ip_schedule'] = frozen_schedules[next(iter(scheduled))]
+    if multiple: normalized_drive['ip_schedules'] = frozen_schedules
     document = dict(schema_version=1, role='compiled_prepared_simion_model', field_status='not_solved',
         source_status='not_requested', native_frame_id=geometry['domain']['frame_id'], geometry=asdict(compiled),
         components_resolved=copy.deepcopy(dict(components)), drive=normalized_drive,
@@ -529,6 +545,8 @@ def render_model_configuration(model: CompiledPreparedModel) -> str:
         configuration['native_frame_id'] = document['native_frame_id']
     if 'ip_schedule' in document['drive']:
         configuration['ip_schedule'] = copy.deepcopy(document['drive']['ip_schedule'])
+    if 'ip_schedules' in document['drive']:
+        configuration['ip_schedules'] = copy.deepcopy(document['drive']['ip_schedules'])
     if 'pulse' in document['drive']:
         configuration['pulse'] = document['drive']['pulse']
     return 'return ' + lua_value(configuration) + '\n'

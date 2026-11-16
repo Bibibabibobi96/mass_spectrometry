@@ -2475,10 +2475,15 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
             'common/contracts/test_neutral_ip_schedule.py',
             'common/contracts/test_neutral_ip_schedule_span.py',
             'common/contracts/test_neutral_ip_schedule_managed.py',
+            'common/contracts/test_neutral_multi_ip_schedule.py',
+            'common/contracts/test_neutral_multi_ip_managed.py',
         }
         paths = [
             'src/msplatform/backends/simion/assembly_geometry.py',
             'src/msplatform/backends/simion/generic_scalar_binding.py',
+            'src/msplatform/backends/simion/model_execution.py',
+            'src/msplatform/backends/simion/native_plans.py',
+            'src/msplatform/backends/simion/resources/build_model_iob.lua',
             'src/msplatform/backends/simion/resources/native_drive.lua',
             'src/msplatform/components/dual_pressure_rectilinear_ion_processor/timing.py',
             'common/contracts/test_support/ip_mr_lp60_requests.json',
