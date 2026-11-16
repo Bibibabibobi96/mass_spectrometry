@@ -268,10 +268,13 @@ local function load_field(binding, shared_mask, reuse_workbench, sharing)
       for a=1,3 do
         local q = local_mm[a]/pitch[a]
         lo[a], hi[a] = math.floor(q)-1, math.ceil(q)+1
-        if not (lo[a] >= 0 and hi[a] < size[a]) then
+        -- SIMION SDK one-sided boundary interpolation; observed on 8.2.0.11
+        -- in pa-boundary-probe-107a6ae586c6, limited to unmirrored 3D scalar V.
+        if not (q >= 0 and q <= size[a]-1) then
           error(string.format('NUMERICAL_COVERAGE_FAILURE V_SUPPORT_BOX_OUTSIDE world=(%.17g,%.17g,%.17g) level=%s axis=%d lo=%d hi=%d dimension=%d ion=%s elapsed_us=%s ion_instance=%s scalar=%s mask=%s',
             x,y,z,tostring(binding.name or 'base'),a,lo[a],hi[a],size[a],tostring(ion_number),tostring(ion_time_of_flight),tostring(ion_instance),tostring(binding.scalar_pa),tostring(binding.valid_pa)))
         end
+        lo[a],hi[a]=math.max(0,lo[a]),math.min(size[a]-1,hi[a])
       end
     end
     -- The existing support envelope must not intersect an unrepresented sheet.

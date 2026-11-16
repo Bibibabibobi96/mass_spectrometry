@@ -112,6 +112,28 @@ ok,err=pcall(adapter,binding,'raw_sample'); assert(not ok and string.find(err,'i
                                 cwd=root, timeout=30, check=False)
         self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
 
+    def test_clipped_boundary_support_stays_fail_closed(self):
+        if not LUA.is_file(): self.skipTest('plain Lua unavailable')
+        adapter = native_resource_path('scalar_field_adapter.lua').read_text(encoding='utf8')
+        lua = """simion={pas={},experimental={}};function simion.early_access()end
+local bad=nil;local nonfinite=nil;local evaluated=0
+function simion.pas:open(path)return {symmetry='3dplanar',nx=5,ny=5,nz=5,dx_mm=1,dy_mm=1,dz_mm=1,debug_max_voltage=100,
+ potential=function(self,i,j,k) assert(i>=0 and i<5 and j>=0 and j<5 and k>=0 and k<5);if path=='mask' then return bad and i==bad[1] and j==bad[2] and k==bad[3] and 0 or 1 end;if nonfinite and i==nonfinite[1] and j==nonfinite[2] and k==nonfinite[3] then return 0/0 end;return 3 end,
+ potential_vc=function()evaluated=evaluated+1;return 3 end,electrode=function()end}end
+simion.experimental.field_array=function()return {efield=function()evaluated=evaluated+1;return 1,2,3 end}end
+local adapter=(function()
+""" + adapter + "\nend)()\n" + """
+local b={mode='comsol_static_scalar_v',scalar_pa='v',valid_pa='mask',origin_mm={0,0,0},pitch_mm={1,1,1},dimensions={5,5,5},ideal_sheet_projection={}}
+local f=adapter(b,'raw_sample')
+for axis=1,3 do for _,x in ipairs({0,.1,.9837869794909693,3.9,4}) do local q={2,2,2};q[axis]=x;assert(f(unpack(q))==3) end end
+for axis=1,3 do for _,x in ipairs({-0.0001,4.0001}) do local q={2,2,2};q[axis]=x;local before=evaluated;local ok,err=pcall(f,unpack(q));assert(not ok and string.find(err,'V_SUPPORT_BOX_OUTSIDE',1,true) and evaluated==before) end end
+bad={0,2,2};local before=evaluated;local ok,err=pcall(f,.1,2,2);assert(not ok and string.find(err,'V_SUPPORT_UNKNOWN',1,true) and evaluated==before)
+bad={2,2,2};ok,err=pcall(f,2,2,2);assert(not ok and string.find(err,'V_SUPPORT_UNKNOWN',1,true) and evaluated==before)
+bad=nil;nonfinite={0,2,2};ok,err=pcall(f,.1,2,2);assert(not ok and string.find(err,'V_SUPPORT_NONFINITE',1,true) and evaluated==before)
+"""
+        result=subprocess.run([str(LUA),'-'],input=lua,text=True,capture_output=True,cwd=root,timeout=30,check=False)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+
     def test_failure_context_precedes_long_paths(self):
         if not LUA.is_file(): self.skipTest('plain Lua unavailable')
         adapter = native_resource_path('scalar_field_adapter.lua').read_text(encoding='utf8')
