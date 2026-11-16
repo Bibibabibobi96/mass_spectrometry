@@ -38,6 +38,15 @@ the run, `which` resolved all three production functions to this canonical `matl
 The original MATLAB path and current folder were restored and the public GATE lease was released.
 No COMSOL server/model, field solve, particle solve, SIMION or GUI was started.
 
+2026-11-16 current-source P4-12复验经原九suite公共R2025b launcher运行
+`20261116_212939__test__comsol__oatof-matlab-unit-p4-12`：125/125通过，0 failed／0 incomplete，
+外墙262.271秒。其中SolverPolicy 18、CartesianRelease 8、PairedAcceleratorPulse 12共38项全部通过，
+`which`分别绑定本checkout的`oatof_cpt_solver_policy.m`、`oatof_read_cartesian_release.m`和
+`run_paired_accelerator_pulse.m`至`src/msplatform/backends/comsol/matlab/`。MATLAB PathFixture及teardown通过，
+但本轮没有独立前后path／cwd transcript，不另称单独测量。launcher attempt 1退出0并最终释放COMSOL lease；
+外层审计wrapper在成功报告及释放后因未设置`$LASTEXITCODE`退出1，保留为wrapper次错，不改写原测试结果。
+未运行独立finite-pulse科学脚本或场／粒子求解。
+
 飞行管、反射镜和检测器variant Lua旧项目路径原先仅转发安装实现；实际smoke、冻结依赖、集成及物理测试现已直接消费新位置，
 三份旧桥已删除。新原生builder字节、错误拒绝及fast_adjust输入不变；本切片未启动SIMION或生成PA。
 
