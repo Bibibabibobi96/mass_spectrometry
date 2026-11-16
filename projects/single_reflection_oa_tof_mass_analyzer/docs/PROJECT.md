@@ -855,8 +855,26 @@ and the detached operating PA. Cold and zero-native reuse preserve the basis;
 older bundles without it still reuse for tracking but refuse compensation-basis
 reading. One real public cold/reuse/legacy-reuse parent, eight worker tests plus
 one environment-independent skip, sixteen detached-tracking tests and two
-focused reader/worker tests passed with inert native leaves. Compensation
-consumption of this reader and all native/scientific acceptance remain open.
+focused reader/worker tests passed with inert native leaves. Native/scientific
+acceptance remains open.
+
+Compensation now accepts `--response-basis-manifest` as an explicit public
+`fields` product for fitting only. Admission authenticates the bundled compiled
+model and its referenced prepared-model product, compares the public OA resolved
+physics with the source case, recomputes downstream spatial identity from the
+public raw assets/numerics/resources and selected executable, and derives the
+expected grid/symmetry from that model. The manifest/product, ordered responses
+and current axis-exporter identity enter the compensation plan; freezing repeats
+authentication and writes a separate response binding and ordered input copies.
+`export_specification` alone selects that frozen response root. Existing case,
+source, producer, flight identity, detached tracking, three arms and partition /
+finalization recovery are unchanged; omission retains the historical response
+root. Synthetic public and historical bases produced identical axis CSV, fit
+JSON and generated Lua bytes. Missing/reordered/tampered/wrong-model/grid bases
+refused before native work, and complete-unit public-basis reuse remained
+zero-native with unchanged parent bytes. All 37 compensation parents and 21
+PowerShell adapter parents passed without native solver execution. This is
+software/fixture evidence only, not a new field, flight or fitting qualification.
 
 保留已有三臂电压补偿研究。原`run_compensation.py`不再原位修改父case，也不再维护
 ThreadPoolExecutor、numpy分批或项目私有调度；实际求解参数与固定端点单调拟合保留。

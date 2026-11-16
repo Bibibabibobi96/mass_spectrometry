@@ -191,8 +191,8 @@ class ReflectronVoltageCompensationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "whole batch"):
             study.complete_batch(run, "baseline", 1, {"completed": True, "exit_code": 0})
 
-    def published_source(self) -> tuple[Path, Path]:
-        case = self.root / "20261030_120004__sim__simion__compensation-source"
+    def published_source(self, name: str | None = None) -> tuple[Path, Path]:
+        case = self.root / (name or "20261030_120004__sim__simion__compensation-source")
         runtime = case / "simion"
         runtime.mkdir(parents=True)
         self.write(case / "contracts/candidate_resolved_geometry.json", CONTRACT)
@@ -213,6 +213,230 @@ class ReflectronVoltageCompensationTests(unittest.TestCase):
         executable = self.root / "simion.exe"
         executable.write_bytes(b"software-fixture-executable")
         return case, executable
+
+    def product_manifest(self, run: Path, product_id: str, kind: str, metadata: dict,
+                         records: dict[str, dict]) -> Path:
+        self.write(run / "run_config.json", {"run_id": run.name, "mode": "field_fixture"})
+        self.write(run / "run_manifest.json", {"schema_version": 2, "role": "simulation_run_manifest",
+            "project": "instrument_assembly", "run_id": run.name, "mode": "field_fixture", "status": "success",
+            "run_config": file_record(run / "run_config.json"), "inputs": {}, "outputs": list(records.values()),
+            "products": {product_id: {"schema_version": 1, "kind": kind, "status": "complete",
+                                      "metadata": metadata, "data": records}}})
+        return run / "run_manifest.json"
+
+    def public_basis(self, executable: Path) -> tuple[Path, dict, dict]:
+        from common.contracts.test_simion_field_action import public_case
+        from msplatform.backends.simion.downstream_fields_worker import DOWNSTREAM_RESOURCES
+        from msplatform.backends.simion.field_closure import downstream_identity
+        from msplatform.backends.simion.model import model_geometry
+        from msplatform.backends.simion.resources import native_resource_path
+        model, numerics, clock_path, clock_root = public_case()
+        serial = getattr(self, "public_serial", 0) + 1
+        self.public_serial = serial
+        document = model.document
+        contract = next(row for row in document["components_resolved"].values()
+                        if row.get("role") == "oa_tof_resolved_contract_do_not_edit")
+        prepared = self.root / ("public-prepared-" + str(serial))
+        prepared.mkdir()
+        records = {}
+        def put(run: Path, target: Path, key: str, data: bytes, records: dict, role="required_evidence"):
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+            records[key] = file_record(target, role)
+        put(prepared, prepared / "model.json", "compiled_model", json.dumps(model.document).encode(), records)
+        epoch = study._load(clock_path)["authority"]["path"]
+        put(prepared, prepared / "clock.json", "clock_authority", clock_path.read_bytes(), records)
+        put(prepared, prepared / Path(epoch).name, "instrument_epoch", (clock_root / epoch).read_bytes(), records)
+        native = {}
+        for role in ("parent", "flight_tube", "reflectron", "detector"):
+            key = role + "_raw"
+            put(prepared, prepared / (role + ".pa#"), key, b"raw-" + role.encode(), records, "solver_native_binary")
+            native[role] = {"raw_geometry": key}
+            if role in {"flight_tube", "detector"}:
+                surface = role + "_surface"
+                put(prepared, prepared / (role + ".pa-surf"), surface, b"surface-" + role.encode(), records, "solver_native_binary")
+                native[role]["fractional_surface"] = surface
+        metadata = dict(backend="simion", drive_configured=True, geometry_materialized=True,
+            field_status="not_solved", source_status="not_requested", native_assets=native)
+        prepared_manifest = self.product_manifest(prepared, "model", "prepared_model", metadata, records)
+        raw_assets = {}
+        for role in ("flight_tube", "reflectron", "detector"):
+            binding = native[role]
+            raw_assets[role] = dict(raw_record=records[binding["raw_geometry"]], surface_records=
+                [records[binding["fractional_surface"]]] if "fractional_surface" in binding else [])
+        fields = self.root / ("public-fields-" + str(serial))
+        fields.mkdir()
+        data = {}
+        put(fields, fields / "model.json", "compiled_model", json.dumps(model.document).encode(), data)
+        put(fields, fields / "source_model.json", "source_model_manifest", prepared_manifest.read_bytes(), data)
+        put(fields, fields / "numerics.json", "field_numerics", json.dumps(numerics).encode(), data)
+        builders = {}
+        for name in DOWNSTREAM_RESOURCES:
+            key = "resource_" + name
+            put(fields, fields / name, key, native_resource_path(name).read_bytes(), data)
+            builders[name] = data[key]["sha256"]
+        executable_record = file_record(executable)
+        tool = dict(release="SIMION 2020", executable_bytes=executable_record["bytes"],
+                    executable_sha256=executable_record["sha256"])
+        spatial = downstream_identity(model, raw_assets=raw_assets,
+            convergence_v=numerics["downstream_convergence_v"], tool_identity=tool, builder_identities=builders)
+        geometry = model_geometry(model, downstream_drive=True)
+        spec = next(row for row in geometry.downstream_specs if row["role"] == "reflectron")
+        instance, variables = spec["native_instance"], spec["template_variables"]
+        grid = dict(nx=instance["nx"], ny=instance["ny"], nz=instance["nz"],
+            dx_mm=variables["mmgu_axial"], dy_mm=variables["mmgu_radial"], dz_mm=variables["mmgu_radial"])
+        maximum = 4 + int(contract["rings"]["stage1_count"]) + int(contract["rings"]["stage2_count"])
+        responses = []
+        bindings = []
+        for response_id in range(1, maximum + 1):
+            key = "reflectron_response_" + str(response_id)
+            put(fields, fields / ("reflectron.pa" + str(response_id)), key,
+                b"authenticated-response-" + str(response_id).encode(), data, "solver_native_binary")
+            responses.append(dict(data[key], response_id=response_id))
+            bindings.append(dict(response_id=response_id, data_key=key))
+        basis = dict(schema_version=1, model_identity_sha256=document["model_identity_sha256"],
+            downstream_identity=spatial, grid=grid, symmetry="2dcylindrical", responses=bindings)
+        metadata = dict(model_identity_sha256=document["model_identity_sha256"],
+            downstream_identity=spatial, reflectron_response_basis=basis)
+        manifest = self.product_manifest(fields, "fields", "field_bundle", metadata, data)
+        return manifest, contract, {"responses": responses, "spatial": spatial, "grid": grid}
+
+    def test_public_response_basis_authenticates_against_case_and_public_documents(self):
+        _case, executable = self.published_source()
+        manifest, contract, expected = self.public_basis(executable)
+        basis = study._inspect_response_basis(manifest, contract, executable)
+        self.assertEqual([row["response_id"] for row in basis["responses"]],
+                         list(range(1, len(expected["responses"])+1)))
+        self.assertEqual(basis["downstream_identity"], expected["spatial"])
+        self.assertEqual(basis["grid"], expected["grid"])
+        self.assertEqual(basis["reference"]["product_id"], "fields")
+
+    def public_compensation_plan(self, use_basis: bool):
+        serial = getattr(self, "public_serial", 0) + 1
+        self.public_serial = serial
+        case, executable = self.published_source("public-case-" + str(serial))
+        manifest, contract, evidence = self.public_basis(executable)
+        self.write(case / "contracts/candidate_resolved_geometry.json", contract)
+        self.write(case / "simion/resolved_geometry.json", contract)
+        self.terminal(case, [], [p for p in case.rglob("*") if p.is_file()
+                                and p.name not in {"run_manifest.json", "run_config.json"}])
+        return study.inspect_source(case, executable, 8, 1e-4, particle_count=100,
+            response_basis_manifest=manifest if use_basis else None), evidence
+
+    def test_public_basis_is_frozen_with_manifest_product_and_ordered_response_inputs(self):
+        plan, _ = self.public_compensation_plan(True)
+        run = self.root / "public-basis-frozen"
+        self.write(run / "inputs/compensation_plan.json", plan)
+        study.freeze_inputs(run)
+        binding = study._load(run / "inputs/response_basis_binding.json")
+        self.assertEqual(binding["reference"], plan["response_basis"]["reference"])
+        self.assertEqual(binding["frozen_reference"]["product_id"], "fields")
+        self.assertEqual([row["response_id"] for row in binding["frozen_responses"]],
+                         list(range(1, plan["maximum_electrode"]+1)))
+        specification = study.export_specification(run)
+        self.assertEqual(Path(specification["argument_list"][4]), run / "inputs/response_basis/reflectron")
+        for row in binding["frozen_responses"]:
+            self.assertEqual(Path(row["record"]["path"]).read_bytes(),
+                             Path(plan["response_basis"]["responses"][row["response_id"]-1]["path"]).read_bytes())
+        default, _ = self.public_compensation_plan(False)
+        other = self.root / "historical-basis-frozen"
+        self.write(other / "inputs/compensation_plan.json", default)
+        study.freeze_inputs(other)
+        self.assertEqual(Path(study.export_specification(other)["argument_list"][4]),
+                         other / "simion/reflectron")
+
+    def test_public_basis_rejects_missing_reordered_tampered_wrong_model_and_grid_before_native(self):
+        _case, executable = self.published_source()
+        manifest, contract, evidence = self.public_basis(executable)
+        original = manifest.read_bytes()
+        for case in ("missing", "reordered", "wrong_model", "wrong_grid", "wrong_case"):
+            changed = json.loads(original)
+            basis = changed["products"]["fields"]["metadata"]["reflectron_response_basis"]
+            actual_contract = contract
+            if case == "missing":
+                changed["products"]["fields"]["metadata"].pop("reflectron_response_basis")
+            elif case == "reordered":
+                basis["responses"].reverse()
+            elif case == "wrong_model":
+                basis["model_identity_sha256"] = "F" * 64
+            elif case == "wrong_grid":
+                basis["grid"] = dict(basis["grid"], nx=basis["grid"]["nx"] + 1)
+            else:
+                actual_contract = dict(contract, geometry_mm=dict(contract["geometry_mm"], L_stage1=-1))
+            if case != "wrong_case":
+                self.write(manifest, changed)
+            with self.subTest(case=case), self.assertRaises((ValueError, AssertionError)):
+                study._inspect_response_basis(manifest, actual_contract, executable)
+            manifest.write_bytes(original)
+        response = evidence["responses"][0]
+        path = Path(response["path"])
+        before = path.read_bytes()
+        path.write_bytes(before + b"tampered")
+        with self.assertRaises((ValueError, AssertionError)):
+            study._inspect_response_basis(manifest, contract, executable)
+        path.write_bytes(before)
+        self.assertEqual(manifest.read_bytes(), original)
+
+    def test_public_and_historical_basis_produce_identical_axis_fit_and_lua_bytes(self):
+        outputs = []
+        for kind in ("historical", "public"):
+            plan, evidence = self.public_compensation_plan(kind == "public")
+            run = self.root / ("equivalent-" + kind)
+            self.write(run / "inputs/compensation_plan.json", plan)
+            study.freeze_inputs(run)
+            specification = study.export_specification(run)
+            root = Path(specification["argument_list"][4])
+            if kind == "historical":
+                for response in evidence["responses"]:
+                    target = run / ("simion/reflectron.pa" + str(response["response_id"]))
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(Path(response["path"]).read_bytes())
+            for response in evidence["responses"]:
+                self.assertEqual((root.parent / (root.name + ".pa" + str(response["response_id"]))).read_bytes(),
+                                 Path(response["path"]).read_bytes())
+            contract = study._load(run / "inputs/candidate_resolved_geometry.json")
+            n1, n2 = contract["rings"]["stage1_count"], contract["rings"]["stage2_count"]
+            l1, l2 = contract["geometry_mm"]["L_stage1"], contract["geometry_mm"]["L_stage2"]
+            mid, back = contract["electrodes_V"]["midgrid"], contract["electrodes_V"]["backplate"]
+            stage1 = [mid * i / (n1 + 1) for i in range(1, n1 + 1)]
+            stage2 = [mid + (back - mid) * i / (n2 + 1) for i in range(1, n2 + 1)]
+            total = sum(stage1) + sum(stage2) + mid + back
+            active = {2+i for i in range(n1)} | {3+n1+i for i in range(n2)} | {2+n1, 3+n1+n2}
+            xs = [l1*.25, l1*.75, l1+l2*.25, l1+l2*.75]
+            lines = ["x_mm," + ",".join("basis_"+str(i) for i in range(1, 5+n1+n2))]
+            for x in xs:
+                target = mid*x/l1 if x <= l1 else mid+(back-mid)*(x-l1)/l2
+                values = [format(target/total*10000 if i in active else 0., ".17g") for i in range(1, 5+n1+n2)]
+                lines.append(format(x, ".17g") + "," + ",".join(values))
+            (run / "results").mkdir(exist_ok=True)
+            (run / "results/axis_basis.csv").write_text("\n".join(lines)+"\n", encoding="utf-8", newline="\n")
+            plan["producer"] = {"component_plan": {"components": [{"role": "reflectron",
+                "identity": {"fixture": "unchanged-flight"}, "operating_voltages_v": {}}]}}
+            plan["native_source_status"] = "supported"
+            self.write(run / "inputs/compensation_plan.json", plan)
+            with patch.object(study, "render_program", return_value="same-existing-program"):
+                study.fit_and_plan(run)
+            outputs.append(tuple((run / path).read_bytes() for path in ("results/axis_basis.csv",
+                "results/monotone_voltage_fit.json", "inputs/reflectron_voltage_profile.lua",
+                "inputs/oatof_ideal_grounded.lua")))
+        self.assertEqual(outputs[0], outputs[1])
+
+    def test_public_basis_complete_predecessor_reuse_remains_zero_native_and_parent_unchanged(self):
+        parent = self.parent({1,2,3,4,5})
+        basis, _ = self.public_compensation_plan(True)
+        plan = study._load(parent / "inputs/compensation_plan.json")
+        plan["response_basis"] = basis["response_basis"]
+        self.write(parent / "inputs/compensation_plan.json", plan)
+        before = {p: p.read_bytes() for p in parent.rglob("*") if p.is_file()}
+        child = self.child(parent)
+        plan = study._load(child / "inputs/compensation_plan.json")
+        plan["response_basis"] = basis["response_basis"]
+        self.write(child / "inputs/compensation_plan.json", plan)
+        with patch.object(study, "producer_specification") as native:
+            self.assertFalse(self.fit(child)["native_fly_required"])
+            native.assert_not_called()
+        self.assertFalse((child / "simion").exists())
+        self.assertEqual(before, {p: p.read_bytes() for p in before})
 
     def test_inspect_consumes_only_selected_metadata_and_does_not_hash_published_pa(self) -> None:
         case, executable = self.published_source()

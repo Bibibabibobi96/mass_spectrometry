@@ -231,7 +231,7 @@ Write-Output 'PUBLIC_CONTEXT_PASS'
         self.assertNotIn("-ParticleCount", command)
         self.assertEqual(launch.call_args.kwargs, dict(cwd=ROOT, timeout=None, check=True))
         launch.reset_mock()
-        for option in ("--case-dir", "--numerics-path", "--resume-from", "--particle-count"):
+        for option in ("--case-dir", "--numerics-path", "--response-basis-manifest", "--resume-from", "--particle-count"):
             value = "100" if option == "--particle-count" else "must-not-read"
             with self.subTest(option=option), patch.object(sys, "argv", [str(source), "--resume-finalization", "--run-id", "existing", option, value]), self.assertRaises(SystemExit) as raised:
                 namespace["main"]()
@@ -243,7 +243,7 @@ Write-Output 'PUBLIC_CONTEXT_PASS'
             script = Path(directory)/"binding.ps1"
             script.write_text(r'''param($Entry)
 $ErrorActionPreference='Stop';$cases=@()
-foreach($option in @('CaseDirectory','SimionExe','NumericsPath','ParticleCount')){
+foreach($option in @('CaseDirectory','SimionExe','NumericsPath','ResponseBasisManifestPath','ParticleCount')){
  $arguments=@{ResumeFinalization=$true;RunId='existing'}
  $arguments[$option]=if($option-eq'ParticleCount'){100}else{'must-not-read'}
  try{& $Entry @arguments;$cases+=@{option=$option;type='unexpected_success';id=''}}
@@ -255,7 +255,7 @@ ConvertTo-Json -InputObject @($cases) -Compress
                 capture_output=True, text=True, encoding="utf-8", timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
             cases = json.loads(result.stdout)
-            self.assertEqual(len(cases), 4)
+            self.assertEqual(len(cases), 5)
             for case in cases:
                 with self.subTest(option=case["option"]):
                     self.assertEqual(case["type"], "System.Management.Automation.ParameterBindingException")
@@ -384,7 +384,8 @@ if(-not$caught-or$script:writersStopped){throw 'Unknown producer writer was acce
 
     def run_fixture(self, mode: str, *, resume: bool = False, timeout: float = 30,
                     delay_action: str = "", delay_seconds: float = 0,
-                    diagnostics_root: Path | None = None, regularization: str | None = None) -> tuple[subprocess.CompletedProcess[str], list[str], dict]:
+                    diagnostics_root: Path | None = None, regularization: str | None = None,
+                    response_basis: str | None = None) -> tuple[subprocess.CompletedProcess[str], list[str], dict]:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "repo"
             target = root / RELATIVE
@@ -448,6 +449,8 @@ if($env:FIXTURE_MODE-eq'producer_failure'){throw 'PRODUCER_ORIGINAL_SENTINEL'}
                 command += ["-ResultPath", str(root / "resume-result.json")]
             if regularization is not None:
                 command += ["-Regularization", regularization]
+            if response_basis is not None:
+                command += ["-ResponseBasisManifestPath", response_basis]
             if mode.startswith("producer"):
                 command += ["-NumericsPath", "explicit-coarse-input"]
             evidence = diagnostics_root
@@ -479,6 +482,18 @@ if($env:FIXTURE_MODE-eq'producer_failure'){throw 'PRODUCER_ORIGINAL_SENTINEL'}
                     self.assertNotIn("--regularization", argv)
                 else:
                     self.assertEqual(float(argv[argv.index("--regularization") + 1]), float(requested))
+
+    def test_direct_adapter_forwards_only_explicit_public_response_basis(self):
+        for requested in (None, "explicit-public-fields-manifest.json"):
+            with self.subTest(requested=requested):
+                result, _, completion = self.run_fixture("reuse", response_basis=requested)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                begin = next(row for row in completion["fixture_actions"] if row["event"] == "action.begin")
+                argv = begin["argv"]
+                if requested is None:
+                    self.assertNotIn("--response-basis-manifest", argv)
+                else:
+                    self.assertEqual(argv[argv.index("--response-basis-manifest") + 1], requested)
 
     def test_safe_producer_uses_one_owner_and_no_copy_or_duplicate_iob(self):
         result, events, completed = self.run_fixture("producer")

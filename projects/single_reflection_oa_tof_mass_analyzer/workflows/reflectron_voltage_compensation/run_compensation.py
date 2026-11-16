@@ -33,6 +33,11 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract 
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.simion_component_pa_plan import compile_component_pa_plan
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.native_stage_completion import append_native_stage_completion
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.prepare_candidate_consumers import prepare as prepare_consumers
+from msplatform.backends.simion.field_closure import downstream_identity, load_field_model, load_reflectron_response_records
+from msplatform.backends.simion.downstream_fields_worker import DOWNSTREAM_RESOURCES
+from msplatform.backends.simion.artifacts import CompiledPreparedModel
+from msplatform.backends.simion.model import model_geometry, require_prepared_model
+from msplatform.results.artifacts import open_artifact
 from msplatform.backends.simion.optimize_reflectron_ring_voltages import (
     _load_basis, load_authoring_default, optimize, render_lua_profile,
 )
@@ -81,8 +86,59 @@ def _bound(manifest: dict[str, Any], run: Path, path: Path, *, verify: bool = Tr
     return result
 
 
+def _inspect_response_basis(manifest_path: Path, contract: dict[str, Any], executable: Path) -> dict[str, Any]:
+    """Authenticate a public fitting basis against the case and public model documents."""
+    manifest_record = file_record(manifest_path.resolve())
+    reference = dict(manifest=manifest_record, product_id="fields")
+    artifact = open_artifact(reference, expected_kind="field_bundle")
+    document = json.loads(artifact.data_path("compiled_model").read_text(encoding="utf-8-sig"))
+    model = CompiledPreparedModel(json.dumps(document, allow_nan=False))
+    document = require_prepared_model(model)
+    resolved = [row for row in document["components_resolved"].values()
+                if row.get("role") == "oa_tof_resolved_contract_do_not_edit"]
+    if len(resolved) != 1:
+        raise ValueError("response basis model must contain one public OA resolved contract")
+    _require_same_physics(contract, resolved[0])
+    source_manifest = dict(artifact.data_records["source_model_manifest"],
+                           path=str(artifact.data_path("source_model_manifest")))
+    prepared = load_field_model(dict(manifest=source_manifest, product_id="model"))
+    if prepared.model.document != document:
+        raise ValueError("response basis compiled model differs from its public prepared-model product")
+    numerics = _load(artifact.data_path("field_numerics"))
+    convergence = numerics["downstream_convergence_v"]
+    executable_record = file_record(executable.resolve())
+    tool = dict(release="SIMION 2020", executable_bytes=executable_record["bytes"],
+                executable_sha256=executable_record["sha256"])
+    builders = {}
+    for name in DOWNSTREAM_RESOURCES:
+        key = "resource_" + name
+        artifact.data_path(key)
+        builders[name] = artifact.data_records[key]["sha256"]
+    raw_assets = {role: prepared.native_assets[role] for role in ("flight_tube", "reflectron", "detector")}
+    spatial = downstream_identity(prepared.model, raw_assets=raw_assets, convergence_v=convergence,
+                                  tool_identity=tool, builder_identities=builders)
+    geometry = model_geometry(model, downstream_drive=True)
+    spec = next(row for row in geometry.downstream_specs if row["role"] == "reflectron")
+    instance, variables = spec["native_instance"], spec["template_variables"]
+    grid = {**{key: instance[key] for key in ("nx", "ny", "nz")},
+            "dx_mm": variables["mmgu_axial"], "dy_mm": variables["mmgu_radial"],
+            "dz_mm": variables["mmgu_radial"]}
+    responses = load_reflectron_response_records(artifact,
+        expected_model_identity_sha256=document["model_identity_sha256"],
+        expected_downstream_identity=spatial, expected_grid=grid, expected_symmetry="2dcylindrical")
+    maximum_electrode = 4 + int(contract["rings"]["stage1_count"]) + int(contract["rings"]["stage2_count"])
+    if len(responses) != maximum_electrode or len(responses) != len(variables["component"]["electrodes"]):
+        raise ValueError("public response basis electrode coverage differs from the case contract")
+    return dict(schema_version=1, role="reflectron_compensation_public_response_basis",
+        reference=reference, source_run=str(manifest_path.resolve().parent),
+        model_identity_sha256=document["model_identity_sha256"], downstream_identity=spatial,
+        grid=grid, symmetry="2dcylindrical", responses=responses,
+        axis_exporter=file_record(REPO_ROOT / AXIS_EXPORTER_SOURCE))
+
+
 def inspect_source(case: Path, executable: Path, trajectory_quality: int, regularization: float,
-                   predecessor: Path | None = None, particle_count: int = 1000, numerics_path: Path | None = None) -> dict[str, Any]:
+                   predecessor: Path | None = None, particle_count: int = 1000, numerics_path: Path | None = None,
+                   response_basis_manifest: Path | None = None) -> dict[str, Any]:
     particle_count = validate_standard_particle_count(particle_count)
     case = case.resolve()
     contract_path = case / "contracts/candidate_resolved_geometry.json"
@@ -187,10 +243,15 @@ def inspect_source(case: Path, executable: Path, trajectory_quality: int, regula
         if previous.get("mode") != "reflectron_voltage_compensation":
             raise ValueError("resume-from is not a compensation owner run")
         previous = file_record(predecessor)
+    response_basis = (_inspect_response_basis(response_basis_manifest, contract, executable)
+                      if response_basis_manifest is not None else None)
+    response_bytes = (sum(row["bytes"] for row in response_basis["responses"])
+                      + response_basis["reference"]["manifest"]["bytes"] if response_basis else 0)
     return {"schema_version": 1, "role": "reflectron_voltage_compensation_plan", "case_dir": str(case),
             "source_run": str(source_run), "source_manifest": file_record(source_run / "run_manifest.json"),
             "contract": contract_record, "source": source_record, "runtime_receipt": runtime_receipt_record, "runtime_geometry": geometry_record,
             "build_completion": build_record, "runtime_files": records if producer is None else [], "producer": producer,
+            "response_basis": response_basis,
             "simion_executable": file_record(executable.resolve()), "trajectory_quality": trajectory_quality,
             "regularization": regularization, "particle_count": particle_count,
             "birth_time_range_us": [float(source_table["TobUs"].min()), float(source_table["TobUs"].max())],
@@ -200,7 +261,7 @@ def inspect_source(case: Path, executable: Path, trajectory_quality: int, regula
             "native_source_representation": "same_owner_project_producer" if producer is not None else "published_native_family" if native_family else "standalone",
             "native_source_status": "supported" if producer is not None else "blocked_requires_manifest_bound_standalone_provider" if native_family else "blocked_requires_explicit_project_producer",
             "protected_cache_keys": [c["cache_key"] for c in producer["component_plan"]["components"] if c["cacheable"]] if producer else [],
-            "committed_new_bytes": producer["component_plan"]["committed_new_bytes"] if producer else sum(r["record"]["bytes"] for r in records) + 256 * 1024**2}
+            "committed_new_bytes": (producer["component_plan"]["committed_new_bytes"] if producer else sum(r["record"]["bytes"] for r in records) + 256 * 1024**2) + response_bytes}
 
 
 def _require_same_physics(source: dict[str, Any], actual: dict[str, Any]) -> None:
@@ -357,6 +418,34 @@ def _predecessor_axis_exporter(closure: dict[str, Any]) -> Path:
     return Path(frozen_source_path(closure, selected[0]))
 
 
+def _freeze_response_basis(run: Path, plan: dict[str, Any], closure: dict[str, Any]) -> None:
+    expected = plan["response_basis"]
+    contract = _load(Path(plan["contract"]["path"]))
+    actual = _inspect_response_basis(Path(expected["reference"]["manifest"]["path"]), contract,
+                                     Path(plan["simion_executable"]["path"]))
+    if actual != expected:
+        raise ValueError("public response basis changed after compensation admission")
+    frozen_export = file_record(Path(frozen_source_path(closure, AXIS_EXPORTER_SOURCE)))
+    if ((frozen_export["bytes"], frozen_export["sha256"]) !=
+            (expected["axis_exporter"]["bytes"], expected["axis_exporter"]["sha256"])):
+        raise ValueError("public response basis axis exporter identity differs")
+    frozen_manifest_path = run / "inputs/response_basis_manifest.json"
+    freeze_file(Path(expected["reference"]["manifest"]["path"]), frozen_manifest_path)
+    frozen_manifest = file_record(frozen_manifest_path)
+    frozen_responses = []
+    for response in expected["responses"]:
+        response_id = response["response_id"]
+        verify_record("public reflectron response", response)
+        destination = run / f"inputs/response_basis/reflectron.pa{response_id}"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        freeze_file(Path(response["path"]), destination)
+        frozen_responses.append(dict(response_id=response_id,
+                                     record=file_record(destination, "solver_native_binary")))
+    _write_json(run / "inputs/response_basis_binding.json", dict(expected,
+        frozen_reference=dict(manifest=frozen_manifest, product_id="fields"),
+        frozen_responses=frozen_responses))
+
+
 def freeze_inputs(run: Path) -> dict[str, Any]:
     plan = _plan(run)
     verify_record("source manifest", plan["source_manifest"])
@@ -380,6 +469,8 @@ def freeze_inputs(run: Path) -> dict[str, Any]:
         authority = plan["regularization_authoring_source"]
         if (frozen_record["bytes"], frozen_record["sha256"]) != (authority["bytes"], authority["sha256"]):
             raise ValueError("frozen regularization authoring source differs from request")
+    if plan.get("response_basis"):
+        _freeze_response_basis(run, plan, closure)
     if plan.get("producer"):
         _freeze_producer(run, plan["producer"])
     _write_json(run / "inputs/source_closure.json", closure)
@@ -413,6 +504,15 @@ def freeze_inputs(run: Path) -> dict[str, Any]:
 
 
 def _basis_identity(plan: dict[str, Any]) -> dict[str, Any]:
+    if plan.get("response_basis"):
+        basis = plan["response_basis"]
+        return {"response_basis": [(row["response_id"], row["bytes"], str(row["sha256"]).upper())
+                                   for row in basis["responses"]],
+                "model_identity_sha256": basis["model_identity_sha256"],
+                "downstream_identity": basis["downstream_identity"],
+                "axis_exporter_sha256": basis["axis_exporter"]["sha256"],
+                "maximum_electrode": plan["maximum_electrode"], "maximum_x_mm": plan["maximum_x_mm"],
+                "simion_executable_sha256": plan["simion_executable"]["sha256"]}
     if plan.get("producer"):
         component = next(c for c in plan["producer"]["component_plan"]["components"] if c["role"] == "reflectron")
         return {"field": component["identity"], "maximum_electrode": plan["maximum_electrode"],
@@ -431,9 +531,27 @@ def export_specification(run: Path) -> dict[str, Any]:
         raise ValueError("axis basis exporter closure differs from run frozen code")
     verify_candidate_source_closure(closure)
     exporter = frozen_source_path(closure, AXIS_EXPORTER_SOURCE)
+    basis_root = run / "simion/reflectron"
+    if plan.get("response_basis"):
+        expected = plan["response_basis"]
+        binding = _load(run / "inputs/response_basis_binding.json")
+        if (binding["reference"] != expected["reference"] or binding["responses"] != expected["responses"]
+                or binding["axis_exporter"] != expected["axis_exporter"]):
+            raise ValueError("frozen public response basis binding differs from compensation plan")
+        frozen = binding["frozen_responses"]
+        if len(frozen) != len(expected["responses"]):
+            raise ValueError("frozen public response basis is incomplete")
+        for response, original in zip(frozen, expected["responses"], strict=True):
+            response_id = original["response_id"]
+            destination = run / f"inputs/response_basis/reflectron.pa{response_id}"
+            if (response["response_id"] != response_id
+                    or Path(response["record"]["path"]).resolve() != destination.resolve()):
+                raise ValueError("frozen public response basis IDs or order differ")
+            verify_record("frozen public reflectron response", response["record"])
+        basis_root = run / "inputs/response_basis/reflectron"
     return {"name": "reflectron_axis_basis", "file_path": plan["simion_executable"]["path"],
             "argument_list": ["--nogui", "--noprompt", "lua", exporter,
-                              str(run / "simion/reflectron"), str(plan["maximum_electrode"]),
+                              str(basis_root), str(plan["maximum_electrode"]),
                               str(run / "results/axis_basis.csv"), format(plan["maximum_x_mm"], ".17g")],
             "working_directory": str(run / "simion"), "stdout_path": str(run / "logs/basis_export.stdout.log"),
             "stderr_path": str(run / "logs/basis_export.stderr.log")}
@@ -649,6 +767,8 @@ def main() -> None:
     parser.add_argument("--particle-count", type=int, choices=(100, 1000, 5000), default=1000,
                         help="consume an already frozen same-N parent ION; never resample")
     parser.add_argument("--numerics-path", type=Path, help="explicit solver numerics for same-owner safe field preparation; never changes Formal defaults")
+    parser.add_argument("--response-basis-manifest", type=Path,
+                        help="explicit public fields product used only for reflectron response fitting")
     parser.add_argument("--run-id")
     parser.add_argument("--resume-from", type=Path, help="explicit terminal parent manifest; creates a new run and reuses complete units")
     parser.add_argument("--resume-finalization", action="store_true", help="finish the original small Result without Fly")
@@ -664,7 +784,7 @@ def main() -> None:
     args = parser.parse_args()
     if args.resume_finalization:
         run_options = {"--case-dir", "--simion-exe", "--trajectory-quality", "--regularization",
-                       "--particle-count", "--numerics-path", "--resume-from", "--action"}
+                       "--particle-count", "--numerics-path", "--response-basis-manifest", "--resume-from", "--action"}
         if any(argument.split("=", 1)[0] in run_options for argument in sys.argv[1:]):
             parser.error("--resume-finalization accepts only the existing --run-id and --result-path")
     if args.action:
@@ -675,7 +795,8 @@ def main() -> None:
                 authoring_source = file_record(authoring_path)
                 if authoring_source["sha256"].lower() != authoring_sha256:
                     raise ValueError("regularization authoring source changed during resolution")
-            result = inspect_source(args.case_dir, args.simion_exe, args.trajectory_quality, args.regularization, args.resume_from, args.particle_count, args.numerics_path)
+            result = inspect_source(args.case_dir, args.simion_exe, args.trajectory_quality, args.regularization,
+                args.resume_from, args.particle_count, args.numerics_path, args.response_basis_manifest)
             if authoring_source is not None:
                 result["regularization_authoring_source"] = authoring_source
         else:
@@ -714,7 +835,8 @@ def main() -> None:
             command += ["-Regularization", str(args.regularization)]
         for name, value in (("CaseDirectory", args.case_dir), ("RunId", args.run_id),
                             ("ContinuationPredecessorManifestPath", args.resume_from),
-                            ("ResultPath", args.result_path), ("NumericsPath", args.numerics_path)):
+                            ("ResultPath", args.result_path), ("NumericsPath", args.numerics_path),
+                            ("ResponseBasisManifestPath", args.response_basis_manifest)):
             if value is not None:
                 command += ["-"+name, str(value)]
     # The public PowerShell owner applies the declared native/resource budget;

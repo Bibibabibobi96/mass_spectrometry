@@ -4,6 +4,7 @@ param(
   [Parameter(ParameterSetName='Run')][string]$CaseDirectory='',
   [Parameter(ParameterSetName='Run')][string]$SimionExe='',
   [Parameter(ParameterSetName='Run')][string]$NumericsPath='',
+  [Parameter(ParameterSetName='Run')][string]$ResponseBasisManifestPath='',
   [Parameter(ParameterSetName='Run')][int]$TrajectoryQuality=8,
   [Parameter(ParameterSetName='Run')][double]$Regularization,
   [Parameter(ParameterSetName='Run')][string]$ContinuationPredecessorManifestPath='',
@@ -86,9 +87,16 @@ function Register-CompensationInputs {
       'source.ion','source_case_resolved_geometry.json','candidate_resolved_geometry.json',
       'candidate_baseline.json','candidate_science_mode.json','candidate_solver_numerics.json',
       'component_pa_plan.json','source_template.iob','source_template.con','flight_identity.json',
+      'response_basis_manifest.json','response_basis_binding.json',
       'oatof_ideal_grounded.lua','reflectron_voltage_profile.lua')){
     $path=Join-Path $package.input_dir $name
     if(Test-Path -LiteralPath $path -PathType Leaf){$config.inputs[$name.Replace('.','_')]=$path}
+  }
+  $responseInputs=Join-Path $package.input_dir 'response_basis'
+  if(Test-Path -LiteralPath $responseInputs -PathType Container){
+    foreach($path in @(Get-ChildItem -LiteralPath $responseInputs -File|Sort-Object Name)){
+      $config.inputs['response_basis_'+$path.BaseName.Replace('.','_')]=$path.FullName
+    }
   }
   foreach($name in @('source_closure','derivation')){
     $path=Join-Path $package.input_dir ('predecessor_source_closure/'+$name+'.json')
@@ -231,9 +239,11 @@ try{
   }
   if($ContinuationPredecessorManifestPath){$inspect+=@('--resume-from',$ContinuationPredecessorManifestPath)}
   if($NumericsPath){$inspect+=@('--numerics-path',$NumericsPath)}
+  if($ResponseBasisManifestPath){$inspect+=@('--response-basis-manifest',$ResponseBasisManifestPath)}
   $plan=Invoke-CompensationAction inspect $inspect
   $parents=@([string]$plan.source_run)
   if($null-ne$plan.predecessor_manifest){$parents+=Split-Path -Parent $plan.predecessor_manifest.path}
+  if($plan.PSObject.Properties['response_basis']-and$null-ne$plan.response_basis){$parents+=[string]$plan.response_basis.source_run}
   foreach($parent in @($parents|Sort-Object -Unique)){
     $script:readers.Add((Enter-RunTerminalConsumptionGuard -RunDirectory $parent))
   }
