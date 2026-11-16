@@ -165,7 +165,7 @@ def _invoke_process_owner(context, request, resource_name, interpret):
     child_environment["MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH"] = str(context.host_state_path)
     child_environment["SIMULATION_PYTHON_EXE"] = str(context.python_executable)
     payload = json.dumps(request, ensure_ascii=False, allow_nan=False).encode("utf-8")
-    process = subprocess.Popen(command, cwd=context.workspace, env=child_environment,
+    process = subprocess.Popen(command, cwd=resource_path(resource_name).parent, env=child_environment,
                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     primary = None
     close_errors = []

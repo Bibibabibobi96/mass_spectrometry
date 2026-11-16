@@ -6,6 +6,52 @@ Paper 1 专用研究准备API的归属与退出条件见[分析说明](../analys
 已闭合的提供者迁移、回归及失败链冻结在[文档收口记录](history/20261026__assembly-documentation-consolidation.md)，
 不把实现迁移、局部验证或旧运行自动提升为新整机资格。
 
+## OA mass-spectrum installed full-study owner
+
+`msplatform.workflows.single_reflection_mass_spectrum_study` now owns five-species study ordering,
+deterministic parent/prefix/mixed-source construction, explicit Formal and resolved-geometry admission,
+per-species scientific completion, and sealed-parent selection. The original PowerShell CLI only selects
+project defaults and an explicit saved execution environment/profile for normal, partial-successor,
+reanalysis and finalization modes. `msplatform.backends.comsol.oatof_retrace` and
+`msplatform.backends.simion.mass_spectrum` own the corresponding native actions through the existing
+managed process owner; there is no second scheduler. The existing spectrum analysis module and its
+mathematics are unchanged. `analysis/mass_spectrum_reanalysis.py` was retired after its selection,
+freezing and worker responsibilities moved to the installed workflow/worker. Geometry, Formal and
+workbench wrappers retained for other consumers were not removed.
+
+Normal and partial runs freeze installed code and the explicitly selected existing OA MATLAB retrace task.
+`ResumeAfterComsol` now requires `SourceRunPath` and a distinct new `RunId`: authenticated complete species
+are reused from a sealed partial parent, authentic but scientifically incomplete species are retraced,
+and altered completed records are rejected. A failed/incomplete species does not block otherwise valid
+siblings. Reanalysis executes one observed frozen `python-analysis` operation, verifies analyzer, particle
+reader and selected geometry against the original inventory, and starts no COMSOL/SIMION process or PA
+materialization. Unknown writers and unconfirmed releases retain protection. Public path/process/host
+launch bridges use their installed resource directory before the managed short alias exists, avoiding a
+deep workspace failure without changing native run cwd or canonical identity.
+
+The five masses, shared seed, N100-prefix-of-N1000 sources, five separate COMSOL completions, one mixed
+500-ion Fly, retrace environment, six analysis products and `resolution_claim_allowed=false` are preserved.
+Formal release assets and scientific qualification are unchanged. No commercial native execution was run
+for this migration; inert native leaves and real managed owner/process/publication APIs provide software
+evidence only. Ordinary wheel/sdist probes cover installed cohort construction, receipt parsing, verified
+SIMION staging and resource origins; full two-arm installation acceptance and a real five-species native
+acceptance run remain separate follow-up actions after commit.
+
+Focused final verification on this worktree passed all **14 original tests in 585.472 s** and all
+**4 new installed-study tests in 313.668 s**, with the shared GATE lease released. The original-to-new
+assertion responsibilities are: sealed/tampered parent admission → `select_analysis_source` plus native
+completion records; frozen analysis and schema/core negatives → the installed worker and original-inventory
+SHA guards; reanalysis success/failure/finalization → the real managed owner; ambiguous CLI inputs → unchanged
+PowerShell parameter binding; release-primary protection → actual process receipt and active capacity hold;
+deep paths → managed alias plus resource-local bridge cwd; normal native argv/environment → installed CLI
+and frozen task; partial replay → distinct successor with incomplete-only retrace; unknown writer → stopped
+receipt requirement and retained hold; normal finalization → owner replay without native work; workspace
+identity → actual frozen run configuration plus the unchanged ideal-publication check; geometry/Formal
+freshness → installed document resolver and frozen-parent binding. Managed Result assertions verify stage,
+manifest, capacity and actual lease files instead of retired PowerShell booleans. Import-stage error types,
+frozen task paths, successor IDs and receipt field locations changed without dropping scientific or failure
+coverage. No original substantive assertion was intentionally retired.
+
 ## 当前状态
 
 ### 可安装COMSOL原生资源切片

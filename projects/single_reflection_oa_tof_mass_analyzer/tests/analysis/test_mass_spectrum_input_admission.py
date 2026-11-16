@@ -14,6 +14,171 @@ import unittest
 
 PROJECT = Path(__file__).resolve().parents[2]
 REPO = PROJECT.parents[1]
+_SUBPROCESS_RUN = subprocess.run
+
+
+def _configure_original_cli(command, *args, **kwargs):
+    """Supply explicit deployment and installed-owner inert native leaves."""
+    env = kwargs.get('env')
+    command = list(command)
+    if kwargs.get('text'):
+        kwargs.setdefault('errors', 'replace')
+    owner_index = next((index for index, value in enumerate(command)
+                        if str(value).endswith('run_mass_spectrum_candidate.ps1')), None)
+    if owner_index is None or env is None or 'MASS_SPECTROMETRY_ARTIFACT_ROOT' not in env:
+        return _SUBPROCESS_RUN(command, *args, **kwargs)
+    owner = Path(command[owner_index])
+    fixture = owner.parents[4]
+    artifacts = Path(env['MASS_SPECTROMETRY_ARTIFACT_ROOT'])
+    root = artifacts.parent
+    formal = artifacts / f'projects/{PROJECT.name}/formal'
+    if (formal / 'simion/oatof_ideal_grounded.iob').is_file():
+        mph = formal / 'comsol/single_reflection_oa_tof_mass_analyzer__model.mph'
+        assets_path = fixture / f'projects/{PROJECT.name}/config/formal_assets.json'
+        assets_path.parent.mkdir(parents=True, exist_ok=True)
+        assets = json.loads((PROJECT / 'config/formal_assets.json').read_text(encoding='utf-8'))
+        assets['comsol']['sha256'] = hashlib.sha256(mph.read_bytes()).hexdigest().upper()
+        assets_path.write_text(json.dumps(assets), encoding='utf-8')
+        iob = formal / 'simion/oatof_ideal_grounded.iob'
+        payload = iob.read_bytes()
+        (formal / 'asset_manifest.json').write_text(json.dumps(dict(
+            schema_version=1, role='formal_asset_manifest', project=PROJECT.name,
+            release_id=assets['release_id'], assets={'iob': dict(
+                path='simion/oatof_ideal_grounded.iob', bytes=len(payload),
+                sha256=hashlib.sha256(payload).hexdigest().upper())})), encoding='utf-8')
+    stage = root / 'stage-policy.json'
+    stage.write_text(json.dumps(dict(schema_version=1, role='execution_stage_policy', stages={
+        'oa_tof_mass_spectrum': dict(limits=dict(wall_clock_seconds=120,
+            transient_run_directory_bytes=268435456, process_tree_working_set_bytes=2147483648,
+            minimum_system_available_memory_bytes=1073741824, compact_final_retained_bytes=67108864,
+            automatic_retry_count=0), artifact_retention=dict(policy_version=1,
+                **{'class': 'solver_review'}, reason='restored inert native regression'))})), encoding='utf-8')
+    environment_path = root / 'execution-environment.json'
+    environment_path.write_text(json.dumps(dict(schema_version=1, role='execution_environment',
+        tools=dict(python=str(Path(sys.executable).resolve()), powershell=shutil.which('pwsh')),
+        policy=dict(host_state_path=str(root/'host.sqlite3'),
+            policy_path=str(fixture/'src/msplatform/execution/resources/host_resource_policy.json'),
+            execution_root=env.get('MASS_SPECTROMETRY_EXECUTION_ROOT', str(root/'execution')),
+            capacity_policy_path=str(fixture/'src/msplatform/execution/resources/artifact_capacity_policy.json')),
+        profiles=dict(test=dict(stage_policy_path=str(stage))))), encoding='utf-8')
+    (fixture/'sitecustomize.py').write_text(r'''
+import csv,hashlib,json,os
+from pathlib import Path
+from msplatform.execution.run_session import RunSession
+_original=RunSession.run_process
+
+def _inert(session,operation_id,*,executable,arguments,**kwargs):
+    env=dict(kwargs.get('environment') or {})
+    ordinal=session.expected_operation_ids.index(operation_id)+1
+    base=session.log_dir/f'operation_{ordinal:04d}'
+    capture=os.environ.get('TEST_MASS_CAPTURE')
+    if capture:
+        Path(capture).write_text(json.dumps(dict(cwd=str(session.run_dir),argv=list(arguments),
+            environment=dict(session.environment,**env),stdout=str(base.with_suffix('.stdout.log')),
+            stderr=str(base.with_suffix('.stderr.log')))),encoding='utf-8')
+    if operation_id.startswith('comsol-'):
+        report=Path(arguments[arguments.index('-ReportPath')+1])
+        completion=Path(arguments[arguments.index('-CompletionPath')+1])
+        output=Path(env['OATOF_COMSOL_OUTPUT_CSV']);ion=Path(env['OATOF_ION_TABLE'])
+        record=dict(task_script=arguments[arguments.index('-TaskScript')+1],report_path=str(report),
+            run_id=session.run_id,completion_path=str(completion),environment=env)
+        with Path(os.environ['TEST_MASS_COMSOL_CAPTURE']).open('a',encoding='utf-8') as stream:
+            stream.write(json.dumps(record)+'\n')
+        argv=[str(Path(os.environ['TEST_MASS_LEAF'])),'comsol',str(report),str(output),str(ion)]
+    else:
+        transport=Path(os.environ['TEST_MASS_SIMON_CAPTURE'] if 'TEST_MASS_SIMON_CAPTURE' in os.environ
+                       else os.environ['TEST_MASS_SIMION_CAPTURE'])
+        transport.with_suffix('.arguments.json').write_text(json.dumps(list(arguments)),encoding='utf-8')
+        transport.write_text(json.dumps(dict(arguments=list(arguments),cwd=str(session.run_dir),
+            stdout=str(base.with_suffix('.stdout.log')))),encoding='utf-8')
+        argv=[str(Path(os.environ['TEST_MASS_LEAF'])),'simion',str(transport.with_suffix('.arguments.json'))]
+    try:
+        result=_original(session,operation_id,executable=Path(os.environ['TEST_MASS_PYTHON']),
+            arguments=argv,**{**kwargs,'environment':env})
+    except Exception as error:
+        if operation_id.startswith('comsol-') and getattr(error,'observed_process_exit_confirmed',False):
+            observation=error.receipt['observation'];code=error.observed_process_returncode
+            completion.write_text(json.dumps(dict(schema_version=1,role='comsol_launcher_completion',
+                run_id=session.run_id,operations=[dict(operation_id='inert',observation=dict(
+                    exit_confirmed=True,returncode=code,process_id=observation['root_process_id'],
+                    process_started_at_utc_ticks=observation['root_process_started_at_utc_ticks']))],
+                host_release=dict(inherited=True,token='inert',error=None))),encoding='utf-8')
+            raise RuntimeError('INERT_COMSOL_FAILURE') from error
+        raise
+    if operation_id.startswith('comsol-'):
+        code=result['observation']['exit_code']
+        completion.write_text(json.dumps(dict(schema_version=1,role='comsol_launcher_completion',
+            run_id=session.run_id,operations=[dict(operation_id='inert',observation=dict(
+                exit_confirmed=True,returncode=code,process_id=result['observation']['root_process_id'],
+                process_started_at_utc_ticks=result['observation']['root_process_started_at_utc_ticks']))],
+            host_release=dict(inherited=True,token='inert',error=None))),encoding='utf-8')
+        if os.environ.get('TEST_MASS_UNKNOWN_SPECIES')==ion.stem:
+            with session._lock:
+                session._completed.pop(operation_id,None);session._active.add(operation_id)
+                session.operations[:]=[row for row in session.operations if row['operation_id']!=operation_id]
+            raise RuntimeError('INERT_WRITER_OBSERVATION_UNKNOWN')
+        if code:raise RuntimeError('INERT_COMSOL_FAILURE')
+    return result
+if os.environ.get('TEST_MASS_LEAF'):RunSession.run_process=_inert
+
+if os.environ.get('TEST_MASS_CAPTURE') and not os.environ.get('TEST_MASS_LEAF'):
+    _observe=RunSession.run_process
+    def _capture(session,operation_id,*,arguments,**kwargs):
+        ordinal=session.expected_operation_ids.index(operation_id)+1;base=session.log_dir/f'operation_{ordinal:04d}'
+        Path(os.environ['TEST_MASS_CAPTURE']).write_text(json.dumps(dict(cwd=str(session.run_dir),
+            argv=list(arguments),environment=session.environment,stdout=str(base.with_suffix('.stdout.log')),
+            stderr=str(base.with_suffix('.stderr.log')))),encoding='utf-8')
+        return _observe(session,operation_id,arguments=arguments,**kwargs)
+    RunSession.run_process=_capture
+
+if os.environ.get('TEST_MASS_RELEASE_SENTINEL'):
+    import msplatform.execution.run_session as process_session
+    _observed=process_session.run_observed_process
+    def _release_failure(*args,**kwargs):
+        try:
+            result=_observed(*args,**kwargs)
+        except Exception as error:
+            if not getattr(error,'receipt',None):raise
+            result=error.receipt
+            with Path(os.environ['TEST_MASS_ROOT'],'release_calls.txt').open('a') as stream:stream.write('release\n')
+            result['host_release']['error']=os.environ['TEST_MASS_RELEASE_SENTINEL']
+            result['host_release']['result']=None
+            raise
+        with Path(os.environ['TEST_MASS_ROOT'],'release_calls.txt').open('a') as stream:stream.write('release\n')
+        result['host_release']['error']=os.environ['TEST_MASS_RELEASE_SENTINEL']
+        result['host_release']['result']=None
+        return result
+    process_session.run_observed_process=_release_failure
+
+if os.environ.get('TEST_MASS_MUTATE'):
+    from msplatform.workflows import single_reflection_mass_spectrum_study as study
+    _freeze=study._freeze_code
+    def _mutate(session,*args,**kwargs):
+        result=_freeze(session,*args,**kwargs);package=result[0]
+        relative=os.environ['TEST_MASS_MUTATE'];row=next(row for row in package['files']
+            if row['relative_path']==relative);target=Path(row['path'])
+        if os.environ.get('TEST_MASS_MISSING'):target.unlink()
+        else:target.write_bytes(target.read_bytes()+b'\n# altered test fixture\n')
+        Path(os.environ['MASS_SPECTROMETRY_ARTIFACT_ROOT']).parent.joinpath('mutation_calls').write_text(relative)
+        return result
+    study._freeze_code=_mutate
+
+if os.environ.get('TEST_MASS_FINALIZATION_SENTINEL'):
+    from msplatform.execution import owner
+    def _held(*args,**kwargs):raise RuntimeError(os.environ['TEST_MASS_FINALIZATION_SENTINEL'])
+    owner._finalize=_held
+''', encoding='utf-8')
+    env['PYTHONPATH'] = os.pathsep.join((str(fixture), str(fixture/'src')))
+    env['PYTHONDONTWRITEBYTECODE'] = '1'
+    command += ['-Workspace', str(root), '-ExecutionEnvironment', str(environment_path),
+                '-EngineeringProfile', 'test']
+    completed = _SUBPROCESS_RUN(command, *args, **kwargs)
+    if completed.stderr is not None:
+        completed.stderr += f"\nTEST_DEPLOYMENT={root}; HOST={env['MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH']}"
+    return completed
+
+
+subprocess.run = _configure_original_cli
 
 
 def sealed_mass_source(root):
@@ -51,7 +216,13 @@ def sealed_mass_source(root):
             f'{i+1},{mass**0.5+i*.01},123.1,.2,True\n' for i in range(4)), encoding='utf-8')
         report = source / f'logs/m{mass}.report.txt'
         report.write_text('DETECTED=4/4\n', encoding='utf-8')
-        outputs += [path, report]
+        completion = source / f'logs/m{mass}.comsol_completion.json'
+        completion.write_text(json.dumps(dict(schema_version=1, role='comsol_launcher_completion',
+            run_id=source.name, operations=[dict(operation_id='fixture', observation=dict(
+                exit_confirmed=True, returncode=0, process_id=101,
+                process_started_at_utc_ticks=1))], host_release=dict(
+                    inherited=True, token='fixture-child', error=None))), encoding='utf-8')
+        outputs += [path, report, completion]
     config = {'schema_version': 2, 'role': 'oa_tof_mass_spectrum_run_config',
               'run_id': source.name, 'project': 'single_reflection_oa_tof_mass_analyzer',
               'mode': 'mass_spectrum_candidate', 'project_root': str(REPO),
@@ -71,15 +242,25 @@ def sealed_mass_source(root):
     return artifacts, source, config, outputs
 
 
+def assert_managed_terminal(test, result_path, status='success'):
+    from msplatform.execution.capacity_protection import _lease_path
+    receipt = json.loads(Path(result_path).read_text(encoding='utf-8-sig'))
+    test.assertEqual(receipt['status'], status)
+    test.assertEqual(receipt['stage'], 'complete')
+    test.assertIsNone(receipt['resume_action'])
+    test.assertTrue(Path(receipt['manifest']['path']).is_file())
+    test.assertIn('capacity', receipt)
+    capacity = receipt['capacity_session']
+    test.assertFalse(_lease_path(Path(capacity['artifact_root']), capacity['lease_id']).exists())
+    return receipt
+
+
 def mass_analysis_fixture(root):
     """Real public owner, private machine policy; no Formal or native resources."""
-    from projects.single_reflection_oa_tof_mass_analyzer.analysis.mass_spectrum_reanalysis import CODE_PATHS
-
     fixture = root / 'repo'
     selected = [p for p in (REPO/'common').rglob('*')
                 if p.is_file() and p.suffix in ('.py', '.ps1', '.json')
                 and not p.name.startswith('test_') and '__pycache__' not in p.parts]
-    selected += [REPO / relative for relative in CODE_PATHS]
     from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
     selected += [PROJECT/'workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1']
     for path in selected:
@@ -262,16 +443,16 @@ class MassSpectrumReanalysisTests(unittest.TestCase):
     def test_consumed_projection_rejects_unsealed_tampered_and_incomplete_records(self):
         from common.contracts.capacity_ledger import record_capacity_object
         from msplatform.execution.manifest_publication import publish_run_manifest
-        from projects.single_reflection_oa_tof_mass_analyzer.analysis.mass_spectrum_reanalysis import select_source
+        from msplatform.workflows.single_reflection_mass_spectrum_study import select_analysis_source as select_source
 
         with tempfile.TemporaryDirectory() as temporary:
             artifacts, source, config, outputs = sealed_mass_source(Path(temporary))
             selected = select_source(source, artifacts)
-            self.assertEqual(len(selected['exports']), 8)
+            self.assertEqual(len(selected['exports']), 11)
             self.assertEqual(selected['run_id'], source.name)
             for name, change, message in (
                 ('hit', lambda: (source/'results/simion_summary.json').write_text('{"Hit":11}', encoding='utf-8'), 'full-mother'),
-                ('report', lambda: (source/'logs/m100.report.txt').write_text('DETECTED=3/4', encoding='utf-8'), 'complete detection'),
+                ('report', lambda: (source/'logs/m100.report.txt').write_text('DETECTED=3/4', encoding='utf-8'), 'DETECTED'),
             ):
                 with self.subTest(case=name):
                     target = source / ('results/simion_summary.json' if name == 'hit' else 'logs/m100.report.txt')
@@ -316,87 +497,75 @@ class MassSpectrumReanalysisTests(unittest.TestCase):
                 select_source(source, artifacts)
 
     def test_frozen_actual_analyzer_uses_parent_geometry_and_preserves_acceptance(self):
-        from projects.single_reflection_oa_tof_mass_analyzer.analysis.mass_spectrum_reanalysis import freeze_analysis, select_source
-
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             artifacts, source, _, _ = sealed_mass_source(root)
-            selected = select_source(source, artifacts)
+            fixture, owner = mass_analysis_fixture(root)
             snapshot = {str(p.relative_to(source)): p.read_bytes() for p in source.rglob('*') if p.is_file()}
-            code = root / 'inputs/code'
-            inventory = freeze_analysis(REPO, code, selected)
+            env = {key: value for key, value in os.environ.items()
+                   if not key.startswith('MASS_SPECTROMETRY_HOST_RESOURCE_') and key not in ('PYTHONPATH', 'SIMULATION_PYTHON_EXE')}
+            env.update(MASS_SPECTROMETRY_ARTIFACT_ROOT=str(artifacts),
+                       MASS_SPECTROMETRY_EXECUTION_ROOT=str(root/'execution'),
+                       MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(root/'host.sqlite3'))
+            run_id = '20261031_100100__analysis__python__mass-frozen-worker'
+            result = subprocess.run(['pwsh', '-NoProfile', '-File', str(owner), '-ReanalyzeOnly',
+                '-SourceRunPath', str(source), '-RunId', run_id, '-PythonExe', sys.executable,
+                '-AnalysisNewBytes', str(8*1024*1024)], cwd=fixture, env=env,
+                capture_output=True, text=True, encoding='utf-8', timeout=90)
+            self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+            child = artifacts/f'projects/{PROJECT.name}/runs/{run_id}'
+            code = child/'inputs/code'
+            inventory_path = child/'inputs/code_inventory.json'
+            inventory = json.loads(inventory_path.read_text(encoding='utf-8-sig'))
             frozen_before = {str(p.relative_to(code)): p.read_bytes() for p in code.rglob('*') if p.is_file()}
-            with self.assertRaises(FileExistsError):
-                freeze_analysis(REPO, code, selected)
-            self.assertEqual(frozen_before, {str(p.relative_to(code)): p.read_bytes() for p in code.rglob('*') if p.is_file()})
-            self.assertIn('src/msplatform/analysis/peak_metrics.py', {item['relative_path'] for item in inventory['files']})
             paths = [item['relative_path'] for item in inventory['files']]
+            self.assertIn('msplatform/analysis/peak_metrics.py', paths)
+            self.assertIn('msplatform/execution/inputs.py', paths)
+            self.assertIn('msplatform/workflows/single_reflection_mass_spectrum.py', paths)
+            self.assertIn('msplatform/results/single_reflection_particle_table.py', paths)
+            self.assertEqual(paths.count('msplatform/analysis/peak_metrics.py'), 1)
+            self.assertEqual(paths.count('msplatform/execution/inputs.py'), 1)
             for unused in ('reference_analysis.py', 'reference_analysis_core.py', 'solver_diagnostics.py', 'mass_spectrum.py'):
                 self.assertNotIn(f'projects/{PROJECT.name}/analysis/{unused}', paths)
-            self.assertEqual(paths.count('src/msplatform/analysis/peak_metrics.py'), 1)
-            self.assertEqual(paths.count('src/msplatform/execution/inputs.py'), 1)
-            for relative in ('src/msplatform/workflows/single_reflection_mass_spectrum.py',
-                             'src/msplatform/results/single_reflection_particle_table.py'):
-                self.assertIn(relative, {item['relative_path'] for item in inventory['files']})
-            inventory_path = root / 'inputs/code_inventory.json'
-            inventory_path.write_text(json.dumps(inventory), encoding='utf-8')
             schemas = {path.relative_to(REPO).as_posix(): path
                        for path in (REPO/'src/msplatform').rglob('*.schema.json')}
             frozen = {item['relative_path']: item for item in inventory['files']
                       if item['relative_path'].endswith('.schema.json')}
             self.assertTrue(schemas)
-            self.assertEqual(set(frozen), set(schemas))
-            self.assertEqual(len(frozen), sum(item['relative_path'].endswith('.schema.json')
-                                             for item in inventory['files']))
+            expected_schemas = {key.removeprefix('src/') for key in schemas}
+            self.assertEqual(set(frozen), expected_schemas)
             for relative, path in schemas.items():
+                relative = relative.removeprefix('src/')
                 with self.subTest(schema=relative):
                     original_bytes = path.read_bytes()
                     self.assertEqual((code/relative).read_bytes(), original_bytes)
                     self.assertEqual((code/relative).stat().st_size, len(original_bytes))
                     self.assertEqual(frozen[relative]['sha256'].upper(),
                                      hashlib.sha256(original_bytes).hexdigest().upper())
-            selection = root / 'inputs/source_selection.json'
-            selection.write_text(json.dumps(selected), encoding='utf-8')
-            output = root / 'analysis'
-            # Obtain the same canonical invocation consumed by the public owner.
-            helper = code/'src/msplatform/execution/resources/frozen_python_package.ps1'
-            arguments = ['analyze', '--selection', str(selection), '--code-root', str(code),
-                         '--output', str(output), '--inventory', str(inventory_path)]
-            probe_args = root/'inputs/probe_args.json'
-            probe_args.write_text(json.dumps(arguments), encoding='utf-8')
-            probe = r"""
-$ErrorActionPreference='Stop'
-. 'HELPER'
-$package=Get-Content -LiteralPath 'INVENTORY' -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable -Depth 100
-$moduleArgs=@(Get-Content -LiteralPath 'ARGS' -Raw -Encoding UTF8 | ConvertFrom-Json)
-$result=Invoke-IsolatedFrozenPythonModule -Python 'PYTHON' -Package $package `
-  -Module 'projects.single_reflection_oa_tof_mass_analyzer.analysis.mass_spectrum_reanalysis' `
-  -Arguments $moduleArgs -ProbeOnly -WorkingDirectory 'WORK' `
-  -RequiredModuleNames @('msplatform.workflows.single_reflection_mass_spectrum',
-                         'msplatform.results.single_reflection_particle_table', 'msplatform.analysis.peak_metrics')
-ConvertTo-Json -InputObject $result.invocation -Depth 100 -Compress
-"""
-            for key, value in {'HELPER': helper, 'INVENTORY': inventory_path, 'ARGS': probe_args,
-                               'PYTHON': Path(sys.executable), 'WORK': root}.items():
-                probe = probe.replace(key, str(value).replace("'", "''"))
-            extracted = subprocess.run(['pwsh', '-NoProfile', '-NonInteractive', '-Command', probe],
-                cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=30)
-            self.assertEqual(extracted.returncode, 0, extracted.stdout + extracted.stderr)
-            invocation = json.loads(extracted.stdout)
-            command = [invocation['file_path'], *invocation['arguments']]
-            result = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=45)
-            self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+            selection = child/'inputs/source_selection.json'
+            bootstrap = ("import runpy,sys;sys.path.insert(0,sys.argv[1]);sys.argv=sys.argv[2:];"
+                         "runpy.run_module('msplatform.workflows.single_reflection_mass_spectrum_worker',"
+                         "run_name='__main__')")
+            command = [sys.executable, '-I', '-B', '-c', bootstrap, str(code), 'mass-spectrum-analysis',
+                       '--selection', str(selection), '--output', str(root/'second-output'),
+                       '--code-root', str(code)]
+            repeated = subprocess.run(command, cwd=root, capture_output=True, text=True,
+                                      encoding='utf-8', timeout=45)
+            self.assertEqual(repeated.returncode, 0, repeated.stdout+repeated.stderr)
+            output = root/'second-output'
             with (output/'mass_spectrum_particles.csv').open(encoding='utf-8', newline='') as stream:
                 rows = list(csv.DictReader(stream))
             self.assertTrue(rows)
             self.assertTrue(all(abs(float(row['detector_x_mm'])-.1) < 1e-12 for row in rows))
-            self.assertEqual(snapshot, {str(p.relative_to(source)): p.read_bytes() for p in source.rglob('*') if p.is_file()})
+            self.assertEqual(snapshot, {str(p.relative_to(source)): p.read_bytes()
+                                        for p in source.rglob('*') if p.is_file()})
             self.assertFalse(list(code.rglob('__pycache__')))
-            # Each selected implementation must exist and match its own frozen bytes.
-            for index, relative in enumerate(('src/msplatform/workflows/single_reflection_mass_spectrum.py',
-                             'src/msplatform/results/single_reflection_particle_table.py',
+            self.assertEqual(frozen_before, {str(p.relative_to(code)): p.read_bytes()
+                                             for p in code.rglob('*') if p.is_file()})
+            for index, relative in enumerate(('msplatform/workflows/single_reflection_mass_spectrum.py',
+                             'msplatform/results/single_reflection_particle_table.py',
                              'projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json')):
-                target = code / relative
+                target = code/relative
                 original = target.read_bytes()
                 try:
                     for missing in (True, False):
@@ -404,65 +573,62 @@ ConvertTo-Json -InputObject $result.invocation -Depth 100 -Compress
                             if missing:
                                 target.unlink()
                             else:
-                                target.write_bytes(original + b"\n# tampered\n")
-                            failure_output = root / f"negative-{index}-{missing}"
+                                target.write_bytes(original+b'\n# tampered\n')
+                            failure_output = root/f'negative-{index}-{missing}'
                             failure_command = list(command)
-                            failure_command[failure_command.index('--output') + 1] = str(failure_output)
-                            refused = subprocess.run(failure_command, cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=30)
+                            failure_command[failure_command.index('--output')+1] = str(failure_output)
+                            refused = subprocess.run(failure_command, cwd=root, capture_output=True,
+                                                     text=True, encoding='utf-8', timeout=30)
                             self.assertNotEqual(refused.returncode, 0)
                             if missing:
-                                self.assertIn('FileNotFoundError', refused.stderr)
-                                self.assertIn(target.name, refused.stderr)
+                                self.assertRegex(refused.stderr, 'FileNotFoundError|ModuleNotFoundError|ImportError')
+                                self.assertIn(Path(relative).stem, refused.stderr)
                             else:
                                 self.assertIn(f'Frozen mass-spectrum source identity differs: {relative}', refused.stderr)
                             self.assertFalse(failure_output.exists())
                             target.write_bytes(original)
                 finally:
                     target.write_bytes(original)
-            # A scientifically invalid exact ID still fails inside the unchanged analyzer.
             csv_path = source/'results/simion_particles.csv'
             text = csv_path.read_text(encoding='utf-8').replace('1,100,1,', '99,100,1,', 1)
             csv_path.write_text(text, encoding='utf-8')
-            bad = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=30)
+            bad = subprocess.run(command, cwd=root, capture_output=True, text=True,
+                                 encoding='utf-8', timeout=30)
             self.assertNotEqual(bad.returncode, 0)
             self.assertIn('exceeds the mixed-species mother population', bad.stderr)
             output_before = {p.name: p.read_bytes() for p in output.iterdir() if p.is_file()}
-            (code/'src').rename(root/'removed-core')
-            missing = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=30)
+            code.rename(root/'removed-core')
+            missing = subprocess.run(command, cwd=root, capture_output=True, text=True,
+                                     encoding='utf-8', timeout=30)
             self.assertNotEqual(missing.returncode, 0)
             self.assertNotIn('exceeds the mixed-species mother population', missing.stderr)
-            self.assertIn('FileNotFoundError', missing.stderr)
-            self.assertIn(repr(str(code/'src/msplatform/workflows/single_reflection_mass_spectrum.py')), missing.stderr)
+            self.assertRegex(missing.stderr, 'ModuleNotFoundError|ImportError')
+            self.assertIn('msplatform.workflows.single_reflection_mass_spectrum_worker', missing.stderr)
             self.assertEqual(output_before, {p.name: p.read_bytes() for p in output.iterdir() if p.is_file()})
 
     def test_public_reanalysis_refuses_changed_frozen_dependencies_before_analysis(self):
         cases = (
-            ('missing_peak', 'src/msplatform/analysis/peak_metrics.py', True, 'Frozen Python dependency is missing'),
-            ('tampered_peak', 'src/msplatform/analysis/peak_metrics.py', False, 'Frozen Python dependency hash differs'),
-            ('tampered_helper', 'src/msplatform/execution/resources/frozen_python_package.ps1', False, 'Frozen Python helper identity differs'),
+            ('missing_peak', 'msplatform/analysis/peak_metrics.py', True, 'Frozen Python dependency is missing'),
+            ('tampered_peak', 'msplatform/analysis/peak_metrics.py', False, 'Frozen Python dependency hash differs'),
+            ('tampered_helper', 'msplatform/execution/resources/frozen_python_package.ps1', False, 'Frozen Python dependency hash differs'),
         )
         for case, relative, missing, expected in cases:
             with self.subTest(case=case), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
                 artifacts, source, _, _ = sealed_mass_source(root)
                 fixture, owner = mass_analysis_fixture(root)
-                text = owner.read_text(encoding='utf-8')
-                marker = "    $helperRelative='src/msplatform/execution/resources/frozen_python_package.ps1'"
-                self.assertEqual(text.count(marker), 1)
-                target = relative.replace('/', '\\')
-                mutation = (f"    Remove-Item -LiteralPath (Join-Path $analysisCode '{target}')\n" if missing else
-                    f"    Add-Content -LiteralPath (Join-Path $analysisCode '{target}') -Value '# altered test fixture'\n")
-                owner.write_text(text.replace(marker, mutation + marker), encoding='utf-8')
                 env = {key: value for key, value in os.environ.items()
                        if not key.startswith('MASS_SPECTROMETRY_HOST_RESOURCE_') and key not in ('PYTHONPATH', 'SIMULATION_PYTHON_EXE')}
                 env.update(MASS_SPECTROMETRY_ARTIFACT_ROOT=str(artifacts),
                            MASS_SPECTROMETRY_EXECUTION_ROOT=str(root/'execution'),
-                           MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(root/'host.sqlite3'))
+                           MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(root/'host.sqlite3'),
+                           TEST_MASS_MUTATE=relative, TEST_MASS_MISSING='1' if missing else '')
                 run_id = '20261031_100100__analysis__python__mass-child'
                 command = ['pwsh', '-NoProfile', '-File', str(owner), '-ReanalyzeOnly', '-SourceRunPath', str(source),
                            '-RunId', run_id, '-PythonExe', sys.executable, '-AnalysisNewBytes', str(8*1024*1024)]
                 result = subprocess.run(command, cwd=fixture, env=env, capture_output=True, text=True, encoding='utf-8', timeout=90)
-                self.assertNotEqual(result.returncode, 0)
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertTrue((root/'mutation_calls').is_file())
                 self.assertIn(expected, result.stdout + result.stderr)
                 result_dir = artifacts/f'projects/{PROJECT.name}/runs/{run_id}/results'
                 self.assertFalse((result_dir/'mass_spectrum_metrics.json').exists())
@@ -487,10 +653,7 @@ ConvertTo-Json -InputObject $result.invocation -Depth 100 -Compress
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
             child = artifacts/f'projects/{PROJECT.name}/runs/{run_id}'
             result_path = artifacts/f'projects/{PROJECT.name}/scratch/workflow_results/{run_id}/result.json'
-            receipt = json.loads(result_path.read_text(encoding='utf-8-sig'))
-            self.assertTrue(receipt['terminal_published'])
-            self.assertTrue(receipt['capacity_finalized'])
-            self.assertTrue(receipt['lease_released'])
+            assert_managed_terminal(self, result_path)
             completion = json.loads((child/'results/execution_completion.json').read_text(encoding='utf-8-sig'))
             self.assertEqual(len(completion['writer_completion']['operations']), 1)
             self.assertGreater(completion['writer_completion']['operations'][0]['observation']['process_id'], 0)
@@ -498,7 +661,6 @@ ConvertTo-Json -InputObject $result.invocation -Depth 100 -Compress
             self.assertEqual(completion['summary']['pa_materializations'], 0)
             self.assertFalse(list(child.rglob('*.pa*')))
             self.assertEqual(snapshot, {str(p.relative_to(source)): p.read_bytes() for p in source.rglob('*') if p.is_file()})
-            env['MASS_SPECTROMETRY_ARTIFACT_ROOT'] = str(root/'different-today-root')
             resumed = subprocess.run(['pwsh', '-NoProfile', '-File', str(owner), '-ResumeFinalization', '-RunId', run_id,
                                       '-ResultPath', str(result_path), '-PythonExe', sys.executable],
                                      cwd=root, env=env, capture_output=True, text=True, encoding='utf-8', timeout=45)
@@ -512,7 +674,6 @@ ConvertTo-Json -InputObject $result.invocation -Depth 100 -Compress
             root = Path(temporary)
             artifacts, source, _, outputs = sealed_mass_source(root)
             fixture, owner = mass_analysis_fixture(root)
-            original = owner.read_text(encoding='utf-8')
             env = {key: value for key, value in os.environ.items()
                    if not key.startswith('MASS_SPECTROMETRY_HOST_RESOURCE_') and key not in ('PYTHONPATH', 'SIMULATION_PYTHON_EXE')}
             env.update(MASS_SPECTROMETRY_ARTIFACT_ROOT=str(artifacts),
@@ -531,11 +692,7 @@ ConvertTo-Json -InputObject $result.invocation -Depth 100 -Compress
                         csv_path.write_bytes(source_bytes)
                         (source/'run_manifest.json').unlink()
                         publish_run_manifest(source/'run_config.json', 'success', output_paths=outputs, retention_api=_manifest_retention_api)
-                        # Fault only the public finalization invocation, after the
-                        # real Complete adapter persists actual stopped writers.
-                        marker='  if($ResumeFinalization){'
-                        owner.write_text(original.replace(marker,
-                            "  function Invoke-RunArtifactWorkflow {throw 'FINALIZATION_SENTINEL'}\n"+marker, 1), encoding='utf-8')
+                        env['TEST_MASS_FINALIZATION_SENTINEL'] = 'FINALIZATION_SENTINEL'
                     snapshot = {str(p.relative_to(source)): p.read_bytes() for p in source.rglob('*') if p.is_file()}
                     command = ['pwsh', '-NoProfile', '-File', str(owner), '-ReanalyzeOnly', '-SourceRunPath', str(source),
                                '-RunId', run_id, '-PythonExe', sys.executable, '-AnalysisNewBytes', str(8*1024*1024)]
@@ -546,19 +703,19 @@ ConvertTo-Json -InputObject $result.invocation -Depth 100 -Compress
                     receipt = json.loads(result_path.read_text(encoding='utf-8-sig'))
                     if case == 'analysis':
                         self.assertIn('reanalysis failed', receipt['exception']['message'])
-                        self.assertTrue(receipt['terminal_published'])
-                        self.assertEqual(receipt['status'], 'failed')
+                        assert_managed_terminal(self, result_path, status='failed')
                     else:
                         self.assertIn('FINALIZATION_SENTINEL', failed.stderr)
-                        self.assertEqual(receipt['stage'], 'completion')
+                        self.assertEqual(receipt['stage'], 'finalization')
+                        self.assertEqual(receipt['resume_action'], 'resume_finalization')
                         completion_before = (child/'results/execution_completion.json').read_bytes()
-                        owner.write_text(original, encoding='utf-8')
+                        env.pop('TEST_MASS_FINALIZATION_SENTINEL')
                         resumed = subprocess.run(['pwsh', '-NoProfile', '-File', str(owner), '-ResumeFinalization',
                             '-RunId', run_id, '-ResultPath', str(result_path), '-PythonExe', sys.executable],
                             cwd=fixture, env=env, capture_output=True, text=True, encoding='utf-8', timeout=45)
                         self.assertEqual(resumed.returncode, 0, resumed.stdout+resumed.stderr)
                         self.assertEqual(completion_before, (child/'results/execution_completion.json').read_bytes())
-                        self.assertTrue(json.loads(result_path.read_text(encoding='utf-8-sig'))['terminal_published'])
+                        assert_managed_terminal(self, result_path)
                     self.assertEqual(snapshot, {str(p.relative_to(source)): p.read_bytes() for p in source.rglob('*') if p.is_file()})
 
     def test_resume_rejects_new_science_and_analysis_rejects_ambiguous_inputs(self):
@@ -595,18 +752,6 @@ ConvertTo-Json -Depth 8 -InputObject $results
             root = Path(temporary)
             artifacts, source, _, outputs = sealed_mass_source(root)
             fixture, owner = mass_analysis_fixture(root)
-            text = owner.read_text(encoding='utf-8')
-            marker = '  if($ResumeFinalization){'
-            owner.write_text(text.replace(marker, """  $actualStageExit=(Get-Command Exit-HostResourceStage).ScriptBlock
-  function Exit-HostResourceStage {
-    param($Lease,[switch]$PassThru)
-    if($Lease.stage-ceq'postprocess'){
-      [IO.File]::AppendAllText((Join-Path $env:TEST_MASS_ROOT 'release_calls.txt'),'release\n')
-      throw 'RELEASE_SECONDARY_SENTINEL'
-    }
-    & $actualStageExit -Lease $Lease -PassThru:$PassThru
-  }
-"""+marker, 1), encoding='utf-8')
             csv_path = source/'results/simion_particles.csv'
             csv_path.write_text(csv_path.read_text(encoding='utf-8').replace('1,100,1,', '99,100,1,', 1), encoding='utf-8')
             (source/'run_manifest.json').unlink()
@@ -616,7 +761,8 @@ ConvertTo-Json -Depth 8 -InputObject $results
                    if not key.startswith('MASS_SPECTROMETRY_HOST_RESOURCE_') and key not in ('PYTHONPATH', 'SIMULATION_PYTHON_EXE')}
             env.update(MASS_SPECTROMETRY_ARTIFACT_ROOT=str(artifacts),
                        MASS_SPECTROMETRY_EXECUTION_ROOT=str(root/'execution'), TEST_MASS_ROOT=str(root),
-                       MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(root/'host.sqlite3'))
+                       MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(root/'host.sqlite3'),
+                       TEST_MASS_RELEASE_SENTINEL='RELEASE_SECONDARY_SENTINEL')
             run_id = '20261031_100400__analysis__python__mass-release-failed'
             result = subprocess.run(['pwsh', '-NoProfile', '-File', str(owner), '-ReanalyzeOnly', '-SourceRunPath', str(source),
                        '-RunId', run_id, '-PythonExe', sys.executable, '-AnalysisNewBytes', str(8*1024*1024)],
@@ -625,12 +771,14 @@ ConvertTo-Json -Depth 8 -InputObject $results
             self.assertIn('mixed-species mother population', result.stderr)
             receipt = json.loads((artifacts/f'projects/{PROJECT.name}/scratch/workflow_results/{run_id}/result.json').read_text(encoding='utf-8-sig'))
             self.assertIn('mixed-species mother population', receipt['exception']['message'])
-            self.assertIn('RELEASE_SECONDARY_SENTINEL', receipt['secondary_errors'])
-            self.assertEqual(receipt['failure_stage'], 'host_release')
+            process = json.loads((artifacts/f'projects/{PROJECT.name}/runs/{run_id}/logs/operation_0001.process.json').read_text(encoding='utf-8-sig'))
+            self.assertEqual(process['host_release']['error'], 'RELEASE_SECONDARY_SENTINEL')
+            self.assertIn('Resource owner release is unconfirmed', '\n'.join(receipt['exception']['notes']))
+            self.assertEqual(receipt['stage'], 'finalization')
             self.assertTrue(receipt['writers_confirmed'])
-            self.assertFalse(receipt['terminal_published'])
-            self.assertFalse(receipt['capacity_finalized'])
-            self.assertFalse(receipt['lease_released'])
+            self.assertEqual(receipt['resume_action'], 'inspect_writer_completion')
+            self.assertEqual(json.loads((artifacts/f'projects/{PROJECT.name}/runs/{run_id}/run_manifest.json').read_text(encoding='utf-8-sig'))['status'], 'checkpoint')
+            self.assertEqual(json.loads((artifacts/f'projects/{PROJECT.name}/runs/{run_id}/logs/capacity_session.json').read_text(encoding='utf-8-sig'))['status'], 'active')
             self.assertEqual((root/'release_calls.txt').read_text(encoding='utf-8').splitlines(), ['release'])
             self.assertEqual(snapshot, {str(p.relative_to(source)): p.read_bytes() for p in source.rglob('*') if p.is_file()})
 
@@ -664,7 +812,8 @@ ConvertTo-Json -Depth 8 -InputObject $results
             completed = subprocess.run(['pwsh', '-NoProfile', '-File', str(owner), '-ReanalyzeOnly', '-SourceRunPath', str(source),
                        '-RunId', run_id, '-PythonExe', sys.executable, '-AnalysisNewBytes', str(8*1024*1024)],
                        cwd=fixture, env=env, capture_output=True, text=True, encoding='utf-8', timeout=90)
-            self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr)
+            self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr+
+                (capture.read_text(encoding='utf-8-sig') if capture.is_file() else 'no observer'))
             child = artifacts/f'projects/{PROJECT.name}/runs/{run_id}'
             self.assertGreater(len(str(child/'inputs/code')), 259)
             observed = json.loads(capture.read_text(encoding='utf-8-sig'))
@@ -674,7 +823,7 @@ ConvertTo-Json -Depth 8 -InputObject $results
             self.assertEqual(observed['environment']['MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY'], observed['cwd'])
             self.assertIn(observed['cwd'], observed['stdout'])
             self.assertIn(observed['cwd'], observed['stderr'])
-            self.assertIn(str(child/'inputs/code'), ' '.join(observed['argv']))
+            self.assertTrue((child/'inputs/code/msplatform/workflows/single_reflection_mass_spectrum_worker.py').is_file())
             self.assertFalse(Path(observed['cwd']).exists(), 'Public finalizer did not remove its disposable alias')
             completion = child/'results/execution_completion.json'
             completion_bytes = completion.read_bytes()
@@ -685,6 +834,13 @@ ConvertTo-Json -Depth 8 -InputObject $results
             owner.write_text(original, encoding='utf-8')
             result_path = artifacts/f'projects/{PROJECT.name}/scratch/workflow_results/{run_id}/result.json'
             env['MASS_SPECTROMETRY_ARTIFACT_ROOT'] = str(root/'different-current-root')
+            resumed = subprocess.run(['pwsh', '-NoProfile', '-File', str(owner), '-ResumeFinalization', '-RunId', run_id,
+                       '-ResultPath', str(result_path), '-PythonExe', sys.executable],
+                       cwd=root, env=env, capture_output=True, text=True, encoding='utf-8', timeout=45)
+            self.assertNotEqual(resumed.returncode, 0)
+            self.assertIn('host ledger differs', resumed.stdout+resumed.stderr)
+            self.assertEqual(completion_bytes, completion.read_bytes())
+            env['MASS_SPECTROMETRY_ARTIFACT_ROOT'] = str(artifacts)
             resumed = subprocess.run(['pwsh', '-NoProfile', '-File', str(owner), '-ResumeFinalization', '-RunId', run_id,
                        '-ResultPath', str(result_path), '-PythonExe', sys.executable],
                        cwd=root, env=env, capture_output=True, text=True, encoding='utf-8', timeout=45)
@@ -707,10 +863,7 @@ class MassSpectrumNativeLifecycleTests(unittest.TestCase):
             diagnostic = native_log.read_text(encoding='utf-8', errors='replace') if native_log.is_file() else ''
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr+diagnostic)
             receipt_path = artifacts/f'projects/{PROJECT.name}/scratch/workflow_results/{run_id}/result.json'
-            receipt = json.loads(receipt_path.read_text(encoding='utf-8-sig'))
-            self.assertTrue(receipt['terminal_published'])
-            self.assertTrue(receipt['capacity_finalized'])
-            self.assertTrue(receipt['lease_released'])
+            assert_managed_terminal(self, receipt_path)
             completion = json.loads((child/'results/execution_completion.json').read_text(encoding='utf-8-sig'))
             self.assertEqual(len(completion['writer_completion']['operations']), 6)
             self.assertEqual(completion['summary']['status'], 'success')
@@ -728,9 +881,10 @@ class MassSpectrumNativeLifecycleTests(unittest.TestCase):
             for index, capture in enumerate(captures):
                 self.assertEqual(capture['run_id'], run_id)
                 self.assertTrue(capture['completion_path'].endswith('.comsol_completion.json'))
-                self.assertEqual(capture['task_script'], str(fixture/f'projects/{PROJECT.name}/comsol/run_fixed_particle_retrace.m'))
+                self.assertEqual(capture['task_script'], str(child/'inputs/code'/f'projects/{PROJECT.name}/comsol/run_fixed_particle_retrace.m'))
                 self.assertEqual({key: capture['environment'][key] for key in expected_environment}, expected_environment)
-                self.assertEqual(capture['environment']['OATOF_ION_TABLE'], str(child/'ions'/f"{config['species'][index]['species_id']}.ion"))
+                self.assertEqual(Path(capture['environment']['OATOF_ION_TABLE']).name,
+                                 f"{config['species'][index]['species_id']}.ion")
             native = json.loads((root/'simion-capture.json').read_text(encoding='utf-8'))
             arguments = native['arguments']
             self.assertEqual(arguments[:13], ['--default-num-particles', '500', '--nogui', 'fly',
@@ -749,7 +903,7 @@ class MassSpectrumNativeLifecycleTests(unittest.TestCase):
             (legacy/'run_config.json').write_text(json.dumps(legacy_config), encoding='utf-8')
             refused = run_mass_native(owner, fixture, env, legacy_id, simion, '-ResumeAfterComsol')
             self.assertNotEqual(refused.returncode, 0)
-            self.assertIn('lacks its original public owner', refused.stdout+refused.stderr)
+            self.assertIn('partial resume requires --source-run', refused.stdout+refused.stderr)
             self.assertEqual(len((root/'comsol-capture.jsonl').read_text(encoding='utf-8').splitlines()), 5)
 
     def test_authenticated_comsol_replay_rejects_tamper_and_reruns_only_incomplete_species(self):
@@ -757,36 +911,39 @@ class MassSpectrumNativeLifecycleTests(unittest.TestCase):
             root = Path(temporary)
             fixture, owner, artifacts, simion, leaf = mass_native_fixture(root)
             env = mass_native_environment(root, fixture, artifacts, simion, leaf, Path(sys.executable))
-            original = owner.read_text(encoding='utf-8')
-            hold = original.replace("$hostRole = 'SIMION'", "function Complete-RunArtifactPowerShellOwner {throw 'OWNER_HOLD_SENTINEL'}\n$hostRole = 'SIMION'", 1)
-            owner.write_text(hold, encoding='utf-8')
             run_id = '20261116_100100__sim__cross__mass-owner-replay'
+            successor_id = '20261116_100101__sim__cross__mass-owner-replay-successor'
             env['TEST_MASS_FAIL_SPECIES'] = 'mz100_z1'
             failed = run_mass_native(owner, fixture, env, run_id, simion)
             self.assertNotEqual(failed.returncode, 0)
-            child = artifacts/f'projects/{PROJECT.name}/runs/{run_id}'
-            self.assertEqual(json.loads((child/'run_manifest.json').read_text(encoding='utf-8-sig'))['status'], 'checkpoint')
+            parent = artifacts/f'projects/{PROJECT.name}/runs/{run_id}'
+            self.assertEqual(json.loads((parent/'run_manifest.json').read_text(encoding='utf-8-sig'))['status'], 'failed')
             self.assertEqual(len((root/'comsol-capture.jsonl').read_text(encoding='utf-8').splitlines()), 2)
-            csv_path = child/'comsol/mz10_z1.csv'
+            csv_path = parent/'comsol/mz10_z1.csv'
             original_csv = csv_path.read_bytes()
             csv_path.write_bytes(original_csv+b' ')
-            tampered = run_mass_native(owner, fixture, env, run_id, simion, '-ResumeAfterComsol')
+            tampered = run_mass_native(owner, fixture, env, successor_id, simion,
+                                       '-ResumeAfterComsol', '-SourceRunPath', str(parent))
             self.assertNotEqual(tampered.returncode, 0)
-            self.assertIn('Workflow file identity differs', tampered.stdout+tampered.stderr)
+            self.assertIn('changed', tampered.stdout+tampered.stderr)
             self.assertEqual(len((root/'comsol-capture.jsonl').read_text(encoding='utf-8').splitlines()), 2)
             csv_path.write_bytes(original_csv)
-            owner.write_text(original, encoding='utf-8')
             env.pop('TEST_MASS_FAIL_SPECIES')
-            resumed = run_mass_native(owner, fixture, env, run_id, simion, '-ResumeAfterComsol')
+            resumed = run_mass_native(owner, fixture, env, successor_id, simion,
+                                      '-ResumeAfterComsol', '-SourceRunPath', str(parent))
             self.assertEqual(resumed.returncode, 0, resumed.stdout+resumed.stderr)
+            child = artifacts/f'projects/{PROJECT.name}/runs/{successor_id}'
             captures = [json.loads(line)['environment']['OATOF_ION_TABLE'] for line in
                         (root/'comsol-capture.jsonl').read_text(encoding='utf-8').splitlines()]
             self.assertEqual(len(captures), 6)
             self.assertEqual(sum(path.endswith('mz10_z1.ion') for path in captures), 1)
             self.assertEqual(sum(path.endswith('mz100_z1.ion') for path in captures), 2)
-            receipt = json.loads((artifacts/f'projects/{PROJECT.name}/scratch/workflow_results/{run_id}/result.json').read_text(encoding='utf-8-sig'))
-            self.assertTrue(receipt['terminal_published'])
-            self.assertEqual(len(json.loads((child/'results/execution_completion.json').read_text(encoding='utf-8-sig'))['writer_completion']['operations']), 6)
+            receipt_path = artifacts/f'projects/{PROJECT.name}/scratch/workflow_results/{successor_id}/result.json'
+            assert_managed_terminal(self, receipt_path)
+            completion = json.loads((child/'results/execution_completion.json').read_text(encoding='utf-8-sig'))
+            self.assertEqual(len(completion['writer_completion']['operations']), 5)
+            self.assertEqual(len(list(child.glob('logs/*.comsol_completion.json'))), 5)
+            self.assertEqual((child/'comsol/mz10_z1.csv').read_bytes(), original_csv)
 
     def test_native_failure_seals_failed_run_and_unknown_writer_retains_hold(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -798,14 +955,11 @@ class MassSpectrumNativeLifecycleTests(unittest.TestCase):
             failed = run_mass_native(owner, fixture, env, failed_id, simion)
             self.assertNotEqual(failed.returncode, 0)
             receipt_path = artifacts/f'projects/{PROJECT.name}/scratch/workflow_results/{failed_id}/result.json'
-            receipt = json.loads(receipt_path.read_text(encoding='utf-8-sig'))
-            self.assertEqual(receipt['status'], 'failed')
-            self.assertTrue(receipt['terminal_published'], json.dumps(receipt)+failed.stdout+failed.stderr)
-            self.assertTrue(receipt['capacity_finalized'])
+            receipt = assert_managed_terminal(self, receipt_path, status='failed')
             self.assertIn('INERT_COMSOL_FAILURE', receipt['exception']['message'])
             replay = run_mass_native(owner, fixture, env, failed_id, simion, '-ResumeAfterComsol')
             self.assertNotEqual(replay.returncode, 0)
-            self.assertIn('ResumeFinalization', replay.stdout+replay.stderr)
+            self.assertIn('partial resume requires --source-run', replay.stdout+replay.stderr)
             self.assertEqual(len((root/'comsol-capture.jsonl').read_text(encoding='utf-8').splitlines()), 2)
             env.pop('TEST_MASS_FAIL_SPECIES')
             unknown_id = '20261116_100201__sim__cross__mass-writer-unknown'
@@ -823,9 +977,10 @@ class MassSpectrumNativeLifecycleTests(unittest.TestCase):
             protected = (retained_path, hold_path, child/'run_config.json')
             before = {path: path.read_bytes() for path in protected}
             launches_before = len((root/'comsol-capture.jsonl').read_text(encoding='utf-8').splitlines())
-            refused = run_mass_native(owner, fixture, env, unknown_id, simion, '-ResumeAfterComsol')
+            refused = run_mass_native(owner, fixture, env, unknown_id+'-successor', simion,
+                                      '-ResumeAfterComsol', '-SourceRunPath', str(child))
             self.assertNotEqual(refused.returncode, 0)
-            self.assertIn('requires confirmed stopped native writers', refused.stdout+refused.stderr)
+            self.assertIn('stopped payload receipt', refused.stdout+refused.stderr)
             self.assertEqual(len((root/'comsol-capture.jsonl').read_text(encoding='utf-8').splitlines()), launches_before)
             self.assertEqual(before, {path: path.read_bytes() for path in protected})
 
@@ -834,8 +989,7 @@ class MassSpectrumNativeLifecycleTests(unittest.TestCase):
             root = Path(temporary)
             fixture, owner, artifacts, simion, leaf = mass_native_fixture(root)
             env = mass_native_environment(root, fixture, artifacts, simion, leaf, Path(sys.executable))
-            original = owner.read_text(encoding='utf-8')
-            owner.write_text(original.replace("$hostRole = 'SIMION'", "function Invoke-RunArtifactWorkflow {throw 'NORMAL_FINALIZATION_SENTINEL'}\n$hostRole = 'SIMION'", 1), encoding='utf-8')
+            env['TEST_MASS_FINALIZATION_SENTINEL'] = 'NORMAL_FINALIZATION_SENTINEL'
             run_id = '20261116_100300__sim__cross__mass-finalization-resume'
             failed = run_mass_native(owner, fixture, env, run_id, simion)
             self.assertNotEqual(failed.returncode, 0)
@@ -844,14 +998,14 @@ class MassSpectrumNativeLifecycleTests(unittest.TestCase):
             completion_path = child/'results/execution_completion.json'
             completion = completion_path.read_bytes()
             receipt_path = artifacts/f'projects/{PROJECT.name}/scratch/workflow_results/{run_id}/result.json'
-            self.assertEqual(json.loads(receipt_path.read_text(encoding='utf-8-sig'))['stage'], 'completion')
-            owner.write_text(original, encoding='utf-8')
+            self.assertEqual(json.loads(receipt_path.read_text(encoding='utf-8-sig'))['stage'], 'finalization')
+            env.pop('TEST_MASS_FINALIZATION_SENTINEL')
             resumed = subprocess.run(['pwsh', '-NoProfile', '-File', str(owner), '-ResumeFinalization',
                 '-RunId', run_id, '-ResultPath', str(receipt_path), '-PythonExe', sys.executable],
                 cwd=fixture, env=env, capture_output=True, text=True, encoding='utf-8', timeout=60)
             self.assertEqual(resumed.returncode, 0, resumed.stdout+resumed.stderr)
             self.assertEqual(completion, completion_path.read_bytes())
-            self.assertTrue(json.loads(receipt_path.read_text(encoding='utf-8-sig'))['terminal_published'])
+            assert_managed_terminal(self, receipt_path)
             self.assertEqual(len((root/'comsol-capture.jsonl').read_text(encoding='utf-8').splitlines()), 5)
             self.assertTrue((root/'simion-capture.json').is_file())
 
@@ -860,123 +1014,119 @@ class MassSpectrumInputAdmissionTests(unittest.TestCase):
     def test_workspace_context_and_final_publication_preserve_package_identity(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            script = root/'context.ps1'
+            artifacts, source, _, _ = sealed_mass_source(root)
+            fixture, owner = mass_analysis_fixture(root)
+            env = {key: value for key, value in os.environ.items()
+                   if not key.startswith('MASS_SPECTROMETRY_HOST_RESOURCE_') and key not in ('PYTHONPATH', 'SIMULATION_PYTHON_EXE')}
+            env.update(MASS_SPECTROMETRY_ARTIFACT_ROOT=str(artifacts),
+                       MASS_SPECTROMETRY_EXECUTION_ROOT=str(root/'execution'),
+                       MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(root/'host.sqlite3'))
+            run_id = '20261031_100100__analysis__python__mass-context'
+            result_path = artifacts/f'projects/{PROJECT.name}/scratch/workflow_results/{run_id}/result.json'
+            completed = subprocess.run(['pwsh', '-NoProfile', '-File', str(owner), '-ReanalyzeOnly',
+                '-SourceRunPath', str(source), '-RunId', run_id, '-PythonExe', sys.executable,
+                '-AnalysisNewBytes', str(8*1024*1024)], cwd=fixture, env=env, capture_output=True,
+                text=True, encoding='utf-8', timeout=90)
+            self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr)
+            child = artifacts/f'projects/{PROJECT.name}/runs/{run_id}'
+            config = json.loads((child/'run_config.json').read_text(encoding='utf-8-sig'))
+            self.assertEqual(config['schema_version'], 2)
+            self.assertEqual(config['paths']['execution_root'], str(root/'execution'))
+            self.assertEqual(config['paths']['host_resource_state_path'], str(root/'host.sqlite3'))
+            self.assertEqual(config['capacity_ledger_lifecycle']['artifact_root'], config['paths']['artifact_root'])
+            self.assertIn('execution_request', config['inputs'])
+            completion = child/'results/execution_completion.json'
+            completion_bytes = completion.read_bytes()
+            missing = subprocess.run(['pwsh', '-NoProfile', '-File', str(owner), '-ResumeFinalization',
+                '-RunId', 'missing-result', '-ResultPath', str(root/'absent-result.json'),
+                '-PythonExe', sys.executable], cwd=fixture, env=env, capture_output=True,
+                text=True, encoding='utf-8', timeout=45)
+            self.assertNotEqual(missing.returncode, 0)
+            env['MASS_SPECTROMETRY_ARTIFACT_ROOT'] = str(root/'other-artifacts')
+            env['MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH'] = str(root/'other-host.sqlite3')
+            from msplatform.execution.context import load_environment
+            from msplatform.workflows.single_reflection_mass_spectrum_study import resume_finalization
+            other_environment = json.loads((root/'execution-environment.json').read_text(encoding='utf-8-sig'))
+            other_environment['policy']['host_state_path'] = str(root/'other-host.sqlite3')
+            (root/'other-environment.json').write_text(json.dumps(other_environment), encoding='utf-8')
+            wrong_context = load_environment(root/'other-environment.json',
+                workspace=root/'other-artifacts', profile='test')
+            with self.assertRaisesRegex(ValueError, 'host ledger differs'):
+                resume_finalization(wrong_context, run_id=run_id, result_path=result_path)
+            env['MASS_SPECTROMETRY_ARTIFACT_ROOT'] = str(artifacts)
+            env['MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH'] = str(root/'host.sqlite3')
+            resumed = subprocess.run(['pwsh', '-NoProfile', '-File', str(owner), '-ResumeFinalization',
+                '-RunId', run_id, '-ResultPath', str(result_path), '-PythonExe', sys.executable],
+                cwd=fixture, env=env, capture_output=True, text=True, encoding='utf-8', timeout=45)
+            self.assertEqual(resumed.returncode, 0, resumed.stdout+resumed.stderr)
+            self.assertEqual(completion_bytes, completion.read_bytes())
+            script = root/'ideal-publication.ps1'
             script.write_text(r'''param($Repo,$Python,$Root)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 . (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
 . (Join-Path $Repo 'common/paths/workspace_paths.ps1')
-$mass=Join-Path $Repo 'projects/single_reflection_oa_tof_mass_analyzer/workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1'
 $ideal=Join-Path $Repo 'projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/run_ideal_field_diagnostic.ps1'
-$text=[IO.File]::ReadAllText($mass);$ast=[Management.Automation.Language.Parser]::ParseFile($mass,[ref]$null,[ref]$null)
-$first=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-ceq'$python'},$true)
-$last=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-ceq'$environmentNames'},$true)
-$prefix=$text.Substring($first.Extent.StartOffset,$last.Extent.StartOffset-$first.Extent.StartOffset)
-$repoRoot=$Repo;$projectRoot=Join-Path $Repo 'projects/single_reflection_oa_tof_mass_analyzer'
-foreach($scenario in @('new','resume','missing_paths','root_mismatch')){
- $selected=Join-Path $Root ($scenario+'/configured-artifacts')
- $original=Resolve-WorkspacePaths -SourceRoot $Repo -ArtifactRoot $selected -ExecutionRoot (Join-Path $Root ($scenario+'/original-exec')) -HostResourceStatePath (Join-Path $Root ($scenario+'/original-host.sqlite3')) -Python $Python
- $env:SIMULATION_PYTHON_EXE=$Python;$env:MASS_SPECTROMETRY_ARTIFACT_ROOT=$selected
- $env:MASS_SPECTROMETRY_EXECUTION_ROOT=Join-Path $Root 'today-exec';$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=Join-Path $Root 'today-host.sqlite3'
- $RunId='20261030_120600__sim__cross__mass-context';$ResumeAfterComsol=$scenario-ne'new';$ReanalyzeOnly=$false
- $expected=Join-Path $selected ('projects/single_reflection_oa_tof_mass_analyzer/runs/'+$RunId)
- if($ResumeAfterComsol){
-  [IO.Directory]::CreateDirectory($expected)|Out-Null
-  $record=@{run_id=$RunId;project='single_reflection_oa_tof_mass_analyzer';mode='mass_spectrum_candidate';paths=$original;capacity_ledger_lifecycle=@{artifact_root=$selected}}
-  if($scenario-eq'missing_paths'){$record.Remove('paths')}
-  if($scenario-eq'root_mismatch'){$record.paths=Resolve-WorkspacePaths -SourceRoot $Repo -ArtifactRoot (Join-Path $Root 'other-artifacts') -Python $Python}
-  Write-RunJson -Path (Join-Path $expected 'run_config.json') -Value $record -Depth 20
- }
- $caught=$null;try{Invoke-Expression $prefix}catch{$caught=$_.Exception.Message}
- if($scenario-eq'missing_paths'){
-  if($caught-notlike'Resume lacks frozen path context. ACTION=*'){throw ('Missing frozen roots accepted: '+$caught)}
- }elseif($scenario-eq'root_mismatch'){
-  if($caught-cne'Resume frozen run/root/capacity identity differs.'){throw ('Frozen root mismatch accepted: '+$caught)}
- }else{
-  if($caught-or$artifactRoot-cne(Join-Path $selected 'projects/single_reflection_oa_tof_mass_analyzer')){throw ('Selected artifact root changed: '+$caught)}
-  if($scenario-eq'resume'-and($pathContext.execution_root-cne$original.execution_root-or$pathContext.host_resource_state_path-cne$original.host_resource_state_path)){throw 'Resume followed today defaults'}
- }
-}
-foreach($entry in @(@{file=$ideal;variable='$finalConfig';pathVariable='$runConfig'},@{file=$mass;variable='$runConfig';pathVariable='$runConfigPath'})){
- $text=[IO.File]::ReadAllText($entry.file);$ast=[Management.Automation.Language.Parser]::ParseFile($entry.file,[ref]$null,[ref]$null)
- $variable=$entry.variable;$pathVariable=$entry.pathVariable
- $first=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-ceq$variable},$true)
- $last=$ast.Find({param($n)$n-is[Management.Automation.Language.CommandAst]-and$n.GetCommandName()-eq'Write-RunJson'-and$n.Extent.Text.Contains('-Value '+$variable+' ')},$true)
- $block=$text.Substring($first.Extent.StartOffset,$last.Extent.EndOffset-$first.Extent.StartOffset)
- $configFile=Join-Path $Root ([IO.Path]::GetFileName($entry.file)+'.json')
- $original=Resolve-WorkspacePaths -SourceRoot $Repo -ArtifactRoot (Join-Path $Root 'publication-artifacts') -ExecutionRoot (Join-Path $Root 'publication-exec') -HostResourceStatePath (Join-Path $Root 'publication-host.sqlite3') -Python $Python
- Write-RunJson -Path $configFile -Value @{schema_version=2;paths=$original;package_sentinel='keep';artifact_retention=@{class='solver_review'};capacity_ledger_lifecycle=@{artifact_root=$original.artifact_root}} -Depth 20
- $runConfig=$configFile;$runConfigPath=$configFile;$runInputs=@{science='source-record'}
- $N=2;$Seed=17;$AnalyzeOnly=$true;$mode=[pscustomobject]@{species=@()};$sourceProvenance=@();$ResumeAfterComsol=$false;$ReanalyzeOnly=$true;$simionMaxTofUs=80
- Invoke-Expression $block
- $result=Get-Content -LiteralPath $configFile -Raw|ConvertFrom-Json -AsHashtable
- if($result.schema_version-ne2-or$result.package_sentinel-cne'keep'-or$result.paths.execution_root-cne$original.execution_root-or$result.paths.host_resource_state_path-cne$original.host_resource_state_path-or$result.capacity_ledger_lifecycle.artifact_root-cne$result.paths.artifact_root-or$result.inputs.science-cne'source-record'){throw 'Final scientific publication discarded package identity'}
-}
+$text=[IO.File]::ReadAllText($ideal);$ast=[Management.Automation.Language.Parser]::ParseFile($ideal,[ref]$null,[ref]$null)
+$first=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-ceq'$finalConfig'},$true)
+$last=$ast.Find({param($n)$n-is[Management.Automation.Language.CommandAst]-and$n.GetCommandName()-eq'Write-RunJson'-and$n.Extent.Text.Contains('-Value $finalConfig ')},$true)
+$block=$text.Substring($first.Extent.StartOffset,$last.Extent.EndOffset-$first.Extent.StartOffset)
+$configFile=Join-Path $Root 'ideal.json'
+$original=Resolve-WorkspacePaths -SourceRoot $Repo -ArtifactRoot (Join-Path $Root 'publication-artifacts') -ExecutionRoot (Join-Path $Root 'publication-exec') -HostResourceStatePath (Join-Path $Root 'publication-host.sqlite3') -Python $Python
+Write-RunJson -Path $configFile -Value @{schema_version=2;paths=$original;package_sentinel='keep';artifact_retention=@{class='solver_review'};capacity_ledger_lifecycle=@{artifact_root=$original.artifact_root}} -Depth 20
+$runConfig=$configFile;$runInputs=@{science='source-record'};$N=2;$Seed=17;$AnalyzeOnly=$true
+$mode=[pscustomobject]@{species=@()};$sourceProvenance=@();$ResumeAfterComsol=$false;$ReanalyzeOnly=$true;$simionMaxTofUs=80
+Invoke-Expression $block
+$result=Get-Content -LiteralPath $configFile -Raw|ConvertFrom-Json -AsHashtable
+if($result.schema_version-ne2-or$result.package_sentinel-cne'keep'-or$result.paths.execution_root-cne$original.execution_root-or$result.paths.host_resource_state_path-cne$original.host_resource_state_path-or$result.capacity_ledger_lifecycle.artifact_root-cne$result.paths.artifact_root-or$result.inputs.science-cne'source-record'){throw 'Final scientific publication discarded package identity'}
 'WORKSPACE_PUBLICATION=PASS'
 ''', encoding='utf-8', newline='\n')
-            result = subprocess.run(['pwsh','-NoProfile','-File',str(script),str(REPO),sys.executable,str(root)],
+            ideal = subprocess.run(['pwsh','-NoProfile','-File',str(script),str(REPO),sys.executable,str(root)],
                 cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=60)
-            self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
-            self.assertIn('WORKSPACE_PUBLICATION=PASS', result.stdout)
+            self.assertEqual(ideal.returncode, 0, ideal.stdout+ideal.stderr)
+            self.assertIn('WORKSPACE_PUBLICATION=PASS', ideal.stdout)
 
     def test_guard_freshness_and_original_resume_inputs(self):
-        owner = PROJECT / "workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1"
-        for scenario in ("normal", "stale", "pending", "resume", "foreign_resume"):
+        from msplatform.workflows import single_reflection_mass_spectrum_study as study
+        from projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_mass_spectrum_study import MassSpectrumStudyTests
+        for scenario in ('normal', 'stale', 'pending', 'resume', 'foreign_resume'):
             with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
-                fixture_project = root / "project"
-                (fixture_project / "config").mkdir(parents=True)
-                lifecycle = "formal_revalidation_pending" if scenario == "pending" else "prototype"
-                (fixture_project / "config/project.json").write_text(
-                    json.dumps({"lifecycle_status": lifecycle}), encoding="utf-8")
-                fixture = root / "admit.ps1"
-                fixture.write_text(r'''param($Repo,$Python,$Owner,$Root,$Project,$Scenario)
-$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
-. (Join-Path $Repo 'projects/single_reflection_oa_tof_mass_analyzer/oatof_lifecycle_preflight.ps1')
-$realCopy=(Get-Command Copy-VerifiedRunInput).ScriptBlock
-$script:copies=0
-function Copy-VerifiedRunInput {param($Source,$Destination)
- $script:copies++
- $result=& $realCopy -Source $Source -Destination $Destination
- if($Scenario-eq'stale'-and$Destination.Replace('\','/').EndsWith('/config/resolved_geometry.json')){[IO.File]::AppendAllText($Destination,' ')}
- return $result
-}
-$repoRoot=$Repo;$python=$Python;$projectRoot=$Project;$runDir=$Root
-[IO.File]::WriteAllText((Join-Path $runDir 'run_config.json'),'{"inputs":{},"parameters":{}}')
-$inputDir=Join-Path $Root 'inputs';New-Item -ItemType Directory $inputDir|Out-Null
-$modePath=Join-Path $inputDir 'mass_spectrum.json';$particleCountPolicyPath=Join-Path $inputDir 'particle_count_policy.json'
-$resolvedPath=Join-Path $inputDir 'resolved_geometry.json';$recordedResolved=Join-Path $inputDir 'original_recorded_resolved.json'
-$liveModePath=Join-Path $Repo 'projects/single_reflection_oa_tof_mass_analyzer/config/modes/mass_spectrum.json'
-$liveParticleCountPolicyPath=Join-Path $Repo 'src/msplatform/contracts/particle_count_policy.json'
-$geometryFrozenInputs=[ordered]@{}
-$resumeExisting=$Scenario-in@('resume','reanalyze','foreign_resume')
-$existingLifecycle=[pscustomobject]@{inputs=[pscustomobject]@{resolved_geometry=$recordedResolved;geometry_freshness_baseline=(Join-Path $inputDir 'original_baseline.json')}}
-if($Scenario-eq'foreign_resume'){$recordedResolved=Join-Path $Root 'outside_resolved.json';$existingLifecycle.inputs.resolved_geometry=$recordedResolved}
-if($resumeExisting){foreach($p in @($modePath,$particleCountPolicyPath,$recordedResolved)){[IO.File]::WriteAllText($p,'{}')}}
-$ast=[Management.Automation.Language.Parser]::ParseFile($Owner,[ref]$null,[ref]$null)
-$prepare=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Extent.Text.Contains('$geometrySnapshotRoot = Join-Path')},$true)
-if($null-eq$prepare){throw 'Actual prepare branch not found'}
-$downstream=0;$caught=$null
-try{
- Assert-OaTofFormalAssetsReadable -ProjectRoot $projectRoot
- Invoke-Expression $prepare.Extent.Text
- $downstream++
-}catch{$caught=$_.Exception.Message}
-switch($Scenario){
- 'pending' {if($caught-notlike'FORMAL_REVALIDATION_REQUIRED*'-or$script:copies-ne0-or$downstream-ne0){throw 'Formal guard was bypassed or did unnecessary geometry work'}}
- 'foreign_resume' {if($caught-cne'Recorded geometry must remain within this run frozen inputs.'-or$script:copies-ne0-or$downstream-ne0){throw 'Foreign recorded input escaped the original frozen-input boundary'}}
- 'stale' {if($caught-cne'Frozen mass-spectrum geometry input freshness failed.'-or$downstream-ne0){throw ('Stale prepare was accepted: '+$caught)};$record=Get-Content (Join-Path $runDir 'run_config.json') -Raw|ConvertFrom-Json;if($record.inputs.resolved_geometry-cne$resolvedPath-or$record.parameters.lifecycle_stage-cne'geometry_input_freshness'){throw 'Failed geometry input identity was lost'}}
- {$_-in@('resume','reanalyze')} {if($caught-or$script:copies-ne0-or$resolvedPath-cne$recordedResolved-or$downstream-ne1-or$geometryFrozenInputs.geometry_freshness_baseline-cne$existingLifecycle.inputs.geometry_freshness_baseline){throw 'Historical inputs rebound to current defaults'}}
- default {if($caught-or$script:copies-ne12-or$resolvedPath-cne$geometryFrozenInputs.geometry_freshness_published-or$downstream-ne1){throw ('Valid pure prepare failed: '+$caught)}}
-}
-'MASS_SPECTRUM_ADMISSION=PASS'
-''', encoding="utf-8")
-                result = subprocess.run(["pwsh", "-NoProfile", "-File", str(fixture), str(REPO),
-                                         sys.executable, str(owner), str(root), str(fixture_project), scenario],
-                                        cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=30)
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                self.assertIn("MASS_SPECTRUM_ADMISSION=PASS", result.stdout)
-                if scenario == "normal":
-                    self.assertIn("RESOLVED_GEOMETRY=PASS", result.stdout)
-                if scenario == "stale":
-                    self.assertIn("STALE=config/resolved_geometry.json", result.stdout + result.stderr)
+                if scenario in ('resume', 'foreign_resume'):
+                    artifacts, source, _, _ = sealed_mass_source(root)
+                    before = {path.relative_to(source): path.read_bytes()
+                              for path in source.rglob('*') if path.is_file()}
+                    selected = study.select_analysis_source(source, artifacts)
+                    self.assertEqual(Path(selected['inputs']['resolved_geometry']['path']),
+                                     source/'inputs/resolved_geometry.json')
+                    self.assertEqual(before, {path.relative_to(source): path.read_bytes()
+                                              for path in source.rglob('*') if path.is_file()})
+                    if scenario == 'foreign_resume':
+                        manifest = json.loads((source/'run_manifest.json').read_text(encoding='utf-8-sig'))
+                        config = json.loads((source/'run_config.json').read_text(encoding='utf-8-sig'))
+                        config['inputs']['resolved_geometry'] = str(root/'outside-resolved.json')
+                        with self.assertRaisesRegex(ValueError, 'input binding differs'):
+                            study._selected_input(manifest, config, source, 'resolved_geometry')
+                    continue
+                values = MassSpectrumStudyTests().inputs(root)
+                resolved = root/'resolved.json'
+                resolved.write_bytes(values['resolved_geometry'].read_bytes())
+                values['resolved_geometry'] = resolved
+                if scenario == 'stale':
+                    resolved.write_bytes(resolved.read_bytes()+b' ')
+                if scenario == 'pending':
+                    pending = root/'pending.json'
+                    pending.write_text(json.dumps({'lifecycle_status': 'formal_revalidation_pending'}), encoding='utf-8')
+                    values['project_config'] = pending
+                arguments = dict(project_config=values['project_config'], formal_assets=values['formal_assets'],
+                    formal_mph=values['formal_mph'], formal_asset_manifest=values['formal_asset_manifest'],
+                    baseline=values['baseline'], formal_mode=values['formal_mode'],
+                    solver_numerics=values['solver_numerics'], resolved_geometry=resolved)
+                if scenario == 'normal':
+                    study.validate_formal_inputs(**arguments)
+                    self.assertEqual(resolved.read_bytes(), (PROJECT/'config/resolved_geometry.json').read_bytes())
+                elif scenario == 'stale':
+                    with self.assertRaisesRegex(ValueError, 'STALE=config/resolved_geometry.json'):
+                        study.validate_formal_inputs(**arguments)
+                else:
+                    with self.assertRaisesRegex(ValueError, 'FORMAL_REVALIDATION_REQUIRED'):
+                        study.validate_formal_inputs(**arguments)

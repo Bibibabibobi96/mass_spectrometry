@@ -15,7 +15,7 @@ def _path_operation(context: ExecutionContext, request: dict[str, Any]) -> dict[
     command = [str(context.powershell_executable), "-NoProfile", "-NonInteractive", "-File",
                str(resource_path("run_paths_owner.ps1"))]
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE, cwd=context.workspace)
+        stderr=subprocess.PIPE, cwd=resource_path("run_paths_owner.ps1").parent)
     try:
         output, errors = process.communicate(json.dumps(request, ensure_ascii=False).encode("utf-8"))
     except BaseException as failure:

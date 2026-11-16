@@ -879,6 +879,59 @@ importlib.import_module(sys.argv[2])
         finally: held.rename(path)
         assert path.read_bytes() == original
 # TOF_MASS_SPECTRUM_INSTALLED_END
+# TOF_MASS_STUDY_INSTALLED_BEGIN
+with section_timing('tof_mass_study', sys.argv[2]):
+    from msplatform.workflows import single_reflection_mass_spectrum_study as mass_study
+    from msplatform.workflows import single_reflection_mass_spectrum_worker as mass_worker
+    from msplatform.backends.comsol import oatof_retrace
+    from msplatform.backends.simion.formal_runtime import stage_verified_simion_runtime
+    from msplatform.backends.simion.ion_table import read_ion_table
+    installed_root = pathlib.Path(sysconfig.get_path('purelib')).resolve()
+    for module in (mass_study, mass_worker, oatof_retrace):
+        assert pathlib.Path(module.__file__).resolve().is_relative_to(installed_root)
+    assert (installed_root/'msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1').is_file()
+    study_root = root/('tof-mass-study-'+sys.argv[2]);study_root.mkdir()
+    mode_path = study_root/'mode.json'
+    mode_path.write_text(json.dumps(dict(schema_version=1,role='oa_tof_candidate_mass_spectrum_mode',
+        mode='mass_spectrum_candidate',particle_source=dict(initial_energy_mean_ev=5.0,
+            initial_energy_sigma_ev=0.4,shared_seed=20260713),species=[dict(
+                species_id=f'mz{mass}_z1',mass_amu=mass,charge_state=1,mz=mass,
+                particle_count=100,relative_abundance=1.0) for mass in (10,100,500,1000,2000)])),encoding='utf-8')
+    policy_path = installed_root/'msplatform/contracts/particle_count_policy.json'
+    cohort = mass_study.build_source_cohort(mode_path,tms_geometry,policy_path,
+        study_root/'ions',study_root/'logs')
+    assert cohort['total_particles'] == 500 and len(cohort['individual']) == 5
+    for selected,parent in zip(cohort['individual'],cohort['parents'],strict=True):
+        assert selected.read_bytes() == b'\r\n'.join(parent.read_bytes().split(b'\r\n')[:100])+b'\r\n'
+    assert read_ion_table(cohort['mixed'])['Ion'].tolist() == list(range(1,501))
+    completion_path = study_root/'completion.json'
+    completion_path.write_text(json.dumps(dict(schema_version=1,role='comsol_launcher_completion',
+        run_id='installed-study',operations=[dict(observation=dict(exit_confirmed=True,returncode=0,
+            process_id=17,process_started_at_utc_ticks=1))],host_release=dict(
+                inherited=True,token='installed-fixture',error=None))),encoding='utf-8')
+    completion = oatof_retrace.load_launcher_completion(completion_path,run_id='installed-study')
+    assert oatof_retrace.completion_successful(completion)
+    formal_project = study_root/'formal-project';(formal_project/'formal/simion').mkdir(parents=True)
+    iob = formal_project/'formal/simion/oatof_ideal_grounded.iob';iob.write_bytes(b'installed IOB fixture')
+    iob_record = dict(bytes=len(iob.read_bytes()),sha256=hashlib.sha256(iob.read_bytes()).hexdigest().upper())
+    (formal_project/'formal/asset_manifest.json').write_text(json.dumps(dict(schema_version=1,
+        role='formal_asset_manifest',project=mass_study.PROJECT,release_id='installed-formal',assets={
+            'iob':dict(path='simion/oatof_ideal_grounded.iob',**iob_record)})),encoding='utf-8')
+    receipt,staged = stage_verified_simion_runtime(artifact_project_root=formal_project,
+        destination=formal_project/'scratch/runtime',receipt=study_root/'runtime-receipt.json',
+        project_id=mass_study.PROJECT)
+    assert receipt['release_id'] == 'installed-formal' and len(staged) == 1
+    assert staged[0].read_bytes() == iob.read_bytes()
+    (formal_project/'formal/simion/oatof_ideal_grounded.iob').write_bytes(b'tampered')
+    try:
+        stage_verified_simion_runtime(artifact_project_root=formal_project,
+            destination=formal_project/'scratch/tampered-runtime',receipt=study_root/'tampered-receipt.json',
+            project_id=mass_study.PROJECT)
+    except ValueError as exc: assert 'identity differs' in str(exc)
+    else: raise AssertionError('tampered Formal SIMION payload accepted')
+    assert not (formal_project/'scratch/tampered-runtime').exists()
+    print('TOF_MASS_STUDY_INSTALLED=PASS ARM='+sys.argv[2],flush=True)
+# TOF_MASS_STUDY_INSTALLED_END
 # Retained single-reflection checkpoint diagnostics are installed independently
 # of the withdrawn local frontend. Preserve its physically missing-module check.
 from msplatform.workflows.single_reflection_flight import checkpoint_diagnostics
