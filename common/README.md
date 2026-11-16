@@ -127,13 +127,37 @@ and neutral scheduled flight native validation remain open. Separately, complete
 canonical IP native geometry built and cold-reopened successfully at `2bae0f7a`;
 that evidence includes no Refine or Fly.
 
-The neutral SIMION renderer also consumes the canonical MR polygon primitive
-through the existing polygon validator and native emitter. Sixteen focused
-MR/IP/collision parents passed. This covers primitive representation and its
-refusal cases; complete neutral MR compilation remains open because thirteen
-within-instance Boolean-solid pairs have overlapping conservative bounds and
-no admitted exact separation proof. Their geometry and the overlap guard remain
-unchanged. Native polygon parity and full MR propagation are not inferred.
+The neutral SIMION renderer consumes the canonical MR polygon primitive through
+the existing polygon validator and native emitter. Its ambiguous conductor pairs
+now use the same optional canonical CAD projection as STEP, without importing an
+exporter into the backend. Source and actual serialized bounds remain checked;
+positive-volume overlap, uncertain separation and unproved contact refuse.
+The retained thirteen-pair source/serialized regression passed: eleven full-CSG
+separations and two exact shared-edge contacts. These are geometry/software
+results, not a native raster or complete instrument flight qualification.
+The full neutral Assembly/IP/MR, STEP and CAD-contact modules passed 49 tests
+without skips in 249.913 s on the isolated current-HS1 successor. The composed
+scalar/CAD candidate separately passed sixteen boundary, Changed-selection and
+original cut-serialization checks in 5.771 s. Both source guards matched and
+their GATE leases released; these local results do not replace Repository or
+ordinary-installation acceptance.
+The neutral source closure now freezes the CAD projection and both primitive
+helpers actually used during revalidation. Real field and tracking operations
+guard their original and frozen copies. Recovery accepted an identical source
+copy, then rejected changed bytes at the same path before another operation;
+the copy served only the identity test and was not executed as Python code.
+Contact obligations keep the scientific groups distinct. Model preparation
+currently admits only exactly equal static voltages at each contact. Every
+sampled workpoint must also respect those obligations before the SIMION field
+owner runs, and actual published requests are checked for all base/window data.
+The independent-unit native field family refuses contacts on fresh solve and
+reuse; equal final voltages cannot legitimize incompatible source unit fields.
+Ambiguous cold geometry replay needs the optional `cad-step` extra. Its absence
+does not block the conservative nonambiguous core-only path. Direct COMSOL
+solve/export contact admission, native shared-boundary behavior, complete public
+MR field/flight and suitable component-local collision grids remain open; the
+single-world-grid representation is an implementation limit, not a physical
+requirement or permission to omit thin members.
 Tracking joins saved-solution provenance through its authenticated small manifest
 and the sample's exact solution record, without rereading an unused MPH payload.
 The existing owner still protects both sampled data and its solution producer.

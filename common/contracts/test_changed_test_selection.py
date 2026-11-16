@@ -2498,6 +2498,26 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
         unrelated = self.selections(REPO_ROOT, [dict(stage='common_contracts', paths=['src/msplatform/analysis/peak_metrics.py'])])[0]
         self.assertFalse(expected & set(unrelated['Modules']))
 
+    def test_contact_geometry_and_drives_select_actual_consumer(self) -> None:
+        consumer = 'common/contracts/test_cad_contact_geometry.py'
+        paths = ['src/msplatform/components/cad_geometry.py',
+                 'src/msplatform/exporters/step.py',
+                 'src/msplatform/backends/simion/assembly_geometry.py',
+                 'src/msplatform/backends/simion/generic_scalar_binding.py',
+                 'src/msplatform/backends/simion/model.py',
+                 'src/msplatform/backends/simion/neutral_sampled_field.py',
+                 'src/msplatform/analysis/peak_metrics.py']
+        selected = self.selections(REPO_ROOT, [dict(stage='common_contracts', paths=[path]) for path in paths])
+        for row in selected[:-1]:
+            self.assertIn(consumer, row['Modules'])
+        self.assertNotIn(consumer, selected[-1]['Modules'])
+        self.assertTrue({'common/contracts/test_step_export.py',
+                         'common/contracts/test_ip_step_projection.py',
+                         'common/contracts/test_mr_step_projection.py',
+                         'common/contracts/test_generic_scalar_managed.py',
+                         'common/contracts/test_generic_scalar_tracking_recovery.py'} <= set(selected[0]['Modules']))
+        self.assertIn('common/contracts/test_generic_scalar_tracking_recovery.py', selected[-2]['Modules'])
+
     def test_neutral_polygon_and_inert_grouping_select_actual_consumers(self) -> None:
         paths = [
             'src/msplatform/backends/simion/mr_geometry.py',

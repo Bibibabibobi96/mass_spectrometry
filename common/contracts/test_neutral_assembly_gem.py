@@ -1,5 +1,6 @@
 """Neutral GEM serializer contracts; no native SIMION execution."""
 import copy
+import importlib.util
 import unittest
 from unittest.mock import patch
 from msplatform.backends.simion.assembly_geometry import render_assembly_gem
@@ -37,7 +38,8 @@ class NeutralAssemblyGemTests(unittest.TestCase):
     def test_union_difference_and_signed_permutation(self):
         rotation=((0,-1,0),(1,0,0),(0,0,1));shape={'kind':'difference','base':{'kind':'union','parts':[self.box,{'kind':'box','center_mm':[4,0,0],'size_mm':[2,2,2]}]},'tools':[self.cylinder]}
         result=self.render([member('x','group','complex',shape,rotation=rotation)],boundary='native_zero_neumann')
-        self.assertEqual(result['gem'].count('notin_inside_or_on'),2);self.assertIn('centered_box3D(0,0,0,4,2,6)',result['gem'])
+        # Existing renderer follows limited native cut-parity evidence 390e85909ccf.
+        self.assertEqual(result['gem'].count('notin {'),2);self.assertIn('centered_box3D(0,0,0,4,2,6)',result['gem'])
         self.assertNotIn('e(0)',result['gem'])
 
     def test_refuses_unrepresentable_shape_pose_domain_and_overlap(self):
@@ -45,7 +47,7 @@ class NeutralAssemblyGemTests(unittest.TestCase):
             with self.subTest(shape=invalid),self.assertRaises(ValueError):self.render([member('a','g','m',invalid)])
         with self.assertRaisesRegex(ValueError,'axis-permutation'):
             self.render([member('a','g','m',self.box,rotation=((.6,-.8,0),(.8,.6,0),(0,0,1)))])
-        with self.assertRaisesRegex(ValueError,'cannot verify.*bounding boxes overlap'):
+        with self.assertRaisesRegex((ValueError,RuntimeError), 'overlap' if importlib.util.find_spec('cadquery') else 'optional cad-step'):
             self.render([member('a','g','1',self.box),member('b','g','2',self.box)])
         bad=dict(self.domain,frame_id='foreign')
         with self.assertRaisesRegex(ValueError,'frame'):self.render(domain=bad)
@@ -74,7 +76,7 @@ class NeutralAssemblyGemTests(unittest.TestCase):
             self.render([member('a','g','c',cylinder,rotation=invalid)])
         pair=[member('a','g','one',self.cylinder,rotation=cases[0][0]),
               member('b','g','two',self.cylinder,(0,1.5,0),rotation=cases[0][0])]
-        with self.assertRaisesRegex(ValueError,'bounding boxes overlap'):
+        with self.assertRaisesRegex((ValueError,RuntimeError), 'overlap' if importlib.util.find_spec('cadquery') else 'optional cad-step'):
             self.render(pair)
 
     def test_registered_cylinder_provider_through_real_assembly(self):
@@ -131,8 +133,18 @@ class NeutralAssemblyGemTests(unittest.TestCase):
         self.assertIn('centered_box3D(0.123456789012,',result['gem'])
         self.assertIn({'input':0.123456789012345,'serialized':'0.123456789012'}, result['serialization']['rounded_values'])
 
-    def test_ambiguous_overlapping_bounds_do_not_claim_collision(self):
-        # Centers sqrt(1.9**2 + 1.9**2) apart: radii sum to 2, but AABBs overlap.
+    def test_overlapping_bounds_with_separate_cylinders_use_exact_proof(self):
+        # The two radii sum to 2; diagonal center distance exceeds 2, despite overlapping AABBs.
         pair=[member('a','g','one',self.cylinder),member('b','g','two',self.cylinder,(1.9,1.9,0))]
-        with self.assertRaisesRegex(ValueError, 'cannot verify independent-conductor separation'):
+        real_import=__import__
+        def deny(name,*args,**kwargs):
+            if name=='cadquery':raise ImportError('controlled missing optional CAD')
+            return real_import(name,*args,**kwargs)
+        with patch('builtins.__import__',side_effect=deny),self.assertRaisesRegex(RuntimeError,'optional cad-step'):
             self.render(pair)
+        if importlib.util.find_spec('cadquery'):
+            result=self.render(pair)
+            self.assertEqual(len(result['electrode_mapping']),2)
+            self.assertNotIn('contact_obligations',result)
+        else:
+            with self.assertRaisesRegex(RuntimeError,'optional cad-step'):self.render(pair)

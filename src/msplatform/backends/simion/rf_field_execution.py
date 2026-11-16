@@ -88,6 +88,8 @@ def plan_rf_fields(model, *, numerics: Mapping, reuse_fields_reference=None) -> 
     else:
         raise ValueError('RF refine_policy must be vendor_default or explicit_convergence')
     if geometry.get('role') == 'simion_neutral_world_collision_geometry':
+        if geometry.get('contact_obligations'):
+            raise ValueError('independent electrode field family cannot represent contacting conductor groups')
         static_world_voltage_vector(model)
         ids = (['audit_fields'] if reuse_fields_reference is not None else
                ['materialize_geometry', 'refine_world', 'audit_family', 'export_operating', 'audit_fields'])

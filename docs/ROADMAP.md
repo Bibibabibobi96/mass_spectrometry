@@ -283,6 +283,24 @@ scientific group identity was removed. A separate 30,000-trial native sensitivit
 probe supports a narrower RF interpolation-support hypothesis but is finite
 evidence, so the production support guard remains unchanged.
 
+The optional neutral CAD projection is now shared with STEP. The retained
+thirteen-pair MR test proves eleven source/serialized CSG separations and two
+exact shared-edge contacts, with source/index guards and released GATE. Physical
+members and scientific groups are unchanged. Equal static contact voltages and
+each selected scalar workpoint are checked; incompatible independent unit-field
+families refuse. This closes the conservative-box false positives in the tested
+projection, not native raster behavior, the complete public MR consumer or
+contact-aware direct COMSOL admission. Full-component numerical partitioning
+must still use adequate grids; a single coarse world grid is not a substitute
+for unresolved thin members. Ordinary installation and final same-candidate
+Repository/native acceptance of this successor remain open.
+The isolated current-HS1 successor passed 49 full neutral Assembly/IP/MR, STEP
+and CAD-contact tests without skips in 249.913 s. The composed scalar/CAD
+candidate separately passed sixteen boundary, Changed-selection and original
+cut-serialization checks in 5.771 s. Source guards and GATE releases matched;
+the frozen `8c3fe6a1` Repository result remains 49 PASS, 2 FAIL and 12 not
+applicable in 5106.319 s, rather than inheriting these local successor results.
+
 The registered-component consumer regression now covers an explicit connected
 Assembly with renamed instances and a changed physical width through the same
 public managed sampled-field/tracking path. The original and connected parents

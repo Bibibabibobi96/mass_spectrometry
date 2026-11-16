@@ -217,6 +217,15 @@ class GenericScalarManagedTests(unittest.TestCase):
                 sample_paths={str(open_artifact(row['reference'],expected_kind='scalar_field_samples').data_path(key).resolve()) for row in case.samples.values() for key in ('field_v','field_valid','grid')}
                 self.assertEqual(len(field_guards),6)
                 for guarded in field_guards:self.assertTrue(sample_paths <= guarded)
+                from msplatform.backends.simion import generic_geometry, mr_geometry
+                from msplatform.components import cad_geometry
+                for module in (generic_geometry, mr_geometry, cad_geometry):
+                    source = str(Path(module.__file__).resolve())
+                    copy_name = module.__name__.replace('.', '_') + '.py'
+                    for guarded in field_guards:
+                        self.assertIn(source, guarded)
+                        self.assertTrue(any(Path(path).name == copy_name and 'native_sources' in Path(path).parts for path in guarded))
+
                 missing=dict(case.samples);missing.pop('one')
                 with patch('msplatform.execution.owner.run_managed_stage') as blocked:
                     with self.assertRaisesRegex(ValueError,'span'):

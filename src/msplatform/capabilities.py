@@ -53,7 +53,7 @@ def capabilities(request: Mapping[str, Any], *, environment: Mapping[str, Any] |
         from msplatform.exporters.operations import _validate_step_export_options
         from msplatform.components.geometry_members import assembly_geometry_members
         _validate_step_export_options(assembly, format, options)
-        from msplatform.exporters.step import _validate_shape
+        from msplatform.components.cad_geometry import _validate_shape
         members = assembly_geometry_members(dict(composition_plan=assembly.composition_plan,
                                                 components_resolved=assembly.components_resolved,
                                                 components_source=assembly.components_source))

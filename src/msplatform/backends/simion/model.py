@@ -354,6 +354,15 @@ def _compile_static_world_published_model(compiled, components, *, drive, physic
     return _finish_static_world_model(compiled, components, drive=drive, physics=physics)
 
 
+def _validate_static_contacts(contacts, groups):
+    """Require an identical static potential on proven contacting groups."""
+    for contact in contacts:
+        values = [groups[side['instance_id']][side['electrode_group_id']]
+                  for side in (contact['first'], contact['second'])]
+        if any(value['kind'] != 'static' for value in values) or values[0]['voltage_v'] != values[1]['voltage_v']:
+            raise ValueError('contacting conductor groups require exactly equal static voltages')
+
+
 def resolve_ip_schedule_authorities(drive, scheduled):
     """Resolve the declared schedule form against actual scheduled instances."""
     single = 'ip_schedule' in drive
@@ -433,6 +442,7 @@ def _finish_static_world_model(compiled, components, *, drive, physics):
                 raise ValueError('unsupported RF waveform, frequency, amplitude or polarity')
             rows.append(dict(instance_id=instance, electrode_group_id=group,
                 native_targets=[dict(domain='world', electrode_id=electrode)], **copy.deepcopy(dict(value))))
+    _validate_static_contacts(geometry.get('contact_obligations', []), drive['groups'])
     normalized_drive = copy.deepcopy(dict(drive))
     if single: normalized_drive['ip_schedule'] = frozen_schedules[next(iter(scheduled))]
     if multiple: normalized_drive['ip_schedules'] = frozen_schedules

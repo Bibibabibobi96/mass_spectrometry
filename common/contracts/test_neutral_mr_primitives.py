@@ -1,4 +1,5 @@
 import copy
+import importlib.util
 import json
 import unittest
 from pathlib import Path
@@ -70,7 +71,7 @@ class NeutralMrPrimitivesTests(unittest.TestCase):
     def test_overlapping_groups_remain_refused(self):
         members = [copy.deepcopy(self.members[0]), copy.deepcopy(self.members[0])]
         members[1]['electrode_group_id'] = 'different_group'
-        with self.assertRaisesRegex(ValueError, 'bounding boxes overlap'):
+        with self.assertRaisesRegex((ValueError,RuntimeError), 'overlap' if importlib.util.find_spec('cadquery') else 'optional cad-step'):
             subject._render_assembly_members_gem({'composition_plan': {'recipe': {'assembly_frame_id': 'world'}}}, members,
                 domain={'frame_id': 'world', 'minimum_mm': [-2000]*3, 'maximum_mm': [2000]*3},
                 pitch_mm=1, boundary='native_zero_neumann')

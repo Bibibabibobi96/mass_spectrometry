@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import math
+import re
 from collections.abc import Mapping
 from fractions import Fraction
 from typing import Any
@@ -158,6 +159,177 @@ def _pieces(shape: Mapping[str, Any], transform: RigidTransform, rounding: list[
     return [(primitive,[],lo,hi)]
 
 
+def _serialized_primitive_bounds(primitive, *, exact=False):
+    """Conservative bounds decoded from the renderer's exact emitted primitives."""
+    num=r'[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?'
+    def bounds(values):
+        if exact:
+            return ([v[0] for v in values], [v[1] for v in values])
+        return ([math.nextafter(float(v[0]),-math.inf) for v in values],
+                [math.nextafter(float(v[1]),math.inf) for v in values])
+    box=re.fullmatch(r'centered_box3D\(([^()]*)\)',primitive)
+    if box:
+        values=[Fraction(x) for x in box.group(1).split(',')]
+        if len(values)!=6:raise ValueError('unrecognized serialized box')
+        return bounds([(values[i]-values[i+3]/2,values[i]+values[i+3]/2) for i in range(3)])
+    polygon=re.compile(r'extrude_yz\(('+num+r'),('+num+r')\) \{ polyline\(([^()]*)\) \}')
+    matches=list(polygon.finditer(primitive))
+    if matches and not polygon.sub('',primitive).strip():
+        spans=[]
+        for match in matches:
+            x=[Fraction(match.group(1)),Fraction(match.group(2))]
+            coords=[Fraction(v) for v in match.group(3).split(',')]
+            if len(coords)<6 or len(coords)%2:raise ValueError('unrecognized serialized polygon')
+            spans.append(((min(x),max(x)),(min(coords[::2]),max(coords[::2])),(min(coords[1::2]),max(coords[1::2]))))
+        return bounds([(min(x[i][0] for x in spans),max(x[i][1] for x in spans)) for i in range(3)])
+    locate=re.match(r'locate\(('+num+r'),('+num+r'),('+num+r')(,1,90)?\) \{ ',primitive)
+    cylinder=re.search(r'cylinder\(0,0,0,('+num+r'),,('+num+r')\)',primitive)
+    if locate and cylinder:
+        rest=primitive[locate.end():]
+        if locate.group(4): axis=0
+        elif rest.startswith('rotate_y(90) { '):axis=0
+        elif rest.startswith('rotate_x(-90) { '):axis=1
+        else:axis=2
+        # The accepted forms are exactly those emitted by _world_primitive.
+        prefix=('rotate_y(90) { ' if axis==0 and not locate.group(4) else
+                'rotate_x(-90) { ' if axis==1 else '')
+        body='cylinder(0,0,0,'+cylinder.group(1)+',,'+cylinder.group(2)+')'
+        expected=prefix+'locate(0,0,0) { '+body+' } } }' if prefix else body+' }'
+        if rest!=expected:raise ValueError('unrecognized serialized cylinder')
+        center=[Fraction(locate.group(i)) for i in (1,2,3)];radius=Fraction(cylinder.group(1));height=Fraction(cylinder.group(2))
+        spans=[(center[i]-radius,center[i]+radius) for i in range(3)]
+        spans[axis]=(center[axis]-height,center[axis])
+        return bounds(spans)
+    raise ValueError('unsupported serialized GEM primitive bounds')
+
+
+def _serialized_polygon_member(member):
+    """Reconstruct only the existing serialized polygon-band CSG in world coordinates."""
+    from .mr_geometry import _polygon_bands
+    transform=RigidTransform.from_contract(member['transform']);rotation=transform.rotation
+    def number(value): return float(format_number(value))
+    def convert(shape):
+        kind=shape.get('kind')
+        if kind=='union': return dict(kind='union',parts=[convert(x) for x in shape['parts']])
+        if kind=='difference':return dict(kind='difference',base=convert(shape['base']),tools=[convert(x) for x in shape['tools']])
+        if kind=='ip_box':
+            primitive,_,_=_world_primitive(shape,transform,[])
+            matched=re.fullmatch(r'centered_box3D\(([^()]*)\)',primitive)
+            if not matched:raise ValueError('unrecognized serialized IP box')
+            values=[float(v) for v in matched.group(1).split(',')]
+            return dict(kind='box',center_mm=values[:3],size_mm=values[3:])
+        if kind=='box':
+            center=_vector(shape.get('center_mm'),'box center'); size=_vector(shape.get('size_mm'),'box size')
+            if any(value<=0 for value in size):raise ValueError('serialized physical box requires positive extents')
+            world=[sum(rotation[i][j]*center[j] for j in range(3))+transform.translation_mm[i] for i in range(3)]
+            span=[sum(abs(rotation[i][j])*size[j] for j in range(3)) for i in range(3)]
+            return dict(kind='box',center_mm=[number(v) for v in world],size_mm=[number(v) for v in span])
+        if kind!='extruded_yz_polygon':raise ValueError('rounded CAD proof lacks supported serialized primitive')
+        if abs(rotation[0][0]) != 1:raise ValueError('serialized polygon requires world-x extrusion')
+        x=sorted(number(rotation[0][0]*v+transform.translation_mm[0]) for v in shape['x'])
+        def world(q):return [sum(rotation[i][j]*q[j-1] for j in (1,2))+transform.translation_mm[i] for i in (1,2)]
+        bands=[dict(kind='extruded_yz_polygon',x=x,polygon_yz_mm=[[number(v) for v in q] for q in second])
+               for band in _polygon_bands(shape['polygon_yz_mm'])
+               for second in _polygon_bands([world(q) for q in band])]
+        return bands[0] if len(bands)==1 else dict(kind='union',parts=bands)
+    identity=dict(schema_version=1,role='rigid_transform',from_frame_id='world',to_frame_id='world',
+                  rotation=[[1,0,0],[0,1,0],[0,0,1]],translation_mm=[0,0,0])
+    return dict(shape=convert(member['shape']),transform=identity)
+
+
+def _serialized_member_solid(member):
+    """Build the exact emitted CSG forms using the shared optional CAD adapter."""
+    from msplatform.components.cad_geometry import placed_physical_solid, serialized_axis_cylinder
+    transform=RigidTransform.from_contract(member['transform'])
+    def convert(shape):
+        kind=shape.get('kind')
+        if kind=='union':
+            parts=[convert(part) for part in shape['parts']]
+            result=parts[0]
+            for part in parts[1:]:result=result.fuse(part)
+            return result
+        if kind=='difference':
+            result=convert(shape['base'])
+            for tool in shape['tools']:result=result.cut(convert(tool))
+            return result
+        if kind in {'cylinder','ip_cylinder_x','rod'}:
+            primitive,_,_=_world_primitive(shape,transform,[])
+            lo,hi=_serialized_primitive_bounds(primitive,exact=True)
+            axis=0 if ',1,90)' in primitive or 'rotate_y(90)' in primitive else 1 if 'rotate_x(-90)' in primitive else 2
+            radius_match=re.search(r'cylinder\(0,0,0,([^,]+),,([^()]+)\)',primitive)
+            if not radius_match:raise ValueError('unrecognized serialized cylinder')
+            top=[float((lo[i]+hi[i])/2) for i in range(3)];top[axis]=float(hi[axis])
+            return serialized_axis_cylinder(top,float(Fraction(radius_match.group(1))),
+                                            float(Fraction(radius_match.group(2))),axis)
+        return placed_physical_solid(_serialized_polygon_member(dict(shape=shape,transform=member['transform'])))
+    solid=convert(member['shape'])
+    if not solid.isValid() or not solid.Solids() or solid.Volume()<=0:
+        raise ValueError('invalid serialized CAD physical member')
+    return solid
+
+
+def _polygon_contact_proof(first, second):
+    """Prove a shared uncut polygon edge remains separating after GEM serialization."""
+    from .mr_geometry import _polygon_bands
+    from msplatform.components.shape_query import shape_relation
+    if first['transform'] != second['transform']:
+        return False
+    transform = RigidTransform.from_contract(first['transform'])
+    rotation = transform.rotation
+    if abs(rotation[0][0]) != 1:
+        return False
+    bases = []
+    for member in (first, second):
+        shape = member['shape']
+        base = shape.get('base') if shape.get('kind') == 'difference' else shape
+        if base.get('kind') != 'extruded_yz_polygon':
+            return False
+        tools = shape.get('tools', []) if shape.get('kind') == 'difference' else []
+        if any(tool.get('kind') != 'extruded_yz_polygon' for tool in tools):
+            return False
+        bases.append((base, tools, shape))
+    if bases[0][0]['x'] != bases[1][0]['x']:
+        return False
+    x = bases[0][0]['x'][0]
+    world_x = rotation[0][0]*x + transform.translation_mm[0]
+    serialized_x = Fraction(format_number(world_x))
+    for _, tools, _ in bases:
+        for tool in tools:
+            bounds = [Fraction(format_number(rotation[0][0]*v+transform.translation_mm[0])) for v in tool['x']]
+            if min(bounds) <= serialized_x <= max(bounds):
+                return False
+    p1, p2 = (base['polygon_yz_mm'] for base, _, _ in bases)
+    def rational(point, serialize):
+        return tuple(Fraction(format_number(v)) if serialize else Fraction.from_float(float(v)) for v in point)
+    def world(point):
+        return [sum(rotation[i][j]*point[j-1] for j in (1,2))+transform.translation_mm[i] for i in (1,2)]
+    def sides(edge, points):
+        (a,b)=edge
+        return [(b[0]-a[0])*(q[1]-a[1])-(b[1]-a[1])*(q[0]-a[0]) for q in points]
+    for i, a in enumerate(p1):
+        b = p1[(i+1)%len(p1)]
+        if not any((a == p2[j] and b == p2[(j+1)%len(p2)]) or
+                   (b == p2[j] and a == p2[(j+1)%len(p2)]) for j in range(len(p2))):
+            continue
+        point=[x,*a]
+        if any(shape_relation(shape,point) != 'boundary' or
+               any(shape_relation(tool,point) != 'outside' for tool in tools)
+               for _,tools,shape in bases):
+            continue
+        edge=(rational(a,False),rational(b,False))
+        first_side=sides(edge,[rational(q,False) for q in p1]);second_side=sides(edge,[rational(q,False) for q in p2])
+        def opposite(left,right):
+            return ((all(v>=0 for v in left) and any(v>0 for v in left) and all(v<=0 for v in right) and any(v<0 for v in right)) or
+                    (all(v<=0 for v in left) and any(v<0 for v in left) and all(v>=0 for v in right) and any(v>0 for v in right)))
+        if not opposite(first_side,second_side):
+            continue
+        edge=(rational(world(a),True),rational(world(b),True))
+        band_points=[[rational(world(q),True) for band in _polygon_bands(poly) for q in band] for poly in (p1,p2)]
+        if opposite(sides(edge,band_points[0]),sides(edge,band_points[1])):
+            return True
+    return False
+
+
 def render_assembly_gem(assembly: Mapping[str, Any], *, domain: Mapping[str, Any], pitch_mm: float,
                         boundary: str) -> dict[str, Any]:
     """Render the actual source-validated provider members."""
@@ -187,21 +359,46 @@ def _render_assembly_members_gem(assembly: Mapping[str, Any], members, *, domain
         counts.append(int(cells)+1)
     rounding: list[dict[str, Any]] = []
     _record_rounding(lo+hi+[-x for x in lo]+[pitch], rounding)
+    represented_origin=[-Fraction(format_number(-value)) for value in lo]
+    represented_pitch=Fraction(format_number(pitch))
+    represented_max=[represented_origin[i]+(counts[i]-1)*represented_pitch for i in range(3)]
 
     if not members: raise ValueError('GEM requires at least one physical member')
-    groups={};witness=[];all_boxes=[]
-    for member in members:
+    groups={};witness=[];all_boxes=[];solids={};serialized_solids={};pair_results={};contacts=set()
+    for member_index,member in enumerate(members):
         if member['representation_role']!='physical_solid': raise ValueError('unsupported GEM representation: '+str(member['representation_role']))
         key=(member['instance_id'],member['electrode_group_id'])
         if any(not isinstance(x,str) or not x for x in key): raise ValueError('GEM physical member requires an explicit electrode group')
-        transform=RigidTransform.from_contract(member['transform']);pieces=_pieces(member['shape'],transform,rounding)
+        transform=RigidTransform.from_contract(member['transform']);member_rounding=[]
+        pieces=_pieces(member['shape'],transform,member_rounding);rounding.extend(member_rounding)
         for primitive,cuts,lower,upper in pieces:
             if any(lower[i]<=lo[i] or upper[i]>=hi[i] for i in range(3)):
                 raise ValueError('GEM physical member is not strictly inside the world domain')
-            for previous,pl,pu in all_boxes:
-                if previous!=key and all(lower[i]<=pu[i] and pl[i]<=upper[i] for i in range(3)):
-                    raise ValueError('GEM cannot verify independent-conductor separation: bounding boxes overlap')
-            all_boxes.append((key,lower,upper));groups.setdefault(key,[]).append((primitive,cuts))
+            exact_lower,exact_upper=_serialized_primitive_bounds(primitive,exact=True)
+            if any(exact_lower[i]<=represented_origin[i] or exact_upper[i]>=represented_max[i] for i in range(3)):
+                raise ValueError('serialized GEM physical member is not strictly inside the world domain')
+            represented_lower=[math.nextafter(float(value),-math.inf) for value in exact_lower]
+            represented_upper=[math.nextafter(float(value),math.inf) for value in exact_upper]
+            for previous,previous_index,pl,pu,previous_rounding,rpl,rpu in all_boxes:
+                source_overlap=all(lower[i]<=pu[i] and pl[i]<=upper[i] for i in range(3))
+                represented_overlap=all(represented_lower[i]<=rpu[i] and rpl[i]<=represented_upper[i] for i in range(3))
+                if previous!=key and (source_overlap or represented_overlap):
+                    pair=(previous_index,member_index)
+                    if pair not in pair_results:
+                        proven_contact = _polygon_contact_proof(members[previous_index],member)
+                        from msplatform.components.cad_geometry import placed_physical_solid, classify_solid_pair
+                        for index in pair:
+                            if index not in solids: solids[index]=placed_physical_solid(members[index])
+                        pair_results[pair]=classify_solid_pair(solids[previous_index],solids[member_index],
+                                                               proven_contact=proven_contact)
+                        if pair_results[pair]=='separated':
+                            for index in pair:
+                                if index not in serialized_solids:
+                                    serialized_solids[index]=_serialized_member_solid(members[index])
+                            if classify_solid_pair(serialized_solids[previous_index],serialized_solids[member_index]) != 'separated':
+                                raise ValueError('serialized GEM conductor separation is not proven')
+                    if pair_results[pair]=='contact': contacts.add(tuple(sorted((previous,key))))
+            all_boxes.append((key,member_index,lower,upper,member_rounding,represented_lower,represented_upper));groups.setdefault(key,[]).append((primitive,cuts))
         witness.append(dict(instance_id=key[0],electrode_group_id=key[1],member_id=member['member_id'],source_refs=copy.deepcopy(member['source_refs']),transform=copy.deepcopy(member['transform'])))
     ordered=sorted(groups);mapping=[dict(instance_id=a,electrode_group_id=b,native_id=i) for i,(a,b) in enumerate(ordered,1)]
     f=format_number
@@ -221,4 +418,7 @@ def _render_assembly_members_gem(assembly: Mapping[str, Any], members, *, domain
                 _record_rounding([(a+b)/2 for a,b in zip(lower,upper)] + [b-a for a,b in zip(lower,upper)], rounding)
         lines+=['  e(0) {',*grounded_pa_face_lines(box),'  }']
     lines+=['}',''];gem='\n'.join(lines)
-    return dict(role='neutral_assembly_gem',gem=gem,gem_sha256=hashlib.sha256(gem.encode('utf8')).hexdigest(),domain=copy.deepcopy(dict(domain)),pitch_mm=pitch,boundary=boundary,dimensions=counts,electrode_mapping=mapping,members=witness,serialization=dict(convention='existing_gem_primitives_12_significant_digits',rounded_values=rounding),scope='geometry_only_not_native_or_field_qualification')
+    contact_rows=[dict(first=dict(instance_id=a[0],electrode_group_id=a[1]),second=dict(instance_id=b[0],electrode_group_id=b[1])) for a,b in sorted(contacts)]
+    result=dict(role='neutral_assembly_gem',gem=gem,gem_sha256=hashlib.sha256(gem.encode('utf8')).hexdigest(),domain=copy.deepcopy(dict(domain)),pitch_mm=pitch,boundary=boundary,dimensions=counts,electrode_mapping=mapping,members=witness,serialization=dict(convention='existing_gem_primitives_12_significant_digits',rounded_values=rounding),scope='geometry_only_not_native_or_field_qualification')
+    if contact_rows:result['contact_obligations']=contact_rows
+    return result

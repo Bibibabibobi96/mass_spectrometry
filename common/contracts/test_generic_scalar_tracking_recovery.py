@@ -68,6 +68,7 @@ class NeutralSampledRecoveryTests(unittest.TestCase):
         calls = []
         fail = [True]
         checks = []
+        selected_source_paths = {}
         gate = {}
         def check(session, records):
             view = load_capacity_protection_leases(context.workspace / 'artifacts')
@@ -76,6 +77,13 @@ class NeutralSampledRecoveryTests(unittest.TestCase):
             actual = {str(Path(row['path']).resolve()) for row in records}
             self.assertTrue(expected_paths <= actual)
             self.assertTrue(globals().get('COLD_PROVIDER_PATHS', set()) <= actual)
+            from msplatform.backends.simion import generic_geometry, mr_geometry
+            from msplatform.components import cad_geometry
+            for module in (generic_geometry, mr_geometry, cad_geometry):
+                self.assertIn(selected_source_paths.get(module.__name__, str(Path(module.__file__).resolve())), actual)
+                copy_name = module.__name__.replace('.', '_') + '.py'
+                self.assertTrue(any(Path(path).name == copy_name and 'native_sources' in Path(path).parts for path in actual))
+
             checks.append(len(refs))
         def single(session, operation_id, *, immutable_input_records=(), **kwargs):
             if '__unit_' not in operation_id:
@@ -165,12 +173,31 @@ class NeutralSampledRecoveryTests(unittest.TestCase):
                 self.assertEqual(len(calls), prior)
             finally:
                 target.write_bytes(saved)
+            # Select the same real-byte copy for both recovery attempts; only its bytes change.
+            from msplatform.backends.simion import neutral_sampled_field
+            from msplatform.components import cad_geometry
+            source_paths = neutral_sampled_field.neutral_source_paths
+            source_name = 'msplatform.components.cad_geometry'
+            selected = root / 'selected_cad_geometry.py'
+            original_bytes = Path(cad_geometry.__file__).read_bytes()
+            selected.write_bytes(original_bytes)
+            selected_source_paths[source_name] = str(selected.resolve())
+            def selected_source(model):
+                paths = source_paths(model)
+                paths[source_name] = selected
+                return paths
             fail[0] = False
-            prior = len(calls)
-            result = track(predecessor)
-            names = [name for _, name in calls[prior:]]
-            self.assertEqual([n.split('__')[0] for n in names], ['build_tracking_iob','verify_tracking_iob','track_fly'])
-            self.assertTrue(all(n.endswith('unit_0002') for n in names))
+            with patch.object(neutral_sampled_field, 'neutral_source_paths', side_effect=selected_source):
+                prior = len(calls)
+                result = track(predecessor)
+                names = [name for _, name in calls[prior:]]
+                self.assertEqual([n.split('__')[0] for n in names], ['build_tracking_iob','verify_tracking_iob','track_fly'])
+                self.assertTrue(all(n.endswith('unit_0002') for n in names))
+                selected.write_bytes(original_bytes + b'\n# changed source\n')
+                prior = len(calls)
+                with self.assertRaisesRegex(ValueError, 'tracking predecessor scientific applicability or partition differs'):
+                    track(predecessor)
+                self.assertEqual(len(calls), prior)
             collection = json.loads(result.data_path('collection').read_text(encoding='utf8'))
             self.assertEqual([row['particle_id'] for row in collection['native_terminals']], [7,91])
             self.assertEqual(collection['original_mother']['mother_records'], list(packet['mother']['records'].values()))

@@ -21,7 +21,7 @@ PROVIDER_DOMAINS = {"rf_multipole", "orthogonal_accelerator", "single_reflection
                     "dual_pressure_rectilinear_ion_processor"}
 # Provider dispatch belongs to components; neutral Assembly data may not import
 # individual providers merely because this shared traversal exists.
-COMPONENT_INFRASTRUCTURE = {"model", "catalog", "geometry_members", "shape_query", "registry"}
+COMPONENT_INFRASTRUCTURE = {"model", "catalog", "geometry_members", "shape_query", "registry", "cad_geometry"}
 DOMAIN_IMPORTS = {
     **{name: SCIENTIFIC_DOMAINS for name in SCIENTIFIC_DOMAINS},
     "gas": {"gas", "contracts", "io"},
@@ -92,7 +92,8 @@ def _target_error(target: str, dependencies: set[str], source_domain: str, sourc
         return None
     if parts[0] in {"common", "projects", "integrations"}:
         return f"scientific core imports a repository owner: {target}"
-    if parts[0] in {"cadquery", "OCP"} and source_domain != "exporters":
+    if (parts[0] in {"cadquery", "OCP"} and source_domain != "exporters"
+            and source_module != "msplatform.components.cad_geometry"):
         return f"{source_domain} imports optional CAD kernel: {target}"
     if parts[0] in {"win32com", "pythoncom", "pywintypes"} and source_domain != "applications":
         return f"{source_domain} imports optional application machinery: {target}"
@@ -336,7 +337,7 @@ class ScientificCoreBoundaryTests(unittest.TestCase):
             parts = path.relative_to(CORE_ROOT.parent).with_suffix("").parts
             module = ".".join(parts[:-1] if path.name == "__init__.py" else parts)
             selected_dependencies = set(dependencies)
-            if len(parts) > 1 and parts[1] == "exporters":
+            if (len(parts) > 1 and parts[1] == "exporters") or module == "msplatform.components.cad_geometry":
                 cad_step = project.get("optional-dependencies", {}).get("cad-step", [])
                 selected_dependencies.update(Requirement(value).name.replace("-", "_") for value in cad_step)
                 if any(Requirement(value).name == "cadquery-ocp" for value in cad_step):

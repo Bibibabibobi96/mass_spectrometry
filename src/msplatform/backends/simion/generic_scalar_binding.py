@@ -217,6 +217,18 @@ def compile_linear_terms(projection, drive, samples):
     )
 
 
+def _validate_contact_sample_workpoints(contacts, samples):
+    """Require each actual saved workpoint to respect every proven metal contact."""
+    for name, row in samples.items():
+        voltages = {(item['instance_id'], item['electrode_group_id']): item['voltage_v']
+                    for item in row['request']['group_voltages']}
+        for contact in contacts:
+            keys = [(side['instance_id'], side['electrode_group_id'])
+                    for side in (contact['first'], contact['second'])]
+            if any(key not in voltages for key in keys) or voltages[keys[0]] != voltages[keys[1]]:
+                raise ValueError('sample workpoint violates equal-potential conductor contact: ' + name)
+
+
 def admit_linear_samples(
     *, model_reference, assembly, geometry_artifact, operator, samples, refinement_windows=None
 ):
@@ -293,6 +305,7 @@ def admit_linear_samples(
         for name, value in samples.items()
     }
     plan = compile_linear_terms(projection, drive, rows)
+    _validate_contact_sample_workpoints(geometry.frontend_geometry.get("contact_obligations", []), rows)
     def admit_level(level_samples):
         if not isinstance(level_samples, Mapping) or set(level_samples) != set(samples):
             raise ValueError("scalar refinement basis coverage differs")

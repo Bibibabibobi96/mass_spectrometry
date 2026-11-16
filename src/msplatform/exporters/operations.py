@@ -67,7 +67,7 @@ def export_cad(assembly: Assembly, *, format: str, options: Mapping[str, Any],
     from functools import partial
     from uuid import uuid4
     from msplatform.components.geometry_members import assembly_geometry_members
-    from msplatform.exporters.step import _validate_shape
+    from msplatform.components.cad_geometry import _validate_shape
     from msplatform.exporters.execution import execute_cad_export
     from msplatform.execution.completion import no_particle_batch_completion_api
     from msplatform.io.manifest_records import file_record

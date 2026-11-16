@@ -96,12 +96,12 @@ def neutral_source_paths(model_value: Any) -> dict[str, Path]:
     """Resolve the existing registered source closure for neutral field consumers."""
     from msplatform.execution import inputs as execution_inputs
     from msplatform.execution.inputs import resolve_python_module_sources
-    from . import neutral_sampled_field, ip_mr_collision_lineage, generic_scalar_binding, scalar_sample_binding, field_closure, native_surface_state, model, assembly_geometry, collision_overlay
+    from . import neutral_sampled_field, ip_mr_collision_lineage, generic_scalar_binding, scalar_sample_binding, field_closure, native_surface_state, model, assembly_geometry, collision_overlay, generic_geometry, mr_geometry
     from msplatform.backends.comsol import assembly_geometry as comsol_geometry, assembly_electrostatic_model, assembly_field_export, assembly_field_solution
-    from msplatform.components import shape_query, geometry_members, registry, catalog
+    from msplatform.components import shape_query, geometry_members, registry, catalog, cad_geometry
     from msplatform.assembly import model as assembly_model, resolve_assembly
     from msplatform.contracts import rigid_transform
-    modules=[neutral_sampled_field,ip_mr_collision_lineage,generic_scalar_binding,scalar_sample_binding,field_closure,native_surface_state,model,assembly_geometry,collision_overlay,comsol_geometry,assembly_electrostatic_model,assembly_field_export,assembly_field_solution,shape_query,geometry_members,registry,catalog,assembly_model,resolve_assembly,rigid_transform,execution_inputs]
+    modules=[neutral_sampled_field,ip_mr_collision_lineage,generic_scalar_binding,scalar_sample_binding,field_closure,native_surface_state,model,assembly_geometry,collision_overlay,generic_geometry,mr_geometry,comsol_geometry,assembly_electrostatic_model,assembly_field_export,assembly_field_solution,shape_query,geometry_members,registry,catalog,cad_geometry,assembly_model,resolve_assembly,rigid_transform,execution_inputs]
     paths={module.__name__:Path(module.__file__).resolve(strict=True) for module in modules}
     snapshot=model_value.document['geometry']['frontend_geometry']['source_snapshot']
     for name in snapshot['composition_plan']['scope']['instance_ids']:

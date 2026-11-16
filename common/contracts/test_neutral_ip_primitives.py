@@ -1,4 +1,5 @@
 import copy,json,unittest
+import importlib.util
 from pathlib import Path
 from msplatform.assembly.factory import assemble
 from msplatform.components.catalog import resolve_component
@@ -114,5 +115,5 @@ class CanonicalIpNeutralTests(unittest.TestCase):
         member=copy.deepcopy(self.members[0]);other=copy.deepcopy(member);other['electrode_group_id']='other'
         frame=self.snapshot['composition_plan']['recipe']['assembly_frame_id']
         domain=dict(frame_id=frame,minimum_mm=[-1000,-1000,-1000],maximum_mm=[1000,1000,1000])
-        with self.assertRaisesRegex(ValueError,'bounding boxes overlap'):
+        with self.assertRaisesRegex((ValueError,RuntimeError), 'overlap' if importlib.util.find_spec('cadquery') else 'optional cad-step'):
             target._render_assembly_members_gem(self.snapshot,[member,other],domain=domain,pitch_mm=1,boundary='native_zero_neumann')

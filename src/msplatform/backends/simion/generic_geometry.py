@@ -71,6 +71,8 @@ def _compile_generic_from_members(snapshot, *, numerics, members):
         serialization=rendered['serialization'], metal_witnesses=copy.deepcopy(metal),
         void_witnesses=copy.deepcopy(voids), physical_samples=rows,
         electrode_witness_ids=[row['native_id'] for row in rendered['electrode_mapping']])
+    if rendered.get('contact_obligations'):
+        geometry['contact_obligations'] = rendered['contact_obligations']
     identities = {}
     for name in snapshot['composition_plan']['scope']['instance_ids']:
         value = {'source': snapshot['components_source'][name], 'resolved': snapshot['components_resolved'][name],
