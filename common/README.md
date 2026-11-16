@@ -1233,3 +1233,5 @@ process plumbing without treating controlled state-machine facts as native or
 OS evidence; it does not close the full software performance target.
 
 When one reserved process identity is unavailable, the host adapter recollects the complete metadata snapshot at most three times after the initial observation, then fails closed with bounded diagnostic details. Generic stale-snapshot contention retains its existing retry and deadline semantics. This engineering bound governs host metadata observation, not solver retry or scientific qualification; when an operating-system telemetry call has no supplied deadline, the count does not bound its wall time. An independently verified unrelated release retains its existing isolation rules.
+
+2026-11-16 P4-83定向复验在同一当前源码上通过5项（0.219秒）：原fresh-snapshot不可读recycled-PID释放、两种stale-release保护、stale非释放失败关闭及recycled PID不保留死owner。原生产身份、创建时间与释放保护未改；该软件结果不证明其他历史宿主故障的根因。

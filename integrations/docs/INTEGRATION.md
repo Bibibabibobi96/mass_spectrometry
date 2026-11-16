@@ -899,6 +899,10 @@ uses those same vertices and extents under the supported signed-permutation
 poses. This closes the source-level polygon refusal, not native kernel or selection
 verification. The SFI results below do not qualify the MR extension; installed
 polygon consumption, coupled fields and continuous MR flight remain open.
+2026-11-16 P4-82顺序复验在同一个新Python解释器先执行原no-GEM Mock起因方法，再执行
+`ComsolOaMrPolygonTests.test_public_request_retains_complete_oa_mr_members_and_groups`；
+两项57.538秒通过，确认消费者引用未被首次导入时的临时Mock污染，完整成员／分组断言保留。
+首次定向命令误写测试类名造成loader error，随后以正确类名完成上述同一解释器复验；该选择器错误不记作生产失败。
 The same public geometry stage now projects complete canonical IP members in the
 real RF–IP consumer. It keeps every original source solid/tool and all 15 IP groups,
 deriving only the backend prism/tetra representation. Source-only mixed dispatch
