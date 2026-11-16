@@ -34,9 +34,30 @@ SIMION SDK's one-sided boundary mechanism. An exact-adapter native probe
 `20261116_093001__analysis__simion__pa-boundary-probe-a99682d20681`
 passed 15 linear-potential queries, six outside refusals and two unknown-mask
 refusals. This qualifies only the tested synthetic mechanism.
-Original-N100 flight with this successor and genuine outside-workbench terminal
-recording remain open; the last Lua callback is not substituted for a missing
-native terminal state. No physical entity or invalid vacuum value was changed.
+The exact header-derived-cache adapter was subsequently exercised by native probe
+`20261116_114945__analysis__simion__pa-boundary-probe-a5063b8723e4`:
+32 numerical queries, twelve outside refusals, five unknown-mask refusals and one
+header-mismatch refusal passed. Synthetic linear-field errors were at most
+7.105427357601002e-15; this is mechanism evidence, not instrument accuracy.
+
+Original-N100 successor `20261116_122512__sim__simion__track-7d0796c215fb`
+passed build and cold verification, then refused an invalid `rf_body` stencil for
+ion 8 at 0.8203724992385 us. The query was
+[-0.5112717840556753, -305.65674976744913, 0.82587829871424023] mm;
+the invalid node was [-1, -305.25, 0.5] mm. Its raw validity remains zero and
+the stored zero is not a measured potential. All native writers stopped and the
+workflow lease released; seven partial splats are not complete original-N100 fates.
+
+FieldBundle `20261116_125045__sim__simion__fields-328701510087` retains the
+seventeen original bases and the ordered `rf_ip_connection`, `rf_badnode_region`
+and `ip_mr_connection` windows, omitting only `rf_body`. It reuses the existing
+collision producer and was published with zero native operations and unchanged
+source guards; its workflow lease released. This is an explicit numerical
+selection with a new product identity, not a repair or overwrite of invalid data.
+Bounded checks of the base at the failed query and original birth stencils do not
+prove whole-path coverage or accuracy. Complete original-N100 flight and genuine
+outside-workbench terminal recording remain open; the last Lua callback is not
+substituted for a missing native terminal state. No physical entity changed.
 
 The original-source native attempts retain their individual failures: missing
 empty-surface evidence (`track-27a67896934c`), PA memory exhaustion
