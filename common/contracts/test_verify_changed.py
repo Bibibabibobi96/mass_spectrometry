@@ -1401,7 +1401,10 @@ $result|ConvertTo-Json -Compress
                      "integrations/runtime/single_flight_frontend.py",
                      "integrations/analysis/plot_single_flight_spatial_six_panel.py"):
             with self.subTest(path=path):
-                self.assertEqual(set(self.routed_stages(path)), {"instrument_assembly_integration"})
+                expected = {"instrument_assembly_integration"}
+                if path == "integrations/config/runtime_dependencies.json":
+                    expected.add("common_contracts")
+                self.assertEqual(set(self.routed_stages(path)), expected)
 
 
     def test_installed_paired_pulse_analysis_routes_real_consumers(self) -> None:

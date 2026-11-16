@@ -679,6 +679,39 @@ class NormalOwnerTests(unittest.TestCase):
         return dict(status="success", summary={"native_launches": 0}, output_paths=[str(path)],
                     required_output_paths=[str(path)], retention_preserve_paths=[], manifest_extra_fields={})
 
+    def test_second_source_lease_failure_releases_first_and_preserves_error(self):
+        from common.contracts.test_cross_root_protection import CrossRootProtectionTests
+        from msplatform.execution import owner, capacity_protection
+        from msplatform.execution.capacity_protection import load_capacity_protection_leases
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fixture = CrossRootProtectionTests(methodName="runTest")
+            _, first = fixture.source(root / "source_a")
+            _, second = fixture.source(root / "source_b")
+            context = self._context(root / "consumer")
+            called = []
+            def action(session):
+                called.append(session)
+                return self._action(session)
+            arguments = self._arguments(root, action)
+            arguments["source_references"] = [first, second]
+            original = capacity_protection.create_capacity_protection_lease
+            first_seen = []
+            def acquire(artifact_root, **kwargs):
+                if Path(artifact_root).resolve() == (root / "source_b").resolve():
+                    first_seen.extend(load_capacity_protection_leases(root / "source_a")["audit"])
+                    raise RuntimeError("SECOND_SOURCE_LEASE_FAILURE")
+                return original(artifact_root, **kwargs)
+            with patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN": ""}), \
+                 patch.object(capacity_protection, "create_capacity_protection_lease", side_effect=acquire):
+                with self.assertRaisesRegex(RuntimeError, "SECOND_SOURCE_LEASE_FAILURE") as caught:
+                    owner.run_managed_stage(context, **arguments)
+            self.assertEqual(str(caught.exception), "SECOND_SOURCE_LEASE_FAILURE")
+            self.assertTrue(first_seen)
+            self.assertEqual(called, [])
+            for name in ("source_a", "source_b"):
+                self.assertEqual(load_capacity_protection_leases(root / name)["audit"], [])
+
     def test_actual_package_capacity_retention_and_finalization_resume_without_reinvoking_action(self):
         from msplatform.execution import owner
         from msplatform.execution.capacity_ledger import load_capacity_ledger
