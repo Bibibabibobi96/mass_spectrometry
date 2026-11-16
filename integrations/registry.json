@@ -81,7 +81,7 @@
             "Only the declared downstream prepared-source scope is continuous; no upstream history is newly executed."
           ],
           "binding_types": {
-            "prepared_joint_workbench_run_path": "directory",
+            "prepared_joint_workbench_run_path": "run_directory",
             "contract_path": "file"
           },
           "purpose": "assembly_propagation",
@@ -135,8 +135,8 @@
             "Existing IP source is handed off to the downstream joint field; IP own partial recovery is not automatic full-chain recovery."
           ],
           "binding_types": {
-            "ion_processor_run_path": "directory",
-            "reference_mr_run_path": "directory",
+            "ion_processor_run_path": "run_directory",
+            "reference_mr_run_path": "run_directory",
             "matching_request_path": "file",
             "field_request_path": "file",
             "contract_path": "file"
@@ -196,9 +196,9 @@
             "Continuous only within the declared prepared-source propagation and supported field/interface domain."
           ],
           "binding_types": {
-            "geometry_review_run_path": "directory",
-            "mirror_run_path": "directory",
-            "stripe_run_path": "directory",
+            "geometry_review_run_path": "run_directory",
+            "mirror_run_path": "run_directory",
+            "stripe_run_path": "run_directory",
             "accelerator_provider_receipt_path": "file",
             "composition_plan_path": "file",
             "prism1_voltage_v": "number",

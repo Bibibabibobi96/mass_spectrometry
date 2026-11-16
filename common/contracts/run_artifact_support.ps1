@@ -83,7 +83,30 @@ function Invoke-CompiledExecutionPlan {
       if($owners.Count-ne1){throw 'Compiled integration owner is not registered.'}
       $workflows=@($owners[0].workflows|Where-Object{$_.workflow_id-eq$plan.profile_id})
       if($workflows.Count-ne1){throw 'Compiled integration workflow is not registered.'}
-      $profiles=@(@{profile_id=$plan.profile_id;steps=@(@{step_id=$plan.profile_id;shell='powershell';entrypoint=$workflows[0].entrypoint;arguments=$workflows[0].arguments})})
+      $workflow=$workflows[0]
+      $optional=@{}
+      if($workflow.ContainsKey('optional_arguments')){$optional=$workflow.optional_arguments}
+      $selected=@{}
+      if($plan.ContainsKey('optional_bindings')){$selected=$plan.optional_bindings}
+      if($selected-isnot[System.Collections.IDictionary]){throw 'Compiled optional bindings must be a mapping.'}
+      foreach($key in $selected.Keys){
+        if(-not$optional.ContainsKey($key)-or$workflow.required_bindings-contains$key-or-not$workflow.binding_types.ContainsKey($key)){
+          throw "Compiled optional binding is not declared: $key"
+        }
+        if($selected[$key]-isnot[string]){throw "Compiled optional binding is not a string: $key"}
+        if($workflow.binding_types[$key]-eq'file'){
+          $location=[IO.Path]::GetFullPath([string]$selected[$key])
+          if(-not(@($plan.binding_sources|Where-Object{[IO.Path]::GetFullPath([string]$_)-eq$location}).Count)){
+            throw "Compiled optional file is not a bound source: $key"
+          }
+          if([IO.Path]::GetExtension($location)-ieq'.json'-and-not(@($plan.binding_authorities|Where-Object{$_.name-eq$key-and[IO.Path]::GetFullPath([string]$_.path)-eq$location}).Count)){
+            throw "Compiled optional file authority differs: $key"
+          }
+        }
+      }
+      $templates=@($workflow.arguments)
+      foreach($key in $optional.Keys){if($selected.ContainsKey($key)){$templates+=@($optional[$key])}}
+      $profiles=@(@{profile_id=$plan.profile_id;steps=@(@{step_id=$plan.profile_id;shell='powershell';entrypoint=$workflow.entrypoint;arguments=$templates})})
       $entryRoot=$repository
     }else{$profiles=@($contract.profiles|Where-Object{$_.profile_id-eq$plan.profile_id})}
     if($profiles.Count-ne1){throw 'Compiled execution profile is not unique.'}
@@ -128,6 +151,20 @@ function Invoke-CompiledExecutionPlan {
       $entry=[IO.Path]::GetFullPath((Join-Path $entryRoot ([string]$step.entrypoint)))
       if($entry-ne[IO.Path]::GetFullPath([string]$command.entrypoint)-or$step.shell-ne$command.shell){throw 'Compiled command differs from declared entrypoint.'}
       if(@($step.arguments).Count-ne@($command.arguments).Count){throw 'Compiled arguments differ from the declared owner inputs.'}
+      if($plan.ContainsKey('owner_kind')-and$plan.owner_kind-eq'integration'-and$optional.Count){
+        $values=@{};foreach($key in $selected.Keys){$values[$key]=[string]$selected[$key]}
+        for($i=0;$i-lt@($workflow.arguments).Count;$i++){
+          if([string]$workflow.arguments[$i]-match'^\{([A-Za-z_]\w*)\}$'){$values[$Matches[1]]=[string]$command.arguments[$i]}
+        }
+        if($command.run_id){$values['run_id']=[string]$command.run_id}
+        for($i=@($workflow.arguments).Count;$i-lt@($step.arguments).Count;$i++){
+          $expected=[string]$step.arguments[$i]
+          foreach($key in $values.Keys){$expected=$expected.Replace('{'+$key+'}',[string]$values[$key])}
+          if($expected-match'\{[A-Za-z_]\w*\}'-or$expected-cne[string]$command.arguments[$i]){
+            throw 'Compiled optional argument differs from its declared binding.'
+          }
+        }
+      }
       for($argumentIndex=0;$argumentIndex-lt@($step.arguments).Count;$argumentIndex++){
         $template=[string]$step.arguments[$argumentIndex]
         if($template-notmatch'\{[A-Za-z_]\w*\}'-and$template-cne[string]$command.arguments[$argumentIndex]){throw 'Compiled arguments changed a fixed owner input.'}

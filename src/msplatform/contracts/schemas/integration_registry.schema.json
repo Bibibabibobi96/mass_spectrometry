@@ -122,6 +122,7 @@
                     "enum": [
                       "file",
                       "directory",
+                      "run_directory",
                       "integer",
                       "number",
                       "string"

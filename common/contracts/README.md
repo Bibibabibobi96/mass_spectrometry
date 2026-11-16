@@ -1117,6 +1117,10 @@ key to its existing argument list. Optional keys require a `binding_types` entry
 must be disjoint from required bindings. Omitted optional bindings add no arguments;
 provided values receive the same input and source-authority checks as required values.
 
+A `directory` binding requires an existing directory; `run_directory` additionally
+requires and binds its `run_manifest.json`. Saved plans retain selected optional
+bindings and validate their registered arguments and file authorities before dispatch.
+
 profile明确实际purpose、action、tools、model、资格支持和输出。`--purpose`、`--qualification`
 只能选择该入口真实支持的用途与局部资格；历史candidate/formal请求保留原资格意图，不静默降级。
 `EXECUTION_READY`仅表示声明准备条件满足，不代表原生已执行、指标已评价或科学PASS。

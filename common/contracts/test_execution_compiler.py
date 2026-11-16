@@ -210,7 +210,7 @@ class ExecutionCompilerTests(unittest.TestCase):
                 self.assertEqual(len(missing["blockers"]), len(row["required_bindings"]))
                 bindings = {}
                 for key, kind in row["binding_types"].items():
-                    if kind == "directory":
+                    if kind in {"directory", "run_directory"}:
                         directory = Path(self.binding_directory.name)/key
                         directory.mkdir(exist_ok=True)
                         (directory/"run_manifest.json").write_text("{}")
@@ -344,6 +344,58 @@ foreach($record in $compiledInputs.files){
                     compile_with({"request": str(required)})
             with self.assertRaisesRegex(ValueError, "duplicate"):
                 parse_bindings(["request=a", "request=b"])
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
+    def test_optional_saved_plan_and_directory_authority(self):
+        from common.contracts.compile_execution_plan import compile_integration_execution
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            entry = root / "integrations/workflows/fixture/run.ps1"
+            entry.parent.mkdir(parents=True)
+            entry.write_text("param($Request,$Workspace,$ScalarFieldBasis)\nSet-Content -LiteralPath (Join-Path $Workspace 'called.txt') -Value $ScalarFieldBasis\n", encoding="utf8")
+            request = root / "request.json"; request.write_text('{}', encoding="utf8")
+            basis = root / "basis.json"; basis.write_text('{"sample":1}', encoding="utf8")
+            workspace = root / "workspace"; workspace.mkdir()
+            workflow = dict(workflow_id="fixture", entrypoint="integrations/workflows/fixture/run.ps1",
+                required_bindings=["request", "workspace"], binding_types=dict(request="file", workspace="directory", scalar_field_basis="file"),
+                arguments=["-Request", "{request}", "-Workspace", "{workspace}"],
+                optional_arguments={"scalar_field_basis": ["-ScalarFieldBasis", "{scalar_field_basis}"]},
+                outputs=["trajectory_artifact_ref"], simulation_paths=["continuous_assembly"], recipes=[],
+                limitations=[], purpose="assembly_propagation", action="run", tools=["python"], model="public stage")
+            registry = root / "integrations/registry.json"
+            registry.write_text(json.dumps(dict(schema_version=1, role="integration_registry",
+                integrations=[dict(integration_id="instrument_assembly", root="integrations", workflows=[workflow])])), encoding="utf8")
+            with patch("common.contracts.compile_execution_plan.REPO_ROOT", root):
+                def plan(bindings):return compile_integration_execution("instrument_assembly", "fixture", self.run_id, bindings)
+                plain=plan(dict(request=str(request), workspace=str(workspace)))
+                selected=plan(dict(request=str(request), workspace=str(workspace), scalar_field_basis=str(basis)))
+                self.assertTrue(plain["safe_to_execute"]);self.assertTrue(selected["safe_to_execute"])
+                workflow["binding_types"]["workspace"]="run_directory"
+                registry.write_text(json.dumps(dict(schema_version=1, role="integration_registry",
+                    integrations=[dict(integration_id="instrument_assembly", root="integrations", workflows=[workflow])])), encoding="utf8")
+                self.assertEqual(plan(dict(request=str(request), workspace=str(workspace)))["status"],"NEEDS_RUNTIME_INPUTS")
+                (workspace/"run_manifest.json").write_text('{}', encoding="utf8")
+                self.assertIn("workspace",[x['name'] for x in plan(dict(request=str(request), workspace=str(workspace)))['binding_authorities']])
+                workflow["binding_types"]["workspace"]="directory"
+                registry.write_text(json.dumps(dict(schema_version=1, role="integration_registry",
+                    integrations=[dict(integration_id="instrument_assembly", root="integrations", workflows=[workflow])])), encoding="utf8")
+                plain=plan(dict(request=str(request), workspace=str(workspace)))
+                selected=plan(dict(request=str(request), workspace=str(workspace), scalar_field_basis=str(basis)))
+            harness = root / "execute.ps1"
+            harness.write_text("param($Helper,$Plan,$Repository)\n$ErrorActionPreference='Stop';Set-StrictMode -Version Latest\n. $Helper\nInvoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository\n", encoding="utf8")
+            target = root/"plan.json"
+            def execute(value):
+                target.write_text(json.dumps(value), encoding="utf8")
+                return subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(harness),
+                    str(REPO_ROOT/"common/contracts/run_artifact_support.ps1"), str(target), str(root)],
+                    cwd=REPO_ROOT,capture_output=True,text=True,encoding="utf8",errors="replace",timeout=30)
+            for value in (plain, selected):
+                result=execute(value);self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            changed=copy.deepcopy(selected);changed['commands'][0]['arguments'][-2]='-Changed'
+            self.assertNotEqual(execute(changed).returncode,0)
+            changed=copy.deepcopy(selected);changed['commands'][0]['arguments'][-1]=str(request)
+            self.assertNotEqual(execute(changed).returncode,0)
+            basis.unlink();self.assertNotEqual(execute(selected).returncode,0)
 
     def test_integration_backend_generated_identity_is_not_a_planned_run(self):
         from common.contracts.compile_execution_plan import compile_integration_execution

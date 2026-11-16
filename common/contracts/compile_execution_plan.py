@@ -36,7 +36,7 @@ def _resolved_inputs(profile: dict[str, Any], project_root: Path,
         value = bindings[key]
         if kind == "file" and not Path(value).is_file():
             unavailable.append(f"{key}: file is missing: {value}")
-        elif kind == "directory" and not Path(value).is_dir():
+        elif kind in {"directory", "run_directory"} and not Path(value).is_dir():
             unavailable.append(f"{key}: directory is missing: {value}")
         elif kind in {"integer", "number"}:
             try:
@@ -415,7 +415,7 @@ def compile_integration_execution(owner: str, workflow_id: str, run_id: str,
     _, unavailable = _resolved_inputs(dict(workflow, binding_types=active_types), REPO_ROOT, bindings)
     authorities, needs_freeze = _binding_authorities(workflow, bindings)
     for key, kind in workflow["binding_types"].items():
-        if kind == "directory" and key in bindings:
+        if kind == "run_directory" and key in bindings:
             manifest = Path(bindings[key])/"run_manifest.json"
             if not manifest.is_file():
                 unavailable.append(f"{key}: parent run manifest is missing: {manifest}")
@@ -440,6 +440,7 @@ def compile_integration_execution(owner: str, workflow_id: str, run_id: str,
         purpose=workflow["purpose"], requested_action=workflow["action"], tools=workflow["tools"], model=workflow["model"],
         requested_qualification=qualification,
         owner_kind="integration", owner_id=owner, profile_id=workflow_id,
+        **({'optional_bindings': {key: bindings[key] for key in optional if key in bindings}} if optional else {}),
         execution_contract=dict(path=str(path), sha256=sha256(path)),
         binding_authorities=authorities, binding_sources=[str(Path(value).resolve()) for key, value in bindings.items()
             if workflow["binding_types"][key] == "file" and Path(value).is_file()],
