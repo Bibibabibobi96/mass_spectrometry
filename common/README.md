@@ -166,6 +166,16 @@ API qualification, not Fly, convergence or universal field accuracy. The officia
 installed SDK `lib/cpp/simion/pa.cpp` describes clipped one-sided field sampling;
 mirrored arrays and active refinement-window halo rules are unchanged.
 
+Scalar response caching uses actual opened PA dimensions even when the existing
+public serializer omits optional declared dimensions. A supplied declaration must
+match the header; shared masks still require the same authenticated identity,
+frame, origin, pitch and resolved grid, and every term retains finite-value and
+support checks. The complete MR scalar module passed 103 tests in 161.156 s on
+the isolated current successor. Native synthetic probe `a5063b8723e4` passed 50
+cases with declared/omitted dimensions, mixed terms, outside and unknown-mask
+refusal and header mismatch. This is bounded API evidence, not Fly or accuracy;
+the 27-mask-read sharing assertion is software evidence, not a native hit count.
+
 The three SFI scalar workpoints now use the same admitted identity pool for their
 validity masks and a fresh support-check cache for each query. Voltage arrays stay
 independent. Mask bytes, frame, origin, pitch and dimensions must match for sharing;

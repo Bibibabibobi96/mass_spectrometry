@@ -1,5 +1,19 @@
 # 开放路径平行镜双条带 MR-TOF 项目状态
 
+The frozen Repository run at `8c3fe6a1` failed the scalar resource pin and six
+Lua cases. One fixture still rejected supported stored boundary cells; five
+consumers exposed a real cache bug when the public serializer omitted declared
+dimensions. The shared adapter now derives cache dimensions from each opened
+PA header, validates any declared dimensions against that header, and retains
+mask/grid identity, unknown-support, sheet and finite-value checks. The original
+resource-origin and missing-resource refusals remain. The complete module passed
+103 tests in 161.156 s on the isolated `c369f180` successor, with its full source
+inventory unchanged. Native synthetic probe `a5063b8723e4` exercised the exact
+`ca02c184...` adapter: 32 numeric positives, twelve outside refusals, five unknown
+refusals and one header mismatch; both writers exited and the capacity lease
+released. This qualifies those API cases, not Fly, field accuracy, full MR or
+Repository acceptance. The original frozen Repository failure remains recorded.
+
 本页维护MR分析器的当前设计、资格、有效证据和开放动作。操作由[项目入口](../README.md)导航，
 推导见[理论索引](theory/index.md)。完整接口迁移、已完成研究、实现修复及原始证据链接冻结在
 [文档收口里程碑](history/20261026__assembly-documentation-consolidation.md)，历史语气不作为当前执行指令。

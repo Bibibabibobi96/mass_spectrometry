@@ -46,7 +46,8 @@ class ScalarAdapterResourceTest(unittest.TestCase):
         self.assertEqual(selected.resolve(), provider.parent / "resources/scalar_field_adapter.lua")
         authority = REPO_ROOT / "src/msplatform/backends/simion/resources/scalar_field_adapter.lua"
         self.assertEqual(selected.read_bytes(), authority.read_bytes())
-        self.assertEqual(hashlib.sha256(selected.read_bytes()).hexdigest(), "db1bec828102216f826a43160ff7db9aa63049b0fd8eac86e2c3ef761852b5cd")
+        # Header/cache successor; native synthetic probe a5063b8723e4.
+        self.assertEqual(hashlib.sha256(selected.read_bytes()).hexdigest(), "ca02c184314494f5fd2890c3ed8da086da5c70e4fdc544b8a57338915166eb7d")
         self.assertFalse((REPO_ROOT / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua").exists())
         with tempfile.TemporaryDirectory() as directory:
             package = Path(directory)
@@ -1647,7 +1648,7 @@ unknown=true;assert(not pcall(fly,3,3,3));assert(not pcall(raw,6,6,6));unknown=f
 for _,name in ipairs({'b','c'}) do nonfinite=name;assert(not pcall(fly,6,6,6)) end
 for _,name in ipairs({'bw','cw'}) do nonfinite=name;assert(not pcall(raw,3,3,3)) end
 nonfinite=nil
-assert(not pcall(fly,0,0,0),'outside support remains failure')
+assert(not pcall(fly,-0.01,0,0),'outside support remains failure')
 -- Different routes must check their own mask and cannot borrow a window box.
 binding.response_terms[2].refinement_windows[1].active_box_mm={{4,5},{4,5},{4,5}}
 local mixed=apply(binding);local before=mask_reads
@@ -1663,6 +1664,52 @@ print('SHARED_MASK_QUERY_PASS')
                                        text=True, timeout=10, check=True)
             self.assertIn("SHARED_MASK_QUERY_PASS", completed.stdout)
 
+    def test_public_serializer_without_dimensions_uses_header_for_sharing(self):
+        from msplatform.backends.comsol.static_field_binding import _scalar_field_lua_fields
+        lua = Path(os.environ.get("SIMION_LUA_EXE") or shutil.which("lua") or shutil.which("lua5.1") or "")
+        if not lua.is_file():
+            self.skipTest("standalone Lua unavailable")
+        grid = {"origin_mm": [0, 0, 0], "pitch_mm": [1, 1, 1], "dimensions": [9, 9, 9]}
+        def fields(name):
+            return _scalar_field_lua_fields({"sources": {"scalar_pa": name, "valid_pa": "mask"},
+                                             "grid": grid, "ideal_sheet_projection": []})
+        first, second = fields("a"), fields("b")
+        self.assertNotIn("dimensions", first)
+        self.assertNotIn("dimensions", second)
+        binding = "local binding={response_terms={{coefficient=1," + first + ",dimensions={9,9,9}},{coefficient=1," + second + "}}}\n"
+        fixture = r'''
+local reads=0;local mode='valid';local pa={}
+for _,name in ipairs({'a','b','mask'}) do
+ local object={symmetry='3dplanar',nx=9,ny=9,nz=9,dx_mm=1,dy_mm=1,dz_mm=1}
+ function object:potential()
+  if name=='mask' then reads=reads+1;if mode=='unknown' and reads>0 then return 0 end;return 1 end
+  if name=='b' and mode=='nonfinite' then return 0/0 end
+  return 1
+ end
+ function object:potential_vc() return self:potential() end
+ pa[name]=object
+end
+simion={pas={},early_access=function()end,experimental={}}
+function simion.pas:open(path) return assert(pa[path]) end
+function simion.experimental.field_array(t) return {efield=function() return 1,2,3 end} end
+function simion.experimental.make_efield_adjust(f) return f end
+''' + binding + r'''
+local make=assert(loadfile(arg[1]))();local sample=make(binding,'raw_sample')
+local bad={scalar_pa='a',valid_pa='mask',origin_mm={0,0,0},pitch_mm={1,1,1},dimensions={8,9,9},ideal_sheet_projection={}}
+local okbad,errbad=pcall(make,bad,'raw_sample');assert(not okbad and tostring(errbad):find('declared scalar dimensions differ',1,true))
+pa.mask.nx=8;bad.dimensions=nil;okbad,errbad=pcall(make,bad,'raw_sample');assert(not okbad and tostring(errbad):find('V/mask dimensions differ',1,true));pa.mask.nx=9
+local v,x,y,z=sample(3,3,3);assert(v==2 and x==2 and y==4 and z==6);assert(reads==27)
+reads=0;mode='unknown';local ok,err=pcall(sample,3,3,3);assert(not ok and tostring(err):find('V_SUPPORT_UNKNOWN',1,true));assert(reads==1)
+reads=0;mode='nonfinite';ok,err=pcall(sample,3,3,3);assert(not ok and tostring(err):find('V_SUPPORT_NONFINITE',1,true))
+print('DIMENSIONLESS_SERIALIZER_RECHECK_PASS')
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "dimensionless.lua"
+            source.write_text(fixture, encoding="utf-8", newline="\n")
+            adapter = REPO_ROOT / "src/msplatform/backends/simion/resources/scalar_field_adapter.lua"
+            result = subprocess.run([str(lua), str(source), str(adapter)], cwd=REPO_ROOT,
+                                    capture_output=True, text=True, timeout=10, check=True)
+            self.assertIn("DIMENSIONLESS_SERIALIZER_RECHECK_PASS", result.stdout)
     def test_existing_cli_compiles_sampling_and_rejects_partial_options(self):
         module = "msplatform.backends.comsol.static_field_binding"
         with tempfile.TemporaryDirectory() as directory:
@@ -3019,6 +3066,7 @@ class StaticFieldVoltageTest(unittest.TestCase):
         adapter = Path(__file__).resolve().parents[4] / "src/msplatform/backends/simion/resources/scalar_field_adapter.lua"
         fixture = r'''
 local calls={};local unknown=false;local nonfinite=false;local faCalls=0;local opens=0
+local expectedY=.425
 local pa={symmetry='3dplanar',nx=9,ny=9,nz=9,dx_mm=.25,dy_mm=.125,dz_mm=.5}
 function pa:potential(i,j,k)
  if nonfinite then return 0/0 end
@@ -3038,7 +3086,7 @@ function simion.experimental.field_array(t)
  assert(t.V==pa and t.type=='V' and t.antimirror=='')
  return {efield=function(x,y,z)
   faCalls=faCalls+1
-  assert(math.abs(x-.575)<1e-14 and math.abs(y-.425)<1e-14 and math.abs(z-2.25)<1e-14)
+  assert(math.abs(x-.575)<1e-14 and math.abs(y-expectedY)<1e-14 and math.abs(z-2.25)<1e-14)
   return -3,7,-11
  end}
 end
@@ -3074,8 +3122,14 @@ end
 binding.pitch_mm=nil;fails(function() apply(binding) end,'pitch_mm')
 assert(opens==before,'invalid pitch must fail before PA open')
 binding.pitch_mm={.25,.125,.5}
+expectedY=.0625
+local ax,ay,az=field(10.575,20.0625,32.25);assert(ax==-3 and ay==7 and az==-11)
+expectedY=1
+ax,ay,az=field(10.575,21,32.25);assert(ax==-3 and ay==7 and az==-11)
+expectedY=.425
 local count=faCalls
-fails(function() field(10.575,20.0625,32.25) end,'V_SUPPORT_BOX_OUTSIDE')
+fails(function() field(10.575,19.9999,32.25) end,'V_SUPPORT_BOX_OUTSIDE')
+fails(function() field(10.575,21.0001,32.25) end,'V_SUPPORT_BOX_OUTSIDE')
 unknown=true;fails(function() field(10.575,20.425,32.25) end,'V_SUPPORT_UNKNOWN');unknown=false
 nonfinite=true;fails(function() field(10.575,20.425,32.25) end,'V_SUPPORT_NONFINITE')
 assert(faCalls==count,'invalid support must not reach field_array')

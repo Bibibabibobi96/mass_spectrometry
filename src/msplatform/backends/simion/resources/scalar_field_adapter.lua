@@ -166,6 +166,14 @@ local function load_field(binding, shared_mask, reuse_workbench, sharing)
   end
   local sheets=assert(binding.ideal_sheet_projection, 'missing frozen OA sheet projection')
   local pa = existing_or_open(binding.scalar_pa, #sheets==0)
+  local dimensions = {pa.nx,pa.ny,pa.nz}
+  for a=1,3 do
+    assert(type(dimensions[a])=='number' and dimensions[a]>=1 and dimensions[a]==math.floor(dimensions[a]), 'invalid scalar dimensions')
+  end
+  if binding.dimensions~=nil then
+    assert(type(binding.dimensions)=='table' and #binding.dimensions==3, 'invalid declared scalar dimensions')
+    for a=1,3 do assert(binding.dimensions[a]==dimensions[a], 'declared scalar dimensions differ from PA') end
+  end
   local mask = shared_mask
   local id = binding.mask_identity
   if not mask and sharing and id then
@@ -177,7 +185,7 @@ local function load_field(binding, shared_mask, reuse_workbench, sharing)
       if entry.sha256~=id.sha256:lower() or entry.bytes~=id.bytes or entry.frame_id~=id.frame_id then return false end
       for a=1,3 do
         if entry.origin[a]~=binding.origin_mm[a] or entry.pitch[a]~=pitch[a]
-          or entry.dimensions[a]~=binding.dimensions[a] then return false end
+          or entry.dimensions[a]~=dimensions[a] then return false end
       end
       return true
     end
@@ -185,7 +193,7 @@ local function load_field(binding, shared_mask, reuse_workbench, sharing)
     if not mask then
       mask=existing_or_open(binding.valid_pa, false)
       sharing[#sharing+1]={sha256=id.sha256:lower(),bytes=id.bytes,frame_id=id.frame_id,
-        origin={unpack(binding.origin_mm)},pitch={unpack(pitch)},dimensions={unpack(binding.dimensions)},mask=mask}
+        origin={unpack(binding.origin_mm)},pitch={unpack(pitch)},dimensions={unpack(dimensions)},mask=mask}
     end
   end
   mask = mask or existing_or_open(binding.valid_pa, true)
@@ -255,7 +263,7 @@ local function load_field(binding, shared_mask, reuse_workbench, sharing)
     if shared then
       for a=1,3 do
         if support.origin[a]~=binding.origin_mm[a] or support.pitch[a]~=pitch[a]
-          or support.dimensions[a]~=binding.dimensions[a] then shared=false; break end
+          or support.dimensions[a]~=dimensions[a] then shared=false; break end
       end
     end
     local local_mm,lo,hi
@@ -306,7 +314,7 @@ local function load_field(binding, shared_mask, reuse_workbench, sharing)
       support.mask,support.local_mm,support.lo,support.hi = mask,local_mm,lo,hi
       support.x,support.y,support.z=x,y,z
       support.origin={unpack(binding.origin_mm)};support.pitch={unpack(pitch)}
-      support.dimensions={unpack(binding.dimensions)}
+      support.dimensions={unpack(dimensions)}
     end
     if sample_potential then
       -- Official potential_vc uses grid units; field_array.efield uses mm.
