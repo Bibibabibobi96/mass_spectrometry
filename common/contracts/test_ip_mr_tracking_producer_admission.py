@@ -146,11 +146,46 @@ class SampledTrackingProducerTests(unittest.TestCase):
             other=next(level['field_solution_reference'] for level in levels if level['field_solution_reference']['manifest']['sha256']!=ref['manifest']['sha256'])
             with self.assertRaisesRegex(ValueError,'solution reference differs'):
                 _verified_solution_manifest(sample,other)
+            # Distinct metadata is legal but gets a separate real verification.
+            original_project = admission_module._ip_mr_bindings
+            original_verify = admission_module.verify_record
+            checked = []
+            def with_duplicate(document, basis):
+                projection, records = original_project(document, basis)
+                return projection, [*records, dict(records[0])]
+            def with_other_role(document, basis):
+                projection, records = original_project(document, basis)
+                return projection, [*records, dict(records[0], retention_role='other_role')]
+            def with_conflict(document, basis):
+                projection, records = original_project(document, basis)
+                return projection, [*records, dict(records[0], sha256='0'*64)]
+            def record_verify(name, record, **kwargs):
+                checked.append((name, dict(record)))
+                return original_verify(name, record, **kwargs)
+            with patch.object(admission_module, '_ip_mr_bindings', side_effect=with_duplicate):
+                duplicate = admit_ip_mr_tracking_fields(fields.reference)
+            self.assertEqual(duplicate['immutable_input_records'], admission['immutable_input_records'])
+            with patch.object(admission_module, '_ip_mr_bindings', side_effect=with_other_role), \
+                 patch.object(admission_module, 'verify_record', side_effect=record_verify):
+                admit_ip_mr_tracking_fields(fields.reference)
+            self.assertTrue(any(name == 'IP–MR tracking immutable input' and row.get('retention_role') == 'other_role'
+                                for name, row in checked))
+            with patch.object(admission_module, '_ip_mr_bindings', side_effect=with_conflict):
+                with self.assertRaisesRegex(ValueError, 'conflicting tracking input identities'):
+                    admit_ip_mr_tracking_fields(fields.reference)
             self.assertEqual(len(admission['basis']['bases']),17)
             self.assertEqual(len(admission['priority']['instances']),5)
             from msplatform.backends.simion.ip_mr_tracking_admission import protect_ip_mr_tracking_fields
             protected={}
             def protect_action(session):
+                first = Path(admission["immutable_input_records"][0]["path"])
+                original = first.read_bytes()
+                try:
+                    first.write_bytes(original+b" ")
+                    with self.assertRaises(AssertionError):
+                        protect_ip_mr_tracking_fields(session,admission)
+                finally:
+                    first.write_bytes(original)
                 protect_ip_mr_tracking_fields(session,admission)
                 from msplatform.execution.capacity_protection import load_capacity_protection_leases, path_is_protected
                 view=load_capacity_protection_leases(session.artifact_root)
@@ -206,6 +241,12 @@ class PurposeScopedSolutionManifestTests(unittest.TestCase):
         record = dict(sample.data_records['field_solution_manifest'], path=str(sample.data_path('field_solution_manifest')))
         ref = {'manifest': record, 'product_id':'solution'}
         _verified_solution_manifest(sample,ref)
+        # Identical bytes at a different manifest location are not the published source.
+        relocated_dir=self.root/'relocated-solution-owner';relocated_dir.mkdir()
+        relocated=relocated_dir/'run_manifest.json';relocated.write_bytes(Path(record['path']).read_bytes())
+        relocated_ref={'manifest':file_record(relocated),'product_id':'solution'}
+        with self.assertRaisesRegex(ValueError,'solution reference differs'):
+            _verified_solution_manifest(sample,relocated_ref)
         from types import SimpleNamespace
         from msplatform.backends.simion.scalar_sample_binding import _small_product
         from msplatform.execution.terminal_publication import publish_terminal_state
@@ -217,7 +258,7 @@ class PurposeScopedSolutionManifestTests(unittest.TestCase):
         alternate_ref={'manifest':alternate_record,'product_id':'alternate'}
         _small_product(alternate_ref,'field_solution',())
         alternate_sample=SimpleNamespace(data_records={'field_solution_manifest':alternate_record},
-            data_path=lambda key: alternate_dir/'run_manifest.json')
+            data_locations={'field_solution_manifest':alternate_dir/'run_manifest.json'})
         with self.assertRaisesRegex(ValueError,'solution product identity differs'):
             _verified_solution_manifest(alternate_sample,alternate_ref)
         with self.assertRaises((ValueError,AssertionError,KeyError)):

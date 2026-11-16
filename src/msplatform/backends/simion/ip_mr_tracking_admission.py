@@ -22,7 +22,7 @@ def _verified_solution_manifest(sample: OpenedArtifact, reference: Mapping[str, 
     record = reference['manifest']
     published = sample.data_records['field_solution_manifest']
     if (any(str(record[k]).lower() != str(published[k]).lower() for k in ('bytes', 'sha256'))
-            or path.resolve(strict=True) != sample.data_path('field_solution_manifest').resolve(strict=True)):
+            or path.resolve(strict=True) != sample.data_locations['field_solution_manifest'].resolve(strict=True)):
         raise ValueError('sampled basis solution reference differs from published sample')
     return dict(record, path=str(path))
 
@@ -113,16 +113,21 @@ def admit_ip_mr_tracking_fields(reference: Mapping[str, Any] | OpenedArtifact) -
     collision_reference = meta.get('collision_producer_reference')
     if collision_reference is not None:
         _verify_original_collision_producer(source, collision_reference)
-    records = [dict(source.data_records[key], path=str(source.data_path(key))) for key in keys]
+    records = [dict(source.data_records[key], path=str(source.data_locations[key])) for key in keys]
     records.extend(copy.deepcopy(sample_records))
     unique = {}
+    verified = {}
     for record in records:
-        verify_record('IP–MR tracking immutable input', record)
         path = str(Path(record['path']).resolve(strict=True))
-        identity = (record['bytes'], str(record['sha256']).lower())
+        selected = dict(record, path=path)
+        identity = (selected['bytes'], str(selected['sha256']).lower())
         if path in unique and unique[path][0] != identity:
             raise ValueError('conflicting tracking input identities')
-        unique[path] = (identity, dict(record, path=path))
+        normalized = dict(selected, sha256=str(selected['sha256']).upper())
+        if normalized not in verified.get(path, []):
+            verify_record('IP–MR tracking immutable input', selected)
+            verified.setdefault(path, []).append(normalized)
+        unique[path] = (identity, selected)
     references = [source.reference['manifest'], prepared.reference['manifest'], basis['geometry_reference']['manifest']]
     if collision_reference is not None:
         references.append(collision_reference['manifest'])
@@ -134,7 +139,7 @@ def admit_ip_mr_tracking_fields(reference: Mapping[str, Any] | OpenedArtifact) -
                 selected = sample.data_records[key]
                 if any(str(record[k]).lower() != str(selected[k]).lower() for k in ('bytes', 'sha256')):
                     raise ValueError('sampled basis record differs from published ' + key)
-                if Path(record['path']).resolve(strict=True) != sample.data_path(key).resolve(strict=True):
+                if Path(record['path']).resolve(strict=True) != sample.data_locations[key].resolve(strict=True):
                     raise ValueError('sampled basis relocation is not qualified')
             references.extend((sample.reference['manifest'], solution_record))
             original = original_sample_source(sample)
@@ -152,7 +157,7 @@ def protect_ip_mr_tracking_fields(session: Any, admission: Mapping[str, Any]) ->
     """Protect every published owner and register the exact borrowed field bytes."""
     from .model_execution import _protected_source
     source = admission['source']
-    owned = [str(source.data_path(key)) for key in source.data_records]
+    owned = [str(source.data_locations[key]) for key in source.data_records]
     _protected_source(session, source.reference['manifest'], required_paths=owned)
     if admission.get('collision_reference') is not None:
         _protected_source(session, admission['collision_reference']['manifest'])

@@ -169,6 +169,13 @@ model, clock and basis records are still verified independently. The managed
 positive/protection regression and producer-identity negatives passed (one parent,
 827.560 s); this concurrent run is not a performance comparison. No persistent
 verification cache or weaker selected-data protection is introduced.
+Tracking admission also uses the artifact's verified location snapshot for path
+and record joins, retaining checked reads for actual data consumption. Exact
+duplicate records are verified once within one admission; differing metadata
+still gets its own check, and owner protection rechecks the immutable inputs.
+The same published software fixture used 336 hash calls instead of 430, with
+tamper, source-protection and unqualified-relocation refusals retained. These
+fixture counts do not predict production throughput or the Repository budget.
 
 The retained `multipole_ip.continuous` consumer now delegates field capability
 admission to the public operations rather than requiring the historical RF-IP
