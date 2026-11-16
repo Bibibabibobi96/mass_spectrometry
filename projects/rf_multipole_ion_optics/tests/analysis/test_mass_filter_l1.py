@@ -348,6 +348,84 @@ class MassFilterL1Tests(unittest.TestCase):
                     self.assertEqual(MODULE.load_json(destination / 'run_manifest.json')['status'], 'failed')
 
 
+    def test_original_cli_resume_finalization_is_terminal_and_context_guarded(self) -> None:
+        from msplatform.execution import owner as OWNER
+
+        with self._workspace() as temporary:
+            root = Path(temporary)
+            capacity_root = root / 'artifacts'
+            capacity_root.mkdir()
+            initialize_capacity_ledger(capacity_root, objects=[])
+            artifact_root = capacity_root / 'projects/rf_multipole_ion_optics'
+            run_id = '20261116_120016__test__python__l1-cli-recovery'
+            destination = artifact_root / 'runs' / run_id
+            original = OSError('original action remains untouched')
+            with patch.object(MODULE, '_prepare_frozen_request', side_effect=original), \
+                 patch.object(OWNER, '_finalize', side_effect=RuntimeError('injected finalization hold')):
+                with self.assertRaises(OSError) as caught:
+                    self._run(artifact_root, run_id)
+            self.assertIs(caught.exception, original)
+            result_path = artifact_root / 'scratch/workflow_results' / run_id / 'result.json'
+            self.assertEqual(load_json(result_path)['resume_action'], 'resume_finalization')
+            self.assertEqual(load_json(destination / 'run_manifest.json')['status'], 'checkpoint')
+
+            context = self._context(artifact_root)
+            environment = root / 'execution-environment.json'
+            environment.write_text(json.dumps(dict(schema_version=1, role='execution_environment',
+                tools=dict(python=str(Path(sys.executable).resolve()), powershell=str(context.powershell_executable)),
+                policy=dict(host_state_path=str(context.host_state_path), policy_path=str(context.policy_path),
+                            execution_root=str(context.execution_root), capacity_policy_path=str(context.capacity_policy_path)),
+                profiles=dict(test=dict(stage_policy_path=str(context.stage_policy_path))))), encoding='utf-8')
+            repository = PROJECT_ROOT.parents[1]
+            command = [sys.executable, '-m',
+                'projects.rf_multipole_ion_optics.workflows.mass_filter_reference.run_finite_length',
+                '--resume-finalization', '--run-id', run_id, '--workspace', str(root),
+                '--execution-environment', str(environment), '--engineering-profile', 'test']
+
+            def invoke(extra=(), selected=command):
+                return subprocess.run([*selected, *extra], cwd=repository, capture_output=True, text=True,
+                    encoding='utf-8', timeout=120, env={**os.environ, 'PYTHONPATH': str(repository / 'src')})
+
+            before = {path: path.read_bytes() for path in (result_path, destination / 'run_manifest.json')}
+            rejected = invoke(('--baseline', str(RUNNER.DEFAULT_BASELINE)))
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn('does not accept scientific inputs', rejected.stderr)
+            self.assertEqual(before, {path: path.read_bytes() for path in before})
+
+            unknown_result = root / 'unknown-writer-result.json'
+            unknown = load_json(result_path)
+            unknown['writers_confirmed'] = False
+            unknown_result.write_text(json.dumps(unknown), encoding='utf-8')
+            rejected = invoke(('--result-path', str(unknown_result)))
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn('confirmed stopped writers', rejected.stderr)
+            self.assertEqual(before, {path: path.read_bytes() for path in before})
+
+            wrong_environment = root / 'wrong-execution-environment.json'
+            wrong = load_json(environment)
+            wrong['policy']['host_state_path'] = str(root / 'wrong-host.sqlite3')
+            wrong_environment.write_text(json.dumps(wrong), encoding='utf-8')
+            wrong_command = [str(sys.executable) if value == sys.executable else str(wrong_environment)
+                             if value == str(environment) else value for value in command]
+            rejected = invoke(selected=wrong_command)
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn('shared host ledger differs', rejected.stderr)
+            self.assertEqual(before, {path: path.read_bytes() for path in before})
+
+            recovered = invoke()
+            self.assertEqual(recovered.returncode, 0, recovered.stdout + recovered.stderr)
+            self.assertIn(f'QUADRUPOLE_MASS_FILTER_L1_FINALIZATION=FAILED RUN={run_id}', recovered.stdout)
+            self.assertEqual(load_json(destination / 'run_manifest.json')['status'], 'failed')
+            self.assertEqual(load_json(result_path)['capacity_session']['status'], 'released')
+            self.assertFalse((destination / 'results/simulation_execution.json').exists())
+            terminal_paths = [result_path, *(destination / name for name in
+                ('run_config.json', 'summary.json', 'run_manifest.json', 'results/execution_completion.json',
+                 'results/failure_context.json'))]
+            terminal = {path: path.read_bytes() for path in terminal_paths}
+            repeated = invoke()
+            self.assertEqual(repeated.returncode, 0, repeated.stdout + repeated.stderr)
+            self.assertEqual(terminal, {path: path.read_bytes() for path in terminal})
+
     def test_actual_frozen_kernel_os_failure_keeps_original_observed_facts(self) -> None:
         from msplatform.execution.processes import ProcessExecutionError
         with self._workspace() as temporary:

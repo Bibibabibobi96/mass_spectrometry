@@ -1,5 +1,27 @@
 # RF多极杆离子光学项目状态
 
+## Original finite-length L1 CLI finalization recovery
+
+The original `mass_filter_reference/run_finite_length.py` CLI now accepts
+`--resume-finalization` with its original run identity, deployment context and
+optional small `--result-path`. It calls the existing
+`owner.resume_finalization(..., completion_api=no_particle_batch_completion_api)`
+without importing the scientific action, parsing research inputs or starting
+prepare/simulation/analysis. Scientific flags and `--check-contract` are
+rejected in recovery mode; ordinary contract checking and execution are
+unchanged. The default Result remains the existing project
+`scratch/workflow_results/<run_id>/result.json`.
+
+A real subprocess regression created a managed finalization hold, recovered its
+original failed terminal state, released capacity and repeated recovery with
+the Result, run configuration, summary, manifest, completion and failure-context
+bytes unchanged. Scientific-input, unconfirmed-writer and wrong-host-context
+attempts were rejected before terminal mutation. The focused public Changed
+gate passed all 15 original/new L1 tests in 375.398 seconds and completed in
+442.791 seconds; changed-source standards, Ruff, freshness and scoped diff
+checks passed. No commercial solver, analysis-only successor or native/scientific
+qualification is involved.
+
 ## COMSOL mesh resource ownership
 
 The three shared mesh Size helpers are installed COMSOL MATLAB resources and are

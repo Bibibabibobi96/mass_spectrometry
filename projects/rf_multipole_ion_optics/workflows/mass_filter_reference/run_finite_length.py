@@ -32,19 +32,47 @@ def run(baseline_path: Path, resolved_path: Path, mode_path: Path, source_path: 
     return Path(result['run_directory'])
 
 
+def resume(run_id: str, result_path: Path | None, artifact_project_root: Path | None, *, context) -> dict:
+    """Resume only the original owner's stopped finalization from its small Result."""
+    from msplatform.execution.completion import no_particle_batch_completion_api
+    from msplatform.execution.owner import resume_finalization
+
+    expected_root = context.workspace / 'artifacts/projects/rf_multipole_ion_optics'
+    if artifact_project_root is not None and artifact_project_root.resolve() != expected_root.resolve():
+        raise ValueError(f'Explicit artifact root must use the selected managed research workspace: {expected_root}')
+    selected = result_path or expected_root / 'scratch/workflow_results' / run_id / 'result.json'
+    document = load_json(selected)
+    if Path(document.get('run_directory', '')).name != run_id:
+        raise ValueError('Finalization Result run identity differs from --run-id')
+    return resume_finalization(context, selected, completion_api=no_particle_batch_completion_api)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--baseline', type=Path, default=DEFAULT_BASELINE)
-    parser.add_argument('--resolved-design', type=Path, default=DEFAULT_RESOLVED)
-    parser.add_argument('--mode', type=Path, default=DEFAULT_MODE)
-    parser.add_argument('--source', type=Path, default=DEFAULT_SOURCE)
+    parser.add_argument('--baseline', type=Path)
+    parser.add_argument('--resolved-design', type=Path)
+    parser.add_argument('--mode', type=Path)
+    parser.add_argument('--source', type=Path)
     parser.add_argument('--run-id')
     parser.add_argument('--check-contract', action='store_true')
+    parser.add_argument('--resume-finalization', action='store_true')
+    parser.add_argument('--result-path', type=Path)
     parser.add_argument('--workspace', type=Path)
     parser.add_argument('--execution-environment', type=Path)
     parser.add_argument('--engineering-profile')
     parser.add_argument('--artifact-project-root', type=Path)
     args = parser.parse_args()
+    if args.resume_finalization:
+        if args.check_contract or any(value is not None for value in (
+                args.baseline, args.resolved_design, args.mode, args.source)):
+            parser.error('--resume-finalization does not accept scientific inputs or --check-contract')
+    else:
+        if args.result_path is not None:
+            parser.error('--result-path requires --resume-finalization')
+        args.baseline = args.baseline or DEFAULT_BASELINE
+        args.resolved_design = args.resolved_design or DEFAULT_RESOLVED
+        args.mode = args.mode or DEFAULT_MODE
+        args.source = args.source or DEFAULT_SOURCE
     if args.check_contract:
         finite_length.validate_l1_contract(load_json(args.baseline), load_json(args.mode), load_json(args.source))
         print('QUADRUPOLE_MASS_FILTER_L1_CONTRACT=PASS')
@@ -53,6 +81,10 @@ def main() -> None:
         parser.error('execution requires --run-id, --workspace, --execution-environment and --engineering-profile')
     from msplatform.execution.context import load_environment
     context = load_environment(args.execution_environment, workspace=args.workspace, profile=args.engineering_profile)
+    if args.resume_finalization:
+        result = resume(args.run_id, args.result_path, args.artifact_project_root, context=context)
+        print(f"QUADRUPOLE_MASS_FILTER_L1_FINALIZATION={result['status'].upper()} RUN={Path(result['run_directory']).name}")
+        return
     destination = run(args.baseline, args.resolved_design, args.mode, args.source,
                       args.run_id, args.artifact_project_root, context=context)
     print(f'QUADRUPOLE_MASS_FILTER_L1=PASS RUN={destination.name}')
