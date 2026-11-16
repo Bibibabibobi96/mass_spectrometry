@@ -403,6 +403,8 @@ $null=Get-HostResourceBudget -Role GATE -Stage snapshot-probe
                               for path in (REPO_ROOT / 'src/msplatform').rglob('*')
                               if path.is_file() and (path.suffix == '.py' or path.name.endswith('.schema.json'))}
                 expected_schemas = {path for path in core_files if path.endswith('.schema.json')}
+                if runner_name == RUNNER.name:
+                    expected.add('projects/rf_multipole_ion_optics/simion/export_stationary_field_samples.lua')
                 frozen_schemas = {path for path in by_path
                                   if path.startswith('src/msplatform/') and path.endswith('.schema.json')}
                 self.assertEqual(frozen_schemas, expected_schemas)

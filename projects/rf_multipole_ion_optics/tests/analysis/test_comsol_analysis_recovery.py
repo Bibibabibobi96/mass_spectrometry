@@ -646,8 +646,16 @@ if($TaskScript.Length-gt260-or$ReportPath.Length-gt260-or$env:RF_FINITE_REEXTRAC
 foreach($path in $request.context.outputs.PSObject.Properties.Value){if($path.Length-gt260){throw 'OUTPUT_PATH_NOT_PROJECTED'}}
 $lease=Enter-HostResourceStage -Role COMSOL -Stage postprocess -RunId $RunId -Budget $ResourceBudgets.postprocess
 foreach($path in $request.context.outputs.PSObject.Properties.Value){Set-Content -LiteralPath $path -Value 'INERT_COMMERCIAL_BOUNDARY_OUTPUT'}
+$stationaryMarker=''
+if($request.context.PSObject.Properties['stationary']-and$null-ne$request.context.stationary){
+ if(-not(Test-Path -LiteralPath $request.context.stationary.points_path)){throw 'STATIONARY_POINTS_NOT_PROJECTED'}
+ @('sample_id,region,field_case,x_mm,y_mm,z_mm,potential_V,Ex_V_per_m,Ey_V_per_m,Ez_V_per_m',
+   'p0,vacuum,differential,0.12345678901234566,0,0,0,0,0,0',
+   'p0,vacuum,static,0.12345678901234566,0,0,0,0,0,0')|Set-Content -LiteralPath $request.context.stationary.output_path
+ $stationaryMarker="CHECKPOINT=STATIONARY_FIELD_SAMPLES_COMPLETE`n"
+}
 $extraction=@{primary=@{mphparticle_calls=14;windows=28;api_logical_windows=2};control=@{mphparticle_calls=14;windows=28;api_logical_windows=2};native_solves=0;parent_model_saved=$false}|ConvertTo-Json -Depth 6 -Compress
-Set-Content -LiteralPath $ReportPath -Value "TASK=MULTIPOLE_FINITE_SAVED_EXTRACTION`nCHECKPOINT=PARTICLE_EXPORT_COMPLETE`nNATIVE_SOLVES=0`nPARENT_MODEL_SAVED=false`nEXTRACTION_RECEIPT_JSON=$extraction`nSTATUS=PASS"
+Set-Content -LiteralPath $ReportPath -Value "TASK=MULTIPOLE_FINITE_SAVED_EXTRACTION`nCHECKPOINT=PARTICLE_EXPORT_COMPLETE`n${stationaryMarker}NATIVE_SOLVES=0`nPARENT_MODEL_SAVED=false`nEXTRACTION_RECEIPT_JSON=$extraction`nSTATUS=PASS"
 $release=Exit-HostResourceStage -Lease $lease -PassThru
 @{schema_version=1;role='comsol_launcher_completion';run_id=$RunId;operations=@();host_release=@{inherited=$false;token=$lease.token;result=$release;error=$null}}|ConvertTo-Json -Depth 20|Set-Content -LiteralPath $CompletionPath
 if($env:RF_INERT_COLD_LAUNCHER_FAIL-eq'1'){[Console]::Error.WriteLine('INERT_COLD_LAUNCHER_FAILURE');exit 7}
@@ -685,7 +693,11 @@ $run=Get-ChildItem -LiteralPath $Root -Directory -Recurse|Where-Object{$_.Name-e
 $package=[pscustomobject]@{artifact_run_dir=$run;run_dir=$run;execution_alias=$null;execution_path_capacity=$null;python=$Python;path_context=@{execution_root=(Join-Path $Root 'e');artifact_root=$Root;host_resource_state_path=$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH}}
 $context=@{run_directory=$run;package=$package}
 $limits=[pscustomobject]@{wall_clock_seconds=60;process_tree_working_set_bytes=2147483648L;minimum_system_available_memory_bytes=1;transient_run_directory_bytes=33554432}
-$result=Invoke-FiniteComsolSavedExtraction -Context $context -State $state -Source $fixture.source -Frozen $fixture.frozen -CodeRoot (Join-Path $run 'inputs/code') -Python $Python -RunId 'inert-cold-wiring' -Limits $limits
+$stationaryPoints=Join-Path $run 'inputs/stationary_points.csv'
+@('sample_id,region,x_mm,y_mm,z_mm','p0,vacuum,0.12345678901234566,0,0')|Set-Content -LiteralPath $stationaryPoints
+$stationarySamples=Join-Path $run 'results/stationary_field_samples.csv'
+$result=Invoke-FiniteComsolSavedExtraction -Context $context -State $state -Source $fixture.source -Frozen $fixture.frozen -CodeRoot (Join-Path $run 'inputs/code') -Python $Python -RunId 'inert-cold-wiring' -Limits $limits -StationaryPointsPath $stationaryPoints -StationarySamplesPath $stationarySamples
+if($stationarySamples-notin@($result.required)-or-not(Test-Path -LiteralPath $stationarySamples)){throw 'STATIONARY_REQUIRED_OUTPUT_BINDING_LOST'}
 $completion=Get-FiniteComsolWriterCompletion -State $state -RunId 'inert-cold-wiring'
 $alias=$package.execution_alias
 $env:RF_INERT_COLD_LAUNCHER_FAIL='1'

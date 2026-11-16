@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import math
 from dataclasses import dataclass
@@ -42,7 +43,7 @@ FIELD_OUTPUT_COLUMNS = (
 
 _PLAN_KEYS = {
     "schema_version", "role", "coordinate_id", "units",
-    "axial_sampling", "cross_section_sampling",
+    "axial_sampling", "cross_section_sampling", "bvp", "potential_reference",
 }
 _PLAN_UNITS = {
     "length": "mm",
@@ -211,6 +212,52 @@ def _validate_resolved_design(
     return coordinate, clear_radius
 
 
+def validate_stationary_bvp(
+    resolved_design: Mapping[str, Any], sampling_plan: Mapping[str, Any]
+) -> dict[str, dict[str, Any]]:
+    """Bind the supported bare-multipole stationary BVP to frozen science."""
+    geometry = _require_mapping(resolved_design.get("geometry_mm"), "resolved geometry_mm")
+    enclosure = _require_mapping(geometry.get("enclosure"), "resolved enclosure")
+    axial = resolved_design.get("axial_drive", {})
+    if enclosure.get("model") != "bare" or axial.get("topology", "none") != "none":
+        raise StationaryFieldContractError(
+            "stationary comparison currently requires a bare unsegmented multipole"
+        )
+    domain = _require_mapping(geometry.get("numerical_domain"), "resolved numerical domain")
+    for key in ("radius_mm", "z_min_mm", "z_max_mm"):
+        _finite_number(domain.get(key), "numerical_domain." + key)
+    bvp = _require_mapping(sampling_plan.get("bvp"), "sampling plan BVP")
+    _require_exact_keys(bvp, {"domain", "exterior", "electrode_voltages_v_by_group"}, "sampling plan BVP")
+    if (bvp.get("domain") != "resolved_design.geometry_mm.numerical_domain"
+            or bvp.get("exterior") != "zero_normal_electric_field"
+            or sampling_plan.get("potential_reference") != "zero_mean_conductor_voltage"):
+        raise StationaryFieldContractError("stationary BVP domain, exterior, or potential reference differs")
+    rods = _require_mapping(geometry.get("rod_array"), "resolved rod array").get("rods")
+    if not isinstance(rods, list) or not rods:
+        raise StationaryFieldContractError("stationary BVP requires the resolved rods")
+    groups = {str(row.get("electrode_group")) for row in rods}
+    if groups != {"1", "2"}:
+        raise StationaryFieldContractError("stationary BVP requires exactly two conductor groups")
+    cases = _require_mapping(bvp.get("electrode_voltages_v_by_group"), "BVP electrode cases")
+    _require_exact_keys(cases, set(FIELD_CASES), "BVP electrode cases")
+    result = {}
+    for field_case in FIELD_CASES:
+        values = _require_mapping(cases.get(field_case), "BVP " + field_case)
+        if set(values) != groups:
+            raise StationaryFieldContractError("BVP conductor groups differ from resolved rods")
+        actual = {key: _finite_number(value, "BVP conductor voltage") for key, value in values.items()}
+        expected = ({key: 100.0 * (3 - 2 * int(key)) for key in groups} if field_case == "differential"
+                    else {key: 0.0 for key in groups})
+        if actual != expected:
+            raise StationaryFieldContractError("BVP electrode voltages differ from the finite3D stationary cases")
+        result[field_case] = {"domain": json.loads(json.dumps(domain)),
+            "exterior": bvp["exterior"], "electrode_voltages_v_by_group": actual}
+    drive = resolved_design.get("drive", {})
+    if _finite_number(drive.get("common_mode_offset_V", 0.0), "common mode offset") != 0.0:
+        raise StationaryFieldContractError("stationary comparison requires zero static common mode")
+    return result
+
+
 def _validate_sampling_plan(
     sampling_plan: Mapping[str, Any],
     coordinate_id: str,
@@ -365,6 +412,7 @@ def generate_stationary_field_sample_rows(
         fractions,
         azimuth_count,
     ) = _validate_sampling_plan(plan, str(coordinate["coordinate_id"]))
+    validate_stationary_bvp(resolved, plan)
     axial_samples = _axial_samples(resolved, uniform_count, plane_ids)
     rows: list[dict[str, str | float]] = []
     for region, axial_index, z_mm in axial_samples:
@@ -410,6 +458,86 @@ def write_stationary_field_sample_csv(
                     "sample row fields differ from the canonical columns"
                 )
             writer.writerow(row)
+
+
+def build_stationary_sampling_authority(
+    resolved_design: Mapping[str, Any], sampling_plan: Mapping[str, Any],
+    points: Sequence[Mapping[str, str | float]], *, points_path: Path, source_id: str,
+) -> dict[str, Any]:
+    """Publish one solver's explicit BVP, frame, reference and point statuses."""
+    from msplatform.contracts.rigid_transform import RigidTransform
+    if not isinstance(source_id, str) or not source_id.strip():
+        raise StationaryFieldContractError("stationary sampling source_id is required")
+    rows = generate_stationary_field_sample_rows(resolved_design, sampling_plan)
+    actual = [{key: (float(row[key]) if key.endswith("_mm") else str(row[key])) for key in SAMPLE_COLUMNS}
+              for row in points]
+    expected = [{key: (float(row[key]) if key.endswith("_mm") else str(row[key])) for key in SAMPLE_COLUMNS}
+                for row in rows]
+    if actual != expected or not points_path.is_file():
+        raise StationaryFieldContractError("stationary points differ from the resolved common sample plan")
+    frame_id = str(sampling_plan["coordinate_id"])
+    statuses = {field_case: {str(row["sample_id"]): "valid" for row in rows} for field_case in FIELD_CASES}
+    return {"schema_version": 1, "role": "multipole_stationary_field_sampling_authority",
+        "source": {"source_id": source_id, "resolved_design_sha256": resolved_design.get("resolved_sha256")},
+        "bvp_by_case": validate_stationary_bvp(resolved_design, sampling_plan),
+        "potential_reference": sampling_plan["potential_reference"], "frame_id": frame_id,
+        "units": dict(_PLAN_UNITS), "transform": RigidTransform.identity(frame_id).to_contract(),
+        "points_sha256": hashlib.sha256(points_path.read_bytes()).hexdigest().upper(),
+        "point_count": len(rows), "points": expected, "status_by_field_case": statuses}
+
+
+def validate_stationary_output_authority(authority: Mapping[str, Any], input_path: Path) -> None:
+    """Require native output rows to match every authorized point and status."""
+    expected = {"schema_version", "role", "source", "bvp_by_case", "potential_reference",
+                "frame_id", "units", "transform", "points_sha256", "point_count", "points",
+                "status_by_field_case"}
+    if (not isinstance(authority, Mapping) or set(authority) != expected
+            or authority.get("schema_version") != 1
+            or authority.get("role") != "multipole_stationary_field_sampling_authority"):
+        raise StationaryFieldContractError("stationary output authority fields differ")
+    records = load_stationary_field_output_csv(input_path)
+    points = {str(row["sample_id"]): row for row in authority["points"]}
+    if len(points) != authority["point_count"] or len(records) != 2 * len(points):
+        raise StationaryFieldContractError("stationary output point coverage differs")
+    for record in records:
+        point = points.get(record.sample_id)
+        if point is None or authority["status_by_field_case"][record.field_case].get(record.sample_id) != "valid":
+            raise StationaryFieldContractError("stationary output point status differs")
+        actual = (record.x_mm, record.y_mm, record.z_mm)
+        wanted = tuple(float(point[key]) for key in ("x_mm", "y_mm", "z_mm"))
+        if actual != wanted or record.region != point["region"]:
+            raise StationaryFieldContractError("stationary output common-point identity differs")
+
+
+def build_multipole_comparison_authority(
+    reference: Mapping[str, Any], candidate: Mapping[str, Any], *, coordinate_tolerance_mm: float,
+) -> dict[str, Any]:
+    """Compile the existing generic comparison authority from managed exports."""
+    tolerance = _finite_number(coordinate_tolerance_mm, "comparison coordinate tolerance")
+    if tolerance < 0:
+        raise StationaryFieldContractError("comparison coordinate tolerance must be nonnegative")
+    for authority in (reference, candidate):
+        if (not isinstance(authority, Mapping)
+                or authority.get("role") != "multipole_stationary_field_sampling_authority"
+                or authority.get("schema_version") != 1):
+            raise StationaryFieldContractError("managed sampling authority is required")
+    if (reference["source"].get("source_id") == candidate["source"].get("source_id")
+            or reference["source"].get("resolved_design_sha256") != candidate["source"].get("resolved_design_sha256")):
+        raise StationaryFieldContractError("comparison requires independent sources for the same resolved scene")
+    for key in ("points_sha256", "point_count", "points", "frame_id", "units", "transform",
+                "potential_reference", "bvp_by_case", "status_by_field_case"):
+        if reference[key] != candidate[key]:
+            raise StationaryFieldContractError("managed sampling authorities differ in "+key)
+    def side(authority, field_case):
+        return {"metadata": {"source": dict(authority["source"]),
+            "bvp": authority["bvp_by_case"][field_case], "frame_id": authority["frame_id"],
+            "units": authority["units"], "potential_reference": authority["potential_reference"]},
+            "transform": authority["transform"],
+            "status_by_point_id": authority["status_by_field_case"][field_case]}
+    return {"schema_version": 1, "role": "multipole_static_field_comparison_authority",
+        "coordinate_tolerance_mm": tolerance,
+        **{field_case: {"reference": side(reference, field_case), "candidate": side(candidate, field_case)}
+           for field_case in FIELD_CASES}}
 
 
 def _record_from_row(
@@ -730,6 +858,20 @@ def _build_parser() -> argparse.ArgumentParser:
     validate = subparsers.add_parser("validate")
     validate.add_argument("--input", type=Path, required=True)
     validate.add_argument("--output", type=Path, required=True)
+    validate.add_argument("--authority", type=Path)
+
+    authorize = subparsers.add_parser("authorize")
+    authorize.add_argument("--resolved-design", type=Path, required=True)
+    authorize.add_argument("--sampling-plan", type=Path, required=True)
+    authorize.add_argument("--points", type=Path, required=True)
+    authorize.add_argument("--source-id", required=True)
+    authorize.add_argument("--output", type=Path, required=True)
+
+    comparison_authority = subparsers.add_parser("comparison-authority")
+    comparison_authority.add_argument("--reference-authority", type=Path, required=True)
+    comparison_authority.add_argument("--candidate-authority", type=Path, required=True)
+    comparison_authority.add_argument("--coordinate-tolerance-mm", type=float, required=True)
+    comparison_authority.add_argument("--output", type=Path, required=True)
 
     compare = subparsers.add_parser("compare")
     compare.add_argument("--reference", type=Path, required=True)
@@ -752,6 +894,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         write_stationary_field_sample_csv(rows, arguments.output)
         return 0
     if arguments.command == "validate":
+        if arguments.authority is not None:
+            validate_stationary_output_authority(
+                _load_json_object(arguments.authority, "sampling authority"), arguments.input)
         records = load_stationary_field_output_csv(arguments.input)
         point_count = len({record.sample_id for record in records})
         _write_json(
@@ -765,6 +910,27 @@ def main(argv: Sequence[str] | None = None) -> int:
             },
             arguments.output,
         )
+        return 0
+    if arguments.command == "authorize":
+        with arguments.points.open(encoding="utf-8", newline="") as stream:
+            reader = csv.DictReader(stream)
+            if tuple(reader.fieldnames or ()) != SAMPLE_COLUMNS:
+                raise StationaryFieldContractError("stationary point columns differ")
+            points = list(reader)
+        authority = build_stationary_sampling_authority(
+            _load_json_object(arguments.resolved_design, "resolved design"),
+            _load_json_object(arguments.sampling_plan, "sampling plan"), points,
+            points_path=arguments.points, source_id=arguments.source_id)
+        arguments.output.parent.mkdir(parents=True, exist_ok=True)
+        _write_json(authority, arguments.output)
+        return 0
+    if arguments.command == "comparison-authority":
+        authority = build_multipole_comparison_authority(
+            _load_json_object(arguments.reference_authority, "reference sampling authority"),
+            _load_json_object(arguments.candidate_authority, "candidate sampling authority"),
+            coordinate_tolerance_mm=arguments.coordinate_tolerance_mm)
+        arguments.output.parent.mkdir(parents=True, exist_ok=True)
+        _write_json(authority, arguments.output)
         return 0
     if arguments.command == "compare":
         if arguments.comparison_authority is not None:

@@ -134,9 +134,10 @@ function Invoke-MultipoleProjectFinite3dTransport {
       }
       $commonEntry = 'projects\rf_multipole_ion_optics\runtime\run_finite_3d_transport.ps1'
     } else {
-      if ($stopStage -ne 'transport') {
+      if ($stopStage -notin @('transport','field_solve')) {
         throw "SIMION transport does not support stop stage '$stopStage'."
       }
+      $arguments.StopStage = $stopStage
       $arguments.ReferenceComsolRunId = $ReferenceComsolRunId
       $arguments.CellMmX = [double]$numerics.cell_mm_xyz.x
       $arguments.CellMmY = [double]$numerics.cell_mm_xyz.y

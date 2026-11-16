@@ -109,7 +109,25 @@ if strlength(outputDirectory) > 0 && ~isfolder(outputDirectory)
             "Could not create the output directory: %s", message);
     end
 end
-writetable(samples, outputPath);
+write_samples_binary64(outputPath, samples);
+end
+
+function write_samples_binary64(outputPath, samples)
+[fileId, message] = fopen(outputPath, 'w');
+if fileId < 0
+    error("multipole:stationaryFieldSamples:OutputOpen", ...
+        "Could not open the output CSV: %s", message);
+end
+cleanup = onCleanup(@() fclose(fileId));
+fprintf(fileId, ['sample_id,region,field_case,x_mm,y_mm,z_mm,potential_V,' ...
+    'Ex_V_per_m,Ey_V_per_m,Ez_V_per_m\n']);
+for row = 1:height(samples)
+    fprintf(fileId, '%s,%s,%s,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g\n', ...
+        samples.sample_id(row), samples.region(row), samples.field_case(row), ...
+        samples.x_mm(row), samples.y_mm(row), samples.z_mm(row), ...
+        samples.potential_V(row), samples.Ex_V_per_m(row), ...
+        samples.Ey_V_per_m(row), samples.Ez_V_per_m(row));
+end
 end
 
 function path = require_path(value, label)

@@ -26,5 +26,20 @@
       0.75
     ],
     "azimuth_count": 12
-  }
+  },
+  "bvp": {
+    "domain": "resolved_design.geometry_mm.numerical_domain",
+    "exterior": "zero_normal_electric_field",
+    "electrode_voltages_v_by_group": {
+      "differential": {
+        "1": 100.0,
+        "2": -100.0
+      },
+      "static": {
+        "1": 0.0,
+        "2": 0.0
+      }
+    }
+  },
+  "potential_reference": "zero_mean_conductor_voltage"
 }

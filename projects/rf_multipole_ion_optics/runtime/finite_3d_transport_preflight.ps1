@@ -366,19 +366,22 @@ function Assert-MultipoleFieldPreregistration {
     [Parameter(Mandatory=$true)][string]$SolverNumericsProfileId,
     [Parameter(Mandatory=$true)][string]$RetentionClass,
     [Parameter(Mandatory=$true)][string]$ExpectedResolvedSha256,
-    [Parameter(Mandatory=$true)][string]$EngineeringBudgetPath
+    [Parameter(Mandatory=$true)][string]$EngineeringBudgetPath,
+    [ValidateSet('comsol','simion')][string]$Solver='comsol'
   )
   if([string]::IsNullOrWhiteSpace($Path)-or
     -not(Test-Path -LiteralPath $Path -PathType Leaf)){
     throw 'COMSOL field-solve runtime requires an existing preregistration evidence contract.'
   }
   $document=Get-Content -LiteralPath $Path -Raw -Encoding UTF8|ConvertFrom-Json
+  $expectedRole='multipole_'+$Solver+'_field_solver_isolation_preregistration'
+  $numericsKey=$Solver+'_solver_numerics_profile_id'
   if([int64]$document.schema_version-ne 2-or
-    [string]$document.role-ne'multipole_comsol_field_solver_isolation_preregistration'-or
+    [string]$document.role-ne$expectedRole-or
     [string]$document.status-ne'authorized_not_run'-or
     [string]$document.project_id-ne$ProjectId-or
     $document.preregistered_before_run-ne$true){
-    throw 'COMSOL field-solve preregistration identity or status is invalid.'
+    throw 'Field-solve preregistration identity or status is invalid.'
   }
   $authorization=$document.authorization
   if([int64]$authorization.maximum_commercial_run_count-ne 1-or
@@ -387,10 +390,10 @@ function Assert-MultipoleFieldPreregistration {
     [string]$authorization.runtime_profile_id-ne$RuntimeProfileId-or
     [string]$authorization.design_profile_id-ne$DesignProfileId-or
     [string]$authorization.particle_source_profile_id-ne$ParticleSourceProfileId-or
-    [string]$authorization.comsol_solver_numerics_profile_id-ne$SolverNumericsProfileId-or
+    [string]$authorization.$numericsKey-ne$SolverNumericsProfileId-or
     [string]$authorization.stop_stage-ne'field_solve'-or
     [string]$authorization.retention_class-ne$RetentionClass){
-    throw 'COMSOL field-solve invocation differs from its preregistered authorization.'
+    throw 'Field-solve invocation differs from its preregistered authorization.'
   }
   $frozen=$document.frozen_identity
   if([string]$frozen.expected_run_parent_resolved_design_sha256-ne$ExpectedResolvedSha256){
@@ -399,26 +402,32 @@ function Assert-MultipoleFieldPreregistration {
   $projectRoot=Join-Path $RepoRoot "projects\$ProjectId"
   $authorities=[ordered]@{
     runtime_profiles_sha256=Join-Path $projectRoot 'config\runtime_profiles.json'
-    comsol_solver_numerics_sha256=Join-Path $projectRoot 'config\comsol_solver_numerics.json'
     engineering_budget_sha256=$EngineeringBudgetPath
     particle_source_profiles_sha256=Join-Path $projectRoot 'config\particle_source_profiles.json'
     design_profiles_sha256=Join-Path $projectRoot 'config\design_profiles.json'
   }
+  $authorities[$Solver+'_solver_numerics_sha256']=Join-Path $projectRoot ('config\'+$Solver+'_solver_numerics.json')
   foreach($field in $authorities.Keys){
     $actual=(Get-FileHash -Algorithm SHA256 -LiteralPath $authorities[$field]).Hash
     if([string]$frozen.$field-ne$actual){
-      throw "COMSOL field-solve preregistration authority hash differs: $field"
+      throw "Field-solve preregistration authority hash differs: $field"
     }
   }
   $implementationFiles=@($document.frozen_implementation.files)
-  $requiredImplementationPaths=@(
+  $requiredImplementationPaths=if($Solver-eq'comsol'){@(
     'projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1',
     'projects/rf_multipole_ion_optics/runtime/finite_3d_transport_preflight.ps1',
     'projects/rf_multipole_ion_optics/comsol/solve_finite_3d_transport.m',
     'projects/rf_multipole_ion_optics/comsol/configure_comsol_segment_hybrid_mesh.m',
     'projects/rf_multipole_ion_optics/comsol/export_comsol_stationary_field_samples.m',
     'projects/rf_multipole_ion_optics/analysis/stationary_field_sampling.py'
-  )
+  )}else{@(
+    'projects/rf_multipole_ion_optics/runtime/run_simion_finite_3d_transport.ps1',
+    'projects/rf_multipole_ion_optics/runtime/finite_3d_transport_preflight.ps1',
+    'projects/rf_multipole_ion_optics/runtime/project_transport_launcher_support.ps1',
+    'projects/rf_multipole_ion_optics/simion/export_stationary_field_samples.lua',
+    'projects/rf_multipole_ion_optics/analysis/stationary_field_sampling.py'
+  )}
   if($implementationFiles.Count-ne$requiredImplementationPaths.Count){
     throw 'COMSOL field-solve preregistration implementation inventory differs.'
   }
