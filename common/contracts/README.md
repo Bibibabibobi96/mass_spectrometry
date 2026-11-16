@@ -1120,6 +1120,10 @@ provided values receive the same input and source-authority checks as required v
 A `directory` binding requires an existing directory; `run_directory` additionally
 requires and binds its `run_manifest.json`. Saved plans retain selected optional
 bindings and validate their registered arguments and file authorities before dispatch.
+2026-11-16 P4-107修正了原fixture的执行时序：普通directory计划现在在执行前显式删除manifest，
+两项真实PowerShell dispatch（无／有optional basis）17.567秒通过；run_directory缺manifest仍拒绝，
+改命令／输入及缺basis负例保留。当前registry的6个run_directory绑定已逐项枚举为prepared_joint 1个、
+IP–MR 2个、OA–MR 3个，未把普通workspace误要求历史run身份。
 
 profile明确实际purpose、action、tools、model、资格支持和输出。`--purpose`、`--qualification`
 只能选择该入口真实支持的用途与局部资格；历史candidate/formal请求保留原资格意图，不静默降级。

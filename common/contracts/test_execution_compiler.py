@@ -379,11 +379,13 @@ foreach($record in $compiledInputs.files){
                 workflow["binding_types"]["workspace"]="directory"
                 registry.write_text(json.dumps(dict(schema_version=1, role="integration_registry",
                     integrations=[dict(integration_id="instrument_assembly", root="integrations", workflows=[workflow])])), encoding="utf8")
+                (workspace/"run_manifest.json").unlink()
                 plain=plan(dict(request=str(request), workspace=str(workspace)))
                 selected=plan(dict(request=str(request), workspace=str(workspace), scalar_field_basis=str(basis)))
             harness = root / "execute.ps1"
             harness.write_text("param($Helper,$Plan,$Repository)\n$ErrorActionPreference='Stop';Set-StrictMode -Version Latest\n. $Helper\nInvoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository\n", encoding="utf8")
             target = root/"plan.json"
+            self.assertFalse((workspace/"run_manifest.json").exists())
             def execute(value):
                 target.write_text(json.dumps(value), encoding="utf8")
                 return subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(harness),
