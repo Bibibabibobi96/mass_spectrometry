@@ -130,7 +130,14 @@ class CanonicalNeutralScheduleManagedTests(unittest.TestCase):
     too_small=dict(hs1,outer=replace(outer,domain=box((-1,-1,-1),(1,1,1))))
     with self.assertRaisesRegex(ValueError,'complete parent box'):
      operations.track(field,packet,propagation=hs1_propagation,observations={'plane_observations':[]},numerics=dict(numerics,grouped=0),context=context,hs1_request=too_small)
-    hs1_trajectory=operations.track(field,packet,propagation=hs1_propagation,observations={'plane_observations':[]},numerics=dict(numerics,grouped=0),context=context,hs1_request=hs1)
+    from msplatform.workflows.multipole_ip.continuous import track_existing_fields
+    with patch('msplatform.execution.owner.run_managed_stage') as blocked:
+     with self.assertRaises((ValueError,TypeError,KeyError)):
+      track_existing_fields(fields={},particles=packet,propagation=hs1_propagation,observations={'plane_observations':[]},tracking_numerics=dict(numerics,grouped=0),context=context,hs1_request=hs1)
+     with self.assertRaisesRegex(ValueError,'handoff clock epoch or authority differs'):
+      track_existing_fields(fields=field,particles=wrong_clock,propagation=hs1_propagation,observations={'plane_observations':[]},tracking_numerics=dict(numerics,grouped=0),context=context,hs1_request=hs1)
+     blocked.assert_not_called()
+    hs1_trajectory=track_existing_fields(fields=field,particles=packet,propagation=hs1_propagation,observations={'plane_observations':[]},tracking_numerics=dict(numerics,grouped=0),context=context,hs1_request=hs1)
     self.assertEqual(len(tracking_guards),6)
     hs1_collection=json.loads(hs1_trajectory.data_path('collection').read_text(encoding='utf8'))
     self.assertEqual([r['particle_id'] for r in hs1_collection['native_terminals']],[7,91])

@@ -2524,6 +2524,7 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
         for row in selected[:2]:
             self.assertTrue({'common/contracts/test_simion_birth_admission.py',
                              'common/contracts/test_rf_ip_composed.py',
+                               'common/contracts/test_neutral_ip_schedule_managed.py',
                              'common/contracts/test_installed_scientific_core.py'} <= set(row['Modules']))
         self.assertIn('common/contracts/test_simion_tracking_execution.py', selected[1]['Modules'])
         self.assertEqual(selected[2]['Modules'], [consumer])

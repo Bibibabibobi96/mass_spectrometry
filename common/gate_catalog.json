@@ -2057,6 +2057,16 @@
           {
             "matches": [
               {
+                "exact": "src/msplatform/workflows/multipole_ip/continuous.py",
+                "reason": "sampled_continuous_consumer_changed"
+              }
+            ],
+            "modules": ["common/contracts/test_neutral_ip_schedule_managed.py"],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
                 "regex": "^src/msplatform/backends/simion/(?:generic_geometry|assembly_geometry|model|field_execution|field_closure|generic_scalar_binding|neutral_sampled_field|operations|rf_tracking_execution|rf_tracking_program|rf_tracking_collection|tracking_execution|tracking_collection|tracking_units|resources|native_plans|ip_mr_collision_lineage|scalar_sample_binding|native_surface_state|collision_overlay|source|standalone_pa_composition)\\.py$",
                 "reason": "generic_sampled_simion_consumer_changed"
               },
