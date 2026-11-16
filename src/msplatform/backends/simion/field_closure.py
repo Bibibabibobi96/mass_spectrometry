@@ -126,3 +126,53 @@ def require_downstream_reuse(reference: Mapping, expected_identity: Mapping) -> 
                 raise ValueError('grounded downstream native family is incomplete or ambiguous')
         assets[role] = dict(carrier_record=carrier, family_records=family)
     return source, assets
+
+
+def load_reflectron_response_records(reference: Mapping | OpenedArtifact, *,
+                                     expected_model_identity_sha256: str,
+                                     expected_downstream_identity: Mapping,
+                                     expected_grid: Mapping,
+                                     expected_symmetry: str) -> list[dict]:
+    """Return the verified ordered reflectron response records for compensation.
+
+    Response IDs are the native electrode numbers and their order is contiguous
+    from one. Every selected file is revalidated before its record is returned.
+    Older bundles without this basis remain usable for detached-carrier tracking,
+    but are rejected here rather than treated as an incomplete fitting basis.
+    """
+    source = reference if isinstance(reference, OpenedArtifact) else open_artifact(reference, expected_kind='field_bundle')
+    if source.kind != 'field_bundle':
+        raise ValueError('reflectron responses require an actual field_bundle artifact')
+    metadata = source.metadata
+    basis = metadata.get('reflectron_response_basis')
+    fields = {'schema_version','model_identity_sha256','downstream_identity','grid','symmetry','responses'}
+    if not isinstance(basis, Mapping) or set(basis) != fields or type(basis['schema_version']) is not int or basis['schema_version'] != 1:
+        raise ValueError('published reflectron response basis is missing or has an unknown schema')
+    if (not isinstance(expected_model_identity_sha256, str)
+            or basis['model_identity_sha256'] != expected_model_identity_sha256
+            or metadata.get('model_identity_sha256') != expected_model_identity_sha256):
+        raise ValueError('reflectron response basis belongs to a different model')
+    if (basis['downstream_identity'] != expected_downstream_identity
+            or metadata.get('downstream_identity') != expected_downstream_identity):
+        raise ValueError('reflectron response basis belongs to a different downstream spatial operator')
+    if basis['grid'] != expected_grid or basis['symmetry'] != expected_symmetry:
+        raise ValueError('reflectron response basis grid or symmetry differs')
+    responses = basis['responses']
+    if not isinstance(responses, list) or not responses:
+        raise ValueError('reflectron response basis must contain ordered responses')
+    records, keys, paths = [], set(), set()
+    for expected_id, response in enumerate(responses, 1):
+        if (not isinstance(response, Mapping) or set(response) != {'response_id','data_key'}
+                or type(response['response_id']) is not int or response['response_id'] != expected_id
+                or not isinstance(response['data_key'], str) or not response['data_key']):
+            raise ValueError('reflectron response IDs, order or data bindings differ')
+        key = response['data_key']
+        if key in keys:
+            raise ValueError('reflectron response data keys are duplicated')
+        keys.add(key)
+        path = source.data_path(key)
+        if path.suffix.lower() != '.pa'+str(expected_id) or path in paths:
+            raise ValueError('reflectron response filename or location is duplicated or inconsistent')
+        paths.add(path)
+        records.append(dict(data_record(source, key), response_id=expected_id))
+    return records

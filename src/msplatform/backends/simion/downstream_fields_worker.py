@@ -113,10 +113,11 @@ def execute_downstream(context: ExecutionContext, *, compiled_model_record: dict
             for role, value in reuse_assets.items():
                 family = [_owned_record(record, root) for record in value['family_records']]
                 carrier = _owned_record(value['carrier_record'], root)
+                responses = value.get('response_records')
                 if role == 'reflectron':
                     if family or not carrier['path'].lower().endswith('.pa'):
                         raise ValueError('reused reflectron must remain detached')
-                elif len(family) != 4 or carrier not in family:
+                elif len(family) != 4 or carrier not in family or responses:
                     raise ValueError('reused native fractional family is incomplete')
                 expected = expected_assets[role]
                 if (Path(carrier['path']).resolve() != Path(expected['carrier_path']).resolve()
@@ -126,7 +127,22 @@ def execute_downstream(context: ExecutionContext, *, compiled_model_record: dict
                 for row in [carrier,*family]:
                     if copied.get(row['path']) != row:
                         raise ValueError('reused downstream member has no matching admitted copy record')
-                assets.append(dict(role=role, carrier_record=carrier, family_records=family))
+                asset = dict(role=role, carrier_record=carrier, family_records=family)
+                if role == 'reflectron' and responses is not None:
+                    response_records = []
+                    expected_paths = expected['response_paths']
+                    if len(responses) != len(expected_paths):
+                        raise ValueError('reused reflectron response basis is incomplete')
+                    for response_id, (response, path) in enumerate(zip(responses, expected_paths, strict=True), 1):
+                        if set(response) != {'response_id','record'} or response['response_id'] != response_id:
+                            raise ValueError('reused reflectron response IDs or order differ')
+                        record = _owned_record(response['record'], root)
+                        if (Path(record['path']).resolve() != Path(path).resolve()
+                                or copied.get(record['path']) != record):
+                            raise ValueError('reused reflectron response has no matching admitted copy record')
+                        response_records.append(dict(response_id=response_id, record=record))
+                    asset['response_records'] = response_records
+                assets.append(asset)
             report.update(status='success', assets=assets, audit_record=reuse_audit_record)
             return report
         for path, content in plan.materializations.items():
@@ -145,8 +161,15 @@ def execute_downstream(context: ExecutionContext, *, compiled_model_record: dict
         audit = json.loads(audit_path.read_text(encoding='utf-8-sig'))
         if audit.get('status') != 'success' or {row['role'] for row in audit.get('checked_assets', [])} != {'flight_tube','reflectron','detector'}:
             raise ValueError('downstream native audit did not check all three roles')
-        assets = [dict(role=row['role'], carrier_record=file_record(Path(row['carrier_path']).resolve(), 'solver_native_binary'),
-            family_records=[file_record(Path(path).resolve(), 'solver_native_binary') for path in row['family_paths']]) for row in asset_plan]
+        assets = []
+        for row in asset_plan:
+            asset = dict(role=row['role'], carrier_record=file_record(Path(row['carrier_path']).resolve(), 'solver_native_binary'),
+                family_records=[file_record(Path(path).resolve(), 'solver_native_binary') for path in row['family_paths']])
+            if row['role'] == 'reflectron':
+                asset['response_records'] = [dict(response_id=index,
+                    record=file_record(Path(path).resolve(), 'solver_native_binary'))
+                    for index, path in enumerate(row['response_paths'], 1)]
+            assets.append(asset)
         report.update(status='success', assets=assets, audit_record=file_record(audit_path.resolve(), 'required_evidence'),
             refine_calls=sum(row['stage'] == 'pa_refine' for row in observations))
         return report

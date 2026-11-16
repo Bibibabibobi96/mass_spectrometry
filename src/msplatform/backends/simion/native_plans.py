@@ -693,7 +693,8 @@ def _plan_downstream_solve_with_assets(compiled: CompiledSimionGeometry, *, raw_
                 ["lua",str(exporter),str(raw.with_suffix(".pa0")),str(operating)],
                 [str(operating)],"STANDALONE_PA_EXPORT=PASS"))
             g,v=contract["geometry_mm"],contract["electrodes_V"]
-            asset.update(carrier_path=str(operating),family_paths=[],endpoint_samples=[dict(x=0,voltage=0),
+            asset.update(carrier_path=str(operating),family_paths=[],response_paths=family[2:],
+                endpoint_samples=[dict(x=0,voltage=0),
                 dict(x=round(g["L_stage1"]/cells[0]),voltage=v["midgrid"]),
                 dict(x=math.ceil(g["L_reflectron"]/cells[0]),voltage=v["backplate"])])
         assets.append(asset)

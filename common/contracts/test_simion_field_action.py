@@ -15,11 +15,11 @@ import unittest
 from unittest.mock import patch
 
 from common.contracts.test_simion_field_worker import INERT_WORKER
-from common.contracts.test_simion_fields_execution import INERT_DOWNSTREAM
+from common.contracts.test_simion_fields_execution import inert_downstream_source
 from msplatform import assembly as assembly_api, components as component_api, examples as example_api
 from msplatform.backends import simion as simion_api
 from msplatform.backends.simion.field_execution import execute_fields, plan_fields_execution
-from msplatform.backends.simion.field_closure import load_field_model
+from msplatform.backends.simion.field_closure import load_field_model, load_reflectron_response_records
 from msplatform.backends.simion.model import compile_prepared_model, project_resolved_drive
 from msplatform.backends.simion.resources import structural_seed_path
 from msplatform.execution import owner
@@ -89,7 +89,7 @@ class FieldActionTests(unittest.TestCase):
             budget.write_text('{"bytes":104857600}', encoding='utf-8')
             scripts = {'member':root/'inert_member.py', 'downstream':root/'inert_downstream.py'}
             scripts['member'].write_text(INERT_WORKER, encoding='utf-8')
-            scripts['downstream'].write_text(INERT_DOWNSTREAM, encoding='utf-8')
+            scripts['downstream'].write_text(inert_downstream_source(), encoding='utf-8')
             limits = dict(reserved_run_payload_bytes=1048576)
             materializer = partial(materialize_payloads, limits=limits)
             materializer_record = file_record(Path(inspect.getsourcefile(materialize_payloads)), 'required_evidence')
@@ -194,8 +194,14 @@ class FieldActionTests(unittest.TestCase):
                 model_ref = dict(manifest=published['manifest'], product_id='model')
                 self.assertEqual(load_field_model(model_ref).model.document, model.document)
                 field_refs, outcomes = [], []
-                for case in ('cold','reuse'):
+                for case in ('cold','reuse','legacy_reuse'):
                     reuse = field_refs[0] if field_refs else None
+                    if case == 'legacy_reuse':
+                        import copy
+                        reuse = copy.copy(outcomes[0])
+                        legacy_metadata = copy.deepcopy(reuse.metadata)
+                        legacy_metadata.pop('reflectron_response_basis')
+                        object.__setattr__(reuse, '_metadata', legacy_metadata)
                     graph = plan_fields_execution(model, numerics=numerics, reuse_fields_reference=reuse)
                     def action(session):
                         for name,path in scripts.items(): session.add_input('inert_'+name, file_record(path,'required_evidence'))
@@ -203,10 +209,10 @@ class FieldActionTests(unittest.TestCase):
                             materialize_geometry=materializer, materializer_record=materializer_record,
                             reuse_fields_reference=reuse)
                     references = [dict(manifest_record=model_ref['manifest'])]
-                    if reuse: references.append(dict(manifest_record=reuse['manifest']))
+                    if reuse: references.append(dict(manifest_record=reuse.reference['manifest'] if hasattr(reuse, 'reference') else reuse['manifest']))
                     with measured_boundary(case, "run_managed_stage") as timing:
                         result = owner.run_managed_stage(context, **base,
-                            run_id='20261104_120000__test__python__field-action-'+case,
+                            run_id='20261104_120000__test__python__field-action-'+case.replace('_', '-'),
                             expected_operation_ids=graph['expected_operation_ids'], operation_dependencies=graph['operation_dependencies'],
                             source_references=references, action=action)
                         timing["manifest_record"] = result['manifest']
@@ -236,4 +242,27 @@ class FieldActionTests(unittest.TestCase):
                 self.assertEqual(outcomes[1].metadata['frontend_native_operations'], 0)
                 self.assertEqual(outcomes[1].metadata['downstream_native_operations'], 0)
                 self.assertTrue(outcomes[1].metadata['downstream_reused'])
+                self.assertEqual(outcomes[2].metadata['frontend_native_operations'], 0)
+                self.assertEqual(outcomes[2].metadata['downstream_native_operations'], 0)
+                self.assertIsNone(outcomes[2].metadata['reflectron_response_basis'])
+                self.assertEqual(outcomes[2].metadata['native_assets']['reflectron']['family'], [])
+                with self.assertRaisesRegex(ValueError, 'response basis'):
+                    load_reflectron_response_records(outcomes[2],
+                        expected_model_identity_sha256=model.document['model_identity_sha256'],
+                        expected_downstream_identity=outcomes[2].metadata['downstream_identity'],
+                        expected_grid=outcomes[0].metadata['reflectron_response_basis']['grid'],
+                        expected_symmetry=outcomes[0].metadata['reflectron_response_basis']['symmetry'])
+                response_sets = []
+                for outcome in outcomes[:2]:
+                    basis = outcome.metadata['reflectron_response_basis']
+                    self.assertEqual(outcome.metadata['native_assets']['reflectron']['family'], [])
+                    response_sets.append(load_reflectron_response_records(outcome,
+                        expected_model_identity_sha256=model.document['model_identity_sha256'],
+                        expected_downstream_identity=outcome.metadata['downstream_identity'],
+                        expected_grid=basis['grid'], expected_symmetry=basis['symmetry']))
+                self.assertGreater(len(response_sets[0]), 1)
+                self.assertEqual([[row['response_id'] for row in rows] for rows in response_sets],
+                    [list(range(1, len(response_sets[0])+1))]*2)
+                self.assertEqual([[row['sha256'] for row in rows] for rows in response_sets],
+                    [[row['sha256'] for row in response_sets[0]]]*2)
                 self.assertGreater(len(snapshot_log.read_text(encoding='utf-8').splitlines()), 0)

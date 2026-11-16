@@ -169,6 +169,63 @@ class FieldExecutionPlanningTests(unittest.TestCase):
                 with self.subTest(field=field):
                     self.assertNotEqual(downstream_identity(model, **broken), identity)
 
+    def test_reflectron_response_reader_authenticates_order_identity_grid_and_bytes(self):
+        from msplatform.backends.simion.field_closure import load_reflectron_response_records
+        from msplatform.results.artifacts import OpenedArtifact
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            records = {}
+            for response_id in (1,2):
+                path = root/('reflectron.pa'+str(response_id))
+                path.write_bytes(b'INERT_RESPONSE_'+bytes([response_id]))
+                records['response_'+str(response_id)] = file_record(path, 'solver_native_binary')
+            model_identity = 'A'*64
+            spatial_identity = dict(schema_version=1, identity_sha256='B'*64)
+            grid = dict(nx=10, ny=11, nz=12, dx_mm=.1, dy_mm=.1, dz_mm=.1)
+            basis = dict(schema_version=1, model_identity_sha256=model_identity,
+                downstream_identity=spatial_identity, grid=grid, symmetry='2dcylindrical',
+                responses=[dict(response_id=index, data_key='response_'+str(index)) for index in (1,2)])
+            metadata = dict(model_identity_sha256=model_identity, downstream_identity=spatial_identity,
+                reflectron_response_basis=basis)
+            reference = dict(manifest=dict(path=str(root/'run_manifest.json'), bytes=1, sha256='D'*64),
+                product_id='fields')
+            def artifact(value):
+                return OpenedArtifact(kind='field_bundle', product_id='fields', reference=reference,
+                    metadata=value, records=records, paths={key:Path(row['path']) for key,row in records.items()},
+                    producer={}, manifest_location=root/'run_manifest.json')
+            kwargs = dict(expected_model_identity_sha256=model_identity,
+                expected_downstream_identity=spatial_identity, expected_grid=grid,
+                expected_symmetry='2dcylindrical')
+            actual = load_reflectron_response_records(artifact(metadata), **kwargs)
+            self.assertEqual(actual, [dict(records['response_'+str(index)], response_id=index) for index in (1,2)])
+            faults = {}
+            faults['missing'] = dict(metadata, reflectron_response_basis=None)
+            for case in ('reordered','duplicated','duplicated_keys','wrong_model','wrong_spatial',
+                         'wrong_grid','wrong_symmetry','extra_field'):
+                changed = copy.deepcopy(basis)
+                if case == 'reordered': changed['responses'].reverse()
+                elif case == 'duplicated': changed['responses'] = [changed['responses'][0]]*2
+                elif case == 'duplicated_keys': changed['responses'][1]['data_key'] = 'response_1'
+                elif case == 'wrong_model': changed['model_identity_sha256'] = 'F'*64
+                elif case == 'wrong_spatial': changed['downstream_identity'] = {}
+                elif case == 'wrong_grid': changed['grid'] = dict(grid, nx=99)
+                elif case == 'wrong_symmetry': changed['symmetry'] = '3dplanar'
+                else: changed['unexpected'] = True
+                faults[case] = dict(metadata, reflectron_response_basis=changed)
+            for case, changed in faults.items():
+                with self.subTest(case=case), self.assertRaises(ValueError):
+                    load_reflectron_response_records(artifact(changed), **kwargs)
+            for case, override in (('expected_model',dict(expected_model_identity_sha256='F'*64)),
+                                   ('expected_grid',dict(expected_grid=dict(grid, nx=99)))):
+                with self.subTest(case=case), self.assertRaises(ValueError):
+                    load_reflectron_response_records(artifact(metadata), **dict(kwargs, **override))
+            path = root/'reflectron.pa2'
+            original = path.read_bytes()
+            path.write_bytes(b'TAMPERED')
+            with self.assertRaises((ValueError, AssertionError)):
+                load_reflectron_response_records(artifact(metadata), **kwargs)
+            path.write_bytes(original)
+
 
 INERT_DOWNSTREAM = r'''
 """TEST ONLY: real Python processes producing inert protocol bytes, never PA data."""
@@ -184,6 +241,11 @@ def inert(context,op,**kwargs):
 worker._native_operation=inert
 worker.main()
 '''
+
+
+def inert_downstream_source():
+    source_root = Path(__file__).resolve().parents[2]/'src'
+    return 'import sys\nsys.path.insert(0,'+repr(str(source_root))+')\n'+INERT_DOWNSTREAM
 
 
 @unittest.skipUnless(os.name == 'nt' and shutil.which('pwsh'), 'Windows PowerShell required')
@@ -311,7 +373,7 @@ class DownstreamWorkerTests(unittest.TestCase):
             source_before = {Path(row['path']):Path(row['path']).read_bytes() for asset in assets.values()
                              for row in [asset['raw_record'],*asset['surface_records']]}
             script = root/'inert_downstream.py'
-            script.write_text(INERT_DOWNSTREAM, encoding='utf-8')
+            script.write_text(inert_downstream_source(), encoding='utf-8')
             budget = root/'budget.json'
             budget.write_text('{"bytes":10485760}', encoding='utf-8')
             context = ExecutionContext(workspace=root/'study', python_executable=Path(sys.executable),
@@ -370,6 +432,11 @@ class DownstreamWorkerTests(unittest.TestCase):
             self.assertEqual(reports[0]['native_count'], 5)
             self.assertEqual(reports[0]['refine_calls'], 3)
             self.assertEqual([len(row['family_records']) for row in reports[0]['assets']], [4,4,0])
+            reflectron = reports[0]['assets'][2]
+            self.assertEqual([row['response_id'] for row in reflectron['response_records']],
+                list(range(1, len(reflectron['response_records'])+1)))
+            self.assertEqual([Path(row['record']['path']).suffix for row in reflectron['response_records']],
+                ['.pa'+str(row['response_id']) for row in reflectron['response_records']])
             completion = json.loads((Path(result['run_directory'])/'results/execution_completion.json').read_text())
             self.assertEqual(len(completion['writer_completion']['operations']), 2)
             self.assertEqual(len(completion['writer_completion']['resource_releases']), 2)

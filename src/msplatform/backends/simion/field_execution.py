@@ -12,7 +12,8 @@ from msplatform.io.manifest_records import file_record, verify_record
 from msplatform.execution.resources import resource_path
 from msplatform.io.file_identity import file_sha256
 from .field_bank import field_bank
-from .field_closure import load_field_model, data_record, downstream_identity, require_downstream_reuse
+from .field_closure import (load_field_model, data_record, downstream_identity, require_downstream_reuse,
+                            load_reflectron_response_records)
 from .field_worker import run_member
 from .downstream_fields_worker import DOWNSTREAM_RESOURCES, run_downstream
 from .model import model_geometry, require_prepared_model
@@ -201,7 +202,15 @@ def execute_fields(session, *, model_reference: Mapping, numerics: dict, limits:
         copies.extend(downstream_plan.input_copies)
     else:
         reuse_source, prior = require_downstream_reuse(reuse_fields_reference, static_identity)
-        _protected_source(session, reuse_source.reference['manifest'], required_paths=[row['carrier_record']['path'] for row in prior.values()])
+        reflectron_plan = next(row for row in asset_plan if row['role'] == 'reflectron')
+        has_response_basis = reuse_source.metadata.get('reflectron_response_basis') is not None
+        prior_responses = load_reflectron_response_records(reuse_source,
+            expected_model_identity_sha256=document['model_identity_sha256'],
+            expected_downstream_identity=static_identity, expected_grid=reflectron_plan['grid'],
+            expected_symmetry=reflectron_plan['symmetry']) if has_response_basis else None
+        _protected_source(session, reuse_source.reference['manifest'],
+            required_paths=[row['carrier_record']['path'] for row in prior.values()]
+                           + [row['path'] for row in prior_responses or []])
         records['reuse_field_manifest'] = small('reuse_field_manifest', session.input_dir/'reuse_field_manifest.json',
             source_path=reuse_source.reference['manifest']['path'])
         records['reuse_downstream_audit'] = small('reuse_downstream_audit', session.input_dir/'reuse_downstream_audit.json',
@@ -214,13 +223,29 @@ def execute_fields(session, *, model_reference: Mapping, numerics: dict, limits:
             for record in entries:
                 target = targets[Path(record['path']).suffix] if targets else Path(row['carrier_path'])
                 copies.append(dict(source_record=record, destination=str(target)))
-            reused_assets[role] = dict(carrier_path=row['carrier_path'], family_paths=row['family_paths'])
+            response_paths = []
+            if role == 'reflectron' and prior_responses is not None:
+                response_paths = row['response_paths']
+                for record, target in zip(prior_responses, response_paths, strict=True):
+                    copies.append(dict(source_record=record, destination=str(target)))
+            elif role == 'reflectron':
+                response_paths = None
+            reused_assets[role] = dict(carrier_path=row['carrier_path'], family_paths=row['family_paths'],
+                response_paths=response_paths)
     copied = _copy_records(session, copies, callback=materialize_geometry, operation_id='materialize_geometry')
     by_path = {row['path']:row for row in copied}
     frontend_records = {name:by_path[str(session.canonical_path(path))] for name,path in frontend_raw.items()}
     if reused_assets is not None:
-        reused_assets = {role:dict(carrier_record=by_path[str(session.canonical_path(row['carrier_path']))],
-            family_records=[by_path[str(session.canonical_path(path))] for path in row['family_paths']]) for role,row in reused_assets.items()}
+        materialized_reuse = {}
+        for role, row in reused_assets.items():
+            asset = dict(carrier_record=by_path[str(session.canonical_path(row['carrier_path']))],
+                family_records=[by_path[str(session.canonical_path(path))] for path in row['family_paths']])
+            if role == 'reflectron':
+                asset['response_records'] = None if row['response_paths'] is None else [dict(response_id=index,
+                    record=by_path[str(session.canonical_path(path))])
+                    for index, path in enumerate(row['response_paths'], 1)]
+            materialized_reuse[role] = asset
+        reused_assets = materialized_reuse
     cache_root = session.artifact_root/'common/simion/pa_family_cache'
     parents, members = {}, []
     for member in graph['field_plan']['ordered_members']:
@@ -309,6 +334,7 @@ def execute_fields(session, *, model_reference: Mapping, numerics: dict, limits:
         if operation['success_marker'].encode() not in (session.log_dir/f'operation_{ordinal:04d}.stdout.log').read_bytes():
             raise ValueError('field workbench actual completion marker is absent')
     native_assets = {}
+    response_basis = None
     for asset in downstream['assets']:
         role = asset['role']
         carrier_key = role+'_carrier'
@@ -319,6 +345,17 @@ def execute_fields(session, *, model_reference: Mapping, numerics: dict, limits:
             records[key] = record
             keys.append(key)
         native_assets[role] = dict(carrier=carrier_key, family=keys)
+        if role == 'reflectron' and asset.get('response_records') is not None:
+            planned = next(row for row in asset_plan if row['role'] == role)
+            response_bindings = []
+            for response in asset['response_records']:
+                response_id = response['response_id']
+                key = 'reflectron_response_'+str(response_id)
+                records[key] = response['record']
+                response_bindings.append(dict(response_id=response_id, data_key=key))
+            response_basis = dict(schema_version=1,
+                model_identity_sha256=document['model_identity_sha256'], downstream_identity=static_identity,
+                grid=planned['grid'], symmetry=planned['symmetry'], responses=response_bindings)
     records['downstream_audit'] = downstream['audit_record']
     for path in plan.declared_outputs:
         key = 'workbench' if Path(path).suffix == '.iob' else 'zero_particle_format_control'
@@ -326,6 +363,7 @@ def execute_fields(session, *, model_reference: Mapping, numerics: dict, limits:
     metadata = dict(backend='simion', field_status='available', source_status='not_requested',
         model_identity_sha256=document['model_identity_sha256'], clock=document['drive']['clock'],
         native_assets=native_assets, frontend_members=frontend_meta, downstream_identity=static_identity,
+        reflectron_response_basis=response_basis,
         downstream_reused=reuse_source is not None, downstream_native_operations=downstream['native_count'],
         frontend_native_operations=sum(row['report']['native_count'] for row in members),
         sampled_particles=0, fly_calls=0, gui_calls=0, scientific_qualification='not_granted',

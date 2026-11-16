@@ -846,6 +846,18 @@ The original synthetic-basis JSON and Lua witnesses matched for omitted, zero,
 explicit-default and nondefault inputs. Focused and ordinary wheel/sdist-rebuilt
 installation checks passed. No new Refine, Fly or scientific qualification is implied.
 
+The public downstream FieldBundle now also publishes ordered `reflectron.pa1…paN`
+response records under separate data keys. Their metadata binds response IDs,
+model identity, downstream spatial identity, grid and symmetry; the strict reader
+revalidates selected bytes and rejects missing/reordered/duplicate/tampered or
+wrong-model/grid responses. Tracking still requires `native_assets.reflectron.family=[]`
+and the detached operating PA. Cold and zero-native reuse preserve the basis;
+older bundles without it still reuse for tracking but refuse compensation-basis
+reading. One real public cold/reuse/legacy-reuse parent, eight worker tests plus
+one environment-independent skip, sixteen detached-tracking tests and two
+focused reader/worker tests passed with inert native leaves. Compensation
+consumption of this reader and all native/scientific acceptance remain open.
+
 保留已有三臂电压补偿研究。原`run_compensation.py`不再原位修改父case，也不再维护
 ThreadPoolExecutor、numpy分批或项目私有调度；实际求解参数与固定端点单调拟合保留。
 实际来源必须遵守公共standalone消费边界；已发布native family的完整copy不能证明关联解除。
