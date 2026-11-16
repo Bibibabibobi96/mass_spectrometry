@@ -512,6 +512,12 @@ The [integration status](../integrations/docs/INTEGRATION.md#installed-single-re
 and project status pages own the detailed evidence. The latest complete software
 result is `b90ac498`; final combined P4 acceptance, the original 15-minute target
 and owner budgets remain OPEN. Pending/cancelled CI is not acceptance.
+The exact `dc0c8dda` Changed run `43861292688` subsequently completed successfully.
+Its direct-wheel and sdist-rebuilt-wheel probes both report
+`INSTALLED_SFI_SCALAR_OWNER=PASS native=INERT` and
+`INSTALLED_RF_IP_CONTINUOUS_OWNER=PASS native=INERT ids=7,91`, closing the P4-111/112
+fixture-import defects with sparse identities and repository-source denial intact.
+This is scoped inert installation evidence, not native, full-Repository or P4-final acceptance.
 The earlier diagnostic full Repository baseline, `778e7015`, ended with 38 PASS, 12 FAIL
 and 12 NOT_APPLICABLE stages: 7,006 parents (6,838 success, 21 skip, 56 failure, 91 error),
 plus one loader error; 7,996 subtests (7,894 success, 59 failure, 43 error). Its summary
