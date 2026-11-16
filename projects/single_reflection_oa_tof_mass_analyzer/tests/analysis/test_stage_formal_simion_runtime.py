@@ -70,7 +70,10 @@ class StageFormalSimionRuntimeTests(unittest.TestCase):
         self.assertNotIn("-WorkingDirectory $formalSimion", combined)
         self.assertNotIn("-WorkingDirectory $formalDir", combined)
         self.assertNotIn("Push-Location $formalDir", combined)
-        for name in ("mass", "ideal", "geometry", "stable", "diagnostics"):
+        mass_source = scripts["mass"].read_text(encoding="utf-8")
+        self.assertIn("msplatform.workflows.single_reflection_mass_spectrum_study", mass_source)
+        self.assertNotIn("New-OaTofFormalSimionRuntime", mass_source)
+        for name in ("ideal", "geometry", "stable", "diagnostics"):
             self.assertIn(
                 "New-OaTofFormalSimionRuntime",
                 scripts[name].read_text(encoding="utf-8"),

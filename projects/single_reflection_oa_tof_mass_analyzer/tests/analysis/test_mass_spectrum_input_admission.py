@@ -602,8 +602,8 @@ class MassSpectrumReanalysisTests(unittest.TestCase):
                                      encoding='utf-8', timeout=30)
             self.assertNotEqual(missing.returncode, 0)
             self.assertNotIn('exceeds the mixed-species mother population', missing.stderr)
-            self.assertRegex(missing.stderr, 'ModuleNotFoundError|ImportError')
-            self.assertIn('msplatform.workflows.single_reflection_mass_spectrum_worker', missing.stderr)
+            self.assertRegex(missing.stderr, 'ModuleNotFoundError|ImportError|FileNotFoundError')
+            self.assertIn('inputs\\\\code', missing.stderr)
             self.assertEqual(output_before, {p.name: p.read_bytes() for p in output.iterdir() if p.is_file()})
 
     def test_public_reanalysis_refuses_changed_frozen_dependencies_before_analysis(self):

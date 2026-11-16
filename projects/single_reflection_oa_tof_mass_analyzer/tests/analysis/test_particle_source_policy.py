@@ -18,6 +18,7 @@ from msplatform.ion_release.dotnet_gaussian_box_ion11 import (
     generate_ion_source,
     validate_ion_source,
 )
+from msplatform.workflows.single_reflection_mass_spectrum_study import build_source_cohort
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -68,32 +69,27 @@ class ParticleSourcePolicyTests(unittest.TestCase):
         source = RUNNER.read_text(encoding="utf-8")
         self.assertNotIn("ParticleCountOverride", source)
         self.assertNotIn("effective_mode.json", source)
-        self.assertIn("__n1000_parent.ion", source)
-        self.assertIn("-m msplatform.contracts.particle_count_policy", source)
-        self.assertIn("--prefix-n100 $ionPath --prefix-n1000 $parentIonPath", source)
-        self.assertIn("Select-Object -First $particleCount", source)
-        self.assertLess(
-            source.index("--prefix-n100 $ionPath"),
-            source.index("src\\msplatform\\backends\\comsol\\launcher\\run_comsol_r2025b.ps1"),
-        )
-        rebuild = source.index("-ValidateExisting")
-        resume_branch = source.index("if ($resumeExisting)")
-        prefix = source.index("--prefix-n100 $ionPath")
-        self.assertLess(resume_branch, rebuild)
-        self.assertLess(rebuild, prefix)
-        checkpoint = source.index(
-            "status = 'pending_deterministic_parent_validation'"
-        )
-        checkpoint_write = source.index(
-            "Write-RunJson -Path $runConfigPath -Depth 12",
-            checkpoint,
-        )
-        self.assertLess(checkpoint_write, rebuild)
-        self.assertIn('["particle_source_$($species.species_id)"]', source)
-        self.assertIn('["particle_source_parent_$($species.species_id)"]', source)
-        self.assertIn("particle_source_provenance = @($sourceProvenance)", source)
-        self.assertIn("$outputs += @($parentIonPaths)", source)
-        self.assertIn("$outputs += @($sourceValidationPaths)", source)
+        self.assertIn("msplatform.workflows.single_reflection_mass_spectrum_study", source)
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            cohort = build_source_cohort(
+                MODE,
+                PROJECT_ROOT / "config" / "resolved_geometry.json",
+                REPO_ROOT / "src" / "msplatform" / "contracts" / "particle_count_policy.json",
+                root_path / "ions",
+                root_path / "logs",
+            )
+            self.assertEqual(cohort["total_particles"], 500)
+            self.assertEqual(len(cohort["mixed"].read_text(encoding="ascii").splitlines()), 500)
+            for selected, parent, receipt in zip(
+                cohort["individual"], cohort["parents"], cohort["provenance"], strict=True,
+            ):
+                parent_lines = parent.read_text(encoding="ascii").splitlines()
+                self.assertEqual(len(parent_lines), 1000)
+                self.assertEqual(selected.read_text(encoding="ascii").splitlines(), parent_lines[:100])
+                self.assertEqual(receipt["consumed_source_path"], str(selected))
+                report = root_path / "logs" / f"{parent.name.removesuffix('.ion')}_validation.json"
+                self.assertEqual(json.loads(report.read_text(encoding="utf-8")), receipt)
 
     def test_post_prefix_parent_tampering_requires_full_rebuild_validation(self) -> None:
         arguments = {

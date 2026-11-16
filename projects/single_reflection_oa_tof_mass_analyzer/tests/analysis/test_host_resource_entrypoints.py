@@ -82,7 +82,8 @@ throw 'deliberate guard boundary rejection'
                 "--adjustable", "trajectory_quality=8", "--adjustable", "trajectory_log_enable=1", inputs["IobPath"]])
             self.assertFalse(Path(inputs["ParticleCsv"]).exists())
 
-    def run_failure(self, relative: str, arguments: list[str], *, nested: bool = False) -> str:
+    def run_failure(self, relative: str, arguments: list[str], *, nested: bool = False,
+                    expect_lease_release: bool = True) -> str:
         with tempfile.TemporaryDirectory(prefix="oa_resource_entry_test_") as directory:
             root = Path(directory)
             target = root / "projects/oa" / relative
@@ -118,7 +119,8 @@ foreach($name in @('Save-RunEnvironment','Restore-RunEnvironment')){
             )
             self.assertIsInstance(result.stdout, str)
             self.assertIsInstance(result.stderr, str)
-            self.assertIn("\ufffd", result.stderr)
+            if expect_lease_release:
+                self.assertIn("\ufffd", result.stderr)
             output = result.stdout + result.stderr
             self.assertNotEqual(result.returncode, 0, output)
             return output
@@ -147,8 +149,17 @@ foreach($name in @('Save-RunEnvironment','Restore-RunEnvironment')){
         self.assertEqual(output.count("TEST_LEASE_EXIT=SIMION"), 1, output)
 
     def test_direct_flight_entrypoints_select_permission_and_release(self) -> None:
+        mass_output = self.run_failure(
+            "workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1", [],
+            expect_lease_release=False,
+        )
+        self.assertTrue(
+            "Select an explicit execution environment and engineering profile" in mass_output
+            or "mass_spectrum.json" in mass_output,
+            mass_output,
+        )
+        self.assertNotIn("TEST_LEASE_ENTER", mass_output)
         cases = (
-            ("workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1", [], "SIMION"),
             ("workflows/formal_reference/run_formal_validation.ps1", [], "SIMION"),
             ("simion/workbench/run_ideal_field_diagnostic.ps1", ["-AnalyzeOnly", "-SourceRunPath", "fixture-source"], "GATE"),
             ("tests/simion/run_field_idealization_sweep.ps1", [], "SIMION"),
@@ -318,8 +329,7 @@ foreach($nested in @($false,$true)) {
 }
 'HANDOFF=PASS'
 """
-        for relative in ("verify_project.ps1", "workflows/formal_reference/run_formal_validation.ps1",
-                         "workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1"):
+        for relative in ("verify_project.ps1", "workflows/formal_reference/run_formal_validation.ps1"):
             with self.subTest(entry=relative):
                 result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
                                         cwd=PROJECT, env=dict(os.environ, OA_TEST_ENTRY=str(PROJECT / relative)),
@@ -331,14 +341,17 @@ foreach($nested in @($false,$true)) {
         for relative in ("simion/workbench/run_parameterized_geometry_smoke.ps1",
                          "simion/workbench/run_ideal_field_diagnostic.ps1",
                          "tests/simion/run_field_idealization_sweep.ps1",
-                         "workflows/formal_reference/run_formal_validation.ps1",
-                         "workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1"):
+                         "workflows/formal_reference/run_formal_validation.ps1"):
             with self.subTest(entry=relative):
                 source = (PROJECT / relative).read_text(encoding="utf-8")
                 flight = source.index("= Start-Process -FilePath $SimionExe")
                 self.assertLess(source.index("Update-HostResourceStage -Lease $hostExecutionLease -Stage flight"), flight)
                 self.assertGreater(source.index("Update-HostResourceStage -Lease $hostExecutionLease -Stage postprocess"), flight)
                 self.assertNotIn("Enter-HostExecutionLease -Role $hostRole -Stage pa_prepare", source)
+        from msplatform.backends.simion import mass_spectrum
+        mass_source = (PROJECT.parents[1] / mass_spectrum.__file__).read_text(encoding="utf-8")
+        self.assertIn("session.run_process", mass_source)
+        self.assertIn('role="SIMION", stage="flight"', mass_source)
         builder = (PROJECT / "simion/workbench/build_formal_delivery.ps1").read_text(encoding="utf-8")
         for name in ("build_two_zone_pa.lua", "build_reflectron_variant.lua",
                      "build_flight_tube_variant.lua", "build_detector_variant.lua"):
