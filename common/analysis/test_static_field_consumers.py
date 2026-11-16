@@ -49,7 +49,7 @@ class StaticFieldConsumersTests(unittest.TestCase):
             (root/'a.csv').write_text(h+a,encoding='utf-8');(root/'b.csv').write_text(h+b,encoding='utf-8')
             value={'schema_version':1,'role':'multipole_static_field_comparison_authority','differential':authority(),'static':authority(),'coordinate_tolerance_mm':0.}
             (root/'authority.json').write_text(json.dumps(value),encoding='utf-8')
-            result=subprocess.run([sys.executable,'-B','-m','projects.rf_multipole_ion_optics.analysis.stationary_field_sampling',
+            result=subprocess.run([sys.executable,'-B','-m','msplatform.workflows.rf_stationary',
                 'compare','--reference',str(root/'a.csv'),'--candidate',str(root/'b.csv'),'--output',str(root/'out.json'),
                 '--comparison-authority',str(root/'authority.json')],cwd=ROOT,capture_output=True,text=True,encoding='utf-8',timeout=60,check=False)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
@@ -79,7 +79,7 @@ class StaticFieldConsumersTests(unittest.TestCase):
                     payload=header+''.join(f'001,rod,{case},1,2,3,0,0,2,0\n' for case in ('differential','static'))
                     pair=authority();pair['candidate']=copy.deepcopy(pair['reference'])
                     doc={'schema_version':1,'role':'multipole_static_field_comparison_authority','differential':pair,'static':copy.deepcopy(pair),'coordinate_tolerance_mm':0.}
-                    module='projects.rf_multipole_ion_optics.analysis.stationary_field_sampling'
+                    module='msplatform.workflows.rf_stationary'
                     args=['compare','--reference',str(root/'a.csv'),'--candidate',str(root/'b.csv'),'--output',str(root/'output.json'),'--comparison-authority',str(root/'authority.json')]
                 for name in ('a.csv','b.csv'):(root/name).write_text(payload,encoding='utf-8')
                 for mutation in ('missing_version','unsupported_version','unknown_outer','unknown_side'):
@@ -117,7 +117,7 @@ class StaticFieldConsumersTests(unittest.TestCase):
                 (root/'a.csv').write_text(h+broken,encoding='utf-8');(root/'b.csv').write_text(h+rows,encoding='utf-8')
                 pair=authority();pair['candidate']=copy.deepcopy(pair['reference']);doc={'schema_version':1,'role':'multipole_static_field_comparison_authority','differential':pair,'static':copy.deepcopy(pair),'coordinate_tolerance_mm':0.}
                 (root/'authority.json').write_text(json.dumps(doc),encoding='utf-8')
-                result=subprocess.run([sys.executable,'-B','-m','projects.rf_multipole_ion_optics.analysis.stationary_field_sampling','compare',
+                result=subprocess.run([sys.executable,'-B','-m','msplatform.workflows.rf_stationary','compare',
                     '--reference',str(root/'a.csv'),'--candidate',str(root/'b.csv'),'--output',str(root/'out.json'),'--comparison-authority',str(root/'authority.json')],cwd=ROOT,capture_output=True,text=True,encoding='utf-8',timeout=60,check=False)
                 self.assertNotEqual(result.returncode,0,(mutation,result.stdout));self.assertIn('StationaryFieldContractError',result.stderr)
                 self.assertFalse((root/'out.json').exists())
@@ -134,7 +134,7 @@ class StaticFieldConsumersTests(unittest.TestCase):
                 else:
                     payload='sample_id,region,field_case,x_mm,y_mm,z_mm,potential_V,Ex_V_per_m,Ey_V_per_m,Ez_V_per_m\n'
                     payload+=''.join(f'001,rod,{case},1,2,3,0,0,2,0\n' for case in ('differential','static'))
-                    module='projects.rf_multipole_ion_optics.analysis.stationary_field_sampling'
+                    module='msplatform.workflows.rf_stationary'
                     args=['compare','--reference',str(root/'a.csv'),'--candidate',str(root/'b.csv'),'--output',str(root/'out.json'),'--comparison-authority',str(root/'authority.json')]
                 for name in ('a.csv','b.csv'):(root/name).write_text(payload,encoding='utf-8')
                 (root/'authority.json').write_text('{"schema_version":1,"schema_version":1}',encoding='utf-8')

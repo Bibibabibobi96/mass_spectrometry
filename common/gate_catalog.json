@@ -415,7 +415,7 @@
           "reason": "static_field_comparison_consumer_changed"
         },
         {
-          "exact": "projects/rf_multipole_ion_optics/analysis/stationary_field_sampling.py",
+          "exact": "src/msplatform/workflows/rf_stationary.py",
           "reason": "static_field_comparison_consumer_changed"
         },
         {

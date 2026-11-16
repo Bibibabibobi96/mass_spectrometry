@@ -28,7 +28,7 @@ param(
   [string]$RetentionReason='Producer-owned fractional field/IOB and complete batch evidence retained for explicit stage reuse.',
   [string]$SourceFamilyPath='',
   [string]$OperatingPointId='',
-  [ValidateSet('transport','field_solve')][string]$StopStage='transport',
+  [ValidateSet('transport')][string]$StopStage='transport',
   [string]$ContinuationPredecessorManifestPath='',
   [string]$NativeFieldRunPath='',
   [string]$ResultPath=''
@@ -90,10 +90,6 @@ $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRo
 . (Join-Path $PSScriptRoot 'simion_execution.ps1')
 . (Join-Path $PSScriptRoot 'simion_field_checkpoint_support.ps1')
 . (Join-Path $PSScriptRoot 'finite_3d_transport_preflight.ps1')
-$fieldOnly=$StopStage-eq'field_solve'
-if($fieldOnly-and([string]::IsNullOrWhiteSpace($EvidenceContractPath)-or$ContinuationPredecessorManifestPath)){
-  throw 'SIMION field_solve requires explicit field evidence and does not accept particle continuation.'
-}
 $particleSourceInput=if($ParticleSourcePath){(Resolve-Path -LiteralPath $ParticleSourcePath).Path}else{$null}
 $engineeringBudgetInput=(Resolve-Path -LiteralPath $EngineeringBudgetPath).Path
 $engineeringBudgetAuthority=Get-Content -LiteralPath $engineeringBudgetInput -Raw -Encoding UTF8|ConvertFrom-Json
@@ -212,11 +208,12 @@ if(-not(Test-Path -LiteralPath $simion -PathType Leaf)){
   throw "SIMION executable is missing: $simion"
 }
 $hostRuntimeSourcePaths=@(
+  'config/project_registry.json',
   'common/host_execution_lease.ps1','common/host_resource_scheduler.py',
   'src/msplatform/execution/resources/host_resource_policy.json','common/require_powershell7.ps1','common/resource_budget_support.ps1')
 $analysisSourcePaths=@('src/msplatform/analysis/particle_census.py')
 $executionCapacityPaths=Get-RunPackageCopiedSourcePaths -RepoRoot $repoRoot `
-  -SourceRelativeDirectories @('src/msplatform','common/contracts','common/simion','projects/rf_multipole_ion_optics/core','projects/rf_multipole_ion_optics/runtime','projects/rf_multipole_ion_optics/analysis','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/comsol','projects/rf_multipole_ion_optics/simion') `
+  -SourceRelativeDirectories @('src/msplatform','common/contracts','common/paths','common/simion','projects/rf_multipole_ion_optics/core','projects/rf_multipole_ion_optics/runtime','projects/rf_multipole_ion_optics/analysis','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/variants','projects/rf_multipole_ion_optics/comsol','projects/rf_multipole_ion_optics/simion') `
   -Extensions @('.py','.json','.ps1','.lua')
 $executionCapacityPaths+=@(($hostRuntimeSourcePaths+$analysisSourcePaths)|ForEach-Object{"inputs/code/$_"})
 $continuationCapacity=$null;$continuationGuards=[Collections.ArrayList]::new();$continuationPredecessor=$null;$continuationChain=@()
@@ -291,7 +288,7 @@ catch{$leaseFailure=$_;foreach($stream in $continuationGuards){$stream.Dispose()
 
 try{
   $codeRoot=Join-Path $inputDir 'code'
-  foreach($area in @('src/msplatform','common/contracts','common/simion','projects/rf_multipole_ion_optics/core','projects/rf_multipole_ion_optics/runtime','projects/rf_multipole_ion_optics/analysis','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/comsol','projects/rf_multipole_ion_optics/simion')){
+  foreach($area in @('src/msplatform','common/contracts','common/paths','common/simion','projects/rf_multipole_ion_optics/core','projects/rf_multipole_ion_optics/runtime','projects/rf_multipole_ion_optics/analysis','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/variants','projects/rf_multipole_ion_optics/comsol','projects/rf_multipole_ion_optics/simion')){
     $sourceRoot=Join-Path $repoRoot $area;$destinationRoot=Join-Path $codeRoot $area
     Get-ChildItem -LiteralPath $sourceRoot -Recurse -File|Where-Object{
       $_.Extension -in @('.py','.json','.ps1','.lua')
@@ -445,34 +442,6 @@ try{
   if($resolvedRuntimeDocument-and $resolvedHash-ne
     [string]$resolvedRuntimeDocument.design_profile_resolution.resolved_design.resolved_sha256
   ){throw 'Frozen resolved design differs from the resolved runtime snapshot.'}
-  $fieldSamplingPlan=$null;$fieldSamplePoints=$null;$fieldSampleAuthority=$null;$fieldPreregistration=$null
-  if($fieldOnly){
-    $fieldPreregistration=Assert-MultipoleFieldPreregistration -Path $EvidenceContractPath -RepoRoot $repoRoot `
-      -ProjectId $ProjectId -RunId $RunId -RuntimeProfileId $RuntimeProfileId -DesignProfileId $DesignProfileId `
-      -ParticleSourceProfileId ([string]$resolvedBudgetPreflight.particle_source_profile_id) `
-      -SolverNumericsProfileId ([string]$resolvedBudgetPreflight.solver_numerics_profile_id) `
-      -RetentionClass $RetentionClass `
-      -ExpectedResolvedSha256 ([string]$resolvedBudgetPreflight.expected_run_parent_resolved_design_sha256) `
-      -EngineeringBudgetPath $engineeringBudgetInput -Solver simion
-    $planInput=[IO.Path]::GetFullPath((Join-Path $repoRoot ([string]$fieldPreregistration.field_sampling.plan_path)))
-    $fieldSamplingPlan=Copy-VerifiedRunInput -Source $planInput -Destination (Join-Path $inputDir 'stationary_field_sampling_plan.json')
-    $fieldSamplePoints=Join-Path $inputDir 'stationary_field_sample_points.csv'
-    $fieldSampleAuthority=Join-Path $inputDir 'stationary_field_sampling_authority.json'
-    Push-Location $codeRoot
-    try{
-      $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
-      & $python -m projects.rf_multipole_ion_optics.analysis.stationary_field_sampling generate `
-        --resolved-design $resolved --sampling-plan $fieldSamplingPlan --output $fieldSamplePoints
-      if($LASTEXITCODE-ne0){throw 'SIMION stationary common-point generation failed.'}
-      & $python -m projects.rf_multipole_ion_optics.analysis.stationary_field_sampling authorize `
-        --resolved-design $resolved --sampling-plan $fieldSamplingPlan --points $fieldSamplePoints `
-        --source-id ('simion:'+$RunId) --output $fieldSampleAuthority
-      if($LASTEXITCODE-ne0){throw 'SIMION stationary BVP authorization failed.'}
-    }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
-    if(@(Get-Content -LiteralPath $fieldSamplePoints -Encoding UTF8).Count-1-ne[int64]$fieldPreregistration.field_sampling.expected_point_count){
-      throw 'SIMION stationary common-point count differs from preregistration.'
-    }
-  }
   $candidateRequest=$null
   if($resolvedRuntimeDocument-and
     $resolvedRuntimeDocument.design_profile_resolution.PSObject.Properties.Name-contains'candidate_request'){
@@ -839,18 +808,6 @@ print(json.dumps(prepare_exit_observation_inputs(run,json.loads(resolved.read_te
   })
   $staticEntries=@($staticRows|ForEach-Object{"{electrode_id=$($_.electrode_id),potential_v=$($_.potential_v)}"})
   $staticLua="static_electrodes={$($staticEntries-join',')},"
-  $stationaryVoltages=$null
-  if($fieldOnly){
-    if($rectangular-or$segmentedRodGeometry-or@($staticRows).Count-ne0){
-      throw 'SIMION stationary export requires the bare unsegmented finite3D BVP.'
-    }
-    $stationaryVoltages=@{
-      differential=@($electrodesById.Values|Sort-Object electrode_id|ForEach-Object{
-        '{0}={1}'-f[int]$_.electrode_id,(100*(3-2*[int]$_.electrode_group)).ToString('R',[Globalization.CultureInfo]::InvariantCulture)})
-      static=@($electrodesById.Values|Sort-Object electrode_id|ForEach-Object{
-        '{0}={1}'-f[int]$_.electrode_id,([double]$_.common_mode_V).ToString('R',[Globalization.CultureInfo]::InvariantCulture)})
-    }
-  }
   $paBasisElectrodeIds+=@($staticRows|ForEach-Object{[int]$_.electrode_id})
   $normalizedGem=(Get-Content -LiteralPath $gem -Encoding ASCII|Where-Object{
     $_-notmatch'^; parent_resolved_sha256='
@@ -958,8 +915,6 @@ print(json.dumps(prepare_exit_observation_inputs(run,json.loads(resolved.read_te
     simion_fly_physics=$flyPhysicsPath;
     simion_execution_batch_plan=$batchPlan;
     evidence_contract=$evidence;simion_gem=$gem;simion_fly2=$fly2;simion_source_states=$states;
-    stationary_field_sampling_plan=$fieldSamplingPlan;stationary_field_sample_points=$fieldSamplePoints;
-    stationary_field_sampling_authority=$fieldSampleAuthority;
     simion_rf_drive_kernel=$rfDriveKernelLua;
     clock_authority=(Join-Path $inputDir 'clock_authority.json');instrument_epoch=(Join-Path $inputDir 'instrument_epoch.json');
     resolved_runtime_profile=$resolvedRuntimeProfile;
@@ -1103,62 +1058,6 @@ print(json.dumps(prepare_exit_observation_inputs(run,json.loads(resolved.read_te
         -IobPath (Join-Path $physicalRunDir 'simion/quad_monolithic.iob') -NativeOperations $nativeOperations -Python $python -RepoRoot $codeRoot
       $fieldCheckpointOutputs+=@($checkpoint.output_paths)
     }
-  }
-  if((Get-Variable fieldOnly -ErrorAction SilentlyContinue)-and$fieldOnly){
-    $fieldSamples=Join-Path $resultDir 'stationary_field_samples.csv'
-    $fieldSampleValidation=Join-Path $resultDir 'stationary_field_sample_validation.json'
-    $sampler=Join-Path $solverDir 'export_stationary_field_samples.lua'
-    Copy-VerifiedRunInput -Source (Join-Path $codeRoot 'projects/rf_multipole_ion_optics/simion/export_stationary_field_samples.lua') `
-      -Destination $sampler|Out-Null
-    $controller=if($null-ne$fieldPlan){[string]$fieldPlan.controller_path}else{Join-Path $solverDir 'quad_monolithic.pa0'}
-    $originText=(@([double]$origin,[double]$origin,[double]$zShift)|ForEach-Object{$_.ToString('R',[Globalization.CultureInfo]::InvariantCulture)})-join','
-    $cellText=(@([double]$resolvedCellMmX,[double]$resolvedCellMmY,[double]$resolvedCellMmZ)|ForEach-Object{$_.ToString('R',[Globalization.CultureInfo]::InvariantCulture)})-join','
-    $caseOutputs=@{}
-    foreach($fieldCase in @('differential','static')){
-      $caseOutput=Join-Path $resultDir ('stationary_field_samples__'+$fieldCase+'.csv');$caseOutputs[$fieldCase]=$caseOutput
-      $sampleArguments=@('--nogui','--noprompt','lua',$sampler,$controller,$fieldSamplePoints,$caseOutput,$fieldCase,$originText,$cellText)+@($stationaryVoltages[$fieldCase])
-      Invoke-SimionStep ('stationary_sample_'+$fieldCase) $sampleArguments
-    }
-    $combined=@(Get-Content -LiteralPath $caseOutputs.differential -Encoding UTF8)+@(Get-Content -LiteralPath $caseOutputs.static -Encoding UTF8|Select-Object -Skip 1)
-    Set-Content -LiteralPath $fieldSamples -Value $combined -Encoding UTF8
-    Push-Location $codeRoot
-    try{
-      $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
-      & $python -m projects.rf_multipole_ion_optics.analysis.stationary_field_sampling validate `
-        --input $fieldSamples --output $fieldSampleValidation --authority $fieldSampleAuthority
-      if($LASTEXITCODE-ne0){throw 'SIMION stationary native output validation failed.'}
-    }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
-    $validationDocument=Get-Content -LiteralPath $fieldSampleValidation -Raw -Encoding UTF8|ConvertFrom-Json
-    if([int64]$validationDocument.point_count-ne[int64]$fieldPreregistration.field_sampling.expected_point_count-or
-      [int64]$validationDocument.row_count-ne[int64]$fieldPreregistration.field_sampling.expected_row_count){
-      throw 'SIMION stationary sample coverage differs from preregistration.'
-    }
-    Set-RfRunPhase 'finalization'
-    $summaryDocument=[ordered]@{schema_version=1;role='multipole_simion_finite_3d_field_summary';status='success';run_id=$RunId;
-      project_id=$ProjectId;design_profile_id=$DesignProfileId;parent_resolved_design_sha256=$resolvedHash;
-      stop_stage='field_solve';field_status='available';scientific_qualification='not_granted';
-      field_sample_point_count=[int64]$validationDocument.point_count;field_sample_row_count=[int64]$validationDocument.row_count;
-      particle_physics_created=0;particle_studies_created=0;fly_calls=0;model_level='L3';formal_gate_passed=$false;
-      execution_status='completed';data_validity='valid';scientific_result='DESCRIPTIVE_ONLY';failure_stage=$null;failure_reason=$null;
-      recovery_action='none';phase_timings_seconds=$phaseTimings;elapsed_before_finalization_seconds=$runTimer.Elapsed.TotalSeconds}
-    $summaryDocument|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $summary -Encoding UTF8
-    $outputs=@($summary,$fieldSamples,$fieldSampleValidation,$resourceUsage)+@($caseOutputs.Values)+@($fieldCheckpointOutputs|Select-Object -Unique)
-    $outputs+=@(Get-ChildItem -LiteralPath $solverDir -File|Select-Object -ExpandProperty FullName)
-    $outputs+=@(Get-ChildItem -LiteralPath $logDir -Recurse -File|Select-Object -ExpandProperty FullName)
-    $outputs=@($outputs|Where-Object{Test-Path -LiteralPath $_ -PathType Leaf}|Select-Object -Unique)
-    $writerCompletion=Get-RfSimionStoppedWriterCompletion -HostLease $hostExecutionLease -NativeOperations $nativeOperations -State $hostReleaseState
-    $hostReleased=$hostReleaseState.released
-    $ownerOutputs=@($outputs|ForEach-Object{Convert-WorkflowOwnerPath $ownerContext $_}|Where-Object{
-      $_.StartsWith($physicalRunDir.TrimEnd('\')+'\',[StringComparison]::OrdinalIgnoreCase)}|Select-Object -Unique)
-    $resourceItems=@(@{case_name='stationary_fields';path=(Convert-WorkflowOwnerPath $ownerContext $resourceUsage)})
-    $deferFinalization=$true
-    $null=Complete-RunArtifactPowerShellOwner -Context $ownerContext -Status success -Summary $summaryDocument `
-      -OutputPaths $ownerOutputs -RequiredOutputPaths @($fieldSamples,$fieldSampleValidation) -WriterCompletion $writerCompletion `
-      -WritersStopped $true -ResourceUsagePaths $resourceItems -OriginalFailure $null
-    $deferFinalization=$false;$continuationCapacity=$null;$hostExecutionOutcome='success'
-    Write-Output "MULTIPOLE_SIMION_WORKFLOW_RESULT=$ResultPath"
-    Write-Output "MULTIPOLE_SIMION_RESOLVED=PASS PROJECT=$ProjectId PROFILE=$DesignProfileId RUN_ID=$RunId STOP_STAGE=field_solve QUALIFICATION=UNQUALIFIED"
-    return
   }
   if($null-eq$fieldPlan-or$fieldPlan.requires_iob_rebind){
   Copy-Item -LiteralPath $templateIob -Destination (Join-Path $solverDir 'quad_monolithic.iob')

@@ -17,12 +17,11 @@ param(
   [string]$RetentionReason='',
   [string]$SourceFamilyPath='',
   [string]$OperatingPointId='',
-  [ValidateSet('transport','mesh_build','field_solve')][string]$StopStage='transport',
+  [ValidateSet('transport','mesh_build')][string]$StopStage='transport',
   [string]$ResolvedRuntimeProfilePath='',
   [Parameter(Mandatory,ParameterSetName='Resume')][switch]$ResumeFinalization,
   [Parameter(Mandatory,ParameterSetName='Analyze')][switch]$AnalyzeOnly,
   [Parameter(ParameterSetName='Analyze')][switch]$ReextractFromModel,
-  [Parameter(ParameterSetName='Analyze')][string]$StationaryFieldSamplingPlanPath='',
   [Parameter(Mandatory,ParameterSetName='Analyze')][string]$ParentManifestPath,
   [string]$ResultPath='',
   [Parameter(ParameterSetName='Resume')][string]$ArtifactRootPath=''
@@ -552,8 +551,7 @@ print(json.dumps(admit(Path(sys.argv[1]),sys.argv[2]=='1')))
 
 function Invoke-FiniteComsolSavedExtraction {
   param([Collections.IDictionary]$Context,[Collections.IDictionary]$State,[Collections.IDictionary]$Source,
-    [Collections.IDictionary]$Frozen,[string]$CodeRoot,[string]$Python,[string]$RunId,[pscustomobject]$Limits,
-    [string]$StationaryPointsPath='',[string]$StationarySamplesPath='')
+    [Collections.IDictionary]$Frozen,[string]$CodeRoot,[string]$Python,[string]$RunId,[pscustomobject]$Limits)
   $inputDir=Join-Path $Context.run_directory 'inputs';$resultDir=Join-Path $Context.run_directory 'results'
   $request=Join-Path $inputDir 'saved_extraction_request.json'
   $report=Join-Path $Context.run_directory 'logs/comsol_saved_extraction.txt'
@@ -565,8 +563,7 @@ function Invoke-FiniteComsolSavedExtraction {
   $binding=Join-Path $inputDir 'saved_extraction_binding.json'
   Write-RunJson -Path $binding -Value @{outputs=$outputs;model_path=$Source.exports.model.path;
     mapping_path=$Source.exports.mapping.path;source_path=$Source.inputs.particle_source.path;
-    source_metadata_path=$Frozen.particle_source_metadata;resolved_path=$Frozen.multipole_resolved_design;numerics_path=$Frozen.solver_numerics;
-    stationary_points_path=$StationaryPointsPath;stationary_output_path=$StationarySamplesPath} -Depth 20
+    source_metadata_path=$Frozen.particle_source_metadata;resolved_path=$Frozen.multipole_resolved_design;numerics_path=$Frozen.solver_numerics} -Depth 20
   $task=Join-Path $inputDir 'reextract_saved_finite_solution.m'
   $State.launcher_receipt=Join-Path $Context.run_directory 'logs/comsol_launcher_completion.json'
   $launcher=Join-Path $CodeRoot 'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1'
@@ -577,7 +574,6 @@ function Invoke-FiniteComsolSavedExtraction {
   $stderr=Join-Path $Context.run_directory 'logs/saved_extraction.stderr.log'
   $nativePaths=@($launcher,$bootstrap,$task,$request,$nativeRequest,$binding,$report,$State.launcher_receipt,$budgetsPath,$CodeRoot,$stdout,$stderr,$usage,
     $Source.exports.model.path,$Source.exports.mapping.path,$Source.inputs.particle_source.path,$Frozen.particle_source_metadata)+@($outputs.Values)
-  if($StationaryPointsPath){$nativePaths+=@($StationaryPointsPath,$StationarySamplesPath)}
   $native=Get-RunNativeExecutionContext -Package $Context.package -Paths $nativePaths -Tool COMSOL
   $Context.execution_run_directory=[string]$Context.package.run_dir
   $nativeMap=@{};for($index=0;$index-lt$nativePaths.Count;$index++){$nativeMap[$nativePaths[$index]]=$native.projected_paths[$index]}
@@ -599,8 +595,6 @@ if any(isinstance(value,bool) or not isinstance(value,int) or value<=0 for name 
 if count!=metadata['particle_count'] or len(set(context['source_ids']))!=count or sorted(context['native_order'])!=list(range(1,count+1)) or len(context['source_birth_s'])!=count:
     raise ValueError('Original native release mapping does not close the mother cohort')
 context.update(solution_on='sol_on',solution_zero='sol_zero',dataset_on='pd_on_temp',dataset_zero='pd_zero_temp',outputs=binding['outputs'])
-if binding.get('stationary_points_path'):
-    context['stationary']={'points_path':binding['stationary_points_path'],'output_path':binding['stationary_output_path']}
 request={key:binding[key] for key in ('model_path','source_path','source_metadata_path','mapping_path')}
 request['context']=context
 Path(sys.argv[2]).write_text(json.dumps(request,allow_nan=False),encoding='utf-8')
@@ -648,10 +642,6 @@ end
   $executionRequest=Get-Content -LiteralPath $request -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
   foreach($key in @('model_path','source_path','source_metadata_path','mapping_path')){$executionRequest[$key]=$nativeMap[$executionRequest[$key]]}
   foreach($key in @($executionRequest.context.outputs.Keys)){$executionRequest.context.outputs[$key]=$nativeMap[$executionRequest.context.outputs[$key]]}
-  if($StationaryPointsPath){
-    $executionRequest.context.stationary.points_path=$nativeMap[$StationaryPointsPath]
-    $executionRequest.context.stationary.output_path=$nativeMap[$StationarySamplesPath]
-  }
   Write-RunJson -Path $nativeRequest -Value $executionRequest -Depth 100
   $nativeEnvironment=@{};foreach($key in $native.environment.Keys){$nativeEnvironment[$key]=$native.environment[$key]}
   $nativeEnvironment.RF_FINITE_REEXTRACTION_REQUEST=$nativeMap[$nativeRequest]
@@ -693,11 +683,6 @@ end
     }
     foreach($path in $outputs.Values){if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "Saved-solution extraction output missing: $path"}}
     $savedOutputs=@($outputs.Values)+@($report,$usage);$savedRequired=@($report,$outputs.events,$outputs.primary_canonical,$outputs.control_canonical)
-    if($StationaryPointsPath){
-      if($text-notmatch'(?m)^CHECKPOINT=STATIONARY_FIELD_SAMPLES_COMPLETE\r?$'){throw 'Saved stationary export completion is absent.'}
-      if(-not(Test-Path -LiteralPath $StationarySamplesPath -PathType Leaf)){throw 'Saved stationary sample output is missing.'}
-      $savedOutputs+=$StationarySamplesPath;$savedRequired+=$StationarySamplesPath
-    }
     $State.saved_extraction=@{completed=$true;commercial_model_load=$true;native_solves=0;parent_model_saved=$false;report_path=$report;source_model_record=$Source.exports.model}
     return @{code_root=$nativeMap[$CodeRoot];exports=@{events=@{path=$outputs.events};primary_state=@{path=$outputs.primary_canonical};control_state=@{path=$outputs.control_canonical}};
       outputs=$savedOutputs;required=$savedRequired}
@@ -709,7 +694,7 @@ end
 
 function Invoke-FiniteComsolAnalysisChild {
   param([string]$ParentManifestPath,[string]$EngineeringBudgetPath,[string]$Python,[string]$RepoRoot,[string]$RunId,[string]$ResultPath,
-    [string]$RetentionClass,[string]$RetentionReason,[switch]$ReextractFromModel,[string]$StationaryFieldSamplingPlanPath='')
+    [string]$RetentionClass,[string]$RetentionReason,[switch]$ReextractFromModel)
   $parent=(Resolve-Path -LiteralPath $ParentManifestPath).Path
   $reader=Enter-RunTerminalConsumptionGuard -RunDirectory (Split-Path -Parent $parent)
   $capacity=$null;$package=$null;$context=$null;$failure=$null
@@ -739,7 +724,7 @@ function Invoke-FiniteComsolAnalysisChild {
       if($LASTEXITCODE-ne0){throw 'Analysis engineering budget differs from frozen parent authority.'}
     }
     $analysisBudget=($budgetText-join"`n")|ConvertFrom-Json -AsHashtable -Depth 100
-    $analysisAreas=@('src/msplatform','common/contracts','common/paths','projects/rf_multipole_ion_optics/core','projects/rf_multipole_ion_optics/runtime','projects/rf_multipole_ion_optics/analysis')
+    $analysisAreas=@('src/msplatform','common/contracts','common/paths','projects/rf_multipole_ion_optics/core','projects/rf_multipole_ion_optics/runtime','projects/rf_multipole_ion_optics/analysis','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/variants')
     $analysisAdditional=@()
     if($ReextractFromModel){
       $analysisAreas+=@('common/comsol','projects/rf_multipole_ion_optics/comsol')
@@ -802,44 +787,10 @@ function Invoke-FiniteComsolAnalysisChild {
     $state.phase_timings.prepare=$state.timer.Elapsed.TotalSeconds
     $analysisExports=$source.exports;$analysisCodeRoot=$copied.code_root
     $nativeOutputs=@();$nativeRequired=@()
-    $stationaryPoints='';$stationarySamples='';$stationaryAuthority='';$stationaryValidation=''
-    if($StationaryFieldSamplingPlanPath){
-      $stationaryPlan=Copy-VerifiedRunInput -Source (Resolve-Path -LiteralPath $StationaryFieldSamplingPlanPath).Path `
-        -Destination (Join-Path $package.input_dir 'stationary_field_sampling_plan.json')
-      $stationaryPoints=Join-Path $package.input_dir 'stationary_field_sample_points.csv'
-      $stationarySamples=Join-Path $package.result_dir 'stationary_field_samples.csv'
-      $stationaryAuthority=Join-Path $package.input_dir 'stationary_field_sampling_authority.json'
-      $stationaryValidation=Join-Path $package.result_dir 'stationary_field_sample_validation.json'
-      Push-Location $analysisCodeRoot
-      try{
-        $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
-        & $Python -m projects.rf_multipole_ion_optics.analysis.stationary_field_sampling generate `
-          --resolved-design $frozen.multipole_resolved_design --sampling-plan $stationaryPlan --output $stationaryPoints
-        if($LASTEXITCODE-ne0){throw 'Saved COMSOL stationary common-point generation failed.'}
-        & $Python -m projects.rf_multipole_ion_optics.analysis.stationary_field_sampling authorize `
-          --resolved-design $frozen.multipole_resolved_design --sampling-plan $stationaryPlan --points $stationaryPoints `
-          --source-id ('comsol_saved:'+$RunId) --output $stationaryAuthority
-        if($LASTEXITCODE-ne0){throw 'Saved COMSOL stationary BVP authorization failed.'}
-      }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
-      $child.inputs.stationary_field_sampling_plan=$stationaryPlan;$child.inputs.stationary_field_sample_points=$stationaryPoints
-      $child.inputs.stationary_field_sampling_authority=$stationaryAuthority
-      Write-RunJson -Atomic -Path (Join-Path $context.run_directory 'run_config.json') -Value $child -Depth 100
-    }
     if($ReextractFromModel){
       $cold=Invoke-FiniteComsolSavedExtraction -Context $context -State $state -Source $source -Frozen $frozen -CodeRoot $copied.code_root `
-        -Python $Python -RunId $RunId -Limits ([pscustomobject]$analysisBudget.limits) `
-        -StationaryPointsPath $stationaryPoints -StationarySamplesPath $stationarySamples
+        -Python $Python -RunId $RunId -Limits ([pscustomobject]$analysisBudget.limits)
       $analysisExports=$cold.exports;$analysisCodeRoot=$cold.code_root;$nativeOutputs=$cold.outputs;$nativeRequired=$cold.required
-      if($stationarySamples){
-        Push-Location $analysisCodeRoot
-        try{
-          $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
-          & $Python -m projects.rf_multipole_ion_optics.analysis.stationary_field_sampling validate `
-            --input $stationarySamples --output $stationaryValidation --authority $stationaryAuthority
-          if($LASTEXITCODE-ne0){throw 'Saved COMSOL stationary native output validation failed.'}
-        }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
-        $nativeOutputs+=@($stationarySamples,$stationaryValidation);$nativeRequired+=@($stationarySamples,$stationaryValidation)
-      }
     }
     $hostBudget=Get-HostResourceBudget -Role COMSOL -Stage postprocess
     $hostBudget.memory_bytes=[long]$analysisBudget.limits.process_tree_working_set_bytes
@@ -880,10 +831,8 @@ function Invoke-FiniteComsolAnalysisChild {
 if($AnalyzeOnly){
   $overrides=@('EvidenceContractPath','MeshAutoLevel','WorkingRegionMaximumElementSizeMm','MinimumElementSizeMm','RfStepsPerPeriod','MaximumTimeUs','SourceFamilyPath','OperatingPointId','StopStage','ResolvedRuntimeProfilePath')
   if(@($overrides|Where-Object{$PSBoundParameters.ContainsKey($_)}).Count){throw 'AnalyzeOnly uses parent frozen scientific authority; scientific overrides are not accepted.'}
-  if($StationaryFieldSamplingPlanPath-and-not$ReextractFromModel){throw 'Stationary saved export requires AnalyzeOnly -ReextractFromModel.'}
   Invoke-FiniteComsolAnalysisChild -ParentManifestPath $ParentManifestPath -EngineeringBudgetPath $EngineeringBudgetPath -Python $python -RepoRoot $repoRoot -RunId $RunId `
-    -ResultPath $ResultPath -RetentionClass $RetentionClass -RetentionReason $RetentionReason -ReextractFromModel:$ReextractFromModel `
-    -StationaryFieldSamplingPlanPath $StationaryFieldSamplingPlanPath
+    -ResultPath $ResultPath -RetentionClass $RetentionClass -RetentionReason $RetentionReason -ReextractFromModel:$ReextractFromModel
   return
 }
 
@@ -918,7 +867,7 @@ try{
     throw 'COMSOL resolved resource budget omits the runtime-profile stop stage.'
   }
   $authorizedStopStage=[string]$resolvedBudget.stop_stage
-  if($authorizedStopStage-notin@('transport','mesh_build','field_solve')){
+  if($authorizedStopStage-notin@('transport','mesh_build')){
     throw 'COMSOL resolved resource budget has an unsupported runtime-profile stop stage.'
   }
   if($StopStage-ne$authorizedStopStage){
@@ -969,22 +918,6 @@ try{
   if($resolvedBudget.limits.PSObject.Properties.Name-contains'maximum_mesh_cells'){
     $maximumMeshCells=[int64]$resolvedBudget.limits.maximum_mesh_cells
   }
-  $fieldPreregistration=$null
-  $fieldSamplingPlanInput=$null
-  if($StopStage-eq'field_solve'){
-    $fieldPreregistration=Assert-MultipoleFieldPreregistration `
-      -Path $EvidenceContractPath -RepoRoot $repoRoot -ProjectId $ProjectId `
-      -RunId $RunId -RuntimeProfileId $RuntimeProfileId `
-      -DesignProfileId $DesignProfileId `
-      -ParticleSourceProfileId ([string]$resolvedBudget.particle_source_profile_id) `
-      -SolverNumericsProfileId ([string]$resolvedBudget.solver_numerics_profile_id) `
-      -RetentionClass $RetentionClass `
-      -ExpectedResolvedSha256 ([string]$resolvedBudget.expected_run_parent_resolved_design_sha256) `
-      -EngineeringBudgetPath $engineeringBudgetInput
-    $fieldSamplingPlanInput=[IO.Path]::GetFullPath(
-      (Join-Path $repoRoot ([string]$fieldPreregistration.field_sampling.plan_path))
-    )
-  }
   $authorizedHmin=if($authorizedNumerics.mesh.PSObject.Properties.Name -contains 'minimum_element_size_mm'){$authorizedNumerics.mesh.minimum_element_size_mm}else{$null}
   if($null-ne$authorizedHmin-and([double]::IsNaN([double]$authorizedHmin)-or[double]::IsInfinity([double]$authorizedHmin)-or[double]$authorizedHmin-le0)){
     throw 'COMSOL authorized minimum element size must be positive finite.'
@@ -1006,11 +939,12 @@ try{
   Remove-Item -LiteralPath $budgetPreflight -Force -ErrorAction SilentlyContinue
 }
 $hostRuntimeSourcePaths=@(
+  'config/project_registry.json',
   'common/host_execution_lease.ps1','common/host_resource_scheduler.py',
   'src/msplatform/execution/resources/host_resource_policy.json','common/require_powershell7.ps1','common/resource_budget_support.ps1','common/resource_budget_support.ps1')
 $analysisSourcePaths=@('src/msplatform/analysis/particle_census.py','src/msplatform/backends/simion/native_completion.py')
 $executionCapacityPaths=Get-RunPackageCopiedSourcePaths -RepoRoot $repoRoot `
-  -SourceRelativeDirectories @('src/msplatform','common/contracts','common/paths','common/comsol','projects/rf_multipole_ion_optics/core','projects/rf_multipole_ion_optics/runtime','projects/rf_multipole_ion_optics/analysis','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/comsol','projects/rf_multipole_ion_optics/simion') `
+  -SourceRelativeDirectories @('src/msplatform','common/contracts','common/paths','common/comsol','projects/rf_multipole_ion_optics/core','projects/rf_multipole_ion_optics/runtime','projects/rf_multipole_ion_optics/analysis','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/variants','projects/rf_multipole_ion_optics/comsol','projects/rf_multipole_ion_optics/simion') `
   -Extensions @('.py','.json','.ps1','.m','.lua')
 $executionCapacityPaths+=@(($hostRuntimeSourcePaths+$analysisSourcePaths)|ForEach-Object{"inputs/code/$_"})
 $entryScriptHash=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash
@@ -1047,7 +981,7 @@ $ownerState.host_lease=Enter-HostExecutionLease -StatePath $workspacePaths.host_
 $comsolRunFailure=$null
 
   $copied=Copy-FiniteComsolRuntime -RepoRoot $repoRoot -InputDir $inputDir -SourceAreas @(
-    'src/msplatform','common/contracts','common/paths','common/comsol','projects/rf_multipole_ion_optics/core','projects/rf_multipole_ion_optics/runtime','projects/rf_multipole_ion_optics/analysis','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/comsol','projects/rf_multipole_ion_optics/simion') -AdditionalPaths @($hostRuntimeSourcePaths+$analysisSourcePaths)
+    'src/msplatform','common/contracts','common/paths','common/comsol','projects/rf_multipole_ion_optics/core','projects/rf_multipole_ion_optics/runtime','projects/rf_multipole_ion_optics/analysis','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/variants','projects/rf_multipole_ion_optics/comsol','projects/rf_multipole_ion_optics/simion') -AdditionalPaths @($hostRuntimeSourcePaths+$analysisSourcePaths)
   $codeRoot=$copied.code_root;$codeInventory=$copied.inventory_path;$inventory=$copied.files
 
   $profileResolution=Join-Path $inputDir 'design_profile_resolution.json'
@@ -1130,31 +1064,6 @@ $comsolRunFailure=$null
   if($expectedResolvedHash-and$resolvedHash-ne$expectedResolvedHash){
     throw "Compiled resolved design differs from the authorized run identity: expected=$expectedResolvedHash actual=$resolvedHash"
   }
-  $fieldSamplingPlan=$null
-  $fieldSamplePoints=$null
-  $fieldSampleAuthority=$null
-  if($StopStage-eq'field_solve'){
-    $fieldSamplingPlan=Join-Path $inputDir 'stationary_field_sampling_plan.json'
-    $fieldSamplePoints=Join-Path $inputDir 'stationary_field_sample_points.csv'
-    $fieldSampleAuthority=Join-Path $inputDir 'stationary_field_sampling_authority.json'
-    Copy-Item -LiteralPath $fieldSamplingPlanInput -Destination $fieldSamplingPlan
-    Push-Location $codeRoot
-    try{
-      $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
-      & $python -m projects.rf_multipole_ion_optics.analysis.stationary_field_sampling generate `
-        --resolved-design $resolved --sampling-plan $fieldSamplingPlan `
-        --output $fieldSamplePoints
-      if($LASTEXITCODE-ne 0){throw 'Governed stationary-field sample generation failed.'}
-      & $python -m projects.rf_multipole_ion_optics.analysis.stationary_field_sampling authorize `
-        --resolved-design $resolved --sampling-plan $fieldSamplingPlan --points $fieldSamplePoints `
-        --source-id ('comsol:'+$RunId) --output $fieldSampleAuthority
-    }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
-    if($LASTEXITCODE-ne 0){throw 'Governed stationary-field BVP authorization failed.'}
-    $fieldSamplePointCount=@(Import-Csv -LiteralPath $fieldSamplePoints).Count
-    if($fieldSamplePointCount-ne[int64]$fieldPreregistration.field_sampling.expected_point_count){
-      throw 'Generated stationary-field sample count differs from preregistration.'
-    }
-  }
   $axialTopology=[string]$design.axial_drive.topology
   $particleSource=Join-Path $inputDir 'particle_source.csv'
   Copy-Item -LiteralPath $particleSourceInput -Destination $particleSource
@@ -1232,8 +1141,6 @@ $comsolRunFailure=$null
   $primaryTrajectories=Join-Path $resultDir 'trajectory_samples__primary.csv'
   $controlTrajectories=Join-Path $resultDir 'trajectory_samples__control.csv'
   $report=Join-Path $logDir 'comsol_finite_3d_transport.txt';$evaluation=Join-Path $resultDir 'evidence_evaluation.json'
-  $fieldSamples=Join-Path $resultDir 'stationary_field_samples.csv'
-  $fieldSampleValidation=Join-Path $resultDir 'stationary_field_sample_validation.json'
   $task=Join-Path $codeRoot 'projects\rf_multipole_ion_optics\comsol\solve_finite_3d_transport.m'
   $configDocument=[ordered]@{schema_version=2;role='multipole_resolved_comsol_run_config';run_id=$RunId;project=$ProjectId;
     mode='resolved_design_transport';project_root=$profile.project_root;
@@ -1249,8 +1156,7 @@ $comsolRunFailure=$null
       multipole_resolved_design=$resolved;particle_source=$particleSource;
       particle_source_metadata=$sourceMetadata;particle_source_family=$sourceFamily;particle_source_volume_snapshot_receipt=$volumeSnapshotReceipt;
       solver_numerics=$numerics;finite_extraction_science=$extractionScience;code_inventory=$codeInventory;
-      evidence_contract=$evidence;stationary_field_sampling_plan=$fieldSamplingPlan;
-      stationary_field_sample_points=$fieldSamplePoints;stationary_field_sampling_authority=$fieldSampleAuthority;comsol_task=$task};
+      evidence_contract=$evidence;comsol_task=$task};
     parameters=[ordered]@{model_level='L3';runtime_profile_id=$RuntimeProfileId;design_profile_id=$DesignProfileId;
       operating_mode_id=$modeId;
       operating_point_id=$(if($sourceFamily){$OperatingPointId}else{$null});mesh_convergence=$false;
@@ -1285,8 +1191,6 @@ $comsolRunFailure=$null
     $env:MULTIPOLE_L3_CONTROL_TRAJECTORIES=$controlTrajectories
     $env:MULTIPOLE_L3_SOLVER_PROGRESS_DIR=$solverProgressDir
     $env:MULTIPOLE_L3_STOP_STAGE=$StopStage
-    $env:MULTIPOLE_L3_FIELD_SAMPLE_POINTS=if($fieldSamplePoints){$fieldSamplePoints}else{''}
-    $env:MULTIPOLE_L3_FIELD_SAMPLES=if($StopStage-eq'field_solve'){$fieldSamples}else{''}
     $env:MULTIPOLE_L3_MAXIMUM_MESH_CELLS=if($null-ne$maximumMeshCells){[string]$maximumMeshCells}else{''}
     $pwsh=(Get-Process -Id $PID).Path
     if($ownerState.host_lease.inherited){
@@ -1394,81 +1298,6 @@ $comsolRunFailure=$null
     $null=Complete-FiniteComsolOwner -Context $ownerContext -State $ownerState -RunId $RunId -Status success -Summary $summaryDocument -Outputs $outputs -Required @($report)
     $hostExecutionOutcome='success'
     Write-Output "MULTIPOLE_COMSOL_RESOLVED=PASS PROJECT=$ProjectId PROFILE=$DesignProfileId RUN_ID=$RunId STOP_STAGE=mesh_build QUALIFICATION=UNQUALIFIED"
-    return
-  }
-  if($StopStage-eq'field_solve'){
-    Push-Location $codeRoot
-    try{
-      $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
-      & $python -m projects.rf_multipole_ion_optics.analysis.stationary_field_sampling validate `
-        --input $fieldSamples --output $fieldSampleValidation --authority $fieldSampleAuthority
-    }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
-    if($LASTEXITCODE-ne 0){throw 'COMSOL stationary-field sample validation failed.'}
-    $fieldSampleValidationDocument=Get-Content -LiteralPath $fieldSampleValidation `
-      -Raw -Encoding UTF8|ConvertFrom-Json
-    if([string]$fieldSampleValidationDocument.status-ne'PASS'-or
-      [int64]$fieldSampleValidationDocument.point_count-ne
-        [int64]$fieldPreregistration.field_sampling.expected_point_count-or
-      [int64]$fieldSampleValidationDocument.row_count-ne
-        [int64]$fieldPreregistration.field_sampling.expected_row_count){
-      throw 'COMSOL stationary-field sample validation differs from preregistration.'
-    }
-    $fieldSolve=Assert-MultipoleFieldSolveReport -Path $report
-    $fieldReportContent=Get-Content -LiteralPath $report -Raw -Encoding UTF8
-    foreach($token in $fieldPreregistration.required_report.tokens){
-      if($fieldReportContent-notmatch("(?m)^$([regex]::Escape([string]$token))\r?$")){
-        throw "COMSOL field-solve report is missing preregistered token: $token"
-      }
-    }
-    foreach($checkpoint in $fieldPreregistration.required_report.forbidden_checkpoints){
-      if($fieldReportContent-match("(?m)^$([regex]::Escape([string]$checkpoint))\r?$")){
-        throw "COMSOL field-solve report contains forbidden checkpoint: $checkpoint"
-      }
-    }
-    if($fieldSolve.stationary_linear_solver_backend-ne$authorizedBackend-or
-      $fieldSolve.electric_potential_element_order-ne$authorizedElementOrder){
-      throw 'COMSOL field-solve report differs from the authorized solver numerics.'
-    }
-    if($authorizedBackend-eq'cg_amg'){
-      $actualConfiguration=$fieldSolve.stationary_solver_configuration
-      if([double]$actualConfiguration.relative_tolerance-ne
-          [double]$authorizedIterativeSolver.relative_tolerance-or
-        [int64]$actualConfiguration.maximum_linear_iterations-ne
-          [int64]$authorizedIterativeSolver.maximum_iterations-or
-        [string]$actualConfiguration.linear_error_check-ne
-          [string]$authorizedIterativeSolver.error_check_mode){
-        throw 'COMSOL field-solve convergence settings differ from the authorized solver numerics.'
-      }
-    }
-    $summaryDocument=[ordered]@{schema_version=1;role='multipole_finite_3d_transport_summary';status='success';
-      qualification_status='UNQUALIFIED_FIELD_SOLVE_DIAGNOSTIC_ONLY';project_id=$ProjectId;
-      design_profile_id=$DesignProfileId;parent_resolved_design_sha256=$resolvedHash;
-      model_level='L3';stop_stage='field_solve';
-      stationary_linear_solver_backend=$fieldSolve.stationary_linear_solver_backend;
-      electric_potential_element_order=$fieldSolve.electric_potential_element_order;
-      field_physics_created=$fieldSolve.field_physics_created;
-      field_studies_created=$fieldSolve.field_studies_created;
-      field_solutions_created=$fieldSolve.field_solutions_created;
-      field_dof=$fieldSolve.field_dof;
-      field_solver_evidence=$fieldSolve.field_solver_evidence;
-      stationary_solver_configuration=$fieldSolve.stationary_solver_configuration;
-      field_sample_point_count=[int64]$fieldSampleValidationDocument.point_count;
-      field_sample_row_count=[int64]$fieldSampleValidationDocument.row_count;
-      particle_physics_created=0;particle_studies_created=0;
-      formal_gate_passed=$false}
-    if($null-ne$maximumMeshCells){
-      $summaryDocument.mesh_cells=$meshCells
-      $summaryDocument.maximum_mesh_cells=$maximumMeshCells
-    }
-    $summaryDocument|ConvertTo-Json -Depth 5|Set-Content -LiteralPath $summary -Encoding UTF8
-    $outputs=@($report,$summary,$resourceUsage,$fieldSamples,$fieldSampleValidation)|
-      Where-Object{Test-Path -LiteralPath $_ -PathType Leaf}
-    $outputs+=@(Get-ChildItem -LiteralPath $solverProgressDir -File|ForEach-Object{$_.FullName})
-    $ownerState.phase_timings.analysis=$ownerState.timer.Elapsed.TotalSeconds-$analysisStart
-    $summaryDocument=Get-Content -LiteralPath $summary -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
-    $null=Complete-FiniteComsolOwner -Context $ownerContext -State $ownerState -RunId $RunId -Status success -Summary $summaryDocument -Outputs $outputs -Required @($report,$fieldSamples,$fieldSampleValidation)
-    $hostExecutionOutcome='success'
-    Write-Output "MULTIPOLE_COMSOL_RESOLVED=PASS PROJECT=$ProjectId PROFILE=$DesignProfileId RUN_ID=$RunId STOP_STAGE=field_solve QUALIFICATION=UNQUALIFIED"
     return
   }
   $analysisNativeOutputs=@($events,$trajectories,$plot,$model,(Join-Path $resultDir 'release_source_mapping.json'),(Join-Path $resultDir 'finite_extraction_context.json'),

@@ -304,7 +304,7 @@ $sourceFamily=$null;$volumeSnapshotReceipt=$null;$volumeReceiptIdentity=$null
 $sourceFamilySha=$null;$resolvedHash='fixture';$modeId='fixture';$RuntimeProfileId='fixture';$DesignProfileId='fixture';$StopStage='transport'
 $registry=$null;$descriptor=$null;$profiles=$null;$engineeringBudget=$null;$profileResolution=$null
 $request=$null;$variables=$null;$envelope=$null;$modeRegistry=$null;$resolved=$null;$particleSource=$null
-$sourceMetadata=$null;$numerics=$null;$codeInventory=$null;$evidence=$null;$fieldSamplingPlan=$null;$fieldSamplePoints=$null;$task=$null
+$sourceMetadata=$null;$numerics=$null;$codeInventory=$null;$evidence=$null;$task=$null
 $extractionScience='{science}'
 $start=@($ast.EndBlock.Statements.FindAll({{param($n) $n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$configDocument'}},$true))[0]
 $finish=@($ast.FindAll({{param($n) $n-is[Management.Automation.Language.CommandAst]-and$n.GetCommandName()-eq'Write-RunJson'-and$n.Extent.Text-match'Value \\$configDocument'}},$true))[0]

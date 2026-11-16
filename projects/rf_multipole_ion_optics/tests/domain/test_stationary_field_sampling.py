@@ -10,16 +10,16 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from projects.rf_multipole_ion_optics.analysis.stationary_field_sampling import (
+from msplatform.components.rf_multipole.stationary_field_sampling import (
     FIELD_OUTPUT_COLUMNS,
     StationaryFieldContractError,
     compare_stationary_field_outputs,
     generate_stationary_field_sample_rows,
     load_stationary_field_output_csv,
-    main,
     validate_stationary_bvp,
     validate_stationary_output_authority,
 )
+from msplatform.workflows.rf_stationary import main
 
 
 def _resolved_design() -> dict[str, Any]:
@@ -240,139 +240,157 @@ class StationaryFieldSamplingTest(unittest.TestCase):
         with self.assertRaisesRegex(StationaryFieldContractError,"identity|coordinates"):
             validate_stationary_output_authority(authority,tampered)
 
-    def test_original_entries_wire_zero_compute_saved_export_and_pre_fly_simion_completion(self):
+    def test_installed_backend_resources_replace_project_stationary_duplicates(self):
+        import msplatform.components.rf_multipole.stationary_field_sampling as component
+        import msplatform.workflows.rf_stationary as workflow
+        from msplatform.backends.simion.resources import native_resource_path
         root=Path(__file__).resolve().parents[2]
-        comsol=(root/"runtime/run_finite_3d_transport.ps1").read_text(encoding="utf-8")
-        simion=(root/"runtime/run_simion_finite_3d_transport.ps1").read_text(encoding="utf-8")
-        saved=(root/"comsol/reextract_finite_3d_transport.m").read_text(encoding="utf-8")
-        self.assertIn("StationaryFieldSamplingPlanPath",comsol)
-        self.assertIn("--authority $stationaryAuthority",comsol)
-        self.assertIn("export_comsol_stationary_field_samples",saved)
-        self.assertIn("receipt.native_solves=0",saved)
-        self.assertNotIn("mphsave",saved)
-        self.assertNotRegex(saved,r"(?i)\.compute\s*\(")
-        self.assertIn("export_stationary_field_samples.lua",simion)
-        export_block="if((Get-Variable fieldOnly -ErrorAction SilentlyContinue)-and$fieldOnly){"
-        self.assertEqual(simion.count(export_block),1)
-        self.assertLess(simion.index(export_block),simion.index("Invoke-SimionStep 'build_runtime_iob'"))
-        self.assertIn("-RequiredOutputPaths @($fieldSamples,$fieldSampleValidation)",simion)
+        repo=root.parents[1]
+        self.assertTrue(Path(component.__file__).resolve().is_relative_to(repo/"src"))
+        self.assertTrue(Path(workflow.__file__).resolve().is_relative_to(repo/"src"))
+        self.assertEqual(native_resource_path("export_stationary_field_samples.lua").name,
+                         "export_stationary_field_samples.lua")
+        self.assertTrue((repo/"src/msplatform/backends/comsol/matlab/export_comsol_stationary_field_samples.m").is_file())
+        self.assertFalse((root/"analysis/stationary_field_sampling.py").exists())
+        self.assertFalse((root/"comsol/export_comsol_stationary_field_samples.m").exists())
+        self.assertFalse((root/"simion/export_stationary_field_samples.lua").exists())
 
-    def test_simion_preregistration_binds_actual_solver_authorities_and_implementation(self):
+    def test_installed_preregistration_binds_authorities_and_implementation(self):
         import hashlib
-        import shutil
-        import subprocess
-        if shutil.which("pwsh") is None: self.skipTest("PowerShell 7 required")
+        from msplatform.workflows.rf_stationary import validate_preregistration
         repo=Path(__file__).resolve().parents[4]
-        relative=lambda path:path.relative_to(repo).as_posix()
-        digest=lambda path:hashlib.sha256(path.read_bytes()).hexdigest().upper()
-        budget=self.root/"budget.json";budget.write_text("{}",encoding="utf-8")
-        implementation=[
-            "projects/rf_multipole_ion_optics/runtime/run_simion_finite_3d_transport.ps1",
-            "projects/rf_multipole_ion_optics/runtime/finite_3d_transport_preflight.ps1",
-            "projects/rf_multipole_ion_optics/runtime/project_transport_launcher_support.ps1",
-            "projects/rf_multipole_ion_optics/simion/export_stationary_field_samples.lua",
-            "projects/rf_multipole_ion_optics/analysis/stationary_field_sampling.py"]
         project=repo/"projects/rf_multipole_ion_optics"
+        budget=self.root/"budget.json";budget.write_text("{}",encoding="utf-8")
+        plan=project/"config/contracts/stationary_field_sampling_plan.json"
+        digest=lambda path:hashlib.sha256(path.read_bytes()).hexdigest().upper()
+        implementation=[repo/"src/msplatform/workflows/rf_stationary.py",
+            repo/"src/msplatform/components/rf_multipole/stationary_field_sampling.py",
+            repo/"src/msplatform/backends/comsol/matlab/export_comsol_stationary_field_samples.m",
+            repo/"src/msplatform/backends/simion/resources/export_stationary_field_samples.lua"]
         authorities={"runtime_profiles_sha256":project/"config/runtime_profiles.json",
             "engineering_budget_sha256":budget,"particle_source_profiles_sha256":project/"config/particle_source_profiles.json",
             "design_profiles_sha256":project/"config/design_profiles.json",
             "simion_solver_numerics_sha256":project/"config/simion_solver_numerics.json"}
-        plan=project/"config/contracts/stationary_field_sampling_plan.json"
         tokens=["CHECKPOINT=MESH_COMPLETE","CHECKPOINT=STATIONARY_FIELDS_COMPLETE",
-            "CHECKPOINT=STATIONARY_FIELD_SAMPLES_COMPLETE","STOP_STAGE=field_solve","PARTICLE_PHYSICS_CREATED=0",
-            "PARTICLE_STUDIES_CREATED=0","FIELD_SOLVE_DIAGNOSTIC=PASS","STATUS=PASS"]
+            "CHECKPOINT=STATIONARY_FIELD_SAMPLES_COMPLETE","STOP_STAGE=field_solve",
+            "PARTICLE_PHYSICS_CREATED=0","PARTICLE_STUDIES_CREATED=0",
+            "FIELD_SOLVE_DIAGNOSTIC=PASS","STATUS=PASS"]
         document={"schema_version":2,"role":"multipole_simion_field_solver_isolation_preregistration",
             "status":"authorized_not_run","project_id":"rf_multipole_ion_optics","preregistered_before_run":True,
             "authorization":{"maximum_commercial_run_count":1,"automatic_retry_count":0,"planned_run_id":"fixture",
-                "runtime_profile_id":"fixture-profile","design_profile_id":"fixture-design","particle_source_profile_id":"fixture-source",
-                "simion_solver_numerics_profile_id":"fixture-numerics","stop_stage":"field_solve","retention_class":"solver_review"},
+                "runtime_profile_id":"fixture-profile","design_profile_id":"fixture-design",
+                "particle_source_profile_id":"fixture-source","simion_solver_numerics_profile_id":"fixture-numerics",
+                "stop_stage":"field_solve","retention_class":"solver_review"},
             "frozen_identity":{"expected_run_parent_resolved_design_sha256":"A"*64,
                 **{key:digest(path) for key,path in authorities.items()}},
-            "frozen_implementation":{"files":[{"path":name,"sha256":digest(repo/name)} for name in implementation]},
+            "frozen_implementation":{"files":[{"path":str(path.resolve()),"sha256":digest(path)} for path in implementation]},
             "field_sampling":{"role":"multipole_stationary_field_sampling","expected_point_count":1,"expected_row_count":2,
-                "field_cases":["differential","static"],"plan_path":relative(plan),"plan_sha256":digest(plan)},
+                "field_cases":["differential","static"],"plan_path":str(plan),"plan_sha256":digest(plan)},
             "required_report":{"tokens":tokens,"forbidden_checkpoints":["PRIMARY_PARTICLE_CASE_COMPLETE","CONTROL_PARTICLE_CASE_COMPLETE"]}}
-        path=self.root/"prereg.json";path.write_text(json.dumps(document),encoding="utf-8")
-        q=lambda value:"'"+str(value).replace("'","''")+"'"
-        script=(". "+q(repo/"projects/rf_multipole_ion_optics/runtime/finite_3d_transport_preflight.ps1")+";"
-            "$result=Assert-MultipoleFieldPreregistration -Path "+q(path)+" -RepoRoot "+q(repo)+
-            " -ProjectId rf_multipole_ion_optics -RunId fixture -RuntimeProfileId fixture-profile -DesignProfileId fixture-design"
-            " -ParticleSourceProfileId fixture-source -SolverNumericsProfileId fixture-numerics -RetentionClass solver_review"
-            " -ExpectedResolvedSha256 "+q("A"*64)+" -EngineeringBudgetPath "+q(budget)+" -Solver simion;"
-            "$result.role|ConvertTo-Json -Compress")
-        result=subprocess.run([shutil.which("pwsh"),"-NoProfile","-Command",script],cwd=self.root,
-            capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=30)
-        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-        self.assertIn("multipole_simion_field_solver_isolation_preregistration",result.stdout)
-        document["role"]="multipole_comsol_field_solver_isolation_preregistration";path.write_text(json.dumps(document),encoding="utf-8")
-        refused=subprocess.run([shutil.which("pwsh"),"-NoProfile","-Command",script],cwd=self.root,
-            capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=30)
-        self.assertNotEqual(refused.returncode,0)
-        self.assertIn("identity or status is invalid",refused.stderr)
+        arguments=dict(solver="simion",run_id="fixture",runtime_profile_id="fixture-profile",
+            design_profile_id="fixture-design",particle_source_profile_id="fixture-source",
+            solver_numerics_profile_id="fixture-numerics",retention_class="solver_review",
+            expected_resolved_sha256="A"*64,authority_paths=authorities,implementation_paths=implementation)
+        self.assertEqual(validate_preregistration(document,**arguments)["authorization"]["planned_run_id"],"fixture")
+        with self.assertRaisesRegex(ValueError,"identity or authorization"):
+            validate_preregistration(document,**dict(arguments,solver="comsol"))
+        budget.write_text("changed",encoding="utf-8")
+        with self.assertRaisesRegex(ValueError,"authority hash"):
+            validate_preregistration(document,**arguments)
 
-    def test_simion_original_field_block_binds_outputs_without_iob_fly_or_transport(self):
-        import shutil
-        import subprocess
+    def test_installed_saved_comsol_action_reaches_frozen_export_invocation(self):
         import sys
-        if shutil.which("pwsh") is None: self.skipTest("PowerShell 7 required")
-        repo=Path(__file__).resolve().parents[4]
-        resolved_path=self.root/"resolved.json";plan_path=self.root/"plan.json";points_path=self.root/"points.csv"
+        from msplatform.io.manifest_records import file_record
+        from msplatform.workflows.rf_stationary import execute_saved_comsol
+        resolved_path=self.root/"saved-resolved.json";plan_path=self.root/"saved-plan.json"
         resolved_path.write_text(json.dumps(_resolved_design()),encoding="utf-8")
         plan_path.write_text(json.dumps(_sampling_plan()),encoding="utf-8")
-        main(["generate","--resolved-design",str(resolved_path),"--sampling-plan",str(plan_path),"--output",str(points_path)])
-        authority=self.root/"authority.json"
-        main(["authorize","--resolved-design",str(resolved_path),"--sampling-plan",str(plan_path),"--points",str(points_path),
-            "--source-id","simion-inert-entry","--output",str(authority)])
-        with points_path.open(encoding="utf-8",newline="") as stream: points=list(csv.DictReader(stream))
-        for field_case in ("differential","static"):
-            rows=[dict(point,field_case=field_case,potential_V="0",Ex_V_per_m="0",Ey_V_per_m="0",Ez_V_per_m="0") for point in points]
-            self._write_rows(field_case+".csv",rows)
-        results=self.root/"results";results.mkdir();(self.root/"logs").mkdir();(self.root/"simion").mkdir()
-        (results/"usage.json").write_text("{}",encoding="utf-8")
-        def q(value): return "'"+str(value).replace("'","''")+"'"
-        script=r'''$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-$fieldOnly=$true;$codeRoot=__REPO__;$python=__PYTHON__;$fieldSamplePoints=__POINTS__;$fieldSampleAuthority=__AUTHORITY__
-$resultDir=__RESULTS__;$logDir=__LOGS__;$solverDir=__SOLVER__;$physicalRunDir=__ROOT__;$runDir=$physicalRunDir
-$summary=Join-Path $resultDir 'summary.json';$resourceUsage=Join-Path $resultDir 'usage.json';$RunId='inert-field';$ProjectId='rf_multipole_ion_optics'
-$DesignProfileId='fixture';$resolvedHash='A'*64;$phaseTimings=@{};$runTimer=[Diagnostics.Stopwatch]::StartNew();$fieldCheckpointOutputs=@()
-$fieldPlan=$null;$origin=12.;$zShift=1.;$resolvedCellMmX=1.;$resolvedCellMmY=1.;$resolvedCellMmZ=1.
-$stationaryVoltages=@{differential=@('1=100','2=-100');static=@('1=0','2=0')}
-$fieldPreregistration=@{field_sampling=@{expected_point_count=__COUNT__;expected_row_count=__ROWS__}}
-$nativeOperations=[Collections.ArrayList]::new();$hostReleaseState=@{released=$false};$ownerContext=@{};$hostExecutionOutcome='failed';$hostExecutionLease=@{}
-$continuationCapacity=$null;$deferFinalization=$false;$ResultPath=Join-Path $resultDir 'result.json';$script:operations=@();$script:required=@()
-function Set-RfRunPhase($Next){}
-function Copy-VerifiedRunInput($Source,$Destination){Copy-Item -LiteralPath $Source -Destination $Destination}
-function Convert-WorkflowOwnerPath($Context,$Path){return $Path}
-function Get-RunPythonImportRoots($RepoRoot){return @((Join-Path $RepoRoot 'src'),$RepoRoot)}
-function Invoke-SimionStep($Name,$Arguments,$Environment=@{}){
- $script:operations+=$Name;Copy-Item -LiteralPath (Join-Path __ROOT__ ($Arguments[7]+'.csv')) -Destination $Arguments[6]
-}
-function Get-RfSimionStoppedWriterCompletion($HostLease,$NativeOperations,$State){$State.released=$true;return @{operations=@();resource_releases=@()}}
-function Complete-RunArtifactPowerShellOwner {
- param($Context,$Status,$Summary,$OutputPaths,$RequiredOutputPaths,$WriterCompletion,$WritersStopped,$ResourceUsagePaths,$OriginalFailure)
- $script:required=@($RequiredOutputPaths);$script:completedStatus=$Status
-}
-$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $codeRoot 'projects/rf_multipole_ion_optics/runtime/run_simion_finite_3d_transport.ps1'),[ref]$null,[ref]$null)
-$nodes=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.IfStatementAst]},$true)|Where-Object{$_.Extent.Text.TrimStart().StartsWith('if((Get-Variable fieldOnly')})
-if($nodes.Count-ne1){throw 'Unique field export/finalization block missing'}
-$node=$nodes[0]
-Invoke-Expression $node.Extent.Text
-if(@($script:operations|Where-Object{$_-notin@('stationary_sample_differential','stationary_sample_static')}).Count){throw 'Transport/native operation escaped field-only branch'}
-if($script:operations.Count-ne2-or$script:completedStatus-ne'success'){throw 'Field-only sampling/finalization did not complete'}
-__RESULT__
-'''
-        script=script.replace("__REPO__",q(repo)).replace("__PYTHON__",q(sys.executable)).replace("__POINTS__",q(points_path))
-        script=script.replace("__AUTHORITY__",q(authority)).replace("__RESULTS__",q(results)).replace("__LOGS__",q(self.root/"logs"))
-        script=script.replace("__SOLVER__",q(self.root/"simion")).replace("__ROOT__",q(self.root)).replace("__COUNT__",str(len(points)))
-        script=script.replace("__ROWS__",str(2*len(points))).replace("__RESULT__","@($script:operations+$script:required)|ConvertTo-Json -Compress")
-        outcome=subprocess.run([shutil.which("pwsh"),"-NoProfile","-Command",script],cwd=self.root,
-            capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=60)
-        self.assertEqual(outcome.returncode,0,outcome.stdout+outcome.stderr)
-        facts=json.loads(outcome.stdout.strip().splitlines()[-1])
-        self.assertEqual(facts[:2],["stationary_sample_differential","stationary_sample_static"])
-        self.assertEqual({Path(value).name for value in facts[2:]},{"stationary_field_samples.csv","stationary_field_sample_validation.json"})
-        summary=json.loads((results/"summary.json").read_text(encoding="utf-8-sig"))
-        self.assertEqual(summary["fly_calls"],0)
+        model=self.root/"parent.mph";model.write_bytes(b"inert-saved-model")
+        class Session:
+            def __init__(session):
+                session.expected_operation_ids=("export_saved_stationary",)
+                session.input_dir=self.root/"saved-inputs";session.result_dir=self.root/"saved-results"
+                session.log_dir=self.root/"saved-logs";session.run_dir=self.root/"saved-run";session.run_id="inert-saved"
+                session.artifact_run_dir=session.run_dir
+                session.context=type("Context",(),{"workspace":self.root,"python_executable":Path(sys.executable),
+                    "host_state_path":self.root/"host.sqlite3","policy_path":self.root/"policy.json",
+                    "powershell_executable":Path(sys.executable),
+                    "tools":{"comsol_launcher":model,"matlab_root":self.root}})()
+                session.invocations=[]
+            def declare_file(session,path,role):
+                path=Path(path);path.parent.mkdir(parents=True,exist_ok=True);return path
+            def canonical_path(session,path):return Path(path)
+            def add_input(session,name,record):pass
+            def run_process(session,operation,**kwargs):
+                session.invocations.append((operation,kwargs))
+                task=Path(kwargs["arguments"][kwargs["arguments"].index("-TaskScript")+1])
+                text=task.read_text(encoding="utf-8")
+                if "read_rf_saved_stationary_solution(request)" not in text:
+                    raise AssertionError("canonical saved export invocation was not reached")
+                with (session.input_dir/"stationary_field_sample_points.csv").open(encoding="utf-8",newline="") as point_stream:
+                    points=list(csv.DictReader(point_stream))
+                samples=session.result_dir/"stationary_field_samples.csv"
+                with samples.open("w",encoding="utf-8",newline="") as stream:
+                    writer=csv.DictWriter(stream,fieldnames=FIELD_OUTPUT_COLUMNS);writer.writeheader()
+                    for field_case in ("differential","static"):
+                        for point in points:
+                            writer.writerow(dict(point,field_case=field_case,potential_V="0",
+                                Ex_V_per_m="0",Ey_V_per_m="0",Ez_V_per_m="0"))
+                (session.result_dir/"saved_stationary_export.json").write_text(json.dumps({
+                    "native_solves":0,"parent_model_saved":False,"stationary_field_row_count":2*len(points)}),encoding="utf-8")
+                (session.log_dir/"saved_stationary.bootstrap.log").write_text("STATUS=PASS\n",encoding="utf-8")
+                (session.log_dir/"saved_stationary.launcher.json").write_text(json.dumps({
+                    "schema_version":1,"role":"comsol_launcher_completion","run_id":session.run_id,
+                    "operations":[{"observation":{"exit_confirmed":True,"returncode":0,"process_id":1,
+                        "process_started_at_utc_ticks":1}}],
+                    "host_release":{"inherited":True,"error":None}}),encoding="utf-8")
+        session=Session()
+        result=execute_saved_comsol(session,parent_manifest={},model_record=file_record(model,"solver_native_binary"),
+            resolved_source=resolved_path,plan_source=plan_path,limits={},source_id="inert-saved")
+        self.assertEqual(result["summary"]["native_solves"],0)
+        self.assertFalse(result["summary"]["parent_model_saved"])
+        self.assertEqual(len(session.invocations),1)
+        self.assertEqual(json.loads((session.result_dir/"stationary_field_sample_validation.json").read_text(encoding="utf-8-sig"))["status"],"PASS")
+
+    def test_installed_simion_action_samples_and_validates_without_iob_or_fly(self):
+        from msplatform.workflows.rf_stationary import execute_simion_samples
+        resolved_path=self.root/"resolved.json";plan_path=self.root/"plan.json"
+        resolved_path.write_text(json.dumps(_resolved_design()),encoding="utf-8")
+        plan_path.write_text(json.dumps(_sampling_plan()),encoding="utf-8")
+        controller=self.root/"controller.pa0";controller.write_bytes(b"inert-pa")
+        class Session:
+            def __init__(session):
+                session.expected_operation_ids=("sample_differential","sample_static")
+                session.input_dir=self.root/"inputs";session.result_dir=self.root/"results"
+                session.run_dir=self.root;session.log_dir=self.root/"logs";session.operations=[]
+                session.artifact_run_dir=self.root
+                session.context=type("Context",(),{"tools":{"simion":controller}})()
+            def declare_file(session,path,role):
+                path=Path(path);path.parent.mkdir(parents=True,exist_ok=True);return path
+            def canonical_path(session,path):return Path(path)
+            def add_input(session,name,record):pass
+            def run_process(session,operation,**kwargs):
+                session.operations.append(operation)
+                arguments=kwargs["arguments"];output=Path(arguments[6]);field_case=arguments[7]
+                with open(arguments[5],encoding="utf-8",newline="") as point_stream:
+                    points=list(csv.DictReader(point_stream))
+                with output.open("w",encoding="utf-8",newline="") as stream:
+                    writer=csv.DictWriter(stream,fieldnames=FIELD_OUTPUT_COLUMNS);writer.writeheader()
+                    for point in points:
+                        writer.writerow(dict(point,field_case=field_case,potential_V="0",
+                            Ex_V_per_m="0",Ey_V_per_m="0",Ez_V_per_m="0"))
+        session=Session()
+        request={"resolved_design":str(resolved_path),"sampling_plan":str(plan_path),
+            "controller_pa":str(controller),"origin_mm":[0,0,0],"cell_mm":[1,1,1],
+            "electrode_ids_by_group":{"1":[1],"2":[2]}}
+        result=execute_simion_samples(session,request=request,limits={},source_id="inert-simion")
+        self.assertEqual(session.operations,["sample_differential","sample_static"])
+        self.assertEqual(result["status"],"success")
+        self.assertEqual(result["summary"]["fly_calls"],0)
+        self.assertEqual(result["summary"]["iob_calls"],0)
+        samples=self.root/"results/stationary_field_samples.csv"
+        self.assertTrue(samples.is_file())
+        self.assertEqual(json.loads((self.root/"results/stationary_field_sample_validation.json").read_text(encoding="utf-8-sig"))["status"],"PASS")
         self.assertFalse((self.root/"simion/quad_monolithic.iob").exists())
 
     def test_simion_sampling_resource_uses_no_save_pa_double_and_canonical_units(self):
@@ -380,8 +398,8 @@ __RESULT__
         import subprocess
         lua=shutil.which("lua") or shutil.which("lua5.1")
         if lua is None: self.skipTest("portable Lua unavailable")
-        root=Path(__file__).resolve().parents[2]
-        resource=root/"simion/export_stationary_field_samples.lua"
+        from msplatform.backends.simion.resources import native_resource_path
+        resource=native_resource_path("export_stationary_field_samples.lua")
         points=self.root/"native-points.csv"
         points.write_text("sample_id,region,x_mm,y_mm,z_mm\np0,vacuum,0,0,0\np1,vacuum,1,2,3\n",encoding="utf-8")
         output=self.root/"native.csv";stub=self.root/"pa_double.lua"

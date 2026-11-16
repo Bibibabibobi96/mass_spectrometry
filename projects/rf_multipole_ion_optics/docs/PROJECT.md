@@ -1477,54 +1477,45 @@ resources selected by the production freezer, including its canonical MATLAB mes
 helpers. Its detached-execution and missing-frozen-input assertions remain in force;
 the fixture does not run COMSOL or establish a new native result.
 
-The existing finite3D entries now also implement governed stationary sample export
-without a second runner. The canonical sampling plan explicitly binds the bare,
-unsegmented numerical domain, zero-normal-field exterior, ±100 V differential and
-zero static conductor voltages, and zero-mean conductor potential reference.
-`stationary_field_sampling.py authorize` freezes per-source scene/BVP/frame/units/
-reference, identity transform, exact common points and per-case statuses. Its
-`comparison-authority` stage requires independent sources on the same resolved
-scene and identical point/BVP/reference/status authority before invoking the
-unchanged descriptive generic comparison. Missing, inconsistent or tampered BVP
-and common-point data fail closed.
+RF stationary BVP, deterministic common-point generation and CSV/authority validation now live only in
+`msplatform.components.rf_multipole.stationary_field_sampling`. The generic descriptive comparator remains
+`msplatform.analysis.field_comparison`; the RF-specific legacy diagnostic reader remains separate and applies
+no threshold. Explicit research sampling plans stay under `projects/rf_multipole_ion_optics/config/contracts/`.
+COMSOL's exporter and saved stationary reader live in `msplatform.backends.comsol/matlab`, and SIMION's no-save
+PA sampler lives in `msplatform.backends.simion/resources`. `msplatform.workflows.rf_stationary` owns saved
+export, PA sampling, preregistration validation and finalization recovery through the installed managed owner.
+The project Python implementation and old stationary PowerShell branches are retired without a compatibility
+bridge. Normal finite3D transport and its field checkpoints remain in the existing runners, whose frozen
+closure now also binds `common/paths`, the root project registry and variant authorities. The old saved-COMSOL
+`$codeRoot` defect and SIMION `common.paths` omission are absent from the installed owner path.
 
-Normal COMSOL field solves validate native samples against that authority.
-`AnalyzeOnly -ReextractFromModel -StationaryFieldSamplingPlanPath ...` generates
-and freezes the same authority, then the saved reader conditionally calls the
-existing MATLAB exporter on the original stationary solutions. Its existing
-`native_solves=0` and `parent_model_saved=false` requirements remain. The SIMION
-owner accepts `field_solve`, validates solver-specific preregistration, refines or
-reuses the existing producer family, applies both frozen voltage vectors in
-memory, and exports through its project-owned no-save Lua resource. The unique
-field-only finalization block precedes IOB/Fly, publishes required sample and
-validation outputs, and returns through the same owner cleanup. Transport remains
-the default and checkpoint/reuse behavior is retained. The snapshot test proves
-the new Lua bytes, inventory hash and execution-capacity closure.
+The 2026-11-16 native failures remain unchanged evidence, with zero native sample rows: saved-COMSOL
+`20261116_212300__analysis__comsol__rf-stationary-saved-b02-r2` stopped before native work on an unset
+`$codeRoot`; SIMION `20261116_213000__sim__simion__rf-stationary-field-b02-r2` stopped before Refine on the
+missing `common.paths` closure and its owner closeout failed on the missing PowerShell path. Earlier budget and
+artifact-root admission failures are also preserved. The active capacity lease
+`workflow-2abfbc367031476d8692ecb84e8f3d09` was not cleared or reused, and no old run was finalized. No
+native retry, production field solve, IOB or Fly has occurred in this software migration.
 
-The MATLAB CSV writer now emits every numeric field with `%.17g`; its existing
-LiveLink fixture includes nontrivial binary64 coordinates, exact readback/text
-checks and a direct exported-CSV → Python authority-validator handoff. That
-LiveLink fixture remains UNEXECUTED in this session because no registered
-selected-fixture runner or MATLAB MCP execution tool was exposed; no ad-hoc
-commercial driver was substituted and no PASS is claimed for it.
+Software-only checks exercise the installed component, backend resources and original workflow action
+boundaries. The stationary module plus shared generic-comparison consumers passed 22 tests with one unchanged
+optional portable-Lua skip, including inert saved-COMSOL adapter invocation, inert SIMION CSV combination,
+preregistration positives/negatives and missing-resource refusal. Two frozen children ran
+`design_profile.py` under `-I` and rejected removed `repository_root.py` and `workspace_paths.ps1`; the
+corresponding snapshot test passed. The affected SIMION runner/source/checkpoint suites passed all 98 tests.
+The affected COMSOL recovery/architecture selection passed 44 of 45 tests. Its one failure is the existing
+saved-extraction fixture's host-context fallback to the nonexistent integration `.venv`; the identical error
+was reproduced with the pre-migration production file restored temporarily, so it is not claimed as a
+migration regression and scheduler behavior was not changed. MATLAB, PowerShell and Ruff checks are separate
+static evidence, not native qualification.
 
-Software evidence retains the failed rounds: extracted-function environment
-selection and the legacy `Import-Csv` guard initially failed; an extracted
-checkpoint block then lacked the new field-only flag; one saved-extraction round
-used the nonexistent integration `.venv`; and orchestration interrupted a later
-adjacent-suite rerun after partial output. The corrected focused cases and final
-90 SIMION runner/source/checkpoint parents passed (157.307 s), as did all 39
-COMSOL recovery/architecture parents (347.130 s) with the selected interpreter.
-Earlier adjacent batches passed 109 and 114 parents with one portable-Lua skip;
-their original interrupted rerun is not relabeled green. Final stationary,
-preregistration, original inert field-only behavior, saved stationary request,
-snapshot closure and corrected checkpoint methods also passed. PowerShell parse,
-Ruff, changed-source standards and diff checks are separate static evidence.
-No commercial production run, field pair, comparison metric or scientific
-qualification has been established. After review/commit, native acceptance must
-use an exact clean detached candidate, a field-stage runtime/preregistration and
-approved budgets: zero-Compute saved COMSOL export, one governed SIMION field/
-sample owner, then comparison-authority compilation and descriptive comparison.
+Outside-checkout imports and installed resource resolution passed for the new component, workflow and all three
+native resources. A normal wheel build could not start because this locked interpreter has neither `build`
+nor `bdist_wheel`; no dependency was installed to bypass that limitation. Native acceptance therefore remains:
+after commit, execute the selected LiveLink fixture through a registered owner, then zero-Compute saved COMSOL
+export and one governed SIMION field/sample owner, compile comparison authority and compare descriptive
+metrics. The original parent MPH and active failed-run hold must remain protected, and no scientific PASS is
+inferred from these software results.
 
 The RF whole-batch continuation planner is available through the installed
 `msplatform.workflows.rf_batch_continuation` owner. Its implementation is byte-identical

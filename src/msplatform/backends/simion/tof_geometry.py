@@ -110,3 +110,46 @@ def resolve_physical_geometry(
                     reflectron=dict(electrodes=native, axial_span_mm=extent["reflectron_axial_span_mm"],
                                     outer_radius_mm=extent["outer_radius_mm"]),
                     detector_marker=dict(contract["simion_detector_marker"]), detector_body=detector_body))
+
+
+def resolve_oatof_contract_documents(baseline, mode, numerics, *, input_identity):
+    """Compose neutral TOF science with its explicit legacy SIMION projection."""
+    from msplatform.components.single_reflection_oa_tof.geometry_contract import (
+        _require_exact_keys, _validate_science, resolve_contract_documents,
+    )
+    _validate_science(baseline, mode)
+    _require_exact_keys(numerics, {"schema_version", "role", "comsol", "simion"}, "solver numerics contract")
+    if type(numerics["schema_version"]) is not int or numerics["schema_version"] != 1:
+        raise ValueError("unsupported solver numerics schema_version; requires integer 1")
+    if numerics.get("role") != "oa_tof_formal_solver_numerics":
+        raise ValueError("unsupported formal solver numerics contract")
+    if not isinstance(mode.get("particle"), dict) or not isinstance(numerics.get("comsol"), dict) or not isinstance(numerics.get("simion"), dict):
+        raise ValueError("formal contracts are missing required science or solver sections")
+    runtime = numerics["comsol"]
+    for key in ("routine_reflectron_hmax_mm", "routine_accelerator_hmax_mm", "convergence_accelerator_hmax_mm",
+                "fine_output_step_ns", "field_free_output_step_ns"):
+        value = runtime.get(key)
+        if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
+            raise ValueError(f"comsol.{key} must be a finite positive number")
+    if runtime.get("solver_steps") not in ("free", "intermediate", "strict"):
+        raise ValueError("comsol.solver_steps must be free, intermediate or strict")
+    if runtime.get("times_to_store") != "tlist":
+        raise ValueError("comsol.times_to_store must be tlist for OA-TOF detector sampling")
+    build = numerics["simion"]["geometry_build"]
+    marker = numerics["simion"]["detector_marker"]
+    if not 0 < marker["capture_depth_mm"] < marker["absorber_thickness_mm"]:
+        raise ValueError("detector capture depth must lie inside the numerical absorber")
+    if marker["capture_arm_distance_mm"] <= marker["front_margin_z_mm"]:
+        raise ValueError("detector capture arm distance must exceed the PA front margin")
+    resolved = resolve_contract_documents(baseline, mode, input_identity=input_identity)
+    resolved.update(simion_runtime={**numerics["simion"], "routine_particles": mode["particle"]["statistical_count"]},
+        simion_geometry_build=build, comsol_runtime=runtime, simion_detector_marker=marker)
+    physical = resolve_physical_geometry(resolved)
+    face = physical["detector_active_face"]
+    if marker["active_plane_z_mm"] != face["center_mm"][2] or marker["active_radius_mm"] != face["radius_mm"]:
+        raise ValueError("numerical detector marker differs from the physical detector active face")
+    detector_body = physical["simion"]["detector_body"]
+    resolved["derived"] = derive_simion_geometry(geometry=resolved["geometry_mm"],
+        coordinate=resolved["coordinate_convention"], build=build, marker=marker,
+        source=resolved["particle_source"], physical_detector=detector_body)
+    return resolved

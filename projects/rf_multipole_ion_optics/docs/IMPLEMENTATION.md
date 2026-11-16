@@ -206,7 +206,8 @@ particle source、solver numerics、资源预算和保留类；CLI不得覆盖�
 
 原生辅助检查包括[定常求解器 smoke](../tests/domain/test_comsol_stationary_solver_smoke.m)与
 [定常场采样测试](../tests/domain/test_export_comsol_stationary_field_samples.m)。前者是公共COMSOL启动器的任务脚本，
-后者通过已配置LiveLink的MATLAB测试框架执行；入口自行管理本项目`comsol/`依赖路径。L1/L2不运行这两项原生检查。
+后者通过已配置LiveLink的MATLAB测试框架执行；测试与生产采样器均消费安装后的
+`msplatform.backends.comsol/matlab`依赖路径，导出CSV由`msplatform.workflows.rf_stationary`验证。L1/L2不运行这两项原生检查。
 
 [杆系与接地壳几何检查](../tests/domain/test_comsol_enclosure_geometry.m)通过公共COMSOL入口消费冻结case，
 直接调用生产杆系和壳体构建器，检查实体干涉、接地连续性、通孔及可选STEP冷导入。

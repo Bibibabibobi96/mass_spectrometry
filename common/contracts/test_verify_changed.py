@@ -157,7 +157,7 @@ class ChangedGateContractTests(unittest.TestCase):
                    for value in row['command']['arguments'][2:]}
         self.assertIn('common.contracts.test_installed_scientific_core', modules)
         for caller in (
-            'projects/rf_multipole_ion_optics/analysis/stationary_field_sampling.py',
+            'src/msplatform/workflows/rf_stationary.py',
             'projects/single_reflection_oa_tof_mass_analyzer/analysis/compare_vector_field_samples.py',
         ):
             with self.subTest(caller=caller):

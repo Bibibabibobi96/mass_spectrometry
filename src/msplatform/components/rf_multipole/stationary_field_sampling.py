@@ -8,7 +8,6 @@ outputs use volts and volts per metre.
 
 from __future__ import annotations
 
-import argparse
 import csv
 import hashlib
 import json
@@ -17,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from projects.rf_multipole_ion_optics.core.interface_geometry import transport_observations
+from msplatform.components.rf_multipole.interface_geometry import transport_observations
 
 
 FIELD_CASES = ("differential", "static")
@@ -842,162 +841,3 @@ def _load_json_object(path: Path, label: str) -> Mapping[str, Any]:
             f"{label} is not readable JSON: {path}"
         ) from error
     return _require_mapping(document, label)
-
-
-def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Prepare, validate, or compare governed multipole field samples."
-    )
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    generate = subparsers.add_parser("generate")
-    generate.add_argument("--resolved-design", type=Path, required=True)
-    generate.add_argument("--sampling-plan", type=Path, required=True)
-    generate.add_argument("--output", type=Path, required=True)
-
-    validate = subparsers.add_parser("validate")
-    validate.add_argument("--input", type=Path, required=True)
-    validate.add_argument("--output", type=Path, required=True)
-    validate.add_argument("--authority", type=Path)
-
-    authorize = subparsers.add_parser("authorize")
-    authorize.add_argument("--resolved-design", type=Path, required=True)
-    authorize.add_argument("--sampling-plan", type=Path, required=True)
-    authorize.add_argument("--points", type=Path, required=True)
-    authorize.add_argument("--source-id", required=True)
-    authorize.add_argument("--output", type=Path, required=True)
-
-    comparison_authority = subparsers.add_parser("comparison-authority")
-    comparison_authority.add_argument("--reference-authority", type=Path, required=True)
-    comparison_authority.add_argument("--candidate-authority", type=Path, required=True)
-    comparison_authority.add_argument("--coordinate-tolerance-mm", type=float, required=True)
-    comparison_authority.add_argument("--output", type=Path, required=True)
-
-    compare = subparsers.add_parser("compare")
-    compare.add_argument("--reference", type=Path, required=True)
-    compare.add_argument("--candidate", type=Path, required=True)
-    compare.add_argument("--output", type=Path, required=True)
-    compare.add_argument("--comparison-authority", type=Path)
-    return parser
-
-
-def main(argv: Sequence[str] | None = None) -> int:
-    """Expose one solver-neutral utility boundary; this does not launch transport."""
-
-    arguments = _build_parser().parse_args(argv)
-    if arguments.command == "generate":
-        rows = generate_stationary_field_sample_rows(
-            _load_json_object(arguments.resolved_design, "resolved design"),
-            _load_json_object(arguments.sampling_plan, "sampling plan"),
-        )
-        arguments.output.parent.mkdir(parents=True, exist_ok=True)
-        write_stationary_field_sample_csv(rows, arguments.output)
-        return 0
-    if arguments.command == "validate":
-        if arguments.authority is not None:
-            validate_stationary_output_authority(
-                _load_json_object(arguments.authority, "sampling authority"), arguments.input)
-        records = load_stationary_field_output_csv(arguments.input)
-        point_count = len({record.sample_id for record in records})
-        _write_json(
-            {
-                "schema_version": 1,
-                "role": "multipole_stationary_field_sample_validation",
-                "status": "PASS",
-                "field_cases": list(FIELD_CASES),
-                "point_count": point_count,
-                "row_count": len(records),
-            },
-            arguments.output,
-        )
-        return 0
-    if arguments.command == "authorize":
-        with arguments.points.open(encoding="utf-8", newline="") as stream:
-            reader = csv.DictReader(stream)
-            if tuple(reader.fieldnames or ()) != SAMPLE_COLUMNS:
-                raise StationaryFieldContractError("stationary point columns differ")
-            points = list(reader)
-        authority = build_stationary_sampling_authority(
-            _load_json_object(arguments.resolved_design, "resolved design"),
-            _load_json_object(arguments.sampling_plan, "sampling plan"), points,
-            points_path=arguments.points, source_id=arguments.source_id)
-        arguments.output.parent.mkdir(parents=True, exist_ok=True)
-        _write_json(authority, arguments.output)
-        return 0
-    if arguments.command == "comparison-authority":
-        authority = build_multipole_comparison_authority(
-            _load_json_object(arguments.reference_authority, "reference sampling authority"),
-            _load_json_object(arguments.candidate_authority, "candidate sampling authority"),
-            coordinate_tolerance_mm=arguments.coordinate_tolerance_mm)
-        arguments.output.parent.mkdir(parents=True, exist_ok=True)
-        _write_json(authority, arguments.output)
-        return 0
-    if arguments.command == "compare":
-        if arguments.comparison_authority is not None:
-            import pandas as pd
-            from msplatform.analysis.field_comparison import compare_static_field_samples, validate_static_comparison_authority
-            from msplatform.contracts.rigid_transform import RigidTransform
-            from msplatform.io.strict_json import load_json_object
-            authority = load_json_object(arguments.comparison_authority)
-            if set(authority) != {"schema_version", "role", "coordinate_tolerance_mm", *FIELD_CASES}:
-                raise StationaryFieldContractError("multipole comparison authority fields differ")
-            if (type(authority["schema_version"]) is not int or authority["schema_version"] != 1
-                    or authority["role"] != "multipole_static_field_comparison_authority"):
-                raise StationaryFieldContractError("multipole comparison authority version or role differs")
-            for field_case in FIELD_CASES:
-                case_authority = authority[field_case]
-                if not isinstance(case_authority, dict) or set(case_authority) != {"reference", "candidate"}:
-                    raise StationaryFieldContractError("multipole comparison authority case fields differ")
-                validate_static_comparison_authority({"schema_version": authority["schema_version"],
-                    "role": "static_field_comparison_authority",
-                    "coordinate_tolerance_mm": authority["coordinate_tolerance_mm"], **case_authority})
-            tables = [pd.read_csv(path, float_precision="round_trip",
-                                  dtype={"sample_id": str, "region": str, "field_case": str},
-                                  keep_default_na=False) for path in
-                      (arguments.reference, arguments.candidate)]
-            for frame in tables:
-                if tuple(frame.columns) != FIELD_OUTPUT_COLUMNS or not frame["field_case"].isin(FIELD_CASES).all():
-                    raise StationaryFieldContractError("field output columns or cases differ")
-            # Validate each source's paired identities without reading field values;
-            # nonvalid samples may intentionally lack finite field observations.
-            from types import SimpleNamespace
-            for table in tables:
-                identities = []
-                for row in table.to_dict("records"):
-                    sample_id, region = row["sample_id"], row["region"]
-                    if (not isinstance(sample_id, str) or not sample_id or sample_id.strip() != sample_id
-                            or not isinstance(region, str) or not region or region.strip() != region):
-                        raise StationaryFieldContractError("sample identity or region is invalid")
-                    identities.append(SimpleNamespace(sample_id=sample_id, region=region, field_case=row["field_case"],
-                        x_mm=_finite_number(row["x_mm"], "x_mm"), y_mm=_finite_number(row["y_mm"], "y_mm"),
-                        z_mm=_finite_number(row["z_mm"], "z_mm")))
-                _validate_paired_field_cases(identities)
-            generic = {}
-            for field_case in FIELD_CASES:
-                frames = []
-                for label, table in zip(("reference", "candidate"), tables, strict=True):
-                    frame = table[table["field_case"] == field_case].copy().rename(columns={"sample_id": "point_id"})
-                    states = authority[field_case][label]["status_by_point_id"]
-                    frame["status"] = [states[str(point)] for point in frame["point_id"]]
-                    frames.append(frame)
-                values = authority[field_case]
-                generic[field_case] = compare_static_field_samples(
-                    *frames, reference_metadata=values["reference"]["metadata"],
-                    candidate_metadata=values["candidate"]["metadata"],
-                    reference_transform=RigidTransform.from_contract(values["reference"]["transform"]),
-                    candidate_transform=RigidTransform.from_contract(values["candidate"]["transform"]),
-                    coordinate_tolerance_mm=authority["coordinate_tolerance_mm"])
-            _write_json({"schema_version":1, "role":"multipole_static_field_comparison", "status":"DESCRIPTIVE_ONLY",
-                         "field_cases":generic}, arguments.output)
-            return 0
-        comparison = compare_stationary_field_outputs(
-            load_stationary_field_output_csv(arguments.reference),
-            load_stationary_field_output_csv(arguments.candidate),
-        )
-        _write_json(comparison, arguments.output)
-        return 0
-    raise AssertionError(f"unhandled command: {arguments.command}")
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

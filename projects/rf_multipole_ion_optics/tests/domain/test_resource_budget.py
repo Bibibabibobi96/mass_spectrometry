@@ -2171,15 +2171,15 @@ foreach($fail in @($false,$true)){
                 timeout=20,
             )
 
-        matching = run_gate("[pscustomobject]@{stop_stage='field_solve'}", "field_solve")
+        matching = run_gate("[pscustomobject]@{stop_stage='mesh_build'}", "mesh_build")
         self.assertEqual(matching.returncode, 0, matching.stderr)
-        self.assertIn("STOP_STAGE=field_solve", matching.stdout)
+        self.assertIn("STOP_STAGE=mesh_build", matching.stdout)
 
-        missing = run_gate("[pscustomobject]@{}", "field_solve")
+        missing = run_gate("[pscustomobject]@{}", "mesh_build")
         self.assertNotEqual(missing.returncode, 0)
         self.assertIn("omits the runtime-profile stop stage", missing.stderr)
 
-        mismatch = run_gate("[pscustomobject]@{stop_stage='mesh_build'}", "field_solve")
+        mismatch = run_gate("[pscustomobject]@{stop_stage='transport'}", "mesh_build")
         self.assertNotEqual(mismatch.returncode, 0)
         self.assertIn("differs from the authorized runtime profile", mismatch.stderr)
 

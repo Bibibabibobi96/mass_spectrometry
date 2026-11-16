@@ -5,8 +5,9 @@ end
 
 function setupOnce(testCase)
 projectRoot = fileparts(fileparts(fileparts(mfilename('fullpath'))));
+repoRoot = fileparts(fileparts(projectRoot));
 testCase.applyFixture(matlab.unittest.fixtures.PathFixture( ...
-    fullfile(projectRoot, 'comsol')));
+    fullfile(repoRoot, 'src', 'msplatform', 'backends', 'comsol', 'matlab')));
 import com.comsol.model.util.*
 
 modelTag = 'StationaryFieldSampleFixture';
@@ -106,7 +107,7 @@ repoRoot = fileparts(fileparts(projectRoot));
 previousPythonPath = getenv('PYTHONPATH');
 pythonPathCleanup = onCleanup(@() setenv('PYTHONPATH', previousPythonPath)); %#ok<NASGU>
 setenv('PYTHONPATH', strjoin({fullfile(repoRoot, 'src'), repoRoot}, pathsep));
-command = sprintf(['"%s" -B -m projects.rf_multipole_ion_optics.analysis.stationary_field_sampling ' ...
+command = sprintf(['"%s" -B -m msplatform.workflows.rf_stationary ' ...
     'validate --input "%s" --output "%s" --authority "%s"'], ...
     pythonExecutable, outputPath, validationPath, authorityPath);
 [status, commandOutput] = system(command);

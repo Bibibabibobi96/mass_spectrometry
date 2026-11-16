@@ -358,8 +358,12 @@ ConvertTo-Json -InputObject $script:calls -Depth 6
         expected = {
             "common/host_execution_lease.ps1", "common/host_resource_scheduler.py",
             "src/msplatform/execution/resources/host_resource_policy.json", "common/require_powershell7.ps1",
-            "src/msplatform/analysis/particle_census.py",
+            "src/msplatform/analysis/particle_census.py", "config/project_registry.json",
         }
+        expected |= {path.relative_to(REPO_ROOT).as_posix()
+                     for root_name in ("common/paths", "projects/rf_multipole_ion_optics/variants")
+                     for path in (REPO_ROOT / root_name).rglob("*")
+                     if path.is_file() and path.suffix in {".py", ".ps1", ".json"}}
         for runner_name in ("run_finite_3d_transport.ps1", RUNNER.name):
             with self.subTest(runner=runner_name), tempfile.TemporaryDirectory() as directory:
                 root = _short_windows_path(Path(directory))
@@ -387,6 +391,7 @@ if('@@NAME@@'-eq'run_finite_3d_transport.ps1'){
  Invoke-Expression $source.Substring($begin.Extent.StartOffset,$finish.Extent.StartOffset-$begin.Extent.StartOffset)
 }
 $executionCapacityPaths|ConvertTo-Json|Set-Content @@CAPACITY@@
+. (Join-Path $codeRoot 'common/paths/workspace_paths.ps1')
 . (Join-Path $codeRoot 'common/host_execution_lease.ps1')
 $null=Get-HostResourceBudget -Role GATE -Stage snapshot-probe
 """.replace('@@PYTHON@@', quoted(Path(sys.executable))).replace('@@REPO@@', quoted(REPO_ROOT)).replace('@@INPUT@@', quoted(root)).replace('@@ENTRY@@', quoted(entry)).replace('@@NAME@@', runner_name).replace('@@CAPACITY@@', quoted(root / 'capacity.json'))
@@ -403,8 +408,6 @@ $null=Get-HostResourceBudget -Role GATE -Stage snapshot-probe
                               for path in (REPO_ROOT / 'src/msplatform').rglob('*')
                               if path.is_file() and (path.suffix == '.py' or path.name.endswith('.schema.json'))}
                 expected_schemas = {path for path in core_files if path.endswith('.schema.json')}
-                if runner_name == RUNNER.name:
-                    expected.add('projects/rf_multipole_ion_optics/simion/export_stationary_field_samples.lua')
                 frozen_schemas = {path for path in by_path
                                   if path.startswith('src/msplatform/') and path.endswith('.schema.json')}
                 self.assertEqual(frozen_schemas, expected_schemas)
@@ -455,6 +458,39 @@ print(json.dumps(dict(mother=result["mother_particle_ids"], non_exit=result["non
                                               timeout=30, check=False)
                 self.assertEqual(census_probe.returncode, 0, census_probe.stderr)
                 self.assertEqual(json.loads(census_probe.stdout), dict(mother=[7, 31], non_exit=[7, 31]))
+                design_program = """
+import json, pathlib, runpy, sys
+sys.path[:0] = json.loads(sys.argv[2])
+from common.paths.repository_root import REPO_ROOT as frozen_repo
+import projects.rf_multipole_ion_optics.runtime.design_profile as design_profile
+assert pathlib.Path(frozen_repo).resolve() == pathlib.Path(sys.argv[1]).resolve()
+assert pathlib.Path(design_profile.__file__).resolve().is_relative_to(pathlib.Path(sys.argv[1]).resolve())
+sys.argv = ['design_profile', '--repo-root', sys.argv[1], '--project-id', 'rf_multipole_ion_optics',
+            '--design-profile-id', 'octupole_no_acceleration_full_length', '--output', sys.argv[3]]
+runpy.run_module('projects.rf_multipole_ion_optics.runtime.design_profile', run_name='__main__')
+"""
+                design_command = [sys.executable, "-B", "-I", "-c", design_program, str(root / "code"),
+                                  roots_json, str(root / "design-resolution.json")]
+                design_probe = subprocess.run(design_command, cwd=root, capture_output=True, text=True,
+                                              timeout=30, check=False)
+                self.assertEqual(design_probe.returncode, 0, design_probe.stderr)
+                self.assertTrue((root / "design-resolution.json").is_file())
+                missing_path_module = root / "code/common/paths/repository_root.py"
+                path_module_bytes = missing_path_module.read_bytes()
+                missing_path_module.unlink()
+                refused_paths = subprocess.run(design_command, cwd=root, capture_output=True, text=True,
+                                               timeout=30, check=False)
+                self.assertNotEqual(refused_paths.returncode, 0)
+                self.assertIn("No module named 'common.paths.repository_root'", refused_paths.stderr)
+                missing_path_module.write_bytes(path_module_bytes)
+                workspace_paths = root / "code/common/paths/workspace_paths.ps1"
+                workspace_bytes = workspace_paths.read_bytes()
+                workspace_paths.unlink()
+                refused_workspace = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command",
+                    ". " + quoted(workspace_paths)], cwd=root, capture_output=True, text=True,
+                    encoding="utf-8", errors="replace", timeout=15, check=False)
+                self.assertNotEqual(refused_workspace.returncode, 0)
+                workspace_paths.write_bytes(workspace_bytes)
                 missing_schema = root / 'code/src/msplatform/contracts/schemas/component_particle_state.schema.json'
                 schema_bytes = missing_schema.read_bytes()
                 missing_schema.unlink()
