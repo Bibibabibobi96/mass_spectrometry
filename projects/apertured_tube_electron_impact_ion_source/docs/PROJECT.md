@@ -88,3 +88,14 @@ data in both solvers. Its original byte identity was unchanged after readback.
 The two observed wrapper processes exited zero and released their host leases;
 the run published a complete `prepared_model` with writers stopped. No Compute,
 field solution, particle result, GUI or new scientific qualification is claimed.
+
+Exact P4 source `2026e814` then passed the same approved build/save/cold-reopen
+scope in `20261116_190628__build__comsol__ei-model-31caa97b09e1` (199.257 seconds
+including admission). Its 931,095-byte MPH has SHA-256
+`A4CAC277DC9872E1A444927AE88EB9DB1F01AA9B8A13379BEA45E8FDC04A95F0`.
+A separate native reopen confirmed four physical domains, a complete mesh, the
+original ES/CPT and Study/Solver trees, empty solutions in both solvers, valid
+parameter bindings, zero Compute and no model rewrite. Publication and an
+independent post-publication hash matched. Writers stopped and both COMSOL host
+leases released. This is current-source build-only evidence, not functional,
+Candidate, Formal or scientific qualification.

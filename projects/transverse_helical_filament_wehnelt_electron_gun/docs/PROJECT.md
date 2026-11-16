@@ -75,6 +75,20 @@ host leases; the owner published a complete unsolved `prepared_model` with write
 stopped. No field/particle solving, current/efficiency, GUI or new Candidate/Formal
 qualification is claimed.
 
+Exact P4 source `2026e814` also passed build/save/cold-reopen in
+`20261116_191003__build__comsol__wehnelt-model-fcb9ebf30f2b` (145.709 seconds
+including admission). The three MPH files are 751,606 / 15,625,008 / 15,788,430
+bytes with respective SHA-256 values
+`28411949FAD50C64854B05199E4074EE3695BE93CE6F1AE6E1D5C899D5CC2043`,
+`16F604C47006631F6677491E8B981FFDD4FE91CE46D20E0F937D57AD81036324` and
+`E864FEC21BCB47803BD19814F21B8B899A617E3CAFC92E1785B1ED9F375D6A35`.
+Cold reopen retained four physical domains, complete mesh, original Study/Solver
+trees, empty solutions, electron mass/charge −1, three inlets, Thermal emission
+and Freeze walls, with zero Compute and no model rewrite. Independent hashes
+matched publication, writers stopped and both COMSOL leases released. This
+closes only the current-source build-only scope, not functional or scientific
+qualification.
+
 ## 资格状态
 
 | 层级 | 当前证据 | 状态 |
