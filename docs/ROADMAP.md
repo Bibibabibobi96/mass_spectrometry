@@ -885,10 +885,10 @@ P1–P5为平台改造批次，与下述组装M0–M4及项目科学资格分别
 |---|---|---|
 | R01 职责独立和可组合 | P1 → P1/P4 | 公共核心：无项目/owner反向依赖、安装外调用、真实消费者。 |
 | R02 同源几何与离散化 | P1/P2 → P2/P4 | 提供项目/integration：参数扰动、真实提供者、多实例与几何投影。 |
-| R03 完整和局部装配 | P1 → P2/P4 | 装配核心/integration：完整父对象、显式位姿及切边、真实接口。 |
+| R03 Complete-component assembly and selected scope | P1 → P2/P4 | Complete instances or canonical complete subcomponents, explicit poses and real ports; numerical partitioning does not cut physical entities. |
 | R04 独立源与粒子群 | P1 → P1/P4 | 源核心/消费者：策略、母群前缀、ID/物种/时间、RF/OA完整输出。 |
 | R05 状态交接与时钟 | P1/P3 → P3 | 合同/integration：出生、快照、穿面、checkpoint区分和不同dt共同钟。 |
-| R06 两种飞行 | P1/P3 → P3/P4 | integration/后端：同一冻结设计与源的分段和联合原生链。 |
+| R06 Public continuous propagation for the selected combinations | P1/P3 → P3/P4 | Original-mother continuous propagation for the specified combinations; legitimate other handoffs remain distinct and do not substitute survivor relaunch for continuity. |
 | R07 场、驱动与耦合 | P1/P2 → P2/P5 | 提供项目/后端：驱动与数值分开、自洽反馈及权重语义。 |
 | R08 后端能力边界 | P1/P2 → P2/P5 | 后端适配：科学请求、原生编译/运行/读取、版本及能力限制。 |
 | R09 观测与重分析 | P1 → P1/P3 | 分析核心/项目：独立oracle、真实MR、样本/分母/资格由项目拥有。 |

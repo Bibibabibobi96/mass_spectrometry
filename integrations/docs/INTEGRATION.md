@@ -59,6 +59,19 @@ prove whole-path coverage or accuracy. Complete original-N100 flight and genuine
 outside-workbench terminal recording remain open; the last Lua callback is not
 substituted for a missing native terminal state. No physical entity changed.
 
+The three-window original-N100 attempt
+`20261116_132804__sim__simion__track-8c5326bec5dd` passed build and cold
+verification, then failed on the earlier ion-4 base-grid no-data stencil after
+17.10 seconds of Fly. Its three partial splats are not a complete census. All
+three native processes exited, host resources released, source guards matched
+and the live workflow lease was absent. The retained small `rf_badnode_region`
+window covers a different entrance location and does not contain this query.
+Bounded checks find the ion-4 stencil valid in all seventeen `rf_body` products,
+whereas the ion-8 stencil is invalid there but valid in the base products.
+Thus neither enabling nor disabling the entire body window closes known support.
+An explicitly bounded active region is being assessed against saved queries;
+raw unknowns remain unchanged and runtime selected-mask failures remain fatal.
+
 The original-source native attempts retain their individual failures: missing
 empty-surface evidence (`track-27a67896934c`), PA memory exhaustion
 (`track-d71e9a4e7331`), and HS1 callback/sequential-state failures
