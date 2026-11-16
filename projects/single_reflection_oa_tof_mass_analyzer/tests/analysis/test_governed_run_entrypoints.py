@@ -20,6 +20,12 @@ class GovernedRunEntrypointTests(unittest.TestCase):
         for relative, retention_class in entries.items():
             with self.subTest(entry=relative):
                 source = (PROJECT_ROOT / relative).read_text(encoding="utf-8")
+                if relative == "workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1":
+                    self.assertIn("msplatform.workflows.single_reflection_mass_spectrum_study", source)
+                    self.assertIn("resume-finalization", source)
+                    self.assertNotIn("New-RunPackage", source)
+                    self.assertNotIn("Initialize-RunRecord", source)
+                    continue
                 self.assertIn("New-RunPackage", source)
                 self.assertIn("-RetentionContractEnabled", source)
                 self.assertIn("-CapacityLedgerLifecycleEnabled", source)
@@ -31,8 +37,6 @@ class GovernedRunEntrypointTests(unittest.TestCase):
                 # Ideal diagnostics now retain these fields by merging the existing public package.
                 # Its actual normal-entrypoint test checks retained paths/capacity/sentinel values;
                 # the public New-RunPackage/retention/lifecycle switches above remain required here.
-        mass_source = (PROJECT_ROOT / "workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1").read_text(encoding="utf-8")
-        self.assertIn("Resume requires an existing governed retention and capacity-ledger lifecycle.", mass_source)
 
     def test_public_output_directory_overrides_are_canonical_run_paths(self):
         for relative in (

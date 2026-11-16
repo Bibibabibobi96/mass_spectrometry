@@ -52,6 +52,12 @@ manifest, capacity and actual lease files instead of retired PowerShell booleans
 frozen task paths, successor IDs and receipt field locations changed without dropping scientific or failure
 coverage. No original substantive assertion was intentionally retired.
 
+Remote Changed run `43942545593` exposed one stale entrypoint assertion: it still required the retired
+PowerShell `New-RunPackage` path and its former resume error text. The assertion now checks the actual
+installed-study module and `resume-finalization` dispatch, while the other five entrypoints retain their
+existing lifecycle requirements. Real owner, publication and recovery behavior remains covered by the
+managed tests above; this is test maintenance, not a production or native change.
+
 ## 当前状态
 
 ### 可安装COMSOL原生资源切片
