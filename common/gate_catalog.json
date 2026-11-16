@@ -630,6 +630,10 @@
       "repository_integration_group": "regression",
       "matches": [
         {
+          "regex": "^src/msplatform/backends/comsol/matlab/(?:ms_stage1_ei_source|load_ei_source_contract|verify_ei_source_model|verify_ei_source_parameter_bindings|ei_source_unit_text|build_wehnelt_model|phase1_geometry_coil_transverse|phase2_electrostatics_coil_transverse|phase4_thermal_emission_coil_transverse|load_wehnelt_contract|apply_wehnelt_contract_parameters|wehnelt_contract_parameter_bindings|verify_wehnelt_contract_parameters|verify_wehnelt_model)\\.m$",
+          "reason": "installed_build_only_model_resource_changed"
+        },
+        {
           "exact": "src/msplatform/backends/comsol/matlab/solve_assembly_stationary.m",
           "reason": "stationary_workpoint_consumer_changed"
         },
@@ -1929,6 +1933,40 @@
             "modules": [
               "common/contracts/test_installed_scientific_core.py",
               "common/contracts/test_comsol_wehnelt_model.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "regex": "^src/msplatform/backends/comsol/(?:ei_model|wehnelt_model|model_execution|native_execution)\\.py$",
+                "reason": "installed_build_only_model_owner_changed"
+              },
+              {
+                "regex": "^src/msplatform/backends/comsol/matlab/(?:ms_stage1_ei_source|load_ei_source_contract|verify_ei_source_model|verify_ei_source_parameter_bindings|ei_source_unit_text|build_wehnelt_model|phase1_geometry_coil_transverse|phase2_electrostatics_coil_transverse|phase4_thermal_emission_coil_transverse|load_wehnelt_contract|apply_wehnelt_contract_parameters|wehnelt_contract_parameter_bindings|verify_wehnelt_contract_parameters|verify_wehnelt_model)\\.m$",
+                "reason": "installed_build_only_model_resource_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_comsol_ei_model.py",
+              "common/contracts/test_comsol_wehnelt_model.py",
+              "common/contracts/test_platform_capabilities.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/backends/comsol/native_execution.py",
+                "reason": "installed_native_execution_freezing_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/comsol/resources.py",
+                "reason": "installed_comsol_resource_registration_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_installed_scientific_core.py"
             ],
             "dependency_profile": "locked"
           },
@@ -5957,7 +5995,7 @@
           "reason": "wehnelt_contract_changed"
         },
         {
-          "regex": "^src/msplatform/backends/comsol/(?:wehnelt_model\\.py|model_execution\\.py|matlab/(?:build_wehnelt_model|phase1_geometry_coil_transverse|phase2_electrostatics_coil_transverse|phase4_thermal_emission_coil_transverse|load_wehnelt_contract|apply_wehnelt_contract_parameters|wehnelt_contract_parameter_bindings|verify_wehnelt_contract_parameters|verify_wehnelt_model)\\.m)$",
+          "regex": "^src/msplatform/backends/comsol/(?:wehnelt_model\\.py|model_execution\\.py|native_execution\\.py|matlab/(?:build_wehnelt_model|phase1_geometry_coil_transverse|phase2_electrostatics_coil_transverse|phase4_thermal_emission_coil_transverse|load_wehnelt_contract|apply_wehnelt_contract_parameters|wehnelt_contract_parameter_bindings|verify_wehnelt_contract_parameters|verify_wehnelt_model)\\.m)$",
           "reason": "wehnelt_model_implementation_changed"
         },
         {
@@ -6010,7 +6048,7 @@
           "reason": "ei_source_contract_changed"
         },
         {
-          "regex": "^src/msplatform/backends/comsol/(?:ei_model\\.py|model_execution\\.py|matlab/(?:ms_stage1_ei_source|load_ei_source_contract|verify_ei_source_model|verify_ei_source_parameter_bindings|ei_source_unit_text)\\.m)$",
+          "regex": "^src/msplatform/backends/comsol/(?:ei_model\\.py|model_execution\\.py|native_execution\\.py|matlab/(?:ms_stage1_ei_source|load_ei_source_contract|verify_ei_source_model|verify_ei_source_parameter_bindings|ei_source_unit_text)\\.m)$",
           "reason": "ei_source_model_implementation_changed"
         },
         {

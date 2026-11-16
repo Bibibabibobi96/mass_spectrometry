@@ -324,23 +324,48 @@ class ChangedGateContractTests(unittest.TestCase):
                 self.assertIn("integration_common", self.routed_stages(path))
 
     def test_installed_source_models_reach_their_original_project_owner(self):
+        behavior = {
+            'common.contracts.test_comsol_ei_model',
+            'common.contracts.test_comsol_wehnelt_model',
+            'common.contracts.test_platform_capabilities',
+        }
         cases = (
             ("src/msplatform/backends/comsol/matlab/ms_stage1_ei_source.m",
-             {"apertured_tube_electron_impact_ion_source_static"}),
+             {"apertured_tube_electron_impact_ion_source_static"}, behavior),
             ("src/msplatform/components/apertured_tube_electron_impact_ion_source/resolve_contract.py",
-             {"apertured_tube_electron_impact_ion_source_static"}),
+             {"apertured_tube_electron_impact_ion_source_static"}, set()),
             ("src/msplatform/backends/comsol/matlab/build_wehnelt_model.m",
-             {"transverse_helical_filament_wehnelt_electron_gun_static"}),
+             {"transverse_helical_filament_wehnelt_electron_gun_static"}, behavior),
             ("src/msplatform/components/transverse_helical_filament_wehnelt_electron_gun/resolve_contract.py",
-             {"transverse_helical_filament_wehnelt_electron_gun_static"}),
+             {"transverse_helical_filament_wehnelt_electron_gun_static"}, set()),
+            ("src/msplatform/backends/comsol/ei_model.py",
+             {"apertured_tube_electron_impact_ion_source_static"}, behavior),
+            ("src/msplatform/backends/comsol/wehnelt_model.py",
+             {"transverse_helical_filament_wehnelt_electron_gun_static"}, behavior),
             ("src/msplatform/backends/comsol/model_execution.py",
              {"apertured_tube_electron_impact_ion_source_static",
-              "transverse_helical_filament_wehnelt_electron_gun_static"}),
+              "transverse_helical_filament_wehnelt_electron_gun_static"}, behavior),
+            ("src/msplatform/backends/comsol/native_execution.py",
+             {"apertured_tube_electron_impact_ion_source_static",
+              "transverse_helical_filament_wehnelt_electron_gun_static"},
+             behavior | {'common.contracts.test_installed_scientific_core'}),
         )
-        for path, owners in cases:
+        for path, owners, expected_modules in cases:
             with self.subTest(path=path):
                 self.assertTrue((REPO_ROOT / path).is_file(), path)
-                self.assertTrue(owners <= self.routed_stages(path).keys(), path)
+                plan, _ = self.plan('-ChangedPath', path)
+                selected = [row for row in plan['stages'] if row['selected']]
+                self.assertTrue(owners <= {row['name'] for row in selected}, path)
+                modules = [value.removesuffix('.py').replace('/', '.') for row in selected
+                           if row.get('command', {}).get('arguments', [])[:2] == ['-m', 'common.gate_unittest']
+                           for value in row['command']['arguments'][2:]]
+                self.assertTrue(expected_modules <= set(modules), (path, modules))
+                self.assertEqual(len(modules), len(set(modules)), path)
+        plan, _ = self.plan('-ChangedPath', 'src/msplatform/backends/comsol/resources.py')
+        modules = [value.removesuffix('.py').replace('/', '.') for row in plan['stages'] if row['selected']
+                   if row.get('command', {}).get('arguments', [])[:2] == ['-m', 'common.gate_unittest']
+                   for value in row['command']['arguments'][2:]]
+        self.assertIn('common.contracts.test_installed_scientific_core', modules)
 
     def test_installed_wehnelt_report_selects_real_owner_plan(self):
         path = 'src/msplatform/backends/comsol/matlab/write_wehnelt_build_only_report.m'

@@ -27,7 +27,9 @@ oa-TOF上游接口。具体数值不在本文复制，避免与机器合同形�
 
 ## 实现与验证边界
 
-The EI MATLAB builder and loader now have one canonical installed owner under `msplatform.backends.comsol/matlab`. The builder requires `(resolvedContractPath, runDirectory[, label])`; it derives only `comsol/` and `results/` beneath the explicit owner run and performs no checkout, path or environment discovery. The old project copies and `ei_source_paths.m` are retired. The existing project smoke fixture passes the public owner execution directory explicitly. This migration preserves geometry, physics, numerical algorithms and the full-mode branch. New native/package acceptance remains pending; historical build-only evidence below does not validate this migration.
+The EI MATLAB builder and loader now have one canonical installed owner under `msplatform.backends.comsol/matlab`. The builder requires `(resolvedContractPath, runDirectory[, label])`; it derives only `comsol/` and `results/` beneath the explicit owner run and performs no checkout, path or environment discovery. The old project copies and `ei_source_paths.m` are retired. The existing project smoke fixture passes the public owner execution directory explicitly. This migration preserves geometry, physics, numerical algorithms and the full-mode branch. The ordinary-wheel native build and separate cold reopen below are the current build-only evidence for those frozen bytes; acceptance of a later final P4 candidate remains open.
+
+Changed routing now selects the original EI/Wehnelt project owners and the existing common model/capability behavior suites for Python and MATLAB implementation changes. Native freezing and resource-registration changes also select the ordinary installation parent. Two planner tests, nine managed EI/Wehnelt tests and fourteen capability tests passed; this closes the selection hole without Compute, GUI or new scientific qualification.
 
 - 源码已移除COMSOL安装路径和`mphstart`，只能由仓库统一R2025b连接入口运行。运行
   `20260722_120000__test__comsol__build-only-smoke`已在真实MATLAB R2025b/COMSOL 6.4连接中完成

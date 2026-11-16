@@ -28,6 +28,12 @@ machine contracts和recorded removal；回归按实际目的路径拒绝任何�
 The retired naming/input adapters now come only from the canonical package selector. Bootstrap
 identity checks use their exact frozen relative paths, without duplicate manifest entries; the
 existing real-selector test and changed-bootstrap negative test retain these guarantees.
+Changed routing now selects the original EI/Wehnelt project owners and existing
+common model/capability behavior suites for Python and MATLAB implementation
+changes; native freezing/resource registration also selects ordinary installation.
+Two planner tests, nine managed model tests and fourteen capability tests passed.
+This is build-only software selection evidence, with no Compute, GUI or new
+scientific qualification.
 Manifest publication and verification are likewise frozen only by the canonical
 package selector. Their separate live-bootstrap identities and frozen-path hash
 checks remain; duplicate common-table entries are removed. The unchanged full
