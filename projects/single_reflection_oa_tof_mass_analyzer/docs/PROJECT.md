@@ -70,8 +70,11 @@ test still expected the former 0.1 mm body, and the Formal text guard required t
 unconditional detector branch. Their successor preserves all geometry checks and explicitly
 checks detector instance, return direction and prior reflectron traversal. The full geometry
 module passed 25 parents / 55 records in 3.796 seconds; the complete Formal static geometry
-check and all three disabled-condition negatives passed. These are software results, not
-new native, Formal asset or Repository qualification. The original remote failures remain.
+check and all three disabled-condition negatives passed. On 2026-11-16 the integrator reran
+`test_canonical_detector_formal_program` at current source: all three parents passed in
+0.169 seconds, including unarmed/non-detector, wrong-direction and valid-return real Lua
+controls plus physical PA coverage and canonical body midpoint negatives. These are software
+results, not new native, Formal asset or Repository qualification. The original remote failures remain.
 The earlier complete ordinary wheel and sdist-rebuilt-wheel parent passed on its own
 production/test candidate in the normal host context (982.713 test seconds, 993.313 command
 seconds). Both arms exercised the saved-field SFI consumer, canonical detector projection,
