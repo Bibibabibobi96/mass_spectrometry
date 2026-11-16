@@ -193,6 +193,10 @@ The 2026-11-11 read-only stable-entry check independently confirmed that the nam
 the managed PA retains that recorded identity, and all 54 manifest-listed SIMION assets match the
 54 actual payload files. Native runtime verification was explicitly not requested.
 
+2026-11-16 当前只读复核使用现有 `verify_manifest_assets` 对显式Formal根的全部65份资产重新核对实际字节与SHA-256，
+无漂移；`accelerator.pa1.recovery-backup`不存在，受管 `accelerator.pa1` 仍为上述身份。当前manifest声明56份SIMION载荷，
+实际也为56份且路径集合闭合，因此旧54份是上述历史时点计数，不作为当前期望。此次没有运行SIMION、GUI或Formal科学验收。
+
 ### P2 R0：受控测试超时现场
 
 原Changed运行41531065614的partial夹具30秒超时仍保留，历史根因未复现。
