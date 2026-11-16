@@ -233,3 +233,88 @@ def run(root, lua_provider):
     run_dynamic(root, product, compiled, packet, clocks, propagation, lua_provider)
     print('INSTALLED_GENERIC_STATIC_PLANNING=PASS groups=2 births=2 outside_refused=1 native=none',flush=True)
     print('INSTALLED_GENERIC_REGISTERED_GEOMETRY=PASS instances=2 renamed=1 capability_rejected=1 pure_compile=1',flush=True)
+
+def run_neutral_ip(root, lua_provider):
+    """Exercise the installed canonical scheduled-IP consumer with portable Lua APIs."""
+    import json
+    import subprocess
+    from msplatform import assembly, components
+    from msplatform.backends.comsol import assembly_geometry, assembly_electrostatic_model
+    from msplatform.backends.simion import model, generic_scalar_binding, rf_tracking_program, resources
+
+    from msplatform.io.manifest_records import verify_record
+
+    purelib = Path(sysconfig.get_paths()['purelib']).resolve()
+    for module in (assembly, components, assembly_geometry, assembly_electrostatic_model, model,
+                   generic_scalar_binding, rf_tracking_program, resources):
+        assert Path(module.__file__).resolve().is_relative_to(purelib), module.__file__
+    fixture = json.loads((Path(root) / 'installed_neutral_ip_fixture.json').read_text(encoding='utf8'))
+    component = components.resolve_component(fixture['request'])
+    product = assembly.assemble(fixture['recipe'], {'ion_processor': component})
+    from msplatform.backends.simion.operations import compile_geometry
+    compiled = compile_geometry(product, numerics=fixture['numerics'])
+    electrodes = product.components_resolved['ion_processor']['projection']['electrodes']
+    assert len(electrodes) == 15
+    clock = fixture['clock']
+    drive = dict(clock=dict(clock, phase_reference_instrument_time_us=0.),
+        ip_schedule=dict(baseline=product.components_source['ion_processor']['baseline'],
+                         native_operating_point=fixture['operating_point'], clock=clock),
+        groups={'ion_processor': {e['name']: dict(kind='ip_schedule', schedule_index=e['electrode_id']) for e in electrodes}})
+    prepared = model.compile_prepared_model(compiled, product.components_resolved, drive=drive, physics=model.RF_PHYSICS)
+    document = model.require_prepared_model(prepared)
+    snapshot = dict(composition_plan=product.composition_plan, components_resolved=product.components_resolved,
+                    components_source=product.components_source)
+    projection = assembly_geometry.project_assembly_geometry(snapshot, outer_box_mm={'min': [-1000]*3, 'max': [1000]*3})
+    groups = [(g['instance_id'], g['electrode_group_id']) for g in projection['electrode_groups']]
+    samples = {}; bases = {}; weights = {}
+    for index, key in enumerate(groups):
+        name = str(index)
+        rows = [dict(instance_id=i, electrode_group_id=g, weight=float((i, g) == key)) for i, g in groups]
+        request = assembly_electrostatic_model.validate_request(projection, dict(
+            group_voltages=[dict(instance_id=r['instance_id'], electrode_group_id=r['electrode_group_id'], voltage_v=r['weight']) for r in rows],
+            relative_permittivity=1., exterior={'kind': 'potential', 'voltage_v': 0.},
+            mesh={'global_automatic_level': 5, 'electrode_hmax_mm': 4.}, study={'kind': 'stationary'}))
+        samples[name] = {'request': request, 'weights': rows}; weights[name] = rows
+        bases[name] = dict(grid=dict(frame_id='world', origin_mm=[0,0,0], pitch_mm=[1,1,1], dimensions=[3,3,3]),
+            records={'field_v': {'path': 'basis_'+name}, 'field_valid': {'path': 'basis_'+name+'_field_valid'}}, ideal_sheet_projection=[])
+    terms = generic_scalar_binding.compile_linear_terms(projection, document['drive'], samples)
+    assert sum(name.startswith('schedule_') for name in terms['terms']) == len(electrodes)
+    try: generic_scalar_binding.compile_linear_terms(projection, document['drive'], dict(list(samples.items())[1:]))
+    except ValueError: pass
+    else: raise AssertionError('incomplete IP basis accepted')
+    names = ('scalar_field_adapter.lua','generic_scalar_field.lua','model_drive.lua','rf_drive.lua','rf_tracking.lua',
+             'single_flight_pulse_hook.lua','voltage_waveforms.lua','native_drive.lua')
+    paths = {name: resources.native_resource_path(name).resolve(strict=True) for name in names}
+    assert all(path.is_relative_to(purelib) for path in paths.values())
+    native_sources = {name: path.read_text(encoding='utf8') for name, path in paths.items()}
+    admission = dict(role='generic_linear_scalar_admission', model_identity_sha256=document['model_identity_sha256'], bases=bases, weights=weights)
+    row = dict(particle_id=7,instrument_time_us=0.,particle_birth_time_us=0.,velocity_x_m_s=1.,velocity_y_m_s=2.,velocity_z_m_s=3.)
+    plan = dict(flight=dict(tracking_kind='neutral_sampled',has_ip_schedule=True,maximum_step_us=1.,rf_steps_per_period=80,trajectory_quality=17,grouped=0),
+        rows=[row], absolute_deadlines_us_by_particle_id={7:200.}, observations=dict(plane_observations=[]), propagation=dict(consumed_plane_events=[],stop=None))
+    program = rf_tracking_program.render_rf_controls(prepared, plan, assets={}, native_sources=native_sources,
+        scalar_bindings=admission, slot_domains=[None,'world'])['program']
+    # Renderer falls back to its installed resource loader when a frozen entry is absent.
+    # Simulate a missing installed resource without mutating either installation or checkout.
+    from unittest.mock import patch
+    missing_sources = dict(native_sources); missing_sources.pop('native_drive.lua')
+    with patch.object(rf_tracking_program, 'native_resource_path', side_effect=FileNotFoundError('native_drive.lua')):
+        try:
+            rf_tracking_program.render_rf_controls(prepared, plan, assets={}, native_sources=missing_sources,
+                scalar_bindings=admission, slot_domains=[None,'world'])
+        except FileNotFoundError as error:
+            assert 'native_drive.lua' in str(error), error
+        else:
+            raise AssertionError('missing native_drive.lua was accepted')
+    baseline=document['drive']['ip_schedule']['baseline']; timing=document['drive']['ip_schedule']['native_timing']
+    edges=sorted(set([baseline['schedule'][k] for k in ('capture_end_us','transfer_end_us','lift_end_us','terminal_us')]+[timing['primary_quench_us'],timing['pulse_start_us']]))
+    cap=1e6/baseline['electric']['rf_frequency_hz']/80; edge=next(x for x in edges if x>cap); epsilon=cap/4
+    suffix=("\nsegment.initialize_run();segment.initialize();ion_time_step=1;segment.tstep_adjust();assert(math.abs(ion_time_step-%.17g)<1e-12);" % cap
+        + "ion_time_of_flight=%.17g;ion_time_step=1;segment.tstep_adjust();assert(math.abs(ion_time_step-%.17g)<1e-12);" % (edge-epsilon,epsilon)
+        + "ion_instance=2;calls=0;segment.efield_adjust();local total=0;for _,r in ipairs(rf_consumer.evaluate_at(single_flight_instrument_time_us())) do total=total+r.voltage_v end;assert(calls==%d and math.abs(ion_dvoltsx_gu+total)<1e-8);print('INSTALLED_NEUTRAL_IP_LUA=PASS')\n" % len(electrodes))
+    script=Path(root)/'installed_neutral_ip.lua';script.write_text(fixture['lua_prefix']+'\n'+program.replace('adjustable ','')+suffix,encoding='utf8')
+    verify_record('installed IP Lua before',lua_provider)
+    result=subprocess.run([str(Path(lua_provider['path']).resolve(strict=True)),str(script)],cwd=root,capture_output=True,text=True,encoding='utf8',timeout=30,check=False)
+    verify_record('installed IP Lua after',lua_provider)
+    assert result.returncode == 0, result.stdout+result.stderr
+    assert 'INSTALLED_NEUTRAL_IP_LUA=PASS' in result.stdout
+    print('INSTALLED_NEUTRAL_IP=PASS groups=15 basis=complete lua=api_stub native=none',flush=True)

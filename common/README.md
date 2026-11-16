@@ -108,9 +108,13 @@ edges. Two complete IPs with different schedules, renamed/reordered declarations
 and 30 response pairs passed public geometry/model/field publication and
 field admission, alongside generated Lua and single-IP regressions (three
 parents, 257.261 s). Missing authority, wrong clock and incomplete span refuse.
-Those native leaves and scalar samples are inert software fixtures. Multiple-bath
-HS1, ordinary installed consumption, successful HS1 recovery and actual neutral
-scheduled-model/flight native validation remain open. Separately, complete
+Those native leaves and scalar samples are inert software fixtures. The earlier
+V18 ordinary wheel and rebuilt-sdist parent passed with the single-IP installed
+probe (1,501.052 s); it does not validate this later multi-IP production version.
+The single-IP native unsolved-model owner subsequently passed at `2c91a701`,
+including actual resource freezing and 15 mapped groups at five readback times.
+Multiple-bath HS1, this successor's ordinary installation, successful HS1 recovery
+and neutral scheduled flight native validation remain open. Separately, complete
 canonical IP native geometry built and cold-reopened successfully at `2bae0f7a`;
 that evidence includes no Refine or Fly.
 

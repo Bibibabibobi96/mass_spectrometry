@@ -2675,6 +2675,7 @@ for case in fixture['single_reflection_workflow']:
         generic_probe=runpy.run_path(str(root/'installed_generic_geometry_probe.py'))
         with section_timing('registered_generic_geometry',sys.argv[2]):
             generic_probe['run'](root, fixture['scalar_adapter']['executable'])
+            generic_probe['run_neutral_ip'](root, fixture['scalar_adapter']['executable'])
     assert receipt['particle_count'] == case['particle_count']
     projected = prepared_run/'inputs/projected_source.csv'
     assert hashlib.sha256(projected.read_bytes()).hexdigest() == case['projected_sha256']
@@ -7649,6 +7650,23 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                 selected=source/'common/contracts/test_support'/name
                 shutil.copyfile(selected,root/destination)
                 self.assertEqual((root/destination).read_bytes(),selected.read_bytes())
+            # Resolve the canonical author fixture once; installed children receive only JSON.
+            import ast
+            from common.contracts import test_neutral_ip_primitives as neutral_ip_fixture
+            from msplatform.io.file_identity import file_sha256
+            neutral_ip_fixture.CanonicalIpNeutralTests.setUpClass()
+            ip_case=neutral_ip_fixture.CanonicalIpNeutralTests(methodName='runTest')
+            ip_geometry=ip_case.compile_complete(ip_case.assembly).frontend_geometry
+            ip_requests=json.loads((source/'common/contracts/test_support/ip_mr_lp60_requests.json').read_text(encoding='utf8'))
+            ip_recipe=copy.deepcopy(ip_requests['recipe']);ip_recipe['instances']=ip_recipe['instances'][:1];ip_recipe['connections']=[]
+            ip_numerics={k:copy.deepcopy(ip_geometry[k]) for k in ('domain','pitch_mm','boundary','metal_witnesses','void_witnesses')}
+            ip_numerics['representation']='neutral_world_collision'
+            ip_tree=ast.parse((source/'common/contracts/test_ip_mr_tracking_program.py').read_text(encoding='utf8'))
+            ip_prefix=next(ast.literal_eval(n.value) for n in ast.walk(ip_tree) if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='prefix' for t in n.targets)).replace('BG_INDEX','2')
+            ip_input=dict(request=ip_requests['component_requests']['ion_processor'],recipe=ip_recipe,numerics=ip_numerics,
+                operating_point=json.loads((source/'projects/dual_pressure_rectilinear_ion_processor/config/native_operating_point.json').read_text(encoding='utf8')),
+                clock=dict(clock_epoch_id='instrument_clock_epoch_v1',authority_sha256=file_sha256(source/'src/msplatform/examples/instrument_epoch_v1.json')),lua_prefix=ip_prefix)
+            (root/'installed_neutral_ip_fixture.json').write_text(json.dumps(ip_input),encoding='utf8')
             ip_mr_probe_source=source/'common/contracts/test_support/installed_ip_mr_tracking_probe.py'
             shutil.copyfile(ip_mr_probe_source,root/'installed_ip_mr_tracking_probe.py')
             self.assertEqual((root/'installed_ip_mr_tracking_probe.py').read_bytes(),ip_mr_probe_source.read_bytes())
