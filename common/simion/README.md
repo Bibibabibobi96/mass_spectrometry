@@ -167,7 +167,12 @@ surfaces without dropping the ideal members; overlapping boxes and multi-domain
 HS1 are not supported. Pure compiler negatives and managed public two-RF
 build/model/field/tracking tests use inert native leaves and preserve the shared
 terminal v1 chain. They do not establish native, installed or overlapping LP60
-IP–MR acceptance.
+IP–MR acceptance by themselves. A successor real SIMION 2020 run built and cold
+reopened both domains with zero Refine/Fly (`geometry-70b454276bcd`, manifest
+SHA `FD4060D4...46DDD4`). A direct wheel consumer outside the checkout compiled
+and sealed both 32-member domains with every provider/core origin in its target
+site directory. These scoped checks do not establish field solve, Fly, full
+wheel/sdist acceptance or overlapping-domain qualification.
 
 所有新建SIMION Workbench必须从[`assets/iob_instance_seeds/`](assets/iob_instance_seeds/README.md)
 中与实际PA实例数一致的干净GUI种子派生。该公共目录提供1--10槽连续容器和唯一占位PA；派生器必须替换每一个槽，

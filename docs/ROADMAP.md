@@ -316,8 +316,12 @@ numerical domains; one component may own multiple domains and one scientific
 group may span their native targets. Mixed ideal/solid representations,
 overlap and multidomain HS1 refuse without dropping members. Pure compiler
 checks plus real public managed per-domain build and two-RF chain tests pass
-with inert native leaves and recorded terminal v1 evidence. Native, ordinary
-installation and overlapping LP60 IP–MR qualification remain open.
+with inert native leaves and recorded terminal v1 evidence. Real SIMION 2020
+geometry build and cold reopen then passed for both domains with zero Refine/Fly
+(`geometry-70b454276bcd`, manifest SHA `FD4060D4...46DDD4`); a direct wheel
+consumer outside the checkout compiled and sealed both 32-member domains with
+all provider/core origins in its target site. Field solve, Fly, full wheel/sdist,
+Repository and overlapping LP60 IP–MR qualification remain open.
 
 The canonical-component witness now adds two complete bare RF instances with
 64 rods and 16 scientific groups, distinct 2.0/1.8 mm rod radii, independent

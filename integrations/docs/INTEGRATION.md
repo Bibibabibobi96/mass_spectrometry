@@ -257,8 +257,12 @@ silently omitting ideal surfaces; overlapping boxes and multi-domain HS1 remain
 unsupported. In particular this does not qualify overlapping LP60 IP–MR domains.
 Focused pure tests, the public per-domain build owner and a two-RF managed
 geometry/model/sampled-field/tracking chain pass with inert native leaves and
-current v1 terminal evidence. No R6 native or ordinary-install acceptance has
-been established.
+current v1 terminal evidence. A successor real SIMION 2020 run built and cold
+reopened both domains with zero Refine/Fly (`geometry-70b454276bcd`, manifest
+SHA `FD4060D4...46DDD4`). A direct wheel consumer outside the checkout compiled
+and sealed both 32-member domains with all provider/core origins in its target
+site directory. Field solve, Fly, full wheel/sdist and overlapping-domain
+acceptance remain open.
 
 The round-rod projection consumes the existing canonical center, radius and axial
 endpoints; it does not regenerate the component. Signed-axis X/Y cylinders use
