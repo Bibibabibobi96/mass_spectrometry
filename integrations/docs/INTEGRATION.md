@@ -17,6 +17,27 @@ successfully through 12 native build/reopen operations, with zero Refine,
 Compute and Fly. It preserves the selected model, scalar sources and collision
 geometry; scalar coverage and scientific qualification are not granted.
 
+The later FieldBundle `20261116_081955__sim__simion__fields-00d2baa60bf6`
+reuses the verified collision geometry and seventeen independently exported
+workpoints, including a 0.1-mm regional window. Every remaining export used the
+same saved solution with zero Compute and preserved invalid raw samples. Original
+N100 attempt `20261116_082928__sim__simion__track-63dc39fcd916` built and
+cold-verified, then refused a base-grid boundary stencil at world
+[-11.16349694764653, -317.54053255127258, 10.148677742946544] mm,
+ion 5, 4.1754277515548 us. All 48 stored nodes of that stencil are valid;
+the other 16 lie beyond the stored boundary. All writers stopped and leases
+released. Four partial preaction contacts are not a complete terminal census.
+
+The unmirrored scalar adapter now rejects queries outside the stored box and
+checks the stored derivative support at a PA face, following the installed
+SIMION SDK's one-sided boundary mechanism. An exact-adapter native probe
+`20261116_093001__analysis__simion__pa-boundary-probe-a99682d20681`
+passed 15 linear-potential queries, six outside refusals and two unknown-mask
+refusals. This qualifies only the tested synthetic mechanism.
+Original-N100 flight with this successor and genuine outside-workbench terminal
+recording remain open; the last Lua callback is not substituted for a missing
+native terminal state. No physical entity or invalid vacuum value was changed.
+
 The original-source native attempts retain their individual failures: missing
 empty-surface evidence (`track-27a67896934c`), PA memory exhaustion
 (`track-d71e9a4e7331`), and HS1 callback/sequential-state failures

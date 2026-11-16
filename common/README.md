@@ -129,6 +129,34 @@ Tracking joins saved-solution provenance through its authenticated small manifes
 and the sample's exact solution record, without rereading an unused MPH payload.
 The existing owner still protects both sampled data and its solution producer.
 
+Collision reuse admission compares the original producer's authenticated record
+closure with the already verified selected FieldBundle. Identical resolved paths,
+sizes, digests and record metadata reuse that byte verification; producer-only
+model, clock and basis records are still verified independently. The managed
+positive/protection regression and producer-identity negatives passed (one parent,
+827.560 s); this concurrent run is not a performance comparison. No persistent
+verification cache or weaker selected-data protection is introduced.
+
+The retained `multipole_ip.continuous` consumer now delegates field capability
+admission to the public operations rather than requiring the historical RF-IP
+field-family label. It forwards an explicitly supplied sampled basis and collision
+reuse reference to the same field stage. Five software parents passed (369.939 s),
+including an actual published neutral-field consumer with HS1, original sparse IDs
+and refusal cases; native leaves were inert.
+
+For unmirrored 3D scalar arrays, the runtime first requires the query inside the
+closed stored box, then checks the stored part of the conservative derivative
+support. It does not require fictitious nodes beyond a PA face. Unknown stored
+mask values and unrepresented sheets still refuse, and actual outside queries
+never consume the vendor API's zero result. SIMION 8.2.0.11 native probes
+`pa-boundary-probe-107a6ae586c6` and `pa-boundary-probe-a99682d20681` cover the
+vendor support and exact candidate adapter respectively. The latter passed 15
+linear-potential face/cell queries, six outside refusals and two unknown-mask
+refusals; both native operations drained and released. This is a bounded synthetic
+API qualification, not Fly, convergence or universal field accuracy. The official
+installed SDK `lib/cpp/simion/pa.cpp` describes clipped one-sided field sampling;
+mirrored arrays and active refinement-window halo rules are unchanged.
+
 The three SFI scalar workpoints now use the same admitted identity pool for their
 validity masks and a fresh support-check cache for each query. Voltage arrays stay
 independent. Mask bytes, frame, origin, pitch and dimensions must match for sharing;

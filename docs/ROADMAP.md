@@ -215,8 +215,13 @@ partial OA sheets remain covered by the fine data. This is functional sampling,
 not field convergence or precision qualification. Public raw export followed by
 the existing protected offline derivation keeps each stage within the unchanged
 2 GiB file accounting without copying original samples. The first carrier raw
-product `assembly-scalar-70de323e2961` is published (zero Compute); classification
-and the remaining workpoints are in progress. Unknown vacuum stays invalid.
+product `assembly-scalar-70de323e2961` and its classified carrier, RF and pulse
+successors are published (zero Compute). Actual original-N100 SFI attempt
+`track-4ce1a73d5ac4` completed three native operations with 100 terminal callbacks,
+zero detector arrivals and 100 unconfirmed causes. This is functional execution,
+not transmission, precision or complete cause qualification. Unknown vacuum stays
+invalid; the carrier classification exceeded its warning budget, so the owner
+performance requirement is not closed.
 
 The SFI composer now shares masks only by their admitted byte/grid identity,
 keeps all three voltage fields independent and checks support even at zero
@@ -225,6 +230,26 @@ an actual-source published-basis replay (20 opens, five masks); PA objects in
 that replay were mocked. The final diagnostic-ordering epoch passed 13 targeted
 parents with unchanged source identities. Native memory/flight and final ordinary
 installation/Repository acceptance of this successor remain open.
+The next RF regional selection published all seventeen same-solution workpoints
+and FieldBundle `fields-00d2baa60bf6`, without Compute or invalid-value filling.
+Its original-N100 `track-63dc39fcd916` attempt failed at the base PA boundary:
+48 stored stencil nodes were valid and 16 requested nodes were outside storage.
+The candidate unmirrored scalar guard now checks the closed query box and clips
+only its conservative support envelope to stored nodes, retaining every mask,
+finite-value and ideal-sheet refusal. The exact native adapter probe
+`pa-boundary-probe-a99682d20681` passed 23 synthetic cases with drained operations
+and released leases. Original-N100 successor flight and real outside-workbench
+terminal-state collection remain open; a last callback is not a terminal state.
+
+The retained continuous RF-IP consumer now uses public field capability admission
+instead of the old field-family label, forwarding explicit sampled basis and
+collision reuse to the existing stage. Five software parents passed in 369.939 s.
+Collision-producer admission reuses already verified identical selected bytes
+while independently verifying producer-only records; its public protection and
+identity regression passed in 827.560 s. Both used inert native leaves. Full sheet
+and selector checks passed 15 parents in 6.755 s. These concurrent scoped epochs
+do not constitute same-candidate Repository, installation, native instrument or
+15-minute acceptance; no measured end-to-end speedup is claimed.
 RF attempt `track-8e687cab0c61` failed on an unknown RF-body support node at
 [4, -305.75, 1.75] mm. Its sampled Fly peak was 8,222,646,272 bytes, below
 8 GiB for that short failed attempt, not a full-flight peak guarantee. A saved-FEM
