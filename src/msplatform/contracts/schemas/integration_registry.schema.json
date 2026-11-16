@@ -76,6 +76,15 @@
                     "type": "string"
                   }
                 },
+                "optional_arguments": {
+                  "type": "object",
+                  "propertyNames": {"$ref": "#/$defs/identifier"},
+                  "additionalProperties": {
+                    "type": "array",
+                    "items": {"type": "string"}
+                  },
+                  "default": {}
+                },
                 "run_identity": {
                   "enum": ["caller_selected", "backend_generated"],
                   "description": "Whether the entry consumes the planned run ID or returns the public backend owner's actual generated identity."

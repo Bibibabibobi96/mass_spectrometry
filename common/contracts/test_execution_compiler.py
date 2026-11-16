@@ -281,6 +281,70 @@ foreach($record in $compiledInputs.files){
                 self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
                 self.assertIn("COMPILED_CONSUMER_FREEZE=PASS", result.stdout)
 
+    def test_integration_optional_bindings_use_existing_authority_and_owner(self):
+        from common.contracts.compile_execution_plan import compile_integration_execution, parse_bindings
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            entry = root / "integrations/workflows/fixture/run.ps1"
+            entry.parent.mkdir(parents=True)
+            entry.write_text("param()\n", encoding="utf8")
+            required = root / "request.json"
+            required.write_text('{"required":true}', encoding="utf8")
+            optional = root / "basis.json"
+            optional.write_text('{"sample":"actual"}', encoding="utf8")
+            workflow = dict(workflow_id="fixture", entrypoint="integrations/workflows/fixture/run.ps1",
+                required_bindings=["request"], binding_types=dict(request="file", scalar_field_basis="file"),
+                arguments=["-Request", "{request}"],
+                optional_arguments={"scalar_field_basis": ["-ScalarFieldBasis", "{scalar_field_basis}"]},
+                outputs=["trajectory_artifact_ref"], simulation_paths=["continuous_assembly"], recipes=[],
+                limitations=[], purpose="assembly_propagation", action="run", tools=["python"],
+                model="public stage", run_identity="backend_generated")
+            registry = root / "integrations/registry.json"
+            def write_registry():
+                registry.write_text(json.dumps(dict(schema_version=1, role="integration_registry",
+                    integrations=[dict(integration_id="instrument_assembly", root="integrations",
+                                       workflows=[workflow])])), encoding="utf8")
+            def compile_with(bindings):
+                return compile_integration_execution("instrument_assembly", "fixture", self.run_id, bindings)
+            with patch("common.contracts.compile_execution_plan.REPO_ROOT", root):
+                write_registry()
+                absent = compile_with({"request": str(required)})
+                self.assertTrue(absent["safe_to_execute"])
+                self.assertEqual(absent["commands"][0]["arguments"], ["-Request", str(required)])
+                self.assertEqual([x["name"] for x in absent["binding_authorities"]], ["request"])
+                present = compile_with({"request": str(required), "scalar_field_basis": str(optional)})
+                self.assertTrue(present["safe_to_execute"])
+                self.assertEqual(present["commands"][0]["arguments"],
+                    ["-Request", str(required), "-ScalarFieldBasis", str(optional)])
+                self.assertEqual({x["name"] for x in present["binding_authorities"]}, {"request", "scalar_field_basis"})
+                self.assertIn(str(optional.resolve()), present["binding_sources"])
+                bare = root / "bare.pa"
+                bare.write_bytes(b"fixture")
+                unbound = compile_with({"request": str(required), "scalar_field_basis": str(bare)})
+                self.assertEqual(unbound["status"], "NEEDS_SOURCE_FREEZE")
+                self.assertIn("scalar_field_basis", unbound["source_freeze_required"])
+                missing = compile_with({"request": str(required), "scalar_field_basis": str(root/"missing.json")})
+                self.assertEqual(missing["status"], "NEEDS_RUNTIME_INPUTS")
+                self.assertTrue(any("scalar_field_basis: file is missing" in x for x in missing["blockers"]))
+                with self.assertRaisesRegex(ValueError, "Unexpected workflow bindings"):
+                    compile_with({"request": str(required), "other": str(optional)})
+                workflow["optional_arguments"]["request"] = ["-Duplicate", "{request}"]
+                write_registry()
+                with self.assertRaisesRegex(ValueError, "disjoint"):
+                    compile_with({"request": str(required)})
+                workflow["optional_arguments"].pop("request")
+                workflow["optional_arguments"]["untyped"] = ["-Untyped", "{untyped}"]
+                write_registry()
+                with self.assertRaisesRegex(ValueError, "binding types"):
+                    compile_with({"request": str(required)})
+                workflow["optional_arguments"].pop("untyped")
+                workflow["optional_arguments"]["scalar_field_basis"].append("{run_id}")
+                write_registry()
+                with self.assertRaisesRegex(ValueError, "cannot bind the planning run ID"):
+                    compile_with({"request": str(required)})
+            with self.assertRaisesRegex(ValueError, "duplicate"):
+                parse_bindings(["request=a", "request=b"])
+
     def test_integration_backend_generated_identity_is_not_a_planned_run(self):
         from common.contracts.compile_execution_plan import compile_integration_execution
         with tempfile.TemporaryDirectory() as directory:

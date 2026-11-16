@@ -400,11 +400,19 @@ def compile_integration_execution(owner: str, workflow_id: str, run_id: str,
         raise ValueError("Assembly propagation does not grant a scientific qualification")
     if purpose is not None and purpose != workflow["purpose"]:
         raise ValueError(f"Purpose is not supported: {purpose}")
-    unexpected = sorted(set(bindings)-set(workflow["required_bindings"]))
+    optional = workflow.get("optional_arguments", {})
+    required = set(workflow["required_bindings"])
+    if required & set(optional):
+        raise ValueError("Optional workflow bindings must be disjoint from required bindings")
+    if set(optional) - set(workflow.get("binding_types", {})):
+        raise ValueError("Optional workflow bindings require declared binding types")
+    unexpected = sorted(set(bindings) - required - set(optional))
     if unexpected:
         raise ValueError("Unexpected workflow bindings: " + ", ".join(unexpected))
     missing = sorted(set(workflow["required_bindings"])-set(bindings))
-    _, unavailable = _resolved_inputs(workflow, REPO_ROOT, bindings)
+    active_types = {key: kind for key, kind in workflow.get("binding_types", {}).items()
+                    if key in required or key in bindings and key in optional}
+    _, unavailable = _resolved_inputs(dict(workflow, binding_types=active_types), REPO_ROOT, bindings)
     authorities, needs_freeze = _binding_authorities(workflow, bindings)
     for key, kind in workflow["binding_types"].items():
         if kind == "directory" and key in bindings:
@@ -418,10 +426,14 @@ def compile_integration_execution(owner: str, workflow_id: str, run_id: str,
     if not entry.is_relative_to((REPO_ROOT/owners[0]["root"]).resolve()) or not entry.is_file():
         raise ValueError("Integration entrypoint is outside its owner or missing")
     run_identity = workflow.get('run_identity', 'caller_selected')
-    if run_identity == 'backend_generated' and any('{run_id' in item for item in workflow['arguments']):
+    declared_arguments = [*workflow['arguments'], *(item for values in optional.values() for item in values)]
+    if run_identity == 'backend_generated' and any('{run_id' in item for item in declared_arguments):
         raise ValueError('Backend-generated run identity cannot bind the planning run ID')
     context = PreserveMissing(run_id=run_id, **bindings)
     arguments = [argument.format_map(context) for argument in workflow["arguments"]]
+    for key, values in optional.items():
+        if key in bindings:
+            arguments.extend(argument.format_map(context) for argument in values)
     return dict(schema_version=1, role="execution_dry_run", python_executable=str(Path(sys.executable).resolve()), status=status,
         safe_to_execute=status == "EXECUTION_READY", can_prepare_sources=status == "NEEDS_SOURCE_FREEZE",
         action="preview", execution_status="not_started", science_status="not_evaluated",
