@@ -634,6 +634,9 @@ try
         fprintf(fid,'PARTICLE_STUDIES_CREATED=0\n');
         assert(particlePhysicsCreated == 0, ...
             'Field-solve stop stage created forbidden particle physics.');
+        modelDirectory=fileparts(modelPath);if ~isfolder(modelDirectory),mkdir(modelDirectory);end
+        model.save(modelPath);
+        fprintf(fid,'MODEL_SAVED=true\n');
         fprintf(fid,'FIELD_SOLVE_DIAGNOSTIC=PASS\n');
         fprintf(fid,'STATUS=PASS\n');
         ModelUtil.remove(tag);

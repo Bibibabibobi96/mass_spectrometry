@@ -190,6 +190,108 @@ def saved_comsol(*, parent_manifest: Path, sampling_plan: Path, budget: Path, ru
     return result
 
 
+def _field_runtime(path: Path, budget: Mapping[str, Any]) -> dict[str, Any]:
+    runtime = _json(path)
+    if (runtime.get("schema_version") != 1
+            or runtime.get("role") != "multipole_resolved_runtime_profile"
+            or runtime.get("project_id") != "rf_multipole_ion_optics"
+            or runtime.get("stop_stage") != "field_solve"):
+        raise ValueError("Explicit RF field_solve resolved runtime required")
+    design = runtime.get("design_profile_resolution", {}).get("resolved_design", {})
+    particle = runtime.get("particle_source", {})
+    numerics = runtime.get("solver_numerics", {}).get("comsol", {})
+    expected = dict(runtime_profile_id=runtime.get("runtime_profile_id"),
+                    design_profile_id=runtime.get("design_profile_id"),
+                    particle_source_profile_id=particle.get("profile_id"),
+                    solver_numerics_profile_id=numerics.get("profile_id"),
+                    authorized_run_id=budget.get("authorized_run_id"),
+                    expected_run_parent_resolved_design_sha256=design.get("resolved_sha256"))
+    if (design.get("role") != "multipole_resolved_design_do_not_edit"
+            or not isinstance(design.get("resolved_sha256"), str)
+            or not isinstance(particle.get("path"), str) or not isinstance(numerics.get("values"), Mapping)
+            or any(budget.get(name) != value for name, value in expected.items())):
+        raise ValueError("RF field runtime, design, numerics and budget identities differ")
+    return runtime
+
+
+def execute_comsol_fields(session: Any, *, runtime: Mapping[str, Any], science_task: Path,
+                          plan_source: Path, limits: Mapping[str, Any], source_id: str) -> dict[str, Any]:
+    from msplatform.backends.comsol.rf_stationary_field import run_field_operations
+    resolved_source = session.declare_file(session.input_dir / "stationary_resolved_design.json", "required_evidence")
+    write_json_atomic(resolved_source, runtime["design_profile_resolution"]["resolved_design"])
+    _owned_input(session, "stationary_sampling_plan", plan_source, "stationary_field_sampling_plan.json")
+    points, _ = _points(session, file_record(resolved_source, "required_evidence"),
+                        file_record(plan_source, "required_evidence"), source_id)
+    samples = session.declare_file(session.result_dir / "stationary_field_samples.csv", "required_evidence")
+    validation = session.declare_file(session.result_dir / "stationary_field_sample_validation.json", "required_evidence")
+    model = session.declare_file(session.result_dir / "finite_3d_transport.mph", "solver_native_binary")
+    try:
+        native = run_field_operations(session, runtime=runtime, science_task=science_task,
+                                      points=points, samples=samples, limits=limits)
+        _validation_document(session.input_dir / "stationary_field_sampling_authority.json", samples, validation)
+    except BaseException as failure:
+        failure.failure_output_paths = [path for path in (model, samples)
+                                        if session.canonical_path(path).is_file()]
+        raise
+    outputs = [model, samples, validation, native["verification"]]
+    return dict(status="success", summary=dict(role="rf_stationary_field_parent",
+        native_solves=1, native_operations=2, verification_compute_calls=0,
+        fly_calls=0, solution_tags=native["solution_tags"], scientific_qualification="not_granted"),
+        output_paths=list(map(str, outputs)), required_output_paths=list(map(str, outputs)),
+        retention_preserve_paths=[], manifest_extra_fields={})
+
+
+def solve_comsol(*, resolved_runtime: Path, preregistration: Path, science_task: Path,
+                 sampling_plan: Path, budget: Path, run_id: str, source_id: str,
+                 context: ExecutionContext) -> dict[str, Any]:
+    from msplatform.backends.comsol import rf_stationary_field
+    from msplatform.backends.comsol.resources import native_resource_path
+    resolved_budget, budget_record = _budget(budget, solver="comsol")
+    runtime = _field_runtime(resolved_runtime, resolved_budget)
+    design = runtime["design_profile_resolution"]["resolved_design"]
+    particle = runtime["particle_source"]
+    profile = runtime["design_profile_resolution"]
+    authorities = {
+        "runtime_profiles_sha256": Path(runtime["runtime_profile_registry_path"]),
+        "engineering_budget_sha256": Path(runtime["engineering_budget"]["path"]),
+        "particle_source_profiles_sha256": Path(particle["registry_path"]),
+        "design_profiles_sha256": Path(profile["profiles_path"]),
+        "comsol_solver_numerics_sha256": Path(runtime["solver_numerics_registry_paths"]["comsol"]),
+    }
+    implementation = [Path(rf_stationary_field.__file__).resolve(), Path(__file__).resolve(),
+        science_task.resolve(), native_resource_path("read_rf_saved_stationary_solution.m"),
+        native_resource_path("export_comsol_stationary_field_samples.m")]
+    rows = sampling.generate_stationary_field_sample_rows(design, _json(sampling_plan))
+    registration = validate_preregistration(_json(preregistration), solver="comsol", run_id=run_id,
+        runtime_profile_id=runtime["runtime_profile_id"], design_profile_id=runtime["design_profile_id"],
+        particle_source_profile_id=particle["profile_id"],
+        solver_numerics_profile_id=runtime["solver_numerics"]["comsol"]["profile_id"],
+        retention_class="solver_review", expected_resolved_sha256=design["resolved_sha256"],
+        authority_paths=authorities, implementation_paths=implementation)
+    if registration["field_sampling"]["expected_point_count"] != len(rows):
+        raise ValueError("RF field preregistration sample count differs")
+    prereg_record = file_record(preregistration, "required_evidence")
+    plan_record = file_record(sampling_plan, "required_evidence")
+    runtime_record = file_record(resolved_runtime, "required_evidence")
+    result = run_managed_stage(context,
+        descriptor=dict(project="rf_multipole_ion_optics", mode="rf_stationary_field_solve",
+                        software=["COMSOL 6.4", "MATLAB R2025b", "Python 3.11"]),
+        run_id=run_id, payload=dict(action="solve_comsol_stationary_fields", source_id=source_id,
+                                    preregistration=registration, budget=resolved_budget),
+        committed_new_bytes=resolved_budget["limits"]["transient_run_directory_bytes"],
+        commitment_inputs=[budget_record, prereg_record, plan_record, runtime_record],
+        retention={"policy_version": 1, "class": "solver_review",
+                   "reason": "RF stationary differential/static parent and cold verification; no Fly or qualification"},
+        source_references=[], expected_operation_ids=("solve_stationary_fields", "verify_stationary_fields"),
+        operation_dependencies={"verify_stationary_fields": ["solve_stationary_fields"]},
+        action=partial(execute_comsol_fields, runtime=runtime, science_task=science_task,
+                       plan_source=sampling_plan, limits=resolved_budget["limits"], source_id=source_id),
+        action_record=file_record(Path(__file__).resolve(), "required_evidence"),
+        expected_relative_paths=("inputs/solve_stationary_fields.m", "inputs/verify_stationary_fields.m"),
+        use_short_execution_path=True)
+    return result
+
+
 def _simion_request(path: Path) -> dict[str, Any]:
     request = _json(path)
     required = {"schema_version", "role", "resolved_design", "sampling_plan", "controller_pa",
@@ -364,7 +466,7 @@ def _build_parser() -> argparse.ArgumentParser:
     compare.add_argument("--candidate", type=Path, required=True)
     compare.add_argument("--output", type=Path, required=True)
     compare.add_argument("--comparison-authority", type=Path)
-    for name in ("saved-comsol", "simion-sample"):
+    for name in ("solve-comsol", "saved-comsol", "simion-sample"):
         command = commands.add_parser(name)
         command.add_argument("--budget", type=Path, required=True)
         command.add_argument("--run-id", required=True)
@@ -374,8 +476,13 @@ def _build_parser() -> argparse.ArgumentParser:
         command.add_argument("--powershell", type=Path, required=True)
         command.add_argument("--host-state", type=Path, required=True)
         command.add_argument("--policy", type=Path, required=True)
-        if name == "saved-comsol":
-            command.add_argument("--parent-manifest", type=Path, required=True)
+        if name in {"solve-comsol", "saved-comsol"}:
+            if name == "solve-comsol":
+                command.add_argument("--resolved-runtime", type=Path, required=True)
+                command.add_argument("--preregistration", type=Path, required=True)
+                command.add_argument("--science-task", type=Path, required=True)
+            else:
+                command.add_argument("--parent-manifest", type=Path, required=True)
             command.add_argument("--sampling-plan", type=Path, required=True)
             command.add_argument("--comsol-launcher", type=Path, required=True)
             command.add_argument("--matlab-root", type=Path, required=True)
@@ -439,6 +546,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     if arguments.command == "resume-finalization":
         resume_finalization(_context(arguments, tools={}), arguments.result_path)
+        return 0
+    if arguments.command == "solve-comsol":
+        context = _context(arguments, tools=dict(comsol_launcher=arguments.comsol_launcher.absolute(),
+                                                 matlab_root=arguments.matlab_root.absolute()))
+        solve_comsol(resolved_runtime=arguments.resolved_runtime,
+            preregistration=arguments.preregistration, science_task=arguments.science_task,
+            sampling_plan=arguments.sampling_plan, budget=arguments.budget,
+            run_id=arguments.run_id, source_id=arguments.source_id, context=context)
         return 0
     if arguments.command == "saved-comsol":
         context = _context(arguments, tools=dict(comsol_launcher=arguments.comsol_launcher.absolute(),

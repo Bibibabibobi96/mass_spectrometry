@@ -24,6 +24,29 @@
 [公共COMSOL入口](../../../common/comsol/README.md)。
 集成入口按本次冻结计划调用适用的 COMSOL／SIMION stage；内部 stage 不是独立公开入口或科学资格。
 
+## RF stationary field-only public stage
+
+`msplatform.workflows.rf_stationary solve-comsol` is the field-only owner for a frozen
+`multipole_resolved_runtime_profile` with `stop_stage=field_solve`. It requires explicit
+preregistration, resolved budget, sampling plan and the canonical project
+`solve_finite_3d_transport.m` science path. The old PowerShell transport runner remains
+unchanged and does not accept this stage.
+
+The managed owner runs the official COMSOL launcher twice: first solve and save the field-only
+MPH, then cold-load it and export both stationary cases with zero Compute and zero parent save.
+The parent includes `multipole_resolved_design` and `finite_3d_transport.mph`, so the existing
+`saved-comsol` owner can consume it. The operation creates no charged-particle physics or Study
+and no Fly. Preregistration binds runtime/design/source/numerics authorities, implementation files,
+sample counts, required checkpoints and zero retries. Ordinary `resume-finalization` uses the same
+public module and saved Result; it does not rerun a completed solve.
+
+COMSOL 6.4's official [`SolverSequence`](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/api/com/comsol/model/SolverSequence.html)
+API supports `createAutoSequence`, `attach`, `runAll`, solution size and solution retrieval
+(reviewed 2026-11-17). The implementation uses the existing project science and these official APIs;
+the two-operation orchestration and evidence contracts are repository implementation, not a second
+commercial driver or a vendor qualification. Native field accuracy, convergence and scientific
+qualification remain separate.
+
 ## interface readiness 的预算与收尾恢复
 
 正常入口的源表、paired bundle、源家族与分布必须属于同一已验证源；数值合同与具名 profile 显式选择：

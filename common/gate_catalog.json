@@ -2693,6 +2693,14 @@
           "reason": "installed_frozen_python_executor_changed"
         },
         {
+          "exact": "src/msplatform/backends/comsol/rf_stationary_field.py",
+          "reason": "installed_rf_stationary_field_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/rf_stationary.py",
+          "reason": "installed_rf_stationary_workflow_changed"
+        },
+        {
           "exact": "src/msplatform/backends/comsol/rf_finite_extraction.py",
           "reason": "installed_rf_finite_extraction_changed"
         },

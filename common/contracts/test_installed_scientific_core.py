@@ -1386,6 +1386,10 @@ assert not list(placed_source_only.rglob('*.gem')) and not list(placed_source_on
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import candidate_authority
 from msplatform.backends.comsol import corridor_field
 assert callable(corridor_field.compile_request)
+from msplatform.backends.comsol import rf_stationary_field
+assert callable(rf_stationary_field.run_field_operations)
+from msplatform.workflows import rf_stationary
+assert 'solve-comsol' in rf_stationary._build_parser().format_help()
 from msplatform.backends.comsol.resources import native_resource_directory, native_resource_path, native_resource_text
 import msplatform.backends.comsol as comsol_backend
 matlab_directory = native_resource_directory().resolve()

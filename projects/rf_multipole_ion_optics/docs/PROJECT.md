@@ -1517,6 +1517,33 @@ export and one governed SIMION field/sample owner, compile comparison authority 
 metrics. The original parent MPH and active failed-run hold must remain protected, and no scientific PASS is
 inferred from these software results.
 
+The public RF stationary COMSOL field stage now lives in
+`msplatform.backends.comsol.rf_stationary_field`, with generic preregistration, owner and recovery
+wiring in `msplatform.workflows.rf_stationary`. It does not edit or add a branch to the old
+PowerShell transport runner. The canonical project MATLAB retains the existing field-only physics;
+that branch now saves its MPH before returning. A second managed operation cold-loads the saved
+parent, requires nonempty differential/static solution identities and exports both cases with zero
+Compute and zero parent save. The Assembly single-workpoint owner was not reused because its
+prepared-model and `std1/sol1` contracts do not represent RF multipole science. Official COMSOL 6.4
+`SolverSequence` APIs support the existing `createAutoSequence`/`attach`/`runAll` and solution-size
+calls (reviewed 2026-11-17); orchestration and qualification boundaries remain repository-owned.
+Six focused inert/negative tests passed, including actual generated task invocation, missing science
+and wrong graph refusal. The existing stationary sampling module passed 16 tests with its one
+unchanged optional portable-Lua skip; Ruff, JSON and diff checks passed. These are software and
+resource-wiring results, not native field, GUI, convergence or scientific qualification.
+
+The complete Changed gate subsequently passed with isolated test artifacts and the shared host ledger:
+ordinary wheel/sdist installation (11 tests), 522 RF domain tests (two existing skips), all four
+integration partitions, all three RF variant static gates, Ruff, documentation and development checks.
+MATLAB R2025b also passed the toolchain probe; SolidWorks used its existing file-version fallback and
+was not a CAD acceptance. Native run `20261117_012100__sim__comsol__rf-stationary-fields-v24` then
+failed before the COMSOL launcher: its caller mistakenly selected `artifact_capacity_policy.json` as
+the host `policy_path`, causing `PropertyNotFoundException: default_profiles`. Earlier attempts were
+refused by `MINIMUM_FREE_CAPACITY_UNAVAILABLE` before any run directory existed. The failed run's
+new lease `workflow-1985f6e6fccd41d7bd2a0c0e2df48f89` remains protected; it was not cleared or reused.
+No Compute, saved MPH, saved export, SIMION sample or comparison resulted. The correct host resource
+policy and a fresh run identity plus capacity are still required for native acceptance.
+
 The RF whole-batch continuation planner is available through the installed
 `msplatform.workflows.rf_batch_continuation` owner. Its implementation is byte-identical
 to the retired project runtime body. All six production calls use the installed API
