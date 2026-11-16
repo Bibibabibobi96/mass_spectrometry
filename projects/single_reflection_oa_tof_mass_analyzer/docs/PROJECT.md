@@ -980,6 +980,12 @@ The installed spectrum records the actual Python version through the existing ex
 
 产物仍为六项质量谱CSV／metrics／PNG及本run公共summary、manifest、Result；原有candidate边界、`resolution_claim_allowed=false`及未资格化的时钟说明保持，软件成功不授予新的Formal或全链资格。旧host-role矩阵中缺少封存父输入的伪分析case由`test_mass_spectrum_input_admission`实际公开CLI→分析→公共GATE释放和恢复测试替代；普通mass/SIMION角色case保留。
 
+### 质量谱正常原生生命周期的公共owner接线
+
+正常五质量入口现在先建立现有公共容量会话和PowerShell run-artifact owner，再进入原生工作。每物种COMSOL调用保留 launcher completion、真实进程／host release、CSV与报告身份；`ResumeAfterComsol`只在原checkpoint、原容量会话仍active且Result明确确认所有writer已停止时，复用哈希核验成功的物种。未知writer／`inspect_writer_completion`在归档或重启任何物种前拒绝，旧run与已封存run不得重新打开或补造资格。混合物种SIMION保持原科学argv与母群，改由公共受观测进程边界执行。
+
+成功、科学失败和基础设施失败统一经公共finalizer发布；未知writer保留容量与运行保护。`-ResumeFinalization -RunId <id> [-ResultPath <原Result>]`同时覆盖正常与重分析owner，只补收尾，不新增原生工作。原CLI惰性原生回归保留正常argv／环境、认证复用、篡改拒绝、不完整物种重跑、失败终态、未知writer零重复启动与既有零原生重分析。独立审查发现的未知writer可重复启动缺口已补前置guard及Result／容量hold／run config字节不变回归，并复核关闭。修后完整14项原CLI／准入模块在627.963秒内全部通过，targeted未知writer与合法replay分别77.851／97.063秒通过；Ruff、PowerShell语法及diff检查通过。此软件迁移不授予新的COMSOL／SIMION、GUI、科学或Formal资格。
+
 ### Candidate测试职责与分片边界
 
 Candidate 工作流测试的直接执行入口位于全部测试类之后，与模块方式均可发现因果阶段测试；same／changed authority 用例按实际两种行为命名，不声称覆盖缺失 authority。测试集合及生产阶段证据检查保持。

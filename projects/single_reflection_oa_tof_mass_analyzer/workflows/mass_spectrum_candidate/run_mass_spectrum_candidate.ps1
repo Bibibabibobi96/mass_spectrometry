@@ -37,7 +37,7 @@ if($ReanalyzeOnly-or$ResumeFinalization){
     $analysisRequest=Join-Path $priorAnalysis.run_directory 'inputs/execution_request.json'
     $analysisRequestValue=Get-Content -LiteralPath $analysisRequest -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
     if($analysisRequestValue.package.project-cne$analysisProject-or$analysisRequestValue.package.run_id-cne$RunId-or
-       $analysisRequestValue.package.mode-cne'mass_spectrum_analysis'){throw 'Mass-spectrum Result owner differs.'}
+       $analysisRequestValue.package.mode-notin@('mass_spectrum_analysis','mass_spectrum_candidate')){throw 'Mass-spectrum Result owner differs.'}
     $analysisOutcome=Invoke-RunArtifactWorkflow -RequestPath $analysisRequest -ResultPath $ResultPath -ResumeFinalization
     if(-not$analysisOutcome.terminal_published){throw 'Mass-spectrum finalization remains incomplete.'}
     return
@@ -226,8 +226,76 @@ $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $python = if ($env:SIMULATION_PYTHON_EXE) { (Resolve-Path -LiteralPath $env:SIMULATION_PYTHON_EXE).Path }
   else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
-. (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $repoRoot 'common/contracts/run_artifact_workflow.ps1')
 . (Join-Path $repoRoot 'common/paths/workspace_paths.ps1')
+function Get-MassSpectrumComsolReceipt {
+  param([string]$Path,[string]$ExpectedRunId)
+  if(-not(Test-Path -LiteralPath $Path -PathType Leaf)){throw 'COMSOL completion receipt is missing.'}
+  $receipt=Get-Content -LiteralPath $Path -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+  if($receipt.schema_version-ne1-or$receipt.role-cne'comsol_launcher_completion'-or$receipt.run_id-cne$ExpectedRunId-or
+     $receipt.operations-isnot[array]-or-not$receipt.operations.Count-or$receipt.host_release-isnot[Collections.IDictionary]){
+    throw 'COMSOL completion receipt identity differs.'
+  }
+  if($receipt.host_release.error-or
+     (-not[bool]$receipt.host_release.inherited-and($null-eq$receipt.host_release.result-or
+      $receipt.host_release.result.status-cne'released'-or$receipt.host_release.result.token-cne$receipt.host_release.token))){
+    throw 'COMSOL writer or host release remains unknown; retain the original owner and protected run.'
+  }
+  foreach($operation in $receipt.operations){
+    $observation=$operation.observation
+    if($null-eq$observation-or-not[bool]$observation.exit_confirmed-or
+       ($observation.process_id-isnot[int]-and$observation.process_id-isnot[long])-or[long]$observation.process_id-le0-or
+       ($observation.process_started_at_utc_ticks-isnot[int]-and$observation.process_started_at_utc_ticks-isnot[long])-or
+       [long]$observation.process_started_at_utc_ticks-le0){
+      throw 'COMSOL writer completion is unknown; retain the original owner and protected run.'
+    }
+  }
+  return $receipt
+}
+function Save-MassSpectrumComsolCompletion {
+  param([string]$Name,[string]$ConfigPath,[string]$CompletionPath,[string]$CsvPath,[string]$ReportPath)
+  $record=@{completion=(New-WorkflowOwnerFileRecord $CompletionPath)}
+  foreach($item in @(@{key='csv';path=$CsvPath},@{key='report';path=$ReportPath})){
+    if(Test-Path -LiteralPath $item.path -PathType Leaf){$record[$item.key]=New-WorkflowOwnerFileRecord $item.path}
+  }
+  $config=Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+  if(-not$config.Contains('native_completion')-or$config.native_completion-isnot[Collections.IDictionary]){
+    $config.native_completion=@{}
+  }
+  $config.native_completion[$Name]=$record
+  Write-RunJson -Atomic -Path $ConfigPath -Value $config -Depth 100
+}
+function Get-MassSpectrumSavedComsolCompletion {
+  param([string]$Name,[string]$ConfigPath,[string]$ExpectedRunId,[string]$ExpectedCompletionPath)
+  $config=Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+  if(-not$config.Contains('native_completion')-or$config.native_completion-isnot[Collections.IDictionary]-or
+     -not$config.native_completion.Contains($Name)){
+    throw "Resume lacks authenticated native completion for $Name; create a new run instead of certifying legacy files."
+  }
+  $saved=$config.native_completion[$Name]
+  if($saved.completion.path-cne$ExpectedCompletionPath){throw "Resume native completion path differs for $Name."}
+  Assert-WorkflowFileRecord $saved.completion $ExpectedCompletionPath
+  foreach($key in @('csv','report')){
+    if($saved.Contains($key)){Assert-WorkflowFileRecord $saved[$key] $saved[$key].path}
+  }
+  $receipt=Get-MassSpectrumComsolReceipt -Path $ExpectedCompletionPath -ExpectedRunId $ExpectedRunId
+  $successful=(@($receipt.operations|Where-Object{[int]$_.observation.returncode-ne0}).Count-eq0)-and
+    $saved.Contains('csv')-and$saved.Contains('report')
+  return @{receipt=$receipt;successful=$successful;csv=$(if($saved.Contains('csv')){$saved.csv.path}else{''});
+    report=$(if($saved.Contains('report')){$saved.report.path}else{''})}
+}
+function Add-MassSpectrumComsolOperations {
+  param([string]$Name,[Collections.IDictionary]$Receipt,[Collections.Generic.List[object]]$Operations,
+    [Collections.Generic.List[object]]$Releases)
+  $releaseId=[string]$Receipt.host_release.token
+  if([string]::IsNullOrWhiteSpace($releaseId)){throw "COMSOL $Name has no resource release identity."}
+  foreach($operation in $Receipt.operations){
+    $operation.operation_id="comsol-$Name-$($operation.operation_id)"
+    $operation.resource_release_id=$releaseId
+    $Operations.Add($operation)
+  }
+  Add-RunArtifactResourceRelease -ResourceReleases $Releases -ReleaseId $releaseId -Receipt $Receipt
+}
 $pathContext = Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
 $artifactRoot = Join-Path $pathContext.artifact_root 'projects/single_reflection_oa_tof_mass_analyzer'
 $runDir = Join-Path $artifactRoot "runs\$RunId"
@@ -259,6 +327,22 @@ $environmentNames = @('SIMULATION_PYTHON_EXE','MASS_SPECTROMETRY_ARTIFACT_ROOT',
 $environmentSnapshot = Save-RunEnvironment -Names $environmentNames
 $hostRole = 'SIMION'
 $hostExecutionLease = $null
+$capacity = $null
+$package = $null
+$owner = $null
+$failure = $null
+$finalizationFailure = $null
+$writersStopped = $true
+$nativeOperations = [Collections.Generic.List[object]]::new()
+$resourceReleases = [Collections.Generic.List[object]]::new()
+$resourceUsage = [Collections.Generic.List[object]]::new()
+$authenticatedComsol = @{}
+$executionAlias = $null
+$runtimeAlias = $null
+$runtimeRoot = $null
+$simionReleaseId = ''
+$stage = 'prepare'
+$timer = [Diagnostics.Stopwatch]::StartNew()
 try {
 $env:SIMULATION_PYTHON_EXE = $python
 $env:MASS_SPECTROMETRY_ARTIFACT_ROOT = [string]$pathContext.artifact_root
@@ -288,11 +372,63 @@ if ($resumeExisting) {
       -not [bool]$existingLifecycle.capacity_ledger_lifecycle.enabled) {
     throw 'Resume requires an existing governed retention and capacity-ledger lifecycle.'
   }
+  $requestPath = Join-Path $inputDir 'execution_request.json'
+  if (-not (Test-Path -LiteralPath $requestPath -PathType Leaf)) {
+    throw 'Resume lacks its original public owner; create a new run instead of certifying legacy files.'
+  }
+  if (Test-Path -LiteralPath (Join-Path $resultDir 'execution_completion.json') -PathType Leaf) {
+    throw 'ResumeAfterComsol found persisted owner completion; use ResumeFinalization without starting native work.'
+  }
+  $request = Get-Content -LiteralPath $requestPath -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
+  if ($request.prepared.owner_kind-cne'powershell'-or$request.package.run_id-cne$RunId-or
+      $request.package.project-cne'single_reflection_oa_tof_mass_analyzer'-or$request.package.mode-cne'mass_spectrum_candidate') {
+    throw 'Resume public owner identity differs.'
+  }
+  $originalResultPath = Join-Path $artifactRoot ('scratch/workflow_results/'+$RunId+'/result.json')
+  if (-not (Test-Path -LiteralPath $originalResultPath -PathType Leaf)) {
+    throw 'Resume requires the original public owner Result.'
+  }
+  $originalResult = Get-Content -LiteralPath $originalResultPath -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
+  if (-not $originalResult.Contains('writers_confirmed')-or$originalResult.writers_confirmed-isnot[bool]-or
+      -not $originalResult.writers_confirmed-or$originalResult.resume_action-ceq'inspect_writer_completion') {
+    throw 'ResumeAfterComsol requires confirmed stopped native writers; inspect the original writer hold without rerunning any species.'
+  }
+  $capacity = Get-Content -LiteralPath (Join-Path $logDir 'capacity_session.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+  if ($capacity.status-cne'active'-or$capacity.owner-cne"run-artifact-workflow:single_reflection_oa_tof_mass_analyzer:$RunId") {
+    throw 'ResumeAfterComsol requires the original active capacity session; use ResumeFinalization or create a new run.'
+  }
+  $manifest = Get-Content -LiteralPath (Join-Path $runDir 'run_manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+  if ($manifest.status-cne'checkpoint') {
+    throw 'ResumeAfterComsol cannot reopen a sealed run; use ResumeFinalization or create a new run.'
+  }
+  $package = [pscustomobject]@{run_dir=$runDir;artifact_run_dir=$runDir;input_dir=$inputDir;result_dir=$resultDir;
+    log_dir=$logDir;run_config=(Join-Path $runDir 'run_config.json');execution_alias=$null;native_path_preparation=@{}}
+  $owner = @{python=$python;repo_root=$repoRoot;request_path=$requestPath;
+    result_path=$originalResultPath;
+    run_directory=$runDir;execution_run_directory=$runDir;session=$capacity;package=$package;
+    native_path_preparation=@{};own_capacity_session=$true;completion_written=$false;finalized=$false;finalization_started=$false}
+  if ($null-ne$existingLifecycle.PSObject.Properties['native_completion']) {
+    foreach ($name in @($existingLifecycle.native_completion.PSObject.Properties.Name)) {
+      $completionPath = Join-Path $logDir "$name.comsol_completion.json"
+      $saved = Get-MassSpectrumSavedComsolCompletion -Name $name -ConfigPath $package.run_config `
+        -ExpectedRunId $RunId -ExpectedCompletionPath $completionPath
+      if ($saved.successful) {
+        $authenticatedComsol[$name] = $saved
+        Add-MassSpectrumComsolOperations -Name $name -Receipt $saved.receipt -Operations $nativeOperations -Releases $resourceReleases
+      }
+    }
+  }
 } else {
-  if ((Test-Path -LiteralPath $runDir) -or (Test-Path -LiteralPath $resultDir)) {
+  if (Test-Path -LiteralPath $runDir) {
     throw "Candidate mass-spectrum run already exists: $RunId"
   }
-  . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+  $capacityPolicy = Get-Content -LiteralPath (Join-Path $repoRoot 'src/msplatform/execution/resources/artifact_capacity_policy.json') `
+    -Raw -Encoding UTF8 | ConvertFrom-Json
+  [long]$committedNewBytes = $capacityPolicy.light_evidence_budget_bytes
+  if ($committedNewBytes-le0) { throw 'Mass-spectrum capacity commitment is invalid.' }
+  $capacity = Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
+    -ArtifactRoot $pathContext.artifact_root -RunDirectory $runDir -CommittedNewBytes $committedNewBytes `
+    -Owner ('run-artifact-workflow:single_reflection_oa_tof_mass_analyzer:'+$RunId)
   $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
     -RunId $RunId -Project 'single_reflection_oa_tof_mass_analyzer' -Mode 'mass_spectrum_candidate' `
     -Software @('COMSOL 6.4','SIMION 2020','Python 3.11') -RetentionContractEnabled `
@@ -304,33 +440,18 @@ if ($resumeExisting) {
   $logDir = $package.log_dir
   $ionDir = Get-Item -LiteralPath (Join-Path $runDir 'ions')
   $comsolDir = Get-Item -LiteralPath (Join-Path $runDir 'comsol')
+  $commitmentPath = Join-Path $inputDir 'native_capacity_commitment.json'
+  Write-RunJson -Path $commitmentPath -Value @{committed_new_bytes=$committedNewBytes;
+    authority='src/msplatform/execution/resources/artifact_capacity_policy.json:light_evidence_budget_bytes';
+    scope='existing normal five-species solver and analysis run; no new scientific inputs or payload copies'} -Depth 20
+  $entrypoint = Join-Path $inputDir 'run_mass_spectrum_candidate.ps1'
+  $null = Copy-VerifiedRunInput -Source $PSCommandPath -Destination $entrypoint
+  $owner = Initialize-RunArtifactPowerShellOwner -Python $python -RepoRoot $repoRoot -Package $package `
+    -CapacitySession $capacity -ResultPath $ResultPath -EntrypointPath $entrypoint `
+    -CommitmentInputPaths @($commitmentPath) -Software @('COMSOL 6.4','SIMION 2020','Python 3.11')
+  Write-Host "MASS_SPECTRUM_RESULT=$($owner.result_path)"
 }
-. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
-$lifecycleConfig = Get-Content -LiteralPath (Join-Path $runDir 'run_config.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-$executionAlias = $null
-$runtimeAlias = $null
-$runtimeRoot = $null
-$runRecordComplete = $false
-trap {
-  if ($null -ne $runtimeAlias) {
-    try { Remove-RunExecutionAlias -ExecutionAlias $runtimeAlias.execution_alias -TargetDirectory $runtimeRoot }
-    catch { Write-Warning "Could not remove short formal-runtime alias: $($_.Exception.Message)" }
-  }
-  if ($null -ne $runtimeRoot) {
-    try { Remove-OaTofFormalSimionRuntime -ArtifactRoot $artifactRoot -RuntimeRoot $runtimeRoot }
-    catch { Write-Warning "Could not remove formal SIMION runtime: $($_.Exception.Message)" }
-  }
-  if ($null -ne $executionAlias) {
-    try { Remove-RunExecutionAlias -ExecutionAlias $executionAlias.execution_alias -TargetDirectory $runDir }
-    catch { Write-Warning "Could not remove short mass-spectrum execution alias: $($_.Exception.Message)" }
-  }
-  if (-not $runRecordComplete) {
-    Write-TerminalRunRecord -RunDir $runDir -Status failed `
-      -Reason $_.Exception.Message -RepoRoot $repoRoot -Python $python `
-      -SummaryRole 'oa_tof_terminal_run_summary'
-  }
-  exit 1
-}
+$runConfigPath = Join-Path $runDir 'run_config.json'
 
 $liveModePath = Join-Path $projectRoot 'config\modes\mass_spectrum.json'
 $liveParticleCountPolicyPath = Join-Path $repoRoot 'src\msplatform\contracts\particle_count_policy.json'
@@ -376,7 +497,7 @@ if ($resumeExisting) {
   $resolvedPath = $geometryFrozenInputs.geometry_freshness_published
   $geometryRunConfigPath = Join-Path $runDir 'run_config.json'
   $geometryRunConfig = Get-Content -LiteralPath $geometryRunConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
-  $geometryRunConfig.inputs = [ordered]@{mode_config=$modePath;resolved_geometry=$resolvedPath}
+  $geometryRunConfig.inputs = [ordered]@{mode_config=$modePath;resolved_geometry=$resolvedPath;execution_request=(Join-Path $inputDir 'execution_request.json')}
   foreach ($entry in $geometryFrozenInputs.GetEnumerator()) {$geometryRunConfig.inputs[$entry.Key]=$entry.Value}
   $geometryRunConfig.parameters = [ordered]@{lifecycle_stage='geometry_input_freshness'}
   Write-RunJson -Path $geometryRunConfigPath -Value $geometryRunConfig -Depth 12
@@ -411,6 +532,7 @@ $preflightRunConfig.inputs = [ordered]@{
   mode_config = $modePath
   resolved_geometry = $resolvedPath
   particle_count_policy = $particleCountPolicyPath
+  execution_request = Join-Path $inputDir 'execution_request.json'
 }
 foreach ($entry in $geometryFrozenInputs.GetEnumerator()) {$preflightRunConfig.inputs[$entry.Key] = $entry.Value}
 $preflightRunConfig.particle_source_preflight = @()
@@ -418,9 +540,6 @@ $preflightRunConfig.parameters = [ordered]@{
   lifecycle_stage = 'particle_source_preflight'
 }
 Write-RunJson -Path $runConfigPath -Depth 12 -Value $preflightRunConfig
-Write-TerminalRunRecord -RunDir $runDir -Status interrupted `
-  -Reason 'Frozen mode, resolved geometry, and particle-count policy are bound.' `
-  -RepoRoot $repoRoot -Python $python -SummaryRole 'oa_tof_terminal_run_summary'
 $statisticalParticleCount = [int]$particleCountPolicy.statistical_count
 & $python -m msplatform.contracts.particle_count_policy --count $statisticalParticleCount
 if ($LASTEXITCODE -ne 0) { throw 'Repository statistical particle-count policy is invalid.' }
@@ -495,9 +614,9 @@ foreach ($species in $mode.species) {
     energy_mean_ev = [double]$mode.particle_source.initial_energy_mean_ev
     energy_std_ev = [double]$mode.particle_source.initial_energy_sigma_ev
     half_width_xyz_mm = @(
-      [double]$source.size_x_mm/2,
-      [double]$source.size_y_mm/2,
-      [double]$source.size_z_mm/2
+      ([double]$source.size_x_mm/2),
+      ([double]$source.size_y_mm/2),
+      ([double]$source.size_z_mm/2)
     )
     center_xyz_mm = @(
       [double]$source.center_x_mm,
@@ -511,9 +630,6 @@ foreach ($species in $mode.species) {
     $parentIonPath
   $preflightRunConfig.particle_source_preflight += $preflightRecord
   Write-RunJson -Path $runConfigPath -Depth 12 -Value $preflightRunConfig
-  Write-TerminalRunRecord -RunDir $runDir -Status interrupted `
-    -Reason "Deterministic parent validation pending for $($species.species_id)." `
-    -RepoRoot $repoRoot -Python $python -SummaryRole 'oa_tof_terminal_run_summary'
   & $ionGenerator @ionGenerationParameters -ValidateExisting `
     -ValidationReport $sourceValidationPath | Out-Null
   if ($LASTEXITCODE -ne 0 -or
@@ -566,19 +682,26 @@ $simionStderr = Join-Path $logDir 'simion_stderr.log'
 $simionCsv = Join-Path $resultDir 'simion_particles.csv'
 $simionSummary = Join-Path $resultDir 'simion_summary.json'
 foreach ($species in $mode.species) {
+  $stage = "comsol_$($species.species_id)"
   $speciesId = [string]$species.species_id
   $ionPath = Join-Path $ionDir "$speciesId.ion"
   $csvPath = Join-Path $comsolDir "$speciesId.csv"
   $reportPath = Join-Path $logDir "$speciesId.report.txt"
+  $completionPath = Join-Path $logDir "$speciesId.comsol_completion.json"
   $expected = "DETECTED={0}/{0}" -f [int]$species.particle_count
   if ($resumeExisting) {
-    $complete = (Test-Path -LiteralPath $csvPath -PathType Leaf) -and
-      (Test-Path -LiteralPath $reportPath -PathType Leaf) -and
-      (Select-String -LiteralPath $reportPath -Pattern ("^" + [regex]::Escape($expected) + '$') -Quiet)
-    if ($complete) { continue }
-    if (Test-Path -LiteralPath $reportPath -PathType Leaf) {
-      $failedReport = $reportPath + '.failed.' + (Get-Date -Format 'yyyyMMdd_HHmmss')
-      Move-Item -LiteralPath $reportPath -Destination $failedReport
+    if ($authenticatedComsol.ContainsKey($speciesId)) {
+      $saved = $authenticatedComsol[$speciesId]
+      if ($saved.csv-cne$csvPath-or$saved.report-cne$reportPath) {throw "COMSOL $speciesId authenticated output path differs."}
+      if (-not (Select-String -LiteralPath $reportPath -Pattern ("^" + [regex]::Escape($expected) + '$') -Quiet)) {
+        throw "COMSOL $speciesId authenticated report does not satisfy $expected."
+      }
+      continue
+    }
+    foreach ($incompletePath in @($completionPath,$reportPath)) {
+      if (Test-Path -LiteralPath $incompletePath -PathType Leaf) {
+        Move-Item -LiteralPath $incompletePath -Destination ($incompletePath+'.failed.'+(Get-Date -Format 'yyyyMMdd_HHmmss'))
+      }
     }
   }
   $old = @{}
@@ -597,6 +720,8 @@ foreach ($species in $mode.species) {
     OATOF_CLEAR_PARTICLE_SOLUTION_DATA='0'
     OATOF_APPLY_PARTICLE_PROPERTIES='1'
   }
+  $comsolFailure = $null
+  $writersStopped = $false
   try {
     foreach ($entry in $variables.GetEnumerator()) {
       $old[$entry.Key] = [Environment]::GetEnvironmentVariable($entry.Key,'Process')
@@ -611,20 +736,38 @@ foreach ($species in $mode.species) {
     $comsolLauncherParameters=Get-ComsolLauncherParameters -HostContext $script:HostResourceExecutionContext -WorkingDirectory $script:HostResourceExecutionContext.workspace
     & (Join-Path $repoRoot 'src\msplatform\backends\comsol\launcher\run_comsol_r2025b.ps1') @comsolLauncherParameters `
       -TaskScript (Join-Path $projectRoot 'comsol\run_fixed_particle_retrace.m') `
-      -ReportPath $reportPath
-    if ($null -eq $hostExecutionLease) {
-      $hostExecutionLease = Enter-HostExecutionLease -Role $hostRole -Stage prepare
-    }
-  } finally {
+      -ReportPath $reportPath -RunId $RunId -CompletionPath $completionPath
+  }catch{
+    $comsolFailure = $_
+  }finally {
     foreach ($entry in $variables.GetEnumerator()) {
       [Environment]::SetEnvironmentVariable($entry.Key,$old[$entry.Key],'Process')
     }
+    try {
+      $observed = Get-MassSpectrumComsolReceipt -Path $completionPath -ExpectedRunId $RunId
+      Save-MassSpectrumComsolCompletion -Name $speciesId -ConfigPath $runConfigPath `
+        -CompletionPath $completionPath -CsvPath $csvPath -ReportPath $reportPath
+      Add-MassSpectrumComsolOperations -Name $speciesId -Receipt $observed -Operations $nativeOperations -Releases $resourceReleases
+      $writersStopped = $true
+    }catch{
+      $writersStopped = $false
+      if ($comsolFailure) {$comsolFailure.Exception.Data['completion_receipt_error']=$_.Exception.Message}
+      else {$comsolFailure=$_}
+    }
+    if ($null-eq$comsolFailure-and$writersStopped-and$null-eq$hostExecutionLease) {
+      $hostExecutionLease = Enter-HostExecutionLease -Role $hostRole -Stage prepare
+    }
+  }
+  if ($comsolFailure) {throw $comsolFailure}
+  if (@($observed.operations|Where-Object{[int]$_.observation.returncode-ne0}).Count) {
+    throw "COMSOL $speciesId native process failed."
   }
   if (-not (Select-String -LiteralPath $reportPath -Pattern ("^" + [regex]::Escape($expected) + '$') -Quiet)) {
     throw "COMSOL $speciesId did not report $expected."
   }
 }
 
+$stage = 'simion'
 # Run the inexpensive mixed-species SIMION side only after all five COMSOL
 # batches succeed, so a COMSOL failure does not create a misleading half-run.
 $referenceMassAmu = [double]$contract.validation_target.mass_amu
@@ -650,30 +793,59 @@ try {
   $executionIon = Join-Path $executionAlias.execution_alias 'ions\wide_mz_combined.ion'
   $executionLog = Join-Path $executionAlias.execution_alias 'logs\simion_stdout.log'
   $executionStderr = Join-Path $executionAlias.execution_alias 'logs\simion_stderr.log'
+  $simionUsage = Join-Path $resultDir 'simion_resource_usage.json'
+  $simionArguments = @(
+    '--default-num-particles',[string]$totalParticles,'--nogui','fly',
+    '--trajectory-quality','8','--retain-trajectories','0','--particles',$executionIon,
+    '--programs','1','--adjustable','trajectory_quality=8','--adjustable',
+    'trajectory_log_enable=1','--adjustable',
+    ("diagnostic_max_tof_us={0}" -f $simionMaxTofUs),$runtimeIob)
+  $simionReleaseId = [string]$hostExecutionLease.token
+  $writersStopped = $false
   try {
     $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage flight `
       -Budget (Get-HostResourceBudget -Role $hostRole -Stage flight) -RetainedMemoryBytes 0
-    $process = Start-Process -FilePath $SimionExe -WorkingDirectory $runtimeAlias.execution_alias `
-      -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput $executionLog `
-      -RedirectStandardError $executionStderr -ArgumentList @(
-        '--default-num-particles',[string]$totalParticles,'--nogui','fly',
-        '--trajectory-quality','8','--retain-trajectories','0','--particles',$executionIon,
-        '--programs','1','--adjustable','trajectory_quality=8','--adjustable',
-        'trajectory_log_enable=1','--adjustable',
-        ("diagnostic_max_tof_us={0}" -f $simionMaxTofUs),$runtimeIob)
-    $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage postprocess `
-      -Budget (Get-HostResourceBudget -Role $hostRole -Stage postprocess) -RetainedMemoryBytes 0
-    if ($process.ExitCode -ne 0) { throw "SIMION mixed-species fly failed: $simionStderr" }
-  } finally {
-    if ($null -ne $runtimeAlias) {
-      Remove-RunExecutionAlias -ExecutionAlias $runtimeAlias.execution_alias -TargetDirectory $runtimeRoot
-      $runtimeAlias = $null
+    try {
+      $process = Invoke-ResourceBudgetedProcess -Limits $null -RunDir $runDir -UsagePath $simionUsage `
+        -FilePath $SimionExe -WorkingDirectory $runtimeAlias.execution_alias -WindowStyle Hidden `
+        -RedirectStandardOutput $executionLog -RedirectStandardError $executionStderr -ArgumentList $simionArguments
+      $writersStopped = $true
+      $nativeOperations.Add(@{operation_id='simion-mixed-species';resource_release_id=$simionReleaseId;observation=@{
+        exit_confirmed=$true;returncode=[int]$process.exit_code;process_id=[int]$process.root_process_id;
+        process_started_at_utc_ticks=[long]$process.root_process_started_at_utc_ticks}})
+      if (Test-Path -LiteralPath $simionUsage -PathType Leaf) {
+        $resourceUsage.Add(@{path=$simionUsage;case_name='mixed_species_simion'})
+      }
+      $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage postprocess `
+        -Budget (Get-HostResourceBudget -Role $hostRole -Stage postprocess) -RetainedMemoryBytes 0
+      if ($process.exit_code-ne0) { throw "SIMION mixed-species fly failed: $simionStderr" }
+    }catch{
+      $data=$_.Exception.Data
+      if($data.Contains('observed_process_exit_confirmed')-and[bool]$data['observed_process_exit_confirmed']-and
+         $data.Contains('observed_process_returncode')-and$null-ne$data['observed_process_returncode']-and
+         $data.Contains('observed_process_id')-and$data.Contains('observed_process_started_at_utc_ticks')){
+        $writersStopped=$true
+        $nativeOperations.Add(@{operation_id='simion-mixed-species';resource_release_id=$simionReleaseId;observation=@{
+          exit_confirmed=$true;returncode=[int]$data['observed_process_returncode'];process_id=[int]$data['observed_process_id'];
+          process_started_at_utc_ticks=[long]$data['observed_process_started_at_utc_ticks']}})
+        if (Test-Path -LiteralPath $simionUsage -PathType Leaf) {
+          $resourceUsage.Add(@{path=$simionUsage;case_name='mixed_species_simion'})
+        }
+      }
+      throw
     }
-    Remove-OaTofFormalSimionRuntime -ArtifactRoot $artifactRoot -RuntimeRoot $runtimeRoot
-    $runtimeRoot = $null
-    if ($null -ne $executionAlias) {
-      Remove-RunExecutionAlias -ExecutionAlias $executionAlias.execution_alias -TargetDirectory $runDir
-      $executionAlias = $null
+  } finally {
+    if ($writersStopped) {
+      if ($null -ne $runtimeAlias) {
+        Remove-RunExecutionAlias -ExecutionAlias $runtimeAlias.execution_alias -TargetDirectory $runtimeRoot
+        $runtimeAlias = $null
+      }
+      Remove-OaTofFormalSimionRuntime -ArtifactRoot $artifactRoot -RuntimeRoot $runtimeRoot
+      $runtimeRoot = $null
+      if ($null -ne $executionAlias) {
+        Remove-RunExecutionAlias -ExecutionAlias $executionAlias.execution_alias -TargetDirectory $runDir
+        $executionAlias = $null
+      }
     }
   }
   $summary = & $simionAnalyzer -Log $simionLog -IonFile $combinedIon `
@@ -685,6 +857,7 @@ if ([int]$summary.Hit -ne $totalParticles) {
   throw "SIMION detected $($summary.Hit)/$totalParticles mixed-species ions."
 }
 
+$stage = 'analysis'
 & $python -m msplatform.workflows.single_reflection_mass_spectrum `
   --mode-config $modePath --comsol-dir $comsolDir --simion-csv $simionCsv --output $resultDir --geometry $resolvedPath
 if ($LASTEXITCODE -ne 0) { throw 'Candidate mass-spectrum analysis failed.' }
@@ -696,6 +869,7 @@ $runInputs = [ordered]@{
   formal_comsol_mph = $formalMph
   formal_simion_iob = $formalIob
   formal_simion_runtime_receipt = Join-Path $inputDir 'formal_simion_runtime_receipt.json'
+  execution_request = Join-Path $inputDir 'execution_request.json'
 }
 foreach ($entry in $geometryFrozenInputs.GetEnumerator()) {$runInputs[$entry.Key] = $entry.Value}
 $runConfig = Get-Content -LiteralPath $runConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
@@ -717,10 +891,7 @@ $scientificConfig = [ordered]@{
 foreach ($entry in $scientificConfig.GetEnumerator()) { $runConfig[$entry.Key] = $entry.Value }
 Write-RunJson -Path $runConfigPath -Value $runConfig -Depth 100
 $summaryPath = Join-Path $runDir 'summary.json'
-$summaryRecord = Get-Content -LiteralPath (Join-Path $resultDir 'mass_spectrum_metrics.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-$summaryRecord | Add-Member -NotePropertyName status -NotePropertyValue 'success' -Force
-$summaryRecord | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
-$manifestPath = Join-Path $runDir 'run_manifest.json'
+$summaryRecord = Get-Content -LiteralPath (Join-Path $resultDir 'mass_spectrum_metrics.json') -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
 $outputs = @($combinedIon,$simionCsv,$simionSummary,$summaryPath)
 $outputs += @($individualIonPaths)
 $outputs += @($parentIonPaths)
@@ -732,6 +903,8 @@ $optionalEvidence = @($simionLog,$simionStderr)
 $optionalEvidence += @($mode.species | ForEach-Object {
   Join-Path $logDir ("{0}.report.txt" -f $_.species_id)
 })
+$optionalEvidence += @(Get-ChildItem -LiteralPath $logDir -File -Filter '*.comsol_completion.json*' | ForEach-Object {$_.FullName})
+$optionalEvidence += @($resourceUsage | ForEach-Object {$_.path})
 $optionalEvidence += @(Get-ChildItem -LiteralPath $comsolDir -File -Filter '*_selected_release_from_data_file.txt' |
   ForEach-Object { $_.FullName })
 $optionalEvidence += @(Get-ChildItem -LiteralPath $comsolDir -Recurse -File -Filter 'hs_err_pid*.log' |
@@ -745,20 +918,82 @@ $outputs += @(
   (Join-Path $resultDir 'mass_spectrum_comparison.png'),
   (Join-Path $resultDir 'mass_detector_landing_comparison.png')
 )
-$manifestArgs = @(
-  '-c','from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)',
-  '--run-config',$runConfigPath,'--manifest',$manifestPath,'--status','success',
-  '--software','SIMION 2020','--software','COMSOL 6.4 via MATLAB R2025b'
+$requiredOutputs = @(
+  (Join-Path $resultDir 'mass_spectrum_particles.csv'),
+  (Join-Path $resultDir 'mass_spectrum_summary.csv'),
+  (Join-Path $resultDir 'mass_peak_shape_comparison.csv'),
+  (Join-Path $resultDir 'mass_spectrum_metrics.json'),
+  (Join-Path $resultDir 'mass_spectrum_comparison.png'),
+  (Join-Path $resultDir 'mass_detector_landing_comparison.png')
 )
-foreach ($output in $outputs) { $manifestArgs += @('--output',$output) }
-& $python @manifestArgs
-if ($LASTEXITCODE -ne 0) { throw 'Run manifest creation failed.' }
-& $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $manifestPath
-if ($LASTEXITCODE -ne 0) { throw 'Run manifest verification failed.' }
-$runRecordComplete = $true
-Write-Output "MASS_SPECTRUM_CANDIDATE=PASS RUN_ID=$RunId PARTICLES=$totalParticles"
-
-} finally {
-  try { if ($null -ne $hostExecutionLease) { Exit-HostExecutionLease -Lease $hostExecutionLease } }
-  finally { Restore-RunEnvironment -Names $environmentNames -Snapshot $environmentSnapshot }
+}catch{$failure=$_}finally{
+  try{
+    if($writersStopped){
+      try{
+        if($null-ne$hostExecutionLease){
+          $releaseId=[string]$hostExecutionLease.token
+          $hostRelease=Exit-HostResourceStage -Lease $hostExecutionLease -PassThru
+          if($simionReleaseId){
+            if($releaseId-cne$simionReleaseId){throw 'SIMION host release identity differs.'}
+            Add-RunArtifactResourceRelease -ResourceReleases $resourceReleases -ReleaseId $releaseId -Receipt @{host_release=@{
+              inherited=[bool]$hostExecutionLease.inherited;token=$releaseId;result=$hostRelease;error=$null}}
+          }
+          $hostExecutionLease=$null
+        }
+      }catch{
+        $writersStopped=$false
+        if($failure){$failure.Exception.Data['host_release_error']=$_.Exception.Message}else{$failure=$_}
+      }
+    }
+    if($writersStopped){
+      try{
+        if($null-ne$runtimeAlias){Remove-RunExecutionAlias -ExecutionAlias $runtimeAlias.execution_alias -TargetDirectory $runtimeRoot;$runtimeAlias=$null}
+        if($null-ne$runtimeRoot){Remove-OaTofFormalSimionRuntime -ArtifactRoot $artifactRoot -RuntimeRoot $runtimeRoot;$runtimeRoot=$null}
+        if($null-ne$executionAlias){Remove-RunExecutionAlias -ExecutionAlias $executionAlias.execution_alias -TargetDirectory $runDir;$executionAlias=$null}
+      }catch{if($failure){$failure.Exception.Data['native_cleanup_error']=$_.Exception.Message}else{$failure=$_}}
+    }
+    if($owner){
+      try{
+        $status=if($failure){'failed'}else{'success'}
+        if($failure){
+          $summaryRecord=@{role='oa_tof_terminal_run_summary';execution_status=$(if($writersStopped){'failed'}else{'writer_completion_unknown'});
+            data_validity=$(if($writersStopped){'incomplete'}else{'unknown'});scientific_result='NOT_EVALUATED';formal_gate_passed=$false;
+            resolution_claim_allowed=$false;failure_stage=$stage;failure_reason=$failure.Exception.Message;
+            recovery_action=$(if(-not$writersStopped){'inspect_writer_completion'}else{'resume_authenticated_unfinished_run_or_create_new_run'});
+            result_path=$owner.result_path;total_elapsed_seconds=$timer.Elapsed.TotalSeconds}
+          $outputs=@(Get-ChildItem -LiteralPath $runDir -Recurse -File|Where-Object{
+            $_.Name-notin@('run_config.json','run_manifest.json')-and-not$_.Name.StartsWith('.')}|ForEach-Object FullName)
+          $requiredOutputs=@()
+        }
+        $outcome=Complete-RunArtifactPowerShellOwner -Context $owner -Status $status -Summary $summaryRecord `
+          -OutputPaths @($outputs|Select-Object -Unique) -RequiredOutputPaths $requiredOutputs `
+          -WriterCompletion @{operations=@($nativeOperations.ToArray());resource_releases=@($resourceReleases.ToArray())} `
+          -WritersStopped $writersStopped -OriginalFailure $failure -ResourceUsagePaths @($resourceUsage.ToArray())
+        if(-not$outcome.terminal_published){throw 'Mass-spectrum finalization remains incomplete.'}
+        $capacity=$null
+      }catch{
+        $finalizationFailure=$_
+        if($failure){$failure.Exception.Data['mass_spectrum_finalization_error']=$_.Exception.Message}
+        if($writersStopped-and-not$owner.completion_written-and(Test-Path -LiteralPath $owner.result_path -PathType Leaf)){
+          $retained=Get-Content -LiteralPath $owner.result_path -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+          $primary=if($failure){$failure}else{$finalizationFailure}
+          $retained.exception=@{type=$primary.Exception.GetType().FullName;message=$primary.Exception.Message;notes=@()}
+          $retained.secondary_errors=@(if($failure){$finalizationFailure.Exception.Message})
+          $retained.status='failed';$retained.execution_status='finalization_failed';$retained.failure_stage='finalization'
+          $retained.failure_reason=$finalizationFailure.Exception.Message;$retained.recovery_action='inspect_finalization_evidence'
+          $retained.resume_action='inspect_finalization_evidence';$retained.writers_confirmed=$writersStopped
+          $retained.terminal_published=$false;$retained.capacity_finalized=$false;$retained.lease_released=$false
+          Write-RunJson -Atomic -Path $owner.result_path -Value $retained -Depth 64
+        }
+      }
+    }elseif($writersStopped){
+      try{
+        if($capacity){$null=Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacity}
+        if($package){Remove-RunPackageExecutionAlias -Package $package}
+      }catch{if($failure){$failure.Exception.Data['bootstrap_cleanup_error']=$_.Exception.Message}else{$finalizationFailure=$_}}
+    }
+  }finally{Restore-RunEnvironment -Names $environmentNames -Snapshot $environmentSnapshot}
 }
+if($failure){throw $failure}
+if($finalizationFailure){throw $finalizationFailure}
+Write-Output "MASS_SPECTRUM_CANDIDATE=PASS RUN_ID=$RunId PARTICLES=$totalParticles"

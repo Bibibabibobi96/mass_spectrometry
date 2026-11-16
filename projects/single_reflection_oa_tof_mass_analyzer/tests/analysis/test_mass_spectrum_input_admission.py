@@ -1,4 +1,4 @@
-"""Thin normal/resume geometry admission; does not grant Formal access."""
+"""Mass-spectrum admission and public-owner lifecycle software tests."""
 
 from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
 from pathlib import Path
@@ -96,6 +96,166 @@ def mass_analysis_fixture(root):
     document['minimum_free_gib'] = 0
     policy.write_text(json.dumps(document), encoding='utf-8')
     return fixture, fixture/f'projects/{PROJECT.name}/workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1'
+
+
+def mass_native_fixture(root):
+    """Original normal CLI with real public owners and inert native leaves."""
+    fixture, owner = mass_analysis_fixture(root)
+    project = fixture / f'projects/{PROJECT.name}'
+    for source in (PROJECT/'analysis').glob('*.py'):
+        target = project/'analysis'/source.name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+    for relative in ('baseline.json', 'formal_solver_numerics.json', 'resolved_geometry.json',
+                     'modes/formal.json', 'modes/mass_spectrum.json'):
+        source = PROJECT/'config'/relative
+        target = project/'config'/relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+    for source in (PROJECT/'oatof_lifecycle_preflight.ps1',
+                   PROJECT/'simion/workbench/generate_comsol_consistent_ions.ps1',
+                   PROJECT/'simion/workbench/analyze_ideal_field_log.ps1',
+                   REPO/'projects/rf_multipole_ion_optics/core/grounded_shield.py',
+                   REPO/'projects/rf_multipole_ion_optics/core/__init__.py',
+                   REPO/'src/msplatform/contracts/particle_count_policy.json'):
+        target = fixture/source.relative_to(REPO)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+    (project/'config/project.json').write_text(json.dumps({
+        'project_id': PROJECT.name, 'lifecycle_status': 'prototype'}), encoding='utf-8')
+    (project/'comsol').mkdir(parents=True, exist_ok=True)
+    (project/'comsol/run_fixed_particle_retrace.m').write_text('% inert native fixture\n', encoding='utf-8')
+    artifacts = root/'artifacts'
+    formal = artifacts/f'projects/{PROJECT.name}/formal'
+    (formal/'comsol').mkdir(parents=True, exist_ok=True)
+    (formal/'simion').mkdir(parents=True, exist_ok=True)
+    (formal/'comsol/single_reflection_oa_tof_mass_analyzer__model.mph').write_bytes(b'inert formal model')
+    (formal/'simion/oatof_ideal_grounded.iob').write_bytes(b'inert formal IOB')
+    from common.contracts.capacity_ledger import initialize_capacity_ledger
+    initialize_capacity_ledger(artifacts, objects=[])
+    fake_simion = root/'inert-simion.exe'
+    fake_simion.write_bytes(b'inert native selector')
+    leaf = root/'native_leaf.py'
+    leaf.write_text(r'''import csv, json, math, os, sys
+from pathlib import Path
+
+mode = sys.argv[1]
+if mode == 'comsol':
+    report, csv_path, ion_path = map(Path, sys.argv[2:5])
+    species = ion_path.stem
+    mass = float(species.split('_')[0][2:])
+    count = sum(1 for _ in ion_path.open(encoding='ascii'))
+    failed = os.environ.get('TEST_MASS_FAIL_SPECIES') == species
+    rows = [] if failed else [(i, math.sqrt(mass) + (i-1)*.01, .1, .2, True)
+                              for i in range(1, count+1)]
+    with csv_path.open('w', encoding='utf-8', newline='') as stream:
+        writer = csv.writer(stream)
+        writer.writerow(['Ion', 'TofUs', 'XMm', 'YMm', 'Hit'])
+        writer.writerows(rows)
+    report.write_text(('STATUS=FAIL\nDETECTED=0/%d\n' if failed else
+                       'STATUS=PASS\nDETECTED=%d/%d\n') % ((count, count) if not failed else (count,)), encoding='utf-8')
+    raise SystemExit(23 if failed else 0)
+capture = Path(os.environ['TEST_MASS_SIMION_CAPTURE'])
+arguments = json.loads(Path(sys.argv[2]).read_text(encoding='utf-8'))
+ion_path = Path(arguments[arguments.index('--particles')+1])
+count = sum(1 for _ in ion_path.open(encoding='ascii'))
+capture.write_text(json.dumps({'arguments': arguments, 'cwd': os.getcwd(),
+    'stdout': os.environ.get('TEST_MASS_SIMION_STDOUT', '')}), encoding='utf-8')
+masses = (10, 100, 500, 1000, 2000)
+for index in range(count):
+    mass = masses[index // 100]
+    print(f'TRACE: detector_crossing ion={index+1} t={math.sqrt(mass)+(index%100)*.01} x=.1 y=.2 z=0 r=.1 zmax=0')
+''', encoding='utf-8')
+    (project/'analysis/stage_formal_simion_runtime.py').write_text(r'''import argparse, json, shutil
+from pathlib import Path
+parser = argparse.ArgumentParser()
+parser.add_argument('--artifact-root', type=Path, required=True)
+parser.add_argument('--destination', type=Path, required=True)
+parser.add_argument('--receipt', type=Path, required=True)
+args = parser.parse_args()
+args.destination.mkdir(parents=True)
+shutil.copyfile(args.artifact_root/'formal/simion/oatof_ideal_grounded.iob', args.destination/'oatof_ideal_grounded.iob')
+args.receipt.write_text(json.dumps({'role': 'inert_formal_runtime_receipt'}), encoding='utf-8')
+''', encoding='utf-8')
+    launcher = fixture/'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1'
+    launcher.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(REPO/'src/msplatform/backends/comsol/launcher/resolve_comsol_64.ps1',
+                    launcher.parent/'resolve_comsol_64.ps1')
+    launcher.write_text(r'''param($HostContextJson,$WorkingDirectory,$TaskScript,$ReportPath,$RunId,$CompletionPath)
+Set-StrictMode -Version Latest;$ErrorActionPreference='Stop'
+$hostContext=$HostContextJson|ConvertFrom-Json -AsHashtable
+. (Join-Path $PSScriptRoot '../../../execution/resources/host_execution_lease.ps1') -HostContext $hostContext
+$capture=@{task_script=$TaskScript;report_path=$ReportPath;run_id=$RunId;completion_path=$CompletionPath;
+  environment=@{OATOF_SOURCE_MODEL_PATH=$env:OATOF_SOURCE_MODEL_PATH;OATOF_ION_TABLE=$env:OATOF_ION_TABLE;
+  OATOF_COMSOL_OUTPUT_CSV=$env:OATOF_COMSOL_OUTPUT_CSV;OATOF_RUNTIME_DIR=$env:OATOF_RUNTIME_DIR;
+  OATOF_RESULTS_DIR=$env:OATOF_RESULTS_DIR;OATOF_ACCELERATOR_HMAX_MM=$env:OATOF_ACCELERATOR_HMAX_MM;
+  OATOF_REUSE_EXISTING_FIELD=$env:OATOF_REUSE_EXISTING_FIELD;OATOF_FINE_TSTEP_NS=$env:OATOF_FINE_TSTEP_NS;
+  OATOF_DRIFT_TSTEP_NS=$env:OATOF_DRIFT_TSTEP_NS;OATOF_SEGMENTED_OUTPUT=$env:OATOF_SEGMENTED_OUTPUT;
+  OATOF_USE_PARTICLE_STOP_TIME=$env:OATOF_USE_PARTICLE_STOP_TIME;
+  OATOF_CLEAR_PARTICLE_SOLUTION_DATA=$env:OATOF_CLEAR_PARTICLE_SOLUTION_DATA;
+  OATOF_APPLY_PARTICLE_PROPERTIES=$env:OATOF_APPLY_PARTICLE_PROPERTIES}}
+[IO.File]::AppendAllText($env:TEST_MASS_COMSOL_CAPTURE,($capture|ConvertTo-Json -Depth 8 -Compress)+"`n")
+$lease=Enter-HostResourceStage -Role COMSOL -Stage solver -RunId $RunId -Budget (Get-HostResourceBudget -Role COMSOL -Stage solver)
+$started=[Diagnostics.Stopwatch]::StartNew()
+$process=$null;$taskFailure=$null
+try{
+ $process=Invoke-ResourceBudgetedProcess -Limits $null -RunDir (Split-Path -Parent $ReportPath) `
+   -UsagePath ($ReportPath+'.usage.json') -FilePath $env:TEST_MASS_PYTHON `
+   -ArgumentList @('-B',$env:TEST_MASS_LEAF,'comsol',$ReportPath,$env:OATOF_COMSOL_OUTPUT_CSV,$env:OATOF_ION_TABLE) `
+   -WorkingDirectory $WorkingDirectory
+ if($process.exit_code-ne0){throw 'INERT_COMSOL_FAILURE'}
+}catch{$taskFailure=$_}
+$release=$null;$releaseError=$null
+try{$release=Exit-HostResourceStage -Lease $lease -PassThru}catch{$releaseError=$_.Exception.Message}
+$observation=@{exit_confirmed=($null-ne$process);returncode=$(if($null-ne$process){[int]$process.exit_code}else{$null});
+  process_id=$(if($null-ne$process){[int]$process.root_process_id}else{$PID});
+  process_started_at_utc_ticks=$(if($null-ne$process){[long]$process.root_process_started_at_utc_ticks}else{[long]$started.StartTicks})}
+if($env:TEST_MASS_UNKNOWN_SPECIES-and[IO.Path]::GetFileNameWithoutExtension($env:OATOF_ION_TABLE)-ceq$env:TEST_MASS_UNKNOWN_SPECIES){
+ $observation.exit_confirmed=$false;$observation.returncode=$null
+}
+$receipt=@{schema_version=1;role='comsol_launcher_completion';run_id=$RunId;
+ operations=@(@{operation_id='launcher-attempt-1';observation=$observation});
+ host_release=@{inherited=[bool]$lease.inherited;token=[string]$lease.token;result=$release;error=$releaseError}}
+Write-RunJson -Atomic -Path $CompletionPath -Value $receipt -Depth 30
+if($taskFailure){throw $taskFailure}
+''', encoding='utf-8')
+    original = owner.read_text(encoding='utf-8')
+    marker = "$hostRole = 'SIMION'"
+    shim = r'''$realMassObserver=(Get-Command Invoke-ResourceBudgetedProcess).ScriptBlock
+function Invoke-ResourceBudgetedProcess {
+ param([AllowNull()]$Limits,$RunDir,$UsagePath,$FilePath,[string[]]$ArgumentList,$WorkingDirectory='',
+  $RedirectStandardOutput='',$RedirectStandardError='',[hashtable]$Environment=@{},
+  [switch]$RequireImmutableInputDrain,$WindowStyle='Hidden',$ProcessObservationMetadata=$null)
+ if($FilePath-ceq$env:TEST_MASS_SIMION){
+  $env:TEST_MASS_SIMION_STDOUT=$RedirectStandardOutput
+  $PSBoundParameters['FilePath']=$env:TEST_MASS_PYTHON
+  $argumentTransport=$env:TEST_MASS_SIMION_CAPTURE+'.arguments.json'
+  [IO.File]::WriteAllText($argumentTransport,($ArgumentList|ConvertTo-Json -Compress))
+  $PSBoundParameters['ArgumentList']=@('-B',$env:TEST_MASS_LEAF,'simion',$argumentTransport)
+ }
+ & $realMassObserver @PSBoundParameters
+}
+'''
+    owner.write_text(original.replace(marker, shim+marker, 1), encoding='utf-8')
+    return fixture, owner, artifacts, fake_simion, leaf
+
+
+def mass_native_environment(root, fixture, artifacts, simion, leaf, python):
+    env = {key: value for key, value in os.environ.items()
+           if not key.startswith('MASS_SPECTROMETRY_HOST_RESOURCE_') and key not in ('PYTHONPATH', 'SIMULATION_PYTHON_EXE')}
+    env.update(SIMULATION_PYTHON_EXE=str(python), MASS_SPECTROMETRY_ARTIFACT_ROOT=str(artifacts),
+               MASS_SPECTROMETRY_EXECUTION_ROOT=str(root/'execution'),
+               MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(root/'host.sqlite3'),
+               TEST_MASS_PYTHON=str(python), TEST_MASS_LEAF=str(leaf), TEST_MASS_SIMION=str(simion),
+               TEST_MASS_COMSOL_CAPTURE=str(root/'comsol-capture.jsonl'),
+               TEST_MASS_SIMION_CAPTURE=str(root/'simion-capture.json'))
+    return env
+
+
+def run_mass_native(owner, fixture, env, run_id, simion, *extra, timeout=120):
+    return subprocess.run(['pwsh', '-NoProfile', '-File', str(owner), '-RunId', run_id,
+                           '-SimionExe', str(simion), *extra], cwd=fixture, env=env,
+                          capture_output=True, text=True, encoding='utf-8', timeout=timeout)
 
 
 class MassSpectrumReanalysisTests(unittest.TestCase):
@@ -532,6 +692,168 @@ ConvertTo-Json -Depth 8 -InputObject $results
             self.assertEqual(completion_bytes, completion.read_bytes())
             self.assertEqual(snapshot, {str(p.relative_to(source)): p.read_bytes() for p in source.rglob('*') if p.is_file()})
 
+
+
+class MassSpectrumNativeLifecycleTests(unittest.TestCase):
+    def test_original_cli_success_preserves_native_transport_and_rejects_legacy_resume(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture, owner, artifacts, simion, leaf = mass_native_fixture(root)
+            env = mass_native_environment(root, fixture, artifacts, simion, leaf, Path(sys.executable))
+            run_id = '20261116_100000__sim__cross__mass-owner-success'
+            result = run_mass_native(owner, fixture, env, run_id, simion)
+            child = artifacts/f'projects/{PROJECT.name}/runs/{run_id}'
+            native_log = child/'logs/simion_stderr.log'
+            diagnostic = native_log.read_text(encoding='utf-8', errors='replace') if native_log.is_file() else ''
+            self.assertEqual(result.returncode, 0, result.stdout+result.stderr+diagnostic)
+            receipt_path = artifacts/f'projects/{PROJECT.name}/scratch/workflow_results/{run_id}/result.json'
+            receipt = json.loads(receipt_path.read_text(encoding='utf-8-sig'))
+            self.assertTrue(receipt['terminal_published'])
+            self.assertTrue(receipt['capacity_finalized'])
+            self.assertTrue(receipt['lease_released'])
+            completion = json.loads((child/'results/execution_completion.json').read_text(encoding='utf-8-sig'))
+            self.assertEqual(len(completion['writer_completion']['operations']), 6)
+            self.assertEqual(completion['summary']['status'], 'success')
+            self.assertEqual(completion['summary']['run_id'], run_id)
+            config = json.loads((child/'run_config.json').read_text(encoding='utf-8-sig'))
+            self.assertEqual(set(config['native_completion']),
+                             {'mz10_z1', 'mz100_z1', 'mz500_z1', 'mz1000_z1', 'mz2000_z1'})
+            captures = [json.loads(line) for line in (root/'comsol-capture.jsonl').read_text(encoding='utf-8').splitlines()]
+            self.assertEqual(len(captures), 5)
+            expected_environment = {
+                'OATOF_ACCELERATOR_HMAX_MM': '1', 'OATOF_REUSE_EXISTING_FIELD': '1',
+                'OATOF_FINE_TSTEP_NS': '0.2', 'OATOF_DRIFT_TSTEP_NS': '50',
+                'OATOF_SEGMENTED_OUTPUT': '1', 'OATOF_USE_PARTICLE_STOP_TIME': '0',
+                'OATOF_CLEAR_PARTICLE_SOLUTION_DATA': '0', 'OATOF_APPLY_PARTICLE_PROPERTIES': '1'}
+            for index, capture in enumerate(captures):
+                self.assertEqual(capture['run_id'], run_id)
+                self.assertTrue(capture['completion_path'].endswith('.comsol_completion.json'))
+                self.assertEqual(capture['task_script'], str(fixture/f'projects/{PROJECT.name}/comsol/run_fixed_particle_retrace.m'))
+                self.assertEqual({key: capture['environment'][key] for key in expected_environment}, expected_environment)
+                self.assertEqual(capture['environment']['OATOF_ION_TABLE'], str(child/'ions'/f"{config['species'][index]['species_id']}.ion"))
+            native = json.loads((root/'simion-capture.json').read_text(encoding='utf-8'))
+            arguments = native['arguments']
+            self.assertEqual(arguments[:13], ['--default-num-particles', '500', '--nogui', 'fly',
+                '--trajectory-quality', '8', '--retain-trajectories', '0', '--particles', arguments[9],
+                '--programs', '1', '--adjustable'])
+            self.assertEqual(arguments[13:17], ['trajectory_quality=8', '--adjustable', 'trajectory_log_enable=1', '--adjustable'])
+            self.assertTrue(arguments[17].startswith('diagnostic_max_tof_us='))
+            self.assertTrue(arguments[18].endswith('oatof_ideal_grounded.iob'))
+            legacy_id = '20261116_100001__sim__cross__mass-legacy-resume'
+            legacy = artifacts/f'projects/{PROJECT.name}/runs/{legacy_id}'
+            for relative in ('inputs', 'results', 'logs', 'ions', 'comsol'):
+                (legacy/relative).mkdir(parents=True, exist_ok=True)
+            legacy_config = dict(config)
+            legacy_config['run_id'] = legacy_id
+            legacy_config.pop('native_completion', None)
+            (legacy/'run_config.json').write_text(json.dumps(legacy_config), encoding='utf-8')
+            refused = run_mass_native(owner, fixture, env, legacy_id, simion, '-ResumeAfterComsol')
+            self.assertNotEqual(refused.returncode, 0)
+            self.assertIn('lacks its original public owner', refused.stdout+refused.stderr)
+            self.assertEqual(len((root/'comsol-capture.jsonl').read_text(encoding='utf-8').splitlines()), 5)
+
+    def test_authenticated_comsol_replay_rejects_tamper_and_reruns_only_incomplete_species(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture, owner, artifacts, simion, leaf = mass_native_fixture(root)
+            env = mass_native_environment(root, fixture, artifacts, simion, leaf, Path(sys.executable))
+            original = owner.read_text(encoding='utf-8')
+            hold = original.replace("$hostRole = 'SIMION'", "function Complete-RunArtifactPowerShellOwner {throw 'OWNER_HOLD_SENTINEL'}\n$hostRole = 'SIMION'", 1)
+            owner.write_text(hold, encoding='utf-8')
+            run_id = '20261116_100100__sim__cross__mass-owner-replay'
+            env['TEST_MASS_FAIL_SPECIES'] = 'mz100_z1'
+            failed = run_mass_native(owner, fixture, env, run_id, simion)
+            self.assertNotEqual(failed.returncode, 0)
+            child = artifacts/f'projects/{PROJECT.name}/runs/{run_id}'
+            self.assertEqual(json.loads((child/'run_manifest.json').read_text(encoding='utf-8-sig'))['status'], 'checkpoint')
+            self.assertEqual(len((root/'comsol-capture.jsonl').read_text(encoding='utf-8').splitlines()), 2)
+            csv_path = child/'comsol/mz10_z1.csv'
+            original_csv = csv_path.read_bytes()
+            csv_path.write_bytes(original_csv+b' ')
+            tampered = run_mass_native(owner, fixture, env, run_id, simion, '-ResumeAfterComsol')
+            self.assertNotEqual(tampered.returncode, 0)
+            self.assertIn('Workflow file identity differs', tampered.stdout+tampered.stderr)
+            self.assertEqual(len((root/'comsol-capture.jsonl').read_text(encoding='utf-8').splitlines()), 2)
+            csv_path.write_bytes(original_csv)
+            owner.write_text(original, encoding='utf-8')
+            env.pop('TEST_MASS_FAIL_SPECIES')
+            resumed = run_mass_native(owner, fixture, env, run_id, simion, '-ResumeAfterComsol')
+            self.assertEqual(resumed.returncode, 0, resumed.stdout+resumed.stderr)
+            captures = [json.loads(line)['environment']['OATOF_ION_TABLE'] for line in
+                        (root/'comsol-capture.jsonl').read_text(encoding='utf-8').splitlines()]
+            self.assertEqual(len(captures), 6)
+            self.assertEqual(sum(path.endswith('mz10_z1.ion') for path in captures), 1)
+            self.assertEqual(sum(path.endswith('mz100_z1.ion') for path in captures), 2)
+            receipt = json.loads((artifacts/f'projects/{PROJECT.name}/scratch/workflow_results/{run_id}/result.json').read_text(encoding='utf-8-sig'))
+            self.assertTrue(receipt['terminal_published'])
+            self.assertEqual(len(json.loads((child/'results/execution_completion.json').read_text(encoding='utf-8-sig'))['writer_completion']['operations']), 6)
+
+    def test_native_failure_seals_failed_run_and_unknown_writer_retains_hold(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture, owner, artifacts, simion, leaf = mass_native_fixture(root)
+            env = mass_native_environment(root, fixture, artifacts, simion, leaf, Path(sys.executable))
+            failed_id = '20261116_100200__sim__cross__mass-native-failed'
+            env['TEST_MASS_FAIL_SPECIES'] = 'mz100_z1'
+            failed = run_mass_native(owner, fixture, env, failed_id, simion)
+            self.assertNotEqual(failed.returncode, 0)
+            receipt_path = artifacts/f'projects/{PROJECT.name}/scratch/workflow_results/{failed_id}/result.json'
+            receipt = json.loads(receipt_path.read_text(encoding='utf-8-sig'))
+            self.assertEqual(receipt['status'], 'failed')
+            self.assertTrue(receipt['terminal_published'], json.dumps(receipt)+failed.stdout+failed.stderr)
+            self.assertTrue(receipt['capacity_finalized'])
+            self.assertIn('INERT_COMSOL_FAILURE', receipt['exception']['message'])
+            replay = run_mass_native(owner, fixture, env, failed_id, simion, '-ResumeAfterComsol')
+            self.assertNotEqual(replay.returncode, 0)
+            self.assertIn('ResumeFinalization', replay.stdout+replay.stderr)
+            self.assertEqual(len((root/'comsol-capture.jsonl').read_text(encoding='utf-8').splitlines()), 2)
+            env.pop('TEST_MASS_FAIL_SPECIES')
+            unknown_id = '20261116_100201__sim__cross__mass-writer-unknown'
+            env['TEST_MASS_UNKNOWN_SPECIES'] = 'mz10_z1'
+            unknown = run_mass_native(owner, fixture, env, unknown_id, simion)
+            self.assertNotEqual(unknown.returncode, 0)
+            child = artifacts/f'projects/{PROJECT.name}/runs/{unknown_id}'
+            retained_path = artifacts/f'projects/{PROJECT.name}/scratch/workflow_results/{unknown_id}/result.json'
+            retained = json.loads(retained_path.read_text(encoding='utf-8-sig'))
+            self.assertFalse(retained['writers_confirmed'])
+            self.assertEqual(retained['resume_action'], 'inspect_writer_completion')
+            self.assertEqual(json.loads((child/'run_manifest.json').read_text(encoding='utf-8-sig'))['status'], 'checkpoint')
+            hold_path = child/'logs/capacity_session.json'
+            self.assertEqual(json.loads(hold_path.read_text(encoding='utf-8-sig'))['status'], 'active')
+            protected = (retained_path, hold_path, child/'run_config.json')
+            before = {path: path.read_bytes() for path in protected}
+            launches_before = len((root/'comsol-capture.jsonl').read_text(encoding='utf-8').splitlines())
+            refused = run_mass_native(owner, fixture, env, unknown_id, simion, '-ResumeAfterComsol')
+            self.assertNotEqual(refused.returncode, 0)
+            self.assertIn('requires confirmed stopped native writers', refused.stdout+refused.stderr)
+            self.assertEqual(len((root/'comsol-capture.jsonl').read_text(encoding='utf-8').splitlines()), launches_before)
+            self.assertEqual(before, {path: path.read_bytes() for path in protected})
+
+    def test_normal_finalization_resume_replays_no_native_work(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture, owner, artifacts, simion, leaf = mass_native_fixture(root)
+            env = mass_native_environment(root, fixture, artifacts, simion, leaf, Path(sys.executable))
+            original = owner.read_text(encoding='utf-8')
+            owner.write_text(original.replace("$hostRole = 'SIMION'", "function Invoke-RunArtifactWorkflow {throw 'NORMAL_FINALIZATION_SENTINEL'}\n$hostRole = 'SIMION'", 1), encoding='utf-8')
+            run_id = '20261116_100300__sim__cross__mass-finalization-resume'
+            failed = run_mass_native(owner, fixture, env, run_id, simion)
+            self.assertNotEqual(failed.returncode, 0)
+            self.assertIn('NORMAL_FINALIZATION_SENTINEL', failed.stdout+failed.stderr)
+            child = artifacts/f'projects/{PROJECT.name}/runs/{run_id}'
+            completion_path = child/'results/execution_completion.json'
+            completion = completion_path.read_bytes()
+            receipt_path = artifacts/f'projects/{PROJECT.name}/scratch/workflow_results/{run_id}/result.json'
+            self.assertEqual(json.loads(receipt_path.read_text(encoding='utf-8-sig'))['stage'], 'completion')
+            owner.write_text(original, encoding='utf-8')
+            resumed = subprocess.run(['pwsh', '-NoProfile', '-File', str(owner), '-ResumeFinalization',
+                '-RunId', run_id, '-ResultPath', str(receipt_path), '-PythonExe', sys.executable],
+                cwd=fixture, env=env, capture_output=True, text=True, encoding='utf-8', timeout=60)
+            self.assertEqual(resumed.returncode, 0, resumed.stdout+resumed.stderr)
+            self.assertEqual(completion, completion_path.read_bytes())
+            self.assertTrue(json.loads(receipt_path.read_text(encoding='utf-8-sig'))['terminal_published'])
+            self.assertEqual(len((root/'comsol-capture.jsonl').read_text(encoding='utf-8').splitlines()), 5)
+            self.assertTrue((root/'simion-capture.json').is_file())
 
 
 class MassSpectrumInputAdmissionTests(unittest.TestCase):
