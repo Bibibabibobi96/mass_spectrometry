@@ -32,6 +32,13 @@ def run(baseline_path: Path, resolved_path: Path, mode_path: Path, source_path: 
     return Path(result['run_directory'])
 
 
+def analyze(parent_manifest_path: Path, run_id: str, artifact_project_root: Path | None = None, *, context) -> Path:
+    """Create a managed analysis-only child from an explicit sealed parent."""
+    result = finite_length.analyze(context, parent_manifest_path=parent_manifest_path,
+        run_id=run_id, artifact_project_root=artifact_project_root)
+    return Path(result['run_directory'])
+
+
 def resume(run_id: str, result_path: Path | None, artifact_project_root: Path | None, *, context) -> dict:
     """Resume only the original owner's stopped finalization from its small Result."""
     from msplatform.execution.completion import no_particle_batch_completion_api
@@ -56,19 +63,27 @@ def main() -> None:
     parser.add_argument('--run-id')
     parser.add_argument('--check-contract', action='store_true')
     parser.add_argument('--resume-finalization', action='store_true')
+    parser.add_argument('--analyze-only', action='store_true')
+    parser.add_argument('--parent-manifest', type=Path)
     parser.add_argument('--result-path', type=Path)
     parser.add_argument('--workspace', type=Path)
     parser.add_argument('--execution-environment', type=Path)
     parser.add_argument('--engineering-profile')
     parser.add_argument('--artifact-project-root', type=Path)
     args = parser.parse_args()
+    if args.resume_finalization and args.analyze_only:
+        parser.error('--resume-finalization cannot be combined with --analyze-only')
     if args.resume_finalization:
-        if args.check_contract or any(value is not None for value in (
+        if args.check_contract or args.parent_manifest is not None or any(value is not None for value in (
                 args.baseline, args.resolved_design, args.mode, args.source)):
             parser.error('--resume-finalization does not accept scientific inputs or --check-contract')
+    elif args.analyze_only:
+        if (args.check_contract or args.result_path is not None or args.parent_manifest is None
+                or any(value is not None for value in (args.baseline, args.resolved_design, args.mode, args.source))):
+            parser.error('--analyze-only requires --parent-manifest and no scientific, contract or Result options')
     else:
-        if args.result_path is not None:
-            parser.error('--result-path requires --resume-finalization')
+        if args.result_path is not None or args.parent_manifest is not None:
+            parser.error('--result-path and --parent-manifest require their explicit recovery/analysis modes')
         args.baseline = args.baseline or DEFAULT_BASELINE
         args.resolved_design = args.resolved_design or DEFAULT_RESOLVED
         args.mode = args.mode or DEFAULT_MODE
@@ -84,6 +99,10 @@ def main() -> None:
     if args.resume_finalization:
         result = resume(args.run_id, args.result_path, args.artifact_project_root, context=context)
         print(f"QUADRUPOLE_MASS_FILTER_L1_FINALIZATION={result['status'].upper()} RUN={Path(result['run_directory']).name}")
+        return
+    if args.analyze_only:
+        destination = analyze(args.parent_manifest, args.run_id, args.artifact_project_root, context=context)
+        print(f'QUADRUPOLE_MASS_FILTER_L1_ANALYSIS=PASS RUN={destination.name}')
         return
     destination = run(args.baseline, args.resolved_design, args.mode, args.source,
                       args.run_id, args.artifact_project_root, context=context)

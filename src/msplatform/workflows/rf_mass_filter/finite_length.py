@@ -408,6 +408,157 @@ def _run_action(session: RunSession, *, requested: dict, original_records: dict,
         raise
 
 
+def _analysis_parent(manifest_path: Path) -> dict:
+    """Verify one sealed functional L1 parent and its exact reusable data."""
+    from msplatform.io.manifest_records import file_record, require_completed_terminal_publication, verify_record
+
+    manifest_path = manifest_path.resolve(strict=True)
+    if manifest_path.name != 'run_manifest.json':
+        raise ValueError('L1 analysis requires the explicit parent run_manifest.json')
+    require_completed_terminal_publication(manifest_path)
+    manifest_record = file_record(manifest_path, 'required_evidence')
+    manifest = load_json(manifest_path)
+    if (manifest.get('role') != 'simulation_run_manifest'
+            or manifest.get('project') != 'rf_multipole_ion_optics'
+            or manifest.get('mode') != 'mass_filter_reference'
+            or manifest.get('status') not in {'success', 'failed'}):
+        raise ValueError('L1 analysis parent must be a sealed functional mass-filter run')
+    parent = manifest_path.parent
+    verify_record('L1 parent run configuration', manifest.get('run_config'), base_dir=parent)
+    config = load_json(parent / 'run_config.json')
+    if config.get('parameters', {}).get('lifecycle_stage') != 'complete':
+        raise ValueError('L1 analysis parent did not complete its original request')
+    summary = load_json(parent / 'summary.json')
+    expected_status = {'PASS': 'success', 'FAIL': 'failed'}
+    if (summary.get('functional_gate') not in expected_status
+            or manifest['status'] != expected_status[summary['functional_gate']]):
+        raise ValueError('L1 analysis parent lacks a completed functional PASS/FAIL result')
+    names = ('baseline', 'resolved_design', 'mode', 'source')
+    records = {name: dict(manifest.get('inputs', {}).get(name, {})) for name in names}
+    response = dict(manifest.get('inputs', {}).get('response_for_analysis', {}))
+    original_response_path = (parent / 'results/mass-response__finite-length.csv').resolve()
+    original_matches = [row for row in manifest.get('outputs', [])
+                        if Path(row.get('path', '')).resolve() == original_response_path]
+    if len(original_matches) != 1:
+        raise ValueError('L1 analysis parent does not bind its original response output')
+    original_response = dict(original_matches[0])
+    if any(response.get(key) != original_response.get(key) for key in ('bytes', 'sha256')):
+        raise ValueError('L1 parent response input differs from its original simulation output')
+    records['response'] = response
+    records['original_response'] = original_response
+    for name, record in records.items():
+        verify_record('L1 parent reusable ' + name, record, base_dir=parent)
+    return dict(run_directory=parent, manifest=manifest, manifest_record=manifest_record, records=records,
+                parent_run_id=manifest.get('run_id'))
+
+
+def _analysis_action(session: RunSession, *, parent: dict, stage: dict) -> dict:
+    """Copy sufficient sealed parent data and invoke only the existing analyzer."""
+    from msplatform.execution.inputs import freeze_file
+    from msplatform.execution.recorded_file_removal import write_json_atomic
+    from msplatform.io.manifest_records import verify_record
+
+    stage_name = 'input_freezing'
+    try:
+        _checkpoint(session, stage_name)
+        filenames = dict(baseline='baseline.json', resolved_design='resolved_design_mass_filter.json',
+                         mode='mass_filter_reference.json', source='official_particle_source.json')
+        frozen = {}
+        for name, filename in filenames.items():
+            original = parent['records'][name]
+            verify_record('L1 parent scientific ' + name, original)
+            target = session.declare_file(session.input_dir / filename, 'required_evidence')
+            frozen[name] = dict(freeze_file(Path(original['path']), target), retention_role='required_evidence')
+            if frozen[name]['sha256'] != original['sha256']:
+                raise ValueError('L1 parent scientific input changed before freezing: ' + name)
+            session.add_input(name, frozen[name])
+        validate_l1_contract(*(load_json(Path(frozen[name]['path'])) for name in ('baseline', 'mode', 'source')))
+        response = session.declare_file(session.result_dir / 'mass-response__finite-length.csv', 'required_evidence')
+        original_response = parent['records']['original_response']
+        copied_response = freeze_file(Path(original_response['path']), response)
+        if copied_response['sha256'] != original_response['sha256']:
+            raise ValueError('L1 parent response changed before child freezing')
+        session.add_input('parent_response', original_response)
+        response_input = session.declare_file(session.input_dir / 'mass_response_for_analysis.csv', 'required_evidence')
+        copied = dict(freeze_file(response, response_input), retention_role='required_evidence')
+        verify_record('L1 original parent response', original_response)
+        session.add_input('response_for_analysis', copied)
+        stage_name = 'analysis_preparation'
+        _checkpoint(session, stage_name)
+        request, guards = _prepare_frozen_request(session, frozen)
+        stage_name = 'analysis_execution'
+        _checkpoint(session, stage_name)
+        analysis = _invoke_frozen_stage(
+            session, request, 'analysis', [*guards, copied, *parent['records'].values()], stage['limits']
+        )
+        metrics = load_json(session.result_dir / 'mass-filter__functional-metrics.json')
+        config = load_json(session.run_config)
+        config['frozen_python_analysis']['environment'] = analysis['environment']
+        config['parameters']['parent_run_id'] = parent['parent_run_id']
+        config['parameters']['simulation_calls'] = 0
+        write_json_atomic(session.run_config, config)
+        stage_name = 'publication'
+        _checkpoint(session, stage_name)
+        _checkpoint(session, 'complete')
+        outputs = [response, session.result_dir / 'mass-filter__functional-metrics.json',
+                   session.result_dir / 'mass-response__passband.png',
+                   session.result_dir / 'analysis_execution.json', session.log_dir / 'analysis_module.stdout.log']
+        return dict(status='success' if metrics['status'] == 'PASS' else 'failed',
+            summary=dict(schema_version=1, role='quadrupole_mass_filter_l1_run_summary',
+                functional_gate=metrics['status'], model_level='L1', analysis_only=True,
+                parent_run_id=parent['parent_run_id'], simulation_calls=0,
+                result='results/mass-filter__functional-metrics.json', figure='results/mass-response__passband.png'),
+            output_paths=outputs, required_output_paths=outputs, retention_preserve_paths=[], manifest_extra_fields={})
+    except Exception as primary:
+        try:
+            failure = session.declare_file(session.result_dir / 'failure_context.json', 'required_evidence')
+            write_json_atomic(failure, dict(schema_version=2, role='rf_mass_filter_l1_failure_context',
+                status='failed', failure_stage=stage_name, reason=f'{type(primary).__name__}: {primary}',
+                threshold_result_eligible=False, model_level='L1', analysis_only=True,
+                parent_run_id=parent['parent_run_id'], simulation_calls=0))
+            candidates = [failure, *(session.result_dir / name for name in (
+                'mass-response__finite-length.csv', 'mass-filter__functional-metrics.json',
+                'mass-response__passband.png', 'analysis_execution.json')),
+                session.log_dir / 'analysis_module.stdout.log']
+            primary.failure_output_paths = [path for path in candidates if path.is_file()]
+        except Exception as secondary:
+            primary.add_note(f'L1 analysis failure context preservation failed: {secondary!r}')
+        raise
+
+
+def analyze(context: ExecutionContext, *, parent_manifest_path: Path, run_id: str,
+            artifact_project_root: Path | None = None) -> dict:
+    """Create a zero-simulation managed child from one sealed L1 parent."""
+    from functools import partial
+    from msplatform.execution.completion import no_particle_batch_completion_api
+    from msplatform.execution.owner import run_managed_stage
+    from msplatform.execution.stage_policy import read_stage_policy
+    from msplatform.io.manifest_records import file_record
+
+    expected_root = context.workspace / 'artifacts/projects/rf_multipole_ion_optics'
+    if artifact_project_root is not None and artifact_project_root.resolve() != expected_root.resolve():
+        raise ValueError(f'Explicit artifact root must use the selected managed research workspace: {expected_root}')
+    parent = _analysis_parent(Path(parent_manifest_path))
+    policy, policy_record = read_stage_policy(context, 'rf_mass_filter_l1')
+    protected = [str(Path(row['path'])) for row in parent['records'].values()]
+    result = run_managed_stage(context, descriptor=dict(project='rf_multipole_ion_optics',
+        mode='mass_filter_reference', software=['Python solver-free quadrupole L1 analysis']), run_id=run_id,
+        payload=dict(model_level='L1', analysis_only=True, solver_rerun=False, simulation_calls=0,
+            lifecycle_stage='prepared', parent_run_id=parent['parent_run_id'],
+            parent_manifest=parent['manifest_record'], frozen_request_schema_version=2,
+            process_deadline_policy='engineering_warning_natural_drain'),
+        committed_new_bytes=policy['limits']['transient_run_directory_bytes'],
+        commitment_inputs=[policy_record, parent['manifest_record']], retention=policy['artifact_retention'],
+        expected_operation_ids=['analysis'], operation_dependencies={},
+        action=partial(_analysis_action, parent=parent, stage=policy),
+        action_record=file_record(Path(__file__).resolve(), 'required_evidence'),
+        source_references=[dict(manifest_record=parent['manifest_record'], protected_paths=protected)],
+        use_short_execution_path=True, completion_api=no_particle_batch_completion_api)
+    if result['status'] == 'failed':
+        raise RuntimeError('mass-filter L1 functional gate failed')
+    return result
+
+
 def run(context: ExecutionContext, *, baseline_path: Path, resolved_path: Path, mode_path: Path,
         source_path: Path, run_id: str, artifact_project_root: Path | None = None) -> dict:
     """Execute explicit L1 inputs with one managed owner and one frozen package.

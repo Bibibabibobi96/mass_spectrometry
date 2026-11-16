@@ -1,5 +1,34 @@
 # RF多极杆离子光学项目状态
 
+## Original finite-length L1 analysis-only successor
+
+The original CLI now accepts `--analyze-only --parent-manifest <sealed parent>`
+with a distinct new run identity and its normal deployment/profile context. The
+installed workflow verifies a completed functional PASS/FAIL parent, its bound
+run configuration, four scientific authorities, and exact identity between the
+parent analysis-response input and original response output. Existing managed
+`source_references` protect those parent paths. The child freezes the same
+scientific inputs and response, builds the same frozen package/request, and
+invokes only the existing `analysis` worker. It has no simulation operation,
+native call, new runner or analysis DSL. Response, metrics, figure and existing
+finalization-recovery roles are retained with explicit parent lineage and
+`simulation_calls=0`.
+
+Real original-CLI coverage proves one analysis operation, byte-identical parent
+and child response/metrics, unchanged parent evidence, terminal child recovery,
+and changed/missing parent-response refusal before a child run. An injected
+analysis failure plus finalization hold recovers to its own failed terminal with
+zero simulation. The corrected method passed with an explicitly inherited outer
+fixture token in 69.636 seconds after the test applied the existing owner-token
+isolation pattern. Earlier focused rounds retain a Path-serialization failure
+and an inherited-grant refusal; all 15 original methods passed in the latter
+round, while only the new fixture failed. These rounds are not relabeled as a
+complete green module rerun. The integrator's subsequent stable public Changed
+gate then passed all 16 original/new methods in 442.089 seconds and completed
+successfully, including freshness, Ruff and changed-source standards.
+`--check-contract` and scoped diff checks also passed. No commercial solver or
+new scientific/native qualification is involved.
+
 ## Original finite-length L1 CLI finalization recovery
 
 The original `mass_filter_reference/run_finite_length.py` CLI now accepts
