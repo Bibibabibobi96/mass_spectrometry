@@ -96,3 +96,55 @@ def track_recorded_birth(*, preparation_manifest: Mapping[str, Any], fields: Ope
         context=context, unit_size=unit_size, recovery_reference=recovery_reference, dispatch_profiles=dispatch_profiles,
         birth_source_authority={'manifest': manifest_record, 'records': records},
         **({'scalar_field_basis': scalar_field_basis} if scalar_field_basis is not None else {}))
+
+
+def main() -> None:
+    """Track explicit previously published inputs using the public owner."""
+    import argparse
+    from msplatform.execution import load_environment
+    from msplatform.io.manifest_records import file_record
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument('--preparation-manifest', type=Path)
+    source.add_argument('--release-request', type=Path)
+    parser.add_argument('--fields-reference', type=Path, required=True)
+    parser.add_argument('--species-id')
+    parser.add_argument('--expected-particle-ids', type=Path)
+    parser.add_argument('--propagation', type=Path)
+    parser.add_argument('--numerics', type=Path)
+    parser.add_argument('--observations', type=Path, required=True)
+    parser.add_argument('--environment', type=Path, required=True)
+    parser.add_argument('--workspace', type=Path, required=True)
+    parser.add_argument('--profile', required=True)
+    parser.add_argument('--scalar-field-basis', type=Path)
+    parser.add_argument('--recovery-reference', type=Path)
+    parser.add_argument('--dispatch-profiles', type=Path)
+    parser.add_argument('--unit-size', type=int)
+    args = parser.parse_args()
+
+    def document(path: Path) -> Any:
+        return json.loads(path.read_text(encoding='utf-8-sig'))
+
+    if args.release_request:
+        if args.species_id or args.expected_particle_ids or not args.propagation or not args.numerics:
+            parser.error('fresh release requires propagation and numerics; species and IDs belong in the release request')
+    elif not args.species_id or not args.expected_particle_ids or args.propagation or args.numerics:
+        parser.error('historical preparation requires species and IDs; propagation and numerics come from preparation')
+    context = load_environment(args.environment, workspace=args.workspace, profile=args.profile)
+    common = dict(fields=document(args.fields_reference), observations=document(args.observations), context=context,
+        unit_size=args.unit_size, recovery_reference=document(args.recovery_reference) if args.recovery_reference else None,
+        dispatch_profiles=document(args.dispatch_profiles) if args.dispatch_profiles else (),
+        scalar_field_basis=document(args.scalar_field_basis) if args.scalar_field_basis else None)
+    if args.release_request:
+        from msplatform.ion_release import sample_release
+        result = simion.track(particles=sample_release(document(args.release_request)),
+            propagation=document(args.propagation), numerics=document(args.numerics), **common)
+    else:
+        result = track_recorded_birth(preparation_manifest=file_record(args.preparation_manifest.resolve()),
+            species_id=args.species_id, expected_particle_ids=document(args.expected_particle_ids), **common)
+    print('OWNER_RETURNED=' + json.dumps(result.reference, ensure_ascii=False), flush=True)
+
+
+if __name__ == '__main__':
+    main()

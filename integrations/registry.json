@@ -10,36 +10,53 @@
           "workflow_id": "single_reflection_flight",
           "entrypoint": "integrations/workflows/single_reflection_flight/run.ps1",
           "required_bindings": [
-            "request",
-            "execution_budget_path"
+            "release_request",
+            "fields_reference",
+            "propagation",
+            "observations",
+            "numerics",
+            "environment",
+            "workspace",
+            "profile"
           ],
           "arguments": [
-            "-Request",
-            "{request}",
-            "-ExecutionBudgetPath",
-            "{execution_budget_path}",
-            "-RunId",
-            "{run_id}"
+            "-ReleaseRequest",
+            "{release_request}",
+            "-FieldsReference",
+            "{fields_reference}",
+            "-Propagation",
+            "{propagation}",
+            "-Observations",
+            "{observations}",
+            "-Numerics",
+            "{numerics}",
+            "-Environment",
+            "{environment}",
+            "-Workspace",
+            "{workspace}",
+            "-Profile",
+            "{profile}"
           ],
           "outputs": [
-            "run_config",
-            "summary",
-            "run_manifest",
-            "analysis_receipts"
+            "trajectory_artifact_ref"
           ],
           "simulation_paths": [
-            "segmented_handoff",
             "continuous_assembly"
           ],
-          "recipes": [
-            "integrations/config/recipes/guide_oa_three_zone_functional_plan.json"
-          ],
+          "recipes": [],
           "limitations": [
-            "Classification follows the request propagation scope and source restart facts; trajectory and field coupling are separate."
+            "Requires an explicit canonical birth request and published FieldBundle; scientific qualification is outside this entry. Historical recorded-birth preparation remains supported by the direct entry."
           ],
           "binding_types": {
-            "request": "file",
-            "execution_budget_path": "file"
+            "release_request": "file",
+            "fields_reference": "file",
+            "propagation": "file",
+            "observations": "file",
+            "numerics": "file",
+            "environment": "file",
+            "workspace": "directory",
+            "profile": "string",
+            "scalar_field_basis": "file"
           },
           "purpose": "assembly_propagation",
           "action": "run",
@@ -48,7 +65,14 @@
             "python"
           ],
           "model": "请求声明的装配场域、接口与轨迹传播",
-          "scientific_status": "not_evaluated"
+          "scientific_status": "not_evaluated",
+          "run_identity": "backend_generated",
+          "optional_arguments": {
+            "scalar_field_basis": [
+              "-ScalarFieldBasis",
+              "{scalar_field_basis}"
+            ]
+          }
         },
         {
           "workflow_id": "prepared_joint_flight",

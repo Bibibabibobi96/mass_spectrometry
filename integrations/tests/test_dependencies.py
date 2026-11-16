@@ -449,26 +449,20 @@ with tempfile.TemporaryDirectory() as request_directory:
             self.assertEqual({path.relative_to(parent): path.read_bytes()
                               for path in parent.rglob("*") if path.is_file()}, parent_before)
 
-    def test_shared_single_reflection_fixture_expands_packages_without_large_seeds(self) -> None:
-        from integrations.tests.test_support.single_reflection_execute_fixture import SingleReflectionExecuteFixture
-        fixture = SingleReflectionExecuteFixture("run")
-        with tempfile.TemporaryDirectory() as directory:
-            author = fixture._prepare_source_template(Path(directory), load(INVENTORY))
-            self.assertTrue((author / "src/msplatform/workflows/single_reflection_flight/prepare.py").is_file())
-            self.assertTrue((author / "src/msplatform/execution/inputs.py").is_file())
-            self.assertTrue((author / "projects/orthogonal_accelerator/analysis/sectioned_geometry.py").is_file())
-            resources = Path('src/msplatform/contracts/schemas')
-            originals = sorted((REPO_ROOT / resources).glob('*.schema.json'))
-            self.assertTrue(originals)
-            self.assertEqual(sorted(path.name for path in (author / resources).glob('*.schema.json')),
-                             [path.name for path in originals])
-            for original in originals:
-                self.assertEqual((author / resources / original.name).read_bytes(), original.read_bytes())
-            seeds = list((author / "common/simion/assets/iob_instance_seeds").glob("iob_seed_placeholder_*.pa0"))
-            self.assertEqual(len(seeds), 0)
-            self.assertTrue(all((author / "src/msplatform/backends/simion/resources" / name).read_bytes() ==
-                                (REPO_ROOT / "src/msplatform/backends/simion/resources" / name).read_bytes()
-                                for name in ("4_instance_seed.iob", "5_instance_seed.iob")))
+    def test_shared_dependency_fixture_expands_retained_consumers_without_large_seeds(self) -> None:
+        from integrations.tests.test_support.single_reflection_execute_fixture import declared_dependency_paths
+        contract = load(INVENTORY)
+        originals = {path.relative_to(REPO_ROOT).as_posix() for path in (REPO_ROOT / 'src/msplatform/contracts/schemas').glob('*.schema.json')}
+        self.assertTrue(originals)
+        for consumer in ('prepared_joint', 'multipole_ip'):
+            with self.subTest(consumer=consumer):
+                paths = declared_dependency_paths(REPO_ROOT, contract, consumer)
+                self.assertIn('src/msplatform/execution/inputs.py', paths)
+                self.assertTrue(originals <= paths)
+                self.assertFalse(any('iob_seed_placeholder_' in path for path in paths))
+        prepared = declared_dependency_paths(REPO_ROOT, contract, 'prepared_joint')
+        for name in ('4_instance_seed.iob', '5_instance_seed.iob'):
+            self.assertIn('src/msplatform/backends/simion/resources/' + name, prepared)
 
     def test_joint_finalization_owners_freeze_the_existing_public_adapter(self) -> None:
         entries = {item["source_repo_path"]: set(item["consumers"])

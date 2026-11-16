@@ -928,6 +928,22 @@
         {
           "regex": "^common/contracts/test_support/installed_(?:strict_json|workbench_seed|static_field|recorded_birth|sfi_consumer)_probe\\.py$",
           "reason": "installed_probe_support_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/single_reflection_flight/recorded_birth.py",
+          "reason": "sfi_public_entry_consumer_changed"
+        },
+        {
+          "exact": "integrations/workflows/single_reflection_flight/run.ps1",
+          "reason": "sfi_public_entry_consumer_changed"
+        },
+        {
+          "exact": "integrations/registry.json",
+          "reason": "sfi_public_entry_consumer_changed"
+        },
+        {
+          "exact": "integrations/config/runtime_dependencies.json",
+          "reason": "sfi_public_entry_consumer_changed"
         }
       ],
       "command": {
@@ -2041,7 +2057,9 @@
                 "reason": "neutral_mr_primitive_fixture_changed"
               }
             ],
-            "modules": ["common/contracts/test_neutral_mr_primitives.py"],
+            "modules": [
+              "common/contracts/test_neutral_mr_primitives.py"
+            ],
             "dependency_profile": "locked"
           },
           {
@@ -2051,7 +2069,9 @@
                 "reason": "canonical_contact_geometry_or_workpoint_changed"
               }
             ],
-            "modules": ["common/contracts/test_cad_contact_geometry.py"],
+            "modules": [
+              "common/contracts/test_cad_contact_geometry.py"
+            ],
             "dependency_profile": "locked"
           },
           {
@@ -2061,7 +2081,9 @@
                 "reason": "inert_tracking_grouping_contract_changed"
               }
             ],
-            "modules": ["common/contracts/test_inert_tracking_grouping.py"],
+            "modules": [
+              "common/contracts/test_inert_tracking_grouping.py"
+            ],
             "dependency_profile": "locked"
           },
           {
@@ -2071,7 +2093,9 @@
                 "reason": "sampled_continuous_consumer_changed"
               }
             ],
-            "modules": ["common/contracts/test_neutral_ip_schedule_managed.py"],
+            "modules": [
+              "common/contracts/test_neutral_ip_schedule_managed.py"
+            ],
             "dependency_profile": "locked"
           },
           {
@@ -2179,6 +2203,31 @@
             ],
             "modules": [
               "common/contracts/test_ip_mr_inert_transport.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/workflows/single_reflection_flight/recorded_birth.py",
+                "reason": "sfi_public_entry_consumer_changed"
+              },
+              {
+                "exact": "integrations/workflows/single_reflection_flight/run.ps1",
+                "reason": "sfi_public_entry_consumer_changed"
+              },
+              {
+                "exact": "integrations/registry.json",
+                "reason": "sfi_public_entry_consumer_changed"
+              },
+              {
+                "exact": "integrations/config/runtime_dependencies.json",
+                "reason": "sfi_public_entry_consumer_changed"
+              }
+            ],
+            "modules": [
+              "common/contracts/test_sfi_recorded_birth_entry.py",
+              "common/contracts/test_execution_compiler.py"
             ],
             "dependency_profile": "locked"
           }
@@ -3012,21 +3061,14 @@
           "test_single_reflection_collection": 4.909472,
           "test_single_reflection_continuation": 64.653259,
           "test_single_reflection_downstream_fields": 2.256505,
-          "test_single_reflection_execute": 152.212622,
-          "test_single_reflection_execute_capacity": 59.944416,
-          "test_single_reflection_execute_discovery": 160.110911,
-          "test_single_reflection_execute_flight": 147.270042,
-          "test_single_reflection_execute_preparation": 87.882355,
           "test_single_reflection_field_stage": 220.790325,
           "test_single_reflection_fields": 2.593645,
           "test_single_reflection_geometry": 2.251395,
           "test_single_reflection_interface_fields": 0.000112,
-          "test_single_reflection_native_evidence": 1.750152,
           "test_single_reflection_owner_recovery": 17.124386,
           "test_single_reflection_preparation": 22.658789,
           "test_single_reflection_program": 3.097224,
           "test_single_reflection_pulse": 0.363729,
-          "test_single_reflection_runner": 17.525127,
           "test_single_reflection_runtime": 8.812237,
           "test_single_reflection_source_protection": 3.537608,
           "test_workflow_finalization_recovery": 49.072669
@@ -3213,23 +3255,16 @@
               "integrations/tests/test_single_reflection_collection.py",
               "integrations/tests/test_single_reflection_continuation.py",
               "integrations/tests/test_single_reflection_downstream_fields.py",
-              "integrations/tests/test_single_reflection_execute.py",
-              "integrations/tests/test_single_reflection_execute_capacity.py",
-              "integrations/tests/test_single_reflection_execute_discovery.py",
-              "integrations/tests/test_single_reflection_execute_flight.py",
-              "integrations/tests/test_single_reflection_execute_preparation.py",
               "integrations/tests/test_single_reflection_field_stage.py",
               "integrations/tests/test_single_reflection_fields.py",
               "integrations/tests/test_single_reflection_geometry.py",
               "integrations/tests/test_single_reflection_interface_fields.py",
-              "integrations/tests/test_single_reflection_native_evidence.py",
               "integrations/tests/test_single_reflection_owner_recovery.py",
               "integrations/tests/test_single_reflection_preparation.py",
               "integrations/tests/test_sfi_preparation_numerics.py",
               "integrations/tests/test_single_reflection_program.py",
               "integrations/tests/test_single_reflection_pulse.py",
               "integrations/tests/test_single_reflection_request_versions.py",
-              "integrations/tests/test_single_reflection_runner.py",
               "integrations/tests/test_single_reflection_runtime.py",
               "integrations/tests/test_single_reflection_scientific_freeze.py",
               "integrations/tests/test_single_reflection_source_protection.py",

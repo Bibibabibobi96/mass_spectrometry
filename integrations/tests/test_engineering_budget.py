@@ -10,23 +10,9 @@ REPO = Path(__file__).resolve().parents[2]
 
 @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 unavailable")
 class EngineeringBudgetTests(unittest.TestCase):
-    def test_shared_budget_and_actual_entry_loaders(self):
+    def test_shared_budget_admission(self):
         code = r"""param($RepoRoot,$Temporary)
 $ErrorActionPreference='Stop'
-$relative='integrations';$sharedRuntime='integrations/runtime'
-foreach($entry in @('integrations/workflows/single_reflection_flight/execute.ps1')){
- Remove-Item Function:Initialize-IntegrationStageBudget -ErrorAction SilentlyContinue
- $tokens=$null;$errors=$null
- $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $RepoRoot $entry),[ref]$tokens,[ref]$errors)
- if($errors.Count){throw $errors[0]}
- foreach($statement in $ast.EndBlock.Statements){
-  if($statement-is[Management.Automation.Language.PipelineAst]){
-   $command=$statement.PipelineElements[0]
-   if($command-is[Management.Automation.Language.CommandAst]-and$command.InvocationOperator-eq'Dot'-and$command.Extent.Text-match 'integrations/runtime/engineering_budget\.ps1'){Invoke-Expression $command.Extent.Text}
-  }
- }
- if(-not(Get-Command Initialize-IntegrationStageBudget -ErrorAction SilentlyContinue)){throw "missing entry budget: $entry"}
-}
 . (Join-Path $RepoRoot 'integrations/runtime/engineering_budget.ps1')
 $document=@{schema_version=2;role='integration_resolved_engineering_budget';integration_id='instrument_assembly';workflow_id='fixture';retention_class='solver_review';particle_count=100;stage_limits=@{transport=@{solver='simion';automatic_retry_count=0;wall_clock_seconds=60;transient_run_directory_bytes=1000;process_tree_working_set_bytes=2000;minimum_system_available_memory_bytes=1;compact_final_retained_bytes=800}}}
 $source=Join-Path $Temporary budget.json

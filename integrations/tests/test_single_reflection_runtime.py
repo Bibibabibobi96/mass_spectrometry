@@ -1628,12 +1628,6 @@ if mode:match('^verify') then assert(reference_closed,'temporary path reference 
                 self.assertFalse(self.output.exists())
 
 
-class SeedOwnerClosureTests(unittest.TestCase):
-    def test_existing_owner_retains_failed_partial_bootstrap_and_cleans_success(self):
-        from integrations.tests.test_support.single_reflection_execute_fixture import SingleReflectionExecuteFixture
-        owner = SingleReflectionExecuteFixture("run")
-        owner._check_public_cases(("workbench", "workbench_build"))
-
 
 if __name__ == "__main__":
     unittest.main()

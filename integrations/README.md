@@ -108,15 +108,13 @@ component 3输入生成composition plan 5；显式旧component 1／2输入分别
 以下为公开入口。商业执行须有明确科学输入、授权及相称预算；准备成功不代表求场、Fly或物理验收。
 跨项目新run归`instrument_assembly`，独立组件几何／场／CAD仍归其提供者项目。
 
-单反射新科学组入口采用[request 10](../src/msplatform/workflows/single_reflection_flight/request_v10.schema.json)、component 3、
-plan 5与backend binding 2；具名旧request 9／plan 3仍按原协议读取。
-实际准备、后端接线和隔离冻结已通过定向软件验证；原生与GUI验收及可选观测规格见
-[当前单反射状态](docs/INTEGRATION.md#单反射整机)。
-
-单反射的科学request可写`"verify_saved_workbench_replay": true`，
-显式请求保存工作台默认Fly回放；省略或false时记`not_requested`，正常Fly不再默认执行第二轮全母群。
-单反射只有请求回放时才要求`instrument_default_replay`预算。保存／源绑定／回调实现或交付承诺改变时，
-仍按相关变更执行相称原生验证；随机碰撞保留`saved_controls_only`，不能冒称默认Fly已通过。
+The SFI entry consumes an explicit published FieldBundle and original births.
+Fresh sources use `canonical_birth_source_request`; the historical recorded-birth
+path requires a successful preparation manifest, species and complete original IDs.
+The public tracking owner generates the actual run identity returned in `OWNER_RETURNED`.
+The former `-Request -ExecutionBudgetPath` entry and duplicate execution body are retired.
+Historical preparation readers and analysis remain; native and installed acceptance
+are tracked in the [current SFI status](docs/INTEGRATION.md#单反射整机).
 
 ### 模拟路径选择
 
@@ -208,36 +206,31 @@ $assembly = Join-Path $artifacts 'projects/instrument_assembly'
   -ContinuationPredecessorManifestPath (Join-Path $assembly 'runs/20261029_225500__sim__simion__ip-mr-reuse-01fc842a/run_manifest.json')
 ```
 
-以下例子使用当前裸八极杆、三区OA和单反射分析器配方，实录100粒子出生源从多极杆入口开始。
-请求与预算由同级产物目录显式提供；源码checkout本身不包含这些外部科学输入：
+Provide the selected study's actual input files. Replace the quoted study directory
+and engineering profile below; fields and budgets are explicit and are not discovered:
 
 ```powershell
-$artifacts = Join-Path (Split-Path -Parent (Get-Location).Path) 'artifacts'
-$case = Join-Path $artifacts 'projects/instrument_assembly/scratch/20261030__continuous-assembly-case'
-$replayRequest = Join-Path $case 'request_functional_explicit_replay.json'
-$request = Get-Content -LiteralPath (Join-Path $case 'request_functional.json') -Raw | ConvertFrom-Json -AsHashtable
-$request.verify_saved_workbench_replay = $true
-$request | ConvertTo-Json -Depth 100 | Out-File -LiteralPath $replayRequest -Encoding utf8NoBOM -NoClobber -ErrorAction Stop
+$case = 'C:\path\selected-study'
 & integrations/workflows/single_reflection_flight/run.ps1 `
-  -Request $replayRequest `
-  -ExecutionBudgetPath (Join-Path $case 'execution_budget.json')
+  -ReleaseRequest (Join-Path $case 'birth-request.json') `
+  -FieldsReference (Join-Path $case 'fields.json') `
+  -Propagation (Join-Path $case 'propagation.json') `
+  -Observations (Join-Path $case 'observations.json') `
+  -Numerics (Join-Path $case 'numerics.json') `
+  -Environment (Join-Path $case 'machine.json') -Workspace $case -Profile 'standard' `
+  -ScalarFieldBasis (Join-Path $case 'scalar-basis.json')
 ```
 
-该同目录作者副本仅为重现历史冻结定义的回放判据，不覆盖原request／run／budget；已有同名副本须先核实，命令不会覆盖。
-普通新request仍默认false，不额外Fly。
-
-该请求预先引用`functional_validation.json`，冻结N100功能问题、事件顺序、母群与时钟容差及三态判据，
-并显式引用093627运行已完成发布的前端与下游场；该父run后续IOB审计失败，不改变已完成场的独立来源事实。
-入口自动冻结提供者与母群、准备或复用三工作点共同MP／OA场及下游场、装配、飞行与分析；保存工作台回放仅按显式请求执行，
-按内容身份复用仍有效的场。新run位于`artifacts/projects/instrument_assembly/runs/`，
-summary指向实际composition／scope和source provenance；canonical事件及母群结果在
-`results/single_reflection/baseline/collection.json`。粗网格为2×2×0.1 mm，理想透明栅屏蔽分域，
-原始ID和绝对时钟从出生到终态保持；没有中途导出重放。
-运行完成与数据闭合不表示有限栅边缘场、峰形／分辨率或Formal资格通过，零检测仍保留科学负结果。
+Supply `-ScalarFieldBasis` only when required by the selected fields. For historical
+recorded births, replace `-ReleaseRequest -Propagation -Numerics` with explicit
+`-PreparationManifest`, `-SpeciesId` and `-ExpectedParticleIds` values. The source
+forms are mutually exclusive. `-RecoveryReference` selects an explicit prior artifact.
+The returned ArtifactRef names the public owner's trajectory product. Software tests
+do not qualify native flight, field coverage or scientific accuracy.
 
 | 科学工作流 | 公开入口与显式输入 | 状态及操作边界 |
 |---|---|---|
-| 多极杆→OA→单反射TOF | [single_reflection_flight/run.ps1](workflows/single_reflection_flight/run.ps1)，`-Request -ExecutionBudgetPath` | [科学组request10及具名旧request9](docs/INTEGRATION.md#单反射整机)；内部execute由owner调用 |
+| Multipole → OA → single-reflection TOF | [single_reflection_flight/run.ps1](workflows/single_reflection_flight/run.ps1), explicit births, fields and environment | [Inputs and historical-reader boundary](docs/INTEGRATION.md#单反射整机); public tracking owner publishes trajectories |
 | OA／IP→MR接口准备与执行 | [accelerator_interface/execute.ps1](workflows/accelerator_interface/execute.ps1)，准备时明确提供者与参考run；`-FullJoint`按源链或prepared workbench分支执行 | [输入及设计／Finalize边界](docs/INTEGRATION.md#oaip接口准备与绑定) |
 | 已准备IP→MR飞行／分析 | [prepared_joint/execute.ps1](workflows/prepared_joint/execute.ps1)，准备run与观测合同 | [联合执行及Analysis](docs/INTEGRATION.md#已准备ipmr联合飞行) |
 | OA→MR | [oa_mr/execute.ps1](workflows/oa_mr/execute.ps1)，`-CompositionPlanPath`及可选`-LocalScopePath` | [支持范围与证据](docs/INTEGRATION.md#已准备ipmr联合飞行) |

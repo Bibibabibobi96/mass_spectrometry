@@ -803,10 +803,21 @@ foreach($scope in @('Owner','Repository')){
     def test_single_reflection_frontend_producer_selects_actual_owner_consumers(self) -> None:
         path = 'src/msplatform/workflows/single_reflection_flight/frontend_fields.py'
         result, = self.selections(REPO_ROOT, [dict(stage='instrument_assembly_integration', paths=[path])])
-        for module in ('test_single_reflection_field_stage', 'test_single_reflection_execute',
+        for module in ('test_single_reflection_field_stage',
                        'test_dependencies', 'test_native_path_consumers'):
             self.assertIn('integrations/tests/' + module + '.py', result['Modules'])
         self.assertEqual(result['Reason'], 'declared_owner_module_dependencies')
+
+    def test_sfi_normal_entry_selects_public_consumer_and_planner(self) -> None:
+        paths = ['src/msplatform/workflows/single_reflection_flight/recorded_birth.py',
+                 'integrations/workflows/single_reflection_flight/run.ps1',
+                 'integrations/registry.json', 'integrations/config/runtime_dependencies.json']
+        results = self.selections(REPO_ROOT, [dict(stage='common_contracts', paths=[path]) for path in paths])
+        for path, result in zip(paths, results, strict=True):
+            with self.subTest(path=path):
+                self.assertIn('common/contracts/test_sfi_recorded_birth_entry.py', result['Modules'])
+                self.assertIn('common/contracts/test_execution_compiler.py', result['Modules'])
+                self.assertEqual(result['Reason'], 'declared_owner_module_dependencies')
 
     def test_unmapped_simion_source_preserves_native_exclusions(self) -> None:
         paths = ["src/msplatform/execution/recovery.py",

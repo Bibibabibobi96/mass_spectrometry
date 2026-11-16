@@ -4,15 +4,11 @@ from __future__ import annotations
 import copy
 import csv
 import json
-import os
 from pathlib import Path
 import shutil
-import subprocess
-import sys
 import tempfile
 import unittest
 
-from msplatform.execution.inputs import python_import_roots
 from msplatform.execution.retention import file_record
 from msplatform.backends.simion.particle_batching import plan_single_wave_batches
 from integrations.tests import test_single_reflection_runtime as runtime_tests
@@ -21,87 +17,6 @@ from msplatform.workflows.single_reflection_flight.continuation import prepare_p
 from msplatform.workflows.single_reflection_flight.collect import collect_log
 
 
-_PUBLIC_FLY = r'''param($Repo,$Python,$OutputDirectory,$frozenExecutionRoot,$FieldReceipt,$workbenchPhase='full_instrument')
-Set-StrictMode -Version Latest
-$ErrorActionPreference='Stop'
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
-. (Join-Path $Repo 'integrations/runtime/frontend_flight_support.ps1')
-. (Join-Path $Repo 'common/resource_budget_support.ps1')
-function Write-RunJson {param($Path,$Value,$Depth=100) ConvertTo-Json -InputObject $Value -Depth $Depth|Set-Content -LiteralPath $Path -Encoding utf8}
-function Invoke-RunToolRootContext {param($RepoRoot,$Operation) & $Operation}
-function Get-HostResourceBudget {param($Role,$Stage) return @{}}
-function Update-HostResourceStage {param($Lease,$Stage,$Budget,$RetainedMemoryBytes) if($Stage-eq'flight'){$script:heavy++};return $Lease}
-function Update-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session,$ProtectedPaths,$SourceReferences,$RemainingCommittedNewBytes) if($ProtectedPaths){$script:protected+=@($ProtectedPaths)};foreach($source in $SourceReferences){$script:protected+=@($source.protected_paths)};if($PSBoundParameters.ContainsKey('RemainingCommittedNewBytes')){$Session.committed_new_bytes=$RemainingCommittedNewBytes};return @{session=$Session}}
-function New-ShortPaCopy {param($Source,$Destination,$ExpectedBytes,$ExpectedSha256,[switch]$GuardDestinationReadOnly)
- New-Item -ItemType Directory -Path (Split-Path -Parent $Destination) -Force|Out-Null
- Copy-Item -LiteralPath $Source -Destination $Destination
- $script:copies++
-}
-function Publish-ShortPaCopyDestination {param($Path,[switch]$KeepDestinationGuard)}
-function Protect-ImmutablePaSource {param($Source,$ExpectedBytes,$ExpectedSha256) $script:guardPaths+=@($Source)}
-function Complete-ResourceUsage {param($RunDir,$UsagePath)}
-function Write-InstrumentWallClockWarning {param($Limits,$Elapsed,$Stage)}
-function Confirm-InstrumentFrontendIobRetention {
- # Explicit inert durable-retention boundary: no production ledger in this fixture.
- $script:pinChecks++
-}
-function Write-NativeExecutionEvidence {param($Records,$Path) Write-RunJson -Path $Path -Value @($Records)}
-$script:builds=0;$script:flights=0;$script:heavy=0;$script:copies=0;$script:pinChecks=0;$script:protected=@();$script:guardPaths=@()
-function Invoke-FrontendIobBuild {
- param($Case,$Phase,$RunDirectory,$SimionExe,$Limits,$Python,$RepoRoot)
- $script:builds++
- [IO.File]::WriteAllText([string]$Case.iob_path,'INERT_NOT_NATIVE_IOB')
- $value=& $Python -B -m msplatform.workflows.single_reflection_flight.runtime --run $RunDirectory --verify-controls ([string]$Case.receipt_path)
- if($LASTEXITCODE-ne0){throw 'inert build binding failed'}
- $bound=$value|ConvertFrom-Json -Depth 100
- $Case.outputs|Add-Member -NotePropertyName iob -NotePropertyValue $bound.iob_record -Force
- $Case|Add-Member -NotePropertyName native_workbench_execution -NotePropertyValue @(@{exit_code=0}) -Force
- Write-RunJson -Path $Case.receipt_path -Value $Case
-}
-function Invoke-ResourceBudgetedProcesses {
- param($DispatchPlanPath,$RunDir,$UsagePath,$ProcessSpecifications,$ExistingProcessRecords=@(),$OnProcessCompleted)
- $records=@($ExistingProcessRecords)
- foreach($spec in $ProcessSpecifications){
-  $script:flights++
-  Copy-Item -LiteralPath (Join-Path $RunDir ('inputs/'+$spec.name+'.native.log')) -Destination $spec.stdout
-  [IO.File]::WriteAllText([string]$spec.stderr,'')
-  $records+=@{name=$spec.name;exit_code=0}
- }
- return @{resource_budget_exceeded=$false;processes=$records}
-}
-$frozen=@{execution_root=$Repo};$resultDirectory=Join-Path $OutputDirectory 'results/single_reflection'
-$RepoRoot=$Repo;$configPath=Join-Path $OutputDirectory 'run_config.json';$capacity=@{committed_new_bytes=0}
-$RunPackage=[pscustomobject]@{python=$Python;artifact_run_dir=$OutputDirectory;run_dir=$OutputDirectory;execution_alias=$null;execution_path_capacity=$null;native_path_preparation=@{calls=0;elapsed_seconds=0.0;transport_bytes=0L}}
-$field=@{cache_receipt=$FieldReceipt};$decisionRecord=$null;$Fly=$true;$batchContinuation=$true
-$phaseArguments=@('--phase',$workbenchPhase)
-$runtimeArguments=@('-B','-m','msplatform.workflows.single_reflection_flight.runtime','--preparation',
- (Join-Path $resultDirectory 'preparation_receipt.json'),'--run',$OutputDirectory,'--snapshot-root',$frozenExecutionRoot)
-$flightLimits=@{instrument_flight=@{};instrument_default_replay=@{};instrument_pulse_discovery=@{}};$lease=@{token='inert-host-lease'};$simion='INERT_NOT_EXECUTABLE'
-$NativeOperations=$null;$PhaseTimings=@{};$currentStage='prepared';$phaseClock=[Diagnostics.Stopwatch]::StartNew()
-$paGuards=[Collections.Generic.List[string]]::new()
-$allWorkbenchExecution=@();$flightExecution=@();$flightCollection=@();$phaseCollection=@();$baselineRecord=$null
-$prefix=if($workbenchPhase-eq'discovery'){'discovery_'}else{''}
-$workbenchReceiptPath=Join-Path $resultDirectory ($prefix+'workbench_preparation.json')
-$workbenchEvidencePath=Join-Path $resultDirectory 'workbench_execution_records.json'
-$nativePhases=if($workbenchPhase-eq'discovery'){@('discovery')}else{@('baseline','default_replay')}
-# This fixture tests Fly wiring; the actual two-root resolver/leases have separate behavior coverage.
-function Get-InstrumentSourceProtectionProjection {param($BorrowedPaths) return @{source_references=@(@{protected_paths=@($BorrowedPaths)})}}
-function Copy-VerifiedRunInput {param($Source,$Destination) Copy-Item -LiteralPath $Source -Destination $Destination}
-$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'integrations/workflows/single_reflection_flight/execute.ps1'),[ref]$null,[ref]$null)
-$timer=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Set-InstrumentStage'},$true)
-. ([scriptblock]::Create($timer.Extent.Text))
-$register=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Register-InstrumentContinuationInputs'},$true)
-. ([scriptblock]::Create($register.Extent.Text))
-$copyFunction=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Initialize-InstrumentIobPaCopies'},$true)
-. ([scriptblock]::Create($copyFunction.Extent.Text))
-$block=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Clauses[0].Item1.Extent.Text-eq'$Fly'-and$n.Extent.Text.Contains('$fullRuntimeInputs=')},$true)
-if(-not$block){throw 'public Fly block missing'}
-. ([scriptblock]::Create($block.Extent.Text))
-Write-RunJson -Path (Join-Path $resultDirectory 'inert_counts.json') -Value @{builds=$script:builds;flights=$script:flights;heavy=$script:heavy;pin_checks=$script:pinChecks}
-Write-RunJson -Path (Join-Path $resultDirectory 'inert_protected.json') -Value @($script:protected)
-Write-RunJson -Path (Join-Path $resultDirectory 'inert_guard_paths.json') -Value @($script:guardPaths)
-Write-RunJson -Path (Join-Path $resultDirectory 'inert_copy_count.json') -Value $script:copies
-'''
 
 
 class SingleReflectionContinuationTests(unittest.TestCase):
@@ -690,129 +605,6 @@ class SingleReflectionContinuationTests(unittest.TestCase):
         self.assertIsNone(self._materialize_cli("baseline"))
         self.assertFalse((self.run / "inputs/continuation").exists())
 
-    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 unavailable")
-    def test_public_fly_block_mixed_and_zero_missing_uses_real_cli_and_collector(self) -> None:
-        """Native and retention admission are inert; executable continuation and collection are real."""
-        for phase, missing, replay_missing in (("full_instrument", False, False), ("full_instrument", True, False), ("discovery", False, False), ("discovery", True, False), ("full_instrument", False, True)):
-            with self.subTest(phase=phase, missing=missing, replay_missing=replay_missing):
-                if phase != "discovery":
-                    self.flight = copy.deepcopy(self.workbench_fixture.flight)
-                    request = Path(self.preparation["input_records"]["request"]["path"])
-                    author = json.loads(request.read_text())
-                    runtime_tests.write_json(request, {**author, "flight": self.flight, "verify_saved_workbench_replay": True})
-                    self.preparation["input_records"]["request"] = file_record(request)
-                if phase == "discovery":
-                    self.flight = {**self.flight, "pulse": dict(mode="discover", width_us=.1, candidate_times_us=[42.25, 42.5])}
-                    request = Path(self.preparation["input_records"]["request"]["path"])
-                    author = json.loads(request.read_text())
-                    runtime_tests.write_json(request, {**author, "flight": self.flight, "verify_saved_workbench_replay": True})
-                    self.preparation["input_records"]["request"] = file_record(request)
-                current = self._current_workbench(phase)
-                parent = self._parent(current, missing_iob=missing)
-                parent_guard_paths = set()
-                if replay_missing:
-                    receipt_path = parent / "results/single_reflection/workbench_preparation.json"
-                    parent_wb = json.loads(receipt_path.read_text())
-                    next(case for case in parent_wb["batches"] if case["index"] == 2).pop("replay_stdout")
-                    changes = []
-                    for index, guard in enumerate(parent_wb["pa_guard_records"]):
-                        source = Path(guard["path"])
-                        destination = parent / "simion/private_fields" / source.parent.name / source.name
-                        destination.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copyfile(source, destination)
-                        changes.append((source.as_posix(), destination.as_posix()))
-                        guard.update(file_record(destination))
-                        parent_guard_paths.add(str(destination))
-                    for case in parent_wb["batches"]:
-                        for transport in case.get("iob_pa_copies", []):
-                            for old, new in changes:
-                                if Path(transport["source_record"]["path"]).as_posix() == old:
-                                    transport["source_record"]["path"] = str(Path(new))
-                        copy_guards = [{**transport["source_record"], "path": transport["destination"]}
-                            for transport in case.get("iob_pa_copies", [])]
-                        parent_guard_paths.update(guard["path"] for guard in copy_guards)
-                        case["iob_pa_guard_records"] = [*copy.deepcopy(parent_wb["pa_guard_records"]), *copy_guards]
-                        # Relocate the frozen numerical controls, then forward-render
-                        # the native Program using its actual bound transport source.
-                        from msplatform.backends.simion.tracking_program import project_program_paths
-                        numerical = Path(case["outputs"]["numerical_program"]["path"])
-                        text = numerical.read_text(encoding="utf-8")
-                        for old, new in changes:
-                            text = text.replace(json.dumps(Path(old).as_posix()), json.dumps(Path(new).as_posix()))
-                        numerical.write_text(text, encoding="utf-8", newline="\n")
-                        case["outputs"]["numerical_program"] = file_record(numerical)
-                        projection = Path(case["program_path_projection_record"]["path"]).read_text(encoding="utf-8")
-                        program = Path(case["outputs"]["program"]["path"])
-                        program.write_text(project_program_paths(text, projection), encoding="utf-8", newline="\n")
-                        case["outputs"]["program"] = file_record(program)
-                        spec = Path(case["outputs"]["build_spec"]["path"])
-                        text = spec.read_text()
-                        for old, new in changes:
-                            text = text.replace(old, new)
-                        spec.write_text(text, encoding="utf-8")
-                        case["outputs"]["build_spec"] = file_record(spec)
-                    runtime_tests.write_json(receipt_path, parent_wb)
-                    manifest = parent / "run_manifest.json"
-                    document = json.loads(manifest.read_text())
-                    document["outputs"] = [file_record(Path(record["path"])) for record in document["outputs"]]
-                    document["outputs"].extend(file_record(Path(path)) for path in parent_guard_paths)
-                    runtime_tests.write_json(manifest, document)
-                    frozen = self.run / "inputs/continuation_parent_manifest.json"
-                    shutil.copyfile(manifest, frozen)
-                    self.preparation["input_records"]["continuation_parent_manifest"] = {**file_record(frozen), "source_path": str(manifest)}
-                parent_before = {path: path.read_bytes() for path in parent.rglob("*") if path.is_file()}
-                shutil.rmtree(self.run / "simion" / phase)
-                result_dir = self.run / "results/single_reflection"
-                result_dir.mkdir(parents=True, exist_ok=True)
-                (self.run / "logs").mkdir(exist_ok=True)
-                runtime_tests.write_json(result_dir / "preparation_receipt.json", self.preparation)
-                runtime_tests.write_json(self.run / "run_config.json", dict(project="instrument_assembly", inputs={}))
-                runtime_tests.write_json(result_dir / "downstream_receipt.json", dict(receipt_record=file_record(self.downstream_path)))
-                with Path(self.preparation["outputs"]["projected_source"]["path"]).open(newline="") as stream:
-                    rows = list(csv.DictReader(stream))
-                for case in current["batches"]:
-                    low, high = case["source_row_range"]
-                    (self.run / "inputs" / (case["case_id"] + ".native.log")).write_text(self._native_log(rows[low-1:high]), encoding="utf-8")
-                script = self.workbench_fixture.root / "public_fly.ps1"
-                script.write_text(_PUBLIC_FLY, encoding="utf-8", newline="\n")
-                repo = Path(__file__).resolve().parents[2]
-                process = subprocess.run(["pwsh", "-NoProfile", "-File", str(script), str(repo), sys.executable,
-                    str(self.run), str(self.snapshot), str(self.field_receipt), phase], cwd=repo,
-                    capture_output=True, text=True, encoding="utf-8", timeout=60,
-                    env={**os.environ, "PYTHONPATH": os.pathsep.join(python_import_roots(repo)), "PYTHONNOUSERSITE": "1"})
-                self.assertEqual(process.returncode, 0, process.stdout + process.stderr + '\n'.join(
-                    p.read_text(encoding='utf-8-sig', errors='replace') for p in (self.run/'logs').glob('*.stderr.log')))
-                counts = json.loads((result_dir / "inert_counts.json").read_text(encoding="utf-8-sig"))
-                self.assertEqual(counts.pop("pin_checks"), 1 if missing else 0)
-                copy_count = json.loads((result_dir / "inert_copy_count.json").read_text(encoding="utf-8-sig"))
-                self.assertEqual(copy_count, len(current["iob_pa_copies"]) if missing else 0)
-                native_count = 1 if replay_missing else (1 if phase == "discovery" else 2) if missing else 0
-                self.assertEqual(counts, dict(builds=1 if missing else 0, flights=native_count, heavy=native_count))
-                self.assertTrue((result_dir / ("discovery" if phase == "discovery" else "baseline") / "collection.json").is_file())
-                if phase != "discovery":
-                    self.assertTrue((result_dir / "default_replay/replay_comparison.json").is_file())
-                published_wb = json.loads((result_dir / ("discovery_workbench_preparation.json" if phase == "discovery" else "workbench_preparation.json")).read_text(encoding="utf-8-sig"))
-                borrowed = {artifact["path"] for name in ("continuation", "replay_continuation")
-                    if name in published_wb for unit in published_wb[name]["plan"]["units"]
-                    if unit["action"] == "reuse" for artifact in unit["terminal_outputs"]}
-                config = json.loads((self.run / "run_config.json").read_text(encoding="utf-8-sig"))
-                self.assertEqual({value for key, value in config["inputs"].items() if key.startswith("continuation_artifact_")}, borrowed)
-                self.assertFalse(parent_guard_paths & set(config["inputs"].values()))
-                self.assertEqual(set(json.loads((result_dir / "inert_protected.json").read_text(encoding="utf-8-sig"))), borrowed | parent_guard_paths)
-                guarded = set(json.loads((result_dir / "inert_guard_paths.json").read_text(encoding="utf-8-sig")))
-                if native_count == 0:
-                    self.assertFalse(guarded)
-                if replay_missing:
-                    self.assertEqual(guarded, parent_guard_paths)
-                self.assertEqual(parent_before, {path: path.read_bytes() for path in parent.rglob("*") if path.is_file()})
-                shutil.rmtree(self.run / "inputs/continuation")
-                shutil.rmtree(self.run / "simion" / phase, ignore_errors=True)
-                for transport in (self.run / "simion/iob_fields").glob("*"):
-                    if transport.is_file():
-                        transport.chmod(0o600)
-                shutil.rmtree(self.run / "simion/iob_fields", ignore_errors=True)
-                shutil.rmtree(self.run / "results")
-                (self.run / "inputs" / f"{phase}_dispatch_request.json").unlink(missing_ok=True)
 
     def _plan(self, *, missing_iob: bool = False, phase: str = "default_replay") -> tuple[dict, dict, Path]:
         current = self._current_workbench()

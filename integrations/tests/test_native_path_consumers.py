@@ -17,69 +17,6 @@ CONSUMER_ROOT = REPO
 
 @unittest.skipUnless(shutil.which("pwsh"), "PowerShell unavailable")
 class NativePathConsumerTests(unittest.TestCase):
-    def test_workbench_receipt_evidence_survives_execution_alias_cleanup(self):
-        code = r"""param($Repo,$Root,$Mode)
-$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $Repo 'common/contracts/run_artifact_workflow.ps1')
-$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'integrations/workflows/single_reflection_flight/execute.ps1'),[ref]$null,[ref]$null)
-$node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Write-InstrumentWorkbenchReceipt'},$true)
-Invoke-Expression $node.Extent.Text
-$run=Join-Path $Root 'persistent';New-Item -ItemType Directory -Path (Join-Path $run 'results/single_reflection') -Force|Out-Null
-$alias=$null;$execution=$run
-if($Mode-eq'alias'){
- $alias=New-RunExecutionAlias -TargetDirectory $run -ExecutionRoot (Join-Path $Root 'execution') -ExpectedExecutionRelativePaths @('results/single_reflection/workbench_execution_records.json','results/single_reflection/flight_execution_records.json')
- $execution=$alias.execution_alias
-}
-try{
- $RunPackage=[pscustomobject]@{run_dir=$execution;artifact_run_dir=$run}
- $workbenchReceiptPath=Join-Path $execution 'results/single_reflection/workbench_preparation.json'
- $workbenchEvidencePath=Join-Path $execution 'results/single_reflection/workbench_execution_records.json'
- $flightEvidencePath=Join-Path $execution 'results/single_reflection/flight_execution_records.json'
- [IO.File]::WriteAllText($workbenchEvidencePath,'{"kind":"native"}')
- [IO.File]::WriteAllText($flightEvidencePath,'{"kind":"flight"}')
- $workbench=@{phase='full_instrument'};$workbenchOkay=$true;$Fly=$true
- $workbenchExecution=@(@{operation='verify';exit_code=0;native_priority_occupancy_validation=@{checked_points=1;observation_only_points=0}})
- $flightExecution=@(@{phase='full_instrument';exit_code=0});$nativePhases=@('full_instrument');$phaseCollection=@('batch1')
- $defaultReplayRequested=$false;$continuationSource=$false
- if($Mode-eq'external_workbench'){$workbenchEvidencePath=Join-Path ($run+'-sibling') 'evidence.json'}
- if($Mode-eq'external_flight'){$flightEvidencePath=Join-Path ($run+'-sibling') 'evidence.json'}
- if($Mode-eq'traversal_workbench'){$workbenchEvidencePath=Join-Path $execution '../outside.json'}
- if($Mode-eq'traversal_flight'){$flightEvidencePath=Join-Path $execution '../outside.json'}
- $caught=$null
- try{Write-InstrumentWorkbenchReceipt -PhaseOkay $true}catch{$caught=$_}
- if($Mode-notin@('alias','direct')){
-  if($null-eq$caught-or$caught.Exception.Message-notmatch'execution evidence is outside its owning run'){throw 'Foreign evidence reference was accepted'}
-  if(Test-Path -LiteralPath $workbenchReceiptPath){throw 'Foreign receipt was published'}
- }else{
-  if($caught){throw $caught}
-  if($null-ne$alias){
-   Remove-RunExecutionAlias -ExecutionAlias $alias.execution_alias -TargetDirectory $run
-   if(Test-Path -LiteralPath $execution){throw 'Execution alias was not removed'}
-  }
-  $receipt=Get-Content -LiteralPath (Join-Path $run 'results/single_reflection/workbench_preparation.json') -Raw -Encoding UTF8|ConvertFrom-Json
-  foreach($pair in @(@($receipt.native_validation,'native'),@($receipt.flight_validation,'flight'))){
-   $path=[string]$pair[0].execution_records_path
-   if(-not(Test-WorkflowPathWithin $path $run)){throw 'Receipt retained an ephemeral or external path'}
-   $actual=Get-Content -LiteralPath $path -Raw -Encoding UTF8|ConvertFrom-Json
-   if($actual.kind-cne$pair[1]){throw 'Receipt no longer locates its actual evidence'}
-  }
- }
- 'PERSISTENT_RECEIPT_EVIDENCE=PASS'
-}finally{
- if($null-ne$alias){Remove-RunExecutionAlias -ExecutionAlias $alias.execution_alias -TargetDirectory $run}
-}
-"""
-        for mode in ("alias", "direct", "external_workbench", "external_flight",
-                     "traversal_workbench", "traversal_flight"):
-            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
-                script = root / "receipt.ps1"
-                script.write_text(code, encoding="utf-8")
-                result = subprocess.run(["pwsh", "-NoProfile", "-File", str(script), str(REPO),
-                                         str(root), mode], cwd=root, capture_output=True,
-                                        text=True, encoding="utf-8", timeout=30)
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                self.assertIn("PERSISTENT_RECEIPT_EVIDENCE=PASS", result.stdout)
 
 
     def test_canonical_member_retains_actual_process_facts_before_checks(self):

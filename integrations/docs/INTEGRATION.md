@@ -926,6 +926,21 @@ RF相位和唯一仪器时钟；换范围不重新投影已记录状态或重新
 
 ## 单反射整机
 
+The normal SFI entry accepts either an explicit canonical birth request, with
+propagation and numerics, or a successful historical recorded-birth preparation
+manifest with species and complete original IDs. Both require selected published
+fields, observations and a saved environment/profile. Scalar basis and recovery
+references are explicit. The entry delegates to the public tracking owner; the
+backend-generated ArtifactRef is returned through `OWNER_RETURNED`.
+
+The duplicate PowerShell `execute.ps1` body and former `-Request -ExecutionBudgetPath`
+contract are retired. Scientific field-plan tests, shared dependency helpers,
+historical preparation readers and analysis remain. Software evidence covers
+fresh/historical births, actual PowerShell forwarding, invalid inputs, inert child
+failure, complete reuse and missing-unit recovery. Native, installed and final
+same-candidate Repository acceptance remain open. Earlier owner/request descriptions
+below retain their historical scope and do not define the current entry.
+
 The public recorded-birth consumer accepts an explicit `scalar_field_basis`
 selection containing a published `geometry_artifact` and three named `samples`:
 `carrier`, `rf_reference` and `pulse_delta`. Admission checks their canonical
@@ -1040,8 +1055,8 @@ request 的 `verify_saved_workbench_replay` 只能为布尔，默认 false。解
 [当前边界](#当前边界)为准；上述旧运行不替代当前源码验收。
 
 
-[公开owner](../workflows/single_reflection_flight/run.ps1)接收`-Request -ExecutionBudgetPath`，默认执行完整Fly；
-`-FieldDesignOnly`、`-WorkbenchOnly`显式选择有限阶段。内部`execute.ps1`只由owner调用，作者格式见
+The retired historical owner accepted `-Request -ExecutionBudgetPath` and separate
+limited-stage switches. Its historical author format is documented by
 [request 10](../../src/msplatform/workflows/single_reflection_flight/request_v10.schema.json)。新链引用component3／plan5，
 由提供者独立确定实际前端域，再用binding2绑定该域的完整科学组；不以标签顺序定义组或角色。
 明确旧[request 9](../../src/msplatform/workflows/single_reflection_flight/request_v9.schema.json)保留其原plan3／native-view读取分支，
@@ -1051,8 +1066,8 @@ Recorded-birth admission is now available through
 `msplatform.ion_release.load_recorded_release`, without sampling or replacing the
 original particle IDs and clock. The public tracking planner and its existing owner
 revalidate and freeze that source. Scoped software fixtures cover actual SFI input
-through the planner and source freezing before recovery; this does not replace the
-SFI PowerShell execution body, recorded pre-pulse verification or native acceptance.
+through the planner and source freezing before recovery; this does not establish
+recorded pre-pulse verification or native acceptance.
 
 可选原生场观测由已绑定`validation_contract`中的`native_field_observation`显式请求；
 规格校验见[`validate_native_field_observation`](../../src/msplatform/backends/simion/tracking_program.py)，
