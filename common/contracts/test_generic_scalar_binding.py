@@ -406,7 +406,10 @@ class GenericDescriptorTests(unittest.TestCase):
     def test_descriptor_validation_and_query_scoped_support(self):
         import os
         import subprocess
-        lua = os.environ['SIMION_LUA_EXE']
+        import shutil
+        lua = os.environ.get("SIMION_LUA_EXE") or shutil.which("lua") or shutil.which("lua5.1")
+        if not lua:
+            raise FileNotFoundError("required standalone Lua executable unavailable")
         composer = Path(__file__).resolve().parents[2] / 'src/msplatform/backends/simion/resources/generic_scalar_field.lua'
         script = r'''
 local module=assert(loadfile(arg[1]))()
