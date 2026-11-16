@@ -1544,6 +1544,14 @@ new lease `workflow-1985f6e6fccd41d7bd2a0c0e2df48f89` remains protected; it was 
 No Compute, saved MPH, saved export, SIMION sample or comparison resulted. The correct host resource
 policy and a fresh run identity plus capacity are still required for native acceptance.
 
+Remote Changed run `43935441738` then failed in the stationary portable-Lua fixture before any native work.
+Lua 5.1 evaluates the non-final `string.match` expression in `assert(match(...), message)` as one value,
+so the sampler assigned the error-message string instead of the second capture. Matching and assertion are
+now separate; the test reads its single-case resource output with `csv.DictReader` rather than the production
+paired-case loader. The exact failed method and all 16 stationary-field tests pass with the same pinned Lua
+5.1.5 archive used by CI. This closes that software regression only; it does not change native capacity,
+field evidence or scientific qualification.
+
 The RF whole-batch continuation planner is available through the installed
 `msplatform.workflows.rf_batch_continuation` owner. Its implementation is byte-identical
 to the retired project runtime body. All six production calls use the installed API

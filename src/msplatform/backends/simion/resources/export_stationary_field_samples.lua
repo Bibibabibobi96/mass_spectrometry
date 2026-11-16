@@ -19,7 +19,8 @@ local cell=triple(arg[6],'PA cell')
 assert(cell[1]>0 and cell[2]>0 and cell[3]>0,'PA cell must be positive')
 local voltages={}
 for index=7,#arg do
-  local id_text,value_text=assert(arg[index]:match('^(%d+)=(.*)$'),'voltage must be ID=V')
+  local id_text,value_text=arg[index]:match('^(%d+)=(.*)$')
+  assert(id_text,'voltage must be ID=V')
   local id=assert(tonumber(id_text),'electrode ID is nonnumeric')
   local value=assert(tonumber(value_text),'electrode voltage is nonnumeric')
   assert(id>0 and id==math.floor(id) and voltages[id]==nil,'electrode ID is invalid or duplicated')

@@ -412,9 +412,11 @@ class StationaryFieldSamplingTest(unittest.TestCase):
         result=subprocess.run([lua,str(combined),"inert.pa0",str(points),str(output),"differential","10,10,10","1,1,1","1=100","2=-100"],
             cwd=self.root,capture_output=True,text=True,encoding="utf-8",timeout=30)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-        records=load_stationary_field_output_csv(output)
+        with output.open(encoding="utf-8",newline="") as stream:
+            records=list(csv.DictReader(stream))
         self.assertEqual(len(records),2)
-        self.assertEqual((records[0].Ex_V_per_m,records[0].Ey_V_per_m,records[0].Ez_V_per_m),(1000.,2000.,3000.))
+        self.assertEqual(tuple(float(records[0][name]) for name in
+            ("Ex_V_per_m","Ey_V_per_m","Ez_V_per_m")),(1000.,2000.,3000.))
         self.assertNotIn(":save",resource.read_text(encoding="utf-8"))
 
     def test_load_and_compare_valid_outputs(self) -> None:
