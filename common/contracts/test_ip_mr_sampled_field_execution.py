@@ -200,7 +200,54 @@ class SampledFieldExecutionTests(unittest.TestCase):
             for key in set(derived_fields.data_records)-{'sampled_basis','compiled_model','clock_authority','instrument_epoch'}:
                 self.assertEqual(reused.data_records[key],derived_fields.data_records[key])
             self.assertNotEqual(reused.data_path('sampled_basis'),derived_fields.data_path('sampled_basis'))
-            admission=admit_ip_mr_tracking_fields(reused.reference)
+            from msplatform.io import manifest_records
+            from msplatform.backends.simion import ip_mr_tracking_admission as tracking_admission
+            collision_key=next(key for key in derived_fields.data_records if key.endswith('_collision'))
+            collision_path=derived_fields.data_locations[collision_key].resolve()
+            real_file_record=manifest_records.file_record
+            collision_reads=[]
+            def count_records(path,*args,**kwargs):
+                if Path(path).resolve()==collision_path:collision_reads.append(str(path))
+                return real_file_record(path,*args,**kwargs)
+            with patch.object(manifest_records,'file_record',side_effect=count_records), \
+                 patch.object(tracking_admission,'_verify_original_collision_producer',
+                              wraps=tracking_admission._verify_original_collision_producer) as verify_producer:
+                admission=admit_ip_mr_tracking_fields(reused.reference)
+            self.assertEqual(verify_producer.call_count,1)
+            self.assertEqual(len(collision_reads),3)
+            original_small=tracking_admission._small_product
+            def mutated_reader(reference,kind,names):
+                owner,product,path=original_small(reference,kind,names)
+                if kind!='field_bundle' or reference!=derived_fields.reference:return owner,product,path
+                owner,product=copy.deepcopy(owner),copy.deepcopy(product)
+                if mutation=='status':owner['status']='failed'
+                elif mutation=='model':product['metadata']['model_identity_sha256']='0'*64
+                elif mutation=='clock':product['metadata']['clock']={}
+                elif mutation=='flattened':product['metadata']['collision_producer_reference']=derived_fields.reference
+                else:
+                    record=product['data'][collision_key]; prior=copy.deepcopy(record)
+                    if mutation=='path':record['path']=str(collision_path.parent/'different.pa')
+                    elif mutation=='relative_wrong':record['path']=os.path.relpath(collision_path.parent/'different.pa',path.parent)
+                    elif mutation=='equivalent':
+                        record['path']=os.path.relpath(collision_path,path.parent)
+                        record['sha256']=record['sha256'].lower()
+                    elif mutation=='bytes':record['bytes']+=1
+                    elif mutation=='hash':record['sha256']='0'*64
+                    elif mutation=='role':record['retention_role']='required_evidence'
+                    if mutation=='unbound':
+                        owner['outputs']=[row for row in owner['outputs'] if row!=prior]
+                        owner['inputs']={k:row for k,row in owner['inputs'].items() if row!=prior}
+                    else:
+                        owner['outputs']=[record if row==prior else row for row in owner['outputs']]
+                        owner['inputs']={k:(record if row==prior else row) for k,row in owner['inputs'].items()}
+                return owner,product,path
+            for mutation in ('status','model','clock','flattened','path','relative_wrong','bytes','hash','role','unbound'):
+                with self.subTest(collision_producer_mutation=mutation), patch.object(tracking_admission,'_small_product',side_effect=mutated_reader):
+                    with self.assertRaises((ValueError,AssertionError)):
+                        tracking_admission._verify_original_collision_producer(reused,derived_fields.reference)
+            mutation='equivalent'
+            with patch.object(tracking_admission,'_small_product',side_effect=mutated_reader):
+                self.assertIsNone(tracking_admission._verify_original_collision_producer(reused,derived_fields.reference))
             self.assertEqual(admission['collision_reference'],derived_fields.reference)
             self.assertIn(str(derived_fields.manifest_location.resolve()),[str(Path(x['path']).resolve()) for x in admission['source_manifests']])
 

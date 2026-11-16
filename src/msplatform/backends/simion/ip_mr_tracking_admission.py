@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from msplatform.contracts.gas import BoxDomain
-from msplatform.io.manifest_records import record_path, verify_record
+from msplatform.io.manifest_records import record_path, validate_file_record, verify_record
 from msplatform.results.artifacts import OpenedArtifact, open_artifact
 from .artifacts import CompiledPreparedModel
 from .ip_mr_field_execution import _priority_projection
@@ -25,6 +25,42 @@ def _verified_solution_manifest(sample: OpenedArtifact, reference: Mapping[str, 
             or path.resolve(strict=True) != sample.data_path('field_solution_manifest').resolve(strict=True)):
         raise ValueError('sampled basis solution reference differs from published sample')
     return dict(record, path=str(path))
+
+
+def _verify_original_collision_producer(source: OpenedArtifact, collision_reference: Mapping[str, Any]) -> None:
+    """Validate the original producer against already verified selected bytes."""
+    meta = source.metadata
+    collision_owner, collision_product, collision_path = _small_product(collision_reference, 'field_bundle', ())
+    collision_meta = collision_product['metadata']
+    if (collision_owner['status'] != 'success'
+            or collision_meta.get('field_representation') != 'assembly_sampled_basis_with_collision_geometry'
+            or collision_meta.get('collision_producer_reference') is not None):
+        raise ValueError('collision producer must be the successful original sampled field')
+    if (collision_meta.get('model_identity_sha256') != meta.get('model_identity_sha256')
+            or collision_meta.get('clock') != meta.get('clock')):
+        raise ValueError('collision producer model or clock differs')
+    excluded = {'compiled_model', 'clock_authority', 'instrument_epoch', 'sampled_basis'}
+    selected = set(source.data_records) - excluded
+    producer_records = collision_product['data']
+    if selected != set(producer_records) - excluded:
+        raise ValueError('collision producer record closure differs')
+    bound = [*collision_owner['inputs'].values(), *collision_owner['outputs']]
+    for key, value in producer_records.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError('collision producer data member name is invalid')
+        record = validate_file_record(value, key)
+        if record not in bound:
+            raise ValueError('collision producer record is not bound: ' + key)
+        path = record_path(record, base_dir=collision_path.parent)
+        if key in excluded:
+            verify_record('collision producer ' + key, dict(record, path=str(path)))
+            continue
+        selected_record = dict(source.data_records[key], path=str(source.data_locations[key]))
+        producer_record = dict(record, path=str(path))
+        selected_identity = dict(selected_record, sha256=str(selected_record['sha256']).upper())
+        producer_identity = dict(producer_record, sha256=str(producer_record['sha256']).upper())
+        if selected_identity != producer_identity:
+            raise ValueError('collision producer record differs: ' + key)
 
 
 def admit_ip_mr_tracking_fields(reference: Mapping[str, Any] | OpenedArtifact) -> dict[str, Any]:
@@ -75,25 +111,8 @@ def admit_ip_mr_tracking_fields(reference: Mapping[str, Any] | OpenedArtifact) -
         if name + '_surface_state' in source.data_records: keys.append(name + '_surface_state')
         if name + '_surface' not in source.data_records and name + '_surface_state' not in source.data_records: raise ValueError('collision surface evidence missing')
     collision_reference = meta.get('collision_producer_reference')
-    collision_source = None
     if collision_reference is not None:
-        collision_source = open_artifact(collision_reference, expected_kind='field_bundle')
-        if (collision_source.producer['status'] != 'success'
-                or collision_source.metadata.get('field_representation') != 'assembly_sampled_basis_with_collision_geometry'
-                or collision_source.metadata.get('collision_producer_reference') is not None):
-            raise ValueError('collision producer must be the successful original sampled field')
-        if (collision_source.metadata.get('model_identity_sha256') != meta.get('model_identity_sha256')
-                or collision_source.metadata.get('clock') != meta.get('clock')):
-            raise ValueError('collision producer model or clock differs')
-        excluded = {'compiled_model', 'clock_authority', 'instrument_epoch', 'sampled_basis'}
-        selected = set(source.data_records) - excluded
-        if selected != set(collision_source.data_records) - excluded:
-            raise ValueError('collision producer record closure differs')
-        for key in selected:
-            selected_record = dict(source.data_records[key], path=str(source.data_locations[key]))
-            producer_record = dict(collision_source.data_records[key], path=str(collision_source.data_locations[key]))
-            if selected_record != producer_record:
-                raise ValueError('collision producer record differs: ' + key)
+        _verify_original_collision_producer(source, collision_reference)
     records = [dict(source.data_records[key], path=str(source.data_path(key))) for key in keys]
     records.extend(copy.deepcopy(sample_records))
     unique = {}
@@ -105,8 +124,8 @@ def admit_ip_mr_tracking_fields(reference: Mapping[str, Any] | OpenedArtifact) -
             raise ValueError('conflicting tracking input identities')
         unique[path] = (identity, dict(record, path=path))
     references = [source.reference['manifest'], prepared.reference['manifest'], basis['geometry_reference']['manifest']]
-    if collision_source is not None:
-        references.append(collision_source.reference['manifest'])
+    if collision_reference is not None:
+        references.append(collision_reference['manifest'])
     for item in basis['bases'].values():
         for level in [item, *item.get('refinement_windows', [])]:
             sample = open_artifact(level['reference'], expected_kind='scalar_field_samples')
