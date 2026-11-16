@@ -1102,8 +1102,15 @@ OA的二区／三区和RF的四／六／八极使用同一选择语义；极数�
 
 普通项目调用加`--execute`可在同一解析之后执行；省略时仅预览。集成使用同一入口，明确
 `--owner instrument_assembly --workflow <已登记workflow> --run-id <新run_id>`和查询结果要求的bindings；
-例如`single_reflection_flight`要求`request`与`execution_budget_path`。完整科学实例从
+各入口的实际输入以查询返回的bindings为准。完整科学实例从
 [集成入口](../../integrations/README.md#模拟路径选择)进入，不把装配伪装为器件项目。
+
+A workflow declaring `run_identity="backend_generated"` delegates run creation to
+the existing public stage owner. Its preview command has `run_id=null` and records
+the supplied preview identity as `planning_run_id`; that identity must not appear
+as a `{run_id}` command argument. The entry returns the actual produced ArtifactRef
+after execution. Other workflows retain their caller-selected run-ID contract.
+The compiler remains a preview/dispatch boundary and does not create another owner.
 
 profile明确实际purpose、action、tools、model、资格支持和输出。`--purpose`、`--qualification`
 只能选择该入口真实支持的用途与局部资格；历史candidate/formal请求保留原资格意图，不静默降级。

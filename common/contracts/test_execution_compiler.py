@@ -281,6 +281,45 @@ foreach($record in $compiledInputs.files){
                 self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
                 self.assertIn("COMPILED_CONSUMER_FREEZE=PASS", result.stdout)
 
+    def test_integration_backend_generated_identity_is_not_a_planned_run(self):
+        from common.contracts.compile_execution_plan import compile_integration_execution
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            entry = root / 'integrations/workflows/fixture/run.ps1'
+            entry.parent.mkdir(parents=True)
+            entry.write_text('param()\n', encoding='utf8')
+            workflow = dict(workflow_id='fixture', entrypoint='integrations/workflows/fixture/run.ps1',
+                required_bindings=[], binding_types={}, arguments=[], outputs=['trajectory_artifact_ref'],
+                simulation_paths=['continuous_assembly'], recipes=[], limitations=[],
+                purpose='assembly_propagation', action='run', tools=['python'], model='public stage',
+                run_identity='backend_generated')
+            registry = root / 'integrations/registry.json'
+
+            def write_registry():
+                registry.write_text(json.dumps(dict(schema_version=1, role='integration_registry',
+                    integrations=[dict(integration_id='instrument_assembly', root='integrations',
+                                       workflows=[workflow])])), encoding='utf8')
+
+            with patch('common.contracts.compile_execution_plan.REPO_ROOT', root):
+                write_registry()
+                result = compile_integration_execution('instrument_assembly', 'fixture', self.run_id, {})
+                command = result['commands'][0]
+                self.assertTrue(result['safe_to_execute'])
+                self.assertIsNone(command['run_id'])
+                self.assertEqual(command['planning_run_id'], self.run_id)
+                self.assertEqual(command['run_identity'], 'backend_generated')
+                self.assertNotIn(self.run_id, command['argv'])
+                workflow['arguments'] = ['-RunId', '{run_id}']
+                write_registry()
+                with self.assertRaisesRegex(ValueError, 'cannot bind the planning run ID'):
+                    compile_integration_execution('instrument_assembly', 'fixture', self.run_id, {})
+                workflow['run_identity'] = 'caller_selected'
+                write_registry()
+                command = compile_integration_execution('instrument_assembly', 'fixture', self.run_id, {})['commands'][0]
+                self.assertEqual(command['run_id'], self.run_id)
+                self.assertIn(self.run_id, command['argv'])
+                self.assertNotIn('planning_run_id', command)
+
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_integration_execution_reaches_its_real_declared_parameters(self):
         from common.contracts.compile_execution_plan import compile_integration_execution

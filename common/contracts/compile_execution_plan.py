@@ -417,6 +417,9 @@ def compile_integration_execution(owner: str, workflow_id: str, run_id: str,
     entry = (REPO_ROOT/workflow["entrypoint"]).resolve()
     if not entry.is_relative_to((REPO_ROOT/owners[0]["root"]).resolve()) or not entry.is_file():
         raise ValueError("Integration entrypoint is outside its owner or missing")
+    run_identity = workflow.get('run_identity', 'caller_selected')
+    if run_identity == 'backend_generated' and any('{run_id' in item for item in workflow['arguments']):
+        raise ValueError('Backend-generated run identity cannot bind the planning run ID')
     context = PreserveMissing(run_id=run_id, **bindings)
     arguments = [argument.format_map(context) for argument in workflow["arguments"]]
     return dict(schema_version=1, role="execution_dry_run", python_executable=str(Path(sys.executable).resolve()), status=status,
@@ -432,7 +435,10 @@ def compile_integration_execution(owner: str, workflow_id: str, run_id: str,
         blockers=[*(f"Missing workflow binding: {key}" for key in missing), *unavailable],
         limitations=workflow["limitations"], simulation_paths=workflow["simulation_paths"],
         commands=[dict(step_id=workflow_id, kind="run", shell="powershell", entrypoint=str(entry),
-            arguments=arguments, argv=["pwsh", "-NoProfile", "-File", str(entry), *arguments], run_id=run_id)])
+            arguments=arguments, argv=["pwsh", "-NoProfile", "-File", str(entry), *arguments],
+            run_id=run_id if run_identity == 'caller_selected' else None,
+            **({'run_identity': run_identity, 'planning_run_id': run_id}
+               if run_identity == 'backend_generated' else {}))])
 
 
 def parse_bindings(values: list[str]) -> dict[str, str]:

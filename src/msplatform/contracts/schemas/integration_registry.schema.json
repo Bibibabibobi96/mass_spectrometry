@@ -76,6 +76,10 @@
                     "type": "string"
                   }
                 },
+                "run_identity": {
+                  "enum": ["caller_selected", "backend_generated"],
+                  "description": "Whether the entry consumes the planned run ID or returns the public backend owner's actual generated identity."
+                },
                 "outputs": {
                   "type": "array",
                   "items": {
