@@ -252,7 +252,7 @@ def admit_linear_samples(
     )
     if (
         geometry.frontend_geometry.get("role")
-        != "simion_neutral_world_collision_geometry"
+        not in {"simion_neutral_world_collision_geometry", "simion_neutral_multi_domain_collision_geometry"}
         or geometry.frontend_geometry.get("source_snapshot") != snapshot
     ):
         raise ValueError("model and registered Assembly source differ")
@@ -305,7 +305,10 @@ def admit_linear_samples(
         for name, value in samples.items()
     }
     plan = compile_linear_terms(projection, drive, rows)
-    _validate_contact_sample_workpoints(geometry.frontend_geometry.get("contact_obligations", []), rows)
+    physical=geometry.frontend_geometry
+    contacts=([c for name in physical['domain_order'] for c in physical['domains'][name].get('contact_obligations',[])]
+              if physical.get('role')=='simion_neutral_multi_domain_collision_geometry' else physical.get('contact_obligations', []))
+    _validate_contact_sample_workpoints(contacts, rows)
     def admit_level(level_samples):
         if not isinstance(level_samples, Mapping) or set(level_samples) != set(samples):
             raise ValueError("scalar refinement basis coverage differs")

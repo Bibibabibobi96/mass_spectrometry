@@ -247,6 +247,19 @@ being checked again in build/cold reopen. Ambiguous overlapping conductor bounds
 are refused as unverified separation, not reported as proven solid intersections.
 Unsampled cuts/surfaces and other representations remain unqualified.
 
+The explicit `neutral_multi_domain_collision` representation partitions every
+canonical physical member exactly once into disjoint numerical domains, including
+multiple domains owned by one complete component. A scientific group may drive
+multiple native domain targets. Domain/instance identities, grid projection,
+structural seed counts, coverage and source closure are rebound at publication
+and cold recovery. Mixed solid/ideal-surface components are refused rather than
+silently omitting ideal surfaces; overlapping boxes and multi-domain HS1 remain
+unsupported. In particular this does not qualify overlapping LP60 IP–MR domains.
+Focused pure tests, the public per-domain build owner and a two-RF managed
+geometry/model/sampled-field/tracking chain pass with inert native leaves and
+current v1 terminal evidence. No R6 native or ordinary-install acceptance has
+been established.
+
 The round-rod projection consumes the existing canonical center, radius and axial
 endpoints; it does not regenerate the component. Signed-axis X/Y cylinders use
 the installed SIMION 2020 GEM rotation syntax and existing cylinder primitive.

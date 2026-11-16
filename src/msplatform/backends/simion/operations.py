@@ -51,10 +51,17 @@ def build_geometry(compiled: CompiledSimionGeometry, *, context: ExecutionContex
                 and type(runtime["simion_allow_asynchronous_io"]) is not bool)):
         raise ContractError("SIMION geometry runtime only accepts explicit boolean simion_allow_asynchronous_io")
     snapshot = CompiledSimionGeometry(**asdict(compiled))
+    provider_sources = {}
+    if snapshot.frontend_geometry.get('role') == 'simion_neutral_multi_domain_collision_geometry':
+        from .generic_geometry import multi_domain_source_paths, seal_multi_domain_geometry_for_publication
+        from msplatform.io.manifest_records import verify_record
+        provider_sources = {name:file_record(path,'required_evidence') for name,path in multi_domain_source_paths(snapshot).items()}
+        snapshot = seal_multi_domain_geometry_for_publication(snapshot)
+        for record in provider_sources.values(): verify_record('multi-domain source after admission',record)
     if snapshot.frontend_geometry.get("role") == "simion_neutral_world_collision_geometry":
         from .generic_geometry import seal_neutral_geometry_for_publication
         snapshot = seal_neutral_geometry_for_publication(snapshot)
-    count = (len(snapshot.frontend_gems) if snapshot.frontend_geometry.get("role") in {"simion_independent_rf_geometry", "simion_independent_oa_geometry", "simion_rf_ip_geometry", "simion_oa_mr_complete_geometry", "simion_ip_mr_complete_geometry", "simion_rf_oa_geometry", "simion_neutral_world_collision_geometry"}
+    count = (len(snapshot.frontend_gems) if snapshot.frontend_geometry.get("role") in {"simion_independent_rf_geometry", "simion_independent_oa_geometry", "simion_rf_ip_geometry", "simion_oa_mr_complete_geometry", "simion_ip_mr_complete_geometry", "simion_rf_oa_geometry", "simion_neutral_world_collision_geometry", "simion_neutral_multi_domain_collision_geometry"}
              else 4 + int("entrance_refinement" in snapshot.frontend_geometry["numerical_domains"]))
     seed = file_record(structural_seed_path(count), "required_evidence")
     # Only derive path-independent action names/relative file lengths here.
@@ -65,18 +72,18 @@ def build_geometry(compiled: CompiledSimionGeometry, *, context: ExecutionContex
     ids = tuple(row["operation_id"] for row in plan.operations)
     source = file_record(Path(execute_geometry.__code__.co_filename).resolve(), "required_evidence")
     surface_validator = None
-    if snapshot.frontend_geometry.get("role") in {"simion_ip_mr_complete_geometry", "simion_neutral_world_collision_geometry"}:
+    if snapshot.frontend_geometry.get("role") in {"simion_ip_mr_complete_geometry", "simion_neutral_world_collision_geometry", "simion_neutral_multi_domain_collision_geometry"}:
         from . import native_surface_state
         surface_validator = file_record(Path(native_surface_state.__file__).resolve(), "required_evidence")
     result = run_managed_stage(context, descriptor=dict(project="instrument_assembly", mode="geometry_only", software=["SIMION"]),
         run_id=datetime.now().strftime("%Y%m%d_%H%M%S") + "__build__simion__geometry-" + uuid4().hex[:12],
         payload=dict(action="build_geometry", compiled_geometry=asdict(snapshot), stage_policy=stage),
         committed_new_bytes=stage["limits"]["transient_run_directory_bytes"],
-        commitment_inputs=[authority, *([surface_validator] if surface_validator else [])], retention=stage["artifact_retention"],
+        commitment_inputs=[authority, *([surface_validator] if surface_validator else []), *provider_sources.values()], retention=stage["artifact_retention"],
         expected_operation_ids=ids,
         operation_dependencies={name: [ids[index-1]] for index, name in enumerate(ids) if index},
         action=partial(execute_geometry, compiled=snapshot, seed_record=seed, limits=stage["limits"],
-            allow_asynchronous_io=runtime.get("simion_allow_asynchronous_io"), surface_validator_record=surface_validator),
+            allow_asynchronous_io=runtime.get("simion_allow_asynchronous_io"), surface_validator_record=surface_validator, provider_source_records=provider_sources),
         action_record=source,
         expected_relative_paths=[str(Path(path).relative_to(planning_root)) for path in (*plan.declared_outputs, *(row["optional_surface"] for row in plan.operations if "optional_surface" in row))],
         use_short_execution_path=True, completion_api=lambda: native_completion)
@@ -129,7 +136,7 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
     ip_mr_has_rf = joint_ip_mr and any(row["project_id"] == "rf_multipole_ion_optics"
         for name, row in compiled.frontend_geometry["composition_plan"]["components"].items()
         if name in compiled.frontend_geometry["composition_plan"]["scope"]["instance_ids"])
-    static_world = compiled.frontend_geometry.get("role") == "simion_neutral_world_collision_geometry"
+    static_world = compiled.frontend_geometry.get("role") in {"simion_neutral_world_collision_geometry", "simion_neutral_multi_domain_collision_geometry"}
     independent_rf = compiled.frontend_geometry.get("role") == "simion_independent_rf_geometry"
     independent_oa = compiled.frontend_geometry.get("role") == "simion_independent_oa_geometry"
     independent_component = independent_rf or independent_oa or joint_ip or joint_oa_mr or joint_ip_mr or static_world
@@ -199,6 +206,10 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
         model = _compile_static_world_published_model(compiled, components, drive=expanded, physics=physics)
     else:
         model = compile_prepared_model(compiled, components, drive=expanded, physics=physics)
+    model_provider_sources={}
+    if compiled.frontend_geometry.get('role') == 'simion_neutral_multi_domain_collision_geometry':
+        from .generic_geometry import multi_domain_source_paths
+        model_provider_sources={name:file_record(path,'required_evidence') for name,path in multi_domain_source_paths(compiled).items()}
     seed = file_record(structural_seed_path(len(compiled.frontend_gems) if independent_component else 4 + int(
         "entrance_refinement" in compiled.frontend_geometry["numerical_domains"])), "required_evidence")
     ids = ("materialize_geometry", "build_model", "verify_model")
@@ -208,14 +219,14 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
         payload=dict(action="prepare_model", geometry=source.reference, model=model.document,
                      clock_authority=clock_reference, stage_policy=stage),
         committed_new_bytes=stage["limits"]["transient_run_directory_bytes"],
-        commitment_inputs=[policy_record, contract_record, epoch_record], retention=stage["artifact_retention"],
+        commitment_inputs=[policy_record, contract_record, epoch_record, *model_provider_sources.values()], retention=stage["artifact_retention"],
         expected_operation_ids=ids,
         operation_dependencies={name: [ids[index-1]] for index, name in enumerate(ids) if index},
         action=partial(execute_model, model=model, geometry_reference=source.reference, seed_record=seed,
             limits=stage["limits"], clock_authority_reference=clock_reference,
             materialize_geometry=partial(materialize_payloads, limits=stage["limits"]),
             materializer_record=file_record(Path(materialize_payloads.__code__.co_filename).resolve(), "required_evidence"),
-            allow_asynchronous_io=runtime.get("simion_allow_asynchronous_io")),
+            allow_asynchronous_io=runtime.get("simion_allow_asynchronous_io"), provider_source_records=model_provider_sources),
         action_record=file_record(Path(execute_model.__code__.co_filename).resolve(), "required_evidence"),
         source_references=[{"manifest_record": source.reference["manifest"]}],
         use_short_execution_path=True, completion_api=lambda: native_completion)
@@ -266,7 +277,7 @@ def solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mapping
         from msplatform.backends.simion.model import require_prepared_model
         candidate = model if isinstance(model, OpenedArtifact) else artifact_reader.open_artifact(model, expected_kind='prepared_model')
         candidate_model = CompiledPreparedModel(candidate.data_path('compiled_model').read_text(encoding='utf8'))
-        if require_prepared_model(candidate_model)['geometry']['frontend_geometry'].get('role') == 'simion_neutral_world_collision_geometry':
+        if require_prepared_model(candidate_model)['geometry']['frontend_geometry'].get('role') in {'simion_neutral_world_collision_geometry','simion_neutral_multi_domain_collision_geometry'}:
             from msplatform.backends.simion.neutral_sampled_field import prepare_neutral_sampled_inputs, execute_neutral_sampled_fields
             if reuse_fields is not None or reuse_collision_geometry is not None or numerics: raise ContractError('neutral sampled fields require explicit samples and empty field numerics')
             if not isinstance(scalar_field_basis, Mapping) or set(scalar_field_basis)-{'geometry_artifact','operator','samples','refinement_windows'} or not {'geometry_artifact','operator','samples'} <= set(scalar_field_basis):
@@ -281,14 +292,23 @@ def solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mapping
             selected_model=ref(model);planning_root=context.execution_root/'neutral-sampled-fields-plan'
             planned=prepare_neutral_sampled_inputs(selected_model,selection=selection,output_directory=planning_root/'simion/collision')
             from msplatform.backends.simion.standalone_pa_composition import PaHeader
-            geometry=planned['model'].document['geometry']['frontend_geometry'];dims=geometry['dimensions'];pitch=geometry['pitch_mm']
-            lower=2*PaHeader(-2,1,1.0,*dims,0,pitch,pitch,pitch).file_bytes
-            task=planned['geometry_plan']['tasks'][0]
-            if 'fractional_surface' in task['source_records']:lower+=task['source_records']['fractional_surface']['bytes']
+            geometry=planned['model'].document['geometry']['frontend_geometry'];tasks=planned['geometry_plan']['tasks']
+            if geometry.get('role') == 'simion_neutral_multi_domain_collision_geometry':
+                from msplatform.backends.simion.neutral_sampled_field import neutral_multi_background_grid
+                background=neutral_multi_background_grid(planned['model'],planned['binding']); dims=background['dimensions']; pitch=background['pitch_mm']
+                lower=PaHeader(-2,1,1.0,*dims,0,*pitch).file_bytes
+                for task in tasks:
+                    domain=geometry['domains'][task['role']];p=domain['pitch_mm']
+                    lower+=PaHeader(-2,1,1.0,*domain['dimensions'],0,p,p,p).file_bytes
+                    if 'fractional_surface' in task['source_records']:lower+=task['source_records']['fractional_surface']['bytes']
+            else:
+                dims=geometry['dimensions'];pitch=geometry['pitch_mm']
+                lower=2*PaHeader(-2,1,1.0,*dims,0,pitch,pitch,pitch).file_bytes
+                if 'fractional_surface' in tasks[0]['source_records']:lower+=tasks[0]['source_records']['fractional_surface']['bytes']
             limits=stage['limits']
             if limits['reserved_run_payload_bytes'] < lower or limits['transient_run_directory_bytes'] < lower:
                 raise ContractError(f'neutral collision output lower bound {lower} bytes exceeds declared reservation or transient limit')
-            ids=planned['expected_operation_ids'];relative=[str(Path(task['output_path']).relative_to(planning_root)),str(Path(task['output_path']).with_suffix('.pa-surf').relative_to(planning_root)),'simion/collision/background.pa','simion/collision/collision.iob','simion/collision/collision.fly2']
+            ids=planned['expected_operation_ids'];relative=[str(path.relative_to(planning_root)) for task in tasks for path in (Path(task['output_path']),Path(task['output_path']).with_suffix('.pa-surf'))]+['simion/collision/background.pa','simion/collision/collision.iob','simion/collision/collision.fly2']
             result=run_managed_stage(context,descriptor=dict(project='instrument_assembly',mode='fields_only',software=['SIMION']),
                 run_id=datetime.now().strftime('%Y%m%d_%H%M%S')+'__sim__simion__fields-'+uuid4().hex[:12],
                 payload=dict(action='solve_fields',model=planned['prepared_source'],numerics={},reuse_fields=None,scalar_field_basis=selection,stage_policy=stage),
@@ -394,6 +414,8 @@ def solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mapping
             use_short_execution_path=True,completion_api=lambda: native_completion)
         return artifact_reader.open_artifact({'manifest':result['manifest'],'product_id':'fields'},expected_kind='field_bundle')
     source = load_field_model(model.reference if isinstance(model, OpenedArtifact) else model)
+    if source.model.document['geometry']['frontend_geometry'].get('role') == 'simion_neutral_multi_domain_collision_geometry':
+        raise ContractError('multi-domain fields require their explicit sampled scalar basis')
     selected_numerics = copy.deepcopy(dict(numerics))
     reuse_reference = None
     references = [{"manifest_record": source.artifact.reference["manifest"]}]
@@ -482,15 +504,15 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
     document = require_prepared_model(model)
     if meta.get("model_identity_sha256") != document["model_identity_sha256"] or meta.get("clock") != document["drive"]["clock"]:
         raise ContractError("tracking field model/clock identity differs")
-    sampled_neutral = meta.get('field_representation') == 'neutral_sampled_basis_with_collision_geometry'
+    sampled_neutral = meta.get('field_representation') in {'neutral_sampled_basis_with_collision_geometry','neutral_multi_sampled_basis_with_collision_geometry'}
     neutral_admission = None
     if sampled_neutral:
         if scalar_field_basis is not None:
             raise ContractError('neutral sampled tracking uses the basis published in its FieldBundle')
         from msplatform.backends.simion.rf_tracking_execution import admit_neutral_sampled_tracking_fields
         neutral_admission = admit_neutral_sampled_tracking_fields(source.reference)
-    if (document['geometry']['frontend_geometry'].get('role') == 'simion_neutral_world_collision_geometry'
-            and meta.get('field_representation') not in {'producer_owned_static_world_standalone_operating_pa', 'neutral_sampled_basis_with_collision_geometry'}):
+    if (document['geometry']['frontend_geometry'].get('role') in {'simion_neutral_world_collision_geometry','simion_neutral_multi_domain_collision_geometry'}
+            and meta.get('field_representation') not in {'producer_owned_static_world_standalone_operating_pa', 'neutral_sampled_basis_with_collision_geometry','neutral_multi_sampled_basis_with_collision_geometry'}):
         raise ContractError('static world tracking requires its published standalone operating field; fractional families must be finalized before publication')
     sampled_ip_mr = meta.get('field_representation') == 'assembly_sampled_basis_with_collision_geometry'
     ip_mr_admission = None
@@ -624,6 +646,9 @@ def compile_geometry(assembly: Assembly, *, numerics: Mapping[str, Any]) -> Comp
     """Compile native geometry specifications only; no source, writes, solve or Fly."""
     if not isinstance(assembly, Assembly):
         raise ContractError("SIMION geometry compilation requires an explicitly assembled design")
+    if isinstance(numerics, Mapping) and numerics.get("representation") == "neutral_multi_domain_collision":
+        from .generic_geometry import compile_generic_multi_domain_geometry
+        return compile_generic_multi_domain_geometry(assembly, numerics=numerics)
     if isinstance(numerics, Mapping) and numerics.get("representation") == "neutral_world_collision":
         from .generic_geometry import compile_generic_collision_geometry
         return compile_generic_collision_geometry(assembly, numerics=numerics)

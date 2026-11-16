@@ -26,7 +26,8 @@ GEOMETRY_RESOURCES = (
 def execute_geometry(session: RunSession, *, compiled: CompiledSimionGeometry,
                      seed_record: Mapping[str, Any], limits: Mapping[str, Any],
                      allow_asynchronous_io: bool | None = None,
-                     surface_validator_record: Mapping[str, Any] | None = None) -> dict[str, Any]:
+                     surface_validator_record: Mapping[str, Any] | None = None,
+                     provider_source_records: Mapping[str, Mapping[str, Any]] | None = None) -> dict[str, Any]:
     """Build raw PA geometry and reopen its IOB; never sample, Refine or Fly.
 
     The caller admits capacity and supplies tool/engineering limits to the one
@@ -38,11 +39,11 @@ def execute_geometry(session: RunSession, *, compiled: CompiledSimionGeometry,
     if not isinstance(compiled, CompiledSimionGeometry):
         raise TypeError("SIMION geometry requires a compiled scientific geometry")
     verify_record("geometry structural seed", dict(seed_record))
-    independent_rf = compiled.frontend_geometry.get("role") in {"simion_independent_rf_geometry", "simion_independent_oa_geometry", "simion_rf_ip_geometry", "simion_oa_mr_complete_geometry", "simion_ip_mr_complete_geometry", "simion_rf_oa_geometry", "simion_neutral_world_collision_geometry"}
+    independent_rf = compiled.frontend_geometry.get("role") in {"simion_independent_rf_geometry", "simion_independent_oa_geometry", "simion_rf_ip_geometry", "simion_oa_mr_complete_geometry", "simion_ip_mr_complete_geometry", "simion_rf_oa_geometry", "simion_neutral_world_collision_geometry", "simion_neutral_multi_domain_collision_geometry"}
     names = GEOMETRY_RESOURCES[:4] if independent_rf else GEOMETRY_RESOURCES
     sources = {name: native_resource_path(name) for name in names}
     sources["native_run_path.lua"] = resource_path("native_run_path.lua")
-    if compiled.frontend_geometry.get("role") in {"simion_ip_mr_complete_geometry", "simion_neutral_world_collision_geometry"}:
+    if compiled.frontend_geometry.get("role") in {"simion_ip_mr_complete_geometry", "simion_neutral_world_collision_geometry", "simion_neutral_multi_domain_collision_geometry"}:
         from . import native_surface_state
         actual = file_record(Path(native_surface_state.__file__).resolve(), "required_evidence")
         if surface_validator_record is None or any(actual[key] != surface_validator_record[key] for key in ("path", "bytes", "sha256")):
@@ -106,6 +107,21 @@ def execute_geometry(session: RunSession, *, compiled: CompiledSimionGeometry,
             session.add_input("surface_validator_original", dict(surface_validator_record))
             source_guards.extend([dict(surface_validator_record), copied])
         frozen_sources[str(source)] = str(target)
+    if compiled.frontend_geometry.get('role') == 'simion_neutral_multi_domain_collision_geometry':
+        from .generic_geometry import multi_domain_source_paths
+        expected=multi_domain_source_paths(compiled)
+        if not isinstance(provider_source_records, Mapping) or set(provider_source_records)!=set(expected):
+            raise ValueError('multi-domain provider source closure differs')
+        for name,path in expected.items():
+            original=dict(provider_source_records[name]);verify_record('multi-domain provider source',original)
+            if Path(original['path']).resolve()!=path.resolve():raise ValueError('multi-domain provider source path differs')
+            target=owned(frozen_dir/('provider_'+name.replace('.','_')+'.py'),'required_evidence')
+            if target.exists():raise FileExistsError('multi-domain provider source destination exists')
+            freeze_file(path,target);copied=bind('provider_source_'+name,target)
+            if any(original[k]!=copied[k] for k in ('bytes','sha256')):raise ValueError('multi-domain provider source copy differs')
+            source_guards.extend((original,copied))
+    elif provider_source_records:
+        raise ValueError('unexpected multi-domain provider source records')
     compiled_path.parent.mkdir(parents=True, exist_ok=True)
     with compiled_path.open("x", encoding="utf-8", newline="\n") as stream:
         json.dump(asdict(compiled), stream, ensure_ascii=False, indent=2, allow_nan=False)
@@ -148,7 +164,11 @@ def execute_geometry(session: RunSession, *, compiled: CompiledSimionGeometry,
             raw, witness, state_path = map(Path, operation["outputs"])
             state = json.loads(state_path.read_text(encoding="utf8"))
             role = operation["operation_id"].removeprefix("geometry_")
-            if compiled.frontend_geometry.get("role") == "simion_neutral_world_collision_geometry":
+            if compiled.frontend_geometry.get("role") == "simion_neutral_multi_domain_collision_geometry":
+                domain = compiled.frontend_geometry["domains"][operation["asset_id"]]
+                grid = domain["dimensions"]
+                pitch = [domain["pitch_mm"]] * 3
+            elif compiled.frontend_geometry.get("role") == "simion_neutral_world_collision_geometry":
                 grid = compiled.frontend_geometry["dimensions"]
                 pitch = [compiled.frontend_geometry["pitch_mm"]] * 3
             else:
@@ -169,7 +189,7 @@ def execute_geometry(session: RunSession, *, compiled: CompiledSimionGeometry,
     for operation in plan.operations:
         operation_id = operation["operation_id"]
         if operation_id.startswith("geometry_"):
-            role = operation_id.removeprefix("geometry_")
+            role = operation.get("asset_id", operation_id.removeprefix("geometry_"))
             member = {}
             paths = list(operation["outputs"])
             if operation_id in optional_surfaces:
@@ -183,7 +203,7 @@ def execute_geometry(session: RunSession, *, compiled: CompiledSimionGeometry,
             if operation_id in optional_surfaces and optional_surfaces[operation_id].is_file():
                 paths.append(str(optional_surfaces[operation_id])); labels += ("fractional_surface",)
             for label, path in zip(labels, paths, strict=True):
-                key = role + "_" + label
+                key = operation_id.removeprefix("geometry_") + "_" + label
                 records[key] = file_record(session.canonical_path(path), "required_evidence" if label in {"surface_witnesses", "surface_state"} else "solver_native_binary")
                 member[label] = key
             native_assets[role] = member

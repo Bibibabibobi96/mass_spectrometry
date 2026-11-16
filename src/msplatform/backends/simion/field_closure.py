@@ -55,8 +55,8 @@ def load_field_model(reference: Mapping | OpenedArtifact, *, field_representatio
     clock['data_root'] = str(Path(clock['contract']['path']).parent)
     _clock_reference(document, clock)
     geometry = model_geometry(model).frontend_geometry
-    independent_component = geometry.get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry', 'simion_rf_ip_geometry', 'simion_neutral_world_collision_geometry'} or sampled
-    expected = ({'world'} if geometry.get('role') == 'simion_neutral_world_collision_geometry' else set(geometry['numerical_domains']) if independent_component else
+    independent_component = geometry.get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry', 'simion_rf_ip_geometry', 'simion_neutral_world_collision_geometry', 'simion_neutral_multi_domain_collision_geometry'} or sampled
+    expected = (set(geometry['domain_order']) if geometry.get('role') == 'simion_neutral_multi_domain_collision_geometry' else {'world'} if geometry.get('role') == 'simion_neutral_world_collision_geometry' else set(geometry['numerical_domains']) if independent_component else
                 {'flight_tube', 'reflectron', 'detector', *geometry['numerical_domains']})
     bindings = metadata.get('native_assets')
     if not isinstance(bindings, Mapping) or set(bindings) != expected:
@@ -65,7 +65,7 @@ def load_field_model(reference: Mapping | OpenedArtifact, *, field_representatio
     for domain, keys in bindings.items():
         fields = ({'raw_geometry', 'fractional_surface', 'surface_witnesses'} if independent_component else
                   {'raw_geometry', 'fractional_surface'} if domain in {'flight_tube', 'detector'} else {'raw_geometry'})
-        if (sampled or geometry.get('role') == 'simion_neutral_world_collision_geometry') and 'surface_state' in keys:
+        if (sampled or geometry.get('role') in {'simion_neutral_world_collision_geometry','simion_neutral_multi_domain_collision_geometry'}) and 'surface_state' in keys:
             fields = (fields | {'surface_state'}) if 'fractional_surface' in keys else ((fields - {'fractional_surface'}) | {'surface_state'})
         if set(keys) != fields or any(key in consumed for key in keys.values()):
             raise ValueError('prepared model native closure is incomplete or ambiguous')

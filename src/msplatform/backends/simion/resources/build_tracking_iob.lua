@@ -23,4 +23,4 @@ if spec.role=='ip_mr_sampled_tracking_iob' then print(mode=='build' and 'IP_MR_S
 
 if spec.role=='static_world_tracking_iob' then print(mode=='build' and 'STATIC_WORLD_TRACKING_IOB=PASS' or 'STATIC_WORLD_TRACKING_IOB_REOPEN=PASS') end
 
-if spec.role=='neutral_sampled_tracking_iob' then print(mode=='build' and 'NEUTRAL_SAMPLED_TRACKING_IOB=PASS' or 'NEUTRAL_SAMPLED_TRACKING_IOB_REOPEN=PASS') end
+if spec.role=='neutral_sampled_tracking_iob' or spec.role=='neutral_multi_sampled_tracking_iob' then print(mode=='build' and 'NEUTRAL_SAMPLED_TRACKING_IOB=PASS' or 'NEUTRAL_SAMPLED_TRACKING_IOB_REOPEN=PASS') end

@@ -4,7 +4,8 @@ local directory=assert(source:match('^(.*)/'))
 local native_path=assert(loadfile(assert(arg[3],'native path resource required')))()
 local spec=dofile(native_path(assert(arg[1],'model IOB specification required')))
 local mode=assert(arg[2],'model operation required')
-local marker=spec.role=='neutral_world_model_iob_build' and 'NEUTRAL_WORLD_MODEL_' or
+local marker=spec.role=='neutral_multi_model_iob_build' and 'NEUTRAL_MULTI_MODEL_' or
+  spec.role=='neutral_world_model_iob_build' and 'NEUTRAL_WORLD_MODEL_' or
   spec.role=='ip_mr_geometry_iob_build' and 'IP_MR_MODEL_' or
   spec.role=='oa_mr_geometry_iob_build' and 'OA_MR_MODEL_' or
   spec.role=='rf_ip_geometry_iob_build' and 'RF_IP_MODEL_' or

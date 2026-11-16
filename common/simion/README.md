@@ -158,6 +158,17 @@ renaming, ordered windows and failure cleanup. They do not establish real
 SIMION execution, ordinary installed-package acceptance, whole-unit recovery,
 field accuracy or numerical qualification; those checks remain open.
 
+The adjacent `neutral_multi_domain_collision` route accepts only an exact
+canonical physical-member partition into disjoint boxes. One complete component
+may own several domains and one scientific group may address several native
+targets. Publication revalidates member identity, grid, witnesses, provider
+closure and structural seed availability. It refuses mixed physical/ideal
+surfaces without dropping the ideal members; overlapping boxes and multi-domain
+HS1 are not supported. Pure compiler negatives and managed public two-RF
+build/model/field/tracking tests use inert native leaves and preserve the shared
+terminal v1 chain. They do not establish native, installed or overlapping LP60
+IP–MR acceptance.
+
 所有新建SIMION Workbench必须从[`assets/iob_instance_seeds/`](assets/iob_instance_seeds/README.md)
 中与实际PA实例数一致的干净GUI种子派生。该公共目录提供1--10槽连续容器和唯一占位PA；派生器必须替换每一个槽，
 不得创建空槽或保留占位实例。种子只用于生成运行目录或正式交付目录中的派生IOB，绝不原地修改。

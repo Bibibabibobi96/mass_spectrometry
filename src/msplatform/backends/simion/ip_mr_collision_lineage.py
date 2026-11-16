@@ -41,8 +41,9 @@ def _verified_collision_sources(model, geometry_reference, *, neutral):
             or source.metadata.get('field_status') != 'not_solved'):
         raise ValueError('successful SIMION geometry producer required')
     compiled = model_geometry(model)
-    expected_role = 'simion_neutral_world_collision_geometry' if neutral else 'simion_ip_mr_complete_geometry'
-    if compiled.frontend_geometry.get('role') != expected_role:
+    expected_roles = {'simion_neutral_world_collision_geometry','simion_neutral_multi_domain_collision_geometry'} if neutral else {'simion_ip_mr_complete_geometry'}
+    multi = compiled.frontend_geometry.get('role') == 'simion_neutral_multi_domain_collision_geometry'
+    if compiled.frontend_geometry.get('role') not in expected_roles:
         raise ValueError('collision geometry representation differs')
     actual = json.loads(source.data_path('compiled_geometry').read_text(encoding='utf8'))
     # JSON canonicalizes the dataclass downstream tuple to a list.
@@ -50,8 +51,9 @@ def _verified_collision_sources(model, geometry_reference, *, neutral):
         raise ValueError('published compiled geometry differs from prepared model')
     assets = source.metadata.get('native_assets')
     if neutral:
-        if not isinstance(assets, dict) or set(assets) != {'world'} or set(compiled.frontend_gems) != {'world'}:
-            raise ValueError('one declared neutral world collision asset required')
+        expected_assets=set(compiled.frontend_geometry['domain_order']) if multi else {'world'}
+        if not isinstance(assets, dict) or set(assets) != expected_assets or set(compiled.frontend_gems) != expected_assets:
+            raise ValueError('complete declared neutral collision assets required')
     else:
         components = compiled.frontend_geometry.get('asset_components')
         if (not isinstance(assets, dict) or not isinstance(components, dict)
@@ -103,7 +105,10 @@ def _verified_collision_sources(model, geometry_reference, *, neutral):
         if 'surface_state' in member: labels.append('surface_state')
         if 'fractional_surface' in member: labels.append('fractional_surface')
         if 'surface_state' not in member and 'fractional_surface' not in member: raise ValueError('missing surface evidence')
-        expected = {label: role+'_'+label for label in labels}
+        operation = next((op for op in geometry_plan.operations if op.get('asset_id') == role),None) if multi else by_operation.get('geometry_'+role)
+        if operation is None: raise ValueError('geometry role differs from its actual planned operation outputs')
+        prefix=operation['operation_id'].removeprefix('geometry_')
+        expected = {label: prefix+'_'+label for label in labels}
         if (member != expected or any(key not in records for key in expected.values())
                 or any(records[key] not in manifest['outputs'] for key in expected.values())):
             raise ValueError('published native geometry asset closure differs')
@@ -114,8 +119,9 @@ def _verified_collision_sources(model, geometry_reference, *, neutral):
         if 'surface_state' in located:
             state=json.loads(located['surface_state'].read_text(encoding='utf8'))
             if neutral:
-                dimensions=compiled.frontend_geometry['dimensions']
-                pitch=[compiled.frontend_geometry['pitch_mm']]*3
+                geom=compiled.frontend_geometry['domains'][role] if multi else compiled.frontend_geometry
+                dimensions=geom['dimensions']
+                pitch=[geom['pitch_mm']]*3
             else:
                 domain=compiled.frontend_geometry['numerical_domains'][role]
                 dimensions=[domain['dimensions']['n'+axis] for axis in 'xyz']
@@ -123,8 +129,6 @@ def _verified_collision_sources(model, geometry_reference, *, neutral):
             from .native_surface_state import validate_native_surface_state
             native_grid=dict(zip(('nx','ny','nz'),dimensions,strict=True), **dict(zip(('dx_mm','dy_mm','dz_mm'),pitch,strict=True)))
             validate_native_surface_state(state,grid=native_grid,surface_present=surface is not None)
-        operation=by_operation.get('geometry_'+role)
-        if operation is None: raise ValueError('geometry role differs from its actual planned operation outputs')
         outputs=operation['outputs']
         if 'optional_surface' in operation:
             expected_paths={'raw_geometry':outputs[0], 'surface_witnesses':outputs[1], 'surface_state':outputs[2], 'fractional_surface':operation['optional_surface']}

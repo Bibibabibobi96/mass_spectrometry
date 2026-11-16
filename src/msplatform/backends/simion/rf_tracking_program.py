@@ -188,8 +188,10 @@ def render_rf_controls(model: Any, plan: Mapping[str, Any], *, assets: Mapping[s
         composer_bindings,scalar_records=_ip_mr_bindings(document,scalar_bindings)
         names=copy.deepcopy(slot_domains)
     elif neutral_sampled:
-        if geometry.get('role') != 'simion_neutral_world_collision_geometry' or slot_domains != [None, 'world']:
-            raise ValueError('neutral sampled tracking requires background then world collision slots')
+        multi=geometry.get('role')=='simion_neutral_multi_domain_collision_geometry'
+        expected=[None]+[f'domain_{i:02d}' for i in range(1,len(geometry['domain_order'])+1)] if multi else [None,'world']
+        if geometry.get('role') not in {'simion_neutral_world_collision_geometry','simion_neutral_multi_domain_collision_geometry'} or slot_domains != expected:
+            raise ValueError('neutral sampled tracking requires background then declared collision slots')
         if not isinstance(scalar_bindings, dict) or not {'scalar_field_adapter.lua', 'generic_scalar_field.lua'} <= native_sources.keys():
             raise ValueError('frozen neutral scalar binding and resources required')
         composer_bindings, scalar_records = _neutral_sampled_bindings(document, scalar_bindings)
@@ -314,13 +316,16 @@ def render_rf_controls(model: Any, plan: Mapping[str, Any], *, assets: Mapping[s
             if program.count(marker)!=1:raise ValueError('RF cut terminal hook differs')
             program=program.replace(marker,marker+"    rf_emit_current('terminal','accepted_cut')\n",1)
     if ip_mr and definitions:program=_stage_rf_plane_observations(program)
-    if geometry.get('role') == 'simion_neutral_world_collision_geometry':
-        domain = geometry['domain']
+    if geometry.get('role') in {'simion_neutral_world_collision_geometry','simion_neutral_multi_domain_collision_geometry'}:
+        if geometry.get('role')=='simion_neutral_multi_domain_collision_geometry':
+            grid=scalar_bindings['grid'];domain=dict(minimum_mm=grid['origin_mm'],maximum_mm=[grid['origin_mm'][i]+(grid['dimensions'][i]-1)*grid['pitch_mm'][i] for i in range(3)])
+        else: domain = geometry['domain']
         program += '\nlocal static_world_min=' + lua_value(domain['minimum_mm']) + '\n'
         program += 'local static_world_max=' + lua_value(domain['maximum_mm']) + '\n'
         program += "local function require_static_world_coverage()\n"
         program += "  local position={ion_px_mm,ion_py_mm,ion_pz_mm}\n"
-        program += "  local valid=" + ('ion_instance==1 or ion_instance==2' if neutral_sampled else 'ion_instance==1') + "\n"
+        valid_slots=' or '.join('ion_instance=='+str(i) for i in range(1,len(names)+1)) if neutral_sampled else 'ion_instance==1'
+        program += "  local valid=" + valid_slots + "\n"
         program += "  for i=1,3 do valid=valid and position[i]>=static_world_min[i] and position[i]<=static_world_max[i] end\n"
         program += "  if not valid then error(string.format('STATIC_WORLD_FIELD_COVERAGE_MISSING particle=%.0f time_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g slot=%s',single_flight_canonical_particle_id(),single_flight_instrument_time_us(),position[1],position[2],position[3],tostring(ion_instance))) end\nend\n"
         for callback in ('initialize', 'other_actions', 'terminate'):

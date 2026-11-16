@@ -12,7 +12,8 @@ local geometry_only=mode=='build_geometry' or mode=='verify_geometry' or model_o
 local source_free=geometry_only or fields_only
 local dual_cone=spec.role=='dual_cone_tracking_iob' or spec.role=='dual_cone_geometry_iob'
 local joint_ip_tracking=spec.role=='rf_ip_tracking_iob'
-local neutral_sampled_tracking=spec.role=='neutral_sampled_tracking_iob'
+local neutral_multi_sampled=spec.role=='neutral_multi_sampled_collision_iob_build' or spec.role=='neutral_multi_sampled_tracking_iob'
+local neutral_sampled_tracking=spec.role=='neutral_sampled_tracking_iob' or spec.role=='neutral_multi_sampled_tracking_iob'
 local sampled_tracking=spec.role=='ip_mr_sampled_tracking_iob' or neutral_sampled_tracking
 local static_tracking=spec.role=='static_world_tracking_iob'
 local component_tracking=static_tracking or sampled_tracking or joint_ip_tracking or spec.role=='independent_rf_tracking_iob' or spec.role=='independent_oa_tracking_iob' or spec.role=='dual_cone_tracking_iob'
@@ -23,24 +24,26 @@ local joint_rf_oa=spec.role=='rf_oa_geometry_iob_build'
 local joint_oa_mr=spec.role=='oa_mr_geometry_iob_build'
 local joint_ip_mr=spec.role=='ip_mr_geometry_iob_build'
 local generic_collision=spec.role=='neutral_world_geometry_iob_build'
+local generic_multi=spec.role=='neutral_multi_geometry_iob_build'
 local generic_model=spec.role=='neutral_world_model_iob_build'
-local generic_sampled=spec.role=='neutral_sampled_collision_iob_build' or neutral_sampled_tracking
+local generic_multi_model=spec.role=='neutral_multi_model_iob_build'
+local generic_sampled=spec.role=='neutral_sampled_collision_iob_build' or neutral_sampled_tracking or neutral_multi_sampled
 local collision_iob=sampled_tracking or spec.role=='ip_mr_collision_iob_build' or generic_sampled
 assert(not collision_iob or sampled_tracking or mode=='build_geometry' or mode=='verify_geometry','collision IOB supports source-free build/reopen only')
-assert(not sampled_tracking or ((mode=='build' or mode=='verify') and spec.field_representation==(neutral_sampled_tracking and 'neutral_sampled_basis_with_collision_geometry' or 'assembly_sampled_basis_with_collision_geometry')), 'sampled tracking requires its explicit field representation')
+assert(not sampled_tracking or ((mode=='build' or mode=='verify') and spec.field_representation==(neutral_multi_sampled and 'neutral_multi_sampled_basis_with_collision_geometry' or neutral_sampled_tracking and 'neutral_sampled_basis_with_collision_geometry' or 'assembly_sampled_basis_with_collision_geometry')), 'sampled tracking requires its explicit field representation')
 if sampled_tracking then
   local file=assert(io.open(assert(spec.scalar_binding),'rb'),'sampled tracking scalar binding missing')
   local first=file:read(1);file:close();assert(first~=nil,'sampled tracking scalar binding empty')
 end
-local independent_component=spec.role=='independent_rf_geometry_iob_build' or independent_oa or tracking_role or dual_cone or joint_rf_ip or joint_oa_mr or joint_rf_oa or joint_ip_mr or collision_iob or generic_collision or generic_model
+local independent_component=spec.role=='independent_rf_geometry_iob_build' or independent_oa or tracking_role or dual_cone or joint_rf_ip or joint_oa_mr or joint_rf_oa or joint_ip_mr or collision_iob or generic_collision or generic_multi or generic_model or generic_multi_model
 assert(not joint_ip_mr or mode=='build_geometry' or mode=='verify_geometry' or model_only,'IP–MR fields and tracking workbench unsupported')
 assert(not joint_rf_oa or mode=='build_geometry' or mode=='verify_geometry','RF-OA geometry only; model and fields unsupported')
 assert(not joint_oa_mr or mode=='build_geometry' or mode=='verify_geometry' or model_only,'OA–MR fields and tracking workbench unsupported')
 assert(not joint_rf_ip or mode=='build_geometry' or mode=='verify_geometry' or mode=='build_model' or mode=='verify_model','RF–IP tracking and fields workbench unsupported')
-assert(not generic_collision or (mode=='build_geometry' or mode=='verify_geometry'),'neutral collision supports source-free build/reopen only')
-assert(not generic_model or model_only,'neutral model supports source-free model operations only')
+assert(not (generic_collision or generic_multi) or (mode=='build_geometry' or mode=='verify_geometry'),'neutral collision supports source-free build/reopen only')
+assert(not (generic_model or generic_multi_model) or model_only,'neutral model supports source-free model operations only')
 assert(not generic_model or #spec.instances==1,'neutral model requires one world slot')
-local independent_marker=generic_collision and 'NEUTRAL_WORLD_GEOMETRY_IOB' or generic_sampled and 'NEUTRAL_SAMPLED_COLLISION_IOB' or collision_iob and 'IP_MR_COLLISION_IOB' or joint_rf_oa and 'RF_OA_GEOMETRY_IOB' or joint_rf_ip and 'RF_IP_GEOMETRY_IOB' or joint_oa_mr and 'OA_MR_GEOMETRY_IOB' or joint_ip_mr and 'IP_MR_GEOMETRY_IOB' or dual_cone and 'DUAL_CONE_GEOMETRY_IOB' or independent_oa and 'INDEPENDENT_OA_GEOMETRY_IOB' or 'INDEPENDENT_RF_GEOMETRY_IOB'
+local independent_marker=generic_multi and 'NEUTRAL_MULTI_GEOMETRY_IOB' or generic_collision and 'NEUTRAL_WORLD_GEOMETRY_IOB' or generic_sampled and 'NEUTRAL_SAMPLED_COLLISION_IOB' or collision_iob and 'IP_MR_COLLISION_IOB' or joint_rf_oa and 'RF_OA_GEOMETRY_IOB' or joint_rf_ip and 'RF_IP_GEOMETRY_IOB' or joint_oa_mr and 'OA_MR_GEOMETRY_IOB' or joint_ip_mr and 'IP_MR_GEOMETRY_IOB' or dual_cone and 'DUAL_CONE_GEOMETRY_IOB' or independent_oa and 'INDEPENDENT_OA_GEOMETRY_IOB' or 'INDEPENDENT_RF_GEOMETRY_IOB'
 assert(not independent_component or mode=='build_geometry' or mode=='verify_geometry'
   or model_only or (tracking_role and (mode=='build' or mode=='verify')),'independent geometry/model mode is unsupported')
 assert(spec.schema_version==1 and (spec.role=='single_reflection_iob_build' or independent_component),
@@ -55,8 +58,13 @@ if collision_iob then
   local names=assert(spec.collision_roles,'explicit verified collision roles required')
   local expected
   if generic_sampled then
-    assert(count==2,'neutral sampled collision IOB requires two actual slots')
-    expected={names.background,names.world}
+    if neutral_multi_sampled then
+      assert(type(names.domains)=='table' and #names.domains==count-1 and count>=2,'multi-domain collision roles differ')
+      expected={names.background};for _,name in ipairs(names.domains) do expected[#expected+1]=name end
+    else
+      assert(count==2,'neutral sampled collision IOB requires two actual slots')
+      expected={names.background,names.world}
+    end
   else
     assert(count==5,'selected collision IOB requires five actual slots')
     expected={names.background,names.rf,names.ip,names.analyzer,names.detector}
@@ -288,7 +296,7 @@ local function verify_fractional_component(item,row)
     checked=checked+1
   end
   witnesses:close();assert(checked>0,'fractional surface witnesses empty')
-  if generic_collision or (generic_sampled and row.role==spec.collision_roles.world) then
+  if generic_collision or generic_multi or (generic_sampled and row.role~=spec.collision_roles.background) then
     local expected, remaining = {}, 0
     for _, eid in ipairs(assert(row.electrode_witness_ids)) do
       assert(type(eid)=='number' and eid>0 and eid==math.floor(eid) and not expected[eid], 'invalid neutral electrode identity')

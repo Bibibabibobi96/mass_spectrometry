@@ -46,22 +46,31 @@ def _resolve_neutral_sampled_inputs(model_reference: Mapping[str, Any], *, selec
         plan=verify_neutral_collision_sources(source.model, geometry_ref)
     else:
         plan=plan_neutral_collision_conversions(source.model,geometry_ref,output_directory=Path(output_directory))
-    if len(plan['tasks'])!=1:raise ValueError('one declared world collision asset required')
-    task=plan['tasks'][0];owned=source.native_assets['world']
-    actual={'raw_geometry':owned['raw_record'],'surface_witnesses':owned['witness_record']}
-    if owned['surface_records']:actual['fractional_surface']=owned['surface_records'][0]
-    if 'state_record' in owned:actual['surface_state']=owned['state_record']
-    if set(actual)!=set(task['source_records']):raise ValueError('model-owned collision surface closure differs')
-    for label,record in actual.items():
-        if any(str(record[k]).upper()!=str(task['source_records'][label][k]).upper() for k in ('bytes','sha256')):
-            raise ValueError('model-owned collision source differs: '+label)
-    task['source_records']=copy.deepcopy(actual);task['raw_path']=actual['raw_geometry']['path']
+    geometry=source.model.document['geometry']['frontend_geometry']
+    multi=geometry.get('role')=='simion_neutral_multi_domain_collision_geometry'
+    expected=set(geometry['domain_order']) if multi else {'world'}
+    if {task['role'] for task in plan['tasks']} != expected or set(source.native_assets)!=expected:
+        raise ValueError('complete declared collision assets required')
+    for task in plan['tasks']:
+        owned=source.native_assets[task['role']]
+        actual={'raw_geometry':owned['raw_record'],'surface_witnesses':owned['witness_record']}
+        if owned['surface_records']:actual['fractional_surface']=owned['surface_records'][0]
+        if 'state_record' in owned:actual['surface_state']=owned['state_record']
+        if set(actual)!=set(task['source_records']):raise ValueError('model-owned collision surface closure differs')
+        for label,record in actual.items():
+            if any(str(record[k]).upper()!=str(task['source_records'][label][k]).upper() for k in ('bytes','sha256')):
+                raise ValueError('model-owned collision source differs: '+label)
+        task['source_records']=copy.deepcopy(actual);task['raw_path']=actual['raw_geometry']['path']
     snapshot=source.model.document['geometry']['frontend_geometry']['source_snapshot'];layout=snapshot['composition_plan']
     components={}
     for name,interface in layout['components'].items():
         descriptor=project_descriptor(interface['project_id'])
         components[name]=_from_provider(descriptor.provider_id,snapshot['components_resolved'][name],interface,source_design=snapshot['components_source'][name])
     assembly=Assembly(layout,components)
+    if multi:
+        from .resources import STRUCTURAL_SEEDS
+        if len(plan['tasks'])+1 not in STRUCTURAL_SEEDS:
+            raise ValueError('no registered sampled-field structural seed for domain count plus background')
     binding=admit_linear_samples(model_reference=model_reference,assembly=assembly,geometry_artifact=selection['geometry_artifact'],operator=selection['operator'],samples=selection['samples'],refinement_windows=selection.get('refinement_windows'))
     references=[source.artifact.reference['manifest'],geometry_ref['manifest'],binding['geometry_reference']['manifest']]
     _,projection_product,projection_path=_small_product(binding['geometry_reference'],'geometry_artifact',('projection',))
@@ -69,7 +78,8 @@ def _resolve_neutral_sampled_inputs(model_reference: Mapping[str, Any], *, selec
     guards=[dict(request,path=str(request_path)),binding['geometry_execution_request'],dict(projection_record,path=str(record_path(projection_record,base_dir=projection_path.parent))),plan['compiled_geometry_record'],plan['geometry_completion_record']]
 
     prepared={key:data_record(owner,key) for key in ('compiled_model','clock_authority','instrument_epoch')}
-    guards.extend(prepared.values());guards.extend(task['source_records'].values())
+    guards.extend(prepared.values())
+    for task in plan['tasks']:guards.extend(task['source_records'].values())
     for row in binding['bases'].values():
         for level in [row,*row.get('refinement_windows',[])]:
             references.extend((level['reference']['manifest'],level['field_solution_reference']['manifest']))
@@ -89,7 +99,7 @@ def _resolve_neutral_sampled_inputs(model_reference: Mapping[str, Any], *, selec
         return list(result.values())
     return dict(model=source.model,prepared_source=source.artifact.reference,prepared_records=prepared,geometry_plan=plan,binding=binding,
                 source_references=[dict(manifest_record=row) for row in unique(references)],immutable_input_records=unique(guards),
-                expected_operation_ids=('collision_build_01','collision_verify_01','background_build','background_verify','collision_iob_build','collision_iob_verify'))
+                expected_operation_ids=tuple(name for index in range(1,len(plan['tasks'])+1) for name in (f'collision_build_{index:02d}',f'collision_verify_{index:02d}')) + ('background_build','background_verify','collision_iob_build','collision_iob_verify'))
 
 
 def neutral_source_paths(model_value: Any) -> dict[str, Path]:
@@ -158,6 +168,8 @@ def execute_neutral_sampled_fields(session: RunSession, *, model_reference: Mapp
         ordinal=ids.index(operation)+1;log=session.canonical_path(session.log_dir/f'operation_{ordinal:04d}.stdout.log')
         if marker.encode('ascii') not in log.read_bytes():raise ValueError('neutral native completion marker missing: '+operation)
         return file_record(log,'required_evidence')
+    if plan['model'].document['geometry']['frontend_geometry'].get('role') == 'simion_neutral_multi_domain_collision_geometry':
+        return _execute_neutral_multi(session,plan=plan,owned=owned,project=project,run=run,frozen=frozen)
     task=plan['geometry_plan']['tasks'][0];target=owned(Path(task['output_path']),'solver_native_binary');side=owned(target.with_suffix('.pa-surf'),'solver_native_binary')
     tail=[project(task['raw_path']),project(target),project(frozen['native_run_path.lua']['path'])]
     if 'surface_state' in task['source_records']:tail.append(project(task['source_records']['surface_state']['path']))
@@ -193,4 +205,72 @@ def execute_neutral_sampled_fields(session: RunSession, *, model_reference: Mapp
     if surface is not None:records['collision_surface']=surface
     document=require_prepared_model(plan['model']);metadata=dict(backend='simion',field_status='available',source_status='not_requested',model_identity_sha256=document['model_identity_sha256'],clock=document['drive']['clock'],field_representation='neutral_sampled_basis_with_collision_geometry',refine_calls=0,compute_calls=0,fly_calls=0,scientific_qualification='not_granted',scalar_coverage='not_qualified')
     outputs=[str(session.canonical_path(path)) for path in [target,background,iob,fly,audit_path,*([side] if surface else [])]]
+    return dict(status='success',summary=metadata,output_paths=outputs,required_output_paths=outputs,retention_preserve_paths=[],manifest_extra_fields={'products':{'fields':dict(schema_version=1,kind='field_bundle',status='complete',metadata=metadata,data=records)}})
+
+
+def neutral_multi_background_grid(model, binding):
+    geometry=model.document['geometry']['frontend_geometry']; grid=binding['grid']
+    dims=grid['dimensions'];pitch=grid['pitch_mm'];origin=grid['origin_mm']
+    if grid['frame_id'] != model.document['native_frame_id']:
+        raise ValueError('scalar background frame differs from collision domains')
+    maximum=[origin[i]+(dims[i]-1)*pitch[i] for i in range(3)]
+    for name in geometry['domain_order']:
+        domain=geometry['domains'][name]['domain']
+        if any(domain['minimum_mm'][i]<origin[i] or domain['maximum_mm'][i]>maximum[i] for i in range(3)):
+            raise ValueError('scalar background does not enclose each collision domain')
+    return copy.deepcopy(grid)
+
+def _execute_neutral_multi(session, *, plan, owned, project, run, frozen):
+    """Publish each verified collision PA and a scalar-grid background under one owner."""
+    import json
+    from .source import lua_value
+    from .resources import structural_seed_path
+    from .ip_mr_collision_lineage import collision_conversion_result
+    from .model import require_prepared_model
+    from msplatform.execution.inputs import freeze_file
+    from msplatform.io.manifest_records import file_record,verify_record
+    geometry=plan['model'].document['geometry']['frontend_geometry'];tasks=plan['geometry_plan']['tasks'];sample_grid=neutral_multi_background_grid(plan['model'],plan['binding'])
+    dims=sample_grid['dimensions'];pitch=sample_grid['pitch_mm'];origin=sample_grid['origin_mm']
+    grid=dict(zip(('nx','ny','nz'),dims,strict=True),**dict(zip(('dx_mm','dy_mm','dz_mm'),pitch,strict=True)))
+    background=owned(session.artifact_run_dir/'simion/collision/background.pa','solver_native_binary')
+    args=[project(background),*(str(x) for x in dims),*(format(x,'.17g') for x in pitch),project(frozen['native_run_path.lua']['path'])]
+    converted=[]; audits=[]; outputs=[]
+    for index,task in enumerate(tasks,1):
+        target=owned(Path(task['output_path']),'solver_native_binary');side=owned(target.with_suffix('.pa-surf'),'solver_native_binary')
+        tail=[project(task['raw_path']),project(target),project(frozen['native_run_path.lua']['path'])]
+        if 'surface_state' in task['source_records']:tail.append(project(task['source_records']['surface_state']['path']))
+        prefix=['lua',project(frozen['raw_collision_pa.lua']['path'])]
+        built=run(f'collision_build_{index:02d}',[*prefix,'build',*tail],'RAW_COLLISION_BUILD=PASS',task['source_records'].values())
+        record=file_record(session.canonical_path(target),'solver_native_binary');surface=file_record(session.canonical_path(side),'solver_native_binary') if side.is_file() else None
+        verified=run(f'collision_verify_{index:02d}',[*prefix,'verify',*tail],'RAW_COLLISION_VERIFY=PASS',[record,*([surface] if surface else [])])
+        audits.append(collision_conversion_result(plan['geometry_plan'],task,output_record=record,surface_record=surface,build_log_record=built,verify_log_record=verified,converter_record=frozen['raw_collision_pa.lua']))
+        converted.append((task,record,surface,target));outputs.extend([target,*([side] if surface else [])])
+    run('background_build',['lua',project(frozen['create_numerical_background.lua']['path']),*args],'NUMERICAL_CARRIER_REOPEN=PASS')
+    bg=file_record(session.canonical_path(background),'solver_native_binary')
+    run('background_verify',['lua',project(frozen['reopen_numerical_background.lua']['path']),*args],'NUMERICAL_CARRIER_COLD_REOPEN=PASS',[bg])
+    count=len(tasks)+1;seed_source=structural_seed_path(count);seed=owned(session.input_dir/'collision_seed'/f'{count}_instance_seed.iob','required_evidence');freeze_file(seed_source,seed);seed_record=file_record(session.canonical_path(seed),'required_evidence');session.add_input('collision_seed',seed_record)
+    control=owned(session.input_dir/'collision_empty.fly2','required_evidence');control.write_text('particles{coordinates=0,}\n',encoding='utf8');control_record=file_record(session.canonical_path(control),'required_evidence');session.add_input('collision_empty',control_record)
+    iob=owned(session.artifact_run_dir/'simion/collision/collision.iob','solver_native_binary');fly=owned(iob.with_suffix('.fly2'),'required_evidence')
+    for i in range(1,count+1):owned(seed.parent/f'iob_seed_placeholder_{i:02d}.pa0','solver_native_binary')
+    rotation=[[1,0,0],[0,1,0],[0,0,1]]
+    def placement(x):return dict(x_mm=x[0],y_mm=x[1],z_mm=x[2],az_deg=0.,el_deg=0.,rt_deg=0.,scale=1.)
+    instances=[dict(role='background',instance_index=1,priority_number=1,path=bg['path'],grid=grid,rotation=rotation,placement=placement(origin))];assets={};records=dict(plan['prepared_records']);guards=[seed_record,control_record,bg]
+    for index,(task,record,surface,target) in enumerate(converted,1):
+        role=f'domain_{index:02d}';geo=geometry['domains'][task['role']];d=geo['dimensions'];p=geo['pitch_mm'];native_grid=dict(zip(('nx','ny','nz'),d,strict=True),dx_mm=p,dy_mm=p,dz_mm=p)
+        row=dict(role=role,instance_index=index+1,priority_number=index+1,path=record['path'],grid=native_grid,rotation=rotation,placement=placement(geo['domain']['minimum_mm']),physical_samples=geo['physical_samples'],electrode_witness_ids=geo['electrode_witness_ids'],surface_witnesses=task['source_records']['surface_witnesses']['path'],fractional_surface=str(target.with_suffix('.pa-surf')))
+        if 'surface_state' in task['source_records']:row['surface_state']=task['source_records']['surface_state']['path']
+        instances.append(row);key=f'collision_{index:02d}';records[key]=record;assets[task['role']]=dict(collision=key)
+        guards.append(record)
+        if surface is not None:records[key+'_surface']=surface;assets[task['role']]['surface']=key+'_surface';guards.append(surface)
+    spec=dict(schema_version=1,role='neutral_multi_sampled_collision_iob_build',collision_roles=dict(background='background',domains=[r['role'] for r in instances[1:]]),instances=instances,seed_iob=str(seed),output_iob=str(iob),empty_particle_control=str(control),bootstrap_paths=[str(seed.parent/f'iob_seed_placeholder_{i:02d}.pa0') for i in range(1,count+1)])
+    spec_path=owned(session.input_dir/'collision_iob.lua','required_evidence');spec_path.write_text('return '+lua_value(spec)+'\n',encoding='utf8');spec_record=file_record(session.canonical_path(spec_path),'required_evidence');session.add_input('collision_iob_spec',spec_record);guards.append(spec_record)
+    tail=[project(spec_path),'build_geometry',project(frozen['native_run_path.lua']['path'])];wrapper=['lua',project(frozen['build_geometry_iob.lua']['path'])]
+    run('collision_iob_build',[*wrapper,*tail],'NEUTRAL_SAMPLED_COLLISION_IOB=PASS',guards);iob_record=file_record(session.canonical_path(iob),'solver_native_binary');tail[1]='verify_geometry'
+    run('collision_iob_verify',[*wrapper,*tail],'NEUTRAL_SAMPLED_COLLISION_IOB_REOPEN=PASS',[*guards,iob_record])
+    for record in plan['immutable_input_records']:verify_record('neutral field source before publication',dict(record))
+    basis=owned(session.input_dir/'sampled_basis.json','required_evidence');basis.write_text(json.dumps(plan['binding'],allow_nan=False,indent=2)+'\n',encoding='utf8');basis_record=file_record(session.canonical_path(basis),'required_evidence');session.add_input('sampled_basis',basis_record)
+    audit=owned(session.result_dir/'collision_audit.json','required_evidence');audit.write_text(json.dumps(audits,allow_nan=False,indent=2)+'\n',encoding='utf8')
+    records.update(sampled_basis=basis_record,background=bg,workbench=iob_record,zero_particle_format_control=file_record(session.canonical_path(fly),'required_evidence'),collision_audit=file_record(session.canonical_path(audit),'required_evidence'))
+    document=require_prepared_model(plan['model']);metadata=dict(backend='simion',field_status='available',source_status='not_requested',model_identity_sha256=document['model_identity_sha256'],clock=document['drive']['clock'],field_representation='neutral_multi_sampled_basis_with_collision_geometry',collision_assets=assets,refine_calls=0,compute_calls=0,fly_calls=0,scientific_qualification='not_granted',scalar_coverage='not_qualified')
+    outputs=[str(session.canonical_path(p)) for p in [*outputs,background,iob,fly,audit]]
     return dict(status='success',summary=metadata,output_paths=outputs,required_output_paths=outputs,retention_preserve_paths=[],manifest_extra_fields={'products':{'fields':dict(schema_version=1,kind='field_bundle',status='complete',metadata=metadata,data=records)}})

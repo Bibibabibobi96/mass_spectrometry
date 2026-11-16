@@ -310,6 +310,15 @@ and shared host-gate release. Both existing default renamed consumers also passe
 negative cases. This inert software witness does not close native, installation,
 Repository or performance acceptance.
 
+The reviewed R6 multidomain candidate is now rebased onto the shared terminal
+chain. Complete canonical members are partitioned exactly once into disjoint
+numerical domains; one component may own multiple domains and one scientific
+group may span their native targets. Mixed ideal/solid representations,
+overlap and multidomain HS1 refuse without dropping members. Pure compiler
+checks plus real public managed per-domain build and two-RF chain tests pass
+with inert native leaves and recorded terminal v1 evidence. Native, ordinary
+installation and overlapping LP60 IP–MR qualification remain open.
+
 The canonical-component witness now adds two complete bare RF instances with
 64 rods and 16 scientific groups, distinct 2.0/1.8 mm rod radii, independent
 amplitudes and a 1 mm port connection. Rename/reorder, parameter propagation,

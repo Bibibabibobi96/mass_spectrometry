@@ -92,7 +92,7 @@ def execute_model(session: RunSession, *, model, geometry_reference: Mapping[str
                   clock_authority_reference: Mapping[str, Any],
                   seed_record: Mapping[str, Any], limits: Mapping[str, Any],
                   materialize_geometry: Callable | None, materializer_record: Mapping[str, Any] | None,
-                  allow_asynchronous_io: bool | None = None) -> dict[str, Any]:
+                  allow_asynchronous_io: bool | None = None, provider_source_records: Mapping[str, Mapping[str, Any]] | None = None) -> dict[str, Any]:
     """Save/reopen an unsolved model; transport and source closure stay explicit.
 
     materialize_geometry(copies, *, session, operation_id) returns actual copied
@@ -119,12 +119,12 @@ def execute_model(session: RunSession, *, model, geometry_reference: Mapping[str
     native_sources = geometry.metadata.get('native_assets')
     if not isinstance(native_sources, Mapping):
         raise ValueError('published geometry lacks explicit native asset bindings')
-    independent_component = document['geometry']['frontend_geometry'].get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry', 'simion_rf_ip_geometry', 'simion_oa_mr_complete_geometry', 'simion_ip_mr_complete_geometry', 'simion_neutral_world_collision_geometry'}
+    independent_component = document['geometry']['frontend_geometry'].get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry', 'simion_rf_ip_geometry', 'simion_oa_mr_complete_geometry', 'simion_ip_mr_complete_geometry', 'simion_neutral_world_collision_geometry', 'simion_neutral_multi_domain_collision_geometry'}
     for domain, names in native_sources.items():
         expected = ({'raw_geometry', 'fractional_surface', 'surface_witnesses'} if independent_component else
                     {'raw_geometry', 'fractional_surface'} if domain in {'flight_tube', 'detector'} else {'raw_geometry'})
         ip_mr = document['geometry']['frontend_geometry'].get('role') == 'simion_ip_mr_complete_geometry'
-        if (ip_mr or document['geometry']['frontend_geometry'].get('role') == 'simion_neutral_world_collision_geometry') and 'surface_state' in names:
+        if (ip_mr or document['geometry']['frontend_geometry'].get('role') in {'simion_neutral_world_collision_geometry','simion_neutral_multi_domain_collision_geometry'}) and 'surface_state' in names:
             if set(names) not in (expected | {'surface_state'}, (expected - {'fractional_surface'}) | {'surface_state'}):
                 raise ValueError('published model geometry surface closure differs')
         elif set(names) != expected:
@@ -148,13 +148,14 @@ def execute_model(session: RunSession, *, model, geometry_reference: Mapping[str
     return _execute_model_preparation(session, model=model, assets=assets, source_manifest_record=manifest_record,
         clock_authority_reference=clock_authority_reference, seed_record=seed_record, limits=limits,
         materialize_geometry=materialize_geometry, materializer_record=materializer_record,
-        allow_asynchronous_io=allow_asynchronous_io)
+        allow_asynchronous_io=allow_asynchronous_io, provider_source_records=provider_source_records)
 
 
 def _execute_model_preparation(session: RunSession, *, model, assets: Mapping[str, dict],
         source_manifest_record: Mapping[str, Any], clock_authority_reference: Mapping[str, Any],
         seed_record: Mapping[str, Any], limits: Mapping[str, Any], materialize_geometry: Callable,
-        materializer_record: Mapping[str, Any], allow_asynchronous_io: bool | None = None) -> dict[str, Any]:
+        materializer_record: Mapping[str, Any], allow_asynchronous_io: bool | None = None,
+        provider_source_records: Mapping[str, Mapping[str, Any]] | None = None) -> dict[str, Any]:
     """One raw model materialization body for prepare-model and explicit GUI views.
 
     Callers own their distinct published source-kind and scientific validation.
@@ -178,6 +179,16 @@ def _execute_model_preparation(session: RunSession, *, model, assets: Mapping[st
                 raise ValueError('published geometry member binding is ambiguous across domains')
             source_members[identity] = (domain, label)
     frozen = session.input_dir / 'native_sources'
+    provider_paths={}
+    if document['geometry']['frontend_geometry'].get('role')=='simion_neutral_multi_domain_collision_geometry':
+        from .generic_geometry import multi_domain_source_paths
+        from .model import model_geometry
+        provider_paths=multi_domain_source_paths(model_geometry(model))
+        if not isinstance(provider_source_records,Mapping) or set(provider_source_records)!=set(provider_paths):raise ValueError('multi-domain model source closure differs')
+        for name,path in provider_paths.items():
+            record=provider_source_records[name];verify_record('model provider source',dict(record))
+            if Path(record['path']).resolve()!=path.resolve():raise ValueError('model provider source path differs')
+    elif provider_source_records:raise ValueError('unexpected model provider source records')
     plan = plan_model_preparation(model, geometry_assets=assets, run_directory=session.run_dir,
         seed_record=seed_record, native_path_resource=frozen/'native_run_path.lua')
     if tuple(row['operation_id'] for row in plan.operations) != admitted[:3]:
@@ -221,6 +232,13 @@ def _execute_model_preparation(session: RunSession, *, model, assets: Mapping[st
         session.add_input(name, record)
         return record
 
+    provider_guards=[]
+    for name,path in provider_paths.items():
+        original=dict(provider_source_records[name]);target=owned(frozen/('provider_'+name.replace('.','_')+'.py'),'required_evidence')
+        if target.exists():raise FileExistsError('model provider source destination exists')
+        freeze_file(path,target);copied=bind('model_provider_source_'+name,target)
+        if any(original[k]!=copied[k] for k in ('bytes','sha256')):raise ValueError('model provider source copy differs')
+        provider_guards.extend((original,copied))
     model_path.write_text(json.dumps(document, ensure_ascii=False, indent=2, allow_nan=False)+'\n', encoding='utf-8', newline='\n')
     records = {'compiled_model': bind('compiled_model', model_path)}
     for label, key, destination in (('clock_authority', 'contract', clock_contract),
@@ -249,7 +267,7 @@ def _execute_model_preparation(session: RunSession, *, model, assets: Mapping[st
     freeze_file(Path(seed['source_record']['path']), Path(seed['destination']))
     records['structural_seed'] = bind('model_structural_seed', Path(seed['destination']))
     seed_parent = Path(seed['destination']).parent
-    count = (len(assets) if document['geometry']['frontend_geometry'].get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry', 'simion_rf_ip_geometry', 'simion_oa_mr_complete_geometry', 'simion_ip_mr_complete_geometry', 'simion_neutral_world_collision_geometry'}
+    count = (len(assets) if document['geometry']['frontend_geometry'].get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry', 'simion_rf_ip_geometry', 'simion_oa_mr_complete_geometry', 'simion_ip_mr_complete_geometry', 'simion_neutral_world_collision_geometry', 'simion_neutral_multi_domain_collision_geometry'}
              else 4 + int('entrance_refinement' in assets))
     for index in range(1, count+1):
         owned(seed_parent/f'iob_seed_placeholder_{index:02d}.pa0', 'solver_native_binary')
@@ -291,12 +309,13 @@ def _execute_model_preparation(session: RunSession, *, model, assets: Mapping[st
         arguments = apply_native_io_mode([str(session.context.tools['simion']), *arguments],
             allow_asynchronous_io=allow_asynchronous_io)[1:]
         session.run_process(operation['operation_id'], executable=session.context.tools['simion'], arguments=arguments,
-            role=operation['role'], stage=operation['stage'], limits=limits)
+            role=operation['role'], stage=operation['stage'], limits=limits, immutable_input_records=provider_guards)
         if operation['success_marker'].encode('ascii') not in (session.log_dir/f'operation_{ordinal:04d}.stdout.log').read_bytes():
             raise ValueError('model native completion marker missing: '+operation['operation_id'])
         for path in operation['outputs']:
             if not Path(path).is_file():
                 raise FileNotFoundError('model native declared output missing: '+path)
+    for record in provider_guards:verify_record('model provider source before publication',record)
     for path in plan.declared_outputs:
         name = Path(path).name
         if name.endswith(('.iob', '.txt', '.fly2')):

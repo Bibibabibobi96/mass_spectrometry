@@ -167,8 +167,10 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
     raw_geometry = model_geometry(model).frontend_geometry
     ip_mr = raw_geometry.get('role') == 'simion_ip_mr_complete_geometry'
     joint_ip = raw_geometry.get('role') == 'simion_rf_ip_geometry'
-    static_world = raw_geometry.get('role') == 'simion_neutral_world_collision_geometry'
+    static_world = raw_geometry.get('role') in {'simion_neutral_world_collision_geometry', 'simion_neutral_multi_domain_collision_geometry'}
     neutral_sampled = neutral_sampled_field_reference is not None
+    if raw_geometry.get('role') == 'simion_neutral_multi_domain_collision_geometry' and not neutral_sampled:
+        raise ValueError('multi-domain tracking requires its published sampled FieldBundle')
     if neutral_sampled:
         if not static_world:
             raise ValueError('neutral sampled field requires its world collision geometry')
@@ -197,6 +199,8 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
         raise ValueError('IP–MR field reference requires IP–MR geometry')
     independent_component = raw_geometry.get('role') in {'simion_independent_rf_geometry','simion_independent_oa_geometry'} or joint_ip or ip_mr or static_world
     neutral_hs1 = neutral_sampled and hs1_request is not None
+    if neutral_hs1 and raw_geometry.get('role') == 'simion_neutral_multi_domain_collision_geometry':
+        raise ValueError('multi-domain neutral HS1 is not yet supported')
     if neutral_hs1:
         if not any(row['kind'] == 'ip_schedule' for row in document['native_drive_rows']):
             raise ValueError('neutral HS1 requires one canonical IP schedule')
@@ -248,7 +252,13 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
             raise ValueError('state_relaunch requires an actual canonical handoff result')
         rows,mother,source_clock = _birth_states(particles,geometry)
         if static_world:
-            domain = raw_geometry['domain']
+            if raw_geometry.get('role') == 'simion_neutral_multi_domain_collision_geometry':
+                grid = neutral_admission['basis']['grid']
+                domain = dict(minimum_mm=grid['origin_mm'], maximum_mm=[
+                    grid['origin_mm'][i] + (grid['dimensions'][i] - 1) * grid['pitch_mm'][i]
+                    for i in range(3)])
+            else:
+                domain = raw_geometry['domain']
             for row in rows:
                 if any(not domain['minimum_mm'][i] <= row['position_'+axis+'_mm'] <= domain['maximum_mm'][i]
                        for i, axis in enumerate('xyz')):
@@ -411,7 +421,12 @@ def _render_tracking_controls(model, plan: dict, *, field_design: dict, stored_b
     """
     if plan['flight'].get('tracking_kind') == 'neutral_sampled':
         from .rf_tracking_program import render_rf_controls
-        return render_rf_controls(model, plan, assets=frontend_records, native_sources=native_sources, scalar_bindings=plan['scalar_field_basis'], slot_domains=[None, 'world'])
+        geometry = model_geometry(model).frontend_geometry
+        slots = ([None] + [f'domain_{i:02d}' for i in range(1, len(geometry['domain_order']) + 1)]
+                 if geometry.get('role') == 'simion_neutral_multi_domain_collision_geometry'
+                 else [None, 'world'])
+        return render_rf_controls(model, plan, assets=frontend_records, native_sources=native_sources,
+                                  scalar_bindings=plan['scalar_field_basis'], slot_domains=slots)
     if plan['flight'].get('tracking_kind') == 'ip_mr':
         from .rf_tracking_program import render_rf_controls
         policy = plan['collision_priority']
@@ -833,10 +848,10 @@ def execute_tracking(session, *, fields_reference, particles, propagation, obser
     if meta.get('model_identity_sha256')!=document['model_identity_sha256'] or meta.get('clock')!=document['drive']['clock']:
         raise ValueError('FieldBundle model/clock identity differs')
     geometry_role = model_geometry(model).frontend_geometry.get('role')
-    if (geometry_role == 'simion_neutral_world_collision_geometry'
-            and meta.get('field_representation') not in {'producer_owned_static_world_standalone_operating_pa', 'neutral_sampled_basis_with_collision_geometry'}):
+    if (geometry_role in {'simion_neutral_world_collision_geometry', 'simion_neutral_multi_domain_collision_geometry'}
+            and meta.get('field_representation') not in {'producer_owned_static_world_standalone_operating_pa', 'neutral_sampled_basis_with_collision_geometry', 'neutral_multi_sampled_basis_with_collision_geometry'}):
         raise ValueError('static world tracking requires its published standalone operating field')
-    if meta.get('field_representation') == 'neutral_sampled_basis_with_collision_geometry':
+    if meta.get('field_representation') in {'neutral_sampled_basis_with_collision_geometry', 'neutral_multi_sampled_basis_with_collision_geometry'}:
         if scalar_field_basis is not None or expected_scalar_basis is not None:
             raise ValueError('neutral sampled field already owns its scalar basis')
         from .rf_tracking_execution import execute_neutral_sampled_tracking

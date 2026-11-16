@@ -68,6 +68,8 @@ def plan_geometry_build(compiled: CompiledSimionGeometry, *, run_directory: Path
     """
     root = _native_ascii(run_directory)
     path_resource = _native_ascii(native_path_resource)
+    if compiled.frontend_geometry.get("role") == "simion_neutral_multi_domain_collision_geometry":
+        return _plan_neutral_multi_build(compiled, root, seed_record, path_resource)
     if compiled.frontend_geometry.get("role") == "simion_neutral_world_collision_geometry":
         return _plan_neutral_world_build(compiled, root, seed_record, path_resource)
     if compiled.frontend_geometry.get("role") in {"simion_rf_ip_geometry", "simion_oa_mr_complete_geometry", "simion_ip_mr_complete_geometry", "simion_rf_oa_geometry"}:
@@ -147,6 +149,39 @@ def plan_geometry_build(compiled: CompiledSimionGeometry, *, run_directory: Path
     return NativeStagePlan(materializations,(dict(source_record=dict(seed_record),destination=str(seed)),),
                            tuple(operations),outputs)
 
+
+
+def _plan_neutral_multi_build(compiled, root, seed_record, path_resource):
+    """Build each complete collision domain in its own N-slot geometry IOB."""
+    from types import SimpleNamespace
+    from .generic_geometry import compile_generic_multi_domain_geometry, validate_published_multi_domain_geometry, _multi_numerics
+    geometry=compiled.frontend_geometry; names=geometry['domain_order']; count=len(names)
+    if 'producer_validated_members' in geometry:
+        validate_published_multi_domain_geometry(compiled)
+    elif compile_generic_multi_domain_geometry(SimpleNamespace(**copy.deepcopy(geometry['source_snapshot'])), numerics=_multi_numerics(geometry)) != compiled:
+        raise ValueError('multi-domain geometry differs from canonical source')
+    if count not in STRUCTURAL_SEEDS:
+        raise ValueError('no registered geometry structural seed for this domain count')
+    if set(compiled.frontend_gems)!=set(names) or (seed_record.get('bytes'),str(seed_record.get('sha256','')).lower())!=STRUCTURAL_SEEDS[count]:
+        raise ValueError('multi-domain geometry requires its registered N-slot seed')
+    _absolute(Path(seed_record['path']))
+    control=root/'inputs/no_particles.fly2';seed=root/'simion/geometry/iob_seed'/f'{count}_instance_seed.iob';iob=root/'simion/geometry/geometry.iob';spec=root/'inputs/geometry_iob.lua'
+    materializations={str(control):render_restart_fly2([])};operations=[];rows=[]
+    for index,name in enumerate(names,1):
+        role=f'domain_{index:02d}';geo=geometry['domains'][name];dims=geo['dimensions'];pitch=geo['pitch_mm'];origin=geo['domain']['minimum_mm']
+        grid=dict(zip(('nx','ny','nz'),dims,strict=True),dx_mm=pitch,dy_mm=pitch,dz_mm=pitch)
+        raw=root/'simion/geometry'/(role+'.pa#');surface=raw.with_suffix('.pa-surf');witness=root/'results'/(role+'_surface.csv');state=root/'results'/(role+'_surface_state.json')
+        gem=root/'inputs'/(role+'.gem');audit=root/'inputs'/(role+'_build.lua');samples=copy.deepcopy(geo['physical_samples'])
+        materializations[str(gem)]=compiled.frontend_gems[name]
+        materializations[str(audit)]='return '+lua_value(dict(schema_version=1,role='simion_frontend_raw_geometry',domain_id=role,gem=str(gem),output=str(raw),grid=grid,physical_samples=samples,electrode_witness_ids=geo['electrode_witness_ids'],fractional_surface=str(surface),surface_witnesses=str(witness),surface_state=str(state)))+'\n'
+        rows.append(dict(role=role,instance_index=index,priority_number=index,path=str(raw),fractional_surface=str(surface),surface_witnesses=str(witness),surface_state=str(state),grid=grid,physical_samples=samples,electrode_witness_ids=geo['electrode_witness_ids'],rotation=[[1,0,0],[0,1,0],[0,0,1]],placement=dict(x_mm=origin[0],y_mm=origin[1],z_mm=origin[2],az_deg=0.,el_deg=0.,rt_deg=0.,scale=1.)))
+        operation=_operation('geometry_'+role,'prepare',['lua',str(native_resource_path('build_frontend_geometry.lua')),str(audit)],[str(raw),str(witness),str(state)],'BUILD_GEOMETRY=PASS ROLE='+role)
+        operation['optional_surface']=str(surface);operation['asset_id']=name;operations.append(operation)
+    materializations[str(spec)]='return '+lua_value(dict(schema_version=1,role='neutral_multi_geometry_iob_build',instances=rows,seed_iob=str(seed),output_iob=str(iob),empty_particle_control=str(control),bootstrap_paths=[str(seed.parent/f'iob_seed_placeholder_{i:02d}.pa0') for i in range(1,count+1)]))+'\n'
+    for mode in ('build_geometry','verify_geometry'):
+        operations.append(_operation(mode,'prepare',['lua',str(native_resource_path('build_geometry_iob.lua')),str(spec),mode,str(path_resource)],[str(iob),str(iob.with_suffix('.fly2'))] if mode=='build_geometry' else [],'NEUTRAL_MULTI_GEOMETRY_IOB'+('_REOPEN' if mode=='verify_geometry' else '')+'=PASS'))
+    outputs=tuple(dict.fromkeys(path for operation in operations for path in operation['outputs']))
+    return NativeStagePlan(materializations,(dict(source_record=dict(seed_record),destination=str(seed)),),tuple(operations),outputs)
 
 def _plan_neutral_world_build(compiled, root, seed_record, path_resource):
     """Build and cold-reopen one explicitly positioned raw collision PA."""
@@ -365,9 +400,10 @@ def plan_model_preparation(model, *, geometry_assets: Mapping[str, dict], run_di
     root = _native_ascii(run_directory)
     joint_ip = compiled.frontend_geometry.get('role') in {'simion_rf_ip_geometry', 'simion_ip_mr_complete_geometry'}
     independent_component = compiled.frontend_geometry.get('role') in {'simion_independent_rf_geometry', 'simion_independent_oa_geometry', 'simion_rf_ip_geometry', 'simion_oa_mr_complete_geometry', 'simion_ip_mr_complete_geometry'}
+    multi_world = compiled.frontend_geometry.get('role') == 'simion_neutral_multi_domain_collision_geometry'
     static_world = compiled.frontend_geometry.get('role') == 'simion_neutral_world_collision_geometry'
-    independent_component = independent_component or static_world
-    expected = ({'world'} if static_world else set(compiled.frontend_geometry['numerical_domains']) if independent_component else
+    independent_component = independent_component or static_world or multi_world
+    expected = (set(compiled.frontend_geometry['domain_order']) if multi_world else {'world'} if static_world else set(compiled.frontend_geometry['numerical_domains']) if independent_component else
                 {'flight_tube', 'reflectron', 'detector', *compiled.frontend_geometry['numerical_domains']})
     if set(geometry_assets) != expected:
         raise ValueError('model geometry assets differ from complete selected scope')
@@ -377,10 +413,10 @@ def plan_model_preparation(model, *, geometry_assets: Mapping[str, dict], run_di
     for operation in projection.operations:
         if not operation['operation_id'].startswith('geometry_'):
             continue
-        domain = operation['operation_id'].removeprefix('geometry_')
+        domain = operation.get('asset_id',operation['operation_id'].removeprefix('geometry_'))
         rows = geometry_assets[domain]
         expected_keys = ({'raw_record', 'surface_records', 'witness_record'} if independent_component else {'raw_record', 'surface_records'})
-        stateful = 'state_record' in rows and compiled.frontend_geometry.get('role') in {'simion_ip_mr_complete_geometry', 'simion_neutral_world_collision_geometry'}
+        stateful = 'state_record' in rows and compiled.frontend_geometry.get('role') in {'simion_ip_mr_complete_geometry', 'simion_neutral_world_collision_geometry', 'simion_neutral_multi_domain_collision_geometry'}
         if set(rows) != (expected_keys | {'state_record'} if stateful else expected_keys):
             raise ValueError('model geometry requires explicit raw and surface records')
         if stateful:
@@ -414,16 +450,16 @@ def plan_model_preparation(model, *, geometry_assets: Mapping[str, dict], run_di
         raise ValueError('canonical IOB specification representation differs')
     empty_control = root/'inputs/no_particles.fly2'
     legacy_state_overrides = ''
-    if compiled.frontend_geometry.get('role') in {'simion_ip_mr_complete_geometry', 'simion_neutral_world_collision_geometry'}:
-        geometry_names = [op['operation_id'].removeprefix('geometry_') for op in projection.operations if op['operation_id'].startswith('geometry_')]
+    if compiled.frontend_geometry.get('role') in {'simion_ip_mr_complete_geometry', 'simion_neutral_world_collision_geometry', 'simion_neutral_multi_domain_collision_geometry'}:
+        geometry_names = [op.get('asset_id',op['operation_id'].removeprefix('geometry_')) for op in projection.operations if op['operation_id'].startswith('geometry_')]
         legacy_state_overrides = ''.join('\nspec.instances['+str(index)+'].surface_state=nil' for index,name in enumerate(geometry_names,1) if 'state_record' not in geometry_assets[name])
     materializations = {str(empty_control): projection.materializations[str(empty_control)],
         str(configuration): render_model_configuration(model),
-        str(spec_path): 'local spec=' + original.removeprefix('return ') + ('\nspec.role=\"neutral_world_model_iob_build\"' if static_world else '') + legacy_state_overrides + '\nspec.model=' + lua_value(native) + '\nreturn spec\n'}
+        str(spec_path): 'local spec=' + original.removeprefix('return ') + ('\nspec.role=\"neutral_world_model_iob_build\"' if static_world else '\nspec.role=\"neutral_multi_model_iob_build\"' if multi_world else '') + legacy_state_overrides + '\nspec.model=' + lua_value(native) + '\nreturn spec\n'}
     native_operations = tuple(_operation(mode, 'prepare', ['lua', str(native_resource_path('build_model_iob.lua')),
         str(spec_path), mode, str(_native_ascii(native_path_resource))],
         [str(root/'simion/geometry/geometry.iob'), str(root/'simion/geometry/geometry.fly2')] if mode == 'build_model' else [str(readback)],
-        ('NEUTRAL_WORLD_MODEL_' if static_world else 'IP_MR_MODEL_' if compiled.frontend_geometry.get('role') == 'simion_ip_mr_complete_geometry' else 'OA_MR_MODEL_' if compiled.frontend_geometry.get('role') == 'simion_oa_mr_complete_geometry' else 'RF_IP_MODEL_' if joint_ip else 'INDEPENDENT_OA_MODEL_' if compiled.frontend_geometry.get('role') == 'simion_independent_oa_geometry' else 'INDEPENDENT_RF_MODEL_' if independent_component else 'SINGLE_REFLECTION_MODEL_') + ('BUILD' if mode == 'build_model' else 'READBACK') + '=PASS')
+        ('NEUTRAL_MULTI_MODEL_' if multi_world else 'NEUTRAL_WORLD_MODEL_' if static_world else 'IP_MR_MODEL_' if compiled.frontend_geometry.get('role') == 'simion_ip_mr_complete_geometry' else 'OA_MR_MODEL_' if compiled.frontend_geometry.get('role') == 'simion_oa_mr_complete_geometry' else 'RF_IP_MODEL_' if joint_ip else 'INDEPENDENT_OA_MODEL_' if compiled.frontend_geometry.get('role') == 'simion_independent_oa_geometry' else 'INDEPENDENT_RF_MODEL_' if independent_component else 'SINGLE_REFLECTION_MODEL_') + ('BUILD' if mode == 'build_model' else 'READBACK') + '=PASS')
         for mode in ('build_model', 'verify_model'))
     materialization = dict(operation_id='materialize_geometry', role='GATE', stage='prepare',
         action='explicit_geometry_payload_callback', outputs=[row['destination'] for row in copies])

@@ -245,7 +245,7 @@ def _validated_ip_schedule(schedule, clock, compiled, components, selected, ip):
     from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import select_legacy_physical_design
     from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
 
-    neutral = compiled.frontend_geometry.get('role') == 'simion_neutral_world_collision_geometry'
+    neutral = compiled.frontend_geometry.get('role') in {'simion_neutral_world_collision_geometry', 'simion_neutral_multi_domain_collision_geometry'}
     snapshot = compiled.frontend_geometry['source_snapshot'] if neutral else None
     plan = snapshot['composition_plan'] if neutral else compiled.frontend_geometry['composition_plan']
     _exact(schedule, {'baseline', 'native_operating_point', 'clock'}, 'IP schedule authority')
@@ -349,8 +349,11 @@ def _compile_static_world_model(compiled, components, *, drive, physics):
 
 def _compile_static_world_published_model(compiled, components, *, drive, physics):
     """Consume a producer-validated projection after the public artifact check."""
-    from .generic_geometry import validate_published_neutral_geometry
-    validate_published_neutral_geometry(compiled)
+    from .generic_geometry import validate_published_neutral_geometry, validate_published_multi_domain_geometry
+    if compiled.frontend_geometry.get('role') == 'simion_neutral_multi_domain_collision_geometry':
+        validate_published_multi_domain_geometry(compiled)
+    else:
+        validate_published_neutral_geometry(compiled)
     return _finish_static_world_model(compiled, components, drive=drive, physics=physics)
 
 
@@ -420,15 +423,18 @@ def _finish_static_world_model(compiled, components, *, drive, physics):
         frozen_schedules[ip] = frozen
     if has_pulse != ('pulse' in drive): raise ValueError('pulse timing must match world drive groups')
     _validate_timing(drive, requires_pulse=has_pulse, static_only=not dynamic)
-    mapping = geometry['electrode_mapping']
+    multi = geometry.get('role') == 'simion_neutral_multi_domain_collision_geometry'
+    mappings = [(f'domain_{i:02d}', geometry['domains'][name]['electrode_mapping'])
+                for i,name in enumerate(geometry['domain_order'],1)] if multi else [('world',geometry['electrode_mapping'])]
     groups = {}
-    for row in mapping:
-        groups.setdefault(row['instance_id'], {})[row['electrode_group_id']] = row['native_id']
+    for domain,mapping in mappings:
+        for row in mapping:
+            groups.setdefault(row['instance_id'], {}).setdefault(row['electrode_group_id'], []).append(dict(domain=domain,electrode_id=row['native_id']))
     _exact(drive['groups'], set(groups), 'static world drive instances')
     rows = []
     for instance, bindings in groups.items():
         _exact(drive['groups'][instance], set(bindings), 'static world drive groups')
-        for group, electrode in bindings.items():
+        for group, targets in bindings.items():
             value = drive['groups'][instance][group]
             if not isinstance(value, Mapping): raise ValueError('world group drive must be a mapping')
             kind = value.get('kind')
@@ -441,13 +447,14 @@ def _finish_static_world_model(compiled, components, *, drive, physics):
             if kind == 'rf' and (value['waveform'] not in {'sine','cosine'} or value['frequency_hz'] <= 0 or value['rf_amplitude_v'] < 0 or value['polarity'] not in {-1,1}):
                 raise ValueError('unsupported RF waveform, frequency, amplitude or polarity')
             rows.append(dict(instance_id=instance, electrode_group_id=group,
-                native_targets=[dict(domain='world', electrode_id=electrode)], **copy.deepcopy(dict(value))))
-    _validate_static_contacts(geometry.get('contact_obligations', []), drive['groups'])
+                native_targets=copy.deepcopy(targets), **copy.deepcopy(dict(value))))
+    contacts = [contact for name in geometry['domain_order'] for contact in geometry['domains'][name].get('contact_obligations', [])] if multi else geometry.get('contact_obligations', [])
+    _validate_static_contacts(contacts, drive['groups'])
     normalized_drive = copy.deepcopy(dict(drive))
     if single: normalized_drive['ip_schedule'] = frozen_schedules[next(iter(scheduled))]
     if multiple: normalized_drive['ip_schedules'] = frozen_schedules
     document = dict(schema_version=1, role='compiled_prepared_simion_model', field_status='not_solved',
-        source_status='not_requested', native_frame_id=geometry['domain']['frame_id'], geometry=asdict(compiled),
+        source_status='not_requested', native_frame_id=geometry['source_snapshot']['composition_plan']['recipe']['assembly_frame_id'] if multi else geometry['domain']['frame_id'], geometry=asdict(compiled),
         components_resolved=copy.deepcopy(dict(components)), drive=normalized_drive,
         physics=copy.deepcopy(dict(physics)), native_drive_rows=rows)
     document = json.loads(json.dumps(document, sort_keys=True, allow_nan=False))
@@ -458,6 +465,13 @@ def _finish_static_world_model(compiled, components, *, drive, physics):
 def compile_prepared_model(compiled: CompiledSimionGeometry, components_resolved: Mapping[str, dict], *,
                            drive: Mapping[str, Any], physics: Mapping[str, Any]) -> CompiledPreparedModel:
     """Return a complete physical-drive snapshot, not a solved/published artifact."""
+    if compiled.frontend_geometry.get('role') == 'simion_neutral_multi_domain_collision_geometry':
+        from .generic_geometry import compile_generic_multi_domain_geometry, _multi_numerics
+        from types import SimpleNamespace
+        snapshot=compiled.frontend_geometry['source_snapshot']
+        if compile_generic_multi_domain_geometry(SimpleNamespace(**copy.deepcopy(snapshot)),numerics=_multi_numerics(compiled.frontend_geometry)) != compiled:
+            raise ValueError('multi-domain geometry differs from canonical source')
+        return _finish_static_world_model(compiled,components_resolved,drive=drive,physics=physics)
     if compiled.frontend_geometry.get('role') == 'simion_neutral_world_collision_geometry':
         return _compile_static_world_model(compiled, components_resolved, drive=drive, physics=physics)
     if compiled.frontend_geometry.get('role') == 'simion_ip_mr_complete_geometry':

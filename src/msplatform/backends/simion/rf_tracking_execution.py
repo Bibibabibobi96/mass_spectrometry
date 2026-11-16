@@ -53,7 +53,7 @@ def admit_neutral_sampled_tracking_fields(reference: Mapping[str, Any]) -> dict[
     from .neutral_sampled_field import verify_neutral_sampled_inputs
 
     source = open_artifact(reference, expected_kind='field_bundle')
-    if source.metadata.get('field_representation') != 'neutral_sampled_basis_with_collision_geometry':
+    if source.metadata.get('field_representation') not in {'neutral_sampled_basis_with_collision_geometry','neutral_multi_sampled_basis_with_collision_geometry'}:
         raise ValueError('published neutral sampled FieldBundle required')
     manifest = json.loads(source.manifest_location.read_text(encoding='utf-8-sig'))
     request_record = manifest['inputs']['execution_request']
@@ -66,22 +66,36 @@ def admit_neutral_sampled_tracking_fields(reference: Mapping[str, Any]) -> dict[
     planned = verify_neutral_sampled_inputs(payload['model'], selection=payload['scalar_field_basis'])
     if json.loads(source.data_path('sampled_basis').read_text(encoding='utf-8-sig')) != planned['binding']:
         raise ValueError('published neutral sampled basis differs from producer sources')
-    audit = json.loads(source.data_path('collision_audit').read_text(encoding='utf-8-sig'))
-    task = planned['geometry_plan']['tasks'][0]
-    if (audit.get('role') != task['role'] or audit.get('source_records') != task['source_records']
-            or audit.get('geometry_reference') != planned['geometry_plan']['geometry_reference']
-            or audit.get('compiled_geometry_record') != planned['geometry_plan']['compiled_geometry_record']):
-        raise ValueError('published collision audit differs from geometry lineage')
-    for label, key in (('output_record', 'collision'), ('surface_record', 'collision_surface')):
-        selected = audit.get(label)
-        if key not in source.data_records:
-            if selected is not None:
-                raise ValueError('collision audit declares an unpublished '+label)
-            continue
-        actual = source.data_records[key]
-        if (not isinstance(selected, dict) or any(str(selected[k]).lower() != str(actual[k]).lower() for k in ('bytes', 'sha256'))
-                or Path(selected['path']).resolve(strict=True) != source.data_path(key).resolve(strict=True)):
-            raise ValueError('collision audit differs from published '+key)
+    audits = json.loads(source.data_path('collision_audit').read_text(encoding='utf-8-sig'))
+    multi=source.metadata.get('field_representation')=='neutral_multi_sampled_basis_with_collision_geometry'
+    if not multi: audits=[audits]
+    actual_multi=planned['model'].document['geometry']['frontend_geometry'].get('role')=='simion_neutral_multi_domain_collision_geometry'
+    if multi != actual_multi:raise ValueError('field representation and geometry role differ')
+    tasks=planned['geometry_plan']['tasks']
+    if not isinstance(audits,list) or len(audits)!=len(tasks):raise ValueError('collision audit count differs')
+    assets=source.metadata.get('collision_assets') if multi else {'world':dict(collision='collision',**({'surface':'collision_surface'} if 'collision_surface' in source.data_records else {}))}
+    if not isinstance(assets,dict) or set(assets)!={task['role'] for task in tasks}:raise ValueError('collision asset roles differ')
+    keys=['compiled_model','clock_authority','instrument_epoch','sampled_basis','background','workbench','zero_particle_format_control','collision_audit']
+    for index,(audit,task) in enumerate(zip(audits,tasks,strict=True),1):
+        if (audit.get('role') != task['role'] or audit.get('source_records') != task['source_records']
+                or audit.get('geometry_reference') != planned['geometry_plan']['geometry_reference']
+                or audit.get('compiled_geometry_record') != planned['geometry_plan']['compiled_geometry_record']):
+            raise ValueError('published collision audit differs from geometry lineage')
+        row=assets[task['role']]; expected_collision=f'collision_{index:02d}' if multi else 'collision'
+        if not isinstance(row,dict) or set(row) not in ({'collision'},{'collision','surface'}) or row['collision']!=expected_collision:
+            raise ValueError('published collision asset keys differ')
+        expected_surface=expected_collision+'_surface' if multi else 'collision_surface'
+        if 'surface' in row and row['surface']!=expected_surface:raise ValueError('published collision surface key differs')
+        for label,key in (('output_record',row['collision']),('surface_record',row.get('surface'))):
+            selected=audit.get(label)
+            if key is None:
+                if selected is not None:raise ValueError('collision audit declares an unpublished '+label)
+                continue
+            actual=source.data_records[key]
+            if (not isinstance(selected,dict) or any(str(selected[k]).lower()!=str(actual[k]).lower() for k in ('bytes','sha256'))
+                    or Path(selected['path']).resolve(strict=True)!=source.data_path(key).resolve(strict=True)):
+                raise ValueError('collision audit differs from published '+key)
+            keys.append(key)
     document = planned['model'].document
     if (source.metadata.get('model_identity_sha256') != document['model_identity_sha256']
             or source.metadata.get('clock') != document['drive']['clock']):
@@ -90,10 +104,6 @@ def admit_neutral_sampled_tracking_fields(reference: Mapping[str, Any]) -> dict[
         expected, actual = planned['prepared_records'][key], source.data_records[key]
         if any(str(expected[k]).lower() != str(actual[k]).lower() for k in ('bytes', 'sha256')):
             raise ValueError('neutral sampled prepared record differs: ' + key)
-    keys = ['compiled_model', 'clock_authority', 'instrument_epoch', 'sampled_basis',
-            'background', 'collision', 'workbench', 'zero_particle_format_control', 'collision_audit']
-    if 'collision_surface' in source.data_records:
-        keys.append('collision_surface')
     records = [dict(source.data_records[k], path=str(source.data_path(k))) for k in keys]
     records.extend(copy.deepcopy(planned['immutable_input_records']))
     records.append(dict(request_record, path=str(request_path)))
@@ -140,6 +150,8 @@ def plan_neutral_sampled_tracking_workbench(compiled: Any, *, admission: Mapping
     root = Path(run_directory)
     source, basis, plan = admission['source'], admission['basis'], admission['plan']
     geometry = compiled.frontend_geometry
+    if geometry.get('role')=='simion_neutral_multi_domain_collision_geometry':
+        return _plan_neutral_multi_tracking_workbench(compiled,admission=admission,run_directory=root,program=program,native_source_rows=native_source_rows,native_path_resource=native_path_resource)
     task = plan['geometry_plan']['tasks'][0]
     dimensions, origin, pitch = geometry['dimensions'], geometry['domain']['minimum_mm'], geometry['pitch_mm']
     grid = dict(zip(('nx', 'ny', 'nz'), dimensions, strict=True), dx_mm=pitch, dy_mm=pitch, dz_mm=pitch)
@@ -470,3 +482,30 @@ def execute_ip_mr_tracking(session: Any, *, source: Any, model: CompiledPrepared
         geometry=geometry,design=None,stored_bank=None,frontend=assets,downstream={},field_workbench=None,
         borrowed=admission['immutable_input_records'],original_clock=clocks,relative_epoch=relative,
         ip_mr_admission=admission,**options)
+
+
+def _plan_neutral_multi_tracking_workbench(compiled, *, admission, run_directory, program, native_source_rows, native_path_resource):
+    import json
+    from .source import lua_value, render_restart_fly2
+    from .neutral_sampled_field import neutral_multi_background_grid
+    root=Path(run_directory);source,basis,plan=admission['source'],admission['basis'],admission['plan'];geometry=compiled.frontend_geometry;tasks=plan['geometry_plan']['tasks']
+    background_grid=neutral_multi_background_grid(admission['model'],basis);dims=background_grid['dimensions'];origin=background_grid['origin_mm'];pitch=background_grid['pitch_mm']
+    grid=dict(zip(('nx','ny','nz'),dims,strict=True),**dict(zip(('dx_mm','dy_mm','dz_mm'),pitch,strict=True)))
+    rotation=[[1,0,0],[0,1,0],[0,0,1]]
+    def placement(v):return dict(x_mm=v[0],y_mm=v[1],z_mm=v[2],az_deg=0.,el_deg=0.,rt_deg=0.,scale=1.)
+    def record(key):return dict(source.data_records[key],path=str(source.data_path(key)))
+    first=dict(role='background',instance_index=1,priority_number=1,path=record('background')['path'],grid=grid,rotation=rotation,placement=placement(origin));instances=[first]
+    for index,task in enumerate(tasks,1):
+        role=f'domain_{index:02d}';geo=geometry['domains'][task['role']];dims=geo['dimensions'];pitch=geo['pitch_mm'];native_grid=dict(zip(('nx','ny','nz'),dims,strict=True),dx_mm=pitch,dy_mm=pitch,dz_mm=pitch)
+        key=source.metadata['collision_assets'][task['role']]['collision'];collision=record(key);surface_key=source.metadata['collision_assets'][task['role']].get('surface')
+        if surface_key is not None:
+            if Path(record(surface_key)['path']).resolve()!=Path(collision['path']).with_suffix('.pa-surf').resolve():raise ValueError('collision surface must be adjacent')
+        elif 'surface_state' not in task['source_records']:raise ValueError('collision surface state or companion required')
+        row=dict(role=role,instance_index=index+1,priority_number=index+1,path=collision['path'],grid=native_grid,rotation=rotation,placement=placement(geo['domain']['minimum_mm']),physical_samples=geo['physical_samples'],electrode_witness_ids=geo['electrode_witness_ids'],surface_witnesses=task['source_records']['surface_witnesses']['path'],fractional_surface=str(Path(collision['path']).with_suffix('.pa-surf')))
+        if 'surface_state' in task['source_records']:row['surface_state']=task['source_records']['surface_state']['path']
+        instances.append(row)
+    count=len(instances);seed_record=file_record(structural_seed_path(count),'required_evidence');seed=root/'inputs/structural_seed'/f'{count}_instance_seed.iob';output=root/'simion/tracking/instrument.iob';binding=root/'inputs/sampled_basis.json';spec_path=root/'inputs/tracking_iob.lua';bootstraps=tuple(str(seed.parent/f'iob_seed_placeholder_{i:02d}.pa0') for i in range(1,count+1))
+    spec=dict(schema_version=1,role='neutral_multi_sampled_tracking_iob',field_representation='neutral_multi_sampled_basis_with_collision_geometry',scalar_binding=str(binding),collision_roles=dict(background='background',domains=[row['role'] for row in instances[1:]]),instances=instances,seed_iob=str(seed),output_iob=str(output),response_fields=[],bootstrap_paths=list(bootstraps))
+    materials={str(spec_path):'return '+lua_value(spec)+'\n',str(binding):json.dumps(basis,ensure_ascii=False,allow_nan=False,indent=2)+'\n',str(output.with_suffix('.lua')):program,str(output.with_suffix('.fly2')):render_restart_fly2(native_source_rows)}
+    wrapper=native_resource_path('build_tracking_iob.lua');ops=tuple(dict(operation_id=name,role='SIMION',stage='prepare',arguments=['--nogui','--noprompt','lua',str(wrapper),str(spec_path),mode,str(native_path_resource)],outputs=[str(output),*bootstraps] if mode=='build' else [],success_marker=marker) for name,mode,marker in [('build_tracking_iob','build','NEUTRAL_SAMPLED_TRACKING_IOB=PASS'),('verify_tracking_iob','verify','NEUTRAL_SAMPLED_TRACKING_IOB_REOPEN=PASS')])
+    return NativeStagePlan(materials,(dict(source_record=seed_record,destination=str(seed)),),ops,(str(output),*bootstraps))
