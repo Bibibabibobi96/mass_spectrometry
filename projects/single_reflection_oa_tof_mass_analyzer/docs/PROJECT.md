@@ -123,6 +123,12 @@ the extractor's canonical identity. The real R2025b read-only run then passed `E
 The COMSOL lease was released. A separate startup-only MATLAB crash was preserved there; an attempted
 cross-model N100 comparison was not accepted as this test's reference and does not alter the 1 ps contract.
 
+The candidate freezer now consumes `artifact_identity_archive` only through the default installed-package
+closure; the retired common extra is absent rather than duplicated under its new path. All 77 original
+candidate-workflow methods passed in 853.185 s, including the Formal preflight without the retired
+`comsol_task` keyword and the previous source-missing/duplicate regressions. This is software closure
+evidence and does not change the native scientific failure above.
+
 ## 当前状态
 
 ### 可安装COMSOL原生资源切片

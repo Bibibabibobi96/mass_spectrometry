@@ -40,6 +40,8 @@ checks remain; duplicate common-table entries are removed. The unchanged full
 MATLAB contract-binding module passed 27 parents (157 records) in 29.724 seconds,
 including the real-selector duplicate-destination regression. This is software
 freezing evidence, with no MATLAB or COMSOL execution or new model qualification.
+The explicit archive input now names `src/msplatform/execution/artifact_identity_archive.py`;
+its original frozen-freshness method passed in 18.094 s without changing the declared input set.
 实心阴极与轴向线圈源码已冻结到
 [`history/20260713__pre-transverse-wehnelt-lineages.md`](history/20260713__pre-transverse-wehnelt-lineages.md)。
 
