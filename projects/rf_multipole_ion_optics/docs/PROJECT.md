@@ -1464,8 +1464,9 @@ remain unchanged. This ownership migration alone grants no finite3D/native quali
 
 
 The offline stationary sample comparison accepts an explicit comparison authority
-for the shared descriptive sample comparison. Existing RF diagnostic metrics remain;
-a real independently sourced matching field pair has not been established here.
+for the shared descriptive sample comparison. Existing RF diagnostic metrics remain.
+The completed COMSOL v37 and SIMION v38 exports below establish the matching real
+non-OA pair; their numerical differences are reported without an equivalence threshold.
 
 The existing stationary-field `compare` CLI selects the explicit generic path
 with `--comparison-authority <json>`; its two field cases each require per-side
@@ -1563,7 +1564,25 @@ Subsequent v33 preregistration identity and v34 MATLAB-root failures left no fie
 COMSOL field solve completed with 614,409 mesh elements and 1,489,674 DOF, then saved the MPH. Cold
 export found `Vstatic` readable but `es_static.Ex` unavailable; `-d(Vstatic,x/y/z)` is valid. The saved
 reader now uses those potential gradients, and solver-progress logs are declared for owner audit. All 24
-stationary tests pass with one unchanged optional skip. This is not yet a completed sample or comparison.
+stationary tests pass with one unchanged optional skip. Native run
+`20261117_083900__sim__comsol__rf-stationary-fields-v36` completed that real solve and saved the MPH;
+`20261117_084300__analysis__comsol__rf-stationary-saved-v37` then cold-loaded it with zero new solves
+and zero parent saves, exporting 3,182 common points / 6,364 rows with authority validation PASS.
+
+The public component → Assembly → SIMION chain then produced the matching segmented bare-octupole
+field in `20261117_091434__sim__simion__fields-a2c46d895765`, using the explicit 0.4 mm
+106×106×214 domain and eight native groups. Its audit retained 192 fractional witnesses, 224
+non-nil surface offsets and all eight response ranges. Governed run
+`20261117_091500__sim__simion__rf-stationary-samples-v38` read that solved family and exported
+the same 3,182 points / 6,364 rows with validation PASS, `refine_calls=0`, `iob_calls=0` and
+`fly_calls=0`; writers stopped and the source producer remained protected. The descriptive generic
+comparison reports differential field-vector RMS difference 558.96895829722 V/m, maximum vector
+difference 2997.535737591321 V/m, and potential RMS/max-absolute differences
+0.7130822886576684 V / 1.2824716532677387 V. The all-zero case is exactly zero on both backends.
+This closes the real non-OA stationary sample and descriptive-comparison chain only; it grants no
+numerical convergence, cross-solver equivalence, GUI or Formal qualification. Remote Changed run
+`43990928916` independently passed the two latest stationary production changes at `8fd714bd`;
+repository integration was not selected.
 
 The RF whole-batch continuation planner is available through the installed
 `msplatform.workflows.rf_batch_continuation` owner. Its implementation is byte-identical
