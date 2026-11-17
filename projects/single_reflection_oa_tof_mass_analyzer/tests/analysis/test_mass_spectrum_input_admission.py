@@ -304,19 +304,15 @@ def mass_native_fixture(root):
         shutil.copyfile(source, target)
     (project/'config/project.json').write_text(json.dumps({
         'project_id': PROJECT.name, 'lifecycle_status': 'prototype'}), encoding='utf-8')
-    (project/'comsol').mkdir(parents=True, exist_ok=True)
+    backend = fixture/'src/msplatform/backends/comsol/matlab'
+    backend.mkdir(parents=True, exist_ok=True)
     from msplatform.workflows import single_reflection_mass_spectrum_study as study
     for relative in study.RETRACE_RESOURCES:
-        source = PROJECT/relative
-        target = project/relative
+        source = REPO/'src/msplatform/backends/comsol/matlab'/relative
+        target = backend/relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, target)
-    for relative in study.RETRACE_COMMON_RESOURCES:
-        source = REPO/relative
-        target = fixture/relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, target)
-    (project/'comsol/run_fixed_particle_retrace.m').write_text('% inert native fixture\n', encoding='utf-8')
+    (backend/'run_fixed_particle_retrace.m').write_text('% inert native fixture\n', encoding='utf-8')
     artifacts = root/'artifacts'
     formal = artifacts/f'projects/{PROJECT.name}/formal'
     (formal/'comsol').mkdir(parents=True, exist_ok=True)
@@ -894,7 +890,7 @@ class MassSpectrumNativeLifecycleTests(unittest.TestCase):
             for index, capture in enumerate(captures):
                 self.assertEqual(capture['run_id'], run_id)
                 self.assertTrue(capture['completion_path'].endswith('.comsol_completion.json'))
-                self.assertEqual(capture['task_script'], str(child/'inputs/code'/f'projects/{PROJECT.name}/comsol/run_fixed_particle_retrace.m'))
+                self.assertEqual(capture['task_script'], str(child/'inputs/code/src/msplatform/backends/comsol/matlab/run_fixed_particle_retrace.m'))
                 self.assertEqual({key: capture['environment'][key] for key in expected_environment}, expected_environment)
                 self.assertEqual(Path(capture['environment']['OATOF_ION_TABLE']).name,
                                  f"{config['species'][index]['species_id']}.ion")

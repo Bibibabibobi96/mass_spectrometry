@@ -11,7 +11,7 @@ assert(~isempty(outputDir), 'OATOF_CANDIDATE_CAD_DIR is required.');
 testDir = fileparts(mfilename('fullpath'));
 projectRoot = fileparts(fileparts(testDir));
 addpath(projectRoot, fullfile(projectRoot, 'cad'));
-paths = oatof_paths(artifactRoot);
+paths = oatof_paths(artifactRoot, fileparts(fileparts(mfilename('fullpath'))));
 addpath(paths.commonSolidWorksDir);
 
 fid = fopen(reportPath, 'w');

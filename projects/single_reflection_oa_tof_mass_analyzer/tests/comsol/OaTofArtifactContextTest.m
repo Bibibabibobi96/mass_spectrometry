@@ -8,6 +8,8 @@ classdef OaTofArtifactContextTest < matlab.unittest.TestCase
             clear oatof_paths workspace_paths resolve_path_identity run_oatof_model oatof_build_model_core oatof_build_saved_particle_solution
             testCase.activeProject=fileparts(fileparts(fileparts(mfilename('fullpath'))));
             testCase.applyFixture(matlab.unittest.fixtures.PathFixture(testCase.activeProject));
+            testCase.applyFixture(matlab.unittest.fixtures.EnvironmentVariableFixture('OATOF_PROJECT_ROOT',testCase.activeProject));
+            testCase.applyFixture(matlab.unittest.fixtures.EnvironmentVariableFixture('OATOF_REPOSITORY_ROOT',fileparts(fileparts(testCase.activeProject)));
             fixture=testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
             testCase.folder=fixture.Folder;
         end
@@ -151,10 +153,10 @@ classdef OaTofArtifactContextTest < matlab.unittest.TestCase
             mkdir(fullfile(project,'comsol'));
             mkdir(fullfile(snapshotRoot,'common','paths'));
             mkdir(fullfile(snapshotRoot,'common','comsol'));
-            copyfile(fullfile(repo,'common','paths','workspace_paths.m'),fullfile(snapshotRoot,'common','paths'));
-            copyfile(fullfile(repo,'common','paths','resolve_path_identity.m'),fullfile(snapshotRoot,'common','paths'));
-            copyfile(fullfile(testCase.activeProject,'oatof_paths.m'),project);
-            copyfile(fullfile(testCase.activeProject,'load_oatof_contract.m'),project);
+            copyfile(fullfile(repo,'src','msplatform','backends','comsol','matlab','workspace_paths.m'),fullfile(snapshotRoot,'common','paths'));
+            copyfile(fullfile(repo,'src','msplatform','backends','comsol','matlab','resolve_path_identity.m'),fullfile(snapshotRoot,'common','paths'));
+            copyfile(fullfile(repo,'src','msplatform','backends','comsol','matlab','oatof_paths.m'),project);
+            copyfile(fullfile(repo,'src','msplatform','backends','comsol','matlab','load_oatof_contract.m'),project);
             copyfile(fullfile(testCase.activeProject,'comsol','run_oatof_model.m'),fullfile(project,'comsol'));
             copyfile(fullfile(testCase.activeProject,'comsol','oatof_build_model_core.m'),fullfile(project,'comsol'));
             copyfile(fullfile(testCase.activeProject,'comsol','oatof_build_saved_particle_solution.m'),fullfile(project,'comsol'));

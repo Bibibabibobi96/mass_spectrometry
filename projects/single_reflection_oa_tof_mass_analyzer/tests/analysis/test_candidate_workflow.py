@@ -813,7 +813,7 @@ print('FROZEN_ION_CONSUMER_PASS')
                     verify_candidate_source_closure(closure)
             finally:
                 payload.write_bytes(saved_payload)
-            reducer = "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_detector_arrival_reducer.m"
+            reducer = "src/msplatform/backends/comsol/matlab/oatof_detector_arrival_reducer.m"
             reducer_path = Path(frozen_source_path(closure, reducer))
             self.assertEqual(reducer_path.read_bytes(), (REPO_ROOT / reducer).read_bytes())
             self.assertEqual(records[reducer]["source_sha256"], sha256(REPO_ROOT / reducer))
@@ -1015,8 +1015,8 @@ print('FROZEN_ION_CONSUMER_PASS')
             }
             self.assertEqual(transformed, PYTHON_BOUND_SOURCES)
             for source_id in (
-                "common/paths/workspace_paths.m",
-                "projects/single_reflection_oa_tof_mass_analyzer/oatof_paths.m",
+                "src/msplatform/backends/comsol/matlab/workspace_paths.m",
+                "src/msplatform/backends/comsol/matlab/oatof_paths.m",
             ):
                 record = next(item for item in closure["sources"] if item["source_id"] == source_id)
                 self.assertEqual(record["transformations"], [])

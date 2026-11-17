@@ -615,10 +615,16 @@ root native orchestration, current composed installation, complete regression or
 RF stationary MATLAB solving, geometry projection, release, extraction and saved-solution
 resources now have one installed COMSOL backend owner, and its stationary selector no longer
 reads the RF project or `common/comsol`. The component and project retain scientific designs,
-cohorts, numerics and research criteria. Focused resource/consumer checks passed; ordinary-wheel
-native solve/cold-read, full Changed and failure-propagation acceptance are still required.
-The two finite-3D PowerShell runners, mass-spectrum retrace resources and prepared-joint MR
-production calls remain separate OPEN ownership migrations; this resource move does not retire them.
+cohorts, numerics and research criteria. Resource packaging and the complete Changed selection passed;
+ordinary-wheel native solve/cold-read remains required. The two finite-3D PowerShell runners and
+prepared-joint MR production calls remain separate OPEN ownership migrations.
+
+The five-species retrace MATLAB loader, segmented-output, detector-arrival and path helpers now have
+one installed COMSOL backend owner. The installed study freezes those resources by canonical path and
+no longer derives support files from the OA project or `common/paths`. Research geometry, Formal assets,
+arbitrary species definitions and study ordering remain explicit inputs; separate per-species retrace
+and mixed-species Fly are not conflated. Consumer and ordinary-install checks passed for this slice;
+v47's COMSOL `25/39/0/18/85` versus SIMION `500/500` scientific failure remains unchanged.
 
 The following is the single active P4 worklist. All rows remain OPEN until their stated
 consumer and acceptance boundaries close; earlier delivered sub-capabilities are inherited,

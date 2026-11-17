@@ -30,10 +30,10 @@
 `ContractPath`必须贯穿顶层入口、底层构建器和时间窗口，不能由理论默认值覆盖。
 
 冻结源码执行可显式传`ArtifactRoot`，其含义为run_config生命周期声明的全局`artifacts`根。
-`oatof_paths`通过公共`workspace_paths`消费该上下文；源码目录仍从实际源码位置解析，
-不从`OutputModelPath`反推产物根。未传时保持原工作区布局。普通输出仍只允许本项目的
-`runs`或`scratch`，显式上下文不开放Formal或根目录外写入。
-Candidate冻结器保持`oatof_paths.m`和公共`workspace_paths.m`原始字节，不再替换MATLAB源码中的
+`oatof_paths`与`workspace_paths`现唯一保存在`src/msplatform/backends/comsol/matlab/`并消费该上下文；
+项目目录只由显式研究输入提供，安装位置不反推项目源码或`OutputModelPath`对应的产物根。
+普通输出仍只允许本项目的`runs`或`scratch`，显式上下文不开放Formal或根目录外写入。
+Candidate冻结器保持backend路径下`oatof_paths.m`和`workspace_paths.m`原始字节，不再替换MATLAB源码中的
 `workspaceRoot`。现有COMSOL／CAD task从已校验runtime上下文运输同一产物根，CAD入口及STEP导出
 继续传递该显式上下文，使冻结执行的Formal保护指向实际产物根。对应CAD纯Unit只验证在原生打开前
 拒绝未授权Formal写入，不代表CAD实体导出或GUI验收。

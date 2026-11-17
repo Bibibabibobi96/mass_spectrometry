@@ -16,7 +16,7 @@ function result = export_oatof_cad_step(modelPath, outputDir, executionMode,opti
 
     componentRoot = fileparts(fileparts(mfilename('fullpath')));
     addpath(componentRoot);
-    paths = oatof_paths(options.ArtifactRoot);
+    paths = oatof_paths(options.ArtifactRoot, fileparts(fileparts(mfilename('fullpath'))));
     formalCad = string(java.io.File(paths.cadFormalDir).getCanonicalPath());
     resolvedOutput = string(java.io.File(char(outputDir)).getCanonicalPath());
     if executionMode == "export" && (strcmpi(resolvedOutput,formalCad) || ...

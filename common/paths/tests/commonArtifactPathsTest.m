@@ -22,8 +22,10 @@ classdef commonArtifactPathsTest < matlab.unittest.TestCase
             isolatedPaths = fullfile(testCase.Workspace, 'repo', 'common', 'paths');
             mkdir(isolatedPaths);
             copyfile(fullfile(source, 'common_artifact_paths.m'), isolatedPaths);
-            copyfile(fullfile(source, 'workspace_paths.m'), isolatedPaths);
-            copyfile(fullfile(source, 'resolve_path_identity.m'), isolatedPaths);
+            backend = fullfile(testCase.Workspace, 'repo', 'src', 'msplatform', 'backends', 'comsol', 'matlab');
+            mkdir(backend);
+            copyfile(fullfile(fileparts(fileparts(source)), 'src', 'msplatform', 'backends', 'comsol', 'matlab', 'workspace_paths.m'), backend);
+            copyfile(fullfile(fileparts(fileparts(source)), 'src', 'msplatform', 'backends', 'comsol', 'matlab', 'resolve_path_identity.m'), backend);
             testCase.applyFixture(matlab.unittest.fixtures.PathFixture(isolatedPaths));
             testCase.ProjectRoot = fullfile(testCase.Workspace, 'artifacts', 'projects', 'example');
             mkdir(testCase.ProjectRoot);
