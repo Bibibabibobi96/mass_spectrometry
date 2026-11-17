@@ -96,6 +96,7 @@ consumers can therefore run concurrently with this negative case.
 `artifact_project.py`统一artifact项目根索引，`particle_state.py`统一SIMION/COMSOL适配后的粒子事件字段、
 身份、三维位置/速度、全局时间和RF相位校验；`run_artifact_support.ps1`统一PowerShell运行器创建目录、
 冻结输入、失败收尾和三件套manifest。它们不得内置器件参数；项目入口保留科学与结果语义，复用公共运行机制。
+保留分类将科学场样本、验证／核验记录及执行、容量、launcher、usage、process收据识别为`required_evidence`，与发布和独立复核的同一角色一致。
 其中`Write-RunJson`保持调用方的JSON类型：空数组和单元素数组仍写作数组，不经PowerShell管道解包，
 以免单批日志路径被下游误读为字符串。
 `Copy-VerifiedRunInput`默认保持单次严格复制；对数百MB至GB级solver数组，调用方可显式设置

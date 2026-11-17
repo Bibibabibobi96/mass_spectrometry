@@ -29,6 +29,14 @@ class RetentionSafetyTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertEqual(_canonical_retention.classify_file(Path(name), bytes_count=2**30), "required_evidence")
 
+    def test_scientific_sample_outputs_are_required_evidence(self) -> None:
+        for name in ("stationary_field_samples.csv", "stationary_field_sample_validation.json",
+                     "stored_solution_verification.json", "execution_completion.json",
+                     "capacity_session.json", "solve_stationary_fields.launcher.json",
+                     "operation_0001.usage.json", "operation_0001.process.json"):
+            with self.subTest(name=name):
+                self.assertEqual(_canonical_retention.classify_file(Path(name), bytes_count=1), "required_evidence")
+
     def test_compressed_trajectory_and_pa_work_array_are_not_optional(self) -> None:
         for name, role in (("trajectory_samples.csv.gz", "dense_trajectory"), ("field.pa_", "solver_native_binary")):
             self.assertEqual(_canonical_retention.classify_file(Path(name), bytes_count=1), role)
