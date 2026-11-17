@@ -71,7 +71,7 @@ if strlength(options.Label) == 0
     options.Label = compose("%gamu", options.MassAmu);
 end
 if strlength(options.OutputModelPath) > 0
-    paths = oatof_paths(options.ArtifactRoot);
+    paths = oatof_paths(options.ArtifactRoot, fileparts(fileparts(mfilename('fullpath'))));
     outputPath = string(resolve_path_identity(options.OutputModelPath));
     allowedRoots = string({paths.runsRoot, paths.scratchRoot});
     allowed = false;

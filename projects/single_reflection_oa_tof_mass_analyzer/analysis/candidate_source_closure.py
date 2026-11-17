@@ -91,8 +91,8 @@ RELATIVE_PATHS = (
     "src/msplatform/backends/comsol/matlab/comsolstartup.m",
     "src/msplatform/backends/comsol/launcher/resolve_comsol_64.ps1",
     "src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1",
-    "common/paths/workspace_paths.m",
-    "common/paths/resolve_path_identity.m",
+    "src/msplatform/backends/comsol/matlab/workspace_paths.m",
+    "src/msplatform/backends/comsol/matlab/resolve_path_identity.m",
     "src/msplatform/contracts/particle_count_policy.json",
     "common/require_powershell7.ps1",
     "common/solidworks/import_step_to_solidworks.m",
@@ -115,7 +115,7 @@ RELATIVE_PATHS = (
     "projects/single_reflection_oa_tof_mass_analyzer/cad/export_oatof_cad_step.m",
     "projects/single_reflection_oa_tof_mass_analyzer/cad/ms_export_oatof_to_solidworks.m",
     "projects/single_reflection_oa_tof_mass_analyzer/cad/oatof_cad_export_manifest.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/comsol/configure_oatof_segmented_output.m",
+    "src/msplatform/backends/comsol/matlab/configure_oatof_segmented_output.m",
     "src/msplatform/backends/comsol/matlab/oatof_build_accelerator_geometry.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_detector_geometry.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_drift_geometry.m",
@@ -134,18 +134,18 @@ RELATIVE_PATHS = (
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_configure_particle_model.m",
     "src/msplatform/backends/comsol/matlab/oatof_cpt_solver_policy.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_create_result_nodes.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_extract_detector_arrivals.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_detector_arrival_reducer.m",
+    "src/msplatform/backends/comsol/matlab/oatof_extract_detector_arrivals.m",
+    "src/msplatform/backends/comsol/matlab/oatof_detector_arrival_reducer.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_export_detector_events.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_parse_field_idealization.m",
     "src/msplatform/backends/comsol/matlab/oatof_read_cartesian_release.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/run_oatof_model.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/verify_oatof_comsol_sync.m",
     "projects/single_reflection_oa_tof_mass_analyzer/docs/SIMION_DELIVERY_CHECKLIST.md",
-    "projects/single_reflection_oa_tof_mass_analyzer/load_oatof_contract.m",
+    "src/msplatform/backends/comsol/matlab/load_oatof_contract.m",
     "projects/single_reflection_oa_tof_mass_analyzer/oatof_lifecycle_preflight.ps1",
     "projects/single_reflection_oa_tof_mass_analyzer/oatof_assert_formal_write_authorized.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/oatof_paths.m",
+    "src/msplatform/backends/comsol/matlab/oatof_paths.m",
     "src/msplatform/backends/simion/resources/build_reflectron_variant.lua",
     "src/msplatform/backends/simion/resources/oatof_reflectron_ideal_10_5.gem",
     "src/msplatform/backends/simion/resources/build_detector_variant.lua",
@@ -541,9 +541,9 @@ def candidate_comsol_source_phases(closure: dict[str, Any]) -> dict[str, Any]:
             raise ValueError(f"COMSOL phase lacks declared frozen sources: {sorted(missing)}")
         return [{key: sources[name][key] for key in ("source_id", "bytes", "sha256")}
                 for name in sorted(names)]
-    native_names = tuple(prefix+name for name in (
-        "load_oatof_contract.m",
-        "comsol/configure_oatof_segmented_output.m",
+    native_names = ("src/msplatform/backends/comsol/matlab/load_oatof_contract.m",
+        "src/msplatform/backends/comsol/matlab/configure_oatof_segmented_output.m")
+    native_names += tuple(prefix+name for name in (
         "comsol/oatof_build_detector_geometry.m", "comsol/oatof_build_drift_geometry.m",
         "comsol/oatof_build_grid_geometry.m", "comsol/oatof_build_mesh.m",
         "comsol/oatof_build_reflectron_geometry.m", "comsol/oatof_configure_particle_model.m",
@@ -559,11 +559,12 @@ def candidate_comsol_source_phases(closure: dict[str, Any]) -> dict[str, Any]:
         "src/msplatform/backends/comsol/matlab/oatof_build_accelerator_geometry.m",
         "src/msplatform/backends/comsol/matlab/build_sectioned_geometry.m",
         "src/msplatform/backends/comsol/matlab/build_accelerator_grids.m")
-    export_names = tuple(prefix+name for name in (
+    export_names = ("src/msplatform/backends/comsol/matlab/oatof_extract_detector_arrivals.m",
+        "src/msplatform/backends/comsol/matlab/oatof_detector_arrival_reducer.m")
+    export_names += tuple(prefix+name for name in (
         "workflows/design_candidate/run_candidate_contract_build.m",
         "comsol/oatof_build_model_core.m", "comsol/oatof_postprocess_saved_solution.m", "comsol/reextract_oatof_saved_solution.m",
-        "comsol/oatof_write_saved_particle_context.m",
-        "comsol/oatof_extract_detector_arrivals.m", "comsol/oatof_detector_arrival_reducer.m", "comsol/oatof_export_detector_events.m",
+        "comsol/oatof_write_saved_particle_context.m", "comsol/oatof_export_detector_events.m",
         "comsol/oatof_particle_plot_view.m", "comsol/oatof_create_result_nodes.m",
         "comsol/oatof_validate_candidate_solution.m"))
     analysis_names = tuple(prefix+"analysis/"+name for name in (
@@ -579,7 +580,7 @@ def candidate_comsol_source_phases(closure: dict[str, Any]) -> dict[str, Any]:
     analysis_names += tuple(name for name in sources if name == "common/contracts/file_identity.py")
     analysis_names += (prefix+"config/analysis_contract.json",)
     sync_names = (prefix+"comsol/verify_oatof_comsol_sync.m",
-                  prefix+"load_oatof_contract.m", "src/msplatform/backends/comsol/matlab/oatof_cpt_solver_policy.m")
+                  "src/msplatform/backends/comsol/matlab/load_oatof_contract.m", "src/msplatform/backends/comsol/matlab/oatof_cpt_solver_policy.m")
     import ast
     identifier = "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_comsol_stage.py"
     tree = ast.parse(candidate_frozen_source_text(closure)[identifier])

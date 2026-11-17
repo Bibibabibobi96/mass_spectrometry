@@ -178,7 +178,7 @@ fprintf('[d1 scan] d1=%gmm -> U1(V_mid)=%.4fV, E1=%.4fV/m, E2=%.4fV/m, V_mirror=
 % Named solid selections and planar allvertices selections prevent unrelated
 % intersecting walls from receiving an electrode's potential.
 t_total_start = tic;
-paths = oatof_paths(artifactRoot);
+paths = oatof_paths(artifactRoot, fileparts(fileparts(mfilename('fullpath'))));
 import com.comsol.model.*
 import com.comsol.model.util.*
 

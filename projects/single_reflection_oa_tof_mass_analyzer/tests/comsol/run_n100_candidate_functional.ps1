@@ -32,7 +32,7 @@ foreach ($item in @(
   @{Name='stable_entry'; Path=(Join-Path $projectRoot 'comsol\run_oatof_model.m'); File='run_oatof_model.m'},
   @{Name='model_core'; Path=(Join-Path $projectRoot 'comsol\oatof_build_model_core.m'); File='oatof_build_model_core.m'},
   @{Name='detector_event_export'; Path=(Join-Path $projectRoot 'comsol\oatof_export_detector_events.m'); File='oatof_export_detector_events.m'},
-  @{Name='detector_extractor'; Path=(Join-Path $projectRoot 'comsol\oatof_extract_detector_arrivals.m'); File='oatof_extract_detector_arrivals.m'},
+  @{Name='detector_extractor'; Path=(Join-Path $repoRoot 'src\msplatform\backends\comsol\matlab\oatof_extract_detector_arrivals.m'); File='oatof_extract_detector_arrivals.m'},
   @{Name='python_event_analyzer'; Path=(Join-Path $projectRoot 'analysis\analyze_comsol_detector_events.py'); File='analyze_comsol_detector_events.py'},
   @{Name='task'; Path=$task; File='workflows/design_candidate/run_candidate_contract_build.m'}
 )) {

@@ -19,7 +19,12 @@ mathematics are unchanged. `analysis/mass_spectrum_reanalysis.py` was retired af
 freezing and worker responsibilities moved to the installed workflow/worker. Geometry, Formal and
 workbench wrappers retained for other consumers were not removed.
 
-Normal and partial runs freeze installed code and the explicitly selected existing OA MATLAB retrace task.
+Normal and partial runs freeze installed code and the retrace task from the installed COMSOL backend.
+Its loader, segmented-output, detector-arrival and path helpers have sole executable sources in
+`msplatform.backends.comsol.matlab`; the study no longer derives support files from the OA project or
+`common/paths`. Project geometry, Formal assets, masses, charge, weights and study criteria remain
+explicit research inputs. Separate per-species retrace and mixed-species Fly retain their different
+physical meanings. The v47 negative native results are unchanged and are not rerun by this migration.
 `ResumeAfterComsol` now requires `SourceRunPath` and a distinct new `RunId`: authenticated complete species
 are reused from a sealed partial parent, authentic but scientifically incomplete species are retraced,
 and altered completed records are rejected. A failed/incomplete species does not block otherwise valid
@@ -67,7 +72,7 @@ COMSOL retrace because the frozen package omitted `load_oatof_contract` and the 
 helpers consumed by the retrace. It did not execute later species or the mixed SIMION Fly. The failed
 owner sealed its evidence, confirmed stopped writers and released its capacity lease. The installed
 study now freezes the actual `load_oatof_contract`, `oatof_paths`, segmented-output and detector-arrival
-helpers plus the existing common path and path-identity helpers, with byte-identity regression coverage.
+helpers plus the backend path and path-identity helpers, with byte-identity regression coverage.
 The exact public five-species API test passes all native-inert units, mixed-source construction and new
 resource-origin assertions in 72.521 s; focused Ruff also passes. The next run
 `20261117_093500__sim__cross__mass-spectrum-five-v40` independently confirmed the same first-species

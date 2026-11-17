@@ -36,13 +36,11 @@ OUTPUT_NAMES = (
 RETRACE_RESOURCES = (
     "load_oatof_contract.m",
     "oatof_paths.m",
-    "comsol/configure_oatof_segmented_output.m",
-    "comsol/oatof_extract_detector_arrivals.m",
-    "comsol/oatof_detector_arrival_reducer.m",
-)
-RETRACE_COMMON_RESOURCES = (
-    "common/paths/workspace_paths.m",
-    "common/paths/resolve_path_identity.m",
+    "configure_oatof_segmented_output.m",
+    "oatof_extract_detector_arrivals.m",
+    "oatof_detector_arrival_reducer.m",
+    "workspace_paths.m",
+    "resolve_path_identity.m",
 )
 RETRACE_ENVIRONMENT = {
     "OATOF_ACCELERATOR_HMAX_MM": "1",
@@ -142,8 +140,9 @@ def mass_spectrum_max_tof_us(mode_path: Path, reference_mass_amu: float) -> floa
 
 
 def _freeze_code(session: RunSession, task_script: Path | None, resolved: Path) -> tuple[dict[str, Any], Path | None, Path]:
-    """Freeze installed origins and the explicitly selected project task."""
+    """Freeze installed origins and the selected backend retrace task."""
     from importlib.resources import files
+    from msplatform.backends.comsol.resources import native_resource_path
     from msplatform.execution.inputs import enumerate_python_sources, freeze_file, freeze_python_package
 
     provider = Path(str(files("msplatform"))).resolve()
@@ -162,33 +161,28 @@ def _freeze_code(session: RunSession, task_script: Path | None, resolved: Path) 
     session.add_inputs(code_inputs())
     task_target = None
     if task_script is not None:
+        if task_script.resolve() != native_resource_path("run_fixed_particle_retrace.m").resolve():
+            raise ValueError("COMSOL retrace task must be the installed backend implementation")
         task_target = session.declare_file(
-            code_root / f"projects/{PROJECT}/comsol/run_fixed_particle_retrace.m", "required_evidence")
+            code_root / "src/msplatform/backends/comsol/matlab/run_fixed_particle_retrace.m", "required_evidence")
         task_target.parent.mkdir(parents=True, exist_ok=True)
         freeze_file(task_script, task_target)
         task_record = file_record(task_target, "required_evidence")
         package["files"].append(dict(
-            relative_path=f"projects/{PROJECT}/comsol/run_fixed_particle_retrace.m",
+            relative_path="src/msplatform/backends/comsol/matlab/run_fixed_particle_retrace.m",
             path=str(task_target), sha256=task_record["sha256"]))
         session.add_input("comsol_task", task_record)
-        project_root = task_script.parent.parent
         for index, relative in enumerate(RETRACE_RESOURCES):
-            source = project_root / relative
-            target = session.declare_file(code_root / f"projects/{PROJECT}/{relative}", "required_evidence")
+            source = native_resource_path(relative)
+            target = session.declare_file(
+                code_root / f"src/msplatform/backends/comsol/matlab/{relative}", "required_evidence")
             target.parent.mkdir(parents=True, exist_ok=True)
             freeze_file(source, target)
             record = file_record(target, "required_evidence")
             package["files"].append(dict(
-                relative_path=f"projects/{PROJECT}/{relative}", path=str(target), sha256=record["sha256"]))
+                relative_path=f"src/msplatform/backends/comsol/matlab/{relative}",
+                path=str(target), sha256=record["sha256"]))
             session.add_input(f"comsol_support_{index}", record)
-        for index, relative in enumerate(RETRACE_COMMON_RESOURCES):
-            source = project_root.parents[1] / relative
-            target = session.declare_file(code_root / relative, "required_evidence")
-            target.parent.mkdir(parents=True, exist_ok=True)
-            freeze_file(source, target)
-            record = file_record(target, "required_evidence")
-            package["files"].append(dict(relative_path=relative, path=str(target), sha256=record["sha256"]))
-            session.add_input(f"comsol_common_{index}", record)
     geometry_target = session.declare_file(
         code_root / f"projects/{PROJECT}/config/resolved_geometry.json", "required_evidence")
     geometry_target.parent.mkdir(parents=True, exist_ok=True)

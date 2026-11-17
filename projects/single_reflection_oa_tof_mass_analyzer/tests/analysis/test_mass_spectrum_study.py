@@ -105,7 +105,7 @@ class MassSpectrumStudyTests(unittest.TestCase):
             resolved_geometry=PROJECT / "config/resolved_geometry.json",
             particle_count_policy=REPO / "src/msplatform/contracts/particle_count_policy.json",
             formal_mph=mph, formal_asset_manifest=asset_manifest,
-            comsol_task=PROJECT / "comsol/run_fixed_particle_retrace.m",
+            comsol_task=REPO / "src/msplatform/backends/comsol/matlab/run_fixed_particle_retrace.m",
             simion_executable=simion, artifact_project_root=artifact_project,
             project_config=PROJECT / "config/project.json", formal_assets=formal_assets,
             baseline=PROJECT / "config/baseline.json",
@@ -205,10 +205,9 @@ for index,row in enumerate(rows,1):
             inventory = _json(run / "inputs/code_inventory.json")
             paths = {row["relative_path"]: row for row in inventory["files"]}
             for relative in study.RETRACE_RESOURCES:
-                name = f"projects/{study.PROJECT}/{relative}"
-                self.assertEqual(Path(paths[name]["path"]).read_bytes(), (PROJECT / relative).read_bytes())
-            for relative in study.RETRACE_COMMON_RESOURCES:
-                self.assertEqual(Path(paths[relative]["path"]).read_bytes(), (REPO / relative).read_bytes())
+                name = f"src/msplatform/backends/comsol/matlab/{relative}"
+                source = REPO / name
+                self.assertEqual(Path(paths[name]["path"]).read_bytes(), source.read_bytes())
             completion = _json(run / "results/execution_completion.json")
             self.assertEqual([row["operation_id"] for row in completion["writer_completion"]["operations"]],
                 [f"comsol-mz{mass}_z1" for mass in (10, 100, 500, 1000, 2000)]

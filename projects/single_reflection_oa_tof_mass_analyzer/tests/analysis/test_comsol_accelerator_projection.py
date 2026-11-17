@@ -88,7 +88,7 @@ class ComsolAcceleratorProjectionTests(unittest.TestCase):
 
 
     def test_loader_preserves_total_derivation_and_validates_third_plane_and_source_rule(self):
-        loader=source("load_oatof_contract.m")
+        loader=(ROOT/"src/msplatform/backends/comsol/matlab/load_oatof_contract.m").read_text(encoding="utf-8")
         self.assertIn("g.L_accel, a.d1_mm + a.d2_mm",loader)
         self.assertIn("a.zone2_length_mm,planes.intermediate2-planes.intermediate1",loader)
         self.assertIn("a.zone3_length_mm,planes.exit-planes.intermediate2",loader)

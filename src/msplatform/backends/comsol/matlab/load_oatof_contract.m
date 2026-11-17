@@ -3,10 +3,8 @@ function contract = load_oatof_contract(contractPath)
 % Humans edit baseline.json and modes/formal.json; programs consume only
 % resolved_geometry.json so every language sees the same derived values.
 
-projectRoot = fileparts(mfilename('fullpath'));
-if nargin < 1 || strlength(string(contractPath)) == 0
-    contractPath = fullfile(projectRoot, 'config', 'resolved_geometry.json');
-end
+assert(nargin >= 1 && strlength(string(contractPath)) > 0, ...
+    'oatof:MissingResolvedContract', 'An explicit resolved contract path is required.');
 contractPath = char(contractPath);
 assert(isfile(contractPath), 'oatof:MissingResolvedContract', ...
     ['Missing resolved contract "%s". Generate the formal contract with ' ...

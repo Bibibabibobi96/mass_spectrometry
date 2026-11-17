@@ -612,6 +612,13 @@ owners and actual migrated consumers. Their scoped checks do not close the remai
 root native orchestration, current composed installation, complete regression or native acceptance.
 
 
+The five-species retrace MATLAB loader, segmented-output, detector-arrival and path helpers now have
+one installed COMSOL backend owner. The installed study freezes those resources by canonical path and
+no longer derives support files from the OA project or `common/paths`. Research geometry, Formal assets,
+arbitrary species definitions and study ordering remain explicit inputs; separate per-species retrace
+and mixed-species Fly are not conflated. Consumer and ordinary-install checks are required before this
+slice closes; v47's COMSOL `25/39/0/18/85` versus SIMION `500/500` scientific failure remains unchanged.
+
 The following is the single active P4 worklist. All rows remain OPEN until their stated
 consumer and acceptance boundaries close; earlier delivered sub-capabilities are inherited,
 not rebuilt. Shared interfaces, the gate catalog, installation fixtures and Git have one

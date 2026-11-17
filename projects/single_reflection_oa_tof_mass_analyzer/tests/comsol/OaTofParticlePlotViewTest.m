@@ -12,6 +12,8 @@ classdef OaTofParticlePlotViewTest < matlab.unittest.TestCase
    root=fileparts(fileparts(fileparts(mfilename('fullpath'))));
    testCase.applyFixture(matlab.unittest.fixtures.PathFixture(root));
    testCase.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(root,'comsol')));
+   repositoryRoot = fileparts(fileparts(root));
+   testCase.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(repositoryRoot,'src','msplatform','backends','comsol','matlab')));
   end
  end
  methods (Test)

@@ -16,7 +16,7 @@ function result = ms_export_oatof_to_solidworks(modelPath, outputDir, visibleSol
     thisDir = fileparts(mfilename('fullpath'));
     componentRoot = fileparts(thisDir);
     addpath(componentRoot);
-    paths = oatof_paths(options.ArtifactRoot);
+    paths = oatof_paths(options.ArtifactRoot, fileparts(fileparts(mfilename('fullpath'))));
     addpath(thisDir, paths.commonSolidWorksDir);
     if strlength(modelPath) == 0
         modelPath = fullfile(paths.comsolFormalDir, ...

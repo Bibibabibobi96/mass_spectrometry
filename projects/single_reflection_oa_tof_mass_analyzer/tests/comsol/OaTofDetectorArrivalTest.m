@@ -6,8 +6,8 @@ classdef OaTofDetectorArrivalTest < matlab.unittest.TestCase
 
     methods (TestClassSetup)
         function addProjectPath(testCase)
-            projectRoot = fileparts(fileparts(fileparts(mfilename('fullpath'))));
-            testCase.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(projectRoot,'comsol')));
+            repositoryRoot = fileparts(fileparts(fileparts(fileparts(fileparts(mfilename('fullpath'))))));
+            testCase.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(repositoryRoot,'src','msplatform','backends','comsol','matlab')));
         end
     end
 

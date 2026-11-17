@@ -548,7 +548,7 @@
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
-          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/comsolstartup\\.m$))",
+          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$))",
           "reason": "common_comsol_direct_dependency_changed"
         },
         {
@@ -2637,7 +2637,7 @@
           "reason": "common_simion_dependency_changed"
         },
         {
-          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/comsolstartup\\.m$))",
+          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$))",
           "reason": "common_comsol_dependency_changed"
         },
         {
@@ -4524,7 +4524,7 @@
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
-          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/comsolstartup\\.m$))",
+          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$))",
           "reason": "common_comsol_direct_dependency_changed"
         },
         {
@@ -4950,7 +4950,7 @@
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
-          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/comsolstartup\\.m$))",
+          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$))",
           "reason": "common_comsol_direct_dependency_changed"
         },
         {
@@ -5463,7 +5463,7 @@
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
-          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/comsolstartup\\.m$))",
+          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$))",
           "reason": "common_comsol_direct_dependency_changed"
         },
         {
@@ -5584,7 +5584,7 @@
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
-          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/comsolstartup\\.m$))",
+          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$))",
           "reason": "common_comsol_direct_dependency_changed"
         },
         {
@@ -6011,7 +6011,7 @@
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
-          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/comsolstartup\\.m$))",
+          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$))",
           "reason": "common_comsol_direct_dependency_changed"
         },
         {

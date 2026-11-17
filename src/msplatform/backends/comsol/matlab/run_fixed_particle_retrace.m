@@ -35,15 +35,9 @@ else
 end
 
 comsolDir = fileparts(mfilename('fullpath'));
-projectDir = fileparts(comsolDir);
-repositoryRoot = fileparts(fileparts(projectDir));
-addpath(projectDir);
-addpath(fullfile(projectDir, 'comsol'));
-addpath(fullfile(repositoryRoot, 'src', 'msplatform', 'backends', 'comsol', 'matlab'));
+addpath(comsolDir);
 contractPath = getenv('OATOF_CONTRACT_PATH');
-if isempty(contractPath)
-    contractPath = fullfile(projectDir,'config','resolved_geometry.json');
-end
+assert(~isempty(contractPath), 'OATOF_CONTRACT_PATH is not set.');
 contract = load_oatof_contract(contractPath);
 paths = oatof_paths();
 import com.comsol.model.util.*

@@ -1,24 +1,26 @@
-function paths = oatof_paths(artifactRoot)
+function paths = oatof_paths(artifactRoot, projectRoot)
 %OATOF_PATHS Resolve oa-TOF source and artifact paths from this file.
 %
 % Keep this function free of machine-specific absolute paths.  Entry
 % scripts may move with the repository as long as the workspace keeps the
 % sibling layout simulation_repo/ and artifacts/.
 
-    projectRoot = fileparts(mfilename('fullpath'));
-    repoRoot = fileparts(fileparts(projectRoot));
+    comsolDir = fileparts(mfilename('fullpath'));
     if nargin<1, artifactRoot=""; end
-    addpath(fullfile(repoRoot,'common','paths'));
+    if nargin<2 || strlength(string(projectRoot))==0
+        projectRoot = string(getenv('OATOF_PROJECT_ROOT'));
+    end
+    addpath(comsolDir);
     workspace=workspace_paths('single_reflection_oa_tof_mass_analyzer',ArtifactRoot=string(artifactRoot));
 
     paths = struct();
     paths.workspaceRoot = workspace.workspaceRoot;
-    paths.repoRoot = repoRoot;
-    paths.commonComsolDir = fullfile(repoRoot, 'common', 'comsol');
-    paths.commonPathsDir = fullfile(repoRoot, 'common', 'paths');
-    paths.commonSolidWorksDir = fullfile(repoRoot, 'common', 'solidworks');
+    paths.repoRoot = string(getenv('OATOF_REPOSITORY_ROOT'));
+    paths.commonComsolDir = comsolDir;
+    paths.commonPathsDir = comsolDir;
+    paths.commonSolidWorksDir = string(getenv('OATOF_SOLIDWORKS_ROOT'));
     paths.projectRoot = projectRoot;
-    paths.comsolDir = fullfile(projectRoot, 'comsol');
+    paths.comsolDir = comsolDir;
     paths.cadDir = fullfile(projectRoot, 'cad');
     paths.testsDir = fullfile(projectRoot, 'tests');
 

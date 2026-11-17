@@ -8,6 +8,7 @@ function paths = common_artifact_paths(runDir, options)
         options.ArtifactRoot (1,1) string = ""
     end
 
+    addpath(fullfile(fileparts(mfilename('fullpath')), '..', '..', 'src', 'msplatform', 'backends', 'comsol', 'matlab'));
     workspace = workspace_paths(ArtifactRoot=options.ArtifactRoot);
     projectsRoot = resolve_path_identity(fullfile(workspace.artifactRoot, 'projects'));
     executionRunDir = char(runDir);
