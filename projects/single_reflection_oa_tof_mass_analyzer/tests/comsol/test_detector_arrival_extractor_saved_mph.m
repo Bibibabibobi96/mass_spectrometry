@@ -4,8 +4,15 @@ modelPath = getenv('OATOF_DETECTOR_EXTRACTOR_MODEL');
 referenceCsv = getenv('OATOF_DETECTOR_EXTRACTOR_REFERENCE_CSV');
 assert(isfile(modelPath),'Saved MPH is missing: %s',modelPath);
 testDir = fileparts(mfilename('fullpath'));
-repositoryRoot = fileparts(fileparts(fileparts(fileparts(fileparts(testDir)))));
-addpath(fullfile(repositoryRoot,'src','msplatform','backends','comsol','matlab'));
+repositoryRoot = fileparts(fileparts(fileparts(fileparts(testDir))));
+backendRoot = fullfile(repositoryRoot,'src','msplatform','backends','comsol','matlab');
+addpath(backendRoot);
+extractorSource = which('oatof_extract_detector_arrivals');
+resolvedExtractor = resolve_path_identity(extractorSource);
+expectedExtractor = resolve_path_identity(fullfile(backendRoot,'oatof_extract_detector_arrivals.m'));
+fprintf('EXTRACTOR_IDENTITY=%s\nEXPECTED_IDENTITY=%s\n',resolvedExtractor,expectedExtractor);
+assert(strcmp(resolvedExtractor,expectedExtractor), ...
+    'Detector extractor resolved outside the installed backend: %s',extractorSource);
 fid = fopen(reportPath,'w');
 assert(fid>=0,'Could not open report: %s',reportPath);
 cleanup = onCleanup(@() fclose(fid));
@@ -28,7 +35,8 @@ detectorRadius = model.param.evaluate('detector_radius')*1e3;
 arrivals = oatof_extract_detector_arrivals( ...
     t,x,y,z,detectorZ,1e-3,0.5,detectorX,0,detectorRadius);
 assert(all(arrivals.hit),'Strict detector extraction found %d/%d hits.',sum(arrivals.hit),numel(arrivals.hit));
-fprintf(fid,'MODEL=%s\nHIT=%d/%d\n',modelPath,sum(arrivals.hit),numel(arrivals.hit));
+fprintf(fid,'EXTRACTOR_SOURCE=%s\nMODEL=%s\nHIT=%d/%d\n', ...
+    extractorSource,modelPath,sum(arrivals.hit),numel(arrivals.hit));
 for event = unique(arrivals.event).'
     fprintf(fid,'EVENT_%s=%d\n',upper(event),sum(arrivals.event==event));
 end

@@ -14,6 +14,7 @@ from msplatform.workflows.single_reflection_mass_spectrum_study import OUTPUT_NA
 def _verify_required_sources(root: Path, selection: dict) -> None:
     inventory = json.loads((root.parent / "code_inventory.json").read_text(encoding="utf-8-sig"))
     required = (
+        "msplatform/workflows/single_reflection_mass_spectrum_worker.py",
         "msplatform/workflows/single_reflection_mass_spectrum.py",
         "msplatform/results/single_reflection_particle_table.py",
         "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json",
@@ -27,7 +28,7 @@ def _verify_required_sources(root: Path, selection: dict) -> None:
         if actual.lower() != str(matches[0]["sha256"]).lower():
             raise ValueError(f"Frozen mass-spectrum source identity differs: {relative}")
     geometry = next(row for row in inventory["files"]
-                    if row.get("relative_path") == required[2])
+                    if row.get("relative_path") == required[-1])
     if str(geometry["sha256"]).lower() != selection["inputs"]["resolved_geometry"]["sha256"].lower():
         raise ValueError("Frozen selected geometry identity differs")
 

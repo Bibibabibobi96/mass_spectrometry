@@ -48,7 +48,6 @@ if($ResumeFinalization){
       '--particle-count-policy',(Join-Path $repoRoot 'src/msplatform/contracts/particle_count_policy.json'),
       '--formal-mph',(Join-Path $artifactProject 'formal/comsol/single_reflection_oa_tof_mass_analyzer__model.mph'),
       '--formal-asset-manifest',(Join-Path $artifactProject 'formal/asset_manifest.json'),
-      '--comsol-task',(Join-Path $repoRoot 'src/msplatform/backends/comsol/matlab/run_fixed_particle_retrace.m'),
       '--simion-executable',$SimionExe,'--artifact-project-root',$artifactProject,
       '--project-config',(Join-Path $projectRoot 'config/project.json'),
       '--formal-assets',(Join-Path $projectRoot 'config/formal_assets.json'),
