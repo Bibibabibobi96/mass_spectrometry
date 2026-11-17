@@ -375,7 +375,9 @@ def _run_action(session: RunSession, *, requested: dict[str, Path], original: di
             raise ValueError(f"Requested scientific input changed before freezing: {name}")
         session.add_input(name, record)
         frozen[name] = target
-    package, task, frozen_geometry = _freeze_code(session, requested["comsol_task"], frozen["resolved_geometry"])
+    from msplatform.backends.comsol.resources import native_resource_path
+    package, task, frozen_geometry = _freeze_code(
+        session, native_resource_path("run_fixed_particle_retrace.m"), frozen["resolved_geometry"])
     guards = _frozen_guards(package)
     guards += [file_record(frozen[name], "required_evidence") for name in (
         "mode_config", "resolved_geometry", "particle_count_policy")]
@@ -516,13 +518,13 @@ def validate_formal_inputs(*, project_config: Path, formal_assets: Path, formal_
 
 
 def _requested_paths(mode_config: Path, resolved_geometry: Path, particle_count_policy: Path,
-                     formal_mph: Path, formal_asset_manifest: Path, comsol_task: Path,
+                     formal_mph: Path, formal_asset_manifest: Path,
                      simion_executable: Path, artifact_project_root: Path,
                      project_config: Path, formal_assets: Path, baseline: Path,
                      formal_mode: Path, solver_numerics: Path) -> dict[str, Path]:
     paths = dict(mode_config=mode_config, resolved_geometry=resolved_geometry,
         particle_count_policy=particle_count_policy, formal_mph=formal_mph,
-        formal_asset_manifest=formal_asset_manifest, comsol_task=comsol_task,
+        formal_asset_manifest=formal_asset_manifest,
         simion_executable=simion_executable, artifact_project_root=artifact_project_root,
         project_config=project_config, formal_assets=formal_assets, baseline=baseline,
         formal_mode=formal_mode, solver_numerics=solver_numerics)
@@ -538,13 +540,13 @@ def _requested_paths(mode_config: Path, resolved_geometry: Path, particle_count_
 
 def run(context: ExecutionContext, *, run_id: str, mode_config: Path, resolved_geometry: Path,
         particle_count_policy: Path, formal_mph: Path, formal_asset_manifest: Path,
-        comsol_task: Path, simion_executable: Path, artifact_project_root: Path,
+        simion_executable: Path, artifact_project_root: Path,
         project_config: Path, formal_assets: Path, baseline: Path, formal_mode: Path,
         solver_numerics: Path, partial_parent: dict[str, Any] | None = None) -> dict[str, Any]:
     """Run a new normal or authenticated partial-successor mass-spectrum study."""
     from functools import partial
     requested = _requested_paths(mode_config, resolved_geometry, particle_count_policy,
-        formal_mph, formal_asset_manifest, comsol_task, simion_executable, artifact_project_root,
+        formal_mph, formal_asset_manifest, simion_executable, artifact_project_root,
         project_config, formal_assets, baseline, formal_mode, solver_numerics)
     original = {name: file_record(path, "required_evidence") for name, path in requested.items()
                 if name not in ("simion_executable", "artifact_project_root")}
@@ -600,7 +602,10 @@ def _analysis_action(session: RunSession, *, selection: dict[str, Any],
         guards += [selection_record, *selection["exports"].values()]
         outputs = [session.declare_file(session.result_dir / name, "required_evidence")
                    for name in OUTPUT_NAMES]
-        bootstrap = ("import runpy,sys;sys.path.insert(0,sys.argv[1]);sys.argv=sys.argv[2:];"
+        bootstrap = ("import runpy,sys;from pathlib import Path;root=Path(sys.argv[1]);"
+                     "worker=root/'msplatform/workflows/single_reflection_mass_spectrum_worker.py';"
+                     "worker.is_file() or (_ for _ in ()).throw(FileNotFoundError(f'Frozen worker is absent: {worker}'));"
+                     "sys.path.insert(0,str(root));sys.argv=sys.argv[2:];"
                      "runpy.run_module('msplatform.workflows.single_reflection_mass_spectrum_worker',"
                      "run_name='__main__')")
         for record in guards:
@@ -694,7 +699,6 @@ def main() -> None:
     parser.add_argument("--particle-count-policy", type=Path)
     parser.add_argument("--formal-mph", type=Path)
     parser.add_argument("--formal-asset-manifest", type=Path)
-    parser.add_argument("--comsol-task", type=Path)
     parser.add_argument("--simion-executable", type=Path)
     parser.add_argument("--artifact-project-root", type=Path)
     parser.add_argument("--project-config", type=Path)
@@ -719,7 +723,7 @@ def main() -> None:
                          committed_new_bytes=args.analysis_new_bytes)
     else:
         required = ("mode_config", "resolved_geometry", "particle_count_policy", "formal_mph",
-                    "formal_asset_manifest", "comsol_task", "simion_executable", "artifact_project_root",
+                    "formal_asset_manifest", "simion_executable", "artifact_project_root",
                     "project_config", "formal_assets", "baseline", "formal_mode", "solver_numerics")
         if any(getattr(args, name) is None for name in required):
             parser.error("normal/partial execution requires every explicit scientific and Formal input")

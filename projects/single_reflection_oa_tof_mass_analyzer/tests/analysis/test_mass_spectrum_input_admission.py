@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 PROJECT = Path(__file__).resolve().parents[2]
 REPO = PROJECT.parents[1]
@@ -76,6 +77,8 @@ def _inert(session,operation_id,*,executable,arguments,**kwargs):
         Path(capture).write_text(json.dumps(dict(cwd=str(session.run_dir),argv=list(arguments),
             environment=dict(session.environment,**env),stdout=str(base.with_suffix('.stdout.log')),
             stderr=str(base.with_suffix('.stderr.log')))),encoding='utf-8')
+    if operation_id == 'python-analysis':
+        return _original(session,operation_id,executable=executable,arguments=arguments,**kwargs)
     if operation_id.startswith('comsol-'):
         report=Path(arguments[arguments.index('-ReportPath')+1])
         completion=Path(arguments[arguments.index('-CompletionPath')+1])
@@ -176,9 +179,6 @@ if os.environ.get('TEST_MASS_FINALIZATION_SENTINEL'):
     if completed.stderr is not None:
         completed.stderr += f"\nTEST_DEPLOYMENT={root}; HOST={env['MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH']}"
     return completed
-
-
-subprocess.run = _configure_original_cli
 
 
 def sealed_mass_source(root):
@@ -442,10 +442,39 @@ def mass_native_environment(root, fixture, artifacts, simion, leaf, python):
     return env
 
 
-def run_mass_native(owner, fixture, env, run_id, simion, *extra, timeout=120):
-    return subprocess.run(['pwsh', '-NoProfile', '-File', str(owner), '-RunId', run_id,
-                           '-SimionExe', str(simion), *extra], cwd=fixture, env=env,
-                          capture_output=True, text=True, encoding='utf-8', timeout=timeout)
+def _run_cli(command, *args, **kwargs):
+    return _configure_original_cli(command, *args, **kwargs)
+
+
+def run_mass_native(owner, fixture, env, run_id, simion, *extra, timeout=180):
+    command = ['pwsh', '-NoProfile', '-File', str(owner), '-RunId', run_id,
+               '-SimionExe', str(simion), *extra]
+    try:
+        return _run_cli(command, cwd=fixture, env=env, capture_output=True,
+                        text=True, encoding='utf-8', timeout=timeout)
+    except subprocess.TimeoutExpired as error:
+        evidence_root = Path(env.get('OATOF_TEST_DIAGNOSTICS_ROOT',
+                                    Path(tempfile.gettempdir()) / 'oatof_fixture_diagnostics'))
+        evidence_root.mkdir(parents=True, exist_ok=True)
+        destination = Path(tempfile.mkdtemp(prefix='mass-native-timeout-', dir=evidence_root))
+        try:
+            shutil.copytree(fixture.parent, destination / 'fixture')
+            for name, payload in (('stdout', error.output), ('stderr', error.stderr)):
+                raw = payload.encode('utf-8') if isinstance(payload, str) else payload or b''
+                (destination / f'{name}.bin').write_bytes(raw)
+                (destination / f'{name}.utf8.txt').write_text(
+                    raw.decode('utf-8', errors='replace'), encoding='utf-8')
+            (destination / 'timeout.json').write_text(json.dumps(dict(
+                argv=command, run_id=run_id, timeout_seconds=timeout,
+                original_exception=type(error).__name__,
+                evidence_includes=('run_config', 'operation/completion/capture',
+                                   'process usage/wait receipts', 'cleanup and capacity receipts'))),
+                encoding='utf-8')
+            error.fixture_diagnostics = str(destination)
+            error.add_note(f'Mass-native timeout evidence: {destination}')
+        except Exception as diagnostic_error:
+            error.add_note(f'Mass-native timeout evidence secondary failure: {diagnostic_error!r}')
+        raise
 
 
 class MassSpectrumReanalysisTests(unittest.TestCase):
@@ -517,7 +546,7 @@ class MassSpectrumReanalysisTests(unittest.TestCase):
                        MASS_SPECTROMETRY_EXECUTION_ROOT=str(root/'execution'),
                        MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(root/'host.sqlite3'))
             run_id = '20261031_100100__analysis__python__mass-frozen-worker'
-            result = subprocess.run(['pwsh', '-NoProfile', '-File', str(owner), '-ReanalyzeOnly',
+            result = _run_cli(['pwsh', '-NoProfile', '-File', str(owner), '-ReanalyzeOnly',
                 '-SourceRunPath', str(source), '-RunId', run_id, '-PythonExe', sys.executable,
                 '-AnalysisNewBytes', str(8*1024*1024)], cwd=fixture, env=env,
                 capture_output=True, text=True, encoding='utf-8', timeout=90)
@@ -552,13 +581,16 @@ class MassSpectrumReanalysisTests(unittest.TestCase):
                     self.assertEqual(frozen[relative]['sha256'].upper(),
                                      hashlib.sha256(original_bytes).hexdigest().upper())
             selection = child/'inputs/source_selection.json'
-            bootstrap = ("import runpy,sys;sys.path.insert(0,sys.argv[1]);sys.argv=sys.argv[2:];"
+            bootstrap = ("import runpy,sys;from pathlib import Path;root=Path(sys.argv[1]);"
+                         "worker=root/'msplatform/workflows/single_reflection_mass_spectrum_worker.py';"
+                         "worker.is_file() or (_ for _ in ()).throw(FileNotFoundError(f'Frozen worker is absent: {worker}'));"
+                         "sys.path.insert(0,str(root));sys.argv=sys.argv[2:];"
                          "runpy.run_module('msplatform.workflows.single_reflection_mass_spectrum_worker',"
                          "run_name='__main__')")
             command = [sys.executable, '-I', '-B', '-c', bootstrap, str(code), 'mass-spectrum-analysis',
                        '--selection', str(selection), '--output', str(root/'second-output'),
                        '--code-root', str(code)]
-            repeated = subprocess.run(command, cwd=root, capture_output=True, text=True,
+            repeated = _run_cli(command, cwd=root, capture_output=True, text=True,
                                       encoding='utf-8', timeout=45)
             self.assertEqual(repeated.returncode, 0, repeated.stdout+repeated.stderr)
             output = root/'second-output'
@@ -571,7 +603,8 @@ class MassSpectrumReanalysisTests(unittest.TestCase):
             self.assertFalse(list(code.rglob('__pycache__')))
             self.assertEqual(frozen_before, {str(p.relative_to(code)): p.read_bytes()
                                              for p in code.rglob('*') if p.is_file()})
-            for index, relative in enumerate(('msplatform/workflows/single_reflection_mass_spectrum.py',
+            for index, relative in enumerate(('msplatform/workflows/single_reflection_mass_spectrum_worker.py',
+                             'msplatform/workflows/single_reflection_mass_spectrum.py',
                              'msplatform/results/single_reflection_particle_table.py',
                              'projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json')):
                 target = code/relative
@@ -601,18 +634,18 @@ class MassSpectrumReanalysisTests(unittest.TestCase):
             csv_path = source/'results/simion_particles.csv'
             text = csv_path.read_text(encoding='utf-8').replace('1,100,1,', '99,100,1,', 1)
             csv_path.write_text(text, encoding='utf-8')
-            bad = subprocess.run(command, cwd=root, capture_output=True, text=True,
+            bad = _run_cli(command, cwd=root, capture_output=True, text=True,
                                  encoding='utf-8', timeout=30)
             self.assertNotEqual(bad.returncode, 0)
             self.assertIn('exceeds the mixed-species mother population', bad.stderr)
             output_before = {p.name: p.read_bytes() for p in output.iterdir() if p.is_file()}
             code.rename(root/'removed-core')
-            missing = subprocess.run(command, cwd=root, capture_output=True, text=True,
+            missing = _run_cli(command, cwd=root, capture_output=True, text=True,
                                      encoding='utf-8', timeout=30)
             self.assertNotEqual(missing.returncode, 0)
             self.assertNotIn('exceeds the mixed-species mother population', missing.stderr)
             self.assertRegex(missing.stderr, 'ModuleNotFoundError|ImportError|FileNotFoundError')
-            self.assertIn('inputs\\\\code', missing.stderr)
+            self.assertIn(str(Path('inputs') / 'code'), missing.stderr)
             self.assertEqual(output_before, {p.name: p.read_bytes() for p in output.iterdir() if p.is_file()})
 
     def test_public_reanalysis_refuses_changed_frozen_dependencies_before_analysis(self):
@@ -635,7 +668,7 @@ class MassSpectrumReanalysisTests(unittest.TestCase):
                 run_id = '20261031_100100__analysis__python__mass-child'
                 command = ['pwsh', '-NoProfile', '-File', str(owner), '-ReanalyzeOnly', '-SourceRunPath', str(source),
                            '-RunId', run_id, '-PythonExe', sys.executable, '-AnalysisNewBytes', str(8*1024*1024)]
-                result = subprocess.run(command, cwd=fixture, env=env, capture_output=True, text=True, encoding='utf-8', timeout=90)
+                result = _run_cli(command, cwd=fixture, env=env, capture_output=True, text=True, encoding='utf-8', timeout=90)
                 self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertTrue((root/'mutation_calls').is_file())
                 self.assertIn(expected, result.stdout + result.stderr)
@@ -658,7 +691,7 @@ class MassSpectrumReanalysisTests(unittest.TestCase):
             run_id = '20261031_100100__analysis__python__mass-child'
             command = ['pwsh', '-NoProfile', '-File', str(owner), '-ReanalyzeOnly', '-SourceRunPath', str(source),
                        '-RunId', run_id, '-PythonExe', sys.executable, '-AnalysisNewBytes', str(8*1024*1024)]
-            result = subprocess.run(command, cwd=fixture, env=env, capture_output=True, text=True, encoding='utf-8', timeout=90)
+            result = _run_cli(command, cwd=fixture, env=env, capture_output=True, text=True, encoding='utf-8', timeout=90)
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
             child = artifacts/f'projects/{PROJECT.name}/runs/{run_id}'
             result_path = artifacts/f'projects/{PROJECT.name}/scratch/workflow_results/{run_id}/result.json'
@@ -670,7 +703,7 @@ class MassSpectrumReanalysisTests(unittest.TestCase):
             self.assertEqual(completion['summary']['pa_materializations'], 0)
             self.assertFalse(list(child.rglob('*.pa*')))
             self.assertEqual(snapshot, {str(p.relative_to(source)): p.read_bytes() for p in source.rglob('*') if p.is_file()})
-            resumed = subprocess.run(['pwsh', '-NoProfile', '-File', str(owner), '-ResumeFinalization', '-RunId', run_id,
+            resumed = _run_cli(['pwsh', '-NoProfile', '-File', str(owner), '-ResumeFinalization', '-RunId', run_id,
                                       '-ResultPath', str(result_path), '-PythonExe', sys.executable],
                                      cwd=root, env=env, capture_output=True, text=True, encoding='utf-8', timeout=45)
             self.assertEqual(resumed.returncode, 0, resumed.stdout+resumed.stderr)
@@ -705,7 +738,7 @@ class MassSpectrumReanalysisTests(unittest.TestCase):
                     snapshot = {str(p.relative_to(source)): p.read_bytes() for p in source.rglob('*') if p.is_file()}
                     command = ['pwsh', '-NoProfile', '-File', str(owner), '-ReanalyzeOnly', '-SourceRunPath', str(source),
                                '-RunId', run_id, '-PythonExe', sys.executable, '-AnalysisNewBytes', str(8*1024*1024)]
-                    failed = subprocess.run(command, cwd=fixture, env=env, capture_output=True, text=True, encoding='utf-8', timeout=90)
+                    failed = _run_cli(command, cwd=fixture, env=env, capture_output=True, text=True, encoding='utf-8', timeout=90)
                     self.assertNotEqual(failed.returncode, 0, failed.stdout+failed.stderr)
                     child = artifacts/f'projects/{PROJECT.name}/runs/{run_id}'
                     result_path = artifacts/f'projects/{PROJECT.name}/scratch/workflow_results/{run_id}/result.json'
@@ -719,7 +752,7 @@ class MassSpectrumReanalysisTests(unittest.TestCase):
                         self.assertEqual(receipt['resume_action'], 'resume_finalization')
                         completion_before = (child/'results/execution_completion.json').read_bytes()
                         env.pop('TEST_MASS_FINALIZATION_SENTINEL')
-                        resumed = subprocess.run(['pwsh', '-NoProfile', '-File', str(owner), '-ResumeFinalization',
+                        resumed = _run_cli(['pwsh', '-NoProfile', '-File', str(owner), '-ResumeFinalization',
                             '-RunId', run_id, '-ResultPath', str(result_path), '-PythonExe', sys.executable],
                             cwd=fixture, env=env, capture_output=True, text=True, encoding='utf-8', timeout=45)
                         self.assertEqual(resumed.returncode, 0, resumed.stdout+resumed.stderr)
@@ -743,7 +776,7 @@ $results=@(foreach($case in (Get-Content $Cases -Raw|ConvertFrom-Json -AsHashtab
 })
 ConvertTo-Json -Depth 8 -InputObject $results
 ''', encoding='utf-8', newline='\n')
-            result = subprocess.run(['pwsh', '-NoProfile', '-File', str(script), str(owner), str(root/'cases.json')],
+            result = _run_cli(['pwsh', '-NoProfile', '-File', str(script), str(owner), str(root/'cases.json')],
                 cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=15)
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
             outcomes = json.loads(result.stdout)
@@ -773,7 +806,7 @@ ConvertTo-Json -Depth 8 -InputObject $results
                        MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(root/'host.sqlite3'),
                        TEST_MASS_RELEASE_SENTINEL='RELEASE_SECONDARY_SENTINEL')
             run_id = '20261031_100400__analysis__python__mass-release-failed'
-            result = subprocess.run(['pwsh', '-NoProfile', '-File', str(owner), '-ReanalyzeOnly', '-SourceRunPath', str(source),
+            result = _run_cli(['pwsh', '-NoProfile', '-File', str(owner), '-ReanalyzeOnly', '-SourceRunPath', str(source),
                        '-RunId', run_id, '-PythonExe', sys.executable, '-AnalysisNewBytes', str(8*1024*1024)],
                        cwd=fixture, env=env, capture_output=True, text=True, encoding='utf-8', timeout=90)
             self.assertNotEqual(result.returncode, 0)
@@ -818,7 +851,7 @@ ConvertTo-Json -Depth 8 -InputObject $results
                        MASS_SPECTROMETRY_EXECUTION_ROOT=str(root/'execution'), TEST_MASS_CAPTURE=str(capture),
                        MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(root/'host.sqlite3'))
             run_id = '20261031_100500__analysis__python__mass-deep'
-            completed = subprocess.run(['pwsh', '-NoProfile', '-File', str(owner), '-ReanalyzeOnly', '-SourceRunPath', str(source),
+            completed = _run_cli(['pwsh', '-NoProfile', '-File', str(owner), '-ReanalyzeOnly', '-SourceRunPath', str(source),
                        '-RunId', run_id, '-PythonExe', sys.executable, '-AnalysisNewBytes', str(8*1024*1024)],
                        cwd=fixture, env=env, capture_output=True, text=True, encoding='utf-8', timeout=90)
             self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr+
@@ -843,20 +876,60 @@ ConvertTo-Json -Depth 8 -InputObject $results
             owner.write_text(original, encoding='utf-8')
             result_path = artifacts/f'projects/{PROJECT.name}/scratch/workflow_results/{run_id}/result.json'
             env['MASS_SPECTROMETRY_ARTIFACT_ROOT'] = str(root/'different-current-root')
-            resumed = subprocess.run(['pwsh', '-NoProfile', '-File', str(owner), '-ResumeFinalization', '-RunId', run_id,
+            resumed = _run_cli(['pwsh', '-NoProfile', '-File', str(owner), '-ResumeFinalization', '-RunId', run_id,
                        '-ResultPath', str(result_path), '-PythonExe', sys.executable],
                        cwd=root, env=env, capture_output=True, text=True, encoding='utf-8', timeout=45)
             self.assertNotEqual(resumed.returncode, 0)
             self.assertIn('host ledger differs', resumed.stdout+resumed.stderr)
             self.assertEqual(completion_bytes, completion.read_bytes())
             env['MASS_SPECTROMETRY_ARTIFACT_ROOT'] = str(artifacts)
-            resumed = subprocess.run(['pwsh', '-NoProfile', '-File', str(owner), '-ResumeFinalization', '-RunId', run_id,
+            resumed = _run_cli(['pwsh', '-NoProfile', '-File', str(owner), '-ResumeFinalization', '-RunId', run_id,
                        '-ResultPath', str(result_path), '-PythonExe', sys.executable],
                        cwd=root, env=env, capture_output=True, text=True, encoding='utf-8', timeout=45)
             self.assertEqual(resumed.returncode, 0, resumed.stdout+resumed.stderr)
             self.assertEqual(completion_bytes, completion.read_bytes())
             self.assertEqual(snapshot, {str(p.relative_to(source)): p.read_bytes() for p in source.rglob('*') if p.is_file()})
 
+
+class MassSpectrumTestIsolationTests(unittest.TestCase):
+    def test_repeated_import_preserves_subprocess_identity_and_strict_decoding(self):
+        import importlib
+        original = subprocess.run
+        command = [sys.executable, '-c', 'import sys;sys.stdout.buffer.write(bytes([255]))']
+        baseline = subprocess.run(command, capture_output=True, text=True,
+                                  encoding='utf-8', errors='strict',
+                                  cwd=Path(__file__).parent, timeout=10)
+        for _ in range(2):
+            importlib.reload(sys.modules[__name__])
+            self.assertIs(subprocess.run, original)
+            repeated = subprocess.run(command, capture_output=True, text=True,
+                                      encoding='utf-8', errors='strict',
+                                      cwd=Path(__file__).parent, timeout=10)
+            self.assertEqual((repeated.returncode, repeated.stdout, repeated.stderr),
+                             (baseline.returncode, baseline.stdout, baseline.stderr))
+        self.assertIs(subprocess.run, original)
+
+    def test_timeout_preserves_run_records_and_restores_subprocess(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = root / 'fixture'
+            run = fixture / 'artifacts/projects/x/runs/y'
+            (run / 'logs').mkdir(parents=True)
+            (run / 'run_config.json').write_text('{"run_id":"y"}', encoding='utf-8')
+            (run / 'logs/operation_0001.usage.json').write_text('{"status":"running"}', encoding='utf-8')
+            original = subprocess.run
+            with patch(f'{__name__}._SUBPROCESS_RUN',
+                       side_effect=subprocess.TimeoutExpired(['pwsh'], 120, output=b'\xff', stderr=b'stderr')):
+                with self.assertRaises(subprocess.TimeoutExpired) as caught:
+                    run_mass_native(fixture / 'owner.ps1', fixture, {}, 'y', 'simion')
+            self.assertIs(subprocess.run, original)
+            evidence = Path(caught.exception.fixture_diagnostics)
+            self.assertEqual((evidence / 'stdout.bin').read_bytes(), b'\xff')
+            self.assertEqual((evidence / 'stderr.bin').read_bytes(), b'stderr')
+            self.assertEqual((evidence / 'fixture/fixture/artifacts/projects/x/runs/y/run_config.json').read_text(),
+                             '{"run_id":"y"}')
+            self.assertTrue((evidence /
+                'fixture/fixture/artifacts/projects/x/runs/y/logs/operation_0001.usage.json').is_file())
 
 
 class MassSpectrumNativeLifecycleTests(unittest.TestCase):
@@ -1009,7 +1082,7 @@ class MassSpectrumNativeLifecycleTests(unittest.TestCase):
             receipt_path = artifacts/f'projects/{PROJECT.name}/scratch/workflow_results/{run_id}/result.json'
             self.assertEqual(json.loads(receipt_path.read_text(encoding='utf-8-sig'))['stage'], 'finalization')
             env.pop('TEST_MASS_FINALIZATION_SENTINEL')
-            resumed = subprocess.run(['pwsh', '-NoProfile', '-File', str(owner), '-ResumeFinalization',
+            resumed = _run_cli(['pwsh', '-NoProfile', '-File', str(owner), '-ResumeFinalization',
                 '-RunId', run_id, '-ResultPath', str(receipt_path), '-PythonExe', sys.executable],
                 cwd=fixture, env=env, capture_output=True, text=True, encoding='utf-8', timeout=60)
             self.assertEqual(resumed.returncode, 0, resumed.stdout+resumed.stderr)
@@ -1032,7 +1105,7 @@ class MassSpectrumInputAdmissionTests(unittest.TestCase):
                        MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(root/'host.sqlite3'))
             run_id = '20261031_100100__analysis__python__mass-context'
             result_path = artifacts/f'projects/{PROJECT.name}/scratch/workflow_results/{run_id}/result.json'
-            completed = subprocess.run(['pwsh', '-NoProfile', '-File', str(owner), '-ReanalyzeOnly',
+            completed = _run_cli(['pwsh', '-NoProfile', '-File', str(owner), '-ReanalyzeOnly',
                 '-SourceRunPath', str(source), '-RunId', run_id, '-PythonExe', sys.executable,
                 '-AnalysisNewBytes', str(8*1024*1024)], cwd=fixture, env=env, capture_output=True,
                 text=True, encoding='utf-8', timeout=90)
@@ -1046,7 +1119,7 @@ class MassSpectrumInputAdmissionTests(unittest.TestCase):
             self.assertIn('execution_request', config['inputs'])
             completion = child/'results/execution_completion.json'
             completion_bytes = completion.read_bytes()
-            missing = subprocess.run(['pwsh', '-NoProfile', '-File', str(owner), '-ResumeFinalization',
+            missing = _run_cli(['pwsh', '-NoProfile', '-File', str(owner), '-ResumeFinalization',
                 '-RunId', 'missing-result', '-ResultPath', str(root/'absent-result.json'),
                 '-PythonExe', sys.executable], cwd=fixture, env=env, capture_output=True,
                 text=True, encoding='utf-8', timeout=45)
@@ -1064,7 +1137,7 @@ class MassSpectrumInputAdmissionTests(unittest.TestCase):
                 resume_finalization(wrong_context, run_id=run_id, result_path=result_path)
             env['MASS_SPECTROMETRY_ARTIFACT_ROOT'] = str(artifacts)
             env['MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH'] = str(root/'host.sqlite3')
-            resumed = subprocess.run(['pwsh', '-NoProfile', '-File', str(owner), '-ResumeFinalization',
+            resumed = _run_cli(['pwsh', '-NoProfile', '-File', str(owner), '-ResumeFinalization',
                 '-RunId', run_id, '-ResultPath', str(result_path), '-PythonExe', sys.executable],
                 cwd=fixture, env=env, capture_output=True, text=True, encoding='utf-8', timeout=45)
             self.assertEqual(resumed.returncode, 0, resumed.stdout+resumed.stderr)
@@ -1089,7 +1162,7 @@ $result=Get-Content -LiteralPath $configFile -Raw|ConvertFrom-Json -AsHashtable
 if($result.schema_version-ne2-or$result.package_sentinel-cne'keep'-or$result.paths.execution_root-cne$original.execution_root-or$result.paths.host_resource_state_path-cne$original.host_resource_state_path-or$result.capacity_ledger_lifecycle.artifact_root-cne$result.paths.artifact_root-or$result.inputs.science-cne'source-record'){throw 'Final scientific publication discarded package identity'}
 'WORKSPACE_PUBLICATION=PASS'
 ''', encoding='utf-8', newline='\n')
-            ideal = subprocess.run(['pwsh','-NoProfile','-File',str(script),str(REPO),sys.executable,str(root)],
+            ideal = _run_cli(['pwsh','-NoProfile','-File',str(script),str(REPO),sys.executable,str(root)],
                 cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=60)
             self.assertEqual(ideal.returncode, 0, ideal.stdout+ideal.stderr)
             self.assertIn('WORKSPACE_PUBLICATION=PASS', ideal.stdout)

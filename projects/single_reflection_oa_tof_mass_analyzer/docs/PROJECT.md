@@ -105,6 +105,24 @@ on the final candidate in 711.813 s. The complete Changed run then passed in 359
 wheel/sdist-rebuilt outside-checkout use. These are inert software fixtures and installation evidence;
 they do not alter the negative native results or grant scientific qualification.
 
+P4-120 now selects `run_fixed_particle_retrace.m` only through the active interpreter's installed COMSOL
+backend; the public PowerShell entry no longer accepts a checkout `--comsol-task` override. P4-117 rejects
+an absent frozen worker before importing scientific modules and binds the worker itself in the source
+inventory, before any analysis call. P4-116 scopes the test CLI fixture to explicit calls rather than
+replacing `subprocess.run` at import time. P4-122 retains raw timeout output and the complete run fixture,
+including run configuration, operation/completion/capture and process/capacity records. The inert timeout
+showed all six operations and a success manifest completed despite the 120-second outer limit; the outer
+fixture now allows 180 seconds for startup/finalization while the stage observation remains unchanged.
+Direct wheel and sdist-rebuilt installations each passed the real PowerShell run, partial resume, analyze,
+finalization and wrong-source refusal with installed-only code/resources; these remain inert software checks.
+
+P4-121 corrected the saved-MPH test to derive the repository root with four parent traversals and verify
+the extractor's canonical identity. The real R2025b read-only run then passed `EXTRACTOR_SOURCE`,
+`HIT=100/100`, `EVENT_FROZEN_ON_DETECTOR=100` and `STATUS_DETECTOR_HIT=100` under
+`artifacts/projects/single_reflection_oa_tof_mass_analyzer/scratch/20261118__saved-mph-backend-origin/`.
+The COMSOL lease was released. A separate startup-only MATLAB crash was preserved there; an attempted
+cross-model N100 comparison was not accepted as this test's reference and does not alter the 1 ps contract.
+
 ## 当前状态
 
 ### 可安装COMSOL原生资源切片
