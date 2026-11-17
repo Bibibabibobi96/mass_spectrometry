@@ -15,7 +15,7 @@ def ps(value):
 
 class FrozenMatlabClosureTests(unittest.TestCase):
     def run_boundary(self, workflow, missing=False, release_gate=False):
-        missing_path = ('projects/rf_multipole_ion_optics/comsol/visit_rf_particle_windows.m'
+        missing_path = ('src/msplatform/backends/comsol/matlab/visit_rf_particle_windows.m'
                         if missing is True else missing if missing else None)
         runner = PROJECT / 'workflows' / workflow / 'run_comsol.ps1'
         support = REPO / 'projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1'
@@ -60,7 +60,7 @@ try{$package=& ([scriptblock]::Create($command[0].Extent.Text))}catch{if($missin
 if($missingDependency){throw 'missing MATLAB dependency was accepted'}
 Assert-FrozenPythonPackage -Package $package
 $reader=Get-FrozenPythonPackageFile -Package $package -RelativePath 'src/msplatform/backends/comsol/matlab/read_comsol_mesh_size_controls.m'
-if(-not(Test-Path -LiteralPath (Join-Path $package.code_root 'projects/rf_multipole_ion_optics/comsol/plan_rf_exact_birth_releases.m'))){throw 'group helper absent from real frozen closure'}
+if(-not(Test-Path -LiteralPath (Join-Path $package.code_root 'src/msplatform/backends/comsol/matlab/plan_rf_exact_birth_releases.m'))){throw 'group helper absent from real frozen closure'}
 [IO.Directory]::Move($repoRoot,$repoRoot+'.disabled')
 if(-not(Test-Path -LiteralPath $reader -PathType Leaf)-or$reader.StartsWith($repoRoot+[IO.Path]::DirectorySeparatorChar)){throw 'Typed size reader escaped frozen closure after active-source removal'}
 $frozenAnalysisPackage=$package;$ReleaseConstructionGate=RELEASE_GATE

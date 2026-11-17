@@ -411,8 +411,10 @@ def admit(path,reextract,allow_cold=True,require_native_payload=True):
         native=admit(original,True,False,False)
         inventory_record=bound_input('code_inventory')
         inventory=json.loads(verify_small(inventory_record).read_text(encoding='utf-8-sig'))
-        for relative in ('runtime/run_finite_3d_transport.ps1','comsol/reextract_finite_3d_transport.m','comsol/export_finite_3d_particle_outputs.m','comsol/validate_finite_extraction_context.m'):
-            relative='projects/rf_multipole_ion_optics/'+relative
+        for relative in ('projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1',
+                         'src/msplatform/backends/comsol/matlab/reextract_finite_3d_transport.m',
+                         'src/msplatform/backends/comsol/matlab/export_finite_3d_particle_outputs.m',
+                         'src/msplatform/backends/comsol/matlab/validate_finite_extraction_context.m'):
             matches=[entry for entry in inventory['files'] if entry['path']==relative]
             frozen_path=root/'inputs/code'/relative
             if len(matches)!=1 or file_sha256(frozen_path).upper()!=matches[0]['sha256'].upper():raise ValueError('Cold child frozen consumer/helper identity differs: '+relative)
@@ -457,10 +459,10 @@ def admit(path,reextract,allow_cold=True,require_native_payload=True):
     report_record=bound_output('logs/comsol_finite_3d_transport.txt')
     report=verify_small(report_record).read_text(encoding='utf-8-sig')
     task_record=bound_input('comsol_task')
-    task=verify_small(task_record,root/'inputs/code/projects/rf_multipole_ion_optics/comsol/solve_finite_3d_transport.m')
+    task=verify_small(task_record,root/'inputs/code/src/msplatform/backends/comsol/matlab/solve_finite_3d_transport.m')
     inventory_record=bound_input('code_inventory')
     inventory=json.loads(verify_small(inventory_record).read_text(encoding='utf-8-sig'))
-    entries=[entry for entry in inventory['files'] if entry['path']=='projects/rf_multipole_ion_optics/comsol/solve_finite_3d_transport.m']
+    entries=[entry for entry in inventory['files'] if entry['path']=='src/msplatform/backends/comsol/matlab/solve_finite_3d_transport.m']
     if len(entries)!=1 or entries[0]['sha256'].upper()!=task_record['sha256'].upper():raise ValueError('parent frozen producer task differs from its code inventory')
     # Derive only these frozen normal finite producer families; no current defaults.
     compact=re.sub(r'\s+','',task.read_text(encoding='utf-8-sig'))
@@ -478,8 +480,8 @@ def admit(path,reextract,allow_cold=True,require_native_payload=True):
     helper_call=compact.find(helper_token)
     helper_record=None
     if helper_call>=0:
-        helper_path=root/'inputs/code/projects/rf_multipole_ion_optics/comsol/export_finite_3d_particle_outputs.m'
-        helper_entries=[entry for entry in inventory['files'] if entry['path']=='projects/rf_multipole_ion_optics/comsol/export_finite_3d_particle_outputs.m']
+        helper_path=root/'inputs/code/src/msplatform/backends/comsol/matlab/export_finite_3d_particle_outputs.m'
+        helper_entries=[entry for entry in inventory['files'] if entry['path']=='src/msplatform/backends/comsol/matlab/export_finite_3d_particle_outputs.m']
         if len(helper_entries)!=1:raise ValueError('TRANSPORT_STAGE_EVIDENCE_MISSING: frozen export helper absent from inventory')
         helper_record=file_record(helper_path)
         if helper_record['sha256'].upper()!=helper_entries[0]['sha256'].upper():raise ValueError('parent frozen export helper differs from inventory')
@@ -605,9 +607,8 @@ Path(sys.argv[2]).write_text(json.dumps(request,allow_nan=False),encoding='utf-8
   }
   $task=Join-Path $inputDir 'reextract_saved_finite_solution.m'
   $matlab=@"
-% Frozen per-run task: the project reader never solves or saves the original.
-addpath(fullfile(fileparts(mfilename('fullpath')),'code','projects','rf_multipole_ion_optics','comsol'));
-addpath(fullfile(fileparts(mfilename('fullpath')),'code','common','comsol'));
+% Frozen per-run task: the saved-solution reader never solves or saves the original.
+addpath(fullfile(fileparts(mfilename('fullpath')),'code','src','msplatform','backends','comsol','matlab'));
 fid=fopen(getenv('COMSOL_BOOTSTRAP_REPORT'),'w');assert(fid>=0,'Cold report unavailable.');
 cleanup=onCleanup(@()fclose(fid));
 fprintf(fid,'TASK=MULTIPOLE_FINITE_SAVED_EXTRACTION\n');
@@ -1141,7 +1142,7 @@ $comsolRunFailure=$null
   $primaryTrajectories=Join-Path $resultDir 'trajectory_samples__primary.csv'
   $controlTrajectories=Join-Path $resultDir 'trajectory_samples__control.csv'
   $report=Join-Path $logDir 'comsol_finite_3d_transport.txt';$evaluation=Join-Path $resultDir 'evidence_evaluation.json'
-  $task=Join-Path $codeRoot 'projects\rf_multipole_ion_optics\comsol\solve_finite_3d_transport.m'
+  $task=Join-Path $codeRoot 'src\msplatform\backends\comsol\matlab\solve_finite_3d_transport.m'
   $configDocument=[ordered]@{schema_version=2;role='multipole_resolved_comsol_run_config';run_id=$RunId;project=$ProjectId;
     mode='resolved_design_transport';project_root=$profile.project_root;
     artifact_retention=[ordered]@{policy_version=1;class=$RetentionClass;

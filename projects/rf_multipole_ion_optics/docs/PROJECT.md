@@ -1521,7 +1521,7 @@ inferred from these software results.
 The public RF stationary COMSOL field stage now lives in
 `msplatform.backends.comsol.rf_stationary_field`, with generic preregistration, owner and recovery
 wiring in `msplatform.workflows.rf_stationary`. It does not edit or add a branch to the old
-PowerShell transport runner. The canonical project MATLAB retains the existing field-only physics;
+PowerShell transport runner. The installed backend MATLAB retains the existing field-only physics;
 that branch now saves its MPH before returning. A second managed operation cold-loads the saved
 parent, requires nonempty differential/static solution identities and exports both cases with zero
 Compute and zero parent save. The Assembly single-workpoint owner was not reused because its
@@ -1604,6 +1604,17 @@ Evidence is retained in workspace
 through `v87-rf-continuation-installed-agent8-r3`.
 These are focused migration and installation results, not a full installed-parent,
 Repository, commercial-solver or native-flight qualification.
+
+The finite3D MATLAB solver, rods/enclosure, mesh controls, release construction,
+extraction and cold-reopen resources now have their sole executable sources in
+`msplatform.backends.comsol.matlab`. The stationary `_science_sources` selector
+accepts only that installed implementation and freezes its backend closure; it no
+longer reads the RF project or `common/comsol`. Interface and mass-filter
+freezers reference the same backend paths. Scientific designs, source cohorts,
+numerics and research criteria remain project inputs. This is a resource-ownership
+migration, not a new solver, native result or retirement of the finite-3D runners.
+Ordinary-install, blocked-project native solve/cold-read and failure-propagation
+acceptance remain separate obligations.
 The integration merge then passed all three RF continuation/checkpoint/runner
 modules and both RF/COMSOL Changed selectors in one frozen epoch: 71 parents,
 zero skips/failures, 107.136 seconds (112.839 guarded wall). Actual candidate

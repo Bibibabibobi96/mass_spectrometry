@@ -175,10 +175,9 @@ ConvertTo-Json -InputObject ($results.ToArray()) -Depth 10 -Compress
     def test_real_mesh_consumers_share_public_mesh_and_size_helpers(self):
         for name in ("solve_finite_3d_transport.m", "solve_deterministic_rf_quadrupole_particles.m"):
             with self.subTest(consumer=name):
-                source = (PROJECT / "comsol" / name).read_text(encoding="utf-8")
+                source = (ROOT / "src/msplatform/backends/comsol/matlab" / name).read_text(encoding="utf-8")
                 self.assertIn("configure_comsol_mesh(mesh,", source)
-                self.assertIn("'common','comsol'", source)
-                self.assertIn("'src','msplatform','backends','comsol','matlab'", source)
+                self.assertNotIn("'common','comsol'", source)
         helper = (ROOT / "src/msplatform/backends/comsol/matlab/configure_comsol_mesh.m").read_text(encoding="utf-8")
         self.assertIn("add_comsol_size_feature(mesh,", helper)
 

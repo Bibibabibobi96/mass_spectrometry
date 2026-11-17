@@ -533,21 +533,21 @@ try {
     $frozenDistribution = Copy-VerifiedRunInput -Source $liveDistribution `
         -Destination (Join-Path $inputDir 'particle_source_distribution.json')
     $frozenMatlabRelativePaths=@(
-        'common/comsol/create_multipole_round_rods.m',
+        'src/msplatform/backends/comsol/matlab/create_multipole_round_rods.m',
         'src/msplatform/backends/comsol/matlab/configure_comsol_mesh.m',
         'src/msplatform/backends/comsol/matlab/add_comsol_size_feature.m',
         'src/msplatform/backends/comsol/matlab/read_comsol_mesh_size_controls.m',
         'projects/rf_multipole_ion_optics/load_rf_quadrupole_contract.m',
-        'projects/rf_multipole_ion_optics/comsol/solve_deterministic_rf_quadrupole_particles.m',
-        'projects/rf_multipole_ion_optics/comsol/compare_rf_gui_observations.m',
-        'projects/rf_multipole_ion_optics/comsol/classify_finite_particle_terminal.m',
-        'projects/rf_multipole_ion_optics/comsol/visit_rf_particle_windows.m',
-        'projects/rf_multipole_ion_optics/comsol/extract_rf_particle_records.m',
-        'projects/rf_multipole_ion_optics/comsol/plan_rf_exact_birth_releases.m',
-        'projects/rf_multipole_ion_optics/comsol/prepare_interface_readiness_run.m',
+        'src/msplatform/backends/comsol/matlab/solve_deterministic_rf_quadrupole_particles.m',
+        'src/msplatform/backends/comsol/matlab/compare_rf_gui_observations.m',
+        'src/msplatform/backends/comsol/matlab/classify_finite_particle_terminal.m',
+        'src/msplatform/backends/comsol/matlab/visit_rf_particle_windows.m',
+        'src/msplatform/backends/comsol/matlab/extract_rf_particle_records.m',
+        'src/msplatform/backends/comsol/matlab/plan_rf_exact_birth_releases.m',
+        'src/msplatform/backends/comsol/matlab/prepare_interface_readiness_run.m',
         'projects/rf_multipole_ion_optics/workflows/interface_readiness/comsol/run_nocollision_candidate.m',
         'projects/rf_multipole_ion_optics/workflows/interface_readiness/comsol/verify_nocollision_comsol.m',
-        'projects/rf_multipole_ion_optics/comsol/interface_readiness/run_release_construction_gate.m'
+        'src/msplatform/backends/comsol/matlab/interface_readiness/run_release_construction_gate.m'
     )
     $frozenCodeRoot = Join-Path $inputDir 'code'
     $frozenPythonPackage = New-FrozenPythonPackage -Python $python `
@@ -804,7 +804,7 @@ $frozenCountPolicy = Get-FrozenPythonPackageFile -Package $frozenPythonPackage -
     $env:RFQUAD_RUN_CONFIG = $package.run_config
     $taskScript = if($ReleaseConstructionGate){
         Join-Path $frozenCodeRoot `
-            'projects/rf_multipole_ion_optics/comsol/interface_readiness/run_release_construction_gate.m'
+            'src/msplatform/backends/comsol/matlab/interface_readiness/run_release_construction_gate.m'
     }else{
         Join-Path $frozenCodeRoot 'projects/rf_multipole_ion_optics/workflows/interface_readiness/comsol/run_nocollision_candidate.m'
     }

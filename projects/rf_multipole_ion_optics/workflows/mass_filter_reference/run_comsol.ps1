@@ -76,17 +76,17 @@ try {
           'projects/rf_multipole_ion_optics/workflows/mass_filter_reference'
       )
   $frozenMatlabRelativePaths=@(
-      'common/comsol/create_multipole_round_rods.m',
+      'src/msplatform/backends/comsol/matlab/create_multipole_round_rods.m',
       'src/msplatform/backends/comsol/matlab/configure_comsol_mesh.m',
       'src/msplatform/backends/comsol/matlab/add_comsol_size_feature.m',
       'src/msplatform/backends/comsol/matlab/read_comsol_mesh_size_controls.m',
       'projects/rf_multipole_ion_optics/load_rf_quadrupole_contract.m',
-      'projects/rf_multipole_ion_optics/comsol/solve_deterministic_rf_quadrupole_particles.m',
-      'projects/rf_multipole_ion_optics/comsol/classify_finite_particle_terminal.m',
-      'projects/rf_multipole_ion_optics/comsol/visit_rf_particle_windows.m',
-      'projects/rf_multipole_ion_optics/comsol/extract_rf_particle_records.m',
-        'projects/rf_multipole_ion_optics/comsol/plan_rf_exact_birth_releases.m',
-      'projects/rf_multipole_ion_optics/comsol/mass_filter_reference/run_scan.m'
+      'src/msplatform/backends/comsol/matlab/solve_deterministic_rf_quadrupole_particles.m',
+      'src/msplatform/backends/comsol/matlab/classify_finite_particle_terminal.m',
+      'src/msplatform/backends/comsol/matlab/visit_rf_particle_windows.m',
+      'src/msplatform/backends/comsol/matlab/extract_rf_particle_records.m',
+        'src/msplatform/backends/comsol/matlab/plan_rf_exact_birth_releases.m',
+      'src/msplatform/backends/comsol/matlab/mass_filter_reference/run_scan.m'
   )
   $frozenAnalysisPackage = New-FrozenPythonPackage -Python $python `
       -SourceRoot $repoRoot -CodeRoot (Join-Path $inputDir 'analysis_runtime') `
@@ -211,7 +211,7 @@ try {
   $environment=Save-RunEnvironment -Names @('RFQUAD_SCAN_CONFIG','COMSOL_BOOTSTRAP_REPORT')
   try {
     $env:RFQUAD_SCAN_CONFIG=$scanConfig;$env:COMSOL_BOOTSTRAP_REPORT=$report
-    $massScanTask=Join-Path $frozenAnalysisPackage.code_root 'projects/rf_multipole_ion_optics/comsol/mass_filter_reference/run_scan.m'
+    $massScanTask=Join-Path $frozenAnalysisPackage.code_root 'src/msplatform/backends/comsol/matlab/mass_filter_reference/run_scan.m'
     . (Join-Path (Split-Path -Parent ((Join-Path $repoRoot 'src\msplatform\backends\comsol\launcher\run_comsol_r2025b.ps1'))) 'resolve_comsol_64.ps1')
     $comsolLauncherParameters=Get-ComsolLauncherParameters -HostContext $script:HostResourceExecutionContext -WorkingDirectory $script:HostResourceExecutionContext.workspace
     & (Join-Path $repoRoot 'src\msplatform\backends\comsol\launcher\run_comsol_r2025b.ps1') @comsolLauncherParameters `

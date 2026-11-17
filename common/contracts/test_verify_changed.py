@@ -1954,7 +1954,7 @@ exit ([int]$env:CI_FIXTURE_EXIT)
 
         for shared_path in (
             "src/msplatform/backends/simion/source.py",
-            "common/comsol/create_multipole_round_rods.m",
+            "src/msplatform/backends/comsol/matlab/create_multipole_round_rods.m",
         ):
             routed = self.routed_stages(shared_path)
             self.assertIn("rf_multipole_domain_tests", routed)
@@ -2054,7 +2054,7 @@ exit ([int]$env:CI_FIXTURE_EXIT)
             "src/msplatform/components/rf_multipole/family_contract.py",
             "projects/rf_multipole_ion_optics/runtime/design_profile.py",
             "projects/rf_multipole_ion_optics/analysis/campaign_analysis.py",
-            "projects/rf_multipole_ion_optics/comsol/solve_finite_3d_transport.m",
+            "src/msplatform/backends/comsol/matlab/solve_finite_3d_transport.m",
             "projects/rf_multipole_ion_optics/simion/simion_geometry.py",
             "src/msplatform/components/rf_multipole/family_contract.json",
             "projects/rf_multipole_ion_optics/config/sources/rf_multipole_family_mother_sample_v1.json",

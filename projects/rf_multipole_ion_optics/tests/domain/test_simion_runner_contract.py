@@ -1377,7 +1377,7 @@ exit 0
 
     def test_mechanically_segmented_rods_always_receive_full_length_rf(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
-        comsol = (REPO_ROOT / "projects/rf_multipole_ion_optics/comsol/solve_finite_3d_transport.m").read_text(
+        comsol = (REPO_ROOT / "src/msplatform/backends/comsol/matlab/solve_finite_3d_transport.m").read_text(
             encoding="utf-8"
         )
         self.assertIn(
@@ -1401,8 +1401,8 @@ exit 0
         )
 
     def test_comsol_uses_the_single_frozen_enclosure_projector(self) -> None:
-        comsol=(REPO_ROOT/"projects/rf_multipole_ion_optics/comsol/solve_finite_3d_transport.m").read_text(encoding="utf-8")
-        helper=(REPO_ROOT/"projects/rf_multipole_ion_optics/comsol/build_multipole_enclosure.m").read_text(encoding="utf-8")
+        comsol=(REPO_ROOT/"src/msplatform/backends/comsol/matlab/solve_finite_3d_transport.m").read_text(encoding="utf-8")
+        helper=(REPO_ROOT/"src/msplatform/backends/comsol/matlab/build_multipole_enclosure.m").read_text(encoding="utf-8")
         self.assertIn("build_multipole_enclosure(geom,enclosureLayout.bodies,'enclosure')",comsol)
         self.assertIn("create_comsol_cylindrical_shell",helper)
         for field in ("inner_radius_mm","outer_radius_mm","z_max_mm","z_min_mm"):

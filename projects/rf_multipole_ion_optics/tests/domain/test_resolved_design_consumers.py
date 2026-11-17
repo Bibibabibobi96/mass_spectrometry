@@ -63,7 +63,7 @@ class ResolvedDesignConsumerContractTest(unittest.TestCase):
         self.assertNotIn("enclosure_role", gem)
 
     def test_comsol_and_simion_consume_all_canonical_drive_fields(self) -> None:
-        comsol = (ROOT / "projects/rf_multipole_ion_optics/comsol/solve_finite_3d_transport.m").read_text(encoding="utf-8")
+        comsol = (ROOT / "src/msplatform/backends/comsol/matlab/solve_finite_3d_transport.m").read_text(encoding="utf-8")
         simion = (ROOT / "projects/rf_multipole_ion_optics/runtime/run_simion_finite_3d_transport.ps1").read_text(
             encoding="utf-8"
         )
@@ -98,7 +98,7 @@ class ResolvedDesignConsumerContractTest(unittest.TestCase):
                 "physical_detector_V": -1500.0,
             },
         )
-        comsol = (ROOT / "projects/rf_multipole_ion_optics/comsol/solve_finite_3d_transport.m").read_text(encoding="utf-8")
+        comsol = (ROOT / "src/msplatform/backends/comsol/matlab/solve_finite_3d_transport.m").read_text(encoding="utf-8")
         simion = (ROOT / "projects/rf_multipole_ion_optics/runtime/run_simion_finite_3d_transport.ps1").read_text(
             encoding="utf-8"
         )

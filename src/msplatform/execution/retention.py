@@ -49,7 +49,10 @@ def classify_file(
         or "metrics" in name
         or "particle_state" in name
         or "particle_events" in name
-        or name == "retention_actions.json"
+        or "field_samples" in name
+        or name.endswith(("_validation.json", "_verification.json", ".launcher.json",
+                          ".usage.json", ".process.json"))
+        or name in {"execution_completion.json", "capacity_session.json", "retention_actions.json"}
     ):
         return "required_evidence"
     if size is not None and size >= int(policy["large_file_threshold_bytes"]):

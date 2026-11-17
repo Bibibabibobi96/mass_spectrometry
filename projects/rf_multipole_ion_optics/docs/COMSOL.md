@@ -16,7 +16,7 @@
 | 接口就绪输运 | [原 CLI](../workflows/interface_readiness/run_comsol.ps1) |
 | 四／六／八极无碰撞传输 | [原 CLI](../workflows/no_collision_transport/run_comsol.ps1) |
 | RF+DC质量过滤 | [原 CLI](../workflows/mass_filter_reference/run_comsol.ps1) |
-| release构造诊断 | 接口 CLI 的 `-ReleaseConstructionGate`；[原任务](../comsol/interface_readiness/run_release_construction_gate.m) |
+| release构造诊断 | 接口 CLI 的 `-ReleaseConstructionGate`；[安装任务](../../../src/msplatform/backends/comsol/matlab/interface_readiness/run_release_construction_gate.m) |
 | 四、六、八极杆同源功能闭合 | [统一集成单反射工作流](../../../integrations/workflows/single_reflection_flight/run.ps1) |
 
 所有任务通过仓库统一MATLAB/COMSOL入口建立连接，不自行`mphstart`。版本、启动及
@@ -28,7 +28,7 @@
 
 `msplatform.workflows.rf_stationary solve-comsol` is the field-only owner for a frozen
 `multipole_resolved_runtime_profile` with `stop_stage=field_solve`. It requires explicit
-preregistration, resolved budget, sampling plan and the canonical project
+preregistration, resolved budget, sampling plan and the installed backend
 `solve_finite_3d_transport.m` science path. The old PowerShell transport runner remains
 unchanged and does not accept this stage.
 

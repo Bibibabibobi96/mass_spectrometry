@@ -612,6 +612,14 @@ owners and actual migrated consumers. Their scoped checks do not close the remai
 root native orchestration, current composed installation, complete regression or native acceptance.
 
 
+RF stationary MATLAB solving, geometry projection, release, extraction and saved-solution
+resources now have one installed COMSOL backend owner, and its stationary selector no longer
+reads the RF project or `common/comsol`. The component and project retain scientific designs,
+cohorts, numerics and research criteria. Focused resource/consumer checks passed; ordinary-wheel
+native solve/cold-read, full Changed and failure-propagation acceptance are still required.
+The two finite-3D PowerShell runners, mass-spectrum retrace resources and prepared-joint MR
+production calls remain separate OPEN ownership migrations; this resource move does not retire them.
+
 The following is the single active P4 worklist. All rows remain OPEN until their stated
 consumer and acceptance boundaries close; earlier delivered sub-capabilities are inherited,
 not rebuilt. Shared interfaces, the gate catalog, installation fixtures and Git have one

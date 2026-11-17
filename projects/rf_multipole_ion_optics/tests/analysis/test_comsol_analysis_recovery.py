@@ -96,23 +96,23 @@ def parent_fixture(root, *, fault=None):
     request = inputs/'execution_request.json'
     write(request, dict(capacity=dict(committed_new_bytes=67108864)))
     paths['execution_request'] = str(request)
-    task = inputs/'code/projects/rf_multipole_ion_optics/comsol/solve_finite_3d_transport.m'
+    task = inputs/'code/src/msplatform/backends/comsol/matlab/solve_finite_3d_transport.m'
     task.parent.mkdir(parents=True)
-    shutil.copyfile(REPO/'projects/rf_multipole_ion_optics/comsol/solve_finite_3d_transport.m', task)
+    shutil.copyfile(REPO/'src/msplatform/backends/comsol/matlab/solve_finite_3d_transport.m', task)
     paths['comsol_task'] = str(task)
     entry = inputs/'code/projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1'
     entry.parent.mkdir(parents=True)
     shutil.copyfile(REPO/'projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1', entry)
     inventory = inputs/'code_inventory.json'
     write(inventory, dict(schema_version=1, role='frozen_code_inventory', files=[dict(
-        path='projects/rf_multipole_ion_optics/comsol/solve_finite_3d_transport.m', sha256=file_record(task)['sha256']), dict(
+        path='src/msplatform/backends/comsol/matlab/solve_finite_3d_transport.m', sha256=file_record(task)['sha256']), dict(
         path='projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1', sha256=file_record(entry)['sha256'])]))
-    helper = inputs/'code/projects/rf_multipole_ion_optics/comsol/export_finite_3d_particle_outputs.m'
-    helper_source = REPO/'projects/rf_multipole_ion_optics/comsol/export_finite_3d_particle_outputs.m'
+    helper = inputs/'code/src/msplatform/backends/comsol/matlab/export_finite_3d_particle_outputs.m'
+    helper_source = REPO/'src/msplatform/backends/comsol/matlab/export_finite_3d_particle_outputs.m'
     if helper_source.exists():
         shutil.copyfile(helper_source, helper)
         document = json.loads(inventory.read_text(encoding='utf-8'))
-        document['files'].append(dict(path='projects/rf_multipole_ion_optics/comsol/export_finite_3d_particle_outputs.m', sha256=file_record(helper)['sha256']))
+        document['files'].append(dict(path='src/msplatform/backends/comsol/matlab/export_finite_3d_particle_outputs.m', sha256=file_record(helper)['sha256']))
         write(inventory, document)
     paths['code_inventory'] = str(inventory)
     write(request, dict(capacity=dict(committed_new_bytes=67108864),
@@ -948,8 +948,10 @@ function Invoke-ResourceBudgetedProcess {
                 shutil.copyfile(native_config['inputs'][name], target)
                 paths[name] = str(target)
             inventory = []
-            for relative in ('runtime/run_finite_3d_transport.ps1', 'comsol/reextract_finite_3d_transport.m', 'comsol/export_finite_3d_particle_outputs.m', 'comsol/validate_finite_extraction_context.m'):
-                relative = 'projects/rf_multipole_ion_optics/'+relative
+            for relative in ('projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1',
+                             'src/msplatform/backends/comsol/matlab/reextract_finite_3d_transport.m',
+                             'src/msplatform/backends/comsol/matlab/export_finite_3d_particle_outputs.m',
+                             'src/msplatform/backends/comsol/matlab/validate_finite_extraction_context.m'):
                 target = inputs/'code'/relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(REPO/relative, target)

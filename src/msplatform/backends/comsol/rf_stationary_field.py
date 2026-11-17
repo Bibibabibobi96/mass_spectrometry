@@ -25,15 +25,14 @@ def _owned_file(session: Any, name: str, source: Path, relative: str) -> tuple[P
 
 
 def _science_sources(session: Any, science_task: Path) -> list[dict[str, Any]]:
+    from msplatform.backends.comsol.resources import native_resource_directory
+
     science_task = science_task.resolve()
-    if not science_task.is_file() or science_task.name != "solve_finite_3d_transport.m":
-        raise ValueError("Explicit RF finite3D MATLAB science resource required")
-    repository = science_task.parents[3]
-    if science_task.parent != repository / "projects/rf_multipole_ion_optics/comsol":
-        raise ValueError("RF science resource is outside its canonical project owner")
+    resource_directory = native_resource_directory().resolve()
+    if science_task != resource_directory / "solve_finite_3d_transport.m":
+        raise ValueError("RF science resource must be the installed finite3D implementation")
     records = []
-    for index, source in enumerate((*sorted(science_task.parent.glob("*.m")),
-                                    *sorted((repository / "common/comsol").glob("*.m")))):
+    for index, source in enumerate(sorted(resource_directory.glob("*.m"))):
         record = file_record(source, "required_evidence")
         session.add_input(f"science_resource_{index:03d}", record)
         records.append(record)

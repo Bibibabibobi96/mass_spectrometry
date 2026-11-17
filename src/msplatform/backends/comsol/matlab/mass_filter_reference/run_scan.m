@@ -1,6 +1,5 @@
-projectRoot = fileparts(fileparts(fileparts(mfilename('fullpath'))));
-addpath(projectRoot);
-addpath(fullfile(projectRoot, 'comsol'));
+addpath(fileparts(mfilename('fullpath')));
+addpath(fileparts(fileparts(mfilename('fullpath'))));
 reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
 scanConfigPath = getenv('RFQUAD_SCAN_CONFIG');
 try

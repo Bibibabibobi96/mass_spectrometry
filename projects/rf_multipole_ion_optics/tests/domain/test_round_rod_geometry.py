@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[4]
 
 class RoundRodGeometryTest(unittest.TestCase):
     def test_comsol_renderer_keeps_round_default_and_adds_explicit_ellipse(self):
-        source = (ROOT / "common/comsol/create_multipole_round_rods.m").read_text(
+        source = (ROOT / "src/msplatform/backends/comsol/matlab/create_multipole_round_rods.m").read_text(
             encoding="utf-8"
         )
         self.assertIn("if isRound", source)

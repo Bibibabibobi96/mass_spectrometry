@@ -179,7 +179,7 @@ class MultipoleFamilyContractTests(unittest.TestCase):
     def test_waveform_phase_dc_and_common_mode_are_all_executed(self) -> None:
         drive = VoltageDrive("cosine", 10.0, 2.0, -3.0, 1.0, 0.0)
         self.assertEqual(electrode_group_voltages(drive, 0.0), (9.0, -15.0))
-        solver = (REPO_ROOT / "projects/rf_multipole_ion_optics/comsol/solve_finite_3d_transport.m").read_text(
+        solver = (REPO_ROOT / "src/msplatform/backends/comsol/matlab/solve_finite_3d_transport.m").read_text(
             encoding="utf-8"
         )
         for token in ("V_dc", "V_axis", "phi_rf", "rf.waveform", "Vdiff", "Vstatic"):
