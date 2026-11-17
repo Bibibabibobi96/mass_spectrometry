@@ -823,6 +823,13 @@ successor in 71.140 seconds, with no skips. All 792 original assertions and test
 identities are retained; this is software evidence, not native execution or the
 complete MR/Repository gate.
 
+The measured-source fixture now advances the real reconciler at its existing observation
+points before reading deferred CSV rows, and reconciles the nonmirror stop before its
+assertion. This preserves the complete injection sequence, original IDs, absolute clock,
+physical vectors and detector/terminal expectations. The original parent passes in
+0.378 seconds after this fixture correction. No production callback, event timing or
+scientific acceptance rule changed; this is plain-Lua software evidence only.
+
 
 ### Software PA-interface Lua discovery
 

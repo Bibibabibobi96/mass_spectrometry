@@ -305,6 +305,17 @@ def mass_native_fixture(root):
     (project/'config/project.json').write_text(json.dumps({
         'project_id': PROJECT.name, 'lifecycle_status': 'prototype'}), encoding='utf-8')
     (project/'comsol').mkdir(parents=True, exist_ok=True)
+    from msplatform.workflows import single_reflection_mass_spectrum_study as study
+    for relative in study.RETRACE_RESOURCES:
+        source = PROJECT/relative
+        target = project/relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+    for relative in study.RETRACE_COMMON_RESOURCES:
+        source = REPO/relative
+        target = fixture/relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
     (project/'comsol/run_fixed_particle_retrace.m').write_text('% inert native fixture\n', encoding='utf-8')
     artifacts = root/'artifacts'
     formal = artifacts/f'projects/{PROJECT.name}/formal'
@@ -327,12 +338,14 @@ if mode == 'comsol':
     mass = float(species.split('_')[0][2:])
     count = sum(1 for _ in ion_path.open(encoding='ascii'))
     failed = os.environ.get('TEST_MASS_FAIL_SPECIES') == species
-    rows = [] if failed else [(i, math.sqrt(mass) + (i-1)*.01, .1, .2, True)
-                              for i in range(1, count+1)]
+    rows = [(i, math.sqrt(mass) + (i-1)*.01, .1, .2, not failed)
+            for i in range(1, count+1)]
     with csv_path.open('w', encoding='utf-8', newline='') as stream:
         writer = csv.writer(stream)
         writer.writerow(['Ion', 'TofUs', 'XMm', 'YMm', 'Hit'])
         writer.writerows(rows)
+    release_path = csv_path.with_name(f'{species}_fixedN{count}_selected_release_from_data_file.txt')
+    release_path.write_text(ion_path.read_text(encoding='ascii'), encoding='ascii')
     report.write_text(('STATUS=FAIL\nDETECTED=0/%d\n' if failed else
                        'STATUS=PASS\nDETECTED=%d/%d\n') % ((count, count) if not failed else (count,)), encoding='utf-8')
     raise SystemExit(23 if failed else 0)

@@ -362,6 +362,9 @@ function Invoke-HostResourceTransaction {
     if ($owner.Count -ne 1) { throw 'Cannot establish the current process creation identity.' }
     $Request.owner = @{pid=$PID; started=[string]$owner[0].started}
     $start = [Diagnostics.ProcessStartInfo]::new()
+    $pythonPath = (Join-Path $repo 'src') + [IO.Path]::PathSeparator + $repo
+    if ($env:PYTHONPATH) { $pythonPath += [IO.Path]::PathSeparator + $env:PYTHONPATH }
+    $start.Environment['PYTHONPATH'] = $pythonPath
     $start.FileName = $python; $start.WorkingDirectory = $PSScriptRoot
     $start.UseShellExecute = $false; $start.CreateNoWindow = $true
     $start.RedirectStandardInput = $true; $start.RedirectStandardOutput = $true

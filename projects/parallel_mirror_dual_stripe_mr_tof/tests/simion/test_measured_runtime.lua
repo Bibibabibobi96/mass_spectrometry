@@ -105,11 +105,15 @@ local function begin()
   assert(tonumber(births[1].t_us)==7500.51+.06,'birth must use the canonical source epoch before engine TOB application')
 end
 local function step(z,vz,t,x,y,vy) state(z,vz,t,x,y,vy);engine.segment.other_actions() end
+local function confirm(z,vz,t,x,y,vy) step(z,vz,t,x,y,vy) end
 local function events(kind) return csv_rows(point.scientific_event_output.events_path,kind) end
 local function value(row,key) return tonumber(assert(row[key])) end
 -- Exercise the complete existing injection, phase-origin and 51-half-cycle path.
 local sequence=assert(fixture:match('%-%- Injection:.-\n(.-)%-%- Real 4 ns detector'))
-local environment=setmetatable({begin=begin,step=step,events=events,value=value,
+sequence=sequence:gsub("assert%(#events%('p2_low_field_reference'%)", 'confirm(2,1,6.5,3,2,1);assert(#events(\'p2_low_field_reference\')')
+sequence=sequence:gsub("assert%(#events%('pre_origin_positive_mirror_turn'%)", 'confirm(11,-1,9.5,3,0,1);assert(#events(\'pre_origin_positive_mirror_turn\')')
+sequence=sequence:gsub("assert%(#events%('drift_phase_return'%)", 'confirm(-11,1,162.5,3,0,-1);assert(#events(\'drift_phase_return\')')
+local environment=setmetatable({begin=begin,step=step,confirm=confirm,events=events,value=value,
   records=records,flush_count=1},{__index=_G})
 -- These helpers are local in the original test; retain the same physical vectors.
 local chunk=assert(loadstring(sequence,'@existing-injection-sequence'))
@@ -134,7 +138,7 @@ assert(#events('detector')==1 and #events('terminal')==1 and engine.ion_splat==1
 assert(value(events('detector')[1],'ion')==64 and value(events('detector')[1],'t_us')==7503.57)
 assert(value(events('terminal')[1],'ion')==64 and value(events('terminal')[1],'t_us')==7505.57)
 -- External handoff has already left the accelerator; nonmirror reversal is invalid.
-begin();step(1,1,1,3,-5,1)
+begin();step(1,1,1,3,-5,1);engine.segment.terminate()
 assert(#events('nonmirror_reversal')==1 and engine.ion_splat==4)
 assert(#events('accelerator_launch_vz_zero')==0)
 -- The 7500 us instrument epoch and per-particle birth offset are not flight age.

@@ -727,6 +727,10 @@ first on their process-local `PYTHONPATH`, followed by declared discovery roots
 and inherited entries. This prevents an explicitly supplied interpreter's foreign
 editable installation from supplying older platform modules. The original
 environment is restored on success, nonzero child exit and script exceptions.
+The host scheduler child applies the same binding to its selected workspace `src`
+and workspace root before inherited entries; it cannot silently substitute an
+ambient package for the configured scheduler. The controlled closed-stdin and
+bounded live-child fixtures retain the original IOException, exit code and stderr.
 Ordinary wheel/sdist acceptance keeps its isolated `python -I`, source-offline
 and installed-origin checks; this development binding does not qualify an
 installed package.

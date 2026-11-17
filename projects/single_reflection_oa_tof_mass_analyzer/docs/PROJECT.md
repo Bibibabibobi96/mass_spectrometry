@@ -93,6 +93,12 @@ was retained, the run remained `failed`, writers stopped and capacity was releas
 was forced and `formal_gate_passed=false`. This closes the native execution and failure-evidence boundary,
 not scientific acceptance, model equivalence or Formal qualification. The subsequent Changed gate passed
 in 1830.934 s, including direct wheel/sdist-rebuilt outside-checkout use and all four integration partitions.
+The isolated native-lifecycle fixture now includes the declared retrace helpers and the generated release
+file, and its scientific-failure rows retain all 100 particles with `Hit=false` instead of an empty table.
+The four remote-failing methods, four installed-study tests and the measured-source MR parent all passed
+on the final candidate in 711.813 s. The complete Changed run then passed in 3596.992 s, including direct
+wheel/sdist-rebuilt outside-checkout use. These are inert software fixtures and installation evidence;
+they do not alter the negative native results or grant scientific qualification.
 
 ## 当前状态
 

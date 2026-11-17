@@ -119,9 +119,11 @@ try {
   Set-Content -LiteralPath (Join-Path $testRoot 'msplatform/__init__.py') -Value '' -Encoding utf8
   Set-Content -LiteralPath (Join-Path $fixturePackage '__init__.py') -Value '' -Encoding utf8
   Set-Content -LiteralPath (Join-Path $fixturePackage 'host_resource_scheduler.py') -Encoding utf8 -Value @'
-import sys
+import os,sys,time
 sys.stderr.buffer.write(b'HOST_SCHEDULER_STDIN_CLOSED_SENTINEL\n')
 sys.stderr.flush()
+os.close(0)
+time.sleep(0.5)
 sys.exit(23)
 '@
   $originalWorkspace = $script:HostResourceExecutionContext.workspace
@@ -162,12 +164,13 @@ created,exited,kernel_time,user_time=(wintypes.FILETIME() for _ in range(4))
 if not kernel.GetProcessTimes(kernel.GetCurrentProcess(),ctypes.byref(created),ctypes.byref(exited),ctypes.byref(kernel_time),ctypes.byref(user_time)):
     raise ctypes.WinError(ctypes.get_last_error())
 ticks=(created.dwHighDateTime<<32)+created.dwLowDateTime+504911232000000000
-pathlib.Path('child-identity.json').write_text(json.dumps({'pid':os.getpid(),'started_ticks':str(ticks)}),encoding='utf-8')
+root=pathlib.Path(__file__).resolve().parents[2]
+(root/'child-identity.json').write_text(json.dumps({'pid':os.getpid(),'started_ticks':str(ticks)}),encoding='utf-8')
 os.close(0)
-pathlib.Path('child-ready').write_text('closed', encoding='utf-8')
+(root/'child-ready').write_text('closed', encoding='utf-8')
 sys.stderr.write('P410_STALL_SENTINEL\n');sys.stderr.flush()
 deadline=time.monotonic()+20
-while not pathlib.Path('stop').exists() and time.monotonic()<deadline: time.sleep(.05)
+while not (root/'stop').exists() and time.monotonic()<deadline: time.sleep(.05)
 sys.exit(23)
 "@)
   $oldWorkspace=$script:HostResourceExecutionContext.workspace
