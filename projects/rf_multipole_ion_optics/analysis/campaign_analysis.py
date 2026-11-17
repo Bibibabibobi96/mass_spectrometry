@@ -15,8 +15,8 @@ from msplatform.contracts.machine_contracts import ContractError, validate_schem
 from msplatform.io.manifest_records import record_path
 from projects.rf_multipole_ion_optics.analysis.campaign_status import _verify_manifest as verify_campaign_manifest
 from projects.rf_multipole_ion_optics.analysis.numerical_qualification import run_data
-from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
-from projects.rf_multipole_ion_optics.runtime.runtime_profile import resolve_campaign_path
+from msplatform.workflows.rf_design_profiles import resolve_design_profile
+from msplatform.workflows.rf_runtime_profiles import resolve_campaign_path
 
 
 MODES = {
@@ -44,9 +44,14 @@ def _load_json(path: Path) -> dict[str, Any]:
 def _resolve_catalog_module(repo_root: Path, module: str) -> str:
     prefix = "projects.rf_multipole_ion_optics.analysis."
     leaf = module.removeprefix(prefix)
-    if not module.startswith(prefix) or not leaf.isidentifier() or "." in leaf:
+    project_owned = module.startswith(prefix) and leaf.isidentifier() and "." not in leaf
+    public_owned = module == "msplatform.workflows.rf_exit_state_plot"
+    if not project_owned and not public_owned:
         raise ValueError(f"analysis capability module is outside multipole analysis: {module}")
-    if not (repo_root / Path(*module.split("."))).with_suffix(".py").is_file():
+    relative = Path(*module.split(".")).with_suffix(".py")
+    if public_owned:
+        relative = Path("src") / relative
+    if not (repo_root / relative).is_file():
         raise ValueError(f"analysis capability module is missing: {module}")
     return module
 

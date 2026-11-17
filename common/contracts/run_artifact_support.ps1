@@ -1085,7 +1085,7 @@ function New-RunPackage {
   if($LASTEXITCODE-ne 0 -or $pythonVersion-ne '3.11'){
     throw "Run package requires Python 3.11, found $pythonVersion at $python"
   }
-  $identityCheck=& $python (Join-Path $RepoRoot 'common\contracts\artifact_identity_archive.py') `
+  $identityCheck=& $python (Join-Path $RepoRoot 'src\msplatform\execution\artifact_identity_archive.py') `
     --repository-root $RepoRoot --check-new-run-project $Project 2>&1
   if($LASTEXITCODE-ne 0 -or -not($identityCheck-match '^NEW_RUN_PROJECT=PASS ')){
     throw "Run project identity rejected before package creation: $($identityCheck -join [Environment]::NewLine)"

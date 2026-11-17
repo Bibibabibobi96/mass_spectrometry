@@ -40,7 +40,7 @@
         "evidence_contract_path"
       ],
       "runtime_binding": {
-        "entrypoint": "runtime/runtime_profile.py",
+        "entrypoint": "msplatform/workflows/rf_runtime_profiles.py",
         "required_bindings": [
           "runtime_profile_id"
         ]
@@ -381,7 +381,7 @@
         "experiment_id"
       ],
       "runtime_binding": {
-        "entrypoint": "runtime/runtime_profile.py",
+        "entrypoint": "msplatform/workflows/rf_runtime_profiles.py",
         "required_bindings": [
           "campaign_path",
           "experiment_id"
@@ -482,7 +482,7 @@
         "experiment_id"
       ],
       "runtime_binding": {
-        "entrypoint": "runtime/runtime_profile.py",
+        "entrypoint": "msplatform/workflows/rf_runtime_profiles.py",
         "required_bindings": [
           "campaign_path",
           "experiment_id"

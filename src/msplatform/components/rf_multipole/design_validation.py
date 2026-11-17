@@ -7,7 +7,7 @@ import json
 import re
 from pathlib import Path
 
-from projects.rf_multipole_ion_optics.core.compile_design_request import resolved_design_sha256
+from msplatform.components.rf_multipole.design_request_files import resolved_design_sha256
 
 
 def verify(path: Path) -> str:

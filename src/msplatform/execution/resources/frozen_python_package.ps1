@@ -1,6 +1,121 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function Get-FrozenPythonPackageExecutionPaths {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string[]]$RelativePaths)
+    return @($RelativePaths | ForEach-Object {
+        'inputs/code/' + ([string]$_ -replace '\\', '/')
+    })
+}
+
+function Invoke-FrozenPythonInputs {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][hashtable]$Request)
+    $Request.inputs_module = Join-Path ([IO.Path]::GetFullPath([string]$Request.source_root)) 'src/msplatform/execution/inputs.py'
+    if (-not (Test-Path -LiteralPath $Request.inputs_module -PathType Leaf)) {
+        throw "Selected Python inputs implementation is missing: $($Request.inputs_module)"
+    }
+    $command = @'
+import json, pathlib, sys, traceback
+try:
+    request = json.load(sys.stdin)
+    selected = pathlib.Path(request['inputs_module']).resolve(strict=True)
+    sys.meta_path = [finder for finder in sys.meta_path
+        if not getattr(finder, '__module__', '').startswith('__editable__')]
+    sys.path.insert(0, str(selected.parents[2]))
+    from msplatform.execution import inputs
+    if pathlib.Path(inputs.__file__).resolve() != selected:
+        raise RuntimeError('Python package builder escaped its explicitly selected implementation')
+    if request['action'] == 'enumerate':
+        root = pathlib.Path(request['source_root']).resolve(strict=True)
+        selected_paths = set()
+        for selection in request['selections']:
+            selected_paths.update(inputs.enumerate_python_sources(root, **selection))
+        for relative in request['required_resources']:
+            resource = root / relative
+            if not resource.is_file() or not resource.resolve().is_relative_to(root):
+                raise FileNotFoundError('Selected frozen Python execution resource is missing: ' + str(resource))
+            selected_paths.add(relative)
+        result = sorted(selected_paths)
+    elif request['action'] == 'freeze':
+        result = inputs.freeze_python_package(pathlib.Path(request['source_root']), pathlib.Path(request['code_root']),
+                                             relative_paths=request['relative_paths'])
+    else:
+        raise ValueError('Unsupported internal Python inputs operation')
+    print(json.dumps({'ok': True, 'value': result}))
+except Exception as error:
+    print(json.dumps({'ok': False, 'error': {'type': type(error).__name__, 'message': str(error), 'traceback': traceback.format_exc()}}))
+    raise SystemExit(1)
+'@
+    $savedOutputEncoding=$OutputEncoding
+    try {
+        $OutputEncoding=[Text.UTF8Encoding]::new($false)
+        $text=($Request|ConvertTo-Json -Depth 12 -Compress)| & $Python -X utf8 -I -B -c $command | Out-String
+        $exitCode=$LASTEXITCODE
+    } finally {$OutputEncoding=$savedOutputEncoding}
+    $result=$text|ConvertFrom-Json
+    if($exitCode-ne0-or-not$result.ok){
+        throw "Selected frozen Python inputs operation failed: $($result.error.message)`n$($result.error.traceback)"
+    }
+    return $result.value
+}
+
+function Get-FrozenPythonPackageRelativePaths {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$SourceRoot,
+        [Parameter(Mandatory)][string]$Python,
+        [string[]]$PythonPackages=@(),[string[]]$PythonModules=@(),[string[]]$RelativePaths=@()
+    )
+    $selection=@()
+    if($PythonPackages.Count-or$PythonModules.Count){
+        $selections=@(@{package_roots=@($PythonPackages);module_paths=@($PythonModules)})
+        $resources=@()
+        if(Test-Path -LiteralPath (Join-Path $SourceRoot 'src/msplatform') -PathType Container){
+            $selections+=@{package_roots=@('src/msplatform');provider_root='src/msplatform';resource_suffixes=@('.schema.json')}
+            $resources=@('src/msplatform/execution/resources/frozen_python_package.ps1')
+        }
+        $selection=@(Invoke-FrozenPythonInputs -Python $Python -Request @{
+            action='enumerate';source_root=[IO.Path]::GetFullPath($SourceRoot);
+            selections=@($selections);required_resources=@($resources)})
+    }
+    return @($selection)+@($RelativePaths)
+}
+
+function New-FrozenPythonPackage {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$SourceRoot,
+        [Parameter(Mandatory)][string]$CodeRoot,
+        [string[]]$RelativePaths=@(),[string[]]$PythonPackages=@(),[string[]]$PythonModules=@(),
+        [Parameter(Mandatory)][string]$Python
+    )
+    if($PythonPackages.Count-or$PythonModules.Count){
+        $RelativePaths=Get-FrozenPythonPackageRelativePaths -SourceRoot $SourceRoot -Python $Python `
+            -PythonPackages $PythonPackages -PythonModules $PythonModules -RelativePaths $RelativePaths
+    }
+    Invoke-FrozenPythonInputs -Python $Python -Request @{
+        action='freeze';source_root=[IO.Path]::GetFullPath($SourceRoot);code_root=[IO.Path]::GetFullPath($CodeRoot);
+        relative_paths=@($RelativePaths)}
+}
+
+function Get-FrozenPythonPackageFile {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]$Package,
+        [Parameter(Mandatory)][string]$RelativePath
+    )
+    $normalized = $RelativePath -replace '\\', '/'
+    $matches = @($Package.files | Where-Object {
+        [string]$_.relative_path -ceq $normalized
+    })
+    if ($matches.Count -ne 1) {
+        throw "Frozen Python inventory does not contain one file: $normalized"
+    }
+    [string]$matches[0].path
+}
+
 function Assert-FrozenPythonPackage {
     [CmdletBinding()]
     param([Parameter(Mandatory)]$Package)

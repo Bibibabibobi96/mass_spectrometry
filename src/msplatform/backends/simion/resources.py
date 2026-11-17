@@ -30,7 +30,7 @@ NATIVE_RESOURCES = frozenset({
     "gem2pa_geometry.lua", "build_frontend_geometry.lua", "build_geometry_iob.lua", "iob_core.lua", "build_iob.lua",
     "build_flight_tube_variant.lua", "build_detector_variant.lua", "build_reflectron_variant.lua",
     "export_paired_accelerator_field.lua", "paired_accelerator_pulse.lua", "scientific_event_csv.lua",
-    "scientific_event_reconciliation.lua",
+    "scientific_event_reconciliation.lua", "simion_transport.lua", "build_simion_runtime_iob.lua", "inspect_builtin_quad_reference.lua",
 })
 
 

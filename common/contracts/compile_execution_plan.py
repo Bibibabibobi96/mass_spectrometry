@@ -110,7 +110,8 @@ def _resolve_runtime_binding(project: dict[str, Any], profile: dict[str, Any],
     }
     if len(owners) > 1:
         raise ValueError("Execution capability must have at most one declared structural variant")
-    module_name = ".".join(entrypoint.relative_to(REPO_ROOT.resolve()).with_suffix("").parts)
+    module_parts = entrypoint.relative_to(REPO_ROOT.resolve()).with_suffix("").parts
+    module_name = ".".join(module_parts[1:] if module_parts[0] == "src" else module_parts)
     try:
         module = importlib.import_module(module_name)
     except ImportError as error:

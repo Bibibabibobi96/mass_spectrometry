@@ -18,7 +18,7 @@ from msplatform.components.rf_multipole.family_contract import (
     from_quadrupole_contract,
     load_family_contract,
 )
-from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
+from msplatform.workflows.rf_design_profiles import resolve_design_profile
 from msplatform.analysis.mass_response import aggregate_response, evaluate_functional_contrast, load_terminal_statuses
 from msplatform.components.rf_multipole.ideal_transport import source_particles
 from msplatform.ion_release.paired_mass_scan import build_paired_ion_rows
@@ -28,8 +28,8 @@ REPO_ROOT = Path(__file__).parents[4]
 SUPPORT_PATH = (
     REPO_ROOT / "projects/rf_multipole_ion_optics/runtime/project_transport_launcher_support.ps1"
 )
-SIMION_RUNNER = REPO_ROOT / "projects/rf_multipole_ion_optics/runtime/run_simion_finite_3d_transport.ps1"
-SIMION_PROGRAM = REPO_ROOT / "projects/rf_multipole_ion_optics/simion/simion_transport.lua"
+SIMION_RUNNER = REPO_ROOT / "src/msplatform/workflows/resources/run_simion_finite_3d_transport.ps1"
+SIMION_PROGRAM = REPO_ROOT / "src/msplatform/backends/simion/resources/simion_transport.lua"
 PROJECTS = tuple(
     ("rf_multipole_ion_optics", "workflows/no_collision_transport", f"{variant}_{profile}")
     for variant, profile in (
@@ -67,12 +67,12 @@ class MultipoleFamilyContractTests(unittest.TestCase):
 
 
     def test_all_three_variants_close_over_one_frozen_rf_drive_kernel(self) -> None:
-        support = SUPPORT_PATH.read_text(encoding="utf-8-sig")
+        support = SUPPORT_PATH.read_text(encoding="utf-8-sig").replace("\\", "/")
         runner = SIMION_RUNNER.read_text(encoding="utf-8-sig")
         program = SIMION_PROGRAM.read_text(encoding="utf-8")
 
         self.assertEqual(
-            support.count("projects\\rf_multipole_ion_optics\\runtime\\run_simion_finite_3d_transport.ps1"),
+            support.count("src/msplatform/workflows/resources/run_simion_finite_3d_transport.ps1"),
             1,
         )
         self.assertIn("src\\msplatform\\backends\\simion\\resources\\rf_drive.lua", runner)

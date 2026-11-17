@@ -6,7 +6,7 @@
       "capability_id": "multipole_exit_state_comparison_v1",
       "consumer": {
         "analysis_module": "projects.rf_multipole_ion_optics.analysis.campaign_analysis",
-        "plot_module": "projects.rf_multipole_ion_optics.analysis.exit_state_plot"
+        "plot_module": "msplatform.workflows.rf_exit_state_plot"
       },
       "allowed_projects": [
         "rf_multipole_ion_optics"
@@ -68,7 +68,7 @@
       "capability_id": "multipole_source_model_comparison_v1",
       "consumer": {
         "analysis_module": "projects.rf_multipole_ion_optics.analysis.analyze_source_model_comparison",
-        "plot_module": "projects.rf_multipole_ion_optics.analysis.exit_state_plot"
+        "plot_module": "msplatform.workflows.rf_exit_state_plot"
       },
       "allowed_projects": [
         "rf_multipole_ion_optics"

@@ -64,7 +64,7 @@ Write-Output 'ACTUAL_ROOT_BOUNDARY_PASS'
                 for key, value in dict(
                     REPO=quote(REPO),
                     PYTHON=quote(sys.executable),
-                    RUNNER=quote(PROJECT / "runtime/run_finite_3d_transport.ps1"),
+                    RUNNER=quote(PROJECT.parents[1] / "src/msplatform/workflows/resources/run_finite_3d_transport.ps1"),
                     ROOT=quote(root),
                     MISSING="$true" if missing else "$false",
                 ).items():

@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from projects.rf_multipole_ion_optics.runtime.simion_batch_completion import validate_batch_completion
+from msplatform.backends.simion.rf_batch_completion import validate_batch_completion
 
 
 class SimionBatchCompletionTests(unittest.TestCase):
@@ -75,7 +75,7 @@ Complete-FailedRun -Python $Python -RepoRoot $Repo -RunConfig (Join-Path $Root '
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_runner_receipts_only_stopped_complete_workers(self):
         repo = Path(__file__).resolve().parents[4]
-        runner = repo / "projects/rf_multipole_ion_optics/runtime/run_simion_finite_3d_transport.ps1"
+        runner = repo / "src/msplatform/workflows/resources/run_simion_finite_3d_transport.ps1"
         source = runner.read_text(encoding="utf-8-sig")
         action = source[source.index("      $checkpointAction={"):
                         source.index("      $wave=Invoke-SimionBatchPhase", source.index("      $checkpointAction={"))]

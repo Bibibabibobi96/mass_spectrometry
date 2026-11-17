@@ -7,7 +7,7 @@ from pathlib import Path
 
 from msplatform.io.file_identity import repository_text_sha256
 from msplatform.contracts.machine_contracts import validate_schema
-from projects.rf_multipole_ion_optics.core.compile_design_request import (
+from msplatform.components.rf_multipole.design_request_files import (
     MultipoleDesignCompileError,
     compile_design_request,
 )

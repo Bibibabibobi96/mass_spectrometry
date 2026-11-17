@@ -6,7 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
-from common.contracts.artifact_identity_archive import (
+from msplatform.execution.artifact_identity_archive import (
     historical_project_identities,
     relocated_manifest_path,
     resolve_legacy_artifact_root,

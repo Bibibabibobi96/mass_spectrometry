@@ -50,7 +50,7 @@ class ComsolMeshReportTests(unittest.TestCase):
             input_path.write_text(json.dumps(inputs), encoding="utf-8", newline="\n")
             def quote(value):
                 return "'" + str(value).replace("'", "''") + "'"
-            source = (PROJECT / "runtime/run_finite_3d_transport.ps1").read_text(encoding="utf-8")
+            source = (PROJECT.parents[1] / "src/msplatform/workflows/resources/run_finite_3d_transport.ps1").read_text(encoding="utf-8")
             start = source.index("      $expectedMeshStrategy=")
             end = source.index("\n", source.index("$meshCells=Assert-MultipoleMeshBuildReport", start))
             call_path = folder / "actual_finite_call.ps1"
@@ -80,7 +80,7 @@ foreach($case in $cases){
 }
 ConvertTo-Json -InputObject ($results.ToArray()) -Depth 10 -Compress
 """
-            script = script.replace("@@PREFLIGHT@@", quote(PROJECT / "runtime/finite_3d_transport_preflight.ps1"))
+            script = script.replace("@@PREFLIGHT@@", quote(ROOT / "src/msplatform/workflows/resources/finite_3d_transport_preflight.ps1"))
             script = script.replace("@@CASES@@", quote(input_path)).replace("@@ACTUAL_CALL@@", quote(call_path))
             result = subprocess.run([PWSH, "-NoProfile", "-NonInteractive", "-Command", script],
                                     cwd=ROOT, capture_output=True, text=True, encoding="utf-8", timeout=20)

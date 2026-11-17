@@ -14,7 +14,8 @@ $artifactRoot=Join-Path $workspaceRoot 'artifacts\projects\rf_multipole_ion_opti
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 . (Join-Path $projectRoot 'runtime\cross_solver_analysis_lifecycle.ps1')
-. (Join-Path $projectRoot 'runtime\frozen_python_package.ps1') -ExecutionResourcePath (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
+. (Join-Path $repoRoot 'src/msplatform/workflows/resources/rf_publication.ps1')
 . (Join-Path $projectRoot 'runtime\particle_table_identity.ps1')
 function Resolve-Input([object]$Config,[string]$Name){$m=$Config.inputs.PSObject.Properties[$Name];if($null-eq$m){throw "Source run config lacks input $Name."};$v=[string]$m.Value;if([IO.Path]::IsPathRooted($v)){return [IO.Path]::GetFullPath($v)};[IO.Path]::GetFullPath((Join-Path ([string]$Config.project_root) $v))}
 function Copy-ModeInput([object[]]$Pairs){Copy-CrossSolverAnalysisInputs -Pairs $Pairs}

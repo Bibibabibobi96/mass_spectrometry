@@ -20,7 +20,7 @@ from msplatform.contracts.machine_contracts import ContractError
 from msplatform.contracts.rigid_transform import FramedPosition, RigidTransform
 from projects.orthogonal_accelerator.analysis.assembly_interface import resolve_assembly_interface
 from projects.orthogonal_accelerator.tests.analysis.test_assembly_interface import TWO_ZONE_PROFILE, two_zone_requirements
-from projects.rf_multipole_ion_optics.core.compile_design_request import compile_design_request
+from msplatform.components.rf_multipole.design_request_files import compile_design_request
 from msplatform.components.rf_multipole.assembly_interface import build_assembly_interface
 from projects.rf_multipole_ion_optics.core.electrode_topology import build_electrode_topology
 from msplatform.backends.simion.rf_electrode_mapping import build_simion_electrode_map

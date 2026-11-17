@@ -45,11 +45,12 @@ if($ResumeFinalization){
 }
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 $entryScriptHash=Get-RunFileSha256 -Path $PSCommandPath
-. (Join-Path $repoRoot 'projects\rf_multipole_ion_optics\runtime\simion_layout_template_support.ps1')
+. (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\simion_layout_template_support.ps1')
 . (Join-Path $projectRoot 'runtime\simion_run_config.ps1')
-. (Join-Path $projectRoot 'runtime\simion_execution.ps1')
-. (Join-Path $projectRoot 'runtime\simion_field_checkpoint_support.ps1')
-. (Join-Path $projectRoot 'runtime\frozen_python_package.ps1') -ExecutionResourcePath (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
+. (Join-Path $repoRoot 'src/msplatform/backends/simion/resources/simion_execution.ps1')
+. (Join-Path $repoRoot 'src/msplatform/backends/simion/resources/simion_field_checkpoint_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
+. (Join-Path $repoRoot 'src/msplatform/workflows/resources/rf_publication.ps1')
 $frozenPythonRelativePaths = Get-FrozenPythonPackageRelativePaths -SourceRoot $repoRoot -Python $python `
     -PythonPackages @(
         'common/contracts',
@@ -134,9 +135,10 @@ $templateCon = $template.con
 Copy-VerifiedRunInput -Source (Join-Path $projectRoot ($modeInput -replace '/', '\')) `
     -Destination $frozenMode | Out-Null
     $frozenPythonSupport = Copy-VerifiedRunInput `
-        -Source (Join-Path $projectRoot 'runtime\frozen_python_package.ps1') `
+        -Source (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1') `
         -Destination (Join-Path $inputDir 'frozen_python_package.ps1')
-    . $frozenPythonSupport -ExecutionResourcePath (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
+    . $frozenPythonSupport
+    . (Join-Path $repoRoot 'src/msplatform/workflows/resources/rf_publication.ps1')
     $publishedDesignFreshness = New-RfPublishedDesignFreshnessPackage `
         -Python $python -SourceRoot $repoRoot `
         -SnapshotRoot (Join-Path $inputDir 'published_design_snapshot') -Profile interface
@@ -162,7 +164,7 @@ if ($minimumTransmission -gt 1) {
 }
 Push-Location $repoRoot
 try {
-    & $python -m projects.rf_multipole_ion_optics.analysis.verify_resolved_design $frozenResolved
+    & $python -m msplatform.components.rf_multipole.design_validation $frozenResolved
     if ($LASTEXITCODE -ne 0) { throw 'Frozen resolved-design identity verification failed.' }
 } finally {
     Pop-Location
@@ -234,12 +236,12 @@ Copy-VerifiedRunInput -Source (Join-Path $projectRoot 'simion\geometry\quad_incl
 Copy-VerifiedRunInput -Source (Join-Path $projectRoot 'simion\geometry\quad_monolithic.gem') `
     -Destination (Join-Path $candidateDir 'quad_monolithic.gem') | Out-Null
 $programSource = Copy-VerifiedRunInput `
-    -Source (Join-Path $repoRoot 'projects\rf_multipole_ion_optics\simion\simion_transport.lua') `
+    -Source (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\simion_transport.lua') `
     -Destination (Join-Path $candidateDir 'multipole_runtime_program.lua')
 $rfDriveKernel=Copy-VerifiedRunInput -Source (Join-Path $repoRoot 'src/msplatform/backends/simion/resources/rf_drive.lua') `
     -Destination (Join-Path $inputDir 'multipole_rf_drive_kernel.lua')
 $iobBuilder = Copy-VerifiedRunInput `
-    -Source (Join-Path $repoRoot 'projects\rf_multipole_ion_optics\simion\build_simion_runtime_iob.lua') `
+    -Source (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\build_simion_runtime_iob.lua') `
     -Destination (Join-Path $candidateDir 'build_simion_runtime_iob.lua')
 $flyPath = Join-Path $candidateDir 'quad_monolithic.fly2'
 $sourceStatesLua = Join-Path $inputDir 'source_states.lua'
@@ -314,7 +316,7 @@ try {
         throw "Formal interface readiness requires at least $minimumParticles particles."
     }
     $sourceProjectionArguments = @(
-        '-m','projects.rf_multipole_ion_optics.runtime.simion_particle_source',
+        '-m','msplatform.backends.simion.rf_particle_source',
         '--particles',$particlePath,
         '--resolved-design',$frozenResolved,
         '--source-family',$frozenSourceFamily,
@@ -324,7 +326,7 @@ try {
         '--source-states-lua',$sourceStatesLua
     )
     Invoke-IsolatedFrozenPythonModule -Python $python -Package $frozenPythonPackage `
-        -Module 'projects.rf_multipole_ion_optics.runtime.simion_particle_source' `
+        -Module 'msplatform.backends.simion.rf_particle_source' `
         -Arguments @($sourceProjectionArguments|Select-Object -Skip 2) -ForbiddenRoots @($repoRoot,$projectRoot)|Out-Null
 } finally { Pop-Location }
 
@@ -495,9 +497,9 @@ $runConfig.inputs.simion_fly_physics=Join-Path $inputDir 'simion_fly_physics.jso
 Write-RfSimionPreparedFlyIdentity -CoreConfig $coreConfig -CaseName 'interface_readiness' `
     -Path $runConfig.inputs.simion_fly_physics -SourcePackage $frozenPythonPackage -ProgramSourcePath $programSource `
     -NativeFlyArguments @(Get-RfSimionFlyArgumentIdentity -CoreConfig $coreConfig) `
-    -SourceRelativePaths @('projects/rf_multipole_ion_optics/runtime/simion_particle_source.py',
+    -SourceRelativePaths @('src/msplatform/backends/simion/rf_particle_source.py',
         'src/msplatform/components/rf_multipole/source_validation.py',
-        'projects/rf_multipole_ion_optics/core/interface_geometry.py',
+        'src/msplatform/components/rf_multipole/interface_geometry.py',
         'src/msplatform/backends/simion/source.py','src/msplatform/contracts/particle_physics.py',
         'src/msplatform/contracts/particle_count_policy.py','src/msplatform/contracts/particle_count_policy.json')
 $lifecycle=Get-Content -LiteralPath $runConfigPath -Raw|ConvertFrom-Json -AsHashtable
@@ -530,7 +532,7 @@ $ownerCapacity=if($null-ne$continuation){$continuation.capacity}else{
 $ownerSource=Copy-VerifiedRunInput -Source $PSCommandPath -Destination (Join-Path $package.artifact_run_dir 'inputs/powershell_owner.ps1')
 if((Get-RunFileSha256 -Path $ownerSource)-cne$entryScriptHash){throw 'Frozen PowerShell owner differs from launched source.'}
 $runConfig.inputs.powershell_owner=$ownerSource
-$runConfig.inputs.simion_execution_owner=Copy-VerifiedRunInput -Source (Join-Path $projectRoot 'runtime/simion_execution.ps1') -Destination (Join-Path $inputDir 'simion_execution_owner.ps1')
+$runConfig.inputs.simion_execution_owner=Copy-VerifiedRunInput -Source (Join-Path $repoRoot 'src/msplatform/backends/simion/resources/simion_execution.ps1') -Destination (Join-Path $inputDir 'simion_execution_owner.ps1')
 Write-RunJson -Path $runConfigPath -Value $runConfig -Depth 20
 . (Join-Path $repoRoot 'common/contracts/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization
 $ownerContext=Initialize-RunArtifactPowerShellOwner -Python $python -RepoRoot $repoRoot -Package $package -CapacitySession $ownerCapacity `
@@ -595,7 +597,7 @@ function New-InterfaceBatchRuns {
         Push-Location $repoRoot
         try {
             Invoke-IsolatedFrozenPythonModule -Python $python -Package $frozenPythonPackage `
-                -Module 'projects.rf_multipole_ion_optics.runtime.simion_particle_source' `
+                -Module 'msplatform.backends.simion.rf_particle_source' `
                 -Arguments @($batchArguments|Select-Object -Skip 2) -ForbiddenRoots @($repoRoot,$projectRoot)|Out-Null
         } finally { Pop-Location }
     }

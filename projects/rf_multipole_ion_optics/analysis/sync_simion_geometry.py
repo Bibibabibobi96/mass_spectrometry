@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 from msplatform.io.file_identity import file_sha256
-from projects.rf_multipole_ion_optics.simion.simion_geometry import (
+from msplatform.backends.simion.rf_finite_geometry import (
     render_grouped_rod_array_gem,
 )
 

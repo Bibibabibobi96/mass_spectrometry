@@ -12,15 +12,15 @@ from typing import Any
 
 from msplatform.io.file_identity import file_sha256 as _sha256
 from msplatform.contracts.machine_contracts import ContractError, validate_schema
-from common.contracts.build_project_registry import pointer_value
-from projects.rf_multipole_ion_optics.core.compile_design_request import (
+from msplatform.contracts.machine_contracts import pointer_value
+from msplatform.components.rf_multipole.design_request_files import (
     MultipoleDesignCompileError,
     apply_typed_operating_mode,
     canonical_sha256,
     compile_design_request,
     operating_mode_source_label,
 )
-from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
+from msplatform.workflows.rf_design_profiles import resolve_design_profile
 from msplatform.backends.simion.numerics import normalize_simion_solver_numerics
 from msplatform.components.rf_multipole.source_validation import load_release_spec
 

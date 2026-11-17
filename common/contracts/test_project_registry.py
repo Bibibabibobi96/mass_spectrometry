@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from artifact_identity_archive import (
+from msplatform.execution.artifact_identity_archive import (
     historical_project_identities,
     legacy_artifact_location,
     load_retired_project_descriptors,

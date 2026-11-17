@@ -20,7 +20,7 @@ from msplatform.contracts.particle_physics import (
     AMU_KG,
     ELEMENTARY_CHARGE_C as E_CHARGE_C,
 )
-from projects.rf_multipole_ion_optics.core.compile_design_request import compile_design_request
+from msplatform.components.rf_multipole.design_request_files import compile_design_request
 from projects.rf_multipole_ion_optics.core.interface_geometry import transport_observations
 from msplatform.components.rf_multipole.source_validation import (
     COLUMNS,
@@ -29,10 +29,10 @@ from msplatform.components.rf_multipole.source_validation import (
     materialize_source_release,
     validate_source,
 )
-from projects.rf_multipole_ion_optics.runtime.simion_particle_source import render_canonical_source
+from msplatform.backends.simion.rf_particle_source import render_canonical_source
 from msplatform.ion_release import mt19937_disk_cone_rf_phase as release_sampler
-from projects.rf_multipole_ion_optics.runtime.runtime_profile import resolve_runtime_profile
-from projects.rf_multipole_ion_optics.runtime.resource_budget import validate_pilot_budget
+from msplatform.workflows.rf_runtime_profiles import resolve_runtime_profile
+from msplatform.workflows.rf_resource_budget import validate_pilot_budget
 from msplatform.ion_release.release import materialize_release_from_file as materialize
 from projects.rf_multipole_ion_optics.tests.domain.test_compile_design_request import design_request
 
@@ -260,7 +260,7 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 from msplatform.components.rf_multipole import source_validation as preflight
-from projects.rf_multipole_ion_optics.runtime.simion_particle_source import render_canonical_source
+from msplatform.backends.simion.rf_particle_source import render_canonical_source
 from msplatform.ion_release import mt19937_disk_cone_rf_phase as sampler
 assert Path(preflight.__file__).resolve().is_relative_to(Path.cwd().resolve())
 source,receipt,spec,resolved=[Path('inputs')/n for n in ('source.csv','receipt.json','spec.json','resolved.json')]

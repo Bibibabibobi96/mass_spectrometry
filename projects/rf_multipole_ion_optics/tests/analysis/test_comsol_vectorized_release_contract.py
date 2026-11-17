@@ -8,7 +8,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[4]
 PROJECT_ROOT = REPO_ROOT / "projects/rf_multipole_ion_optics"
 MATLAB_CORE = REPO_ROOT / "src/msplatform/backends/comsol/matlab/solve_finite_3d_transport.m"
-RUNNER = REPO_ROOT / "projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1"
+RUNNER = REPO_ROOT / "src/msplatform/workflows/resources/run_finite_3d_transport.ps1"
 RUNTIME_PROFILES = PROJECT_ROOT / "config/runtime_profiles.json"
 PREREGISTRATION = (
     PROJECT_ROOT

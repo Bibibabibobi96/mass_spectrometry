@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from msplatform.execution.retention import file_record
-from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
+from msplatform.workflows.rf_design_profiles import resolve_design_profile
 from projects.rf_multipole_ion_optics.runtime import run_round_rod_transport
 
 ROOT = Path(__file__).resolve().parents[4]

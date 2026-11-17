@@ -7,8 +7,8 @@ from typing import Any
 
 from msplatform.io.file_identity import repository_text_sha256
 from msplatform.contracts.machine_contracts import validate_schema
-from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
-from projects.rf_multipole_ion_optics.runtime.runtime_profile import resolve_runtime_profile
+from msplatform.workflows.rf_design_profiles import resolve_design_profile
+from msplatform.workflows.rf_runtime_profiles import resolve_runtime_profile
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]

@@ -143,7 +143,7 @@
             "properties": {
               "entrypoint": {
                 "type": "string",
-                "pattern": "^(?:[A-Za-z_][A-Za-z0-9_]*/)*[A-Za-z_][A-Za-z0-9_]*\\.py$"
+                "pattern": "^(?:msplatform/)?(?:[A-Za-z_][A-Za-z0-9_]*/)*[A-Za-z_][A-Za-z0-9_]*\\.py$"
               },
               "required_bindings": {
                 "type": "array",

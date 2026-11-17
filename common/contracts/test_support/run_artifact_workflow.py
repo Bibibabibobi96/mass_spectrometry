@@ -34,14 +34,15 @@ def copy_scientific_core(source_root: Path, destination_root: Path) -> None:
     declaration = source_root / "pyproject.toml"
     shutil.copyfile(declaration, destination_root / "pyproject.toml")
     config = tomllib.loads(declaration.read_text(encoding="utf-8"))
-    package = source_root / "src/msplatform/execution"
-    for pattern in config["tool"]["setuptools"]["package-data"]["msplatform.execution"]:
-        for source in package.glob(pattern):
-            if not source.is_file():
-                continue
-            destination = destination_root / source.relative_to(source_root)
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(source, destination)
+    for package_name, patterns in config["tool"]["setuptools"]["package-data"].items():
+        package = source_root / "src" / Path(*package_name.split("."))
+        for pattern in patterns:
+            for source in package.glob(pattern):
+                if not source.is_file():
+                    continue
+                destination = destination_root / source.relative_to(source_root)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, destination)
 
 
 CALLBACK = '''import json, os, sys, time

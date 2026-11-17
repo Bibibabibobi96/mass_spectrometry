@@ -40,7 +40,7 @@ from msplatform.execution.cache_generation import (
     payload_sha256,
 )
 
-from common.contracts.artifact_identity_archive import (
+from msplatform.execution.artifact_identity_archive import (
     READ_ONLY_IDENTITY_POLICY,
     historical_project_identities,
     validate_identity_archive_manifest,

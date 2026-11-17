@@ -1940,7 +1940,7 @@ exit ([int]$env:CI_FIXTURE_EXIT)
             self.assertIn("artifacts_other/missing.json", report["errors"][0])
 
     def test_shared_dependencies_route_to_actual_consumers(self) -> None:
-        multipole = self.routed_stages("projects/rf_multipole_ion_optics/runtime/simion_particle_source.py")
+        multipole = self.routed_stages("src/msplatform/backends/simion/rf_particle_source.py")
         self.assertTrue(
             {
                 "rf_multipole_domain_tests",
@@ -2052,7 +2052,7 @@ exit ([int]$env:CI_FIXTURE_EXIT)
         }
         for path in (
             "src/msplatform/components/rf_multipole/family_contract.py",
-            "projects/rf_multipole_ion_optics/runtime/design_profile.py",
+            "src/msplatform/workflows/rf_design_profiles.py",
             "projects/rf_multipole_ion_optics/analysis/campaign_analysis.py",
             "src/msplatform/backends/comsol/matlab/solve_finite_3d_transport.m",
             "projects/rf_multipole_ion_optics/simion/simion_geometry.py",

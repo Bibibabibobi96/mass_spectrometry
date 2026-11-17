@@ -13,7 +13,7 @@ import unittest
 from unittest.mock import patch
 
 from msplatform.execution.manifest_publication import build_run_manifest
-from projects.rf_multipole_ion_optics.runtime.simion_field_checkpoint import read_checkpoint, write_checkpoint
+from msplatform.backends.simion.rf_field_checkpoint import read_checkpoint, write_checkpoint
 
 REPO = Path(__file__).resolve().parents[4]
 NATIVE_SUCCESS = {"exit_confirmed": True, "returncode": 0, "process_id": 11, "process_started_at_utc_ticks": 123456}
@@ -34,7 +34,7 @@ class FieldCheckpointTests(unittest.TestCase):
             (root / "quad_include.gem").write_text('; Generated from first; do not edit.\ne(1){fill{within{box(1,1,1,2,2,2)}}}\n')
             self.run_powershell(r'''
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $env:RF_TEST_REPO 'projects/rf_multipole_ion_optics/runtime/simion_field_checkpoint_support.ps1')
+. (Join-Path $env:RF_TEST_REPO 'src/msplatform/backends/simion/resources/simion_field_checkpoint_support.ps1')
 $root=$env:RF_TEST_ROOT;$gem=Join-Path $root 'root.gem';$include=Join-Path $root 'quad_include.gem'
 $a=@{GemPath=$gem;SimionExe=$gem;Grid=@(5,5,5);CellMm=@(1,1,1);ResponseIds=@(1);GemIncludePaths=@($include);Gem2PaArguments=@('gem2pa','root.gem');RefineArguments=@('refine','root.pa#')}
 $first=New-RfSimionFieldIdentity @a
@@ -64,7 +64,7 @@ $gem='gem';$simion='exe';$python='python';$codeRoot=$env:RF_TEST_REPO;$repoRoot=
 $gridAuditDocument=@{nx=5;ny=5;nz=5};$resolvedCellMmX=1;$resolvedCellMmY=1;$resolvedCellMmZ=1;$paBasisElectrodeIds=@(1)
 $flyPhysics=@{gem2pa_args=@('gem2pa');refine_args=@('refine');iob_args=@('build')}
 $templateIob=Join-Path $root 'template.iob';$templateCon=Join-Path $root 'template.con'
-$RetentionClass='solver_review';$nativeOperations=@();$fieldCheckpointOutputs=@();$continuationAllReuse=$false
+$RetentionClass='solver_review';$nativeOperations=@();$fieldCheckpointOutputs=@();$continuationAllReuse=$false;$StopStage='transport'
 $script:reads=0;$script:protects=0
 function New-RfSimionFieldIdentity {return @{field='fixture'}}
 function Write-RunJson {param($Path,$Value,$Depth,[switch]$Atomic) $Value|ConvertTo-Json -Depth 30|Set-Content $Path}
@@ -73,7 +73,7 @@ function Update-ArtifactWorkflowCapacitySession {return @{session=@{}}}
 function Protect-RfSimionFieldCheckpoint {$script:protects++;return @{guard='held'}}
 function Invoke-SimionStep {throw 'valid field unexpectedly recomputed or rebound'}
 function Write-RfSimionFieldCheckpoint {throw 'child overwrote original checkpoint'}
-$runner=Join-Path $codeRoot 'projects/rf_multipole_ion_optics/runtime/run_simion_finite_3d_transport.ps1'
+$runner=Join-Path $codeRoot 'src/msplatform/workflows/resources/run_simion_finite_3d_transport.ps1'
 $text=Get-Content $runner -Raw
 $start=$text.IndexOf('  if(-not$continuationAllReuse){', $text.IndexOf("Set-RfRunPhase 'field_and_layout'"))
 $end=$text.IndexOf("  Set-RfRunPhase 'flight_and_case_analysis'",$start)
@@ -98,7 +98,7 @@ if($config.inputs.simion_field_producer_manifest-cne'producer-manifest'){throw '
 
     def test_finite_inspects_permanent_layout_with_actual_case_before_ready_receipt(self):
         project = REPO / "projects/rf_multipole_ion_optics"
-        finite = (project / "runtime/run_simion_finite_3d_transport.ps1").read_text(encoding="utf-8-sig")
+        finite = (project.parents[1] / "src/msplatform/workflows/resources/run_simion_finite_3d_transport.ps1").read_text(encoding="utf-8-sig")
         self.assertIn("$iobBuildArguments[4]=$flightIobPath", finite)
         layout = finite[finite.index("  $iobBuildArguments=@($flyPhysics.iob_args)"):]
         self.assertLess(layout.index("New-RfSimionLayoutSeedCompanion"), layout.index("Invoke-SimionStep 'build_runtime_iob'"))
@@ -109,7 +109,7 @@ if($config.inputs.simion_field_producer_manifest-cne'producer-manifest'){throw '
         self.assertIn("RFQUAD_SIMION_REFERENCE_IOB=$flightIobPath", inspect)
         self.assertIn("MULTIPOLE_SIMION_RF_DRIVE_KERNEL_LUA=$rfDriveKernelLua", inspect)
         self.assertLess(inspect.index("Invoke-SimionStep 'inspect_runtime_iob'"), inspect.index("Write-RfSimionFieldCheckpoint"))
-        lua = (project / "simion/workbench/inspect_builtin_quad_reference.lua").read_text()
+        lua = (project.parents[1] / "src/msplatform/backends/simion/resources/inspect_builtin_quad_reference.lua").read_text()
         self.assertIn("if cell_x ~= nil or cell_y ~= nil or cell_z ~= nil then", lua)
         self.assertIn("type(cell_x) == 'number' and type(cell_y) == 'number' and type(cell_z) == 'number'", lua)
         self.assertIn("cell_y, cell_z = cell_x, cell_x", lua)
@@ -123,7 +123,7 @@ if($config.inputs.simion_field_producer_manifest-cne'producer-manifest'){throw '
             run, _, _ = self.fixture(root)
             self.run_powershell(r'''
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $env:RF_TEST_REPO 'projects/rf_multipole_ion_optics/runtime/simion_field_checkpoint_support.ps1')
+. (Join-Path $env:RF_TEST_REPO 'src/msplatform/backends/simion/resources/simion_field_checkpoint_support.ps1')
 $run=Join-Path $env:RF_TEST_ROOT '20261030_000000__sim__simion__field-producer'
 $native=[Collections.Generic.List[object]]::new()
 $native.Add(@{operation_id='refine';observation=@{exit_confirmed=$true;returncode=0;process_id=11;process_started_at_utc_ticks=123456}})
@@ -267,7 +267,7 @@ foreach($path in $second.output_paths|Where-Object{$_-ne$second.checkpoint_path}
             plan_path = root / "plan.json"; plan_path.write_text(json.dumps(plan), encoding="utf-8")
             script = r'''
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $env:RF_TEST_REPO 'projects/rf_multipole_ion_optics/runtime/simion_field_checkpoint_support.ps1')
+. (Join-Path $env:RF_TEST_REPO 'src/msplatform/backends/simion/resources/simion_field_checkpoint_support.ps1')
 $plan=Get-Content $env:RF_TEST_PLAN -Raw|ConvertFrom-Json
 $original=(Get-Command Get-ImmutablePaSourceVerificationSha256).ScriptBlock;$script:reads=0
 function Get-ImmutablePaSourceVerificationSha256 {param($Stream,$Length) $script:reads++;&$original -Stream $Stream -Length $Length}

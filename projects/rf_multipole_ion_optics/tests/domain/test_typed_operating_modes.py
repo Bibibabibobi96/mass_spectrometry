@@ -9,13 +9,13 @@ from pathlib import Path
 
 from msplatform.io.file_identity import repository_text_sha256
 from msplatform.contracts.machine_contracts import ContractError, validate_schema
-from projects.rf_multipole_ion_optics.core.compile_design_request import (
+from msplatform.components.rf_multipole.design_request_files import (
     MultipoleDesignCompileError,
     apply_typed_operating_mode,
     compile_governed_design_request_file,
     validate_resolved_design,
 )
-from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
+from msplatform.workflows.rf_design_profiles import resolve_design_profile
 from projects.rf_multipole_ion_optics.tests.domain.test_compile_design_request import (
     design_request,
     multipole_catalog,

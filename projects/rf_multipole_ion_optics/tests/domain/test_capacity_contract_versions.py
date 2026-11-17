@@ -9,13 +9,13 @@ import tempfile
 import unittest
 
 from msplatform.contracts.machine_contracts import ContractError
-from projects.rf_multipole_ion_optics.core.compile_design_request import (
+from msplatform.components.rf_multipole.design_request_files import (
     compile_design_request, compile_design_request_file, compile_governed_design_request_file,
     validate_design_request, validate_resolved_design, validate_resolved_design_contract,
 )
 from projects.rf_multipole_ion_optics.core.electrode_topology import build_electrode_topology
 from msplatform.backends.simion.rf_electrode_mapping import build_simion_electrode_map
-from projects.rf_multipole_ion_optics.simion.simion_geometry import render_physical_gem
+from msplatform.backends.simion.rf_finite_geometry import render_physical_gem
 from projects.rf_multipole_ion_optics.tests.domain.test_compile_design_request import design_request, multipole_catalog
 
 

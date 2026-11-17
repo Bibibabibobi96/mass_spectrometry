@@ -163,7 +163,7 @@ class ParticleTableIdentityTests(unittest.TestCase):
             }
         )
         command = (
-            ". (Join-Path $env:RF_REPO_ROOT 'projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1') -ExecutionResourcePath (Join-Path $env:RF_REPO_ROOT 'src/msplatform/execution/resources/frozen_python_package.ps1'); "
+            ". (Join-Path $env:RF_REPO_ROOT 'src/msplatform/execution/resources/frozen_python_package.ps1'); "
             "$t=$null;$e=$null;$entry=Join-Path $env:RF_REPO_ROOT 'projects/rf_multipole_ion_optics/workflows/cross_solver/compare_cross_solver.ps1'; "
             "$ast=[Management.Automation.Language.Parser]::ParseFile($entry,[ref]$t,[ref]$e);if($e.Count){throw 'Cross-solver entry did not parse'}; "
             "$selection=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$frozenPackage'},$true); "
