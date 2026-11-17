@@ -125,11 +125,12 @@ if mode=='comsol':
     fail=os.environ.get('TEST_MASS_FAIL_SPECIES')==name
     with output.open('w',newline='',encoding='utf-8') as stream:
         writer=csv.writer(stream);writer.writerow(['Ion','TofUs','XMm','YMm','Hit'])
-        if not fail:
-            for i in range(1,count+1):writer.writerow([i,math.sqrt(mass)+(i-1)*.01,48.9,.2,True])
-    report.write_text(('DETECTED=0/%d\n' if fail else 'DETECTED=%d/%d\n')%((count,) if fail else (count,count)))
+        for i in range(1,count+1):writer.writerow([i,math.sqrt(mass)+(i-1)*.01,48.9,.2,not fail])
+    report.write_text(('DETECTED=0/%d\nSTATUS=FAIL\n' if fail else 'DETECTED=%d/%d\nSTATUS=PASS\n')%((count,) if fail else (count,count)))
+    release=output.parent/f'{output.stem}_fixedN{count}_selected_release_from_data_file.txt'
+    release.write_text('native release fixture\n',encoding='utf-8')
     completion.write_text(json.dumps(dict(schema_version=1,role='comsol_launcher_completion',run_id=str(run_id),
-        operations=[dict(operation_id='inert',observation=dict(exit_confirmed=True,returncode=23 if fail else 0,
+        operations=[dict(operation_id='inert',observation=dict(exit_confirmed=True,returncode=0,
             process_id=os.getpid(),process_started_at_utc_ticks=1))],
         host_release=dict(inherited=True,token='inert-child',error=None))))
     raise SystemExit(23 if fail else 0)
@@ -201,6 +202,13 @@ for index,row in enumerate(rows,1):
             result = self.run_study(root, RUN_ID)
             run = Path(result["run_directory"])
             self.assertEqual(result["status"], "success")
+            inventory = _json(run / "inputs/code_inventory.json")
+            paths = {row["relative_path"]: row for row in inventory["files"]}
+            for relative in study.RETRACE_RESOURCES:
+                name = f"projects/{study.PROJECT}/{relative}"
+                self.assertEqual(Path(paths[name]["path"]).read_bytes(), (PROJECT / relative).read_bytes())
+            for relative in study.RETRACE_COMMON_RESOURCES:
+                self.assertEqual(Path(paths[relative]["path"]).read_bytes(), (REPO / relative).read_bytes())
             completion = _json(run / "results/execution_completion.json")
             self.assertEqual([row["operation_id"] for row in completion["writer_completion"]["operations"]],
                 [f"comsol-mz{mass}_z1" for mass in (10, 100, 500, 1000, 2000)]
@@ -230,17 +238,19 @@ for index,row in enumerate(rows,1):
 
     def test_authenticated_partial_successor_reuses_only_complete_species(self):
         with self.workspace() as root:
-            with self.assertRaisesRegex(Exception, "23"):
-                self.run_study(root, RUN_ID, fail_species="mz500_z1")
+            result = self.run_study(root, RUN_ID, fail_species="mz500_z1")
+            self.assertEqual(result["status"], "failed")
             parent = root / f"artifacts/projects/{study.PROJECT}/runs/{RUN_ID}"
+            summary = _json(parent / "summary.json")
+            self.assertEqual(summary["scientific_failures"], ["mz500_z1"])
             selection = study.select_partial_source(parent, root / "artifacts")
-            self.assertEqual(set(selection["completed"]), {"mz10_z1", "mz100_z1"})
+            self.assertEqual(set(selection["completed"]), {"mz10_z1", "mz100_z1", "mz1000_z1", "mz2000_z1"})
             child_id = "20261116_120100__sim__cross__mass-resumed"
             result = self.run_study(root, child_id, partial_parent=selection)
             child = Path(result["run_directory"])
             operations = _json(child / "results/execution_completion.json")["writer_completion"]["operations"]
             self.assertEqual([row["operation_id"] for row in operations],
-                ["comsol-mz500_z1", "comsol-mz1000_z1", "comsol-mz2000_z1", "simion-mixed-species"])
+                ["comsol-mz500_z1", "simion-mixed-species"])
             for name in ("mz10_z1", "mz100_z1"):
                 self.assertEqual((parent / f"comsol/{name}.csv").read_bytes(),
                                  (child / f"comsol/{name}.csv").read_bytes())

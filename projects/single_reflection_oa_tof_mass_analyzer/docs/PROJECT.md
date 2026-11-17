@@ -62,6 +62,38 @@ The cumulative local Changed run then exposed two more retired-PowerShell assert
 
 That ordinary-install rerun passed installation (1820.074 s), RF domain, integration and OA partitions 01/03, then exposed two further migration-specific expectations. The mass-spectrum host-resource fixture now verifies its installed entrypoint does not call the retired lease stub, while the other four legacy entrypoints retain their lease assertions. The missing-frozen-core negative accepts the actual FileNotFoundError and still checks the frozen `inputs/code` boundary and unchanged outputs. Both exact methods passed together in 43.750 s. The following rerun passed installation (1824.553 s) and OA partitions 01–03, then exposed two additional mass-spectrum AST assumptions in that host module and one environment-dependent early-error expectation. The fixture now accepts either the missing deployment/profile or missing science-file refusal, retains the old AST checks only for the legacy consumers, and checks the installed mixed-species `session.run_process` role/stage. All four affected methods plus the missing-core negative passed together in 44.999 s. The complete nine-path Changed rerun then passed in 2488.984 s, including ordinary installation, all four integration partitions, RF domain, all four OA test partitions, documentation, Ruff and development checks. Remote Changed run `43980992590` independently passed its changed-scope job in 9 m 25 s at `2dce031e`; repository integration was not selected. This closes the stale software assertions only; it is not a real five-species native run, complete Repository or scientific qualification.
 
+The first real run `20261117_092500__sim__cross__mass-spectrum-five-v39` stopped during the first
+COMSOL retrace because the frozen package omitted `load_oatof_contract` and the other existing MATLAB
+helpers consumed by the retrace. It did not execute later species or the mixed SIMION Fly. The failed
+owner sealed its evidence, confirmed stopped writers and released its capacity lease. The installed
+study now freezes the actual `load_oatof_contract`, `oatof_paths`, segmented-output and detector-arrival
+helpers plus the existing common path and path-identity helpers, with byte-identity regression coverage.
+The exact public five-species API test passes all native-inert units, mixed-source construction and new
+resource-origin assertions in 72.521 s; focused Ruff also passes. The next run
+`20261117_093500__sim__cross__mass-spectrum-five-v40` independently confirmed the same first-species
+boundary by reaching `oatof_paths` and then stopping on the previously unlisted `resolve_path_identity`;
+that failure is preserved and its dependency is now explicitly frozen. A fresh native identity is required.
+These repairs are resource closure only, not yet a successful native or scientific result.
+
+The subsequent real 10 Da retrace completed its COMSOL study but detected only 3/100 ions. All 100
+terminal rows, including `no_detector_event`, are now written before the unchanged all-hit assertion.
+The failed v41 run also exposed an undeclared generated release file; its owner hold remains protected
+because a later finalization attempt correctly rejected the changed bound task hash rather than rewrite
+that evidence. Independent species no longer have an incorrect sequential prerequisite: a CSV-proven
+scientific detection failure is recorded with its actual count and does not block valid siblings or the
+mixed Fly, while infrastructure and contract failures still stop immediately. Such a run remains failed
+and does not force spectrum analysis that requires at least three detections. The inert negative/recovery
+regression and the other three public study tests pass, including four valid siblings, failed-run evidence
+and selective authenticated reuse. This preserves the 3/100 negative and is not scientific acceptance.
+
+The complete native study `20261117_110500__sim__cross__mass-spectrum-five-v47` then executed all five
+COMSOL retraces and the mixed 500-ion Fly. COMSOL detections were `mz10=25/100`, `mz100=39/100`,
+`mz500=0/100`, `mz1000=18/100` and `mz2000=85/100`; SIMION detected all 500 ions. Every terminal CSV
+was retained, the run remained `failed`, writers stopped and capacity was released. No spectrum analysis
+was forced and `formal_gate_passed=false`. This closes the native execution and failure-evidence boundary,
+not scientific acceptance, model equivalence or Formal qualification. The subsequent Changed gate passed
+in 1830.934 s, including direct wheel/sdist-rebuilt outside-checkout use and all four integration partitions.
+
 ## 当前状态
 
 ### 可安装COMSOL原生资源切片

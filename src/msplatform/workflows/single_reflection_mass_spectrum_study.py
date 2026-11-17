@@ -33,6 +33,17 @@ OUTPUT_NAMES = (
     "mass_peak_shape_comparison.csv", "mass_spectrum_metrics.json",
     "mass_spectrum_comparison.png", "mass_detector_landing_comparison.png",
 )
+RETRACE_RESOURCES = (
+    "load_oatof_contract.m",
+    "oatof_paths.m",
+    "comsol/configure_oatof_segmented_output.m",
+    "comsol/oatof_extract_detector_arrivals.m",
+    "comsol/oatof_detector_arrival_reducer.m",
+)
+RETRACE_COMMON_RESOURCES = (
+    "common/paths/workspace_paths.m",
+    "common/paths/resolve_path_identity.m",
+)
 RETRACE_ENVIRONMENT = {
     "OATOF_ACCELERATOR_HMAX_MM": "1",
     "OATOF_REUSE_EXISTING_FIELD": "1",
@@ -160,6 +171,24 @@ def _freeze_code(session: RunSession, task_script: Path | None, resolved: Path) 
             relative_path=f"projects/{PROJECT}/comsol/run_fixed_particle_retrace.m",
             path=str(task_target), sha256=task_record["sha256"]))
         session.add_input("comsol_task", task_record)
+        project_root = task_script.parent.parent
+        for index, relative in enumerate(RETRACE_RESOURCES):
+            source = project_root / relative
+            target = session.declare_file(code_root / f"projects/{PROJECT}/{relative}", "required_evidence")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            freeze_file(source, target)
+            record = file_record(target, "required_evidence")
+            package["files"].append(dict(
+                relative_path=f"projects/{PROJECT}/{relative}", path=str(target), sha256=record["sha256"]))
+            session.add_input(f"comsol_support_{index}", record)
+        for index, relative in enumerate(RETRACE_COMMON_RESOURCES):
+            source = project_root.parents[1] / relative
+            target = session.declare_file(code_root / relative, "required_evidence")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            freeze_file(source, target)
+            record = file_record(target, "required_evidence")
+            package["files"].append(dict(relative_path=relative, path=str(target), sha256=record["sha256"]))
+            session.add_input(f"comsol_common_{index}", record)
     geometry_target = session.declare_file(
         code_root / f"projects/{PROJECT}/config/resolved_geometry.json", "required_evidence")
     geometry_target.parent.mkdir(parents=True, exist_ok=True)
@@ -367,12 +396,15 @@ def _run_action(session: RunSession, *, requested: dict[str, Path], original: di
         frozen["particle_count_policy"], ion_dir, session.log_dir)
     _declare_sources(session, cohort)
     native_completion = {}
+    scientific_failures = {}
     reused_outputs: list[Path] = []
     launcher = session.input_dir / "code/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1"
     try:
         for index, species in enumerate(cohort["mode"]["species"]):
             name, count = str(species["species_id"]), int(species["particle_count"])
             csv_path = session.declare_file(comsol_dir / f"{name}.csv", "required_evidence")
+            session.declare_file(comsol_dir / f"{name}_fixedN{count}_selected_release_from_data_file.txt",
+                                 "required_evidence")
             report = session.declare_file(session.log_dir / f"{name}.report.txt", "required_evidence")
             completion_path = session.declare_file(
                 session.log_dir / f"{name}.comsol_completion.json", "required_evidence")
@@ -389,13 +421,32 @@ def _run_action(session: RunSession, *, requested: dict[str, Path], original: di
                 reused_outputs.extend((csv_path, report, completion_path))
                 continue
             environment = dict(RETRACE_ENVIRONMENT, OATOF_CONTRACT_PATH=str(frozen_geometry))
-            oatof_retrace.run_species_retrace(session,
-                operation_id=f"comsol-{name}", run_id=session.run_id, launcher=launcher,
-                task_script=task, source_model=requested["formal_mph"],
-                ion_table=cohort["individual"][index], output_csv=csv_path,
-                report_path=report, completion_path=completion_path, runtime_dir=comsol_dir,
-                results_dir=session.result_dir, scientific_environment=environment,
-                limits=stage["limits"], immutable_input_records=tuple(guards + [formal_model_record]))
+            from msplatform.execution.processes import ProcessExecutionError
+            try:
+                oatof_retrace.run_species_retrace(session,
+                    operation_id=f"comsol-{name}", run_id=session.run_id, launcher=launcher,
+                    task_script=task, source_model=requested["formal_mph"],
+                    ion_table=cohort["individual"][index], output_csv=csv_path,
+                    report_path=report, completion_path=completion_path, runtime_dir=comsol_dir,
+                    results_dir=session.result_dir, scientific_environment=environment,
+                    limits=stage["limits"], immutable_input_records=tuple(guards + [formal_model_record]))
+            except ProcessExecutionError as failure:
+                completion = oatof_retrace.load_launcher_completion(completion_path, run_id=session.run_id)
+                report_lines = report.read_text(encoding="utf-8-sig").splitlines()
+                if "STATUS=FAIL" not in report_lines:
+                    raise
+                import csv
+                with csv_path.open(encoding="utf-8-sig", newline="") as stream:
+                    rows = list(csv.DictReader(stream))
+                detected = sum(row.get("Hit", "").strip().lower() in {"1", "true", "yes"} for row in rows)
+                if len(rows) != count or detected == count:
+                    raise
+                for evidence in (csv_path, report, completion_path):
+                    verify_record(f"COMSOL scientific negative {name}", file_record(evidence, "required_evidence"))
+                native_completion[name] = {"receipt": completion,
+                    "scientific_failure": "not_all_particles_detected", "detected": detected, "total": count}
+                scientific_failures[name] = failure
+                continue
             native_completion[name] = oatof_retrace.verify_completed_species(
                 run_id=session.run_id, particle_count=count, csv_path=csv_path,
                 report_path=report, completion_path=completion_path)
@@ -411,7 +462,8 @@ def _run_action(session: RunSession, *, requested: dict[str, Path], original: di
             max_tof_us=mass_spectrum_max_tof_us(frozen["mode_config"], reference_mass),
             output_csv=simion_csv, summary_path=simion_summary, runtime_receipt=runtime_receipt,
             limits=stage["limits"], immutable_input_records=guards)
-        analysis = _analysis_outputs(session, frozen["mode_config"], frozen_geometry, comsol_dir, simion_csv)
+        analysis = [] if scientific_failures else _analysis_outputs(
+            session, frozen["mode_config"], frozen_geometry, comsol_dir, simion_csv)
         config = _json(session.run_config)
         config.update(role="oa_tof_mass_spectrum_run_config", species=cohort["mode"]["species"],
             particle_source_provenance=cohort["provenance"], native_completion=native_completion,
@@ -421,7 +473,7 @@ def _run_action(session: RunSession, *, requested: dict[str, Path], original: di
                 particle_count_contract="repository_standard_with_n100_prefix_of_n1000",
                 simion_max_tof_us=mass_spectrum_max_tof_us(frozen["mode_config"], reference_mass)))
         write_json_atomic(session.run_config, config)
-        metrics = _json(session.result_dir / "mass_spectrum_metrics.json")
+        metrics = {} if scientific_failures else _json(session.result_dir / "mass_spectrum_metrics.json")
         outputs = [*analysis, simion_csv, simion_summary, cohort["mixed"],
             *cohort["individual"], *cohort["parents"], *reused_outputs]
         outputs += [comsol_dir / f"{item['species_id']}.csv" for item in cohort["mode"]["species"]]
@@ -429,8 +481,10 @@ def _run_action(session: RunSession, *, requested: dict[str, Path], original: di
         outputs += [session.log_dir / f"{item['species_id']}.comsol_completion.json" for item in cohort["mode"]["species"]]
         outputs += list(session.log_dir.glob("*__n1000_parent_validation.json"))
         outputs = [session.canonical_path(path) for path in dict.fromkeys(outputs)]
-        return dict(status="success", summary=dict(metrics, execution_status="completed",
-            data_validity="valid", scientific_result="candidate_diagnostic", formal_gate_passed=False),
+        return dict(status="failed" if scientific_failures else "success",
+            summary=dict(metrics, execution_status="completed",
+            data_validity="valid", scientific_result="candidate_diagnostic", formal_gate_passed=False,
+            scientific_failures=sorted(scientific_failures)),
             output_paths=outputs, required_output_paths=analysis,
             retention_preserve_paths=[], manifest_extra_fields={})
     except Exception as primary:
@@ -509,8 +563,6 @@ def run(context: ExecutionContext, *, run_id: str, mode_config: Path, resolved_g
            if not partial_parent or item["species_id"] not in partial_parent["completed"]]
     ids.append("simion-mixed-species")
     dependencies = {name: [] for name in ids}
-    for left, right in zip(ids, ids[1:]):
-        dependencies[right] = [left]
     source_references, protected = [], []
     if partial_parent:
         source_references = [dict(manifest_record=partial_parent["manifest_record"],
