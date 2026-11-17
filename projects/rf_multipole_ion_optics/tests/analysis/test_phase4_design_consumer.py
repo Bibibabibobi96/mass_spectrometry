@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
+from msplatform.workflows.rf_design_profiles import resolve_design_profile
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -137,9 +137,7 @@ class Phase4DesignConsumerTests(unittest.TestCase):
 
     def test_solver_builders_read_governed_physical_fields_directly(self) -> None:
         matlab = (
-            PROJECT_ROOT
-            / "comsol"
-            / "solve_deterministic_rf_quadrupole_particles.m"
+            REPO_ROOT / "src/msplatform/backends/comsol/matlab/solve_deterministic_rf_quadrupole_particles.m"
         ).read_text(encoding="utf-8")
         simion = (
             PROJECT_ROOT / "workflows" / "interface_readiness" / "run_simion.ps1"

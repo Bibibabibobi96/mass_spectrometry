@@ -85,10 +85,10 @@ try {
   }
   Write-RunJson -Path $definitionPath -Value $definition
   $sourcePaths = @(
-    'projects/parallel_mirror_dual_stripe_mr_tof/analysis/downstream_fixed_grid_workpoint.py',
+    'src/msplatform/workflows/prepared_joint/fixed_grid_workpoint.py',
     'projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_downstream_fixed_grid_workpoint.ps1',
-    'projects/parallel_mirror_dual_stripe_mr_tof/analysis/joint_mirror_stripe_l0.py',
-    'projects/parallel_mirror_dual_stripe_mr_tof/analysis/two_prism_operating_point.py',
+    'src/msplatform/workflows/prepared_joint/joint_mirror_stripe_l0.py',
+    'src/msplatform/workflows/prepared_joint/prism_operating_point.py',
     'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/candidate_contract.py',
     'src/msplatform/io/file_identity.py',
     'src/msplatform/execution/manifest_verification.py',
@@ -115,7 +115,7 @@ try {
   $analysisLog = Join-Path $package.log_dir 'downstream_fixed_grid_workpoint.log'
   $lease = Enter-HostExecutionLease -Role GATE -Stage downstream_workpoint_audit -RunId $RunId
   Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
-    & $python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_workpoint `
+    & $python -m msplatform.workflows.prepared_joint.fixed_grid_workpoint `
       --definition $definitionPath --output $proposalPath --freeze-input-dir (Join-Path $package.input_dir 'trials') `
       2>&1 | Tee-Object -FilePath $analysisLog
     if ($LASTEXITCODE -ne 0) { throw 'Downstream fixed-grid workpoint audit failed.' }

@@ -17,8 +17,8 @@ from msplatform.components.orthogonal_accelerator.assembly_interface import reso
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.provider import resolve_component
 from msplatform.backends.simion.oa_focus_plan import derive
 from projects.orthogonal_accelerator.analysis.two_zone_geometry import load_geometry_profile
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis import two_prism_simion_trial as trial
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import resolve_oa_mr_direct_pose
+from msplatform.workflows.prepared_joint import prism_trial as trial
+from msplatform.backends.simion.native_system_geometry import resolve_oa_mr_direct_pose
 from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis import test_two_prism_simion_trial as trial_fixture
 from projects.parallel_mirror_dual_stripe_mr_tof.tests.test_support.mr_geometry_inputs import geometry_authority
 

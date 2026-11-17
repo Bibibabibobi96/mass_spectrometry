@@ -10,7 +10,7 @@ is owned by subsequent instrument TE1/TE2 calibration rather than v1/v2/L.
 
 from __future__ import annotations
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_component_requirements import read_accelerator_geometry_authority
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.accelerator_requirements import read_accelerator_geometry_authority
 
 import argparse
 import copy
@@ -42,7 +42,7 @@ from msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0 imp
     project_y_from_theory_drift_mm,
     theory_drift_y_mm,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0 import (
+from msplatform.workflows.prepared_joint.joint_mirror_stripe_l0 import (
     JointL0Trial,
     StripeHardBoundary,
     classify_constraint_system,
@@ -71,7 +71,7 @@ from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import (
     derive_mirror_l0_slope_tolerance_per_v,
     reduced_period,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_stripe_shape_adapter import (
+from msplatform.backends.simion.native_stripe_shape_adapter import (
     build_native_stripe_shape_selection,
 )
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import (
@@ -82,7 +82,7 @@ from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract
     CandidateContractError,
     derive_operating_energy_envelope,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_handoff import (
+from msplatform.workflows.prepared_joint.prism_handoff import (
     audit_two_prism_voltage_definition,
 )
 

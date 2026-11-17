@@ -7,7 +7,7 @@ import unittest
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_operating_point import (
+from msplatform.workflows.prepared_joint.prism_operating_point import (
     measured_prism_jacobian,
 )
 

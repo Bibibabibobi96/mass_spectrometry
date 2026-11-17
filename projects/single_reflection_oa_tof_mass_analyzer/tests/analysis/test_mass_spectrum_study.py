@@ -105,7 +105,6 @@ class MassSpectrumStudyTests(unittest.TestCase):
             resolved_geometry=PROJECT / "config/resolved_geometry.json",
             particle_count_policy=REPO / "src/msplatform/contracts/particle_count_policy.json",
             formal_mph=mph, formal_asset_manifest=asset_manifest,
-            comsol_task=REPO / "src/msplatform/backends/comsol/matlab/run_fixed_particle_retrace.m",
             simion_executable=simion, artifact_project_root=artifact_project,
             project_config=PROJECT / "config/project.json", formal_assets=formal_assets,
             baseline=PROJECT / "config/baseline.json",
@@ -189,7 +188,7 @@ for index,row in enumerate(rows,1):
             str(PROJECT / "workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1"),
             "-RunId", run_id, "-Workspace", str(root), "-ExecutionEnvironment", str(environment),
             "-EngineeringProfile", "test", *options], cwd=REPO, capture_output=True, text=True,
-            encoding="utf-8", timeout=120,
+            encoding="utf-8", errors="replace", timeout=120,
             env={**os.environ, "PYTHONPATH": str(REPO / "src"),
                  "MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN": "",
                  "MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "",
@@ -285,6 +284,13 @@ for index,row in enumerate(rows,1):
             with self.assertRaises(Exception):
                 study.select_analysis_source(parent, root / "artifacts")
             self.assertFalse((root / f"artifacts/projects/{study.PROJECT}/runs/tampered-child").exists())
+
+    def test_original_cli_rejects_external_retrace_override(self):
+        with self.workspace() as root:
+            result = self.cli(root, RUN_ID, "--comsol-task", "external-retrace.m")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("comsol-task", result.stderr)
+            self.assertFalse((root / "artifacts/projects" / study.PROJECT / "runs" / RUN_ID).exists())
 
     def test_unknown_writer_and_scientific_receipt_negatives(self):
         with self.workspace() as root:

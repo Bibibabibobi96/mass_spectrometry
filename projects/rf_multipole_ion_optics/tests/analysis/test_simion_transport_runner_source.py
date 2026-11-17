@@ -18,7 +18,7 @@ from msplatform.contracts.particle_count_policy import POLICY_PATH
 from common.contracts.capacity_ledger import initialize_capacity_ledger
 from msplatform.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
 from msplatform.components.rf_multipole.source_validation import COLUMNS
-from projects.rf_multipole_ion_optics.analysis.verify_resolved_design import verify as verify_resolved_design
+from msplatform.components.rf_multipole.design_validation import verify as verify_resolved_design
 from projects.rf_multipole_ion_optics.workflows.interface_readiness.particle_source_policy import (
     generate_interface_bundle as generate_bundle,
 )
@@ -34,7 +34,7 @@ MASS_RUNNER = (
     PROJECT_ROOT / "workflows" / "mass_filter_reference" / "run_simion.ps1"
 )
 RUN_CONFIG_CONTRACT = PROJECT_ROOT / "runtime" / "simion_run_config.ps1"
-SHARED_LUA = REPO_ROOT / "projects/rf_multipole_ion_optics/simion/simion_transport.lua"
+SHARED_LUA = REPO_ROOT / "src/msplatform/backends/simion/resources/simion_transport.lua"
 EXECUTION_PROFILES = PROJECT_ROOT / "config" / "execution_profiles.json"
 RESOLVED = PROJECT_ROOT / "variants" / "quadrupole" / "config" / "resolved_design_official.json"
 SOURCE_FAMILY = PROJECT_ROOT / "variants" / "quadrupole" / "config" / "interface_readiness_particle_source.json"
@@ -103,7 +103,7 @@ class SimionTransportRunnerSourceTests(unittest.TestCase):
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 . (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
-$errors=$null;$entry=Join-Path $Repo 'projects/rf_multipole_ion_optics/runtime/run_simion_finite_3d_transport.ps1'
+$errors=$null;$entry=Join-Path $Repo 'src/msplatform/workflows/resources/run_simion_finite_3d_transport.ps1'
 $ast=[Management.Automation.Language.Parser]::ParseFile($entry,[ref]$null,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
 $pending=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$pendingRuns'},$true)
@@ -157,7 +157,7 @@ exit 0
     def test_preparation_completion_never_turns_unknown_descendants_into_stopped(self) -> None:
         script = r"""
 $ErrorActionPreference='Stop'
-. (Join-Path $PWD 'projects/rf_multipole_ion_optics/runtime/simion_execution.ps1')
+. (Join-Path $PWD 'src/msplatform/backends/simion/resources/simion_execution.ps1')
 function Invoke-ResourceBudgetedProcess {
  param($Limits)
  if($null-ne$Limits){throw 'Invented project limits'}
@@ -185,7 +185,7 @@ foreach($scenario in @('success','nonzero','observation_failure','danger')){
         self.assertIn("PREPARATION_OWNER=PASS", result.stdout)
 
     def test_prepared_identity_and_mass_analysis_consume_resolved_radian_phase(self) -> None:
-        from projects.rf_multipole_ion_optics.core.compile_design_request import resolved_design_sha256
+        from msplatform.components.rf_multipole.design_request_files import resolved_design_sha256
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             resolved = json.loads((PROJECT_ROOT / "variants/quadrupole/config/resolved_design_mass_filter.json").read_text(encoding="utf-8"))
@@ -196,7 +196,7 @@ foreach($scenario in @('success','nonzero','observation_failure','danger')){
 $ErrorActionPreference='Stop'
 . (Join-Path $PWD 'common/contracts/run_artifact_support.ps1')
 . (Join-Path $PWD 'projects/rf_multipole_ion_optics/runtime/simion_run_config.ps1')
-. (Join-Path $PWD 'projects/rf_multipole_ion_optics/runtime/simion_execution.ps1')
+. (Join-Path $PWD 'src/msplatform/backends/simion/resources/simion_execution.ps1')
 $r=Get-Content (Join-Path $env:RF_TEST_TEMP 'resolved.json') -Raw|ConvertFrom-Json
 $i=Get-Content 'projects/rf_multipole_ion_optics/variants/quadrupole/config/interface_contract.json' -Raw|ConvertFrom-Json
 $n=Get-Content 'projects/rf_multipole_ion_optics/variants/quadrupole/config/simion_solver_numerics.json' -Raw|ConvertFrom-Json
@@ -205,7 +205,7 @@ $coreConfig=New-RfSimionCoreRunConfig -ResolvedDesign $r -InterfaceContract $i -
  -OperatingPoint mass_filter_reference -IobPath 'C:\fixture\a.iob' -Fly2Path 'C:\fixture\a.fly2' `
  -SourceStatesLua 'C:\fixture\source.lua' -ParticleStateCsv 'C:\fixture\state.csv' -TrajectoryCsv 'C:\fixture\trajectory.csv' -SummaryJson 'C:\fixture\summary.json'
 if($coreConfig.phase_rad-ne0.37-or$coreConfig.Contains('phase_deg')){throw 'Core radian authority differs'}
-$program='projects/rf_multipole_ion_optics/simion/simion_transport.lua'
+$program='src/msplatform/backends/simion/resources/simion_transport.lua'
 $source=@{files=@(@{relative_path='fixture.py';sha256=('A'*64)})}
 $one=Join-Path $env:RF_TEST_TEMP 'one.json';$two=Join-Path $env:RF_TEST_TEMP 'two.json';$three=Join-Path $env:RF_TEST_TEMP 'three.json'
 Write-RfSimionPreparedFlyIdentity -CoreConfig $coreConfig -Path $one -CaseName fixture -SourcePackage $source -SourceRelativePaths fixture.py -ProgramSourcePath $program -NativeFlyArguments @(Get-RfSimionFlyArgumentIdentity -CoreConfig $coreConfig)
@@ -281,7 +281,7 @@ if($script:calls-ne2){throw 'Shared recovery not called'}
         script = r"""
 $ErrorActionPreference='Stop'
 . (Join-Path $PWD 'common/contracts/run_artifact_support.ps1')
-. (Join-Path $PWD 'projects/rf_multipole_ion_optics/runtime/simion_execution.ps1')
+. (Join-Path $PWD 'src/msplatform/backends/simion/resources/simion_execution.ps1')
 function Initialize-RfSimionPaBasis {if($script:fieldReady){throw 'Completed field was refined again'};$script:pa++}
 function Initialize-RfSimionPreparedBatch {if($script:fieldReady){throw 'Prepared IOB was rebuilt'};$script:iob++}
 function Update-HostResourceStage {param($Lease) $Lease}
@@ -349,7 +349,7 @@ foreach($scenario in @('full','partial','prepared_partial','failed')){
         self.assertIn("PREPARED_REUSE=PASS", result.stdout)
 
     def test_particle_wave_dispatches_through_shared_batch_phase(self) -> None:
-        support = PROJECT_ROOT / "runtime/simion_execution.ps1"
+        support = PROJECT_ROOT.parents[1] / "src/msplatform/backends/simion/resources/simion_execution.ps1"
         script = r"""
 $ErrorActionPreference='Stop'
 . $env:RF_EXECUTION_SUPPORT
@@ -388,7 +388,7 @@ $null=Invoke-RfSimionParticleBatchWave @arguments
 
     def test_adaptive_wave_retains_first_batch_and_failure_inventory(self) -> None:
         """Execute the shared lifecycle with native work replaced at its boundary."""
-        support = PROJECT_ROOT / "runtime/simion_execution.ps1"
+        support = PROJECT_ROOT.parents[1] / "src/msplatform/backends/simion/resources/simion_execution.ps1"
         script = r"""
 $ErrorActionPreference='Stop'
 . $env:RF_EXECUTION_SUPPORT
@@ -510,7 +510,7 @@ foreach ($nested in @($false,$true)) {
         $body=$acquire[0].Extent.Text + @'
 
 # Exercise production PA stage transitions around a native-command fixture.
-. (Join-Path $PWD 'projects/rf_multipole_ion_optics/runtime/simion_execution.ps1')
+. (Join-Path $PWD 'src/msplatform/backends/simion/resources/simion_execution.ps1')
 function Invoke-TestSimion {
     if ('gem2pa' -in $args) {
         $current=@((Get-HostResourceStatus).records)[0]
@@ -987,7 +987,7 @@ exit 0
         self.assertIn("$mode = 'transport_interface_readiness'", source)
         invocation = source[source.index("$sourceProjectionArguments = @(") :]
         for token in (
-            "'-m','projects.rf_multipole_ion_optics.runtime.simion_particle_source'",
+            "'-m','msplatform.backends.simion.rf_particle_source'",
             "'--particles',$particlePath",
             "'--resolved-design',$frozenResolved",
             "'--source-family',$frozenSourceFamily",
@@ -999,7 +999,7 @@ exit 0
         ):
             self.assertIn(token, invocation)
         self.assertNotIn(
-            "projects.rf_multipole_ion_optics.runtime.simion_particle_source --ion-table", source
+            "msplatform.backends.simion.rf_particle_source --ion-table", source
         )
         self.assertIn("particle_source_metadata.json", source)
         self.assertIn("'--source',$particlePath", source)
@@ -1172,7 +1172,7 @@ exit 0
                 [
                     sys.executable,
                     "-m",
-                    "projects.rf_multipole_ion_optics.runtime.simion_particle_source",
+                    "msplatform.backends.simion.rf_particle_source",
                     "--particles",
                     str(particles),
                     "--resolved-design",
@@ -1207,6 +1207,8 @@ exit 0
             particles = root / "empty canonical.csv"
             particles.write_text(",".join(COLUMNS) + "\n", encoding="utf-8")
             fixture_source = capacity_fixture_source(REPO_ROOT, root/"fixture_source")
+            shutil.copytree(REPO_ROOT / "src/msplatform/backends/simion/resources",
+                            fixture_source / "src/msplatform/backends/simion/resources", dirs_exist_ok=True)
             environment = os.environ.copy()
             # Exercise the governed project layout in an isolated artifact tree.
             artifact_workspace = root / "artifacts"

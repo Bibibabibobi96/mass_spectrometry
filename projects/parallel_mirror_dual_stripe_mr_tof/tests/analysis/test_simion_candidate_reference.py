@@ -17,7 +17,7 @@ from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract
     derive_operating_energy_envelope, derive_two_zone_focus, derive_two_zone_placement,
     load_contract, resolve_trajectory_profile,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import (
+from msplatform.backends.simion.native_system_geometry import (
     build_analyzer_gem, resolve_accelerator_iob_origin, resolve_oa_mr_direct_pose,
     resolve_static_iob_origins,
 )
@@ -31,7 +31,7 @@ from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry 
     geometry_receipt,
     resolve_geometry,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import summarize_events
+from msplatform.workflows.prepared_joint.event_analysis import summarize_events
 from msplatform.backends.simion.mrtof_observations import parse_events
 from projects.parallel_mirror_dual_stripe_mr_tof.tests.test_support.cad_pose_contract import (
     load_cad_pose_contract,
@@ -219,7 +219,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         self.assertEqual(authority, before)
 
     def test_mr_delegates_accelerator_electrode_topology_to_component_owner(self) -> None:
-        source = (PROJECT / "analysis" / "native_system_geometry.py").read_text(encoding="utf-8")
+        source = (PROJECT.parents[1] / "src/msplatform/backends/simion/native_system_geometry.py").read_text(encoding="utf-8")
         self.assertIn("build_analyzer_gem", source)
         self.assertNotIn("render_closed_two_zone_local_pa", source)
         self.assertNotIn("emit_ideal_grid", source)
@@ -321,7 +321,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
             inherited["two_prism_low_field_reference_section"],
             resolve_geometry(authority, **pure_geometry_inputs(authority))["two_prism_low_field_reference_section"],
         )
-        with patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry.resolve_geometry",
+        with patch("msplatform.backends.simion.native_system_geometry.resolve_geometry",
                    side_effect=AssertionError("already resolved geometry must not be compiled again")):
             origins = resolve_static_iob_origins(reviewed, resolved_geometry=inherited)
         detector_box = inherited["detector"]["box"]
@@ -366,7 +366,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
             PROJECT.parent.parent / "integrations/config/recipes/oa_mr_two_zone_gap30_plan.json"
         ).read_text(encoding="utf-8"))
         from msplatform.components.orthogonal_accelerator.assembly_interface import resolve_assembly_interface
-        with patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry.resolve_oa_assembly_interface",
+        with patch("msplatform.backends.simion.native_system_geometry.resolve_oa_assembly_interface",
                    wraps=resolve_assembly_interface) as publisher:
             origin = resolve_accelerator_iob_origin(contract, provider_plan, composition_plan, accelerator_geometry_authority=geometry_authority(contract))
         self.assertEqual(publisher.call_args.kwargs["schema_version"], 1)
@@ -1110,9 +1110,9 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         self.assertEqual(geometry_fingerprint(shifted_reference), geometry_fingerprint(resolved))
 
     def test_active_flight_program_and_launcher_contract(self) -> None:
-        program = (PROJECT / "simion" / "mrtof_candidate.lua").read_text(encoding="utf-8")
+        program = (PROJECT.parents[1] / "src/msplatform/backends/simion/resources/mrtof_candidate.lua").read_text(encoding="utf-8")
         bunch = (PROJECT / "simion" / "mrtof_candidate.fly2").read_text(encoding="utf-8")
-        launcher = (PROJECT / "simion" / "run_iob_flight.lua").read_text(encoding="utf-8")
+        launcher = (PROJECT.parents[1] / "src/msplatform/backends/simion/resources/run_iob_flight.lua").read_text(encoding="utf-8")
         # Scientific CSV and central-plane coordinates are exercised by the actual
         # cycle emitter test; stopping/terminal callbacks live in test_scientific_event_io.
         self.assertNotIn("initial-exit-triggered accelerator pulse requires local-refinement", program)

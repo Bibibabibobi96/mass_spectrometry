@@ -895,15 +895,15 @@ $selected=Get-GateChangedTests -Route $route -RepoRoot $PWD.Path -KnownTestRoots
     def test_mr_workpoint_sources_augment_core_with_actual_consumers(self) -> None:
         stage = "parallel_mirror_dual_stripe_mr_tof_static"
         dependencies = (
-            ("workpoint_controller_state.py", ("test_workpoint_controller_state", "test_downstream_workpoint_iteration_runner")),
-            ("downstream_workpoint_iteration.py", ("test_downstream_workpoint_iteration",
+            ("src/msplatform/workflows/prepared_joint/controller_state.py", ("test_workpoint_controller_state", "test_downstream_workpoint_iteration_runner")),
+            ("src/msplatform/workflows/prepared_joint/downstream_workpoint.py", ("test_downstream_workpoint_iteration",
              "test_downstream_workpoint_checkpoint", "test_downstream_workpoint_iteration_runner")),
             ("run_downstream_workpoint_iteration.ps1", ("test_downstream_workpoint_iteration_runner",
              "test_static_workpoint_iteration", "test_prism_runner_contract_matrix")),
         )
         with tempfile.TemporaryDirectory(prefix="mr_source_augmentation_") as directory:
             root = Path(directory)
-            cases = [dict(name=str(index), paths=[f"{MR}/analysis/{source}"],
+            cases = [dict(name=str(index), paths=[source if source.startswith("src/") else f"{MR}/analysis/{source}"],
                           modules=sorted(f"{MR}/tests/analysis/{name}.py" for name in modules))
                      for index, (source, modules) in enumerate(dependencies)]
             cases.append(dict(name="union", paths=[path for case in cases for path in case["paths"]],
@@ -1127,12 +1127,12 @@ ConvertTo-Json -InputObject $results -Depth 16 -Compress
                 'test_two_prism_simion_trial',
             ],
         }
-        cases.extend(dict(stage=stage, paths=[f"{MR}/analysis/{name}.py"],
+        cases.extend(dict(stage=stage, paths=[({"joint_flight_preparation":"src/msplatform/workflows/prepared_joint/native_preparation.py","simion_event_analysis":"src/msplatform/workflows/prepared_joint/event_analysis.py","two_prism_simion_trial":"src/msplatform/workflows/prepared_joint/prism_trial.py"}.get(name, f"{MR}/analysis/{name}.py"))],
                           modules=(None if modules is None else
                                    sorted(f"{MR}/tests/analysis/{module}.py" for module in modules)))
                      for name, modules in consumers.items())
         for name in dependencies:
-            cases.append(dict(stage=stage, paths=[f"{MR}/analysis/{name}.py"], modules=None))
+            cases.append(dict(stage=stage, paths=[({"joint_flight_preparation":"src/msplatform/workflows/prepared_joint/native_preparation.py","simion_event_analysis":"src/msplatform/workflows/prepared_joint/event_analysis.py","two_prism_simion_trial":"src/msplatform/workflows/prepared_joint/prism_trial.py"}.get(name, f"{MR}/analysis/{name}.py"))], modules=None))
         for case, selected in zip(cases, self.selections(REPO_ROOT, cases), strict=True):
             with self.subTest(paths=case['paths']):
                 if case['modules'] is None:
@@ -1650,7 +1650,7 @@ $four=@('projects/rf_multipole_ion_optics/docs/COMSOL.md',$compiler,
  'projects/rf_multipole_ion_optics/variants/quadrupole/config/comsol_solver_numerics.json')
 $cases=@(@{name='four';paths=$four},@{name='deleted';paths=@($compiler)},
  @{name='renamed';paths=@($compiler,'projects/rf_multipole_ion_optics/runtime/unknown_new_name.ps1')},
- @{name='other';paths=@('projects/rf_multipole_ion_optics/runtime/runtime_profile.py')},
+ @{name='other';paths=@('src/msplatform/workflows/rf_runtime_profiles.py')},
  @{name='docs';paths=@('projects/rf_multipole_ion_optics/docs/COMSOL.md')})
 $result=@(foreach($case in $cases){
  $selected=@{};foreach($stage in @('rf_multipole_domain_tests','instrument_assembly_integration',
@@ -2457,7 +2457,7 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
         stage = "parallel_mirror_dual_stripe_mr_tof_static"
         adapter = "src/msplatform/backends/simion/resources/scalar_field_adapter.lua"
         lookup = "src/msplatform/backends/simion/resources.py"
-        prepared = MR + "/analysis/prepared_joint_trial.py"
+        prepared = "src/msplatform/workflows/prepared_joint/trial.py"
         provider = MR + "/simion/run_native_static_field_provider.ps1"
         consumers = [MR + "/tests/analysis/" + name + ".py" for name in (
             "test_static_field_binding", "test_native_memory_consumer_crop",

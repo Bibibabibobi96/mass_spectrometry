@@ -107,7 +107,7 @@ function Invoke-PreparedWorkpointAcquisition {
     $session=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactWorkspaceRoot `
       -RunDirectory $pkg.artifact_run_dir -CommittedNewBytes 0 -ProtectedPaths @($prepared,(Split-Path -Parent $p1),(Split-Path -Parent $p2)) `
       -Owner "mrtof-prepared-acquisition:$parentId"
-    $code="import sys;from pathlib import Path;from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import prepare_measured_centroid_acquisition;prepare_measured_centroid_acquisition(prepared_run=Path(sys.argv[1]),contract_path=Path(sys.argv[2]),proposal_path=Path(sys.argv[3]),p1_response=Path(sys.argv[4]),p2_response=Path(sys.argv[5]),field_run_id=sys.argv[6],output_directory=Path(sys.argv[7]))"
+    $code="import sys;from pathlib import Path;from msplatform.workflows.prepared_joint.downstream_workpoint import prepare_measured_centroid_acquisition;prepare_measured_centroid_acquisition(prepared_run=Path(sys.argv[1]),contract_path=Path(sys.argv[2]),proposal_path=Path(sys.argv[3]),p1_response=Path(sys.argv[4]),p2_response=Path(sys.argv[5]),field_run_id=sys.argv[6],output_directory=Path(sys.argv[7]))"
     Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
       & $python -c $code $prepared $physics $proposal $p1 $p2 $providerId $pkg.input_dir
       if($LASTEXITCODE-ne0){throw 'Prepared acquisition source/response/proposal preflight failed.'}
@@ -227,7 +227,7 @@ function Get-ManifestOutputPath {
   if($measured-and$measured.Value-and$FileName-in@('two_prism_trial_materialization.json','two_prism_trial_observation.json')){
     # Adapt only the original common function's output slots. The emitted files
     # retain their measured role and derive from the published N1 projection.
-    $code="import json,sys;from pathlib import Path;from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import materialize_prepared_staged_adapter;r=materialize_prepared_staged_adapter(Path(sys.argv[1]),Path(sys.argv[2]),Path(sys.argv[3]),Path(sys.argv[4]));print(json.dumps(r))"
+    $code="import json,sys;from pathlib import Path;from msplatform.workflows.prepared_joint.downstream_workpoint import materialize_prepared_staged_adapter;r=materialize_prepared_staged_adapter(Path(sys.argv[1]),Path(sys.argv[2]),Path(sys.argv[3]),Path(sys.argv[4]));print(json.dumps(r))"
     $adapter=Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
       $raw=@(& $python -c $code $ManifestPath $frozenPreparedTargetAuthorityPath $frozenContract $package.result_dir)
       if($LASTEXITCODE-ne0){throw 'Measured original-stage observation adapter failed.'}
@@ -263,7 +263,7 @@ function New-InitialGroupedWorkpointDecision {
   $baselineObservation = Get-ManifestOutputPath -ManifestPath $baselineManifest -FileName 'two_prism_trial_observation.json'
   $baselineMaterialization = Get-ManifestOutputPath -ManifestPath $baselineManifest -FileName 'two_prism_trial_materialization.json'
   Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
-    & $python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration `
+    & $python -m msplatform.workflows.prepared_joint.downstream_workpoint `
       --prior $ProposalPath --observation $baselineObservation --materialization $baselineMaterialization `
       --child-manifest $baselineManifest --contract $ContractPath --history $HistoryPath --iteration 1 --output $OutputPath
     if ($LASTEXITCODE -ne 0) { throw 'Initial grouped workpoint decision failed.' }
@@ -408,7 +408,7 @@ function Invoke-WorkpointControllerRequest {
   Push-Location -LiteralPath $RepoRoot
   try{
     $PSNativeCommandUseErrorActionPreference=$false
-    $captured=@($Request|ConvertTo-Json -Depth 100 -Compress|& $Python -X utf8 -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.workpoint_controller_state --controller-request - --output - 2>&1)
+    $captured=@($Request|ConvertTo-Json -Depth 100 -Compress|& $Python -X utf8 -m msplatform.workflows.prepared_joint.controller_state --controller-request - --output - 2>&1)
     $exitCode=$LASTEXITCODE
     $output=@($captured|Where-Object{$_-isnot[Management.Automation.ErrorRecord]})
     $stderr=@($captured|Where-Object{$_-is[Management.Automation.ErrorRecord]})
@@ -843,7 +843,7 @@ function Invoke-PreclosureDecision {
     if($Columns.Contains([string]$entry[0])){$arguments+=@($entry[1],[string]$Columns[[string]$entry[0]])}
   }
   Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
-    & $python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration @arguments | Out-Host
+    & $python -m msplatform.workflows.prepared_joint.downstream_workpoint @arguments | Out-Host
     if($LASTEXITCODE-ne0){throw 'Stage preclosure decision failed.'}
   }
   return Get-Content -LiteralPath $OutputPath -Raw|ConvertFrom-Json -AsHashtable
@@ -1128,11 +1128,11 @@ function Complete-StagedTrial {
   $materialization=Get-Content -LiteralPath (Get-ManifestOutputPath -ManifestPath $child -FileName 'two_prism_trial_materialization.json') -Raw|ConvertFrom-Json
   $actual=@($materialization.stripe_biases_v)+@($materialization.prism_voltages_v)
   if($actual.Count-ne4-or@((0..3)|Where-Object{-not[double]::IsFinite([double]$actual[$_])-or[double]$actual[$_]-ne[double]$Pending.voltages_v[$_]}).Count){throw 'Pending stage child voltages differ from the persisted trial.'}
-  $identityCode="import sys; from pathlib import Path; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import _load_stage_trial; a=_load_stage_trial(Path(sys.argv[1])); c=_load_stage_trial(Path(sys.argv[2])); assert a['frozen_problem']==c['frozen_problem'], 'Pending stage child frozen problem differs'"
+  $identityCode="import sys; from pathlib import Path; from msplatform.workflows.prepared_joint.downstream_workpoint import _load_stage_trial; a=_load_stage_trial(Path(sys.argv[1])); c=_load_stage_trial(Path(sys.argv[2])); assert a['frozen_problem']==c['frozen_problem'], 'Pending stage child frozen problem differs'"
   if([bool]$Context.prepared_staged){
     $targetLiteral=ConvertTo-Json -InputObject ([string]$Context.target_authority_path) -Compress
     $contractLiteral=ConvertTo-Json -InputObject ([string]$frozenContract) -Compress
-    $identityCode="import sys;from pathlib import Path;from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import load_prepared_centroid_trial;load=lambda p:load_prepared_centroid_trial(Path(p),Path($targetLiteral),Path($contractLiteral));a=load(sys.argv[1]);c=load(sys.argv[2]);assert a['frozen_problem']==c['frozen_problem'],'Pending measured stage child frozen problem differs'"
+    $identityCode="import sys;from pathlib import Path;from msplatform.workflows.prepared_joint.downstream_workpoint import load_prepared_centroid_trial;load=lambda p:load_prepared_centroid_trial(Path(p),Path($targetLiteral),Path($contractLiteral));a=load(sys.argv[1]);c=load(sys.argv[2]);assert a['frozen_problem']==c['frozen_problem'],'Pending measured stage child frozen problem differs'"
   }
   $predictionAssessment=@{status='unmeasured';reason='no_quality_authority_or_prediction'}
   if($ControllerPolicyPath){
@@ -1142,7 +1142,7 @@ function Complete-StagedTrial {
     Write-RunJson -Path $predictionInput -Depth 100 -Value $Pending.decision
     $predictionBytes=(Get-Item -LiteralPath $predictionInput).Length
     $predictionSha=(Get-FileHash -LiteralPath $predictionInput -Algorithm SHA256).Hash
-    $identityCode+="; import json; from msplatform.execution.retention import verify_record; verify_record('staged prediction input',dict(path=sys.argv[3],bytes=int(sys.argv[6]),sha256=sys.argv[7])); from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import assess_staged_prediction,resolve_prism_controller_policy; print(json.dumps(assess_staged_prediction(json.loads(Path(sys.argv[3]).read_text(encoding='utf-8-sig')),a,c,json.loads(Path(sys.argv[4]).read_text(encoding='utf-8-sig')),resolve_prism_controller_policy(Path(sys.argv[5])))))"
+    $identityCode+="; import json; from msplatform.execution.retention import verify_record; verify_record('staged prediction input',dict(path=sys.argv[3],bytes=int(sys.argv[6]),sha256=sys.argv[7])); from msplatform.workflows.prepared_joint.downstream_workpoint import assess_staged_prediction,resolve_prism_controller_policy; print(json.dumps(assess_staged_prediction(json.loads(Path(sys.argv[3]).read_text(encoding='utf-8-sig')),a,c,json.loads(Path(sys.argv[4]).read_text(encoding='utf-8-sig')),resolve_prism_controller_policy(Path(sys.argv[5])))))"
   }
   $identityArguments=@('-c',$identityCode,([string]$Pending.anchor_manifest),$child)
   if($ControllerPolicyPath){$identityArguments+=@($predictionInput,$frozenContract,$ControllerPolicyPath,([string]$predictionBytes),$predictionSha)}
@@ -1586,7 +1586,7 @@ function Invoke-SLocalModelRecovery {
   $modelPath=Join-Path (Split-Path -Parent $StatePath) 'iteration_local_s_model.json'
   Push-Location -LiteralPath $repoRoot
   try{
-    & $python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration `
+    & $python -m msplatform.workflows.prepared_joint.downstream_workpoint `
       --prior $frozenProposal --contract $frozenContract --refresh-history $historyPath --refresh-anchor-observation $anchorEvidence.observation `
       --refresh-anchor-materialization $anchorEvidence.materialization --refresh-s1-observation $s1.observation_path `
       --refresh-s1-materialization $s1.materialization_path --refresh-s2-observation $s2.observation_path `
@@ -1657,7 +1657,7 @@ function New-RecoveredSFirstCandidate {
   $anchorEvidence=$Recovery.accepted_anchor.evidence
   Push-Location -LiteralPath $repoRoot
   try {
-    & $python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration `
+    & $python -m msplatform.workflows.prepared_joint.downstream_workpoint `
       --prior $frozenProposal --observation ([string]$anchorEvidence.observation) `
       --materialization ([string]$anchorEvidence.materialization) `
       --child-manifest ([string]$anchorEvidence.child_manifest) --contract $frozenContract `
@@ -1702,7 +1702,7 @@ function Restore-PreparedOriginalStages {
       $canonicalPolicy=Join-Path $repoRoot 'projects/parallel_mirror_dual_stripe_mr_tof/config/prism_controller_policy.json'
       if((Get-Item -LiteralPath $current).Length-ne(Get-Item -LiteralPath $canonicalPolicy).Length-or
          (Get-FileHash -LiteralPath $current -Algorithm SHA256).Hash-ne(Get-FileHash -LiteralPath $canonicalPolicy -Algorithm SHA256).Hash){throw 'Policy adoption requires the unchanged repository OA policy.'}
-      $policyCode='import json,sys;from pathlib import Path;from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import resolve_prism_controller_policy;print(json.dumps(resolve_prism_controller_policy(Path(sys.argv[1]))))'
+      $policyCode='import json,sys;from pathlib import Path;from msplatform.workflows.prepared_joint.downstream_workpoint import resolve_prism_controller_policy;print(json.dumps(resolve_prism_controller_policy(Path(sys.argv[1]))))'
       $adoptedPolicy=Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
         $raw=@(& $python -c $policyCode $current)
         if($LASTEXITCODE-ne0){throw 'Repository policy adoption failed the original resolver.'}
@@ -1716,7 +1716,7 @@ function Restore-PreparedOriginalStages {
     if((Get-FileHash -LiteralPath $previous -Algorithm SHA256).Hash-ne(Get-FileHash -LiteralPath $current -Algorithm SHA256).Hash){
       if($reanchor){throw 'Target re-anchor requires unchanged execution and scientific inputs.'}
       if($key-ne'trajectory_contract'){throw "Prepared resume $key differs; changed authority requires fresh columns."}
-      $budgetCode='import json,sys;from pathlib import Path;from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import assert_bounded_controller_resume;read=lambda p:json.loads(Path(p).read_text(encoding="utf-8-sig"));print(json.dumps(assert_bounded_controller_resume(read(sys.argv[1]),read(sys.argv[2]),read(sys.argv[3])["stage_state"],budget_only=True)))'
+      $budgetCode='import json,sys;from pathlib import Path;from msplatform.workflows.prepared_joint.downstream_workpoint import assert_bounded_controller_resume;read=lambda p:json.loads(Path(p).read_text(encoding="utf-8-sig"));print(json.dumps(assert_bounded_controller_resume(read(sys.argv[1]),read(sys.argv[2]),read(sys.argv[3])["stage_state"],budget_only=True)))'
       $change=Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
         $raw=@(& $python -c $budgetCode $previous $current $priorPath)
         if($LASTEXITCODE-ne0){throw 'Prepared resume differs beyond an explicit total candidate budget increase.'}
@@ -1741,7 +1741,7 @@ function Restore-PreparedOriginalStages {
   $replayCode=@'
 import json,sys
 from pathlib import Path
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import load_prepared_centroid_trial
+from msplatform.workflows.prepared_joint.downstream_workpoint import load_prepared_centroid_trial
 b=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8-sig'))
 seed=load_prepared_centroid_trial(Path(sys.argv[2]),Path(sys.argv[3]),Path(sys.argv[4]))
 children=[e['child_manifest'] for e in b['stage_lineage']['children']]
@@ -1791,7 +1791,7 @@ for path in children:
     $reanchorCode=@'
 import json,sys
 from pathlib import Path
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import reanchor_prepared_target
+from msplatform.workflows.prepared_joint.downstream_workpoint import reanchor_prepared_target
 read=lambda p:json.loads(Path(p).read_text(encoding='utf-8-sig'))
 print(json.dumps(reanchor_prepared_target(read(sys.argv[1]),anchor_manifest=Path(sys.argv[2]),target_path=Path(sys.argv[3]),contract_path=Path(sys.argv[4]),previous_target_path=Path(sys.argv[5]))))
 '@
@@ -1867,7 +1867,7 @@ function Invoke-PreparedOriginalStagedWorkflow {
     $script:capacitySession=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactWorkspaceRoot `
       -RunDirectory $package.artifact_run_dir -CommittedNewBytes 0 -ProtectedPaths @($prepared,(Split-Path -Parent $p1),(Split-Path -Parent $p2)) `
       -Owner "mrtof-prepared-original-stages:$RunId"
-    $prepareCode="import sys;from pathlib import Path;from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import prepare_measured_centroid_acquisition;prepare_measured_centroid_acquisition(prepared_run=Path(sys.argv[1]),contract_path=Path(sys.argv[2]),proposal_path=Path(sys.argv[3]),p1_response=Path(sys.argv[4]),p2_response=Path(sys.argv[5]),field_run_id=sys.argv[6],output_directory=Path(sys.argv[7]))"
+    $prepareCode="import sys;from pathlib import Path;from msplatform.workflows.prepared_joint.downstream_workpoint import prepare_measured_centroid_acquisition;prepare_measured_centroid_acquisition(prepared_run=Path(sys.argv[1]),contract_path=Path(sys.argv[2]),proposal_path=Path(sys.argv[3]),p1_response=Path(sys.argv[4]),p2_response=Path(sys.argv[5]),field_run_id=sys.argv[6],output_directory=Path(sys.argv[7]))"
     Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
       & $python -c $prepareCode $prepared $ContractPath $proposal $p1 $p2 ($RunId+'-initial-field') $package.input_dir
       if($LASTEXITCODE-ne0){throw 'Prepared original-stage source/response authority preflight failed.'}
@@ -1884,7 +1884,7 @@ function Invoke-PreparedOriginalStagedWorkflow {
     if($PrismControllerPolicyPath){
       $script:frozenPrismControllerPolicyPath=Copy-VerifiedRunInput -Source $PrismControllerPolicyPath -Destination (Join-Path $package.input_dir 'prism_controller_policy.json')
       Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
-        & $python -c 'import sys; from pathlib import Path; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import resolve_prism_controller_policy; resolve_prism_controller_policy(Path(sys.argv[1]))' $frozenPrismControllerPolicyPath
+        & $python -c 'import sys; from pathlib import Path; from msplatform.workflows.prepared_joint.downstream_workpoint import resolve_prism_controller_policy; resolve_prism_controller_policy(Path(sys.argv[1]))' $frozenPrismControllerPolicyPath
         if($LASTEXITCODE-ne0){throw 'Prepared original-stage P controller policy is invalid.'}
       }
     }
@@ -1899,7 +1899,7 @@ function Invoke-PreparedOriginalStagedWorkflow {
     $loadCode=@'
 import json,sys
 from pathlib import Path
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import load_prepared_centroid_trial
+from msplatform.workflows.prepared_joint.downstream_workpoint import load_prepared_centroid_trial
 from msplatform.backends.comsol.static_field_binding import load_binding,load_native_response_basis,native_response_operator
 a=load_prepared_centroid_trial(Path(sys.argv[1]),Path(sys.argv[2]),Path(sys.argv[3]))
 b=load_binding(Path(sys.argv[4]))
@@ -1986,7 +1986,7 @@ if($ResumeParentCheckpoint){
     if($freshBootstrap){$resumeBootstrapPath=Get-ManifestOutputPath -ManifestPath $resumeManifest -FileName 'workpoint_bootstrap.json'}
     $priorStatic=Get-Content -LiteralPath (Join-Path $resumeParentRun 'inputs/field_provider_request.json') -Raw|ConvertFrom-Json -AsHashtable
     if(($priorStatic|ConvertTo-Json -Depth 100 -Compress)-ne($fieldProviderRequest|ConvertTo-Json -Depth 100 -Compress)){
-      $storageResumeCode="import json,sys; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_workpoint import assert_native_provider_storage_resume; assert_native_provider_storage_resume(json.loads(sys.argv[1]),json.loads(sys.argv[2]))"
+      $storageResumeCode="import json,sys; from msplatform.workflows.prepared_joint.fixed_grid_workpoint import assert_native_provider_storage_resume; assert_native_provider_storage_resume(json.loads(sys.argv[1]),json.loads(sys.argv[2]))"
       Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
         & $python -B -c $storageResumeCode ($priorStatic|ConvertTo-Json -Depth 100 -Compress) ($fieldProviderRequest|ConvertTo-Json -Depth 100 -Compress)
         if($LASTEXITCODE-ne0){throw 'Static recovery field provider inputs differ beyond the exact sealed storage view.'}
@@ -2125,7 +2125,7 @@ try {
   if($PrismControllerPolicyPath){
     $frozenPrismControllerPolicyPath=Copy-VerifiedRunInput -Source $PrismControllerPolicyPath -Destination (Join-Path $package.input_dir 'prism_controller_policy.json')
     Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
-      & $python -c 'import sys; from pathlib import Path; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import resolve_prism_controller_policy; resolve_prism_controller_policy(Path(sys.argv[1]))' $frozenPrismControllerPolicyPath
+      & $python -c 'import sys; from pathlib import Path; from msplatform.workflows.prepared_joint.downstream_workpoint import resolve_prism_controller_policy; resolve_prism_controller_policy(Path(sys.argv[1]))' $frozenPrismControllerPolicyPath
       if($LASTEXITCODE-ne0){throw 'Prism controller policy is invalid.'}
     }
   }
@@ -2325,7 +2325,7 @@ try {
     if($ContinuationRunManifest){$bootstrap.transport_seed_attempts=$transportSeedAttempts}
     if($resumeBootstrapPath){
       # Consume historical state without duplicating the sealed child field trees.
-      $stateCode='import json,sys; from pathlib import Path; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import compact_saved_iteration_state; print(json.dumps(compact_saved_iteration_state(json.loads(Path(sys.argv[1]).read_text(encoding="utf-8-sig")))))'
+      $stateCode='import json,sys; from pathlib import Path; from msplatform.workflows.prepared_joint.downstream_workpoint import compact_saved_iteration_state; print(json.dumps(compact_saved_iteration_state(json.loads(Path(sys.argv[1]).read_text(encoding="utf-8-sig")))))'
       $priorBootstrap=Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
         $output=((& $python -c $stateCode $resumeBootstrapPath)-join"`n")
         if($LASTEXITCODE-ne0){throw 'Saved workpoint state could not be read.'}
@@ -2429,7 +2429,7 @@ try {
         if(-not$oldPath-or-not$pair[1]){throw 'Stage replay source, contract or stage replay evidence differs.'}
         if((Get-FileHash $oldPath -Algorithm SHA256).Hash-ne(Get-FileHash $pair[1] -Algorithm SHA256).Hash){
           if($pair[0]-ne'contract'){throw 'Stage replay source, contract or stage replay evidence differs.'}
-          $controllerResumeCode='import json,sys; from pathlib import Path; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import assert_bounded_controller_resume; read=lambda p:json.loads(Path(p).read_text(encoding="utf-8-sig")); print(json.dumps(assert_bounded_controller_resume(read(sys.argv[1]),read(sys.argv[2]),read(sys.argv[3])["stage_state"])))'
+          $controllerResumeCode='import json,sys; from pathlib import Path; from msplatform.workflows.prepared_joint.downstream_workpoint import assert_bounded_controller_resume; read=lambda p:json.loads(Path(p).read_text(encoding="utf-8-sig")); print(json.dumps(assert_bounded_controller_resume(read(sys.argv[1]),read(sys.argv[2]),read(sys.argv[3])["stage_state"])))'
           $resumeChanges=Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
             $value=((& $python -B -c $controllerResumeCode $oldPath $pair[1] $resumeBootstrapPath)-join"`n")
             if($LASTEXITCODE-ne0){throw 'Stage replay controller change is outside the bounded resume scope.'}
@@ -2740,7 +2740,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Child flight manifest projection is invalid: $childManifest" }
     $cacheBindingPath = Join-Path $package.result_dir ('iteration_{0:D2}_cache_binding.json' -f $iteration)
     $cacheBindingArguments = @(
-      '-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration',
+      '-m','msplatform.workflows.prepared_joint.downstream_workpoint',
       '--cache-identity',$cacheIdentity,
       '--cache-protection-renewal',$childProtectionPath,
       '--output',$cacheBindingPath
@@ -2796,7 +2796,7 @@ try {
     $failureStage = "decide_iteration_$iteration"
     Push-Location -LiteralPath $repoRoot
     try {
-      & $python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration `
+      & $python -m msplatform.workflows.prepared_joint.downstream_workpoint `
         --prior $frozenProposal --observation $observation --materialization $materialization `
         --child-manifest $childManifest --contract $frozenContract --history $historyPath --iteration $iteration --output $decisionPath
       if ($LASTEXITCODE -ne 0) { throw "Iteration controller failed at iteration $iteration." }
@@ -2891,7 +2891,7 @@ try {
   if($staticFieldMode-and$terminalDecision.terminal_reason-eq'success'){
     $bestPhysicalHandoffPath=Join-Path $package.result_dir 'best_physical_workpoint_handoff.json'
     Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
-      & $python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration `
+      & $python -m msplatform.workflows.prepared_joint.downstream_workpoint `
         --select-best-physical-workpoint --history $historyPath --output $bestPhysicalHandoffPath | Out-Host
       if($LASTEXITCODE-ne0){throw 'Could not select the complete static physical workpoint.'}
     }
@@ -2909,7 +2909,7 @@ try {
     $bestPhysicalHandoffPath=Join-Path $package.result_dir 'best_physical_workpoint_handoff.json'
     Push-Location -LiteralPath $repoRoot
     try {
-      & $python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration `
+      & $python -m msplatform.workflows.prepared_joint.downstream_workpoint `
         --select-best-physical-workpoint --history $historyPath --output $bestPhysicalHandoffPath | Out-Host
       if($LASTEXITCODE-ne0){throw 'Could not select the best complete physical workpoint for downstream screening.'}
     } finally { Pop-Location }

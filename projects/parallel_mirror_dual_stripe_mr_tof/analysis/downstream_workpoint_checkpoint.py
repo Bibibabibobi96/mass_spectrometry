@@ -10,7 +10,7 @@ from typing import Any, Mapping
 
 import numpy as np
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import (
+from msplatform.workflows.prepared_joint.downstream_workpoint import (
     decide_iteration,
     assert_trial_matches_jacobian,
     resolve_operating_cache_binding,

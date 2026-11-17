@@ -20,10 +20,12 @@ MASS_FILTER_RUNNER = (
 MASS_FILTER_WORKFLOW = PROJECT_ROOT / "workflows" / "mass_filter_reference"
 SAME_SOLVER_WORKFLOW = PROJECT_ROOT / "workflows" / "same_solver_convergence"
 SIMION_CONFIG_CORE = PROJECT_ROOT / "runtime" / "simion_run_config.ps1"
-SIMION_EXECUTION_SUPPORT = PROJECT_ROOT / "runtime" / "simion_execution.ps1"
+SIMION_EXECUTION_SUPPORT = (
+    REPO_ROOT / "src/msplatform/backends/simion/resources/simion_execution.ps1"
+)
 RUNTIME_ROOT = PROJECT_ROOT / "runtime"
 RUN_ARTIFACT_SUPPORT = REPO_ROOT / "common" / "contracts" / "run_artifact_support.ps1"
-SHARED_SIMION_LUA = REPO_ROOT / "projects/rf_multipole_ion_optics/simion/simion_transport.lua"
+SHARED_SIMION_LUA = REPO_ROOT / "src/msplatform/backends/simion/resources/simion_transport.lua"
 EXECUTION_PROFILES = PROJECT_ROOT / "config" / "execution_profiles.json"
 OFFICIAL_RESOLVED = PROJECT_ROOT / "variants" / "quadrupole" / "config" / "resolved_design_official.json"
 MASS_FILTER_RESOLVED = PROJECT_ROOT / "variants" / "quadrupole" / "config" / "resolved_design_mass_filter.json"
@@ -471,9 +473,9 @@ Get-Content $specification.stdout|Write-Output
             self.assertIn("if((Get-RunFileSha256 -Path $ownerSource)-cne$entryScriptHash)", source)
             for support_path in (
                 "common\\contracts\\run_artifact_support.ps1",
-                "projects\\rf_multipole_ion_optics\\runtime\\simion_layout_template_support.ps1",
+                "src\\msplatform\\backends\\simion\\resources\\simion_layout_template_support.ps1",
                 "runtime\\simion_run_config.ps1",
-                "runtime\\simion_execution.ps1",
+                "src/msplatform/backends/simion/resources/simion_execution.ps1",
             ):
                 self.assertIn(support_path, source)
             for function in (

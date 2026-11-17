@@ -10,7 +10,7 @@ function Protect-MrtofContinuationEvidence {
     Push-Location -LiteralPath $RepoRoot;$saved=$env:PYTHONPATH
     try {
       $env:PYTHONPATH=$RepoRoot
-      $output=& $Python -B -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_continuation --predecessor-run-dir $Parent --protection-projection
+      $output=& $Python -B -m msplatform.workflows.prepared_joint.continuation --predecessor-run-dir $Parent --protection-projection
       if($LASTEXITCODE-ne0){throw 'Continuation protection projection failed.'}
       return (($output -join "`n")|ConvertFrom-Json -AsHashtable -Depth 100)
     } finally {$env:PYTHONPATH=$saved;Pop-Location}

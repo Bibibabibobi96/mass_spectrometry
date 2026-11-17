@@ -29,7 +29,7 @@ from common.simion import resource_profile
 from msplatform.backends.simion import particle_batching
 from msplatform.execution import simion_dispatch as resource_scheduler
 from msplatform.backends.simion.source import render_standard_beams
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepare_accelerator_interface import verified_reference
+from msplatform.workflows.prepared_joint.preparation import verified_reference
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ip_prism_local_geometry import prepare_geometry
 
 
@@ -390,8 +390,8 @@ def _contour_geometry_and_voltage(case: dict, registration: dict, geometry: dict
     """Project exact native CSG and evaluate the unchanged sole Lua voltage schedule."""
     import copy
     from msplatform.contracts.particle_physics import kinetic_energy_ev
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly import transform_shape
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_flight_preparation import project_provider_voltages
+    from msplatform.workflows.prepared_joint.ion_processor_assembly import transform_shape
+    from msplatform.workflows.prepared_joint.native_preparation import project_provider_voltages
 
     model = case["config"]
     if geometry["frame_id"] != registration["to_frame_id"]:

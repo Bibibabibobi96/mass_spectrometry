@@ -818,7 +818,7 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
 $ErrorActionPreference='Stop'
 $repoRoot={literal(REPO_ROOT)};$python={literal(sys.executable)}
 . (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
-. (Join-Path $repoRoot 'projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1') -ExecutionResourcePath (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
 $t=$null;$e=$null
 $entry=Join-Path $repoRoot 'projects/rf_multipole_ion_optics/workflows/same_solver_convergence/run_comparison.ps1'
 $ast=[Management.Automation.Language.Parser]::ParseFile($entry,[ref]$t,[ref]$e)
@@ -1455,8 +1455,8 @@ if(-not$execution.module_invoked){{throw 'Actual frozen evaluator did not run'}}
 
     def test_comsol_solver_summary_records_mesh_element_count(self) -> None:
         builder = (
-            PROJECT_ROOT
-            / "comsol"
+            PROJECT_ROOT.parents[1]
+            / "src/msplatform/backends/comsol/matlab"
             / "solve_deterministic_rf_quadrupole_particles.m"
         ).read_text(encoding="utf-8")
         self.assertIn("'mesh_elements_total',sum(mi.numelem)", builder)

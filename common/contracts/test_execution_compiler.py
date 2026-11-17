@@ -161,7 +161,7 @@ class ExecutionCompilerTests(unittest.TestCase):
                 plan["requested_evidence_level"] = legacy
                 plan_path.write_text(json.dumps(plan))
                 if legacy in ("candidate", "formal"):
-                    with patch("projects.rf_multipole_ion_optics.runtime.runtime_profile.resolve_execution_binding", side_effect=AssertionError("unsupported qualification resolved scientific inputs")):
+                    with patch("msplatform.workflows.rf_runtime_profiles.resolve_execution_binding", side_effect=AssertionError("unsupported qualification resolved scientific inputs")):
                         result = compile_execution(plan_path, self.registry, self.functional_bindings())
                 else:
                     result = compile_execution(plan_path, self.registry, self.functional_bindings())
@@ -704,18 +704,18 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
                 self.compile_request(request, {**self.functional_bindings(), "runtime_profile_id": runtime})
 
     def test_runtime_structure_is_read_from_resolution_not_selector_spelling(self):
-        from projects.rf_multipole_ion_optics.runtime.runtime_profile import resolve_runtime_profile
+        from msplatform.workflows.rf_runtime_profiles import resolve_runtime_profile
         resolved = resolve_runtime_profile(REPO_ROOT, "rf_multipole_ion_optics",
                                            self.functional_bindings()["runtime_profile_id"])
         resolved["design_profile_resolution"]["profile"]["structural_variant_id"] = "octupole"
-        with patch("projects.rf_multipole_ion_optics.runtime.runtime_profile.resolve_runtime_profile", return_value=resolved):
+        with patch("msplatform.workflows.rf_runtime_profiles.resolve_runtime_profile", return_value=resolved):
             with self.assertRaisesRegex(ValueError, "Runtime structural variant"):
                 self.compile_request(self.approved_functional_rf_request(), self.functional_bindings())
 
     def test_runtime_resolver_receives_only_declared_selectors(self):
         resolved = {"project_id": "rf_multipole_ion_optics", "structural_variant_id": "quadrupole",
                     "authorized_run_id": None}
-        with patch("projects.rf_multipole_ion_optics.runtime.runtime_profile.resolve_execution_binding",
+        with patch("msplatform.workflows.rf_runtime_profiles.resolve_execution_binding",
                    return_value=resolved) as resolver:
             ready = self.compile_request(self.approved_functional_rf_request(), self.functional_bindings())
             self.assertEqual(ready["status"], "EXECUTION_READY")
@@ -723,7 +723,7 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
                                             {"runtime_profile_id": self.functional_bindings()["runtime_profile_id"]}, request_path=ANY)
 
     def test_runtime_selection_is_checked_even_when_other_required_inputs_are_missing(self):
-        with patch("projects.rf_multipole_ion_optics.runtime.runtime_profile.resolve_execution_binding") as resolver:
+        with patch("msplatform.workflows.rf_runtime_profiles.resolve_execution_binding") as resolver:
             preview = self.compile_request(self.approved_functional_rf_request(), {"evidence_contract_path": "evidence.json"})
             self.assertEqual(preview["status"], "NEEDS_RUNTIME_INPUTS")
             resolver.assert_not_called()
@@ -748,12 +748,12 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
         invalid.extend({**valid, "authorized_run_id": value} for value in (True, 1, "", "forged", " " + self.run_id))
         for resolved in invalid:
             with self.subTest(resolved=resolved), patch(
-                "projects.rf_multipole_ion_optics.runtime.runtime_profile.resolve_execution_binding", return_value=resolved,
+                "msplatform.workflows.rf_runtime_profiles.resolve_execution_binding", return_value=resolved,
             ), self.assertRaises(ValueError):
                 self.compile_request(self.approved_functional_rf_request(), self.functional_bindings())
 
     def test_runtime_binding_requires_the_declared_callable(self):
-        with patch("projects.rf_multipole_ion_optics.runtime.runtime_profile.resolve_execution_binding", None):
+        with patch("msplatform.workflows.rf_runtime_profiles.resolve_execution_binding", None):
             with self.assertRaisesRegex(ValueError, "must define resolve_execution_binding"):
                 self.compile_request(self.approved_functional_rf_request(), self.functional_bindings())
 
@@ -772,14 +772,14 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
         valid = dict(project_id="rf_multipole_ion_optics", structural_variant_id="hexapole",
                      authorized_run_id=self.run_id, tools=["simion", "python"])
         with patch("common.contracts.compile_execution_plan.load_json", side_effect=selected_load), patch(
-            "projects.rf_multipole_ion_optics.runtime.runtime_profile.resolve_execution_binding", return_value=valid,
+            "msplatform.workflows.rf_runtime_profiles.resolve_execution_binding", return_value=valid,
         ):
             selected = self.compile_request(self.campaign_request("hexapole"), self.campaign_binding("hex"))
         self.assertEqual(selected["tools"], ["simion", "python"])
         self.assertEqual(len(selected["commands"]), 1)
         for tools in (None, [], "simion", ["simion", "simion"], [1], [""], ["unknown"]):
             with self.subTest(tools=tools), patch(
-                "projects.rf_multipole_ion_optics.runtime.runtime_profile.resolve_execution_binding",
+                "msplatform.workflows.rf_runtime_profiles.resolve_execution_binding",
                 return_value={**valid, "tools": tools},
             ), self.assertRaisesRegex(ValueError, "Runtime tools"):
                 self.compile_request(self.campaign_request("hexapole"), self.campaign_binding("hex"))
@@ -794,7 +794,7 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
         with patch("common.contracts.compile_execution_plan.load_json", side_effect=changed_load):
             with self.assertRaisesRegex(ValueError, "contract project identity differs"):
                 self.compile_request(self.approved_functional_rf_request(), self.functional_bindings())
-        with patch("projects.rf_multipole_ion_optics.runtime.runtime_profile.__file__", str(HERE / "machine_contracts.py")):
+        with patch("msplatform.workflows.rf_runtime_profiles.__file__", str(HERE / "machine_contracts.py")):
             with self.assertRaisesRegex(ValueError, "differs from its declared entrypoint"):
                 self.compile_request(self.approved_functional_rf_request(), self.functional_bindings())
 
@@ -1116,6 +1116,7 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
             compile_env = os.environ.copy()
             compile_env.pop("PYTHONPATH", None)
             compile_env["SIMULATION_PYTHON_EXE"] = str(compile_root / "poison/python.exe")
+            compile_env["PYTHONPATH"] = os.pathsep.join((str(REPO_ROOT / "src"), str(REPO_ROOT)))
             preview = subprocess.run([interpreter, "-m", "common.contracts.compile_execution_plan",
                                       str(planned_path), "--output", str(saved_path)], cwd=REPO_ROOT,
                                      env=compile_env, capture_output=True, text=True, encoding="utf-8", timeout=30)

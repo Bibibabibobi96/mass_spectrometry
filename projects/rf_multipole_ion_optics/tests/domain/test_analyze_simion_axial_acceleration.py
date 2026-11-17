@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from projects.rf_multipole_ion_optics.analysis.analyze_simion_axial_acceleration import evaluate
+from msplatform.analysis.rf_axial_acceleration import evaluate
 
 
 HEADER = (

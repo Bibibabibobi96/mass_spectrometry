@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from msplatform.execution.retention import verify_record
-from projects.rf_multipole_ion_optics.runtime.runtime_profile import resolve_campaign_path, resolve_runtime_selection
+from msplatform.workflows.rf_runtime_profiles import resolve_campaign_path, resolve_runtime_selection
 
 
 TERMINAL_STATUSES = {"success", "failed", "interrupted", "superseded"}

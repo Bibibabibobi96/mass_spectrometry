@@ -17,11 +17,15 @@ from msplatform.execution.retention import verify_record
 from msplatform.io.manifest_records import verified_successful_run_reference
 from msplatform.execution.retention import file_record
 from msplatform.assembly.resolve_assembly import derive_assembly_scope
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepare_accelerator_interface import (
-    CONFIG, ION_PROCESSOR, REPO, verified_reference, validate_execution_contract,
+from msplatform.workflows.prepared_joint.preparation import (
+    ION_PROCESSOR, PROJECT, verified_reference, validate_execution_contract,
 )
+
+REPO = Path(__file__).resolve().parents[3]
+CONFIG = REPO / "projects" / PROJECT / "config"
 from msplatform.backends.simion.mr_prepared_field import collision_workbench_layout
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_flight_preparation import (
+from msplatform.backends.simion.resources import native_resource_path
+from msplatform.workflows.prepared_joint.native_preparation import (
     _lua, freeze_field_reference, prepare_interface_field_audit,
     project_provider_voltages, render_measured_operating_point,
 )
@@ -96,7 +100,7 @@ def _resolve_ip_matching(*, source_run: Path, results: Path, inputs: Path,
         raise ValueError("unsupported ion processor provider API")
     from msplatform.backends.simion.ip_exit import export_component_exit
     from msplatform.workflows.prepared_joint.ip_mr_connection import resolve_ip_mr_connection
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import resolve_matching_request
+    from msplatform.workflows.prepared_joint.ip_mr_handoff import resolve_matching_request
     request = _read(Path(frozen['accelerator_request']['path']))
     plan = derive_assembly_scope(_read(Path(frozen['composition_plan']['path'])), local_scope=request.get('local_scope'))
     connection = resolve_ip_mr_connection(plan)
@@ -133,7 +137,7 @@ def prepare_joint_flight(*, reference_run: Path,
         source, _read(trajectory_path), resolved, connection=matching["connection"],
         input_paths=[source_model, trajectory_path, assembly_request], output_directory=output / "assembly")
     assembly = prepared_geometry["report"]
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import prepare_handoff
+    from msplatform.workflows.prepared_joint.ip_mr_handoff import prepare_handoff
     prepare_handoff(matching, assembly["composition_plan"], interface_results / "mrtof_handoff")
     from msplatform.workflows.ion_processor.preparation import validate_configs
     from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
@@ -185,10 +189,11 @@ def _joint_binding_inputs(*, design_run: Path, field_run: Path, source_run: Path
     request_path = verified_preparation_reference(design_run, "inputs/accelerator_request.json", manifest=design_manifest)
     plan_path = verified_preparation_reference(design_run, "inputs/composition_plan.json", manifest=design_manifest)
     request = _read(request_path)
-    Draft202012Validator(_read(CONFIG / "ion_processor_matching_request.schema.json")).validate(request)
+    from msplatform.workflows.prepared_joint.ip_mr_handoff import matching_request_schema_path
+    Draft202012Validator(_read(matching_request_schema_path())).validate(request)
     plan = derive_assembly_scope(_read(plan_path), local_scope=request.get("local_scope"))
     from msplatform.workflows.prepared_joint.ip_mr_connection import resolve_ip_mr_connection
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import resolve_ip_mr_transform
+    from msplatform.workflows.prepared_joint.ip_mr_handoff import resolve_ip_mr_transform
     connection = resolve_ip_mr_connection(plan)
     registration = resolve_ip_mr_transform(plan, connection).to_contract()
     if (assembly["composition_plan"] != plan
@@ -279,10 +284,10 @@ def bind_joint_workbench(*, design_run: Path, field_run: Path, source_run: Path,
         "mrtof_candidate.lua": "mrtof_candidate.lua", "mirror_cycle_counter.lua": "mrtof_candidate.mirror_cycle_counter.lua",
         "build_native_corridor_iob.lua": "build_workbench.lua",
     }.items():
-        freeze_file(REPO / "projects/parallel_mirror_dual_stripe_mr_tof/simion" / source_name, runtime / target_name)
-    freeze_file(REPO / "src/msplatform/backends/simion/resources/scalar_field_adapter.lua",
+        freeze_file(native_resource_path(source_name), runtime / target_name)
+    freeze_file(native_resource_path("scalar_field_adapter.lua"),
                 runtime / "mrtof_candidate.scalar_field_adapter.lua")
-    freeze_file(REPO / "src/msplatform/backends/simion/resources/voltage_waveforms.lua", runtime / "mrtof_candidate.voltage_waveforms.lua")
+    freeze_file(native_resource_path("voltage_waveforms.lua"), runtime / "mrtof_candidate.voltage_waveforms.lua")
     shutil.copyfile(output_directory / "measured_source/source_runtime.lua", runtime / "mrtof_candidate.source_runtime.lua")
     reference_path = design_run / "inputs/reference_operating_point.lua"
     verified_preparation_reference(design_run, reference_path.relative_to(design_run).as_posix(), manifest=design_manifest)
@@ -439,7 +444,7 @@ def prepare_interface(*, source_run: Path | None, reference_mr_run: Path,
 def finalize_interface(*, source_run: Path, reference_mr_run: Path, design_run: Path,
                        field_run: Path, run_directory: Path, contract_path: Path | None = None) -> dict[str, Any]:
     """Bind one measured replacement design; the public launcher builds IOB only."""
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import compare_measured_exit_energy
+    from msplatform.workflows.prepared_joint.ip_mr_handoff import compare_measured_exit_energy
 
     inputs, results = run_directory / "inputs", run_directory / "results"
     design_manifest = _read(design_run / "run_manifest.json")
@@ -480,7 +485,7 @@ def finalize_interface(*, source_run: Path, reference_mr_run: Path, design_run: 
     if matching.get("role") == "ion_processor_component_exit_export" and matching.get("status") == "zero_exit":
         raise ValueError("IP source has zero transferred particles; joint workbench and flight cannot run")
     design_plan = design_receipt["joint_preparation"]["assembly"]["composition_plan"]
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import prepare_handoff
+    from msplatform.workflows.prepared_joint.ip_mr_handoff import prepare_handoff
     prepare_handoff(matching, design_plan, results / "mrtof_handoff")
     energy = compare_measured_exit_energy(results / "ion_processor_exit/component_exit_receipt.json", reference_mr_run)
     binding = bind_joint_workbench(

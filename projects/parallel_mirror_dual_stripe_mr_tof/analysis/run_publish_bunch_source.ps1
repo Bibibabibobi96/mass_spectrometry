@@ -71,7 +71,7 @@ try{
   $saved=$env:PYTHONPATH
   try{
     $env:PYTHONPATH=$repoRoot
-    & $python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule `
+    & $python -m msplatform.backends.simion.mr_bunch_source `
       materialize-source --definition $frozenDefinition --geometry-contract $frozenGeometry `
       --accelerator-provider-receipt $frozenAcceleratorProviderReceipt `
       --state-table $stateTable --fly2 $fly2 --receipt $receipt 2>&1|Tee-Object -FilePath $log

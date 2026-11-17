@@ -16,7 +16,7 @@ from msplatform.execution.retention import file_record
 from msplatform.io.manifest_records import require_completed_terminal_publication
 from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepare_accelerator_interface import verified_reference
+from msplatform.workflows.prepared_joint.preparation import verified_reference
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis import ip_prism_focus_diagnostics as focus
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis import ip_prism_local_diagnostics as local
 

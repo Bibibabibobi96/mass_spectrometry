@@ -24,13 +24,13 @@ if($ResumeFinalization){
   $resumeArguments=@{ResumeFinalization=$true;RunId=$RunId;PythonExe=$PythonExe}
   if($ResultPath){$resumeArguments.ResultPath=$ResultPath}
   if($ArtifactRootPath){$resumeArguments.ArtifactRootPath=$ArtifactRootPath}
-  & (Join-Path $repoRoot 'projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1') @resumeArguments
+  & (Join-Path $repoRoot 'src/msplatform/workflows/resources/run_finite_3d_transport.ps1') @resumeArguments
   return
 }
 if($AnalyzeOnly){
   if([string]::IsNullOrWhiteSpace($EngineeringBudgetPath)){throw 'AnalyzeOnly requires an explicit EngineeringBudgetPath for new analysis payload; parent native budget is not a fallback.'}
   if($EvidenceContractPath-or$ResolvedRuntimeProfilePath){throw 'AnalyzeOnly uses parent frozen scientific authority; scientific overrides are not accepted.'}
-  & (Join-Path $repoRoot 'projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1') -AnalyzeOnly `
+  & (Join-Path $repoRoot 'src/msplatform/workflows/resources/run_finite_3d_transport.ps1') -AnalyzeOnly `
     -ReextractFromModel:$ReextractFromModel -ParentManifestPath $ParentManifestPath -EngineeringBudgetPath $EngineeringBudgetPath -RunId $RunId -ResultPath $ResultPath -PythonExe $PythonExe `
     -RetentionClass $RetentionClass -RetentionReason $RetentionReason
   return

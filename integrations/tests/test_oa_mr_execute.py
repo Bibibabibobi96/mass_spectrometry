@@ -243,7 +243,7 @@ if(@($pendingSpecs).Count-ne1-or$pendingSpecs[0].index-ne3){{throw 'observed or 
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_mrtof_batch_continuation import MrtofBatchContinuationTests
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_static_field_binding import NativeStaticBindingTest
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_bunch_source_and_schedule import _states
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule import materialize_bunch_source
+        from msplatform.backends.simion.mr_bunch_source import materialize_bunch_source
         from msplatform.backends.comsol.static_field_binding import load_binding
         from msplatform.contracts.trajectory_recording import resolve_trajectory_recording
         from msplatform.execution.retention import verify_record
@@ -660,7 +660,7 @@ foreach($staticFieldRequested in @($false,$true)){
  $fieldKind=if($staticFieldRequested){'static'}else{'native'}
  $solverDir=Join-Path $Root ($fieldKind+'_'+[string]$fixtureBunch)
  New-Item -ItemType Directory -Path $solverDir|Out-Null
- $providerSimionRoot=Join-Path $script:pythonRoot 'projects/parallel_mirror_dual_stripe_mr_tof/simion'
+ $providerSimionRoot=Join-Path $script:pythonRoot 'src/msplatform/backends/simion/resources'
  $contract=$trajectoryContractInput;$acceleratorGeometry='geometry';$trajectoryContract='numerics';$reviewed='reviewed'
  $mirrorLocal='mirror';$stripeLocal='stripe';$acceleratorLocal='accelerator'
  $acceleratorProviderPlanLocal='provider';$compositionPlanLocal='composition-plan';$localScopeLocal=$null;$acceleratorResolvedCampaignLocal='campaign'
@@ -712,7 +712,7 @@ foreach($staticFieldRequested in @($false,$true)){
             root = Path(directory)
             oa_contract = REPO / "projects/orthogonal_accelerator/config/component_contract.json"
             oa_profile = "closed_two_zone_compact_mr_axial_r3_gap1_4mm"
-            from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_component_requirements import read_accelerator_geometry_authority
+            from msplatform.components.parallel_mirror_dual_stripe_mr_tof.accelerator_requirements import read_accelerator_geometry_authority
             from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
             expected_authority = read_accelerator_geometry_authority(
                 load_contract(REPO / "projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json"),
@@ -727,7 +727,7 @@ import sys
 from unittest.mock import patch
 from msplatform.execution.retention import file_record
 from msplatform.io.manifest_records import file_record as source_record
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis import two_prism_simion_trial as module
+from msplatform.workflows.prepared_joint import prism_trial as module
 assert Path(module.__file__).is_relative_to(Path.cwd())
 assert sys.argv[1:3] == ['-m', module.__name__]
 sys.argv = [module.__name__, *sys.argv[3:]]
@@ -774,11 +774,11 @@ if((Get-FileHash -LiteralPath $oaComponentContractLocal).Hash-ne(Get-FileHash -L
 $env:PYTHONPATH=(Join-Path $script:pythonRoot 'src')+[IO.Path]::PathSeparator+$script:pythonRoot
 Push-Location -LiteralPath $script:pythonRoot
 try{
- & $Python -B -s -c "from pathlib import Path; from projects.parallel_mirror_dual_stripe_mr_tof.analysis import two_prism_simion_trial, mrtof_batch_flight; assert Path(two_prism_simion_trial.__file__).is_relative_to(Path.cwd()); assert Path(mrtof_batch_flight.__file__).is_relative_to(Path.cwd()); from msplatform.contracts import trajectory_recording; assert Path(trajectory_recording.__file__).is_relative_to(Path.cwd()/'src')"
+ & $Python -B -s -c "from pathlib import Path; from msplatform.workflows.prepared_joint import prism_trial as two_prism_simion_trial; from msplatform.backends.simion import mrtof_batch_flight; assert Path(two_prism_simion_trial.__file__).is_relative_to(Path.cwd()); assert Path(mrtof_batch_flight.__file__).is_relative_to(Path.cwd()); from msplatform.contracts import trajectory_recording; assert Path(trajectory_recording.__file__).is_relative_to(Path.cwd()/'src')"
  if($LASTEXITCODE-ne0){throw 'Detached provider import failed'}
  & $Python -B -s -m msplatform.contracts.trajectory_recording --contract (Join-Path $script:pythonRoot 'projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json')
  if($LASTEXITCODE-ne0){throw 'Detached provider compilation failed'}
- & $Python -B -s -c "import json; from pathlib import Path; from msplatform.contracts.particle_count_policy import validate_standard_particle_count; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_component_requirements import read_accelerator_geometry_authority; import sys; validate_standard_particle_count(100); c=json.loads(Path('projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json').read_text(encoding='utf-8')); selected=read_accelerator_geometry_authority(c,component_contract_path=Path(sys.argv[1]),geometry_profile_id=sys.argv[2]); assert selected['accelerator_requirements']['variant_id']=='two_zone'; assert selected['source_refs'][0]['path']==str(Path(sys.argv[1]).resolve())" $oaComponentContractLocal $AcceleratorGeometryProfileId
+ & $Python -B -s -c "import json; from pathlib import Path; from msplatform.contracts.particle_count_policy import validate_standard_particle_count; from msplatform.components.parallel_mirror_dual_stripe_mr_tof.accelerator_requirements import read_accelerator_geometry_authority; import sys; validate_standard_particle_count(100); c=json.loads(Path('projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json').read_text(encoding='utf-8')); selected=read_accelerator_geometry_authority(c,component_contract_path=Path(sys.argv[1]),geometry_profile_id=sys.argv[2]); assert selected['accelerator_requirements']['variant_id']=='two_zone'; assert selected['source_refs'][0]['path']==str(Path(sys.argv[1]).resolve())" $oaComponentContractLocal $AcceleratorGeometryProfileId
  if($LASTEXITCODE-ne0){throw 'Detached source policy or physical provider requirements failed'}
 """ + stage_fixture + r"""
 }finally{Pop-Location}
@@ -1442,7 +1442,7 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
     def test_bunch_batches_publish_common_whole_batch_checkpoints(self):
         for token in (
             "[string]$BatchContinuationRunPath=''",
-            "projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_continuation",
+            "msplatform.workflows.prepared_joint.continuation",
             "simion_whole_unit_replay_plan",
             "continuation requires a sealed whole-batch log and owner exit evidence",
             "-OnProcessCompleted $checkpointAction",

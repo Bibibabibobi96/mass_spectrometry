@@ -14,7 +14,7 @@ from typing import Any
 
 import numpy as np
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0 import (
+from msplatform.workflows.prepared_joint.joint_mirror_stripe_l0 import (
     ConstraintClassification,
     classify_constraint_system,
 )
@@ -25,10 +25,10 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prism_mirror_transport
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_handoff import (
+from msplatform.workflows.prepared_joint.prism_handoff import (
     ProjectPhaseSpaceState,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_operating_point import (
+from msplatform.workflows.prepared_joint.prism_operating_point import (
     RESIDUAL_NAMES,
     UNKNOWN_NAMES,
     natural_two_prism_scales,

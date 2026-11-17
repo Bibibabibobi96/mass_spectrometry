@@ -1050,7 +1050,7 @@ def main() -> None:
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prism_mirror_transport import (
         TransportNumerics,
     )
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_operating_point import (
+    from msplatform.workflows.prepared_joint.prism_operating_point import (
         natural_two_prism_scales,
     )
     from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_segmented_coverage import (

@@ -8,14 +8,14 @@ import sys
 import tempfile
 import unittest
 from msplatform.contracts.machine_contracts import validate_schema
-from projects.rf_multipole_ion_optics.runtime import runtime_profile as runtime
-from projects.rf_multipole_ion_optics.runtime import design_profile as design_provider
-from projects.rf_multipole_ion_optics.runtime.resource_budget import (
+from msplatform.workflows import rf_runtime_profiles as runtime
+from msplatform.workflows import rf_design_profiles as design_provider
+from msplatform.workflows.rf_resource_budget import (
     validate_pilot_budget,
 )
 
 REPO = Path(design_provider.__file__).resolve().parents[3]
-PROJECT = Path(runtime.__file__).resolve().parents[1]
+PROJECT = REPO / "projects/rf_multipole_ion_optics"
 SCHEMA = (
     Path(__file__).resolve().parents[4]
     / "src/msplatform/contracts/schemas/multipole_transport_experiment_campaign.schema.json"
@@ -229,7 +229,7 @@ class ComsolCampaignRequestTests(unittest.TestCase):
         capture = self.root / "capture.json"
         entry = (
             self.root
-            / "projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1"
+            / "src/msplatform/workflows/resources/run_finite_3d_transport.ps1"
         )
         entry.parent.mkdir(parents=True)
         entry.write_text(

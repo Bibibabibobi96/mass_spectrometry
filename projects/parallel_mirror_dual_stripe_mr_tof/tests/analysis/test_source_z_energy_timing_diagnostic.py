@@ -13,11 +13,11 @@ import unittest
 from unittest.mock import patch
 
 from msplatform.analysis.peak_metrics import AnalysisSettings
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import peak_time_metrics
+from msplatform.workflows.prepared_joint.event_analysis import peak_time_metrics
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule import (
+from msplatform.backends.simion.mr_bunch_source import (
     resolve_bunch_source_interval,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.source_z_energy_timing_diagnostic import (

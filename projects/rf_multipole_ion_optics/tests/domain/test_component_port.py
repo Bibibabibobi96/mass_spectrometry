@@ -10,8 +10,8 @@ from msplatform.components.rf_multipole.event_table import PARTICLE_STATE_COLUMN
 from msplatform.components.rf_multipole.assembly_interface import build_assembly_interface
 from msplatform.backends.simion.rf_observations import prepare_exit_observation_inputs, validate_exit_observations
 from projects.rf_multipole_ion_optics.tests.domain.test_compile_design_request import design_request
-from projects.rf_multipole_ion_optics.core.compile_design_request import compile_design_request
-from projects.rf_multipole_ion_optics.simion.simion_geometry import physical_electrode_view
+from msplatform.components.rf_multipole.design_request_files import compile_design_request
+from msplatform.backends.simion.rf_finite_geometry import physical_electrode_view
 from msplatform.backends.simion.rf_assembly_interface import build_legacy_assembly_interface
 
 

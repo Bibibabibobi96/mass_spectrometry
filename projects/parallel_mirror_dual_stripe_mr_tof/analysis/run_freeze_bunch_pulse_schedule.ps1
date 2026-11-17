@@ -109,7 +109,7 @@ try{
   Push-Location -LiteralPath $repoRoot;$saved=$env:PYTHONPATH
   try{
     $env:PYTHONPATH=$repoRoot
-    $freezeArguments=@('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule',
+    $freezeArguments=@('-m','msplatform.backends.simion.mr_bunch_source',
       'freeze-schedule','--source-receipt',$frozenSourceReceipt,'--pilot-log',$frozenPilotLog,
       '--pilot-trial-receipt',$frozenPilotReceipt,'--guard-us',([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',$GuardUs)),'--output',$schedule)
     if($null-ne$PulseOffTimeUs){$freezeArguments+=@('--pulse-off-time-us',([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',[double]$PulseOffTimeUs)))}

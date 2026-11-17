@@ -376,32 +376,6 @@
       "provider_project": "parallel_mirror_dual_stripe_mr_tof",
       "files": [
         {
-          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_simion_build_native_corridor_iob_lua",
-          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/simion/build_native_corridor_iob.lua",
-          "consumers": [
-            "prepared_joint",
-            "accelerator_interface",
-            "oa_mr"
-          ]
-        },
-        {
-          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_simion_mrtof_candidate_lua",
-          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/simion/mrtof_candidate.lua",
-          "consumers": [
-            "prepared_joint",
-            "accelerator_interface",
-            "oa_mr"
-          ]
-        },
-        {
-          "id": "prepared_joint_projects_parallel_mirror_dual_stripe_mr_tof_simion_run_iob_flight_lua",
-          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_iob_flight.lua",
-          "consumers": [
-            "prepared_joint",
-            "oa_mr"
-          ]
-        },
-        {
           "id": "accelerator_interface_projects_parallel_mirror_dual_stripe_mr_tof_config_accelerator_component_request_n100_json",
           "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/config/accelerator_component_request_n100.json",
           "consumers": [
@@ -427,21 +401,6 @@
           "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/config/ion_processor_dependency.json",
           "consumers": [
             "accelerator_interface"
-          ]
-        },
-        {
-          "id": "accelerator_interface_projects_parallel_mirror_dual_stripe_mr_tof_config_ion_processor_matching_request_schema_json",
-          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/config/ion_processor_matching_request.schema.json",
-          "consumers": [
-            "accelerator_interface"
-          ]
-        },
-        {
-          "id": "accelerator_interface_projects_parallel_mirror_dual_stripe_mr_tof_simion_mirror_cycle_counter_lua",
-          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/simion/mirror_cycle_counter.lua",
-          "consumers": [
-            "accelerator_interface",
-            "oa_mr"
           ]
         },
         {
@@ -512,15 +471,6 @@
             "single_reflection_flight"
           ]
         },
-        {
-          "source_repo_path": "projects/rf_multipole_ion_optics/simion",
-          "consumers": [
-            "accelerator_interface",
-            "multipole_ip",
-            "paired_accelerator_static_field",
-            "single_reflection_flight"
-          ]
-        }
       ],
       "python_modules": []
     },
@@ -528,6 +478,40 @@
       "provider_scope": "repository_core",
       "provider_project": "msplatform",
       "files": [
+        {
+          "id": "prepared_joint_msplatform_backends_simion_resources_build_native_corridor_iob_lua",
+          "source_repo_path": "src/msplatform/backends/simion/resources/build_native_corridor_iob.lua",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_msplatform_backends_simion_resources_run_iob_flight_lua",
+          "source_repo_path": "src/msplatform/backends/simion/resources/run_iob_flight.lua",
+          "consumers": [
+            "prepared_joint",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "accelerator_interface_msplatform_backends_simion_resources_mirror_cycle_counter_lua",
+          "source_repo_path": "src/msplatform/backends/simion/resources/mirror_cycle_counter.lua",
+          "consumers": [
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "prepared_joint_msplatform_backends_simion_resources_mrtof_candidate_lua",
+          "source_repo_path": "src/msplatform/backends/simion/resources/mrtof_candidate.lua",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr"
+          ]
+        },
         {
           "id": "msplatform_contracts_particle_count_policy_json",
           "source_repo_path": "src/msplatform/contracts/particle_count_policy.json",

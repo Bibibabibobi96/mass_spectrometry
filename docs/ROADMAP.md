@@ -616,8 +616,12 @@ RF stationary MATLAB solving, geometry projection, release, extraction and saved
 resources now have one installed COMSOL backend owner, and its stationary selector no longer
 reads the RF project or `common/comsol`. The component and project retain scientific designs,
 cohorts, numerics and research criteria. Resource packaging and the complete Changed selection passed;
-ordinary-wheel native solve/cold-read remains required. The two finite-3D PowerShell runners and
-prepared-joint MR production calls remain separate OPEN ownership migrations.
+ordinary-wheel native solve/cold-read remains required. The two finite-3D PowerShell runners now execute
+from `msplatform.workflows.resources`; SIMION layout, checkpoint, source projection and native programs have
+installed backend owners, device/source rules remain in the RF component, and evidence/reporting uses the
+appropriate analysis/workflow owners. Their frozen source closure includes installed code and research config,
+not the former project implementation tree. Architecture and 125 focused tests pass; full RF consumers,
+ordinary installation, native runs and complete Changed remain OPEN. Prepared-joint MR is a separate migration.
 
 The five-species retrace MATLAB loader, segmented-output, detector-arrival and path helpers now have
 one installed COMSOL backend owner. The installed study freezes those resources by canonical path and
@@ -625,6 +629,13 @@ no longer derives support files from the OA project or `common/paths`. Research 
 arbitrary species definitions and study ordering remain explicit inputs; separate per-species retrace
 and mixed-species Fly are not conflated. Consumer and ordinary-install checks passed for this slice;
 v47's COMSOL `25/39/0/18/85` versus SIMION `500/500` scientific failure remains unchanged.
+
+Prepared-joint Python production modules and four native Lua programs now have installed component, backend,
+workflow and results owners. Their integration consumers and frozen dependency declarations use those owners;
+installed sources no longer import MR project implementations. Project configuration and historical evidence
+remain in place. The complete integration suite passed 585 tests with four existing external-asset skips.
+Ordinary wheel and sdist-rebuilt outside-checkout acceptance passed in 1790.246 seconds. Complete MR,
+Changed and applicable native acceptance remain OPEN.
 
 The following is the single active P4 worklist. All rows remain OPEN until their stated
 consumer and acceptance boundaries close; earlier delivered sub-capabilities are inherited,
@@ -665,6 +676,7 @@ status table or a promise to preserve each historical workflow as a permanent pa
 | OA accelerator-only theory and closed-focus source | `components.orthogonal_accelerator.three_zone_ideal_theory` and `backends.simion.oa_focus_source`; actual contracts, CLI and frozen consumers | Old bodies retired with scientific definitions unchanged; current v2 authority refresh preserves historical v1 bytes/refusal. The closed-focus plan, recorded analysis and protocol-2 FastAdjust decisions are installed with explicit mesh/profile authority and frozen consumers. Remaining native orchestration and native acceptance stay OPEN. |
 | Paired RF source and sampled response | `ion_release.paired_mass_scan` and `analysis.mass_response`; actual RF preparation/evaluation and three frozen PS consumers | Both old bodies retired, explicit mass/input/criteria preserved; ordinary source epochs and main scoped checks delivered. Remaining root RF workflows and final composed-source acceptance remain OPEN. |
 | RF finite-SIMION metrics | `analysis.rf_transport_metrics`; all four actual finite-transport CLI modes and frozen consumers | The complete old assembler is retired, with original denominators, handoff counting and UNQUALIFIED limits unchanged. Scoped software and ordinary-wheel evidence delivered; remaining RF algorithms/orchestration and composed acceptance stay OPEN. |
+| RF design/runtime/budget configuration and COMSOL metrics | `components.rf_multipole.design_request_files`, `workflows.rf_design_profiles`, `rf_runtime_profiles`, `rf_resource_budget` and `analysis.rf_comsol_transport_metrics`; actual profile/campaign/CLI and execution-selector consumers | Old project implementations retired; installed runtime bindings resolve modules directly. Compiler/runtime/typed-mode/budget/metric tests and frozen-selector checks cover the migrated logic; ordinary-install, complete Changed and the two thick finite runners remain OPEN. |
 | IP scientific source/input preparation and HS1 resources | `workflows.ion_processor.preparation`, `backends.simion.collision_hs1` and four installed `ip_*.lua` resources; IP, accelerator and MR consumers | Seven original validators and byte-identical native resources migrated. Explicit research files and supplied values must agree. Installed source/materialization checks do not imply an IOB, field, Fly or qualification. Root snapshot, field adoption, seed binding, analysis and native orchestration remain OPEN. |
 | Native execution path projection/context | `execution.run_paths` and its selected installed/frozen PowerShell resource; actual native consumers | Root projection/context bodies retired; explicit execution roots, canonical identity, shared ledger and existing junction/writer guards retained. Repository DEV root discovery remains outside the package. No new native or general historical-path portability claim. |
 | Named SFI preparation/pulse/field planning/downstream/runtime/collection/continuation | `workflows.single_reflection_flight`; canonical source/results/backend consumers, actual PS CLI and freezer selections | Root Python bodies retired; scoped consumers, missing-resource and cache/reuse checks delivered. Installed four/five-slot seed materialization no longer consumes legacy large PA inputs. Remaining PS orchestration and broader native seed/reopen qualification stay OPEN; the selected four-slot unsolved build and reopen are recorded above. |

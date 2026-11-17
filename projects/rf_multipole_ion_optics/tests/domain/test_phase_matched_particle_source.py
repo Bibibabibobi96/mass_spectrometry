@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 from msplatform.io.file_identity import file_sha256
-from projects.rf_multipole_ion_optics.runtime.phase_matched_particle_source import (
+from msplatform.components.rf_multipole.phase_matched_source import (
     COLUMNS,
     derive_phase_matched_source,
     validate_phase_matched_source_metadata,

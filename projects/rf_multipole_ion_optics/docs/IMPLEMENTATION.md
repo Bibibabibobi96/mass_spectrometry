@@ -7,14 +7,14 @@
 按任务阅读：[设计](#设计合同)、[实体与端口](#simion实体与独立pa)、[术语](#统一术语)、
 [源与运行选择](#粒子源与runtime-profile)、[证据](#证据和资格)、[求解器执行](#求解器投影)、[GUI模板](#单pa-gui模板)。
 
-实现按职责分开：`core/`拥有物理模型与设计编译，`runtime/`解析输入并编排运行，`analysis/`发布指标与证据，
-`comsol/`、`simion/`做求解器投影；`config/`维护机器合同、预登记campaign和源声明。
-这些均属于本项目，通用主机调度、粒子释放、状态合同和缓存仍复用仓库`common/`。
+实现按职责分开：规范 RF 组件负责物理模型，安装 workflow 解析输入并编排运行，安装 analysis 发布指标与证据，
+backend 的 `comsol/`、`simion/` 做求解器投影；项目 `config/` 维护机器合同、预登记 campaign 和源声明。
+通用主机调度、粒子释放、状态合同和缓存复用公共 execution。
 
 ## 设计合同
 
-设计解析入口只接受`ProjectId + DesignProfileId`；本项目的owner为`rf_multipole_ion_optics`。[`design_profile.py`](../runtime/design_profile.py)从项目注册表定位
-项目并解析具名profile；[`compile_design_request.py`](../core/compile_design_request.py)把以下三类输入单向编译
+设计解析入口只接受`ProjectId + DesignProfileId`；本项目的owner为`rf_multipole_ion_optics`。[`rf_design_profiles.py`](../../../src/msplatform/workflows/rf_design_profiles.py)从项目注册表定位
+项目并解析具名profile；[`design_request_files.py`](../../../src/msplatform/components/rf_multipole/design_request_files.py)把以下三类输入单向编译
 为`multipole_resolved_design_do_not_edit`：
 
 1. 完整机械request；
@@ -51,7 +51,7 @@ typed operating-mode registry 只声明同一机械 base 上的电气差异。�
 
 ## SIMION实体与独立PA
 
-[`simion_geometry.py`](../simion/simion_geometry.py)的`render_physical_gem(resolved, cell_mm_xyz, electrode_ids=...)`
+[`simion_geometry.py`](../../../src/msplatform/backends/simion/rf_finite_geometry.py)的`render_physical_gem(resolved, cell_mm_xyz, electrode_ids=...)`
 与独立器件运行的`render_gem`共用同一实体生成器。前者只输出提供者局部mm坐标下的真实杆系与
 显式壳体／端盖，不包含`pa_define`、PA原点平移或数值吸收面。当前组件API接受裸杆或显式接地圆柱壳，
 支持连续及分段杆；矩形专用reference保留独立workflow，不作为组件API的隐含光学或兼容外壳。
@@ -151,7 +151,7 @@ RF 家族母样本的随机圆盘位置、filled-cone 方向和 RF 相位出生�
 每个独立入口仍验证其实际输入，非法列、ID、能量、释放面和批区间继续拒绝；没有跨调用缓存。
 同一次 runtime 解析复用已算出的源与 campaign 哈希，保留配置绑定和陈旧身份拒绝。
 
-普通 runtime profile 与 campaign 共用 `runtime_profile.py` 的源身份、数值注册表和设计序列化实现；
+普通 runtime profile 与 campaign 共用安装 workflow `rf_runtime_profiles.py` 的源身份、数值注册表和设计序列化实现；
 普通 profile 在一次解析中只读一次 runtime 注册表。连续体积源的文件字节身份复用
 `src/msplatform/io/file_identity.py`，不另维护哈希算法。
 
@@ -218,8 +218,8 @@ Python→PowerShell的派生预算经临时JSON传递并由finally清理，不�
 观察器 API、普通预算告警与持续物理危险的处置只见[进程观测与预算](../../../common/README.md#进程观测与预算)，
 COMSOL阶段接线见[公共入口](../../../common/comsol/README.md#主机资源阶段)。
 
-求解器底层入口为 [COMSOL 传输](../runtime/run_finite_3d_transport.ps1) 和
-[SIMION 传输](../runtime/run_simion_finite_3d_transport.ps1)。它们由项目 wrapper 或 campaign 传入冻结的
+求解器底层入口为 [COMSOL 传输](../../../src/msplatform/workflows/resources/run_finite_3d_transport.ps1) 和
+[SIMION 传输](../../../src/msplatform/workflows/resources/run_simion_finite_3d_transport.ps1)。它们由项目 wrapper 或 campaign 传入冻结的
 `ProjectId`、`RuntimeProfileId`、`DesignProfileId`、`ParticleSourcePath` 和 `EngineeringBudgetPath`，
 不作为跳过 runtime profile 的手工调参入口。执行后检查 summary 的实际状态与 manifest，不能仅凭退出
 码或结果文件存在声明成功。
@@ -293,7 +293,7 @@ RMS、输出能量统计、成对差和指标JSON均由Python分析器从canonic
 - GUI登记：[`register_simion_layout_template.ps1`](../runtime/register_simion_layout_template.ps1)
 - 当前登记：[`simion_layout_template.json`](../config/simion_layout_template.json)
 
-生产 run 通过 [`simion_layout_template_support.ps1`](../runtime/simion_layout_template_support.ps1) 一次解析并冻结注册表、登记manifest、IOB和CON，再重绑run-local PA、更新实例尺寸并恢复Program/Fly2。登记不refine、
+生产 run 通过 [`simion_layout_template_support.ps1`](../../../src/msplatform/backends/simion/resources/simion_layout_template_support.ps1) 一次解析并冻结注册表、登记manifest、IOB和CON，再重绑run-local PA、更新实例尺寸并恢复Program/Fly2。登记不refine、
 不Fly，也不授予Candidate或Formal。SIMION 2026 `.wgem`在许可证和隔离复验完成前不是活动路线。
 
 ## 理论与项目状态

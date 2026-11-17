@@ -9,7 +9,7 @@ import unittest
 import tempfile
 from pathlib import Path
 
-from projects.rf_multipole_ion_optics.runtime.simion_particle_source import (
+from msplatform.backends.simion.rf_particle_source import (
     render_ion11_fly2,
     render_ion11_source_states,
 )
@@ -61,7 +61,7 @@ class MassFilterSimionContractTests(unittest.TestCase):
         self.assertNotIn("[3]", states)
 
     def test_project_lua_binds_shared_dc_and_rf_drive(self) -> None:
-        transport = (REPO_ROOT / "projects/rf_multipole_ion_optics/simion/simion_transport.lua").read_text(encoding="utf-8")
+        transport = (REPO_ROOT / "src/msplatform/backends/simion/resources/simion_transport.lua").read_text(encoding="utf-8")
         self.assertIn("group_dc_v={[1]=transport_dc_amplitude_v, [2]=-transport_dc_amplitude_v}", transport)
         self.assertIn("rf_drive.apply_at(ion_time_of_flight, set_electrode_voltage)", transport)
 

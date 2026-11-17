@@ -1940,7 +1940,7 @@ exit ([int]$env:CI_FIXTURE_EXIT)
             self.assertIn("artifacts_other/missing.json", report["errors"][0])
 
     def test_shared_dependencies_route_to_actual_consumers(self) -> None:
-        multipole = self.routed_stages("projects/rf_multipole_ion_optics/runtime/simion_particle_source.py")
+        multipole = self.routed_stages("src/msplatform/backends/simion/rf_particle_source.py")
         self.assertTrue(
             {
                 "rf_multipole_domain_tests",
@@ -1950,7 +1950,7 @@ exit ([int]$env:CI_FIXTURE_EXIT)
                 "rf_multipole_octupole_static",
             }.issubset(multipole)
         )
-        self.assertNotIn("single_reflection_oa_tof_mass_analyzer_static", multipole)
+        self.assertIn("single_reflection_oa_tof_mass_analyzer_static", multipole)
 
         for shared_path in (
             "src/msplatform/backends/simion/source.py",
@@ -2052,10 +2052,10 @@ exit ([int]$env:CI_FIXTURE_EXIT)
         }
         for path in (
             "src/msplatform/components/rf_multipole/family_contract.py",
-            "projects/rf_multipole_ion_optics/runtime/design_profile.py",
+            "src/msplatform/workflows/rf_design_profiles.py",
             "projects/rf_multipole_ion_optics/analysis/campaign_analysis.py",
             "src/msplatform/backends/comsol/matlab/solve_finite_3d_transport.m",
-            "projects/rf_multipole_ion_optics/simion/simion_geometry.py",
+            "src/msplatform/backends/simion/rf_finite_geometry.py",
             "src/msplatform/components/rf_multipole/family_contract.json",
             "projects/rf_multipole_ion_optics/config/sources/rf_multipole_family_mother_sample_v1.json",
         ):
@@ -2331,7 +2331,7 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
         base = 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/'
         sources = ('src/msplatform/components/catalog.py', base+'provider.py', base+'candidate_contract.py',
                    base+'assembly_interface.py', base+'resolved_geometry.py', 'src/msplatform/backends/simion/mr_geometry.py',
-                   'projects/parallel_mirror_dual_stripe_mr_tof/analysis/native_system_geometry.py')
+                   'src/msplatform/backends/simion/native_system_geometry.py')
         prefix = 'projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.'
         required = {prefix+name for name in ('test_mr_provider_freeze','test_mr_provider_trial_transport',
                     'test_assembly_interface','test_simion_candidate_reference','test_two_prism_simion_trial')}

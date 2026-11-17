@@ -49,7 +49,7 @@ IP采用`state_handoff`，继承实测状态与到达时刻，后段为RF为零�
 
 [候选合同](../config/simion_candidate_two_zone.json)提供 MR 物理输入和机械约束，
 [resolved_geometry.py](../../../src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resolved_geometry.py)生成求解器无关的毫米几何；
-[native_system_geometry.py](../analysis/native_system_geometry.py)及
+[native_system_geometry.py](../../../src/msplatform/backends/simion/native_system_geometry.py)及
 [native_corridor_geometry.py](../analysis/native_corridor_geometry.py)只派生 SIMION 副本。
 GEM、PA、IOB 和 GUI 不持有下一轮可调几何真值；旧 PA 不因源码修复自动恢复有效性。
 
@@ -408,7 +408,7 @@ GUI 对等不能由 `efield_adjust` 回调推定，最终交付仍须满足实�
 [Python 3.11官方说明](https://docs.python.org/3.11/library/os.html#os.fsync)要求先刷新Python流，
 Windows使用`_commit`（查阅2026-10-13）；这不保证硬件缓存持久化或场精度，发布仍由公共manifest负责。
 
-[build_native_corridor_iob.lua](../simion/build_native_corridor_iob.lua)仅装配已封存四角色，
+[build_native_corridor_iob.lua](../../../src/msplatform/backends/simion/resources/build_native_corridor_iob.lua)仅装配已封存四角色，
 检查位姿、网格、对称性及真实重叠优先级。先保存 IOB，再做 Fast Adjust，
 避免 Workbench 保存尝试回写脏 PA；日志中的保存错误即使进程 exit0 也判失败。
 原生电压更新一次提交完整通道表，不逐区合成或保存 published PA。
@@ -473,8 +473,8 @@ native Candidate 链的受控焦点对及回退区间只供导数，不混入正
 
 ### 控制器职责与普通S恢复策略
 
-[downstream_workpoint_iteration.py](../analysis/downstream_workpoint_iteration.py)拥有物理残差、模型和有界提议；
-[workpoint_controller_state.py](../analysis/workpoint_controller_state.py)统一计算电压档位、候选接受／回退、
+[downstream_workpoint_iteration.py](../../../src/msplatform/workflows/prepared_joint/downstream_workpoint.py)拥有物理残差、模型和有界提议；
+[workpoint_controller_state.py](../../../src/msplatform/workflows/prepared_joint/controller_state.py)统一计算电压档位、候选接受／回退、
 档位复位及局部模型恢复状态转移。PowerShell负责身份验证、实际执行、冻结输入与检查点发布，不复制这些决策公式。
 `Complete-StagedTrial`及其决策／provider核验helper显式接收Context；合同、目标、proposal、handoff、
 run与artifact路径取自本次上下文，handoff复制后重绑冻结副本，不从同名脚本全局变量补取。
@@ -630,7 +630,7 @@ published PA 不是 runtime 写目标；私有 family、standalone PA 的具体�
 
 ## 事件与分析
 
-[mrtof_candidate.lua](../simion/mrtof_candidate.lua)及[mirror_cycle_counter.lua](../simion/mirror_cycle_counter.lua)
+[mrtof_candidate.lua](../../../src/msplatform/backends/simion/resources/mrtof_candidate.lua)及[mirror_cycle_counter.lua](../../../src/msplatform/backends/simion/resources/mirror_cycle_counter.lua)
 以 P2 后正镜转折定义快相位原点，后续每次真实镜转折增加半周期。
 目标 K 与返回镜侧来自 `target_drift_period_ratio/fast_path_symmetry`，不在代码中固定数值。
 中央 `z=0` 或提前 `y=0` 穿越仅作诊断；目标镜转折才产生严格相位返回。
@@ -643,7 +643,7 @@ published PA 不是 runtime 写目标；私有 family、standalone PA 的具体�
 跨界本身不证明电场跳变，质心容差不作为整束接受度门槛。轮廓投影不冒充真实布尔截面。
 缺 target-K 或完整返回的观察不得补造有效 Jacobian；完整通过与阶段观察分开保留。
 `sim_segment_global=1` 用于捕获 PA 外终态，仍须逐粒子核对唯一结束和日志完整性。
-[run_iob_flight.lua](../simion/run_iob_flight.lua)要求同名 Program/Fly2/operating-point/voltage-map/
+[run_iob_flight.lua](../../../src/msplatform/backends/simion/resources/run_iob_flight.lua)要求同名 Program/Fly2/operating-point/voltage-map/
 mirror-cycle-counter 伴随文件，实际源必须匹配冻结字节；zero-exit 错误日志仍判失败。
 
 同一进程先构建／重载IOB再Fly时，launcher按`simion.pas[1..#simion.pas]`的完整`path`

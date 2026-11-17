@@ -12,6 +12,7 @@ def run(root, arm, timer, blocked_roots):
     from msplatform.contracts.machine_contracts import ContractError
     from msplatform.execution.manifest_publication import build_run_manifest
     from msplatform.execution.terminal_publication import publish_terminal_state
+    from msplatform.io.strict_json import StrictJsonError
     from msplatform.workflows import rf_batch_continuation as continuation
 
     purelib=Path(sysconfig.get_paths()['purelib']).resolve()
@@ -94,7 +95,9 @@ runpy.run_module('msplatform.workflows.rf_batch_continuation',run_name='__main__
         try:
             manifest_path.unlink()
             try: continuation.ancestry(parent,project,mode)
-            except FileNotFoundError as error: assert error.filename and Path(error.filename)==manifest_path
+            except StrictJsonError as error:
+                assert f'cannot read {manifest_path}' in str(error),str(error)
+                assert isinstance(error.__cause__,FileNotFoundError),repr(error.__cause__)
             else: raise AssertionError('missing predecessor manifest accepted')
         finally: manifest_path.write_bytes(old_manifest)
         assert manifest_path.read_bytes()==original

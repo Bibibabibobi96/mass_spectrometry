@@ -70,7 +70,7 @@ for _,bad in ipairs({0/0,math.huge,-math.huge}) do
 end
 assert(expected.analyser[15]==0 and expected.analyser[18]==0 and expected.analyser[20]==0
   and expected.analyser[19]==nil and expected.analyser[25]==nil)
-local program_file=assert(io.open(directory..'mrtof_candidate.lua','rb'))
+local program_file=assert(io.open(repo..'/src/msplatform/backends/simion/resources/mrtof_candidate.lua','rb'))
 local program_text=program_file:read('*a'); program_file:close()
 local calls={}
 local function pa(index)
@@ -86,7 +86,7 @@ loadfile=function(path)
   if path=='virtual/source.voltage_waveforms.lua' then return original_loadfile(repo..'/src/msplatform/backends/simion/resources/voltage_waveforms.lua') end
   if path=='virtual/source.operating_point.lua' then return function() return point end end
   if path=='virtual/source.voltage_map.lua' then return function() return map end end
-  if path=='virtual/source.mirror_cycle_counter.lua' then return original_loadfile(directory..'mirror_cycle_counter.lua') end
+  if path=='virtual/source.mirror_cycle_counter.lua' then return original_loadfile(repo..'/src/msplatform/backends/simion/resources/mirror_cycle_counter.lua') end
   if path=='virtual/source.priority.lua' then return function() return priority end end
   if path=='virtual/source.scalar_field_adapter.lua' then return function()
     return function() return function() end end

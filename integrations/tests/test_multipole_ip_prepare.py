@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 from msplatform.components.rf_multipole.event_table import PARTICLE_STATE_COLUMNS
 from msplatform.execution.retention import file_record
-from projects.rf_multipole_ion_optics.core.compile_design_request import compile_design_request
+from msplatform.components.rf_multipole.design_request_files import compile_design_request
 from msplatform.backends.simion.rf_observations import prepare_exit_observation_inputs, validate_exit_observations
 from msplatform.backends.simion.rf_assembly_interface import build_legacy_assembly_interface
 from projects.rf_multipole_ion_optics.tests.domain.test_compile_design_request import design_request

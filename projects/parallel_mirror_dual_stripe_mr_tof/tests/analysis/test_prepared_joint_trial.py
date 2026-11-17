@@ -1,6 +1,7 @@
 """Measured joint batch identity/clock tests; no commercial solver."""
 
 from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
+from msplatform.backends.simion.resources import native_resource_path
 from msplatform.backends.simion.mr_prepared_field import compile_memory_consumer_crops, validate_candidate_binding
 import csv
 import os
@@ -14,8 +15,8 @@ import unittest
 from unittest.mock import patch
 from msplatform.execution.inputs import freeze_file
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight import merge_measured_event_logs
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial import (
+from msplatform.backends.simion.mrtof_batch_flight import merge_measured_event_logs
+from msplatform.workflows.prepared_joint.trial import (
     compare_trajectory_representation, materialize_batch,
     analyze_centroid_probe, prepare_trial,
 )
@@ -33,7 +34,7 @@ class BlockIntegrationCli(importlib.abc.MetaPathFinder):
         if fullname == "integrations.workflows.accelerator_interface.prepare":
             raise AssertionError("MR component imported integration CLI")
 sys.meta_path.insert(0, BlockIntegrationCli())
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial import verified_preparation_reference
+from msplatform.workflows.prepared_joint.trial import verified_preparation_reference
 from msplatform.execution.retention import file_record
 with tempfile.TemporaryDirectory() as directory:
     root=Path(directory)
@@ -79,7 +80,7 @@ $null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath 
                 "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_ion_processor_handoff.py",
                 "integrations/config/recipes/ip_mr_y_minus55_plan.json",
                 "projects/parallel_mirror_dual_stripe_mr_tof/config/ion_processor_matching_request.json",
-                "projects/parallel_mirror_dual_stripe_mr_tof/config/ion_processor_matching_request.schema.json",
+                "src/msplatform/workflows/config/ion_processor_matching_request.schema.json",
             ):
                 target = snapshot / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -143,11 +144,11 @@ $function=$tree.FindAll({param($node) $node -is [System.Management.Automation.La
 if($function.Count-ne1){throw 'launcher invoker not unique'}
 . ([scriptblock]::Create($function[0].Extent.Text))
 $script:pythonRoot=[string]$frozen.execution_root;$script:preparedPackage=$null
-$module='projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial'
+$module='msplatform.workflows.prepared_joint.trial'
 $help=@('-m',$module,'--help')
 $good=@(Invoke-ProjectPython -Arguments $help -FrozenPackage $frozen)-join "`n"
 if($good-notmatch 'usage:'){throw 'real selected module did not return help'}
-$identity=@($frozen.identities|Where-Object {$_.source_repo_path-ceq 'projects/parallel_mirror_dual_stripe_mr_tof/analysis/prepared_joint_trial.py'})
+$identity=@($frozen.identities|Where-Object {$_.source_repo_path-ceq 'src/msplatform/workflows/prepared_joint/trial.py'})
 if($identity.Count-ne1){throw 'selected source identity missing'}
 $target=[string]$identity[0].snapshot_path;$original=[IO.File]::ReadAllBytes($target)
 try{
@@ -291,12 +292,12 @@ Write-Output 'FROZEN_PREPARE_INVOKER=PASS'
                                   for role in ("global_fallback","native_corridor","ion_processor_collision","detector")],
                        records=dict(scalar_pa=dict(sha256="A"*64)))
         binding["instances"][0]["pa_path"] = binding["sources"]["scalar_pa"]
-        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial"
+        module = "msplatform.workflows.prepared_joint.trial"
         if os.environ.get("MR_TEST_PUBLIC_97"):
             # Reuse the real 97-state source fixture above. Field PA bytes below
             # are inert software fixtures and are never opened by SIMION.
             from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_static_field_binding import IonProcessorNativeBindingTest
-            from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import resolve_ip_mr_transform
+            from msplatform.workflows.prepared_joint.ip_mr_handoff import resolve_ip_mr_transform
             from msplatform.workflows.prepared_joint.ip_mr_connection import resolve_ip_mr_connection
             from msplatform.backends.comsol.static_field_binding import load_binding as load_real_binding
             field_root = root / "sealed_software_field"
@@ -356,7 +357,7 @@ $function=@($tree.FindAll({param($node)$node-is[System.Management.Automation.Lan
 if($function.Count-ne1){throw 'launcher invoker not unique'}
 . ([scriptblock]::Create($function[0].Extent.Text))
 $script:pythonRoot=[string]$frozen.execution_root;$script:preparedPackage=$null
-$module='projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial'
+$module='msplatform.workflows.prepared_joint.trial'
 function Invoke-Prepare([string]$run){
  # The public owner normally creates this destination identity before prepare.
  $null=New-Item -ItemType Directory -Path $run
@@ -800,7 +801,7 @@ Write-Output 'PUBLIC_97_PREPARATION=PASS'
         # Pure finalization -> ordinary preparation: generated effective reference
         # must carry the selected contract rather than inherit the old .004 Lua.
         from integrations.workflows.accelerator_interface.prepare import bind_joint_workbench
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepare_accelerator_interface import validate_execution_contract
+        from msplatform.workflows.prepared_joint.preparation import validate_execution_contract
         final = root / "finalized"
         (final / "results").mkdir(parents=True)
         (final / "run_manifest.json").write_text("{}")
@@ -953,10 +954,10 @@ Write-Output 'PUBLIC_97_PREPARATION=PASS'
                 prepare_trial(prepared,original_path,root/"inconsistent_json_numerics")
 
     def test_staged_adapter_reuses_json_phase_space_and_rejects_changed_evidence(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import (
+        from msplatform.workflows.prepared_joint.downstream_workpoint import (
             materialize_prepared_staged_adapter,
         )
-        module="projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration"
+        module="msplatform.workflows.prepared_joint.downstream_workpoint"
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory); authority=root/"authority.json";authority.write_text('{}')
             state=dict(position_mm=(.1,-2.,33.),velocity_mm_per_us=(.01,1.4,40.))
@@ -1044,12 +1045,12 @@ Write-Output 'PUBLIC_97_PREPARATION=PASS'
             trajectory_contract=file_record(reference),operating_point=file_record(reference),
             stripe_biases_v=[0,0],prism_voltages_v=[10,20])))
         log=root/"flight.log";log.write_text(_terminal(1,-1,7600.0)+"\nstatus,Fly completed. 1 splats\n")
-        module="projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial"
+        module="msplatform.workflows.prepared_joint.trial"
         normalized=dict(authority=dict(analyzer_electrode_voltages_v=[0.0]*20,
             component_voltages_v=[dict(component_namespace="ion_processor",component_electrode_id=i,voltage_v=i) for i in range(1,16)]))
         normalized["authority"]["analyzer_electrode_voltages_v"][15:17]=[10,20]
         with patch(module+".load_binding",return_value=normalized),patch(module+".native_response_operator",return_value={}),\
-             patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial._static_field_receipt",return_value=dict(mode="native_static_pa",path=str(binding))):
+             patch("msplatform.workflows.prepared_joint.prism_trial._static_field_receipt",return_value=dict(mode="native_static_pa",path=str(binding))):
             result=analyze_centroid_probe(preparation,log,root/"analysis")
         self.assertEqual(result["frozen_problem"]["source_center_projection"]["role"],"measured_exit_centroid")
         self.assertEqual(result["observation"]["terminal"]["splat"],-1)
@@ -1063,7 +1064,7 @@ Write-Output 'PUBLIC_97_PREPARATION=PASS'
         self.assertTrue((root/"analysis/probe_event_states.csv").is_file())
         # Once published, controller reanalysis consumes frozen metadata only:
         # an absent (retired) PA must not be reopened to recover S/full evidence.
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import (
+        from msplatform.workflows.prepared_joint.downstream_workpoint import (
             load_prepared_centroid_trial, materialize_prepared_staged_adapter, reanchor_prepared_target,
         )
         manifest=root/"run_manifest.json"
@@ -1075,7 +1076,7 @@ Write-Output 'PUBLIC_97_PREPARATION=PASS'
             inputs=dict(mother_source_receipt=file_record(fixture.output/"source_receipt.json"),
                         trajectory_contract=file_record(reference)))
         target["prism_handoff_target"]={"axial_energy_per_charge_v":4372}
-        adapter="projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration"
+        adapter="msplatform.workflows.prepared_joint.downstream_workpoint"
         with patch(adapter+".load_measured_centroid_closure_target",return_value=target),\
              patch("msplatform.backends.comsol.static_field_binding.load_binding",side_effect=AssertionError("retired PA opened")):
             from msplatform.contracts.particle_state import load_component_particle_state_csv
@@ -1101,7 +1102,7 @@ Write-Output 'PUBLIC_97_PREPARATION=PASS'
 
     def test_explicit_slow_turn_reanchor_preserves_spent_budget_and_rejects_other_changes(self):
         import copy
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import reanchor_prepared_target
+        from msplatform.workflows.prepared_joint.downstream_workpoint import reanchor_prepared_target
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary);old=root/"old.json";new=root/"new.json"
             original=dict(target_slow_turn_y_mm=360,energy=4359.32,source="same")
@@ -1113,7 +1114,7 @@ Write-Output 'PUBLIC_97_PREPARATION=PASS'
             state=dict(stage="stripe_preclosure",candidate_count=16,flight_count=51,columns={"0":"old"},
                        attempts=[1],history=["keep"],prism_model_manifest="old",prediction_assessment={})
             saved=copy.deepcopy(state)
-            module="projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration"
+            module="msplatform.workflows.prepared_joint.downstream_workpoint"
             with patch(module+".load_prepared_centroid_trial",return_value=trial):
                 reset=reanchor_prepared_target(state,anchor_manifest=old,target_path=new,contract_path=old,previous_target_path=old)
                 self.assertEqual((reset["candidate_count"],reset["flight_count"]),(16,51))
@@ -1159,7 +1160,7 @@ Write-Output 'PUBLIC_97_PREPARATION=PASS'
                 Path(__file__).resolve().parents[4]/"src/msplatform/backends/simion/resources/scientific_event_reconciliation.lua",
                 runtime/"scientific_event_reconciliation.lua"),
             trajectory_recording=dict(mode="fixed_interval",interval_us=.1))))
-        module="projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial"
+        module="msplatform.workflows.prepared_joint.trial"
         alias_script=root/'alias.ps1'
         alias_script.write_text(r"""param($Repo,$Root,$Execution,$Alias,$Mode)
 . (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
@@ -1190,7 +1191,7 @@ if($Mode-eq'create'){
         self.assertIn("4_instance_seed.iob",build)
         batch_dir = root / "batch"
         provider = "dual_pressure_rectilinear_ion_processor"
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_flight_preparation import _lua
+        from msplatform.workflows.prepared_joint.native_preparation import _lua
         priority = dict(role="mrtof_native_corridor_iob_priority_contract", accelerator_provider=provider,
                         instances=[dict(role=role, priority_number=index) for index, role in enumerate(
                             ("global_fallback", "native_corridor", "ion_processor_collision", "detector"), 1)])
@@ -1237,7 +1238,7 @@ dofile(builder)
 assert(probes==3 and priority_projected)
 print('ACTUAL_BUILDER_SAVE_SOURCE_RESTORATION=PASS')
 ''', encoding="utf-8")
-        builder = Path(__file__).resolve().parents[2] / "simion/build_native_corridor_iob.lua"
+        builder = native_resource_path("build_native_corridor_iob.lua")
         result = subprocess.run([lua, str(script), batch_dir.as_posix(), str(builder),
                                  str(repository/"src/msplatform/execution/resources/native_run_path.lua")], cwd=root,
                                 env=dict(os.environ, MASS_SPECTROMETRY_RUN_DIRECTORY=str(root),
@@ -1336,7 +1337,7 @@ print('ACTUAL_BUILDER_SAVE_SOURCE_RESTORATION=PASS')
         lua = shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe"
         if not Path(lua).exists():
             self.skipTest("Plain Lua interpreter is unavailable")
-        launcher = Path(__file__).resolve().parents[2] / "simion/run_iob_flight.lua"
+        launcher = native_resource_path("run_iob_flight.lua")
         script = root / "mock_launcher.lua"
         script.write_text("""
 local directory,launcher,epoch,t=arg[1],arg[2],tonumber(arg[3]),tonumber(arg[4])

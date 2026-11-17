@@ -9,8 +9,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from projects.rf_multipole_ion_optics.runtime import runtime_profile
-from projects.rf_multipole_ion_optics.runtime.runtime_profile import (
+from msplatform.workflows import rf_runtime_profiles as runtime_profile
+from msplatform.workflows.rf_runtime_profiles import (
     resolve_campaign_experiment,
     resolve_execution_binding,
     resolve_runtime_profile,
@@ -25,7 +25,7 @@ VARIANTS = ("quadrupole", "hexapole", "octupole")
 
 class RuntimeProfileTests(unittest.TestCase):
     def test_comsol_minimum_size_is_authorized_numeric_and_selected_region_only(self):
-        from projects.rf_multipole_ion_optics.runtime.runtime_profile import _resolve_solver_profile
+        from msplatform.workflows.rf_runtime_profiles import _resolve_solver_profile
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)/"numerics.json"
             registry = dict(schema_version=1, role="multipole_comsol_solver_numerics_profiles", project_id="fixture",
@@ -73,7 +73,7 @@ Invoke-Expression $resolvedBlock.Extent.Text
 'COMSOL_RESOLVED_INPUTS=PASS'
 """, encoding="utf-8")
             completed = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(script), str(REPO_ROOT),
-                str(REPO_ROOT/"projects"/PROJECT_ID/"runtime/run_finite_3d_transport.ps1"), str(snapshot), str(root)],
+                str(REPO_ROOT/"src/msplatform/workflows/resources/run_finite_3d_transport.ps1"), str(snapshot), str(root)],
                 cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
             self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr)
             self.assertEqual(json.loads((root/"resolved.json").read_text()), runtime["design_profile_resolution"]["resolved_design"])
@@ -103,17 +103,19 @@ $profile=Get-Content $ResolvedRuntimeProfilePath -Raw|ConvertFrom-Json
  ConvertTo-Json|Set-Content (Join-Path $PSScriptRoot ([IO.Path]::GetFileNameWithoutExtension($PSCommandPath)+'.json'))
 $global:LASTEXITCODE=0
 """
+            public_resources = root/"src/msplatform/workflows/resources"
+            public_resources.mkdir(parents=True, exist_ok=True)
             for solver, native, expected in (("comsol", "run_finite_3d_transport", 23), ("simion", "run_simion_finite_3d_transport", 29)):
                 with self.subTest(solver=solver):
                     wrapper = project/"workflows/no_collision_transport"/("run_"+solver+".ps1")
                     shutil.copyfile(REPO_ROOT/"projects"/PROJECT_ID/"workflows/no_collision_transport"/wrapper.name, wrapper)
-                    (project/"runtime"/(native+".ps1")).write_text(stub, encoding="utf-8")
+                    (public_resources/(native+".ps1")).write_text(stub, encoding="utf-8")
                     result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(wrapper),
                         "-ResolvedRuntimeProfilePath", str(snapshot), "-RunId", "20261030_123000__sim__simion__resolved-wrapper",
                         "-PythonExe", str(root/"python-must-not-start.exe")], cwd=root,
                         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
                     self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
-                    actual = json.loads((project/"runtime"/(native+".json")).read_text())
+                    actual = json.loads((public_resources/(native+".json")).read_text())
                     self.assertEqual(actual["id"], runtime["runtime_profile_id"])
                     self.assertEqual(actual["time"], expected)
                     self.assertEqual(actual["resolved"], runtime["design_profile_resolution"]["resolved_design"]["resolved_sha256"])

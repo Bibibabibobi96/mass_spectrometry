@@ -8,15 +8,15 @@ from pathlib import Path
 from typing import Any
 
 if __package__:
-    from .artifact_identity_archive import historical_project_identities
+    from msplatform.execution.artifact_identity_archive import historical_project_identities
     from msplatform.io.file_identity import repository_text_sha256
     from common.paths.repository_root import REPO_ROOT
-    from msplatform.contracts.machine_contracts import ContractError, load_json, validate_schema
+    from msplatform.contracts.machine_contracts import ContractError, load_json, pointer_value, validate_schema
 else:
-    from artifact_identity_archive import historical_project_identities
+    from msplatform.execution.artifact_identity_archive import historical_project_identities
     from msplatform.io.file_identity import repository_text_sha256
     from common.paths.repository_root import REPO_ROOT
-    from msplatform.contracts.machine_contracts import ContractError, load_json, validate_schema
+    from msplatform.contracts.machine_contracts import ContractError, load_json, pointer_value, validate_schema
 
 
 MATURITY = {"prototype": 0, "static": 1, "candidate": 2, "formal": 3}
@@ -34,9 +34,12 @@ def validate_runtime_binding(profile: dict[str, Any], project_root: Path) -> Pat
         return None
     if not set(declaration["required_bindings"]) <= set(profile["required_bindings"]):
         raise ContractError("runtime binding selectors must be required bindings of the execution profile")
-    entrypoint = (project_root / declaration["entrypoint"]).resolve()
-    if not entrypoint.is_relative_to(project_root.resolve()):
-        raise ContractError("runtime binding entrypoint must remain inside its project")
+    relative = declaration["entrypoint"]
+    entrypoint = (project_root.parents[1] / "src" / relative if relative.startswith("msplatform/")
+                  else project_root / relative).resolve()
+    expected_root = project_root.parents[1] / "src" if relative.startswith("msplatform/") else project_root.resolve()
+    if not entrypoint.is_relative_to(expected_root):
+        raise ContractError("runtime binding entrypoint must remain inside its declared owner")
     if not entrypoint.is_file():
         raise ContractError(f"runtime binding entrypoint is missing: {declaration['entrypoint']}")
     return entrypoint
@@ -78,13 +81,6 @@ def validate_legacy_identity_mappings(
                     f"{mapping_owners[mapping_id]} and {current_id}"
                 )
             mapping_owners[mapping_id] = current_id
-
-
-def pointer_value(document: dict[str, Any], pointer: str) -> Any:
-    value: Any = document
-    for token in pointer.lstrip("/").split("/"):
-        value = value[token.replace("~1", "/").replace("~0", "~")]
-    return value
 
 
 def consistent_profile_identity(

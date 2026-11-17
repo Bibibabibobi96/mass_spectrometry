@@ -24,7 +24,7 @@ $guard=$null
 try{
   $fixture=Join-Path $Repo 'projects/parallel_mirror_dual_stripe_mr_tof/tests/simion/test_workbench_load_fixture.lua'
   $seed=Join-Path $Repo 'src/msplatform/backends/simion/resources/1_instance_seed.iob'
-  $launcher=Join-Path $Repo 'projects/parallel_mirror_dual_stripe_mr_tof/simion/run_iob_flight.lua'
+  $launcher=Join-Path $Repo 'src/msplatform/backends/simion/resources/run_iob_flight.lua'
   & $Simion --nogui --noprompt lua $fixture $Root prepare $seed $launcher
   if($LASTEXITCODE-ne0){throw 'Tiny loader fixture preparation failed'}
   $pa=Join-Path $Root 'collision.pa'
@@ -56,7 +56,7 @@ try{
         lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(r'C:\Program Files\SIMION-2020\lua.exe')))
         if not lua.is_file():
             self.skipTest('standalone Lua unavailable')
-        builder = (PROJECT/'simion/build_native_corridor_iob.lua').read_text()
+        builder = (PROJECT.parents[1]/'src/msplatform/backends/simion/resources/build_native_corridor_iob.lua').read_text()
         copies = builder[builder.index('local function copy(source, target)'):]
         native_path = builder[builder.index('local native_path='):builder.index('local seed, paths, output')]
         waveform = PROJECT.parents[1]/'src/msplatform/backends/simion/resources/voltage_waveforms.lua'
@@ -225,7 +225,7 @@ try{
     (Get-Item -LiteralPath $path).IsReadOnly=$true
     $guards+=,[IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
   }
-  $build=@('--nogui','--noprompt','lua',(Join-Path $project 'simion/build_native_corridor_iob.lua'),'--',
+  $build=@('--nogui','--noprompt','lua',(Join-Path $Repo 'src/msplatform/backends/simion/resources/build_native_corridor_iob.lua'),'--',
     (Join-Path $Repo 'src/msplatform/backends/simion/resources/4_instance_seed.iob'),
     (Join-Path $Root 'global.pa'),(Join-Path $Root 'fixture.pa0'),(Join-Path $Root 'accelerator.pa'),(Join-Path $Root 'detector.pa'),
     (Join-Path $Root 'fixture.iob'),(Join-Path $Root 'program.lua'),(Join-Path $Root 'source.fly2'),
@@ -248,7 +248,7 @@ try{
   try{
   & $python -B $helper prepare --repo $Repo --root $Root
   if($LASTEXITCODE-ne0){throw 'Complete current program fixture preparation failed'}
-  $currentBuild=@('--nogui','--noprompt','lua',(Join-Path $project 'simion/build_native_corridor_iob.lua'),'--',
+  $currentBuild=@('--nogui','--noprompt','lua',(Join-Path $Repo 'src/msplatform/backends/simion/resources/build_native_corridor_iob.lua'),'--',
     (Join-Path $Repo 'src/msplatform/backends/simion/resources/4_instance_seed.iob'),
     (Join-Path $Root 'global.pa'),(Join-Path $Root 'fixture.pa0'),(Join-Path $accelerator 'fixture.pa0'),(Join-Path $Root 'detector.pa'),
     (Join-Path $Root 'current.iob'),(Join-Path $Root 'program_current.lua'),(Join-Path $Root 'source_current.fly2'),
@@ -263,7 +263,7 @@ try{
       $env:MRTOF_FIXTURE_EVENTS=Join-Path $Root ($phase+'.events.csv')
       $env:MRTOF_FIXTURE_TRAJECTORY=Join-Path $Root ($phase+'.trajectory.csv')
       # Each call is a new native process; cold starts from the same persisted IOB.
-      & $Simion --nogui --noprompt lua (Join-Path $project 'simion/run_iob_flight.lua') (Join-Path $Root 'current.iob') 1>(Join-Path $Root ($phase+'.stdout.log')) 2>(Join-Path $Root ($phase+'.stderr.log'))
+      & $Simion --nogui --noprompt lua (Join-Path $Repo 'src/msplatform/backends/simion/resources/run_iob_flight.lua') (Join-Path $Root 'current.iob') 1>(Join-Path $Root ($phase+'.stdout.log')) 2>(Join-Path $Root ($phase+'.stderr.log'))
       if($LASTEXITCODE-ne0){throw ('Current complete program '+$phase+' Fly failed')}
     }
   }finally{foreach($name in $names){[Environment]::SetEnvironmentVariable($name,$saved[$name])}}
@@ -303,7 +303,7 @@ try{
             root=Path(temporary)
             (root/'priority.lua').write_text('return {}',encoding='utf-8')
             helper.prepare(PROJECT.parents[1],root)
-            self.assertEqual((root/'program_current.lua').read_bytes(),(PROJECT/'simion/mrtof_candidate.lua').read_bytes())
+            self.assertEqual((root/'program_current.lua').read_bytes(),(PROJECT.parents[1]/'src/msplatform/backends/simion/resources/mrtof_candidate.lua').read_bytes())
             records=json.loads((root/'current_source_records.json').read_text(encoding='utf-8'))
             self.assertEqual(len(records),6)
             self.assertIn('scientific_event_reconciliation.lua',records)

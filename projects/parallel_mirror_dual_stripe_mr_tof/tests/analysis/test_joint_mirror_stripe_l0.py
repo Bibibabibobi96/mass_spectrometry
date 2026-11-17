@@ -6,7 +6,7 @@ from unittest.mock import patch
 from pathlib import Path
 import json
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0 import (
+from msplatform.workflows.prepared_joint.joint_mirror_stripe_l0 import (
     JointL0Trial,
     StripeHardBoundary,
     adiabatic_fast_phase_oscillation_count,
@@ -36,7 +36,7 @@ from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry 
     compile_dual_stripe_width_evaluator,
 )
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import CandidateContractError
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_handoff import (
+from msplatform.workflows.prepared_joint.prism_handoff import (
     ProjectPhaseSpaceState,
     TwoPrismTransportObservation,
 )
@@ -44,7 +44,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_handoff impo
 
 class JointMirrorStripeL0Test(unittest.TestCase):
     def test_rounded_fast_phase_endpoint_matches_linear_analytic_count(self) -> None:
-        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0"
+        module = "msplatform.workflows.prepared_joint.joint_mirror_stripe_l0"
         # Constant T and linear Phi give K=2*sqrt(L/Phi_slope)/T.
         # Include u=0 to reproduce the endpoint produced by rounded 1-u*u.
         for direction in (-1.0, 1.0):
@@ -61,7 +61,7 @@ class JointMirrorStripeL0Test(unittest.TestCase):
             self.assertAlmostEqual(count, 2.0 / (3.0 * math.sqrt(2.0 - math.sqrt(3.0))), places=12)
 
     def test_rounded_fast_phase_endpoint_rejects_missing_or_zero_derivative(self) -> None:
-        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0"
+        module = "msplatform.workflows.prepared_joint.joint_mirror_stripe_l0"
         for stripe, message in (
             (StripeHardBoundary(1.0, lambda y: 10.0 + y), "requires a Stripe width derivative"),
             (StripeHardBoundary(1.0, lambda y: 10.0 + 2*y-y*y, lambda y: 2-2*y), "positive simple slow turn"),
@@ -83,7 +83,7 @@ class JointMirrorStripeL0Test(unittest.TestCase):
             )
 
     def test_nonlinear_endpoint_regularization_matches_stable_cubic_on_both_sides(self) -> None:
-        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0"
+        module = "msplatform.workflows.prepared_joint.joint_mirror_stripe_l0"
         stripe = StripeHardBoundary(1.0, lambda y: 10+y+y**3, lambda y: 1+3*y*y)
         coefficient = 2.0 - math.sqrt(3.0)
         for factor in (0.5, 2.0):

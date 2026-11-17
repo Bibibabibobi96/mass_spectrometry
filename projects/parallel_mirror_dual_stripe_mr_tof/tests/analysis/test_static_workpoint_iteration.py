@@ -13,18 +13,18 @@ import unittest
 from unittest.mock import patch
 
 from msplatform.backends.comsol import corridor_field
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_workpoint import (
+from msplatform.workflows.prepared_joint.fixed_grid_workpoint import (
     _native_static_binding_problem, _static_field_problem, _transport_invariants, assert_trial_matches_jacobian,
 )
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import CandidateContractError
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import (
+from msplatform.workflows.prepared_joint.prism_trial import (
     _project_selected_center_observation, analyze_trial,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 PROJECT = Path(__file__).resolve().parents[2]
 RUNNER = PROJECT / "analysis/run_downstream_workpoint_iteration.ps1"
-MODULE = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_workpoint"
+MODULE = "msplatform.workflows.prepared_joint.fixed_grid_workpoint"
 
 
 class NativeStaticIdentityTest(unittest.TestCase):
@@ -493,8 +493,8 @@ Invoke-CenterTrial -Arguments $arguments
             process = subprocess.run([pwsh, "-NoProfile", "-File", str(fixture), str(RUNNER), str(root), mode,
                                       str(prism_only).lower(), str(provider_failure).lower(), str(mirror).lower(), str(same).lower(),
                                       str(mirror_changed).lower(), str(preflight_failure).lower(), sys.executable, completed],
-                                     cwd=REPO_ROOT, env={**os.environ,"PYTHONPATH":str(REPO_ROOT)},
-                                     capture_output=True, text=True, encoding="utf-8", timeout=30)
+                                     cwd=REPO_ROOT, env={**os.environ,"PYTHONPATH":str(REPO_ROOT / "src") + os.pathsep + str(REPO_ROOT)},
+                                     capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
             order_path = root / "order.txt"
             order = order_path.read_text(encoding="utf-8-sig").splitlines() if order_path.exists() else []
             if mirror and process.returncode == 0:

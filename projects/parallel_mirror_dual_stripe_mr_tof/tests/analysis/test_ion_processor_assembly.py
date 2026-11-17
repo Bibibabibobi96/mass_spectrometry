@@ -17,7 +17,7 @@ from integrations.workflows.accelerator_interface import geometry as assembly_ge
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 from msplatform.workflows.prepared_joint.ip_mr_connection import resolve_ip_mr_connection
 from integrations.workflows.accelerator_interface.geometry import prepare_ion_processor_assembly
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis import ion_processor_assembly as assembly
+from msplatform.workflows.prepared_joint import ion_processor_assembly as assembly
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import resolve_geometry
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
 

@@ -158,7 +158,7 @@ function Invoke-PreparedJointTrial {
     Write-RunJson -Path $package.run_config -Depth 50 -Value $configuration
     $stage='freeze_measured_joint_trial'
     if($TrajectoryEquivalenceReferenceRunPath){$guards.Add((Enter-RunTerminalConsumptionGuard -RunDirectory $TrajectoryEquivalenceReferenceRunPath))}
-    $prepareArguments=@('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial','prepare','--prepared-run',$prepared,'--contract',$observation,'--run-directory',$runDir,'--source-mode',$PreparedSourceMode)
+    $prepareArguments=@('-m','msplatform.workflows.prepared_joint.trial','prepare','--prepared-run',$prepared,'--contract',$observation,'--run-directory',$runDir,'--source-mode',$PreparedSourceMode)
     if($FieldBindingPath){$prepareArguments+=@('--field-binding',(Resolve-Path -LiteralPath $FieldBindingPath).Path)}
     if($TrajectoryEquivalenceReferenceRunPath){$prepareArguments+=@('--equivalence-reference-run',(Resolve-Path -LiteralPath $TrajectoryEquivalenceReferenceRunPath).Path)}
     if($parentManifest){$prepareArguments+=@('--continuation-predecessor-manifest',$parentManifest)}
@@ -177,7 +177,7 @@ function Invoke-PreparedJointTrial {
     $continuation=$null;$continuationPlanPath=$null
     if($ContinuationPredecessorManifestPath){
       $continuationRoot=Join-Path $package.input_dir 'mrtof_batch_continuation'
-      Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_continuation',
+      Invoke-ProjectPython -Arguments @('-m','msplatform.workflows.prepared_joint.continuation',
         '--predecessor-run-dir',$parentRun,'--current-run-config',$package.run_config,
         '--prepared-joint-current-preparation',$preparationPath,'--trusted-repo-root',$repoRoot,'--output-dir',$continuationRoot)
       $continuationPlanPath=Join-Path $continuationRoot 'simion_whole_unit_replay_plan.json'
@@ -201,7 +201,7 @@ function Invoke-PreparedJointTrial {
         (Join-Path $batchDirectory 'joint.fly2'),(Join-Path $batchDirectory 'joint.lua'))+@($trial.guard_paths)
       $execution=Get-RunNativeExecutionContext -Package $package -Paths $nativePaths
       Invoke-RunToolRootContext -RepoRoot $script:pythonRoot -Environment $execution.environment -Operation {
-        Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight','materialize-joint','--preparation',$preparationPath,'--particle-id-min',([string]$PlannedBatch.particle_id_min),'--particle-id-max',([string]$PlannedBatch.particle_id_max),'--output',$batchDirectory)|Out-Host
+        Invoke-ProjectPython -Arguments @('-m','msplatform.workflows.prepared_joint.flight','materialize-joint','--preparation',$preparationPath,'--particle-id-min',([string]$PlannedBatch.particle_id_min),'--particle-id-max',([string]$PlannedBatch.particle_id_max),'--output',$batchDirectory)|Out-Host
       }
       return [pscustomobject]@{
         name=('mrtof_ip_measured_batch_{0:D3}'-f[int]$PlannedBatch.index);scheduler_batch=$PlannedBatch
@@ -353,18 +353,18 @@ function Invoke-PreparedJointTrial {
     $stage='merge_measured_original_ids'
     $merged=Join-Path $logDir 'native_two_prism_flight.log'
     $mergeReceipt=Join-Path $resultDir 'batch_log_merge_receipt.json'
-    $merge=@('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight','merge-joint','--preparation',$preparationPath,'--output',$merged,'--receipt',$mergeReceipt)
+    $merge=@('-m','msplatform.workflows.prepared_joint.flight','merge-joint','--preparation',$preparationPath,'--output',$merged,'--receipt',$mergeReceipt)
     foreach($batch in @($final.batches)){$item=$records[[int]$batch.index];$merge+=@('--batch-log',$item.stdout,$item.batch_receipt)}
     Invoke-ProjectPython -Arguments $merge
     $stage='automatic_joint_diagnostics'
     if($PreparedSourceMode-eq'centroid_probe'){
-      Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial','analyze-probe','--preparation',$preparationPath,'--log',$merged,'--scientific-event-receipt',$mergeReceipt,'--output',(Join-Path $resultDir 'diagnostics'))
+      Invoke-ProjectPython -Arguments @('-m','msplatform.workflows.prepared_joint.trial','analyze-probe','--preparation',$preparationPath,'--log',$merged,'--scientific-event-receipt',$mergeReceipt,'--output',(Join-Path $resultDir 'diagnostics'))
     }else{
       Invoke-ProjectPython -Arguments @('-m','msplatform.workflows.prepared_joint.diagnostics','analyze-joint','--preparation',$preparationPath,'--log',$merged,'--output',(Join-Path $resultDir 'diagnostics'))
     }
     if($trial.PSObject.Properties.Name-contains'trajectory_equivalence_reference'-and$null-ne$trial.trajectory_equivalence_reference){
       $stage='field_consumer_trajectory_equivalence'
-      Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight','compare-joint','--preparation',$preparationPath,'--log',$merged,'--scientific-event-receipt',$mergeReceipt,'--output',(Join-Path $resultDir 'trajectory_equivalence_receipt.json'))
+      Invoke-ProjectPython -Arguments @('-m','msplatform.workflows.prepared_joint.flight','compare-joint','--preparation',$preparationPath,'--log',$merged,'--scientific-event-receipt',$mergeReceipt,'--output',(Join-Path $resultDir 'trajectory_equivalence_receipt.json'))
     }
     $phaseTimings.analysis_seconds=$runTimer.Elapsed.TotalSeconds-$analysisStarted
     Write-RunJson -Path $package.summary -Depth 20 -Value ([ordered]@{

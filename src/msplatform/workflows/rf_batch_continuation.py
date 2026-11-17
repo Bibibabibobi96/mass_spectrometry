@@ -10,8 +10,8 @@ from pathlib import Path
 from msplatform.io.file_identity import file_sha256
 from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
-from msplatform.io.manifest_records import require_completed_terminal_publication
 from msplatform.execution.recovery import WholeUnitReplayUnit, build_whole_unit_replay_plan
+from msplatform.backends.simion.rf_continuation import ancestry
 
 
 def read(path: Path) -> dict:
@@ -19,37 +19,6 @@ def read(path: Path) -> dict:
     if not isinstance(value, dict):
         raise ValueError(f"expected object: {path}")
     return value
-
-
-def ancestry(predecessor: Path, project: str, mode: str = "resolved_design_transport") -> list[Path]:
-    """Follow only manifest-bound direct predecessors; reject cycles and drift."""
-    current, chain = predecessor.resolve(strict=True), []
-    while True:
-        if current in chain:
-            raise ValueError("RF continuation ancestry contains a cycle")
-        chain.append(current)
-        manifest_path = current / "run_manifest.json"
-        require_completed_terminal_publication(manifest_path)
-        manifest = read(manifest_path)
-        if (manifest.get("project") != project or manifest.get("mode") != mode
-                or manifest.get("run_id") != current.name or manifest.get("status") not in {"success", "failed", "interrupted"}):
-            raise ValueError("RF continuation ancestor is not a terminal owner run")
-        inputs = manifest.get("inputs", {})
-        plan_record = inputs.get("continuation_plan")
-        parent_record = inputs.get("continuation_predecessor_manifest")
-        if not plan_record and not parent_record:
-            return chain
-        if not plan_record or not parent_record:
-            raise ValueError("RF continuation provenance is incomplete")
-        verify_record("RF continuation plan", plan_record, base_dir=current)
-        verify_record("RF continuation parent", parent_record, base_dir=current)
-        plan = read(record_path(plan_record, base_dir=current))
-        parent = record_path(parent_record, base_dir=current)
-        if (parent.name != "run_manifest.json" or plan.get("role") != "simion_whole_unit_replay_plan"
-                or plan.get("status") != "ready" or str(parent.parent) != plan["predecessor"]["run_dir"]
-                or str(parent_record["sha256"]).upper() != str(plan["predecessor"]["manifest_sha256"]).upper()):
-            raise ValueError("RF continuation parent binding differs")
-        current = parent.parent.resolve(strict=True)
 
 
 def prepare(run: Path, predecessor: Path, cases: list[str], retention: str, mechanical: bool,
@@ -111,14 +80,20 @@ def prepare(run: Path, predecessor: Path, cases: list[str], retention: str, mech
     old_inventory = frozen("code_inventory") if input_names is None else {"files": []}
     new_inventory = read(Path(inputs["code_inventory"])) if input_names is None else {"files": []}
     source_code = {
-        "projects/rf_multipole_ion_optics/runtime/simion_particle_source.py",
+        "src/msplatform/backends/simion/rf_particle_source.py",
         "src/msplatform/components/rf_multipole/source_validation.py",
-        "projects/rf_multipole_ion_optics/core/interface_geometry.py",
+        "src/msplatform/components/rf_multipole/interface_geometry.py",
         "src/msplatform/backends/simion/source.py", "src/msplatform/contracts/particle_physics.py",
     }
+    source_aliases = {
+        "projects/rf_multipole_ion_optics/runtime/simion_particle_source.py": "src/msplatform/backends/simion/rf_particle_source.py",
+        "projects/rf_multipole_ion_optics/core/interface_geometry.py": "src/msplatform/components/rf_multipole/interface_geometry.py",
+        "projects/rf_multipole_ion_optics/simion/simion_transport.lua": "src/msplatform/backends/simion/resources/simion_transport.lua",
+    }
     def simion_code(inventory: dict) -> dict[str, str]:
-        return {row["path"]: row["sha256"] for row in inventory["files"]
-                if row["path"].startswith("projects/rf_multipole_ion_optics/simion/") or row["path"] in source_code}
+        selected = ((source_aliases.get(row["path"], row["path"]), row["sha256"]) for row in inventory["files"])
+        return {path: digest for path, digest in selected
+                if path in source_code or path == "src/msplatform/backends/simion/resources/simion_transport.lua"}
     old_code, new_code = simion_code(old_inventory), simion_code(new_inventory)
     if input_names is None and (not source_code <= old_code.keys() or not source_code <= new_code.keys() or old_code != new_code):
         raise ValueError("RF predecessor SIMION physics or batch source code differs")

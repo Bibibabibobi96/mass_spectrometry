@@ -14,7 +14,8 @@ $workspaceRoot=Split-Path -Parent $repoRoot
 $artifactRoot=Join-Path $workspaceRoot 'artifacts\projects\rf_multipole_ion_optics'
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
-. (Join-Path $projectRoot 'runtime\frozen_python_package.ps1') -ExecutionResourcePath (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
+. (Join-Path $repoRoot 'src/msplatform/workflows/resources/rf_publication.ps1')
 . (Join-Path $projectRoot 'runtime\comsol_solver_numerics.ps1')
 if([string]::IsNullOrWhiteSpace($RunId)){
   $RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__sim__comsol__mass-filter__rf-dc-scan'
@@ -63,9 +64,10 @@ try {
     -ProfileId $SolverNumericsProfileId
   $compiledNumerics=$numericsCompilation.compiled
   $frozenPythonSupport = Copy-VerifiedRunInput `
-      -Source (Join-Path $projectRoot 'runtime\frozen_python_package.ps1') `
+      -Source (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1') `
       -Destination (Join-Path $inputDir 'frozen_python_package.ps1')
-  . $frozenPythonSupport -ExecutionResourcePath (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
+  . $frozenPythonSupport
+    . (Join-Path $repoRoot 'src/msplatform/workflows/resources/rf_publication.ps1')
   $analysisModule = 'projects.rf_multipole_ion_optics.workflows.mass_filter_reference.evaluate_comsol'
   $analysisFiles = Get-FrozenPythonPackageRelativePaths -SourceRoot $repoRoot -Python $python `
       -PythonPackages @(

@@ -7,7 +7,7 @@ electrode IDs; the stream runner remaps those IDs to the dense native family
 namespace before creating ``pa#``/``pa0``.
 """
 from __future__ import annotations
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_component_requirements import read_accelerator_geometry_authority
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.accelerator_requirements import read_accelerator_geometry_authority
 
 import argparse
 import re

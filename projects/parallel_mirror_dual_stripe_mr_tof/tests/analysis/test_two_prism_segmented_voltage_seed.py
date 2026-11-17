@@ -14,7 +14,7 @@ from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract
     CandidateContractError,
     load_contract,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_handoff import (
+from msplatform.workflows.prepared_joint.prism_handoff import (
     ProjectPhaseSpaceState,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_segmented_voltage_seed import (

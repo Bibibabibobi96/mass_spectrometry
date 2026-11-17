@@ -6,7 +6,7 @@ import re
 import unittest
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ip_prism_local_geometry import prepare_geometry
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly import (
+from msplatform.workflows.prepared_joint.ion_processor_assembly import (
     transform_shape, _bounds, _primitive,
 )
 from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import contains_shape

@@ -12,9 +12,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from projects.rf_multipole_ion_optics.runtime.resource_budget import validate_pilot_budget, validate_analysis_budget, validate_resource_limits
+from msplatform.workflows.rf_resource_budget import validate_pilot_budget, validate_analysis_budget, validate_resource_limits
 from projects.rf_multipole_ion_optics.tests.analysis.test_comsol_analysis_recovery import engineering_budget
-from projects.rf_multipole_ion_optics.runtime.runtime_profile import resolve_runtime_profile
+from msplatform.workflows.rf_runtime_profiles import resolve_runtime_profile
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 PROJECT_ID = "rf_multipole_ion_optics"
@@ -185,9 +185,9 @@ class AnalysisBudgetTests(unittest.TestCase):
 
     def test_old_one_particle_source_analysis_uses_only_frozen_scope_without_sampling_or_defaults(self):
         budget = engineering_budget(retention_class='compact', transient=33554432)
-        with mock.patch('projects.rf_multipole_ion_optics.runtime.resource_budget.resolve_runtime_profile', side_effect=AssertionError('today profile')), \
-             mock.patch('projects.rf_multipole_ion_optics.runtime.resource_budget.resolve_runtime_selection', side_effect=AssertionError('today campaign')), \
-             mock.patch('projects.rf_multipole_ion_optics.runtime.resource_budget._particle_count', side_effect=AssertionError('rescan source')):
+        with mock.patch('msplatform.workflows.rf_resource_budget.resolve_runtime_profile', side_effect=AssertionError('today profile')), \
+             mock.patch('msplatform.workflows.rf_resource_budget.resolve_runtime_selection', side_effect=AssertionError('today campaign')), \
+             mock.patch('msplatform.workflows.rf_resource_budget._particle_count', side_effect=AssertionError('rescan source')):
             value = validate_analysis_budget(budget, **self.arguments())
         self.assertEqual(value['limits']['transient_run_directory_bytes'], 33554432)
         self.assertEqual(value['limits']['automatic_retry_count'], 0)
@@ -212,7 +212,7 @@ class AnalysisBudgetTests(unittest.TestCase):
                     design_profile_id='frozen-design', particle_source_profile_id='frozen-source',
                     comsol_solver_numerics_profile_id='frozen-comsol', simion_solver_numerics=binding,
                     solver='comsol', retention_class='solver_review')])
-                with mock.patch('projects.rf_multipole_ion_optics.runtime.resource_budget.resolve_runtime_profile', side_effect=AssertionError('today profile')):
+                with mock.patch('msplatform.workflows.rf_resource_budget.resolve_runtime_profile', side_effect=AssertionError('today profile')):
                     result = validate_analysis_budget(engineering_budget(retention_class='compact'), **arguments)
                 self.assertEqual(result['runtime_profile_id'], 'frozen-runtime')
 
@@ -244,9 +244,9 @@ class ResourceBudgetTests(unittest.TestCase):
             project_id=PROJECT_ID, solver="simion", runtime_profile_id=runtime["runtime_profile_id"],
             design_profile_id=runtime["design_profile_id"], particle_source_path=Path(runtime["particle_source"]["path"]),
             retention_class="compact", resolved_runtime=runtime)
-        with mock.patch("projects.rf_multipole_ion_optics.runtime.resource_budget._load", side_effect=lambda _: runtime["engineering_budget"]["inline_contract"]), \
-             mock.patch("projects.rf_multipole_ion_optics.runtime.resource_budget.resolve_runtime_profile", side_effect=AssertionError("re-resolved defaults")), \
-             mock.patch("projects.rf_multipole_ion_optics.runtime.resource_budget.resolve_runtime_selection", side_effect=AssertionError("re-resolved campaign")):
+        with mock.patch("msplatform.workflows.rf_resource_budget._load", side_effect=lambda _: runtime["engineering_budget"]["inline_contract"]), \
+             mock.patch("msplatform.workflows.rf_resource_budget.resolve_runtime_profile", side_effect=AssertionError("re-resolved defaults")), \
+             mock.patch("msplatform.workflows.rf_resource_budget.resolve_runtime_selection", side_effect=AssertionError("re-resolved campaign")):
             result = validate_pilot_budget(**options)
             self.assertEqual(result["solver_numerics"], runtime["solver_numerics"]["simion"]["values"])
             runtime["engineering_budget"]["inline_contract"]["pilot_authorization"]["authorized"] = False
@@ -281,13 +281,13 @@ class ResourceBudgetTests(unittest.TestCase):
                 retention_class="compact",
             )
             with (
-                mock.patch("projects.rf_multipole_ion_optics.runtime.resource_budget.resolve_runtime_profile", return_value=runtime),
+                mock.patch("msplatform.workflows.rf_resource_budget.resolve_runtime_profile", return_value=runtime),
                 mock.patch(
                     "msplatform.ion_release.mt19937_disk_cone_rf_phase.generate_mt19937_disk_cone_rf_phase_states",
                     side_effect=AssertionError("budget sampled"),
                 ),
                 mock.patch(
-                    "projects.rf_multipole_ion_optics.runtime.resource_budget._particle_count",
+                    "msplatform.workflows.rf_resource_budget._particle_count",
                     side_effect=AssertionError("budget read nonexistent CSV"),
                 ),
             ):
@@ -561,7 +561,7 @@ class ResourceBudgetTests(unittest.TestCase):
             )
             result = subprocess.run(
                 ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command], cwd=REPO_ROOT,
-                capture_output=True, text=True, encoding="utf-8", timeout=20,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("MEMORY_DANGER_TERMINATION", result.stdout)
@@ -721,7 +721,7 @@ Assert-RepositoryDispatchLimits -Limits @{duration=7;bytes=[int64]3221225472} -P
         # process/transaction boundaries are inert instrumentation, not native facts.
         runner = (
             REPO_ROOT
-            / "projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1"
+            / "src/msplatform/workflows/resources/run_finite_3d_transport.ps1"
         )
         script = r"""
 $ErrorActionPreference='Stop'
@@ -1010,7 +1010,7 @@ $results|ConvertTo-Json -Depth 12 -Compress
 """
         completed = subprocess.run(
             ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
-            cwd=REPO_ROOT, check=False, capture_output=True, text=True, encoding="utf-8", timeout=20,
+            cwd=REPO_ROOT, check=False, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20,
         )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         samples = json.loads(completed.stdout)
@@ -1104,7 +1104,7 @@ foreach($count in @(1,4,8)){
 """
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
-                cwd=REPO_ROOT, check=False, capture_output=True, text=True, encoding="utf-8", timeout=20,
+                cwd=REPO_ROOT, check=False, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20,
             )
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
             results = json.loads(next(line[7:] for line in completed.stdout.splitlines() if line.startswith("RESULT=")))
@@ -1132,7 +1132,7 @@ foreach($count in @(1,4,8)){
             "if($sample.ancestry_complete-or$sample.unknown_ancestry_process_ids-notcontains$PID){exit 4}"
         )
         result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
-            cwd=REPO_ROOT, check=False, capture_output=True, text=True, encoding="utf-8", timeout=15)
+            cwd=REPO_ROOT, check=False, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_native_parent_unknown_identity_is_scoped_to_owned_candidates(self) -> None:
@@ -1164,7 +1164,7 @@ if($sample.active_process_ids-notcontains424242-or$sample.active_process_ids-not
 if($sample.tracked_process_started_at_utc_ticks.ContainsKey('424242')-or$sample.tracked_process_started_at_utc_ticks.ContainsKey('424243')){{throw 'Unknown candidates received verified birth identities'}}
 """
         result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
-            cwd=REPO_ROOT, check=False, capture_output=True, text=True, encoding="utf-8", timeout=15)
+            cwd=REPO_ROOT, check=False, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_launcher_completion_ignores_only_classified_system_console_hosts(self) -> None:
@@ -1499,7 +1499,7 @@ if($sample.tracked_process_started_at_utc_ticks.ContainsKey('424242')-or$sample.
                 "if($r.resource_budget_exceeded){throw 'Controlled child did not finish'}"
             )
             result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
-                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
+                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30, check=False)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             observation = json.loads(usage.read_text())["per_process_memory_observation"]
             self.assertEqual(observation["work_units"], 7)
@@ -2093,13 +2093,13 @@ Write-Output 'TERMINATION_FAILURE=PASS'
     def test_preflight_temp_cleanup_runs_after_success_and_failure(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             for name in ("run_finite_3d_transport.ps1", "run_simion_finite_3d_transport.ps1"):
-                runner = REPO_ROOT / "projects/rf_multipole_ion_optics/runtime" / name
+                runner = REPO_ROOT / "src/msplatform/workflows/resources" / name
                 command = (
                     f"$path='{runner}';$budgetPreflight='{Path(directory) / 'budget.json'}';"
                     + r"""
 $ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$null,[ref]$null)
 $blocks=@($ast.FindAll({param($node) $node -is [Management.Automation.Language.TryStatementAst] -and $node.Finally -and $node.Finally.Extent.Text.Contains('Remove-Item -LiteralPath $budgetPreflight')},$true))
-if($blocks.Count-ne1-or-not$blocks[0].Body.Extent.Text.Contains('projects.rf_multipole_ion_optics.runtime.resource_budget')){throw 'TEMP cleanup does not belong to the compiler preflight'}
+if($blocks.Count-ne1-or-not$blocks[0].Body.Extent.Text.Contains('msplatform.workflows.rf_resource_budget')){throw 'TEMP cleanup does not belong to the compiler preflight'}
 foreach($fail in @($false,$true)){
  Set-Content -LiteralPath $budgetPreflight -Value '{}'
  $script=[scriptblock]::Create('try {if($fail){throw "fixture"}} finally '+$blocks[0].Finally.Extent.Text)
@@ -2128,10 +2128,10 @@ foreach($fail in @($false,$true)){
             source.write_text("fixture input: budget must reject before source preparation", encoding="utf-8")
             for name in ("run_finite_3d_transport.ps1", "run_simion_finite_3d_transport.ps1"):
                 with self.subTest(runner=name):
-                    entry = REPO_ROOT / "projects/rf_multipole_ion_optics/runtime" / name
+                    entry = REPO_ROOT / "src/msplatform/workflows/resources" / name
                     metadata = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command",
                         f"$entry=Get-Command '{entry}';$sets=@($entry.ParameterSets|Where-Object {{$_.Name-notin@('Analyze','Resume')}});foreach($set in $sets){{foreach($name in @('RuntimeProfileId','EngineeringBudgetPath')){{$p=@($set.Parameters|Where-Object Name -eq $name);if($p.Count-ne1-or-not$p[0].IsMandatory){{throw ('Required run binding missing: '+$name)}}}}}};$entry.Parameters.GetEnumerator()|Where-Object {{$_.Key-in@('RuntimeProfileId','EngineeringBudgetPath')}}|ForEach-Object {{$_.Key}}"],
-                        cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=20)
+                        cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20)
                     self.assertEqual(metadata.returncode, 0, metadata.stdout + metadata.stderr)
                     self.assertEqual(set(metadata.stdout.split()), {"RuntimeProfileId", "EngineeringBudgetPath"})
                     artifacts = root / name.replace(".ps1", "_artifacts")
@@ -2148,7 +2148,7 @@ foreach($fail in @($false,$true)){
                     self.assertFalse(artifacts.exists(), "Invalid budget created a run package before rejection")
 
     def test_comsol_runner_fails_closed_on_stop_stage_disagreement(self) -> None:
-        runner = (REPO_ROOT / "projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1").read_text(encoding="utf-8")
+        runner = (REPO_ROOT / "src/msplatform/workflows/resources/run_finite_3d_transport.ps1").read_text(encoding="utf-8")
         start = runner.index("  if($resolvedBudget.PSObject.Properties.Name-notcontains'stop_stage')")
         end = runner.index("  $authorizedNumerics=$resolvedBudget.solver_numerics", start)
         stop_stage_gate = runner[start:end]
@@ -2204,11 +2204,11 @@ foreach($fail in @($false,$true)){
         def validate_with(candidate: dict) -> dict:
             with (
                 mock.patch(
-                    "projects.rf_multipole_ion_optics.runtime.resource_budget._load",
+                    "msplatform.workflows.rf_resource_budget._load",
                     return_value=candidate,
                 ),
                 mock.patch(
-                    "projects.rf_multipole_ion_optics.runtime.resource_budget.resolve_runtime_profile",
+                    "msplatform.workflows.rf_resource_budget.resolve_runtime_profile",
                     return_value=hybrid_runtime,
                 ),
             ):
@@ -2230,11 +2230,11 @@ foreach($fail in @($false,$true)){
         del runtime_without_stop_stage["stop_stage"]
         with (
             mock.patch(
-                "projects.rf_multipole_ion_optics.runtime.resource_budget.resolve_runtime_profile",
+                "msplatform.workflows.rf_resource_budget.resolve_runtime_profile",
                 return_value=runtime_without_stop_stage,
             ),
             mock.patch(
-                "projects.rf_multipole_ion_optics.runtime.resource_budget._load",
+                "msplatform.workflows.rf_resource_budget._load",
                 return_value=authorized_fixture,
             ),
             self.assertRaisesRegex(ValueError, "stop stage is missing or unsupported"),
@@ -2275,7 +2275,7 @@ foreach($fail in @($false,$true)){
 
         def validate_with(candidate: dict, run_id: str | None) -> dict:
             with mock.patch(
-                "projects.rf_multipole_ion_optics.runtime.resource_budget._load",
+                "msplatform.workflows.rf_resource_budget._load",
                 return_value=candidate,
             ):
                 return validate_pilot_budget(
@@ -2321,7 +2321,7 @@ foreach($fail in @($false,$true)){
 
         def validate_with(candidate: dict, solver: str = "simion") -> dict:
             with mock.patch(
-                "projects.rf_multipole_ion_optics.runtime.resource_budget._load",
+                "msplatform.workflows.rf_resource_budget._load",
                 return_value=candidate,
             ):
                 return validate_pilot_budget(
@@ -2350,7 +2350,7 @@ foreach($fail in @($false,$true)){
                     validate_with(invalid_budget)
 
     def test_mesh_build_report_enforces_declared_cell_limit(self) -> None:
-        runner = (REPO_ROOT / "projects/rf_multipole_ion_optics/runtime/finite_3d_transport_preflight.ps1").read_text(encoding="utf-8")
+        runner = (REPO_ROOT / "src/msplatform/workflows/resources/finite_3d_transport_preflight.ps1").read_text(encoding="utf-8")
         start = runner.index("function Assert-MultipoleMeshBuildReport")
         end = runner.index("\nfunction Assert-MultipoleFieldSolveReport", start)
         assertion_function = runner[start:end]
@@ -2431,7 +2431,7 @@ foreach($fail in @($false,$true)){
                     self.assertIn(expected, rejected.stdout + rejected.stderr)
 
     def test_field_solve_report_requires_complete_fields_and_no_particles(self) -> None:
-        runner = (REPO_ROOT / "projects/rf_multipole_ion_optics/runtime/finite_3d_transport_preflight.ps1").read_text(encoding="utf-8")
+        runner = (REPO_ROOT / "src/msplatform/workflows/resources/finite_3d_transport_preflight.ps1").read_text(encoding="utf-8")
         start = runner.index("function Assert-MultipoleFieldSolveReport")
         end = len(runner)
         assertion_function = runner[start:end]
@@ -3042,7 +3042,7 @@ if(Test-Path -LiteralPath '{identities}'){{
 exit 0
 """
                 drained = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", drain],
-                    cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=35)
+                    cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=35)
                 self.assertEqual(drained.returncode, 0, drained.stdout + drained.stderr)
             self.assertEqual(
                 completed.returncode,
@@ -3153,7 +3153,7 @@ function Write-ResourceUsage {{param($Usage,$Path);throw 'TEST_ONLY metrics writ
 if(-not(Update-RepositoryProcessObservation -Observation $metrics -Sample $sample -Final).physical_danger){{throw 'Usage write failure hid known physical danger'}}
 """
         result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
-            cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=15, check=False)
+            cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15, check=False)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_watchdog_checkpoint_copy_restores_real_observer_bytes(self):
@@ -3303,7 +3303,7 @@ if(-not(Update-RepositoryProcessObservation -Observation $metrics -Sample $sampl
                 "-NoProfile",
                 "-NonInteractive",
                 "-File",
-                str(REPO_ROOT / "projects/rf_multipole_ion_optics/runtime" / name),
+                str(REPO_ROOT / "src/msplatform/workflows/resources" / name),
                 "-ProjectId",
                 PROJECT_ID,
                 "-RuntimeProfileId",

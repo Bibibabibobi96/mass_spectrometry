@@ -10,6 +10,7 @@ import unittest
 from msplatform.backends.simion.mrtof_observations import extract_trajectory_samples
 
 from msplatform.contracts.trajectory_recording import resolve_trajectory_recording
+from msplatform.backends.simion.resources import native_resource_path
 
 PROJECT = Path(__file__).resolve().parents[2]
 
@@ -56,7 +57,7 @@ class TrajectoryRecordingTest(unittest.TestCase):
     def test_fixed_interval_actual_lua_callbacks_keep_clock_identity_and_state(self):
         lua=shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe"
         if not Path(lua).exists() and shutil.which(lua) is None:self.skipTest("plain Lua unavailable")
-        source=(PROJECT/"simion/mrtof_candidate.lua").read_text(encoding="utf-8")
+        source=(native_resource_path("mrtof_candidate.lua")).read_text(encoding="utf-8")
         # Include the real writer, ID encoder and sampling closure together.
         function=source[source.index("-- The frozen sidecar"):source.index("local static_field_adjust")]
         with TemporaryDirectory() as temporary:
@@ -116,7 +117,7 @@ scientific_events:close();scientific_trajectory:close()
         lua = shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe"
         if not Path(lua).exists() and shutil.which(lua) is None:
             self.skipTest("plain Lua unavailable")
-        source = (PROJECT / "simion/mrtof_candidate.lua").read_text(encoding="utf-8")
+        source = (native_resource_path("mrtof_candidate.lua")).read_text(encoding="utf-8")
         function = source[source.index("-- The frozen sidecar"):source.index("local static_field_adjust")]
         for hook in ("record_trajectory_sample('birth', birth_time_us)", "record_trajectory_sample('step')", "record_trajectory_sample('terminal')"):
             self.assertIn(hook, source)

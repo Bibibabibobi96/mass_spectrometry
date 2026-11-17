@@ -169,8 +169,9 @@ class ProjectGatePrevalidationTests(unittest.TestCase):
         resources = [
             *(f"projects/{MR}/tests/simion/{name}" for name in (
                 "test_candidate_plane_events.lua", "test_candidate_voltage_map.lua", "test_mirror_cycle_counter.lua")),
-            *(f"projects/{MR}/simion/{name}" for name in (
-                "mrtof_candidate.lua", "candidate_voltage_map.lua", "mirror_cycle_counter.lua")),
+            "src/msplatform/backends/simion/resources/mrtof_candidate.lua",
+            f"projects/{MR}/simion/candidate_voltage_map.lua",
+            "src/msplatform/backends/simion/resources/mirror_cycle_counter.lua",
             "src/msplatform/backends/simion/resources/scientific_event_csv.lua",
             "src/msplatform/backends/simion/resources/scientific_event_reconciliation.lua",
             "src/msplatform/backends/simion/resources/voltage_waveforms.lua",

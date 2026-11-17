@@ -11,7 +11,7 @@ from pathlib import Path
 
 from projects.rf_multipole_ion_optics.core.interface_geometry import build_enclosure_layout
 from projects.rf_multipole_ion_optics.core.round_rod_geometry import build_rod_array
-from projects.rf_multipole_ion_optics.simion.simion_geometry import (
+from msplatform.backends.simion.rf_finite_geometry import (
     physical_electrode_view, render_axis_mapped_segmented_rod_array_gem,
     render_gem, render_physical_gem, render_grouped_rod_array_gem,
 )
@@ -221,7 +221,7 @@ class SimionGeometryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             source=Path(d)/'resolved.json';out=Path(d)/'body.gem'
             source.write_text(json.dumps(resolved_design()),encoding='utf-8')
-            command=[sys.executable,'-m','projects.rf_multipole_ion_optics.simion.simion_geometry',
+            command=[sys.executable,'-m','msplatform.backends.simion.rf_finite_geometry',
                 '--resolved-design',str(source),'--output',str(out)]
             ok=subprocess.run(command+['--cell-mm-x','.2','--cell-mm-y','.4','--cell-mm-z','.5'],cwd=Path(__file__).parents[4],capture_output=True,text=True,timeout=30)
             self.assertEqual(ok.returncode,0,ok.stderr)
