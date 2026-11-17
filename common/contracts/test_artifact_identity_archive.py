@@ -153,6 +153,19 @@ class ArtifactIdentityArchiveTests(unittest.TestCase):
             target = repository / "src/msplatform/execution/artifact_identity_archive.py"
             target.parent.mkdir(parents=True)
             shutil.copyfile(source, target)
+            for relative in (
+                "common/contracts/run_artifact_support.ps1",
+                "common/require_powershell7.ps1",
+                "common/host_execution_lease.ps1",
+                "common/paths/workspace_paths.ps1",
+                "common/paths/workspace_paths.py",
+                "src/msplatform/execution/resources/run_paths.ps1",
+                "src/msplatform/execution/resources/host_execution_lease.ps1",
+                "src/msplatform/execution/resources/host_resource_policy.json",
+            ):
+                support = repository / relative
+                support.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(Path(__file__).resolve().parents[2] / relative, support)
             ledger = fixture / "artifacts/common/fixture.sqlite3"
             ledger.parent.mkdir(parents=True)
             ledger.write_bytes(b"untouched ledger fixture")
@@ -180,7 +193,7 @@ Write-Output 'RETIRED_RUN_GUARD=PASS'
 """
             process = subprocess.run(
                 ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
-                cwd=repository, capture_output=True, text=True, encoding="utf-8", timeout=60,
+                cwd=repository, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
             )
             self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
             self.assertIn("RETIRED_RUN_GUARD=PASS", process.stdout)
