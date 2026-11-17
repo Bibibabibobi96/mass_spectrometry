@@ -15,10 +15,10 @@ def ps(value):
 
 class FrozenMatlabClosureTests(unittest.TestCase):
     def run_boundary(self, workflow, missing=False, release_gate=False):
-        missing_path = ('projects/rf_multipole_ion_optics/comsol/visit_rf_particle_windows.m'
+        missing_path = ('src/msplatform/backends/comsol/matlab/visit_rf_particle_windows.m'
                         if missing is True else missing if missing else None)
         runner = PROJECT / 'workflows' / workflow / 'run_comsol.ps1'
-        support = REPO / 'projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1'
+        support = REPO / 'src/msplatform/execution/resources/frozen_python_package.ps1'
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             script = root / 'fixture.ps1'
@@ -27,13 +27,15 @@ class FrozenMatlabClosureTests(unittest.TestCase):
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 . RUN_CONTEXT
-. SUPPORT -ExecutionResourcePath EXECUTOR_RESOURCE
+. SUPPORT
 function Copy-VerifiedRunInput {param($Source,$Destination)
  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Destination)|Out-Null
  Copy-Item -LiteralPath $Source -Destination $Destination -ErrorAction Stop
 }
 function Get-RunFileSha256 {param($Path) (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash}
 $python=SELECTED_PYTHON;$root=ROOT;$repoRoot=Join-Path $root 'active';$frozenCodeRoot=Join-Path $root 'inputs/code'
+New-Item -ItemType Directory -Force -Path (Join-Path $repoRoot 'src')|Out-Null
+Copy-Item -Recurse -LiteralPath (Join-Path REPO 'src/msplatform') -Destination (Join-Path $repoRoot 'src')
 $inputDir=Join-Path $root 'inputs';$analysisFiles=@();$frozenPythonRelativePaths=@()
 $tokens=$null;$errors=$null
 $ast=[System.Management.Automation.Language.Parser]::ParseFile(RUNNER,[ref]$tokens,[ref]$errors)
@@ -60,7 +62,7 @@ try{$package=& ([scriptblock]::Create($command[0].Extent.Text))}catch{if($missin
 if($missingDependency){throw 'missing MATLAB dependency was accepted'}
 Assert-FrozenPythonPackage -Package $package
 $reader=Get-FrozenPythonPackageFile -Package $package -RelativePath 'src/msplatform/backends/comsol/matlab/read_comsol_mesh_size_controls.m'
-if(-not(Test-Path -LiteralPath (Join-Path $package.code_root 'projects/rf_multipole_ion_optics/comsol/plan_rf_exact_birth_releases.m'))){throw 'group helper absent from real frozen closure'}
+if(-not(Test-Path -LiteralPath (Join-Path $package.code_root 'src/msplatform/backends/comsol/matlab/plan_rf_exact_birth_releases.m'))){throw 'group helper absent from real frozen closure'}
 [IO.Directory]::Move($repoRoot,$repoRoot+'.disabled')
 if(-not(Test-Path -LiteralPath $reader -PathType Leaf)-or$reader.StartsWith($repoRoot+[IO.Path]::DirectorySeparatorChar)){throw 'Typed size reader escaped frozen closure after active-source removal'}
 $frozenAnalysisPackage=$package;$ReleaseConstructionGate=RELEASE_GATE

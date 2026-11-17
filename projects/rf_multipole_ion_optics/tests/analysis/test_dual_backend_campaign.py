@@ -10,8 +10,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from projects.rf_multipole_ion_optics.runtime import runtime_profile as runtime
-from projects.rf_multipole_ion_optics.runtime.resource_budget import (
+from msplatform.workflows import rf_runtime_profiles as runtime
+from msplatform.workflows.rf_resource_budget import (
     validate_pilot_budget,
 )
 from projects.rf_multipole_ion_optics.tests.analysis import (
@@ -440,7 +440,7 @@ class DualBackendCampaignTests(unittest.TestCase):
         ):
             with self.subTest(flags=flags):
                 env = os.environ.copy()
-                env["PYTHONPATH"] = str(self.tree)
+                env["PYTHONPATH"] = os.pathsep.join((str(self.tree / "src"), str(self.tree)))
                 env["PYTHONDONTWRITEBYTECODE"] = "1"
                 result = subprocess.run(
                     [
@@ -465,6 +465,7 @@ class DualBackendCampaignTests(unittest.TestCase):
                     capture_output=True,
                     text=True,
                     encoding="utf-8",
+                    errors="replace",
                     timeout=30,
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -531,15 +532,15 @@ $freezeStart=$finiteText.IndexOf('  $solverNumericsDocument=[ordered]')
 $freezeEnd=$finiteText.IndexOf('  $evidence=$null',$freezeStart)
 $freezeText=$finiteText.Substring($freezeStart,$freezeEnd-$freezeStart)
 foreach($solver in @('comsol','simion')){
- $relative=if($solver-eq'comsol'){'runtime/run_finite_3d_transport.ps1'}else{'runtime/run_simion_finite_3d_transport.ps1'}
- $file=Join-Path $source ('projects/rf_multipole_ion_optics/'+$relative)
+ $relative=if($solver-eq'comsol'){'run_finite_3d_transport.ps1'}else{'run_simion_finite_3d_transport.ps1'}
+ $file=Join-Path $source ('src/msplatform/workflows/resources/'+$relative)
  $ast=[Management.Automation.Language.Parser]::ParseFile($file,[ref]$null,[ref]$null)
  $body=@'
 $ErrorActionPreference='Stop'
 $resolved=Get-Content -LiteralPath $ResolvedRuntimeProfilePath -Raw|ConvertFrom-Json
 $budget=Join-Path (Split-Path '@@EVENTS@@') ('budget_@@SOLVER@@.json')
 Push-Location '@@SOURCE@@'
-try{& $PythonExe -B -m projects.rf_multipole_ion_optics.runtime.resource_budget --repo-root '@@SOURCE@@' --budget $EngineeringBudgetPath --project-id $ProjectId --solver '@@SOLVER@@' --runtime-profile-id $RuntimeProfileId --design-profile-id $DesignProfileId --particle-source $ParticleSourcePath --retention-class $RetentionClass --run-id $RunId --resolved-runtime-profile $ResolvedRuntimeProfilePath --output $budget
+try{& $PythonExe -B -m msplatform.workflows.rf_resource_budget --repo-root '@@SOURCE@@' --budget $EngineeringBudgetPath --project-id $ProjectId --solver '@@SOLVER@@' --runtime-profile-id $RuntimeProfileId --design-profile-id $DesignProfileId --particle-source $ParticleSourcePath --retention-class $RetentionClass --run-id $RunId --resolved-runtime-profile $ResolvedRuntimeProfilePath --output $budget
  if($LASTEXITCODE-ne0){throw 'REAL_BUDGET_FAILED'}
  & $PythonExe -B -c 'import sys;from msplatform.execution.artifact_retention import validate_retention;validate_retention(dict(policy_version=1,**{"class":sys.argv[1]},reason=sys.argv[2] if sys.argv[1]!="compact" else None))' $RetentionClass $RetentionReason
  if($LASTEXITCODE-ne0){throw 'REAL_RETENTION_POLICY_FAILED'}
@@ -565,7 +566,7 @@ if('@@SOLVER@@'-eq'comsol'){
 """
         replacements = {
             "@@MINIMUM_OVERRIDE@@": "" if minimum_override is None else f"$MinimumElementSizeMm={minimum_override}",
-            "@@FINITE_SOURCE@@": str(REPO / PROJECT / "runtime/run_finite_3d_transport.ps1").replace("'", "''"),
+            "@@FINITE_SOURCE@@": str(REPO / "src/msplatform/workflows/resources/run_finite_3d_transport.ps1").replace("'", "''"),
             "@@SOURCE@@": str(self.tree).replace("'", "''"),
             "@@EVENTS@@": str(self.root / "events.jsonl").replace("'", "''"),
             "@@PYTHON@@": sys.executable.replace("'", "''"),
@@ -585,7 +586,7 @@ if('@@SOLVER@@'-eq'comsol'){
             instrument = instrument.replace(key, value)
         script.write_text(instrument, encoding="utf-8", newline="\n")
         env = os.environ.copy()
-        env["PYTHONPATH"] = str(self.tree)
+        env["PYTHONPATH"] = os.pathsep.join((str(self.tree / "src"), str(self.tree)))
         env["PYTHONDONTWRITEBYTECODE"] = "1"
         result = subprocess.run(
             [PWSH, "-NoProfile", "-File", str(script)],
@@ -594,6 +595,7 @@ if('@@SOLVER@@'-eq'comsol'){
             capture_output=True,
             text=True,
             encoding="utf-8",
+            errors="replace",
             timeout=60,
         )
         if expected_error:

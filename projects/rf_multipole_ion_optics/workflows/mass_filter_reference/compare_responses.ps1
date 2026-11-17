@@ -20,7 +20,8 @@ $python = if ($PythonExe) {
 }
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 . (Join-Path $projectRoot 'runtime\analysis_run_lifecycle.ps1')
-. (Join-Path $projectRoot 'runtime\frozen_python_package.ps1') -ExecutionResourcePath (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
+. (Join-Path $repoRoot 'src/msplatform/workflows/resources/rf_publication.ps1')
 
 if ([string]::IsNullOrWhiteSpace($RunId)) {
     $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') +
@@ -201,7 +202,7 @@ try {
             'runtime\analysis_run_lifecycle.ps1') `
         -Destination (Join-Path $inputDir 'analysis_run_lifecycle.ps1')
     $frozenPythonSupport = Copy-VerifiedRunInput `
-        -Source (Join-Path $projectRoot 'runtime\frozen_python_package.ps1') `
+        -Source (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1') `
         -Destination (Join-Path $inputDir 'frozen_python_package.ps1')
     $runtimeRoot = Join-Path $inputDir 'runtime'
     $runtimeFiles = Get-FrozenPythonPackageRelativePaths -SourceRoot $repoRoot -Python $python `

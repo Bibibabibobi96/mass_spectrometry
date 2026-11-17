@@ -21,7 +21,7 @@ from projects.rf_multipole_ion_optics.workflows.interface_readiness.particle_sou
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
-HELPER = PROJECT_ROOT / "runtime" / "frozen_python_package.ps1"
+HELPER = PROJECT_ROOT.parents[1] / "src/msplatform/execution/resources/frozen_python_package.ps1"
 SUPPORT = REPO_ROOT / "common" / "contracts" / "run_artifact_support.ps1"
 COMSOL_RUNNER = PROJECT_ROOT / "workflows" / "interface_readiness" / "run_comsol.ps1"
 SIMION_RUNNER = PROJECT_ROOT / "workflows" / "interface_readiness" / "run_simion.ps1"
@@ -209,7 +209,7 @@ foreach($label in @('relative','missing')){{
 $ErrorActionPreference='Stop'
 $repoRoot={_ps(REPO_ROOT)};$python={_ps(sys.executable)}
 . {_ps(SUPPORT)}
-. {_ps(HELPER)} -ExecutionResourcePath {_ps(REPO_ROOT / 'src/msplatform/execution/resources/frozen_python_package.ps1')}
+. {_ps(HELPER)}
 $t=$null;$e=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile({_ps(PROJECT_ROOT / relative)},[ref]$t,[ref]$e)
 if($e.Count){{throw 'Actual runner did not parse'}}
@@ -247,7 +247,7 @@ $execution=Invoke-IsolatedFrozenPythonModule -Python $python -Package $package `
                                               provider_root='src/msplatform', resource_suffixes=('.schema.json',)))
         files.add('src/msplatform/execution/resources/frozen_python_package.ps1')
         state_relative = "projects/rf_multipole_ion_optics/analysis/analyze_comsol_particle_state_metrics.py"
-        helper_relative = "projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1"
+        helper_relative = "src/msplatform/execution/resources/frozen_python_package.ps1"
         mode_path = PROJECT_ROOT / "config/modes/quadrupole_mass_filter_reference.json"
         mode = json.loads(mode_path.read_text(encoding="utf-8"))
         masses = mode["mass_scan_spec"]["paired_source_masses_Th"]
@@ -255,7 +255,9 @@ $execution=Invoke-IsolatedFrozenPythonModule -Python $python -Package $package `
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             active = root / "active_source"
-            for relative in {*files, state_relative, helper_relative}:
+            for relative in {*files, state_relative, helper_relative,
+                             'src/msplatform/workflows/resources/rf_publication.ps1',
+                             'src/msplatform/workflows/resources/finite_3d_transport_preflight.ps1'}:
                 destination = active / relative
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(REPO_ROOT / relative, destination)
@@ -385,7 +387,7 @@ try {{ . $analysisBlock }} catch {{ $missing=$_.Exception.Message }}
 $ErrorActionPreference='Stop'
 $repoRoot={_ps(REPO_ROOT)};$python={_ps(sys.executable)}
 . {_ps(SUPPORT)}
-. {_ps(HELPER)} -ExecutionResourcePath {_ps(REPO_ROOT / 'src/msplatform/execution/resources/frozen_python_package.ps1')}
+. {_ps(HELPER)}
 $results=@()
 """
             for index, runner in enumerate((COMSOL_RUNNER, SIMION_RUNNER)):
@@ -439,7 +441,7 @@ $results+=@{{files=@($package.files.relative_path);paths=$paths;executed=$execut
                 self.assertEqual(junction.resolve(), REPO_ROOT.resolve())
                 script = f"""
 $ErrorActionPreference='Stop'
-. {_ps(HELPER)} -ExecutionResourcePath {_ps(REPO_ROOT / 'src/msplatform/execution/resources/frozen_python_package.ps1')}
+. {_ps(HELPER)}
 $OutputEncoding=[Text.ASCIIEncoding]::new()
 $before=$OutputEncoding
 $one=Get-FrozenPythonPackageRelativePaths -SourceRoot {_ps(junction)} `
@@ -481,26 +483,24 @@ $two=Get-FrozenPythonPackageRelativePaths -SourceRoot {_ps(REPO_ROOT)} `
             source = root / 'data'
             source.mkdir()
             (source / 'owned.py').write_bytes(b'value = 1\r\n')
+            selected_inputs = source / 'src/msplatform/execution/inputs.py'
+            selected_inputs.parent.mkdir(parents=True)
+            shutil.copytree(selected, selected_inputs.parents[1], dirs_exist_ok=True)
             command = f"""
 $ErrorActionPreference='Stop'
-. {_ps(HELPER)} -ExecutionResourcePath {_ps(selected / 'execution/resources/frozen_python_package.ps1')}
+. {_ps(HELPER)}
 $package=New-FrozenPythonPackage -Python {_ps(sys.executable)} -SourceRoot {_ps(source)} `
  -CodeRoot {_ps(root / 'copy')} -RelativePaths @('owned.py')
 if($package.files.Count-ne1-or$package.files[0].relative_path-cne'owned.py'){{throw 'Selected builder lost its inventory'}}
 if($package.files[0].sha256-cne(Get-FileHash -LiteralPath {_ps(source / 'owned.py')} -Algorithm SHA256).Hash){{throw 'Selected builder changed its identity convention'}}
-Remove-Item -LiteralPath {_ps(selected / 'execution/inputs.py')}
-try{{
- New-FrozenPythonPackage -Python {_ps(sys.executable)} -SourceRoot {_ps(source)} `
-  -CodeRoot {_ps(root / 'refused')} -RelativePaths @('owned.py')
- throw 'Missing selected builder accepted'
-}}catch{{if($_.Exception.Message-notlike'Selected Python inputs implementation is missing:*'){{throw}}}}
-Write-Output 'SELECTED_BUILDER_MISSING_REJECTED'
-exit 0
+Remove-Item -LiteralPath {_ps(selected_inputs)}
+New-FrozenPythonPackage -Python {_ps(sys.executable)} -SourceRoot {_ps(source)} `
+ -CodeRoot {_ps(root / 'refused')} -RelativePaths @('owned.py')
 """
             completed = subprocess.run(['pwsh', '-NoProfile', '-NonInteractive', '-Command', command],
-                cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=120)
-            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
-            self.assertIn('SELECTED_BUILDER_MISSING_REJECTED', completed.stdout)
+                cwd=root, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=120)
+            self.assertNotEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            self.assertIn('Selected Python inputs implementation is missing', completed.stdout + completed.stderr)
             self.assertEqual((root / 'copy/owned.py').read_bytes(), (source / 'owned.py').read_bytes())
             self.assertFalse((root / 'refused').exists())
             self.assertTrue((REPO_ROOT / 'src/msplatform/execution/inputs.py').is_file())
@@ -571,7 +571,7 @@ exit 0
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . {_ps(SUPPORT)}
-. {_ps(HELPER)} -ExecutionResourcePath {_ps(REPO_ROOT / 'src/msplatform/execution/resources/frozen_python_package.ps1')}
+. {_ps(HELPER)}
 $package = New-FrozenPythonPackage -Python {_ps(sys.executable)} -SourceRoot {_ps(source_snapshot)} `
     -CodeRoot {_ps(code_root)} -RelativePaths @(
         {relative_paths}
@@ -739,7 +739,7 @@ $result | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath {_ps(result_path)}
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . {_ps(SUPPORT)}
-. {_ps(HELPER)} -ExecutionResourcePath {_ps(REPO_ROOT / 'src/msplatform/execution/resources/frozen_python_package.ps1')}
+. {_ps(HELPER)}
 $repoRoot = {_ps(REPO_ROOT)}
 $projectRoot = {_ps(PROJECT_ROOT)}
 $python = {_ps(Path(sys.executable).resolve())}
@@ -932,7 +932,7 @@ $result | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath {_ps(result_path)}
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 . {_ps(SUPPORT)}
-. {_ps(HELPER)} -ExecutionResourcePath {_ps(REPO_ROOT / 'src/msplatform/execution/resources/frozen_python_package.ps1')}
+. {_ps(HELPER)}
 $repoRoot={_ps(REPO_ROOT)}
 $projectRoot={_ps(PROJECT_ROOT)}
 $python={_ps(Path(sys.executable).resolve())}

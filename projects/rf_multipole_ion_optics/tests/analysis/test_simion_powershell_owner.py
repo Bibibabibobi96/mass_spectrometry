@@ -16,7 +16,7 @@ PROJECT = "rf_multipole_ion_optics"
 @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
 class RfPowerShellOwnerTests(unittest.TestCase):
     def test_batch_completion_passes_original_native_identity_and_rejects_unknown_exit(self):
-        support = REPO / "projects" / PROJECT / "runtime/simion_execution.ps1"
+        support = REPO / "src/msplatform/backends/simion/resources/simion_execution.ps1"
         text = support.read_text()
         callback = text[text.index("    $complete={"):text.index("    $receipt = Invoke-SimionBatchPhase", text.index("    $complete={"))]
         script = """$ErrorActionPreference='Stop';Set-StrictMode -Version Latest

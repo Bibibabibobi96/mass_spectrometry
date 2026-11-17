@@ -130,7 +130,7 @@ $python = if ($PythonExe) {[IO.Path]::GetFullPath($PythonExe)} else {Join-Path $
 # This grants no output, cleanup, solver or external-code permission.
 Push-Location $repo
 try {
-  $resolvedInput=@(& $python -B -c 'from pathlib import Path; import sys; from projects.rf_multipole_ion_optics.runtime.runtime_profile import resolve_campaign_path; print(resolve_campaign_path(Path(sys.argv[1]), Path(sys.argv[2])))' $repo $CampaignPath)
+  $resolvedInput=@(& $python -B -c 'from pathlib import Path; import sys; from msplatform.workflows.rf_runtime_profiles import resolve_campaign_path; print(resolve_campaign_path(Path(sys.argv[1]), Path(sys.argv[2])))' $repo $CampaignPath)
   if($LASTEXITCODE-ne0){throw 'Campaign input path could not be resolved.'}
   $candidate=($resolvedInput-join "`n").Trim()
 } finally {Pop-Location}
@@ -154,7 +154,7 @@ if ($PSCmdlet.ParameterSetName -eq 'Status') {
   return
 }
 if ($PSCmdlet.ParameterSetName -eq 'Diff') {
-  & $python -m projects.rf_multipole_ion_optics.runtime.runtime_profile --repo-root $repo `
+  & $python -m msplatform.workflows.rf_runtime_profiles --repo-root $repo `
     --campaign-path $candidate --semantic-diff-experiment-ids $ExperimentId $SemanticDiffAgainst
   if ($LASTEXITCODE -ne 0) {throw 'Campaign semantic diff could not resolve both experiments.'}
   return
@@ -180,7 +180,7 @@ try {
       if($selected.Count-ne1){throw 'A compiled runtime binds exactly one campaign experiment.'}
       Copy-Item -LiteralPath $ResolvedRuntimeProfilePath -Destination $snapshot
     }else{
-    & $python -m projects.rf_multipole_ion_optics.runtime.runtime_profile --repo-root $repo `
+    & $python -m msplatform.workflows.rf_runtime_profiles --repo-root $repo `
       --project-id ([string]$experiment.project_id) --campaign-path $candidate `
       --experiment-id ([string]$experiment.experiment_id) --output $snapshot
     if ($LASTEXITCODE -ne 0) {throw "Campaign preflight failed: $($experiment.experiment_id)"}

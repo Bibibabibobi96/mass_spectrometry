@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from projects.rf_multipole_ion_optics.core.compile_design_request import (
+from msplatform.components.rf_multipole.design_request_files import (
     MultipoleDesignCompileError,
     apply_typed_operating_mode,
     compile_design_request,

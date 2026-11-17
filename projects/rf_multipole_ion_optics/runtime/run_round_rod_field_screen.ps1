@@ -35,7 +35,7 @@ New-Item -ItemType Directory -Force -Path $inputDir,$resultDir,$logDir | Out-Nul
 $profileResolution = Join-Path $inputDir 'design_profile_resolution.json'
 $env:PYTHONPATH = $repoRoot
 try {
-  & $python -m projects.rf_multipole_ion_optics.runtime.design_profile --repo-root $repoRoot --project-id $ProjectId `
+  & $python -m msplatform.workflows.rf_design_profiles --repo-root $repoRoot --project-id $ProjectId `
     --design-profile-id $DesignProfileId --output $profileResolution
   if ($LASTEXITCODE -ne 0) { throw 'Governed design profile resolution failed.' }
 } finally { Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue }
@@ -58,7 +58,7 @@ $resolved = Join-Path $inputDir 'multipole_resolved_design.json'
 Push-Location $repoRoot
 try {
   $env:PYTHONPATH = $repoRoot
-  & $python -m projects.rf_multipole_ion_optics.core.compile_design_request --request $request `
+  & $python -m msplatform.components.rf_multipole.design_request_files --request $request `
     --design-variables $variables --optimization-envelope $envelope --output $resolved `
     --provenance-root $inputDir --project-id $ProjectId `
     --radial-order-n ([int]$identity.radial_order_n) `

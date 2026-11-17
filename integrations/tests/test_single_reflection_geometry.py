@@ -10,8 +10,8 @@ from unittest.mock import patch
 
 from msplatform.contracts.machine_contracts import ContractError
 from msplatform.contracts.rigid_transform import FramedPosition, RigidTransform
-from projects.rf_multipole_ion_optics.core.compile_design_request import compile_design_request
-from projects.rf_multipole_ion_optics.simion.simion_geometry import render_physical_gem, physical_electrode_view
+from msplatform.components.rf_multipole.design_request_files import compile_design_request
+from msplatform.backends.simion.rf_finite_geometry import render_physical_gem, physical_electrode_view
 from projects.rf_multipole_ion_optics.tests.domain.test_compile_design_request import design_request
 from msplatform.assembly.resolve_assembly import compile_assembly_layout
 # These fixtures exercise the explicitly retained request-v9/native-v1 reader.

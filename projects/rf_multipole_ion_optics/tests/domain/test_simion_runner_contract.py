@@ -13,11 +13,11 @@ from pathlib import Path
 
 from msplatform.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
 from msplatform.components.rf_multipole.source_validation import COLUMNS
-from projects.rf_multipole_ion_optics.runtime.simion_particle_source import render_canonical_source
+from msplatform.backends.simion.rf_particle_source import render_canonical_source
 from common.simion.resource_profile import publish_resource_profile
 
 
-RUNNER = Path(__file__).resolve().parents[2] / "runtime/run_simion_finite_3d_transport.ps1"
+RUNNER = Path(__file__).resolve().parents[4] / "src/msplatform/workflows/resources/run_simion_finite_3d_transport.ps1"
 REPO_ROOT = Path(__file__).parents[4]
 
 
@@ -46,7 +46,7 @@ class SimionRunnerContractTests(unittest.TestCase):
         script = r'''
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 . (Join-Path $env:RF_TEST_REPO 'common/contracts/run_artifact_workflow.ps1')
-. (Join-Path $env:RF_TEST_REPO 'projects/rf_multipole_ion_optics/runtime/simion_execution.ps1')
+. (Join-Path $env:RF_TEST_REPO 'src/msplatform/backends/simion/resources/simion_execution.ps1')
 function Exit-HostResourceStage {param($Lease,[switch]$PassThru);$script:exits++;if($Lease.inherited){return $null};return @{status=$(if($scenario-eq'mismatch'){'retained'}else{'released'});token=$Lease.token}}
 function Invoke-HostResourceTransaction {param($StatePath,$Request);$script:inherits++;if($Request.operation-ne'inherit'-or$Request.token-cne'actual-token'){throw 'Actual inheritance identity changed'};return @{status=$(if($scenario-eq'inherited_unknown'){'unknown'}else{'acquired'});token=$Request.token}}
 foreach($scenario in @('owned','inherited','mismatch','inherited_unknown')){
@@ -197,7 +197,7 @@ $codeRoot='{escaped_repo}';$python='{escaped_python}';$manifestRepoRoot=$codeRoo
 . (Join-Path $codeRoot 'common/contracts/run_artifact_support.ps1')
 $tokens=$null;$parseErrors=$null
 $runnerAst=[Management.Automation.Language.Parser]::ParseFile(
- (Join-Path $codeRoot 'projects/rf_multipole_ion_optics/runtime/run_simion_finite_3d_transport.ps1'),[ref]$tokens,[ref]$parseErrors)
+ (Join-Path $codeRoot 'src/msplatform/workflows/resources/run_simion_finite_3d_transport.ps1'),[ref]$tokens,[ref]$parseErrors)
 if($parseErrors.Count){{throw 'Production runner does not parse'}}
 $scientificTry=@($runnerAst.EndBlock.Statements|Where-Object {{
  $_-is[Management.Automation.Language.TryStatementAst]-and$_.Body.Extent.Text.Contains("`$scientificStatus='success'")
@@ -373,6 +373,7 @@ ConvertTo-Json -InputObject $script:calls -Depth 6
                 script = r"""$ErrorActionPreference='Stop'
 $repoRoot=@@REPO@@;$inputDir=@@INPUT@@;$python=@@PYTHON@@
 . (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
 $ast=[Management.Automation.Language.Parser]::ParseFile(@@ENTRY@@,[ref]$null,[ref]$null)
 $declarations=@($ast.FindAll({param($n) $n-is[Management.Automation.Language.AssignmentStatementAst]-and
  $n.Left.Extent.Text-in@('$hostRuntimeSourcePaths','$analysisSourcePaths','$executionCapacityPaths')},$true)|Sort-Object {$_.Extent.StartOffset})
@@ -462,12 +463,12 @@ print(json.dumps(dict(mother=result["mother_particle_ids"], non_exit=result["non
 import json, pathlib, runpy, sys
 sys.path[:0] = json.loads(sys.argv[2])
 from common.paths.repository_root import REPO_ROOT as frozen_repo
-import projects.rf_multipole_ion_optics.runtime.design_profile as design_profile
+import msplatform.workflows.rf_design_profiles as design_profile
 assert pathlib.Path(frozen_repo).resolve() == pathlib.Path(sys.argv[1]).resolve()
 assert pathlib.Path(design_profile.__file__).resolve().is_relative_to(pathlib.Path(sys.argv[1]).resolve())
 sys.argv = ['design_profile', '--repo-root', sys.argv[1], '--project-id', 'rf_multipole_ion_optics',
             '--design-profile-id', 'octupole_no_acceleration_full_length', '--output', sys.argv[3]]
-runpy.run_module('projects.rf_multipole_ion_optics.runtime.design_profile', run_name='__main__')
+runpy.run_module('msplatform.workflows.rf_design_profiles', run_name='__main__')
 """
                 design_command = [sys.executable, "-B", "-I", "-c", design_program, str(root / "code"),
                                   roots_json, str(root / "design-resolution.json")]
@@ -496,7 +497,7 @@ runpy.run_module('projects.rf_multipole_ion_optics.runtime.design_profile', run_
                 missing_schema.unlink()
                 guard_script = r"""
 . @@SUPPORT@@
-. @@HELPER@@ -ExecutionResourcePath (Join-Path @@CODE@@ 'src/msplatform/execution/resources/frozen_python_package.ps1')
+. @@HELPER@@
 $codeRoot=@@CODE@@
 $inventory=(Get-Content -Raw @@INVENTORY@@|ConvertFrom-Json).files
 $package=[pscustomobject]@{code_root=$codeRoot;package_roots=@(Get-RunPythonImportRoots -RepoRoot $codeRoot);
@@ -504,7 +505,7 @@ $package=[pscustomobject]@{code_root=$codeRoot;package_roots=@(Get-RunPythonImpo
 Invoke-IsolatedFrozenPythonModule -Python @@PYTHON@@ -Package $package -Module msplatform `
  -Arguments @('--help') -RequiredModuleNames @('msplatform') -ProbeOnly
 """.replace('@@SUPPORT@@', quoted(root / 'code/common/contracts/run_artifact_support.ps1')).replace(
-                    '@@HELPER@@', quoted(root / 'code/projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1')).replace(
+                    '@@HELPER@@', quoted(root / 'code/src/msplatform/execution/resources/frozen_python_package.ps1')).replace(
                     '@@CODE@@', quoted(root / 'code')).replace('@@INVENTORY@@', quoted(root / 'code_inventory.json')).replace(
                     '@@PYTHON@@', quoted(Path(sys.executable)))
                 refused_core = subprocess.run([shutil.which('pwsh'), '-NoProfile', '-Command', guard_script],
@@ -520,7 +521,7 @@ Invoke-IsolatedFrozenPythonModule -Python @@PYTHON@@ -Package $package -Module m
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_frozen_comsol_runner_receives_resolved_python_environment(self) -> None:
-        entry = REPO_ROOT / "projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1"
+        entry = REPO_ROOT / "src/msplatform/workflows/resources/run_finite_3d_transport.ps1"
         with tempfile.TemporaryDirectory() as directory:
             fixture = Path(directory)
             launcher = fixture / "src/msplatform/backends/comsol/launcher"
@@ -615,7 +616,7 @@ Invoke-IsolatedFrozenPythonModule -Python @@PYTHON@@ -Package $package -Module m
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_shared_host_lease_reports_one_manifest_bound_terminal_outcome(self) -> None:
-        entry = REPO_ROOT / "projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1"
+        entry = REPO_ROOT / "src/msplatform/workflows/resources/run_finite_3d_transport.ps1"
         script = r"""$ErrorActionPreference='Stop'
 $ast=[Management.Automation.Language.Parser]::ParseFile('@@ENTRY@@',[ref]$null,[ref]$null)
 $ast.FindAll({param($n) $n-is[Management.Automation.Language.FunctionDefinitionAst]},$true)|ForEach-Object{Invoke-Expression $_.Extent.Text}
@@ -963,7 +964,7 @@ if($scenario-eq'inherited_light'){
         self.assertFalse(policy["profiles"][policy["stages"]["SIMION/postprocess"]]["heavy_stage"])
 
     def test_segmented_voltage_binding_uses_resolved_dynamic_electrodes(self) -> None:
-        lua = (REPO_ROOT / "projects/rf_multipole_ion_optics/simion/simion_transport.lua").read_text(encoding="utf-8")
+        lua = (REPO_ROOT / "src/msplatform/backends/simion/resources/simion_transport.lua").read_text(encoding="utf-8")
         runner = RUNNER.read_text(encoding="utf-8")
         self.assertIn("adj_elect[electrode_id] = voltage", lua)
         self.assertIn("electrode_id <= 1000", lua)
@@ -1135,8 +1136,8 @@ exit 0
             "EndplateAcceleration",
         ):
             self.assertNotIn(legacy, source)
-        self.assertIn("projects.rf_multipole_ion_optics.runtime.design_profile", source)
-        self.assertIn("projects.rf_multipole_ion_optics.core.compile_design_request", source)
+        self.assertIn("msplatform.workflows.rf_design_profiles", source)
+        self.assertIn("msplatform.components.rf_multipole.design_request_files", source)
         self.assertIn("msplatform.components.rf_multipole.source_validation", source)
 
     def test_typed_mode_is_forwarded_to_both_solver_compilers(self) -> None:
@@ -1153,17 +1154,17 @@ exit 0
             self.assertIn("operating_mode_id=$modeId", source)
 
     def test_tool_paths_are_numerical_runtime_parameters(self) -> None:
-        source = RUNNER.read_text(encoding="utf-8")
+        source = RUNNER.read_text(encoding="utf-8").replace("\\", "/")
         template_support = (
-            REPO_ROOT / "projects/rf_multipole_ion_optics/runtime/simion_layout_template_support.ps1"
+            REPO_ROOT / "src/msplatform/backends/simion/resources/simion_layout_template_support.ps1"
         ).read_text(encoding="utf-8")
         self.assertIn("[string]$SimionExe", source)
         self.assertNotIn("[string]$TemplateIob", source)
         self.assertIn(
-            "projects\\rf_multipole_ion_optics\\runtime\\simion_layout_template_support.ps1", source
+            "src/msplatform/backends/simion/resources/simion_layout_template_support.ps1", source
         )
         self.assertIn("Resolve-MultipoleSimionLayoutTemplate", source)
-        self.assertIn("projects.rf_multipole_ion_optics.runtime.simion_layout_template", template_support)
+        self.assertIn("msplatform.backends.simion.rf_layout_template", template_support)
         self.assertIn("build_simion_runtime_iob.lua", source)
         self.assertIn("simion_layout_template_registry", source)
         self.assertIn("simion_layout_template_con", source)
@@ -1329,7 +1330,7 @@ exit 0
             self.assertIsNone(unconfigured["maximum_pa_grid_points"])
 
     def test_rejected_handoff_writes_a_unique_terminal_event(self) -> None:
-        program = (REPO_ROOT / "projects/rf_multipole_ion_optics/simion/simion_transport.lua").read_text(
+        program = (REPO_ROOT / "src/msplatform/backends/simion/resources/simion_transport.lua").read_text(
             encoding="utf-8"
         )
         self.assertIn(
@@ -1359,7 +1360,7 @@ exit 0
 
     def test_waveform_and_all_drive_scalars_come_from_resolved_design(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
-        lua = (REPO_ROOT / "projects/rf_multipole_ion_optics/simion/simion_transport.lua").read_text(encoding="utf-8")
+        lua = (REPO_ROOT / "src/msplatform/backends/simion/resources/simion_transport.lua").read_text(encoding="utf-8")
         for field in (
             "waveform",
             "rf_amplitude_V_zero_to_peak_per_group",
@@ -1377,7 +1378,7 @@ exit 0
 
     def test_mechanically_segmented_rods_always_receive_full_length_rf(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
-        comsol = (REPO_ROOT / "projects/rf_multipole_ion_optics/comsol/solve_finite_3d_transport.m").read_text(
+        comsol = (REPO_ROOT / "src/msplatform/backends/comsol/matlab/solve_finite_3d_transport.m").read_text(
             encoding="utf-8"
         )
         self.assertIn(
@@ -1401,8 +1402,8 @@ exit 0
         )
 
     def test_comsol_uses_the_single_frozen_enclosure_projector(self) -> None:
-        comsol=(REPO_ROOT/"projects/rf_multipole_ion_optics/comsol/solve_finite_3d_transport.m").read_text(encoding="utf-8")
-        helper=(REPO_ROOT/"projects/rf_multipole_ion_optics/comsol/build_multipole_enclosure.m").read_text(encoding="utf-8")
+        comsol=(REPO_ROOT/"src/msplatform/backends/comsol/matlab/solve_finite_3d_transport.m").read_text(encoding="utf-8")
+        helper=(REPO_ROOT/"src/msplatform/backends/comsol/matlab/build_multipole_enclosure.m").read_text(encoding="utf-8")
         self.assertIn("build_multipole_enclosure(geom,enclosureLayout.bodies,'enclosure')",comsol)
         self.assertIn("create_comsol_cylindrical_shell",helper)
         for field in ("inner_radius_mm","outer_radius_mm","z_max_mm","z_min_mm"):
@@ -1415,8 +1416,8 @@ exit 0
     def test_metrics_are_unqualified_without_explicit_evidence(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
         self.assertIn("$qualification='UNQUALIFIED'", source)
-        self.assertIn("evaluate_transport_evidence", source)
-        self.assertIn("analyze_simion_axial_acceleration", source)
+        self.assertIn("rf_transport_evidence", source)
+        self.assertIn("rf_axial_acceleration", source)
         self.assertIn("msplatform.analysis.rf_transport_metrics", source)
         self.assertNotIn("function ConvertTo-TransportMetricCase", source)
         self.assertNotIn("MinimumRfTransmission", source)
@@ -1633,6 +1634,65 @@ exit 0
         self.assertIn(
             "Paired SIMION case set did not produce a control transmission.", runner
         )
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
+    def test_field_solve_finalizes_parent_then_calls_public_stationary_sampler(self):
+        source = RUNNER.read_text(encoding="utf-8-sig")
+        branch = source[source.index("  if($StopStage-eq'field_solve'){"):
+                         source.index("  Set-RfRunPhase 'flight_and_case_analysis'", source.index("  if($StopStage-eq'field_solve'){"))]
+        self.assertNotIn("build_runtime_iob", branch)
+        self.assertNotIn("Invoke-TransportCase", branch)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            capture = root / "capture.json"
+            script = f"""
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+function Invoke-FieldBranch {{
+{branch}
+}}
+function Set-RfRunPhase {{param($Next)}}
+function Convert-WorkflowOwnerPath {{param($Context,$Path);$Path}}
+function Get-RfSimionStoppedWriterCompletion {{param($HostLease,$NativeOperations,$State);@{{operations=@()}}}}
+function Complete-RunArtifactPowerShellOwner {{
+ param($Context,$Status,$Summary,$OutputPaths,$RequiredOutputPaths,$WriterCompletion,$WritersStopped,$ResourceUsagePaths,$OriginalFailure)
+ if($Status-ne'success'-or$Summary.stop_stage-ne'field_solve'-or$Summary.scientific_result-ne'NOT_EVALUATED'){{throw 'Field-only terminal facts changed'}}
+ $script:fieldSummary=$Summary
+ '{{"status":"success"}}'|Set-Content -LiteralPath (Join-Path $physicalRunDir 'run_manifest.json')
+}}
+function Write-RunJson {{param($Path,$Depth,$Value);$Value|ConvertTo-Json -Depth $Depth|Set-Content -LiteralPath $Path}}
+function Get-RunPythonImportRoots {{param($RepoRoot);@((Join-Path $RepoRoot 'src'))}}
+$physicalRunDir=Join-Path $env:RF_FIELD_ROOT 'parent';$solverDir=Join-Path $physicalRunDir 'simion'
+$inputDir=Join-Path $physicalRunDir 'inputs';$logDir=Join-Path $physicalRunDir 'logs';$resultDir=Join-Path $physicalRunDir 'results'
+@($solverDir,$inputDir,$logDir,$resultDir)|ForEach-Object{{New-Item -ItemType Directory -Force -Path $_|Out-Null}}
+$summary=Join-Path $resultDir 'summary.json';$gem=Join-Path $solverDir 'quad_monolithic.gem';$resourceUsage=Join-Path $resultDir 'resource_usage.json'
+@($summary,$gem,$resourceUsage,(Join-Path $solverDir 'quad_monolithic.pa0'))|ForEach-Object{{Set-Content -LiteralPath $_ -Value 'fixture'}}
+$controller=Join-Path $solverDir 'quad_monolithic.pa0';$resolved=Join-Path $inputDir 'resolved.json';$engineeringBudget=Join-Path $inputDir 'budget.json'
+@($resolved,$engineeringBudget)|ForEach-Object{{Set-Content -LiteralPath $_ -Value '{{}}'}}
+$fieldPlan=$null;$fieldCheckpointOutputs=@();$ownerContext=@{{}};$nativeOperations=@();$hostExecutionLease=$null
+$hostReleaseState=@{{released=$false}};$deferFinalization=$false;$continuationCapacity=$null
+$RunId='field_parent';$ResultPath=Join-Path $env:RF_FIELD_ROOT 'result.json';$ProjectId='rf_multipole_ion_optics';$DesignProfileId='quad';$resolvedHash='design'
+$CaseSet='primary_only';$StopStage='field_solve';$phaseTimings=@{{}};$runTimer=[Diagnostics.Stopwatch]::StartNew()
+$resolvedCellMmX=.4;$resolvedCellMmY=.5;$resolvedCellMmZ=.6
+$electrodesById=@{{1=@{{electrode_id=1;electrode_group=1}};2=@{{electrode_id=2;electrode_group=2}};3=@{{electrode_id=3;electrode_group=2}}}}
+$codeRoot=$env:RF_TEST_REPO;$workspaceRoot=$env:RF_FIELD_ROOT;$python=Join-Path $env:RF_FIELD_ROOT 'python.ps1';$simion=Join-Path $env:RF_FIELD_ROOT 'simion.exe'
+Set-Content -LiteralPath $simion -Value 'fixture'
+$hostExecutionOutcome='';Invoke-FieldBranch
+@{{summary=$fieldSummary;request=(Get-Content -LiteralPath (Join-Path $inputDir 'stationary_simion_sampling_request.json') -Raw|ConvertFrom-Json);
+ argv=(Get-Content -LiteralPath $env:RF_FIELD_CAPTURE -Raw|ConvertFrom-Json)}}|ConvertTo-Json -Depth 30 -Compress
+"""
+            mock = root / "python.ps1"
+            mock.write_text("$args|ConvertTo-Json -Depth 20|Set-Content -LiteralPath $env:RF_FIELD_CAPTURE\n$global:LASTEXITCODE=0\n", encoding="utf-8")
+            result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
+                cwd=REPO_ROOT, env={**os.environ, "RF_TEST_REPO": str(REPO_ROOT), "RF_FIELD_ROOT": str(root),
+                                    "RF_FIELD_CAPTURE": str(capture)}, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            payload = json.loads(result.stdout.strip().splitlines()[-1])
+            self.assertEqual(payload["argv"][0:2], ["-m", "msplatform.workflows.rf_stationary"])
+            self.assertIn("simion-sample", payload["argv"])
+            self.assertEqual(payload["request"]["electrode_ids_by_group"], {"1": [1], "2": [2, 3]})
+            self.assertEqual(payload["request"]["cell_mm"], [0.4, 0.5, 0.6])
+            self.assertEqual(payload["summary"]["stop_stage"], "field_solve")
 
 
 if __name__ == "__main__":

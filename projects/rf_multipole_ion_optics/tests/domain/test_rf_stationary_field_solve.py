@@ -93,11 +93,7 @@ class RfStationaryFieldSolveTests(unittest.TestCase):
     def test_inert_backend_reaches_solve_then_zero_compute_verification(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            repository = root / "repo"
-            science = repository / "projects/rf_multipole_ion_optics/comsol/solve_finite_3d_transport.m"
-            science.parent.mkdir(parents=True)
-            science.write_text("% inert science", encoding="utf-8")
-            (repository / "common/comsol").mkdir(parents=True)
+            science = native_resource_path("solve_finite_3d_transport.m")
             source = root / "source.csv"
             source.write_text("fixture", encoding="utf-8")
             runtime = {"design_profile_resolution": {"resolved_design": {
@@ -202,8 +198,8 @@ class RfStationaryFieldSolveTests(unittest.TestCase):
             self.assertEqual(result["status"], "success")
             self.assertEqual(calls[0]["completion_api"], no_particle_batch_completion_api)
 
-    def test_project_science_saves_only_its_field_only_branch(self):
-        science = Path(__file__).resolve().parents[2] / "comsol/solve_finite_3d_transport.m"
+    def test_installed_science_saves_only_its_field_only_branch(self):
+        science = native_resource_path("solve_finite_3d_transport.m")
         text = science.read_text(encoding="utf-8")
         branch = text[text.index("    if fieldSolveOnly"):text.index("    cpt = comp.physics.create")]
         self.assertIn("model.save(modelPath)", branch)

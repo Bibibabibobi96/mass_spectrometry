@@ -7,8 +7,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from common.contracts.artifact_identity_archive import legacy_artifact_location
-from projects.rf_multipole_ion_optics.runtime.simion_layout_template import resolve_simion_layout_template
+from msplatform.execution.artifact_identity_archive import legacy_artifact_location
+from msplatform.backends.simion.rf_layout_template import resolve_simion_layout_template
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -181,7 +181,7 @@ class SimionLayoutTemplateBindingTests(unittest.TestCase):
         self.assertEqual(Path(result["bundle"]["placeholder_pa0"]["path"]).suffix, ".pa0")
 
     def test_retired_alias_resolves_with_original_artifact_owner(self) -> None:
-        from projects.rf_multipole_ion_optics.runtime import simion_layout_template
+        from msplatform.backends.simion import rf_layout_template as simion_layout_template
         original = simion_layout_template.resolve_legacy_artifact_root
         with patch.object(simion_layout_template, "resolve_legacy_artifact_root", wraps=original) as resolve:
             result = resolve_simion_layout_template(self.repo_root)

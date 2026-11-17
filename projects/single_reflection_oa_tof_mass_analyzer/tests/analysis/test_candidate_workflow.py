@@ -1923,7 +1923,7 @@ print('FROZEN_ION_CONSUMER_PASS')
             root = Path(root)
             paths = {name: root / (name + ".json") for name in (
                 "mode_config", "resolved_geometry", "particle_count_policy", "formal_mph",
-                "formal_asset_manifest", "comsol_task", "simion_executable", "project_config",
+                "formal_asset_manifest", "simion_executable", "project_config",
                 "formal_assets", "baseline", "formal_mode", "solver_numerics")}
             paths["artifact_project_root"] = root / "artifacts"
             for path in paths.values():

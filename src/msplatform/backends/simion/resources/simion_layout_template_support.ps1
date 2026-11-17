@@ -31,7 +31,7 @@ function Resolve-MultipoleSimionLayoutTemplate {
         [IO.Path]::GetFullPath($ModuleRoot)
     }
     $arguments = @(
-        '-m', 'projects.rf_multipole_ion_optics.runtime.simion_layout_template',
+        '-m', 'msplatform.backends.simion.rf_layout_template',
         '--repo-root', [IO.Path]::GetFullPath($RepositoryRoot),
         '--output', $resolutionPath
     )

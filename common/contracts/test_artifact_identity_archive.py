@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from common.contracts.artifact_identity_archive import (
+from msplatform.execution.artifact_identity_archive import (
     READ_ONLY_IDENTITY_POLICY,
     assert_new_run_project_allowed,
     historical_project_identities,
@@ -149,10 +149,10 @@ class ArtifactIdentityArchiveTests(unittest.TestCase):
             repository = fixture / "repo"
             retirement_fixture(repository)
             source = Path(__file__).resolve().parent
-            scripts = repository / "common/contracts"
-            scripts.mkdir(parents=True)
-            for name in ("artifact_identity_archive.py",):
-                shutil.copyfile(source / name, scripts / name)
+            source = Path(__file__).resolve().parents[2] / "src/msplatform/execution/artifact_identity_archive.py"
+            target = repository / "src/msplatform/execution/artifact_identity_archive.py"
+            target.parent.mkdir(parents=True)
+            shutil.copyfile(source, target)
             ledger = fixture / "artifacts/common/fixture.sqlite3"
             ledger.parent.mkdir(parents=True)
             ledger.write_bytes(b"untouched ledger fixture")

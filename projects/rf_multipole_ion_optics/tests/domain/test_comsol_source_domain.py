@@ -16,11 +16,11 @@ from msplatform.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
 from msplatform.components.rf_multipole import (
     source_validation as source_api,
 )
-from projects.rf_multipole_ion_optics.runtime.runtime_profile import (
+from msplatform.workflows.rf_runtime_profiles import (
     resolve_runtime_profile,
 )
-from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
-from projects.rf_multipole_ion_optics.core.compile_design_request import (
+from msplatform.workflows.rf_design_profiles import resolve_design_profile
+from msplatform.components.rf_multipole.design_request_files import (
     compile_design_request,
     apply_typed_operating_mode,
 )
@@ -65,7 +65,7 @@ ConvertTo-Json -InputObject @($preflightArguments) -Compress
 """, encoding="utf-8")
             args = subprocess.run(
                 [shutil.which("pwsh"), "-NoProfile", "-File", str(script),
-                 str(REPO / "projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1"),
+                 str(REPO / "src/msplatform/workflows/resources/run_finite_3d_transport.ps1"),
                  str(self.source), str(resolved), str(metadata)],
                 cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=30,
             )
@@ -230,7 +230,6 @@ ConvertTo-Json -InputObject @($preflightArguments) -Compress
 
 
     def source_receipt_boundary(self, mode):
-        PROJECT = REPO / "projects/rf_multipole_ion_optics"
         resolved = resolve_runtime_profile(
             REPO,
             "rf_multipole_ion_optics",
@@ -279,7 +278,7 @@ ConvertTo-Json -InputObject @($preflightArguments) -Compress
         body = "\n$ErrorActionPreference='Stop';Set-StrictMode -Version Latest\n$repoRoot=@@REPO@@;$runner=@@RUNNER@@;$testRoot=@@ROOT@@\n. (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')\n$inputDir=Join-Path $testRoot 'inputs';New-Item -ItemType Directory -Path $inputDir -Force|Out-Null\n$compiledRuntime=Get-Content -LiteralPath @@IR@@ -Raw -Encoding UTF8|ConvertFrom-Json -Depth 100\n$particleSourceInput=@@SOURCE@@;$sourceFamilyInput=$null;$OperatingPointId='fixture'\nif(@@CONFLICT@@){$sourceFamilyInput=Join-Path $testRoot 'family.json';'{}'|Set-Content -LiteralPath $sourceFamilyInput -Encoding utf8}\n$codeRoot=$repoRoot;$resolved=@@DESIGN@@;$python=@@PYTHON@@\n$tokens=$null;$errors=$null;$ast=[System.Management.Automation.Language.Parser]::ParseFile($runner,[ref]$tokens,[ref]$errors)\nif($errors.Count){throw 'production runner parse failed'}\n$start=@($ast.FindAll({param($node)$node-is[System.Management.Automation.Language.AssignmentStatementAst]-and$node.Left-is[System.Management.Automation.Language.VariableExpressionAst]-and$node.Left.VariablePath.UserPath-eq'particleSource'},$true))[0].Extent.StartOffset\n$end=@($ast.FindAll({param($node)$node-is[System.Management.Automation.Language.AssignmentStatementAst]-and$node.Left-is[System.Management.Automation.Language.VariableExpressionAst]-and$node.Left.VariablePath.UserPath-eq'sourceMeta'},$true))[0].Extent.EndOffset\n$source=Get-Content -LiteralPath $runner -Raw -Encoding UTF8\nInvoke-Expression $source.Substring($start,$end-$start)\nif(-not$sourceMeta.source_volume_snapshot){throw 'actual preflight missed snapshot semantics'}\nif(-not$volumeSnapshotReceipt-or-not(Test-Path -LiteralPath $volumeSnapshotReceipt)){throw 'frozen receipt absent'}\nif([string]$volumeReceiptIdentity.sha256-ne[string]$compiledRuntime.particle_source.volume_snapshot_receipt.sha256){throw 'receipt identity differs'}\nWrite-Output 'ACTUAL_COMSOL_SOURCE_PREPARE=PASS SNAPSHOT=true'\n"
         replacements = {
             "REPO": quote(REPO),
-            "RUNNER": quote(PROJECT / "runtime/run_finite_3d_transport.ps1"),
+            "RUNNER": quote(REPO / "src/msplatform/workflows/resources/run_finite_3d_transport.ps1"),
             "ROOT": quote(self.root),
             "IR": quote(snapshot),
             "SOURCE": quote(resolved["particle_source"]["path"]),
@@ -297,6 +296,7 @@ ConvertTo-Json -InputObject @($preflightArguments) -Compress
             text=True,
             timeout=30,
             encoding="utf-8",
+            errors="replace",
         )
 
     def test_actual_comsol_source_prepare_freezes_and_consumes_receipt(self):

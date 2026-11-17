@@ -166,11 +166,10 @@ foreach($name in @('msplatform.workflows.rf_event_table_validation','msplatform.
                 writer = csv.DictWriter(stream, fieldnames=columns)
                 writer.writeheader()
                 writer.writerows(rows)
-            helper = repo / "projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1"
-            execution = repo / "src/msplatform/execution/resources/frozen_python_package.ps1"
+            helper = repo / "src/msplatform/execution/resources/frozen_python_package.ps1"
             command = f"""$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $repoRoot={quote(repo)};$projectRoot=Join-Path $repoRoot 'projects/rf_multipole_ion_optics';$python={quote(sys.executable)}
-. {quote(helper)} -ExecutionResourcePath {quote(execution)}
+. {quote(helper)}
 $frozenPackage=New-FrozenPythonPackage -SourceRoot $repoRoot -CodeRoot {quote(root / 'code')} -Python $python -PythonModules @('src/msplatform/workflows/rf_transport_comparison.py')
 . (Get-FrozenPythonPackageFile -Package $frozenPackage -RelativePath 'src/msplatform/execution/resources/frozen_python_package.ps1')
 $cr={quote(root / 'comsol')};$sr={quote(root / 'simion')};$FrequencyHz=1100000;$PhaseRad=0

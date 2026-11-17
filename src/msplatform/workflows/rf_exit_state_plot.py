@@ -6,7 +6,6 @@ import argparse
 import csv
 import json
 import os
-import subprocess
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,6 +19,7 @@ import numpy as np  # noqa: E402
 
 from msplatform.analysis import particle_styles
 from msplatform.io.file_identity import file_sha256
+from msplatform.execution.source_identity import git_identity
 
 
 NUMERIC_COLUMNS = (
@@ -476,31 +476,6 @@ def render_four_domain_comparison(
     return figure, axes
 
 
-def _git_identity(repo_root: Path | None) -> dict:
-    if repo_root is None:
-        return {"commit": None, "working_tree": "unknown"}
-    try:
-        commit = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=repo_root,
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=5,
-        ).stdout.strip()
-        dirty = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=repo_root,
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=5,
-        ).stdout
-        return {"commit": commit, "working_tree": "dirty" if dirty else "clean"}
-    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
-        return {"commit": None, "working_tree": "unknown"}
-
-
 def _jsonable_scales(scales: dict) -> dict:
     return {
         "transverse_mm": list(scales["transverse_mm"]),
@@ -638,7 +613,7 @@ def export_figure(
             "size_inches": figure_size,
             "dpi": dpi,
         },
-        "git": _git_identity(repo_root),
+        "git": git_identity(repo_root),
         "units": {"position": "mm", "divergence_angle": "deg", "kinetic_energy": "eV", "elapsed_time": "us"},
         "filtering": "No outlier clipping or display subsampling; solver-neutral exit-event preference is frozen.",
         "normalization": "Each histogram is conditional on its selected cohort and sums to one per series.",

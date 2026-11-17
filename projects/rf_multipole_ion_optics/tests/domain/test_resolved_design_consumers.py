@@ -8,12 +8,12 @@ import unittest
 from pathlib import Path
 
 from projects.rf_multipole_ion_optics.analysis.analyze_round_rod_screen import analyze
-from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
-from projects.rf_multipole_ion_optics.simion.simion_geometry import render_gem
+from msplatform.workflows.rf_design_profiles import resolve_design_profile
+from msplatform.backends.simion.rf_finite_geometry import render_gem
 
 
 ROOT = Path(__file__).parents[4]
-MULTIPOLE = ROOT / "projects/rf_multipole_ion_optics"
+MULTIPOLE = ROOT / "src/msplatform/workflows/resources"
 
 
 class ResolvedDesignConsumerContractTest(unittest.TestCase):
@@ -36,10 +36,10 @@ class ResolvedDesignConsumerContractTest(unittest.TestCase):
             "run_finite_3d_transport.ps1",
             "run_simion_finite_3d_transport.ps1",
         ):
-            source = (MULTIPOLE / "runtime" / name).read_text(encoding="utf-8")
+            source = (MULTIPOLE / name).read_text(encoding="utf-8")
             self.assertIn("ProjectId", source)
             self.assertIn("DesignProfileId", source)
-            self.assertIn("projects.rf_multipole_ion_optics.core.compile_design_request", source)
+            self.assertIn("msplatform.components.rf_multipole.design_request_files", source)
             self.assertIn("parent_resolved_design_sha256", source)
             self.assertIn("code_inventory.json", source)
             self.assertNotIn("common\\__init__.py", source)
@@ -63,8 +63,8 @@ class ResolvedDesignConsumerContractTest(unittest.TestCase):
         self.assertNotIn("enclosure_role", gem)
 
     def test_comsol_and_simion_consume_all_canonical_drive_fields(self) -> None:
-        comsol = (ROOT / "projects/rf_multipole_ion_optics/comsol/solve_finite_3d_transport.m").read_text(encoding="utf-8")
-        simion = (ROOT / "projects/rf_multipole_ion_optics/runtime/run_simion_finite_3d_transport.ps1").read_text(
+        comsol = (ROOT / "src/msplatform/backends/comsol/matlab/solve_finite_3d_transport.m").read_text(encoding="utf-8")
+        simion = (ROOT / "src/msplatform/workflows/resources/run_simion_finite_3d_transport.ps1").read_text(
             encoding="utf-8"
         )
         for field in (
@@ -77,7 +77,7 @@ class ResolvedDesignConsumerContractTest(unittest.TestCase):
         ):
             self.assertIn(field, comsol)
             self.assertIn(field, simion)
-        lua = (ROOT / "projects/rf_multipole_ion_optics/simion/simion_transport.lua").read_text(encoding="utf-8")
+        lua = (ROOT / "src/msplatform/backends/simion/resources/simion_transport.lua").read_text(encoding="utf-8")
         kernel = (ROOT / "src/msplatform/backends/simion/resources/rf_drive.lua").read_text(encoding="utf-8")
         self.assertIn("config.waveform == 'sine' and math.sin or math.cos", kernel)
         self.assertIn("rf_drive.apply_at(ion_time_of_flight", lua)
@@ -98,8 +98,8 @@ class ResolvedDesignConsumerContractTest(unittest.TestCase):
                 "physical_detector_V": -1500.0,
             },
         )
-        comsol = (ROOT / "projects/rf_multipole_ion_optics/comsol/solve_finite_3d_transport.m").read_text(encoding="utf-8")
-        simion = (ROOT / "projects/rf_multipole_ion_optics/runtime/run_simion_finite_3d_transport.ps1").read_text(
+        comsol = (ROOT / "src/msplatform/backends/comsol/matlab/solve_finite_3d_transport.m").read_text(encoding="utf-8")
+        simion = (ROOT / "src/msplatform/workflows/resources/run_simion_finite_3d_transport.ps1").read_text(
             encoding="utf-8"
         )
         for field in (
@@ -154,8 +154,8 @@ class ResolvedDesignConsumerContractTest(unittest.TestCase):
         for token in (
             "ProjectId",
             "DesignProfileId",
-            "projects.rf_multipole_ion_optics.runtime.design_profile",
-            "projects.rf_multipole_ion_optics.core.compile_design_request",
+            "msplatform.workflows.rf_design_profiles",
+            "msplatform.components.rf_multipole.design_request_files",
             "multipole_resolved_design",
             "parent_resolved_design_sha256",
         ):
@@ -177,7 +177,7 @@ class ResolvedDesignConsumerContractTest(unittest.TestCase):
     def test_run_config_manifest_parent_hash_is_explicit(self) -> None:
         for name in ("run_finite_3d_transport.ps1", "run_simion_finite_3d_transport.ps1"):
             with self.subTest(runner=name):
-                entry = MULTIPOLE / "runtime" / name
+                entry = MULTIPOLE / name
                 script = r"""$ErrorActionPreference='Stop'
 $ast=[Management.Automation.Language.Parser]::ParseFile('@@ENTRY@@',[ref]$null,[ref]$null)
 $tables=@($ast.FindAll({param($n)
@@ -191,7 +191,7 @@ $actual=Invoke-Expression $tables[0].Extent.Text
 if($actual.parent_resolved_design_sha256-cne$resolvedHash-or$actual.particle_source_sha256-cne$sourceMeta.source_sha256){throw 'Frozen parent/source identity was not propagated'}
 """.replace('@@ENTRY@@', str(entry))
                 result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
-                                        cwd=ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30)
+                                        cwd=ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_l3_runners_freeze_optional_source_operating_point_binding(self) -> None:
@@ -199,7 +199,7 @@ if($actual.parent_resolved_design_sha256-cne$resolvedHash-or$actual.particle_sou
             "run_finite_3d_transport.ps1",
             "run_simion_finite_3d_transport.ps1",
         ):
-            source = (MULTIPOLE / "runtime" / name).read_text(encoding="utf-8")
+            source = (MULTIPOLE / name).read_text(encoding="utf-8")
             parameter_block = source[: source.index(")\n\nSet-StrictMode")]
             self.assertLess(
                 parameter_block.index("[string]$EvidenceContractPath"),

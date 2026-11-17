@@ -536,6 +536,22 @@
       "repository_integration_group": "fast",
       "matches": [
         {
+          "exact": "src/msplatform/workflows/rf_design_profiles.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/rf_runtime_profiles.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/rf_resource_budget.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/analysis/rf_comsol_transport_metrics.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
           "exact": "src/msplatform/backends/simion/source.py",
           "reason": "installed_source_serialization_changed"
         },
@@ -548,7 +564,7 @@
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
-          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$))",
+          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|build_multipole_enclosure|classify_finite_particle_terminal|compare_rf_gui_observations|configure_comsol_segment_hybrid_mesh|configure_comsol_stationary_solver|create_comsol_grounded_connector|create_multipole_round_rods|create_multipole_segmented_round_rods|export_finite_3d_particle_outputs|extract_rf_particle_records|plan_rf_exact_birth_releases|reextract_finite_3d_transport|solve_finite_3d_transport|validate_finite_extraction_context|validate_finite_source_start|visit_rf_particle_windows|prepare_interface_readiness_run|solve_deterministic_rf_quadrupole_particles|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$|matlab/(?:interface_readiness/run_release_construction_gate|mass_filter_reference/run_scan)\\.m$))",
           "reason": "common_comsol_direct_dependency_changed"
         },
         {
@@ -2597,6 +2613,22 @@
       "repository_integration_group": "regression",
       "matches": [
         {
+          "exact": "src/msplatform/workflows/rf_design_profiles.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/rf_runtime_profiles.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/rf_resource_budget.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/analysis/rf_comsol_transport_metrics.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
           "exact": "src/msplatform/workflows/rf_batch_continuation.py",
           "reason": "installed_rf_batch_continuation_changed"
         },
@@ -2637,7 +2669,7 @@
           "reason": "common_simion_dependency_changed"
         },
         {
-          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$))",
+          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|build_multipole_enclosure|classify_finite_particle_terminal|compare_rf_gui_observations|configure_comsol_segment_hybrid_mesh|configure_comsol_stationary_solver|create_comsol_grounded_connector|create_multipole_round_rods|create_multipole_segmented_round_rods|export_finite_3d_particle_outputs|extract_rf_particle_records|plan_rf_exact_birth_releases|reextract_finite_3d_transport|solve_finite_3d_transport|validate_finite_extraction_context|validate_finite_source_start|visit_rf_particle_windows|prepare_interface_readiness_run|solve_deterministic_rf_quadrupole_particles|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$|matlab/(?:interface_readiness/run_release_construction_gate|mass_filter_reference/run_scan)\\.m$))",
           "reason": "common_comsol_dependency_changed"
         },
         {
@@ -2874,6 +2906,22 @@
       "dependency_profile": "locked",
       "repository_integration_group": "regression",
       "matches": [
+        {
+          "exact": "src/msplatform/workflows/rf_design_profiles.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/rf_runtime_profiles.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/rf_resource_budget.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/analysis/rf_comsol_transport_metrics.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
         {
           "exact": "src/msplatform/backends/simion/collision_overlay.py",
           "reason": "collision_overlay_binding_consumer_changed"
@@ -4544,7 +4592,7 @@
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
-          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$))",
+          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|build_multipole_enclosure|classify_finite_particle_terminal|compare_rf_gui_observations|configure_comsol_segment_hybrid_mesh|configure_comsol_stationary_solver|create_comsol_grounded_connector|create_multipole_round_rods|create_multipole_segmented_round_rods|export_finite_3d_particle_outputs|extract_rf_particle_records|plan_rf_exact_birth_releases|reextract_finite_3d_transport|solve_finite_3d_transport|validate_finite_extraction_context|validate_finite_source_start|visit_rf_particle_windows|prepare_interface_readiness_run|solve_deterministic_rf_quadrupole_particles|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$|matlab/(?:interface_readiness/run_release_construction_gate|mass_filter_reference/run_scan)\\.m$))",
           "reason": "common_comsol_direct_dependency_changed"
         },
         {
@@ -4918,6 +4966,22 @@
       ],
       "matches": [
         {
+          "exact": "src/msplatform/workflows/rf_design_profiles.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/rf_runtime_profiles.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/rf_resource_budget.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/analysis/rf_comsol_transport_metrics.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
           "exact": "src/msplatform/components/rf_multipole/event_table.py",
           "reason": "rf_event_or_axis_actual_consumer_changed"
         },
@@ -4970,7 +5034,7 @@
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
-          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$))",
+          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|build_multipole_enclosure|classify_finite_particle_terminal|compare_rf_gui_observations|configure_comsol_segment_hybrid_mesh|configure_comsol_stationary_solver|create_comsol_grounded_connector|create_multipole_round_rods|create_multipole_segmented_round_rods|export_finite_3d_particle_outputs|extract_rf_particle_records|plan_rf_exact_birth_releases|reextract_finite_3d_transport|solve_finite_3d_transport|validate_finite_extraction_context|validate_finite_source_start|visit_rf_particle_windows|prepare_interface_readiness_run|solve_deterministic_rf_quadrupole_particles|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$|matlab/(?:interface_readiness/run_release_construction_gate|mass_filter_reference/run_scan)\\.m$))",
           "reason": "common_comsol_direct_dependency_changed"
         },
         {
@@ -5463,6 +5527,22 @@
       "repository_integration_group": "regression",
       "matches": [
         {
+          "exact": "src/msplatform/workflows/rf_design_profiles.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/rf_runtime_profiles.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/rf_resource_budget.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/analysis/rf_comsol_transport_metrics.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
           "exact": "src/msplatform/backends/simion/source.py",
           "reason": "installed_source_serialization_changed"
         },
@@ -5483,7 +5563,7 @@
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
-          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$))",
+          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|build_multipole_enclosure|classify_finite_particle_terminal|compare_rf_gui_observations|configure_comsol_segment_hybrid_mesh|configure_comsol_stationary_solver|create_comsol_grounded_connector|create_multipole_round_rods|create_multipole_segmented_round_rods|export_finite_3d_particle_outputs|extract_rf_particle_records|plan_rf_exact_birth_releases|reextract_finite_3d_transport|solve_finite_3d_transport|validate_finite_extraction_context|validate_finite_source_start|visit_rf_particle_windows|prepare_interface_readiness_run|solve_deterministic_rf_quadrupole_particles|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$|matlab/(?:interface_readiness/run_release_construction_gate|mass_filter_reference/run_scan)\\.m$))",
           "reason": "common_comsol_direct_dependency_changed"
         },
         {
@@ -5584,6 +5664,22 @@
       "repository_integration_group": "regression",
       "matches": [
         {
+          "exact": "src/msplatform/workflows/rf_design_profiles.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/rf_runtime_profiles.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/rf_resource_budget.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/analysis/rf_comsol_transport_metrics.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
           "exact": "src/msplatform/backends/simion/source.py",
           "reason": "installed_source_serialization_changed"
         },
@@ -5604,7 +5700,7 @@
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
-          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$))",
+          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|build_multipole_enclosure|classify_finite_particle_terminal|compare_rf_gui_observations|configure_comsol_segment_hybrid_mesh|configure_comsol_stationary_solver|create_comsol_grounded_connector|create_multipole_round_rods|create_multipole_segmented_round_rods|export_finite_3d_particle_outputs|extract_rf_particle_records|plan_rf_exact_birth_releases|reextract_finite_3d_transport|solve_finite_3d_transport|validate_finite_extraction_context|validate_finite_source_start|visit_rf_particle_windows|prepare_interface_readiness_run|solve_deterministic_rf_quadrupole_particles|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$|matlab/(?:interface_readiness/run_release_construction_gate|mass_filter_reference/run_scan)\\.m$))",
           "reason": "common_comsol_direct_dependency_changed"
         },
         {
@@ -5922,7 +6018,7 @@
           "reason": "shared_rod_cross_section_dependency_changed"
         },
         {
-          "exact": "projects/rf_multipole_ion_optics/simion/simion_geometry.py",
+          "exact": "src/msplatform/backends/simion/rf_finite_geometry.py",
           "reason": "shared_simion_rod_renderer_dependency_changed"
         },
         {
@@ -6031,7 +6127,7 @@
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
-          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$))",
+          "regex": "(?:^common/comsol/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|build_multipole_enclosure|classify_finite_particle_terminal|compare_rf_gui_observations|configure_comsol_segment_hybrid_mesh|configure_comsol_stationary_solver|create_comsol_grounded_connector|create_multipole_round_rods|create_multipole_segmented_round_rods|export_finite_3d_particle_outputs|extract_rf_particle_records|plan_rf_exact_birth_releases|reextract_finite_3d_transport|solve_finite_3d_transport|validate_finite_extraction_context|validate_finite_source_start|visit_rf_particle_windows|prepare_interface_readiness_run|solve_deterministic_rf_quadrupole_particles|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$|matlab/(?:interface_readiness/run_release_construction_gate|mass_filter_reference/run_scan)\\.m$))",
           "reason": "common_comsol_direct_dependency_changed"
         },
         {

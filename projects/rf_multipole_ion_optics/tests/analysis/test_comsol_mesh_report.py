@@ -50,7 +50,7 @@ class ComsolMeshReportTests(unittest.TestCase):
             input_path.write_text(json.dumps(inputs), encoding="utf-8", newline="\n")
             def quote(value):
                 return "'" + str(value).replace("'", "''") + "'"
-            source = (PROJECT / "runtime/run_finite_3d_transport.ps1").read_text(encoding="utf-8")
+            source = (PROJECT.parents[1] / "src/msplatform/workflows/resources/run_finite_3d_transport.ps1").read_text(encoding="utf-8")
             start = source.index("      $expectedMeshStrategy=")
             end = source.index("\n", source.index("$meshCells=Assert-MultipoleMeshBuildReport", start))
             call_path = folder / "actual_finite_call.ps1"
@@ -80,7 +80,7 @@ foreach($case in $cases){
 }
 ConvertTo-Json -InputObject ($results.ToArray()) -Depth 10 -Compress
 """
-            script = script.replace("@@PREFLIGHT@@", quote(PROJECT / "runtime/finite_3d_transport_preflight.ps1"))
+            script = script.replace("@@PREFLIGHT@@", quote(ROOT / "src/msplatform/workflows/resources/finite_3d_transport_preflight.ps1"))
             script = script.replace("@@CASES@@", quote(input_path)).replace("@@ACTUAL_CALL@@", quote(call_path))
             result = subprocess.run([PWSH, "-NoProfile", "-NonInteractive", "-Command", script],
                                     cwd=ROOT, capture_output=True, text=True, encoding="utf-8", timeout=20)
@@ -175,10 +175,9 @@ ConvertTo-Json -InputObject ($results.ToArray()) -Depth 10 -Compress
     def test_real_mesh_consumers_share_public_mesh_and_size_helpers(self):
         for name in ("solve_finite_3d_transport.m", "solve_deterministic_rf_quadrupole_particles.m"):
             with self.subTest(consumer=name):
-                source = (PROJECT / "comsol" / name).read_text(encoding="utf-8")
+                source = (ROOT / "src/msplatform/backends/comsol/matlab" / name).read_text(encoding="utf-8")
                 self.assertIn("configure_comsol_mesh(mesh,", source)
-                self.assertIn("'common','comsol'", source)
-                self.assertIn("'src','msplatform','backends','comsol','matlab'", source)
+                self.assertNotIn("'common','comsol'", source)
         helper = (ROOT / "src/msplatform/backends/comsol/matlab/configure_comsol_mesh.m").read_text(encoding="utf-8")
         self.assertIn("add_comsol_size_feature(mesh,", helper)
 

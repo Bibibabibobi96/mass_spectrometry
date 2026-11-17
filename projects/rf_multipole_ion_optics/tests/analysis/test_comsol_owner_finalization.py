@@ -12,7 +12,7 @@ import unittest
 from common.contracts.test_support import run_artifact_workflow as workflow_fixture
 
 REPO = Path(__file__).resolve().parents[4]
-CLI = REPO / "projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1"
+CLI = REPO / "src/msplatform/workflows/resources/run_finite_3d_transport.ps1"
 OUTER = (
     REPO
     / "projects/rf_multipole_ion_optics/workflows/no_collision_transport/run_comsol.ps1"
@@ -78,7 +78,7 @@ $particleSourceInput='unused-source';$sourceFamilyInput='unused-family';$enginee
 $records=@(foreach($scenario in @('capacity','package','package_cleanup')){
  foreach($callerPresent in @($true,$false)){
   if($callerPresent){$env:SIMULATION_PYTHON_EXE='CALLER_PYTHON'}else{Remove-Item Env:SIMULATION_PYTHON_EXE -ErrorAction SilentlyContinue}
-  $env:PYTHONPATH='CALLER_PATH'
+  $env:PYTHONPATH='CALLER_PATH';$initialPythonPath=$env:PYTHONPATH
   $script:events=[Collections.Generic.List[string]]::new();$script:nativeCount=0;$script:aliasCount=0;$script:session=$null
   $failure=$null;try{& $bootstrap}catch{$failure=$_}
   $expected=if($scenario-eq'capacity'){'CAPACITY_PRIMARY'}else{'PACKAGE_PRIMARY'}
@@ -379,7 +379,7 @@ try{{$null=Complete-FiniteComsolOwner -Context $context -State $state -RunId '{r
             tree = root / "source"
             target = (
                 tree
-                / "projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1"
+                / "src/msplatform/workflows/resources/run_finite_3d_transport.ps1"
             )
             target.parent.mkdir(parents=True)
             shutil.copyfile(CLI, target)

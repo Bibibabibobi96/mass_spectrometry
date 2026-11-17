@@ -306,6 +306,6 @@ def run_fixture_process(command: list[str], *, root: Path, environment: dict[str
                 failure.add_note(f"FIXTURE_DIAGNOSTICS={destination}")
                 for secondary in metadata["secondary_errors"]:
                     failure.add_note(secondary)
-    result = subprocess.CompletedProcess(command, process.returncode, stdout.decode("utf-8"), stderr.decode("utf-8"))
+    result = subprocess.CompletedProcess(command, process.returncode, stdout.decode("utf-8", errors="replace"), stderr.decode("utf-8", errors="replace"))
     result.fixture_diagnostics = str(destination)
     return result

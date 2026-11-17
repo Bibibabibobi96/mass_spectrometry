@@ -17,7 +17,7 @@ from common.contracts.artifact_project import ensure_artifact_project
 from msplatform.execution.manifest_publication import build_run_manifest
 from msplatform.execution.manifest_publication import publish_run_manifest
 from msplatform.execution.terminal_publication import publish_terminal_state
-from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
+from msplatform.workflows.rf_design_profiles import resolve_design_profile
 from msplatform.components.rf_multipole.family_contract import (
     from_high_order_resolved_design,
     l1_l2_transport_contract_from_resolved_design,

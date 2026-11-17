@@ -307,7 +307,7 @@ try {
     resource_budget_support = 'common\resource_budget_support.ps1'
     artifact_support = 'common\contracts\run_artifact_support.ps1'
     capacity_protection = 'common\contracts\capacity_protection.py'
-    artifact_identity_archive = 'common\contracts\artifact_identity_archive.py'
+    artifact_identity_archive = 'src\msplatform\execution\artifact_identity_archive.py'
     project_registry_builder = 'common\contracts\build_project_registry.py'
   }
   foreach ($entry in $commonFrozenFiles.GetEnumerator()) {

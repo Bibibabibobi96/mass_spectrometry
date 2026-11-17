@@ -9,7 +9,7 @@ from typing import Any
 
 from msplatform.io.file_identity import repository_text_sha256
 from msplatform.contracts.machine_contracts import ContractError, validate_schema
-from projects.rf_multipole_ion_optics.core.compile_design_request import (
+from msplatform.components.rf_multipole.design_request_files import (
     apply_typed_operating_mode,
     compile_governed_design_request_file,
     validate_design_request,

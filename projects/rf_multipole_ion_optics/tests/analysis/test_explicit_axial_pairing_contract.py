@@ -4,7 +4,7 @@ import json
 import unittest
 from pathlib import Path
 
-from projects.rf_multipole_ion_optics.runtime.runtime_profile import resolve_runtime_profile
+from msplatform.workflows.rf_runtime_profiles import resolve_runtime_profile
 
 
 PROJECT_ROOT = Path(__file__).parents[2]

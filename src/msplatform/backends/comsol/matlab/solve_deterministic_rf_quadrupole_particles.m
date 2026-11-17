@@ -3,12 +3,7 @@ function result = solve_deterministic_rf_quadrupole_particles(runConfig, executi
 % This project-local mechanism does not select a scientific workflow. Dedicated
 % entries must validate and compile their claim before calling this function.
 
-projectRoot = fileparts(fileparts(mfilename('fullpath')));
-addpath(projectRoot);
-repoRoot=fileparts(fileparts(projectRoot));
-addpath(fullfile(repoRoot,'common','comsol'));
-addpath(fullfile(repoRoot,'src','msplatform','backends','comsol','matlab'));
-addpath(fullfile(projectRoot,'comsol'));
+addpath(fileparts(mfilename('fullpath')));
 assert(nargin>=1 && nargin<=2 && isstruct(runConfig), ...
     'A fully compiled run-config struct is required.');
 releaseGateEnabled=nargin==2;

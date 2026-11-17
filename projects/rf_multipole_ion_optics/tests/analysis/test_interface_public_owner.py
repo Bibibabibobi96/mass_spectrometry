@@ -135,7 +135,7 @@ foreach($ignored in @('ReleaseConstructionGate','NumericalExperimentId','Startup
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $repoRoot=REPO;$python=PYTHON
 . (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
-. (Join-Path $repoRoot 'projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1') -ExecutionResourcePath (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
 $t=$null;$e=$null;$ast=[Management.Automation.Language.Parser]::ParseFile(ENTRY,[ref]$t,[ref]$e)
 $list=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$frozenPythonRelativePaths'},$true)
 Invoke-Expression $list.Extent.Text

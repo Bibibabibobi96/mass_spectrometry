@@ -7348,7 +7348,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             recipe, components = direct_fixture()
             spec = halton_spec(7)
             from msplatform.ion_release.release import generate_release_states
-            from projects.rf_multipole_ion_optics.core.compile_design_request import compile_design_request
+            from msplatform.components.rf_multipole.design_request_files import compile_design_request
             from msplatform.components.rf_multipole.assembly_interface import build_assembly_interface
             from projects.rf_multipole_ion_optics.tests.domain.test_compile_design_request import design_request
             from msplatform.assembly.resolve_assembly import compile_assembly_layout

@@ -1650,7 +1650,7 @@ $four=@('projects/rf_multipole_ion_optics/docs/COMSOL.md',$compiler,
  'projects/rf_multipole_ion_optics/variants/quadrupole/config/comsol_solver_numerics.json')
 $cases=@(@{name='four';paths=$four},@{name='deleted';paths=@($compiler)},
  @{name='renamed';paths=@($compiler,'projects/rf_multipole_ion_optics/runtime/unknown_new_name.ps1')},
- @{name='other';paths=@('projects/rf_multipole_ion_optics/runtime/runtime_profile.py')},
+ @{name='other';paths=@('src/msplatform/workflows/rf_runtime_profiles.py')},
  @{name='docs';paths=@('projects/rf_multipole_ion_optics/docs/COMSOL.md')})
 $result=@(foreach($case in $cases){
  $selected=@{};foreach($stage in @('rf_multipole_domain_tests','instrument_assembly_integration',

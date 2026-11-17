@@ -13,7 +13,7 @@
 
 三变体无碰撞传输使用[共同求解器投影](IMPLEMENTATION.md#求解器投影)和具名runtime profile。
 活动GEM由[设计同步器](../analysis/sync_simion_geometry.py)从具名profile编译的resolved发布生成，
-生成GEM不得手改。无碰撞、接口就绪和质量过滤入口共用[simion_transport.lua](../simion/simion_transport.lua)，
+生成GEM不得手改。无碰撞、接口就绪和质量过滤入口共用[simion_transport.lua](../../../src/msplatform/backends/simion/resources/simion_transport.lua)，
 各自冻结实际Program、粒子与PA输入；共享机制不扩大各workflow的物理资格。
 默认裸杆不生成接地边界电极；显式圆柱壳及可选端盖共用同一0 V电极。
 外部孔板／透镜由装配加入，不在Program中补出几何或可调端盖电压。

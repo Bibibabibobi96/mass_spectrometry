@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import unittest
 
-from projects.rf_multipole_ion_optics.analysis.analyze_comsol_transport_metrics import derive
+from msplatform.backends.comsol.rf_transport_metrics import derive
 
 
 class AnalyzeComsolTransportMetricsTests(unittest.TestCase):
     def test_derives_case_metrics_from_canonical_state_and_event_rows(self) -> None:
         from msplatform.analysis.particle_census import partition_cohort
-        from projects.rf_multipole_ion_optics.analysis import analyze_comsol_transport_metrics
+        from msplatform.backends.comsol import rf_transport_metrics as rf_comsol_transport_metrics
 
-        self.assertIs(analyze_comsol_transport_metrics.partition_cohort, partition_cohort)
+        self.assertIs(rf_comsol_transport_metrics.partition_cohort, partition_cohort)
         self.assertEqual(partition_cohort.__module__, "msplatform.analysis.particle_census")
         state = [
             {"particle_id": "1", "event": "source", "status": "alive", "radial_position_mm": "0", "kinetic_energy_eV": "2", "max_rod_radius_mm": "1"},

@@ -15,7 +15,7 @@ from msplatform.contracts.particle_physics import (
 )
 from msplatform.components.rf_multipole.source_validation import load_validated_source
 from msplatform.backends.simion.source import render_source_states, render_standard_beams
-from projects.rf_multipole_ion_optics.core.interface_geometry import transport_numerical_domain
+from msplatform.components.rf_multipole.interface_geometry import transport_numerical_domain
 
 
 def _ion11_rows(

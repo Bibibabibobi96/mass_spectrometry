@@ -18,7 +18,7 @@ from msplatform.execution.retention import verify_record
 from projects.rf_multipole_ion_optics.analysis.analyze_round_rod_screen import analyze
 from projects.rf_multipole_ion_optics.runtime._transport_run_artifacts import ARTIFACT_PROJECTS_ROOT, transport_run
 from msplatform.components.rf_multipole import ideal_transport
-from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
+from msplatform.workflows.rf_design_profiles import resolve_design_profile
 
 
 def _validated_selected_samples(rows: list[dict[str, str]], contract: dict, design: dict) -> list[dict[str, str]]:

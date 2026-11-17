@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from msplatform.analysis.particle_census import partition_cohort
-from projects.rf_multipole_ion_optics.core.interface_geometry import transport_observations
+from msplatform.components.rf_multipole.interface_geometry import transport_observations
 
 import argparse
 import csv

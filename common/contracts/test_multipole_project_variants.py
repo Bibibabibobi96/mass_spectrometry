@@ -14,13 +14,13 @@ import unittest
 
 from common.contracts.build_project_registry import validate_descriptor, validate_structural_variants
 from msplatform.contracts.machine_contracts import ContractError
-from projects.rf_multipole_ion_optics.core.compile_design_request import (
+from msplatform.components.rf_multipole.design_request_files import (
     compile_governed_design_request_file,
 )
-from projects.rf_multipole_ion_optics.runtime.design_profile import (
+from msplatform.workflows.rf_design_profiles import (
     resolve_design_profile, validate_design_profile_structures,
 )
-from projects.rf_multipole_ion_optics.runtime.runtime_profile import resolve_runtime_profile
+from msplatform.workflows.rf_runtime_profiles import resolve_runtime_profile
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -86,9 +86,6 @@ class MultipoleStructuralVariantTests(unittest.TestCase):
                 REPO_ROOT / "common/paths/repository_root.py",
                 root / "common/paths/repository_root.py",
             )
-            runtime = root / "projects" / PROJECT_ID / "runtime"
-            runtime.mkdir()
-            shutil.copyfile(PROJECT_ROOT / "runtime/design_profile.py", runtime / "design_profile.py")
             for variant in ("quadrupole", "hexapole", "octupole"):
                 relative = f"projects/{PROJECT_ID}/variants/{variant}/config"
                 shutil.copytree(REPO_ROOT / relative, root / relative, ignore=ignore)
@@ -96,7 +93,7 @@ class MultipoleStructuralVariantTests(unittest.TestCase):
             shutil.copyfile(REPO_ROOT / "config/project_registry.json", root / "config/project_registry.json")
             code = (
                 "import json,sys; from pathlib import Path; sys.path[:0]=json.loads(sys.argv[2]); "
-                "from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile; "
+                "from msplatform.workflows.rf_design_profiles import resolve_design_profile; "
                 "results=[resolve_design_profile(Path(sys.argv[1]),'rf_multipole_ion_optics',v+'_no_acceleration_full_length') "
                 "for v in ('quadrupole','hexapole','octupole')]; "
                 "assert [r['resolved_design']['identity']['electrode_count'] for r in results]==[4,6,8]; "

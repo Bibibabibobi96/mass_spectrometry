@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from projects.rf_multipole_ion_optics.runtime.runtime_profile import resolve_runtime_profile
+from msplatform.workflows.rf_runtime_profiles import resolve_runtime_profile
 from msplatform.contracts.particle_count_policy import validate_prefix_particle_sources
 
 

@@ -14,7 +14,7 @@ import numpy as np
 
 from msplatform.analysis.particle_styles import prepare_visual_style_map
 
-from projects.rf_multipole_ion_optics.analysis.exit_state_plot import (
+from msplatform.workflows.rf_exit_state_plot import (
     HISTOGRAMS,
     NoExitState,
     main,
@@ -115,7 +115,7 @@ class ExitStatePlotTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell7 required")
     def test_finite_plot_fragment_skips_zero_exit_and_propagates_bad_source(self):
         repo = Path(__file__).resolve().parents[4]
-        runner = (repo / "projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1").read_text(encoding="utf-8")
+        runner = (repo / "src/msplatform/workflows/resources/run_finite_3d_transport.ps1").read_text(encoding="utf-8")
         start = runner.rfind("  Push-Location $codeRoot", 0, runner.index("    $exitStatePlotLabel="))
         end = runner.index("  if($axialTopology-ne'none'){", start)
         fragment = runner[start:end]
@@ -173,7 +173,7 @@ class ExitStatePlotTests(unittest.TestCase):
             argv = ["exit_state_plot", "--series", f"single={source}", "--output", str(output),
                     "--manifest", str(manifest), "--title", "fixture", "--purpose", "test", "--allow-no-exit"]
             with patch("sys.argv", argv), patch(
-                    "projects.rf_multipole_ion_optics.analysis.exit_state_plot.file_sha256",
+                    "msplatform.workflows.rf_exit_state_plot.file_sha256",
                     side_effect=AssertionError("No-exit metadata does not need a new payload hash")):
                 self.assertEqual(main(), 0)
             document = json.loads(manifest.read_text(encoding="utf-8"))
@@ -585,7 +585,7 @@ class ExitStatePlotTests(unittest.TestCase):
                 return real_replace(source_path, destination_path)
 
             with patch(
-                "projects.rf_multipole_ion_optics.analysis.exit_state_plot._replace_path",
+                "msplatform.workflows.rf_exit_state_plot._replace_path",
                 side_effect=fail_manifest_install,
             ):
                 with self.assertRaisesRegex(OSError, "manifest commit"):

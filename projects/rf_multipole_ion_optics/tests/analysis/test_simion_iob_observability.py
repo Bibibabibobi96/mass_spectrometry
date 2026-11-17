@@ -11,8 +11,8 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
-EXECUTION_SUPPORT = PROJECT_ROOT / "runtime" / "simion_execution.ps1"
-INSPECT_SCRIPT = PROJECT_ROOT / "simion" / "workbench" / "inspect_builtin_quad_reference.lua"
+EXECUTION_SUPPORT = REPO_ROOT / "src/msplatform/backends/simion/resources/simion_execution.ps1"
+INSPECT_SCRIPT = REPO_ROOT / "src/msplatform/backends/simion/resources/inspect_builtin_quad_reference.lua"
 ARTIFACT_SUPPORT = REPO_ROOT / "common" / "contracts" / "run_artifact_support.ps1"
 INTERFACE_RUNNER = PROJECT_ROOT / "workflows" / "interface_readiness" / "run_simion.ps1"
 MASS_FILTER_RUNNER = PROJECT_ROOT / "workflows" / "mass_filter_reference" / "run_simion.ps1"
@@ -44,7 +44,7 @@ class SimionIobObservabilityTests(unittest.TestCase):
         script = r"""
 $ErrorActionPreference='Stop'
 . (Join-Path $PWD 'common/contracts/run_artifact_support.ps1')
-. (Join-Path $PWD 'projects/rf_multipole_ion_optics/runtime/simion_execution.ps1')
+. (Join-Path $PWD 'src/msplatform/backends/simion/resources/simion_execution.ps1')
 function Invoke-ResourceBudgetedProcess {
  param($ArgumentList,$Environment,$RedirectStandardOutput,$RedirectStandardError)
  if($Environment.MULTIPOLE_SIMION_RF_DRIVE_KERNEL_LUA-cne'kernel.lua'){throw 'Kernel input was not explicit'}

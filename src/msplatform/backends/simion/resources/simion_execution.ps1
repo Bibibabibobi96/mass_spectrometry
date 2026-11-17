@@ -1,6 +1,6 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot '..\..\..\common\resource_budget_support.ps1')
+. (Join-Path $PSScriptRoot '..\..\..\..\..\common\resource_budget_support.ps1')
 
 function Get-RfSimionStoppedWriterCompletion {
     param($HostLease,[Parameter(Mandatory)][AllowEmptyCollection()]$NativeOperations,[Parameter(Mandatory)][hashtable]$State)
@@ -69,7 +69,7 @@ function Write-RfSimionPreparedBatchCompletion {
     $count=[int]$BatchRun.batch.particle_id_max-[int]$BatchRun.batch.particle_id_min+1
     Push-Location $RepositoryRoot
     try{
-        & $PythonExe -m projects.rf_multipole_ion_optics.runtime.simion_batch_completion `
+        & $PythonExe -m msplatform.backends.simion.rf_batch_completion `
             --stdout $Record.specification.stdout --state $BatchRun.state --summary $BatchRun.summary --particle-count $count | Out-Null
         if($LASTEXITCODE-ne0){throw 'RF prepared batch completion is invalid.'}
     }finally{Pop-Location}

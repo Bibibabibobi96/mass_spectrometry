@@ -419,7 +419,7 @@ package、容量 session、冻结 PS 入口、原生退出和实际 host release
 | 职责 | 入口 |
 |---|---|
 | 身份、结构变体与发现能力 | [project.json](../config/project.json) |
-| 变体极数、电极数与物理设计校验 | [家族合同](../../../src/msplatform/components/rf_multipole/family_contract.json)、[项目设计Schema](../config/contracts/design_profiles.schema.json)、[设计解析器](../runtime/design_profile.py) |
+| 变体极数、电极数与物理设计校验 | [家族合同](../../../src/msplatform/components/rf_multipole/family_contract.json)、[项目设计Schema](../config/contracts/design_profiles.schema.json)、[设计解析器](../../../src/msplatform/workflows/rf_design_profiles.py) |
 | 具名设计与typed电气模式 | [design_profiles.json](../config/design_profiles.json)、[operating_modes.json](../config/operating_modes.json) |
 | 完整runtime与粒子源绑定 | [runtime_profiles.json](../config/runtime_profiles.json)、[particle_source_profiles.json](../config/particle_source_profiles.json) |
 | 三变体传输数值注册表 | [COMSOL](../config/comsol_solver_numerics.json)、[SIMION](../config/simion_solver_numerics.json) |
@@ -431,7 +431,7 @@ package、容量 session、冻结 PS 入口、原生退出和实际 host release
 
 活动runtime编译完整输入后执行；不能用命令行自由覆盖几何、RF/DC、源或已绑定数值语义。
 公共命令预览通过execution profile的`runtime_binding`调用本项目
-[`resolve_execution_binding`](../runtime/runtime_profile.py)，具名runtime与campaign均复用既有解析器；
+[`resolve_execution_binding`](../../../src/msplatform/workflows/rf_runtime_profiles.py)，具名runtime与campaign均复用既有解析器；
 本项目提取实际结构及campaign的`authorized_run_id`，公共编译器负责身份、能力归属和受保护上下文校验。
 纯回归覆盖三种结构、campaign身份、未知与跨结构拒绝及真实CLI预览；`authorized=False`仍可预览，
 实际商业执行继续由`validate_pilot_budget`失败关闭，不改变上面的未授权结论。
@@ -1478,6 +1478,8 @@ resources selected by the production freezer, including its canonical MATLAB mes
 helpers. Its detached-execution and missing-frozen-input assertions remain in force;
 the fixture does not run COMSOL or establish a new native result.
 
+RF design-file compilation, typed electrical modes, runtime/design profile and resource-budget resolution now live only in `msplatform.components.rf_multipole.design_request_files` and the installed `rf_design_profiles`, `rf_runtime_profiles` and `rf_resource_budget` workflows. Their former project implementations are retired, and callers use those owners directly. The COMSOL finite metric derivation is solely `msplatform.analysis.rf_comsol_transport_metrics`; scientific fields, source identities, acceptance semantics and native behavior are unchanged. Focused validation passed 16 compiler, 28 runtime, 5 typed-mode, 68 budget and 7 metric tests plus Ruff. These are source-level software results, not ordinary-install, native or scientific qualification; the two finite runners remain the next migration responsibility.
+
 RF stationary BVP, deterministic common-point generation and CSV/authority validation now live only in
 `msplatform.components.rf_multipole.stationary_field_sampling`. The generic descriptive comparator remains
 `msplatform.analysis.field_comparison`; the RF-specific legacy diagnostic reader remains separate and applies
@@ -1521,7 +1523,7 @@ inferred from these software results.
 The public RF stationary COMSOL field stage now lives in
 `msplatform.backends.comsol.rf_stationary_field`, with generic preregistration, owner and recovery
 wiring in `msplatform.workflows.rf_stationary`. It does not edit or add a branch to the old
-PowerShell transport runner. The canonical project MATLAB retains the existing field-only physics;
+PowerShell transport runner. The installed backend MATLAB retains the existing field-only physics;
 that branch now saves its MPH before returning. A second managed operation cold-loads the saved
 parent, requires nonempty differential/static solution identities and exports both cases with zero
 Compute and zero parent save. The Assembly single-workpoint owner was not reused because its
@@ -1584,6 +1586,14 @@ numerical convergence, cross-solver equivalence, GUI or Formal qualification. Re
 `43990928916` independently passed the two latest stationary production changes at `8fd714bd`;
 repository integration was not selected.
 
+The finite COMSOL and SIMION PowerShell runners now execute from `msplatform.workflows.resources` without
+changing their script names, parameter contracts, run identity, recovery or finalization behavior. SIMION layout,
+field checkpoints, particle projection and native Lua are installed backend resources; device/source rules remain
+in the RF component, while metrics, evidence and figures use their analysis/workflow owners. Frozen closures now
+contain these installed owners plus research config/variants rather than the old implementation directories.
+The architecture boundary and 125 focused tests pass. Full RF consumers, ordinary installation, native runs and
+complete Changed remain required; this ownership migration alone does not qualify any scientific run.
+
 The RF whole-batch continuation planner is available through the installed
 `msplatform.workflows.rf_batch_continuation` owner. Its implementation is byte-identical
 to the retired project runtime body. All six production calls use the installed API
@@ -1604,6 +1614,17 @@ Evidence is retained in workspace
 through `v87-rf-continuation-installed-agent8-r3`.
 These are focused migration and installation results, not a full installed-parent,
 Repository, commercial-solver or native-flight qualification.
+
+The finite3D MATLAB solver, rods/enclosure, mesh controls, release construction,
+extraction and cold-reopen resources now have their sole executable sources in
+`msplatform.backends.comsol.matlab`. The stationary `_science_sources` selector
+accepts only that installed implementation and freezes its backend closure; it no
+longer reads the RF project or `common/comsol`. Interface and mass-filter
+freezers reference the same backend paths. Scientific designs, source cohorts,
+numerics and research criteria remain project inputs. This is a resource-ownership
+migration, not a new solver, native result or retirement of the finite-3D runners.
+Ordinary-install, blocked-project native solve/cold-read and failure-propagation
+acceptance remain separate obligations.
 The integration merge then passed all three RF continuation/checkpoint/runner
 modules and both RF/COMSOL Changed selectors in one frozen epoch: 71 parents,
 zero skips/failures, 107.136 seconds (112.839 guarded wall). Actual candidate

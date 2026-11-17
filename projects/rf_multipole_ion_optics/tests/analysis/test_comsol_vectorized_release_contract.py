@@ -7,8 +7,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 PROJECT_ROOT = REPO_ROOT / "projects/rf_multipole_ion_optics"
-MATLAB_CORE = REPO_ROOT / "projects/rf_multipole_ion_optics/comsol/solve_finite_3d_transport.m"
-RUNNER = REPO_ROOT / "projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1"
+MATLAB_CORE = REPO_ROOT / "src/msplatform/backends/comsol/matlab/solve_finite_3d_transport.m"
+RUNNER = REPO_ROOT / "src/msplatform/workflows/resources/run_finite_3d_transport.ps1"
 RUNTIME_PROFILES = PROJECT_ROOT / "config/runtime_profiles.json"
 PREREGISTRATION = (
     PROJECT_ROOT
@@ -58,7 +58,7 @@ class ComsolVectorizedReleaseContractTests(unittest.TestCase):
     def test_active_solvers_share_exact_birth_planner_without_phase_workarounds(self) -> None:
         # Exact grouping, row mapping, species and weights are exercised by
         # RfExactBirthReleasePlanTest; keep only the two production adapter seams.
-        for path in (MATLAB_CORE, PROJECT_ROOT / "comsol/solve_deterministic_rf_quadrupole_particles.m"):
+        for path in (MATLAB_CORE, REPO_ROOT / "src/msplatform/backends/comsol/matlab/solve_deterministic_rf_quadrupole_particles.m"):
             with self.subTest(consumer=path.name):
                 source = path.read_text(encoding="utf-8-sig")
                 self.assertIn("plan_rf_exact_birth_releases(", source)

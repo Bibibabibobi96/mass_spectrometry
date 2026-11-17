@@ -661,7 +661,7 @@ Write-Output 'FROZEN_BUDGET_OBSERVATION=PASS'
             "src/msplatform/execution/manifest_verification.py",
             "src/msplatform/execution/artifact_naming.py",
             "src/msplatform/io/file_identity.py",
-            "common/contracts/artifact_identity_archive.py",
+            "src/msplatform/execution/artifact_identity_archive.py",
             "common/contracts/build_project_registry.py",
             "src/msplatform/execution/inputs.py",
         )

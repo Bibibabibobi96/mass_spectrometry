@@ -3,10 +3,7 @@ assert(~isempty(reportPath), ...
     'COMSOL_BOOTSTRAP_REPORT must identify the shared launcher report.');
 writeReportAtomically(reportPath,sprintf('STATUS=RUNNING\n'));
 
-taskDir=fileparts(mfilename('fullpath'));
-projectRoot=fileparts(fileparts(taskDir));
-addpath(projectRoot);
-addpath(fullfile(projectRoot,'comsol'));
+addpath(fileparts(mfilename('fullpath')));
 try
     runConfigPath=getenv('RFQUAD_RUN_CONFIG');
     assert(~isempty(runConfigPath) && isfile(runConfigPath), ...

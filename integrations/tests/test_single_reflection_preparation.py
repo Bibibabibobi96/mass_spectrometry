@@ -25,7 +25,7 @@ from msplatform.execution.retention import classify_file
 from functools import partial
 verify_record = partial(_verify_record, retention_classifier=classify_file)
 from msplatform.components.rf_multipole.source_validation import validate_source
-from projects.rf_multipole_ion_optics.simion.simion_geometry import physical_electrode_view
+from msplatform.backends.simion.rf_finite_geometry import physical_electrode_view
 from msplatform.ion_release import cylinder
 from integrations.tests.test_single_reflection_geometry import candidate_300mm_fixture, inputs, reframe_parent
 from msplatform.backends.simion.source import GLOBAL_COLUMNS, SOURCE_COLUMNS
@@ -44,7 +44,7 @@ def fixture(root, *, source=None, source_rows=None, source_metadata=None, clock_
     run = root / "run"
     (run / "inputs").mkdir(parents=True)
     if source is None:
-        from projects.rf_multipole_ion_optics.core.compile_design_request import compile_design_request
+        from msplatform.components.rf_multipole.design_request_files import compile_design_request
 
         raw = json.loads(
             (
@@ -523,7 +523,7 @@ class SingleReflectionPreparationTests(unittest.TestCase):
         self.assertEqual(current['schema_version'], 3)
 
     def test_changed_housing_cannot_inherit_an_existing_parent_geometry(self):
-        from projects.rf_multipole_ion_optics.core.compile_design_request import compile_design_request
+        from msplatform.components.rf_multipole.design_request_files import compile_design_request
 
         with tempfile.TemporaryDirectory() as directory:
             path, run, request = fixture(Path(directory))

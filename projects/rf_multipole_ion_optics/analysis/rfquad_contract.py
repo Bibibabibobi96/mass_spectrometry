@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from projects.rf_multipole_ion_optics.core.compile_design_request import validate_resolved_design
+from msplatform.components.rf_multipole.design_request_files import validate_resolved_design
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
