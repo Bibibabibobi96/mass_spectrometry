@@ -536,6 +536,22 @@
       "repository_integration_group": "fast",
       "matches": [
         {
+          "exact": "src/msplatform/workflows/rf_design_profiles.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/rf_runtime_profiles.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/rf_resource_budget.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/analysis/rf_comsol_transport_metrics.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
           "exact": "src/msplatform/backends/simion/source.py",
           "reason": "installed_source_serialization_changed"
         },
@@ -2597,6 +2613,22 @@
       "repository_integration_group": "regression",
       "matches": [
         {
+          "exact": "src/msplatform/workflows/rf_design_profiles.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/rf_runtime_profiles.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/rf_resource_budget.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/analysis/rf_comsol_transport_metrics.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
           "exact": "src/msplatform/workflows/rf_batch_continuation.py",
           "reason": "installed_rf_batch_continuation_changed"
         },
@@ -2874,6 +2906,22 @@
       "dependency_profile": "locked",
       "repository_integration_group": "regression",
       "matches": [
+        {
+          "exact": "src/msplatform/workflows/rf_design_profiles.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/rf_runtime_profiles.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/rf_resource_budget.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/analysis/rf_comsol_transport_metrics.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
         {
           "exact": "src/msplatform/backends/simion/collision_overlay.py",
           "reason": "collision_overlay_binding_consumer_changed"
@@ -4898,6 +4946,22 @@
       ],
       "matches": [
         {
+          "exact": "src/msplatform/workflows/rf_design_profiles.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/rf_runtime_profiles.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/rf_resource_budget.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/analysis/rf_comsol_transport_metrics.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
           "exact": "src/msplatform/components/rf_multipole/event_table.py",
           "reason": "rf_event_or_axis_actual_consumer_changed"
         },
@@ -5443,6 +5507,22 @@
       "repository_integration_group": "regression",
       "matches": [
         {
+          "exact": "src/msplatform/workflows/rf_design_profiles.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/rf_runtime_profiles.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/rf_resource_budget.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/analysis/rf_comsol_transport_metrics.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
           "exact": "src/msplatform/backends/simion/source.py",
           "reason": "installed_source_serialization_changed"
         },
@@ -5563,6 +5643,22 @@
       "dependency_profile": "locked",
       "repository_integration_group": "regression",
       "matches": [
+        {
+          "exact": "src/msplatform/workflows/rf_design_profiles.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/rf_runtime_profiles.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/workflows/rf_resource_budget.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
+        {
+          "exact": "src/msplatform/analysis/rf_comsol_transport_metrics.py",
+          "reason": "installed_rf_configuration_or_analysis_changed"
+        },
         {
           "exact": "src/msplatform/backends/simion/source.py",
           "reason": "installed_source_serialization_changed"
@@ -5902,7 +5998,7 @@
           "reason": "shared_rod_cross_section_dependency_changed"
         },
         {
-          "exact": "projects/rf_multipole_ion_optics/simion/simion_geometry.py",
+          "exact": "src/msplatform/backends/simion/rf_finite_geometry.py",
           "reason": "shared_simion_rod_renderer_dependency_changed"
         },
         {

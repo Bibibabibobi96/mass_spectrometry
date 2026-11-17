@@ -8,7 +8,7 @@ from typing import Any
 
 from msplatform.io.file_identity import repository_text_sha256
 from msplatform.contracts.machine_contracts import validate_schema
-from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
+from msplatform.workflows.rf_design_profiles import resolve_design_profile
 from msplatform.components.rf_multipole.assembly_interface import build_assembly_interface
 from msplatform.backends.simion.rf_observations import prepare_exit_observation_inputs
 

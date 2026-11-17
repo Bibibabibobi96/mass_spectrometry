@@ -12,9 +12,7 @@ from typing import Any
 
 from msplatform.io.file_identity import file_sha256
 from msplatform.io.file_identity import repository_text_sha256
-from common.contracts.build_project_registry import pointer_value
-from common.paths.repository_root import REPO_ROOT
-from msplatform.contracts.machine_contracts import ContractError, validate_schema
+from msplatform.contracts.machine_contracts import ContractError, pointer_value, validate_schema
 
 
 from msplatform.components.rf_multipole.compile_design_request import _version_schema as _version_schema
@@ -50,10 +48,7 @@ def _repository_text_source_policy(
     """Select LF-normalized identities only for repository text authorities."""
     if requested is not None:
         return requested
-    return (
-        source_root is not None
-        and Path(source_root).resolve() == REPO_ROOT.resolve()
-    )
+    return False
 
 
 def _source_records(
@@ -462,6 +457,7 @@ def main() -> int:
         provenance_root=args.provenance_root,
         operating_mode_registry_path=args.operating_mode_registry,
         mode_id=args.mode_id,
+        repository_text_sources=True,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(

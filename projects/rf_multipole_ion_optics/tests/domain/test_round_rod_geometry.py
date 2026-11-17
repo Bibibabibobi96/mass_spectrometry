@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from projects.rf_multipole_ion_optics.core.compile_design_request import (
+from msplatform.components.rf_multipole.design_request_files import (
     compile_design_request,
 )
 from projects.rf_multipole_ion_optics.core.round_rod_geometry import (
@@ -15,13 +15,13 @@ from projects.rf_multipole_ion_optics.core.round_rod_geometry import (
     build_round_rod_array,
     points_inside_rods,
 )
-from projects.rf_multipole_ion_optics.simion.simion_geometry import (
+from msplatform.backends.simion.rf_finite_geometry import (
     render_axis_mapped_segmented_rod_array_gem,
     render_gem,
     render_grouped_rod_array_gem,
     render_segmented_rod_array_gem,
 )
-from projects.rf_multipole_ion_optics.simion import simion_geometry
+from msplatform.backends.simion import rf_finite_geometry as simion_geometry
 ROOT = Path(__file__).resolve().parents[4]
 
 

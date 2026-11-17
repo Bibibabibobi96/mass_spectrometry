@@ -13,7 +13,7 @@ from projects.rf_multipole_ion_optics.tests.test_support.capacity_fixture import
 from pathlib import Path
 
 from common.contracts.capacity_ledger import initialize_capacity_ledger
-from projects.rf_multipole_ion_optics.runtime.runtime_profile import resolve_runtime_profile
+from msplatform.workflows.rf_runtime_profiles import resolve_runtime_profile
 from projects.rf_multipole_ion_optics.analysis.validate_release_construction_gate import (
     _expected_release_state,
 )
@@ -44,13 +44,13 @@ GUI_VERIFY_TASK = (
     / "verify_nocollision_comsol.m"
 )
 RELEASE_GATE_TASK = (
-    PROJECT_ROOT / "comsol" / "interface_readiness" / "run_release_construction_gate.m"
+    REPO_ROOT / "src/msplatform/backends/comsol/matlab/interface_readiness/run_release_construction_gate.m"
 )
 DEDICATED_ENTRY = (
-    PROJECT_ROOT / "comsol" / "prepare_interface_readiness_run.m"
+    REPO_ROOT / "src/msplatform/backends/comsol/matlab/prepare_interface_readiness_run.m"
 )
 SHARED_SOLVER = (
-    PROJECT_ROOT / "comsol" / "solve_deterministic_rf_quadrupole_particles.m"
+    REPO_ROOT / "src/msplatform/backends/comsol/matlab/solve_deterministic_rf_quadrupole_particles.m"
 )
 NUMERICS_SUPPORT = PROJECT_ROOT / "runtime" / "comsol_solver_numerics.ps1"
 RUN_ARTIFACT_SUPPORT = REPO_ROOT / "common" / "contracts" / "run_artifact_support.ps1"
@@ -315,7 +315,7 @@ class ComsolWorkflowArchitectureContractTests(unittest.TestCase):
         self.assertIn("[switch]$ReleaseConstructionGate", runner)
         self.assertIn("if($ReleaseConstructionGate -and $expectedParticles-ne 100)", runner)
         self.assertIn("execution_stage='release_construction_gate'", runner)
-        self.assertIn("comsol/interface_readiness/run_release_construction_gate.m", runner.replace("\\", "/"))
+        self.assertIn("src/msplatform/backends/comsol/matlab/interface_readiness/run_release_construction_gate.m", runner.replace("\\", "/"))
         self.assertIn("validate_release_construction_gate.py", runner)
         self.assertIn("threshold_result_eligible=$false", runner)
         self.assertIn("solve_deterministic_rf_quadrupole_particles(runConfig,control)", task)
@@ -536,7 +536,7 @@ class ComsolSolverNumericsFailureTests(unittest.TestCase):
         command = r"""
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 . (Join-Path $PWD 'common/contracts/run_artifact_workflow.ps1')
-. (Join-Path $PWD 'projects/rf_multipole_ion_optics/runtime/simion_execution.ps1')
+. (Join-Path $PWD 'src/msplatform/backends/simion/resources/simion_execution.ps1')
 $root=$env:RF_CLOSURE_ROOT;$physicalRunDir=$root;$runDir=$root;$resultDir=$root;$logDir=$root;$solverDir=$root
 New-Item -ItemType Directory (Join-Path $root 'logs')|Out-Null
 $runConfig=Join-Path $root 'run_config.json';$workflowRequestPath=Join-Path $root 'request.json'
@@ -573,7 +573,7 @@ if(-not$nativeOperations[0].observation.exit_confirmed){throw 'A stopped native 
         with tempfile.TemporaryDirectory(prefix="rf-host-unknown-") as directory:
             environment = os.environ.copy()
             environment.update(RF_CLOSURE_ROOT=directory, RF_TRANSPORT_RUNNER=str(
-                PROJECT_ROOT / "runtime/run_simion_finite_3d_transport.ps1"))
+                PROJECT_ROOT.parents[1] / "src/msplatform/workflows/resources/run_simion_finite_3d_transport.ps1"))
             result = _run_pwsh(command, environment)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             transport = json.loads((Path(directory) / "result.json").read_text(encoding="utf-8-sig"))
@@ -659,7 +659,7 @@ ConvertTo-Json -InputObject $results -Compress
         for name in ("run_simion_finite_3d_transport.ps1",):
             with self.subTest(runner=name), tempfile.TemporaryDirectory(prefix="rf-closure-") as directory:
                 environment = os.environ.copy()
-                environment["RF_TRANSPORT_RUNNER"] = str(PROJECT_ROOT / "runtime" / name)
+                environment["RF_TRANSPORT_RUNNER"] = str(PROJECT_ROOT.parents[1] / "src/msplatform/workflows/resources" / name)
                 environment["RF_CLOSURE_ROOT"] = directory
                 environment["RF_IS_SIMION"] = "1" if "simion" in name else "0"
                 result = _run_pwsh(command, environment)

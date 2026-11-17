@@ -26,6 +26,13 @@ def load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
+def pointer_value(document: dict[str, Any], pointer: str) -> Any:
+    value: Any = document
+    for token in pointer.lstrip("/").split("/"):
+        value = value[token.replace("~1", "/").replace("~0", "~")]
+    return value
+
+
 @lru_cache(maxsize=1)
 def schema_registry() -> Registry:
     """Build the immutable repository schema registry once per Python process."""

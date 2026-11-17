@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from projects.rf_multipole_ion_optics.runtime.simion_particle_source import (
+from msplatform.backends.simion.rf_particle_source import (
     render_ion11_fly2,
     render_ion11_source_states,
 )

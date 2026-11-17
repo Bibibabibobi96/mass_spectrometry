@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import unittest
 
-from projects.rf_multipole_ion_optics.analysis.evaluate_transport_evidence import evaluate
+from msplatform.workflows.rf_transport_evidence import evaluate
 
 
 class TransportEvidenceTest(unittest.TestCase):

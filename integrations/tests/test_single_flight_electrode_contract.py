@@ -8,7 +8,7 @@ from unittest.mock import patch
 from msplatform.backends.simion.electrode_contract import (
     physical_multipole_voltages, scientific_multipole_voltages, scientific_multipole_rod_pieces,
 )
-from projects.rf_multipole_ion_optics.core.compile_design_request import compile_design_request
+from msplatform.components.rf_multipole.design_request_files import compile_design_request
 from projects.rf_multipole_ion_optics.core.electrode_topology import build_electrode_topology
 from projects.rf_multipole_ion_optics.tests.domain.test_capacity_contract_versions import request
 from projects.rf_multipole_ion_optics.tests.domain.test_simion_geometry import resolved_design, shell

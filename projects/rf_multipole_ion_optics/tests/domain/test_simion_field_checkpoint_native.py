@@ -27,9 +27,9 @@ HARNESS = r'''param($Repo,$Python,$SimionExe,$Stamp,$Tag,$Evidence,$SourceRun=''
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 $OutputEncoding=[Text.UTF8Encoding]::new($false)
-. (Join-Path $Repo 'projects/rf_multipole_ion_optics/runtime/simion_field_checkpoint_support.ps1')
-. (Join-Path $Repo 'projects/rf_multipole_ion_optics/runtime/simion_execution.ps1')
-. (Join-Path $Repo 'projects/rf_multipole_ion_optics/runtime/simion_layout_template_support.ps1')
+. (Join-Path $Repo 'src/msplatform/backends/simion/resources/simion_field_checkpoint_support.ps1')
+. (Join-Path $Repo 'src/msplatform/backends/simion/resources/simion_execution.ps1')
+. (Join-Path $Repo 'src/msplatform/backends/simion/resources/simion_layout_template_support.ps1')
 if($env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN){throw 'Native checkpoint fixture requires its own standalone host owner.'}
 $artifacts=Join-Path (Split-Path -Parent $Repo) 'artifacts'
 $projectArtifacts=Join-Path $artifacts 'projects/rf_multipole_ion_optics'
@@ -108,7 +108,7 @@ function segment.terminate() print('CHECKPOINT_PARTICLE_TERMINAL id='..ion_numbe
  $fly=Join-Path $package.input_dir 'toy_particles.fly2'
  Copy-VerifiedRunInput -Source (Join-Path $Evidence 'toy_particles.fly2') -Destination $fly|Out-Null
  $builder=Join-Path $package.input_dir 'build_simion_runtime_iob.lua'
- Copy-VerifiedRunInput -Source (Join-Path $Repo 'projects/rf_multipole_ion_optics/simion/build_simion_runtime_iob.lua') -Destination $builder|Out-Null
+ Copy-VerifiedRunInput -Source (Join-Path $Repo 'src/msplatform/backends/simion/resources/build_simion_runtime_iob.lua') -Destination $builder|Out-Null
  Copy-VerifiedRunInput -Source $PSCommandPath -Destination (Join-Path $package.input_dir 'native_fixture.ps1')|Out-Null
  $identityPath=Join-Path $package.input_dir 'simion_field_identity.json'
  $argv=Get-RfSimionPaBasisArguments
@@ -169,7 +169,7 @@ function segment.terminate() print('CHECKPOINT_PARTICLE_TERMINAL id='..ion_numbe
   Copy-VerifiedRunInput -Source $templateIob -Destination $activeIob|Out-Null
   Copy-VerifiedRunInput -Source $templateCon -Destination ([IO.Path]::ChangeExtension($activeIob,'.con'))|Out-Null
   $builder=Join-Path $package.input_dir 'build_simion_runtime_iob.lua'
-  Copy-VerifiedRunInput -Source (Join-Path $Repo 'projects/rf_multipole_ion_optics/simion/build_simion_runtime_iob.lua') -Destination $builder|Out-Null
+  Copy-VerifiedRunInput -Source (Join-Path $Repo 'src/msplatform/backends/simion/resources/build_simion_runtime_iob.lua') -Destination $builder|Out-Null
   $config.inputs.iob_builder=$builder
   $config.inputs.template_seed_pa0=$layout.placeholder_pa0
   $config.inputs.template_seed_registration=$layout.registration_manifest

@@ -18,7 +18,7 @@ class FrozenMatlabClosureTests(unittest.TestCase):
         missing_path = ('src/msplatform/backends/comsol/matlab/visit_rf_particle_windows.m'
                         if missing is True else missing if missing else None)
         runner = PROJECT / 'workflows' / workflow / 'run_comsol.ps1'
-        support = REPO / 'projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1'
+        support = REPO / 'src/msplatform/execution/resources/frozen_python_package.ps1'
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             script = root / 'fixture.ps1'
@@ -27,13 +27,15 @@ class FrozenMatlabClosureTests(unittest.TestCase):
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 . RUN_CONTEXT
-. SUPPORT -ExecutionResourcePath EXECUTOR_RESOURCE
+. SUPPORT
 function Copy-VerifiedRunInput {param($Source,$Destination)
  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Destination)|Out-Null
  Copy-Item -LiteralPath $Source -Destination $Destination -ErrorAction Stop
 }
 function Get-RunFileSha256 {param($Path) (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash}
 $python=SELECTED_PYTHON;$root=ROOT;$repoRoot=Join-Path $root 'active';$frozenCodeRoot=Join-Path $root 'inputs/code'
+New-Item -ItemType Directory -Force -Path (Join-Path $repoRoot 'src')|Out-Null
+Copy-Item -Recurse -LiteralPath (Join-Path REPO 'src/msplatform') -Destination (Join-Path $repoRoot 'src')
 $inputDir=Join-Path $root 'inputs';$analysisFiles=@();$frozenPythonRelativePaths=@()
 $tokens=$null;$errors=$null
 $ast=[System.Management.Automation.Language.Parser]::ParseFile(RUNNER,[ref]$tokens,[ref]$errors)

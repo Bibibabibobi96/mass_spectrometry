@@ -100,13 +100,13 @@ def parent_fixture(root, *, fault=None):
     task.parent.mkdir(parents=True)
     shutil.copyfile(REPO/'src/msplatform/backends/comsol/matlab/solve_finite_3d_transport.m', task)
     paths['comsol_task'] = str(task)
-    entry = inputs/'code/projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1'
+    entry = inputs/'code/src/msplatform/workflows/resources/run_finite_3d_transport.ps1'
     entry.parent.mkdir(parents=True)
-    shutil.copyfile(REPO/'projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1', entry)
+    shutil.copyfile(REPO/'src/msplatform/workflows/resources/run_finite_3d_transport.ps1', entry)
     inventory = inputs/'code_inventory.json'
     write(inventory, dict(schema_version=1, role='frozen_code_inventory', files=[dict(
         path='src/msplatform/backends/comsol/matlab/solve_finite_3d_transport.m', sha256=file_record(task)['sha256']), dict(
-        path='projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1', sha256=file_record(entry)['sha256'])]))
+        path='src/msplatform/workflows/resources/run_finite_3d_transport.ps1', sha256=file_record(entry)['sha256'])]))
     helper = inputs/'code/src/msplatform/backends/comsol/matlab/export_finite_3d_particle_outputs.m'
     helper_source = REPO/'src/msplatform/backends/comsol/matlab/export_finite_3d_particle_outputs.m'
     if helper_source.exists():
@@ -387,7 +387,7 @@ Write-Output 'CONTROLLED_CPU_GREEN=real_process_and_released'
 param($Repo,$Python,$Manifest)
 $ErrorActionPreference='Stop'
 . (Join-Path $Repo 'common/contracts/run_artifact_workflow.ps1')
-$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1'),[ref]$null,[ref]$null)
+$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'src/msplatform/workflows/resources/run_finite_3d_transport.ps1'),[ref]$null,[ref]$null)
 $function=@($ast.FindAll({param($node)$node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-ceq'Get-FiniteComsolAnalysisSource'},$true))
 if($function.Count-ne1){throw 'source admission function is ambiguous'}
 Invoke-Expression $function[0].Extent.Text
@@ -450,7 +450,7 @@ param($Repo,$Root)
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 . (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
-$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1'),[ref]$null,[ref]$null)
+$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'src/msplatform/workflows/resources/run_finite_3d_transport.ps1'),[ref]$null,[ref]$null)
 $function=@($ast.FindAll({param($node)$node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-ceq'Invoke-FiniteComsolAnalysis'},$true))
 if($function.Count-ne1){throw 'Actual shared analysis function missing'}
 Invoke-Expression $function[0].Extent.Text
@@ -486,7 +486,7 @@ Write-Output 'UNKNOWN_WRITER_PRESERVED'
 param($Repo,$Python,$Manifest)
 $ErrorActionPreference='Stop'
 . (Join-Path $Repo 'common/contracts/run_artifact_workflow.ps1')
-$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1'),[ref]$null,[ref]$null)
+$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'src/msplatform/workflows/resources/run_finite_3d_transport.ps1'),[ref]$null,[ref]$null)
 $function=@($ast.FindAll({param($node)$node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-ceq'Get-FiniteComsolAnalysisSource'},$true))
 Invoke-Expression $function[0].Extent.Text
 $source=Get-FiniteComsolAnalysisSource -ManifestPath $Manifest -Python $Python -RepoRoot $Repo -ReextractFromModel
@@ -625,7 +625,7 @@ function Write-ColdFixtureEvent {
                            exports=dict(model=dict(path=str(model)), mapping=dict(path=str(mapping)))))
             write(root/'fixture.json', fixture)
             launcher = code/'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1'
-            launcher.parent.mkdir(parents=True)
+            launcher.parent.mkdir(parents=True, exist_ok=True)
             resolver = REPO/'src/msplatform/backends/comsol/launcher/resolve_comsol_64.ps1'
             (launcher.parent/'resolve_comsol_64.ps1').write_text(resolver.read_text(encoding='utf-8') +
                 "\nfunction Get-Comsol64Launcher { Join-Path $PSScriptRoot 'inert.exe' }\n"
@@ -677,7 +677,7 @@ $ErrorActionPreference='Stop'
 . (Join-Path $Repo 'common/host_execution_lease.ps1')
 $env:SIMULATION_PYTHON_EXE=$Python
 $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=Join-Path $Root 'host.sqlite3'
-$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1'),[ref]$null,[ref]$null)
+$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'src/msplatform/workflows/resources/run_finite_3d_transport.ps1'),[ref]$null,[ref]$null)
 $ast.FindAll({param($node)$node-is[Management.Automation.Language.FunctionDefinitionAst]},$true)|ForEach-Object{Invoke-Expression $_.Extent.Text}
 $fixture=Get-Content -LiteralPath (Join-Path $Root 'fixture.json') -Raw|ConvertFrom-Json -AsHashtable
 $state=@{native_attempted=$false;wrapper_observation=$null;host_lease=$null;writer_unknown=$false;phase_timings=@{};timer=[Diagnostics.Stopwatch]::StartNew()}
@@ -834,7 +834,7 @@ function Invoke-ResourceBudgetedProcess {
             script.write_text(script_text, encoding='utf-8')
             environment = private_host_environment()
             environment.update(FIXTURE_PYTHON=sys.executable, FIXTURE_TEST_SOURCE=__file__,
-                FIXTURE_ADAPTER_SOURCE=str(REPO/'projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1'),
+                FIXTURE_ADAPTER_SOURCE=str(REPO/'src/msplatform/workflows/resources/run_finite_3d_transport.ps1'),
                 FIXTURE_TEST_METHOD=self.id(), RF_COLD_FIXTURE_EVENTS=str(root/'events'),
                 RF_COLD_FIXTURE_TIMELINE=str(root/'timeline.jsonl'))
             failure = None
@@ -948,7 +948,7 @@ function Invoke-ResourceBudgetedProcess {
                 shutil.copyfile(native_config['inputs'][name], target)
                 paths[name] = str(target)
             inventory = []
-            for relative in ('projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1',
+            for relative in ('src/msplatform/workflows/resources/run_finite_3d_transport.ps1',
                              'src/msplatform/backends/comsol/matlab/reextract_finite_3d_transport.m',
                              'src/msplatform/backends/comsol/matlab/export_finite_3d_particle_outputs.m',
                              'src/msplatform/backends/comsol/matlab/validate_finite_extraction_context.m'):
@@ -958,7 +958,7 @@ function Invoke-ResourceBudgetedProcess {
                 inventory.append(dict(path=relative, sha256=file_record(target)['sha256']))
             write(inputs/'code_inventory.json', dict(files=inventory))
             paths['code_inventory'] = str(inputs/'code_inventory.json')
-            entry = inputs/'code/projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1'
+            entry = inputs/'code/src/msplatform/workflows/resources/run_finite_3d_transport.ps1'
             write(inputs/'execution_request.json', dict(prepared=dict(owner_kind='powershell', entrypoint=file_record(entry))))
             paths['execution_request'] = str(inputs/'execution_request.json')
             task = inputs/'reextract_saved_finite_solution.m'
@@ -988,7 +988,7 @@ function Invoke-ResourceBudgetedProcess {
 param($Repo,$Python,$Manifest)
 $ErrorActionPreference='Stop'
 . (Join-Path $Repo 'common/contracts/run_artifact_workflow.ps1')
-$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'projects/rf_multipole_ion_optics/runtime/run_finite_3d_transport.ps1'),[ref]$null,[ref]$null)
+$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'src/msplatform/workflows/resources/run_finite_3d_transport.ps1'),[ref]$null,[ref]$null)
 $function=@($ast.FindAll({param($node)$node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-ceq'Get-FiniteComsolAnalysisSource'},$true))
 Invoke-Expression $function[0].Extent.Text
 $source=Get-FiniteComsolAnalysisSource -ManifestPath $Manifest -Python $Python -RepoRoot $Repo

@@ -67,7 +67,8 @@ $ResourceBudgets=@{}
 foreach($stage in @('prepare','solver','postprocess')){$ResourceBudgets[$stage]=(Get-HostResourceBudget -Role COMSOL -Stage $stage).Clone()}
 $ResourceBudgets.solver.memory_bytes=[long]$Limits.process_tree_working_set_bytes
 . (Join-Path $projectRoot 'runtime\comsol_solver_numerics.ps1')
-. (Join-Path $projectRoot 'runtime\frozen_python_package.ps1') -ExecutionResourcePath (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
+. (Join-Path $repoRoot 'src/msplatform/workflows/resources/rf_publication.ps1')
 $frozenPythonRelativePaths = Get-FrozenPythonPackageRelativePaths -SourceRoot $repoRoot -Python $python `
     -PythonPackages @(
         'common/contracts',
@@ -513,9 +514,10 @@ try {
     }
 
     $frozenPythonSupport = Copy-VerifiedRunInput `
-        -Source (Join-Path $projectRoot 'runtime\frozen_python_package.ps1') `
+        -Source (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1') `
         -Destination (Join-Path $inputDir 'frozen_python_package.ps1')
-    . $frozenPythonSupport -ExecutionResourcePath (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
+    . $frozenPythonSupport
+    . (Join-Path $repoRoot 'src/msplatform/workflows/resources/rf_publication.ps1')
     $publishedDesignFreshness = New-RfPublishedDesignFreshnessPackage `
         -Python $python -SourceRoot $repoRoot `
         -SnapshotRoot (Join-Path $inputDir 'published_design_snapshot') -Profile interface

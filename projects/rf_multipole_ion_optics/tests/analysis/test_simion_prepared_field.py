@@ -8,7 +8,7 @@ import sys
 import tempfile
 import unittest
 
-from projects.rf_multipole_ion_optics.runtime.simion_field_checkpoint import write_checkpoint
+from msplatform.backends.simion.rf_field_checkpoint import write_checkpoint
 from projects.rf_multipole_ion_optics.tests.domain import test_simion_field_checkpoint as fixtures
 
 REPO = fixtures.REPO
@@ -20,7 +20,7 @@ class PreparedFieldConsumerTests(unittest.TestCase):
         script = r'''
 $ErrorActionPreference='Stop'
 . (Join-Path $PWD 'common/contracts/run_artifact_support.ps1')
-. (Join-Path $PWD 'projects/rf_multipole_ion_optics/runtime/simion_execution.ps1')
+. (Join-Path $PWD 'src/msplatform/backends/simion/resources/simion_execution.ps1')
 $seed=Join-Path $env:RF_TEST_TEMP 'registered.pa0';'inert registered companion'|Set-Content $seed
 $iob=Join-Path $env:RF_TEST_TEMP 'quad.iob'
 $companion=New-RfSimionLayoutSeedCompanion -IobPath $iob -SeedPaPath $seed
@@ -106,8 +106,8 @@ foreach($workflow in @('interface_readiness','mass_filter_reference')){
                 program.write_bytes(b"inert lua")
                 script = r'''
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $env:RF_TEST_REPO 'projects/rf_multipole_ion_optics/runtime/simion_execution.ps1')
-. (Join-Path $env:RF_TEST_REPO 'projects/rf_multipole_ion_optics/runtime/simion_field_checkpoint_support.ps1')
+. (Join-Path $env:RF_TEST_REPO 'src/msplatform/backends/simion/resources/simion_execution.ps1')
+. (Join-Path $env:RF_TEST_REPO 'src/msplatform/backends/simion/resources/simion_field_checkpoint_support.ps1')
 function Enter-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$ArtifactRoot,$RunDirectory,$CommittedNewBytes,$ProtectedPaths,$Owner)
  if($ProtectedPaths.Count-lt1){throw 'source capacity not protected'};return @{protected_paths=$ProtectedPaths}}
 function Initialize-RfSimionPaBasis {throw 'valid predecessor field must not be refined'}

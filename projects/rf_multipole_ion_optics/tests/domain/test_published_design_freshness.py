@@ -19,7 +19,8 @@ class PublishedDesignFreshnessTests(unittest.TestCase):
                 script.write_text(r'''param($Repo,$Python,$Root,$Profile)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 . (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
-. (Join-Path $Repo 'projects/rf_multipole_ion_optics/runtime/frozen_python_package.ps1') -ExecutionResourcePath (Join-Path $Repo 'src/msplatform/execution/resources/frozen_python_package.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/frozen_python_package.ps1')
+. (Join-Path $Repo 'src/msplatform/workflows/resources/rf_publication.ps1')
 $snapshot=Join-Path $Root 'snapshot'
 $facts=New-RfPublishedDesignFreshnessPackage -Python $Python -SourceRoot $Repo -SnapshotRoot $snapshot -Profile $Profile
 if($facts.profile-cne$Profile-or-not(Test-Path $facts.resolved_path)){throw 'Lost selected checked publication'}
@@ -64,7 +65,7 @@ if($recheck.module_stdout-notlike'*RESOLVED_DESIGN=PASS*'){throw 'Frozen check r
 ''', encoding="utf-8")
                 result = subprocess.run(["pwsh", "-NoProfile", "-File", str(script), str(REPO),
                                          sys.executable, str(root), profile], cwd=root,
-                                        capture_output=True, text=True, encoding="utf-8", timeout=120)
+                                        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn("STALE=", result.stdout + result.stderr)
                 facts = json.loads(result.stdout.splitlines()[-1])

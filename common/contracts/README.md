@@ -1055,7 +1055,7 @@ Euler顺序或器件参数反写到公共刚体语义。供应商局部坐标映
 
 项目合并通过`retired_project_descriptors`绑定原字节冻结的旧描述符：仓库相对路径、字节数、SHA-256及
 来源commit必须明确，旧owner和其更早aliases仍使用原artifact位置、记录身份及资格边界。
-[`artifact_identity_archive.py`](artifact_identity_archive.py)只读展开这些身份；旧capabilities不进入活动项目注册，
+[`artifact_identity_archive.py`](../../src/msplatform/execution/artifact_identity_archive.py)只读展开这些身份；旧capabilities不进入活动项目注册，
 行政改名的`legacy_identities`也不因合并改写为新的归档owner。
 `New-RunPackage`在创建目录和登记容量前调用同一身份检查，拒绝明确退休owner及其aliases创建新run；
 其他项目、`instrument_assembly`及未声明退休的既有调用边界保持不变。历史读取与验证继续允许，
@@ -1145,7 +1145,7 @@ profile明确实际purpose、action、tools、model、资格支持和输出。`-
 表达实际解析结果、科学条件与输入来源。公共层验证身份、所选能力的结构归属及运行身份；项目解释
 物种、几何、工作点与必要sidecar。接口查询不调用GEM渲染或商业求解器。
 
-Python step entrypoints under the actual repository `src/msplatform` tree compile to installed `msplatform.*` module names; project Python module names and PowerShell file commands keep their existing mapping. Project-only `runtime_binding` is unchanged.
+Python step entrypoints under the actual repository `src/msplatform` tree compile to installed `msplatform.*` module names; project Python module names and PowerShell file commands keep their existing mapping. `runtime_binding.entrypoint` also accepts an `msplatform/...` installed source path, resolving the selector from that owner instead of a project wrapper; project-relative bindings remain supported.
 
 Python owner执行使用编译计划记录的`python_executable`（编译器当前`sys.executable`），不依赖仓库`.venv`或执行时的环境默认值。旧计划缺少该字段或解释器已不可用时，需用预期解释器重新编译；不静默换解释器。
 

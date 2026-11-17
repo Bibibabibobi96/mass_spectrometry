@@ -16,6 +16,7 @@ from projects.rf_multipole_ion_optics.workflows.mass_filter_reference import (
 
 
 PROJECT_ROOT = Path(__file__).parents[2]
+REPO_ROOT = PROJECT_ROOT.parents[1]
 
 
 class ComsolMassFilterContractTests(unittest.TestCase):
@@ -137,12 +138,10 @@ if($outputs.Count-ne8){throw 'Existing three outputs and mapping must remain for
 
     def test_matlab_builder_superposes_differential_and_static_fields(self) -> None:
         builder = (
-            PROJECT_ROOT
-            / "comsol"
-            / "solve_deterministic_rf_quadrupole_particles.m"
+            REPO_ROOT / "src/msplatform/backends/comsol/matlab/solve_deterministic_rf_quadrupole_particles.m"
         ).read_text(encoding="utf-8")
         mass_task = (
-            PROJECT_ROOT / "comsol" / "mass_filter_reference" / "run_scan.m"
+            REPO_ROOT / "src/msplatform/backends/comsol/matlab/mass_filter_reference/run_scan.m"
         ).read_text(
             encoding="utf-8"
         )
@@ -162,7 +161,7 @@ if($outputs.Count-ne8){throw 'Existing three outputs and mapping must remain for
 
     def test_matlab_exports_raw_metadata_while_python_owns_aggregate_metrics(self) -> None:
         builder = (
-            PROJECT_ROOT / "comsol" / "solve_deterministic_rf_quadrupole_particles.m"
+            REPO_ROOT / "src/msplatform/backends/comsol/matlab/solve_deterministic_rf_quadrupole_particles.m"
         ).read_text(encoding="utf-8")
         interface_runner = (
             PROJECT_ROOT / "workflows/interface_readiness/run_comsol.ps1"
@@ -267,10 +266,10 @@ if($outputs.Count-ne8){throw 'Existing three outputs and mapping must remain for
             PROJECT_ROOT / "workflows/interface_readiness/run_comsol.ps1"
         ).read_text(encoding="utf-8")
         builder = (
-            PROJECT_ROOT / "comsol/solve_deterministic_rf_quadrupole_particles.m"
+            PROJECT_ROOT.parents[1] / "src/msplatform/backends/comsol/matlab/solve_deterministic_rf_quadrupole_particles.m"
         ).read_text(encoding="utf-8")
         dedicated = (
-            PROJECT_ROOT / "comsol/prepare_interface_readiness_run.m"
+            PROJECT_ROOT.parents[1] / "src/msplatform/backends/comsol/matlab/prepare_interface_readiness_run.m"
         ).read_text(encoding="utf-8")
         for source in (runner, builder):
             self.assertNotIn("[ValidateSet('transport_no_collision'", source)

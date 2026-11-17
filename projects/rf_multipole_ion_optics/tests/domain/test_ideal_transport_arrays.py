@@ -92,7 +92,7 @@ class FrozenIdealTransportBoundaryTests(unittest.TestCase):
     def test_frozen_full_source_has_canonical_origin_and_missing_module_rejects(self):
         from msplatform.execution.inputs import enumerate_python_sources, freeze_file
         from msplatform.components.rf_multipole.family_contract import l1_l2_transport_contract_from_resolved_design
-        from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
+        from msplatform.workflows.rf_design_profiles import resolve_design_profile
         repo=Path(__file__).resolve().parents[4]
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary);snapshot=root/'code'
@@ -129,7 +129,7 @@ assert not any(k.split('.')[0] in ('common','projects','integrations') for k in 
 class IdealTransportScalarWaveformTests(unittest.TestCase):
     def test_declared_waveform_phase_and_signed_charge_set_the_analytic_force(self):
         from msplatform.components.rf_multipole.family_contract import l1_l2_transport_contract_from_resolved_design
-        from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
+        from msplatform.workflows.rf_design_profiles import resolve_design_profile
         repo = Path(__file__).resolve().parents[4]
         resolved = resolve_design_profile(
             repo, "rf_multipole_ion_optics", "hexapole_no_acceleration_full_length",
@@ -172,7 +172,7 @@ class IdealTransportScalarWaveformTests(unittest.TestCase):
     def test_particle_prepares_unit_drive_once_outside_rk4_steps(self):
         from unittest.mock import patch
         from msplatform.components.rf_multipole.family_contract import l1_l2_transport_contract_from_resolved_design
-        from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
+        from msplatform.workflows.rf_design_profiles import resolve_design_profile
         repo = Path(__file__).resolve().parents[4]
         contract = l1_l2_transport_contract_from_resolved_design(resolve_design_profile(
             repo, "rf_multipole_ion_optics", "hexapole_no_acceleration_full_length",

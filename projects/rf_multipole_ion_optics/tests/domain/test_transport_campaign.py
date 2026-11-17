@@ -11,10 +11,10 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-from projects.rf_multipole_ion_optics.runtime.resource_budget import validate_pilot_budget
+from msplatform.workflows.rf_resource_budget import validate_pilot_budget
 from projects.rf_multipole_ion_optics.analysis.campaign_analysis import campaign_request_preflight
 from projects.rf_multipole_ion_optics.analysis.campaign_status import campaign_status
-from projects.rf_multipole_ion_optics.runtime.runtime_profile import (
+from msplatform.workflows.rf_runtime_profiles import (
     resolve_runtime_profile,
     resolve_runtime_selection,
     semantic_diff_campaign_experiments,
@@ -185,9 +185,10 @@ class TransportCampaignTests(unittest.TestCase):
             set(capability["allowed_parameters"]), {"bin_count", "dpi"}
         )
         for module in capability["consumer"].values():
-            self.assertRegex(module, r"^projects\.rf_multipole_ion_optics\.analysis\.[a-z][a-z0-9_]*$")
+            self.assertRegex(module, r"^(projects\.rf_multipole_ion_optics\.analysis|msplatform\.workflows)\.[a-z][a-z0-9_]*$")
+            prefix = "src/" if module.startswith("msplatform.") else ""
             self.assertTrue(
-                (REPO_ROOT / (module.replace(".", "/") + ".py")).is_file()
+                (REPO_ROOT / (prefix + module.replace(".", "/") + ".py")).is_file()
             )
 
     def test_campaign_analysis_status_validates_analysis_without_writing_runs(self) -> None:
@@ -698,7 +699,7 @@ class TransportCampaignTests(unittest.TestCase):
             self.assertEqual(path.read_bytes(), original)
 
     def test_explicit_campaign_data_location_keeps_science_and_authorization(self) -> None:
-        from projects.rf_multipole_ion_optics.runtime.runtime_profile import resolve_campaign_path
+        from msplatform.workflows.rf_runtime_profiles import resolve_campaign_path
         document = campaign_fixture()
         with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory(dir=CAMPAIGN_ROOT) as case:
             root = Path(directory)

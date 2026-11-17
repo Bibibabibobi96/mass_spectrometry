@@ -46,7 +46,11 @@ function Invoke-MultipoleProjectFinite3dTransport {
     "multipole_runtime_{0}_{1}.json" -f $ProjectId, [guid]::NewGuid()
   )
 
+  $savedPythonPath = $env:PYTHONPATH
   try {
+    $env:PYTHONPATH = (Join-Path $RepoRoot 'src') + $(if ($savedPythonPath) {
+      [IO.Path]::PathSeparator + $savedPythonPath
+    } else { '' })
     if($ResolvedRuntimeProfilePath){
       Copy-Item -LiteralPath $ResolvedRuntimeProfilePath -Destination $resolutionPath
     }else{
@@ -60,7 +64,7 @@ function Invoke-MultipoleProjectFinite3dTransport {
       } else {
         $selectionArguments = @('--runtime-profile-id', $RuntimeProfileId)
       }
-      & $python -m projects.rf_multipole_ion_optics.runtime.runtime_profile --repo-root $RepoRoot `
+      & $python -m msplatform.workflows.rf_runtime_profiles --repo-root $RepoRoot `
         --project-id $ProjectId @selectionArguments --output $resolutionPath
     } finally {
       Pop-Location
@@ -132,7 +136,7 @@ function Invoke-MultipoleProjectFinite3dTransport {
           $numerics.mesh.working_region_maximum_element_size_mm
         )
       }
-      $commonEntry = 'projects\rf_multipole_ion_optics\runtime\run_finite_3d_transport.ps1'
+      $commonEntry = 'src\msplatform\workflows\resources\run_finite_3d_transport.ps1'
     } else {
       if ($stopStage -notin @('transport','field_solve')) {
         throw "SIMION transport does not support stop stage '$stopStage'."
@@ -156,7 +160,7 @@ function Invoke-MultipoleProjectFinite3dTransport {
       if ($SimionExe) {
         $arguments.SimionExe = $SimionExe
       }
-      $commonEntry = 'projects\rf_multipole_ion_optics\runtime\run_simion_finite_3d_transport.ps1'
+      $commonEntry = 'src\msplatform\workflows\resources\run_simion_finite_3d_transport.ps1'
     }
 
     & (Join-Path $RepoRoot $commonEntry) @arguments
@@ -164,6 +168,7 @@ function Invoke-MultipoleProjectFinite3dTransport {
       throw "Multipole $Solver transport failed for '$ProjectId'."
     }
   } finally {
+    $env:PYTHONPATH = $savedPythonPath
     Remove-Item -LiteralPath $resolutionPath -Force -ErrorAction SilentlyContinue
   }
 }

@@ -13,7 +13,7 @@ from msplatform.assembly.resolve_assembly import compile_assembly_layout
 from integrations.tests.test_single_reflection_geometry import candidate_300mm_fixture, reframe_parent
 from msplatform.backends.simion.geometry import compile_frontend_geometry
 from msplatform.workflows.single_reflection_flight.prepare import prepare
-from projects.rf_multipole_ion_optics.core.compile_design_request import compile_design_request
+from msplatform.components.rf_multipole.design_request_files import compile_design_request
 from msplatform.components.rf_multipole.assembly_interface import build_assembly_interface
 from projects.rf_multipole_ion_optics.core.electrode_topology import build_electrode_topology
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_geometry import (

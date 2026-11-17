@@ -10,9 +10,9 @@ GEM = ROOT / "simion/multipole_layout_placeholder.gem"
 BUILDER = ROOT / "runtime/build_simion_layout_placeholder.ps1"
 REGISTER = ROOT / "runtime/register_simion_layout_template.ps1"
 INSPECTOR = ROOT / "simion/inspect_simion_layout_template.lua"
-RUNNER = ROOT / "runtime/run_simion_finite_3d_transport.ps1"
-RUNTIME_BUILDER = ROOT / "simion/build_simion_runtime_iob.lua"
-TEMPLATE_SUPPORT = ROOT / "runtime/simion_layout_template_support.ps1"
+RUNNER = ROOT.parents[1] / "src/msplatform/workflows/resources/run_simion_finite_3d_transport.ps1"
+RUNTIME_BUILDER = ROOT.parents[1] / "src/msplatform/backends/simion/resources/build_simion_runtime_iob.lua"
+TEMPLATE_SUPPORT = ROOT.parents[1] / "src/msplatform/backends/simion/resources/simion_layout_template_support.ps1"
 
 
 class SimionLayoutTemplateContractTests(unittest.TestCase):
@@ -88,7 +88,7 @@ class SimionLayoutTemplateContractTests(unittest.TestCase):
         )
         support = TEMPLATE_SUPPORT.read_text(encoding="utf-8-sig")
         for token in (
-            "projects.rf_multipole_ion_optics.runtime.simion_layout_template",
+            "msplatform.backends.simion.rf_layout_template",
             "registration_run_manifest.json",
             "quad_monolithic.con",
             "Copy-VerifiedRunInput",
@@ -99,7 +99,7 @@ class SimionLayoutTemplateContractTests(unittest.TestCase):
             with self.subTest(runner=runner):
                 source = runner.read_text(encoding="utf-8-sig")
                 self.assertIn(
-                    "projects\\rf_multipole_ion_optics\\runtime\\simion_layout_template_support.ps1", source
+                    "src\\msplatform\\backends\\simion\\resources\\simion_layout_template_support.ps1", source
                 )
                 self.assertIn("Resolve-MultipoleSimionLayoutTemplate", source)
                 self.assertNotRegex(source, r"\[string\]\$TemplateIob(?:Path)?\b")

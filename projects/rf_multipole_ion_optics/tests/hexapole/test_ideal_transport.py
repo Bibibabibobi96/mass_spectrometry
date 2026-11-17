@@ -14,11 +14,11 @@ from msplatform.components.rf_multipole.ideal_transport import (
     pseudopotential_ev,
     source_particles,
 )
-from projects.rf_multipole_ion_optics.core.compile_design_request import (
+from msplatform.components.rf_multipole.design_request_files import (
     MultipoleDesignCompileError,
     compile_design_request,
 )
-from projects.rf_multipole_ion_optics.runtime.design_profile import resolve_design_profile
+from msplatform.workflows.rf_design_profiles import resolve_design_profile
 from msplatform.components.rf_multipole.family_contract import l1_l2_transport_contract_from_resolved_design
 
 

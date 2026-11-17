@@ -1,7 +1,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-. (Join-Path $PSScriptRoot '..\..\..\common\contracts\run_artifact_support.ps1')
-. (Join-Path $PSScriptRoot '..\..\..\common\simion\short_pa_path_support.ps1')
+. (Join-Path $PSScriptRoot '..\..\..\..\..\common\contracts\run_artifact_support.ps1')
+. (Join-Path $PSScriptRoot '..\..\..\..\..\common\simion\short_pa_path_support.ps1')
 
 function New-RfSimionFieldIdentity {
     param([Parameter(Mandatory)][string]$GemPath,[Parameter(Mandatory)][string]$SimionExe,
@@ -38,7 +38,7 @@ function Write-RfSimionFieldCheckpoint {
           [Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$RepoRoot)
     $result=Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
         $OutputEncoding=[Text.UTF8Encoding]::new($false)
-        $output=(ConvertTo-Json -InputObject @($NativeOperations|ForEach-Object{$_}) -Depth 30 -Compress)|& $Python -m projects.rf_multipole_ion_optics.runtime.simion_field_checkpoint write --run $RunDirectory --identity $IdentityPath --iob $IobPath
+        $output=(ConvertTo-Json -InputObject @($NativeOperations|ForEach-Object{$_}) -Depth 30 -Compress)|& $Python -m msplatform.backends.simion.rf_field_checkpoint write --run $RunDirectory --identity $IdentityPath --iob $IobPath
         if($LASTEXITCODE-ne0){throw 'RF field checkpoint native completion or inventory is invalid.'}
         ($output-join"`n")|ConvertFrom-Json -Depth 50
     }
@@ -61,7 +61,7 @@ function Read-RfSimionFieldCheckpoint {
           [Parameter(Mandatory)][string]$RepoRoot,[Parameter(Mandatory)][string]$TemplateIobPath,
           [Parameter(Mandatory)][string]$TemplateConPath)
     return Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
-        $output=& $Python -m projects.rf_multipole_ion_optics.runtime.simion_field_checkpoint read --run $SourceRunPath --identity $IdentityPath --program $ProgramSourcePath --template-iob $TemplateIobPath --template-con $TemplateConPath
+        $output=& $Python -m msplatform.backends.simion.rf_field_checkpoint read --run $SourceRunPath --identity $IdentityPath --program $ProgramSourcePath --template-iob $TemplateIobPath --template-con $TemplateConPath
         if($LASTEXITCODE-ne0){throw 'RF field checkpoint source identity is invalid.'}
         ($output-join"`n")|ConvertFrom-Json -Depth 50
     }

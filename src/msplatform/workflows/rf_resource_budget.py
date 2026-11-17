@@ -6,9 +6,9 @@ import argparse
 import json
 from pathlib import Path
 from typing import Any
-from projects.rf_multipole_ion_optics.core.compile_design_request import resolved_design_sha256
+from msplatform.components.rf_multipole.design_request_files import resolved_design_sha256
 
-from projects.rf_multipole_ion_optics.runtime.runtime_profile import (
+from msplatform.workflows.rf_runtime_profiles import (
     resolve_runtime_profile,
     resolve_runtime_selection,
 )
