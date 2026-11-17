@@ -25,7 +25,7 @@ from msplatform.io.file_identity import file_sha256
 from msplatform.contracts.particle_physics import kinetic_energy_ev
 from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule import (
+from msplatform.backends.simion.mr_bunch_source import (
     resolve_bunch_source_interval,
 )
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import derive_mirror_l0_slope_tolerance_per_v
@@ -33,9 +33,9 @@ from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract
     CandidateContractError,
 )
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import _te1_reference
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import histogram_half_height_bin_span, peak_time_metrics
+from msplatform.workflows.prepared_joint.event_analysis import histogram_half_height_bin_span, peak_time_metrics
 from msplatform.backends.simion.mrtof_observations import collision_diagnostics, read_scientific_events
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import _resolve_trial_geometry
+from msplatform.workflows.prepared_joint.prism_trial import _resolve_trial_geometry
 from msplatform.backends.simion.mrtof_observations import _collision_geometry_projection
 
 
@@ -2615,7 +2615,7 @@ def candidate_policy(request: dict[str, Any]) -> dict[str, Any]:
     if action == "focus_configuration":
         return candidate_focus_configuration(request["radius_mm"], request["minimum_resolution"])
     if action == "center_feedback":
-        from .workpoint_controller_state import center_residual_gate
+        from msplatform.workflows.prepared_joint.controller_state import center_residual_gate
         result = center_residual_gate(request["status"], request["names"], request["residuals"], request["tolerances"])
         if request.get("focus") is not None:
             result["focus"] = candidate_focus_decision(**request["focus"], center=result["passed"])

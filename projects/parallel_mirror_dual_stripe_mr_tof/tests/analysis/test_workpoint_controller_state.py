@@ -7,7 +7,7 @@ from pathlib import Path
 import unittest
 
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import CandidateContractError
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.workpoint_controller_state import (
+from msplatform.workflows.prepared_joint.controller_state import (
     RECOVERY_VERSION, advance_recovery_round, import_recovery_checkpoint,
     prepare_recovery_state, relative_voltage_step, voltage_stencil_steps, validate_recovery_policy,
     complete_staged_trial, dispatch_controller_request, plan_staged_trial,
@@ -586,7 +586,7 @@ class ControllerStateTests(unittest.TestCase):
         import sys
         from tempfile import TemporaryDirectory
 
-        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.workpoint_controller_state"
+        module = "msplatform.workflows.prepared_joint.controller_state"
         command = [sys.executable, "-X", "utf8", "-m", module,
                    "--controller-request", "-", "--output", "-"]
         request = dict(action="center_trial_physical_gate", observation=dict(status="lost"),
@@ -615,7 +615,7 @@ class ControllerStateTests(unittest.TestCase):
             self.assertIn("writes only to stdout", failed.stderr)
             self.assertFalse(destination.exists())
         old = command.copy()
-        old[4] = module.replace("workpoint_controller_state", "downstream_workpoint_iteration")
+        old[4] = "msplatform.workflows.prepared_joint.downstream_workpoint"
         failed = subprocess.run(old, input=json.dumps(request), cwd=PROJECT.parents[1],
                                 capture_output=True, text=True, encoding="utf-8", timeout=30)
         self.assertEqual(failed.returncode, 2)

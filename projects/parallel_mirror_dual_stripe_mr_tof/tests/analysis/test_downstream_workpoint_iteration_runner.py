@@ -387,7 +387,7 @@ $results|ConvertTo-Json -Depth 20 -Compress
                                              pending=dict(identity='pending-recovery'), same_identity=True if value is not None else None))
 
     def test_recovery_model_completion_preserves_provisional_policy_and_save_order(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.workpoint_controller_state import (
+        from msplatform.workflows.prepared_joint.controller_state import (
             prepare_recovery_state, advance_recovery_round,
         )
         script = r'''
@@ -588,7 +588,7 @@ $topology=Get-InterruptedSOnlyTopologyRecoveryDecision -History @{decisions=@()}
 
     def test_prediction_decision_file_transport_handles_large_inputs_and_rejects_damage(self):
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_downstream_workpoint_iteration import DownstreamWorkpointIterationTests
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import _stripe_stage_record, assess_staged_prediction
+        from msplatform.workflows.prepared_joint.downstream_workpoint import _stripe_stage_record, assess_staged_prediction
         import copy
         fixture_case=DownstreamWorkpointIterationTests()
         baseline,current,_,contract,_=fixture_case.stripe_preclosure_fixtures()
@@ -622,7 +622,7 @@ function Invoke-TestPython {
   $text=[IO.File]::ReadAllText($inputPath).Replace(('x'*200000),('y'+('x'*199999)))
   [IO.File]::WriteAllText($inputPath,$text,[Text.UTF8Encoding]::new($false))
  }
- $prefix='import json;from pathlib import Path;import projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration as m;m._load_stage_trial=lambda p:json.loads(Path(p).read_text(encoding="utf-8-sig"))'
+ $prefix='import json;from pathlib import Path;import msplatform.workflows.prepared_joint.downstream_workpoint as m;m._load_stage_trial=lambda p:json.loads(Path(p).read_text(encoding="utf-8-sig"))'
  $Arguments[1]=$prefix+';'+$Arguments[1]
  & $RealPython @Arguments
 }
@@ -936,7 +936,7 @@ try{Restore-PreparedOriginalStages -Bootstrap $bootstrap -BootstrapPath 'new-boo
         self.assertEqual(list(results), [])
 
     def test_prepared_checkpoint_replay_validates_full_frozen_problem_without_pa_reads(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import downstream_workpoint_iteration as controller
+        from msplatform.workflows.prepared_joint import downstream_workpoint as controller
         source=(PROJECT/'analysis/run_downstream_workpoint_iteration.ps1').read_text(encoding='utf-8-sig')
         code=re.search(r"\$replayCode=@'\n(.*?)\n'@",source,re.S).group(1)
         for scenario in ('valid','source','target','operator','numerics'):
@@ -1042,7 +1042,7 @@ try{Invoke-CenterTrial -Arguments $arguments -StagedPending $pending -Bootstrap 
 
     def test_prepared_refine_preflight_keeps_five_layer_ip_operator_identity(self):
         from msplatform.backends.comsol import static_field_binding as fields
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import downstream_workpoint_iteration as controller
+        from msplatform.workflows.prepared_joint import downstream_workpoint as controller
         source=(PROJECT/"analysis/run_downstream_workpoint_iteration.ps1").read_text(encoding="utf-8-sig")
         code=re.search(r"\$loadCode=@'\n(.*?)\n'@",source,re.S).group(1)
         actual=dict(ip15=list(range(15)),fixed_analyzer20=list(range(20)),actual_grid="five sealed grids")
@@ -1374,7 +1374,7 @@ if(($b|ConvertTo-Json -Depth 100 -Compress)-ne$before){throw 'Actual resume rewr
             value = json.loads(result.stdout)
             self.assertEqual((value["flight"], value["candidate"]), (10, 4))
             self.assertTrue(value["pending"].endswith("r03-stage-010"))
-            from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_workpoint import _trajectory_physics_identity
+            from msplatform.workflows.prepared_joint.fixed_grid_workpoint import _trajectory_physics_identity
             old_path = parent / "inputs/contract.json"
             from msplatform.io.file_identity import file_sha256
             identities = []
@@ -3100,7 +3100,7 @@ if(-not$failure-and$script:queue.Count-ne0){throw 'Unconsumed controller decisio
                 self.assertIn(message, result["failure"])
                 if message == "inactive stage stencil":
                     for diagnostic in ("action=plan_staged_trial", "stage=stripe_preclosure", "exit_code=1",
-                                       "workpoint_controller_state.py", "CandidateContractError"):
+                                       "controller_state.py", "CandidateContractError"):
                         self.assertIn(diagnostic, result["failure"])
                 self.assertEqual(result["flights"], [])
 

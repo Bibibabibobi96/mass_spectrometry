@@ -132,7 +132,7 @@ class NativeCorridorPlanTest(unittest.TestCase):
         self.assertNotIn('e(20)', text)
 
     def test_candidate_consumes_role_sidecar_and_adjusts_native_corridor(self) -> None:
-        source = (PROJECT / 'simion' / 'mrtof_candidate.lua').read_text(encoding='utf-8-sig')
+        source = (PROJECT.parents[1] / 'src/msplatform/backends/simion/resources/mrtof_candidate.lua').read_text(encoding='utf-8-sig')
         self.assertIn("program_path:gsub('%.lua$', '.priority.lua')", source)
         self.assertIn("native_corridor_instances[expected_role] = index", source)
         self.assertIn('for index,role in ipairs(expected_roles) do', source)

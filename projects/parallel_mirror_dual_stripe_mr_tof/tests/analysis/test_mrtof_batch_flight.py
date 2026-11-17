@@ -5,8 +5,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule import resolve_bunch_source_interval
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight import (
+from msplatform.backends.simion.mr_bunch_source import resolve_bunch_source_interval
+from msplatform.backends.simion.mrtof_batch_flight import (
     materialize_batch_fly2,
     merge_rebased_event_logs,
 )
@@ -36,7 +36,7 @@ class MrtofBatchFlightTest(unittest.TestCase):
             (root / "receipt.json").write_text("{}\n", encoding="utf-8")
             output = root / "batch.fly2"
             with patch(
-                "projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule.load_verified_bunch_source_receipt",
+                "msplatform.backends.simion.mr_bunch_source.load_verified_bunch_source_receipt",
                 return_value=receipt,
             ):
                 result = materialize_batch_fly2(
@@ -66,7 +66,7 @@ class MrtofBatchFlightTest(unittest.TestCase):
             }
             (root / "receipt.json").write_text("{}\n", encoding="utf-8")
             with patch(
-                "projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule.load_verified_bunch_source_receipt",
+                "msplatform.backends.simion.mr_bunch_source.load_verified_bunch_source_receipt",
                 return_value=receipt,
             ):
                 selected = resolve_bunch_source_interval(
@@ -103,7 +103,7 @@ class MrtofBatchFlightTest(unittest.TestCase):
             }
             (root / "receipt.json").write_text("{}\n", encoding="utf-8")
             with patch(
-                "projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule.load_verified_bunch_source_receipt",
+                "msplatform.backends.simion.mr_bunch_source.load_verified_bunch_source_receipt",
                 return_value=receipt,
             ):
                 selected = resolve_bunch_source_interval(

@@ -24,7 +24,7 @@ from msplatform.backends.simion.oa_focus_plan import derive
 from msplatform.backends.simion import collision_overlay
 from msplatform.backends.comsol.static_field_binding import verify_joint_asset_records
 from msplatform.assembly.resolve_assembly import compile_assembly_layout
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import resolve_accelerator_iob_origin, resolve_oa_mr_direct_pose
+from msplatform.backends.simion.native_system_geometry import resolve_accelerator_iob_origin, resolve_oa_mr_direct_pose
 root = pathlib.Path(sys.argv[1]).resolve()
 collision_path = root / 'src/msplatform/backends/simion/collision_overlay.py'
 assert pathlib.Path(collision_overlay.__file__).resolve() == collision_path.resolve()

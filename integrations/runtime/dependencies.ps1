@@ -369,7 +369,10 @@ print(json.dumps(records, ensure_ascii=False))
     $relative = [string]$dependency.source_repo_path
     $id = [string]$dependency.id
     $source = [IO.Path]::GetFullPath((Join-Path $repo $relative))
-    if (-not $ids.Add($id) -or -not $sources.Add($source)) { throw "Duplicate derived Python source: $relative" }
+    if (-not $ids.Add($id)) { throw "Duplicate derived Python dependency id: $id" }
+    if (-not $sources.Add($source)) {
+      continue
+    }
     if (@($dependency.consumers) -cnotcontains $ConsumerId) { continue }
     $selected.Add([pscustomobject]@{
       id=$id; provider_scope=$dependency.provider_scope; provider_project=$dependency.provider_project

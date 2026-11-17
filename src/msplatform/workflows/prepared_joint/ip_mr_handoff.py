@@ -95,7 +95,7 @@ def _exit_distributions(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _reference_exit(reference_mr_run: Path) -> tuple[float, dict[str, Any], dict[str, Any]]:
     # Reuse the existing exact manifest projection; no PA payload is consumed.
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepare_accelerator_interface import verified_reference
+    from msplatform.workflows.prepared_joint.preparation import verified_reference
     from msplatform.backends.simion.mrtof_observations import parse_events
     provider_path = verified_reference(reference_mr_run, "simion/accelerator_provider_runtime_receipt.json")
     source_path = verified_reference(reference_mr_run, "simion/bunch_source_receipt.json")
@@ -230,6 +230,10 @@ def compare_measured_exit_energy(component_receipt_path: Path, reference_mr_run:
                        "component_states": _identity(state_path), "mother_census": _identity(census_path)}}
 
 
+def matching_request_schema_path() -> Path:
+    return Path(__file__).parents[1] / "config/ion_processor_matching_request.schema.json"
+
+
 def resolve_matching_request(
     component_receipt: Path, trajectory_contract: Path,
     accelerator_provider_receipt: Path, request_path: Path, plan_path: Path, *,
@@ -239,7 +243,7 @@ def resolve_matching_request(
     if ip_mr_connection.resolve_ip_mr_connection(composition_plan) != connection:
         raise ValueError("Matching connection differs from the frozen composition scope")
     request = _read(request_path)
-    schema_path = Path(__file__).parents[1] / "config/ion_processor_matching_request.schema.json"
+    schema_path = matching_request_schema_path()
     Draft202012Validator(_read(schema_path)).validate(request)
     exported = _read(component_receipt)
     ip_mr_connection.validate_component_exit_binding(exported)

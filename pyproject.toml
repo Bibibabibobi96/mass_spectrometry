@@ -40,6 +40,7 @@ namespaces = false
 [tool.setuptools.package-data]
 "msplatform.components.rf_multipole" = ["family_contract.json"]
 "msplatform.workflows.multipole_ip" = ["*.json"]
+"msplatform.workflows" = ["config/*.json"]
 "msplatform.contracts" = ["schemas/*.schema.json", "particle_count_policy.json"]
 "msplatform.examples" = ["*.json"]
 "msplatform.backends.simion" = ["resources/*.gem", "resources/*.lua", "resources/*.iob", "resources/*.schema.json", "resources/reflectron_voltage_fit_authoring.json"]

@@ -10,7 +10,7 @@ from pathlib import Path
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_checkpoint import (
     reconstruct_checkpoint,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import (
+from msplatform.workflows.prepared_joint.downstream_workpoint import (
     decide_iteration,
 )
 

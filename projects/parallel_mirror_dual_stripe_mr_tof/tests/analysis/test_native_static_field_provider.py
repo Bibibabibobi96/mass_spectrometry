@@ -14,7 +14,7 @@ from unittest.mock import patch
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis import native_static_field_provider as p
 from msplatform.backends.simion import collision_overlay as collision
 from msplatform.backends.comsol.candidate_authority import derive_candidate_authority
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import build_static_c0_gem
+from msplatform.backends.simion.native_system_geometry import build_static_c0_gem
 from msplatform.backends.comsol.static_field_binding import _record, load_binding
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import _pure_axis_authority, _te1_excitation
 from msplatform.execution.retention import verify_record
@@ -1222,7 +1222,7 @@ class IonProcessorResponseProviderTest(unittest.TestCase):
         grid = dict(box_mm=[0,-2,-2,2,2,6], pitch_mm=[1,1,1], dimensions=[3,5,9])
         for axis, physical_id in (("p1",16),("p2",17)):
             with self.subTest(axis=axis), patch(
-                "projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly._analyzer_geometry_lines",
+                "msplatform.workflows.prepared_joint.ion_processor_assembly._analyzer_geometry_lines",
                 return_value=[f"e({i}) {{ box3d(0,0,0,1,1,1) }}" for i in (16,17)]):
                 gem, _ = p._static_gem(geometry, _pure_axis_authority(source, axis), grid,
                                        boundary_mode="x_mirror_five_faces")
@@ -1236,7 +1236,7 @@ class IonProcessorResponseProviderTest(unittest.TestCase):
         import shutil
         import struct
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_static_field_binding import IonProcessorNativeBindingTest
-        geometry_lines = patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly._analyzer_geometry_lines",
+        geometry_lines = patch("msplatform.workflows.prepared_joint.ion_processor_assembly._analyzer_geometry_lines",
                                return_value=["e(16) { box3d(0,0,0,1,1,1) }", "e(17) { box3d(1,1,1,2,2,2) }"])
         geometry_lines.start()
         self.addCleanup(geometry_lines.stop)

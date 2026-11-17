@@ -24,7 +24,7 @@ from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
 from msplatform.io.file_identity import file_sha256
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_workpoint import (
+from msplatform.workflows.prepared_joint.fixed_grid_workpoint import (
     RESIDUAL_NAMES,
     UNKNOWN_NAMES,
     native_bank_identity,
@@ -37,13 +37,13 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_operating_point import (
+from msplatform.workflows.prepared_joint.prism_operating_point import (
     measured_prism_jacobian,
     _same_frozen_problem,
 )
 
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.workpoint_controller_state import (
+from msplatform.workflows.prepared_joint.controller_state import (
     relative_voltage_step,
 )
 
@@ -2273,7 +2273,7 @@ def _derive_saved_slow_signature(trial: dict[str, Any], manifest_path: Path) -> 
         raise CandidateContractError("trial binds duplicate centre flight logs")
     if logs and record_path(logs[0], base_dir=manifest_path.parent).exists():
         from msplatform.backends.simion.mrtof_observations import parse_events
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import _first_slow_turn_signature
+        from msplatform.workflows.prepared_joint.prism_trial import _first_slow_turn_signature
         verify_record("first slow-turn source log", logs[0], base_dir=manifest_path.parent)
         events = parse_events(record_path(logs[0], base_dir=manifest_path.parent).read_text(encoding="utf-8"))
         origins = [event for event in events if event["kind"] == "drift_phase_origin" and event["ion"] == 1]
@@ -2443,12 +2443,12 @@ def load_prepared_centroid_trial(manifest_path: Path, target_path: Path,
         raise CandidateContractError("Prepared observation P/S voltages differ from actual bound field")
     materialization.update({key:copy.deepcopy(target[key]) for key in (
         "prism_handoff_target","target_positive_mirror_turn_y_mm","target_low_field_tangent_ratio_vy_over_vz","target_slow_turn_y_mm")})
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_handoff import ProjectPhaseSpaceState
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import (
+    from msplatform.workflows.prepared_joint.prism_handoff import ProjectPhaseSpaceState
+    from msplatform.workflows.prepared_joint.prism_trial import (
         _bunch_center_prism_handoff_validation,_bunch_center_stripe_stage_validation,
         _bunch_center_workpoint_validation,_termination_diagnostic,_static_return_diagnostic,
     )
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import summarize_events
+    from msplatform.workflows.prepared_joint.event_analysis import summarize_events
     materialization.update(particle_mass_th=source["mass_amu"],charge_state=source["charge_state"],
                            target_drift_period_ratio=target["target_k"])
     primary=materialization["source_center_state"]

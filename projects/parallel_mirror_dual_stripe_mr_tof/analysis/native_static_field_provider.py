@@ -22,7 +22,7 @@ from msplatform.backends.simion import collision_overlay
 from msplatform.backends.simion.standalone_pa_composition import HEADER, PaHeader
 from msplatform.backends.comsol.candidate_authority import derive_candidate_authority
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import PS_GROUPS, candidate_authority
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import build_static_c0_gem
+from msplatform.backends.simion.native_system_geometry import build_static_c0_gem
 from msplatform.backends.simion.mr_geometry import _analyzer_geometry_lines
 from msplatform.backends.simion.mr_geometry import resolve_mr_geometry as resolve_geometry
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
@@ -101,7 +101,7 @@ def _ip_source_layout(source: dict[str, Any]) -> dict[str, Any]:
 def _static_gem(geometry: dict, authority: dict, grid: dict, *, boundary_mode: str):
     if authority.get("assembly", {}).get("accelerator_provider") != IP_PROVIDER:
         return build_static_c0_gem(geometry, authority, grid, boundary_mode=boundary_mode)
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly import _gem
+    from msplatform.workflows.prepared_joint.ion_processor_assembly import _gem
     rows = authority["component_voltages_v"]
     ip = [row["voltage_v"] for row in rows if row["component_namespace"] == "ion_processor"]
     detector = [row["voltage_v"] for row in rows if row["component_namespace"] == "detector"]
@@ -546,7 +546,7 @@ def _new_collision_plan(source: dict[str, Any], geometry: dict[str, Any]) -> dic
 
 def _compile_ip_fine_extension(request: dict[str, Any]) -> dict[str, Any]:
     """Reuse one ordinary operator, rebuilding only its extended IP fine domain."""
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly import _gem
+    from msplatform.workflows.prepared_joint.ion_processor_assembly import _gem
     from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import extend_fine_z_domain
     from msplatform.backends.simion.mr_geometry import ordinary_pa_file_bytes
     required = {"schema_version", "role", "source_binding_path", "source_field_manifest",
@@ -730,7 +730,7 @@ def compile_request(request: dict[str, Any]) -> dict[str, Any]:
     if "ion_processor_local_domain_update" in request:
         return _compile_ip_fine_extension(request)
     if "replacement_assembly_path" in request:
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly import (
+        from msplatform.workflows.prepared_joint.ion_processor_assembly import (
             compile_materializable_fields,
         )
 
@@ -906,7 +906,9 @@ def compile_request(request: dict[str, Any]) -> dict[str, Any]:
     }
     ancestry_bindings = [source]
     if _ip_metadata(source):
-        inputs["ion_processor_emitter"] = str(Path(__file__).with_name("ion_processor_assembly.py").resolve())
+        from msplatform.workflows.prepared_joint import ion_processor_assembly
+
+        inputs["ion_processor_emitter"] = str(Path(ion_processor_assembly.__file__).resolve())
         inputs["gem_primitives"] = str(Path(gem_primitives.__file__).resolve())
     if reused_basis is not None:
         inputs["source_response_basis"] = inputs["source_binding"]

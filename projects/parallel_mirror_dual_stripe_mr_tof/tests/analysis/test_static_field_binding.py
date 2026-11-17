@@ -22,7 +22,7 @@ from msplatform.backends.comsol.static_field_binding import (
     main as binding_main,
     _load_native_level, native_numerics_match, resolve_native_refine_numerics,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import (
+from msplatform.workflows.prepared_joint.prism_trial import (
     _scalar_field_lua_fields, _scalar_refinement_windows_lua,
 )
 

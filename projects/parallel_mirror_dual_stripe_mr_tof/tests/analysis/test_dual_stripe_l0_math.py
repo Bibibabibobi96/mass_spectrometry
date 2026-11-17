@@ -44,7 +44,7 @@ from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry 
     compile_dual_stripe_width_evaluator,
     dual_stripe_width_at_y_mm,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0 import (
+from msplatform.workflows.prepared_joint.joint_mirror_stripe_l0 import (
     stripes_from_contract,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_operating_seed import (
@@ -66,7 +66,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_operating_
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_exact_k_operating_point import (
     ManagedExactKOperatingPoint,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_stripe_shape_adapter import (
+from msplatform.backends.simion.native_stripe_shape_adapter import (
     build_native_stripe_shape_selection,
 )
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import (

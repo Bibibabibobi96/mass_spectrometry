@@ -290,7 +290,7 @@ assert Path(assembly_interface.__file__).resolve().is_relative_to(Path.cwd() / "
 paths = list(map(Path, sys.argv[2:5]))
 values = [json.loads(path.read_text()) for path in paths]
 # Independent fixture supplies minimal MR conductors; only its renderer is stubbed.
-with patch('projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly._analyzer_geometry_lines', return_value=['e(2) { box3d(1,2,3,4,5,6) }']):
+with patch('msplatform.workflows.prepared_joint.ion_processor_assembly._analyzer_geometry_lines', return_value=['e(2) { box3d(1,2,3,4,5,6) }']):
     prepare_ion_processor_assembly(*values, connection=resolve_ip_mr_connection(values[2]["composition_plan"]), input_paths=paths, output_directory=Path(sys.argv[5]))
 """
         environment = dict(os.environ)

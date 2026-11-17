@@ -29,6 +29,14 @@ The remaining P4 study/provider callers and their frozen tests use the canonical
 and dispatch owners. The affected RF/MR software modules ran 134 tests successfully with three skips;
 the original IP/prism-distance module separately passed all 30 tests. These checks do not rerun native
 fields, Fly or historical assets, and do not establish a complete MR/Repository acceptance result.
+Prepared-joint production responsibilities now have installed owners: native bunch serialization and event
+reading are in `msplatform.backends.simion.mr_bunch_source`; mixed IP assembly, joint L0 and event analysis
+are in `msplatform.workflows.prepared_joint`; source-control and plain-Lua process boundaries are in
+`msplatform.execution`. The integrations and project scripts remain research/CLI consumers. Architecture
+and targeted consumer checks have passed; the complete integration suite passed 585 tests with four
+existing external-asset skips. Ordinary wheel and sdist-rebuilt outside-checkout acceptance passed in
+1790.246 seconds. Full MR, Changed and applicable native acceptance remain separately bounded and are
+not granted by this ownership migration.
 The corridor exporter freezes the [shared scalar sampler](../../../common/comsol/README.md#saved-assembly-scalar-export)
 with its native sources while retaining its own half-domain mapping and conductor
 policy. Its isolated-resource test checks exact frozen bytes and missing-helper
@@ -119,7 +127,7 @@ controller-state夹具的两个配置读取显式使用UTF-8；campaign夹具经
 
 ## 科学核心 P1 接线
 
-`analysis/simion_event_analysis.py` 直接调用 `msplatform.analysis.peak_metrics`；
+`msplatform.workflows.prepared_joint.event_analysis` 直接调用 `msplatform.analysis.peak_metrics`；
 回归在拒绝旧峰形桥导入时执行真实 KDE，保持原适配及拒绝行为。
 `config/ion_processor_dependency.json` 的 `state_schema` 指向唯一规范资源
 `src/msplatform/contracts/schemas`，不恢复旧目录资源副本。
@@ -631,8 +639,15 @@ OA→MR 和 prepared joint 共用 MR `Protect-MrtofContinuationEvidence`：沿�
 analysis CLI. `measured_population` closes the original source census and `loss_acceptance` supplies
 the existing diagnostics; the sole SIMION recorded-event/trajectory adapter is
 `msplatform.backends.simion.mrtof_observations`. CSV iteration and PNG/SVG export are installed neutral
-I/O. Their former project/common implementations and moved CLI operations are retired; the remaining
-native materializer, controller and research operations retain their current owners.
+I/O. Their former project/common implementations and moved CLI operations are retired.
+
+Prepared-joint materialization, continuation, controller and research operations now live under
+`msplatform.workflows.prepared_joint`; complete MR geometry/physics primitives remain in the MR component,
+SIMION programs and native adapters in the SIMION backend, and recorded-event analysis in `msplatform.results`.
+The integration entry selects study configuration and invokes those owners without reading project production
+modules. Installed sources contain no MR-project imports. The four migrated Lua programs are package resources
+and the declared freezer consumes those same paths. Complete consumer, isolated-install and native acceptance
+remain separately required; this ownership migration does not grant field convergence, Fly, GUI or Formal qualification.
 
 The operation consumes explicit preparation, merge, source, timing, field-binding metadata and declared
 observations. It does not discover Git or invoke a supplier, need PA payloads, or create a run owner.

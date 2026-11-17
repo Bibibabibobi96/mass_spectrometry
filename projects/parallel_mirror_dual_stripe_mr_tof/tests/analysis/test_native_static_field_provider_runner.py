@@ -21,7 +21,7 @@ LUA = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get
 class NativeProviderRunnerTest(unittest.TestCase):
     @unittest.skipUnless(LUA.is_file(), 'Installed standalone Lua required')
     def test_iob_ordinary_collision_is_only_allowed_for_static_field(self):
-        source = (SIMION_ROOT / 'build_native_corridor_iob.lua').read_text(encoding='utf-8-sig')
+        source = (SIMION_ROOT.parents[2] / 'src/msplatform/backends/simion/resources/build_native_corridor_iob.lua').read_text(encoding='utf-8-sig')
         start = source.index('if operating.static_field then')
         # Stop before the following OA-only branch, retaining exactly the
         # shared static/family suffix guard as a complete Lua statement.

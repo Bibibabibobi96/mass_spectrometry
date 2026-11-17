@@ -9,8 +9,6 @@ from msplatform.execution.run_paths import project_native_run_path
 from pathlib import Path
 from msplatform.execution.resources import resource_path
 import shutil
-import subprocess
-import sys
 from itertools import zip_longest
 from typing import Any
 
@@ -24,7 +22,7 @@ from msplatform.assembly.resolve_assembly import derive_assembly_scope
 import msplatform.workflows.prepared_joint.source as measured_source
 from msplatform.workflows.prepared_joint.source import materialize_measured_source_slice, materialize_centroid_probe
 from msplatform.backends.simion.resources import native_resource_path
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepare_accelerator_interface import (
+from msplatform.workflows.prepared_joint.preparation import (
     ION_PROCESSOR, validate_execution_contract,
 )
 from msplatform.backends.comsol.static_field_binding import load_binding, native_response_operator
@@ -33,8 +31,8 @@ from msplatform.backends.simion.mr_prepared_field import (
     validate_candidate_binding, native_projection,
 )
 from msplatform.workflows.prepared_joint.ip_mr_connection import resolve_ip_mr_connection
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import resolve_ip_mr_transform
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_flight_preparation import _lua, render_measured_operating_point
+from msplatform.workflows.prepared_joint.ip_mr_handoff import resolve_ip_mr_transform
+from msplatform.workflows.prepared_joint.native_preparation import _lua, render_measured_operating_point
 from msplatform.contracts.trajectory_recording import resolve_trajectory_recording
 from msplatform.backends.simion.native_completion import parse_fly_completed_line
 from msplatform.io.scientific_csv import iter_csv_rows
@@ -76,7 +74,7 @@ def _prepared_assembly(prepared_run: Path, parent: dict, manifest: dict) -> tupl
 
 def _continuation_waveforms(predecessor_manifest: Path) -> tuple[Path, dict[str, Any]]:
     """Resolve the predecessor's manifest-bound small helper for the new run."""
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_continuation import _bound_parent_input
+    from msplatform.workflows.prepared_joint.continuation import _bound_parent_input
     manifest_path = predecessor_manifest.resolve()
     manifest = _read(manifest_path)
     config_record = manifest["run_config"]
@@ -215,9 +213,9 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
             continue
         verified_preparation_reference(prepared_run, path.relative_to(prepared_run).as_posix(), manifest=prepared_manifest)
         freeze_file(path, frozen_runtime / path.name)
-    current_program = Path(__file__).parents[1] / "simion/mrtof_candidate.lua"
+    current_program = native_resource_path("mrtof_candidate.lua")
     program_record = freeze_file(current_program, frozen_runtime / "joint.lua")
-    waveform_source, waveform_provenance = (Path(__file__).parents[3] / "src/msplatform/backends/simion/resources/voltage_waveforms.lua", None)
+    waveform_source, waveform_provenance = (native_resource_path("voltage_waveforms.lua"), None)
     if continuation_predecessor_manifest is not None:
         waveform_source, waveform_provenance = _continuation_waveforms(continuation_predecessor_manifest)
     waveforms_record = freeze_file(waveform_source,
@@ -225,10 +223,10 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
     if waveform_provenance is not None:
         waveforms_record["continuation_source"] = waveform_provenance
     source_runtime_record = freeze_file(source_copy / "source_runtime.lua", frozen_runtime / "joint.source_runtime.lua")
-    science_writer_record = freeze_file(Path(__file__).resolve().parents[3] / "src/msplatform/backends/simion/resources/scientific_event_csv.lua", frozen_runtime / "joint.scientific_event_csv.lua")
+    science_writer_record = freeze_file(native_resource_path("scientific_event_csv.lua"), frozen_runtime / "joint.scientific_event_csv.lua")
     science_reconciliation_record = freeze_file(native_resource_path("scientific_event_reconciliation.lua"),
         frozen_runtime / "joint.scientific_event_reconciliation.lua")
-    freeze_file(Path(__file__).parents[3] / "src/msplatform/backends/simion/resources/scalar_field_adapter.lua",
+    freeze_file(native_resource_path("scalar_field_adapter.lua"),
                 frozen_runtime / "joint.scalar_field_adapter.lua")
     reference = runtime / "mr_reference.operating_point.lua"
     verified_preparation_reference(prepared_run, reference.relative_to(prepared_run).as_posix(), manifest=prepared_manifest)
@@ -252,12 +250,12 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
         "for _,window in ipairs(t.static_field.refinement_windows) do\n"
         "  window.memory_consumer_crop=crops[window.name]\nend\nreturn t\n")
     (frozen_runtime / "joint.operating_point.lua").write_text(sidecar, encoding="utf-8", newline="\n")
-    launcher = Path(__file__).parents[1] / "simion/run_iob_flight.lua"
+    launcher = native_resource_path("run_iob_flight.lua")
     freeze_file(launcher, inputs / launcher.name)
     effective_launcher = inputs / launcher.name
     projection = freeze_file(resource_path("native_run_path.lua"), inputs / "native_run_path.lua")
     if field_binding_path is not None:
-        builder = Path(__file__).parents[1] / "simion/build_native_corridor_iob.lua"
+        builder = native_resource_path("build_native_corridor_iob.lua")
         freeze_file(builder, inputs / builder.name)
         effective_launcher = inputs / "build_and_run_prepared_iob.lua"
         effective_launcher.write_text("local directory=assert(debug.getinfo(1,'S').source:sub(2):match('^(.*[/\\\\])'))\n"
@@ -332,10 +330,11 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
 def freeze_equivalence_reference(reference_run: Path, preparation: dict[str, Any],
                                   inputs: Path) -> dict[str, Any]:
     """Bind a completed batch from a fully verified interrupted flight, without PA reads."""
-    subprocess.run([sys.executable, "-c", "from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)",
-                    str(reference_run / "run_manifest.json"), "--require-status", "interrupted"],
-                   cwd=Path(__file__).resolve().parents[3], timeout=60,
-                   check=True, capture_output=True, text=True, encoding="utf-8")
+    from msplatform.backends.simion.native_completion import retention_api
+    from msplatform.execution.manifest_verification import verify_run_manifest
+
+    verify_run_manifest(reference_run / "run_manifest.json", require_status="interrupted",
+                        retention_api=retention_api)
     manifest = _read(reference_run / "run_manifest.json")
     # Historical MR runs remain read-only comparison evidence. New executions
     # have exactly the assembly owner/mode; no old public execution branch exists.
@@ -533,10 +532,10 @@ def analyze_centroid_probe(preparation_path: Path, log_path: Path, output_direct
     import math
     from msplatform.contracts.particle_physics import kinetic_energy_ev
     from msplatform.backends.simion.mrtof_observations import read_scientific_events
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_handoff import (
+    from msplatform.workflows.prepared_joint.prism_handoff import (
         ProjectPhaseSpaceState, observation_from_simion_events, prism_handoff_residuals,
     )
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import _prism_handoff_event_prefix, _static_field_receipt
+    from msplatform.workflows.prepared_joint.prism_trial import _prism_handoff_event_prefix, _static_field_receipt
     preparation = _read(preparation_path)
     if preparation.get("source_mode") != "centroid_probe" or preparation["expected_particle_ids"] != [1]:
         raise ValueError("Independent constructed centroid probe required")

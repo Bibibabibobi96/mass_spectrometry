@@ -351,7 +351,7 @@ if($receipt.exit_count-ne1){throw 'wrong receipt'}
         if not powershell:
             self.skipTest("PowerShell 7 required")
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_ion_processor_assembly import AssemblyTests
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import ion_processor_assembly as assembly
+        from msplatform.workflows.prepared_joint import ion_processor_assembly as assembly
         from integrations.workflows.accelerator_interface.geometry import prepare_ion_processor_assembly
         from msplatform.workflows.prepared_joint.ip_mr_connection import resolve_ip_mr_connection
 
@@ -457,7 +457,7 @@ Write-Output 'REAL_FIELD_PROVIDER=PASS'
             connection = dict(upstream=dict(instance_id="ip"), downstream=dict(instance_id="mr"))
             with patch('integrations.workflows.accelerator_interface.prepare.derive_assembly_scope', return_value={}), \
                  patch('msplatform.workflows.prepared_joint.ip_mr_connection.resolve_ip_mr_connection', return_value=connection), \
-                 patch('projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff.resolve_matching_request', side_effect=AssertionError('must not match')), \
+                 patch('msplatform.workflows.prepared_joint.ip_mr_handoff.resolve_matching_request', side_effect=AssertionError('must not match')), \
                  patch('msplatform.backends.simion.ip_exit.export_component_exit', return_value=zero):
                 self.assertEqual(_resolve_ip_matching(source_run=root, results=root, inputs=root, frozen=frozen), zero)
 
@@ -631,8 +631,8 @@ if(($Bad-eq'bad')-ne$caught-or($Bad-eq'bad')-eq$vendorAllowed){throw 'Live ident
                 payload = assets/"iob_seed_placeholder_01.pa0"
                 payload.write_bytes(b"inert shared PA fixture; not a SIMION field")
                 originals = {path: path.read_bytes() for path in (seed, payload)}
-                scripts = snapshot/"projects/parallel_mirror_dual_stripe_mr_tof/simion"
-                scripts.mkdir(parents=True)
+                scripts = snapshot/"src/msplatform/backends/simion/resources"
+                scripts.mkdir(parents=True, exist_ok=True)
                 for name in ("mrtof_candidate.lua", "mirror_cycle_counter.lua", "build_native_corridor_iob.lua"):
                     (scripts/name).write_text("-- inert frozen script fixture")
                 scalar = snapshot/"src/msplatform/backends/simion/resources/scalar_field_adapter.lua"
@@ -701,6 +701,7 @@ if(($Bad-eq'bad')-ne$caught-or($Bad-eq'bad')-eq$vendorAllowed){throw 'Live ident
                         (output/name).write_text("inert source fixture")
                     return dict(counts=dict(source=1, transferred=1, not_transferred=0))
                 with patch.object(module, "REPO", snapshot), \
+                        patch.object(module, "native_resource_path", side_effect=lambda name: scripts/name), \
                         patch.object(module, "verified_reference", side_effect=lambda run, relative, **kw: run/relative), \
                         patch.object(module, "verified_preparation_reference", side_effect=lambda run, relative, **kw: run/relative), \
                         patch("msplatform.backends.comsol.static_field_binding.load_binding", return_value=binding), \
@@ -790,7 +791,8 @@ if(($Bad-eq'bad')-ne$caught-or($Bad-eq'bad')-eq$vendorAllowed){throw 'Live ident
                 self.assertEqual({path: path.read_bytes() for path in originals}, originals)
                 self.assertEqual(sorted(path.name for path in assets.iterdir()), [payload.name])
                 self.assertEqual(sorted(path.name for path in seed.parent.iterdir()),
-                                 sorted([seed.name, waveform.name, scalar.name]))
+                                 sorted([seed.name, waveform.name, scalar.name, "mrtof_candidate.lua",
+                                         "mirror_cycle_counter.lua", "build_native_corridor_iob.lua"]))
                 self.assertIn(module._lua(str(runtime/seed.name)), (runtime/"workbench_build.lua").read_text())
                 self.assertEqual(result["guard_paths"], sorted({item["pa_path"] for item in binding["instances"]} | {binding["sources"]["scalar_pa"]}))
 
@@ -1120,7 +1122,7 @@ if($LASTEXITCODE-ne0){throw 'actual preparation command did not disable bytecode
 
     def test_ip_export_and_handoff_use_actual_provider_without_source_reloading(self):
         fixture, reference, result, inputs, sources, matching = self.matching_fixture()
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import prepare_handoff
+        from msplatform.workflows.prepared_joint.ip_mr_handoff import prepare_handoff
         handoff = prepare_handoff(matching, matching["resolved"]["composition_plan"], result / "mrtof_handoff")
         self.assertEqual(handoff["counts"], dict(source=100, transferred=81, not_transferred=19))
         with (result / "mrtof_handoff/component_particle_state.csv").open(newline="") as stream:
@@ -1160,7 +1162,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' 
 import json,sys
 from pathlib import Path
 from integrations.workflows.accelerator_interface.prepare import _resolve_ip_matching
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import prepare_handoff
+from msplatform.workflows.prepared_joint.ip_mr_handoff import prepare_handoff
 from msplatform.workflows.prepared_joint.source import materialize_measured_source
 source,authorities,output=map(Path,sys.argv[1:])
 output.mkdir()
@@ -1173,7 +1175,7 @@ assert handoff["connection"]["upstream"]["instance_id"]=="processor_a"
 print("DETACHED_IP_MR_COMPLETE_SOURCE=PASS")
 """
         environment = dict(os.environ)
-        environment.pop("PYTHONPATH", None)
+        environment["PYTHONPATH"] = str(inputs / "runtime_snapshot/src") + os.pathsep + str(inputs / "runtime_snapshot")
         completed = subprocess.run([sys.executable, "-B", "-s", "-c", program,
             str(fixture.run), str(authorities), str(fixture.root / "detached_source")],
             cwd=inputs / "runtime_snapshot", env=environment, capture_output=True,
@@ -1183,7 +1185,7 @@ print("DETACHED_IP_MR_COMPLETE_SOURCE=PASS")
 
     def test_public_prepare_clis_reject_foreign_destination_before_writing(self):
         from integrations.workflows.accelerator_interface import prepare as interface
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import prepared_joint_trial as joint
+        from msplatform.workflows.prepared_joint import trial as joint
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for module, mode, operation, arguments in (
@@ -1236,7 +1238,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' 
             self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr)
             snapshot = run / "inputs/runtime_snapshot"
             environment = dict(os.environ)
-            environment.pop("PYTHONPATH", None)
+            environment["PYTHONPATH"] = str(snapshot / "src") + os.pathsep + str(snapshot)
             completed = subprocess.run([sys.executable, "-B", "-s", "-m", "integrations.workflows.accelerator_interface.prepare",
                 "--provider", "orthogonal_accelerator", "--reference-mr-run", str(reference), "--run-directory", str(run)],
                 cwd=snapshot, env=environment, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)

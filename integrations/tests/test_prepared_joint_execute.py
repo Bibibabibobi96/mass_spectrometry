@@ -333,7 +333,8 @@ class PreparedJointExecuteTests(unittest.TestCase):
     def test_scientific_receipt_arguments_reach_actual_probe_and_equivalence_clis(self):
         import contextlib
         import io
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import prepared_joint_trial, mrtof_batch_flight
+        from msplatform.workflows.prepared_joint import trial as prepared_joint_trial
+        from msplatform.workflows.prepared_joint import flight as prepared_flight
         runner = REPO / "integrations/workflows/prepared_joint/execute.ps1"
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -368,8 +369,8 @@ ConvertTo-Json -InputObject @($script:calls) -Depth 10 -Compress
             for arguments in calls:
                 self.assertEqual(arguments.count("--scientific-event-receipt"), 1)
                 self.assertEqual(Path(arguments[arguments.index("--scientific-event-receipt")+1]), root/"merge.json")
-                cli = prepared_joint_trial if arguments[1].endswith("prepared_joint_trial") else mrtof_batch_flight
-                function = "analyze_centroid_probe" if cli is prepared_joint_trial else "compare_trajectory_representation"
+                cli = prepared_joint_trial if arguments[1].endswith(".trial") else prepared_flight
+                function = "analyze_centroid_probe" if arguments[2] == "analyze-probe" else "compare_trajectory_representation"
                 with patch.object(prepared_joint_trial, function) as actual_analysis, \
                         patch.object(sys, "argv", [arguments[1], *arguments[2:]]), contextlib.redirect_stdout(io.StringIO()):
                     cli.main()
@@ -727,7 +728,7 @@ foreach($kind in @('Prepared','Legacy')){
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
 
     def test_prepared_child_rejects_old_or_wrong_owner(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import load_prepared_centroid_trial
+        from msplatform.workflows.prepared_joint.downstream_workpoint import load_prepared_centroid_trial
         with tempfile.TemporaryDirectory() as directory:
             manifest = Path(directory) / "run_manifest.json"
             for owner, mode in (("parallel_mirror_dual_stripe_mr_tof", "two_prism_joint_measured_trial"),
@@ -756,7 +757,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' 
                                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
         self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr)
         snapshot = inputs / "runtime_snapshot"
-        relative = Path("projects/parallel_mirror_dual_stripe_mr_tof/simion")
+        relative = Path("src/msplatform/backends/simion/resources")
         for name in ("mrtof_candidate.lua", "run_iob_flight.lua", "build_native_corridor_iob.lua"):
             self.assertEqual((snapshot / relative / name).read_bytes(), (REPO / relative / name).read_bytes())
         scalar_relative = Path("src/msplatform/backends/simion/resources/scalar_field_adapter.lua")
@@ -777,9 +778,9 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' 
             scientific_event_writer=writer, scientific_event_reconciliation=reconciliation)), encoding="utf-8")
         batch = fixture.root / "batch"
         environment = dict(os.environ)
-        environment.pop("PYTHONPATH", None)
+        environment["PYTHONPATH"] = str(snapshot / "src") + os.pathsep + str(snapshot)
         completed = subprocess.run([sys.executable, "-B", "-s", "-m",
-            "projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight", "materialize-joint",
+            "msplatform.workflows.prepared_joint.flight", "materialize-joint",
             "--preparation", str(preparation), "--particle-id-min", "2", "--particle-id-max", "2", "--output", str(batch)],
             cwd=snapshot, env=environment, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
         self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr)
@@ -809,7 +810,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' 
 
     def test_equivalence_reads_exact_old_or_new_identity_without_execution_fallback(self):
         from msplatform.execution.retention import file_record
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial import freeze_equivalence_reference
+        from msplatform.workflows.prepared_joint.trial import freeze_equivalence_reference
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             prior = root / "prior"
@@ -837,7 +838,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' 
                 (prior / "run_manifest.json").write_text(json.dumps(dict(project=owner, mode=mode, status="interrupted", outputs=records)))
                 destination = root / str(index)
                 destination.mkdir()
-                with patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial.subprocess.run") as verifier:
+                with patch("msplatform.execution.manifest_verification.verify_run_manifest") as verifier:
                     if index == 2:
                         with self.assertRaisesRegex(ValueError, "owner/mode"):
                             freeze_equivalence_reference(prior, preparation, destination)

@@ -14,13 +14,14 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.materialize_simion_prototype import _particle_source_record
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import SOURCE_COUNT_KEYS, _mirrored_branch_turn_diagnostics, analyze_log, histogram_half_height_bin_span, load_particle_source, summarize_events, peak_time_metrics
+from msplatform.backends.simion.prototype_materialization import _particle_source_record
+from msplatform.workflows.prepared_joint.event_analysis import SOURCE_COUNT_KEYS, _mirrored_branch_turn_diagnostics, analyze_log, histogram_half_height_bin_span, load_particle_source, summarize_events, peak_time_metrics
 from msplatform.backends.simion.mrtof_observations import collision_diagnostics, parse_events
+from msplatform.backends.simion.resources import native_resource_path
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
-PROGRAM = REPOSITORY_ROOT / "projects" / "parallel_mirror_dual_stripe_mr_tof" / "simion" / "mrtof_candidate.lua"
+PROGRAM = native_resource_path("mrtof_candidate.lua")
 PEAK_CONTRACT = json.loads((Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json").read_text(encoding="utf-8"))["peak_analysis"]
 
 
@@ -1149,7 +1150,7 @@ scientific_events:close()
                                           ("status,Fly completed.\n", 1), ("", 1)):
                 log.write_text(event + suffix, encoding="utf-8")
                 result = subprocess.run([sys.executable, "-m",
-                    "projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis",
+                    "msplatform.workflows.prepared_joint.event_analysis",
                     str(log), str(output), "--input-manifest", str(manifest), "--source-key", "center_fly2"],
                     cwd=REPOSITORY_ROOT, capture_output=True, text=True,
                     timeout=30, check=False)

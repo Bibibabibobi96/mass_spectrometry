@@ -7,7 +7,6 @@ import copy
 import csv
 from pathlib import Path
 import re
-import subprocess
 from typing import Any
 
 from msplatform.backends.simion import mr_prepared_field
@@ -18,9 +17,8 @@ from msplatform.execution.inputs import freeze_file
 from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
 from msplatform.execution.retention import file_record
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepare_accelerator_interface import (
-    REPO, verified_reference,
-)
+from msplatform.workflows.prepared_joint.preparation import verified_reference
+from msplatform.backends.simion.resources import native_resource_path
 
 
 def _read(path: Path) -> dict[str, Any]:
@@ -490,7 +488,7 @@ def freeze_field_reference(reference_run: Path, inputs: Path, *, compiler_contra
     """Bind only original field geometry/voltage/grid authors; never open old PA."""
     from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import resolve_trajectory_profile
     from msplatform.components.parallel_mirror_dual_stripe_mr_tof.drift_phase_contract import resolve_drift_phase_contract
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.materialize_simion_prototype import _full_path_timeout_us
+    from msplatform.backends.simion.prototype_materialization import _full_path_timeout_us
 
     materialization_path = verified_reference(reference_run, "results/two_prism_trial_materialization.json")
     materialization_record = freeze_file(materialization_path, inputs / "reference_materialization.json")
@@ -556,22 +554,20 @@ def freeze_field_reference(reference_run: Path, inputs: Path, *, compiler_contra
 
 def project_provider_voltages(source: dict, request: dict, inputs: Path, lua_executable: Path) -> dict:
     """Evaluate the sole provider Lua schedule with RF=0; no field or flight API."""
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly import derive_lift_seed
+    from msplatform.workflows.prepared_joint.ion_processor_assembly import derive_lift_seed
     if lua_executable.name.lower() not in {"lua", "lua.exe", "lua5.1", "lua5.1.exe"} or not lua_executable.is_file():
         raise ValueError("an explicit plain Lua interpreter is required; no SIMION solver fallback")
     baseline, point = copy.deepcopy(source["baseline"]), copy.deepcopy(source["native_operating_point"])
     point["lift_v"] = derive_lift_seed(source, request)
     baseline["electric"]["lift_v"] = point["lift_v"]
     dependency = _read(inputs / "accelerator_dependency.json")
-    schedule_source = (REPO / dependency["provider_voltage_schedule"]).resolve()
-    if schedule_source != (REPO / "src/msplatform/backends/simion/resources/native_drive.lua").resolve():
+    if dependency["provider_voltage_schedule"] != "src/msplatform/backends/simion/resources/native_drive.lua":
         raise ValueError("provider voltage schedule must belong to the selected IP component")
-    schedule = freeze_file(schedule_source,
+    schedule = freeze_file(native_resource_path("native_drive.lua"),
                            inputs / "provider_native_drive.lua")
-    waveforms_source = (REPO / dependency["provider_voltage_waveforms"]).resolve()
-    if waveforms_source != (REPO / "src/msplatform/backends/simion/resources/voltage_waveforms.lua").resolve():
+    if dependency["provider_voltage_waveforms"] != "src/msplatform/backends/simion/resources/voltage_waveforms.lua":
         raise ValueError("provider voltage waveforms must be the declared common module")
-    waveforms = freeze_file(waveforms_source, inputs / "provider_voltage_waveforms.lua")
+    waveforms = freeze_file(native_resource_path("voltage_waveforms.lua"), inputs / "provider_voltage_waveforms.lua")
     when = max(baseline["schedule"]["lift_end_us"], source["native_timing"]["pulse_start_us"])
     config = dict(baseline=baseline, native_operating_point=point, native_timing=source["native_timing"])
     program = inputs / "provider_voltage_evaluation.lua"
@@ -580,9 +576,10 @@ def project_provider_voltages(source: dict, request: dict, inputs: Path, lua_exe
                        "local v=d.voltages(" + _lua(config) + "," + _lua(when) + ",0)\n"
                        "local out={} for i=1,15 do out[i]=string.format('%.17g',assert(v[i])) end\n"
                        "assert(#v==15);print(table.concat(out,','))\n", encoding="utf-8", newline="\n")
-    evaluation = subprocess.run([str(lua_executable), str(program)], cwd=REPO,
-                                capture_output=True, text=True, timeout=30, check=True)
-    values = [float(token) for token in evaluation.stdout.strip().split(",")]
+    from msplatform.execution.lua_process import run_lua_program
+
+    output = run_lua_program(lua_executable, program, inputs)
+    values = [float(token) for token in output.strip().split(",")]
     if len(values) != 15 or not all(math.isfinite(v) for v in values):
         raise ValueError("provider native schedule did not return 15 finite electrode voltages")
     result = dict(values_v15=values, source_native_drive=schedule, source_voltage_waveforms=waveforms, evaluation_time_us=when,

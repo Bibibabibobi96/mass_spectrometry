@@ -35,7 +35,7 @@ from msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0 imp
     NativeStripeSpatialShapeRoot,
     materialize_native_stripe_spatial_return_root,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0 import (
+from msplatform.workflows.prepared_joint.joint_mirror_stripe_l0 import (
     StripeHardBoundary,
     classify_constraint_system,
     derive_coupled_drift_state,
@@ -61,7 +61,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l1 import (
     refine_l0_gamma_intersection,
     screen_l1_fixed_geometry,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_stripe_shape_adapter import (
+from msplatform.backends.simion.native_stripe_shape_adapter import (
     build_native_stripe_shape_selection,
     load_native_stripe_shape_selection,
 )

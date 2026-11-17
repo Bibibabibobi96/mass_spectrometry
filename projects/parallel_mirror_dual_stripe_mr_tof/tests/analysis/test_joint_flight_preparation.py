@@ -10,10 +10,11 @@ import json
 import os
 
 from msplatform.backends.simion.mr_prepared_field import audit_field_coverage
+from msplatform.backends.simion.resources import native_resource_path
 from msplatform.execution.retention import file_record
 from msplatform.io.file_identity import file_sha256
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_flight_preparation import (
+from msplatform.workflows.prepared_joint.native_preparation import (
     _lua, render_measured_operating_point, freeze_field_reference,
     prepare_interface_field_audit, summarize_interface_field_audit,
     prepare_event_field_audit, summarize_event_field_audit,
@@ -25,7 +26,8 @@ PROJECT = Path(__file__).resolve().parents[2]
 class JointPreparationTests(unittest.TestCase):
     def test_provider_voltage_projection_freezes_injected_public_waveforms(self):
         from projects.dual_pressure_rectilinear_ion_processor.tests.test_functional import load_config
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_flight_preparation import REPO, project_provider_voltages
+        from msplatform.workflows.prepared_joint.native_preparation import project_provider_voltages
+        REPO = PROJECT.parents[1]
         lua = shutil.which('lua') or shutil.which('lua5.1') or 'C:/Program Files/SIMION-2020/lua.exe'
         if not Path(lua).is_file():
             self.skipTest('plain Lua unavailable')
@@ -109,7 +111,7 @@ print('FIVE_ROLE_BUILDER_MOCK=PASS')
 ''')
             for fault in ('none','saved_grid','saved_refinable','priority','metal','boundary'):
                 with self.subTest(fault=fault):
-                    actual = subprocess.run([lua,str(root/'fixture.lua'),str(root),str(PROJECT/'simion/build_native_corridor_iob.lua'),fault],
+                    actual = subprocess.run([lua,str(root/'fixture.lua'),str(root),str(native_resource_path("build_native_corridor_iob.lua")),fault],
                                             cwd=root,capture_output=True,text=True,timeout=30)
                     if fault=='none':
                         self.assertEqual(actual.returncode,0,actual.stdout+actual.stderr)
@@ -212,7 +214,7 @@ print('CANONICAL_INNER_SOURCE_REOPEN=PASS')
 
     def test_reference_json_binds_real_compiler_and_derives_timeout_without_lua_numerics(self):
         import copy
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.materialize_simion_prototype import _full_path_timeout_us
+        from msplatform.backends.simion.prototype_materialization import _full_path_timeout_us
         from msplatform.components.parallel_mirror_dual_stripe_mr_tof.drift_phase_contract import OPPOSITE_MIRROR_TURN
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -260,7 +262,7 @@ print('CANONICAL_INNER_SOURCE_REOPEN=PASS')
                     (reference/"results/two_prism_trial_materialization.json").write_text(json.dumps(materialization))
                     inputs = root/case
                     inputs.mkdir()
-                    with patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_flight_preparation.verified_reference",
+                    with patch("msplatform.workflows.prepared_joint.native_preparation.verified_reference",
                                side_effect=lambda owner,relative:owner/relative):
                         if case != "valid":
                             with self.assertRaises(ValueError):
@@ -318,7 +320,7 @@ print('MEASURED_BUILDER_MOCK=PASS')
             for verified in (True, False):
                 operating['field_assembly_verified'] = verified
                 write('operating.lua', 'return ' + _lua(operating))
-                result = subprocess.run([lua, str(root / 'fixture.lua'), str(root), str(PROJECT / 'simion/build_native_corridor_iob.lua')],
+                result = subprocess.run([lua, str(root / 'fixture.lua'), str(root), str(native_resource_path("build_native_corridor_iob.lua"))],
                                         cwd=root, capture_output=True, text=True, timeout=30, check=False)
                 if verified:
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -390,7 +392,7 @@ print('OA_BUILDER_MOCK=PASS')
                     scenario['accelerator_ring_voltages_v'] = []
                 (root / 'operating.lua').write_text('return ' + _lua(scenario), encoding='utf-8')
                 result = subprocess.run(
-                    [lua, str(root / 'fixture.lua'), str(root), str(PROJECT / 'simion/build_native_corridor_iob.lua'),
+                    [lua, str(root / 'fixture.lua'), str(root), str(native_resource_path("build_native_corridor_iob.lua")),
                      str(PROJECT / 'simion/candidate_voltage_map.lua'), str(root / 'priority.lua'),
                      invalid],
                     cwd=root, capture_output=True, text=True, timeout=30, check=False)

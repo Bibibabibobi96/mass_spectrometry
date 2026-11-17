@@ -1,6 +1,6 @@
 """Identity for the symmetric full-domain 1 mm analyzer raw PA."""
 from __future__ import annotations
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_component_requirements import read_accelerator_geometry_authority
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.accelerator_requirements import read_accelerator_geometry_authority
 
 import argparse
 import json
@@ -10,7 +10,7 @@ from typing import Any
 
 from msplatform.io.file_identity import file_sha256
 from msplatform.backends.simion.pa_family_cache import canonical_pa_family_cache_key
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import (
+from msplatform.backends.simion.native_system_geometry import (
     build_analyzer_gem,
 )
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract

@@ -17,7 +17,7 @@ from msplatform.execution.retention import file_record
 from msplatform.workflows.prepared_joint.source import (
     materialize_measured_source, materialize_measured_source_slice,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight import merge_measured_event_logs
+from msplatform.backends.simion.mrtof_batch_flight import merge_measured_event_logs
 from msplatform.workflows.prepared_joint.diagnostics import main
 from msplatform.workflows.prepared_joint.diagnostics import (
     _design_reference, _prism_rows, _prism_statistics, _save_figure, _snapshot_rows, analyze_prepared_joint_flight,

@@ -12,7 +12,8 @@ GEM_TEMPLATES = {
 NATIVE_RESOURCES = frozenset({
     "native_terminal_recording.lua",
     "collision_hs1_gas.lua", "collision_sds_binding.lua", "rf_ip_gas_selection.lua", "rf_ip_tracking_hs1.lua",
-    "mrtof_measured_source_runtime.lua",
+    "mrtof_measured_source_runtime.lua", "mrtof_candidate.lua", "run_iob_flight.lua", "build_native_corridor_iob.lua",
+    "mirror_cycle_counter.lua",
     "export_axis_basis.lua",
     "ip_runtime.lua", "ip_build_workbench.lua", "ip_probe_native_field.lua", "ip_extraction_force_audit.lua",
     "native_drive.lua", "generic_scalar_field.lua", "scalar_field_adapter.lua", "sfi_scalar_field.lua", "ip_mr_scalar_field.lua", "compose_standalone_pa.lua",

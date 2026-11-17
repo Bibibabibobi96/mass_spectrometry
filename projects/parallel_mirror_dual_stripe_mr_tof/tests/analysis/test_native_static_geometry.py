@@ -6,11 +6,11 @@ import copy
 import unittest
 from unittest.mock import patch
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import (
+from msplatform.backends.simion.native_system_geometry import (
     build_static_c0_gem,
 )
 
-MODULE = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry"
+MODULE = "msplatform.backends.simion.native_system_geometry"
 
 
 def box(values):

@@ -490,7 +490,7 @@ with tempfile.TemporaryDirectory() as request_directory:
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
             environment = snapshot_environment(snapshot)
             result = subprocess.run([sys.executable,"-B","-s","-m",
-                "projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_continuation","--help"],
+                "msplatform.workflows.prepared_joint.continuation","--help"],
                 cwd=snapshot,env=environment,capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
 
@@ -694,7 +694,7 @@ assert Path(capacity_protection.__file__).is_relative_to(Path.cwd())
                     statement += "\nfrom projects.dual_pressure_rectilinear_ion_processor.analysis import batching\n"
                     statement += "assert Path(batching.__file__).is_relative_to(Path.cwd())\n"
                 if consumer == 'accelerator_interface':
-                    statement += "\nfrom projects.parallel_mirror_dual_stripe_mr_tof.analysis import bunch_source_and_schedule\n"
+                    statement += "\nfrom msplatform.backends.simion import mr_bunch_source\n"
                 command = [sys.executable, '-B', '-s', '-c', statement]
                 completed = subprocess.run(command, cwd=snapshot, env=environment,
                     capture_output=True, text=True, encoding='utf-8', timeout=60)

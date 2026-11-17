@@ -121,9 +121,9 @@ class InterfacePreparationTests(unittest.TestCase):
                     with patch(module+'.verified_reference', side_effect=lambda owner, relative, **kwargs: owner/relative), patch(module+'.verified_preparation_reference', side_effect=lambda owner, relative, **kwargs: owner/relative), \
                          patch(module+'._resolve_ip_matching') as handoff, \
                          patch(module+'._joint_binding_inputs', side_effect=lambda **kw: dict(binding=field_binding_module.load_binding(fields/'results/field_binding.json'))), \
-                         patch('projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff.prepare_handoff'), \
+                         patch('msplatform.workflows.prepared_joint.ip_mr_handoff.prepare_handoff'), \
                          patch(field_module+'.load_binding', return_value=binding) as load, \
-                         patch('projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff.compare_measured_exit_energy', return_value={}), \
+                         patch('msplatform.workflows.prepared_joint.ip_mr_handoff.compare_measured_exit_energy', return_value={}), \
                          patch('integrations.workflows.accelerator_interface.prepare.bind_joint_workbench', return_value={}):
                         if bad_level is None:
                             receipt = finalize_interface(source_run=source, reference_mr_run=reference, design_run=design,
@@ -323,8 +323,8 @@ class InterfacePreparationTests(unittest.TestCase):
             with patch(module+'.verified_reference', side_effect=lambda run, relative, **kwargs: run/relative), patch(module+'.verified_preparation_reference', side_effect=lambda run, relative, **kwargs: run/relative), \
                  patch(module+'._joint_binding_inputs',return_value=dict(binding={})), \
                  patch(module+'._resolve_ip_matching'), \
-                 patch('projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff.prepare_handoff'), \
-                 patch('projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff.compare_measured_exit_energy',return_value={}), \
+                 patch('msplatform.workflows.prepared_joint.ip_mr_handoff.prepare_handoff'), \
+                 patch('msplatform.workflows.prepared_joint.ip_mr_handoff.compare_measured_exit_energy',return_value={}), \
                  patch('integrations.workflows.accelerator_interface.prepare.bind_joint_workbench',return_value={}) as bind:
                 receipt = finalize_interface(source_run=source,reference_mr_run=reference,design_run=design,
                                              field_run=fields,run_directory=run,contract_path=execution)

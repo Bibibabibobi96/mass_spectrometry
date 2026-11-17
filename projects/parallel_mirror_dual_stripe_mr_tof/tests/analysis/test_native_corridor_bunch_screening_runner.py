@@ -387,7 +387,7 @@ class NativeCorridorBunchScreeningRunnerTest(unittest.TestCase):
     def _te1_field_preflight(self, mutation=None, *, variation_enabled=True, center_view=False):
         from msplatform.backends.comsol import static_field_binding as fields
         from msplatform.backends.comsol import candidate_authority as provider
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import downstream_fixed_grid_workpoint as workpoint
+        from msplatform.workflows.prepared_joint import fixed_grid_workpoint as workpoint
         text = RUNNER.read_text(encoding="utf-8-sig")
         helper = text.split("function Assert-StaticScreeningField {", 1)[1].split("\nfunction ", 1)[0]
         code = helper.split("$code=@'\n", 1)[1].split("\n'@", 1)[0]
@@ -549,7 +549,7 @@ class NativeCorridorBunchScreeningRunnerTest(unittest.TestCase):
                 self.assertIn("cannot rebind", result.stdout)
 
     def _source_physical_comparison(self, mutation=None):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import bunch_source_and_schedule as sources
+        from msplatform.backends.simion import mr_bunch_source as sources
         text = RUNNER.read_text(encoding="utf-8-sig")
         start = text.index("  $sourceCode=@'\n") + len("  $sourceCode=@'\n")
         code = text[start:text.index("\n'@", start)]

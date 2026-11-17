@@ -30,7 +30,7 @@ CASES = {
             "Copy-VerifiedRunInput",
             "--pulse-off-time-us",
             "caller_common_envelope_verified_against_this_cohort",
-            "bunch_source_and_schedule",
+            "mr_bunch_source",
             "freeze-schedule",
             "bunch_global_pulse_schedule.json",
             "solver_execution='none'",

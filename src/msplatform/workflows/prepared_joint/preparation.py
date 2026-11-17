@@ -10,8 +10,6 @@ from msplatform.execution.retention import verify_record
 
 PROJECT = "parallel_mirror_dual_stripe_mr_tof"
 ION_PROCESSOR = "dual_pressure_rectilinear_ion_processor"
-REPO = Path(__file__).resolve().parents[3]
-CONFIG = REPO / "projects" / PROJECT / "config"
 
 
 def _read(path: Path) -> dict[str, Any]:
@@ -62,7 +60,7 @@ def validate_execution_contract(reference: dict[str, Any], contract: dict[str, A
     if scientific != expected:
         if not allow_controller_budget:
             raise ValueError("Finalization contract changes more than the selected trajectory step")
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import assert_bounded_controller_resume
+        from msplatform.workflows.prepared_joint.downstream_workpoint import assert_bounded_controller_resume
         budget = assert_bounded_controller_resume(expected, scientific, None, budget_only=True)
     return dict(reference_profile=changes["reference_profile"], selected_profile=changes["selected_profile"],
                 numerical_change=changes["numerical_change"], execution_budget_change=budget,

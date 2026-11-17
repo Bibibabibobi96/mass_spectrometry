@@ -45,7 +45,7 @@ def _polygon_mask(part: dict, x: float, points: np.ndarray, shape: tuple) -> np.
 
 def _section(geometry: dict, x: float, box: list, pixel_mm: float) -> tuple[np.ndarray, list]:
     """Evaluate CSG at pixel centres; resolution is a declared display control."""
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_assembly import _bounds
+    from msplatform.workflows.prepared_joint.ion_processor_assembly import _bounds
     ny, nz = [int(np.ceil((box[a+3]-box[a])/pixel_mm)) for a in (1, 2)]
     ys = box[1] + (np.arange(ny)+0.5)*(box[4]-box[1])/ny
     zs = box[2] + (np.arange(nz)+0.5)*(box[5]-box[2])/nz

@@ -24,7 +24,7 @@ from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import (
     MirrorL0Design,
     reduced_period,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_stripe_shape_adapter import (
+from msplatform.backends.simion.native_stripe_shape_adapter import (
     NATIVE_SHAPE_BRANCH_STATUS,
     NATIVE_SHAPE_REFERENCE_AUTHORITY,
     build_native_stripe_shape_selection,

@@ -11,11 +11,12 @@ import unittest
 from unittest.mock import patch
 from msplatform.io import scientific_csv as io
 from common.paths import workspace_paths
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis import mrtof_batch_flight as merger
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis import mrtof_batch_continuation as continuation
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis import prepared_joint_trial as prepared
+from msplatform.backends.simion import mrtof_batch_flight as merger
+from msplatform.workflows.prepared_joint import continuation
+from msplatform.workflows.prepared_joint import trial as prepared
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis import source_z_energy_timing_diagnostic as source_z
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis import bunch_source_and_schedule as pilot
+from msplatform.backends.simion import mr_bunch_source as pilot
+from msplatform.backends.simion.resources import native_resource_path
 ROOT=Path(__file__).resolve().parents[4]
 
 class ScientificEventIoTests(unittest.TestCase):
@@ -59,7 +60,7 @@ class ScientificEventIoTests(unittest.TestCase):
         lua = Path(shutil.which("lua") or shutil.which("lua5.1") or 'C:/Program Files/SIMION-2020/lua.exe')
         if not lua.is_file():
             self.skipTest('Lua runtime unavailable')
-        source = (ROOT / 'projects/parallel_mirror_dual_stripe_mr_tof/simion/mrtof_candidate.lua').read_text(encoding='utf-8')
+        source = (native_resource_path("mrtof_candidate.lua")).read_text(encoding='utf-8')
         block = source[source.index('-- The frozen sidecar'):source.index('-- Official SIMION initialize/other_actions/terminate')]
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -87,7 +88,7 @@ class ScientificEventIoTests(unittest.TestCase):
         lua=Path(shutil.which("lua") or shutil.which("lua5.1") or 'C:/Program Files/SIMION-2020/lua.exe')
         if not lua.is_file():
             self.skipTest('Lua runtime unavailable')
-        source=(ROOT/'projects/parallel_mirror_dual_stripe_mr_tof/simion/mrtof_candidate.lua').read_text(encoding='utf-8')
+        source=(native_resource_path("mrtof_candidate.lua")).read_text(encoding='utf-8')
         block=source[source.index('-- The frozen sidecar'):source.index('local static_field_adjust')]
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
@@ -113,7 +114,7 @@ class ScientificEventIoTests(unittest.TestCase):
         lua = Path(shutil.which("lua") or shutil.which("lua5.1") or 'C:/Program Files/SIMION-2020/lua.exe')
         if not lua.is_file():
             self.skipTest('Lua runtime unavailable')
-        source = (ROOT/'projects/parallel_mirror_dual_stripe_mr_tof/simion/mrtof_candidate.lua').read_text(encoding='utf-8')
+        source = (native_resource_path("mrtof_candidate.lua")).read_text(encoding='utf-8')
         callbacks = source[source.index('function segment.other_actions()'):source.index('function segment.terminate_run()')]
         setup = r"""
 segment={}
@@ -403,7 +404,7 @@ assert(#events==2 and events[2].kind=='terminal' and events[2].t_us==0.018 and e
                 self.assertEqual(Path(paths[2]).resolve().parent, folder.resolve())
 
     def test_unconfirmed_candidate_is_raw_evidence_not_accepted_detection(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import summarize_events
+        from msplatform.workflows.prepared_joint.event_analysis import summarize_events
         text = "\n".join((
             "MRTOF_EVENT observation_candidate ion=11 field=detector status=rejected "
             "reason=terminal_precedes_candidate_event native_splat=-1 t_us=7.5 "
@@ -458,7 +459,7 @@ assert(#events==2 and events[2].kind=='terminal' and events[2].t_us==0.018 and e
         lua = Path(shutil.which("lua") or shutil.which("lua5.1") or 'C:/Program Files/SIMION-2020/lua.exe')
         if not lua.is_file():
             self.skipTest('Lua runtime unavailable')
-        source = (ROOT / 'projects/parallel_mirror_dual_stripe_mr_tof/simion/mrtof_candidate.lua').read_text(encoding='utf-8')
+        source = (native_resource_path("mrtof_candidate.lua")).read_text(encoding='utf-8')
         block = source[source.index('-- The frozen sidecar'):source.index('-- Official SIMION initialize/other_actions/terminate')]
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

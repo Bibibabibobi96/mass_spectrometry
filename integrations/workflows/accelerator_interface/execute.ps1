@@ -524,7 +524,7 @@ try{
       throw 'Interface field audit did not close all measured crossings and centroid.'
     }
     Invoke-RunToolRootContext -RepoRoot $script:pythonRoot -Environment $pathEnvironment -Operation {
-      & $python -B -c 'import sys;from pathlib import Path;from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_flight_preparation import summarize_interface_field_audit;summarize_interface_field_audit(Path(sys.argv[1]))' (Split-Path -Parent $audit.raw_output)
+      & $python -B -c 'import sys;from pathlib import Path;from msplatform.workflows.prepared_joint.native_preparation import summarize_interface_field_audit;summarize_interface_field_audit(Path(sys.argv[1]))' (Split-Path -Parent $audit.raw_output)
       if($LASTEXITCODE-ne0){throw 'Interface energy/field ledger reduction failed.'}
     }
     $joint.interface_field_audit.status='reported_no_energy_acceptance'

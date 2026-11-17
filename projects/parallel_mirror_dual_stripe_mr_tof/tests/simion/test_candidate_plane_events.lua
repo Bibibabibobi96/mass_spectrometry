@@ -18,7 +18,7 @@ end
 local original_loadfile,original_print=loadfile,print
 local original_flush,flush_count=io.flush,0
 io.flush=function() flush_count=flush_count+1; return original_flush() end
-local program_file=assert(io.open(directory..'mrtof_candidate.lua','rb'))
+local program_file=assert(io.open(repo..'/src/msplatform/backends/simion/resources/mrtof_candidate.lua','rb'))
 local program=program_file:read('*a'); program_file:close()
 local map=assert(loadfile(directory..'candidate_voltage_map.lua'))()
 local priority={schema_version=1,role='mrtof_native_corridor_iob_priority_contract',
@@ -44,7 +44,7 @@ loadfile=function(path)
   if path=='virtual/source.operating_point.lua' then return function() return point end end
   if path=='virtual/source.voltage_map.lua' then return function() return map end end
   if path=='virtual/source.mirror_cycle_counter.lua' then
-    return assert(original_loadfile(directory..'mirror_cycle_counter.lua'))
+    return assert(original_loadfile(repo..'/src/msplatform/backends/simion/resources/mirror_cycle_counter.lua'))
   end
   if path=='virtual/source.priority.lua' then
     return function() return priority end

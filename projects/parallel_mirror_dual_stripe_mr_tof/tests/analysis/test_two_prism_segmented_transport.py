@@ -36,7 +36,7 @@ from msplatform.components.parallel_mirror_dual_stripe_mr_tof.prism_analytic imp
     hard_boundary_bias_v,
     trace_triangular_hard_boundary_prism,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_handoff import (
+from msplatform.workflows.prepared_joint.prism_handoff import (
     ProjectPhaseSpaceState,
 )
 

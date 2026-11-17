@@ -7,7 +7,7 @@ accelerator gap 1 with the mirror/Stripe-selected near-5-eV slow kinetic energy
 in +project-y; the accelerator field supplies the fast -project-z energy.
 """
 from __future__ import annotations
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_component_requirements import read_accelerator_geometry_authority
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.accelerator_requirements import read_accelerator_geometry_authority
 from msplatform.backends.simion import mrtof_observations as _mrtof_observations
 
 import argparse
@@ -41,22 +41,22 @@ from msplatform.workflows.oa_focus_analysis import (
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.drift_phase_contract import (
     resolve_drift_phase_contract,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule import (
+from msplatform.backends.simion.mr_bunch_source import (
     load_verified_bunch_source_receipt,
     solver_problem_identity_from_trial_receipt,
     source_cohort_identity,
     validate_fixed_global_pulse_events,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.materialize_simion_prototype import (
+from msplatform.backends.simion.prototype_materialization import (
     _full_path_timeout_us,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule import (
+from msplatform.backends.simion.mr_bunch_source import (
     resolve_bunch_source_interval,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_stripe_shape_adapter import (
+from msplatform.backends.simion.native_stripe_shape_adapter import (
     native_stripe_geometry_projection_sha256,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import (
+from msplatform.backends.simion.native_system_geometry import (
     resolve_accelerator_iob_origin, resolve_oa_mr_direct_pose, resolve_static_iob_origins,
 )
 from msplatform.backends.simion.mr_geometry import resolve_mr_geometry as resolve_geometry
@@ -80,10 +80,10 @@ from msplatform.components.parallel_mirror_dual_stripe_mr_tof.operating_authorit
     fixed_mirror_stripe_source_state as _fixed_mirror_stripe_source_state,
     vector as _vector,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import (
+from msplatform.workflows.prepared_joint.event_analysis import (
     summarize_events,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_handoff import (
+from msplatform.workflows.prepared_joint.prism_handoff import (
     ProjectPhaseSpaceState,
     observation_from_simion_events,
     prism_handoff_residuals,

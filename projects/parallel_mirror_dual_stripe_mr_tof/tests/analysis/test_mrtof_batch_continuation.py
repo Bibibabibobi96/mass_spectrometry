@@ -11,7 +11,7 @@ import unittest.mock
 
 from msplatform.io.file_identity import file_sha256
 from msplatform.contracts.machine_contracts import ContractError
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_continuation import (
+from msplatform.workflows.prepared_joint.continuation import (
     REQUIRED_INPUT_ROLES,
     build_continuation_plan,
     build_prepared_joint_whole_unit_plan,
@@ -50,7 +50,7 @@ class MrtofBatchContinuationTests(unittest.TestCase):
             self.assertIn(str(exit_fact), projection["files"])
             self.assertEqual(len(projection["manifests"]), 3)
             cli = subprocess.run([sys.executable, "-m",
-                "projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_continuation",
+                "msplatform.workflows.prepared_joint.continuation",
                 "--predecessor-run-dir", str(third), "--protection-projection"],
                 cwd=Path(__file__).resolve().parents[4], capture_output=True, text=True, timeout=30)
             self.assertEqual(cli.returncode, 0, cli.stdout + cli.stderr)
@@ -371,8 +371,8 @@ class MrtofBatchContinuationTests(unittest.TestCase):
             manifest["outputs"] = [record for record in manifest["outputs"] if not record["path"].endswith("owner_exit.json")]
             manifest["outputs"].append(file_record(usage))
             manifest_path.write_text(json.dumps(manifest))
-            from projects.parallel_mirror_dual_stripe_mr_tof.analysis import mrtof_batch_continuation
-            frozen_module = root / "snapshot/projects/parallel_mirror_dual_stripe_mr_tof/analysis/mrtof_batch_continuation.py"
+            from msplatform.workflows.prepared_joint import continuation as mrtof_batch_continuation
+            frozen_module = root / "snapshot/src/msplatform/workflows/prepared_joint/continuation.py"
             frozen_module.parent.mkdir(parents=True)
             frozen_module.write_bytes(Path(mrtof_batch_continuation.__file__).read_bytes())
             spec = importlib.util.spec_from_file_location("frozen_batch_continuation", frozen_module)
@@ -381,7 +381,7 @@ class MrtofBatchContinuationTests(unittest.TestCase):
             spec.loader.exec_module(snapshot)
             self.assertIsNone(snapshot._legacy_prepared_success(manifest_path, 2))
             self.assertEqual(snapshot._legacy_prepared_success(manifest_path, 2,
-                trusted_repo_root=Path(mrtof_batch_continuation.__file__).resolve().parents[3]), usage)
+                trusted_repo_root=Path(mrtof_batch_continuation.__file__).resolve().parents[4]), usage)
             self.assertIsNone(snapshot._legacy_prepared_success(manifest_path, 2, trusted_repo_root=root))
             plan = build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current, output_dir=root / "legacy")
             self.assertEqual(plan["replay_unit_count"], 0)
@@ -403,7 +403,7 @@ class MrtofBatchContinuationTests(unittest.TestCase):
             self.assertEqual(plan["replay_unit_count"], 2)
 
     def test_continuation_waveform_is_resolved_through_sealed_trial_and_rejects_damage(self) -> None:
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepared_joint_trial import _continuation_waveforms
+        from msplatform.workflows.prepared_joint.trial import _continuation_waveforms
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             waveform = root / "waveforms.lua"

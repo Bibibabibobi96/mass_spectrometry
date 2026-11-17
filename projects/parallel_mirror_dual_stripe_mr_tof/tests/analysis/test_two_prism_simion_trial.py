@@ -17,6 +17,7 @@ import unittest
 from unittest.mock import patch
 
 from msplatform.backends.simion.native_completion import parse_fly_completed_line
+from msplatform.backends.simion.resources import native_resource_path
 
 
 def mock_recorded_scientific_events(events):
@@ -33,12 +34,12 @@ def mock_recorded_scientific_events(events):
     )
 
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis import two_prism_simion_trial
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule import (
+from msplatform.workflows.prepared_joint import prism_trial as two_prism_simion_trial
+from msplatform.backends.simion.mr_bunch_source import (
     materialize_bunch_source,
 )
 from msplatform.backends.simion.mrtof_observations import parse_events
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import (
+from msplatform.workflows.prepared_joint.prism_trial import (
     _accelerator_energy_binding,
     _accelerator_geometric_exit_reference,
     _accelerator_geometric_exit_validation,
@@ -63,7 +64,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial
     _termination_diagnostic,
     analyze_trial,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_stripe_shape_adapter import (
+from msplatform.backends.simion.native_stripe_shape_adapter import (
     native_stripe_geometry_projection_sha256,
 )
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
@@ -177,7 +178,7 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
                             "reference_plane_project_z_mm": 33.,
                             "transit_aperture_project_mm": {"x_mm": [-1., 1.], "y_mm": [-10., 10.]}})
         seed = {"stripe_biases_v": [-20., 50.]}
-        module = "projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial"
+        module = "msplatform.workflows.prepared_joint.prism_trial"
         if parent_plan is not None:
             from msplatform.backends.simion.oa_focus_plan import derive
             paths["provider"].write_text(json.dumps(derive(
@@ -234,7 +235,7 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
         from msplatform.backends.simion.two_zone_candidate import resolve_closed_two_zone_electrodes
         from msplatform.components.orthogonal_accelerator.two_zone_geometry import resolve_closed_two_zone_geometry
         from msplatform.components.parallel_mirror_dual_stripe_mr_tof.provider import resolve_component
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import resolve_accelerator_iob_origin
+        from msplatform.backends.simion.native_system_geometry import resolve_accelerator_iob_origin
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_mr_provider_trial_transport import _plans
 
         _, plan, contract = _plans()
@@ -463,7 +464,7 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
         lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"))
         if not lua.is_file():
             self.skipTest("plain vendor Lua unavailable; no commercial execution")
-        launcher = Path(__file__).resolve().parents[2] / "simion/run_iob_flight.lua"
+        launcher = native_resource_path("run_iob_flight.lua")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             iob = root/"joint.iob"
@@ -524,7 +525,7 @@ print('OVERLAY_COLLISION_PRELOAD_PASS')
         lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"))
         if not lua.is_file():
             self.skipTest("standalone vendor Lua unavailable; no commercial execution")
-        launcher = Path(__file__).resolve().parents[2] / "simion/run_iob_flight.lua"
+        launcher = native_resource_path("run_iob_flight.lua")
         fixture = r'''
 local launcher, iob, expected = arg[1], arg[2], arg[3]
 local calls,commands = 0,0
@@ -606,7 +607,7 @@ print('COLLISION_PRELOAD_PASS')
         lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe"))
         if not lua.is_file():
             self.skipTest("plain vendor Lua unavailable; no commercial execution")
-        launcher = Path(__file__).resolve().parents[2] / "simion/run_iob_flight.lua"
+        launcher = native_resource_path("run_iob_flight.lua")
         fixture = r'''
 local launcher,iob,mode,override=unpack(arg)
 local function forbidden() error('load-workbench must not Fly, Refine, save or discard PAs') end
@@ -670,7 +671,7 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
                         self.assertIn('WORKBENCH_LOAD_PRELOAD_PASS', actual.stdout)
 
     def test_center_view_validates_actual_source_not_particle_count(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import _validate_center_view_source
+        from msplatform.workflows.prepared_joint.prism_trial import _validate_center_view_source
         _validate_center_view_source(None, None)
         def state(x, dx):
             return dict(position_workbench_mm=[x, 1., 2.], direction_workbench=[dx, 1., 0.])
@@ -922,7 +923,7 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
         self.assertEqual(row["source_position_provider_mm"][2], 32.0)
         self.assertEqual(result["expected_particle_ids"], [7])
         from msplatform.backends.simion.oa_focus_plan import derive
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_geometry import resolve_oa_mr_direct_pose
+        from msplatform.backends.simion.native_system_geometry import resolve_oa_mr_direct_pose
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_simion_candidate_reference import reframe_oa_mr_plan
         project = Path(__file__).resolve().parents[2]
         actual_provider = derive(project.parent / "orthogonal_accelerator/config/two_zone_component_focus_campaign.json", geometry_profile=load_geometry_profile(json.loads((project.parent / "orthogonal_accelerator/config/two_zone_component_focus_campaign.json").read_text(encoding="utf-8"))["geometry_profile_id"]), mesh_mm_per_gu=[0.25, 0.25, 0.1])
@@ -1119,9 +1120,7 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
             )
 
     def test_runtime_fast_adjust_uses_profile_sized_accelerator_vector(self) -> None:
-        source = (
-            Path(__file__).resolve().parents[2] / "simion" / "mrtof_candidate.lua"
-        ).read_text(encoding="utf-8")
+        source = native_resource_path("mrtof_candidate.lua").read_text(encoding="utf-8")
         self.assertIn("for local_id = 1,#values.accelerator do", source)
         self.assertNotIn("for local_id = 1,9 do", source)
 
@@ -1523,7 +1522,7 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
     def test_real_p1_extension_consumes_changed_profile_and_explicit_placement(self) -> None:
         from msplatform.backends.simion.two_zone_candidate import resolve_closed_two_zone_electrodes
         from msplatform.components.orthogonal_accelerator.two_zone_geometry import resolve_closed_two_zone_geometry
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_component_requirements import read_accelerator_geometry_authority
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.accelerator_requirements import read_accelerator_geometry_authority
 
         project = Path(__file__).resolve().parents[2]
         contract = json.loads((project / "config/simion_candidate_two_zone.json").read_text(encoding="utf-8"))

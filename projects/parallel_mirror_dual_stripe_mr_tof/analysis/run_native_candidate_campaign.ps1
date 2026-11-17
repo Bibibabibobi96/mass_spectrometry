@@ -476,7 +476,7 @@ function New-CampaignComparison {
   $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv/Scripts/python.exe'}
   Push-Location -LiteralPath $repoRoot;$saved=$env:PYTHONPATH
   try{
-    $env:PYTHONPATH=$repoRoot
+    $env:PYTHONPATH=(Join-Path $repoRoot 'src')+[IO.Path]::PathSeparator+$repoRoot+$(if($saved){[IO.Path]::PathSeparator+$saved}else{''})
     $output=@(@{action='campaign_comparison';conditions=@($rows)}|ConvertTo-Json -Depth 100 -Compress|
       & $python -X utf8 -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.source_z_energy_timing_diagnostic --policy-request - --output -)
     if($LASTEXITCODE-ne0){throw 'Candidate campaign comparison failed.'}

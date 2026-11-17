@@ -2331,7 +2331,7 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
         base = 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/'
         sources = ('src/msplatform/components/catalog.py', base+'provider.py', base+'candidate_contract.py',
                    base+'assembly_interface.py', base+'resolved_geometry.py', 'src/msplatform/backends/simion/mr_geometry.py',
-                   'projects/parallel_mirror_dual_stripe_mr_tof/analysis/native_system_geometry.py')
+                   'src/msplatform/backends/simion/native_system_geometry.py')
         prefix = 'projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.'
         required = {prefix+name for name in ('test_mr_provider_freeze','test_mr_provider_trial_transport',
                     'test_assembly_interface','test_simion_candidate_reference','test_two_prism_simion_trial')}

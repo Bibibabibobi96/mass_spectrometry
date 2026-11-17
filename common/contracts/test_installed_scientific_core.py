@@ -6331,7 +6331,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
 
     def prepared_joint_diagnostics_probe_fixture(self) -> list[dict]:
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_prepared_joint_diagnostics import PreparedJointDiagnosticsTests
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight import merge_measured_event_logs
+        from msplatform.backends.simion.mrtof_batch_flight import merge_measured_event_logs
         result = []
         for structured in (False, True):
             case = PreparedJointDiagnosticsTests()

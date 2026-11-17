@@ -208,7 +208,7 @@ import copy, hashlib, json, sys
 from pathlib import Path
 from msplatform.backends.comsol.static_field_binding import load_binding, _record, native_numerics_match, resolve_native_refine_numerics
 from msplatform.backends.comsol.candidate_authority import derive_candidate_authority
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_workpoint import _native_static_binding_problem
+from msplatform.workflows.prepared_joint.fixed_grid_workpoint import _native_static_binding_problem
 def read(path):
     return json.loads(Path(path).read_text(encoding='utf-8-sig'))
 request = read(sys.argv[2])
@@ -305,7 +305,7 @@ function Assert-WorkpointPhysicalBinding {
 import json, sys
 from pathlib import Path
 from msplatform.backends.comsol.static_field_binding import load_binding
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_workpoint import _native_static_binding_problem
+from msplatform.workflows.prepared_joint.fixed_grid_workpoint import _native_static_binding_problem
 materialization = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8-sig'))
 actual = load_binding(Path(materialization['field_binding']['path']))
 request = json.loads(Path(sys.argv[2]).read_text(encoding='utf-8-sig'))
@@ -1109,7 +1109,7 @@ try{
     $PrismControllerPolicyPath=Copy-VerifiedRunInput -Source (Resolve-Path -LiteralPath $PrismControllerPolicyPath).Path `
       -Destination (Join-Path $package.input_dir 'prism_controller_policy.json')
     Invoke-ProjectPython -Arguments @('-c',
-      'import sys; from pathlib import Path; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration import resolve_prism_controller_policy; resolve_prism_controller_policy(Path(sys.argv[1]))',
+      'import sys; from pathlib import Path; from msplatform.workflows.prepared_joint.downstream_workpoint import resolve_prism_controller_policy; resolve_prism_controller_policy(Path(sys.argv[1]))',
       $PrismControllerPolicyPath)
     $config.inputs.prism_controller_policy=$PrismControllerPolicyPath
   }
@@ -1177,7 +1177,7 @@ try{
   if($handoff.status-ne'within_tolerance'){
     $handoffPath=Join-Path $package.result_dir 'qualified_workpoint_handoff.json'
     Invoke-ProjectPython -Arguments @(
-      '-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration',
+      '-m','msplatform.workflows.prepared_joint.downstream_workpoint',
       '--select-best-physical-workpoint','--history',(Join-Path $workpointRun 'results\iteration_history.json'),
       '--output',$handoffPath
     )

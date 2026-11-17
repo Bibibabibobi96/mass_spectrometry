@@ -68,7 +68,7 @@ loadfile=function(path)
       __newindex=function(_,key) error('pure helper wrote global '..key) end}))
     return module_chunk
   end
-  if path=='virtual/source.mirror_cycle_counter.lua' then return original_loadfile(directory..'simion/mirror_cycle_counter.lua') end
+  if path=='virtual/source.mirror_cycle_counter.lua' then return original_loadfile(repo..'/src/msplatform/backends/simion/resources/mirror_cycle_counter.lua') end
   assert(path~='virtual/source.voltage_map.lua','IP must not load OA voltage map')
   return original_loadfile(path)
 end
@@ -77,7 +77,7 @@ engine=setmetatable({}, {__index=_G})
 print=function(line) records[#records+1]=line end
 simion={workbench_program=function() engine.segment={} end,wb={instances={
   {filename='full-c0.pa'},{filename='downstream.pa'},{filename='ip-collision.pa'},{filename='detector.pa'}}}}
-local program=read(directory..'simion/mrtof_candidate.lua'):gsub('\nadjustable ','\n')
+local program=read(repo..'/src/msplatform/backends/simion/resources/mrtof_candidate.lua'):gsub('\nadjustable ','\n')
 local function compile()
   local chunk=assert(loadstring(program,'@virtual/source.lua'))
   setfenv(chunk,engine);chunk()

@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from msplatform.contracts.particle_state import write_component_particle_state_csv
 from msplatform.contracts.particle_physics import kinetic_energy_ev
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ion_processor_handoff import compare_measured_exit_energy
+from msplatform.workflows.prepared_joint.ip_mr_handoff import compare_measured_exit_energy
 from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis import test_ion_processor_handoff as fixtures
 
 
@@ -35,7 +35,7 @@ class IonProcessorEnergyComparisonTests(unittest.TestCase):
                       "logs/native_two_prism_flight.log": self.log}
 
     def _compare(self) -> dict:
-        with patch("projects.parallel_mirror_dual_stripe_mr_tof.analysis.prepare_accelerator_interface.verified_reference",
+        with patch("msplatform.workflows.prepared_joint.preparation.verified_reference",
                    side_effect=lambda run, name: self.paths[name]):
             return compare_measured_exit_energy(self.fixture.receipt_path, self.reference)
 

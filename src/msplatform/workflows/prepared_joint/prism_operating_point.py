@@ -11,7 +11,7 @@ from typing import Any, Sequence
 
 import numpy as np
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0 import (
+from msplatform.workflows.prepared_joint.joint_mirror_stripe_l0 import (
     classify_constraint_system,
 )
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (

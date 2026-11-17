@@ -150,7 +150,7 @@ function Read-StaticCenterProblem {
   $sourceCode=@'
 import json, sys
 from pathlib import Path
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule import load_verified_bunch_source_receipt
+from msplatform.backends.simion.mr_bunch_source import load_verified_bunch_source_receipt
 source, mother = [load_verified_bunch_source_receipt(Path(p)) for p in sys.argv[1:3]]
 for key in ('nominal_center_state', 'species', 'frame_id', 'clock_basis', 'common_time_of_birth_us', 'source_y_offset_mm', 'center_rule'):
     if source[key] != mother[key]:
@@ -194,7 +194,7 @@ from pathlib import Path
 from msplatform.backends.comsol.static_field_binding import load_binding, _record
 from msplatform.backends.comsol.candidate_authority import derive_candidate_authority
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import candidate_authority
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_fixed_grid_workpoint import _native_static_binding_problem
+from msplatform.workflows.prepared_joint.fixed_grid_workpoint import _native_static_binding_problem
 def read(path):
     return json.loads(Path(path).read_text(encoding='utf-8-sig'))
 center, actual = [load_binding(Path(p)) for p in sys.argv[1:3]]
@@ -308,7 +308,7 @@ try{
     $history=Get-VerifiedManifestOutput -ManifestPath $workpointManifest -Name 'iteration_history.json'
     $handoff=Join-Path $package.input_dir 'qualified_workpoint_handoff.json'
     Invoke-ProjectPython -Arguments @(
-      '-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.downstream_workpoint_iteration',
+      '-m','msplatform.workflows.prepared_joint.downstream_workpoint',
       '--select-best-physical-workpoint','--history',$history,'--output',$handoff
     )
     $handoffData=Get-Content -LiteralPath $handoff -Raw|ConvertFrom-Json -AsHashtable

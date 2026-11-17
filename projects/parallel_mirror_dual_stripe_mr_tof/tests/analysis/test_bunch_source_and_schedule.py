@@ -9,7 +9,7 @@ from pathlib import Path
 
 from msplatform.contracts.particle_count_policy import validate_prefix_particle_sources
 from msplatform.ion_release.cylinder import generate_center_axis_pair_halton_cylinder_phase_space
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.bunch_source_and_schedule import (
+from msplatform.backends.simion.mr_bunch_source import (
     bunch_identity,
     derive_bunch_pulse_schedule,
     deterministic_ideal_bunch_states,

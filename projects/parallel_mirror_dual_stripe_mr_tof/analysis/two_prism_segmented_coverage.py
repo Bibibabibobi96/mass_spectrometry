@@ -1,7 +1,7 @@
 """Deterministic branch coverage for the solver-neutral segmented P1/P2 model."""
 from __future__ import annotations
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_component_requirements import read_accelerator_geometry_authority
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.accelerator_requirements import read_accelerator_geometry_authority
 
 import argparse
 from collections import Counter, defaultdict
@@ -37,7 +37,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prism_mirror_transport
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_operating_point import (
+from msplatform.workflows.prepared_joint.prism_operating_point import (
     RESIDUAL_NAMES,
     natural_two_prism_scales,
 )
@@ -51,7 +51,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_segmented_vo
     two_prism_legacy_topology_signature,
     two_prism_topology_signature,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import (
+from msplatform.workflows.prepared_joint.prism_trial import (
     load_schema5_native_source_state,
 )
 

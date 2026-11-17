@@ -515,8 +515,8 @@ try{
   $acceleratorProviderPlan=[string]$providerAccelerator.provider_plan.path
   $acceleratorResolvedCampaign=[string]$providerAccelerator.resolved_campaign.path
   $fixedMirrorStripeLoader=Join-Path $script:pythonRoot 'projects\parallel_mirror_dual_stripe_mr_tof\analysis\fixed_mirror_stripe_operating_point.py'
-  $trialTool=Join-Path $script:pythonRoot 'projects\parallel_mirror_dual_stripe_mr_tof\analysis\two_prism_simion_trial.py'
-  $batchTool=Join-Path $script:pythonRoot 'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mrtof_batch_flight.py'
+  $trialTool=Join-Path $script:pythonRoot 'src\msplatform\workflows\prepared_joint\prism_trial.py'
+  $batchTool=Join-Path $script:pythonRoot 'src\msplatform\backends\simion\mrtof_batch_flight.py'
   $programSource=Join-Path $providerSimionRoot 'mrtof_candidate.lua'
   $waveformsSource=Join-Path $script:pythonRoot 'src/msplatform/backends/simion/resources/voltage_waveforms.lua'
   $counterSource=Join-Path $providerSimionRoot 'mirror_cycle_counter.lua'
@@ -582,7 +582,7 @@ try{
   $failureStage='materialize_trial'
   $acceleratorInstance='3'
   $isBunchFlight=$null-ne$bunchSourceContract
-  $materializeArguments=@('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial','materialize',
+  $materializeArguments=@('-m','msplatform.workflows.prepared_joint.prism_trial','materialize',
     '--accelerator-component-contract',$oaComponentContractLocal,'--accelerator-geometry-profile-id',$AcceleratorGeometryProfileId,
     '--contract',$contract,'--accelerator-geometry-contract',$acceleratorGeometry,'--trajectory-contract',$trajectoryContract,'--reviewed-contract',$reviewed,'--mirror-summary',$mirrorLocal,'--stripe-summary',$stripeLocal,
     '--accelerator-receipt',$acceleratorLocal,'--prism-1-v',([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',$Prism1VoltageV)),
@@ -713,7 +713,7 @@ try{
 
     if(-not[string]::IsNullOrWhiteSpace($BatchContinuationRunPath)){
       $continuationRoot=Join-Path ([string]$package.artifact_run_dir) 'inputs/mrtof_batch_continuation'
-      Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_continuation',
+      Invoke-ProjectPython -Arguments @('-m','msplatform.workflows.prepared_joint.continuation',
         '--predecessor-run-dir',$continuationParent,
         '--current-run-config',$runConfig,'--output-dir',$continuationRoot)
       if(Test-Path -LiteralPath (Join-Path $continuationParent '.run_terminal_publication.json')){throw 'Continuation predecessor terminal publication became incomplete.'}
@@ -980,7 +980,7 @@ try{
       # PowerShell includes every uncaptured pipeline value in a function's
       # return value.  Keep diagnostics visible without allowing them to turn
       # the structured batch record below into a heterogeneous array.
-      Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight','materialize','--receipt',$bunchSourceLocal,'--particle-id-min',([string]$batchParticleIdMin),'--particle-id-max',([string]$batchParticleIdMax),'--output',$batchFly2) | Out-Host
+      Invoke-ProjectPython -Arguments @('-m','msplatform.backends.simion.mrtof_batch_flight','materialize','--receipt',$bunchSourceLocal,'--particle-id-min',([string]$batchParticleIdMin),'--particle-id-max',([string]$batchParticleIdMax),'--output',$batchFly2) | Out-Host
       $scienceDir=Join-Path (Join-Path ([string]$package.artifact_run_dir) 'results') ('batches/batch_{0:D3}'-f$batchIndex)
       New-Item -ItemType Directory -Path $scienceDir -Force|Out-Null
       $science=[ordered]@{events_path=[IO.Path]::GetFullPath((Join-Path $scienceDir 'events.csv'))}
@@ -1153,7 +1153,7 @@ try{
     }
     $rawLog=Join-Path $logDir 'native_two_prism_flight.log';$batchMergeReceipt=Join-Path $resultDir 'batch_log_merge_receipt.json'
     $mergeParticleIdMin=if($bunchSelectionRequested){$BunchParticleIdMin}else{1}
-    $mergeArgs=@('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.mrtof_batch_flight','merge','--particle-count',([string]$trial.source_particle_count),'--particle-id-min',([string]$mergeParticleIdMin),'--output',$rawLog,'--receipt',$batchMergeReceipt)
+    $mergeArgs=@('-m','msplatform.backends.simion.mrtof_batch_flight','merge','--particle-count',([string]$trial.source_particle_count),'--particle-id-min',([string]$mergeParticleIdMin),'--output',$rawLog,'--receipt',$batchMergeReceipt)
     foreach($planned in @($finalBatchPlan.batches)){
       $record=$batchRecords[[int]$planned.index]
       $mergeArgs+=@('--batch-log',$record.stdout,([string]$record.offset),([string]$record.count))
@@ -1182,7 +1182,7 @@ try{
     Invoke-ProjectPython -Arguments @('-m','msplatform.backends.simion.mrtof_observations','extract-trajectory','--log',$rawLog,'--output',$trajectorySamples,'--receipt',$trajectorySampleReceipt)
   }
   $failureStage='analyze_trial'
-  $analysisArguments=@('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial','analyze','--log',$rawLog,'--trial-receipt',$trialReceipt,'--output',$observation)
+  $analysisArguments=@('-m','msplatform.workflows.prepared_joint.prism_trial','analyze','--log',$rawLog,'--trial-receipt',$trialReceipt,'--output',$observation)
   if($isBunchFlight){$analysisArguments+=@('--scientific-event-receipt',$batchMergeReceipt)}
   Invoke-ProjectPython -Arguments $analysisArguments
   $observed=Get-Content -LiteralPath $observation -Raw -Encoding UTF8|ConvertFrom-Json

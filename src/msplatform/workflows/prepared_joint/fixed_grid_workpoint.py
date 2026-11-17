@@ -27,14 +27,14 @@ import numpy as np
 from msplatform.io.file_identity import file_sha256
 from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0 import (
+from msplatform.workflows.prepared_joint.joint_mirror_stripe_l0 import (
     classify_constraint_system,
 )
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
 )
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.operating_authority import load_object as _load_object
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import _bunch_center_source_state, _source_release_record
+from msplatform.workflows.prepared_joint.prism_trial import _bunch_center_source_state, _source_release_record
 from msplatform.backends.simion.mrtof_observations import _collision_geometry_projection
 from msplatform.backends.comsol.static_field_binding import (
     load_binding, _record, _validate_native_surface_absence, native_refine_numerics,

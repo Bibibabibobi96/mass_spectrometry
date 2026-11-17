@@ -619,6 +619,13 @@ arbitrary species definitions and study ordering remain explicit inputs; separat
 and mixed-species Fly are not conflated. Consumer and ordinary-install checks are required before this
 slice closes; v47's COMSOL `25/39/0/18/85` versus SIMION `500/500` scientific failure remains unchanged.
 
+Prepared-joint Python production modules and four native Lua programs now have installed component, backend,
+workflow and results owners. Their integration consumers and frozen dependency declarations use those owners;
+installed sources no longer import MR project implementations. Project configuration and historical evidence
+remain in place. The complete integration suite passed 585 tests with four existing external-asset skips.
+Ordinary wheel and sdist-rebuilt outside-checkout acceptance passed in 1790.246 seconds. Complete MR,
+Changed and applicable native acceptance remain OPEN.
+
 The following is the single active P4 worklist. All rows remain OPEN until their stated
 consumer and acceptance boundaries close; earlier delivered sub-capabilities are inherited,
 not rebuilt. Shared interfaces, the gate catalog, installation fixtures and Git have one

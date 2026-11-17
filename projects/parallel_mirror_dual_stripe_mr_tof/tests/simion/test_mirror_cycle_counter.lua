@@ -1,5 +1,5 @@
 -- Pure-Lua event-logic regression: synthetic samples are NOT flight evidence.
-local counter = assert(loadfile('projects/parallel_mirror_dual_stripe_mr_tof/simion/mirror_cycle_counter.lua'))()
+local counter = assert(loadfile('src/msplatform/backends/simion/resources/mirror_cycle_counter.lua'))()
 local regions = {negative={z_min_mm=-20,z_max_mm=-10}, positive={z_min_mm=10,z_max_mm=20}}
 local passed = 0
 local function test(name, check) check(); passed = passed + 1; print('PASS '..name) end
