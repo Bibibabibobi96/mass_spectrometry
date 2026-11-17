@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from msplatform.components.rf_multipole import stationary_field_sampling as sampling
+from msplatform.execution.completion import no_particle_batch_completion_api
 from msplatform.execution.context import ExecutionContext
 from msplatform.execution.inputs import freeze_file
 from msplatform.execution.owner import resume_finalization, run_managed_stage
@@ -186,7 +187,8 @@ def saved_comsol(*, parent_manifest: Path, sampling_plan: Path, budget: Path, ru
                        resolved_source=Path(resolved["path"]), plan_source=sampling_plan,
                        limits=resolved_budget["limits"], source_id=source_id),
         action_record=file_record(Path(__file__).resolve(), "required_evidence"),
-        expected_relative_paths=("inputs/saved_stationary_export.m",), use_short_execution_path=True)
+        expected_relative_paths=("inputs/saved_stationary_export.m",), use_short_execution_path=True,
+        completion_api=no_particle_batch_completion_api)
     return result
 
 
@@ -288,7 +290,7 @@ def solve_comsol(*, resolved_runtime: Path, preregistration: Path, science_task:
                        plan_source=sampling_plan, limits=resolved_budget["limits"], source_id=source_id),
         action_record=file_record(Path(__file__).resolve(), "required_evidence"),
         expected_relative_paths=("inputs/solve_stationary_fields.m", "inputs/verify_stationary_fields.m"),
-        use_short_execution_path=True)
+        use_short_execution_path=True, completion_api=no_particle_batch_completion_api)
     return result
 
 
@@ -379,7 +381,8 @@ def simion_samples(*, request_path: Path, budget: Path, run_id: str, source_id: 
         source_references=[dict(manifest_record=producer)],
         expected_operation_ids=("sample_differential", "sample_static"), operation_dependencies={},
         action=partial(execute_simion_samples, request=request, limits=resolved_budget["limits"], source_id=source_id),
-        action_record=file_record(Path(__file__).resolve(), "required_evidence"), use_short_execution_path=True)
+        action_record=file_record(Path(__file__).resolve(), "required_evidence"), use_short_execution_path=True,
+        completion_api=no_particle_batch_completion_api)
 
 
 def validate_preregistration(document: Mapping[str, Any], *, solver: str, run_id: str,

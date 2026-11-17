@@ -1552,6 +1552,13 @@ paired-case loader. The exact failed method and all 16 stationary-field tests pa
 5.1.5 archive used by CI. This closes that software regression only; it does not change native capacity,
 field evidence or scientific qualification.
 
+Native run `20261117_035232__sim__comsol__rf-stationary-fields-v32` failed before COMSOL launched because
+its caller supplied `run_comsol_r2025b.ps1` instead of the actual `comsolmphserver.exe` selected by
+`Get-Comsol64Launcher`. Finalization also exposed a missing native retention completion policy. All three
+RF stationary managed entries now explicitly use `no_particle_batch_completion_api`; the new regression and
+all 22 stationary tests pass with one unchanged optional portable-Lua skip. A fresh run identity is required;
+the failed evidence remains unchanged and no native field or sample was produced.
+
 The RF whole-batch continuation planner is available through the installed
 `msplatform.workflows.rf_batch_continuation` owner. Its implementation is byte-identical
 to the retired project runtime body. All six production calls use the installed API

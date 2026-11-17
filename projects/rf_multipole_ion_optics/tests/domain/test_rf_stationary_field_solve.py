@@ -10,7 +10,8 @@ from unittest.mock import patch
 
 from msplatform.backends.comsol.resources import native_resource_path
 from msplatform.backends.comsol.rf_stationary_field import run_field_operations
-from msplatform.workflows.rf_stationary import _build_parser, _field_runtime
+from msplatform.execution.completion import no_particle_batch_completion_api
+from msplatform.workflows.rf_stationary import _build_parser, _field_runtime, solve_comsol
 
 
 class _Session:
@@ -147,6 +148,46 @@ class RfStationaryFieldSolveTests(unittest.TestCase):
         self.assertEqual(arguments.command, "solve-comsol")
         for name in ("read_rf_saved_stationary_solution.m", "export_comsol_stationary_field_samples.m"):
             self.assertTrue(native_resource_path(name).is_file())
+
+    def test_managed_field_solve_supplies_native_retention_policy(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            runtime = {
+                "design_profile_resolution": {
+                    "resolved_design": {"resolved_sha256": "A" * 64},
+                    "profiles_path": str(root / "design.json"),
+                },
+                "particle_source": {
+                    "profile_id": "source", "registry_path": str(root / "source.json"),
+                },
+                "runtime_profile_registry_path": str(root / "runtime.json"),
+                "design_profile_id": "design", "runtime_profile_id": "profile",
+                "solver_numerics": {"comsol": {"profile_id": "numerics"}},
+                "solver_numerics_registry_paths": {"comsol": str(root / "numerics.json")},
+                "engineering_budget": {"path": str(root / "budget.json")},
+            }
+            science = root / "science.m"
+            science.write_text("% inert", encoding="utf-8")
+            for name in ("budget.json", "prereg.json", "plan.json", "resolved.json"):
+                (root / name).write_text("{}", encoding="utf-8")
+            calls = []
+            with (
+                patch("msplatform.workflows.rf_stationary._budget",
+                      return_value=({"limits": {"transient_run_directory_bytes": 1}}, object())),
+                patch("msplatform.workflows.rf_stationary._field_runtime", return_value=runtime),
+                patch("msplatform.workflows.rf_stationary.sampling.generate_stationary_field_sample_rows",
+                      return_value=[]),
+                patch("msplatform.workflows.rf_stationary.validate_preregistration",
+                      return_value={"field_sampling": {"expected_point_count": 0}}),
+                patch("msplatform.workflows.rf_stationary.run_managed_stage",
+                      side_effect=lambda *args, **kwargs: calls.append(kwargs) or {"status": "success"}),
+            ):
+                result = solve_comsol(resolved_runtime=root / "resolved.json",
+                    preregistration=root / "prereg.json", science_task=science,
+                    sampling_plan=root / "plan.json", budget=root / "budget.json",
+                    run_id="run", source_id="source", context=SimpleNamespace())
+            self.assertEqual(result["status"], "success")
+            self.assertEqual(calls[0]["completion_api"], no_particle_batch_completion_api)
 
     def test_project_science_saves_only_its_field_only_branch(self):
         science = Path(__file__).resolve().parents[2] / "comsol/solve_finite_3d_transport.m"
