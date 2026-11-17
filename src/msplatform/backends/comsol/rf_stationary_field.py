@@ -184,6 +184,11 @@ def run_field_operations(session: Any, *, runtime: Mapping[str, Any], science_ta
                 immutable_input_records=guards)
         finally:
             declare_runtime_files(session, runtime_dir, bootstrap=bootstrap)
+            progress = session.log_dir / "solver_progress"
+            if progress.is_dir():
+                for path in progress.rglob("*"):
+                    if path.is_file():
+                        session.declare_file(path, "required_evidence")
         require_launcher_completion(completion, session.run_id)
         text = bootstrap.read_text(encoding="utf-8-sig")
         if "STATUS=PASS" not in text:

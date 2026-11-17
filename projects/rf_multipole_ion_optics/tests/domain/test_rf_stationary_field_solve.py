@@ -28,12 +28,14 @@ class _Session:
                                                      "matlab_root": root / "matlab"})
         self.inputs = {}
         self.operations = []
+        self.declared = []
         for directory in (self.input_dir, self.result_dir, self.log_dir):
             directory.mkdir(parents=True, exist_ok=True)
 
     def declare_file(self, path, role):
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
+        self.declared.append((path, role))
         return path
 
     def canonical_path(self, path):
@@ -58,6 +60,9 @@ class _Session:
             bootstrap.write_text("CHECKPOINT=MESH_COMPLETE\nCHECKPOINT=STATIONARY_FIELDS_COMPLETE\n"
                 "STOP_STAGE=field_solve\nPARTICLE_PHYSICS_CREATED=0\nPARTICLE_STUDIES_CREATED=0\n"
                 "MODEL_SAVED=true\nFIELD_SOLVE_DIAGNOSTIC=PASS\nSTATUS=PASS\n", encoding="utf-8")
+            progress = self.log_dir / "solver_progress" / "stationary_field_progress.log"
+            progress.parent.mkdir(exist_ok=True)
+            progress.write_text("inert progress", encoding="utf-8")
         else:
             self.assert_verify_body(body)
             bootstrap.write_text("CHECKPOINT=STATIONARY_FIELD_SAMPLES_COMPLETE\nSTATUS=PASS\n", encoding="utf-8")
@@ -109,6 +114,8 @@ class RfStationaryFieldSolveTests(unittest.TestCase):
                                               points=points, samples=samples, limits={})
             self.assertEqual(session.operations, ["solve_stationary_fields", "verify_stationary_fields"])
             self.assertEqual(result["solution_tags"], ["sol_es"])
+            self.assertIn((session.log_dir / "solver_progress/stationary_field_progress.log",
+                           "required_evidence"), session.declared)
             self.assertIn("multipole_resolved_design", session.inputs)
             self.assertTrue(any(name.startswith("science_resource_") for name in session.inputs))
 
@@ -148,6 +155,12 @@ class RfStationaryFieldSolveTests(unittest.TestCase):
         self.assertEqual(arguments.command, "solve-comsol")
         for name in ("read_rf_saved_stationary_solution.m", "export_comsol_stationary_field_samples.m"):
             self.assertTrue(native_resource_path(name).is_file())
+
+    def test_saved_static_field_uses_the_readable_potential_gradient(self):
+        source = native_resource_path("read_rf_saved_stationary_solution.m").read_text(encoding="utf-8")
+        for axis in ("x", "y", "z"):
+            self.assertIn(f"-d(Vstatic,{axis})", source)
+        self.assertNotIn("es_static.Ex", source)
 
     def test_managed_field_solve_supplies_native_retention_policy(self):
         with tempfile.TemporaryDirectory() as temporary:

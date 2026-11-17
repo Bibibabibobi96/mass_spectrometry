@@ -1559,6 +1559,12 @@ RF stationary managed entries now explicitly use `no_particle_batch_completion_a
 all 22 stationary tests pass with one unchanged optional portable-Lua skip. A fresh run identity is required;
 the failed evidence remains unchanged and no native field or sample was produced.
 
+Subsequent v33 preregistration identity and v34 MATLAB-root failures left no field. In v35, the real
+COMSOL field solve completed with 614,409 mesh elements and 1,489,674 DOF, then saved the MPH. Cold
+export found `Vstatic` readable but `es_static.Ex` unavailable; `-d(Vstatic,x/y/z)` is valid. The saved
+reader now uses those potential gradients, and solver-progress logs are declared for owner audit. All 24
+stationary tests pass with one unchanged optional skip. This is not yet a completed sample or comparison.
+
 The RF whole-batch continuation planner is available through the installed
 `msplatform.workflows.rf_batch_continuation` owner. Its implementation is byte-identical
 to the retired project runtime body. All six production calls use the installed API
