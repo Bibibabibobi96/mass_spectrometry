@@ -1,5 +1,13 @@
 # SIMION geometry compiler
 
+## OA-TOF text input rendering
+
+`oatof_inputs` owns pure OA-TOF resolved-contract validation and deterministic
+Lua, Program and Fly2 rendering from an explicit contract. `render_program`
+accepts the Program source text directly; the module performs no project file
+I/O and starts no native process. Project workflows retain their own Formal
+paths, seeds and authority-document updates.
+
 `compile_geometry(assembly, *, numerics)` compiles the supported RF/oaTOF
 assembly into `CompiledSimionGeometry`. It reads installed GEM resources but
 does not create a run, sample particles, start SIMION, Refine, Fly or open a GUI.

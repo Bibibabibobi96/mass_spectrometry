@@ -6,12 +6,8 @@ import argparse
 import json
 from pathlib import Path
 
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.sync_geometry_contract import (
-    load_contract,
-    render_fly2,
-    render_program,
-    render_resolved_lua,
-)
+from msplatform.backends.simion.oatof_inputs import render_fly2, render_program, render_resolved_lua
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.sync_geometry_contract import PROGRAM_PATH, load_contract
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -55,7 +51,7 @@ def prepare(
     }
     contents = {
         "resolved_lua": render_resolved_lua(contract),
-        "program": render_program(contract),
+        "program": render_program(contract, PROGRAM_PATH.read_text(encoding="utf-8")),
         "fly2": render_fly2(contract, particle_source_seed=particle_source_seed),
     }
     for key, path in generated.items():
