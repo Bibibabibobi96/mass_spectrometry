@@ -264,6 +264,9 @@ class CandidateDesignTests(CandidateFixtures, unittest.TestCase):
             source,
         )
         self.assertIn("codeRoot = resolve_code_root()", source)
+        self.assertIn("moduleRoot = fullfile(codeRoot, 'src')", source)
+        self.assertIn("setenv('PYTHONPATH', moduleRoot)", source)
+        self.assertIn("[moduleRoot pathsep previousPythonPath]", source)
         self.assertIn("setenv('PYTHONPATH'", source)
         self.assertIn("setenv('PYTHONDONTWRITEBYTECODE', '1')", source)
         self.assertIn("-B -m msplatform.exporters.solidworks.import_step_to_solidworks", source)
@@ -311,6 +314,34 @@ class CandidateDesignTests(CandidateFixtures, unittest.TestCase):
             self.assertIn("--manifest", result.stdout)
             self.assertFalse(any(code_root.rglob("__pycache__")))
             self.assertFalse(any(code_root.rglob("*.pyc")))
+
+            interference = Path(root) / "external_same_name"
+            foreign = interference / "msplatform/exporters/solidworks"
+            foreign.mkdir(parents=True)
+            (foreign / "import_step_to_solidworks.py").write_text("raise RuntimeError('foreign module selected')", encoding="utf-8")
+            environment["PYTHONPATH"] = os.pathsep.join((str(code_root / "src"), str(interference)))
+            environment["PYTHONNOUSERSITE"] = "1"
+            program = (
+                "import sys; from pathlib import Path; "
+                "from msplatform.exporters.solidworks import import_step_to_solidworks as bridge; "
+                "expected = Path(sys.argv[1]).resolve(); "
+                "actual = Path(bridge.__file__).resolve(); "
+                "assert actual == expected, (actual, expected); "
+                "print('SOLIDWORKS_FROZEN_MODULE=' + str(actual))"
+            )
+            loaded = subprocess.run(
+                [sys.executable, "-B", "-c", program, str(solidworks / "import_step_to_solidworks.py")],
+                cwd=working_directory,
+                env=environment,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+                timeout=20,
+            )
+            self.assertEqual(loaded.returncode, 0, loaded.stdout + loaded.stderr)
+            self.assertIn("SOLIDWORKS_FROZEN_MODULE=", loaded.stdout)
 
 
     def test_missing_consumer_route_is_rejected(self):

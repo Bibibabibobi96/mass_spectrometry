@@ -660,7 +660,11 @@ actual exporter through its selected Python and freezes that source instead of
 the retired analysis implementation. Component geometry, native B-splines,
 voltages and publication criteria are unchanged. All 76 original CAD, installation
 and adjacent candidate tests pass without launching SolidWorks. Ordinary-install,
-complete Repository and native CAD acceptance remain separately OPEN.
+complete Repository and native CAD acceptance remain separately OPEN. The OA
+candidate closure and MATLAB bridge now select installed SolidWorks sources without
+retired paths or inherited-path ambiguity; host access is limited to the actual
+SolidWorks adapters. Ninety-two focused tests and direct/sdist-rebuilt module-origin
+checks pass, without a MATLAB or SolidWorks native smoke claim.
 
 The following is the single active P4 worklist. All rows remain OPEN until their stated
 consumer and acceptance boundaries close; earlier delivered sub-capabilities are inherited,

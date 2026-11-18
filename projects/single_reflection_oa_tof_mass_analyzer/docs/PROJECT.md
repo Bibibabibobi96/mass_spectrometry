@@ -10,6 +10,14 @@ identity checks are unchanged, and RF stationary comparison remains the distinct
 non-OA consumer. Thirty-six focused consumer/owner tests pass; final installation,
 Repository and scientific acceptance are separate open obligations.
 
+The candidate source closure no longer declares retired `common/solidworks/*.py`
+paths. Installed SolidWorks modules enter through the existing `src/msplatform`
+enumeration exactly once and load from frozen `src` in isolation. The MATLAB bridge
+puts `codeRoot/src` before inherited paths, with missing/tampered/out-of-scope
+sources still rejected. Direct wheel and sdist-rebuilt consumers load the same
+modules from their own site-packages. These are software checks, not a MATLAB or
+SolidWorks native smoke result.
+
 
 本文件维护项目当前事实、资格与开放任务。精确输入以[机器合同](../README.md#机器权威)为准，
 执行入口由[项目README](../README.md#活动入口)导航；跨项目整机状态只查[统一集成状态](../../../integrations/docs/INTEGRATION.md)。
