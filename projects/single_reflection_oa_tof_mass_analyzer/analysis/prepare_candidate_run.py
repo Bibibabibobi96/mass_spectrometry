@@ -666,7 +666,7 @@ def prepare_candidate_run(
                 "model_path": str(comsol_model),
                 "report_path": str(report_dir / "comsol_build.txt"),
                 "entrypoint": frozen_source_path(source_closure, "src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1"),
-                "task_script": str(frozen_code_root / "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_contract_build.m"),
+                "task_script": str(frozen_code_root / "src/msplatform/backends/comsol/matlab/run_candidate_contract_build.m"),
                 "environment": {
                     "OATOF_CANDIDATE_CONTRACT_PATH": str(frozen["candidate_resolved_geometry.json"]),
                     "OATOF_CANDIDATE_MODEL_PATH": str(comsol_model),

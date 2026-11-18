@@ -34,9 +34,9 @@ arguments
     options.GeometryOnly (1,1) logical = false
 end
 
-projectRoot = fileparts(fileparts(mfilename('fullpath')));
-repositoryRoot = fileparts(fileparts(projectRoot));
-addpath(projectRoot, fullfile(repositoryRoot, 'src', 'msplatform', 'backends', 'comsol', 'matlab'));
+codeRoot = fileparts(fileparts(fileparts(fileparts(fileparts(mfilename('fullpath'))))));
+projectRoot = fullfile(codeRoot, 'projects', 'single_reflection_oa_tof_mass_analyzer');
+addpath(projectRoot, fullfile(codeRoot, 'src', 'msplatform', 'backends', 'comsol', 'matlab'));
 contractPath = options.ContractPath;
 if options.GeometryOnly
     assert(strlength(contractPath)>0 && strlength(options.OutputModelPath)>0, ...
@@ -71,7 +71,7 @@ if strlength(options.Label) == 0
     options.Label = compose("%gamu", options.MassAmu);
 end
 if strlength(options.OutputModelPath) > 0
-    paths = oatof_paths(options.ArtifactRoot, fileparts(fileparts(mfilename('fullpath'))));
+    paths = oatof_paths(options.ArtifactRoot, projectRoot);
     outputPath = string(resolve_path_identity(options.OutputModelPath));
     allowedRoots = string({paths.runsRoot, paths.scratchRoot});
     allowed = false;

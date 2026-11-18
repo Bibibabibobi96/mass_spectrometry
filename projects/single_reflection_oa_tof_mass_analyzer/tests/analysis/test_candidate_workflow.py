@@ -1098,10 +1098,8 @@ print('FROZEN_ION_CONSUMER_PASS')
 
     def test_candidate_comsol_adapter_uses_contract_and_run_config_authorities(self):
         source = (
-            PROJECT_ROOT
-            / "workflows"
-            / "design_candidate"
-            / "run_candidate_contract_build.m"
+            REPO_ROOT
+            / "src/msplatform/backends/comsol/matlab/run_candidate_contract_build.m"
         ).read_text(encoding="utf-8")
         self.assertIn("OATOF_CANDIDATE_RUN_CONFIG_PATH", source)
         self.assertIn("runConfig.run_instance.particle_count", source)

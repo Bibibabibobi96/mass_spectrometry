@@ -12,7 +12,7 @@ $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\single_reflection_oa_tof_mass_analyzer'
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 $launcher = Join-Path $repoRoot 'src\msplatform\backends\comsol\launcher\run_comsol_r2025b.ps1'
-$task = Join-Path $projectRoot 'workflows\design_candidate\run_candidate_contract_build.m'
+$task = Join-Path $repoRoot 'src\msplatform\backends\comsol\matlab\run_candidate_contract_build.m'
 $contract = Join-Path $projectRoot 'config\resolved_geometry.json'
 $ion = Join-Path $artifactRoot 'formal\simion\oatof_comsol_524amu_gaussian_N100.ion'
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
@@ -29,12 +29,12 @@ $frozen = [ordered]@{}
 foreach ($item in @(
   @{Name='resolved_geometry'; Path=$contract; File='resolved_geometry.json'},
   @{Name='particle_table'; Path=$ion; File='particles_n100.ion'},
-  @{Name='stable_entry'; Path=(Join-Path $projectRoot 'comsol\run_oatof_model.m'); File='run_oatof_model.m'},
+  @{Name='stable_entry'; Path=(Join-Path $repoRoot 'src\msplatform\backends\comsol\matlab\run_oatof_model.m'); File='src/msplatform/backends/comsol/matlab/run_oatof_model.m'},
   @{Name='model_core'; Path=(Join-Path $projectRoot 'comsol\oatof_build_model_core.m'); File='oatof_build_model_core.m'},
   @{Name='detector_event_export'; Path=(Join-Path $projectRoot 'comsol\oatof_export_detector_events.m'); File='oatof_export_detector_events.m'},
   @{Name='detector_extractor'; Path=(Join-Path $repoRoot 'src\msplatform\backends\comsol\matlab\oatof_extract_detector_arrivals.m'); File='oatof_extract_detector_arrivals.m'},
   @{Name='python_event_analyzer'; Path=(Join-Path $projectRoot 'analysis\analyze_comsol_detector_events.py'); File='analyze_comsol_detector_events.py'},
-  @{Name='task'; Path=$task; File='workflows/design_candidate/run_candidate_contract_build.m'}
+  @{Name='task'; Path=$task; File='src/msplatform/backends/comsol/matlab/run_candidate_contract_build.m'}
 )) {
   if (-not (Test-Path -LiteralPath $item.Path -PathType Leaf)) {
     throw "Required input is missing: $($item.Path)"

@@ -59,7 +59,7 @@ STAGE_SOURCE_PREFIXES = {
         "projects/single_reflection_oa_tof_mass_analyzer/oatof_assert_formal_write_authorized.m",
         "projects/single_reflection_oa_tof_mass_analyzer/oatof_lifecycle_preflight.ps1",
         "src/msplatform/backends/comsol/matlab/oatof_paths.m",
-        "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_contract_build.m",
+        "src/msplatform/backends/comsol/matlab/run_candidate_contract_build.m",
         "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_stage_execution.py",
         "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_comsol_stage.py",
     ),
