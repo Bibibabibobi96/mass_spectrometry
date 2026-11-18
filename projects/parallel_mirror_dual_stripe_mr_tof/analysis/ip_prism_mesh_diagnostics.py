@@ -14,7 +14,7 @@ import numpy as np
 
 from msplatform.execution.retention import file_record
 from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import convex_planes, convex_section
-from msplatform.workflows.prepared_joint.ion_processor_assembly import _bounds
+from msplatform.backends.simion.assembled_field_plan import _bounds
 from msplatform.backends.simion.standalone_pa_composition import HEADER, PaHeader, read_pa_header
 
 

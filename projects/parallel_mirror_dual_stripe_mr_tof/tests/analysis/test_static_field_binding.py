@@ -308,7 +308,7 @@ class NativeAxisMaterializationTest(unittest.TestCase):
     def setup_bank(self, root, *, nested=False):
         import numpy as np
         from msplatform.backends.simion.standalone_pa_composition import PaHeader
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import native_static_field_provider as provider
+        from msplatform.backends.simion import native_static_field_provider as provider
         base_dir = root/"base"; base_dir.mkdir()
         base = NativeStaticBindingTest().fixture(base_dir)
         base["instances"][0]["origin_mm"] = base["parent"]["grid"]["origin_mm"]
@@ -3577,7 +3577,7 @@ class RetiredIonProcessorOperatorTest(unittest.TestCase):
         return receipt_path, receipt
 
     def test_current_chain_and_future_compose_keep_strict_current_assets_after_exact_retirement(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import native_static_field_provider as provider
+        from msplatform.backends.simion import native_static_field_provider as provider
         from msplatform.backends.comsol.static_field_binding import load_native_response_basis
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis import test_native_static_field_provider as fixtures
         with tempfile.TemporaryDirectory() as directory:
@@ -3651,7 +3651,7 @@ class RetiredIonProcessorOperatorTest(unittest.TestCase):
                 load_binding(path)
 
     def test_materialized_field_reads_retired_mixed_owner_and_pure_response_ancestry_only(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import native_static_field_provider as provider
+        from msplatform.backends.simion import native_static_field_provider as provider
         from msplatform.backends.comsol.static_field_binding import load_native_response_basis
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis import test_native_static_field_provider as fixtures
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_static_field_binding import (

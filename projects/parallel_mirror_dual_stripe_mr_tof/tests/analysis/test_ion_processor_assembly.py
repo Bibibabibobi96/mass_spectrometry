@@ -17,7 +17,8 @@ from integrations.workflows.accelerator_interface import geometry as assembly_ge
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 from msplatform.workflows.prepared_joint.ip_mr_connection import resolve_ip_mr_connection
 from integrations.workflows.accelerator_interface.geometry import prepare_ion_processor_assembly
-from msplatform.workflows.prepared_joint import ion_processor_assembly as assembly
+from msplatform.backends.simion import assembled_field_plan as assembly
+from msplatform.workflows.prepared_joint import ion_processor_assembly as assembly_workflow
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import resolve_geometry
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
 
@@ -160,7 +161,8 @@ class AssemblyTests(unittest.TestCase):
             self.write(name + ".json", value)
             for name, value in (("source", self.source), ("trajectory", self.trajectory), ("request", self.request))
         ]
-        with patch.object(assembly, "_analyzer_geometry_lines", return_value=["e(2) { box3d(1,2,3,4,5,6) }"]):
+        with patch("msplatform.backends.simion.ip_geometry._analyzer_geometry_lines",
+                   return_value=["e(2) { box3d(1,2,3,4,5,6) }"]):
             return prepare_ion_processor_assembly(self.source, self.trajectory, self.request,
                 connection=resolve_ip_mr_connection(self.request["composition_plan"]),
                 input_paths=paths, output_directory=self.root / "output")["report"]
@@ -208,7 +210,7 @@ class AssemblyTests(unittest.TestCase):
     def test_lift_seed_rejects_unknown_energy_adjustment_policy(self):
         self.request["policies"]["energy_adjustment"] = "unknown"
         with self.assertRaisesRegex(ValueError, "energy adjustment policy"):
-            assembly.derive_lift_seed(self.source, self.request)
+            assembly_workflow.derive_lift_seed(self.source, self.request)
 
     def test_historical_source_authors_current_native_seed_without_retired_analytic_fields(self):
         expected = copy.deepcopy(self.source["baseline"])
@@ -284,10 +286,10 @@ class AssemblyTests(unittest.TestCase):
             "center_z_mm": 0,
             "radius_mm": 1,
         }
-        actual = assembly.transform_shape(hole, r, t)
+        actual = assembly_workflow.transform_shape(hole, r, t)
         self.assertEqual(actual["endpoints_mm"], [[0, -195.6, 9.8], [0, -194.9, 9.8]])
         self.assertEqual(actual["radius_mm"], 1)
-        box = assembly.transform_shape({"shape": "box", "min_mm": [166, 1.9, -0.4], "max_mm": [174, 3.6, 0.4]}, r, t)
+        box = assembly_workflow.transform_shape({"shape": "box", "min_mm": [166, 1.9, -0.4], "max_mm": [174, 3.6, 0.4]}, r, t)
         self.assertEqual(box["min_mm"][:2], [-0.4, -59])
         self.assertAlmostEqual(box["min_mm"][2], 6.2)
 
@@ -314,7 +316,7 @@ class AssemblyTests(unittest.TestCase):
 
     def test_invalid_rotation_rejected(self):
         with self.assertRaises(ValueError):
-            assembly.transform_shape(
+            assembly_workflow.transform_shape(
                 {"shape": "box", "min_mm": [0, 0, 0], "max_mm": [1, 1, 1]},
                 [[0.7, 0, 0.7], [0, 1, 0], [-0.7, 0, 0.7]],
                 [0, 0, 0],
@@ -359,11 +361,12 @@ class AssemblyTests(unittest.TestCase):
         }
 
     def test_materializable_new_fields_and_fine_collision(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import native_static_field_provider as provider
+        from msplatform.backends.simion import native_static_field_provider as provider
         import shutil
 
         request = self.materializable_request()
-        with patch.object(assembly, "_analyzer_geometry_lines", return_value=["e(2) { box3d(1,2,3,4,5,6) }"]):
+        with patch("msplatform.backends.simion.ip_geometry._analyzer_geometry_lines",
+                   return_value=["e(2) { box3d(1,2,3,4,5,6) }"]):
             plan = provider.compile_request(request)
         self.assertEqual(plan["window_labels"], ["ion_processor_local"])
         self.assertNotIn("ion_processor_instance_id", plan["resolved_geometry"])
@@ -398,12 +401,13 @@ class AssemblyTests(unittest.TestCase):
         self.assertEqual(binding["accelerator_provider"], "dual_pressure_rectilinear_ion_processor")
 
     def test_replacement_field_accepts_current_and_legacy_preparation_identity(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import native_static_field_provider as provider
+        from msplatform.backends.simion import native_static_field_provider as provider
 
         request = self.materializable_request()
         path = Path(request["replacement_assembly_manifest"])
         manifest = json.loads(path.read_text())
-        with patch.object(assembly, "_analyzer_geometry_lines", return_value=["e(2) { box3d(1,2,3,4,5,6) }"]):
+        with patch("msplatform.backends.simion.ip_geometry._analyzer_geometry_lines",
+                   return_value=["e(2) { box3d(1,2,3,4,5,6) }"]):
             legacy = provider.compile_request(request)
             manifest.update(project="instrument_assembly", mode="accelerator_interface_preparation")
             path.write_text(json.dumps(manifest), encoding="utf-8")
@@ -430,12 +434,13 @@ class AssemblyTests(unittest.TestCase):
         self.assertEqual(assembly.ordinary_pa_file_bytes([65, 65, 9], [1, 1, 0.5]), 304256)
 
     def test_materializable_explicit_skipped_point_keeps_geometry_and_freezes_identity(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import native_static_field_provider as provider
+        from msplatform.backends.simion import native_static_field_provider as provider
         import shutil
         request = self.materializable_request()
         numerical = Path(request["numerical_contract_path"])
         contract = json.loads(numerical.read_text())
-        with patch.object(assembly, "_analyzer_geometry_lines", return_value=["e(2) { box3d(1,2,3,4,5,6) }"]):
+        with patch("msplatform.backends.simion.ip_geometry._analyzer_geometry_lines",
+                   return_value=["e(2) { box3d(1,2,3,4,5,6) }"]):
             baseline = provider.compile_request(request)
             contract["simion"]["numerical_profiles"]["native_static_field"]["refine"]["skipped_point"] = False
             numerical = self.root / "new_numerical_strategy.json"

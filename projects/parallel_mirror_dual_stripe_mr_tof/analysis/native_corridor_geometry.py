@@ -14,7 +14,7 @@ import re
 from pathlib import Path
 from collections.abc import Mapping
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_plan import (
+from msplatform.backends.simion.native_corridor_plan import (
     derive_native_corridor_plan,
 )
 from msplatform.backends.simion.mr_geometry import _number

@@ -1595,7 +1595,7 @@ $full.parameters.PSObject.Properties.Remove('PreflightOnly')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(json.loads(result.stdout), dict(mr_core=False, mr_full=True, integration_full=True))
         result = subprocess.run([pwsh, "-NoProfile", "-File", str(CHANGED_GATE), "-PythonExe", sys.executable,
-            "-PlanOnly", "-ChangedPath", "projects/parallel_mirror_dual_stripe_mr_tof/analysis/native_corridor_plan.py"],
+            "-PlanOnly", "-ChangedPath", "src/msplatform/backends/simion/native_corridor_plan.py"],
             cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("parallel_mirror_dual_stripe_mr_tof_static", result.stdout)

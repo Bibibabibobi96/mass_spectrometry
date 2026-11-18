@@ -1,5 +1,15 @@
 # 开放路径平行镜双条带 MR-TOF 项目状态
 
+## Installed native static-field provider
+
+`msplatform.backends.simion.native_static_field_provider` and `native_corridor_plan`
+now own native request compilation, GEM/binding metadata and grid planning for the
+existing PowerShell execution owner. The project launcher and downstream workpoint
+caller consume that installed implementation; the former analysis copies are
+retired. Scientific geometry, voltage authorities, level reuse and no-Fly scope are
+unchanged. This ownership migration does not launch SIMION or grant a new field,
+trajectory or scientific qualification.
+
 ## Installed resolved-CAD owner
 
 `msplatform.exporters.mr_resolved_cad`, `mr_cad_pose` and `solidworks` now own the

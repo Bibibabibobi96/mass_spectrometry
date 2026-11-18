@@ -6,9 +6,9 @@ import re
 import unittest
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.ip_prism_local_geometry import prepare_geometry
-from msplatform.workflows.prepared_joint.ion_processor_assembly import (
-    transform_shape, _bounds, _primitive,
-)
+from msplatform.workflows.prepared_joint.ion_processor_assembly import transform_shape
+from msplatform.backends.simion.assembled_field_plan import _bounds
+from msplatform.backends.simion.ip_geometry import _assembled_primitive as _primitive
 from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import contains_shape
 
 

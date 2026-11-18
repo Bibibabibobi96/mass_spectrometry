@@ -12,6 +12,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 from msplatform.execution.artifact_naming import validate_run_id, validate_task_id
+from msplatform.execution.inputs import python_import_roots
 from msplatform.contracts.machine_contracts import load_json, sha256, validate_schema
 from common.simion.process_observation import run_observed_process
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import (
@@ -592,7 +593,7 @@ def prepare_candidate_run(
         "--contract", str(frozen["candidate_resolved_geometry.json"]), "--output-dir", str(prepared_dir),
         "--particle-source-seed", str(particle_source_seed),
     ], cwd=frozen_code_root, stdout=stdout, stderr=stderr,
-        environment={key: value for key, value in os.environ.items() if key != "PYTHONPATH"},
+        environment={**os.environ, "PYTHONPATH": os.pathsep.join(python_import_roots(frozen_code_root))},
         warning_seconds=30)
     if process.returncode != 0:
         # Keep the actual final diagnostic after a temporary planning tree exits,

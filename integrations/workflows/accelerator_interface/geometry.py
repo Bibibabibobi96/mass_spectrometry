@@ -13,9 +13,11 @@ from msplatform.components.dual_pressure_rectilinear_ion_processor.assembly_inte
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 from msplatform.backends.simion.ip_geometry import render_gem
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.assembly_interface import resolve_assembly_interface as mr_interface
+from msplatform.backends.simion.ip_geometry import render_assembled_ip_gem as _gem, _assembled_primitive as _primitive
+from msplatform.backends.simion.assembled_field_plan import _bounds, _grid_plan
 from msplatform.workflows.prepared_joint.ion_processor_assembly import (
-    _bounds, _finite, _gem, _grid_plan, _inside_body, _point, _primitive, _read,
-    _shield_contains, _transform_projection, _write, derive_lift_seed,
+    _finite, _inside_body, _point, _read, _shield_contains, _transform_projection,
+    _write, derive_lift_seed,
 )
 
 
