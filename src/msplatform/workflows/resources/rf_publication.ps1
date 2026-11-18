@@ -11,36 +11,33 @@ function New-RfPublishedDesignFreshnessPackage {
         [Parameter(Mandatory)][ValidateSet('interface','mass_filter')][string]$Profile
     )
     $sourceFiles = Get-FrozenPythonPackageRelativePaths -SourceRoot $SourceRoot -Python $Python `
-        -PythonPackages @('common/contracts','projects/rf_multipole_ion_optics/analysis') `
-        -PythonModules @('common/paths/repository_root.py')
+        -PythonPackages @('src/msplatform')
     $sourcePackage = New-FrozenPythonPackage -Python $Python -SourceRoot $SourceRoot `
         -CodeRoot $SnapshotRoot -RelativePaths $sourceFiles
     $selectionScript = @'
 import json, pathlib, sys
-root = pathlib.Path(sys.argv[1]).resolve()
-sys.path[:0] = [str(root / "src"), str(root)] if (root / "src").is_dir() else [str(root)]
-from projects.rf_multipole_ion_optics.analysis import resolve_contract
-assert pathlib.Path(resolve_contract.__file__).resolve().is_relative_to(root)
-profile = resolve_contract.PROFILES[sys.argv[2]]
-print(json.dumps({key: path.relative_to(root).as_posix() for key, path in profile.items()}))
+root = pathlib.Path(sys.argv[2]).resolve()
+sys.path.insert(0, str(root / "src"))
+from msplatform.workflows import rf_publication
+assert pathlib.Path(rf_publication.__file__).resolve().is_relative_to(root)
+print(json.dumps(rf_publication.PROFILE_RESOURCES[sys.argv[1]]))
 '@
-    $selectionText = (& $Python -I -B -c $selectionScript $SnapshotRoot $Profile | Out-String).Trim()
+    $selectionText = (& $Python -I -B -c $selectionScript $Profile $SnapshotRoot | Out-String).Trim()
     if ($LASTEXITCODE -ne 0) {throw 'Frozen RF publication resource selection failed.'}
     $selection = $selectionText | ConvertFrom-Json
-    $resources = @($selection.PSObject.Properties | ForEach-Object {[string]$_.Value}) + @(
-        'src/msplatform/components/rf_multipole/family_contract.json'
-    )
+    $resources = @($selection.PSObject.Properties | ForEach-Object {[string]$_.Value})
     $resourcePackage = New-FrozenPythonPackage -Python $Python -SourceRoot $SourceRoot `
         -CodeRoot $SnapshotRoot -RelativePaths @($resources | Sort-Object -Unique)
     $package = $sourcePackage
     $package.files = @($sourcePackage.files) + @($resourcePackage.files)
     Assert-FrozenPythonPackage -Package $package
     . (Get-FrozenPythonPackageFile -Package $package -RelativePath 'src/msplatform/execution/resources/frozen_python_package.ps1')
+    $projectRoot = Join-Path $SnapshotRoot 'projects/rf_multipole_ion_optics'
     $check = Invoke-IsolatedFrozenPythonModule -Python $Python -Package $package `
-        -Module 'projects.rf_multipole_ion_optics.analysis.resolve_contract' `
-        -Arguments @('--profile',$Profile,'--check') `
+        -Module 'msplatform.workflows.rf_publication' `
+        -Arguments @('--project-root',$projectRoot,'--repository-root',$SnapshotRoot,'--profile',$Profile,'--check') `
         -DistributionNames @('jsonschema','referencing') `
-        -RequiredModuleNames @('projects.rf_multipole_ion_optics.analysis.resolve_contract') `
+        -RequiredModuleNames @('msplatform.workflows.rf_publication') `
         -ForbiddenRoots @($SourceRoot)
     [pscustomobject]@{
         profile = $Profile

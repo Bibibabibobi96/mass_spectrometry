@@ -1,5 +1,18 @@
 # RF多极杆离子光学项目状态
 
+## Installed publication owner
+
+`msplatform.workflows.rf_publication` owns the complete request compiler, freshness
+checks and governance-authoring implementation. The common PowerShell freezer no
+longer imports or executes the project analysis resolver; it supplies the selected
+frozen project root and repository root explicitly. This project keeps its named
+research profiles and a thin author CLI. The original publication/gate regressions
+and frozen positive, stale-publication and immutable-source checks pass. Focused
+ordinary wheel and sdist-rebuilt consumers also pass outside the checkout with
+project imports denied; final same-candidate acceptance remains open. No geometry, solver
+or scientific qualification changes follow from this ownership migration.
+
+
 ## Original finite-length L1 analysis-only successor
 
 The original CLI now accepts `--analyze-only --parent-manifest <sealed parent>`
