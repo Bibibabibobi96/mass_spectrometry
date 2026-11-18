@@ -101,7 +101,7 @@ def _ip_source_layout(source: dict[str, Any]) -> dict[str, Any]:
 def _static_gem(geometry: dict, authority: dict, grid: dict, *, boundary_mode: str):
     if authority.get("assembly", {}).get("accelerator_provider") != IP_PROVIDER:
         return build_static_c0_gem(geometry, authority, grid, boundary_mode=boundary_mode)
-    from msplatform.workflows.prepared_joint.ion_processor_assembly import _gem
+    from msplatform.backends.simion.ip_geometry import render_assembled_ip_gem as _gem
     rows = authority["component_voltages_v"]
     ip = [row["voltage_v"] for row in rows if row["component_namespace"] == "ion_processor"]
     detector = [row["voltage_v"] for row in rows if row["component_namespace"] == "detector"]
@@ -546,7 +546,7 @@ def _new_collision_plan(source: dict[str, Any], geometry: dict[str, Any]) -> dic
 
 def _compile_ip_fine_extension(request: dict[str, Any]) -> dict[str, Any]:
     """Reuse one ordinary operator, rebuilding only its extended IP fine domain."""
-    from msplatform.workflows.prepared_joint.ion_processor_assembly import _gem
+    from msplatform.backends.simion.ip_geometry import render_assembled_ip_gem as _gem
     from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import extend_fine_z_domain
     from msplatform.backends.simion.mr_geometry import ordinary_pa_file_bytes
     required = {"schema_version", "role", "source_binding_path", "source_field_manifest",
@@ -730,9 +730,7 @@ def compile_request(request: dict[str, Any]) -> dict[str, Any]:
     if "ion_processor_local_domain_update" in request:
         return _compile_ip_fine_extension(request)
     if "replacement_assembly_path" in request:
-        from msplatform.workflows.prepared_joint.ion_processor_assembly import (
-            compile_materializable_fields,
-        )
+        from msplatform.backends.simion.assembled_field_plan import compile_materializable_fields
 
         return compile_materializable_fields(request)
     allowed = {
@@ -906,9 +904,9 @@ def compile_request(request: dict[str, Any]) -> dict[str, Any]:
     }
     ancestry_bindings = [source]
     if _ip_metadata(source):
-        from msplatform.workflows.prepared_joint import ion_processor_assembly
+        from msplatform.backends.simion import ip_geometry
 
-        inputs["ion_processor_emitter"] = str(Path(ion_processor_assembly.__file__).resolve())
+        inputs["ion_processor_emitter"] = str(Path(ip_geometry.__file__).resolve())
         inputs["gem_primitives"] = str(Path(gem_primitives.__file__).resolve())
     if reused_basis is not None:
         inputs["source_response_basis"] = inputs["source_binding"]

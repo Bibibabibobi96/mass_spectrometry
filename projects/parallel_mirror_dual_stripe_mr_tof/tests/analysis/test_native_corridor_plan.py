@@ -6,7 +6,8 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_plan import derive_native_corridor_plan
+from msplatform.backends.simion import native_corridor_plan
+from msplatform.backends.simion.native_corridor_plan import derive_native_corridor_plan
 from msplatform.backends.simion.mr_geometry import validate_generation_grid_pitch
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_response_bank import (
     NATIVE_RESPONSE_NAMES,
@@ -69,7 +70,7 @@ class NativeCorridorPlanTest(unittest.TestCase):
         self.assertEqual(plan['parity_bytes'], 0)
         self.assertEqual(plan['staging_worker_bytes'], 0)
         self.assertAlmostEqual(plan['peak_additional_bytes'] / 1024**3, 60.7803039998, places=6)
-        source = (PROJECT / 'analysis' / 'native_corridor_plan.py').read_text(encoding='utf-8-sig')
+        source = Path(native_corridor_plan.__file__).read_text(encoding='utf-8-sig')
         self.assertNotIn('analyzer_local_refinement_plan', source)
 
     def test_mr_cache_cannot_build_an_accelerator(self) -> None:

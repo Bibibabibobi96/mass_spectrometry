@@ -495,9 +495,9 @@ class CandidateDesignTests(CandidateFixtures, unittest.TestCase):
             contract.write_text(json.dumps(document), encoding="utf-8")
             output = root / "compiled"
             result = subprocess.run([sys.executable, "-I", "-B", "-c",
-                "import sys;sys.path.insert(0,sys.argv[1]);sys.argv=sys.argv[2:];"
+                "import sys;sys.path[:0]=sys.argv[1:3];sys.argv=sys.argv[3:];"
                 "from projects.single_reflection_oa_tof_mass_analyzer.analysis.compile_candidate_design import main;main()",
-                str(REPO_ROOT), "compile_candidate_design", str(proposal), "--output-dir", str(output),
+                str(REPO_ROOT / "src"), str(REPO_ROOT), "compile_candidate_design", str(proposal), "--output-dir", str(output),
                 "--solver-numerics-contract", str(contract)], cwd=root, capture_output=True,
                 text=True, encoding="utf-8", timeout=60)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

@@ -536,7 +536,7 @@ class RadialCompactionCampaignTests(unittest.TestCase):
             stdout, stderr = root / "stdout.log", root / "stderr.log"
             receipt = radial.run_managed_python_process(
                 ["-B", "-c", worker], cwd=code_root, stdout=stdout, stderr=stderr,
-                environment={**radial.os.environ, "PYTHONPATH": str(code_root),
+                environment={**radial.os.environ, "PYTHONPATH": radial.os.pathsep.join(radial.python_import_roots(code_root)),
                              "PYTHONDONTWRITEBYTECODE": "1",
                              "MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH": str(shared_state)},
             )
@@ -651,7 +651,7 @@ def run(case_root, run_id, context, managed):
             receipt = radial.run_managed_python_process(
                 ["-B", "-c", controller, str(case_root), run.name, "A" * 64, json.dumps(managed_process_fixture())],
                 cwd=code_root, stdout=stdout, stderr=stderr, environment={
-                    **radial.os.environ, "PYTHONPATH": radial.os.pathsep.join((str(code_root), str(root))),
+                    **radial.os.environ, "PYTHONPATH": radial.os.pathsep.join((*radial.python_import_roots(code_root), str(root))),
                     "PYTHONDONTWRITEBYTECODE": "1", "MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN": "",
                     "MASS_SPECTROMETRY_PYTHON_HEAVY_REENTRY": "",
                     "MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH": str(root / "fixture-host.sqlite3")},

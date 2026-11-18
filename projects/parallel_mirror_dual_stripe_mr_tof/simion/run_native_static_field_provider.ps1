@@ -15,7 +15,7 @@ $repo=Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent
 . (Join-Path $repo 'common/host_execution_lease.ps1')
 . (Join-Path $repo 'common/resource_budget_support.ps1')
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repo '.venv/Scripts/python.exe'}
-$module='projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_static_field_provider'
+$module='msplatform.backends.simion.native_static_field_provider'
 function Exit-NativeProviderHostStage {
     param([Parameter(Mandatory)]$Lease)
     $released=Exit-HostResourceStage -Lease $Lease -PassThru
@@ -60,7 +60,7 @@ $fieldBinding=$null;$responseBasis=$null;$watch=[Diagnostics.Stopwatch]::StartNe
 $levelStatus=[ordered]@{}
 try{
     $capacity=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repo -ArtifactRoot $artifacts -RunDirectory $RunDirectory -Owner $plan.project -CommittedNewBytes ([int64]$plan.committed_new_bytes) -ProtectedPaths @($plan.protected_paths)
-    $copies=[ordered]@{request=$RequestPath;launcher=$PSCommandPath;compiler=(Join-Path $repo 'projects/parallel_mirror_dual_stripe_mr_tof/analysis/native_static_field_provider.py');geometry_emitter=(Join-Path $repo 'src/msplatform/backends/simion/native_system_geometry.py');analyzer_shapes=(Join-Path $repo 'src/msplatform/backends/simion/mr_geometry.py');candidate_authority=(Join-Path $repo 'src/msplatform/backends/comsol/candidate_authority.py');binding_loader=(Join-Path $repo 'src/msplatform/backends/comsol/static_field_binding.py');scalar_adapter=(Join-Path $repo 'src/msplatform/backends/simion/resources/scalar_field_adapter.lua');builder=(Join-Path $repo 'common/simion/build_dirichlet_patch_basis.lua');executor=(Join-Path $repo 'common/resource_budget_support.ps1')}
+    $copies=[ordered]@{request=$RequestPath;launcher=$PSCommandPath;compiler=(Join-Path $repo 'src/msplatform/backends/simion/native_static_field_provider.py');geometry_emitter=(Join-Path $repo 'src/msplatform/backends/simion/native_system_geometry.py');analyzer_shapes=(Join-Path $repo 'src/msplatform/backends/simion/mr_geometry.py');candidate_authority=(Join-Path $repo 'src/msplatform/backends/comsol/candidate_authority.py');binding_loader=(Join-Path $repo 'src/msplatform/backends/comsol/static_field_binding.py');scalar_adapter=(Join-Path $repo 'src/msplatform/backends/simion/resources/scalar_field_adapter.lua');builder=(Join-Path $repo 'common/simion/build_dirichlet_patch_basis.lua');executor=(Join-Path $repo 'common/resource_budget_support.ps1')}
     foreach($key in $plan.inputs.Keys){$copies[$key]=$plan.inputs[$key]}
     if($plan.ContainsKey('collision_build')){
         $copies.geometry_resolver=Join-Path $repo 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resolved_geometry.py'
@@ -93,7 +93,7 @@ try{
     }
     $plan=Get-Content -LiteralPath $planPath -Raw|ConvertFrom-Json -AsHashtable
     $nativeInputs=Invoke-RunToolRootContext -RepoRoot $repo -Operation {
-        $text=& $python -B -c 'import json,sys;from pathlib import Path;from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_static_field_provider import native_input_binding,read;print(json.dumps(native_input_binding(read(Path(sys.argv[1])),Path(sys.argv[2]))))' $planPath $RunDirectory
+        $text=& $python -B -c 'import json,sys;from pathlib import Path;from msplatform.backends.simion.native_static_field_provider import native_input_binding,read;print(json.dumps(native_input_binding(read(Path(sys.argv[1])),Path(sys.argv[2]))))' $planPath $RunDirectory
         if($LASTEXITCODE-ne0){throw 'Native input metadata selection failed.'}
         ($text-join"`n")|ConvertFrom-Json -Depth 50
     }
@@ -106,7 +106,7 @@ try{
     }
     if(-not$isComposition){
         Invoke-RunToolRootContext -RepoRoot $repo -Operation {
-            & $python -B -c 'import sys;from pathlib import Path;from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_static_field_provider import read,verify_native_provider_inputs;verify_native_provider_inputs(read(Path(sys.argv[1])),Path(sys.argv[2]));print("NATIVE_INPUT_ASSETS=PASS")' $planPath $RunDirectory
+            & $python -B -c 'import sys;from pathlib import Path;from msplatform.backends.simion.native_static_field_provider import read,verify_native_provider_inputs;verify_native_provider_inputs(read(Path(sys.argv[1])),Path(sys.argv[2]));print("NATIVE_INPUT_ASSETS=PASS")' $planPath $RunDirectory
             if($LASTEXITCODE-ne0){throw 'Native input asset verification failed before vendor use.'}
         }
     }

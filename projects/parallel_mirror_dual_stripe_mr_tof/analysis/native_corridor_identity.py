@@ -16,7 +16,7 @@ from msplatform.io.file_identity import file_sha256
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_geometry import (
     build_native_corridor_gem,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_plan import (
+from msplatform.backends.simion.native_corridor_plan import (
     derive_native_corridor_plan,
 )
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
