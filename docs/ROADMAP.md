@@ -637,6 +637,15 @@ remain in place. The complete integration suite passed 585 tests with four exist
 Ordinary wheel and sdist-rebuilt outside-checkout acceptance passed in 1790.246 seconds. Complete MR,
 Changed and applicable native acceptance remain OPEN.
 
+RF publication compilation, freshness and author governance now have one installed
+`msplatform.workflows.rf_publication` owner. Its PowerShell freezer selects only
+that installed implementation and the explicitly supplied research inputs; it no
+longer imports or executes the RF project resolver. The project retains its named
+research profiles and a thin author entry. Frozen positive/stale/immutable-source
+checks and the original publication/gate regressions pass. Focused ordinary wheel
+and sdist-rebuilt consumers pass outside the checkout with project imports denied;
+complete Repository and final same-candidate acceptance remain OPEN.
+
 The following is the single active P4 worklist. All rows remain OPEN until their stated
 consumer and acceptance boundaries close; earlier delivered sub-capabilities are inherited,
 not rebuilt. Shared interfaces, the gate catalog, installation fixtures and Git have one

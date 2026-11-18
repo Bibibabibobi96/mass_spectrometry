@@ -40,9 +40,9 @@ $sourcePackage=New-FrozenPythonPackage -Python $python -SourceRoot $source -Code
 Assert-FrozenPythonPackage -Package $sourcePackage
 . (Get-FrozenPythonPackageFile -Package $sourcePackage -RelativePath 'src/msplatform/execution/resources/frozen_python_package.ps1')
 $sourceCheck=Invoke-IsolatedFrozenPythonModule -Python $Python -Package $sourcePackage `
- -Module 'projects.rf_multipole_ion_optics.analysis.resolve_contract' `
- -Arguments @('--profile',$Profile,'--check') -DistributionNames @('jsonschema','referencing') `
- -RequiredModuleNames @('projects.rf_multipole_ion_optics.analysis.resolve_contract') -ForbiddenRoots @($source)
+ -Module 'msplatform.workflows.rf_publication' `
+ -Arguments @('--project-root',(Join-Path $Root 'source_good/projects/rf_multipole_ion_optics'),'--repository-root',(Join-Path $Root 'source_good'),'--profile',$Profile,'--check') -DistributionNames @('jsonschema','referencing') `
+ -RequiredModuleNames @('msplatform.workflows.rf_publication') -ForbiddenRoots @($source)
 $resolvedRelative=[IO.Path]::GetRelativePath($snapshot,$facts.resolved_path)
 $sourceFacts=@{profile=$Profile;package=$sourcePackage;execution=$sourceCheck;
  resolved_path=Get-FrozenPythonPackageFile -Package $sourcePackage -RelativePath $resolvedRelative}
@@ -57,8 +57,8 @@ if(-not$failed){throw 'Stale selected publication was accepted'}
 # A subsequent live/default change cannot rebind the completed frozen check.
 [IO.File]::WriteAllText((Join-Path $source $request[0].relative_path),'{}')
 $recheck=Invoke-IsolatedFrozenPythonModule -Python $Python -Package $sourceFacts.package `
- -Module 'projects.rf_multipole_ion_optics.analysis.resolve_contract' `
- -Arguments @('--profile',$Profile,'--check') -RequiredModuleNames @('projects.rf_multipole_ion_optics.analysis.resolve_contract') `
+ -Module 'msplatform.workflows.rf_publication' `
+ -Arguments @('--project-root',(Join-Path $Root 'source_good/projects/rf_multipole_ion_optics'),'--repository-root',(Join-Path $Root 'source_good'),'--profile',$Profile,'--check') -RequiredModuleNames @('msplatform.workflows.rf_publication') `
  -ForbiddenRoots @($Repo,$source)
 if($recheck.module_stdout-notlike'*RESOLVED_DESIGN=PASS*'){throw 'Frozen check read later defaults'}
 @{profile=$Profile;files=$facts.package.files.Count;resolved=$resolvedRelative;stale_rejected=$failed}|ConvertTo-Json -Compress
