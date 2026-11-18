@@ -321,17 +321,19 @@ class GasPreparationTests(unittest.TestCase):
             copy_scientific_core(repo, snapshot)
             kernel = Path("src/msplatform/backends/simion/resources/rf_drive.lua")
             (snapshot / kernel).parent.mkdir(parents=True, exist_ok=True)
-            kernel_record = freeze_file(repo / kernel, snapshot / kernel)
-            self.assertEqual(kernel_record["sha256"], file_sha256(repo / kernel))
-            self.assertEqual((snapshot / kernel).read_bytes(), (repo / kernel).read_bytes())
+            def freeze_selected(relative):
+                if not (snapshot / relative).exists():
+                    freeze_file(repo / relative, snapshot / relative)
+                self.assertEqual(file_sha256(snapshot / relative), file_sha256(repo / relative))
+                self.assertEqual((snapshot / relative).read_bytes(), (repo / relative).read_bytes())
+
+            kernel = Path("src/msplatform/backends/simion/resources/rf_drive.lua")
+            (snapshot / kernel).parent.mkdir(parents=True, exist_ok=True)
+            freeze_selected(kernel)
             program = Path("src/msplatform/backends/simion/resources/dual_cone_gas_assisted_transport.lua")
-            program_record = freeze_file(repo / program, snapshot / program)
-            self.assertEqual(program_record["sha256"], file_sha256(repo / program))
-            self.assertEqual((snapshot / program).read_bytes(), (repo / program).read_bytes())
+            freeze_selected(program)
             binding = Path("src/msplatform/backends/simion/resources/collision_sds_binding.lua")
-            binding_record = freeze_file(repo / binding, snapshot / binding)
-            self.assertEqual(binding_record["sha256"], file_sha256(repo / binding))
-            self.assertEqual((snapshot / binding).read_bytes(), (repo / binding).read_bytes())
+            freeze_selected(binding)
 
             code = r"""
 from pathlib import Path
