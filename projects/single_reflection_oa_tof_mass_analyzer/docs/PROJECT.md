@@ -159,6 +159,11 @@ candidate-workflow methods passed in 853.185 s, including the Formal preflight w
 `comsol_task` keyword and the previous source-missing/duplicate regressions. This is software closure
 evidence and does not change the native scientific failure above.
 
+The Candidate native entry `run_oatof_model.m` and its contract-build task now have their sole sources in
+`msplatform.backends.comsol.matlab`. The project workflow, source closure, Formal selector and native test
+entry consume those same installed files; no second project copy remains. This ownership change does not
+rerun COMSOL or alter model physics, the five-species scientific failure or Formal qualification.
+
 ## 当前状态
 
 ### 可安装COMSOL原生资源切片

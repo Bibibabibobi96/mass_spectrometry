@@ -157,7 +157,8 @@ classdef OaTofArtifactContextTest < matlab.unittest.TestCase
             copyfile(fullfile(repo,'src','msplatform','backends','comsol','matlab','resolve_path_identity.m'),fullfile(snapshotRoot,'common','paths'));
             copyfile(fullfile(repo,'src','msplatform','backends','comsol','matlab','oatof_paths.m'),project);
             copyfile(fullfile(repo,'src','msplatform','backends','comsol','matlab','load_oatof_contract.m'),project);
-            copyfile(fullfile(testCase.activeProject,'comsol','run_oatof_model.m'),fullfile(project,'comsol'));
+            copyfile(fullfile(repo,'src','msplatform','backends','comsol','matlab','run_oatof_model.m'), ...
+                fullfile(snapshotRoot,'src','msplatform','backends','comsol','matlab'));
             copyfile(fullfile(testCase.activeProject,'comsol','oatof_build_model_core.m'),fullfile(project,'comsol'));
             copyfile(fullfile(testCase.activeProject,'comsol','oatof_build_saved_particle_solution.m'),fullfile(project,'comsol'));
             copyfile(fullfile(testCase.activeProject,'comsol','oatof_save_run_model.m'),fullfile(project,'comsol'));
