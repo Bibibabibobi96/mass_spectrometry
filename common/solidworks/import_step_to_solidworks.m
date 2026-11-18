@@ -71,7 +71,7 @@ function result = import_step_to_solidworks(stepPaths, sldprtPaths, visible, ass
         setenv('PYTHONPATH', [codeRoot pathsep previousPythonPath]);
     end
     setenv('PYTHONDONTWRITEBYTECODE', '1');
-    command = sprintf('"%s" -B -m common.solidworks.import_step_to_solidworks --manifest "%s"%s', ...
+    command = sprintf('"%s" -B -m msplatform.exporters.solidworks.import_step_to_solidworks --manifest "%s"%s', ...
         pythonExecutable, manifestPath, visibleArg);
     [status, output] = system(command);
     if status ~= 0

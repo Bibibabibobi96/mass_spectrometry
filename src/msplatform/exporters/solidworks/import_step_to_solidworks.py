@@ -10,7 +10,7 @@ from pathlib import Path
 import pythoncom
 import win32com.client
 
-from common.solidworks.installation import resolve_solidworks_2022_root
+from msplatform.exporters.solidworks.installation import resolve_solidworks_2022_root
 
 
 SW_MULTI_CAD_ENABLE_3D_INTERCONNECT = 691

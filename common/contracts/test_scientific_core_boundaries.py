@@ -64,7 +64,8 @@ def _namespace_error(module: str) -> str | None:
         return f"undeclared component provider or infrastructure module: {module}"
     if parts[1] == "backends" and len(parts) > 2 and parts[2] not in {"simion", "comsol"}:
         return f"undeclared installed backend: {module}"
-    if parts[1] == "exporters" and len(parts) > 2 and parts[2] not in {"step", "execution", "operations", "mr_cad_parts"}:
+    if parts[1] == "exporters" and len(parts) > 2 and parts[2] not in {
+            "step", "execution", "operations", "mr_cad_parts", "mr_resolved_cad", "mr_cad_pose", "solidworks"}:
         return f"undeclared installed exporter: {module}"
     if parts[1] == "applications" and len(parts) > 2 and parts[2] not in {
             "solidworks", "solidworks_worker", "model_execution", "simion", "simion_model_execution", "operations"}:
@@ -95,9 +96,10 @@ def _target_error(target: str, dependencies: set[str], source_domain: str, sourc
     if (parts[0] in {"cadquery", "OCP"} and source_domain != "exporters"
             and source_module != "msplatform.components.cad_geometry"):
         return f"{source_domain} imports optional CAD kernel: {target}"
-    if parts[0] in {"win32com", "pythoncom", "pywintypes"} and source_domain != "applications":
+    if parts[0] in {"win32com", "pythoncom", "pywintypes"} and source_domain not in {"applications", "exporters"}:
         return f"{source_domain} imports optional application machinery: {target}"
     if (parts[0] in HOST_MODULES and source_domain != "execution"
+            and source_domain != "exporters"
             and not (source_module == "msplatform.io.file_identity" and parts[0] == "ctypes")
             and not (source_domain == "applications" and parts[0] == "subprocess")):
         return f"{source_domain} imports host/process machinery: {target}"
@@ -209,7 +211,7 @@ def core_boundary_errors(source: str, module: str, *, is_package: bool = False,
                     errors.append(f"{node.lineno}: {error}")
         if (source_domain != "execution" and (name in ENVIRONMENT_PROBES or name.startswith("platform."))
                 and not (name == "os.name" and module in {"msplatform.io.file_identity", "msplatform.io.manifest_records"})
-                and not (source_domain == "applications" and name == "os.environ")
+                and not (source_domain in {"applications", "exporters"} and name == "os.environ")
                 and not (name == "os.environ" and _mr_numeric_thread_environment_access(node, module, parents))):
             errors.append(f"{node.lineno}: scientific core probes host/search-path state: {name}")
         if not isinstance(node, ast.Call):
@@ -342,7 +344,7 @@ class ScientificCoreBoundaryTests(unittest.TestCase):
                 selected_dependencies.update(Requirement(value).name.replace("-", "_") for value in cad_step)
                 if any(Requirement(value).name == "cadquery-ocp" for value in cad_step):
                     selected_dependencies.add("OCP")
-            if len(parts) > 1 and parts[1] == "applications":
+            if len(parts) > 1 and parts[1] in {"applications", "exporters"}:
                 cad = project.get("optional-dependencies", {}).get("cad", [])
                 if any(Requirement(value).name == "pywin32" for value in cad):
                     selected_dependencies.update({"win32com", "pythoncom", "pywintypes"})

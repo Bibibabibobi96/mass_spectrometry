@@ -106,7 +106,7 @@ if($ReuseCadRunPath){
  if(-not$nativeParts.Count){throw 'No saved native parts to revalidate.'}
  if($ExchangeFormat-eq'step'){foreach($part in $nativeParts){if(-not(Test-Path -LiteralPath (Join-Path $part.DirectoryName ($part.BaseName+'.step')))){throw 'Saved part STEP is missing.'}}}
 }
-$module='projects.parallel_mirror_dual_stripe_mr_tof.analysis.export_resolved_cad'
+$module='msplatform.exporters.mr_resolved_cad'
 $preflight=@('-B','-m',$module,'--geometry',$geometry,'--authority',$authority,'--materialization',$materialization,
  '--output',(Join-Path $projectArtifacts "runs/$RunId/cad"),'--exchange-format',$ExchangeFormat,'--check-only')
 if($Smoke){$preflight+='--smoke'}
@@ -132,7 +132,12 @@ try{
   -AdditionalDirectories @('cad') -CapacityLedgerLifecycleEnabled -CapacityLedgerArtifactRoot $allArtifacts
  $capacity=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -ArtifactRoot $allArtifacts `
   -RunDirectory $package.artifact_run_dir -CommittedNewBytes $committedBytes -Owner "mrtof-cad:$RunId" -ProtectedPaths @($field,$assembly,$reuse,$original,$pose,$publish,$overview,$overviewManifest,$holeAudit,$electrical,$individual|Where-Object {$_})
- $source=Copy-VerifiedRunInput -Source (Join-Path $PSScriptRoot 'export_resolved_cad.py') -Destination (Join-Path $package.input_dir 'cad_exporter.py')
+ $exporterSelectedSource=Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
+  $selected=& $python -B -c 'import json;from pathlib import Path;from msplatform.exporters import mr_resolved_cad;print(json.dumps(str(Path(mr_resolved_cad.__file__).resolve(strict=True))))'
+  if($LASTEXITCODE-ne0){throw 'Selected canonical CAD exporter is unavailable.'}
+  $selected|ConvertFrom-Json
+ }
+ $source=Copy-VerifiedRunInput -Source $exporterSelectedSource -Destination (Join-Path $package.input_dir 'cad_exporter.py')
  $null=Copy-VerifiedRunInput -Source $PSCommandPath -Destination (Join-Path $package.input_dir 'launcher.ps1')
  # CAD_PARTS_SOURCE_AUDIT_BEGIN
  # Resolve the actual selected provider in the same Python/root context as CAD.

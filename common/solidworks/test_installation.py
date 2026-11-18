@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from common.solidworks.installation import resolve_solidworks_2022_root
+from msplatform.exporters.solidworks.installation import resolve_solidworks_2022_root
 
 
 class SolidWorksInstallationTests(unittest.TestCase):
@@ -19,7 +19,7 @@ class SolidWorksInstallationTests(unittest.TestCase):
     def test_missing_environment_and_registry_fail_closed(self) -> None:
         with (
             patch.dict("os.environ", {}, clear=True),
-            patch("common.solidworks.installation.REGISTRY_KEYS", ()),
+            patch("msplatform.exporters.solidworks.installation.REGISTRY_KEYS", ()),
         ):
             with self.assertRaisesRegex(FileNotFoundError, "SOLIDWORKS_2022_ROOT"):
                 resolve_solidworks_2022_root()

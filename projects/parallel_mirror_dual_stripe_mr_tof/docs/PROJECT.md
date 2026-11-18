@@ -1,5 +1,17 @@
 # 开放路径平行镜双条带 MR-TOF 项目状态
 
+## Installed resolved-CAD owner
+
+`msplatform.exporters.mr_resolved_cad`, `mr_cad_pose` and `solidworks` now own the
+resolved CAD exporter, exact pose composition and SolidWorks 2022 support. The
+project launcher selects the actual installed exporter through its Python and
+freezes that source. The former analysis implementation is retired without a
+second production copy. Geometry, exact B-splines, electrode voltages, delivery
+whitelist and cold-read criteria are unchanged. All 76 original CAD, installation
+and adjacent candidate tests pass; no SolidWorks GUI or native CAD acceptance was
+run for this ownership migration.
+
+
 The frozen Repository run at `8c3fe6a1` failed the scalar resource pin and six
 Lua cases. One fixture still rejected supported stored boundary cells; five
 consumers exposed a real cache bug when the public serializer omitted declared

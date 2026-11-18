@@ -7,9 +7,9 @@
 
 | 任务 | 入口与职责 |
 |---|---|
-| 解析受支持的安装 | [PowerShell 解析器](resolve_solidworks_2022.ps1)、[Python 解析器](installation.py) |
-| 从 MATLAB 导入 STEP 并保存零件／装配 | [MATLAB 桥接](import_step_to_solidworks.m)，通过临时 JSON manifest 调用同目录 Python 模块 |
-| 从 Python 导入 STEP，或复用保存、变换操作 | [Python 桥接](import_step_to_solidworks.py)：`import_steps`、`save_native_document`、`create_transform`、`document_title` |
+| 解析受支持的安装 | [PowerShell 解析器](resolve_solidworks_2022.ps1)、[Python 解析器](../../src/msplatform/exporters/solidworks/installation.py) |
+| 从 MATLAB 导入 STEP 并保存零件／装配 | [MATLAB 桥接](import_step_to_solidworks.m)，通过临时 JSON manifest 调用安装包 Python 模块 |
+| 从 Python 导入 STEP，或复用保存、变换操作 | [Python 桥接](../../src/msplatform/exporters/solidworks/import_step_to_solidworks.py)：`import_steps`、`save_native_document`、`create_transform`、`document_title` |
 | 仅查看已发布 STEP，不保存或转存 | `msplatform.applications.open_model(..., application="solidworks")`；[阶段参数](../README.md#科学核心发行与旧入口)，当前验收范围查集成正文 |
 | 核对项目几何、交付及资格 | 项目 README → `docs/CAD.md`；当前资产与资格只查 PROJECT 和 manifest |
 
@@ -55,7 +55,7 @@ Toolbox数据库缺失是独立环境问题。官方`swHoleWizardToolBoxFolder=5
 
 ## 安装发现与验证
 
-PowerShell 入口通过[`resolve_solidworks_2022.ps1`](resolve_solidworks_2022.ps1)、Python 入口通过[`installation.py`](installation.py)解析同一
+PowerShell 入口通过[`resolve_solidworks_2022.ps1`](resolve_solidworks_2022.ps1)、Python 入口通过[`../../src/msplatform/exporters/solidworks/installation.py`](../../src/msplatform/exporters/solidworks/installation.py)解析同一
 SolidWorks 2022 安装。默认读取系统注册表；非标准或便携安装可以设置`SOLIDWORKS_2022_ROOT`，其值
 必须直接指向包含`SLDWORKS.exe`和2022 PIA程序集的安装目录。调用者不得复制安装盘符或PIA路径。
 

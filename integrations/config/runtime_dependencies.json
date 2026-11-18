@@ -470,7 +470,7 @@
             "paired_accelerator_static_field",
             "single_reflection_flight"
           ]
-        },
+        }
       ],
       "python_modules": []
     },
