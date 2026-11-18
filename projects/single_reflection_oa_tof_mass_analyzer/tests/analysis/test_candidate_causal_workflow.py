@@ -379,8 +379,8 @@ class CandidateCausalPhaseTests(CandidateFixtures, unittest.TestCase):
             field_changed=candidate_comsol_source_phases(closure)
             self.assertNotEqual(field_changed['native'],original['native'])
             replace_source(prefix+'workflows/design_candidate/candidate_comsol_stage.py',
-                lambda text:text.replace('return "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_contract_build.m", environment',
-                    'environment["OATOF_CANDIDATE_CONTRACT_PATH"]="different-science"\n    return "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_contract_build.m", environment'))
+                lambda text:text.replace('return "src/msplatform/backends/comsol/matlab/run_candidate_contract_build.m", environment',
+                    'environment["OATOF_CANDIDATE_CONTRACT_PATH"]="different-science"\n    return "src/msplatform/backends/comsol/matlab/run_candidate_contract_build.m", environment'))
             task_changed=candidate_comsol_source_phases(closure)
             self.assertNotEqual(task_changed['native']['dispatch'],field_changed['native']['dispatch'])
 

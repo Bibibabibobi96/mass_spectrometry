@@ -2050,7 +2050,7 @@ try {
         # Keep the immutable bank protected between serial provider children.
         $protectionRequest=$fieldProviderRequest|ConvertTo-Json -Depth 100|ConvertFrom-Json -AsHashtable
         if(-not$staticBinding.Contains('consumer_view')){$protectionRequest.numerical_contract_path=[string]$contract}
-        $bankProtectionCode="import json,sys; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_static_field_provider import compile_request; print(json.dumps(compile_request(json.loads(sys.argv[1]))['protected_paths']))"
+        $bankProtectionCode="import json,sys; from msplatform.backends.simion.native_static_field_provider import compile_request; print(json.dumps(compile_request(json.loads(sys.argv[1]))['protected_paths']))"
         $bankProtectedPaths=Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
           $resolved=((& $python -B -c $bankProtectionCode ($protectionRequest|ConvertTo-Json -Depth 100 -Compress))-join"`n")
           if($LASTEXITCODE-ne0){throw 'Native response bank protection preflight failed.'}

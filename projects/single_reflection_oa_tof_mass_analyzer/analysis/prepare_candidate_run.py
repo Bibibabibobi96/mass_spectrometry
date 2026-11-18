@@ -12,6 +12,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 from msplatform.execution.artifact_naming import validate_run_id, validate_task_id
+from msplatform.execution.inputs import python_import_roots
 from msplatform.contracts.machine_contracts import load_json, sha256, validate_schema
 from common.simion.process_observation import run_observed_process
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import (
@@ -592,7 +593,7 @@ def prepare_candidate_run(
         "--contract", str(frozen["candidate_resolved_geometry.json"]), "--output-dir", str(prepared_dir),
         "--particle-source-seed", str(particle_source_seed),
     ], cwd=frozen_code_root, stdout=stdout, stderr=stderr,
-        environment={key: value for key, value in os.environ.items() if key != "PYTHONPATH"},
+        environment={**os.environ, "PYTHONPATH": os.pathsep.join(python_import_roots(frozen_code_root))},
         warning_seconds=30)
     if process.returncode != 0:
         # Keep the actual final diagnostic after a temporary planning tree exits,
@@ -666,7 +667,7 @@ def prepare_candidate_run(
                 "model_path": str(comsol_model),
                 "report_path": str(report_dir / "comsol_build.txt"),
                 "entrypoint": frozen_source_path(source_closure, "src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1"),
-                "task_script": str(frozen_code_root / "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_contract_build.m"),
+                "task_script": str(frozen_code_root / "src/msplatform/backends/comsol/matlab/run_candidate_contract_build.m"),
                 "environment": {
                     "OATOF_CANDIDATE_CONTRACT_PATH": str(frozen["candidate_resolved_geometry.json"]),
                     "OATOF_CANDIDATE_MODEL_PATH": str(comsol_model),

@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 
 from msplatform.backends.simion.pa_family_cache import publish_pa_family_cache
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_plan import (
+from msplatform.backends.simion.native_corridor_plan import (
     derive_native_corridor_plan,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_freeze import (

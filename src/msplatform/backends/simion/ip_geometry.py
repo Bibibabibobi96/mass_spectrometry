@@ -9,9 +9,11 @@ import copy
 import hashlib
 import json
 import math
+import re
 
 from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import convex_planes
 from msplatform.backends.simion.gem_primitives import centered_box3d, format_number
+from msplatform.backends.simion.mr_geometry import _analyzer_geometry_lines
 
 
 def _represent_selected_ip_design(selected: dict, *, baseline: dict, grid_mm: float) -> dict:
@@ -118,3 +120,69 @@ def render_gem(projection: dict) -> str:
             lines.append("    fill { within { " + _primitive(_box(low, high)) + " } }")
     lines.extend(["  }", "}", ""])
     return "\n".join(lines)
+
+
+def _assembled_primitive(shape: dict) -> str:
+    if shape["shape"] == "convex_polyhedron":
+        return _primitive(shape)
+    if shape["shape"] == "box":
+        low, high = shape["min_mm"], shape["max_mm"]
+        return centered_box3d(*[(a + b) / 2 for a, b in zip(low, high)], *[b - a for a, b in zip(low, high)])
+    return (
+        "cylinder3d("
+        + ",".join(format_number(v) for p in shape["endpoints_mm"] for v in p)
+        + ","
+        + format_number(shape["radius_mm"])
+        + ")"
+    )
+
+
+def render_assembled_ip_gem(
+    geometry: dict,
+    electrodes: list,
+    voltages: list,
+    analyzer_voltages: list,
+    detector_voltage: float,
+    plan: dict,
+    *,
+    occupancy: bool = False,
+) -> str:
+    """Render one complete IP/MR assembly without solving or reusing fields."""
+    box = plan["box_mm"]
+    lines = [
+        "; Fresh IP replacement assembly; Refine required; no reused OA fields.",
+        "pa_define("
+        + ",".join(map(str, plan["dimensions"]))
+        + ",planar,x,electrostatic,,"
+        + ",".join(map(format_number, plan["pitch_mm"]))
+        + ",surface=fractional)",
+        "locate(" + ",".join(format_number(-v) for v in box[:3]) + ") {",
+    ]
+    for line in _analyzer_geometry_lines(geometry):
+        lines.append(
+            re.sub(r"\be\((\d+)\)", lambda m: "e(" + format(analyzer_voltages[int(m[1]) - 1], ".17g") + ")", line)
+        )
+    for electrode, voltage in zip(electrodes, voltages):
+        lines.append(
+            "e(" + format(voltage, ".17g") + ") { ; namespace=ion_processor id=" + str(electrode["electrode_id"])
+        )
+        for solid in electrode["solids"]:
+            lines.extend(["fill {", "within { " + _assembled_primitive(solid) + " }"])
+            lines.extend("notin_inside { " + _assembled_primitive(hole) + " }" for hole in electrode["cutouts"])
+            lines.append("}")
+        lines.append("}")
+    d = geometry["detector"]["box"]
+    lines.append(
+        "e("
+        + format(detector_voltage, ".17g")
+        + ") { "
+        + _assembled_primitive({"shape": "box", "min_mm": d[:3], "max_mm": d[3:]})
+        + " }"
+    )
+    if plan["boundary_mode"] == "grounded_enclosure" and not occupancy:
+        for axis, side in ((0, 1), (1, 0), (1, 1), (2, 0), (2, 1)):
+            face = list(box)
+            face[axis] = face[axis + 3] = box[axis + 3 * side]
+            lines.append("e(0) { " + _assembled_primitive({"shape": "box", "min_mm": face[:3], "max_mm": face[3:]}) + " }")
+    text = "\n".join([*lines, "}", ""])
+    return re.sub(r"\be\([^)]*\)", "e(1)", text) if occupancy else text

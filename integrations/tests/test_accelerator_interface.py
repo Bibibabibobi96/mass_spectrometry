@@ -351,7 +351,6 @@ if($receipt.exit_count-ne1){throw 'wrong receipt'}
         if not powershell:
             self.skipTest("PowerShell 7 required")
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_ion_processor_assembly import AssemblyTests
-        from msplatform.workflows.prepared_joint import ion_processor_assembly as assembly
         from integrations.workflows.accelerator_interface.geometry import prepare_ion_processor_assembly
         from msplatform.workflows.prepared_joint.ip_mr_connection import resolve_ip_mr_connection
 
@@ -373,7 +372,8 @@ if($receipt.exit_count-ne1){throw 'wrong receipt'}
                  (("source", fixture.source), ("trajectory", fixture.trajectory), ("request", fixture.request))]
         assembly_dir = root / "results/joint_flight/assembly"
         assembly_dir.parent.mkdir(parents=True)
-        with patch.object(assembly, "_analyzer_geometry_lines", return_value=["e(2) { box3d(1,2,3,4,5,6) }"]):
+        with patch("msplatform.backends.simion.ip_geometry._analyzer_geometry_lines",
+                   return_value=["e(2) { box3d(1,2,3,4,5,6) }"]):
             prepare_ion_processor_assembly(fixture.source, fixture.trajectory, fixture.request,
                 connection=resolve_ip_mr_connection(fixture.request["composition_plan"]),
                 input_paths=paths, output_directory=assembly_dir)
