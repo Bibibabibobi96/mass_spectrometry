@@ -42,7 +42,7 @@ $contractPath = Join-Path $componentDir 'config\resolved_geometry.json'
 $resolvedLuaPath = Join-Path $componentDir 'simion\workbench\formal\oatof_resolved.lua'
 $comsolSourceDir = Join-Path $componentDir 'comsol'
 $comsolSources = @(
-  (Join-Path $comsolSourceDir 'run_oatof_model.m')
+  (Join-Path $repoRoot 'src\msplatform\backends\comsol\matlab\run_oatof_model.m')
 ) + @(Get-ChildItem -LiteralPath $comsolSourceDir -Filter 'oatof_*.m' -File |
   Select-Object -ExpandProperty FullName)
 $acceleratorComsolSource = Join-Path $repoRoot 'src\msplatform\backends\comsol\matlab\build_sectioned_geometry.m'

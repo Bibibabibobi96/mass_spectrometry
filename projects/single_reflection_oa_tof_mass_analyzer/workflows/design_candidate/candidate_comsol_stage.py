@@ -67,7 +67,7 @@ def comsol_native_inputs(stage: dict[str, Any], closure: dict[str, Any]) -> tupl
     environment["OATOF_CANDIDATE_ARTIFACT_ROOT"] = str(
         Path(closure["runtime"]["candidate_artifact_root"]).resolve().parents[1]
     )
-    return "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_contract_build.m", environment
+    return "src/msplatform/backends/comsol/matlab/run_candidate_contract_build.m", environment
 
 
 def comsol_sync_inputs(stage: dict[str, Any], closure: dict[str, Any]) -> tuple[str, dict[str, str]]:

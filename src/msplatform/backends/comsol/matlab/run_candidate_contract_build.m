@@ -2,10 +2,10 @@
 reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
 assert(~isempty(reportPath), 'COMSOL_BOOTSTRAP_REPORT is required.');
 testDir = fileparts(mfilename('fullpath'));
-projectRoot = fileparts(fileparts(testDir));
-repositoryRoot = fileparts(fileparts(projectRoot));
+codeRoot = fileparts(fileparts(fileparts(fileparts(fileparts(testDir)))));
+projectRoot = fullfile(codeRoot, 'projects', 'single_reflection_oa_tof_mass_analyzer');
 addpath(projectRoot, fullfile(projectRoot, 'comsol'), ...
-    fullfile(repositoryRoot, 'src', 'msplatform', 'backends', 'comsol', 'matlab'));
+    fullfile(codeRoot, 'src', 'msplatform', 'backends', 'comsol', 'matlab'));
 fid = fopen(reportPath, 'w');
 assert(fid >= 0, 'Could not open report: %s', reportPath);
 cleanup = onCleanup(@() fclose(fid));

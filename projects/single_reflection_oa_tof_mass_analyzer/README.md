@@ -45,7 +45,7 @@
 | 用途 | 唯一入口 | 合同或资格边界 |
 |---|---|---|
 | 理想场残差、仿射斜率与束宽设计比较 | [统一分析入口](analysis/README.md#自动理想场比较) | 同一 workflow 按科学配置选择比较；配置角色、运行方法及声明边界在分析说明维护 |
-| COMSOL生产 | [`comsol/run_oatof_model.m`](comsol/run_oatof_model.m) | `config/baseline.json`与显式Candidate合同 |
+| COMSOL生产 | [`run_oatof_model.m`](../../src/msplatform/backends/comsol/matlab/run_oatof_model.m) | `config/baseline.json`与显式Candidate合同 |
 | SIMION交付构建 | [`simion/workbench/build_formal_delivery.ps1`](simion/workbench/build_formal_delivery.ps1) | Formal只读；Candidate输出不得反写Formal |
 | 单个结构Candidate | [`workflows/design_candidate/run_candidate.py`](workflows/design_candidate/run_candidate.py) | 获批request、显式seed、完整COMSOL/SIMION/CAD链 |
 | 预注册Candidate campaign | [`workflows/experiment_campaign/run_campaign.py`](workflows/experiment_campaign/run_campaign.py) | 默认合同已完成并retired；新campaign须使用新的合同与run ID，执行时显式选择实验或`--all` |
