@@ -304,7 +304,7 @@ try{
     }
     Set-PairedStage 'diagnostic_comparison'
     Invoke-RunToolRootContext -RepoRoot $frozen.execution_root -Operation {
-      &$Python -B -m projects.single_reflection_oa_tof_mass_analyzer.analysis.compare_vector_field_samples `
+      &$Python -B -m msplatform.analysis.vector_field_samples `
         $comsolSamples $simionSamples --output (Join-Path $package.result_dir 'comparison')
       if($LASTEXITCODE-ne0){throw 'Static field diagnostic comparison failed.'}
     }

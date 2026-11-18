@@ -158,7 +158,7 @@ class ChangedGateContractTests(unittest.TestCase):
         self.assertIn('common.contracts.test_installed_scientific_core', modules)
         for caller in (
             'src/msplatform/workflows/rf_stationary.py',
-            'projects/single_reflection_oa_tof_mass_analyzer/analysis/compare_vector_field_samples.py',
+            'src/msplatform/analysis/vector_field_samples.py',
         ):
             with self.subTest(caller=caller):
                 self.assertIn('static_field_comparison_tests', self.routed_stages(caller))
@@ -1494,7 +1494,7 @@ $result|ConvertTo-Json -Compress
         # These newly consumed geometry/export paths previously escaped L1 routing.
         paths = [
             "common/comsol/add_comsol_size_feature.m",
-            "projects/single_reflection_oa_tof_mass_analyzer/analysis/compare_vector_field_samples.py",
+            "src/msplatform/analysis/vector_field_samples.py",
             "src/msplatform/analysis/field_comparison.py",
             "src/msplatform/backends/comsol/matlab/build_and_export_paired_accelerator_field.m",
             "src/msplatform/backends/comsol/matlab/oatof_build_accelerator_geometry.m",

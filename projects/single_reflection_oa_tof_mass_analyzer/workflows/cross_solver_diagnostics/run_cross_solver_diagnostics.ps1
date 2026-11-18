@@ -22,7 +22,7 @@ $simionAxisTask = Join-Path $simionAdapterRoot 'export_axis_field_profiles.lua'
 $simionVectorTask = Join-Path $simionAdapterRoot 'export_accelerator_vector_field_samples.lua'
 $axisAnalysis = Join-Path $projectRoot 'analysis\compare_field_profiles.py'
 $trajectoryAnalysis = Join-Path $projectRoot 'analysis\compare_particle_trajectories.py'
-$vectorAnalysis = Join-Path $projectRoot 'analysis\compare_vector_field_samples.py'
+$vectorAnalysis = Join-Path $repoRoot 'src/msplatform/analysis/vector_field_samples.py'
 
 . (Join-Path $projectRoot 'oatof_lifecycle_preflight.ps1')
 Assert-OaTofFormalAssetsReadable -ProjectRoot $projectRoot
@@ -248,7 +248,7 @@ $trajectoryResultDir = Join-Path $resultDir 'selected_trajectories'
   $comsolAxisCsv $simionAxisCsv --output $axisResultDir `
   --contract $resolvedGeometryPath
 if ($LASTEXITCODE -ne 0) { throw 'Axis-field comparison failed.' }
-& $python -m projects.single_reflection_oa_tof_mass_analyzer.analysis.compare_vector_field_samples `
+& $python -m msplatform.analysis.vector_field_samples `
   $comsolVectorCsv $simionVectorCsv --output $vectorResultDir
 if ($LASTEXITCODE -ne 0) { throw 'Vector-field comparison failed.' }
 & $python -m projects.single_reflection_oa_tof_mass_analyzer.analysis.compare_particle_trajectories `

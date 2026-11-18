@@ -637,6 +637,14 @@ remain in place. The complete integration suite passed 585 tests with four exist
 Ordinary wheel and sdist-rebuilt outside-checkout acceptance passed in 1790.246 seconds. Complete MR,
 Changed and applicable native acceptance remain OPEN.
 
+Generic vector-field sample validation, comparison and its CLI now have one
+`msplatform.analysis.vector_field_samples` owner. Paired static-field execution
+and OA cross-solver diagnostics consume that installed implementation instead of
+the former OA project module; the RF stationary workflow remains a real non-OA
+consumer. Original numerical, coverage, duplicate/error and managed-owner checks
+pass, including 36 focused tests. Complete installation, Repository and final
+same-candidate acceptance remain OPEN.
+
 The following is the single active P4 worklist. All rows remain OPEN until their stated
 consumer and acceptance boundaries close; earlier delivered sub-capabilities are inherited,
 not rebuilt. Shared interfaces, the gate catalog, installation fixtures and Git have one
