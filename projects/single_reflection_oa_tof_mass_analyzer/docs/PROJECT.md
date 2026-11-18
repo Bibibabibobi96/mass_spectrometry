@@ -1,5 +1,24 @@
 # 单次反射正交加速飞行时间质量分析器当前状态
 
+## Generic vector-field comparison owner
+
+`msplatform.analysis.vector_field_samples` now owns static-sample validation,
+comparison and the existing comparison CLI. Paired static-field execution and
+this project's cross-solver diagnostics use that installed implementation; the
+old project module is retired. Numerical values, complete-coverage and source
+identity checks are unchanged, and RF stationary comparison remains the distinct
+non-OA consumer. Thirty-six focused consumer/owner tests pass; final installation,
+Repository and scientific acceptance are separate open obligations.
+
+The candidate source closure no longer declares retired `common/solidworks/*.py`
+paths. Installed SolidWorks modules enter through the existing `src/msplatform`
+enumeration exactly once and load from frozen `src` in isolation. The MATLAB bridge
+puts `codeRoot/src` before inherited paths, with missing/tampered/out-of-scope
+sources still rejected. Direct wheel and sdist-rebuilt consumers load the same
+modules from their own site-packages. These are software checks, not a MATLAB or
+SolidWorks native smoke result.
+
+
 本文件维护项目当前事实、资格与开放任务。精确输入以[机器合同](../README.md#机器权威)为准，
 执行入口由[项目README](../README.md#活动入口)导航；跨项目整机状态只查[统一集成状态](../../../integrations/docs/INTEGRATION.md)。
 Paper 1 专用研究准备API的归属与退出条件见[分析说明](../analysis/README.md#核心分析)。

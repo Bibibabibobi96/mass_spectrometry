@@ -245,7 +245,7 @@ class CandidateDesignTests(CandidateFixtures, unittest.TestCase):
 
 
     def test_solidworks_step_import_binds_clean_part_template_temporarily(self):
-        source = (REPO_ROOT / "common" / "solidworks" / "import_step_to_solidworks.py").read_text(
+        source = (REPO_ROOT / "src/msplatform/exporters/solidworks" / "import_step_to_solidworks.py").read_text(
             encoding="utf-8"
         )
         self.assertIn("CLEAN_PART_TEMPLATE", source)
@@ -264,18 +264,25 @@ class CandidateDesignTests(CandidateFixtures, unittest.TestCase):
             source,
         )
         self.assertIn("codeRoot = resolve_code_root()", source)
+        self.assertIn("moduleRoot = fullfile(codeRoot, 'src')", source)
+        self.assertIn("setenv('PYTHONPATH', moduleRoot)", source)
+        self.assertIn("[moduleRoot pathsep previousPythonPath]", source)
         self.assertIn("setenv('PYTHONPATH'", source)
         self.assertIn("setenv('PYTHONDONTWRITEBYTECODE', '1')", source)
-        self.assertIn("-B -m common.solidworks.import_step_to_solidworks", source)
+        self.assertIn("-B -m msplatform.exporters.solidworks.import_step_to_solidworks", source)
         self.assertIn("cleanupPythonPath", source)
         self.assertIn("cleanupBytecodePolicy", source)
 
         with tempfile.TemporaryDirectory() as root:
             code_root = Path(root) / "frozen_code"
-            solidworks = code_root / "common" / "solidworks"
+            solidworks = code_root / "src/msplatform/exporters/solidworks"
             solidworks.mkdir(parents=True)
-            for name in ("import_step_to_solidworks.py", "installation.py"):
-                shutil.copy2(REPO_ROOT / "common" / "solidworks" / name, solidworks / name)
+            for name in ("__init__.py", "import_step_to_solidworks.py", "installation.py"):
+                shutil.copy2(REPO_ROOT / "src/msplatform/exporters/solidworks" / name, solidworks / name)
+            for package in ("msplatform", "msplatform/exporters"):
+                target = code_root / "src" / package / "__init__.py"
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text("", encoding="utf-8")
             (code_root / "pythoncom.py").write_text("", encoding="utf-8")
             win32com = code_root / "win32com"
             win32com.mkdir()
@@ -284,14 +291,14 @@ class CandidateDesignTests(CandidateFixtures, unittest.TestCase):
             working_directory = Path(root) / "outside_frozen_code"
             working_directory.mkdir()
             environment = dict(os.environ)
-            environment["PYTHONPATH"] = str(code_root)
+            environment["PYTHONPATH"] = str(code_root / "src")
             environment["PYTHONDONTWRITEBYTECODE"] = "1"
             result = subprocess.run(
                 [
                     sys.executable,
                     "-B",
                     "-m",
-                    "common.solidworks.import_step_to_solidworks",
+                    "msplatform.exporters.solidworks.import_step_to_solidworks",
                     "--help",
                 ],
                 cwd=working_directory,
@@ -307,6 +314,34 @@ class CandidateDesignTests(CandidateFixtures, unittest.TestCase):
             self.assertIn("--manifest", result.stdout)
             self.assertFalse(any(code_root.rglob("__pycache__")))
             self.assertFalse(any(code_root.rglob("*.pyc")))
+
+            interference = Path(root) / "external_same_name"
+            foreign = interference / "msplatform/exporters/solidworks"
+            foreign.mkdir(parents=True)
+            (foreign / "import_step_to_solidworks.py").write_text("raise RuntimeError('foreign module selected')", encoding="utf-8")
+            environment["PYTHONPATH"] = os.pathsep.join((str(code_root / "src"), str(interference)))
+            environment["PYTHONNOUSERSITE"] = "1"
+            program = (
+                "import sys; from pathlib import Path; "
+                "from msplatform.exporters.solidworks import import_step_to_solidworks as bridge; "
+                "expected = Path(sys.argv[1]).resolve(); "
+                "actual = Path(bridge.__file__).resolve(); "
+                "assert actual == expected, (actual, expected); "
+                "print('SOLIDWORKS_FROZEN_MODULE=' + str(actual))"
+            )
+            loaded = subprocess.run(
+                [sys.executable, "-B", "-c", program, str(solidworks / "import_step_to_solidworks.py")],
+                cwd=working_directory,
+                env=environment,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+                timeout=20,
+            )
+            self.assertEqual(loaded.returncode, 0, loaded.stdout + loaded.stderr)
+            self.assertIn("SOLIDWORKS_FROZEN_MODULE=", loaded.stdout)
 
 
     def test_missing_consumer_route_is_rejected(self):

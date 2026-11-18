@@ -129,7 +129,7 @@ input bytes are unchanged; root workflow/controller closure remains separate P4 
 - `reference_analysis.py`：CSV/XLSX/TRACE导入、Recording审计、source mapping、bootstrap和CLI。
 - `msplatform.workflows.single_reflection_mass_spectrum`：五质量标定、峰形与探测落点比较。
 - `compare_field_profiles.py`：同坐标轴场比较。
-- `compare_vector_field_samples.py`：同坐标三维场分量比较。
+- `msplatform.analysis.vector_field_samples`：同坐标三维场分量比较及静场样本校验。
 - `compare_particle_trajectories.py`：代表粒子轨迹和关键面到达时间。
 - `analyze_longitudinal_closure.py`：纵向场与逐粒子TOF差解释。
 - `analyze_accelerator_transverse_field_uniformity.py`：轴心/偏轴场均匀性诊断。

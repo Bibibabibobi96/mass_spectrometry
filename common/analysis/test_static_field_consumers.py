@@ -30,7 +30,7 @@ class StaticFieldConsumersTests(unittest.TestCase):
             (root/'b.csv').write_text(header+'001,1,3,3,2,0,0\n2,0,0,0,0,0,0\nNA,1,3,3,2,0,0\n',encoding='utf-8')
             data=authority();data['reference']['metadata']['potential_reference']=None;data['candidate']['metadata']['potential_reference']=None
             data.update(schema_version=1,role='static_field_comparison_authority',coordinate_tolerance_mm=0.);(root/'authority.json').write_text(json.dumps(data),encoding='utf-8')
-            result=subprocess.run([sys.executable,'-B','-m','projects.single_reflection_oa_tof_mass_analyzer.analysis.compare_vector_field_samples',
+            result=subprocess.run([sys.executable,'-B','-m','msplatform.analysis.vector_field_samples',
                 str(root/'a.csv'),str(root/'b.csv'),'--output',str(root/'out'),'--static-comparison-authority',str(root/'authority.json')],
                 cwd=ROOT,capture_output=True,text=True,encoding='utf-8',timeout=60,check=False)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
@@ -72,7 +72,7 @@ class StaticFieldConsumersTests(unittest.TestCase):
                     payload=header+'001,1,2,3,0,2,0\n'
                     doc=authority();doc['candidate']=copy.deepcopy(doc['reference'])
                     doc.update(schema_version=1,role='static_field_comparison_authority',coordinate_tolerance_mm=0.)
-                    module='projects.single_reflection_oa_tof_mass_analyzer.analysis.compare_vector_field_samples'
+                    module='msplatform.analysis.vector_field_samples'
                     args=[str(root/'a.csv'),str(root/'b.csv'),'--output',str(root/'output'),'--static-comparison-authority',str(root/'authority.json')]
                 else:
                     header='sample_id,region,field_case,x_mm,y_mm,z_mm,potential_V,Ex_V_per_m,Ey_V_per_m,Ez_V_per_m\n'
@@ -100,7 +100,7 @@ class StaticFieldConsumersTests(unittest.TestCase):
             for name in ('a.csv','b.csv'):(root/name).write_text(payload,encoding='utf-8')
             doc=authority();doc['candidate']=copy.deepcopy(doc['reference']);doc.update(schema_version=1,role='static_field_comparison_authority',coordinate_tolerance_mm=0.)
             (root/'authority.json').write_text(json.dumps(doc),encoding='utf-8')
-            result=subprocess.run([sys.executable,'-B','-m','projects.single_reflection_oa_tof_mass_analyzer.analysis.compare_vector_field_samples',
+            result=subprocess.run([sys.executable,'-B','-m','msplatform.analysis.vector_field_samples',
                 str(root/'a.csv'),str(root/'b.csv'),'--output',str(root/'out'),'--static-comparison-authority',str(root/'authority.json')],cwd=ROOT,capture_output=True,text=True,encoding='utf-8',timeout=60,check=False)
             self.assertNotEqual(result.returncode,0);self.assertIn('rejects trajectory',result.stderr);self.assertFalse((root/'out').exists())
 
@@ -129,7 +129,7 @@ class StaticFieldConsumersTests(unittest.TestCase):
                 root=Path(directory)
                 if mode=="oa":
                     payload='point_id,x_mm,y_mm,z_mm,Ex_V_per_m,Ey_V_per_m,Ez_V_per_m\n001,1,2,3,0,2,0\n'
-                    module='projects.single_reflection_oa_tof_mass_analyzer.analysis.compare_vector_field_samples'
+                    module='msplatform.analysis.vector_field_samples'
                     args=[str(root/'a.csv'),str(root/'b.csv'),'--output',str(root/'out'),'--static-comparison-authority',str(root/'authority.json')]
                 else:
                     payload='sample_id,region,field_case,x_mm,y_mm,z_mm,potential_V,Ex_V_per_m,Ey_V_per_m,Ez_V_per_m\n'

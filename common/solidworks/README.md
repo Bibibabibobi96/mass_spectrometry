@@ -7,9 +7,9 @@
 
 | 任务 | 入口与职责 |
 |---|---|
-| 解析受支持的安装 | [PowerShell 解析器](resolve_solidworks_2022.ps1)、[Python 解析器](installation.py) |
-| 从 MATLAB 导入 STEP 并保存零件／装配 | [MATLAB 桥接](import_step_to_solidworks.m)，通过临时 JSON manifest 调用同目录 Python 模块 |
-| 从 Python 导入 STEP，或复用保存、变换操作 | [Python 桥接](import_step_to_solidworks.py)：`import_steps`、`save_native_document`、`create_transform`、`document_title` |
+| 解析受支持的安装 | [PowerShell 解析器](resolve_solidworks_2022.ps1)、[Python 解析器](../../src/msplatform/exporters/solidworks/installation.py) |
+| 从 MATLAB 导入 STEP 并保存零件／装配 | [MATLAB 桥接](import_step_to_solidworks.m)，通过临时 JSON manifest 调用安装包 Python 模块 |
+| 从 Python 导入 STEP，或复用保存、变换操作 | [Python 桥接](../../src/msplatform/exporters/solidworks/import_step_to_solidworks.py)：`import_steps`、`save_native_document`、`create_transform`、`document_title` |
 | 仅查看已发布 STEP，不保存或转存 | `msplatform.applications.open_model(..., application="solidworks")`；[阶段参数](../README.md#科学核心发行与旧入口)，当前验收范围查集成正文 |
 | 核对项目几何、交付及资格 | 项目 README → `docs/CAD.md`；当前资产与资格只查 PROJECT 和 manifest |
 
@@ -18,7 +18,10 @@
 MATLAB 的 `import_step_to_solidworks` 接收配对 STEP／SLDPRT 路径、可见性、可选装配路径及每件的毫米平移。
 Python 的 `import_steps` 消费同样的显式输入；CLI 的 `--manifest` 适合完整装配，避免命令行长度限制。
 桥接不生成器件几何，也不决定项目坐标或目标路径。oa-TOF 使用完整导入桥接，MR 的 CAD 导出器复用
-原生保存和变换 helper；调用方仍须按各自几何合同验收。
+原生保存和变换 helper；调用方仍须按各自几何合同验收。MATLAB 在开发树和冻结布局中把 `codeRoot/src`
+放在 `PYTHONPATH` 首位，确保选择本次规范模块而不是外部同名包；普通安装则由所选解释器的 site-packages
+提供同一实现。92 项定向软件检查覆盖冻结加载、缺件/篡改/越界、外部同名包和宿主边界，未执行 MATLAB
+或 SolidWorks 原生冒烟。
 
 返回值包含逐件导入／保存错误与警告、零件数，以及可选装配的组件数、平移和世界中心。
 这些是实际 API 回执；调用方还须检验引用、坐标、冷重开与项目判据，不能用 `partCount` 或文件存在代替验收。
@@ -55,7 +58,7 @@ Toolbox数据库缺失是独立环境问题。官方`swHoleWizardToolBoxFolder=5
 
 ## 安装发现与验证
 
-PowerShell 入口通过[`resolve_solidworks_2022.ps1`](resolve_solidworks_2022.ps1)、Python 入口通过[`installation.py`](installation.py)解析同一
+PowerShell 入口通过[`resolve_solidworks_2022.ps1`](resolve_solidworks_2022.ps1)、Python 入口通过[`../../src/msplatform/exporters/solidworks/installation.py`](../../src/msplatform/exporters/solidworks/installation.py)解析同一
 SolidWorks 2022 安装。默认读取系统注册表；非标准或便携安装可以设置`SOLIDWORKS_2022_ROOT`，其值
 必须直接指向包含`SLDWORKS.exe`和2022 PIA程序集的安装目录。调用者不得复制安装盘符或PIA路径。
 

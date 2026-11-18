@@ -43,6 +43,11 @@ PATH_LOADERS = {"importlib.util.spec_from_file_location", "importlib.machinery.S
                 "imp.load_source", "imp.load_module", "zipimport.zipimporter", "runpy.run_path", "runpy.run_module"}
 ENVIRONMENT_PROBES = {"os.getenv", "os.environ", "os.name", "sys.path", "sys.platform",
                       "shutil.which", "importlib.util.find_spec"}
+SOLIDWORKS_HOST_ADAPTERS = {
+    "msplatform.exporters.mr_resolved_cad",
+    "msplatform.exporters.solidworks.import_step_to_solidworks",
+    "msplatform.exporters.solidworks.installation",
+}
 
 
 def _qualified_name(node: ast.AST, aliases: dict[str, str]) -> str:
@@ -64,7 +69,8 @@ def _namespace_error(module: str) -> str | None:
         return f"undeclared component provider or infrastructure module: {module}"
     if parts[1] == "backends" and len(parts) > 2 and parts[2] not in {"simion", "comsol"}:
         return f"undeclared installed backend: {module}"
-    if parts[1] == "exporters" and len(parts) > 2 and parts[2] not in {"step", "execution", "operations", "mr_cad_parts"}:
+    if parts[1] == "exporters" and len(parts) > 2 and parts[2] not in {
+            "step", "execution", "operations", "mr_cad_parts", "mr_resolved_cad", "mr_cad_pose", "solidworks"}:
         return f"undeclared installed exporter: {module}"
     if parts[1] == "applications" and len(parts) > 2 and parts[2] not in {
             "solidworks", "solidworks_worker", "model_execution", "simion", "simion_model_execution", "operations"}:
@@ -95,9 +101,11 @@ def _target_error(target: str, dependencies: set[str], source_domain: str, sourc
     if (parts[0] in {"cadquery", "OCP"} and source_domain != "exporters"
             and source_module != "msplatform.components.cad_geometry"):
         return f"{source_domain} imports optional CAD kernel: {target}"
-    if parts[0] in {"win32com", "pythoncom", "pywintypes"} and source_domain != "applications":
+    if (parts[0] in {"win32com", "pythoncom", "pywintypes"} and source_domain != "applications"
+            and source_module not in SOLIDWORKS_HOST_ADAPTERS):
         return f"{source_domain} imports optional application machinery: {target}"
     if (parts[0] in HOST_MODULES and source_domain != "execution"
+            and source_module not in SOLIDWORKS_HOST_ADAPTERS
             and not (source_module == "msplatform.io.file_identity" and parts[0] == "ctypes")
             and not (source_domain == "applications" and parts[0] == "subprocess")):
         return f"{source_domain} imports host/process machinery: {target}"
@@ -210,6 +218,7 @@ def core_boundary_errors(source: str, module: str, *, is_package: bool = False,
         if (source_domain != "execution" and (name in ENVIRONMENT_PROBES or name.startswith("platform."))
                 and not (name == "os.name" and module in {"msplatform.io.file_identity", "msplatform.io.manifest_records"})
                 and not (source_domain == "applications" and name == "os.environ")
+                and not (module in SOLIDWORKS_HOST_ADAPTERS and name == "os.environ")
                 and not (name == "os.environ" and _mr_numeric_thread_environment_access(node, module, parents))):
             errors.append(f"{node.lineno}: scientific core probes host/search-path state: {name}")
         if not isinstance(node, ast.Call):
@@ -342,7 +351,7 @@ class ScientificCoreBoundaryTests(unittest.TestCase):
                 selected_dependencies.update(Requirement(value).name.replace("-", "_") for value in cad_step)
                 if any(Requirement(value).name == "cadquery-ocp" for value in cad_step):
                     selected_dependencies.add("OCP")
-            if len(parts) > 1 and parts[1] == "applications":
+            if (len(parts) > 1 and parts[1] == "applications") or module in SOLIDWORKS_HOST_ADAPTERS:
                 cad = project.get("optional-dependencies", {}).get("cad", [])
                 if any(Requirement(value).name == "pywin32" for value in cad):
                     selected_dependencies.update({"win32com", "pythoncom", "pywintypes"})
@@ -408,6 +417,18 @@ class ScientificCoreBoundaryTests(unittest.TestCase):
         for source in rejected:
             with self.subTest(source=source):
                 self.assertTrue(core_boundary_errors(source, "msplatform.analysis.example", dependencies=set()))
+
+    def test_solidworks_host_access_is_limited_to_actual_adapters(self):
+        source = "import ctypes, os, pythoncom, winreg; value = os.environ['ProgramData']"
+        for module in SOLIDWORKS_HOST_ADAPTERS:
+            with self.subTest(allowed=module):
+                self.assertEqual(core_boundary_errors(source, module, dependencies={"pythoncom"}), [])
+        for module in ("msplatform.exporters.mr_cad_pose", "msplatform.exporters.step", "msplatform.exporters.operations"):
+            with self.subTest(rejected=module):
+                errors = core_boundary_errors(source, module, dependencies=set())
+                self.assertTrue(any("imports optional application machinery" in error for error in errors))
+                self.assertTrue(any("host/process machinery" in error for error in errors))
+                self.assertTrue(any("host/search-path state" in error for error in errors))
 
     def test_named_mr_restart_thread_environment_does_not_allow_host_or_search_path_probes(self):
         source = """

@@ -41,7 +41,7 @@ SolidWorks API使用米，项目使用毫米，转换只在边界施加一次；
 ## 唯一活动生成入口
 
 使用[run_resolved_cad_export](../analysis/run_resolved_cad_export.ps1)，其
-[生成器](../analysis/export_resolved_cad.py)调用共享SolidWorks桥接。
+[生成器](../../../src/msplatform/exporters/mr_resolved_cad.py)调用共享SolidWorks桥接。
 完整 MR＋OA／探测器／C0 的纯部件计划由
 [`msplatform.exporters.mr_cad_parts`](../../../src/msplatform/exporters/mr_cad_parts.py)唯一实现；
 它消费冻结几何与显式电压，不是 MR-only provider，不创建 CAD／求场／轨迹或运行 owner。

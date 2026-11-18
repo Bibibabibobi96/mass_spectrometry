@@ -637,6 +637,14 @@ remain in place. The complete integration suite passed 585 tests with four exist
 Ordinary wheel and sdist-rebuilt outside-checkout acceptance passed in 1790.246 seconds. Complete MR,
 Changed and applicable native acceptance remain OPEN.
 
+Generic vector-field sample validation, comparison and its CLI now have one
+`msplatform.analysis.vector_field_samples` owner. Paired static-field execution
+and OA cross-solver diagnostics consume that installed implementation instead of
+the former OA project module; the RF stationary workflow remains a real non-OA
+consumer. Original numerical, coverage, duplicate/error and managed-owner checks
+pass, including 36 focused tests. Complete installation, Repository and final
+same-candidate acceptance remain OPEN.
+
 RF publication compilation, freshness and author governance now have one installed
 `msplatform.workflows.rf_publication` owner. Its PowerShell freezer selects only
 that installed implementation and the explicitly supplied research inputs; it no
@@ -645,6 +653,18 @@ research profiles and a thin author entry. Frozen positive/stale/immutable-sourc
 checks and the original publication/gate regressions pass. Focused ordinary wheel
 and sdist-rebuilt consumers pass outside the checkout with project imports denied;
 complete Repository and final same-candidate acceptance remain OPEN.
+
+MR resolved CAD export, exact pose composition and SolidWorks 2022 support now
+have installed `msplatform.exporters` owners. The project launcher resolves the
+actual exporter through its selected Python and freezes that source instead of
+the retired analysis implementation. Component geometry, native B-splines,
+voltages and publication criteria are unchanged. All 76 original CAD, installation
+and adjacent candidate tests pass without launching SolidWorks. Ordinary-install,
+complete Repository and native CAD acceptance remain separately OPEN. The OA
+candidate closure and MATLAB bridge now select installed SolidWorks sources without
+retired paths or inherited-path ambiguity; host access is limited to the actual
+SolidWorks adapters. Ninety-two focused tests and direct/sdist-rebuilt module-origin
+checks pass, without a MATLAB or SolidWorks native smoke claim.
 
 The following is the single active P4 worklist. All rows remain OPEN until their stated
 consumer and acceptance boundaries close; earlier delivered sub-capabilities are inherited,

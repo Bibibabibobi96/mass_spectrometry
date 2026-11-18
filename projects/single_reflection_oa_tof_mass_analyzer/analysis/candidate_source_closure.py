@@ -95,8 +95,6 @@ RELATIVE_PATHS = (
     "src/msplatform/contracts/particle_count_policy.json",
     "common/require_powershell7.ps1",
     "common/solidworks/import_step_to_solidworks.m",
-    "common/solidworks/import_step_to_solidworks.py",
-    "common/solidworks/installation.py",
     "projects/orthogonal_accelerator/analysis/accelerator_time_focus.py",
     "projects/orthogonal_accelerator/analysis/component_contract.py",
     "projects/orthogonal_accelerator/analysis/two_zone_geometry.py",
