@@ -30,7 +30,7 @@ from msplatform.exporters import mr_cad_parts
 def original_stripe_instances(parts: list[dict],geometry: dict,curve_contract: dict,
     native_audit: dict,parent_audit: dict,child_pose: dict,frame: dict) -> list[dict]:
     """Compose recorded real poses and match exact native controls, never fit."""
-    from .compose_top_level_cad_pose import compose
+    from msplatform.exporters.mr_cad_pose import compose
     if native_audit.get('status')!='success' or parent_audit.get('status')!='success':
         raise ValueError('Original native/parent read evidence is incomplete')
     if frame['target_frame']!=geometry['frame_id']:raise ValueError('Original native target frame differs')
@@ -296,7 +296,7 @@ def open_reference_document(sw,path: str,kind: int,error,warning):
 
 def save_step_document(sw,document,path: Path):
     """Official AP214 save avoids the observed AP203 assembly knit loss."""
-    from common.solidworks.import_step_to_solidworks import save_native_document
+    from msplatform.exporters.solidworks.import_step_to_solidworks import save_native_document
     original=sw.GetUserPreferenceIntegerValue(75)  # installed swStepAP
     try:
         if not sw.SetUserPreferenceIntegerValue(75,214):raise RuntimeError('STEP AP214 setting rejected')
@@ -306,7 +306,7 @@ def save_step_document(sw,document,path: Path):
 
 def save_exchange_document(sw,document,path: Path):
     """Official extension-selected SaveAs; scope and restore Parasolid options."""
-    from common.solidworks.import_step_to_solidworks import save_native_document
+    from msplatform.exporters.solidworks.import_step_to_solidworks import save_native_document
     document.ClearSelection2(True)
     if path.suffix=='.step':return save_step_document(sw,document,path)
     if path.suffix!='.x_t':raise ValueError('Unsupported engineering exchange extension')
@@ -360,7 +360,7 @@ def save_assembly(sw,rows: list[dict],output: Path,stem: str,api_state: dict,sta
     """One official flat assembly save/reopen path, reused for named groups."""
     import pythoncom
     import win32com.client
-    from common.solidworks.import_step_to_solidworks import (
+    from msplatform.exporters.solidworks.import_step_to_solidworks import (
         ASSEMBLY_TEMPLATE,create_transform,document_title,save_native_document)
     assembly=sw.NewDocument(str(ASSEMBLY_TEMPLATE),2,0,0)
     if assembly is None:raise RuntimeError('Assembly template failed')
@@ -838,7 +838,7 @@ def electrical_step_groups(source: Path, frozen_inputs: dict[str,Path], *, froze
         if frozen_mirror_pose:
             spec['voltage_v']=target_parts[spec['name']]['voltage_v']
             if spec['name'] in poses:
-                from .compose_top_level_cad_pose import compose
+                from msplatform.exporters.mr_cad_pose import compose
                 row['source_project_transform']=row['project_transform']
                 world=compose(row['project_transform'],poses[spec['name']])
                 row['project_transform']=sum(world['rotation'],[])+world['translation_m']+[1,0,0,0]
@@ -981,7 +981,7 @@ def build_connected_step_part(sw, group: dict, output: Path) -> tuple[dict, dict
     """
     import pythoncom
     import win32com.client
-    from common.solidworks.import_step_to_solidworks import CLEAN_PART_TEMPLATE, create_transform, document_title, save_native_document
+    from msplatform.exporters.solidworks.import_step_to_solidworks import CLEAN_PART_TEMPLATE, create_transform, document_title, save_native_document
     bodies = []; opened = []
     identity = [1,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0]
     try:
@@ -1076,8 +1076,8 @@ def export_parts(parts: list[dict], output: Path, *, smoke: bool=False,reuse: bo
     """Save engineering parts and cold-read the declared neutral format."""
     import pythoncom
     import win32com.client
-    from common.solidworks.installation import resolve_solidworks_2022_root
-    from common.solidworks.import_step_to_solidworks import (
+    from msplatform.exporters.solidworks.installation import resolve_solidworks_2022_root
+    from msplatform.exporters.solidworks.import_step_to_solidworks import (
         CLEAN_PART_TEMPLATE,ASSEMBLY_TEMPLATE,document_title,save_native_document)
     install_root=resolve_solidworks_2022_root()
     pythoncom.CoInitialize();sw=None;started=False;rows=[];preferences=None

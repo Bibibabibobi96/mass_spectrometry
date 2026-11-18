@@ -646,6 +646,14 @@ checks and the original publication/gate regressions pass. Focused ordinary whee
 and sdist-rebuilt consumers pass outside the checkout with project imports denied;
 complete Repository and final same-candidate acceptance remain OPEN.
 
+MR resolved CAD export, exact pose composition and SolidWorks 2022 support now
+have installed `msplatform.exporters` owners. The project launcher resolves the
+actual exporter through its selected Python and freezes that source instead of
+the retired analysis implementation. Component geometry, native B-splines,
+voltages and publication criteria are unchanged. All 76 original CAD, installation
+and adjacent candidate tests pass without launching SolidWorks. Ordinary-install,
+complete Repository and native CAD acceptance remain separately OPEN.
+
 The following is the single active P4 worklist. All rows remain OPEN until their stated
 consumer and acceptance boundaries close; earlier delivered sub-capabilities are inherited,
 not rebuilt. Shared interfaces, the gate catalog, installation fixtures and Git have one

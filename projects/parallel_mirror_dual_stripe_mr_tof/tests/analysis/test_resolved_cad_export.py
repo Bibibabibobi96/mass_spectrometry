@@ -18,7 +18,7 @@ from unittest.mock import patch
 from xml.sax.saxutils import escape
 
 from msplatform.exporters.mr_cad_parts import compile_parts, rectangle
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.export_resolved_cad import (
+from msplatform.exporters.mr_resolved_cad import (
     member,bounds_mm,verify_assembly_leaves,PROJECT_TRANSFORM,reopen_owned_part,close_owned_parts,
     open_reference_document,save_step_document,original_stripe_instances,save_exchange_document,inspect_exchange_geometry,
     delivery_paths,publish_validated_delivery,verify_preserved_bspline_edges,omit_mounting_holes,electrical_step_groups,mass_property_volume_levels,save_trimmed_curve_samples,compare_trimmed_curve_samples,individual_step_groups,connected_step_groups)
@@ -237,7 +237,7 @@ class CadPlanTests(unittest.TestCase):
         objects={f['name']:Feature() for f in features}
         for name,obj in objects.items():obj.name=name
         document=SimpleNamespace(FeatureByName=lambda n:objects[n],EditRebuild3=True)
-        module='projects.parallel_mirror_dual_stripe_mr_tof.analysis.export_resolved_cad'
+        module='msplatform.exporters.mr_resolved_cad'
         with patch(module+'.machining_feature_inventory',side_effect=[before,after]),patch(module+'.inspect_bspline_edges',return_value=[]),patch(module+'.verify_preserved_bspline_edges',return_value={'edge_count':4}):
             result=omit_mounting_holes(document,dict(name='s1_electrode_11',project_transform=PROJECT_TRANSFORM,original_body_bspline_edges=[]))
         self.assertEqual(calls,[('pattern',0,1),('hole',0,1)])
@@ -319,10 +319,10 @@ class CadPlanTests(unittest.TestCase):
         sw=Sw();document=Document()
         def save(doc,path):
             self.assertTrue(doc.cleared);self.assertEqual((sw.version,sw.flatten),(0,True));return (0,0)
-        with patch('common.solidworks.import_step_to_solidworks.save_native_document',side_effect=save):
+        with patch('msplatform.exporters.solidworks.import_step_to_solidworks.save_native_document',side_effect=save):
             self.assertEqual(save_exchange_document(sw,document,Path('owned/assembly.x_t')),(0,0))
         self.assertEqual((sw.version,sw.flatten),(17,False))
-        with patch('common.solidworks.import_step_to_solidworks.save_native_document',side_effect=RuntimeError('save failure')):
+        with patch('msplatform.exporters.solidworks.import_step_to_solidworks.save_native_document',side_effect=RuntimeError('save failure')):
             with self.assertRaisesRegex(RuntimeError,'save failure'):
                 save_exchange_document(sw,document,Path('owned/assembly.x_t'))
         self.assertEqual((sw.version,sw.flatten),(17,False))
@@ -335,7 +335,7 @@ class CadPlanTests(unittest.TestCase):
             def GetUserPreferenceToggle(self,key):raise AssertionError('Assembly option on part')
             def SetUserPreferenceToggle(self,key,value):raise AssertionError('Assembly option on part')
         document=SimpleNamespace(GetType=1,ClearSelection2=lambda value:None)
-        with patch('common.solidworks.import_step_to_solidworks.save_native_document',return_value=(0,0)):
+        with patch('msplatform.exporters.solidworks.import_step_to_solidworks.save_native_document',return_value=(0,0)):
             self.assertEqual(save_exchange_document(Sw(),document,Path('owned/part.x_t')),(0,0))
 
     def test_flat_exchange_matches_world_bodies_and_rejects_sheet_conversion(self):
@@ -403,10 +403,10 @@ class CadPlanTests(unittest.TestCase):
             def SetUserPreferenceIntegerValue(self,key,value):
                 assert key==75;self.value=value;return True
         sw=Sw()
-        with patch('common.solidworks.import_step_to_solidworks.save_native_document',return_value=(0,0)):
+        with patch('msplatform.exporters.solidworks.import_step_to_solidworks.save_native_document',return_value=(0,0)):
             self.assertEqual(save_step_document(sw,object(),Path('owned/assembly.step')),(0,0))
         self.assertEqual(sw.value,203)
-        with patch('common.solidworks.import_step_to_solidworks.save_native_document',side_effect=RuntimeError('save failure')):
+        with patch('msplatform.exporters.solidworks.import_step_to_solidworks.save_native_document',side_effect=RuntimeError('save failure')):
             with self.assertRaisesRegex(RuntimeError,'save failure'):save_step_document(sw,object(),Path('owned/assembly.step'))
         self.assertEqual(sw.value,203)
     def test_hidden_preload_restores_part_visibility_on_success_and_failure(self):
@@ -626,7 +626,7 @@ exit 0
 class ConnectedStepContactsTests(unittest.TestCase):
     def test_real_export_merge_preserves_contact_details_and_boolean_scope(self):
         from unittest.mock import Mock
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.export_resolved_cad import export_parts
+        from msplatform.exporters.mr_resolved_cad import export_parts
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
             group=dict(name='mirror_positive_a_ground_shield',voltage_v=0,optional_boundary_reference=False,
@@ -640,13 +640,13 @@ class ConnectedStepContactsTests(unittest.TestCase):
                 dynamic=SimpleNamespace(Dispatch=Mock(return_value=sw)))
             modules={'pythoncom':SimpleNamespace(CoInitialize=Mock(),CoUninitialize=Mock(),com_error=RuntimeError),
                 'win32com':SimpleNamespace(client=client),'win32com.client':client,
-                'common.solidworks.installation':SimpleNamespace(resolve_solidworks_2022_root=lambda:root),
-                'common.solidworks.import_step_to_solidworks':SimpleNamespace(CLEAN_PART_TEMPLATE=root/'part',ASSEMBLY_TEMPLATE=root/'assembly',
+                'msplatform.exporters.solidworks.installation':SimpleNamespace(resolve_solidworks_2022_root=lambda:root),
+                'msplatform.exporters.solidworks.import_step_to_solidworks':SimpleNamespace(CLEAN_PART_TEMPLATE=root/'part',ASSEMBLY_TEMPLATE=root/'assembly',
                     document_title=Mock(),save_native_document=Mock())}
             with patch.dict('sys.modules',modules),patch(
-                'projects.parallel_mirror_dual_stripe_mr_tof.analysis.export_resolved_cad.build_connected_step_part',
+                'msplatform.exporters.mr_resolved_cad.build_connected_step_part',
                 return_value=(row,details)) as repair,patch(
-                'projects.parallel_mirror_dual_stripe_mr_tof.analysis.export_resolved_cad.save_assembly',return_value=dict(status='PASS')):
+                'msplatform.exporters.mr_resolved_cad.save_assembly',return_value=dict(status='PASS')):
                 result=export_parts([],root/'cad',electrical_groups=[group],reuse_native_samples=True)
             repair.assert_called_once()
             observed=result['electrical_groups'][0]
@@ -656,7 +656,7 @@ class ConnectedStepContactsTests(unittest.TestCase):
 
     def test_reused_step_bytes_cannot_restore_old_voltage_metadata(self):
         from unittest.mock import Mock
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.export_resolved_cad import export_parts
+        from msplatform.exporters.mr_resolved_cad import export_parts
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);original=root/'sealed.step';original.write_bytes(b'sealed unchanged geometry')
             current=dict(name='linear_stripe',voltage_v=0,optional_boundary_reference=False,
@@ -670,8 +670,8 @@ class ConnectedStepContactsTests(unittest.TestCase):
                 dynamic=SimpleNamespace(Dispatch=Mock(return_value=sw)))
             modules={'pythoncom':SimpleNamespace(CoInitialize=Mock(),CoUninitialize=Mock(),com_error=RuntimeError),
                 'win32com':SimpleNamespace(client=client),'win32com.client':client,
-                'common.solidworks.installation':SimpleNamespace(resolve_solidworks_2022_root=lambda:root),
-                'common.solidworks.import_step_to_solidworks':SimpleNamespace(CLEAN_PART_TEMPLATE=root/'part',ASSEMBLY_TEMPLATE=root/'assembly',
+                'msplatform.exporters.solidworks.installation':SimpleNamespace(resolve_solidworks_2022_root=lambda:root),
+                'msplatform.exporters.solidworks.import_step_to_solidworks':SimpleNamespace(CLEAN_PART_TEMPLATE=root/'part',ASSEMBLY_TEMPLATE=root/'assembly',
                     document_title=Mock(),save_native_document=Mock())}
             with patch.dict('sys.modules',modules):
                 result=export_parts([],root/'cad',electrical_groups=[current],reuse_native_samples=True)
@@ -701,7 +701,7 @@ class ConnectedStepContactsTests(unittest.TestCase):
         return g,n,a,v
 
     def test_frozen_pose_validates_fourteen_mirrors_and_exact_reflection(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.export_resolved_cad import frozen_mirror_pose_transforms
+        from msplatform.exporters.mr_resolved_cad import frozen_mirror_pose_transforms
         values=self.frozen_pose_fixture();poses=frozen_mirror_pose_transforms(*values)
         self.assertEqual(len(poses),14)
         plus,minus=poses['mirror_positive_e01'],poses['mirror_negative_e06']
@@ -709,7 +709,7 @@ class ConnectedStepContactsTests(unittest.TestCase):
         self.assertEqual(plus[10],minus[10]);self.assertEqual(plus[11],-minus[11])
 
     def test_frozen_pose_rejects_wrong_pivot_and_non_mirror_geometry(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.export_resolved_cad import frozen_mirror_pose_transforms
+        from msplatform.exporters.mr_resolved_cad import frozen_mirror_pose_transforms
         g,n,a,v=self.frozen_pose_fixture()
         wrong=copy.deepcopy(n);wrong['mirror_convergence_transform']['pivot_positive_project_mm'][1]=1
         with self.assertRaisesRegex(ValueError,'declared rigid pose'):
@@ -719,7 +719,7 @@ class ConnectedStepContactsTests(unittest.TestCase):
             frozen_mirror_pose_transforms(g,wrong,a,v)
 
     def test_frozen_pose_rejects_aperture_or_component_voltage_changes(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.export_resolved_cad import frozen_mirror_pose_transforms
+        from msplatform.exporters.mr_resolved_cad import frozen_mirror_pose_transforms
         g,n,a,v=self.frozen_pose_fixture()
         wrong=copy.deepcopy(n);wrong['mirror_electrodes'][0]['holes'][0]['x'][0]-=.01
         with self.assertRaisesRegex(ValueError,'aperture differs'):
@@ -733,7 +733,7 @@ class ConnectedStepContactsTests(unittest.TestCase):
             frozen_mirror_pose_transforms(g,n,a,wrong)
 
     def test_sealed_native_retarget_uses_new_complete_voltages_and_remeasures_mirrors(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.export_resolved_cad import expected_bounds_mm
+        from msplatform.exporters.mr_resolved_cad import expected_bounds_mm
         g,n,a,v=self.frozen_pose_fixture()
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);source=root/'source';source.mkdir();(source/'inputs').mkdir();(source/'cad').mkdir()
@@ -767,7 +767,7 @@ class ConnectedStepContactsTests(unittest.TestCase):
 
     def test_boolean_uses_typed_output_parameter_and_preserves_sources(self):
         from unittest.mock import Mock
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.export_resolved_cad import _body_operation
+        from msplatform.exporters.mr_resolved_cad import _body_operation
         target, tool = Mock(), Mock()
         result_body = object()
         target.Copy.return_value.Operations2.return_value = ((result_body,), 0)
@@ -781,7 +781,7 @@ class ConnectedStepContactsTests(unittest.TestCase):
         target.Operations2.assert_not_called()
 
     def test_connected_repair_rejects_tilted_geometry(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis import export_resolved_cad
+        from msplatform.exporters import mr_resolved_cad as export_resolved_cad
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);g,a=fixture()
             g['mirror_electrodes'][0]['polygon_yz_mm']=[[0,0],[1,1],[1,2],[0,1]]
@@ -897,17 +897,17 @@ class CompletedStepPublicationTests(unittest.TestCase):
         (root/'run_manifest.json').write_text(json.dumps(manifest))
 
     def test_completed_step_republication_preserves_bytes_and_source_failure(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.export_resolved_cad import publish_validated_step_delivery
+        from msplatform.exporters.mr_resolved_cad import publish_validated_step_delivery
         with tempfile.TemporaryDirectory() as directory:
             root,physical=self.make_source(directory);old_summary=(root/'summary.json').read_bytes()
-            with patch('projects.parallel_mirror_dual_stripe_mr_tof.analysis.export_resolved_cad.export_parts',side_effect=AssertionError('no CAD')):
+            with patch('msplatform.exporters.mr_resolved_cad.export_parts',side_effect=AssertionError('no CAD')):
                 result=publish_validated_step_delivery(root,Path(directory)/'published',physical)
             self.assertFalse(result['commercial_cad_performed']);self.assertTrue(result['source_publication_failure'])
             self.assertEqual((root/'summary.json').read_bytes(),old_summary)
             self.assertEqual((Path(directory)/'published/mrtof_step_delivery.zip').read_bytes(),(root/'mrtof_step_delivery.zip').read_bytes())
 
     def test_step_publication_rejects_tamper_wrong_inputs_and_true_cad_failure(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.analysis.export_resolved_cad import publish_validated_step_delivery
+        from msplatform.exporters.mr_resolved_cad import publish_validated_step_delivery
         for mutation in ('tamper','physical','failure','missing','voltage'):
             with self.subTest(mutation=mutation),tempfile.TemporaryDirectory() as directory:
                 root,physical=self.make_source(directory)
