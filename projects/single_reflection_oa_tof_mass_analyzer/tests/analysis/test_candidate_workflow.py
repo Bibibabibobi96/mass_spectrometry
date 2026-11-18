@@ -458,6 +458,49 @@ def execute_prepared_run(*args):
                 with self.assertRaisesRegex(ValueError, "duplicate candidate source id: " + policy_source):
                     freeze_candidate_source_closure(root / "duplicate", root / "artifacts")
 
+    def test_candidate_freeze_loads_installed_solidworks_and_rejects_drift(self):
+        installed = (
+            "src/msplatform/exporters/solidworks/import_step_to_solidworks.py",
+            "src/msplatform/exporters/solidworks/installation.py",
+        )
+        retired = (
+            "common/solidworks/import_step_to_solidworks.py",
+            "common/solidworks/installation.py",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            closure = freeze_candidate_source_closure(root / "code", root / "artifacts")
+            ids = [row["source_id"] for row in closure["sources"]]
+            self.assertFalse(set(retired).intersection(ids))
+            for source_id in installed:
+                self.assertEqual(ids.count(source_id), 1)
+                frozen = Path(frozen_source_path(closure, source_id))
+                self.assertEqual(frozen.read_bytes(), (REPO_ROOT / source_id).read_bytes())
+            program = (
+                "import sys; from pathlib import Path; root = Path(sys.argv[1]); "
+                "sys.path.insert(0, str(root / 'src')); "
+                "from msplatform.exporters.solidworks import import_step_to_solidworks, installation; "
+                "assert Path(import_step_to_solidworks.__file__).resolve().is_relative_to(root); "
+                "assert Path(installation.__file__).resolve().is_relative_to(root); "
+                "print('FROZEN_SOLIDWORKS_IMPORT=PASS')"
+            )
+            result = subprocess.run([sys.executable, "-I", "-B", "-c", program, closure["code_root"]],
+                                    cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("FROZEN_SOLIDWORKS_IMPORT=PASS", result.stdout)
+            target = Path(closure["code_root"]) / installed[0]
+            original = target.read_bytes()
+            target.unlink()
+            with self.assertRaisesRegex(ValueError, "frozen candidate source changed"):
+                verify_candidate_source_closure(closure)
+            target.write_bytes(original)
+            target.write_bytes(original + b"\n")
+            with self.assertRaisesRegex(ValueError, "frozen candidate source changed"):
+                verify_candidate_source_closure(closure)
+            with self.assertRaisesRegex(ValueError, "invalid candidate source path"):
+                from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import _source_path
+                _source_path("../outside.py")
+
     def test_freezer_payload_records_and_write_corruption(self):
         from projects.single_reflection_oa_tof_mass_analyzer.analysis import candidate_source_closure as module
 

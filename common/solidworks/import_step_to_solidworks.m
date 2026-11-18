@@ -60,15 +60,19 @@ function result = import_step_to_solidworks(stepPaths, sldprtPaths, visible, ass
     fclose(fid);
     pythonExecutable = resolve_python_executable();
     codeRoot = resolve_code_root();
+    moduleRoot = fullfile(codeRoot, 'src');
+    assert(isfolder(fullfile(moduleRoot, 'msplatform', 'exporters', 'solidworks')), ...
+        'oatofCadExport:CodeRootUnavailable', ...
+        'Installed SolidWorks Python source root is unavailable: %s', moduleRoot);
     previousPythonPath = getenv('PYTHONPATH');
     cleanupPythonPath = onCleanup(@() setenv('PYTHONPATH', previousPythonPath));
     previousBytecodePolicy = getenv('PYTHONDONTWRITEBYTECODE');
     cleanupBytecodePolicy = onCleanup(@() setenv( ...
         'PYTHONDONTWRITEBYTECODE', previousBytecodePolicy));
     if isempty(previousPythonPath)
-        setenv('PYTHONPATH', codeRoot);
+        setenv('PYTHONPATH', moduleRoot);
     else
-        setenv('PYTHONPATH', [codeRoot pathsep previousPythonPath]);
+        setenv('PYTHONPATH', [moduleRoot pathsep previousPythonPath]);
     end
     setenv('PYTHONDONTWRITEBYTECODE', '1');
     command = sprintf('"%s" -B -m msplatform.exporters.solidworks.import_step_to_solidworks --manifest "%s"%s', ...

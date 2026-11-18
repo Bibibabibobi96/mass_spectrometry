@@ -419,7 +419,7 @@
           "reason": "static_field_comparison_consumer_changed"
         },
         {
-          "exact": "projects/single_reflection_oa_tof_mass_analyzer/analysis/compare_vector_field_samples.py",
+          "exact": "src/msplatform/analysis/vector_field_samples.py",
           "reason": "static_field_comparison_consumer_changed"
         }
       ],

@@ -136,6 +136,8 @@ CI失败涉及的七个方法通过，测试103.159秒、公开Python命令外�
 controller-state夹具的两个配置读取显式使用UTF-8；campaign夹具经现有`PythonExe`参数传入当前解释器，
 不要求CI checkout自带`.venv`。历史prepared-owner单测只在可信Git版本查询边界提供受控小夹具，
 仍验证完整owner字节绑定、来源目录、聚合完成证据、缺失历史及篡改拒绝；生产查询和恢复判据保持。
+独立安装API读取该历史sealed-success时必须显式提供`trusted_repo_root`；缺省不再从安装文件位置推测Git根，
+而是保持未知并按普通恢复处理。现有PowerShell消费者继续显式传根，原owner及证据字节不变。
 
 ## 科学核心 P1 接线
 
