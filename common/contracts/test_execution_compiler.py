@@ -195,7 +195,8 @@ class ExecutionCompilerTests(unittest.TestCase):
         self.assertEqual([row["owner_id"] for row in assemblies], ["instrument_assembly"])
         self.assertNotIn("instrument_assembly", projects)
         self.assertEqual({row["workflow_id"] for row in assemblies[0]["profiles"]},
-                         {"single_reflection_flight", "prepared_joint_flight", "ip_mr_chain", "oa_mr_flight"})
+                         {"single_reflection_flight", "prepared_joint_flight", "ip_mr_chain", "oa_mr_flight",
+                          "multipole_ip_continuous"})
         with self.assertRaisesRegex(ValueError, "Unknown capability owner"):
             query_capabilities(load_json(self.registry), owner="missing")
 

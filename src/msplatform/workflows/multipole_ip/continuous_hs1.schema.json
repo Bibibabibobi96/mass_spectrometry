@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/multipole-ip-continuous-hs1-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "bath_domain", "outer", "vendor_path", "numerics"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "bath_domain": {"$ref": "#/$defs/box"},
+    "outer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field_id", "frame_id", "composition_id", "species", "domain", "source", "uniform_state"],
+      "properties": {
+        "field_id": {"type": "string", "minLength": 1},
+        "frame_id": {"type": "string", "minLength": 1},
+        "composition_id": {"type": "string", "minLength": 1},
+        "species": {
+          "type": "array", "minItems": 1,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["species_id", "mass_amu", "mole_fraction"],
+            "properties": {
+              "species_id": {"type": "string", "minLength": 1},
+              "mass_amu": {"type": "number", "exclusiveMinimum": 0},
+              "mole_fraction": {"type": "number", "exclusiveMinimum": 0, "maximum": 1}
+            }
+          }
+        },
+        "domain": {"$ref": "#/$defs/box"},
+        "source": {
+          "type": "object", "additionalProperties": false,
+          "required": ["kind", "source_id", "assumptions"],
+          "properties": {
+            "kind": {"enum": ["prescribed", "prescribed_proxy"]},
+            "source_id": {"type": "string", "minLength": 1},
+            "assumptions": {"type": "array", "items": {"type": "string", "minLength": 1}},
+            "reference": {"type": "object"}
+          }
+        },
+        "uniform_state": {
+          "type": "object", "additionalProperties": false,
+          "required": ["status", "pressure_pa", "temperature_k", "bulk_velocity_m_s"],
+          "properties": {
+            "status": {"enum": ["gas", "vacuum"]},
+            "pressure_pa": {"type": "number", "minimum": 0},
+            "temperature_k": {"type": ["number", "null"], "exclusiveMinimum": 0},
+            "bulk_velocity_m_s": {"$ref": "#/$defs/vector"}
+          }
+        }
+      }
+    },
+    "vendor_path": {"type": "string", "minLength": 1},
+    "numerics": {
+      "type": "object", "additionalProperties": false,
+      "required": ["seed", "hs1_steps_per_mfp"],
+      "properties": {
+        "seed": {"type": "integer", "minimum": 0},
+        "hs1_steps_per_mfp": {"type": "integer", "minimum": 1}
+      }
+    }
+  },
+  "$defs": {
+    "vector": {
+      "type": "array", "minItems": 3, "maxItems": 3,
+      "items": {"type": "number"}
+    },
+    "box": {
+      "type": "object", "additionalProperties": false,
+      "required": ["minimum_mm", "maximum_mm", "lower_closed", "upper_closed"],
+      "properties": {
+        "minimum_mm": {"$ref": "#/$defs/vector"},
+        "maximum_mm": {"$ref": "#/$defs/vector"},
+        "lower_closed": {"$ref": "#/$defs/booleans"},
+        "upper_closed": {"$ref": "#/$defs/booleans"}
+      }
+    },
+    "booleans": {
+      "type": "array", "minItems": 3, "maxItems": 3,
+      "items": {"type": "boolean"}
+    }
+  }
+}

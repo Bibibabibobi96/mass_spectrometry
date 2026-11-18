@@ -691,4 +691,9 @@ This is not a native HS1 or field qualification. Ordinary-install acceptance for
 this successor is pending. Existing standalone diagnostics and their scientific
 acceptance remain available; their exact force-audit/sample file layout is not
 claimed by the joint consumer. The old segmented producer stays until the genuine
-continuous replacement and its applicable native checks pass.
+continuous replacement and its applicable native checks pass. A thin PowerShell
+and JSON adapter now supplies original births, an explicit complete field and
+typed HS1 inputs to that same installed consumer. Eight focused parents passed
+with nineteen successful records, covering CLI forwarding, relative vendor
+identity, invalid composition and missing-vendor refusal. This adds no native
+field or flight claim and does not retire the segmented producer.

@@ -106,3 +106,121 @@ class ContinuousConsumerTests(unittest.TestCase):
                 continuous.run_continuous(assembly=self.assembly, geometry_numerics=self.geometry_numerics,
                     drive={}, physics=self.physics, field_numerics=self.field_numerics, **self.common)
             compile_.assert_not_called()
+
+
+class ContinuousInputTests(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.vendor = self.root / 'vendor.lua'
+        self.vendor.write_text('-- original vendor fixture\n', encoding='utf-8')
+        self.request = {
+            'schema_version': 1,
+            'bath_domain': self.box((0, -10, -10), (211, 10, 10)),
+            'outer': {
+                'field_id': 'outer', 'frame_id': 'ip_local', 'composition_id': 'one_gas',
+                'species': [{'species_id': 'gas', 'mass_amu': 28, 'mole_fraction': 1}],
+                'domain': self.box((-200, -40, -40), (300, 40, 40)),
+                'source': {'kind': 'prescribed', 'source_id': 'explicit', 'assumptions': []},
+                'uniform_state': {'status': 'gas', 'pressure_pa': 4,
+                                  'temperature_k': 300, 'bulk_velocity_m_s': [1, 2, 3]}},
+            'vendor_path': 'vendor.lua', 'numerics': {'seed': 40, 'hs1_steps_per_mfp': 20}}
+
+    @staticmethod
+    def box(lo, hi):
+        return {'minimum_mm': lo, 'maximum_mm': hi,
+                'lower_closed': [True] * 3, 'upper_closed': [True] * 3}
+
+    def write(self, name, value):
+        import json
+        path = self.root / name
+        path.write_text(json.dumps(value), encoding='utf-8')
+        return path
+
+    def test_hs1_document_resolves_typed_inputs_and_relative_vendor(self):
+        from msplatform.contracts.gas import BoxDomain, GasFieldSpec
+        result = continuous.load_hs1_request(self.write('hs1.json', self.request))
+        self.assertIsInstance(result['bath_domain'], BoxDomain)
+        self.assertIsInstance(result['outer'], GasFieldSpec)
+        self.assertEqual(result['outer'].uniform_state.bulk_velocity_m_s, (1., 2., 3.))
+        self.assertEqual(result['vendor_record']['path'], str(self.vendor.resolve()))
+        self.assertEqual(result['numerics'], {'seed': 40, 'hs1_steps_per_mfp': 20})
+
+    def test_hs1_document_rejects_unknown_fields_bad_composition_and_missing_vendor(self):
+        from copy import deepcopy
+        for mutate in (
+                lambda value: value.update(extra=True),
+                lambda value: value['outer']['species'][0].update(mole_fraction=.5),
+                lambda value: value.update(vendor_path='missing.lua')):
+            with self.subTest(mutate=mutate):
+                value = deepcopy(self.request)
+                mutate(value)
+                with self.assertRaises((ValueError, FileNotFoundError, AssertionError)):
+                    continuous.load_hs1_request(self.write('bad.json', value))
+
+    def test_real_cli_forwards_original_birth_and_explicit_recovery_inputs(self):
+        from msplatform.ion_release.authoring import ReleaseRealization
+        fixture = ContinuousConsumerTests(methodName='runTest')
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        release = fixture.birth if isinstance(fixture.birth, ReleaseRealization) else fixture.birth
+        paths = {name: self.write(name + '.json', value) for name, value in (
+            ('release', {'role': 'release_fixture'}), ('fields', {'manifest': 'fields'}),
+            ('propagation', fixture.propagation), ('observations', {'plane_observations': []}),
+            ('numerics', fixture.numerics), ('recovery', {'manifest': 'prior'}),
+            ('dispatch', [{'name': 'selected'}]))}
+        hs1 = self.write('hs1.json', self.request)
+        environment = self.write('environment.json', {'selected': True})
+        workspace = self.root / 'workspace'
+        argv = ['continuous', '--release-request', str(paths['release']),
+            '--fields-reference', str(paths['fields']), '--propagation', str(paths['propagation']),
+            '--observations', str(paths['observations']), '--numerics', str(paths['numerics']),
+            '--hs1-request', str(hs1), '--environment', str(environment),
+            '--workspace', str(workspace), '--profile', 'engineering',
+            '--recovery-reference', str(paths['recovery']), '--dispatch-profiles', str(paths['dispatch']),
+            '--unit-size', '5']
+        result = Mock(reference={'manifest': 'returned'})
+        with patch('msplatform.ion_release.sample_release', return_value=release) as sample, \
+             patch('msplatform.execution.load_environment', return_value=fixture.context) as load, \
+             patch.object(continuous, 'track_existing_fields', return_value=result) as track, \
+             patch('sys.argv', argv):
+            continuous.main()
+        sample.assert_called_once_with({'role': 'release_fixture'})
+        load.assert_called_once_with(environment, workspace=workspace, profile='engineering')
+        self.assertIs(track.call_args.kwargs['particles'], release)
+        self.assertEqual(track.call_args.kwargs['fields'], {'manifest': 'fields'})
+        self.assertEqual(track.call_args.kwargs['recovery_reference'], {'manifest': 'prior'})
+        self.assertEqual(track.call_args.kwargs['dispatch_profiles'], [{'name': 'selected'}])
+        self.assertEqual(track.call_args.kwargs['unit_size'], 5)
+        self.assertEqual(track.call_args.kwargs['hs1_request']['vendor_record']['path'], str(self.vendor.resolve()))
+
+    def test_powershell_entry_reaches_continuous_owner_with_real_python(self):
+        import shutil
+        import subprocess
+        import sys
+        from msplatform import examples
+        from pathlib import Path
+        repo = Path(continuous.__file__).resolve().parents[4]
+        release = self.write('release.json', examples.load_example('rf_oatof_functional_v1').release)
+        fields = self.write('fields.json', {})
+        propagation = self.write('propagation.json', {})
+        observations = self.write('observations.json', {'plane_observations': []})
+        numerics = self.write('numerics.json', {})
+        hs1 = self.write('hs1.json', self.request)
+        environment = self.write('environment.json', {})
+        script = repo / 'integrations/workflows/multipole_ip/continuous.ps1'
+        command = [shutil.which('pwsh'), '-NoProfile', '-File', str(script),
+            '-ReleaseRequest', str(release), '-FieldsReference', str(fields),
+            '-Propagation', str(propagation), '-Observations', str(observations),
+            '-Numerics', str(numerics), '-Hs1Request', str(hs1),
+            '-Environment', str(environment), '-Workspace', str(self.root), '-Profile', 'test',
+            '-Python', sys.executable, '-RepoRoot', str(repo)]
+        result = subprocess.run(command, cwd=self.root, capture_output=True, text=True, encoding='utf-8',
+                                errors='replace', timeout=60)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('multipole_ip\\continuous.py', result.stdout + result.stderr)
+        self.assertIn('load_environment', result.stdout + result.stderr)
+        self.assertNotIn('multipole_ip.prepare', result.stdout + result.stderr)
