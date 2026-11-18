@@ -380,10 +380,12 @@ class MrtofBatchContinuationTests(unittest.TestCase):
             snapshot = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(snapshot)
             self.assertIsNone(snapshot._legacy_prepared_success(manifest_path, 2))
+            lookup.assert_not_called()
             self.assertEqual(snapshot._legacy_prepared_success(manifest_path, 2,
                 trusted_repo_root=Path(mrtof_batch_continuation.__file__).resolve().parents[4]), usage)
             self.assertIsNone(snapshot._legacy_prepared_success(manifest_path, 2, trusted_repo_root=root))
-            plan = build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current, output_dir=root / "legacy")
+            plan = build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current,
+                output_dir=root / "legacy", trusted_repo_root=trusted_root)
             self.assertEqual(plan["replay_unit_count"], 0)
             self.assertEqual(plan["batches"][0]["exit_evidence_kind"], "legacy_aggregate_success")
             self.assertEqual(plan["batches"][0]["exit_evidence_manifest"], str(manifest_path.resolve()))

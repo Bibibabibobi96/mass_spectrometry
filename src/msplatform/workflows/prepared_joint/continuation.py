@@ -272,10 +272,12 @@ def _legacy_prepared_success(manifest_path: Path, expected_count: int, *, truste
         # This published owner version was reviewed: its success path checks
         # every native exit. Compare the complete small frozen source bytes,
         # not fragments that cannot establish its control flow.
+        if trusted_repo_root is None:
+            return None
         from msplatform.execution.source_identity import git_show
 
         published = git_show(
-            trusted_repo_root.resolve() if trusted_repo_root is not None else Path(__file__).resolve().parents[4],
+            trusted_repo_root.resolve(),
             "af158d22c53e5ff85a32e9984f4d9b2bb009777b",
             "integrations/workflows/prepared_joint/execute.ps1",
         )
