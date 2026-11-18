@@ -14,8 +14,8 @@ from unittest.mock import patch
 import pandas as pd
 from PIL import Image
 
-from projects.single_reflection_oa_tof_mass_analyzer.analysis import compare_vector_field_samples as comparison
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.compare_vector_field_samples import (
+from msplatform.analysis import vector_field_samples as comparison
+from msplatform.analysis.vector_field_samples import (
     main,
 )
 
