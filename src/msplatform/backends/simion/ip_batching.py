@@ -29,7 +29,7 @@ from msplatform.contracts.particle_physics import kinetic_energy_ev
 from msplatform.backends.simion.native_completion import require_one_fly_completion
 from msplatform.backends.simion.particle_batching import merge_rebased_particle_csvs
 # Import public dependencies before prepare freezes the loaded source closure.
-from msplatform.backends.simion import resource_profile as resource_profile
+from msplatform.execution import resource_profile
 from msplatform.execution import simion_dispatch as resource_scheduler
 from msplatform.backends.simion.source import project_direct_velocity, render_standard_beams, render_source_states
 from msplatform.backends.simion.ip_handoff import frozen_release_states
