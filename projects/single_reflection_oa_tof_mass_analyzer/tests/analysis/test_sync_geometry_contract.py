@@ -17,6 +17,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.sync_geometry_cont
     render_optimization_envelope,
     render_resolved_lua,
 )
+from msplatform.backends.simion import oatof_inputs
 from msplatform.contracts.machine_contracts import sha256
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract import (
     BASELINE_PATH,
@@ -174,6 +175,43 @@ class SyncGeometryContractTests(unittest.TestCase):
         )
         self.assertEqual(contract["grid_policy"]["baseline"], expected)
         self.assertIn(f'baseline="{expected}"', render_resolved_lua(contract))
+
+    def test_installed_renderer_preserves_formal_bytes(self) -> None:
+        contract = load_contract()
+        program_source = sync_geometry_contract.PROGRAM_PATH.read_text(encoding="utf-8")
+        self.assertEqual(
+            oatof_inputs.render_resolved_lua(contract),
+            sync_geometry_contract.RESOLVED_LUA_PATH.read_text(encoding="utf-8"),
+        )
+        self.assertEqual(
+            oatof_inputs.render_program(contract, program_source),
+            program_source,
+        )
+        self.assertEqual(
+            oatof_inputs.render_fly2(contract, particle_source_seed=frozen_fly2_seed()),
+            sync_geometry_contract.FLY2_PATH.read_text(encoding="utf-8"),
+        )
+
+    def test_installed_program_renderer_uses_only_explicit_source(self) -> None:
+        contract = load_contract()
+        source = f"prefix\n{oatof_inputs.BEGIN}\nold\n{oatof_inputs.END}\nsuffix\n"
+        rendered = oatof_inputs.render_program(contract, source)
+        self.assertTrue(rendered.startswith("prefix\n" + oatof_inputs.BEGIN))
+        self.assertTrue(rendered.endswith(oatof_inputs.END + "\nsuffix\n"))
+        self.assertNotIn("\nold\n", rendered)
+        with self.assertRaisesRegex(ValueError, "generated markers"):
+            oatof_inputs.render_program(contract, "without markers")
+
+    def test_installed_scalar_serializers_and_validation(self) -> None:
+        self.assertEqual(oatof_inputs.number(True), "1")
+        self.assertEqual(oatof_inputs.number(False), "0")
+        self.assertEqual(oatof_inputs.number(2), "2.0")
+        self.assertEqual(
+            oatof_inputs.lua_value({"a": [True, None, 1.5], "not valid": "text"}),
+            '{\n  a={\n    true,\n    nil,\n    1.5\n  },\n  ["not valid"]="text"\n}',
+        )
+        with self.assertRaisesRegex(ValueError, "unsupported oa-TOF resolved contract"):
+            oatof_inputs.validate_resolved_contract({})
 
     def test_fly2_seed_remains_a_run_instance_binding(self) -> None:
         contract = load_contract()

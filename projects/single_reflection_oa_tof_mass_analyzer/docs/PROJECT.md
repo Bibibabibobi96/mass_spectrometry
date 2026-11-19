@@ -1,5 +1,16 @@
 # 单次反射正交加速飞行时间质量分析器当前状态
 
+## Installed OA-TOF SIMION input renderer
+
+`msplatform.backends.simion.oatof_inputs` now solely owns pure resolved-contract
+validation, Lua/number serialization, resolved Lua, generated adjustables, Program
+and Fly2 rendering. It uses the installed physical-geometry resolver and accepts
+Program source text explicitly, without project file access. The project sync
+entry retains Formal paths, frozen-seed and authority updates as thin delegates;
+candidate preparation and reflectron compensation call the installed renderer.
+Generated Formal bytes and scientific inputs are unchanged. This is a pure
+software migration, not native execution or scientific qualification.
+
 ## Generic vector-field comparison owner
 
 `msplatform.analysis.vector_field_samples` now owns static-sample validation,
