@@ -19,6 +19,16 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $RepoRoot=(Resolve-Path -LiteralPath $RepoRoot).Path
+$ReleaseRequest=(Resolve-Path -LiteralPath $ReleaseRequest).Path
+$FieldsReference=(Resolve-Path -LiteralPath $FieldsReference).Path
+$Propagation=(Resolve-Path -LiteralPath $Propagation).Path
+$Observations=(Resolve-Path -LiteralPath $Observations).Path
+$Numerics=(Resolve-Path -LiteralPath $Numerics).Path
+$Hs1Request=(Resolve-Path -LiteralPath $Hs1Request).Path
+$Environment=(Resolve-Path -LiteralPath $Environment).Path
+$Workspace=(Resolve-Path -LiteralPath $Workspace).Path
+if($RecoveryReference){$RecoveryReference=(Resolve-Path -LiteralPath $RecoveryReference).Path}
+if($DispatchProfiles){$DispatchProfiles=(Resolve-Path -LiteralPath $DispatchProfiles).Path}
 . (Join-Path $RepoRoot 'common/require_powershell7.ps1')
 . (Join-Path $RepoRoot 'common/contracts/run_artifact_support.ps1')
 if(-not $Python){

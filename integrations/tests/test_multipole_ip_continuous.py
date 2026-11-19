@@ -221,6 +221,59 @@ class ContinuousInputTests(unittest.TestCase):
         result = subprocess.run(command, cwd=self.root, capture_output=True, text=True, encoding='utf-8',
                                 errors='replace', timeout=60)
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn('multipole_ip\\continuous.py', result.stdout + result.stderr)
+        self.assertIn('continuous.py', result.stdout + result.stderr)
         self.assertIn('load_environment', result.stdout + result.stderr)
         self.assertNotIn('multipole_ip.prepare', result.stdout + result.stderr)
+
+    def test_powershell_external_cwd_returns_public_consumer_reference_and_sources(self):
+        import json
+        import os
+        import shutil
+        import subprocess
+        import sys
+        from msplatform import examples
+        from pathlib import Path
+        repo = Path(continuous.__file__).resolve().parents[4]
+        self.write('release.json', examples.load_example('rf_oatof_functional_v1').release)
+        self.write('fields.json', {'manifest': 'selected-fields'})
+        self.write('propagation.json', {})
+        self.write('observations.json', {'plane_observations': []})
+        self.write('numerics.json', {})
+        self.write('hs1.json', self.request)
+        self.write('environment.json', {})
+        outside = self.root / 'external-cwd'
+        outside.mkdir()
+        runtime = self.root / 'runtime'
+        shutil.copytree(repo / 'src', runtime / 'src')
+        shutil.copytree(repo / 'common', runtime / 'common', ignore=shutil.ignore_patterns('assets', '__pycache__'))
+        capture = self.root / 'observed.json'
+        owner_source = runtime / 'src/msplatform/workflows/multipole_ip/continuous.py'
+        source = owner_source.read_text(encoding='utf-8')
+        start = source.index('def track_existing_fields(')
+        end = source.index('\ndef run_continuous(', start)
+        replacement = (
+            'def track_existing_fields(**kwargs):\n'
+            '    import json\n'
+            f'    Path(r"{capture}").write_text(json.dumps({{"fields": kwargs["fields"], "vendor": kwargs["hs1_request"]["vendor_record"]["path"], "workspace": str(kwargs["context"].workspace)}}), encoding="utf-8")\n'
+            '    return SimpleNamespace(reference={"manifest": "returned-trajectory"})\n\n')
+        source = source[:start] + replacement + source[end:]
+        source = source.replace(
+            'context=load_environment(args.environment, workspace=args.workspace, profile=args.profile),',
+            'context=SimpleNamespace(workspace=args.workspace),')
+        source = source.replace('from typing import Any', 'from typing import Any\nfrom types import SimpleNamespace')
+        owner_source.write_text(source, encoding='utf-8')
+        script = repo / 'integrations/workflows/multipole_ip/continuous.ps1'
+        arguments = ['-ReleaseRequest', '../release.json', '-FieldsReference', '../fields.json',
+            '-Propagation', '../propagation.json', '-Observations', '../observations.json',
+            '-Numerics', '../numerics.json', '-Hs1Request', '../hs1.json',
+            '-Environment', '../environment.json', '-Workspace', '..', '-Profile', 'test',
+            '-Python', sys.executable, '-RepoRoot', str(runtime)]
+        environment = dict(os.environ, PYTHONPATH=os.pathsep.join((str(runtime / 'src'), str(runtime))))
+        result = subprocess.run([shutil.which('pwsh'), '-NoProfile', '-File', str(script), *arguments],
+            cwd=outside, env=environment, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('OWNER_RETURNED={"manifest": "returned-trajectory"}', result.stdout)
+        observed = json.loads(capture.read_text(encoding='utf-8'))
+        self.assertEqual(observed['fields'], {'manifest': 'selected-fields'})
+        self.assertEqual(observed['vendor'], str(self.vendor.resolve()))
+        self.assertEqual(observed['workspace'], str(self.root))

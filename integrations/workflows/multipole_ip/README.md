@@ -2,8 +2,9 @@
 
 `msplatform.workflows.multipole_ip.continuous.run_continuous` calls the existing
 public geometry, model, field and tracking stages for a complete RF–IP Assembly.
-`track_existing_fields` instead consumes one explicit published RF–IP field bundle;
-a missing, tampered or wrong-scope field is refused without rebuilding it.
+`track_existing_fields` instead consumes one explicit published complete field bundle;
+a missing, tampered or wrong-scope field is refused without rebuilding it. The same
+backend admission also supports the selected complete RF–IP–MR sampled FieldBundle.
 
 Supply the following existing inputs explicitly; the consumer does not choose a
 physical design, source, drive, gas, mesh or engineering budget.
@@ -32,7 +33,12 @@ For an existing field, `continuous.ps1` invokes the same installed module with
 beside `continuous.py`; it explicitly describes the bath box, uniform outer
 field and vendor path, which may be absolute or relative to that document.
 Optional recovery, dispatch and unit-size inputs follow the public tracker.
-The PowerShell layer only forwards these inputs and the selected Python.
+Relative file and workspace inputs are resolved from the caller's working
+directory before entering the public execution context. The PowerShell layer
+only forwards these inputs and the selected Python. For the named complete
+RF–IP–MR case, `accelerator_interface/execute.ps1 -FullJoint` accepts the same
+inputs with the `Continuous` prefix and delegates here without creating another
+field, tracking or recovery owner.
 
 Software tests cover the real compiler, field reader, managed tracking/recovery,
 typed HS1/CLI admission and failure guards using an inert native leaf. Real
