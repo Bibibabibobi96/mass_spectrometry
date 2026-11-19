@@ -1,5 +1,15 @@
 # SIMION geometry compiler
 
+## oaTOF component PA plans
+
+`simion_component_pa_plan.compile_component_pa_plan` and
+`sum_component_commitments` own the pure four-component PA request and capacity
+compilation, including the existing constants and CLI. They consume
+`tof_geometry` directly, preserve the original source paths and plan identity,
+and neither build nor open a PA. The project Candidate and Formal delivery
+entrypoints use this installed owner; only the unfinished radial and
+compensation runner migrations retain the thin project-path delegate.
+
 `compile_geometry(assembly, *, numerics)` compiles the supported RF/oaTOF
 assembly into `CompiledSimionGeometry`. It reads installed GEM resources but
 does not create a run, sample particles, start SIMION, Refine, Fly or open a GUI.

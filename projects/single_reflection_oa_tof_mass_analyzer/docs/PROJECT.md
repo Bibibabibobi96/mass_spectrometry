@@ -1,5 +1,17 @@
 # 单次反射正交加速飞行时间质量分析器当前状态
 
+## Installed component PA-plan owner
+
+`msplatform.backends.simion.simion_component_pa_plan` now owns the pure
+four-component PA-plan compiler, commitment summation, constants and CLI. It
+uses the installed `tof_geometry` physical/instance projection directly; source
+paths, numeric commitments, cache identities and plan behavior are unchanged.
+The Candidate workflow, Formal delivery builder, radial campaign and reflectron
+compensation runner consume the installed owner. Their actual frozen consumers
+passed after switching from the retired project path; the old project module has
+no remaining production consumer. No native build/cache logic, PA, Refine, Fly
+or scientific qualification changed.
+
 ## Generic vector-field comparison owner
 
 `msplatform.analysis.vector_field_samples` now owns static-sample validation,

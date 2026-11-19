@@ -60,7 +60,6 @@ RELATIVE_PATHS = (
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/compile_candidate_design.py",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/oatof_oaaccelerator_coupling.py",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/reflectron_dual_stage_solver.py",
-    "projects/single_reflection_oa_tof_mass_analyzer/analysis/simion_component_pa_plan.py",
     "projects/single_reflection_oa_tof_mass_analyzer/simion/reflectron/refine_single_pa.lua",
     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/verify_component_pa.lua",
     "common/simion/process_observation.py",

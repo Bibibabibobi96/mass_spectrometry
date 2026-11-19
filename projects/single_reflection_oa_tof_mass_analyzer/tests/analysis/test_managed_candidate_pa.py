@@ -37,7 +37,7 @@ class ManagedCandidatePaTests(unittest.TestCase):
         from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import (
             freeze_candidate_source_closure, frozen_source_path, verify_candidate_source_closure,
         )
-        from projects.single_reflection_oa_tof_mass_analyzer.analysis.simion_component_pa_plan import compile_component_pa_plan
+        from msplatform.backends.simion.simion_component_pa_plan import compile_component_pa_plan
         from projects.single_reflection_oa_tof_mass_analyzer.analysis.sync_geometry_contract import (
             render_fly2, render_program, render_resolved_lua,
         )
@@ -442,7 +442,7 @@ write_json_atomic(run/'run_config.json',config)
         from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import (
             freeze_candidate_source_closure, frozen_source_path, verify_candidate_source_closure,
         )
-        from projects.single_reflection_oa_tof_mass_analyzer.analysis.simion_component_pa_plan import compile_component_pa_plan
+        from msplatform.backends.simion.simion_component_pa_plan import compile_component_pa_plan
         from projects.single_reflection_oa_tof_mass_analyzer.analysis.sync_geometry_contract import (
             render_fly2, render_program, render_resolved_lua,
         )
