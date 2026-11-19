@@ -1,11 +1,16 @@
 """Continuous RF-to-IP consumer using the public SIMION stages."""
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 from msplatform.assembly.model import Assembly
 from msplatform.backends.simion import operations
 from msplatform.backends.simion.tracking_execution import validate_birth_source
+from msplatform.contracts.gas import BoxDomain, GasFieldSpec, GasSource, GasSpecies, GasState
+from msplatform.contracts.machine_contracts import validate_schema
 from msplatform.ion_release.authoring import ReleaseRealization
+
+HS1_SCHEMA = Path(__file__).with_name("continuous_hs1.schema.json")
 
 
 def _birth(particles: Any, hs1_request: Mapping[str, Any], propagation: Mapping[str, Any]) -> None:
@@ -62,3 +67,80 @@ def run_continuous(*, assembly: Assembly, geometry_numerics: Mapping[str, Any],
         observations=observations, tracking_numerics=tracking_numerics, hs1_request=hs1_request, context=context,
                             birth_source_authority=birth_source_authority, unit_size=unit_size,
                             recovery_reference=recovery_reference, dispatch_profiles=dispatch_profiles)
+
+
+def load_hs1_request(path: Path) -> dict[str, Any]:
+    """Load explicit bath, outer gas and original vendor inputs for continuous RF-IP."""
+    import json
+    from msplatform.io.manifest_records import file_record, verify_record
+
+    path = path.resolve()
+    document = json.loads(path.read_text(encoding="utf-8-sig"))
+    validate_schema(document, HS1_SCHEMA)
+
+    def box(value: Mapping[str, Any]) -> BoxDomain:
+        return BoxDomain(tuple(value["minimum_mm"]), tuple(value["maximum_mm"]),
+                         tuple(value["lower_closed"]), tuple(value["upper_closed"]))
+
+    outer = document["outer"]
+    source = outer["source"]
+    state = outer["uniform_state"]
+    vendor = Path(document["vendor_path"])
+    if not vendor.is_absolute():
+        vendor = path.parent / vendor
+    vendor_record = file_record(vendor.resolve())
+    verify_record("continuous RF-IP vendor", vendor_record)
+    return dict(
+        bath_domain=box(document["bath_domain"]),
+        outer=GasFieldSpec(
+            field_id=outer["field_id"], frame_id=outer["frame_id"], representation="uniform",
+            composition_id=outer["composition_id"],
+            composition=tuple(GasSpecies(item["species_id"], item["mass_amu"], item["mole_fraction"])
+                              for item in outer["species"]),
+            domain=box(outer["domain"]),
+            source=GasSource(source["kind"], source["source_id"], tuple(source["assumptions"]),
+                             source.get("reference")),
+            uniform_state=GasState(state["status"], state["pressure_pa"], state["temperature_k"],
+                                   tuple(state["bulk_velocity_m_s"]))),
+        vendor_record=vendor_record,
+        numerics=dict(document["numerics"]))
+
+
+def main() -> None:
+    """Track original births through an explicitly selected complete RF-IP field."""
+    import argparse
+    import json
+    from msplatform.execution import load_environment
+    from msplatform.ion_release import sample_release
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--release-request", type=Path, required=True)
+    parser.add_argument("--fields-reference", type=Path, required=True)
+    parser.add_argument("--propagation", type=Path, required=True)
+    parser.add_argument("--observations", type=Path, required=True)
+    parser.add_argument("--numerics", type=Path, required=True)
+    parser.add_argument("--hs1-request", type=Path, required=True)
+    parser.add_argument("--environment", type=Path, required=True)
+    parser.add_argument("--workspace", type=Path, required=True)
+    parser.add_argument("--profile", required=True)
+    parser.add_argument("--recovery-reference", type=Path)
+    parser.add_argument("--dispatch-profiles", type=Path)
+    parser.add_argument("--unit-size", type=int)
+    args = parser.parse_args()
+
+    def document(path: Path) -> Any:
+        return json.loads(path.read_text(encoding="utf-8-sig"))
+
+    result = track_existing_fields(
+        fields=document(args.fields_reference), particles=sample_release(document(args.release_request)),
+        propagation=document(args.propagation), observations=document(args.observations),
+        tracking_numerics=document(args.numerics), hs1_request=load_hs1_request(args.hs1_request),
+        context=load_environment(args.environment, workspace=args.workspace, profile=args.profile),
+        recovery_reference=document(args.recovery_reference) if args.recovery_reference else None,
+        dispatch_profiles=document(args.dispatch_profiles) if args.dispatch_profiles else (),
+        unit_size=args.unit_size)
+    print("OWNER_RETURNED=" + json.dumps(result.reference, ensure_ascii=False), flush=True)
+
+
+if __name__ == "__main__":
+    main()
