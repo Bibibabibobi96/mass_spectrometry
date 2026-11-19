@@ -105,6 +105,22 @@ not evidence of a damaged parent or a successful current-SHA reuse. No assertion
 was relaxed; a new matching-renderer native result is still required for final
 same-candidate recovery acceptance.
 
+A fresh current-renderer N1 diagnostic,
+`20261120_025424__sim__simion__track-8a7e53e4727f`, completed IOB build, cold
+verification and Fly with three exit-zero operations and released leases. Its
+original birth realization is semantically identical to the retained N1: ID
+1000003, unchanged 6D, clock and weight. Native stdout reports one actual RF
+instance-2 splat at 5.20681410792426 us and complete terminal 6D, followed by
+`Fly completed. 1 splats`. Pre/post-action splat flags are both -1, while the
+physical surface identity remains unassigned; this is not an MR observation.
+The bath and vendor hashes match the retained inputs, but the reconstructed
+outer-vacuum serialization differs and is not claimed byte-identical. The replay
+`20261120_034300__sim__simion__track-da2214cf8943` reused one complete unit with
+zero native and Refine calls. Parent manifest, summary, collection and both
+source records retained their exact hashes. These are current N1 mechanism and
+recovery results, not MR traversal, surface diagnosis, N100 or scientific
+qualification, and they do not replace final-SHA native acceptance.
+
 The original-source native attempts retain their individual failures: missing
 empty-surface evidence (`track-27a67896934c`), PA memory exhaustion
 (`track-d71e9a4e7331`), and HS1 callback/sequential-state failures
