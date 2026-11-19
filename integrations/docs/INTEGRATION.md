@@ -72,6 +72,25 @@ Thus neither enabling nor disabling the entire body window closes known support.
 An explicitly bounded active region is being assessed against saved queries;
 raw unknowns remain unchanged and runtime selected-mask failures remain fatal.
 
+The later FieldBundle `20261116_140034__sim__simion__fields-dd95bfc6401b`
+kept all seventeen `rf_body` bases but bounded that first-match window to
+`[-2.5,2.5] x [-300,-226] x [-0.1,6.1]` mm. This includes the recorded ion-4
+query and excludes the recorded ion-8 query, leaving the latter on its valid base;
+it does not repair raw data or prove whole-path coverage. Publication reused the
+existing collision producer with zero native operations, Refine, Compute and Fly.
+Original-N100 successor `20261116_141817__sim__simion__track-f34320c4c8c2`
+then completed three native calls successfully with 100 executions and 100 mothers.
+Its `source_realization.json` (`39c68baa...fd816`) and
+`canonical_source_states.json` (`f2bb0610...e0a`) are byte-identical to the failed
+13:28 attempt, so the original cohort was not resampled. The collection records
+`native_complete=true`, `observation_complete=true`, 100 native terminals and 100
+original IDs. All 100 terminal reasons nevertheless remain `unknown`; 99 preaction
+contacts are separate evidence and `mr_observations.status=not_recorded`. Writers
+stopped and scientific qualification is not granted. This closes the recorded
+support-stencil blocker and demonstrates native original-birth propagation only;
+it does not satisfy detector/MR terminal science, same-final-SHA recovery, or P4
+acceptance by itself.
+
 The original-source native attempts retain their individual failures: missing
 empty-surface evidence (`track-27a67896934c`), PA memory exhaustion
 (`track-d71e9a4e7331`), and HS1 callback/sequential-state failures
