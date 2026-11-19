@@ -10,7 +10,6 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from types import SimpleNamespace
 
 from msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates import (
     to_project_position, to_project_vector,
@@ -360,8 +359,7 @@ class AdmissionTests(unittest.TestCase):
         (vendor/"examples/collision_hs1").mkdir(parents=True)
         (vendor/"examples/collision_hs1/collision_hs1.lua").write_text(HS1_SOURCE_FIXTURE)
         functional.write_json(consumer/"run_config.json", dict(inputs={}))
-        with patch.object(functional.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout="fixture")):
-            functional.prepare(consumer, PROJECT, vendor, injected_source=self.inputs/"injected_source.json")
+        functional.prepare(consumer, PROJECT, vendor, injected_source=self.inputs/"injected_source.json")
         return consumer, functional.read_json(consumer/"inputs/resolved_model.json")
 
     def test_real_prepare_freezes_actual_source_clock_and_batch_identity(self):

@@ -1,5 +1,7 @@
 # 双锥串联四极杆离子传输接口项目状态
 
+The project verifier now loads the installed execution lease resource with an explicit HostContext. Callers must select Python through `-PythonExe` or `SIMULATION_PYTHON_EXE`; the verifier no longer assumes a checkout `.venv`. Contract checks, tests and scientific behavior are unchanged.
+
 ## Dual-cone shared terminal evidence
 
 Current fresh and saved-field dual-cone preparation freezes the common native

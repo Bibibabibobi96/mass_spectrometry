@@ -1,5 +1,7 @@
 # 横置螺旋灯丝Wehnelt电子枪当前状态
 
+The project verifier now loads the installed execution lease resource with an explicit HostContext. Callers must select Python through `-PythonExe` or `SIMULATION_PYTHON_EXE`; the verifier no longer assumes a checkout `.venv`. Contract checks, tests and scientific behavior are unchanged.
+
 本文件是项目当前事实、资格与开放任务的唯一权威。COMSOL实现见[`COMSOL.md`](COMSOL.md)；选型依据
 和旧实验见[`history/PROJECT_HISTORY.md`](history/PROJECT_HISTORY.md)；2026-07-28以前的完整runner
 故障与修复时间线冻结在

@@ -1,5 +1,7 @@
 # 开孔长管电子轰击离子源当前项目状态
 
+The project verifier now loads the installed execution lease resource with an explicit HostContext. Callers must select Python through `-PythonExe` or `SIMULATION_PYTHON_EXE`; the verifier no longer assumes a checkout `.venv`. Contract checks, tests and scientific behavior are unchanged.
+
 本文件是项目当前状态的唯一权威。跨项目规则适用仓库根README；物理输入以
 [`../config/baseline.json`](../config/baseline.json)为准，数值与证据语义以
 [`../config/numerical_modes.json`](../config/numerical_modes.json)为准，MATLAB只能消费

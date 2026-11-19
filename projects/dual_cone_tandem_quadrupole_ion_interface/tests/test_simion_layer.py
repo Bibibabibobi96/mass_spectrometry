@@ -370,7 +370,7 @@ for receipt in (c0, gas):
     assert set(record) == {'source_path', 'frozen_path', 'sha256', 'bytes'}
     assert Path(record['frozen_path']).read_bytes() == Path(record['source_path']).read_bytes()
 assert gas['inputs']['cylindrical_ion_source_receipt']['identity']['particle_count'] == 100
-assert not list(Path.cwd().rglob('*.pa*'))
+assert not list(case.rglob('*.pa*'))
 for name, module in tuple(sys.modules.items()):
     if name.startswith('msplatform') and getattr(module, '__file__', None):
         assert Path(module.__file__).resolve().is_relative_to(Path.cwd() / 'src'), (name, module.__file__)

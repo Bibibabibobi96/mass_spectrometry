@@ -25,15 +25,15 @@ if (($PreflightOnly -and $SelectedTestModules.Count) -or
   throw 'Static preflight and selected test modules are mutually exclusive with other modes.'
 }
 
-$hostExecutionLease = $null
-$hostExecutionLeaseSupport = Join-Path $repoRoot 'common\host_execution_lease.ps1'
-if (Test-Path -LiteralPath $hostExecutionLeaseSupport -PathType Leaf) {
-  . $hostExecutionLeaseSupport
-  $hostExecutionLease = Enter-HostExecutionLease -Role GATE
-}
-try {
-$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } elseif ($env:SIMULATION_PYTHON_EXE) { $env:SIMULATION_PYTHON_EXE } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
+$executionResources = Join-Path $repoRoot 'src/msplatform/execution/resources'
+. (Join-Path $executionResources 'require_powershell7.ps1')
+$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } elseif ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) } else { throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required' }
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 runtime missing: $python" }
+$hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path (Split-Path -Parent $repoRoot) 'artifacts/common/host_resources.sqlite3' }
+$hostContext = @{workspace=(Split-Path -Parent $repoRoot);python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
+. (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
+$hostExecutionLease = Enter-HostExecutionLease -Role GATE
+try {
 if ($FreshnessPrevalidated -and $Level -eq 'Freshness') {
   throw 'FreshnessPrevalidated cannot be combined with Level=Freshness.'
 }

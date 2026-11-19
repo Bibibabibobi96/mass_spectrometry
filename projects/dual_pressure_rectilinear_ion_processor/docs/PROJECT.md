@@ -1,5 +1,7 @@
 # 双压力区矩形射频离子处理器项目状态
 
+The project verifier now loads the installed execution lease resource with an explicit HostContext. Callers must select Python through `-PythonExe` or `SIMULATION_PYTHON_EXE`; the verifier no longer assumes a checkout `.venv`. Test discovery and scientific behavior are unchanged.
+
 Functional and GUI-replay preparation call the installed SIMION seed-freezing owner with their
 explicitly selected IOB and common PA placeholder; the placeholder remains unchanged. Frozen
 preparation and functional software tests cover the moved source. This does not add IP native

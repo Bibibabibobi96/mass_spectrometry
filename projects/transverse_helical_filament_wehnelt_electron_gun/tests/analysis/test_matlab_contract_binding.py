@@ -348,8 +348,8 @@ class MatlabContractBindingTests(unittest.TestCase):
         )
         bootstrap_block = self.build_runner[bootstrap_start:bootstrap_end]
         required = (
-            "powershell_runtime_gate = 'common\\require_powershell7.ps1'",
-            "artifact_support = 'common\\contracts\\run_artifact_support.ps1'",
+            "powershell_runtime_gate = 'src\\msplatform\\execution\\resources\\require_powershell7.ps1'",
+            "artifact_support = 'src/msplatform/execution/resources/run_artifact_support.ps1'",
             "manifest_writer = 'src\\msplatform\\execution\\manifest_publication.py'",
             "manifest_verifier = 'src\\msplatform\\execution\\manifest_verification.py'",
             "artifact_naming = 'src\\msplatform\\execution\\artifact_naming.py'",
@@ -383,13 +383,14 @@ function Get-RunFileSha256($Path){(Get-FileHash -LiteralPath $Path -Algorithm SH
                 result = subprocess.run(
                     ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
                     cwd=snapshot, env=dict(os.environ, BOOTSTRAP_SNAPSHOT=str(snapshot), BOOTSTRAP_DIGEST=digest),
-                    capture_output=True, text=True, encoding="utf-8", timeout=30,
+                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
                 )
+                details = (result.stdout or "") + (result.stderr or "")
                 if changed:
-                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertNotEqual(result.returncode, 0, details)
                     self.assertIn("Bootstrap dependency changed", result.stderr)
                 else:
-                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertEqual(result.returncode, 0, details)
 
     def test_external_termination_has_a_verified_interrupted_prestate(self) -> None:
         initial_summary = self.build_runner.index(
@@ -570,7 +571,7 @@ function Get-RunFileSha256($Path){(Get-FileHash -LiteralPath $Path -Algorithm SH
         required = (
             "config\\execution_profiles.json",
             "config\\project.json",
-            "common\\contracts\\run_artifact_support.ps1",
+            "src/msplatform/execution/resources/run_artifact_support.ps1",
             "src\\msplatform\\execution\\manifest_publication.py",
             "common\\contracts\\capacity_protection.py",
             "src\\msplatform\\execution\\manifest_verification.py",
@@ -631,9 +632,9 @@ Write-Output 'FROZEN_BUDGET_OBSERVATION=PASS'
                 cwd=directory,
                 env=dict(os.environ, FROZEN_DEPENDENCY_TEST_ROOT=directory,
                          DEPENDENCY_TEST_REPO=str(REPO_ROOT), DEPENDENCY_TEST_PYTHON=sys.executable),
-                capture_output=True, text=True, encoding='utf-8', timeout=30,
+                capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30,
             )
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(result.returncode, 0, (result.stdout or '') + (result.stderr or ''))
             self.assertIn('FROZEN_BUDGET_OBSERVATION=PASS', result.stdout)
 
     def test_frozen_input_freshness_does_not_mutate_its_declared_input_set(self) -> None:

@@ -261,9 +261,9 @@ class NativeCandidateConditionPreparationTests(unittest.TestCase):
                 analysis.mkdir(parents=True)
                 for name in ("run_native_candidate_campaign.ps1", RUNNER.name):
                     shutil.copyfile(RUNNER.with_name(name), analysis / name)
-                support = repo / "common" / "contracts" / "run_artifact_support.ps1"
+                support = repo / "src" / "msplatform" / "execution" / "resources" / "run_artifact_support.ps1"
                 support.parent.mkdir(parents=True)
-                real_support = RUNNER.parents[3] / "common" / "contracts" / support.name
+                real_support = RUNNER.parents[3] / "src" / "msplatform" / "execution" / "resources" / support.name
                 support.write_text(
                     f". '{real_support.as_posix()}'\n" + r"""
 function New-RunPackage {

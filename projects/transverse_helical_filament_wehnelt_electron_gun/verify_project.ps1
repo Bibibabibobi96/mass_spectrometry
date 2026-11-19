@@ -5,16 +5,10 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
-$hostExecutionLease = $null
-$hostExecutionLeaseSupport = Join-Path $repoRoot 'common\host_execution_lease.ps1'
-if (Test-Path -LiteralPath $hostExecutionLeaseSupport -PathType Leaf) {
-  . $hostExecutionLeaseSupport
-  $hostExecutionLease = Enter-HostExecutionLease -Role GATE
-}
-try {
-. (Join-Path $repoRoot 'src\msplatform\execution\resources\require_powershell7.ps1')
+$executionResources = Join-Path $repoRoot 'src/msplatform/execution/resources'
+. (Join-Path $executionResources 'require_powershell7.ps1')
 if (-not $PythonExe) {
-  $PythonExe = Join-Path $repoRoot '.venv\Scripts\python.exe'
+  $PythonExe = if ($env:SIMULATION_PYTHON_EXE) { $env:SIMULATION_PYTHON_EXE } else { throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required' }
 }
 $PythonExe = [IO.Path]::GetFullPath($PythonExe)
 if (-not (Test-Path -LiteralPath $PythonExe -PathType Leaf)) {
@@ -24,6 +18,11 @@ $pythonVersion = (& $PythonExe -c "import sys; print(f'{sys.version_info.major}.
 if ($LASTEXITCODE -ne 0 -or $pythonVersion -ne '3.11') {
   throw "Wehnelt Static gate requires Python 3.11, found $pythonVersion at $PythonExe"
 }
+$hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path (Split-Path -Parent $repoRoot) 'artifacts/common/host_resources.sqlite3' }
+$hostContext = @{workspace=(Split-Path -Parent $repoRoot);python_executable=$PythonExe;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
+. (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
+$hostExecutionLease = Enter-HostExecutionLease -Role GATE
+try {
 
 Push-Location $repoRoot
 try {
