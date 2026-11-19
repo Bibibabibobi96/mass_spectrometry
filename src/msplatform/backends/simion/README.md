@@ -6,9 +6,16 @@
 `sum_component_commitments` own the pure four-component PA request and capacity
 compilation, including the existing constants and CLI. They consume
 `tof_geometry` directly, preserve the original source paths and plan identity,
-and neither build nor open a PA. The project Candidate and Formal delivery
-entrypoints use this installed owner; only the unfinished radial and
-compensation runner migrations retain the thin project-path delegate.
+and neither build nor open a PA. The project Candidate, Formal delivery,
+radial and compensation consumers use this installed owner.
+
+## OA-TOF text input rendering
+
+`oatof_inputs` owns pure OA-TOF resolved-contract validation and deterministic
+Lua, Program and Fly2 rendering from an explicit contract. `render_program`
+accepts the Program source text directly; the module performs no project file
+I/O and starts no native process. Project workflows retain their own Formal
+paths, seeds and authority-document updates.
 
 `compile_geometry(assembly, *, numerics)` compiles the supported RF/oaTOF
 assembly into `CompiledSimionGeometry`. It reads installed GEM resources but

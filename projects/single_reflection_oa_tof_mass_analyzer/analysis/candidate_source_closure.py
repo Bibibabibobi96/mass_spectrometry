@@ -135,7 +135,7 @@ RELATIVE_PATHS = (
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_export_detector_events.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_parse_field_idealization.m",
     "src/msplatform/backends/comsol/matlab/oatof_read_cartesian_release.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/comsol/run_oatof_model.m",
+    "src/msplatform/backends/comsol/matlab/run_oatof_model.m",
     "projects/single_reflection_oa_tof_mass_analyzer/comsol/verify_oatof_comsol_sync.m",
     "projects/single_reflection_oa_tof_mass_analyzer/docs/SIMION_DELIVERY_CHECKLIST.md",
     "src/msplatform/backends/comsol/matlab/load_oatof_contract.m",
@@ -157,7 +157,7 @@ RELATIVE_PATHS = (
     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/verify_iob_runtime_contract.lua",
     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/verify_iob_runtime_contract.ps1",
     "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_cad_sync.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_contract_build.m",
+    "src/msplatform/backends/comsol/matlab/run_candidate_contract_build.m",
     "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate.py",
     "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_workflow.py",
     "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_stage_execution.py",
@@ -557,8 +557,8 @@ def candidate_comsol_source_phases(closure: dict[str, Any]) -> dict[str, Any]:
         "src/msplatform/backends/comsol/matlab/build_accelerator_grids.m")
     export_names = ("src/msplatform/backends/comsol/matlab/oatof_extract_detector_arrivals.m",
         "src/msplatform/backends/comsol/matlab/oatof_detector_arrival_reducer.m")
+    export_names += ("src/msplatform/backends/comsol/matlab/run_candidate_contract_build.m",)
     export_names += tuple(prefix+name for name in (
-        "workflows/design_candidate/run_candidate_contract_build.m",
         "comsol/oatof_build_model_core.m", "comsol/oatof_postprocess_saved_solution.m", "comsol/reextract_oatof_saved_solution.m",
         "comsol/oatof_write_saved_particle_context.m", "comsol/oatof_export_detector_events.m",
         "comsol/oatof_particle_plot_view.m", "comsol/oatof_create_result_nodes.m",
@@ -614,13 +614,13 @@ def _comsol_dispatch_from_tree(tree: Any, phase: str) -> str:
 
 def project_comsol_named_entry(closure: dict[str, Any]) -> str:
     """Bind the actual named native parameter entry, with no historical lowering."""
-    path=Path(closure["code_root"])/"projects/single_reflection_oa_tof_mass_analyzer/comsol/run_oatof_model.m"
+    path=Path(closure["code_root"])/"src/msplatform/backends/comsol/matlab/run_oatof_model.m"
     return path.read_bytes().decode("utf-8")
 
 
 def project_comsol_build_invocation(closure: dict[str, Any]) -> str:
     """Bind the actual local scientific input reader/build, not its report tail."""
-    path=Path(closure["code_root"])/"projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_contract_build.m"
+    path=Path(closure["code_root"])/"src/msplatform/backends/comsol/matlab/run_candidate_contract_build.m"
     source=path.read_bytes().decode("utf-8")
     marker="function [result,contract,modelPath,contractPath]=build_candidate_model()\n"
     if source.count(marker)!=1:

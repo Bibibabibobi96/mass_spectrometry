@@ -868,6 +868,31 @@ print('FROZEN_ION_CONSUMER_PASS')
                 verify_candidate_source_closure(closure)
 
 
+    def test_source_closure_loads_installed_solidworks_owner_in_cold_process(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            closure = freeze_candidate_source_closure(root / "code", root / "artifacts")
+            source_ids = {item["source_id"] for item in closure["sources"]}
+            self.assertIn("src/msplatform/exporters/solidworks/import_step_to_solidworks.py", source_ids)
+            self.assertIn("src/msplatform/exporters/solidworks/installation.py", source_ids)
+            self.assertNotIn("common/solidworks/import_step_to_solidworks.py", source_ids)
+            self.assertNotIn("common/solidworks/installation.py", source_ids)
+            code_root = Path(closure["code_root"])
+            probe = (
+                "import importlib,json,sys;"
+                f"sys.path.insert(0,{str(code_root / 'src')!r});"
+                "module=importlib.import_module('msplatform.exporters.solidworks.import_step_to_solidworks');"
+                f"assert __import__('pathlib').Path(module.__file__).resolve().is_relative_to({str(code_root)!r});"
+                "print(json.dumps({'module':module.__file__}))"
+            )
+            result = subprocess.run(
+                [sys.executable, "-I", "-B", "-c", probe],
+                cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            loaded = Path(json.loads(result.stdout)["module"]).resolve()
+            self.assertEqual(loaded, code_root / "src/msplatform/exporters/solidworks/import_step_to_solidworks.py")
+
     def test_source_closure_rejects_invalid_extras_before_copy(self):
         for extra in ("../outside.py", str(Path(__file__).resolve()), "absent_source.py"):
             with self.subTest(extra=extra), tempfile.TemporaryDirectory() as directory:
@@ -1098,10 +1123,8 @@ print('FROZEN_ION_CONSUMER_PASS')
 
     def test_candidate_comsol_adapter_uses_contract_and_run_config_authorities(self):
         source = (
-            PROJECT_ROOT
-            / "workflows"
-            / "design_candidate"
-            / "run_candidate_contract_build.m"
+            REPO_ROOT
+            / "src/msplatform/backends/comsol/matlab/run_candidate_contract_build.m"
         ).read_text(encoding="utf-8")
         self.assertIn("OATOF_CANDIDATE_RUN_CONFIG_PATH", source)
         self.assertIn("runConfig.run_instance.particle_count", source)

@@ -43,7 +43,8 @@ from msplatform.backends.simion.optimize_reflectron_ring_voltages import (
 )
 from msplatform.backends.simion import detector_census
 from msplatform.backends.simion import ion_table as simion_ion_table
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.sync_geometry_contract import render_program
+from msplatform.backends.simion.oatof_inputs import render_program
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.sync_geometry_contract import PROGRAM_PATH
 
 PROJECT = "single_reflection_oa_tof_mass_analyzer"
 MODULE = "projects.single_reflection_oa_tof_mass_analyzer.workflows.reflectron_voltage_compensation.run_compensation"
@@ -582,7 +583,8 @@ def fit_and_plan(run: Path) -> dict[str, Any]:
         midgrid_voltage_v=float(contract["electrodes_V"]["midgrid"]), backplate_voltage_v=float(contract["electrodes_V"]["backplate"]),
         regularization=plan["regularization"])
     _write_json(run / "results/monotone_voltage_fit.json", fit)
-    for name, text in (("reflectron_voltage_profile.lua", render_lua_profile(fit)), ("oatof_ideal_grounded.lua", render_program(contract))):
+    program_source = PROGRAM_PATH.read_text(encoding="utf-8")
+    for name, text in (("reflectron_voltage_profile.lua", render_lua_profile(fit)), ("oatof_ideal_grounded.lua", render_program(contract, program_source))):
         (run / "inputs" / name).write_text(text, encoding="utf-8", newline="\n")
         if (run / "results/runtime_materialization.json").exists():
             shutil.copyfile(run / "inputs" / name, run / "simion" / name)

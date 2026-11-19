@@ -12,6 +12,17 @@ passed after switching from the retired project path; the old project module has
 no remaining production consumer. No native build/cache logic, PA, Refine, Fly
 or scientific qualification changed.
 
+## Installed OA-TOF SIMION input renderer
+
+`msplatform.backends.simion.oatof_inputs` now solely owns pure resolved-contract
+validation, Lua/number serialization, resolved Lua, generated adjustables, Program
+and Fly2 rendering. It uses the installed physical-geometry resolver and accepts
+Program source text explicitly, without project file access. The project sync
+entry retains Formal paths, frozen-seed and authority updates as thin delegates;
+candidate preparation and reflectron compensation call the installed renderer.
+Generated Formal bytes and scientific inputs are unchanged. This is a pure
+software migration, not native execution or scientific qualification.
+
 ## Generic vector-field comparison owner
 
 `msplatform.analysis.vector_field_samples` now owns static-sample validation,
@@ -159,6 +170,11 @@ closure; the retired common extra is absent rather than duplicated under its new
 candidate-workflow methods passed in 853.185 s, including the Formal preflight without the retired
 `comsol_task` keyword and the previous source-missing/duplicate regressions. This is software closure
 evidence and does not change the native scientific failure above.
+
+The Candidate native entry `run_oatof_model.m` and its contract-build task now have their sole sources in
+`msplatform.backends.comsol.matlab`. The project workflow, source closure, Formal selector and native test
+entry consume those same installed files; no second project copy remains. This ownership change does not
+rerun COMSOL or alter model physics, the five-species scientific failure or Formal qualification.
 
 ## 当前状态
 

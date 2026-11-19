@@ -26,7 +26,16 @@ geometry, model-clock and field applicability remain checked by their public
 stages. The result is the normal trajectory artifact, with its original mother,
 clock, observations, losses and provenance. Interfaces do not reinitialize it.
 
-Software tests cover the real compiler, field reader, managed tracking/recovery
-and failure guards using an inert native leaf. Real construction, Refine,
-coupled-field and HS1 qualification remain open. The existing segmented
-preparation entry stays until that corresponding native replacement is validated.
+For an existing field, `continuous.ps1` invokes the same installed module with
+`-ReleaseRequest -FieldsReference -Propagation -Observations -Numerics
+-Hs1Request -Environment -Workspace -Profile`. The HS1 JSON schema is packaged
+beside `continuous.py`; it explicitly describes the bath box, uniform outer
+field and vendor path, which may be absolute or relative to that document.
+Optional recovery, dispatch and unit-size inputs follow the public tracker.
+The PowerShell layer only forwards these inputs and the selected Python.
+
+Software tests cover the real compiler, field reader, managed tracking/recovery,
+typed HS1/CLI admission and failure guards using an inert native leaf. Real
+construction, Refine, coupled-field and HS1 qualification remain open. The
+existing segmented preparation entry stays until that corresponding native
+replacement is validated; adding the continuous consumer does not retire it.

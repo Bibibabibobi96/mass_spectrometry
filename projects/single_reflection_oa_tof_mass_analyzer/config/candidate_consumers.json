@@ -6,7 +6,7 @@
   "consumers": {
     "comsol": {
       "input": "candidate_resolved_geometry.json + candidate_solver_numerics.json",
-      "entrypoint": "comsol/run_oatof_model.m",
+      "entrypoint": "src/msplatform/backends/comsol/matlab/run_oatof_model.m",
       "binding": "ContractPath",
       "output": "candidate COMSOL MPH"
     },

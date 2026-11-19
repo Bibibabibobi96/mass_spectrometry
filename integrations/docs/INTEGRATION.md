@@ -475,6 +475,14 @@ consumer rather than duplicating its owner calls. The fixed affected batch passe
 Its native leaf is inert; the design-to-field call sequence is tested at the public
 stage boundaries. Real coupled fields and HS1 flight remain pending. The old segmented preparation
 entry remains until its actual continuous replacement is natively validated.
+For an existing complete field, `multipole_ip/continuous.ps1` now invokes that
+same installed consumer with explicit original birth, field, propagation,
+observations, numerics and HS1 documents. The packaged HS1 schema resolves the
+bath and uniform outer typed gas contracts and verifies the original vendor
+before tracking; optional recovery/dispatch inputs retain the public identity.
+Eight focused parents with nineteen successful records cover the original
+consumer and this CLI admission without a native claim. The segmented producer
+is not retired by this software-only adapter.
 
 The installation harness now prepares a separate inert RF-IP field fixture for
 each ordinary-install arm. Both children call the installed consumer and real

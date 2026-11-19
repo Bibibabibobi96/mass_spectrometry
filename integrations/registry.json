@@ -236,6 +236,87 @@
           ],
           "model": "请求声明的装配场域、接口与轨迹传播",
           "scientific_status": "not_evaluated"
+        },
+        {
+          "workflow_id": "multipole_ip_continuous",
+          "entrypoint": "integrations/workflows/multipole_ip/continuous.ps1",
+          "required_bindings": [
+            "release_request",
+            "fields_reference",
+            "propagation",
+            "observations",
+            "numerics",
+            "hs1_request",
+            "environment",
+            "workspace",
+            "profile"
+          ],
+          "arguments": [
+            "-ReleaseRequest",
+            "{release_request}",
+            "-FieldsReference",
+            "{fields_reference}",
+            "-Propagation",
+            "{propagation}",
+            "-Observations",
+            "{observations}",
+            "-Numerics",
+            "{numerics}",
+            "-Hs1Request",
+            "{hs1_request}",
+            "-Environment",
+            "{environment}",
+            "-Workspace",
+            "{workspace}",
+            "-Profile",
+            "{profile}"
+          ],
+          "outputs": [
+            "trajectory_artifact_ref"
+          ],
+          "simulation_paths": [
+            "continuous_assembly"
+          ],
+          "recipes": [],
+          "limitations": [
+            "Requires an original birth request, an explicitly selected complete RF-IP FieldBundle and explicit HS1 coverage. Native qualification and retirement of the segmented producer remain open."
+          ],
+          "binding_types": {
+            "release_request": "file",
+            "fields_reference": "file",
+            "propagation": "file",
+            "observations": "file",
+            "numerics": "file",
+            "hs1_request": "file",
+            "environment": "file",
+            "workspace": "directory",
+            "profile": "string",
+            "recovery_reference": "file",
+            "dispatch_profiles": "file",
+            "unit_size": "number"
+          },
+          "optional_arguments": {
+            "recovery_reference": [
+              "-RecoveryReference",
+              "{recovery_reference}"
+            ],
+            "dispatch_profiles": [
+              "-DispatchProfiles",
+              "{dispatch_profiles}"
+            ],
+            "unit_size": [
+              "-UnitSize",
+              "{unit_size}"
+            ]
+          },
+          "purpose": "assembly_propagation",
+          "action": "run",
+          "tools": [
+            "simion",
+            "python"
+          ],
+          "model": "完整RF与IP共同场中的原始母群连续传播",
+          "scientific_status": "not_evaluated"
         }
       ]
     }
