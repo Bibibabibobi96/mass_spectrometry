@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -991,10 +992,10 @@ function Exit-HostExecutionLease { param($Lease) }
             **kwargs,
         )
 
-    def _view_repair_fixture(self):
+    def _view_repair_fixture(self, *, with_lease=True, payload=b"original-native-bytes"):
         """Retire one actual fixture member while preserving a second native PA."""
         source = self.target / "simion/collision.pa"
-        source.write_bytes(b"original-native-bytes")
+        source.write_bytes(payload)
         manifest_path = self.target / "run_manifest.json"
         manifest = json.loads(manifest_path.read_text())
         manifest["outputs"].append(dict(path=str(source), exists=True, bytes=source.stat().st_size,
@@ -1009,13 +1010,100 @@ function Exit-HostExecutionLease { param($Lease) }
             project="p", run_id=audit.name, mode="owned_payload_view_repair",
             artifact_retention=dict(policy_version=1, **{"class":"solver_review"}, reason="view repair audit"),
             capacity_ledger_lifecycle=dict(enabled=True, artifact_root=str(self.artifacts)))))
-        create_capacity_protection_lease(self.artifacts, lease_id="repair", ttl_seconds=60,
-            owner=f"owned-payload-view-repair:p:{audit.name}", protected_paths=[self.target, audit],
-            committed_new_bytes=3 * source.stat().st_size)
+        if with_lease:
+            create_capacity_protection_lease(self.artifacts, lease_id="repair", ttl_seconds=60,
+                owner=f"owned-payload-view-repair:p:{audit.name}", protected_paths=[self.target, audit],
+                committed_new_bytes=3 * source.stat().st_size)
         options = dict(owner="p", expected_manifest_sha256=_sha(manifest_path),
             expected_retirement_sha256=_sha(self.target / "solver_review_retirement_receipt.json"),
             writing_stopped=True, capacity_lease_id="repair", apply=True)
         return source, audit, options
+
+    @unittest.skipUnless(os.name == "nt", "Windows preserved PA read-view repair")
+    def test_preserved_repair_wrapper_real_apply_uses_canonical_support(self):
+        from msplatform.execution.capacity_protection import load_capacity_protection_leases
+
+        pwsh = shutil.which("pwsh")
+        if not pwsh:
+            self.skipTest("PowerShell 7 is required for the wrapper integration regression")
+        source, audit, options = self._view_repair_fixture(
+            with_lease=False, payload=b"original-native-bytes" * 400000,
+        )
+        source_repository = Path(__file__).resolve().parents[2]
+        repository = self.root / "isolated"
+        contracts = repository / "common/contracts"
+        shutil.copytree(source_repository / "common/contracts", contracts)
+        shutil.copytree(source_repository / "src/msplatform", repository / "src/msplatform")
+        capacity_policy = repository / "src/msplatform/execution/resources/artifact_capacity_policy.json"
+        policy = json.loads(capacity_policy.read_text(encoding="utf-8"))
+        policy.update(target_gib=0.1, minimum_free_gib=0.0001)
+        capacity_policy.write_text(json.dumps(policy), encoding="utf-8")
+        python_executable = repository / ".venv/Scripts/python.exe"
+        python_executable.parent.mkdir(parents=True)
+        shutil.copy2(sys.executable, python_executable)
+        (python_executable.parents[1] / "pyvenv.cfg").write_text(
+            f"home = {Path(sys.executable).parent}\nexecutable = {sys.executable}\n", encoding="utf-8",
+        )
+        wrapper = contracts / "invoke_solver_review_retirement.ps1"
+        wrapper.write_bytes(Path(__file__).with_name(wrapper.name).read_bytes())
+        host_calls = self.root / "host-calls.txt"
+        (contracts.parent / "host_execution_lease.ps1").write_text(f"""
+$script:HostResourceExecutionContext = @{{workspace=$RepositoryRoot;
+  python_executable=(Join-Path $RepositoryRoot '.venv/Scripts/python.exe');
+  host_state_path=(Join-Path $ArtifactRoot 'host_resources.sqlite3');
+  policy_path=(Join-Path $RepositoryRoot 'src/msplatform/execution/resources/host_resource_policy.json')}}
+function Invoke-HostResourceTransaction {{}}
+function Enter-HostExecutionLease {{
+  $env:MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID = [string]$PID
+  Add-Content -LiteralPath '{host_calls}' -Value 'enter'
+  return @{{id='isolated fixture lease'}}
+}}
+function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Value 'exit' }}
+""", encoding="utf-8")
+        command = [
+            pwsh, "-NoLogo", "-NoProfile", "-File", str(wrapper),
+            "-ArtifactRoot", str(self.artifacts), "-RepositoryRoot", str(repository),
+            "-TargetRun", str(self.target), "-Owner", "p", "-ConfirmWritingStopped",
+            "-RepairPreservedFile", "simion/collision.pa", "-RepairEvidenceRun", str(audit),
+            "-ExpectedManifestSha256", options["expected_manifest_sha256"],
+            "-ExpectedRetirementSha256", options["expected_retirement_sha256"],
+            "-Apply", "-Confirm:$false",
+        ]
+        original = source.read_bytes()
+        original_id = source.stat().st_ino
+        result = subprocess.run(command, cwd=repository, capture_output=True, text=True,
+                                encoding="utf-8", errors="replace", timeout=90, check=False)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        receipt = json.loads(result.stdout)
+        self.assertEqual(receipt["status"], "complete")
+        self.assertEqual(source.read_bytes(), original)
+        self.assertNotEqual(source.stat().st_ino, original_id)
+        self.assertEqual(Path(receipt["quarantine_path"]).stat().st_ino, original_id)
+        self.assertEqual(Path(receipt["quarantine_path"]).read_bytes(), original)
+        self.assertEqual(Path(receipt["retained_snapshot"]).read_bytes(), original)
+        self.assertEqual(_sha(self.target / "run_manifest.json"), options["expected_manifest_sha256"])
+        self.assertEqual(_sha(self.target / "solver_review_retirement_receipt.json"),
+                         options["expected_retirement_sha256"])
+        self.assertEqual(host_calls.read_text().splitlines(), ["enter", "enter", "exit", "exit"])
+        leases = load_capacity_protection_leases(self.artifacts)
+        self.assertEqual((leases["protected_paths"], leases["protected_cache_keys"],
+                          leases["committed_new_bytes"]), (set(), set(), 0))
+        self.assertFalse((self.root / "isolated/common/src").exists())
+
+        replaced_id = source.stat().st_ino
+        failed_command = command.copy()
+        failed_command[failed_command.index("-ExpectedManifestSha256") + 1] = "0" * 64
+        failed = subprocess.run(failed_command, cwd=repository, capture_output=True, text=True,
+                                encoding="utf-8", errors="replace", timeout=90, check=False)
+        self.assertNotEqual(failed.returncode, 0, failed.stdout + failed.stderr)
+        self.assertIn("Preserved payload repair preflight failed", failed.stdout + failed.stderr)
+        self.assertEqual(source.read_bytes(), original)
+        self.assertEqual(source.stat().st_ino, replaced_id)
+        self.assertEqual(host_calls.read_text().splitlines(),
+                         ["enter", "enter", "exit", "exit", "enter", "exit"])
+        leases = load_capacity_protection_leases(self.artifacts)
+        self.assertEqual((leases["protected_paths"], leases["protected_cache_keys"],
+                          leases["committed_new_bytes"]), (set(), set(), 0))
 
     @unittest.skipUnless(os.name == "nt", "Windows preserved PA read-view repair")
     def test_preserved_payload_view_repair_keeps_large_io_outside_capacity_lock(self):
