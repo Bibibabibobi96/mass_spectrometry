@@ -391,7 +391,7 @@ function Invoke-ArtifactCapacityGate {
   $capacityFailure=$null
   try{
   $arguments=@(
-    '-m','common.contracts.reconcile_artifact_capacity',
+    '-m','msplatform.execution.reconcile_artifact_capacity',
     '--artifact-root',$ArtifactRoot,
     '--execution-mode',$ExecutionMode,
     '--capacity-ledger',(Join-Path $ArtifactRoot 'common\capacity_ledger.json'),
@@ -864,7 +864,7 @@ import json,sys
 from pathlib import Path
 from msplatform.execution.run_capacity_lifecycle import resolve_consumed_run_capacity_owner
 from msplatform.io.manifest_records import record_path
-from common.contracts.capacity_protection import load_capacity_protection_leases,path_is_protected
+from msplatform.execution.capacity_protection import load_capacity_protection_leases,path_is_protected
 request=json.load(sys.stdin)
 session,refs,paths,require=(request[key] for key in ('session','source_references','native_input_paths','require_protection'))
 sources={}

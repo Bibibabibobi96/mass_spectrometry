@@ -20,6 +20,10 @@
 | 维护STEP导入、SolidWorks生成和引用检查 | [SolidWorks桥接](solidworks/README.md) |
 | 定位源码、产物、执行表示与主机库 | [路径机制](paths/README.md#公共运行根与原生执行表示)；身份使用持久位置，原生参数使用本次执行表示 |
 
+正常 startup 容量准入唯一执行入口为 `msplatform.execution.reconcile_artifact_capacity`；
+仓库维护仍由 `common.contracts.reconcile_artifact_capacity` 承担，不再共享整份实现。保护租约读取直接使用
+`msplatform.execution.capacity_protection`，workspace 解释器只接受显式参数或 `SIMULATION_PYTHON_EXE`。
+
 只进入本次涉及的实现边界。文档结构与链接由`verify_documentation.ps1`和`documentation_links.py`检查；
 跨语言实现规则由`verify_development_standards.py`检查；受管文本字节由`verify_repository_text_bytes.py`检查。
 这些门禁的统一调度仍由下述目录负责，不在本页维护第二份阶段名单。

@@ -5,9 +5,7 @@ function Invoke-WorkspacePathRequest {
   [CmdletBinding()]
   param([Parameter(Mandatory)][hashtable]$Request,[string]$Python='')
   if(-not$Python){
-    $Python=if($env:SIMULATION_PYTHON_EXE){$env:SIMULATION_PYTHON_EXE}else{
-      Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) '.venv/Scripts/python.exe'
-    }
+    $Python=if($env:SIMULATION_PYTHON_EXE){$env:SIMULATION_PYTHON_EXE}else{throw 'Explicit Python or SIMULATION_PYTHON_EXE is required'}
   }
   if(-not(Test-Path -LiteralPath $Python -PathType Leaf)){throw "Workspace paths require the repository Python runtime: $Python"}
   $start=[Diagnostics.ProcessStartInfo]::new()
