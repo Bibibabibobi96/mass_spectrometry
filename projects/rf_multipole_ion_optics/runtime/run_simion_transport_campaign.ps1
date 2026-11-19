@@ -41,7 +41,7 @@ function Invoke-AnalysisLifecycle {
   if([string]$Plan.status-eq'FAILED'){throw "Campaign analysis is failed closed: $($Plan.reason)"}
   if([string]$Plan.status-ne'READY'){throw "Unknown campaign analysis state: $($Plan.status)"}
 
-  . (Join-Path $Repository 'common\contracts\run_artifact_support.ps1')
+  . (Join-Path $Repository 'src/msplatform/execution/resources/run_artifact_support.ps1')
   $artifactRoot=Join-Path $Workspace "artifacts\projects\$([string]$Plan.project_id)"
   $package=New-RunPackage -Python $Python -RepoRoot $Repository -ArtifactRoot $artifactRoot `
     -RunId ([string]$Plan.analysis_run_id) -Project ([string]$Plan.project_id) `

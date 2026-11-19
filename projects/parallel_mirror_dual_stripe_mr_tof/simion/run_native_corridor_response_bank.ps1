@@ -38,7 +38,7 @@ $pinReason='MR-TOF detached native-corridor response bank required to construct 
 foreach($path in @($python,$simion)){if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "Required response-bank executable is missing: $path"}}
 if(-not$RunId){$RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__build__simion__mrtof-native-corridor-response-bank'}
 
-. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $repoRoot 'common\parallel_gate_support.ps1')
 
 function Invoke-ProjectPython {

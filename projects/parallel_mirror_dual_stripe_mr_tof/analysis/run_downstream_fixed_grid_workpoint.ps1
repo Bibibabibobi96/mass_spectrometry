@@ -17,7 +17,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
-. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $project = 'parallel_mirror_dual_stripe_mr_tof'
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 $contract = if ($ContractPath) { $ContractPath } else { Join-Path $PSScriptRoot '..\config\simion_candidate_two_zone.json' }

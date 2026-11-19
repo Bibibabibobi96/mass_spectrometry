@@ -22,7 +22,7 @@ if ([string]::IsNullOrWhiteSpace($RunId)) {
   $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__analysis__python__mirror-l0-l1-family'
 }
 
-. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$projectId") `
   -RunId $RunId -Project $projectId -Mode 'analytic_mirror_l0_l1_candidate' `

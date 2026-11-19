@@ -68,7 +68,7 @@ if($completedRootScreeningRuns.Count-gt$MaximumTe1RootFlights){
   throw 'Completed root screening runs exceed MaximumTe1RootFlights.'
 }
 
-. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $workpointRunner=Join-Path $PSScriptRoot 'run_downstream_workpoint_iteration.ps1'
 $sourceRunner=Join-Path $PSScriptRoot 'run_publish_bunch_source.ps1'
 $screeningRunner=Join-Path $PSScriptRoot 'run_native_corridor_bunch_screening.ps1'

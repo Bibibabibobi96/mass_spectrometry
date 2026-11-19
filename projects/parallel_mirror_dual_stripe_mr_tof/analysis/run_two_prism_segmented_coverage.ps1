@@ -61,7 +61,7 @@ $exitManifest = (Resolve-Path -LiteralPath $AcceleratorExitRunManifest).Path
 if ([string]::IsNullOrWhiteSpace($RunId)) { $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__analysis__python__mrtof-two-prism-segmented-coverage' }
 
 . (Join-Path $repoRoot 'common\host_execution_lease.ps1')
-. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$projectId") `
   -RunId $RunId -Project $projectId -Mode 'two_prism_segmented_voltage_branch_coverage' `
   -Software @('Python 3.11', 'SciPy') -RetentionContractEnabled -RetentionClass compact `

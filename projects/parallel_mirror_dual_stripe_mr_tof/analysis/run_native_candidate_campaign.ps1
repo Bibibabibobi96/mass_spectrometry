@@ -23,7 +23,7 @@ $project='parallel_mirror_dual_stripe_mr_tof'
 $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $workspaceRoot=Split-Path -Parent $repoRoot
 $artifactRuns=Join-Path $workspaceRoot "artifacts\projects\$project\runs"
-. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $campaign=(Resolve-Path -LiteralPath $CampaignPath).Path
 $conditionRunner=if($ConditionRunnerPath){
   (Resolve-Path -LiteralPath $ConditionRunnerPath).Path

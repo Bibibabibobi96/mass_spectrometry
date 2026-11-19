@@ -43,7 +43,7 @@ if($ResumeFinalization){
     Write-Output "RF_FINALIZATION=$($outcome.status) RUN_ID=$RunId RESULT=$ResultPath"
     if($outcome.status-ne'success'){exit 1};return
 }
-. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $entryScriptHash=Get-RunFileSha256 -Path $PSCommandPath
 . (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\simion_layout_template_support.ps1')
 . (Join-Path $projectRoot 'runtime\simion_run_config.ps1')

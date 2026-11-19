@@ -37,7 +37,7 @@ foreach($path in @($python,$identityPath,$planPath,$recipePath,$freezeManifestPa
 }
 if(-not$RunId){$RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__build__simion__mrtof-native-corridor-qualification'}
 
-. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $repoRoot 'common\parallel_gate_support.ps1')
 
 function Invoke-ProjectPython {

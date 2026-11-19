@@ -20,7 +20,7 @@ if([string]::IsNullOrWhiteSpace($RunId)){
   $RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__analysis__python__mrtof-bunch-source-n100'
 }
 
-. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $artifactProjectRoot=Join-Path $workspaceRoot "artifacts\projects\$projectId"
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactProjectRoot `
   -RunId $RunId -Project $projectId -Mode 'deterministic_bunch_source_materialization' `

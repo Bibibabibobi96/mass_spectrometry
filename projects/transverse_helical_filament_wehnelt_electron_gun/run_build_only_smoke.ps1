@@ -18,7 +18,7 @@ $software = @('COMSOL 6.4 via MATLAB R2025b')
 
 $bootstrapFiles = [ordered]@{
   powershell_runtime_gate = 'src\msplatform\execution\resources\require_powershell7.ps1'
-  artifact_support = 'common\contracts\run_artifact_support.ps1'
+  artifact_support = 'src/msplatform/execution/resources/run_artifact_support.ps1'
   manifest_writer = 'src\msplatform\execution\manifest_publication.py'
   recorded_file_removal = 'src\msplatform\execution\recorded_file_removal.py'
   manifest_verifier = 'src\msplatform\execution\manifest_verification.py'
@@ -305,7 +305,7 @@ try {
     host_resource_adapter = 'common\host_execution_lease.ps1'
     host_resource_scheduler = 'common\host_resource_scheduler.py'
     resource_budget_support = 'common\resource_budget_support.ps1'
-    artifact_support = 'common\contracts\run_artifact_support.ps1'
+    artifact_support = 'src/msplatform/execution/resources/run_artifact_support.ps1'
     capacity_protection = 'common\contracts\capacity_protection.py'
     project_registry_builder = 'common\contracts\build_project_registry.py'
   }

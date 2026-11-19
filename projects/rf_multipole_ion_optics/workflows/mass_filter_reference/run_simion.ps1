@@ -47,7 +47,7 @@ if($ResumeFinalization){
     Write-Output "RF_FINALIZATION=$($outcome.status) RUN_ID=$RunId RESULT=$ResultPath"
     if($outcome.status-ne'success'){exit 1};return
 }
-. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $entryScriptHash=Get-RunFileSha256 -Path $PSCommandPath
 . (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
 . (Join-Path $repoRoot 'src/msplatform/workflows/resources/rf_publication.ps1')

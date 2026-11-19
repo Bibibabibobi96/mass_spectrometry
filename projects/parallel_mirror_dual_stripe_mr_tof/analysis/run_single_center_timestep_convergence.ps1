@@ -18,7 +18,7 @@ if([string]::IsNullOrWhiteSpace($RunId)){
   $RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__analysis__python__mrtof-single-center-timestep-convergence'
 }
 
-. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 
 $artifactProjectRoot=Join-Path $workspaceRoot "artifacts\projects\$projectId"
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactProjectRoot `

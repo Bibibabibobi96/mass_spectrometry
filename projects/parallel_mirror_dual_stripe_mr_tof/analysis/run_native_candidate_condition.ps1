@@ -37,7 +37,7 @@ $localScopeSource=if($LocalScopePath){(Resolve-Path -LiteralPath $LocalScopePath
 if(-not(Test-Path -LiteralPath $compositionPlanSource -PathType Leaf)){throw 'CompositionPlanPath must be a file.'}
 if($localScopeSource-and-not(Test-Path -LiteralPath $localScopeSource -PathType Leaf)){throw 'LocalScopePath must be a file.'}
 
-. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 
 function Resolve-ContextPath {
   param([Parameter(Mandatory)][string]$Value)

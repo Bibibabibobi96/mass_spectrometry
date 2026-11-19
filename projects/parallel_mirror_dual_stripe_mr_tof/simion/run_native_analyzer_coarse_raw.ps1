@@ -13,7 +13,7 @@ $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRo
 $simion=if($SimionExe){[IO.Path]::GetFullPath($SimionExe)}else{Join-Path $env:ProgramFiles 'SIMION-2020\simion.exe'}
 $contract=Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\config\simion_candidate_two_zone.json'
 if(-not$RunId){$RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__build__simion__mrtof-symmetric-coarse-raw'}
-. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $repoRoot 'common\parallel_gate_support.ps1')
 . (Join-Path $repoRoot 'common\simion\short_pa_path_support.ps1')
 

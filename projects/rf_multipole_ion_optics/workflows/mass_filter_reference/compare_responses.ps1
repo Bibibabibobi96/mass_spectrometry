@@ -18,7 +18,7 @@ $python = if ($PythonExe) {
 } else {
     Join-Path $repoRoot '.venv\Scripts\python.exe'
 }
-. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $projectRoot 'runtime\analysis_run_lifecycle.ps1')
 . (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
 . (Join-Path $repoRoot 'src/msplatform/workflows/resources/rf_publication.ps1')

@@ -52,7 +52,7 @@ $qualification = if ($authorityOnly) {
 }
 
 . (Join-Path $repoRoot 'common\host_execution_lease.ps1')
-. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$projectId") `
   -RunId $RunId -Project $projectId -Mode $runMode `

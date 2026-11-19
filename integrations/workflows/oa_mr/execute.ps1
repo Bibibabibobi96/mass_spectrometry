@@ -412,7 +412,7 @@ if($nativeSystemRuntimeRecords.Count-ne3){throw 'Native system runtime bundle la
 }
 if([string]::IsNullOrWhiteSpace($RunId)){$RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__sim__simion__oa-mr'}
 
-. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $repoRoot 'common\host_execution_lease.ps1')
 . (Join-Path $repoRoot 'common\resource_budget_support.ps1')
 . (Join-Path $repoRoot 'common\simion\short_pa_path_support.ps1')

@@ -86,7 +86,7 @@ function Get-SimionPaGridAudit {
 $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
 $workspaceRoot=Split-Path -Parent $repoRoot
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
-. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $PSScriptRoot '../../backends/simion/resources/simion_execution.ps1')
 . (Join-Path $PSScriptRoot '../../backends/simion/resources/simion_field_checkpoint_support.ps1')
 . (Join-Path $PSScriptRoot 'finite_3d_transport_preflight.ps1')

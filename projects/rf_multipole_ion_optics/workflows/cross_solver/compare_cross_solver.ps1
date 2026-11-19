@@ -12,7 +12,7 @@ $repoRoot=Split-Path -Parent (Split-Path -Parent $projectRoot)
 $workspaceRoot=Split-Path -Parent $repoRoot
 $artifactRoot=Join-Path $workspaceRoot 'artifacts\projects\rf_multipole_ion_optics'
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
-. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $projectRoot 'runtime\cross_solver_analysis_lifecycle.ps1')
 . (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
 . (Join-Path $repoRoot 'src/msplatform/workflows/resources/rf_publication.ps1')

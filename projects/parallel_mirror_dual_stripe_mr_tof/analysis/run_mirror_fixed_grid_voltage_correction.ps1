@@ -46,7 +46,7 @@ if ([string]::IsNullOrWhiteSpace($RunId)) {
   $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__analysis__python__mrtof-fixed-grid-voltage-correction'
 }
 
-. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $repoRoot 'common\host_execution_lease.ps1')
 $coarse = (Resolve-Path -LiteralPath $CoarseRefinementRunPath).Path
 $fixed = (Resolve-Path -LiteralPath $FixedGridRunPath).Path

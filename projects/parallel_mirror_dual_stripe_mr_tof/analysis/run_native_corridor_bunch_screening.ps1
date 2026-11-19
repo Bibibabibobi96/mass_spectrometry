@@ -55,7 +55,7 @@ if(($requiredDiagnosticCount -eq 0 -and $CohortParticleCount -notin @(100,1000))
 }
 if([string]::IsNullOrWhiteSpace($RunId)){$RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__sim__simion__mrtof-native-corridor-bunch-screening'}
 
-. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\simion\native_corridor_runtime_support.ps1')
 
 function Get-VerifiedManifestOutput {
