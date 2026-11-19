@@ -532,6 +532,15 @@ modules passed 35 parents and 99 records in 98.583 seconds, including exact-scop
 positive/refusal cases. These and the segmented-input rejection tests are software
 evidence only; native continuous acceptance and segmented retirement remain open.
 
+The paired static-field, paired-pulse and prepared-joint PowerShell consumers now
+require explicit Python selection and use the installed execution HostContext and
+process owner instead of the retired common lease/budget adapters. Their scientific
+requests, native scopes and recovery assertions are unchanged. The prepared-joint
+analysis fixture loads its admission override from that same canonical owner and
+retains all six success/failure scenarios. The four affected modules passed 45
+parents with 159 successful records in 355.948 seconds. This is execution-resource
+migration, not a new runner, native result or scientific qualification.
+
 The installation harness now prepares a separate inert RF-IP field fixture for
 each ordinary-install arm. Both children call the installed consumer and real
 artifact reader/managed tracking owner with the existing HS1 guards; only the

@@ -31,18 +31,20 @@ $Request=(Resolve-Path -LiteralPath $Request).Path
 if(-not$DryRun-and(-not$SolverAuthorized-or-not$ExecutionBudgetPath)){
   throw 'Native paired pulse execution requires SolverAuthorized and an explicit ExecutionBudgetPath.'
 }
-. (Join-Path $RepoRoot 'src/msplatform/execution/resources/require_powershell7.ps1')
-. (Join-Path $RepoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
-. (Join-Path $RepoRoot 'common/host_execution_lease.ps1')
-. (Join-Path $RepoRoot 'common/resource_budget_support.ps1')
+$executionResources=Join-Path $RepoRoot 'src/msplatform/execution/resources'
+. (Join-Path $executionResources 'require_powershell7.ps1')
+. (Join-Path $executionResources 'run_artifact_support.ps1')
+. (Join-Path $executionResources 'resource_process_support.ps1')
 . (Join-Path $RepoRoot 'src/msplatform/backends/simion/resources/short_pa_path_support.ps1')
 . (Join-Path $RepoRoot 'integrations/runtime/dependencies.ps1')
 . (Join-Path $RepoRoot 'integrations/runtime/frontend_flight_support.ps1')
-if(-not$Python){$Python=Join-Path $RepoRoot '.venv/Scripts/python.exe'}
-. (Join-Path $RepoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
+if(-not$Python){$Python=if($env:SIMULATION_PYTHON_EXE){$env:SIMULATION_PYTHON_EXE}else{throw 'Explicit Python or SIMULATION_PYTHON_EXE is required'}}
+. (Join-Path $executionResources 'workspace_paths.ps1')
 $pathArguments=@{SourceRoot=$RepoRoot;Python=$Python}
 if($ArtifactRoot){$pathArguments.ArtifactRoot=$ArtifactRoot}
 $pathContext=Resolve-WorkspacePaths @pathArguments
+$hostContext=@{workspace=(Split-Path -Parent $RepoRoot);python_executable=$Python;host_state_path=[string]$pathContext.host_resource_state_path;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
+. (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 $ArtifactRoot=[string]$pathContext.artifact_root
 if(-not$RunId){$RunId=(Get-Date -Format yyyyMMdd_HHmmss)+$(if($DryRun){'__test__python__paired-accelerator-pulse'}else{'__sim__cross__paired-accelerator-pulse'})}
 $project='instrument_assembly';$consumer='paired_accelerator_pulse'

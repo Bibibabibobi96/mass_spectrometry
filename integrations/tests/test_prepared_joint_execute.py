@@ -106,7 +106,7 @@ class PreparedJointAnalysisTests(unittest.TestCase):
         inventory = json.loads((REPO / "integrations/config/runtime_dependencies.json").read_text())
         from integrations.tests.test_support.single_reflection_execute_fixture import declared_dependency_paths
         records = [{'source_repo_path': path} for path in declared_dependency_paths(REPO, inventory, 'prepared_joint')]
-        support = {"src/msplatform/execution/resources/run_artifact_support.ps1", "src/msplatform/execution/resources/require_powershell7.ps1", "common/host_execution_lease.ps1"}
+        support = {"src/msplatform/execution/resources/run_artifact_support.ps1", "src/msplatform/execution/resources/require_powershell7.ps1", "src/msplatform/execution/resources/host_execution_lease.ps1"}
         capacity_fixture = r'''
 function Invoke-RunCapacityLifecycleAdapter {return @{light_evidence_budget_exceeded=$false}}
 function Assert-AnalysisFixtureSourceProtection {
@@ -199,7 +199,8 @@ if os.environ['ANALYSIS_TEST_SEAL_FAIL']=='1': raise RuntimeError('Explicit iner
                 dependency.write_text(json.dumps(inventory))
                 helpers = repo / "src/msplatform/execution/resources/run_artifact_support.ps1"
                 helpers.write_text(helpers.read_text() + capacity_fixture)
-                (repo / "common/host_execution_lease.ps1").write_text(host_fixture)
+                host_support = repo / "src/msplatform/execution/resources/host_execution_lease.ps1"
+                host_support.write_text(host_support.read_text() + host_fixture)
                 workflow_owner = repo / "src/msplatform/workflows/resources/run_artifact_workflow.ps1"
                 workflow_owner.write_text(workflow_owner.read_text() + owner_fixture)
                 (repo / "src/msplatform/workflows/prepared_joint/diagnostics.py").write_text(analyzer_fixture)

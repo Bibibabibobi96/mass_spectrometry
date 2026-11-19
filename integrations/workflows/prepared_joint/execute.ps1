@@ -21,10 +21,12 @@ $repoRoot=(Resolve-Path -LiteralPath $RepoRoot).Path
 $projectId='instrument_assembly'
 $workspaceRoot=Split-Path -Parent $repoRoot
 $script:pythonRoot=$repoRoot
-$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv/Scripts/python.exe'}
+$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
 if(-not(Test-Path -LiteralPath $python -PathType Leaf)){throw "Python executable is missing: $python"}
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
+$executionResources=Join-Path $repoRoot 'src/msplatform/execution/resources'
+. (Join-Path $executionResources 'workspace_paths.ps1')
 $pathContext=Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
+$hostContext=@{workspace=$workspaceRoot;python_executable=$python;host_state_path=[string]$pathContext.host_resource_state_path;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $repoRoot 'src/msplatform/workflows/resources/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
 if($ResumeFinalization){
   if(-not$RunId){throw 'Finalization recovery requires the existing RunId.'}
@@ -103,8 +105,8 @@ function Get-PreparedJointSourceReferences {
 function Invoke-PreparedJointTrial {
   # One public trial entry; common run/lease/capacity and batch executors own
   # lifecycle and admission. The compiler only freezes scientific inputs.
-  . (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
-  . (Join-Path $repoRoot 'common/resource_budget_support.ps1')
+  . (Join-Path $executionResources 'run_artifact_support.ps1')
+  . (Join-Path $executionResources 'resource_process_support.ps1')
   . (Join-Path $repoRoot 'integrations/runtime/dependencies.ps1')
   if(-not$ContractPath){throw 'Prepared joint flight requires an explicit observation ContractPath.'}
   $prepared=(Resolve-Path -LiteralPath $PreparedJointWorkbenchRunPath).Path
@@ -523,7 +525,7 @@ function Invoke-PreparedJointAnalysis {
   Write-Output "PREPARED_JOINT_ANALYSIS=PASS RUN_ID=$analysisRunId NATIVE_FLY=False"
 }
 if($PSCmdlet.ParameterSetName-eq'Analysis'){
-  . (Join-Path $repoRoot 'common/host_execution_lease.ps1')
+  . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
   $analysisLease=Enter-HostExecutionLease -StatePath $pathContext.host_resource_state_path -Role GATE -Stage unclassified -RunId $RunId
   $analysisOkay=$false
   try{Invoke-PreparedJointAnalysis;$analysisOkay=$true}
