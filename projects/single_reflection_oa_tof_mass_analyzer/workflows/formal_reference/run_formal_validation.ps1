@@ -56,7 +56,7 @@ if ([string]::IsNullOrWhiteSpace($CandidateRunRoot)) {
   throw 'Formal Validate requires -CandidateRunRoot.'
 }
 $candidateRoot = (Resolve-Path -LiteralPath $CandidateRunRoot).Path
-. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $runRecordComplete = $false
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project 'single_reflection_oa_tof_mass_analyzer' -Mode 'formal_vnext_zero_change_validation' `

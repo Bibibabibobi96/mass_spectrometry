@@ -69,7 +69,7 @@ else {
 $formalBaselinePath = Join-Path $projectRoot 'config\baseline.json'
 $modePath = Join-Path $projectRoot 'config\modes\formal.json'
 $formalContractPath = Join-Path $projectRoot 'config\resolved_geometry.json'
-. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 $nativeOperations=[Collections.Generic.List[object]]::new()
 $producerComponents=[Collections.Generic.List[object]]::new()

@@ -23,7 +23,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
-. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 
 if ($ExpectedParticleCount -ne 100) {
   throw 'This shared OA-TOF transport helper is the fixed N=100 functional tier.'

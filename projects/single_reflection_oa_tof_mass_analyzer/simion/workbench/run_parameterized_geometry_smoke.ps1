@@ -12,7 +12,7 @@ $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\single_reflection_oa_tof_mass_analyzer'
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
-. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 if ([string]::IsNullOrWhiteSpace($RunId)) {
   $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__gate__simion__native-ideal-grid__smoke'
 }

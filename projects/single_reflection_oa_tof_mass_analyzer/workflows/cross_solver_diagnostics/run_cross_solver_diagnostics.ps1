@@ -27,7 +27,7 @@ $vectorAnalysis = Join-Path $repoRoot 'src/msplatform/analysis/vector_field_samp
 . (Join-Path $projectRoot 'oatof_lifecycle_preflight.ps1')
 Assert-OaTofFormalAssetsReadable -ProjectRoot $projectRoot
 
-. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $runRecordComplete = $false
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project 'single_reflection_oa_tof_mass_analyzer' -Mode 'formal_cross_solver_diagnostics' `

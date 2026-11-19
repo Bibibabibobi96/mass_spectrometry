@@ -67,7 +67,7 @@ $expectedOutputDir = [IO.Path]::GetFullPath((Join-Path $artifactRoot "runs\$runI
 if ($OutputDir -and [IO.Path]::GetFullPath($OutputDir) -cne $expectedOutputDir) {
   throw 'OutputDir must be the canonical artifacts/runs/run_id directory.'
 }
-. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $runRecordComplete = $false
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $runId -Project 'single_reflection_oa_tof_mass_analyzer' -Mode 'simion_field_idealization_sweep' `

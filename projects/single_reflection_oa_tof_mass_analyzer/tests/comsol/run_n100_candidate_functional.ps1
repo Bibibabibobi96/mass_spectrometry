@@ -15,7 +15,7 @@ $launcher = Join-Path $repoRoot 'src\msplatform\backends\comsol\launcher\run_com
 $task = Join-Path $repoRoot 'src\msplatform\backends\comsol\matlab\run_candidate_contract_build.m'
 $contract = Join-Path $projectRoot 'config\resolved_geometry.json'
 $ion = Join-Path $artifactRoot 'formal\simion\oatof_comsol_524amu_gaussian_N100.ion'
-. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 
 $software = @('COMSOL 6.4', 'MATLAB R2025b', 'Python 3.11')
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `

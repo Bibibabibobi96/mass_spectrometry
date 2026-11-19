@@ -18,7 +18,7 @@ $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 if ([string]::IsNullOrWhiteSpace($RunId)) {
   $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + "__test__comsol__particle-count__n$ParticleCount"
 }
-. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $runRecordComplete = $false
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project 'single_reflection_oa_tof_mass_analyzer' -Mode 'comsol_extreme_particle_count_threshold' `
