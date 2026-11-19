@@ -34,9 +34,10 @@ arguments
     options.GeometryOnly (1,1) logical = false
 end
 
-codeRoot = fileparts(fileparts(fileparts(fileparts(fileparts(mfilename('fullpath'))))));
+matlabRoot = fileparts(mfilename('fullpath'));
+codeRoot = fileparts(fileparts(fileparts(fileparts(fileparts(matlabRoot)))));
 projectRoot = fullfile(codeRoot, 'projects', 'single_reflection_oa_tof_mass_analyzer');
-addpath(projectRoot, fullfile(codeRoot, 'src', 'msplatform', 'backends', 'comsol', 'matlab'));
+addpath(projectRoot, matlabRoot);
 contractPath = options.ContractPath;
 if options.GeometryOnly
     assert(strlength(contractPath)>0 && strlength(options.OutputModelPath)>0, ...

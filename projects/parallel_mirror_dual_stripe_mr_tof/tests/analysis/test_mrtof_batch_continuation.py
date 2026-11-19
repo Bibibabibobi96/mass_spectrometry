@@ -389,16 +389,23 @@ class MrtofBatchContinuationTests(unittest.TestCase):
             self.assertEqual(plan["replay_unit_count"], 0)
             self.assertEqual(plan["batches"][0]["exit_evidence_kind"], "legacy_aggregate_success")
             self.assertEqual(plan["batches"][0]["exit_evidence_manifest"], str(manifest_path.resolve()))
+            lookup.reset_mock()
             lookup.side_effect = subprocess.CalledProcessError(128, ["git", "show"])
             unavailable = build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent,
-                current_preparation=current, output_dir=root / "unavailable_history")
+                current_preparation=current, output_dir=root / "unavailable_history",
+                trusted_repo_root=trusted_root)
             self.assertEqual(unavailable["replay_unit_count"], 2)
+            self.assertTrue(lookup.called)
+            lookup.reset_mock()
             lookup.side_effect = lookup_owner
             owner.write_bytes(owner.read_bytes() + b"\n# different version\n")
             manifest["inputs"]["prepared_joint_integrations_workflows_prepared_joint_execute_ps1"] = file_record(owner)
             manifest_path.write_text(json.dumps(manifest))
-            plan = build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current, output_dir=root / "unknown_owner")
+            plan = build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent,
+                current_preparation=current, output_dir=root / "unknown_owner",
+                trusted_repo_root=trusted_root)
             self.assertEqual(plan["replay_unit_count"], 2)
+            self.assertTrue(lookup.called)
             manifest["status"] = "failed"
             manifest_path.write_text(json.dumps(manifest))
             plan = build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current, output_dir=root / "failed")

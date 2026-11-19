@@ -59,6 +59,13 @@ and targeted consumer checks have passed; the complete integration suite passed 
 existing external-asset skips. Ordinary wheel and sdist-rebuilt outside-checkout acceptance passed in
 1790.246 seconds. Full MR, Changed and applicable native acceptance remain separately bounded and are
 not granted by this ownership migration.
+
+The prepared-history negative tests now pass `trusted_repo_root` explicitly for
+both unavailable history and changed-owner bytes, and assert that the actual Git
+lookup occurs. The no-root rejection remains without an implicit repository
+fallback. Together with the mass-isolation cases, the selection passed 30 Python
+parents / 88 records. No new native recovery was run.
+
 The corridor exporter freezes the [shared scalar sampler](../../../common/comsol/README.md#saved-assembly-scalar-export)
 with its native sources while retaining its own half-domain mapping and conductor
 policy. Its isolated-resource test checks exact frozen bytes and missing-helper

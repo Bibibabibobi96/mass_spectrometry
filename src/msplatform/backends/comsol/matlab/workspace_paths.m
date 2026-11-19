@@ -9,7 +9,7 @@ function paths = workspace_paths(projectName,options)
     end
 
     pathsDir = fileparts(mfilename('fullpath'));
-    repoRoot = fileparts(fileparts(pathsDir));
+    repoRoot = fileparts(fileparts(fileparts(fileparts(fileparts(pathsDir)))));
     workspaceRoot = fileparts(repoRoot);
 
     paths = struct();

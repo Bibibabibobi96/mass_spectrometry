@@ -23,6 +23,21 @@ candidate preparation and reflectron compensation call the installed renderer.
 Generated Formal bytes and scientific inputs are unchanged. This is a pure
 software migration, not native execution or scientific qualification.
 
+## Installed MATLAB resource roots
+
+The independent `run_oatof_model` and `workspace_paths` entries now derive the
+repository from their installed MATLAB locations instead of stopping in `src`.
+The default resolved contract and backend helper directory therefore resolve
+without `src/projects` or `src/src` aliases. R2025b executed all 16
+`OaTofArtifactContextTest` methods successfully: the no-explicit-contract case
+loads the frozen project contract and confirms actual `which` origins, missing
+contract rejection and path/cwd restoration; the pre-existing source/output
+guards remain. No COMSOL model or native solve was launched. The strict
+mass-spectrum decode regression now asserts caller or reader-thread
+`UnicodeDecodeError` by platform while preserving `subprocess.run` identity
+across reloads. The mass-isolation and MR-history selections passed 30 Python
+parents / 88 records; no native worker was started.
+
 ## Generic vector-field comparison owner
 
 `msplatform.analysis.vector_field_samples` now owns static-sample validation,
