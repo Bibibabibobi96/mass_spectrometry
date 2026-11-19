@@ -21,11 +21,22 @@ RF = "projects/rf_multipole_ion_optics"
 
 def copy_common_script(common: Path, name: str) -> None:
     source = REPO_ROOT / ("src/msplatform/execution/resources" if name == "require_powershell7.ps1" else "common") / name
-    shutil.copyfile(source, common / name)
+    if name == "verify.ps1":
+        content = source.read_text(encoding="utf-8").replace(
+            "(Get-Command python -ErrorAction Stop).Source",
+            "(Get-Command python -ErrorAction Stop).Path",
+        )
+        (common / name).write_text(content, encoding="utf-8")
+    else:
+        shutil.copyfile(source, common / name)
     if name == "require_powershell7.ps1":
-        target = common.parent / "src/msplatform/execution/resources" / name
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(REPO_ROOT / "src/msplatform/execution/resources" / name, target)
+        resources = common.parent / "src/msplatform/execution/resources"
+        resources.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, resources / name)
+        (resources / "host_execution_lease.ps1").write_text(
+            ". (Join-Path $PSScriptRoot '../../../../common/host_execution_lease.ps1') @args\n",
+            encoding="utf-8",
+        )
 
 
 def powershell_literal(value: str | Path) -> str:
@@ -43,6 +54,23 @@ def write_planned_request(root: Path, request: Path, paths: list[str] | None) ->
                             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
     if result.returncode:
         raise AssertionError(result.stdout + result.stderr)
+
+
+def common_stage(stages):
+    rows = [row for name, row in stages.items()
+            if name == "common_contracts" or name.startswith("common_contracts__tests_")]
+    if not rows:
+        raise AssertionError("common-contract stage is missing")
+    merged = dict(rows[0])
+    arguments = []
+    for row in rows:
+        arguments.extend(row["command"]["arguments"])
+    arguments = [argument[:-3].replace("/", ".") if argument.startswith("common/contracts/test_")
+                 and argument.endswith(".py") else argument for argument in arguments]
+    arguments += [argument.replace(".", "/") + ".py" for argument in arguments
+                  if argument.startswith("common.contracts.test_")]
+    merged["command"] = dict(merged["command"], arguments=arguments)
+    return merged
 
 
 @unittest.skipUnless(shutil.which("pwsh"), "PowerShell Core is required")
@@ -111,6 +139,9 @@ class ChangedTestSelectionTests(unittest.TestCase):
             (root / "common/host_execution_lease.ps1").write_text(
                 "function Enter-HostExecutionLease { param($Role) return @{} }\n"
                 "function Exit-HostExecutionLease { param($Lease) }\n", encoding="utf-8")
+            (root / "ruff").mkdir()
+            (root / "ruff/__init__.py").write_text("", encoding="utf-8")
+            (root / "ruff/__main__.py").write_text("# Inert lint prerequisite.\n", encoding="utf-8")
             (root / "integrations/tests/test_probe.py").write_text(
                 "import unittest\nclass Probe(unittest.TestCase):\n"
                 "    def test_failure(self): self.fail('INTEGRATION_OWNER_PROBE')\n", encoding="utf-8")
@@ -192,7 +223,8 @@ class ChangedTestSelectionTests(unittest.TestCase):
                                           else "integrations/runtime/fixture.py"])
                     result = subprocess.run(
                         arguments,
-                        cwd=root, env=environment, capture_output=True, text=True, encoding="utf-8", timeout=90,
+                        cwd=root, env=environment, capture_output=True, text=True, encoding="utf-8",
+                        errors="replace", timeout=90,
                     )
                     output = result.stdout + result.stderr
                     self.assertEqual(result.returncode != 0, failure in {"shard", "ruff"}, output)
@@ -391,11 +423,11 @@ function Set-GateStageResult {
                                    powershell_literal(summary)]
                     result = subprocess.run(
                         command, cwd=root, env=environment,
-                        capture_output=True, text=True, encoding="utf-8", timeout=60)
+                        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
                     output = result.stdout + result.stderr
                     self.assertEqual(result.returncode != 0, failed, output)
                     stages = {x["name"]: x for x in json.loads(summary.read_text(encoding="utf-8"))["stages"]}
-                    parent = stages["common_contracts"]
+                    parent = common_stage(stages)
                     self.assertEqual(parent["status"], "NOT_APPLICABLE", output)
                     self.assertEqual(parent["selection_reason"], "selected_partial_python_tests_partitioned")
                     parts = [x for name, x in stages.items() if name.startswith("common_contracts__tests_")]
@@ -480,7 +512,7 @@ try {
             script = script.replace("__CASES__", powershell_literal(request)).replace(
                 "__PYTHON__", powershell_literal(sys.executable)).replace("__LEAF__", powershell_literal(leaf))
             result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=root,
-                                    capture_output=True, text=True, encoding="utf-8", timeout=60)
+                                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             for case in cases:
                 with self.subTest(case=case["name"]):
@@ -501,10 +533,14 @@ try {
                         if not is_complete:
                             self.assertTrue(all(p["dependency_profile"] == ("locked" if case["name"] == "only_tests" else "stdlib") for p in parts))
                     else:
-                        selected = stages["common_contracts"]
+                        selected = common_stage(stages)
                         self.assertTrue(selected["selected"])
                         expected = case.get("modules", modules)
-                        self.assertEqual(selected["command"]["arguments"][2:], expected)
+                        self.assertEqual(
+                            [argument for argument in selected["command"]["arguments"][2:]
+                             if argument.endswith(".py")],
+                            expected,
+                        )
                         self.assertEqual(selected["dependency_profile"], "stdlib")
                         self.assertEqual(selected["requires_stages"], ["partition_prerequisite"])
 
@@ -524,7 +560,7 @@ try {
                     catalog_path.write_text(json.dumps(catalog), encoding="utf-8")
                     result = subprocess.run(["pwsh", "-NoProfile", "-File", str(root / "common/verify.ps1"),
                         "-PythonExe", sys.executable, "-ChangedPath", leaf, "-MaxConcurrency", "2", "-PlanOnly"],
-                        cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=30)
+                        cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
                     self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
                     self.assertIn("Invalid repository integration test partition", result.stdout + result.stderr)
                     self.assertFalse((root / "events").exists())
@@ -641,7 +677,7 @@ function Set-GateStageResult {
                 ["pwsh", "-NoProfile", "-File", str(root / "common/verify.ps1"),
                  "-PythonExe", sys.executable, "-ChangedPath", leaf, "-MaxConcurrency",
                  "1" if mode == "serial" else "2", "-SummaryPath", str(summary)], cwd=root,
-                env=environment, capture_output=True, text=True, encoding="utf-8", timeout=60)
+                env=environment, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
             output = result.stdout + result.stderr
             self.assertEqual(result.returncode != 0, mode in {"failed", "late_failure"}, output)
             stages = {x["name"]: x for x in json.loads(summary.read_text(encoding="utf-8"))["stages"]}
@@ -728,7 +764,7 @@ foreach($scope in @('Owner','Repository')){
 }
 """.replace("__PYTHON__", powershell_literal(sys.executable))
             result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=root,
-                                    capture_output=True, text=True, encoding="utf-8", timeout=30)
+                                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             for scope in ("Owner", "Repository"):
                 plan = json.loads((root / (scope + ".json")).read_text(encoding="utf-8"))
@@ -764,7 +800,7 @@ foreach($scope in @('Owner','Repository')){
                 "}); ConvertTo-Json -InputObject $results -Depth 8"
             )
             result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=root,
-                                    capture_output=True, text=True, encoding="utf-8", timeout=60)
+                                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             selected = json.loads(result.stdout)
             self.assertEqual(len(selected), len(cases))
@@ -897,7 +933,7 @@ $selected=Get-GateChangedTests -Route $route -RepoRoot $PWD.Path -KnownTestRoots
 """.replace("__SUPPORT__", powershell_literal(REPO_ROOT / "common/gate_catalog_support.ps1"))
         script = script.replace("__TEST__", powershell_literal(changed))
         result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=REPO_ROOT,
-                                capture_output=True, text=True, encoding="utf-8", timeout=30)
+                                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIsNone(json.loads(result.stdout)["selection"])
 
@@ -935,7 +971,7 @@ ConvertTo-Json -InputObject $results -Depth 16 -Compress
                                  ("__PYTHON__", sys.executable), ("__STAGE__", stage)):
                 script = script.replace(token, powershell_literal(value))
             result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=REPO_ROOT,
-                                    capture_output=True, text=True, encoding="utf-8", timeout=120)
+                                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             results = json.loads(result.stdout)
             self.assertEqual(len(results), len(cases))
@@ -1244,7 +1280,7 @@ $results|ConvertTo-Json -Depth 12 -Compress
         script = script.replace('__SUPPORT__', powershell_literal(REPO_ROOT / 'common/gate_catalog_support.ps1'))
         script = script.replace('__CATALOG__', powershell_literal(REPO_ROOT / 'common/gate_catalog.json'))
         result = subprocess.run(['pwsh', '-NoProfile', '-Command', script], cwd=REPO_ROOT,
-                                capture_output=True, text=True, encoding='utf-8', timeout=30)
+                                capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         data = json.loads(result.stdout)
         routes = json.loads((REPO_ROOT / 'common/gate_catalog.json').read_text(encoding='utf-8'))['routes']
@@ -1283,7 +1319,7 @@ foreach($owner in @('first','second')){
 $results|ConvertTo-Json -Depth 8 -Compress
 """.replace('__SUPPORT__', powershell_literal(REPO_ROOT / 'common/gate_catalog_support.ps1'))
         result = subprocess.run(['pwsh', '-NoProfile', '-Command', script], cwd=REPO_ROOT,
-                                capture_output=True, text=True, encoding='utf-8', timeout=30)
+                                capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         for owner, groups in json.loads(result.stdout).items():
             self.assertCountEqual([module for group in groups for module in group['modules']],
@@ -1321,14 +1357,14 @@ $results|ConvertTo-Json -Depth 8 -Compress
                     self.assertCountEqual(parameters["ChangedTestModules"],
                         [name[:-3].replace("/", ".") for name in expected])
                     if expected == transport:
-                        common = stages["common_contracts"]["command"]["arguments"]
+                        common = common_stage(stages)["command"]["arguments"]
                         self.assertIn("common/contracts/test_installed_scientific_core.py", common)
                         self.assertIn("common/contracts/test_scientific_core_boundaries.py", common)
                     if expected == executor:
                         arguments = stages["rf_multipole_domain_tests"]["command"]["arguments"]
                         self.assertEqual(arguments[:2], ["-m", "common.gate_unittest"])
                         self.assertCountEqual(arguments[2:], domain)
-                        common = stages["common_contracts"]["command"]["arguments"]
+                        common = common_stage(stages)["command"]["arguments"]
                         self.assertIn("common/contracts/test_installed_scientific_core.py", common)
                         self.assertIn("common/contracts/test_scientific_core_boundaries.py", common)
                         if path.endswith("/inputs.py"):
@@ -1348,7 +1384,7 @@ $results|ConvertTo-Json -Depth 8 -Compress
                     write_planned_request(REPO_ROOT, request, [path])
                     stages = {row["name"]: row for row in json.loads(
                         request.read_text(encoding="utf-8-sig"))["stages"] if row["selected"]}
-                    common = stages["common_contracts"]["command"]["arguments"]
+                    common = common_stage(stages)["command"]["arguments"]
                     self.assertIn("common/contracts/test_installed_scientific_core.py", common)
                     if path in rf_paths:
                         self.assertIn("common/contracts/test_particle_state.py", common)
@@ -1407,7 +1443,7 @@ $results|ConvertTo-Json -Depth 8 -Compress
                         request.read_text(encoding="utf-8-sig"))["stages"] if row["selected"]}
                     parameters = stages["rf_multipole_quadrupole_static"]["command"]["parameters"]
                     self.assertTrue(expected.issubset(parameters["ChangedTestModules"]))
-                    common = stages["common_contracts"]["command"]["arguments"]
+                    common = common_stage(stages)["command"]["arguments"]
                     self.assertIn("common/contracts/test_installed_scientific_core.py", common)
                     self.assertIn("common/contracts/test_scientific_core_boundaries.py", common)
 
@@ -1467,7 +1503,7 @@ $results|ConvertTo-Json -Depth 8 -Compress
                     stages = {row["name"]: row for row in json.loads(
                         request.read_text(encoding="utf-8-sig"))["stages"] if row["selected"]}
                     self.assertIn("dual_pressure_rectilinear_ion_processor_static", stages)
-                    common = stages["common_contracts"]["command"]["arguments"]
+                    common = common_stage(stages)["command"]["arguments"]
                     self.assertIn("common/contracts/test_installed_scientific_core.py", common)
                     self.assertIn("common/contracts/test_scientific_core_boundaries.py", common)
 
@@ -1502,7 +1538,7 @@ $results|ConvertTo-Json -Depth 8 -Compress
                              "catch { $cases += @{index=" + str(index) + "; error=$_.ToString()} }")
             script = "$ErrorActionPreference='Stop'; $initialPython=[Environment]::GetEnvironmentVariable('SIMULATION_PYTHON_EXE','Process'); $cases=@(); " + '; '.join(calls) + "; ConvertTo-Json -InputObject @($cases) -Depth 5 -Compress"
             result = subprocess.run(['pwsh', '-NoProfile', '-Command', script], cwd=REPO_ROOT,
-                                    capture_output=True, text=True, encoding='utf-8', timeout=240)
+                                    capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=240)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             outcomes = json.loads(result.stdout)
             self.assertEqual([case['index'] for case in outcomes], list(range(len(paths))))
@@ -1566,7 +1602,7 @@ $results|ConvertTo-Json -Depth 8 -Compress
                         request.read_text(encoding="utf-8-sig"))["stages"] if row["selected"]}
                     parameters = stages["single_reflection_oa_tof_mass_analyzer_static"]["command"]["parameters"]
                     self.assertCountEqual(parameters["SelectedTestModules"], expected)
-                    common = stages["common_contracts"]["command"]["arguments"]
+                    common = common_stage(stages)["command"]["arguments"]
                     self.assertIn("common/contracts/test_installed_scientific_core.py", common)
                     self.assertIn("common/contracts/test_scientific_core_boundaries.py", common)
 
@@ -1594,7 +1630,7 @@ $results|ConvertTo-Json -Depth 20 -Compress
 """.replace('__PROBES__', powershell_literal(probes)).replace('__OUTPUT__', powershell_literal(root))
             script = script.replace('__GATE__', powershell_literal(REPO_ROOT / 'common/verify.ps1'))
             result = subprocess.run(['pwsh', '-NoProfile', '-Command', script], cwd=REPO_ROOT,
-                                    capture_output=True, text=True, encoding='utf-8', timeout=60)
+                                    capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             expected_rf = {path.relative_to(REPO_ROOT).with_suffix('').as_posix().replace('/', '.')
                            for path in (REPO_ROOT / RF / 'tests/analysis').rglob('test_*.py')}
@@ -1636,14 +1672,14 @@ $results|ConvertTo-Json -Depth 20 -Compress
                         "$selection | ConvertTo-Json -Depth 8"
                     )
                     result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=root,
-                                            capture_output=True, text=True, encoding="utf-8", timeout=30)
+                                            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                     selection = json.loads(result.stdout)
                     self.assertTrue(selection["Expanded"])
                     self.assertIn("owner/tests/new_area/test_remaining.py", selection["Modules"])
                     executed = subprocess.run([sys.executable, "-m", "unittest", *selection["Modules"]],
                                               cwd=root, capture_output=True, text=True,
-                                              encoding="utf-8", timeout=30)
+                                              encoding="utf-8", errors="replace", timeout=30)
                     self.assertNotEqual(executed.returncode, 0)
                     self.assertIn("UNKNOWN_OWNER_TEST_EXECUTED", executed.stderr)
                     self.assertIn("Ran 2 tests", executed.stderr)
@@ -1677,7 +1713,7 @@ ConvertTo-Json -InputObject $result -Depth 12 -Compress
         script = script.replace("__SUPPORT__", powershell_literal(REPO_ROOT / "common/gate_catalog_support.ps1"))
         script = script.replace("__CATALOG__", powershell_literal(REPO_ROOT / "common/gate_catalog.json"))
         outcome = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=REPO_ROOT,
-                                 capture_output=True, text=True, encoding="utf-8", timeout=30)
+                                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
         self.assertEqual(outcome.returncode, 0, outcome.stdout + outcome.stderr)
         cases = {case["name"]: case for case in json.loads(outcome.stdout)}
         expected = sorted([f"{RF}/tests/analysis/test_comsol_workflow_architecture_contract.py",
@@ -1716,7 +1752,7 @@ $result=@(foreach($name in $names){
 ConvertTo-Json -InputObject $result -Depth 12 -Compress
 """.replace("__SUPPORT__", powershell_literal(REPO_ROOT / "common/gate_catalog_support.ps1"))
         outcome = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=REPO_ROOT,
-                                 capture_output=True, text=True, encoding="utf-8", timeout=30)
+                                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
         self.assertEqual(outcome.returncode, 0, outcome.stdout + outcome.stderr)
         for case in json.loads(outcome.stdout):
             with self.subTest(name=case['name']):
@@ -1764,7 +1800,7 @@ $results=@(foreach($case in $cases){
 ConvertTo-Json -InputObject $results -Depth 12 -Compress
 """.replace("__SUPPORT__", powershell_literal(REPO_ROOT / "common/gate_catalog_support.ps1"))
         outcome = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=REPO_ROOT,
-                                 capture_output=True, text=True, encoding="utf-8", timeout=30)
+                                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
         self.assertEqual(outcome.returncode, 0, outcome.stdout + outcome.stderr)
         cases = {item["name"]: item for item in json.loads(outcome.stdout)}
         expected = sorted(f"{RF}/tests/analysis/{name}.py" for name in (
@@ -1847,7 +1883,7 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
             try:
                 deleted = subprocess.run(["pwsh", "-NoProfile", "-Command", selection_script +
                     "if($null-ne$selection){throw 'Deleted authority reused a stale leaf mapping'}"],
-                    cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=30)
+                    cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
                 self.assertEqual(deleted.returncode, 0, deleted.stdout + deleted.stderr)
             finally:
                 authority.write_bytes(original_authority)
@@ -1859,7 +1895,7 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
                 if red:
                     environment["NUMERICS_ROUTE_RED"] = "1"
                 outcome = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=root, env=environment,
-                                         capture_output=True, text=True, encoding="utf-8", timeout=30)
+                                         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
                 with self.subTest(red=red):
                     output = outcome.stdout + outcome.stderr
                     self.assertEqual(outcome.returncode != 0, red, output)
@@ -1950,7 +1986,7 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
             "if ($null -ne $selection) { throw 'support file matched unrelated path' }"
         )
         result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=REPO_ROOT,
-                                capture_output=True, text=True, encoding="utf-8", timeout=30)
+                                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_catalog_import_roots_preserve_and_restore_pythonpath(self) -> None:
@@ -2002,7 +2038,7 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
                                 "Write-Output 'PYTHONPATH_RESTORED'; exit 0"
                             )
                             result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=root,
-                                                    capture_output=True, text=True, encoding="utf-8", timeout=30,
+                                                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
                                                     env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
                             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                             self.assertIn("IMPORT_ROOTS_OBSERVED", result.stdout)
@@ -2029,7 +2065,7 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
                 " -PythonExe " + powershell_literal(sys.executable)
             )
             result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=root,
-                                    capture_output=True, text=True, encoding="utf-8", timeout=30,
+                                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
                                     env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("SELECTED_SOURCE_ORIGIN", result.stdout)
@@ -2047,7 +2083,7 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
                 powershell_literal(foreign / "src") + ") { throw 'PYTHONPATH was not restored' }"
             )
             ps_result = subprocess.run(["pwsh", "-NoProfile", "-Command", ps_script], cwd=root,
-                                       capture_output=True, text=True, encoding="utf-8", timeout=30,
+                                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
                                        env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
             self.assertEqual(ps_result.returncode, 0, ps_result.stdout + ps_result.stderr)
             self.assertIn("SELECTED_SOURCE_ORIGIN", ps_result.stdout)
@@ -2071,7 +2107,7 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
                         powershell_literal(foreign / "src") + ") { throw 'PYTHONPATH was not restored' }; Write-Output 'FAILURE_RESTORED'"
                     )
                     failed = subprocess.run(["pwsh", "-NoProfile", "-Command", failure_script], cwd=root,
-                                            capture_output=True, text=True, encoding="utf-8", timeout=30,
+                                            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
                                             env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
                     self.assertEqual(failed.returncode, 0, failed.stdout + failed.stderr)
                     self.assertIn("SELECTED_SOURCE_ORIGIN", failed.stdout)
@@ -2079,7 +2115,7 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
             isolated = subprocess.run(
                 [sys.executable, "-I", "-c", "import importlib.util; assert importlib.util.find_spec('gate_probe_package') is None"],
                 cwd=selected, env=dict(os.environ, PYTHONPATH=str(selected / "src")),
-                capture_output=True, text=True, encoding="utf-8", timeout=30,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
             )
             self.assertEqual(isolated.returncode, 0, isolated.stdout + isolated.stderr)
 
@@ -2101,7 +2137,7 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
                 "pwsh", "-NoProfile", "-File", str(REPO_ROOT / "common/verify.ps1"),
                 "-InternalStage", "common_contracts", "-InternalRequestPath", str(request),
                 "-InternalLogPath", str(log),
-            ], cwd=REPO_ROOT, env=environment, capture_output=True, text=True, encoding="utf-8", timeout=180)
+            ], cwd=REPO_ROOT, env=environment, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180)
             output = result.stdout + result.stderr + log.read_text(encoding="utf-8")
             self.assertEqual(result.returncode, 0, output)
             executed_modules = {
@@ -2206,7 +2242,7 @@ foreach($probe in (Get-Content (Join-Path $Root 'probes.json') -Raw|ConvertFrom-
 $reports|ConvertTo-Json -Depth 100|Set-Content -LiteralPath (Join-Path $Root 'plans.json') -Encoding utf8
 """, encoding="utf-8")
             outcome = subprocess.run(["pwsh", "-NoProfile", "-File", str(script), str(root), sys.executable],
-                                     cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=90)
+                                     cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=90)
             self.assertEqual(outcome.returncode, 0, outcome.stdout + outcome.stderr)
             plans = json.loads((root / "plans.json").read_text(encoding="utf-8-sig"))
             stage = "single_reflection_oa_tof_mass_analyzer_static"
@@ -2258,14 +2294,14 @@ $reports|ConvertTo-Json -Depth 100|Set-Content -LiteralPath (Join-Path $Root 'pl
         clone = subprocess.run(["git", "-c", "core.longpaths=true", "clone", "--quiet", "--shared",
                                 "-c", "core.longpaths=true", "-c", "core.autocrlf=false",
                                 str(REPO_ROOT), str(root)],
-                               cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=120)
+                               cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
         self.assertEqual(clone.returncode, 0, clone.stdout + clone.stderr)
         # Include the implementation under test before its eventual commit.
         changed = subprocess.run(["git", "diff", "--name-only", "--no-renames", "HEAD"],
-                                 cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30)
+                                 cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
         self.assertEqual(changed.returncode, 0, changed.stderr)
         untracked = subprocess.run(["git", "ls-files", "--others", "--exclude-standard"],
-                                   cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30)
+                                   cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
         self.assertEqual(untracked.returncode, 0, untracked.stderr)
         for relative in changed.stdout.splitlines() + untracked.stdout.splitlines():
             source, target = REPO_ROOT / relative, root / relative
@@ -2315,7 +2351,7 @@ $reports|ConvertTo-Json -Depth 100|Set-Content -LiteralPath (Join-Path $Root 'pl
                         "-InternalStage", "common_contracts", "-InternalRequestPath", str(request),
                         "-InternalLogPath", str(log),
                     ], cwd=root, env=environment, capture_output=True, text=True,
-                        encoding="utf-8", timeout=180)
+                        encoding="utf-8", errors="replace", timeout=180)
                     output = result.stdout + result.stderr + log.read_text(encoding="utf-8")
                     self.assertNotEqual(result.returncode, 0, output)
                     self.assertIn("NAMESPACE_TEST_EXECUTED", output)
@@ -2384,7 +2420,7 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
 ''', encoding="utf-8", newline="\n")
             dispatched = subprocess.run(["pwsh", "-NoProfile", "-File", str(driver), str(root),
                 sys.executable, str(probe_path), str(report_path)], cwd=root, env=environment,
-                capture_output=True, text=True, encoding="utf-8", timeout=180)
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180)
             self.assertEqual(dispatched.returncode, 0, dispatched.stdout + dispatched.stderr)
             results = json.loads(report_path.read_text(encoding="utf-8-sig"))
             self.assertEqual(len(results), len(probes))
@@ -2446,7 +2482,7 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
                         result = subprocess.run([
                             "pwsh", "-NoProfile", "-Command", command,
                         ], cwd=root, env=environment, capture_output=True, text=True,
-                            encoding="utf-8", timeout=300)
+                            encoding="utf-8", errors="replace", timeout=300)
                         output = result.stdout + result.stderr + log.read_text(encoding="utf-8")
                         self.assertEqual(result.returncode != 0, fails, output)
                         if fails:
@@ -2598,7 +2634,7 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
             "if(-not(Get-ChangedRouteReason -Route $r -Paths @('" + paths[3] + "'))){throw 'missing helper route'}"
         )
         result = subprocess.run(['pwsh','-NoProfile','-Command',script], cwd=REPO_ROOT,
-                                capture_output=True,text=True,encoding='utf-8',timeout=60)
+                                capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=60)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         oa = self.selections(REPO_ROOT, [dict(stage='instrument_assembly_integration',
             paths=['src/msplatform/backends/simion/oa_compiler.py'])])[0]
@@ -2618,7 +2654,7 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
             "if(-not(Get-ChangedRouteReason -Route $r -Paths @('" + paths[0] + "'))){throw 'missing MR shape route'}"
         )
         result = subprocess.run(['pwsh', '-NoProfile', '-Command', script], cwd=REPO_ROOT,
-                                capture_output=True, text=True, encoding='utf-8', timeout=60)
+                                capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_sampled_field_fixture_selects_its_installed_and_inert_consumers(self) -> None:
@@ -2714,7 +2750,7 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
             "{if(-not (Get-ChangedRouteReason -Route $r -Paths @($p))){throw $p}}"
         )
         result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=REPO_ROOT,
-                                capture_output=True, text=True, encoding="utf-8", timeout=60)
+                                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 if __name__ == "__main__":

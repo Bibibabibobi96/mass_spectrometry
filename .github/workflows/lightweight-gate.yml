@@ -187,6 +187,8 @@ jobs:
           $scopePath = Join-Path $env:RUNNER_TEMP 'changed_scope.json'
           $scope | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $scopePath -Encoding UTF8
           $python = if ($env:pythonLocation) { Join-Path $env:pythonLocation 'python.exe' } else { (Get-Command python -ErrorAction Stop | Select-Object -First 1).Path }
+          if ([string]::IsNullOrWhiteSpace($python)) { throw 'Selected Python path is empty.' }
+          Write-Output "SELECTED_PYTHON=$python"
           $planPath = Join-Path $env:RUNNER_TEMP 'software_gate_plan.json'
           $settings = @{
             MaxConcurrency = $(if ($env:PUBLIC_GATE_WORKERS -eq 'auto') { 0 } else { [int]$env:PUBLIC_GATE_WORKERS })
@@ -214,6 +216,8 @@ jobs:
         shell: pwsh
         run: &gate_command |
           $python = if ($env:pythonLocation) { Join-Path $env:pythonLocation 'python.exe' } else { (Get-Command python -ErrorAction Stop | Select-Object -First 1).Path }
+          if ([string]::IsNullOrWhiteSpace($python)) { throw 'Selected Python path is empty.' }
+          Write-Output "SELECTED_PYTHON=$python"
           $env:PUBLIC_GATE_POWERSHELL = (Get-Process -Id $PID).Path
           @'
           import ctypes, datetime, hashlib, json, os, platform, subprocess, sys, threading, time
@@ -478,6 +482,8 @@ jobs:
           PUBLIC_GATE_COMPARISON_BASE: ${{ inputs.comparison_base }}
         run: |
           $python = if ($env:pythonLocation) { Join-Path $env:pythonLocation 'python.exe' } else { (Get-Command python -ErrorAction Stop | Select-Object -First 1).Path }
+          if ([string]::IsNullOrWhiteSpace($python)) { throw 'Selected Python path is empty.' }
+          Write-Output "SELECTED_PYTHON=$python"
           if ($env:PUBLIC_GATE_OWNER -and $env:PUBLIC_GATE_COMPARISON_BASE) {
             throw 'owner and comparison_base are mutually exclusive; refusing a different scope.'
           }
