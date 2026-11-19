@@ -12,7 +12,7 @@ $projectId = 'parallel_mirror_dual_stripe_mr_tof'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
 $projectRoot = Join-Path $repoRoot "projects\$projectId"
-$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
+$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } elseif ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) } else { throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required' }
 $contractInput = if ($ContractPath) {
   (Resolve-Path -LiteralPath $ContractPath).Path
 } else {
@@ -72,10 +72,10 @@ function Assert-FrozenSourcesUnchanged {
 
 try {
   $sourceRelativePaths = @(
-    'common\host_resource_python.py',
-    'common\host_resource_python.ps1',
-    'common\host_execution_lease.ps1',
-    'common\host_resource_scheduler.py',
+    'src\msplatform\execution\host_resource_python.py',
+    'src\msplatform\execution\resources\host_resource_python.ps1',
+    'src\msplatform\execution\resources\host_execution_lease.ps1',
+    'src\msplatform\execution\host_resource_scheduler.py',
     'src\msplatform\execution\resources\host_resource_policy.json',
     'src\msplatform\io\file_identity.py',
     'projects\orthogonal_accelerator\analysis\accelerator_time_focus.py',

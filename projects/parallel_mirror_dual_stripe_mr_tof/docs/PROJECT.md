@@ -75,6 +75,9 @@ of checkout `.venv` or retired host/budget adapters. Their five affected modules
 passed 142 parents with 252 successes and four existing external-asset skips in
 376.132 seconds. Scientific geometry, native requests and recovery semantics are
 unchanged; no SolidWorks, COMSOL or SIMION native execution was performed.
+The mirror L0/L1, exact-K and fixed-grid correction runners follow the same
+execution context and freeze canonical host resources. Their four modules passed
+51 parents with 98 successful records in 15.323 seconds, without a native solve.
 Prepared-joint production responsibilities now have installed owners: native bunch serialization and event
 reading are in `msplatform.backends.simion.mr_bunch_source`; mixed IP assembly, joint L0 and event analysis
 are in `msplatform.workflows.prepared_joint`; source-control and plain-Lua process boundaries are in
