@@ -111,15 +111,19 @@ verification and Fly with three exit-zero operations and released leases. Its
 original birth realization is semantically identical to the retained N1: ID
 1000003, unchanged 6D, clock and weight. Native stdout reports one actual RF
 instance-2 splat at 5.20681410792426 us and complete terminal 6D, followed by
-`Fly completed. 1 splats`. Pre/post-action splat flags are both -1, while the
-physical surface identity remains unassigned; this is not an MR observation.
-The bath and vendor hashes match the retained inputs, but the reconstructed
-outer-vacuum serialization differs and is not claimed byte-identical. The replay
+`Fly completed. 1 splats`. Pre/post-action splat flags are both -1; this is not
+an MR observation. Inverting the canonical Assembly transform gives RF-local
+`(4.078205744683475, 0.5134360531686682, 6.624986855651798)` mm. The nearest
+segment-1 rod-1 axis is 1.9891982657495493 mm away, consistent with its 2 mm
+radius and axial span. This identifies a genuine first-segment rod-1 collision,
+not an unexplained loss or an MR arrival. The bath and vendor hashes match the
+retained inputs, but the reconstructed outer-vacuum serialization differs and
+is not claimed byte-identical. The replay
 `20261120_034300__sim__simion__track-da2214cf8943` reused one complete unit with
 zero native and Refine calls. Parent manifest, summary, collection and both
 source records retained their exact hashes. These are current N1 mechanism and
-recovery results, not MR traversal, surface diagnosis, N100 or scientific
-qualification, and they do not replace final-SHA native acceptance.
+recovery results, not MR traversal, N100 or scientific qualification, and they
+do not replace final-SHA native acceptance.
 
 The original-source native attempts retain their individual failures: missing
 empty-surface evidence (`track-27a67896934c`), PA memory exhaustion
