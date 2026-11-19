@@ -10,16 +10,15 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/require_powershell7.ps1')
-. (Join-Path $repoRoot 'common/host_execution_lease.ps1')
-$lease = Enter-HostExecutionLease -Role GATE
+$executionResources = Join-Path $repoRoot 'src/msplatform/execution/resources'
+. (Join-Path $executionResources 'require_powershell7.ps1')
 try {
     if (($PreflightOnly -and $SelectedTestModules.Count) -or
         (($PreflightOnly -or $SelectedTestModules.Count) -and $ChangedTestModules.Count) -or
         ($PreflightValidated -and -not $SelectedTestModules.Count)) {
         throw 'Integration preflight and selected test modules are mutually exclusive with changed-test selection.'
     }
-    if (-not $PythonExe) { $PythonExe = Join-Path $repoRoot '.venv/Scripts/python.exe' }
+    if (-not $PythonExe) { $PythonExe = if ($env:SIMULATION_PYTHON_EXE) { $env:SIMULATION_PYTHON_EXE } else { throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required' } }
     if (-not (Test-Path -LiteralPath $PythonExe -PathType Leaf)) {
         throw "Python 3.11 executable not found: $PythonExe"
     }
@@ -27,6 +26,10 @@ try {
     if ($LASTEXITCODE -ne 0 -or $version -ne '3.11') {
         throw "Integration gate requires Python 3.11, found $version at $PythonExe"
     }
+    $hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path (Split-Path -Parent $repoRoot) 'artifacts/common/host_resources.sqlite3' }
+    $hostContext = @{workspace=(Split-Path -Parent $repoRoot);python_executable=$PythonExe;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
+    . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
+    $lease = Enter-HostExecutionLease -Role GATE
     Push-Location $repoRoot
     try {
         if (-not $PreflightValidated) {

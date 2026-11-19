@@ -65,6 +65,10 @@ The remaining P4 study/provider callers and their frozen tests use the canonical
 and dispatch owners. The affected RF/MR software modules ran 134 tests successfully with three skips;
 the original IP/prism-distance module separately passed all 30 tests. These checks do not rerun native
 fields, Fly or historical assets, and do not establish a complete MR/Repository acceptance result.
+The project verifier now selects an explicit Python and initializes the installed
+execution HostContext instead of the retired common host adapter. Its actual
+preflight passed with confirmed lease release; the selected drift-phase partition
+passed four tests with six records. This is gate wiring, not native acceptance.
 Prepared-joint production responsibilities now have installed owners: native bunch serialization and event
 reading are in `msplatform.backends.simion.mr_bunch_source`; mixed IP assembly, joint L0 and event analysis
 are in `msplatform.workflows.prepared_joint`; source-control and plain-Lua process boundaries are in

@@ -543,6 +543,9 @@ migration, not a new runner, native result or scientific qualification. OA–MR 
 uses the same installed HostContext/process and short-PA resources with explicit
 Python; its complete-component and LocalScope contracts are unchanged. The OA–MR
 and native-path modules passed 56 parents with 125 records in 98.580 seconds.
+The integration verifier likewise selects explicit Python and the installed
+HostContext; its real preflight and selected dependency partition passed with
+confirmed lease release, including 19 parents and 76 records in 210.782 seconds.
 
 The installation harness now prepares a separate inert RF-IP field fixture for
 each ordinary-install arm. Both children call the installed consumer and real

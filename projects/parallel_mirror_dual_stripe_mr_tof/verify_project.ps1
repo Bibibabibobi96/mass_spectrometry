@@ -15,8 +15,6 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 . (Join-Path $repoRoot 'src\msplatform\execution\resources\require_powershell7.ps1')
-. (Join-Path $repoRoot 'common\host_execution_lease.ps1')
-$lease = Enter-HostExecutionLease -Role GATE
 $savedPythonPath = $env:PYTHONPATH
 $savedNoBytecode = $env:PYTHONDONTWRITEBYTECODE
 $savedSimionExe = $env:SIMION_EXE
@@ -29,8 +27,10 @@ try {
   }
   $python = if ($PythonExe) {
     (Resolve-Path -LiteralPath $PythonExe -ErrorAction Stop).Path
+  } elseif ($env:SIMULATION_PYTHON_EXE) {
+    [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)
   } else {
-    Join-Path $repoRoot '.venv\Scripts\python.exe'
+    throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'
   }
   if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
     throw "Python 3.11 runtime missing: $python"
@@ -38,6 +38,11 @@ try {
   $env:PYTHONPATH = @((Join-Path $repoRoot 'src'), $repoRoot) -join [IO.Path]::PathSeparator
   $env:PYTHONDONTWRITEBYTECODE = '1'
   Remove-Item Env:SIMION_EXE -ErrorAction SilentlyContinue
+  $executionResources = Join-Path $repoRoot 'src/msplatform/execution/resources'
+  $hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path (Split-Path -Parent $repoRoot) 'artifacts/common/host_resources.sqlite3' }
+  $hostContext = @{workspace=(Split-Path -Parent $repoRoot);python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
+  . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
+  $lease = Enter-HostExecutionLease -Role GATE
 
   Push-Location $repoRoot
   try {

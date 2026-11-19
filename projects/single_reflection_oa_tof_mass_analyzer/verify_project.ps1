@@ -29,8 +29,6 @@ if ($testModules.Count -ne $SelectedTestModules.Count -or @($testModules | Where
 }).Count) { throw 'SFI test partition contains duplicate, foreign or missing modules.' }
 $savedPythonPath = $env:PYTHONPATH
 $hostExecutionLease = $null
-$hostExecutionLeaseSupport = Join-Path $repoRoot 'common\host_execution_lease.ps1'
-. $hostExecutionLeaseSupport
 $hostRole = if ($Level -eq 'Formal' -or ($Level -eq 'Candidate' -and $CandidateTarget -eq 'COMSOL')) {
   'COMSOL'
 } elseif ($Level -eq 'Candidate' -and $CandidateTarget -eq 'SIMION') {
@@ -39,12 +37,16 @@ $hostRole = if ($Level -eq 'Formal' -or ($Level -eq 'Candidate' -and $CandidateT
   'GATE'
 }
 $hostStage = 'prepare'
-$hostExecutionLease = Enter-HostExecutionLease -Role $hostRole -Stage $hostStage
 try {
-$env:PYTHONPATH = (@($repoRoot,(Join-Path $projectRoot 'tests'),(Join-Path $projectRoot 'tests/analysis'),(Join-Path $projectRoot 'tests/simion'),$savedPythonPath) | Where-Object { $_ }) -join [IO.Path]::PathSeparator
+$env:PYTHONPATH = (@((Join-Path $repoRoot 'src'),$repoRoot,(Join-Path $projectRoot 'tests'),(Join-Path $projectRoot 'tests/analysis'),(Join-Path $projectRoot 'tests/simion'),$savedPythonPath) | Where-Object { $_ }) -join [IO.Path]::PathSeparator
 $workspaceRoot = Split-Path -Parent $repoRoot
-$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
+$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } elseif ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) } else { throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required' }
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 runtime missing: $python" }
+$executionResources = Join-Path $repoRoot 'src/msplatform/execution/resources'
+$hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path $workspaceRoot 'artifacts/common/host_resources.sqlite3' }
+$hostContext = @{workspace=$workspaceRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
+. (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
+$hostExecutionLease = Enter-HostExecutionLease -Role $hostRole -Stage $hostStage
 $gateTimer = [Diagnostics.Stopwatch]::StartNew()
 if (-not $PreflightValidated) {
 . (Join-Path $projectRoot 'oatof_lifecycle_preflight.ps1')

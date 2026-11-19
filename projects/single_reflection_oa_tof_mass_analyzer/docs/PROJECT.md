@@ -52,6 +52,12 @@ the outer 1800-second process budget expired, including about nine minutes of I/
 admission waiting. It remains interrupted and unverified, not a scientific failure
 or native pass; field-idealization and modular-candidate native smokes were not run.
 
+The project verifier now selects the current checkout `src` and explicit Python,
+then initializes the installed execution HostContext instead of the retired common
+host adapter. Its actual static preflight passed with confirmed lease release;
+the selected installed-geometry partition passed three tests. This closes the
+external-interpreter source-selection failure, not the pending native smokes.
+
 ## Generic vector-field comparison owner
 
 `msplatform.analysis.vector_field_samples` now owns static-sample validation,
