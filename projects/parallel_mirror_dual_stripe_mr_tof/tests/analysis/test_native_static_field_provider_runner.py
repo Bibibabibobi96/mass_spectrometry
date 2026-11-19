@@ -19,6 +19,15 @@ LUA = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get
 
 @unittest.skipUnless(Path(PWSH).is_file(), 'PowerShell Core required for AST fixtures')
 class NativeProviderRunnerTest(unittest.TestCase):
+    def test_runner_uses_explicit_execution_resources_without_checkout_python(self):
+        source = RUNNER.read_text(encoding='utf-8-sig')
+        self.assertIn("host_execution_lease.ps1') -HostContext $hostContext", source)
+        self.assertIn("resource_process_support.ps1", source)
+        self.assertIn("executor=(Join-Path $executionResources 'resource_process_support.ps1')", source)
+        self.assertNotIn("common/host_execution_lease.ps1", source)
+        self.assertNotIn("common/resource_budget_support.ps1", source)
+        self.assertNotIn(".venv/Scripts/python.exe", source)
+
     @unittest.skipUnless(LUA.is_file(), 'Installed standalone Lua required')
     def test_iob_ordinary_collision_is_only_allowed_for_static_field(self):
         source = (SIMION_ROOT.parents[2] / 'src/msplatform/backends/simion/resources/build_native_corridor_iob.lua').read_text(encoding='utf-8-sig')

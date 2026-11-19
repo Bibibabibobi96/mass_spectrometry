@@ -8,7 +8,13 @@ existing PowerShell execution owner. The project launcher and downstream workpoi
 caller consume that installed implementation; the former analysis copies are
 retired. Scientific geometry, voltage authorities, level reuse and no-Fly scope are
 unchanged. This ownership migration does not launch SIMION or grant a new field,
-trajectory or scientific qualification.
+trajectory or scientific qualification. Its PowerShell execution owner now loads
+host admission, budgeted processes and lifecycle support directly from the installed
+execution resources and requires an explicit Python selection instead of defaulting
+to the checkout `.venv`. Existing host-state overrides, native input guards,
+failure closure and frozen scientific inputs remain unchanged. The 14 runner
+methods passed with 24 successful records; this software check did not launch
+SIMION or complete ordinary-install field production.
 
 ## Installed resolved-CAD owner
 
