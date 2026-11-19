@@ -70,6 +70,42 @@ class ContinuousConsumerTests(unittest.TestCase):
             self.assertEqual(track.call_args.args[0], 'explicit')
             self.assertIs(track.call_args.args[1], self.birth)
 
+    def test_expected_component_scope_uses_published_model_and_rejects_rf_ip_for_full_joint(self):
+        source = Mock()
+        source.data_path.return_value.read_text.return_value = '{}'
+        projects = {
+            'rf': 'rf_multipole_ion_optics',
+            'ip': 'dual_pressure_rectilinear_ion_processor',
+        }
+        document = {'geometry': {'frontend_geometry': {'composition_plan': {
+            'scope': {'instance_ids': list(projects)},
+            'components': {key: {'project_id': value} for key, value in projects.items()}}}},
+            'components_resolved': {key: {} for key in projects}}
+        for expected, accepted in [('rf_ip', True), ('rf_ip_mr', False)]:
+            with self.subTest(expected=expected), \
+                 patch('msplatform.results.artifacts.open_artifact', return_value=source), \
+                 patch('msplatform.backends.simion.model.require_prepared_model', return_value=document), \
+                 patch.object(continuous.operations, 'track', return_value='trajectory') as track:
+                if accepted:
+                    self.assertEqual(continuous.track_existing_fields(
+                        fields={'manifest': 'fields'}, expected_component_scope=expected,
+                        **self.common), 'trajectory')
+                    self.assertIs(track.call_args.args[0], source)
+                else:
+                    with self.assertRaisesRegex(ValueError, 'exact rf_ip_mr component scope'):
+                        continuous.track_existing_fields(fields={'manifest': 'fields'},
+                            expected_component_scope=expected, **self.common)
+                    track.assert_not_called()
+        document['geometry']['frontend_geometry']['composition_plan']['components']['mr'] = {
+            'project_id': 'parallel_mirror_dual_stripe_mr_tof'}
+        document['geometry']['frontend_geometry']['composition_plan']['scope']['instance_ids'].append('mr')
+        document['components_resolved']['mr'] = {}
+        with patch('msplatform.results.artifacts.open_artifact', return_value=source), \
+             patch('msplatform.backends.simion.model.require_prepared_model', return_value=document), \
+             patch.object(continuous.operations, 'track', return_value='trajectory'):
+            self.assertEqual(continuous.track_existing_fields(fields={'manifest': 'fields'},
+                expected_component_scope='rf_ip_mr', **self.common), 'trajectory')
+
     def test_sampled_field_arguments_forwarded_to_public_owner(self):
         basis={'explicit':'sampled'}; collision={'explicit':'collision-producer'}
         with patch.object(continuous.operations, 'compile_geometry', return_value='compiled'), \
@@ -195,6 +231,7 @@ class ContinuousInputTests(unittest.TestCase):
         self.assertEqual(track.call_args.kwargs['recovery_reference'], {'manifest': 'prior'})
         self.assertEqual(track.call_args.kwargs['dispatch_profiles'], [{'name': 'selected'}])
         self.assertEqual(track.call_args.kwargs['unit_size'], 5)
+        self.assertEqual(track.call_args.kwargs['expected_component_scope'], 'rf_ip')
         self.assertEqual(track.call_args.kwargs['hs1_request']['vendor_record']['path'], str(self.vendor.resolve()))
 
     def test_powershell_entry_reaches_continuous_owner_with_real_python(self):

@@ -81,10 +81,10 @@ $script:calls=[Collections.Generic.List[string]]::new()
 function Invoke-JointOwnerStage {param($Script,$Arguments)
  $script:calls.Add($Script)
  if($Script-ne(Join-Path $repoRoot 'integrations/workflows/multipole_ip/continuous.ps1')){throw 'wrong continuous owner'}
- foreach($key in @('ReleaseRequest','FieldsReference','Propagation','Observations','Numerics','Hs1Request','Environment','Workspace','Profile','RecoveryReference','DispatchProfiles','UnitSize','Python','RepoRoot')){
+ foreach($key in @('ReleaseRequest','FieldsReference','Propagation','Observations','Numerics','Hs1Request','Environment','Workspace','Profile','RecoveryReference','DispatchProfiles','UnitSize','Python','RepoRoot','ExpectedComponentScope')){
   if(-not$Arguments.ContainsKey($key)){throw "missing continuous input $key"}
  }
- if($Arguments.Python-ne$SelectedPython-or$Arguments.UnitSize-ne2-or$Arguments.RepoRoot-ne$repoRoot){throw 'continuous execution context changed'}
+ if($Arguments.Python-ne$SelectedPython-or$Arguments.UnitSize-ne2-or$Arguments.RepoRoot-ne$repoRoot-or$Arguments.ExpectedComponentScope-ne'rf_ip_mr'){throw 'continuous execution context or component scope changed'}
 }
 Invoke-JointWorkflow
 if($script:calls.Count-ne1){throw 'continuous owner did not run exactly once'}
@@ -178,9 +178,11 @@ if(-not$caught){throw 'segmented and continuous inputs were accepted together'}
             owner_source = repo / "src/msplatform/workflows/multipole_ip/continuous.py"
             source = owner_source.read_text(encoding="utf-8")
             marker = "from msplatform.ion_release.authoring import ReleaseRealization\n"
-            injection = marker + f'''\nfrom types import SimpleNamespace as _InertNamespace\n\ndef _inert_native_track(fields, particles, **kwargs):\n    import json, sys\n    Path(r"{capture}").write_text(json.dumps({{\n        "executable": sys.executable, "fields": fields, "particles": particles.to_dict(),\n        "propagation": kwargs["propagation"], "observations": kwargs["observations"],\n        "numerics": kwargs["numerics"], "vendor": kwargs["hs1_request"]["vendor_record"]["path"],\n        "workspace": str(kwargs["context"].workspace), "environment": kwargs["context"].environment,\n        "recovery": kwargs["recovery_reference"], "dispatch": kwargs["dispatch_profiles"]}}), encoding="utf-8")\n    return _InertNamespace(reference={{"path": r"{artifact}"}})\n\noperations.track = _inert_native_track\n'''
+            injection = marker + f'''\nfrom types import SimpleNamespace as _InertNamespace\n\ndef _inert_native_track(fields, particles, **kwargs):\n    import json, sys\n    Path(r"{capture}").write_text(json.dumps({{\n        "executable": sys.executable, "fields": fields, "particles": particles.to_dict(),\n        "propagation": kwargs["propagation"], "observations": kwargs["observations"],\n        "numerics": kwargs["numerics"], "vendor": kwargs["hs1_request"]["vendor_record"]["path"],\n        "workspace": str(kwargs["context"].workspace), "environment": kwargs["context"].environment,\n        "recovery": kwargs["recovery_reference"], "dispatch": kwargs["dispatch_profiles"]}}), encoding="utf-8")\n    return _InertNamespace(reference={{"path": r"{artifact}"}})\n\noperations.track = _inert_native_track\n\ndef _inert_component_scope(fields, expected):\n    if expected != "rf_ip_mr":\n        raise ValueError("FullJoint component scope was not forwarded")\n    return fields\n'''
             self.assertIn(marker, source)
-            owner_source.write_text(source.replace(marker, injection, 1), encoding="utf-8", newline="\n")
+            instrumented = source.replace(marker, injection, 1).replace(
+                '\ndef track_existing_fields(', '\n_admit_component_scope = _inert_component_scope\n\ndef track_existing_fields(', 1)
+            owner_source.write_text(instrumented, encoding="utf-8", newline="\n")
 
             entry = repo / "integrations/workflows/accelerator_interface/execute.ps1"
             entry.parent.mkdir(parents=True, exist_ok=True)
@@ -420,6 +422,7 @@ function Invoke-JointOwnerStage {param($Script,$Arguments)
   if($Arguments.ContainsKey('InjectedSource')){
     $script:calls.Add('ip')
     if($Arguments.InjectedSource-ne(Join-Path $workspaceRoot 'artifacts/projects/instrument_assembly/runs/mp/results/multipole_ip/ip_injected_source.json')){throw 'source package differs'}
+    if($Arguments.RepositoryRoot-ne$repoRoot){throw 'IP execution repository root was not forwarded'}
     if($Scenario-in@('resume','resume-failure')){
       if($Arguments.ContinuationPredecessorManifestPath-ne(Join-Path $Root 'parent/run_manifest.json')){throw 'IP parent not forwarded'}
       if($Scenario-eq'resume-failure'){throw 'IP_RECOVERY_SENTINEL'}

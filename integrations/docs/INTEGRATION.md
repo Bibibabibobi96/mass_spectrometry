@@ -485,13 +485,19 @@ consumer and this CLI admission without a native claim. The segmented producer
 is not retired by this software-only adapter. The named FullJoint continuous
 branch accepts the same original-birth, complete RF–IP–MR field and execution
 inputs with the `Continuous` prefix, and delegates to this consumer rather than
-adding another runner. Both PowerShell layers resolve caller-relative inputs,
+adding another runner. The direct entry declares `rf_ip`; top-level FullJoint
+requires the exact `rf_ip_mr` project set from the published FieldBundle's compiled
+model before calling the public tracker. An RF–IP-only bundle is therefore refused
+by FullJoint before solver launch but remains valid for direct RF–IP tracking. The
+retained segmented branch also forwards its resolved repository root to the public
+IP functional owner. Both PowerShell layers resolve caller-relative inputs,
 workspace, optional recovery/dispatch and explicit Python before entering the
 repository context. The real top-level external-cwd regression distinguishes
 same-named caller/checkout inputs, checks missing-input refusal and recovery
-forwarding, and returns the inert tracker's artifact reference. These and the
-segmented-input rejection tests are software evidence only; native continuous
-acceptance and segmented retirement remain open.
+forwarding, and returns the inert tracker's artifact reference. The two affected
+modules passed 35 parents and 99 records in 98.583 seconds, including exact-scope
+positive/refusal cases. These and the segmented-input rejection tests are software
+evidence only; native continuous acceptance and segmented retirement remain open.
 
 The installation harness now prepares a separate inert RF-IP field fixture for
 each ordinary-install arm. Both children call the installed consumer and real

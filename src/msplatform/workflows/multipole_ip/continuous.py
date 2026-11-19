@@ -11,6 +11,29 @@ from msplatform.contracts.machine_contracts import validate_schema
 from msplatform.ion_release.authoring import ReleaseRealization
 
 HS1_SCHEMA = Path(__file__).with_name("continuous_hs1.schema.json")
+COMPONENT_SCOPES = {
+    "rf_ip": {"rf_multipole_ion_optics", "dual_pressure_rectilinear_ion_processor"},
+    "rf_ip_mr": {"rf_multipole_ion_optics", "dual_pressure_rectilinear_ion_processor",
+                 "parallel_mirror_dual_stripe_mr_tof"},
+}
+
+
+def _admit_component_scope(fields: Any, expected_scope: str) -> Any:
+    from msplatform.backends.simion.artifacts import CompiledPreparedModel
+    from msplatform.backends.simion.model import require_prepared_model
+    from msplatform.results import artifacts as artifact_reader
+    from msplatform.results.artifacts import OpenedArtifact
+
+    source = fields if isinstance(fields, OpenedArtifact) else artifact_reader.open_artifact(
+        fields, expected_kind="field_bundle")
+    model = CompiledPreparedModel(source.data_path("compiled_model").read_text(encoding="utf-8-sig"))
+    document = require_prepared_model(model)
+    plan = document["geometry"]["frontend_geometry"]["composition_plan"]
+    selected = plan["scope"]["instance_ids"]
+    projects = {plan["components"][instance]["project_id"] for instance in selected}
+    if set(selected) != set(document["components_resolved"]) or projects != COMPONENT_SCOPES[expected_scope]:
+        raise ValueError(f"continuous tracking requires the exact {expected_scope} component scope")
+    return source
 
 
 def _birth(particles: Any, hs1_request: Mapping[str, Any], propagation: Mapping[str, Any]) -> None:
@@ -34,9 +57,12 @@ def track_existing_fields(*, fields: Any, particles: Any, propagation: Mapping[s
                           observations: Mapping[str, Any], tracking_numerics: Mapping[str, Any],
                           hs1_request: Mapping[str, Any], context: Any, birth_source_authority: Mapping[str, Any] | None = None,
                           unit_size: int | None = None, recovery_reference: Mapping[str, Any] | None = None,
-                          dispatch_profiles: tuple[Mapping[str, Any], ...] = ()) -> Any:
+                          dispatch_profiles: tuple[Mapping[str, Any], ...] = (),
+                          expected_component_scope: str | None = None) -> Any:
     """Track original births in an explicitly selected complete joint field."""
     _birth(particles, hs1_request, propagation)
+    if expected_component_scope is not None:
+        fields = _admit_component_scope(fields, expected_component_scope)
     return operations.track(fields, particles, propagation=propagation, observations=observations,
                             numerics=tracking_numerics, hs1_request=hs1_request, context=context,
                             birth_source_authority=birth_source_authority, unit_size=unit_size,
@@ -126,6 +152,7 @@ def main() -> None:
     parser.add_argument("--recovery-reference", type=Path)
     parser.add_argument("--dispatch-profiles", type=Path)
     parser.add_argument("--unit-size", type=int)
+    parser.add_argument("--expected-component-scope", choices=tuple(COMPONENT_SCOPES), default="rf_ip")
     args = parser.parse_args()
 
     def document(path: Path) -> Any:
@@ -138,7 +165,7 @@ def main() -> None:
         context=load_environment(args.environment, workspace=args.workspace, profile=args.profile),
         recovery_reference=document(args.recovery_reference) if args.recovery_reference else None,
         dispatch_profiles=document(args.dispatch_profiles) if args.dispatch_profiles else (),
-        unit_size=args.unit_size)
+        unit_size=args.unit_size, expected_component_scope=args.expected_component_scope)
     print("OWNER_RETURNED=" + json.dumps(result.reference, ensure_ascii=False), flush=True)
 
 

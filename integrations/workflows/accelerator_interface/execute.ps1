@@ -241,7 +241,8 @@ function Invoke-JointWorkflow {
     }
     $continuous=@{ReleaseRequest=$ContinuousReleaseRequest;FieldsReference=$ContinuousFieldsReference;Propagation=$ContinuousPropagation;
       Observations=$ContinuousObservations;Numerics=$ContinuousNumerics;Hs1Request=$ContinuousHs1Request;
-      Environment=$ContinuousEnvironment;Workspace=$ContinuousWorkspace;Profile=$ContinuousProfile;RepoRoot=$repoRoot}
+      Environment=$ContinuousEnvironment;Workspace=$ContinuousWorkspace;Profile=$ContinuousProfile;RepoRoot=$repoRoot;
+      ExpectedComponentScope='rf_ip_mr'}
     if($ContinuousRecoveryReference){$continuous.RecoveryReference=$ContinuousRecoveryReference}
     if($ContinuousDispatchProfiles){$continuous.DispatchProfiles=$ContinuousDispatchProfiles}
     if($ContinuousUnitSize -gt 0){$continuous.UnitSize=$ContinuousUnitSize}
@@ -350,7 +351,7 @@ if context.python_executable.resolve()!=pathlib.Path(sys.executable).resolve():
       }
       $stage='ion_processor_flight'
       $IonProcessorRunPath=Join-Path $artifactRoot "projects/dual_pressure_rectilinear_ion_processor/runs/$IonProcessorRunId"
-      $ipArguments=@{RunId=$IonProcessorRunId;InjectedSource=(Join-Path $sourceRun 'results/multipole_ip/ip_injected_source.json');ConfigurationDirectory=$ipConfiguration}
+      $ipArguments=@{RunId=$IonProcessorRunId;RepositoryRoot=$repoRoot;InjectedSource=(Join-Path $sourceRun 'results/multipole_ip/ip_injected_source.json');ConfigurationDirectory=$ipConfiguration}
       if($SimionExe){$ipArguments.SimionExe=$SimionExe}
       if($IonProcessorFieldRunPath){$ipArguments.NativeFieldRun=(Resolve-Path -LiteralPath $IonProcessorFieldRunPath).Path}
       if($IonProcessorContinuationPredecessorManifestPath){$ipArguments.ContinuationPredecessorManifestPath=(Resolve-Path -LiteralPath $IonProcessorContinuationPredecessorManifestPath).Path}
