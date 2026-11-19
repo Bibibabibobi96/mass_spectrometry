@@ -33,7 +33,7 @@ from msplatform.backends.simion.collision_hs1 import adapt_hs1_for_repeat_fly
 from msplatform.contracts.particle_count_policy import POLICY_PATH
 from msplatform.execution.inputs import enumerate_python_sources, python_import_roots
 from msplatform.ion_release.release import generate_release_states
-from projects.dual_pressure_rectilinear_ion_processor.analysis import functional
+from msplatform.workflows.ion_processor import functional
 from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
 
 
@@ -448,7 +448,7 @@ print('IP_ZERO_HS1_SOFTWARE_WITNESS=PASS')
                          repo / "src/msplatform/backends/simion/resources/collision_hs1_gas.lua",
                          repo / "src/msplatform/execution/resources/native_run_path.lua",
                          repo / "src/msplatform/backends/simion/resources/1_instance_seed.iob",
-                         repo / "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0",
+                         repo / "src/msplatform/backends/simion/resources/iob_seed_placeholder_01.pa0",
                          vendor / "examples/collision_hs1/collision_hs1.lua"]
         for path in fixture_paths:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -550,7 +550,7 @@ print('IP_ZERO_HS1_SOFTWARE_WITNESS=PASS')
                                 else f"common.analysis.{name}", None)
             functional.prepare(self.run, PROJECT, vendor)
         code = self.run / 'inputs/code'
-        frozen = code / 'projects/dual_pressure_rectilinear_ion_processor/analysis/functional.py'
+        frozen = code / 'src/msplatform/workflows/ion_processor/functional.py'
         self.assertEqual(frozen.read_bytes(), Path(functional.__file__).read_bytes())
         self.assertTrue((code / 'src/msplatform/backends/simion/collision_hs1.py').is_file())
         self.assertFalse((code / 'projects/dual_pressure_rectilinear_ion_processor/tests/test_functional.py').exists())
@@ -791,7 +791,7 @@ print(json.dumps(dict(alpha=rows[0].interpolation_alpha, lower=rows[0].lower_anc
         freeze_file(PROJECT/"config/runtime_profiles.json",detached/"inputs/runtime_profiles.json")
         code = """from pathlib import Path
 import sys
-from projects.dual_pressure_rectilinear_ion_processor.analysis import functional
+from msplatform.workflows.ion_processor import functional
 from msplatform.backends.simion import workbench_seed
 closure,run,vendor=map(Path,sys.argv[1:4])
 Path(functional.__file__).resolve().relative_to(closure.resolve())
@@ -804,7 +804,7 @@ assert (run/'simion/iob_seed/iob_seed_placeholder_01.pa0').is_file()
 assert not (run/'simion/processor.iob').exists()
 # Existing inert template fixture tests metadata/copy wiring only, never vendor IOB validity.
 from msplatform.backends.simion.particle_batching import plan_single_wave_batches
-from projects.dual_pressure_rectilinear_ion_processor.analysis import batching
+from msplatform.backends.simion import ip_batching as batching
 import shutil
 shutil.copyfile(run/'simion/runtime.lua',run/'simion/processor.lua')
 plan=plan_single_wave_batches(100,2)
@@ -854,7 +854,7 @@ print('FROZEN_ACTUAL_PREPARE=PASS NATIVE=0 TASKS=2 IOB=INERT_TEST_FIXTURE')
         closure = self.run / "inputs/code"
         frozen = closure / "src/msplatform/results/ip_continuation.py"
         live = PROJECT.parents[1] / "src/msplatform/results/ip_continuation.py"
-        support = PROJECT.parents[1] / "common/contracts/run_artifact_support.ps1"
+        support = PROJECT.parents[1] / "src/msplatform/execution/resources/run_artifact_support.ps1"
         self.assertTrue(frozen.is_file())
         self.assertTrue(live.is_file())
         self.assertTrue(support.is_file())
@@ -863,7 +863,7 @@ print('FROZEN_ACTUAL_PREPARE=PASS NATIVE=0 TASKS=2 IOB=INERT_TEST_FIXTURE')
         driver.write_text(r'''param($Support, $Closure, $Python, $Run)
 . $Support
 Invoke-RunToolRootContext -RepoRoot $Closure -Operation {
-    & $Python -B -s -v -m projects.dual_pressure_rectilinear_ion_processor.analysis.functional analyze --run $Run
+    & $Python -B -s -v -m msplatform.workflows.ion_processor.functional analyze --run $Run
     if ($LASTEXITCODE -ne 0) { throw "Prepared Python boundary failed: $LASTEXITCODE" }
 }
 ''', encoding="utf-8")
@@ -871,7 +871,7 @@ Invoke-RunToolRootContext -RepoRoot $Closure -Operation {
             return subprocess.run([pwsh, "-NoProfile", "-File", str(driver), str(support),
                                    str(closure), sys.executable, str(selected_run or self.run)],
                                   cwd=self.run, capture_output=True, text=True,
-                                  encoding="utf-8", timeout=60)
+                                  encoding="utf-8", errors="replace", timeout=60)
         # No events are fabricated: the unchanged prepared model must reach the
         # selected data directory and fail at its absent events.csv boundary.
         events = self.run / "simion/events.csv"
@@ -943,9 +943,9 @@ Invoke-RunToolRootContext -RepoRoot $Closure -Operation {
                 "assert Path(p.__file__).resolve().is_relative_to(Path('inputs/code/src').resolve()); "
                 "frozen = freeze_file(p.POLICY_PATH, Path('isolated_policy.json')); "
                 "assert frozen['source_path'] == str(p.POLICY_PATH.resolve()); "
-                "from common.simion import resource_profile; from msplatform.backends.simion import particle_batching; from msplatform.execution import simion_dispatch as resource_scheduler;assert Path(particle_batching.__file__).resolve().is_relative_to(Path('inputs/code/src').resolve());"
+                "from msplatform.backends.simion import resource_profile; from msplatform.backends.simion import particle_batching; from msplatform.execution import simion_dispatch as resource_scheduler;assert Path(particle_batching.__file__).resolve().is_relative_to(Path('inputs/code/src').resolve());"
                 "assert resource_profile.PROFILE_ROLE == 'simion_resource_profile'; "
-                "from projects.dual_pressure_rectilinear_ion_processor.analysis import batching; "
+                "from msplatform.backends.simion import ip_batching as batching; "
                 "completion = batching.require_one_fly_completion(['status,Fly completed. 10 splats, 2.19 seconds']); "
                 "assert completion.splats == 10 and completion.elapsed_seconds == 2.19; "
                 "print('FROZEN_POLICY_PASS')")
@@ -1197,7 +1197,7 @@ class NativeFieldReferenceTests(unittest.TestCase):
 
     def test_source_projection_and_child_publication_reference_owner_without_payload_rereads(self) -> None:
         from msplatform.io import manifest_records
-        from projects.dual_pressure_rectilinear_ion_processor.analysis import batching
+        from msplatform.backends.simion import ip_batching as batching
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             parent, child, model, family = self.make_family_fixture(root)

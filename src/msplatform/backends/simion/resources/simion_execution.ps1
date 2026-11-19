@@ -666,7 +666,7 @@ function Invoke-RfSimionAdaptiveBatchWave {
         $profile = Join-Path (Split-Path -Parent $arguments.UsagePath) 'simion_resource_profile.json'
         Push-Location $arguments.RepositoryRoot
         try {
-            & $arguments.PythonExe -m common.simion.resource_profile publish --run-id $RunConfig.run_id `
+            & $arguments.PythonExe -m msplatform.execution.resource_profile publish --run-id $RunConfig.run_id `
                 --resource-usage $arguments.UsagePath --dispatch-plan $arguments.DispatchPlanPath --output $profile | Write-Host
             if ($LASTEXITCODE -ne 0) { throw 'SIMION resource profile publication failed.' }
         } finally { Pop-Location }

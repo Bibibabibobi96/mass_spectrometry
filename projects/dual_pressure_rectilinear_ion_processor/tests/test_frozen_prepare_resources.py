@@ -19,7 +19,7 @@ from projects.dual_pressure_rectilinear_ion_processor.tests.test_functional impo
 
 ROOT = Path(__file__).resolve().parents[3]
 PROJECT_RELATIVE = Path("projects/dual_pressure_rectilinear_ion_processor")
-FUNCTIONAL_SOURCE = ROOT / PROJECT_RELATIVE / "analysis/functional.py"
+FUNCTIONAL_SOURCE = ROOT / "src/msplatform/workflows/ion_processor/functional.py"
 
 CHILD = r"""
 import json, sys
@@ -28,7 +28,7 @@ root, run, vendor = map(Path, sys.argv[1:4])
 sys.path[:0] = [str(root / "src"), str(root)]
 from msplatform.execution.inputs import python_import_roots
 assert sys.path[:2] == python_import_roots(root)
-from projects.dual_pressure_rectilinear_ion_processor.analysis.functional import prepare
+from msplatform.workflows.ion_processor.functional import prepare
 run.mkdir(); (run/'inputs').mkdir()
 (run/'run_config.json').write_text('{"schema_version":1}', encoding='utf-8')
 prepare(run, root/'projects/dual_pressure_rectilinear_ion_processor', vendor)
@@ -42,10 +42,10 @@ class FrozenPrepareResourceTests(unittest.TestCase):
     def make_author(self, root: Path) -> tuple[Path, Path]:
         # Derive the Python set from the same imports used by production prepare.
         for name in (
-            "projects.dual_pressure_rectilinear_ion_processor.analysis.functional",
+            "msplatform.workflows.ion_processor.functional",
             "msplatform.workflows.ion_processor.diagnostics",
             "msplatform.workflows.ion_processor.field_diagnostics",
-            "projects.dual_pressure_rectilinear_ion_processor.analysis.batching",
+            "msplatform.backends.simion.ip_batching",
             "msplatform.workflows.ion_processor.extraction_force_budget",
             "msplatform.execution.retention",
             "msplatform.analysis.population_moments",
@@ -73,8 +73,9 @@ class FrozenPrepareResourceTests(unittest.TestCase):
             target = author / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, target)
+        (author / "src/msplatform/workflows/ion_processor").mkdir(parents=True, exist_ok=True)
         shutil.copyfile(
-            FUNCTIONAL_SOURCE, author / PROJECT_RELATIVE / "analysis/functional.py"
+            FUNCTIONAL_SOURCE, author / "src/msplatform/workflows/ion_processor/functional.py"
         )
         project = author / PROJECT_RELATIVE
         resources = [
@@ -94,7 +95,7 @@ class FrozenPrepareResourceTests(unittest.TestCase):
             Path("src/msplatform/backends/simion/resources/collision_hs1_gas.lua"),
             Path("src/msplatform/execution/resources/native_run_path.lua"),
             Path("src/msplatform/backends/simion/resources/1_instance_seed.iob"),
-            Path("common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0"),
+            Path("src/msplatform/backends/simion/resources/iob_seed_placeholder_01.pa0"),
             Path("src/msplatform/execution/resources/artifact_retention.json"),
             Path("src/msplatform/contracts/particle_count_policy.json"),
             Path("src/msplatform/execution/resources/host_resource_policy.json"),
@@ -104,7 +105,7 @@ class FrozenPrepareResourceTests(unittest.TestCase):
             resource_suffixes=(".schema.json",),
         ))
         functional = importlib.import_module(
-            "projects.dual_pressure_rectilinear_ion_processor.analysis.functional")
+            "msplatform.workflows.ion_processor.functional")
         resources.extend(Path(relative) for relative in enumerate_python_sources(
             ROOT, module_paths=(*functional.FROZEN_SCIENTIFIC_BRIDGE_MODULES,
                                 *functional.FROZEN_RUNTIME_MODULES)))
@@ -128,12 +129,13 @@ class FrozenPrepareResourceTests(unittest.TestCase):
         for relative in resources:
             target = author / relative
             target.parent.mkdir(parents=True, exist_ok=True)
-            if relative.parts[:4] == (
-                "common",
+            if relative.parts[:5] == (
+                "src",
+                "msplatform",
+                "backends",
                 "simion",
-                "assets",
-                "iob_instance_seeds",
-            ):
+                "resources",
+            ) and relative.name.startswith("iob_seed_placeholder_"):
                 # Prepare only copies/binds this opaque pair; no IOB/PA parser or vendor runs.
                 target.write_bytes(b"INERT_COPY_BINDING_FIXTURE_NOT_NATIVE_SEED\n")
             else:
@@ -219,7 +221,7 @@ class FrozenPrepareResourceTests(unittest.TestCase):
             Path("src/msplatform/backends/simion/resources/ip_runtime.lua"),
             Path("src/msplatform/backends/simion/resources/collision_hs1_gas.lua"),
             Path("src/msplatform/execution/resources/native_run_path.lua"),
-            Path("common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0"),
+            Path("src/msplatform/backends/simion/resources/iob_seed_placeholder_01.pa0"),
         ):
             with (
                 self.subTest(resource=str(relative)),

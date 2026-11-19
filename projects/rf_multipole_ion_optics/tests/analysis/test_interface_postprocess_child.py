@@ -31,7 +31,7 @@ class InterfacePostprocessChildTests(unittest.TestCase):
             stopped.write_text('{"fixture":"explicit stopped receipt"}', encoding="utf-8")
             command = r"""
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path REPO 'common/contracts/run_artifact_workflow.ps1')
+. (Join-Path REPO 'src/msplatform/workflows/resources/run_artifact_workflow.ps1')
 $t=$null;$e=$null;$ast=[Management.Automation.Language.Parser]::ParseFile(ENTRY,[ref]$t,[ref]$e)
 $definition=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-InterfacePostprocessChild'},$true)
 . ([scriptblock]::Create($definition.Extent.Text))
@@ -71,7 +71,7 @@ foreach($script:expectStopped in @($false,$true)){
             command = r"""
 $ErrorActionPreference='Stop'
 $python=PYTHON;$repo=REPO;$repoRoot=$repo
-. (Join-Path $repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $repo 'src/msplatform/execution/resources/frozen_python_package.ps1')
 $t=$null;$e=$null;$ast=[Management.Automation.Language.Parser]::ParseFile(ENTRY,[ref]$t,[ref]$e)
 $list=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$frozenPythonRelativePaths'},$true)
@@ -258,8 +258,8 @@ foreach($key in @('MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN','MASS_SPECTROMETRY_HOS
 $env:SIMULATION_PYTHON_EXE=$python;$env:MASS_SPECTROMETRY_ARTIFACT_ROOT=$artifact
 $env:MASS_SPECTROMETRY_EXECUTION_ROOT=Join-Path $artifact 'execution'
 $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=Join-Path $artifact 'host.sqlite3'
-. (Join-Path $repo 'common/contracts/run_artifact_workflow.ps1')
-. (Join-Path $repo 'common/paths/workspace_paths.ps1')
+. (Join-Path $repo 'src/msplatform/workflows/resources/run_artifact_workflow.ps1')
+. (Join-Path $repo 'src/msplatform/execution/resources/workspace_paths.ps1')
 . (Join-Path $repo 'common/host_execution_lease.ps1')
 $paths=Resolve-WorkspacePaths -SourceRoot $repo -Python $python
 $parentId='20261031_230000__test__python__interface-parent'

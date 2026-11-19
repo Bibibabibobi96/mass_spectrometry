@@ -16,8 +16,8 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $RepoRoot=(Resolve-Path -LiteralPath $RepoRoot).Path
-. (Join-Path $RepoRoot 'common/contracts/run_artifact_support.ps1')
-. (Join-Path $RepoRoot 'common/contracts/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
+. (Join-Path $RepoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
+. (Join-Path $RepoRoot 'src/msplatform/workflows/resources/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
 if($ResumeFinalization){
   if(-not$ResultPath){throw 'ResumeFinalization requires the original ResultPath.'}
   $prior=Get-Content -LiteralPath $ResultPath -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
@@ -31,15 +31,15 @@ $Request=(Resolve-Path -LiteralPath $Request).Path
 if(-not$DryRun-and(-not$SolverAuthorized-or-not$ExecutionBudgetPath)){
   throw 'Native paired pulse execution requires SolverAuthorized and an explicit ExecutionBudgetPath.'
 }
-. (Join-Path $RepoRoot 'common/require_powershell7.ps1')
-. (Join-Path $RepoRoot 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $RepoRoot 'src/msplatform/execution/resources/require_powershell7.ps1')
+. (Join-Path $RepoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $RepoRoot 'common/host_execution_lease.ps1')
 . (Join-Path $RepoRoot 'common/resource_budget_support.ps1')
-. (Join-Path $RepoRoot 'common/simion/short_pa_path_support.ps1')
+. (Join-Path $RepoRoot 'src/msplatform/backends/simion/resources/short_pa_path_support.ps1')
 . (Join-Path $RepoRoot 'integrations/runtime/dependencies.ps1')
 . (Join-Path $RepoRoot 'integrations/runtime/frontend_flight_support.ps1')
 if(-not$Python){$Python=Join-Path $RepoRoot '.venv/Scripts/python.exe'}
-. (Join-Path $RepoRoot 'common/paths/workspace_paths.ps1')
+. (Join-Path $RepoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
 $pathArguments=@{SourceRoot=$RepoRoot;Python=$Python}
 if($ArtifactRoot){$pathArguments.ArtifactRoot=$ArtifactRoot}
 $pathContext=Resolve-WorkspacePaths @pathArguments

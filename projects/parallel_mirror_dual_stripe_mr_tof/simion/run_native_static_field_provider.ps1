@@ -10,8 +10,8 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $repo=Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent
-. (Join-Path $repo 'common/require_powershell7.ps1')
-. (Join-Path $repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $repo 'src/msplatform/execution/resources/require_powershell7.ps1')
+. (Join-Path $repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $repo 'common/host_execution_lease.ps1')
 . (Join-Path $repo 'common/resource_budget_support.ps1')
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repo '.venv/Scripts/python.exe'}

@@ -12,8 +12,8 @@
 - 执行输入：[numerics](config/numerics.json)、[公共执行登记](config/execution_profiles.json)、[内部运行预算](config/runtime_profiles.json)、[项目身份](config/project.json)。
 - 仓库规则：[根入口](../../README.md)。
 
-生产入口为[`simion/run_functional.ps1`](simion/run_functional.ps1)；
-[`analysis/functional.py`](analysis/functional.py)负责运行准备与命令分派，实际分析和诊断由
+生产入口为[`msplatform/workflows/resources/ip_functional.ps1`](../../src/msplatform/workflows/resources/ip_functional.ps1)；
+[`msplatform.workflows.ion_processor.functional`](../../src/msplatform/workflows/ion_processor/functional.py)负责运行准备与命令分派，实际分析和诊断由
 [`msplatform.workflows.ion_processor`](../../src/msplatform/workflows/ion_processor/analysis.py)承担。
 按任务查[执行与验收边界](docs/SIMION.md#执行与验收边界)、
 [原生场复用与分批](docs/SIMION.md#自动分批与单工作台重放)或[GUI准备](docs/SIMION.md#gui准备与批处理区别)。

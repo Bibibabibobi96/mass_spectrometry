@@ -25,7 +25,7 @@ class ComsolWorkspaceContextTests(unittest.TestCase):
                 body = r"""
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $repoRoot=@@REPO@@;$python=@@PYTHON@@;$runner=@@RUNNER@@;$testRoot=@@ROOT@@;$ProjectId='rf_multipole_ion_optics'
-. (Join-Path $repoRoot 'common/paths/workspace_paths.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
 $env:MASS_SPECTROMETRY_ARTIFACT_ROOT=Join-Path $testRoot 'managed_data'
 $env:MASS_SPECTROMETRY_EXECUTION_ROOT=Join-Path $testRoot 'execution'
 $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=Join-Path $testRoot 'shared.sqlite3'

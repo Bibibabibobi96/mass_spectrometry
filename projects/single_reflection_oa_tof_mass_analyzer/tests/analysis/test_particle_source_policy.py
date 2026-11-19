@@ -190,7 +190,7 @@ class ParticleSourcePolicyTests(unittest.TestCase):
             )
             command = (
                 ". (Join-Path $env:OATOF_TEST_REPO_ROOT "
-                "'common/contracts/run_artifact_support.ps1'); "
+                "'src/msplatform/execution/resources/run_artifact_support.ps1'); "
                 "Write-TerminalRunRecord -RunDir $env:OATOF_TEST_RUN_DIR "
                 "-Status failed -Reason 'seed mismatch' "
                 "-RepoRoot $env:OATOF_TEST_REPO_ROOT "

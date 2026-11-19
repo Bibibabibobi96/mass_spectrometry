@@ -109,7 +109,7 @@ class EquatorialSectionTests(unittest.TestCase):
 class FrozenSectionGeometryTests(unittest.TestCase):
     def test_actual_ip_prepare_freezes_sections_and_missing_owner_fails_cold(self):
         from projects.dual_pressure_rectilinear_ion_processor.tests.test_functional import FunctionalContractTests, PROJECT
-        from projects.dual_pressure_rectilinear_ion_processor.analysis import functional
+        from msplatform.workflows.ion_processor import functional
         from msplatform.execution.inputs import python_import_roots
         fixture = FunctionalContractTests()
         fixture.setUp()

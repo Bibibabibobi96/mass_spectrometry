@@ -7,8 +7,8 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '../../..')).Path
-. (Join-Path $repoRoot 'common/require_powershell7.ps1')
-. (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/require_powershell7.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $repoRoot 'common/resource_budget_support.ps1')
 $python=Join-Path $repoRoot '.venv/Scripts/python.exe'
 $module='projects.parallel_mirror_dual_stripe_mr_tof.analysis.ip_prism_distance_study'
@@ -85,7 +85,7 @@ function Invoke-StudyDispatchPhase {
  $profiles=Join-Path $package.result_dir ($prefix+'_resource_profiles.json')
  $dispatch=Join-Path $package.result_dir ($prefix+'_repository_dispatch_plan.json')
  $usage=Join-Path $package.result_dir ($prefix+'_batch_resource_usage.json')
- Invoke-StudyPython -Arguments @('-m','common.simion.resource_profile','discover','--runs-root',(Join-Path $projectArtifacts 'runs'),'--output',$profiles)
+ Invoke-StudyPython -Arguments @('-m','msplatform.execution.resource_profile','discover','--runs-root',(Join-Path $projectArtifacts 'runs'),'--output',$profiles)
  Invoke-StudyPython -Arguments @('-m','msplatform.execution.simion_dispatch','--request',$request,'--profiles',$profiles,'--output',$dispatch)
  $plan=Get-Content -LiteralPath $dispatch -Raw|ConvertFrom-Json -Depth 40
  $expected=if($build){$study.build_cases.Count}else{$study.cases.Count}

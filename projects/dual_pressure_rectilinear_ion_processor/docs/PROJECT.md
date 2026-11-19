@@ -64,7 +64,7 @@ HS1截面仍为未标定示例值。原解析规定电场已退役，活动生�
 
 ### 原批分区恢复
 
-`simion/run_functional.ps1 -ContinuationPredecessorManifestPath <原manifest> -RunId <新run>`
+`src/msplatform/workflows/resources/ip_functional.ps1 -ContinuationPredecessorManifestPath <原manifest> -RunId <新run>`
 保持前驱完整批次分区和原ID；已完成（包括已归档）的单元由manifest引用，缺失完整单元重做。
 公共scheduler按实际最大缺失单元选择同身份画像；画像不足时先执行该原单元观测，保留其实际进程，
 再按实测CPU、内存和现有互斥策略派发剩余单元，不再强制单路恢复。未知writer仍保守处理，
@@ -307,7 +307,7 @@ IP的210 DPI及白底。manifest记录实际导出的尺寸／格式／DPI／字
 IP功能入口的正式首批观测及重规划由公共SIMION机制执行；IP继续负责批次物化和物理判据。
 
 IP批次请求可在提供已验证场身份及冻结程序后计算，计算过程不创建IOB或场；正常准备入口继续使用同一身份投影。
-`run_functional.ps1 -ContinuationPredecessorManifestPath`目前支持完整母群已归并的显式终态前驱：
+`ip_functional.ps1 -ContinuationPredecessorManifestPath`目前支持完整母群已归并的显式终态前驱：
 验证原生批完成、母群、科学输入与程序身份后直接引用原CSV重分析，不启动PA、IOB或Fly，也不改父run。
 多代重分析先验证前驱与数据源的 manifest 绑定，在容量会话中保护来源链，再引用原始完整母群；出口也沿该绑定读取原生证据。
 正式批次完成回调持久记录每个原生进程的实际退出码与批次身份；旧结果缺少该证据时不能仅凭结束日志推断单批成功。
@@ -328,7 +328,7 @@ summary与stdout报告失败阶段、原因、恢复动作、稳定结果路径�
 stdout的最终owner总耗时另含发布及资源释放。未知写者保留保护并要求先确认其完成，不能直接重试。
 正常IP收尾使用公共PowerShell owner：冻结request、实际进程／host完成事实和小Result后，由公共机制执行
 保留、终态发布与容量封存。Result默认持久放在`scratch/workflow_results/<run_id>/result.json`；
-原入口`run_functional.ps1 -RunId <id> -ResumeFinalization [-ResultPath <原Result>]`只重放收尾，
+原入口`ip_functional.ps1 -RunId <id> -ResumeFinalization [-ResultPath <原Result>]`只重放收尾，
 不准备源／场／IOB、不重飞、不修改父run。发布前失败与已发布终态后的seal失败均保留原事实；重复恢复
 不重写已发布summary/manifest。未知writer仍拒绝收尾，原始科学异常与收尾次错分别保留。
 `msplatform.backends.simion.ip_exit.load_component_source`验证封存的IP来源与结果；科学门限失败、诊断失败与写入状态未知分别记录，
@@ -337,7 +337,7 @@ stdout的最终owner总耗时另含发布及资源释放。未知写者保留保
 
 ## 普通执行计划与新场身份
 
-`native_functional`只调用原`run_functional.ps1`，不每次先跑整套软件回归；编译结果以`ConfigurationDirectory`运输同一冻结功能源、科学／数值／接受配置。action=run不等于已完成原生或科学通过。
+`native_functional`只调用原`ip_functional.ps1`，不每次先跑整套软件回归；编译结果以`ConfigurationDirectory`运输同一冻结功能源、科学／数值／接受配置。action=run不等于已完成原生或科学通过。
 新PA在writer确认停止及必要flush后，由公共immutable guard在持续防写句柄内建立一次身份；内部prepare-dispatch、模板及收尾复用同一活guard，不重复全文读取。保护中断或未知writer不放行；外部已发布家族仍核对manifest期望身份，不能用新场投影覆盖。
 
 ## 机器能力与解析输入
@@ -381,7 +381,7 @@ canonical状态保留原reason：接受为transmitted、明确逃逸／电极损
 
 ### 运行根与冻结原生路径
 
-正式`run_functional.ps1`在启动时解析并冻结公共四根，持久身份使用`artifact_run_dir`；
+正式`ip_functional.ps1`在启动时解析并冻结公共四根，持久身份使用`artifact_run_dir`；
 实际Python与SIMION准备／批次调用沿同一Package的`Get-RunNativeExecutionContext`选择执行表示，
 同步运输cwd、argv、环境及Lua内的种子／场／IOB引用。主机库保持原身份，恢复读取原Result的run位置。
 `functional.prepare`冻结实际动态资源、所选配置和官方seed/placeholder；新解释器可仅凭该源码闭包
@@ -463,9 +463,12 @@ not a claim of physical impossibility.
 The sole IP source/profile/scientific-input and observation-boundary checks now live in
 `msplatform.workflows.ion_processor.preparation`, together with the existing diagnostic
 control validators. Their original bodies and rejection semantics are preserved. The
-root functional workflow delegates scientific compilation/materialization, while retaining
-its genuine repository snapshot, seed provision, field adoption and CLI duties;
-that whole workflow has not yet been retired or qualified as an installed native operation.
+root functional workflow delegates scientific compilation/materialization to the installed
+`msplatform.workflows.ion_processor.functional` owner. SIMION batching and GUI replay
+belong to `msplatform.backends.simion`; project PowerShell entries are one-way adapters
+with an explicit repository root for research configuration. Installed resources own
+PowerShell lifecycle, workspace resolution, resource profiles and the structural seed
+placeholder. This owner migration does not itself qualify a native operation.
 
 `compile_source(config, *, admission=None)` accepts an explicit in-memory research request
 and preserves the existing release or validated `ip_handoff` admission, original birth,
@@ -692,3 +695,18 @@ this successor is pending. Existing standalone diagnostics and their scientific
 acceptance remain available; their exact force-audit/sample file layout is not
 claimed by the joint consumer. The old segmented producer stays until the genuine
 continuous replacement and its applicable native checks pass.
+
+The installed IP launcher now initializes the explicit research project root before
+resolving its registry, runtime profile and configuration directory. A production-source
+regression checks this resolution before native admission, and the two affected IP
+modules passed 67 tests with one existing environment skip. Separately, the gate plan
+transport fixtures copy the PowerShell 7 preflight from its installed execution-resource
+path instead of the retired common path; their complete module passed 49 parents and
+95 records in 360.003 seconds. These are source/software checks only, not a native
+launcher run, coupled field, continuous flight or final Changed/Repository result.
+
+The registered native-functional command now selects that installed launcher and supplies
+the resolved repository root explicitly. Finalization recovery, the accelerator consumer
+and execution compilation use the same path. The affected execution/finalization/binding
+checks passed, including publication, seal and unknown-writer preservation. These checks
+do not establish native execution or final acceptance.

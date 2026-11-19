@@ -326,7 +326,7 @@ def bind_joint_workbench(*, design_run: Path, field_run: Path, source_run: Path,
     # run-local hard links, leaving the dependency snapshot unchanged.
     seed = runtime / Path(layout["seed"]).name
     shutil.copyfile(layout["seed"], seed)
-    placeholder = REPO / "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0"
+    placeholder = REPO / "src/msplatform/backends/simion/resources/iob_seed_placeholder_01.pa0"
     for index in range(1, len(binding["instances"]) + 1):
         os.link(placeholder, runtime / f"iob_seed_placeholder_{index:02d}.pa0")
     build = dict(schema_version=1, role="mrtof_measured_source_workbench_build",

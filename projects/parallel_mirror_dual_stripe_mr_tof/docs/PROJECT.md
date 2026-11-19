@@ -14,6 +14,14 @@ refusals and one header mismatch; both writers exited and the capacity lease
 released. This qualifies those API cases, not Fly, field accuracy, full MR or
 Repository acceptance. The original frozen Repository failure remains recorded.
 
+The native corridor runtime, Fast Adjust family builder and assembler now live only in
+`msplatform/backends/simion/resources`. OA–MR and prepared-joint load that installed
+owner directly; MR supplies its research parameters and geometry, while guards,
+continuation admission and native family construction retain their existing behavior.
+Dependency declarations use the scientific-core provider instead of the retired common
+or MR project paths. Focused frozen-consumer tests cover this migration; complete
+integration, ordinary-install and applicable native acceptance remain separately bounded.
+
 本页维护MR分析器的当前设计、资格、有效证据和开放动作。操作由[项目入口](../README.md)导航，
 推导见[理论索引](theory/index.md)。完整接口迁移、已完成研究、实现修复及原始证据链接冻结在
 [文档收口里程碑](history/20261026__assembly-documentation-consolidation.md)，历史语气不作为当前执行指令。
@@ -761,7 +769,7 @@ unchanged. This migration provides no new native or scientific qualification.
 
 IP/prism preparation keeps the structural IOB under the canonical installed
 SIMION resource owner and copies its required PA placeholder from the explicit
-repository fixture at `common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0`.
+installed fixture at `src/msplatform/backends/simion/resources/iob_seed_placeholder_01.pa0`.
 It no longer assumes that this PA is adjacent to the relocated IOB. The original
 `inputs/workbench_seed.iob` and `inputs/iob_seed_placeholder_01.pa0` locations and
 input records remain unchanged; no PA fixture is added to the package or cache.

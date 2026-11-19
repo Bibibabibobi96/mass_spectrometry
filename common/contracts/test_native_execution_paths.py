@@ -125,7 +125,7 @@ if(-not$caught){throw 'Relative observation target was accepted'}
             script = root / "check.ps1"
             script.write_text(r'''param($Repo,$Root,$Deep,$InputFile,$Python)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 function Package($Path){[pscustomobject]@{artifact_run_dir=$Path;run_dir=$Path;execution_alias=$null;execution_path_capacity=$null;python=$Python}}
 $short=Package $Root
 $shortContext=Get-RunNativeExecutionContext -Package $short -Paths @((Join-Path $Root 'result.json')) -Tool 'fixture'

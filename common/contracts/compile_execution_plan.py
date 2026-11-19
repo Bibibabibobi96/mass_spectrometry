@@ -239,6 +239,7 @@ def compile_execution(
         "python_exe",
         "design_plan_path",
         "request_path",
+        "repository_root",
         "run_id",
         "authorized_run_id",
     }
@@ -281,6 +282,7 @@ def compile_execution(
         "python_exe": str(Path(sys.executable).resolve()),
         "design_plan_path": str(plan_path),
         "request_path": str(Path(plan["provenance"]["request"]["path"]).resolve()),
+        "repository_root": str(REPO_ROOT),
         "run_id": plan["run_id"],
         "resolved_inputs_path": "__COMPILED_INPUTS__",
         "resolved_configuration_directory": "__COMPILED_CONFIGURATION__",
@@ -525,7 +527,7 @@ def main() -> None:
             frozen.write_text(rendered, encoding="utf-8")
             environment = dict(os.environ, MASS_SPECTROMETRY_COMPILED_PLAN=str(frozen),
                                MASS_SPECTROMETRY_COMPILED_REPO=str(REPO_ROOT))
-            bootstrap = (". (Join-Path $env:MASS_SPECTROMETRY_COMPILED_REPO 'common/contracts/run_artifact_support.ps1'); "
+            bootstrap = (". (Join-Path $env:MASS_SPECTROMETRY_COMPILED_REPO 'src/msplatform/execution/resources/run_artifact_support.ps1'); "
                          "Invoke-CompiledExecutionPlan -PlanPath $env:MASS_SPECTROMETRY_COMPILED_PLAN "
                          "-RepoRoot $env:MASS_SPECTROMETRY_COMPILED_REPO" +
                          (" -PrepareUnfrozenSources" if args.execute and result.get("can_prepare_sources") else ""))

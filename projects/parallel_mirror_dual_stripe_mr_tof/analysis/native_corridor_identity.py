@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from msplatform.io.file_identity import file_sha256
+from msplatform.backends.simion.resources import native_resource_path
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_geometry import (
     build_native_corridor_gem,
 )
@@ -163,7 +164,7 @@ def build_native_corridor_identity(contract_path: Path, gem_path: Path, simion_e
         "builder_identity": {"identity_schema": "mrtof_analyzer_corridor_identity_v1",
                              "verification_order": "fast_adjust_before_final_inventory_and_seal_v1",
                              "native_corridor_geometry_generator_sha256": file_sha256(project / "analysis" / "native_corridor_geometry.py"),
-                             "native_fast_adjust_assembler_sha256": file_sha256(common_simion / "assemble_native_fast_adjust_family.lua"),
+                             "native_fast_adjust_assembler_sha256": file_sha256(native_resource_path("assemble_native_fast_adjust_family.lua")),
                              "physical_basis_builder_sha256": file_sha256(simion_directory / "build_component_basis.lua"),
                              "id_remapper_sha256": file_sha256(common_simion / "remap_pa_electrode_ids.lua"),
                              "dirichlet_builder_sha256": file_sha256(common_simion / "build_dirichlet_patch_basis.lua")},

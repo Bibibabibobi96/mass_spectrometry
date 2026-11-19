@@ -307,7 +307,7 @@ class NativeCorridorBunchScreeningRunnerTest(unittest.TestCase):
         source = RUNNER.read_text(encoding="utf-8-sig")
         start = source.index("function Read-StaticCenterProblem {")
         helper = source[start:source.index("\nfunction ", start + 1)]
-        support = REPO_ROOT / "common/contracts/run_artifact_support.ps1"
+        support = REPO_ROOT / "src/msplatform/execution/resources/run_artifact_support.ps1"
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
             review = root / "review"
@@ -633,7 +633,7 @@ class SelectedOaAuthorityInputTests(unittest.TestCase):
         block = source[start:source.index("\n  if($null-eq$mirrorVoltageVariation", start)]
         start = source.index("function Invoke-ProjectPython {")
         helper = source[start:source.index("\nfunction ", start + 1)]
-        transport = (REPO_ROOT / "common/contracts/run_artifact_support.ps1").read_text(encoding="utf-8-sig")
+        transport = (REPO_ROOT / "src/msplatform/execution/resources/run_artifact_support.ps1").read_text(encoding="utf-8-sig")
         start = transport.index("function Get-RunPythonImportRoots {")
         roots = transport[start:transport.index("\nfunction ", start + 1)]
         with TemporaryDirectory() as directory:

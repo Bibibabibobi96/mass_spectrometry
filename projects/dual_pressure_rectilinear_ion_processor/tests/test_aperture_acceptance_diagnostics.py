@@ -4,7 +4,7 @@ from __future__ import annotations
 import copy
 import unittest
 
-from projects.dual_pressure_rectilinear_ion_processor.analysis.aperture_acceptance_diagnostics import (
+from msplatform.workflows.ion_processor.aperture_acceptance_diagnostics import (
     build_aperture_figure,
     prepare_aperture_diagnostics,
 )

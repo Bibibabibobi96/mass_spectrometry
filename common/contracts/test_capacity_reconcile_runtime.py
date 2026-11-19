@@ -40,7 +40,7 @@ class DailyCapacityReconcileTest(unittest.TestCase):
         script = r'''
 $ErrorActionPreference='Stop'
 $RepoRoot=$env:CAPACITY_FIXTURE_REPO
-. (Join-Path $RepoRoot 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $RepoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $results=@(foreach($scenario in @('receipt','native','success','workflow_initial','workflow')){
   & {
     param($Scenario)
@@ -210,7 +210,7 @@ Write-Output ('HOST_RELEASE_RESULT='+($results|ConvertTo-Json -Depth 15 -Compres
                     quote = lambda value: "'" + str(value).replace("'", "''") + "'"
                     script = f'''
 $ErrorActionPreference='Stop'
-. {quote(repo / 'common/contracts/run_artifact_support.ps1')}
+. {quote(repo / 'src/msplatform/execution/resources/run_artifact_support.ps1')}
 $fixturePython={quote(sys.executable)}
 $fixtureDriver={quote(driver)}
 $fixtureHostState={quote(root / 'host.sqlite3')}

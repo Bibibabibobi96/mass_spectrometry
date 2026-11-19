@@ -22,8 +22,8 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $RepoRoot=(Resolve-Path -LiteralPath $RepoRoot).Path
-. (Join-Path $RepoRoot 'common/require_powershell7.ps1')
-. (Join-Path $RepoRoot 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $RepoRoot 'src/msplatform/execution/resources/require_powershell7.ps1')
+. (Join-Path $RepoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 if(-not $Python){
   $Python=if($env:SIMULATION_PYTHON_EXE){$env:SIMULATION_PYTHON_EXE}else{Join-Path $RepoRoot '.venv/Scripts/python.exe'}
 }

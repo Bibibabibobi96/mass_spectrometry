@@ -646,6 +646,24 @@ checks and the original publication/gate regressions pass. Focused ordinary whee
 and sdist-rebuilt consumers pass outside the checkout with project imports denied;
 complete Repository and final same-candidate acceptance remain OPEN.
 
+IP functional preparation, analysis, batching, GUI replay, resource profiles and their
+PowerShell lifecycle now have installed workflow/backend/execution owners. Project
+entries are one-way adapters for the explicit research root; the structural seed
+placeholder is packaged. The original preparation, failure, recovery and GUI replay
+contracts are retained. The installed launcher also initializes that research root
+before resolving its registry, profile and configuration directory; its two affected
+modules passed 67 tests with one existing environment skip. Gate plan fixtures now
+copy the PowerShell 7 preflight from the installed execution resource, and their full
+module passed 49 parents / 95 records in 360.003 seconds. Complete Changed, Repository,
+native and final same-candidate acceptance remain OPEN; these software checks grant no
+new native or scientific qualification.
+
+MR resolved CAD, pose composition and SolidWorks import/install support now belong to
+installed exporters, with the selected Python owner frozen by the project launcher.
+The original geometry, native identities and CAD checks are preserved. Focused software,
+Changed and ordinary-install pose checks pass; new SolidWorks GUI and final acceptance
+remain OPEN.
+
 The following is the single active P4 worklist. All rows remain OPEN until their stated
 consumer and acceptance boundaries close; earlier delivered sub-capabilities are inherited,
 not rebuilt. Shared interfaces, the gate catalog, installation fixtures and Git have one

@@ -154,11 +154,11 @@ class ArtifactIdentityArchiveTests(unittest.TestCase):
             target.parent.mkdir(parents=True)
             shutil.copyfile(source, target)
             for relative in (
-                "common/contracts/run_artifact_support.ps1",
-                "common/require_powershell7.ps1",
+                "src/msplatform/execution/resources/run_artifact_support.ps1",
+                "src/msplatform/execution/resources/require_powershell7.ps1",
                 "common/host_execution_lease.ps1",
-                "common/paths/workspace_paths.ps1",
-                "common/paths/workspace_paths.py",
+                "src/msplatform/execution/resources/workspace_paths.ps1",
+                "src/msplatform/execution/resources/workspace_paths.py",
                 "src/msplatform/execution/resources/run_paths.ps1",
                 "src/msplatform/execution/resources/host_execution_lease.ps1",
                 "src/msplatform/execution/resources/host_resource_policy.json",
@@ -172,7 +172,7 @@ class ArtifactIdentityArchiveTests(unittest.TestCase):
             quote = lambda value: "'" + str(value).replace("'", "''") + "'"
             script = f"""
 $ErrorActionPreference='Stop'
-. {quote(repository / 'common/contracts/run_artifact_support.ps1')}
+. {quote(repository / 'src/msplatform/execution/resources/run_artifact_support.ps1')}
 $script:capacityCalls=0
 function Invoke-RunCapacityLifecycleAdapter {{ $script:capacityCalls++; throw 'CAPACITY_CALLED' }}
 foreach($owner in @('{CURRENT}','{LEGACY}')) {{

@@ -486,7 +486,7 @@ $rejected=$false;$reason=$null
 try{& $consumer}catch{$rejected=$true;$reason=$_.Exception.Message}
 [ordered]@{rejected=$rejected;reason=$reason;copied=@(Get-ChildItem -LiteralPath $inputDir -File|Select-Object -ExpandProperty Name)}|ConvertTo-Json -Depth 8 -Compress
 """
-            values={'SUPPORT':str(REPO_ROOT/'common/contracts/run_artifact_support.ps1'),
+            values={'SUPPORT':str(REPO_ROOT/'src/msplatform/execution/resources/run_artifact_support.ps1'),
                 'FORMAL':str(PROJECT_ROOT/'workflows/formal_reference/run_formal_validation.ps1'),
                 'CONFIG':str(config_path),'CANDIDATE':str(candidate),'MODEL':str(model),'INPUTS':str(inputs)}
             for key,value in values.items():text=text.replace('@@'+key+'@@',value.replace("'","''"))

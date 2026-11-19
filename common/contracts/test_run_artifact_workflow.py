@@ -115,7 +115,8 @@ if(-not$caught){{throw 'Live foreign original owner accepted'}}
     def test_direct_powershell_release_keeps_actual_transaction_fields(self):
         script=r'''param($Repo)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $Repo 'common/contracts/run_artifact_workflow.ps1')
+. (Join-Path $Repo 'common/host_execution_lease.ps1')
+. (Join-Path $Repo 'src/msplatform/workflows/resources/run_artifact_workflow.ps1')
 # Use the real Exit adapter with an isolated transaction boundary. No native
 # process is represented by the inert grammar-only operation below.
 function Invoke-HostResourceTransaction {param($StatePath,$Request) return [pscustomobject]@{status='released';token=$Request.token}}
@@ -348,6 +349,7 @@ if([Convert]::ToBase64String([IO.File]::ReadAllBytes($leasePath))-cne$leaseBefor
 Write-FixtureEvent 'child-entry'
 . '{OWNER}'
 $ErrorActionPreference='Stop'
+function Get-HostResourceIoPressure {{param($Disks,$TargetPath) return $false}}
 function Invoke-ArtifactCapacityGate {{ return @{{satisfied=$true;fixture_admission=$true}} }}
 if($args[0]-eq'first'){{
   $proc=Start-Process -FilePath '{sys.executable}' -ArgumentList @('-c','pass') -PassThru
@@ -374,8 +376,9 @@ Write-FixtureEvent ('child-after-workflow-'+$args[0])
 Write-FixtureEvent 'parent-entry'
 . '{OWNER}'
 $ErrorActionPreference='Stop'
-. '{controlled / 'common/host_execution_lease.ps1'}'
 $env:SIMULATION_PYTHON_EXE='{sys.executable}'
+. '{controlled / 'common/host_execution_lease.ps1'}'
+function Get-HostResourceIoPressure {{param($Disks,$TargetPath) return $false}}
 [Environment]::SetEnvironmentVariable('MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN',[NullString]::Value,'Process')
 Write-FixtureEvent 'parent-before-admission'
 $lease=Enter-HostResourceStage -Role SIMION -Stage flight -StatePath '{root / 'host.json'}' -Budget (Get-HostResourceBudget -Role SIMION -Stage flight)

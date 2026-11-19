@@ -25,8 +25,8 @@ from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
 from msplatform.analysis import beam_focus_diagnostics
 from msplatform.io.figure_export import export_figures
-from projects.dual_pressure_rectilinear_ion_processor.analysis import aperture_acceptance_diagnostics
-from projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_phase_space_comparison import (
+from msplatform.workflows.ion_processor import aperture_acceptance_diagnostics
+from msplatform.workflows.ion_processor.extraction_phase_space_comparison import (
     COLORS, MARKERS, VALUES, load_recorded_case, prepare_spatial_crossings, prepare_statistics,
 )
 from msplatform.workflows.ion_processor.preparation import validate_numerical_boundaries

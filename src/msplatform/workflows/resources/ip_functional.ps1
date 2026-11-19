@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([Parameter(Mandatory)][string]$RunId,[string]$SimionExe='',[string]$NativeFieldRun='',[string]$ContinuationPredecessorManifestPath='',
+param([Parameter(Mandatory)][string]$RunId,[Parameter(Mandatory)][string]$RepositoryRoot,[string]$PythonExe='',[string]$SimionExe='',[string]$NativeFieldRun='',[string]$ContinuationPredecessorManifestPath='',
  [string]$ConfigurationDirectory='',[string]$InjectedSource='',
  [ValidateSet('functional','exploration')][string]$SourceProfile='functional',
  [string]$ResultPath='',[switch]$ResumeFinalization)
@@ -170,7 +170,7 @@ function Invoke-IonProcessorCompletedContinuation {
  $env:PYTHONPATH=$pythonContext.projected_paths[0]
  Push-Location $pythonContext.projected_paths[1]
  try {
-  & $Python -m projects.dual_pressure_rectilinear_ion_processor.analysis.functional prepare-continuation --run $Run --baseline-run $Predecessor | Out-Host
+  & $Python -m msplatform.workflows.ion_processor.functional prepare-continuation --run $Run --baseline-run $Predecessor | Out-Host
   if($LASTEXITCODE-ne0){throw 'IP continuation requires a complete compatible native population'}
  } finally {Pop-Location;$env:PYTHONPATH=$RepoRoot}
  return Enter-HostExecutionLease -StatePath $pathContext.host_resource_state_path -Role SIMION -Stage postprocess
@@ -197,15 +197,19 @@ function Add-IonProcessorFailedOperation {
    process_id=[int]$id;process_started_at_utc_ticks=[long]$started};resource_release_id='simion'})|Out-Null
  return $true
 }
-$projectRoot=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$repoRoot=(Resolve-Path (Join-Path $projectRoot '..\..')).Path
+$repoRoot=$RepositoryRoot
+$projectRoot=Join-Path $repoRoot 'projects/dual_pressure_rectilinear_ion_processor'
 $workspaceRoot=Split-Path -Parent $repoRoot
-. (Join-Path $repoRoot 'common/require_powershell7.ps1')
-. (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
-. (Join-Path $repoRoot 'common/resource_budget_support.ps1')
-. (Join-Path $repoRoot 'common/simion/short_pa_path_support.ps1')
-$python=if($env:SIMULATION_PYTHON_EXE){$env:SIMULATION_PYTHON_EXE}else{Join-Path $repoRoot '.venv/Scripts/python.exe'}
-. (Join-Path $repoRoot 'common/paths/workspace_paths.ps1')
+. (Join-Path $PSScriptRoot '../../execution/resources/require_powershell7.ps1')
+. (Join-Path $PSScriptRoot '../../execution/resources/run_artifact_support.ps1')
+. (Join-Path $PSScriptRoot '../../backends/simion/resources/short_pa_path_support.ps1')
+$python=if($PythonExe){$PythonExe}elseif($env:SIMULATION_PYTHON_EXE){$env:SIMULATION_PYTHON_EXE}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
+$hostState=if($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH}else{Join-Path $workspaceRoot 'artifacts/common/host_resources.sqlite3'}
+$script:HostResourceExecutionContext=@{workspace=$workspaceRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $PSScriptRoot '../../execution/resources/host_resource_policy.json')}
+. (Join-Path $PSScriptRoot '../../execution/resources/host_execution_lease.ps1') -HostContext $script:HostResourceExecutionContext
+. (Join-Path $PSScriptRoot '../../execution/resources/resource_process_support.ps1')
+. (Join-Path $PSScriptRoot '../../execution/resources/simion_dispatch_support.ps1')
+. (Join-Path $PSScriptRoot '../../execution/resources/workspace_paths.ps1')
 $pathContext=Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
 if($ResumeFinalization){
  $projectArtifacts=Join-Path $pathContext.artifact_root 'projects/dual_pressure_rectilinear_ion_processor'
@@ -219,13 +223,13 @@ if($ResumeFinalization){
  $requestPath=Join-Path $recoveryRun 'inputs/execution_request.json'
  $request=Get-Content -LiteralPath $requestPath -Raw|ConvertFrom-Json -AsHashtable
  if($request.package.project-cne'dual_pressure_rectilinear_ion_processor'-or$request.package.mode-cne'native_electrode_functional'-or$request.package.run_id-cne$RunId){throw 'IP recovery request identity differs.'}
- . (Join-Path $repoRoot 'common/contracts/run_artifact_workflow.ps1') -RequestPath $requestPath -ResultPath $ResultPath -ResumeFinalization
+ . (Join-Path $PSScriptRoot 'run_artifact_workflow.ps1') -RequestPath $requestPath -ResultPath $ResultPath -ResumeFinalization
  $outcome=Invoke-RunArtifactWorkflow -RequestPath $requestPath -ResultPath $ResultPath -ResumeFinalization
  Write-Output "ION_PROCESSOR_FINALIZATION=$($outcome.status) RUN_ID=$RunId RESULT=$ResultPath"
  if($outcome.status-ne'success'){exit 1}
  return
 }
-. (Join-Path $repoRoot 'common/contracts/run_artifact_workflow.ps1') -ResultPath $ResultPath
+. (Join-Path $PSScriptRoot 'run_artifact_workflow.ps1') -ResultPath $ResultPath
 if(-not $SimionExe){$SimionExe=Join-Path $env:ProgramFiles 'SIMION-2020/simion.exe'}
 if(-not(Test-Path -LiteralPath $SimionExe)){throw 'SIMION 2020 executable missing'}
 if($ContinuationPredecessorManifestPath-and$NativeFieldRun){throw 'Completed-population continuation obtains its field identity from the explicit predecessor; do not supply a second field source'}
@@ -333,7 +337,7 @@ print(json.dumps(refs))
   -CommitmentInputPaths @($budgetInput) -Software @('SIMION 2020','Python 3.11')
  $ResultPath=$ownerContext.result_path
  Set-IonProcessorRunStage -Context $runObservation -Stage prepare
- $prepareArguments=@('-m','projects.dual_pressure_rectilinear_ion_processor.analysis.functional','prepare','--run',$run,'--simion-dir',(Split-Path -Parent $SimionExe),'--source-profile',$SourceProfile)
+ $prepareArguments=@('-m','msplatform.workflows.ion_processor.functional','prepare','--run',$run,'--simion-dir',(Split-Path -Parent $SimionExe),'--source-profile',$SourceProfile)
  if($ConfigurationDirectory){$prepareArguments+=@('--configuration-directory',$configurationRoot)}
  if($NativeFieldRun){$prepareArguments+=@('--native-field-run',$NativeFieldRun)}
  if($InjectedSource){$prepareArguments+=@('--injected-source',$InjectedSource)}
@@ -347,7 +351,7 @@ print(json.dumps(refs))
  Write-RunJson -Path $package.run_config -Value $config
  $resolvedSource=(Get-Content (Join-Path $package.input_dir 'resolved_model.json') -Raw|ConvertFrom-Json).source
  if($InjectedSource-and$resolvedSource.particle_count-eq0){
-  & $python -m projects.dual_pressure_rectilinear_ion_processor.analysis.functional analyze --run $run
+  & $python -m msplatform.workflows.ion_processor.functional analyze --run $run
   if($LASTEXITCODE-ne0){throw 'Empty upstream admission publication failed'}
   $finished=$true;$runSucceeded=$true
   Write-Output "ION_PROCESSOR_RESULT=empty_upstream_admission RUN=$run SOLVER_EXECUTED=false"
@@ -367,19 +371,19 @@ print(json.dumps(refs))
   $pythonContext=Get-RunNativeExecutionContext -Package $package -Paths @((Join-Path $run 'inputs/code'),$run) -Tool Python
   $env:PYTHONPATH=$pythonContext.projected_paths[0];Push-Location $pythonContext.projected_paths[1]
   try {
-   & $python -m projects.dual_pressure_rectilinear_ion_processor.analysis.functional prepare-partial-continuation --run $run --baseline-run $predecessor | Out-Host
+   & $python -m msplatform.workflows.ion_processor.functional prepare-partial-continuation --run $run --baseline-run $predecessor | Out-Host
    if($LASTEXITCODE-ne0){throw 'IP partial continuation planning failed'}
    $partialPlan=Get-Content (Join-Path $run 'inputs/partial_batch_replay/simion_whole_unit_replay_plan.json') -Raw|ConvertFrom-Json
    $partialReplayCount=[int]$partialPlan.replay_unit_count
    Copy-Item -LiteralPath (Join-Path $run 'inputs/partial_batch_replay/batch_plan.json') -Destination (Join-Path $package.result_dir 'simion_execution_batch_plan.json')
-   & $python -m projects.dual_pressure_rectilinear_ion_processor.analysis.functional restore-partial-batches --run $run | Out-Host
+   & $python -m msplatform.workflows.ion_processor.functional restore-partial-batches --run $run | Out-Host
    if($LASTEXITCODE-ne0){throw 'IP partial continuation materialization failed'}
    if($partialReplayCount-gt0){
     $model=Get-Content (Join-Path $run 'inputs/resolved_model.json') -Raw|ConvertFrom-Json
     $expectedFieldRun=if($model.native_field.source_manifest){Split-Path -Parent ([string]$model.native_field.source_manifest)}else{Split-Path -Parent ([string]$model.native_field.directory)}
     if([IO.Path]::GetFullPath($expectedFieldRun)-ne[IO.Path]::GetFullPath($continuationFieldRun)){throw 'Continuation field authority changed after capacity admission'}
     Protect-IonProcessorPreviousField -FieldRun $continuationFieldRun -ResolvedModel $model -Context $continuationFieldGuards
-    & $python -m projects.dual_pressure_rectilinear_ion_processor.analysis.functional adopt-native-field --run $run --native-field-run $continuationFieldRun | Out-Host
+    & $python -m msplatform.workflows.ion_processor.functional adopt-native-field --run $run --native-field-run $continuationFieldRun | Out-Host
     if($LASTEXITCODE-ne0){throw 'IP continuation field binding failed'}
     $NativeFieldRun=$continuationFieldRun
    }
@@ -394,7 +398,7 @@ print(json.dumps(refs))
   $pythonContext=Get-RunNativeExecutionContext -Package $package -Paths @((Join-Path $run 'inputs/code'),$run) -Tool Python
   $env:PYTHONPATH=$pythonContext.projected_paths[0];Push-Location $pythonContext.projected_paths[1]
   try {
-   & $python -m projects.dual_pressure_rectilinear_ion_processor.analysis.functional merge-batches --run $run --batch-plan (Join-Path $run 'inputs/partial_batch_replay/batch_plan.json') | Out-Host
+   & $python -m msplatform.workflows.ion_processor.functional merge-batches --run $run --batch-plan (Join-Path $run 'inputs/partial_batch_replay/batch_plan.json') | Out-Host
    if($LASTEXITCODE-ne0){throw 'IP reused batch merge failed'}
    $count=@($partialPlan.units|Where-Object{$_.action-eq'reuse'}).Count
    Write-RunJson -Path (Join-Path $package.result_dir 'simion_batch_resource_usage.json') -Value @{schema_version=2;role='multipole_resource_usage';status='completed';failure_class=$null;limit_name=$null;execution_wave=@{process_count=0;reused_batch_count=$count}}
@@ -454,7 +458,7 @@ print(json.dumps(refs))
    }
   }
   $resolvedModel=Get-Content (Join-Path $run 'inputs/resolved_model.json') -Raw|ConvertFrom-Json -AsHashtable
-  $dispatchArguments=@('-m','projects.dual_pressure_rectilinear_ion_processor.analysis.functional','prepare-dispatch','--run',$run)
+  $dispatchArguments=@('-m','msplatform.workflows.ion_processor.functional','prepare-dispatch','--run',$run)
   if(-not$resolvedModel.native_field.source_manifest){
    $nativeFlightGuardContext=@{records=[Collections.Generic.List[object]]::new();status='acquiring';error=$null}
    $controller=Join-Path $resolvedModel.native_field.directory 'processor.pa0'
@@ -488,7 +492,7 @@ print(json.dumps(refs))
   $dispatchPath=Join-Path $run 'results/simion_repository_dispatch_plan.json'
   $batchPlanPath=Join-Path $run 'results/simion_execution_batch_plan.json'
   $usagePath=Join-Path $run 'results/simion_batch_resource_usage.json'
-  Invoke-PreparedPython -Arguments @('-m','common.simion.resource_profile','discover','--runs-root',(Join-Path $projectArtifacts 'runs'),'--output',$profilesPath)
+  Invoke-PreparedPython -Arguments @('-m','msplatform.execution.resource_profile','discover','--runs-root',(Join-Path $projectArtifacts 'runs'),'--output',$profilesPath)
   Invoke-PreparedPython -Arguments @('-m','msplatform.execution.simion_dispatch','--request',$requestPath,'--profiles',$profilesPath,'--output',$dispatchPath)
   Invoke-PreparedPython -Arguments @('-m','msplatform.backends.simion.particle_batching','--from-dispatch-plan',$dispatchPath,'--output',$batchPlanPath)
   if($partialContinuation){
@@ -500,7 +504,7 @@ print(json.dumps(refs))
    Invoke-PreparedPython -Arguments $fixedArguments
    Copy-Item -LiteralPath $oldPlanPath -Destination $batchPlanPath -Force
   }
-  Invoke-PreparedPython -Arguments @('-m','projects.dual_pressure_rectilinear_ion_processor.analysis.functional','materialize-batches','--run',$run,'--batch-plan',$batchPlanPath)
+  Invoke-PreparedPython -Arguments @('-m','msplatform.workflows.ion_processor.functional','materialize-batches','--run',$run,'--batch-plan',$batchPlanPath)
   function New-IonProcessorProcessSpecification {
    param($Batch)
    $folder=Join-Path $run ('simion_batch_{0:D4}'-f[int]$Batch.index)
@@ -535,7 +539,7 @@ print(json.dumps(refs))
     Invoke-PreparedPython -Arguments $adaptive
     if(-not$partialContinuation){
      Invoke-PreparedPython -Arguments @('-m','msplatform.backends.simion.particle_batching','--from-dispatch-plan',$dispatchPath,'--output',$batchPlanPath)
-     Invoke-PreparedPython -Arguments @('-m','projects.dual_pressure_rectilinear_ion_processor.analysis.functional','materialize-batches','--run',$run,'--batch-plan',$batchPlanPath)
+     Invoke-PreparedPython -Arguments @('-m','msplatform.workflows.ion_processor.functional','materialize-batches','--run',$run,'--batch-plan',$batchPlanPath)
     }
     }
     $firstSpecification=New-IonProcessorProcessSpecification $first
@@ -563,8 +567,8 @@ print(json.dumps(refs))
    $usage.execution_wave.reused_batch_count=@($partialPlan.units|Where-Object{$_.action-eq'reuse'}).Count
    Write-RunJson -Path $usagePath -Value $usage
   }
-  if($unknown){Invoke-PreparedPython -Arguments @('-m','common.simion.resource_profile','publish','--run-id',$RunId,'--resource-usage',$usagePath,'--resource-usage-relative-path','results/simion_batch_resource_usage.json','--dispatch-plan',$dispatchPath,'--dispatch-plan-relative-path','results/simion_repository_dispatch_plan.json','--output',(Join-Path $run 'results/simion_resource_profile.json'))}
-  Invoke-PreparedPython -Arguments @('-m','projects.dual_pressure_rectilinear_ion_processor.analysis.functional','merge-batches','--run',$run,'--batch-plan',$batchPlanPath)
+  if($unknown){Invoke-PreparedPython -Arguments @('-m','msplatform.execution.resource_profile','publish','--run-id',$RunId,'--resource-usage',$usagePath,'--resource-usage-relative-path','results/simion_batch_resource_usage.json','--dispatch-plan',$dispatchPath,'--dispatch-plan-relative-path','results/simion_repository_dispatch_plan.json','--output',(Join-Path $run 'results/simion_resource_profile.json'))}
+  Invoke-PreparedPython -Arguments @('-m','msplatform.workflows.ion_processor.functional','merge-batches','--run',$run,'--batch-plan',$batchPlanPath)
   $nativeCompleted=$true
  } finally {
   try {
@@ -580,7 +584,7 @@ print(json.dumps(refs))
  $env:PYTHONPATH=$pythonContext.projected_paths[0]
  Push-Location $pythonContext.projected_paths[1]
  try {
-  & $python -m projects.dual_pressure_rectilinear_ion_processor.analysis.functional analyze --run $run
+  & $python -m msplatform.workflows.ion_processor.functional analyze --run $run
   $analysisExit=$LASTEXITCODE
  } finally {Pop-Location;$env:PYTHONPATH=$repoRoot}
  if($analysisExit-ne0-and-not(Test-Path -LiteralPath $package.summary)){throw 'Analysis did not publish measured summary'}

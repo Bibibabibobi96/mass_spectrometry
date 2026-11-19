@@ -8,10 +8,12 @@ import os
 import stat
 from pathlib import Path
 import shutil
-from typing import Any
+from typing import Any, Callable
 
 from msplatform.io.file_identity import file_sha256
 from msplatform.backends.simion.workbench_seed import freeze_workbench_seed
+from msplatform.backends.simion.lua_serialization import lua_literal
+from msplatform.backends.simion.resources import native_resource_path, structural_seed_path
 from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
 from msplatform.execution.retention import file_record
@@ -128,7 +130,6 @@ def prepare_replay(run: Path, baseline_run: Path, repeat_fly_count: int = 1) -> 
         shutil.copyfile(source, inputs / source.name)
     for source, target in ((manifest_path, "baseline_manifest.json"), (baseline_run / "summary.json", "baseline_summary.json"), (baseline_run / "simion/events.csv", "baseline_events.csv"), (baseline_run / "results/particle_state.csv", "baseline_particle_state.csv")):
         shutil.copyfile(source, inputs / target)
-    project = Path(__file__).resolve().parents[1]
     runtime = baseline_run / "simion/processor.lua"
     shutil.copyfile(runtime, solver / "processor.lua")
     if repeat_fly_count == 2:
@@ -151,15 +152,13 @@ def prepare_replay(run: Path, baseline_run: Path, repeat_fly_count: int = 1) -> 
         ])
         with (solver / "processor.lua").open("a", encoding="utf-8") as stream:
             stream.write(orchestrator)
-    seed_binding = freeze_workbench_seed(run, seed_path=project.parents[1] / "src/msplatform/backends/simion/resources/1_instance_seed.iob",
-        placeholder_path=project.parents[1] / "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0")
+    seed_binding = freeze_workbench_seed(run, seed_path=structural_seed_path(1),
+        placeholder_path=native_resource_path("iob_seed_placeholder_01.pa0"))
     seed = Path(seed_binding["seed"]["frozen"]["path"])
     placeholder = Path(seed_binding["placeholder"]["frozen"]["path"])
     config = _read(inputs / "resolved_model.json")
     if "native_timing" in config and _read(inputs / "native_timing.json") != config["native_timing"]:
         raise ValueError("GUI frozen native timing JSON differs from baseline resolved timing")
-    from msplatform.workflows.ion_processor.preparation import lua_literal
-
     config["native_field"] = {"directory": str(solver.resolve()), "source_manifest": None, "construction_policy": "new_private_refine_from_frozen_GEM"}
     config["workbench_seed_path"] = str(seed.resolve())
     config["workbench_seed_records"] = seed_binding
@@ -369,13 +368,13 @@ def _verify_active_gui_receipts(run: Path, config: dict) -> dict:
                 pressure_semantics="zero fallback; frozen runtime pressure callback supplies HP/LP gas")
 
 
-def finalize_replay(run: Path, manual_gui_confirmed: bool = False) -> dict:
+def finalize_replay(run: Path, manual_gui_confirmed: bool = False, *,
+                    analyzer: Callable[[Path], dict]) -> dict:
     """Analyze Fly and compare every recorded event/sample and canonical row.
 
     Headless replay never proves manual visual review. Caller must explicitly
     confirm an actual manual GUI Fly; terminal manifest publication is external.
     """
-    from msplatform.workflows.ion_processor.analysis import analyze
 
     run = run.resolve()
     plan = _read(run / "inputs/gui_replay_plan.json")
@@ -398,7 +397,7 @@ def finalize_replay(run: Path, manual_gui_confirmed: bool = False) -> dict:
     expected_samples = record_path(plan["baseline_samples_record"], base_dir=run)
     expected_states = record_path(plan["baseline_particle_state_record"], base_dir=run)
     native_receipts = _verify_active_gui_receipts(run, _read(run / "inputs/resolved_model.json"))
-    measured = analyze(run)
+    measured = analyzer(run)
     profile = _read(run / "inputs/resolved_model.json").get("source_profile")
     if profile != plan.get("source_profile") or measured.get("source_profile") != profile:
         raise ValueError("replay source profile differs from frozen baseline")

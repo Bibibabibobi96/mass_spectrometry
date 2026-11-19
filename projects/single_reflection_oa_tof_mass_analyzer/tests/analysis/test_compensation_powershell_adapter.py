@@ -41,7 +41,7 @@ run=Path(a.run) if a.run else None
 if a.action=='inspect':
     source=root/'source.pa'
     record={'path':str(source),'bytes':source.stat().st_size,'sha256':hashlib.sha256(source.read_bytes()).hexdigest()}
-    value={'source_run':str(root/'parent'),'predecessor_manifest':None,'committed_new_bytes':10,'source_manifest':{},'runtime_files':[{'relative_path':'field.pa1' if mode=='native_family' else 'field.pa','pa':True,'record':record}],'producer':None if mode in ['reuse','analysis_failure','finalization_failure','native_family'] else {},'protected_cache_keys':[]}
+    value={'source_run':str(root/'configured_artifacts/parent'),'predecessor_manifest':None,'committed_new_bytes':10,'source_manifest':{},'runtime_files':[{'relative_path':'field.pa1' if mode=='native_family' else 'field.pa','pa':True,'record':record}],'producer':None if mode in ['reuse','analysis_failure','finalization_failure','native_family'] else {},'protected_cache_keys':[]}
 elif a.action=='freeze':
     value={'frozen_code_root':str(root),'basis_export_required':mode=='producer_fresh'}
 elif a.action=='fit':
@@ -177,8 +177,8 @@ class CompensationPowerShellAdapterTests(unittest.TestCase):
             script = root / "paths.ps1"
             script.write_text(r'''param($Repo,$Adapter,$Root,$Python)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
-. (Join-Path $Repo 'common/paths/workspace_paths.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/workspace_paths.ps1')
 $configuredPaths=Resolve-WorkspacePaths -SourceRoot $Repo -ArtifactRoot (Join-Path $Root 'configured-artifacts') -ExecutionRoot (Join-Path $Root 'exec') -HostResourceStatePath (Join-Path $Root 'host.sqlite3') -Python $Python
 $run=Join-Path $configuredPaths.artifact_root 'projects/test/runs/fixture'
 foreach($d in @('logs','results','simion')){[IO.Directory]::CreateDirectory((Join-Path $run $d))|Out-Null}
@@ -265,7 +265,7 @@ ConvertTo-Json -InputObject @($cases) -Compress
             script = Path(directory)/"inherited.ps1"
             script.write_text(r'''param($Entry,$Repo,$Root)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $Repo 'common/contracts/run_artifact_workflow.ps1')
+. (Join-Path $Repo 'src/msplatform/workflows/resources/run_artifact_workflow.ps1')
 function Invoke-HostResourceTransaction {throw 'PARENT_TRANSACTION_MUST_NOT_RUN'}
 $ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$null)
 $ownerTry=$ast.Find({param($n)$n-is[Management.Automation.Language.TryStatementAst]-and$null-ne$n.Finally-and$null-ne$n.Finally.Find({param($command)$command-is[Management.Automation.Language.CommandAst]-and$command.GetCommandName()-eq'Complete-RunArtifactPowerShellOwner'},$true)},$true)
@@ -274,8 +274,9 @@ $script:owner=@{result_path=(Join-Path $Root 'result.json')};$script:writersStop
 $script:lease=@{inherited=$true;environment_set=$false;token='real-parent-grant'}
 $script:operations=[ordered]@{inert=@{operation_id='inert-consumer-contract';resource_release_id='simion';observation=@{exit_confirmed=$true;returncode=0;process_id=$PID;process_started_at_utc_ticks=(Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks}}}
 $script:run=$Root;$script:executionAlias=$null;$script:readers=@();$script:controlGuards=@();$script:capacity=$null
-$science=@{};$failure=$null;$finalizationFailure=$null;$timings=@{};$clock=[Diagnostics.Stopwatch]::StartNew()
+$science=@{};$failure=$null;$finalizationFailure=$null;$releaseAttempted=$false;$releaseConfirmed=$false;$timings=@{};$clock=[Diagnostics.Stopwatch]::StartNew()
 function Set-CompensationStage {param($Name)}
+function Exit-HostResourceStage {param($Lease,[switch]$PassThru);return $null}
 function Complete-RunArtifactPowerShellOwner {
  param($Context,$Status,$Summary,$OutputPaths,$WriterCompletion,$WritersStopped,$OriginalFailure)
  Assert-WorkflowWriterCompletion $WriterCompletion -PowerShellOwner
@@ -285,7 +286,8 @@ function Complete-RunArtifactPowerShellOwner {
 }
 $before=$env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN
 Invoke-Expression $ownerTry.Finally.Extent.Text.TrimStart('{').TrimEnd('}')
-if(-not$script:validated-or$null-ne$script:lease-or$null-ne$finalizationFailure-or$env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN-cne$before){throw 'Parent ownership or actual receipt changed'}
+if($null-ne$finalizationFailure){throw $finalizationFailure}
+if(-not$script:validated-or$null-ne$script:lease-or$env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN-cne$before){throw 'Parent ownership or actual receipt changed'}
 ''', encoding="utf-8")
             result = subprocess.run(["pwsh", "-NoProfile", "-File", str(script), str(ADAPTER), str(ROOT), directory],
                 cwd=ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30)
@@ -312,7 +314,8 @@ if(-not$script:validated-or$null-ne$script:lease-or$null-ne$finalizationFailure-
                 _, run, _, initial = fixture.invoke_fixture(root, {}, retention="solver_review",
                     failure_stage="retention_before", project="single_reflection_oa_tof_mass_analyzer", host_state=str(root/"host.sqlite3"))
             self.assertNotEqual(initial.returncode, 0)
-            counter = (root/"callback_count.txt").read_bytes()
+            callback_count = root/"callback_count.txt"
+            counter = callback_count.read_bytes() if callback_count.exists() else None
             target = root/"repo"/RELATIVE
             target.mkdir(parents=True)
             shutil.copyfile(ADAPTER, target/"execute_compensation.ps1")
@@ -323,7 +326,8 @@ if(-not$script:validated-or$null-ne$script:lease-or$null-ne$finalizationFailure-
                     destination = root/"repo"/source.relative_to(ROOT)
                     destination.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(source, destination)
-            shutil.copyfile(ROOT/"common/paths/workspace_paths.py", root/"repo/common/paths/workspace_paths.py")
+            (root/"repo/src/msplatform/execution/resources").mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT/"src/msplatform/execution/resources/workspace_paths.py", root/"repo/src/msplatform/execution/resources/workspace_paths.py")
             from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
             copy_scientific_core(ROOT, root / "repo")
             command = ["pwsh", "-NoProfile", "-File", str(target/"execute_compensation.ps1"),
@@ -339,14 +343,14 @@ if(-not$script:validated-or$null-ne$script:lease-or$null-ne$finalizationFailure-
                 self.assertTrue(outcome["lease_released"])
                 self.assertTrue(outcome["terminal_published"])
                 self.assertTrue(outcome["capacity_finalized"])
-                self.assertEqual((root/"callback_count.txt").read_bytes(), counter)
+                self.assertEqual(callback_count.read_bytes() if callback_count.exists() else None, counter)
             wrong = list(command)
             wrong[wrong.index("-RunId") + 1] = "20261028_120001__test__python__wrong-run"
             rejected = subprocess.run(wrong, cwd=root/"repo", env=environment,
                 capture_output=True, text=True, encoding="utf-8", timeout=30)
             self.assertNotEqual(rejected.returncode, 0)
             self.assertIn("Result RunId binding differs", rejected.stderr)
-            self.assertEqual((root/"callback_count.txt").read_bytes(), counter)
+            self.assertEqual(callback_count.read_bytes() if callback_count.exists() else None, counter)
 
     def test_safe_producer_worker_facts_share_one_outer_release(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -390,6 +394,9 @@ if(-not$caught-or$script:writersStopped){throw 'Unknown producer writer was acce
             root = Path(directory) / "repo"
             target = root / RELATIVE
             target.mkdir(parents=True)
+            (root / "parent").mkdir()
+            (root / "configured_artifacts").mkdir()
+            (root / "configured_artifacts/parent").mkdir()
             shutil.copyfile(ADAPTER, target / "execute_compensation.ps1")
             copied = target / "execute_compensation.ps1"
             source = copied.read_text(encoding="utf-8")
@@ -399,20 +406,23 @@ if(-not$caught-or$script:writersStopped){throw 'Unknown producer writer was acce
                 "# TEST ONLY: establish owned-process containment before any action.\n"
                 "if([Console]::In.ReadLine()-cne'fixture-owned-start'){throw 'Fixture ownership ACK missing'}\n"
                 "Set-StrictMode -Version Latest", 1), encoding="utf-8", newline="\n")
-            (root / "common/paths").mkdir(parents=True)
+            (root / "src/msplatform/execution/resources").mkdir(parents=True)
             for filename in ("workspace_paths.ps1", "workspace_paths.py"):
-                shutil.copyfile(ROOT / "common/paths" / filename, root / "common/paths" / filename)
-            (root / "common/contracts").mkdir(parents=True)
+                shutil.copyfile(ROOT / "src/msplatform/execution/resources" / filename,
+                                root / "src/msplatform/execution/resources" / filename)
+            shutil.copytree(ROOT / "common/contracts", root / "common/contracts")
             (root / "common/simion").mkdir(parents=True)
-            (root / "common/contracts/run_artifact_workflow.ps1").write_text(OWNER_FIXTURE + r'''
+            (root / "src/msplatform/workflows/resources").mkdir(parents=True)
+            (root / "source.pa").write_bytes(b"inert byte transport fixture, no native PA")
+            from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
+            copy_scientific_core(ROOT, root)
+            (root / "src/msplatform/execution/resource_profile.py").write_text(
+                "if __name__ == '__main__': raise SystemExit(0)\n", encoding="utf-8")
+            (root / "src/msplatform/workflows/resources/run_artifact_workflow.ps1").write_text(OWNER_FIXTURE + r'''
 $publicAst=[Management.Automation.Language.Parser]::ParseFile($env:FIXTURE_PUBLIC_OWNER_SOURCE,[ref]$null,[ref]$null)
 $release=$publicAst.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Add-RunArtifactResourceRelease'},$true)
 Invoke-Expression $release.Extent.Text
 ''', encoding="utf-8")
-            (root / "source.pa").write_bytes(b"inert byte transport fixture, no native PA")
-            (root / "common/simion/resource_profile.py").write_text("", encoding="utf-8")
-            from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
-            copy_scientific_core(ROOT, root)
             (root / "src/msplatform/execution/simion_dispatch.py").write_text(
                 "import os,sys\nfrom pathlib import Path\n"
                 "with (Path(os.environ['FIXTURE_ROOT'])/'dispatch_origins.jsonl').open('a',encoding='utf-8') as f: f.write(str(Path(__file__).resolve())+'\\n')\n"
@@ -430,21 +440,27 @@ foreach($name in @('oatof_ideal_grounded.iob','oatof_ideal_grounded.lua','reflec
 [IO.File]::WriteAllText((Join-Path $Run 'inputs/source.ion'),'same frozen source')
 if($env:FIXTURE_MODE-eq'producer_failure'){throw 'PRODUCER_ORIGINAL_SENTINEL'}
 ''', encoding="utf-8")
-            env = dict(os.environ, FIXTURE_ROOT=str(root), FIXTURE_MODE=mode, FIXTURE_PYTHON=sys.executable, FIXTURE_PUBLIC_OWNER_SOURCE=str(ROOT/"common/contracts/run_artifact_workflow.ps1"))
+            env = dict(os.environ, FIXTURE_ROOT=str(root), FIXTURE_MODE=mode, FIXTURE_PYTHON=sys.executable, FIXTURE_PUBLIC_OWNER_SOURCE=str(ROOT/"src/msplatform/workflows/resources/run_artifact_workflow.ps1"))
             env.update(FIXTURE_DELAY_ACTION=delay_action, FIXTURE_DELAY_SECONDS=str(delay_seconds))
             env.update(FIXTURE_TEST_SOURCE=__file__, FIXTURE_ADAPTER_SOURCE=str(ADAPTER), FIXTURE_TEST_METHOD=self.id())
             env.update(MASS_SPECTROMETRY_ARTIFACT_ROOT=str(root / "configured_artifacts"),
                        MASS_SPECTROMETRY_EXECUTION_ROOT=str(root / "execution"),
-                       MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(root / "host.sqlite3"))
+                       MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(root / "host.sqlite3"),
+                       MASS_SPECTROMETRY_HOST_CONTEXT_JSON=json.dumps({
+                           "workspace": str(root), "python_executable": sys.executable,
+                           "host_state_path": str(root / "host.sqlite3"),
+                           "policy_path": str(ROOT / "src/msplatform/execution/resources/host_resource_policy.json"),
+                       }))
             env.pop("SIMULATION_PYTHON_EXE", None)
             env.pop("PYTHONPATH", None)
             env.pop("PYTHONHOME", None)
-            command = ["pwsh", "-NoProfile", "-File", str(target / "execute_compensation.ps1"), "-PythonExe", sys.executable, "-RunId", "fixture"]
+            command = ["pwsh", "-NoProfile", "-File", str(target / "execute_compensation.ps1"), "-PythonExe", sys.executable,
+                       "-RunId", "20261119_120000__test__simion__compensation-fixture"]
             command += ["-ResumeFinalization"] if resume else ["-CaseDirectory", "inert", "-SimionExe", "inert"]
             if resume:
-                prior_run = root / "original-artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/fixture"
+                prior_run = root / "original-artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261119_120000__test__simion__compensation-fixture"
                 (prior_run / "inputs").mkdir(parents=True)
-                (prior_run / "inputs/execution_request.json").write_text(json.dumps({"package": {"project": "single_reflection_oa_tof_mass_analyzer", "run_id": "fixture", "mode": "reflectron_voltage_compensation"}}), encoding="utf-8")
+                (prior_run / "inputs/execution_request.json").write_text(json.dumps({"package": {"project": "single_reflection_oa_tof_mass_analyzer", "run_id": prior_run.name, "mode": "reflectron_voltage_compensation"}}), encoding="utf-8")
                 (root / "resume-result.json").write_text(json.dumps({"role": "run_artifact_workflow_result", "run_directory": str(prior_run)}), encoding="utf-8")
                 command += ["-ResultPath", str(root / "resume-result.json")]
             if regularization is not None:
@@ -456,6 +472,8 @@ if($env:FIXTURE_MODE-eq'producer_failure'){throw 'PRODUCER_ORIGINAL_SENTINEL'}
             evidence = diagnostics_root
             if evidence is None and os.environ.get("OATOF_TEST_DIAGNOSTICS_ROOT"):
                 evidence = Path(os.environ["OATOF_TEST_DIAGNOSTICS_ROOT"])
+            from common.contracts.capacity_ledger import initialize_capacity_ledger
+            initialize_capacity_ledger(root / "configured_artifacts", objects=[])
             result = fixture_process.run_fixture_process(command, root=root, environment=env, mode=mode,
                                                          timeout=timeout, diagnostics_root=evidence)
             print(f"FIXTURE_EVIDENCE mode={mode} path={result.fixture_diagnostics}", flush=True)

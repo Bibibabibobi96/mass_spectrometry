@@ -1145,8 +1145,8 @@ class MassSpectrumInputAdmissionTests(unittest.TestCase):
             script = root/'ideal-publication.ps1'
             script.write_text(r'''param($Repo,$Python,$Root)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
-. (Join-Path $Repo 'common/paths/workspace_paths.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/workspace_paths.ps1')
 $ideal=Join-Path $Repo 'projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/run_ideal_field_diagnostic.ps1'
 $text=[IO.File]::ReadAllText($ideal);$ast=[Management.Automation.Language.Parser]::ParseFile($ideal,[ref]$null,[ref]$null)
 $first=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-ceq'$finalConfig'},$true)

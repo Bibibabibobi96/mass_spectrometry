@@ -331,7 +331,7 @@ class ObservedExecutionTests(unittest.TestCase):
                     with self.assertRaises(TimeoutError):
                         with process_file_lock(lock, timeout_seconds=0):
                             self.fail("Publisher entered a live shared terminal guard")
-                script = ". '" + str(repository / "common/contracts/run_artifact_support.ps1").replace("'", "''") + "'; "
+                script = ". '" + str(repository / "src/msplatform/execution/resources/run_artifact_support.ps1").replace("'", "''") + "'; "
                 script += "$g=Enter-RunTerminalConsumptionGuard -RunDirectory '" + str(root).replace("'", "''") + "' -TimeoutSeconds 1;try{'SHARED_READER_OK'}finally{$g.Dispose()}"
                 result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-NonInteractive", "-Command", script],
                     cwd=root, capture_output=True, encoding="utf-8", timeout=15)

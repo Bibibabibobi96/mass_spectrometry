@@ -10,7 +10,6 @@ import copy
 import json
 import math
 from pathlib import Path
-import subprocess
 
 import matplotlib
 matplotlib.use("Agg")
@@ -24,10 +23,11 @@ from msplatform.contracts.particle_state import load_component_particle_state_cs
 from msplatform.contracts.particle_physics import kinetic_energy_ev
 from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
+from msplatform.execution.source_identity import git_worktree_context
 from msplatform.execution.retention import file_record
 from msplatform.io.manifest_records import require_completed_terminal_publication
 from msplatform.workflows.ion_processor.preparation import derive_numerical_boundaries, recorded_native_projection
-from projects.dual_pressure_rectilinear_ion_processor.analysis.spatial_crossings import (
+from msplatform.workflows.ion_processor.spatial_crossings import (
     VALUES, prepare_spatial_crossings_from_samples,
 )
 
@@ -457,11 +457,9 @@ def export_comparison(run_mapping: dict[str, Path], output_directory: Path, stud
             for extension in ("png", "svg"):
                 fig.savefig(out / f"{role}.{extension}", format=extension, dpi=210, facecolor="white")
             plt.close(fig)
-    repository = Path(__file__).resolve().parents[3]
-    git = dict(sha=subprocess.run(["git", "rev-parse", "HEAD"], cwd=repository, text=True,
-                                  encoding="utf-8", capture_output=True, timeout=10, check=True).stdout.strip(),
-               worktree_porcelain=subprocess.run(["git", "status", "--porcelain"], cwd=repository, text=True,
-                                                  encoding="utf-8", capture_output=True, timeout=10, check=True).stdout)
+    repository = Path(__file__).resolve().parents[4]
+    context = git_worktree_context(repository)
+    git = dict(sha=context["git_sha"], worktree_porcelain=context["worktree_porcelain"])
     metadata = dict(schema_version=1, role="ion_processor_extraction_factorial_comparison", study_contract=study_contract, git=git,
                     producer=file_record(Path(__file__)), cases=[{k:c[k] for k in ("label", "run", "lp_length_mm", "lift_v", "source_records")} for c in cases],
                     common_extracted_ids=common, frame_id=cases[0]["config"]["coordinate_transform"]["to_frame_id"],

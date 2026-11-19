@@ -123,7 +123,7 @@ class CrossRootProtectionTests(unittest.TestCase):
             script = base / "check.ps1"
             script.write_text(r'''param($Repo,$Python,$Request)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 function Invoke-ArtifactWorkflowCapacityAdmission {return @{satisfied=$true;fixture_admission=$true}}
 $data=Get-Content -LiteralPath $Request -Raw|ConvertFrom-Json -AsHashtable
 $session=Enter-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $Repo -ArtifactRoot $data.target `
@@ -188,7 +188,7 @@ fixture_protection.delete_capacity_protection_lease=fixture_release
                 script = base / "check.ps1"
                 script.write_text(r'''param($Repo,$Python,$Request)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 function Invoke-ArtifactWorkflowCapacityAdmission {return @{satisfied=$true;fixture_admission=$true}}
 $data=Get-Content -LiteralPath $Request -Raw|ConvertFrom-Json -AsHashtable
 if($data.scenario-eq'alias'){$null=New-Item -ItemType Junction -Path $data.alias -Target $data.first}
@@ -259,7 +259,7 @@ fixture_protection.create_capacity_protection_lease=fixture_pin
             script = base / "guard.ps1"
             script.write_text(r'''param($Repo,$Python,$Request)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 function Invoke-ArtifactWorkflowCapacityAdmission {return @{satisfied=$true;fixture_admission=$true}}
 $data=Get-Content -LiteralPath $Request -Raw|ConvertFrom-Json -AsHashtable
 $null=New-Item -ItemType Junction -Path $data.alias -Target $data.root

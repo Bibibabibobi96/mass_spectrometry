@@ -13,15 +13,22 @@ class PairedOwnerRecoveryTests(unittest.TestCase):
     def test_actual_cli_resume_passes_original_owner_paths_and_propagates_status(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            contracts = root / "repository/common/contracts"
-            contracts.mkdir(parents=True)
-            (contracts / "run_artifact_support.ps1").write_text("# inert import fixture\n", encoding="utf-8")
-            (contracts / "run_artifact_workflow.ps1").write_text(
+            execution_resources = root / "repository/src/msplatform/execution/resources"
+            workflow_resources = root / "repository/src/msplatform/workflows/resources"
+            execution_resources.mkdir(parents=True)
+            workflow_resources.mkdir(parents=True)
+            (execution_resources / "run_artifact_support.ps1").write_text("# inert import fixture\n", encoding="utf-8")
+            (workflow_resources / "run_artifact_workflow.ps1").write_text(
                 "param($ResultPath,[switch]$ResumeFinalization)\n"
                 "function Invoke-RunArtifactWorkflow {param($RequestPath,$ResultPath,[switch]$ResumeFinalization)\n"
                 " @{request=$RequestPath;result=$ResultPath;resume=[bool]$ResumeFinalization}|ConvertTo-Json|Set-Content ($ResultPath+'.called')\n"
                 " $prior=Get-Content -LiteralPath $ResultPath -Raw|ConvertFrom-Json\n"
                 " return @{status=$prior.expected_status}\n}\n", encoding="utf-8")
+            launcher = root / "invoke_utf8.ps1"
+            launcher.write_text(
+                "[Console]::OutputEncoding=[Text.UTF8Encoding]::new()\n"
+                "$remaining=@($args[1..($args.Count-1)])\n"
+                "& $args[0] @remaining\n", encoding="utf-8")
             for owner in ("paired_accelerator_static_field", "paired_accelerator_pulse"):
                 for status in ("success", "failed"):
                     with self.subTest(owner=owner, status=status):
@@ -29,7 +36,7 @@ class PairedOwnerRecoveryTests(unittest.TestCase):
                         result = root / (owner + status + ".json")
                         payload = json.dumps(dict(run_directory=str(run), expected_status=status)).encode("utf-8")
                         result.write_bytes(payload)
-                        actual = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File",
+                        actual = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(launcher),
                             str(ROOT / f"integrations/workflows/{owner}/execute.ps1"),
                             "-ResumeFinalization", "-ResultPath", str(result), "-RunId", "managed_run",
                             "-RepoRoot", str(root / "repository")], cwd=ROOT, capture_output=True,
@@ -45,7 +52,7 @@ class PairedOwnerRecoveryTests(unittest.TestCase):
     def test_unconfirmed_host_release_is_attempted_once_and_preserves_protection(self):
         code=r"""param($Owner,$Failure,$Repo)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $pathEnvironmentNames=@('MASS_SPECTROMETRY_ARTIFACT_ROOT','MASS_SPECTROMETRY_EXECUTION_ROOT','MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH','MASS_SPECTROMETRY_RUN_DIRECTORY','MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY')
 $savedPathEnvironment=Save-RunEnvironment -Names $pathEnvironmentNames
 $ast=[Management.Automation.Language.Parser]::ParseFile($Owner,[ref]$null,[ref]$null)
@@ -76,7 +83,7 @@ if($Failure-eq'throw'-and$failure.Exception.Message-ne'PRIMARY_RELEASE_FAILURE')
     def test_failed_owners_pass_saved_raw_outputs_and_original_error_to_public_finalizer(self):
         code=r"""param($Owner,$Run,$Repo)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $pathEnvironmentNames=@('MASS_SPECTROMETRY_ARTIFACT_ROOT','MASS_SPECTROMETRY_EXECUTION_ROOT','MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH','MASS_SPECTROMETRY_RUN_DIRECTORY','MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY')
 $savedPathEnvironment=Save-RunEnvironment -Names $pathEnvironmentNames
 $ast=[Management.Automation.Language.Parser]::ParseFile($Owner,[ref]$null,[ref]$null)

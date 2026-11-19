@@ -1,11 +1,6 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 
-if (-not (Get-Command Assert-HostResourceHeavyStage -ErrorAction SilentlyContinue) -or
-    -not (Get-Command Test-HostResourceConsoleProcess -ErrorAction SilentlyContinue)) {
-  throw 'Load the installed host resource with an explicit execution context first.'
-}
-
 if(-not('MultipoleMemoryStatus' -as[type])){
   Add-Type -TypeDefinition @'
 using System;

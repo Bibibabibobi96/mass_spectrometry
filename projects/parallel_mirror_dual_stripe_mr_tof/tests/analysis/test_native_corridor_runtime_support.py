@@ -88,12 +88,12 @@ try{
                 self.assertEqual((target/'retained.lua').read_bytes(), (original/'program.lua').read_bytes())
 
     def test_support_loads_its_short_pa_copy_dependency(self) -> None:
-        source = (PROJECT / 'simion/native_corridor_runtime_support.ps1').read_text(encoding='utf-8-sig')
-        self.assertIn("common\\simion\\short_pa_path_support.ps1", source)
+        source = (PROJECT.parents[1] / 'src/msplatform/backends/simion/resources/native_corridor_runtime_support.ps1').read_text(encoding='utf-8-sig')
+        self.assertIn("short_pa_path_support.ps1", source)
         self.assertIn("[math]::Max([int64]0,[int64]$CapacityWorkflowSession.committed_new_bytes", source)
 
     def test_accelerator_reuses_provider_owned_checkpoint_without_materialization(self) -> None:
-        source = (PROJECT / 'simion/native_corridor_runtime_support.ps1').read_text(encoding='utf-8-sig')
+        source = (PROJECT.parents[1] / 'src/msplatform/backends/simion/resources/native_corridor_runtime_support.ps1').read_text(encoding='utf-8-sig')
         function = source.split('function Get-NativeAcceleratorRuntimeFamily {', 1)[1].split(
             'function Assert-NativeCorridorRuntimeSessionDirectory {', 1,
         )[0]
@@ -107,8 +107,8 @@ try{
         script = r"""
 param($Repo,$Root,$Python)
 $ErrorActionPreference='Stop'
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
-. (Join-Path $Repo 'projects/parallel_mirror_dual_stripe_mr_tof/simion/native_corridor_runtime_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/backends/simion/resources/native_corridor_runtime_support.ps1')
 $owner=Join-Path $Root 'runs/owner'
 New-Item -ItemType Directory -Path (Join-Path $owner 'results') -Force|Out-Null
 [IO.File]::WriteAllText((Join-Path $owner 'run_config.json'),'{}')
@@ -192,6 +192,7 @@ try{
                 ['pwsh', '-NoProfile', '-File', str(fixture), str(PROJECT.parents[1]), temporary,
                  sys.executable],
                 cwd=PROJECT, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60,
+                env={**os.environ, 'MASS_SPECTROMETRY_EXECUTION_ROOT': str(Path(temporary) / 'execution')},
             )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('MANAGED_NATIVE_RECOVERY=PASS', result.stdout)
@@ -361,9 +362,9 @@ Write-Output 'STREAM_FIXTURE=PASS'
             path.write_text(script, encoding='utf-8')
             result = subprocess.run(
                 ['pwsh', '-NoProfile', '-NonInteractive', '-File', str(path),
-                 '-Support', str(PROJECT / 'simion/native_corridor_runtime_support.ps1'),
+                 '-Support', str(PROJECT.parents[1] / 'src/msplatform/backends/simion/resources/native_corridor_runtime_support.ps1'),
                  '-Root', str(root), '-Bank', json.dumps(bank)],
-                cwd=PROJECT, capture_output=True, text=True, encoding='utf-8', timeout=30,
+                cwd=PROJECT, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn('STREAM_FIXTURE=PASS', result.stdout)

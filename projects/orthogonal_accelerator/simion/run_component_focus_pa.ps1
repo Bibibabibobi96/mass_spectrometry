@@ -2,7 +2,7 @@
 param([Parameter(Mandatory)][string]$RunId,[Parameter(Mandatory)][ValidateCount(3,3)][double[]]$MeshMmPerGu,[string]$CampaignPath='',[string]$RuntimeCheckpointPath='',[string]$SimionExe='')
 Set-StrictMode -Version Latest;$ErrorActionPreference='Stop'
 $projectRoot=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path;$repoRoot=(Resolve-Path (Join-Path $projectRoot '..\..')).Path;$workspaceRoot=(Resolve-Path (Join-Path $repoRoot '..')).Path
-. (Join-Path $repoRoot 'common\require_powershell7.ps1');. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1');. (Join-Path $repoRoot 'common\host_execution_lease.ps1');. (Join-Path $repoRoot 'common\simion\native_fast_adjust_runtime_support.ps1')
+. (Join-Path $repoRoot 'src\msplatform\execution\resources\require_powershell7.ps1');. (Join-Path $repoRoot 'src\msplatform\execution\resources\run_artifact_support.ps1');. (Join-Path $repoRoot 'common\host_execution_lease.ps1');. (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\native_fast_adjust_runtime_support.ps1')
 . (Join-Path $PSScriptRoot 'focus_python.ps1')
 $python=Join-Path $repoRoot '.venv\Scripts\python.exe';if(-not$SimionExe){$SimionExe=Join-Path $env:ProgramFiles 'SIMION-2020\simion.exe'};foreach($item in @($python,$SimionExe)){if(-not(Test-Path -LiteralPath $item -PathType Leaf)){throw "Required executable is missing: $item"}}
 $campaign=if($CampaignPath){(Resolve-Path -LiteralPath $CampaignPath).Path}else{Join-Path $projectRoot 'config\two_zone_component_focus_campaign.json'};$builder=Join-Path $projectRoot 'simion\build_component_focus_pa.lua';$artifactRoot=Join-Path $workspaceRoot 'artifacts';$cacheRoot=Join-Path $artifactRoot 'common\simion\pa_family_cache'

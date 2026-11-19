@@ -29,7 +29,7 @@ $python = if ($PythonExe) {
 } else {
     Join-Path $repoRoot '.venv\Scripts\python.exe'
 }
-. (Join-Path $repoRoot 'common/contracts/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
+. (Join-Path $repoRoot 'src/msplatform/workflows/resources/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
 if($ResumeFinalization){
     $allowed=@('ResumeFinalization','RunId','ResultPath','PythonExe')
     $ignored=@($PSBoundParameters.Keys|Where-Object{$_-notin$allowed})
@@ -57,7 +57,7 @@ function Read-InterfaceExecutionLimits {
     }
     return $value
 }
-. (Join-Path $repoRoot 'common/paths/workspace_paths.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
 $pathContext=Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
 $artifactRoot=Join-Path ([string]$pathContext.artifact_root) 'projects/rf_multipole_ion_optics'
 $Limits=Read-InterfaceExecutionLimits -Path $LimitsPath

@@ -14,7 +14,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '../../..')).Path
 $python=Join-Path $repoRoot '.venv/Scripts/python.exe'
-. (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $repoRoot 'common/host_execution_lease.ps1')
 $project='parallel_mirror_dual_stripe_mr_tof'
 $allArtifacts=Join-Path (Split-Path -Parent $repoRoot) 'artifacts'

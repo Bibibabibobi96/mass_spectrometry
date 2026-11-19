@@ -21,16 +21,7 @@ from msplatform.contracts.particle_physics import charge_to_mass_c_per_kg
 from msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates import to_project_position, to_project_vector
 from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import shape_bounds
 
-AXES = "xyz"
-STEP_COLUMNS = ("particle_id", "step_index", "start_t_us", "end_t_us",
-               *(f"{end}_{axis}_mm" for end in ("start", "end") for axis in AXES),
-               *(f"{state}_v{axis}_mm_us" for state in ("start_post", "end_pre", "end_post") for axis in AXES),
-               "pressure_pa")
-IMPULSE_COLUMNS = ("particle_id", "step_index", "electrode_id", "start_t_us", "end_t_us",
-                  *(f"integral_e{a}_v_us_per_mm" for a in AXES),
-                  *(f"fine_minus_coarse_e{a}_v_us_per_mm" for a in AXES),
-                  "max_reconstruction_error_v_per_mm",
-                  *(f"unit_integral_e{a}_us_per_mm" for a in AXES))
+from msplatform.backends.simion.ip_force_protocol import AXES, STEP_COLUMNS, IMPULSE_COLUMNS
 REGIONS = ("upstream_E5", "E5_slab", "E5_to_E14_gap", "E14_slab", "downstream_E14")
 TERMS = tuple(f"E{i}" for i in range(1, 16)) + ("collision", "field_residual")
 PRODUCER_SOURCE_PATH = Path(__file__).resolve()

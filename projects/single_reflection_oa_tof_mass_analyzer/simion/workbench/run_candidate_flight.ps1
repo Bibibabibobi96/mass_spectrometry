@@ -8,9 +8,9 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 . (Join-Path $RepositoryRoot 'common/host_execution_lease.ps1')
-. (Join-Path $RepositoryRoot 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $RepositoryRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $RepositoryRoot 'common/resource_budget_support.ps1')
-. (Join-Path $RepositoryRoot 'common/simion/short_pa_path_support.ps1')
+. (Join-Path $RepositoryRoot 'src/msplatform/backends/simion/resources/short_pa_path_support.ps1')
 $request=Get-Content -LiteralPath $ExecutionRequestPath -Raw|ConvertFrom-Json -Depth 50
 $runtime=Get-Content -LiteralPath $RuntimeReceiptPath -Raw|ConvertFrom-Json -Depth 80
 $session=Get-Content -LiteralPath $CapacitySessionPath -Raw|ConvertFrom-Json -Depth 80

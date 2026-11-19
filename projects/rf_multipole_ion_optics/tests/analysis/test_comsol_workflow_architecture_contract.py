@@ -535,7 +535,7 @@ class ComsolSolverNumericsFailureTests(unittest.TestCase):
     def test_simion_failed_closure_unconfirmed_host_preserves_owner_and_primary_error(self) -> None:
         command = r"""
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $PWD 'common/contracts/run_artifact_workflow.ps1')
+. (Join-Path $PWD 'src/msplatform/workflows/resources/run_artifact_workflow.ps1')
 . (Join-Path $PWD 'src/msplatform/backends/simion/resources/simion_execution.ps1')
 $root=$env:RF_CLOSURE_ROOT;$physicalRunDir=$root;$runDir=$root;$resultDir=$root;$logDir=$root;$solverDir=$root
 New-Item -ItemType Directory (Join-Path $root 'logs')|Out-Null

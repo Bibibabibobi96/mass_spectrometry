@@ -386,7 +386,7 @@ Write-Output 'CONTROLLED_CPU_GREEN=real_process_and_released'
             code = r"""
 param($Repo,$Python,$Manifest)
 $ErrorActionPreference='Stop'
-. (Join-Path $Repo 'common/contracts/run_artifact_workflow.ps1')
+. (Join-Path $Repo 'src/msplatform/workflows/resources/run_artifact_workflow.ps1')
 $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'src/msplatform/workflows/resources/run_finite_3d_transport.ps1'),[ref]$null,[ref]$null)
 $function=@($ast.FindAll({param($node)$node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-ceq'Get-FiniteComsolAnalysisSource'},$true))
 if($function.Count-ne1){throw 'source admission function is ambiguous'}
@@ -449,7 +449,7 @@ $source.stage_evidence|ConvertTo-Json -Depth 20 -Compress
 param($Repo,$Root)
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'src/msplatform/workflows/resources/run_finite_3d_transport.ps1'),[ref]$null,[ref]$null)
 $function=@($ast.FindAll({param($node)$node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-ceq'Invoke-FiniteComsolAnalysis'},$true))
 if($function.Count-ne1){throw 'Actual shared analysis function missing'}
@@ -485,7 +485,7 @@ Write-Output 'UNKNOWN_WRITER_PRESERVED'
                 script.write_text(r"""
 param($Repo,$Python,$Manifest)
 $ErrorActionPreference='Stop'
-. (Join-Path $Repo 'common/contracts/run_artifact_workflow.ps1')
+. (Join-Path $Repo 'src/msplatform/workflows/resources/run_artifact_workflow.ps1')
 $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'src/msplatform/workflows/resources/run_finite_3d_transport.ps1'),[ref]$null,[ref]$null)
 $function=@($ast.FindAll({param($node)$node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-ceq'Get-FiniteComsolAnalysisSource'},$true))
 Invoke-Expression $function[0].Extent.Text
@@ -590,7 +590,7 @@ function Write-ColdFixtureEvent {
             run = root/('deep-'+'a'*65)/('deep-'+'b'*65)/('deep-'+'c'*65)/'run'
             code = run/'inputs/code'
             for relative in ('common/host_execution_lease.ps1', 'src/msplatform/execution/resources/host_resource_policy.json',
-                             'common/host_resource_scheduler.py', 'common/require_powershell7.ps1'):
+                             'common/host_resource_scheduler.py', 'src/msplatform/execution/resources/require_powershell7.ps1'):
                 target = code/relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(REPO/relative, target)
@@ -672,7 +672,7 @@ if($env:RF_INERT_COLD_LAUNCHER_FAIL-eq'1'){[Console]::Error.WriteLine('INERT_COL
             script.write_text(r"""
 param($Repo,$Python,$Root)
 $ErrorActionPreference='Stop'
-. (Join-Path $Repo 'common/contracts/run_artifact_workflow.ps1')
+. (Join-Path $Repo 'src/msplatform/workflows/resources/run_artifact_workflow.ps1')
 . (Join-Path $Repo 'common/resource_budget_support.ps1')
 . (Join-Path $Repo 'common/host_execution_lease.ps1')
 $env:SIMULATION_PYTHON_EXE=$Python
@@ -987,7 +987,7 @@ function Invoke-ResourceBudgetedProcess {
             script.write_text(r"""
 param($Repo,$Python,$Manifest)
 $ErrorActionPreference='Stop'
-. (Join-Path $Repo 'common/contracts/run_artifact_workflow.ps1')
+. (Join-Path $Repo 'src/msplatform/workflows/resources/run_artifact_workflow.ps1')
 $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'src/msplatform/workflows/resources/run_finite_3d_transport.ps1'),[ref]$null,[ref]$null)
 $function=@($ast.FindAll({param($node)$node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-ceq'Get-FiniteComsolAnalysisSource'},$true))
 Invoke-Expression $function[0].Extent.Text

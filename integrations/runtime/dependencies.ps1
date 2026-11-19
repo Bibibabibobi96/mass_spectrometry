@@ -1,6 +1,6 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-. (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'common/contracts/run_artifact_support.ps1')
+. (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'src/msplatform/execution/resources/run_artifact_support.ps1')
 
 function Get-DependencyIntegrationRoot {
   [CmdletBinding()]

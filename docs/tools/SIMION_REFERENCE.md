@@ -85,7 +85,7 @@ SIMION 实例分别飞行不同粒子子集，再合并输出；仓库的调度�
 | 新 family 的构建、Refine 与响应生成 | 仅在一次性、可写的 build staging 中创建原生 family；发布前把每个响应复制到全新 PA 对象并保存为 standalone `.pa` | 新对象逐节点保留势、电极标志及网格元数据；独立进程重开和延迟哈希稳定 |
 | 已发布 cache 的 `.paN` 成员 | **禁止供应商进程再次打开**；运行时只消费同 generation 内已发布的 standalone 响应 | manifest 同时覆盖原生 family 和 standalone 响应；运行后完整 cache probe |
 
-统一复用 [short_pa_path_support.ps1](../../common/simion/short_pa_path_support.ps1)。禁止用
+统一复用 [short_pa_path_support.ps1](../../src/msplatform/backends/simion/resources/short_pa_path_support.ps1)。禁止用
 junction、symlink 或 hard link 把不可变缓存暴露给 SIMION，禁止项目私有短路径实现。文件只读属性
 不能代替写隔离；所有路径都不能只核对 `.pa#` 哨兵。临时短名副本在供应商退出后清理；需作为保存IOB依赖保留的
 独立副本由公共 `Publish-ShortPaCopyDestination` 封存为run自有只读产物，并绑定manifest，不能清理后留下失效IOB。

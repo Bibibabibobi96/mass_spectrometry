@@ -254,7 +254,7 @@ class ExecutionCompilerTests(unittest.TestCase):
                 harness = root/"freeze.ps1"
                 harness.write_text(r"""param($Repo,$Entry,$Project,$Root,$Bundle,$Variable)
 Set-StrictMode -Version Latest;$ErrorActionPreference='Stop'
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$null)
 $assignment=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left-is[Management.Automation.Language.VariableExpressionAst]-and$n.Left.VariablePath.UserPath-eq$Variable},$true)
 $selection=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Clauses[0].Item1.Extent.Text-eq'$ResolvedInputsPath'},$true)
@@ -389,7 +389,7 @@ foreach($record in $compiledInputs.files){
             def execute(value):
                 target.write_text(json.dumps(value), encoding="utf8")
                 return subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(harness),
-                    str(REPO_ROOT/"common/contracts/run_artifact_support.ps1"), str(target), str(root)],
+                    str(REPO_ROOT/"src/msplatform/execution/resources/run_artifact_support.ps1"), str(target), str(root)],
                     cwd=REPO_ROOT,capture_output=True,text=True,encoding="utf8",errors="replace",timeout=30)
             for value in (plain, selected):
                 result=execute(value);self.assertEqual(result.returncode,0,result.stdout+result.stderr)
@@ -472,7 +472,7 @@ $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
 """, encoding="utf-8")
             completed = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(harness),
-                str(REPO_ROOT/"common/contracts/run_artifact_support.ps1"), str(plan), str(root)],
+                str(REPO_ROOT/"src/msplatform/execution/resources/run_artifact_support.ps1"), str(plan), str(root)],
                 cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
             self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr)
             actual = json.loads((entry.parent/"actual.json").read_text())
@@ -523,7 +523,7 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
                     (project/"actual.json").unlink(missing_ok=True)
                     plan_path.write_text(json.dumps(actual))
                     completed = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(harness),
-                        str(REPO_ROOT/"common/contracts/run_artifact_support.ps1"), str(plan_path), str(root)],
+                        str(REPO_ROOT/"src/msplatform/execution/resources/run_artifact_support.ps1"), str(plan_path), str(root)],
                         cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
                     if mode == "success":
                         self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr)
@@ -615,7 +615,9 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
         self.assertEqual(result["profile_id"], "native_functional")
         self.assertEqual([item["step_id"] for item in result["commands"]], ["native_run"])
         command = result["commands"][0]
-        self.assertTrue(command["argv"][4].replace("\\", "/").endswith("/simion/run_functional.ps1"))
+        self.assertTrue(any(value.replace("\\", "/").endswith("/msplatform/workflows/resources/ip_functional.ps1")
+                            for value in command["argv"]))
+        self.assertEqual(command["argv"][command["argv"].index("-RepositoryRoot") + 1], str(REPO_ROOT))
         self.assertEqual(command["argv"][command["argv"].index("-RunId") + 1], command["run_id"])
         self.assertEqual(command["argv"][command["argv"].index("-SourceProfile")+1], "functional")
         self.assertTrue(any("Prototype" in message for message in result["limitations"]))
@@ -1162,7 +1164,7 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
                 env["SIMULATION_PYTHON_EXE"] = str(root / "poison/python.exe")
                 env.pop("PYTHONPATH", None)
                 result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(harness),
-                                         str(REPO_ROOT / "common/contracts/run_artifact_support.ps1"),
+                                         str(REPO_ROOT / "src/msplatform/execution/resources/run_artifact_support.ps1"),
                                          str(plan_path), str(repo)], cwd=root, env=env, capture_output=True,
                                         text=True, encoding="utf-8", errors="replace", timeout=30)
                 self.assertFalse((repo / ".venv").exists())

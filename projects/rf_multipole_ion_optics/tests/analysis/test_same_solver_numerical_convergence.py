@@ -172,7 +172,7 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
         }
         command = (
             ". (Join-Path $env:RF_REPO "
-            "'common/contracts/run_artifact_support.ps1');"
+            "'src/msplatform/execution/resources/run_artifact_support.ps1');"
             ". (Join-Path $env:RF_PROJECT "
             "'runtime/analysis_run_lifecycle.ps1');"
             "$inputRoles=ConvertFrom-Json $env:RF_INPUT_ROLES;"
@@ -817,7 +817,7 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
             script = f"""
 $ErrorActionPreference='Stop'
 $repoRoot={literal(REPO_ROOT)};$python={literal(sys.executable)}
-. (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
 $t=$null;$e=$null
 $entry=Join-Path $repoRoot 'projects/rf_multipole_ion_optics/workflows/same_solver_convergence/run_comparison.ps1'

@@ -12,7 +12,8 @@ import unittest
 from unittest.mock import patch
 
 from msplatform.execution.retention import file_record
-from projects.dual_pressure_rectilinear_ion_processor.analysis.gui_replay import prepare_replay, finalize_replay, record_prepared_native_family, validate_baseline_for_private_gui
+from msplatform.backends.simion.ip_gui_replay import prepare_replay, finalize_replay, record_prepared_native_family, validate_baseline_for_private_gui
+from msplatform.workflows.ion_processor import analysis as ion_analysis
 from msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates import (
     to_local_position, to_local_vector, to_project_position, to_project_vector,
     transform_from_config,
@@ -99,18 +100,17 @@ class GuiReplayPlanTests(unittest.TestCase):
         # data. No checkout-local 16 MB seed or scientific PA is required.
         from msplatform.backends.simion.workbench_seed import freeze_workbench_seed as freeze_pair
         from msplatform.backends.simion.resources import structural_seed_path
-        from projects.dual_pressure_rectilinear_ion_processor.analysis import gui_replay
+        from msplatform.backends.simion import ip_gui_replay as gui_replay
         self.seed_repository = root / "explicit_seed_source"
         public_seed = self.seed_repository / "src/msplatform/backends/simion/resources/1_instance_seed.iob"
         public_seed.parent.mkdir(parents=True)
         shutil.copyfile(structural_seed_path(1), public_seed)
-        public_placeholder = self.seed_repository / "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0"
-        public_placeholder.parent.mkdir(parents=True)
+        public_placeholder = self.seed_repository / "src/msplatform/backends/simion/resources/iob_seed_placeholder_01.pa0"
+        public_placeholder.parent.mkdir(parents=True, exist_ok=True)
         public_placeholder.write_bytes(b"INERT_STRUCTURE_ONLY_NOT_A_SCIENTIFIC_PA")
         def selected_pair(run, *, seed_path, placeholder_path):
-            actual_repo = Path(gui_replay.__file__).resolve().parents[3]
-            self.assertEqual(seed_path, actual_repo / "src/msplatform/backends/simion/resources/1_instance_seed.iob")
-            self.assertEqual(placeholder_path, actual_repo / "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0")
+            self.assertEqual(seed_path, structural_seed_path(1))
+            self.assertEqual(placeholder_path, gui_replay.native_resource_path("iob_seed_placeholder_01.pa0"))
             return freeze_pair(run, seed_path=public_seed, placeholder_path=public_placeholder)
         selected_seed = patch.object(gui_replay, "freeze_workbench_seed", side_effect=selected_pair)
         selected_seed.start()
@@ -286,7 +286,7 @@ class GuiReplayPlanTests(unittest.TestCase):
         powershell = shutil.which("pwsh")
         if not powershell:
             self.skipTest("PowerShell 7 unavailable for the GUI limits projection")
-        script = (Path(__file__).resolve().parents[1]/"simion/prepare_gui_replay.ps1").read_text(encoding="utf-8")
+        script = (Path(__file__).resolve().parents[3]/"src/msplatform/backends/simion/resources/ip_prepare_gui_replay.ps1").read_text(encoding="utf-8")
         projection = script[script.index(" $limits=$profile.limits"):script.index(" $runConfig=Get-Content")]
         committed = profile["profiles"][0]["gui_preparation_committed_new_bytes"]
         command = f"$profile=(Get-Content -Raw -LiteralPath '{copied_profile}'|ConvertFrom-Json).profiles[0];$guiCommitted=[long]{committed};" + projection + ";$limits|ConvertTo-Json -Compress"
@@ -303,13 +303,13 @@ class GuiReplayPlanTests(unittest.TestCase):
         self.assertEqual(json.loads((self.run / "inputs/resolved_model.json").read_text())["native_timing"],
                          json.loads((self.baseline / "inputs/native_timing.json").read_text()))
         with self.assertRaisesRegex(ValueError, "preparation is not sealed"):
-            finalize_replay(self.run)
+            finalize_replay(self.run, analyzer=lambda run: ion_analysis.analyze(run))
         with self.assertRaises(FileNotFoundError):
             record_prepared_native_family(self.run)
 
     def test_new_private_family_is_flushed_before_any_native_identity_read(self) -> None:
         self.prepare_native()
-        from projects.dual_pressure_rectilinear_ion_processor.analysis import gui_replay
+        from msplatform.backends.simion import ip_gui_replay as gui_replay
         family = list((self.run / "simion").glob("processor.pa*"))
         expected = {path.stat().st_ino for path in family}
         baseline = {path.stat().st_ino for path in (self.baseline / "simion").glob("processor.pa*")}
@@ -332,13 +332,13 @@ class GuiReplayPlanTests(unittest.TestCase):
         alias = self.run / "simion/processor.pa1"
         alias.unlink()
         os.link(self.baseline / "simion/processor.pa1", alias)
-        with patch("projects.dual_pressure_rectilinear_ion_processor.analysis.gui_replay.os.fsync") as flush:
+        with patch("msplatform.backends.simion.ip_gui_replay.os.fsync") as flush:
             with self.assertRaisesRegex(ValueError, "alias an external source"):
                 record_prepared_native_family(self.run)
             flush.assert_not_called()
 
     def test_active_GUI_receipts_require_full_cohort_and_actual_HS1_values(self) -> None:
-        from projects.dual_pressure_rectilinear_ion_processor.analysis.gui_replay import _verify_active_gui_receipts
+        from msplatform.backends.simion.ip_gui_replay import _verify_active_gui_receipts
         project = Path(__file__).resolve().parents[1]
         config = {name: json.loads((project / "config" / (name + ".json")).read_text(encoding="utf-8"))
                   for name in ("baseline", "numerics", "source")}
@@ -364,7 +364,7 @@ class GuiReplayPlanTests(unittest.TestCase):
         with (self.run / "simion/samples.csv").open("a", encoding="utf-8") as stream:
             stream.write("1,1.1,2.1,0,0,1,0,0\n")
         with patch("msplatform.workflows.ion_processor.analysis.analyze", return_value={"status": "success", "functional_status": "functional_pass", "source_profile": "functional"}):
-            result = finalize_replay(self.run)
+            result = finalize_replay(self.run, analyzer=lambda run: ion_analysis.analyze(run))
         self.assertFalse(result["numerical_equivalence"])
         self.assertFalse(result["exact_trajectory_match_required"])
         self.assertEqual(result["measured_functional_status"], "functional_pass")
@@ -434,7 +434,7 @@ class GuiReplayPlanTests(unittest.TestCase):
             self.assertTrue((self.run/"inputs"/name).is_file())
 
     def test_finalize_uses_bound_sample_record_for_main_and_both_repeats(self) -> None:
-        from projects.dual_pressure_rectilinear_ion_processor.analysis import gui_replay
+        from msplatform.backends.simion import ip_gui_replay as gui_replay
         self.prepare_native(2)
         for relative in ("simion/events.csv", "simion/samples.csv", "results/particle_state.csv"):
             (self.run/relative).write_bytes((self.baseline/relative).read_bytes())
@@ -443,7 +443,7 @@ class GuiReplayPlanTests(unittest.TestCase):
                 (self.run/f"simion/repeat_{index}_{kind}.csv").write_bytes((self.baseline/f"simion/{kind}.csv").read_bytes())
         with patch.object(gui_replay, "_compare_tables", wraps=gui_replay._compare_tables) as compare:
             with patch("msplatform.workflows.ion_processor.analysis.analyze", return_value={"status":"failed", "functional_status":"functional_incomplete", "source_profile":"functional"}):
-                self.assertTrue(finalize_replay(self.run)["numerical_equivalence"])
+                self.assertTrue(finalize_replay(self.run, analyzer=lambda run: ion_analysis.analyze(run))["numerical_equivalence"])
         sample_calls = [call for call in compare.call_args_list if call.args[0].name.endswith("samples.csv")]
         self.assertEqual(len(sample_calls), 3)
         self.assertTrue(all(call.args[1] == self.baseline/"simion/samples.csv" for call in sample_calls))
@@ -454,7 +454,7 @@ class GuiReplayPlanTests(unittest.TestCase):
         source.write_bytes(source.read_bytes()+b"1,2,3,0,0,1,0,0\n")
         with patch("msplatform.workflows.ion_processor.analysis.analyze") as analyze:
             with self.assertRaises(AssertionError):
-                finalize_replay(self.run)
+                finalize_replay(self.run, analyzer=lambda run: ion_analysis.analyze(run))
             analyze.assert_not_called()
 
     def test_complete_hundred_particle_controls_stay_private_and_byte_exact(self) -> None:
@@ -483,13 +483,13 @@ class GuiReplayPlanTests(unittest.TestCase):
         plan.pop("baseline_trajectory_storage")
         plan_path.write_text(json.dumps(plan), encoding="utf-8")
         with patch("msplatform.workflows.ion_processor.analysis.analyze", return_value={"status":"failed", "functional_status":"functional_incomplete", "source_profile":"functional"}):
-            self.assertTrue(finalize_replay(self.run)["numerical_equivalence"])
+            self.assertTrue(finalize_replay(self.run, analyzer=lambda run: ion_analysis.analyze(run))["numerical_equivalence"])
 
     def test_local_basis_mutation_rejected_before_analysis(self) -> None:
         self.prepare_native()
         (self.run / "simion/processor.pa7").write_bytes(b"changed GUI basis")
         with self.assertRaises(AssertionError):
-            finalize_replay(self.run)
+            finalize_replay(self.run, analyzer=lambda run: ion_analysis.analyze(run))
 
     def test_unconsumed_source_PA_changes_do_not_enter_light_projection(self) -> None:
         self.prepare_native()
@@ -519,7 +519,7 @@ class GuiReplayPlanTests(unittest.TestCase):
         for relative in ("simion/events.csv", "simion/samples.csv", "results/particle_state.csv"):
             (self.run / relative).write_bytes((self.baseline / relative).read_bytes())
         with patch("msplatform.workflows.ion_processor.analysis.analyze", return_value={"status": "failed", "functional_status": "functional_incomplete", "source_profile": "functional"}):
-            result = finalize_replay(self.run)
+            result = finalize_replay(self.run, analyzer=lambda run: ion_analysis.analyze(run))
         self.assertTrue(result["gui_pa0_changed"])
         self.assertTrue(result["local_immutable_basis_verified"])
         self.assertEqual((self.baseline / "simion/processor.pa0").read_bytes(), source)
@@ -531,12 +531,12 @@ class GuiReplayPlanTests(unittest.TestCase):
         for relative in ("simion/events.csv", "simion/samples.csv", "results/particle_state.csv"):
             (self.run / relative).write_bytes((self.baseline / relative).read_bytes())
         with patch("msplatform.workflows.ion_processor.analysis.analyze", return_value={"status": "failed", "functional_status": "functional_incomplete", "source_profile": "functional"}):
-            result = finalize_replay(self.run)
+            result = finalize_replay(self.run, analyzer=lambda run: ion_analysis.analyze(run))
             self.assertTrue(result["numerical_equivalence"])
             self.assertFalse(result["gui_visual_review"])
             self.assertEqual(result["comparison_scope"], "headless_replay_vs_baseline")
             (self.run / "simion/events.csv").write_text("particle_id,event,t_us,x_mm\n1,source,0,1\n1,terminal,1,2.1\n", encoding="utf-8")
-            result = finalize_replay(self.run)
+            result = finalize_replay(self.run, analyzer=lambda run: ion_analysis.analyze(run))
             self.assertFalse(result["numerical_equivalence"])
             self.assertAlmostEqual(result["raw_events"]["max_absolute_difference"]["x_mm"], 0.1)
             self.assertTrue(result["canonical_particle_state"]["passed"])
@@ -557,13 +557,13 @@ class GuiReplayPlanTests(unittest.TestCase):
         for relative in ("simion/events.csv", "simion/samples.csv", "results/particle_state.csv"):
             (self.run / relative).write_bytes((self.baseline / relative).read_bytes())
         with patch("msplatform.workflows.ion_processor.analysis.analyze", return_value={"status": "success", "functional_status": "exploration_pass", "source_profile": "exploration"}):
-            result = finalize_replay(self.run)
+            result = finalize_replay(self.run, analyzer=lambda run: ion_analysis.analyze(run))
         self.assertEqual(result["qualification"], "unqualified_exploration_replay_no_Candidate_or_Formal")
         self.assertEqual(result["measured_functional_status"], "exploration_pass")
         self.assertFalse(result["gui_visual_review"])
         with patch("msplatform.workflows.ion_processor.analysis.analyze", return_value={"status": "success", "functional_status": "functional_pass", "source_profile": "exploration"}):
             with self.assertRaisesRegex(ValueError, "upgrade"):
-                finalize_replay(self.run)
+                finalize_replay(self.run, analyzer=lambda run: ion_analysis.analyze(run))
 
     def test_recorded_samples_change_breaks_replay_equivalence(self) -> None:
         self.prepare_native()
@@ -571,7 +571,7 @@ class GuiReplayPlanTests(unittest.TestCase):
             (self.run / relative).write_bytes((self.baseline / relative).read_bytes())
         (self.run / "simion/samples.csv").write_text("particle_id,t_us,x_mm,y_mm,z_mm,vx_mm_us,vy_mm_us,vz_mm_us\n1,0,1,0,0,1,0,0\n1,1,2.25,0,0,1,0,0\n", encoding="utf-8")
         with patch("msplatform.workflows.ion_processor.analysis.analyze", return_value={"status": "failed", "functional_status": "functional_incomplete", "source_profile": "functional"}):
-            result = finalize_replay(self.run)
+            result = finalize_replay(self.run, analyzer=lambda run: ion_analysis.analyze(run))
         self.assertFalse(result["numerical_equivalence"])
         self.assertFalse(result["sampled_trajectory"]["passed"])
         self.assertTrue(result["raw_events"]["passed"])
@@ -605,7 +605,7 @@ class GuiReplayPlanTests(unittest.TestCase):
             if Path(source).resolve() == workspace_runtime.resolve():
                 raise AssertionError("working-tree runtime must not affect replay")
             return original_copy(source, target, **kwargs)
-        with patch("projects.dual_pressure_rectilinear_ion_processor.analysis.gui_replay.shutil.copyfile", side_effect=reject_worktree_runtime):
+        with patch("msplatform.backends.simion.ip_gui_replay.shutil.copyfile", side_effect=reject_worktree_runtime):
             plan = self.prepare_native()
         self.assertFalse(plan["runtime_wrapper_changed"])
         self.assertEqual(plan["runtime_source_policy"], "baseline_exact_copy")
@@ -719,7 +719,7 @@ class GuiReplayPlanTests(unittest.TestCase):
         path = self.run / "simion/repeat_1_samples.csv"
         path.write_text(path.read_text(encoding="utf-8").replace("1,1,2,0,0", "1,1,2.5,0,0"), encoding="utf-8")
         with patch("msplatform.workflows.ion_processor.analysis.analyze", return_value={"status": "failed", "functional_status": "functional_incomplete", "source_profile": "functional"}):
-            result = finalize_replay(self.run)
+            result = finalize_replay(self.run, analyzer=lambda run: ion_analysis.analyze(run))
         self.assertFalse(result["numerical_equivalence"])
         self.assertEqual(len(result["repeated_fly_comparisons"]), 2)
         self.assertTrue(result["raw_events"]["passed"])

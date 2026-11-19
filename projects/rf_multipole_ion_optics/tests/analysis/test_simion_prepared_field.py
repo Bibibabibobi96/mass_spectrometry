@@ -19,7 +19,7 @@ class PreparedFieldConsumerTests(unittest.TestCase):
     def test_seed_cleanup_requires_known_builder_and_preserves_original_field(self):
         script = r'''
 $ErrorActionPreference='Stop'
-. (Join-Path $PWD 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $PWD 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $PWD 'src/msplatform/backends/simion/resources/simion_execution.ps1')
 $seed=Join-Path $env:RF_TEST_TEMP 'registered.pa0';'inert registered companion'|Set-Content $seed
 $iob=Join-Path $env:RF_TEST_TEMP 'quad.iob'

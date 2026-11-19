@@ -32,7 +32,7 @@ class SimionBatchCompletionTests(unittest.TestCase):
             state.write_text("particle_id,event\n1,terminal\n", encoding="utf-8")
             log.write_text("Fly completed. 1 splats\n", encoding="utf-8")
             script = r"""param($Repo,$Python,$Root)
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 Complete-FailedRun -Python $Python -RepoRoot $Repo -RunConfig (Join-Path $Root 'run_config.json') `
  -Summary (Join-Path $Root 'summary.json') -SummaryRole 'rf_test_summary' `
  -Reason 'injected analysis failure' -Software @('SIMION 2020')
@@ -90,7 +90,7 @@ Complete-FailedRun -Python $Python -RepoRoot $Repo -RunConfig (Join-Path $Root '
             script.write_text("""param($Repo,$Python,$Root)
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $codeRoot=$Repo;$manifestRepoRoot=$Repo;$python=$Python;$runConfig='fixture';$name='primary';$resultDir=$Root;$runDir=$Root
 $mechanicalExitEnabled=$false;$RetentionClass='compact';$checkpointOutputs=[Collections.ArrayList]::new()
 $nativeOperations=[Collections.ArrayList]::new()

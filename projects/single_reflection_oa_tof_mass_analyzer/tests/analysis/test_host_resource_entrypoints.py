@@ -39,7 +39,7 @@ class HostResourceEntrypointTests(unittest.TestCase):
             workbench.mkdir(parents=True)
             transport = workbench / "run_n100_transport.ps1"
             transport.write_bytes((PROJECT / "simion/workbench/run_n100_transport.ps1").read_bytes())
-            support = root / "common/contracts/run_artifact_support.ps1"
+            support = root / "src/msplatform/execution/resources/run_artifact_support.ps1"
             support.parent.mkdir(parents=True)
             support.write_text("function Write-RunJson {param($Path,$Value) $Value|ConvertTo-Json -Depth 32|Set-Content -LiteralPath $Path -Encoding utf8}\n", encoding="utf-8")
             (workbench / "run_candidate_flight.ps1").write_text(r'''
@@ -109,7 +109,7 @@ foreach($name in @('Save-RunEnvironment','Restore-RunEnvironment')){
 ''', encoding="utf-8", newline="\n")
             environment = dict(os.environ, OA_TEST_PARENT_HEAVY="1" if nested else "0",
                 SIMULATION_PYTHON_EXE=sys.executable,
-                OA_TEST_PUBLIC_SUPPORT=str(PROJECT.parents[1]/"common/contracts/run_artifact_support.ps1"),
+                OA_TEST_PUBLIC_SUPPORT=str(PROJECT.parents[1]/"src/msplatform/execution/resources/run_artifact_support.ps1"),
                 MASS_SPECTROMETRY_ARTIFACT_ROOT=str(root/"artifacts"),
                 MASS_SPECTROMETRY_EXECUTION_ROOT=str(root/"execution"),
                 MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(root/"host.sqlite3"))
@@ -176,7 +176,7 @@ foreach($name in @('Save-RunEnvironment','Restore-RunEnvironment')){
     def test_deep_lua_transport_uses_frozen_root_and_preserves_unknown_writer(self) -> None:
         script = r"""
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $env:OA_TEST_REPO 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $env:OA_TEST_REPO 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $ast=[Management.Automation.Language.Parser]::ParseFile($env:OA_TEST_BUILDER,[ref]$null,[ref]$null)
 $f=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-SimionLua'},$true)
 . ([scriptblock]::Create($f.Extent.Text))

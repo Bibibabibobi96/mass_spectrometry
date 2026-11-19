@@ -230,7 +230,7 @@ function Invoke-FrontendFlightPhase {
     $scheduler=@()
   }else{
     Invoke-FrontendRuntimePython @context -Name "$Phase.resource-profile-discover" `
-      -Arguments @('-m','common.simion.resource_profile','discover','--runs-root',$ProjectRunsRoot,'--output',$profiles)
+      -Arguments @('-m','msplatform.execution.resource_profile','discover','--runs-root',$ProjectRunsRoot,'--output',$profiles)
     $scheduler=@('-m','msplatform.execution.simion_dispatch','--request',[string]$Prepared.dispatch_request_path,'--profiles',$profiles,'--output',$dispatch)
     Invoke-FrontendRuntimePython @context -Name "$Phase.dispatch-plan" -Arguments $scheduler
   }
@@ -353,7 +353,7 @@ function Invoke-FrontendFlightPhase {
   if($null-ne$formalIndex-and-not$recovery){
     $profileName=if($Phase-eq'extraction'){'simion_resource_profile.json'}else{"$Phase.simion_resource_profile.json"}
     Invoke-FrontendRuntimePython @context -Name "$Phase.resource-profile-publish" -Arguments @(
-      '-m','common.simion.resource_profile','publish','--run-id',([IO.Path]::GetFileName($RunDirectory)),
+      '-m','msplatform.execution.resource_profile','publish','--run-id',([IO.Path]::GetFileName($RunDirectory)),
       '--resource-usage',$usage,'--dispatch-plan',$dispatch,'--resource-usage-relative-path',"results/$Phase.resource_usage.json",
       '--dispatch-plan-relative-path',"results/$Phase.dispatch_plan.json",'--output',(Join-Path $RunDirectory "results/$profileName"))
   }

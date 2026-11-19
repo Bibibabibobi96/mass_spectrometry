@@ -34,9 +34,9 @@ $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
 $initialPythonPath=$env:PYTHONPATH
 $env:PYTHONPATH=(Join-Path $repoRoot 'src')+$(if($initialPythonPath){[IO.Path]::PathSeparator+$initialPythonPath}else{''})
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
-. (Join-Path $repoRoot 'common/contracts/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
+. (Join-Path $repoRoot 'src/msplatform/workflows/resources/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
 if($ResumeFinalization){
-  . (Join-Path $repoRoot 'common/paths/workspace_paths.ps1')
+  . (Join-Path $repoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
   $pathArguments=@{SourceRoot=$repoRoot;Python=$python}
   if($ArtifactRootPath){$pathArguments.ArtifactRoot=$ArtifactRootPath}
   if($RunId){
@@ -78,7 +78,7 @@ if(-not$AnalyzeOnly){. (Join-Path $PSScriptRoot 'finite_3d_transport_preflight.p
 if(-not [double]::IsNaN($WorkingRegionMaximumElementSizeMm) -and $WorkingRegionMaximumElementSizeMm-le 0){
   throw 'WorkingRegionMaximumElementSizeMm must be positive when supplied.'
 }
-. (Join-Path $repoRoot 'common/paths/workspace_paths.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
 $workspacePaths=Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
 $projectArtifactRoot=if($ProjectId){Join-Path ([string]$workspacePaths.artifact_root) ('projects/'+$ProjectId)}else{$null}
 . (Join-Path $repoRoot 'common/resource_budget_support.ps1')
@@ -731,7 +731,7 @@ function Invoke-FiniteComsolAnalysisChild {
     $analysisAdditional=@()
     if($ReextractFromModel){
       $analysisAreas+=@('common/comsol')
-      $analysisAdditional=@('common/host_execution_lease.ps1','common/host_resource_scheduler.py','src/msplatform/execution/resources/host_resource_policy.json','common/require_powershell7.ps1','common/resource_budget_support.ps1')
+      $analysisAdditional=@('common/host_execution_lease.ps1','common/host_resource_scheduler.py','src/msplatform/execution/resources/host_resource_policy.json','src/msplatform/execution/resources/require_powershell7.ps1','common/resource_budget_support.ps1')
     }
     $copiedPaths=@(Get-RunPackageCopiedSourcePaths -RepoRoot $RepoRoot -SourceRelativeDirectories $analysisAreas -Extensions @('.py','.json','.ps1','.m','.lua'))
     $copiedPaths+=@($analysisAdditional|ForEach-Object{"inputs/code/$_"})
@@ -944,7 +944,7 @@ try{
 $hostRuntimeSourcePaths=@(
   'config/project_registry.json',
   'common/host_execution_lease.ps1','common/host_resource_scheduler.py',
-  'src/msplatform/execution/resources/host_resource_policy.json','common/require_powershell7.ps1','common/resource_budget_support.ps1','common/resource_budget_support.ps1')
+  'src/msplatform/execution/resources/host_resource_policy.json','src/msplatform/execution/resources/require_powershell7.ps1','common/resource_budget_support.ps1','common/resource_budget_support.ps1')
 $analysisSourcePaths=@('src/msplatform/analysis/particle_census.py','src/msplatform/backends/simion/native_completion.py')
 $executionCapacityPaths=Get-RunPackageCopiedSourcePaths -RepoRoot $repoRoot `
   -SourceRelativeDirectories @('src/msplatform','common/contracts','common/paths','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/variants') `

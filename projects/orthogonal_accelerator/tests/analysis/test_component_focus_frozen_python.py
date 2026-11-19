@@ -22,7 +22,7 @@ ENTRY = REPO / "projects/orthogonal_accelerator/simion/run_component_focus_fligh
 
 SCRIPT = r'''param($Repo,$Entry,$Root,$Python,$Data,$Mode)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-$support=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'common/contracts/run_artifact_support.ps1'),[ref]$null,[ref]$null)
+$support=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1'),[ref]$null,[ref]$null)
 $node=$support.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Copy-VerifiedRunInput'},$true)
 Invoke-Expression $node.Extent.Text
 $ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$null)

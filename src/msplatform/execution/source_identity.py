@@ -20,6 +20,18 @@ def git_identity(repo_root: Path | None) -> dict:
         return {"commit": None, "working_tree": "unknown"}
 
 
+def git_worktree_context(repo_root: Path) -> dict:
+    """Capture the existing IP provenance fields through the execution boundary."""
+    context = {}
+    for key, arguments in (("git_sha", ["rev-parse", "HEAD"]), ("worktree_porcelain", ["status", "--porcelain"])):
+        result = subprocess.run(["git", "-C", str(repo_root), *arguments], capture_output=True,
+                                text=True, encoding="utf-8", errors="replace", check=False,
+                                cwd=repo_root, timeout=10)
+        context[key] = result.stdout.strip() if result.returncode == 0 else "unavailable"
+    context["worktree_dirty"] = bool(context["worktree_porcelain"])
+    return context
+
+
 def git_show(repo_root: Path, revision: str, path: str) -> bytes:
     try:
         return subprocess.run(

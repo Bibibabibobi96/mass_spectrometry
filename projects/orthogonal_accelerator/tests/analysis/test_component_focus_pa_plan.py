@@ -262,7 +262,7 @@ class FrozenFocusPlanTests(unittest.TestCase):
         repo = Path(__file__).resolve().parents[4]
         script_text = r'''param($Repo,$Python,$Root,$Mode)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-$support=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'common/contracts/run_artifact_support.ps1'),[ref]$null,[ref]$null)
+$support=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1'),[ref]$null,[ref]$null)
 $copy=$support.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Copy-VerifiedRunInput'},$true)
 Invoke-Expression $copy.Extent.Text
 $repoRoot=$Repo;$projectRoot=Join-Path $Repo 'projects/orthogonal_accelerator';$python=$Python

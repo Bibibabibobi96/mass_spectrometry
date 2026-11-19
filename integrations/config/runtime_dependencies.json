@@ -28,56 +28,6 @@
           ]
         },
         {
-          "id": "common_paths_workspace_paths_ps1",
-          "source_repo_path": "common/paths/workspace_paths.ps1",
-          "consumers": [
-            "prepared_joint",
-            "accelerator_interface",
-            "multipole_ip",
-            "oa_mr",
-            "single_reflection_flight",
-            "paired_accelerator_static_field",
-            "paired_accelerator_pulse"
-          ]
-        },
-        {
-          "id": "common_run_artifact_support",
-          "source_repo_path": "common/contracts/run_artifact_support.ps1",
-          "consumers": [
-            "prepared_joint",
-            "accelerator_interface",
-            "multipole_ip",
-            "oa_mr",
-            "single_reflection_flight",
-            "paired_accelerator_static_field",
-            "paired_accelerator_pulse"
-          ]
-        },
-        {
-          "id": "common_run_artifact_workflow",
-          "source_repo_path": "common/contracts/run_artifact_workflow.ps1",
-          "consumers": [
-            "prepared_joint",
-            "oa_mr",
-            "paired_accelerator_static_field",
-            "paired_accelerator_pulse",
-            "single_reflection_flight"
-          ]
-        },
-        {
-          "id": "common_require_powershell7",
-          "source_repo_path": "common/require_powershell7.ps1",
-          "consumers": [
-            "prepared_joint",
-            "accelerator_interface",
-            "multipole_ip",
-            "oa_mr",
-            "single_reflection_flight",
-            "paired_accelerator_static_field",
-            "paired_accelerator_pulse"
-          ]
-        },
-        {
           "id": "local_frontend_common_host_execution_lease_ps1",
           "source_repo_path": "common/host_execution_lease.ps1",
           "consumers": [
@@ -88,41 +38,6 @@
             "single_reflection_flight",
             "paired_accelerator_static_field",
             "paired_accelerator_pulse"
-          ]
-        },
-        {
-          "id": "local_frontend_common_simion_assets_iob_instance_seeds_iob_seed_placeholder_01_pa0",
-          "source_repo_path": "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0",
-          "consumers": [
-            "oa_mr",
-            "accelerator_interface",
-            "paired_accelerator_pulse"
-          ]
-        },
-        {
-          "id": "local_frontend_common_simion_short_pa_path_support_ps1",
-          "source_repo_path": "common/simion/short_pa_path_support.ps1",
-          "consumers": [
-            "oa_mr",
-            "prepared_joint",
-            "single_reflection_flight",
-            "paired_accelerator_static_field",
-            "paired_accelerator_pulse"
-          ]
-        },
-        {
-          "id": "common_simion_native_fast_adjust_runtime_support_ps1",
-          "source_repo_path": "common/simion/native_fast_adjust_runtime_support.ps1",
-          "consumers": [
-            "oa_mr",
-            "prepared_joint"
-          ]
-        },
-        {
-          "id": "common_simion_assemble_native_fast_adjust_family_lua",
-          "source_repo_path": "common/simion/assemble_native_fast_adjust_family.lua",
-          "consumers": [
-            "oa_mr"
           ]
         }
       ],
@@ -356,23 +271,6 @@
     },
     {
       "provider_scope": "project",
-      "provider_project": "dual_pressure_rectilinear_ion_processor",
-      "files": [],
-      "python_packages": [
-        {
-          "source_repo_path": "projects/dual_pressure_rectilinear_ion_processor/analysis",
-          "consumers": [
-            "accelerator_interface",
-            "multipole_ip",
-            "oa_mr",
-            "prepared_joint"
-          ]
-        }
-      ],
-      "python_modules": []
-    },
-    {
-      "provider_scope": "project",
       "provider_project": "parallel_mirror_dual_stripe_mr_tof",
       "files": [
         {
@@ -401,14 +299,6 @@
           "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/config/ion_processor_dependency.json",
           "consumers": [
             "accelerator_interface"
-          ]
-        },
-        {
-          "id": "projects_parallel_mirror_dual_stripe_mr_tof_simion_native_corridor_runtime_support_ps1",
-          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/simion/native_corridor_runtime_support.ps1",
-          "consumers": [
-            "oa_mr",
-            "prepared_joint"
           ]
         },
         {
@@ -1020,6 +910,91 @@
           "consumers": [
             "paired_accelerator_static_field"
           ]
+        },
+        {
+          "id": "common_paths_workspace_paths_ps1",
+          "source_repo_path": "src/msplatform/execution/resources/workspace_paths.ps1",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "multipole_ip",
+            "oa_mr",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "common_run_artifact_support",
+          "source_repo_path": "src/msplatform/execution/resources/run_artifact_support.ps1",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "multipole_ip",
+            "oa_mr",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "common_run_artifact_workflow",
+          "source_repo_path": "src/msplatform/workflows/resources/run_artifact_workflow.ps1",
+          "consumers": [
+            "prepared_joint",
+            "oa_mr",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse",
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "common_require_powershell7",
+          "source_repo_path": "src/msplatform/execution/resources/require_powershell7.ps1",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "multipole_ip",
+            "oa_mr",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "local_frontend_common_simion_assets_iob_instance_seeds_iob_seed_placeholder_01_pa0",
+          "source_repo_path": "src/msplatform/backends/simion/resources/iob_seed_placeholder_01.pa0",
+          "consumers": [
+            "oa_mr",
+            "accelerator_interface",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "local_frontend_common_simion_short_pa_path_support_ps1",
+          "source_repo_path": "src/msplatform/backends/simion/resources/short_pa_path_support.ps1",
+          "consumers": [
+            "oa_mr",
+            "prepared_joint",
+            "single_reflection_flight",
+            "paired_accelerator_static_field",
+            "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "common_simion_native_fast_adjust_runtime_support_ps1",
+          "source_repo_path": "src/msplatform/backends/simion/resources/native_fast_adjust_runtime_support.ps1",
+          "consumers": ["oa_mr", "prepared_joint"]
+        },
+        {
+          "id": "common_simion_assemble_native_fast_adjust_family_lua",
+          "source_repo_path": "src/msplatform/backends/simion/resources/assemble_native_fast_adjust_family.lua",
+          "consumers": ["oa_mr"]
+        },
+        {
+          "id": "projects_parallel_mirror_dual_stripe_mr_tof_simion_native_corridor_runtime_support_ps1",
+          "source_repo_path": "src/msplatform/backends/simion/resources/native_corridor_runtime_support.ps1",
+          "consumers": ["oa_mr", "prepared_joint"]
         }
       ],
       "python_packages": [

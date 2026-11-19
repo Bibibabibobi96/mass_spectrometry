@@ -134,7 +134,7 @@ $null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath 
             script.write_text(r"""param($Repo,$Destination,$Python)
 $repoRoot=$Repo
 . (Join-Path $Repo 'integrations/runtime/dependencies.ps1')
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $frozen=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath (Join-Path $Repo 'integrations/config/runtime_dependencies.json') -InputDir $Destination -OwnerId instrument_assembly -ConsumerId prepared_joint
 $source=Get-Content -LiteralPath (Join-Path $Repo 'integrations/workflows/prepared_joint/execute.ps1') -Raw
 $tokens=$null;$errors=$null
@@ -348,7 +348,7 @@ Write-Output 'FROZEN_PREPARE_INVOKER=PASS'
             ps.write_text(r"""param($Repo,$Destination,$Python,$Prepared,$Contract,$Output,$BadBinding)
 $ErrorActionPreference='Stop';$repoRoot=$Repo
 . (Join-Path $Repo 'integrations/runtime/dependencies.ps1')
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $frozen=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath (Join-Path $Repo 'integrations/config/runtime_dependencies.json') -InputDir $Destination -OwnerId instrument_assembly -ConsumerId prepared_joint
 $source=Get-Content -LiteralPath (Join-Path $Repo 'integrations/workflows/prepared_joint/execute.ps1') -Raw
 $tokens=$null;$errors=$null;$tree=[System.Management.Automation.Language.Parser]::ParseInput($source,[ref]$tokens,[ref]$errors)
@@ -1163,7 +1163,7 @@ Write-Output 'PUBLIC_97_PREPARATION=PASS'
         module="msplatform.workflows.prepared_joint.trial"
         alias_script=root/'alias.ps1'
         alias_script.write_text(r"""param($Repo,$Root,$Execution,$Alias,$Mode)
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 if($Mode-eq'create'){
  $record=New-RunExecutionAlias -TargetDirectory $Root -ExecutionRoot $Execution
  $record.execution_alias

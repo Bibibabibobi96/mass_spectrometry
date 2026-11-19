@@ -21,7 +21,7 @@ class OwnerFinalizationRecoveryTests(unittest.TestCase):
     def test_original_cli_replays_after_seal_and_rejects_unknown_writer(self) -> None:
         helper = owner_fixture.RunArtifactWorkflowFixture()
         project = "dual_pressure_rectilinear_ion_processor"
-        cli = REPO / "projects" / project / "simion/run_functional.ps1"
+        cli = REPO / "src/msplatform/workflows/resources/ip_functional.ps1"
         for failure in ("publication", "seal", "unknown"):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory(prefix="ip-owner-recovery-") as directory:
                 root = Path(directory)
@@ -74,7 +74,7 @@ try {{
                     self.assertEqual(result["phase_timings_seconds"], {"analysis": 0.1})
                 terminal_before = (run / "run_manifest.json").read_bytes()
                 command = [PWSH, "-NoProfile", "-File", str(cli), "-RunId", run.name,
-                           "-ResultPath", str(result_path), "-ResumeFinalization"]
+                           "-RepositoryRoot", str(REPO), "-ResultPath", str(result_path), "-ResumeFinalization"]
                 resumed = subprocess.run(command, cwd=REPO, env={**os.environ,"SIMULATION_PYTHON_EXE":sys.executable}, capture_output=True, text=True, encoding="utf-8", timeout=90)
                 if failure == "unknown":
                     self.assertNotEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)

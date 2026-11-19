@@ -379,7 +379,7 @@ def execute_prepared_run(*args):
                 request_path, result_path = root / "request.json", root / "result.json"
                 request_path.write_text(json.dumps(request), encoding="utf-8")
                 driver = root / "driver.ps1"
-                driver.write_text(f". '{REPO_ROOT / 'common/contracts/run_artifact_workflow.ps1'}'\n"
+                driver.write_text(f". '{REPO_ROOT / 'src/msplatform/workflows/resources/run_artifact_workflow.ps1'}'\n"
                     "function Invoke-ArtifactCapacityGate { return @{satisfied=$true;fixture_admission=$true} }\n"
                     f"$null=Invoke-RunArtifactWorkflow -RequestPath '{request_path}' -ResultPath '{result_path}'\n", encoding="utf-8")
                 process = subprocess.run(["pwsh", "-NoProfile", "-File", str(driver)], cwd=REPO_ROOT,
@@ -1000,7 +1000,7 @@ print('FROZEN_ION_CONSUMER_PASS')
                 "projects/orthogonal_accelerator/simion/build_two_zone_pa.lua",
                 "projects/orthogonal_accelerator/simion/two_zone_accelerator.gem",
             }.issubset(source_ids))
-            self.assertIn("common/require_powershell7.ps1", source_ids)
+            self.assertIn("src/msplatform/execution/resources/require_powershell7.ps1", source_ids)
             self.assertIn("projects/single_reflection_oa_tof_mass_analyzer/oatof_lifecycle_preflight.ps1", source_ids)
             self.assertIn("projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/build_formal_iob.lua", source_ids)
             code_root = Path(closure["code_root"]).resolve()

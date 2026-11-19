@@ -4093,7 +4093,8 @@ if os.name=='nt':
     for frozen_relative in frozen_sources:
         frozen_target=frozen_code/'src'/frozen_relative
         frozen_target.parent.mkdir(parents=True,exist_ok=True)
-        frozen_record=freeze_file(frozen_purelib/frozen_relative,frozen_target)
+        frozen_record=freeze_file(frozen_purelib/frozen_relative,frozen_target,
+            retention_classifier=lambda _path,**_options:'required_evidence')
         frozen_records.append(dict(path=frozen_record['path'],
             relative_path='src/'+frozen_relative,sha256=frozen_record['sha256'].upper()))
     frozen_selected=frozen_code/'src/msplatform/execution/resources/frozen_python_package.ps1'
@@ -7191,9 +7192,10 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
 
     def assert_distribution_member(self, name: str) -> None:
         self.assertNotRegex(name, r'(^|/)(tests?|test_support|__pycache__|history|runs)(/|_)')
-        # Only the ten reviewed, already tracked structural source templates
-        # migrate into the wheel. Generated/native payloads remain forbidden.
-        template = any(name == path or name.endswith('/' + path) for path in
+        # Only the reviewed structural IOB templates and their required empty PA0
+        # placeholder migrate into the wheel. Generated/native payloads remain forbidden.
+        placeholder = 'msplatform/backends/simion/resources/iob_seed_placeholder_01.pa0'
+        template = name == placeholder or name.endswith('/' + placeholder) or any(name == path or name.endswith('/' + path) for path in
             (f'msplatform/backends/simion/resources/{count}_instance_seed.iob' for count in range(1,11)))
         if not template:
             self.assertNotRegex(name, r'\.(pa\d*|pa#|pa-surf|mph|iob|dll|exe|pyc)$')
@@ -7497,7 +7499,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                         rfconv_env = dict(os.environ, RF_REPO=str(REPO_ROOT), RF_PROJECT=str(rfconv_project),
                             RF_MANIFEST=str(rfconv_source), RF_DESTINATION=str(rfconv_target),
                             RF_INPUT_ROLES=json.dumps(rfconv_inputs), RF_OUTPUT_ROLES=json.dumps(rfconv_outputs))
-                        rfconv_command = (". (Join-Path $env:RF_REPO 'common/contracts/run_artifact_support.ps1');"
+                        rfconv_command = (". (Join-Path $env:RF_REPO 'src/msplatform/execution/resources/run_artifact_support.ps1');"
                             ". (Join-Path $env:RF_PROJECT 'runtime/analysis_run_lifecycle.ps1');"
                             "$i=ConvertFrom-Json $env:RF_INPUT_ROLES;$o=ConvertFrom-Json $env:RF_OUTPUT_ROLES -AsHashtable;"
                             "$c=Copy-PortableRunManifestClosure -SourceManifest $env:RF_MANIFEST -Destination $env:RF_DESTINATION "

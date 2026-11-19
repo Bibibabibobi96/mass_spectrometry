@@ -45,7 +45,7 @@ def source(root, *, legacy=False, status="success"):
 def owner_overlay(destination):
     """Only the public capacity owner's executable Python dependency closure."""
     pending = ["src/msplatform/execution/run_capacity_lifecycle.py", "common/contracts/reconcile_artifact_capacity.py",
-               "common/paths/workspace_paths.py"]
+               "src/msplatform/execution/resources/workspace_paths.py"]
     selected = set()
     while pending:
         relative = pending.pop()
@@ -71,8 +71,8 @@ def owner_overlay(destination):
     from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
 
     copy_scientific_core(REPO, destination)
-    for relative in ("common/contracts/run_artifact_support.ps1", "common/host_execution_lease.ps1",
-                     "common/require_powershell7.ps1", "common/paths/workspace_paths.ps1",
+    for relative in ("src/msplatform/execution/resources/run_artifact_support.ps1", "common/host_execution_lease.ps1",
+                     "src/msplatform/execution/resources/require_powershell7.ps1", "src/msplatform/execution/resources/workspace_paths.ps1",
                      "src/msplatform/execution/resources/artifact_capacity_policy.json"):
         original = PROPOSAL / relative
         if not original.is_file():
@@ -124,7 +124,7 @@ class SingleReflectionSourceProtectionTests(unittest.TestCase):
             check = base / "check.ps1"
             check.write_text(r'''param($Repo,$Python,$Request)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 function Invoke-ArtifactWorkflowCapacityAdmission {return @{satisfied=$true;fixture_admission=$true}}
 $data=Get-Content -LiteralPath $Request -Raw|ConvertFrom-Json -AsHashtable
 $session=Enter-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $Repo -ArtifactRoot $data.target `

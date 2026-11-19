@@ -92,7 +92,7 @@ try {
     'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/candidate_contract.py',
     'src/msplatform/io/file_identity.py',
     'src/msplatform/execution/manifest_verification.py',
-    'common/contracts/run_artifact_support.ps1'
+    'src/msplatform/execution/resources/run_artifact_support.ps1'
   )
   $sourceCopies = @{}
   foreach ($relative in $sourcePaths) {

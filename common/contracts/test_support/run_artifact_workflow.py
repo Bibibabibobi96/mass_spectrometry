@@ -16,7 +16,7 @@ from msplatform.execution.retention import file_record
 
 REPO = Path(__file__).resolve().parents[3]
 
-OWNER = REPO / "common/contracts/run_artifact_workflow.ps1"
+OWNER = REPO / "src/msplatform/workflows/resources/run_artifact_workflow.ps1"
 
 PROJECT = "single_reflection_oa_tof_mass_analyzer"
 
@@ -173,6 +173,12 @@ class RunArtifactWorkflowFixture(unittest.TestCase):
         try:
             outcome = run_fixture_process(command, root=root, cwd=REPO,
                                           environment=dict(os.environ, FIXTURE_PYTHON=sys.executable,
+                                                           MASS_SPECTROMETRY_HOST_CONTEXT_JSON=json.dumps({
+                                                               "workspace": str(root),
+                                                               "python_executable": sys.executable,
+                                                               "host_state_path": str(root / "host_resources.sqlite3"),
+                                                               "policy_path": str(REPO / "src/msplatform/execution/resources/host_resource_policy.json"),
+                                                           }),
                                                            FIXTURE_TEST_METHOD=self.id(), FIXTURE_TEST_SOURCE=__file__),
                                           mode="inherited-grant", timeout=90, diagnostics_root=owned_diagnostics)
             return outcome

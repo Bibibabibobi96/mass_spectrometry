@@ -417,7 +417,7 @@ function Invoke-JointOwnerStage {
     $p=Join-Path $artifactRoot ('projects/instrument_assembly/runs/'+$Arguments.RunId);New-Item -ItemType Directory -Force $p|Out-Null;Set-Content (Join-Path $p 'summary.json') '{"status":"success","diagnostics":"fixture","actual_native_batch_count":0,"reused_batch_count":1}'
   }
 }
-. (Join-Path $Repo 'common/paths/workspace_paths.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/workspace_paths.ps1')
 $context=Resolve-WorkspacePaths -SourceRoot $Repo -ArtifactRoot (Join-Path $Root 'selected-store') -Python $Python
 $artifactRoot=[string]$context.artifact_root;$pathEnvironment=@{}
 $MultipoleIpRequestPath='';$MultipoleIpRunId='';$IonProcessorRunId='';$IonProcessorConfigurationDirectory='';$IonProcessorFieldRunPath='';$ContinueOnIpScientificFailure=$false;$ResultPath=''
@@ -510,7 +510,7 @@ function Invoke-JointOwnerStage {
     Set-Content (Join-Path $d 'diagnostics_receipt.json') '{"status":"complete_recorded_diagnostics","counts":{"detected":2},"detector_peak":{"fwhm_us":0.1}}'
   }
 }
-. (Join-Path $SourceRoot 'common/paths/workspace_paths.ps1')
+. (Join-Path $SourceRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
 $context=Resolve-WorkspacePaths -SourceRoot $SourceRoot -ArtifactRoot (Join-Path $Root 'selected-store') -Python $Python
 $MultipoleIpRequestPath='';$MultipoleIpRunId='';$IonProcessorRunId='';$IonProcessorConfigurationDirectory='';$IonProcessorFieldRunPath='';$ContinueOnIpScientificFailure=$false;$ResultPath=''
 $artifactRoot=[string]$context.artifact_root;$repoRoot=$Root;$AcceleratorProvider='dual_pressure_rectilinear_ion_processor'
@@ -623,10 +623,10 @@ if(($Bad-eq'bad')-ne$caught-or($Bad-eq'bad')-eq$vendorAllowed){throw 'Live ident
             with self.subTest(slots=count), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 snapshot = root/"snapshot"
-                assets = snapshot/"common/simion/assets/iob_instance_seeds"
+                assets = snapshot/"src/msplatform/backends/simion/resources"
                 assets.mkdir(parents=True)
                 seed = snapshot/"src/msplatform/backends/simion/resources"/f"{count}_instance_seed.iob"
-                seed.parent.mkdir(parents=True)
+                seed.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(REPO/"src/msplatform/backends/simion/resources"/seed.name, seed)
                 payload = assets/"iob_seed_placeholder_01.pa0"
                 payload.write_bytes(b"inert shared PA fixture; not a SIMION field")
@@ -789,10 +789,10 @@ if(($Bad-eq'bad')-ne$caught-or($Bad-eq'bad')-eq$vendorAllowed){throw 'Live ident
                 self.assertTrue(all(os.path.samefile(path, payload) for path in aliases))
                 self.assertEqual(len({path.stat().st_ino for path in [payload, *aliases]}), 1)
                 self.assertEqual({path: path.read_bytes() for path in originals}, originals)
-                self.assertEqual(sorted(path.name for path in assets.iterdir()), [payload.name])
+                self.assertEqual(sorted(path.name for path in assets.iterdir()),
+                                 sorted(path.name for path in seed.parent.iterdir()))
                 self.assertEqual(sorted(path.name for path in seed.parent.iterdir()),
-                                 sorted([seed.name, waveform.name, scalar.name, "mrtof_candidate.lua",
-                                         "mirror_cycle_counter.lua", "build_native_corridor_iob.lua"]))
+                                 sorted(path.name for path in assets.iterdir()))
                 self.assertIn(module._lua(str(runtime/seed.name)), (runtime/"workbench_build.lua").read_text())
                 self.assertEqual(result["guard_paths"], sorted({item["pa_path"] for item in binding["instances"]} | {binding["sources"]["scalar_pa"]}))
 
@@ -848,7 +848,7 @@ $configuration|ConvertTo-Json -Depth 50|Set-Content -LiteralPath '{config}' -Enc
             self.skipTest("PowerShell 7 is unavailable")
         harness = r"""param($Repo,$Python,$Run,$Scenario)
 $ErrorActionPreference='Stop'
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $errors=$null;$tokens=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'integrations/workflows/accelerator_interface/execute.ps1'),[ref]$tokens,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
@@ -1359,7 +1359,7 @@ foreach($key in $before.Keys){if([Environment]::GetEnvironmentVariable($key)-cne
             driver = root / "capacity.ps1"
             driver.write_text(r"""param($Repo,$Entry,$Python,$Root)
 $ErrorActionPreference='Stop'
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $repoRoot=$Repo;$artifactRoot=Join-Path $Root 'selected';$package=@{artifact_run_dir=(Join-Path $artifactRoot 'projects/instrument_assembly/runs/new')};$RunId='new';$python=$Python
 $reference,$sourceRun,$designRun,$fieldRun=@('reference','ip','design','field')|ForEach-Object{Join-Path $Root "other-root/$_"}
 $pathEnvironment=@{MASS_SPECTROMETRY_ARTIFACT_ROOT=$artifactRoot};$script:admissions=0

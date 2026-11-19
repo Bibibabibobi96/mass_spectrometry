@@ -26,7 +26,8 @@ import zipfile
 from msplatform.io.file_identity import file_sha256
 from msplatform.backends.simion.particle_batching import batch_plan_from_dispatch
 from msplatform.execution.simion_dispatch import plan_simion_dispatch, plan_adaptive_followup
-from projects.dual_pressure_rectilinear_ion_processor.analysis import batching, functional
+from msplatform.backends.simion import ip_batching as batching
+from msplatform.workflows.ion_processor import functional
 from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
 from msplatform.workflows.ion_processor.extraction_force_budget import STEP_COLUMNS, IMPULSE_COLUMNS
 
@@ -386,14 +387,14 @@ class BatchingTests(unittest.TestCase):
         suffixes = ["#", "0", "-surf", *map(str, self.config["native_projection"]["electrode_ids"])]
         for suffix in suffixes:
             (self.run/"simion"/("processor.pa"+suffix)).write_bytes(("stopped "+suffix).encode())
-        runner = PROJECT/"simion/run_functional.ps1"
+        runner = PROJECT.parents[1]/"src/msplatform/workflows/resources/ip_functional.ps1"
         source = runner.read_text(encoding="utf-8")
         start = source.index("  $resolvedModel=Get-Content (Join-Path $run 'inputs/resolved_model.json')")
         block = source[start:source.index("  $iobPreparation=", start)]
         script = self.run/"guard_projection.ps1"
         script.write_text(r"""param($Repo,$Runner,$Run,$Python)
 Set-StrictMode -Version Latest;$ErrorActionPreference='Stop'
-. (Join-Path $Repo 'common/simion/short_pa_path_support.ps1')
+. (Join-Path $Repo 'src/msplatform/backends/simion/resources/short_pa_path_support.ps1')
 $ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]$null)
 foreach($name in @('Enter-IonProcessorNativeFlightGuards','Complete-IonProcessorNativeFlightGuards')){
  $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$name},$true)

@@ -18,7 +18,7 @@ class PublishedDesignFreshnessTests(unittest.TestCase):
                 script = root / "check.ps1"
                 script.write_text(r'''param($Repo,$Python,$Root,$Profile)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $Repo 'src/msplatform/execution/resources/frozen_python_package.ps1')
 . (Join-Path $Repo 'src/msplatform/workflows/resources/rf_publication.ps1')
 $snapshot=Join-Path $Root 'snapshot'

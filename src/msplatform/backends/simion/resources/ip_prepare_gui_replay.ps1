@@ -2,19 +2,23 @@
 param(
  [Parameter(Mandatory)][string]$RunId,
  [Parameter(Mandatory)][string]$BaselineRun,
+ [Parameter(Mandatory)][string]$RepositoryRoot,
  [ValidateSet(1,2)][int]$RepeatFlyCount=1,
  [string]$PythonExe='',
  [string]$SimionExe=''
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-$projectRoot=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$repoRoot=(Resolve-Path (Join-Path $projectRoot '..\..')).Path
+$repoRoot=$RepositoryRoot
 $workspaceRoot=Split-Path -Parent $repoRoot
-. (Join-Path $repoRoot 'common/require_powershell7.ps1')
-. (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
-. (Join-Path $repoRoot 'common/resource_budget_support.ps1')
-if(-not $PythonExe){$PythonExe=Join-Path $repoRoot '.venv/Scripts/python.exe'}
+. (Join-Path $PSScriptRoot '../../../execution/resources/require_powershell7.ps1')
+. (Join-Path $PSScriptRoot '../../../execution/resources/run_artifact_support.ps1')
+if(-not $PythonExe){$PythonExe=$env:SIMULATION_PYTHON_EXE}
+if(-not $PythonExe){throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
+$hostState=if($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH}else{Join-Path $workspaceRoot 'artifacts/common/host_resources.sqlite3'}
+$script:HostResourceExecutionContext=@{workspace=$workspaceRoot;python_executable=$PythonExe;host_state_path=$hostState;policy_path=(Join-Path $PSScriptRoot '../../../execution/resources/host_resource_policy.json')}
+. (Join-Path $PSScriptRoot '../../../execution/resources/host_execution_lease.ps1') -HostContext $script:HostResourceExecutionContext
+. (Join-Path $PSScriptRoot '../../../execution/resources/resource_process_support.ps1')
 $sourceRun=(Resolve-Path -LiteralPath $BaselineRun).Path
 $sourceManifest=Join-Path $sourceRun 'run_manifest.json'
 if(-not(Test-Path -LiteralPath $sourceManifest -PathType Leaf)){throw 'Explicit baseline manifest is missing'}
@@ -29,9 +33,9 @@ $savedPythonPath=$env:PYTHONPATH;$env:PYTHONPATH=$repoRoot
 Push-Location $repoRoot
 try {
  $lease=Enter-HostExecutionLease -Role GATE -Stage prepare
- & $PythonExe -c 'import sys; from pathlib import Path; from projects.dual_pressure_rectilinear_ion_processor.analysis.gui_replay import validate_baseline_for_private_gui; validate_baseline_for_private_gui(Path(sys.argv[1]))' $sourceRun
+ & $PythonExe -c 'import sys; from pathlib import Path; from msplatform.backends.simion.ip_gui_replay import validate_baseline_for_private_gui; validate_baseline_for_private_gui(Path(sys.argv[1]))' $sourceRun
  if($LASTEXITCODE-ne0){throw 'Baseline lightweight consumer projection or retirement verification failed'}
- $profileJson=& $PythonExe -c 'import json,sys; from pathlib import Path; from projects.dual_pressure_rectilinear_ion_processor.analysis.batching import frozen_runtime_profile; print(json.dumps(frozen_runtime_profile(Path(sys.argv[1]),allow_legacy=True)))' $sourceRun
+ $profileJson=& $PythonExe -c 'import json,sys; from pathlib import Path; from msplatform.backends.simion.ip_batching import frozen_runtime_profile; print(json.dumps(frozen_runtime_profile(Path(sys.argv[1]),allow_legacy=True)))' $sourceRun
  if($LASTEXITCODE-ne0){throw 'Baseline frozen runtime profile is invalid'}
  $profile=$profileJson|ConvertFrom-Json
  if(($profile.native_field_query_memory_bytes-isnot[long]-and$profile.native_field_query_memory_bytes-isnot[int])-or$profile.native_field_query_memory_bytes-le0){throw 'Native query memory declaration must be positive integer bytes'}
@@ -44,7 +48,7 @@ try {
  if(-not(Test-Path -LiteralPath $SimionExe -PathType Leaf)){throw 'SIMION executable missing for private GUI field build'}
  $capacity=Enter-ArtifactWorkflowCapacitySession -Python $PythonExe -RepoRoot $repoRoot -ArtifactRoot $artifacts -RunDirectory (Join-Path $projectArtifacts "runs/$RunId") -CommittedNewBytes $guiCommitted -ProtectedPaths @($sourceRun)
  $package=New-RunPackage -Python $PythonExe -RepoRoot $repoRoot -ArtifactRoot $projectArtifacts -RunId $RunId -Project dual_pressure_rectilinear_ion_processor -Mode native_gui_replay -Software @('SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass solver_review -RetentionReason 'Retain new private native field and IOB for user Load/Fly; trajectory comparison unverified' -CapacityLedgerLifecycleEnabled -AdditionalDirectories @('simion')
- & $PythonExe -m projects.dual_pressure_rectilinear_ion_processor.analysis.functional prepare-replay --run $package.run_dir --baseline-run $sourceRun --repeat-fly-count $RepeatFlyCount
+ & $PythonExe -m msplatform.workflows.ion_processor.functional prepare-replay --run $package.run_dir --baseline-run $sourceRun --repeat-fly-count $RepeatFlyCount
  if($LASTEXITCODE-ne0){throw 'GUI replay input preparation failed'}
  $guiBudget=Join-Path $package.input_dir 'gui_execution_budget.json'
  Write-RunJson -Path $guiBudget -Value @{schema_version=1;committed_new_bytes=$guiCommitted;basis='Baseline frozen native_functional GUI preparation forecast (legacy: full functional forecast); private fractional field, logs and IOB only';user_fly_trajectory_growth_reserved=$false;user_fly_notice='Manual Fly can create multi-GiB retained trajectories beyond this preparation reservation'}
@@ -73,7 +77,7 @@ try {
   $result=Invoke-ResourceBudgetedProcess -Limits $limits -RunDir $package.run_dir -UsagePath (Join-Path $package.result_dir "$($command.name)_resource_usage.json") -FilePath $SimionExe -ArgumentList $command.arguments -WorkingDirectory $solver -RedirectStandardOutput (Join-Path $package.log_dir "$($command.name).log") -RedirectStandardError (Join-Path $package.log_dir "$($command.name).stderr.log")
   if($result.exit_code-ne0){throw "Private GUI preparation stage failed: $($command.name)"}
  }
- & $PythonExe -c 'import sys; from pathlib import Path; from projects.dual_pressure_rectilinear_ion_processor.analysis.gui_replay import record_prepared_native_family; record_prepared_native_family(Path(sys.argv[1]))' $package.run_dir
+ & $PythonExe -c 'import sys; from pathlib import Path; from msplatform.backends.simion.ip_gui_replay import record_prepared_native_family; record_prepared_native_family(Path(sys.argv[1]))' $package.run_dir
  if($LASTEXITCODE-ne0){throw 'Private GUI native identity publication failed'}
  $planPath=Join-Path $package.input_dir 'gui_replay_plan.json'
  if(-not(Test-Path -LiteralPath $planPath -PathType Leaf)){throw 'GUI replay preparation did not publish its frozen plan'}

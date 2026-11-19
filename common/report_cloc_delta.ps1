@@ -8,7 +8,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-. (Join-Path $PSScriptRoot 'require_powershell7.ps1')
+. (Join-Path $PSScriptRoot '../src/msplatform/execution/resources/require_powershell7.ps1')
 
 $codeExtensions=@(
   '.py','.m','.ps1','.lua','.gem','.fly2',

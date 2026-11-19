@@ -217,7 +217,7 @@ class PrismRunnerContractMatrixTests(unittest.TestCase):
         harness = r"""param($Repository,$Output)
 $ErrorActionPreference='Stop'
 $tokens=$null;$errors=$null
-$support=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repository 'common/contracts/run_artifact_support.ps1'),[ref]$tokens,[ref]$errors)
+$support=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repository 'src/msplatform/execution/resources/run_artifact_support.ps1'),[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Public input-copy source parse failed'}
 $copy=@($support.FindAll({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Copy-VerifiedRunInput'},$true))
 if($copy.Count-ne1){throw 'Public input-copy function must be unique'}

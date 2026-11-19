@@ -250,8 +250,11 @@ catch{{if($_.Exception.Message-eq'accepted missing invocation'){{throw}};$reject
         base=Path(temporary.name);root=base/"checkout";common=root/"common"
         for path in (common,root/"projects",root/"integrations"):
             path.mkdir(parents=True)
-        for name in ("verify.ps1","gate_catalog_support.ps1","parallel_gate_support.ps1","require_powershell7.ps1","gate_outcome_report.py"):
+        for name in ("verify.ps1","gate_catalog_support.ps1","parallel_gate_support.ps1","gate_outcome_report.py"):
             shutil.copyfile(ROOT/"common"/name,common/name)
+        preflight = root / "src/msplatform/execution/resources/require_powershell7.ps1"
+        preflight.parent.mkdir(parents=True)
+        shutil.copyfile(ROOT / preflight.relative_to(root), preflight)
         with (common/"gate_catalog_support.ps1").open("a",encoding="utf-8",newline="\n") as stream:
             stream.write("\n$script:originalCatalogReader=${function:Read-GateCatalog}\nfunction Read-GateCatalog {param($RepoRoot);Add-Content -LiteralPath $env:PLAN_READ_COUNT -Value 'read';& $script:originalCatalogReader -RepoRoot $RepoRoot}\n")
         (common/"host_execution_lease.ps1").write_text("function Get-HostResourceBudget {param($Role,$Stage) @{}}\nfunction Enter-HostResourceStage {param($Role,$Stage,$Budget);Add-Content -LiteralPath $env:PLAN_ADMISSION_COUNT -Value 'enter';@{}}\nfunction Exit-HostResourceStage {param($Lease)}\n",encoding="utf-8",newline="\n")
@@ -745,7 +748,10 @@ if($script:released-ne0){{throw 'unacquired lease was released'}}
                 path.mkdir()
             for name in ("verify.ps1", "parallel_gate_support.ps1",
                          "require_powershell7.ps1"):
-                shutil.copyfile(ROOT / "common" / name, common / name)
+                source = ROOT / ("src/msplatform/execution/resources" if name == "require_powershell7.ps1" else "common") / name
+                destination = root / source.relative_to(ROOT)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, destination)
             (common / "gate_catalog_support.ps1").write_text(
                 (ROOT / "common/gate_catalog_support.ps1").read_text(encoding="utf-8") + """
 function Read-GateCatalog {
@@ -822,7 +828,10 @@ exit $LASTEXITCODE
                 for path in (common, root / 'temporary', root / 'projects', root / 'integrations'):
                     path.mkdir()
                 for name in ('verify.ps1', 'parallel_gate_support.ps1', 'require_powershell7.ps1'):
-                    shutil.copyfile(ROOT / 'common' / name, common / name)
+                    source = ROOT / ('src/msplatform/execution/resources' if name == 'require_powershell7.ps1' else 'common') / name
+                    destination = root / source.relative_to(ROOT)
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(source, destination)
                 (common / 'gate_catalog_support.ps1').write_text(
                     (ROOT / 'common/gate_catalog_support.ps1').read_text(encoding='utf-8') + r'''
 $script:fixtureOriginalSetGateStageResult = (Get-Command Set-GateStageResult).ScriptBlock
@@ -1040,7 +1049,10 @@ Write-Output 'ORIGINAL_LAUNCH_FAILURE_PRESERVED'
             common.mkdir()
             for name in ("verify.ps1", "parallel_gate_support.ps1",
                          "require_powershell7.ps1"):
-                shutil.copyfile(ROOT / "common" / name, common / name)
+                source = ROOT / ("src/msplatform/execution/resources" if name == "require_powershell7.ps1" else "common") / name
+                destination = root / source.relative_to(ROOT)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, destination)
             (common / "gate_catalog_support.ps1").write_text(
                 (ROOT / "common/gate_catalog_support.ps1").read_text(encoding="utf-8")
                 + "\nfunction Read-GateCatalog { param($RepoRoot) return @() }\n",
@@ -1347,7 +1359,10 @@ if ($script:performed -ne 1) {{ throw 'nested action did not execute once' }}
             (root / "projects").mkdir()
             (root / "integrations").mkdir()
             for name in ("verify.ps1", "parallel_gate_support.ps1", "gate_catalog_support.ps1", "require_powershell7.ps1"):
-                shutil.copyfile(ROOT / "common" / name, common / name)
+                source = ROOT / ("src/msplatform/execution/resources" if name == "require_powershell7.ps1" else "common") / name
+                destination = root / source.relative_to(ROOT)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, destination)
             (common / "host_execution_lease.ps1").write_text("# no resource admission in PlanOnly\n", encoding="utf-8")
             routes = []
             for name, profile in (("alpha", "stdlib"), ("beta", "stdlib"), ("unrelated", "locked")):
@@ -1972,7 +1987,10 @@ ConvertTo-Json -InputObject $parts -Depth 32 -Compress
             modules_root.mkdir(parents=True)
             (root/"temporary").mkdir(); (root/"projects").mkdir(); (root/"integrations").mkdir(); (root/"src").mkdir()
             for name in ("verify.ps1","parallel_gate_support.ps1","require_powershell7.ps1","gate_unittest.py"):
-                shutil.copyfile(ROOT/"common"/name,common/name)
+                source = ROOT / ("src/msplatform/execution/resources" if name == "require_powershell7.ps1" else "common") / name
+                destination = root / source.relative_to(ROOT)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, destination)
             (common/"gate_catalog_support.ps1").write_text(
                 (ROOT/"common/gate_catalog_support.ps1").read_text(encoding="utf-8")+r"""
 $script:originalPartitioner=${function:Get-GateRepositoryTestPartitions}
@@ -2056,7 +2074,10 @@ function Read-GateCatalog {param($RepoRoot)
                 path.mkdir(parents=True)
             for name in ("verify.ps1", "parallel_gate_support.ps1",
                          "require_powershell7.ps1"):
-                shutil.copyfile(ROOT / "common" / name, common / name)
+                source = ROOT / ("src/msplatform/execution/resources" if name == "require_powershell7.ps1" else "common") / name
+                destination = root / source.relative_to(ROOT)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, destination)
             (common / "gate_catalog_support.ps1").write_text(
                 (ROOT / "common/gate_catalog_support.ps1").read_text(encoding="utf-8") + r'''
 $script:originalPartitioner=${function:Get-GateRepositoryTestPartitions}

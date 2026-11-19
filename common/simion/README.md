@@ -385,8 +385,8 @@ prepared发布在目录移动前失败时，重放复用逐值相同的既有只
 新生成receipt为v2，原recipe身份保留。缺generation或未完成库存不会因版本可读而升级为ready／published。
 前端仅保留独立响应与必要小记录；仍有真实原生消费者的OA／MR继续保留其声明的raw载荷，不按扩展名统一删除。
 
-[`native_fast_adjust_runtime_support.ps1`](native_fast_adjust_runtime_support.ps1)和
-[`assemble_native_fast_adjust_family.lua`](assemble_native_fast_adjust_family.lua)把已发布 raw `.pa#` 与上述
+[`native_fast_adjust_runtime_support.ps1`](../../src/msplatform/backends/simion/resources/native_fast_adjust_runtime_support.ps1)和
+[`assemble_native_fast_adjust_family.lua`](../../src/msplatform/backends/simion/resources/assemble_native_fast_adjust_family.lua)把已发布 raw `.pa#` 与上述
 standalone 响应重组为一套受管、只读的私有原生 Fast Adjust family。控制器只执行一次`solutions={0}`；响应
 逐个从 standalone `.pa` 复制到全新`.paN`对象，不再次Refine，也不打开已发布generation中的原生`.paN`。
 首次构造核对generation身份及小型response receipt字节；PA载荷沿现有短副本记录核对，不额外扫描整库。
@@ -501,7 +501,7 @@ surface 拒绝与不可变缓存边界均是本仓库实现，不应表述为 SI
 
 ### 调用与回归
 
-[short_pa_path_support.ps1](short_pa_path_support.ps1) 提供：
+[short_pa_path_support.ps1](../../src/msplatform/backends/simion/resources/short_pa_path_support.ps1) 提供：
 
 | API | 输入与职责 |
 |---|---|
@@ -606,7 +606,7 @@ payload 权威；不得再复制完整 family 或重复扫描来“确认”同�
 精确名称/大小和只读状态，不重读整个大型 family；发现异常时才走完整审计或恢复。已发布源绝不以 ReadWrite
 打开、flush 或原位“修复”。
 
-Windows上的独立大PA投影由[`short_pa_path_support.ps1`](short_pa_path_support.ps1)在`8 MiB`及以上使用
+Windows上的独立大PA投影由[`short_pa_path_support.ps1`](../../src/msplatform/backends/simion/resources/short_pa_path_support.ps1)在`8 MiB`及以上使用
 `robocopy /J`非缓冲复制，再核对目标SHA-256；较小文件仍使用受写穿透保护的流式复制。本机已复现普通
 缓存式复制在同长度约3 GB PA中产生单字节差异，而同一来源经`/J`得到冻结SHA，因此不得把重复普通复制
 或增加哈希次数当作恢复办法。临时staging只在目标目录内创建，成功后同卷重命名，异常路径删除该具名前缀目录。
@@ -704,7 +704,7 @@ RF finite每个case按实际缺批重新检查覆盖，仍在运行的观测work
 分类或项目结果布局变成第二套通用合同。
 
 PA family 的可恢复发布／复用由[`pa_family_cache.py`](../../src/msplatform/backends/simion/pa_family_cache.py)的事务和 generation API 承担；
-运行期 Fast Adjust 私有 family 由[`native_fast_adjust_runtime_support.ps1`](native_fast_adjust_runtime_support.ps1)
+运行期 Fast Adjust 私有 family 由[`native_fast_adjust_runtime_support.ps1`](../../src/msplatform/backends/simion/resources/native_fast_adjust_runtime_support.ps1)
 从已发布 generation 重建。两者均不保存或恢复供应商进程的内存状态。当前公共层尚未提供把任意
 项目 runner 自动接入 continuation 的 CLI：各项目保留上述窄 adapter，避免公共层猜测日志语法或完成语义。
 
@@ -746,7 +746,7 @@ drain只确认其实际接管的记录；若准备回调另外启动的IOB write
 
 ### 结果收据与串行边界
 
-成功运行只保留紧凑调度收据，不保留逐秒探测文件。 [`resource_profile.py`](resource_profile.py)发布已完成运行中
+成功运行只保留紧凑调度收据，不保留逐秒探测文件。 [`resource_profile.py`](../../src/msplatform/execution/resource_profile.py)发布已完成运行中
 实测的单worker内存峰值及该worker的实际工作单元数，并用run manifest及输入收据SHA-256复核。
 后续worker峰值高于首批时使用其对应计数；未测得同一worker的CPU时不混用首批CPU。
 进程名、PID及创建身份保存在resource usage中；并行聚合峰值不得按进程数拆分。PA/IOB构建及没有独立粒子/可合并结果

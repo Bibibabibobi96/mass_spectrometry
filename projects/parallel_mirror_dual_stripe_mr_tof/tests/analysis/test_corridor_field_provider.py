@@ -28,7 +28,7 @@ class CandidateAuthorityTest(unittest.TestCase):
             environment = dict(os.environ)
             environment.pop("PYTHONPATH", None)
             command = (
-                ". '" + str(repo / "common/contracts/run_artifact_support.ps1").replace("'", "''") + "'; "
+                ". '" + str(repo / "src/msplatform/execution/resources/run_artifact_support.ps1").replace("'", "''") + "'; "
                 "Invoke-RunToolRootContext -RepoRoot '" + str(repo).replace("'", "''") + "' -Operation { "
                 "& '" + sys.executable.replace("'", "''") + "' -m msplatform.backends.comsol.corridor_field --help; "
                 "if ($LASTEXITCODE -ne 0) { throw 'Installed provider import failed' } }"

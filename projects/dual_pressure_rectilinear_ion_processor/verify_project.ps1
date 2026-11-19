@@ -3,7 +3,7 @@ param([string]$PythonExe='')
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-. (Join-Path $repoRoot 'common/require_powershell7.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/require_powershell7.ps1')
 . (Join-Path $repoRoot 'common/host_execution_lease.ps1')
 if(-not $PythonExe){$PythonExe=Join-Path $repoRoot '.venv/Scripts/python.exe'}
 $lease=Enter-HostExecutionLease -Role GATE

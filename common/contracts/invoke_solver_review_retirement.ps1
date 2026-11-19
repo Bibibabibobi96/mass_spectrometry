@@ -39,7 +39,7 @@ if($RepairPreservedFile){
     '--owner',$Owner,'--confirm-writing-stopped')
   if(-not$Apply){& $python @arguments;exit $LASTEXITCODE}
   if(-not$PSCmdlet.ShouldProcess($TargetRun,'replace one preserved PA object with verified identical bytes; retain old object')){return}
-  . (Join-Path $PSScriptRoot 'run_artifact_support.ps1')
+  . (Join-Path $PSScriptRoot '../src/msplatform/execution/resources/run_artifact_support.ps1')
   $lease=Enter-HostExecutionLease -Role GATE -Stage artifact_retirement -RunId ([IO.Path]::GetFileName($RepairEvidenceRun))
   $session=$null
   try{

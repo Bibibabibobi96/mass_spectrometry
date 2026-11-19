@@ -1851,7 +1851,7 @@ exit 0
                 result = subprocess.run(['pwsh', '-NoProfile', '-File', str(path),
                                          str(PROJECT / 'analysis/run_downstream_workpoint_iteration.ps1'),
                                          temporary, refused or 'no', 'yes' if completed else 'no',
-                                         str(PROJECT.parents[1] / 'common/contracts/run_artifact_support.ps1')],
+                                         str(PROJECT.parents[1] / 'src/msplatform/execution/resources/run_artifact_support.ps1')],
                                         cwd=caller, timeout=30, capture_output=True, text=True,
                                         encoding='utf-8', errors='replace')
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -4091,7 +4091,7 @@ param($Source,$repoRoot,$python,$SeedTrialManifest,$Inputs)
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
-. (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $ast=[System.Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
 $node=$ast.Find({param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name-eq'Get-ManifestOutputPath'},$true)
 Invoke-Expression $node.Extent.Text

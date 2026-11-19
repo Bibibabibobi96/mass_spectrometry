@@ -1,8 +1,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-$nativeCorridorRepoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
-. (Join-Path $nativeCorridorRepoRoot 'common\simion\short_pa_path_support.ps1')
-. (Join-Path $nativeCorridorRepoRoot 'common\simion\native_fast_adjust_runtime_support.ps1')
+. (Join-Path $PSScriptRoot 'short_pa_path_support.ps1')
+. (Join-Path $PSScriptRoot 'native_fast_adjust_runtime_support.ps1')
 
 function Protect-MrtofContinuationEvidence {
   param([string]$Parent,$Session,[string]$Python,[string]$RepoRoot,$Guards)
@@ -178,7 +177,7 @@ function Get-NativeFamilyGeneratorIdentity {
   param([Parameter(Mandatory)][string]$SimionExe)
   $identity=[ordered]@{}
   foreach($name in @('native_fast_adjust_runtime_support.ps1','assemble_native_fast_adjust_family.lua')){
-    $identity[$name]=(Get-FileHash -LiteralPath (Join-Path $nativeCorridorRepoRoot 'common\simion' $name) -Algorithm SHA256).Hash
+    $identity[$name]=(Get-FileHash -LiteralPath (Join-Path $PSScriptRoot $name) -Algorithm SHA256).Hash
   }
   $identity.simion_binary_sha256=(Get-FileHash -LiteralPath $SimionExe -Algorithm SHA256).Hash
   return $identity

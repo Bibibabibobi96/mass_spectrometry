@@ -14,7 +14,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
-. (Join-Path $repoRoot 'common\require_powershell7.ps1')
+. (Join-Path $repoRoot 'src\msplatform\execution\resources\require_powershell7.ps1')
 . (Join-Path $repoRoot 'common\host_execution_lease.ps1')
 $lease = Enter-HostExecutionLease -Role GATE
 $savedPythonPath = $env:PYTHONPATH

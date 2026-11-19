@@ -102,7 +102,7 @@ class SimionTransportRunnerSourceTests(unittest.TestCase):
             script.write_text(r'''param($Repo,$Root,$Python)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $errors=$null;$entry=Join-Path $Repo 'src/msplatform/workflows/resources/run_simion_finite_3d_transport.ps1'
 $ast=[Management.Automation.Language.Parser]::ParseFile($entry,[ref]$null,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
@@ -194,7 +194,7 @@ foreach($scenario in @('success','nonzero','observation_failure','danger')){
             (root / "resolved.json").write_text(json.dumps(resolved), encoding="utf-8")
             script = r"""
 $ErrorActionPreference='Stop'
-. (Join-Path $PWD 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $PWD 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $PWD 'projects/rf_multipole_ion_optics/runtime/simion_run_config.ps1')
 . (Join-Path $PWD 'src/msplatform/backends/simion/resources/simion_execution.ps1')
 $r=Get-Content (Join-Path $env:RF_TEST_TEMP 'resolved.json') -Raw|ConvertFrom-Json
@@ -280,7 +280,7 @@ if($script:calls-ne2){throw 'Shared recovery not called'}
     def test_prepared_wave_full_and_partial_reuse_preserve_native_units(self) -> None:
         script = r"""
 $ErrorActionPreference='Stop'
-. (Join-Path $PWD 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $PWD 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $PWD 'src/msplatform/backends/simion/resources/simion_execution.ps1')
 function Initialize-RfSimionPaBasis {if($script:fieldReady){throw 'Completed field was refined again'};$script:pa++}
 function Initialize-RfSimionPreparedBatch {if($script:fieldReady){throw 'Prepared IOB was rebuilt'};$script:iob++}

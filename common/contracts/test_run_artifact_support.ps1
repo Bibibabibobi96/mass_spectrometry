@@ -57,7 +57,7 @@ try {
   $env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN=''
   $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=Join-Path $testRoot 'host.sqlite3'
   $env:SIMULATION_PYTHON_EXE=$python
-  . (Join-Path $PSScriptRoot 'run_artifact_support.ps1')
+  . (Join-Path $PSScriptRoot '../../src/msplatform/execution/resources/run_artifact_support.ps1')
   Test-RunJsonAtomic -Root $testRoot
   & {
     $fixturePath=Join-Path $testRoot 'named_arguments/retention_actions.json'

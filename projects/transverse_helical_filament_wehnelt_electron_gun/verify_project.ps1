@@ -12,7 +12,7 @@ if (Test-Path -LiteralPath $hostExecutionLeaseSupport -PathType Leaf) {
   $hostExecutionLease = Enter-HostExecutionLease -Role GATE
 }
 try {
-. (Join-Path $repoRoot 'common\require_powershell7.ps1')
+. (Join-Path $repoRoot 'src\msplatform\execution\resources\require_powershell7.ps1')
 if (-not $PythonExe) {
   $PythonExe = Join-Path $repoRoot '.venv\Scripts\python.exe'
 }

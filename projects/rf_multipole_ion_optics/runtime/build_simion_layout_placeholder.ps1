@@ -15,7 +15,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot '..\..\..\common\require_powershell7.ps1')
+. (Join-Path $PSScriptRoot '..\..\..\src\msplatform\execution\resources\require_powershell7.ps1')
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot

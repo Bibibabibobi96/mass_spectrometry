@@ -185,7 +185,7 @@ else: raise AssertionError(name)
                     driver.write_text(r'''
 param($LiveRepo,$FrozenRepo,$Python,$ArtifactProject,$Inputs,$Builder,$Native,$Predecessor,$Report,$Attempt)
 $ErrorActionPreference='Stop';$PSNativeCommandUseErrorActionPreference=$false
-. (Join-Path $LiveRepo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $LiveRepo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 function Invoke-ArtifactCapacityGate { return @{satisfied=$true;fixture_admission=$true} }
 $runId='20261029_01000'+$Attempt+'__test__simion__handoff-builder'
 $run=Join-Path $ArtifactProject ('runs/'+$runId)
@@ -475,7 +475,7 @@ write_json_atomic(run/'run_config.json',config)
             driver.write_text(r'''
 param($LiveRepo,$FrozenRepo,$Python,$ArtifactProject,$Inputs,$Builder,$Report)
 $ErrorActionPreference='Stop';$PSNativeCommandUseErrorActionPreference=$false
-. (Join-Path $LiveRepo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $LiveRepo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 # A small, test-owned capacity ledger is real. Its admission decision is a
 # software fixture, independent of the developer machine's current free disk.
 function Invoke-ArtifactCapacityGate { return @{satisfied=$true;fixture_admission=$true} }
@@ -615,8 +615,8 @@ try{$null=Invoke-ComponentCache ($arguments+@('--action','not-an-action')) 'bad-
                 repo = root / "repo"
                 relatives = (
                     "common/host_execution_lease.ps1", "common/host_resource_python.py",
-                    "common/contracts/run_artifact_support.ps1", "common/require_powershell7.ps1",
-                    "common/resource_budget_support.ps1", "common/simion/short_pa_path_support.ps1",
+                    "src/msplatform/execution/resources/run_artifact_support.ps1", "src/msplatform/execution/resources/require_powershell7.ps1",
+                    "common/resource_budget_support.ps1", "src/msplatform/backends/simion/resources/short_pa_path_support.ps1",
                     "common/simion/process_observation.py",
                     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/run_candidate_flight.ps1",
                 )
@@ -636,7 +636,7 @@ function Enter-HostExecutionLease {
 }
 function Exit-HostResourceStage {param($Lease,[switch]$PassThru); return $null}
 ''', encoding="utf-8")
-                artifact_support = repo / "common/contracts/run_artifact_support.ps1"
+                artifact_support = repo / "src/msplatform/execution/resources/run_artifact_support.ps1"
                 artifact_support.write_text(artifact_support.read_text(encoding="utf-8") + r'''
 function Update-ArtifactWorkflowCapacitySession {
  param($Python,$RepoRoot,$Session)
@@ -698,7 +698,7 @@ catch{$failure=$_.Exception.Message}
  ConvertTo-Json|Set-Content -LiteralPath $Report -Encoding utf8
 # Every process in this fixture is now naturally exited; retained guards in
 # the deliberately unknown arm are inspected before this test-owned cleanup.
-. (Join-Path $Repo 'common/simion/short_pa_path_support.ps1')
+. (Join-Path $Repo 'src/msplatform/backends/simion/resources/short_pa_path_support.ps1')
 foreach($path in @($global:MassSpectrometryImmutablePaSourceGuards.Keys)){Unprotect-ImmutablePaSource -Source $path|Out-Null}
 ''', encoding="utf-8")
                 report = root / "report.json"
