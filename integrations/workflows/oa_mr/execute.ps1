@@ -220,7 +220,10 @@ $repoRoot=(Resolve-Path -LiteralPath $RepoRoot).Path
 . (Join-Path $repoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
 $script:pythonRoot=$repoRoot
 $workspaceRoot=Split-Path -Parent $repoRoot
-$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
+$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
+$executionResources=Join-Path $repoRoot 'src/msplatform/execution/resources'
+$hostState=if($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH}else{Join-Path $workspaceRoot 'artifacts/common/host_resources.sqlite3'}
+$hostContext=@{workspace=$workspaceRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $repoRoot 'src/msplatform/workflows/resources/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
 if($ResumeFinalization){
   if(-not$RunId){throw 'Finalization recovery requires the existing RunId.'}
@@ -412,10 +415,10 @@ if($nativeSystemRuntimeRecords.Count-ne3){throw 'Native system runtime bundle la
 }
 if([string]::IsNullOrWhiteSpace($RunId)){$RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__sim__simion__oa-mr'}
 
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
-. (Join-Path $repoRoot 'common\host_execution_lease.ps1')
-. (Join-Path $repoRoot 'common\resource_budget_support.ps1')
-. (Join-Path $repoRoot 'common\simion\short_pa_path_support.ps1')
+. (Join-Path $executionResources 'run_artifact_support.ps1')
+. (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
+. (Join-Path $executionResources 'resource_process_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/backends/simion/resources/short_pa_path_support.ps1')
 . (Join-Path $repoRoot 'integrations/runtime/dependencies.ps1')
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$projectId") `
   -RunId $RunId -Project $projectId -Mode 'oa_mr' -Software @('SIMION 2020','Python 3.11') `

@@ -539,7 +539,10 @@ requests, native scopes and recovery assertions are unchanged. The prepared-join
 analysis fixture loads its admission override from that same canonical owner and
 retains all six success/failure scenarios. The four affected modules passed 45
 parents with 159 successful records in 355.948 seconds. This is execution-resource
-migration, not a new runner, native result or scientific qualification.
+migration, not a new runner, native result or scientific qualification. OA–MR now
+uses the same installed HostContext/process and short-PA resources with explicit
+Python; its complete-component and LocalScope contracts are unchanged. The OA–MR
+and native-path modules passed 56 parents with 125 records in 98.580 seconds.
 
 The installation harness now prepares a separate inert RF-IP field fixture for
 each ordinary-install arm. Both children call the installed consumer and real
