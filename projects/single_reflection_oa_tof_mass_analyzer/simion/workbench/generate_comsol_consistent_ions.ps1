@@ -35,7 +35,7 @@ $python = if ($PythonExe) {
 } elseif ($env:SIMULATION_PYTHON_EXE) {
   [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)
 } else {
-  Join-Path $repoRoot '.venv\Scripts\python.exe'
+  throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'
 }
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
   throw "ION generation requires the selected Python runtime: $python"

@@ -13,7 +13,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $python = if ($env:SIMULATION_PYTHON_EXE) { $env:SIMULATION_PYTHON_EXE } else {
-  Join-Path $repoRoot '.venv\Scripts\python.exe'
+  throw 'Explicit SIMULATION_PYTHON_EXE is required'
 }
 $pythonVersion = (& $python -c 'import sys; print(str(sys.version_info.major) + "." + str(sys.version_info.minor))').Trim()
 if ($LASTEXITCODE -ne 0 -or $pythonVersion -ne '3.11') { throw 'SIMION log analysis requires Python 3.11.' }

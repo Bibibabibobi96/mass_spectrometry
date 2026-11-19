@@ -61,6 +61,11 @@ Formal validation/delivery, parameterized geometry, field-idealization and the
 candidate-flight owner now also use explicit Python and canonical execution
 resources. Formal write protection, capacity and original consumer assertions
 remain unchanged and are covered by the shared 103-parent/150-record selection.
+The Changed fixtures now load canonical workspace resources, classify the
+16,403,404-byte `iob_seed_placeholder_01.pa0` as `solver_native_binary`, and bind
+Python using the actual explicit-runtime scripts. The three affected modules
+passed 27 parents with 57 successful records in 54.357 seconds, including frozen
+scheduler inheritance, zero-native refusals and source-missing protection.
 
 ## Generic vector-field comparison owner
 

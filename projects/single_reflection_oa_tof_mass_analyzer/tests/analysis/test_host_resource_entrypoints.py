@@ -91,15 +91,15 @@ throw 'deliberate guard boundary rejection'
             target.write_bytes((PROJECT / relative).read_bytes())
             support = root / "common"
             (support / "contracts").mkdir(parents=True)
-            (support / "host_execution_lease.ps1").write_text(LEASE_STUB, encoding="utf-8")
             # Resolve real roots with the explicit interpreter, then fail at
             # the next absent science dependency. No native asset is copied.
-            paths = support / "paths"
-            paths.mkdir()
+            paths = root / "src/msplatform/execution/resources"
+            paths.mkdir(parents=True, exist_ok=True)
+            (paths / "host_execution_lease.ps1").write_text(LEASE_STUB, encoding="utf-8")
             for name in ("workspace_paths.ps1", "workspace_paths.py"):
-                shutil.copyfile(PROJECT.parents[1] / "common/paths" / name, paths / name)
-            (support / "contracts/run_artifact_support.ps1").write_text(r'''
-. (Join-Path $PSScriptRoot '../host_execution_lease.ps1')
+                shutil.copyfile(PROJECT.parents[1] / "src/msplatform/execution/resources" / name, paths / name)
+            (paths / "run_artifact_support.ps1").write_text(r'''
+. (Join-Path $PSScriptRoot 'host_execution_lease.ps1')
 $public=[Management.Automation.Language.Parser]::ParseFile($env:OA_TEST_PUBLIC_SUPPORT,[ref]$null,[ref]$null)
 foreach($name in @('Save-RunEnvironment','Restore-RunEnvironment')){
  $functions=@($public.FindAll({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-ceq$name},$true))
@@ -137,13 +137,16 @@ foreach($name in @('Save-RunEnvironment','Restore-RunEnvironment')){
                 output = self.run_failure("verify_project.ps1", ["-Level", level, "-CandidateTarget", candidate])
                 self.assertEqual(output.count(f"TEST_LEASE_ENTER={role}"), 1, output)
                 self.assertEqual(output.count(f"TEST_LEASE_EXIT={role}"), 1, output)
-                self.assertIn("Python 3.11 runtime missing", output)
+                self.assertIn("oatof_lifecycle_preflight.ps1", output)
                 stage = "prepare"
                 self.assertIn(f"TEST_LEASE_STAGE={stage}", output)
 
     def test_standalone_geometry_smoke_prepares_light_and_releases_on_failure(self) -> None:
-        output = self.run_failure("simion/workbench/run_parameterized_geometry_smoke.ps1", ["-RunId", "fixture"])
-        self.assertIn("python.exe", output)
+        output = self.run_failure(
+            "simion/workbench/run_parameterized_geometry_smoke.ps1",
+            ["-RunId", "20261119_000000__test__simion__fixture"],
+        )
+        self.assertIn("resolved_geometry.json", output)
         self.assertIn("TEST_LEASE_STAGE=prepare", output)
         self.assertEqual(output.count("TEST_LEASE_ENTER=SIMION"), 1, output)
         self.assertEqual(output.count("TEST_LEASE_EXIT=SIMION"), 1, output)

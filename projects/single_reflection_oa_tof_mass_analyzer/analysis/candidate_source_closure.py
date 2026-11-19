@@ -172,11 +172,11 @@ PYTHON_BOUND_SOURCES = frozenset({
     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/analyze_ideal_field_log.ps1",
     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/build_formal_delivery.ps1",
 })
-PYTHON_ASSIGNMENT = "$python = Join-Path $repoRoot '.venv\\Scripts\\python.exe'"
-HOST_PYTHON_ASSIGNMENT = "$legacyPython=if($env:SIMULATION_PYTHON_EXE){$env:SIMULATION_PYTHON_EXE}else{Join-Path $legacyRepo '.venv/Scripts/python.exe'}"
-ANALYSIS_PYTHON_ASSIGNMENT = "$python = if ($env:SIMULATION_PYTHON_EXE) { $env:SIMULATION_PYTHON_EXE } else {\n  Join-Path $repoRoot '.venv\\Scripts\\python.exe'\n}"
+PYTHON_ASSIGNMENT = "$python = if ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) } else { throw 'Explicit SIMULATION_PYTHON_EXE is required' }"
+HOST_PYTHON_ASSIGNMENT = "$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } elseif ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) } else { throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required' }"
+ANALYSIS_PYTHON_ASSIGNMENT = "$python = if ($env:SIMULATION_PYTHON_EXE) { $env:SIMULATION_PYTHON_EXE } else {\n  throw 'Explicit SIMULATION_PYTHON_EXE is required'\n}"
 
-GENERATOR_PYTHON_ASSIGNMENT = "$python = if ($PythonExe) {\n  [IO.Path]::GetFullPath($PythonExe)\n} elseif ($env:SIMULATION_PYTHON_EXE) {\n  [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)\n} else {\n  Join-Path $repoRoot '.venv\\Scripts\\python.exe'\n}"
+GENERATOR_PYTHON_ASSIGNMENT = "$python = if ($PythonExe) {\n  [IO.Path]::GetFullPath($PythonExe)\n} elseif ($env:SIMULATION_PYTHON_EXE) {\n  [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)\n} else {\n  throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'\n}"
 
 
 def _source_path(source_id: str) -> Path:
@@ -194,7 +194,7 @@ def _bind_python_runtime(payload: bytes, python_executable: Path, assignment: st
     if text.count(assignment) != 1:
         raise ValueError("candidate PowerShell source has an unexpected Python binding")
     escaped = str(python_executable).replace("'", "''")
-    variable = "$legacyPython" if assignment == HOST_PYTHON_ASSIGNMENT else "$python"
+    variable = "$python"
     replacement = f"{variable} = '{escaped}' # frozen candidate runtime binding"
     return text.replace(assignment, replacement).encode("utf-8")
 

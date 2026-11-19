@@ -398,6 +398,7 @@ class ThreeZoneIdealTheoryTests(unittest.TestCase):
     def test_frozen_total_time_and_root_modules_require_their_actual_sources(self) -> None:
         from dataclasses import asdict
         from msplatform.execution.inputs import enumerate_python_sources, freeze_file
+        from msplatform.execution.retention import classify_file
         repository = Path(__file__).resolve().parents[4]
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -407,7 +408,7 @@ class ThreeZoneIdealTheoryTests(unittest.TestCase):
             for relative in selected:
                 destination = snapshot / relative
                 destination.parent.mkdir(parents=True, exist_ok=True)
-                freeze_file(repository / relative, destination)
+                freeze_file(repository / relative, destination, retention_classifier=classify_file)
             shutil.copytree(snapshot, competing)
             request = dict(snapshot=str(snapshot / "src"), competing=str(competing / "src"),
                 source=asdict(self.source()), outer=asdict(self.outer()),

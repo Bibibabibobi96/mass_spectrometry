@@ -117,15 +117,16 @@ class DiagnosticRunnerTests(unittest.TestCase):
         body = (PROJECT/'simion/workbench/run_ideal_field_diagnostic.ps1').read_text(encoding='utf-8')
         write(script, body)
         for name in ('workspace_paths.ps1', 'workspace_paths.py'):
-            write(repo/'common/paths'/name, (ROOT/'common/paths'/name).read_text(encoding='utf-8'))
-        write(repo/'common/host_execution_lease.ps1', r'''
+            resource = repo/'src/msplatform/execution/resources'/name
+            write(resource, (ROOT/'src/msplatform/execution/resources'/name).read_text(encoding='utf-8'))
+        write(repo/'src/msplatform/execution/resources/host_execution_lease.ps1', r'''
 function Enter-HostExecutionLease {param($Role,$Stage,$StatePath) if($StatePath-cne$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){throw 'Host state differs'};Add-Content $env:DIAGNOSTIC_TRACE "lease:$Role";return @{role=$Role}}
 function Exit-HostExecutionLease {param($Lease)}
 function Update-HostResourceStage {param($Lease,$Stage,$Budget,$RetainedMemoryBytes) return $Lease}
 function Get-HostResourceBudget {param($Role,$Stage) return @{}}
 ''')
         write(repo/'src/msplatform/execution/resources/run_artifact_support.ps1', r'''
-. (Join-Path $PSScriptRoot '../host_execution_lease.ps1')
+. (Join-Path $PSScriptRoot 'host_execution_lease.ps1')
 $publicAst=[Management.Automation.Language.Parser]::ParseFile($env:DIAGNOSTIC_PUBLIC_SUPPORT,[ref]$null,[ref]$null)
 foreach($name in @('Save-RunEnvironment','Restore-RunEnvironment','Write-RunJson')){
  $node=$publicAst.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$name},$true)
@@ -190,7 +191,7 @@ return [pscustomobject]@{Distribution=$Distribution;Mode=$Mode;Hit=0;EfficiencyP
             run_id = '20261030_120100__analysis__python__diagnostic-fixture'
             result = subprocess.run(['pwsh','-NoProfile','-File',str(script),'-AnalyzeOnly',
                 '-SourceRunPath',str(source),'-RunId',run_id,'-SimionExe',str(root/'missing_simion.exe')],
-                cwd=ROOT, timeout=120, env=env, capture_output=True, text=True, encoding="utf-8")
+                cwd=ROOT, timeout=120, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
             self.assertEqual(trace.read_text(encoding="utf-8-sig").splitlines(), ['lease:GATE','source_guard'])
             run = root/'artifacts/projects'/PROJECT_ID/'runs'/run_id
@@ -215,7 +216,7 @@ return [pscustomobject]@{Distribution=$Distribution;Mode=$Mode;Hit=0;EfficiencyP
             result = subprocess.run(['pwsh','-NoProfile','-File',str(script),'-AnalyzeOnly',
                 '-SourceRunPath',str(source),'-RunId',run_id], cwd=ROOT, timeout=60,
                 env=self.environment(root, trace),
-                capture_output=True, text=True, encoding='utf-8')
+                capture_output=True, text=True, encoding='utf-8', errors='replace')
             self.assertNotEqual(result.returncode, 0)
             events = trace.read_text(encoding='utf-8-sig').splitlines()
             self.assertTrue(any('ACTION=provide_complete_manifest_bound' in event for event in events))
@@ -235,7 +236,7 @@ return [pscustomobject]@{Distribution=$Distribution;Mode=$Mode;Hit=0;EfficiencyP
             env = self.environment(root, trace)
             result = subprocess.run(['pwsh','-NoProfile','-File',str(script),'-N','2',
                 '-RunId','20261030_120200__test__simion__diagnostic-fixture'],
-                cwd=ROOT, timeout=120, env=env, capture_output=True, text=True, encoding="utf-8")
+                cwd=ROOT, timeout=120, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
             events = trace.read_text(encoding="utf-8-sig").splitlines()
             self.assertEqual(events.count('prepare_runtime'), 1)
@@ -263,7 +264,7 @@ foreach($name in $names){if([Environment]::GetEnvironmentVariable($name)-cne$bef
 ''')
             run_id = '20261030_120500__analysis__python__diagnostic-context'
             result = subprocess.run(['pwsh','-NoProfile','-File',str(wrapper),str(script),str(source),run_id],
-                cwd=root, timeout=60, env=environment, capture_output=True, text=True, encoding='utf-8')
+                cwd=root, timeout=60, env=environment, capture_output=True, text=True, encoding='utf-8', errors='replace')
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
             run = root/'separate-data/projects'/PROJECT_ID/'runs'/run_id
             config = json.loads((run/'run_config.json').read_text(encoding='utf-8-sig'))
@@ -284,7 +285,7 @@ foreach($name in $names){if([Environment]::GetEnvironmentVariable($name)-cne$bef
             result = subprocess.run(['pwsh','-NoProfile','-File',str(script),'-N','2',
                 '-RunId','20261030_120300__test__simion__diagnostic-pending'],
                 cwd=ROOT, timeout=60, env=self.environment(root, trace),
-                capture_output=True, text=True, encoding='utf-8')
+                capture_output=True, text=True, encoding='utf-8', errors='replace')
             self.assertNotEqual(result.returncode, 0)
             events = trace.read_text(encoding='utf-8-sig').splitlines()
             self.assertTrue(any('FORMAL_REVALIDATION_REQUIRED' in event for event in events))
@@ -318,14 +319,14 @@ $global:LASTEXITCODE=0
             env = dict(os.environ, DIAGNOSTIC_TRACE=str(trace))
             command = ['pwsh','-NoProfile','-File',str(verifier),'-PreparedRuntime',str(runtime),
                        '-SimionExe',str(native),'-RuntimeReportPath',str(root/'report.txt')]
-            result = subprocess.run(command, cwd=ROOT, timeout=120, env=env, capture_output=True, text=True, encoding="utf-8")
+            result = subprocess.run(command, cwd=ROOT, timeout=120, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
             self.assertEqual(trace.read_text(encoding="utf-8-sig").splitlines(), ['verify_saved_iob','verify_actual_fields'])
             self.assertIn('PREPARED_RUNTIME_GEOMETRY=PASS', result.stdout)
-            result = subprocess.run(command, cwd=ROOT, timeout=120, env=dict(env, DIAGNOSTIC_FAIL_NATIVE='1'), capture_output=True, text=True, encoding="utf-8")
+            result = subprocess.run(command, cwd=ROOT, timeout=120, env=dict(env, DIAGNOSTIC_FAIL_NATIVE='1'), capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('runtime geometry validation failed', result.stderr)
-            result = subprocess.run(['pwsh','-NoProfile','-File',str(verifier)], cwd=ROOT, timeout=120, env=env, capture_output=True, text=True, encoding="utf-8")
+            result = subprocess.run(['pwsh','-NoProfile','-File',str(verifier)], cwd=ROOT, timeout=120, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('FORMAL_QUALIFICATION_REQUIRED', result.stderr)
 
