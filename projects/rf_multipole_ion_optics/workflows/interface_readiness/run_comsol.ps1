@@ -26,8 +26,10 @@ $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $repoRoot = Split-Path -Parent (Split-Path -Parent $projectRoot)
 $python = if ($PythonExe) {
     [IO.Path]::GetFullPath($PythonExe)
+} elseif ($env:SIMULATION_PYTHON_EXE) {
+    [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)
 } else {
-    Join-Path $repoRoot '.venv\Scripts\python.exe'
+    throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'
 }
 . (Join-Path $repoRoot 'src/msplatform/workflows/resources/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
 if($ResumeFinalization){
@@ -62,7 +64,9 @@ $pathContext=Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
 $artifactRoot=Join-Path ([string]$pathContext.artifact_root) 'projects/rf_multipole_ion_optics'
 $Limits=Read-InterfaceExecutionLimits -Path $LimitsPath
 $CommittedNewBytes=[long]$Limits.transient_run_directory_bytes
-. (Join-Path $repoRoot 'common/host_execution_lease.ps1')
+$executionResources = Join-Path $repoRoot 'src/msplatform/execution/resources'
+$hostContext = @{workspace=(Split-Path -Parent $repoRoot);python_executable=$python;host_state_path=[string]$pathContext.host_resource_state_path;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
+. (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 $ResourceBudgets=@{}
 foreach($stage in @('prepare','solver','postprocess')){$ResourceBudgets[$stage]=(Get-HostResourceBudget -Role COMSOL -Stage $stage).Clone()}
 $ResourceBudgets.solver.memory_bytes=[long]$Limits.process_tree_working_set_bytes

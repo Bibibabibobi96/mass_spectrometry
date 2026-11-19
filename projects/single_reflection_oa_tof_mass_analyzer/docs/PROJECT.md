@@ -57,6 +57,10 @@ then initializes the installed execution HostContext instead of the retired comm
 host adapter. Its actual static preflight passed with confirmed lease release;
 the selected installed-geometry partition passed three tests. This closes the
 external-interpreter source-selection failure, not the pending native smokes.
+Formal validation/delivery, parameterized geometry, field-idealization and the
+candidate-flight owner now also use explicit Python and canonical execution
+resources. Formal write protection, capacity and original consumer assertions
+remain unchanged and are covered by the shared 103-parent/150-record selection.
 
 ## Generic vector-field comparison owner
 

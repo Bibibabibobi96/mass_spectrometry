@@ -70,7 +70,7 @@ $formalBaselinePath = Join-Path $projectRoot 'config\baseline.json'
 $modePath = Join-Path $projectRoot 'config\modes\formal.json'
 $formalContractPath = Join-Path $projectRoot 'config\resolved_geometry.json'
 . (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
-$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+$python = if ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) } else { throw 'Explicit SIMULATION_PYTHON_EXE is required' }
 $nativeOperations=[Collections.Generic.List[object]]::new()
 $producerComponents=[Collections.Generic.List[object]]::new()
 $hostExecutionLease=$null;$hostRelease=$null;$buildFailure=$null
@@ -112,9 +112,12 @@ else {
   $textDir = Join-Path $projectRoot 'simion\workbench\formal'
 }
 
-. (Join-Path $repoRoot 'common\host_execution_lease.ps1')
+$executionResources = Join-Path $repoRoot 'src/msplatform/execution/resources'
+$hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path $workspaceRoot 'artifacts/common/host_resources.sqlite3' }
+$hostContext = @{workspace=$workspaceRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
+. (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 . (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\native_fast_adjust_runtime_support.ps1')
-. (Join-Path $repoRoot 'common\resource_budget_support.ps1')
+. (Join-Path $executionResources 'resource_process_support.ps1')
 $capacitySession=Get-Content -LiteralPath $CapacitySessionPath -Raw|ConvertFrom-Json -Depth 80
 $runRoot=Join-Path $artifactRoot ('runs/'+$RunId)
 if($capacitySession.role-ne'artifact_workflow_capacity_session'-or$capacitySession.status-ne'active'-or

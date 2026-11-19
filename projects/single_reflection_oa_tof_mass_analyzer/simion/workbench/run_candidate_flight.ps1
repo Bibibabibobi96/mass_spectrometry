@@ -7,9 +7,12 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-. (Join-Path $RepositoryRoot 'common/host_execution_lease.ps1')
-. (Join-Path $RepositoryRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
-. (Join-Path $RepositoryRoot 'common/resource_budget_support.ps1')
+$executionResources = Join-Path $RepositoryRoot 'src/msplatform/execution/resources'
+$hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path (Split-Path -Parent $RepositoryRoot) 'artifacts/common/host_resources.sqlite3' }
+$hostContext = @{workspace=(Split-Path -Parent $RepositoryRoot);python_executable=$PythonExe;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
+. (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
+. (Join-Path $executionResources 'run_artifact_support.ps1')
+. (Join-Path $executionResources 'resource_process_support.ps1')
 . (Join-Path $RepositoryRoot 'src/msplatform/backends/simion/resources/short_pa_path_support.ps1')
 $request=Get-Content -LiteralPath $ExecutionRequestPath -Raw|ConvertFrom-Json -Depth 50
 $runtime=Get-Content -LiteralPath $RuntimeReceiptPath -Raw|ConvertFrom-Json -Depth 80

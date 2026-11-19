@@ -2,8 +2,9 @@
 param([Parameter(Mandatory)][string]$RunId,[Parameter(Mandatory)][string]$PABuildRunPath,[Parameter(Mandatory)][string]$RuntimeControllerPath,[Parameter(Mandatory)][string]$CampaignPath,[Parameter(Mandatory)][string]$ReleaseSpecPath,[ValidateSet('native','zone1_ideal','zone2_ideal','full_ideal')][string]$FieldMode='native',[string]$SimionExe='')
 Set-StrictMode -Version Latest;$ErrorActionPreference='Stop'
 $projectRoot=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path;$repoRoot=(Resolve-Path (Join-Path $projectRoot '..\..')).Path;$workspaceRoot=(Resolve-Path (Join-Path $repoRoot '..')).Path
-. (Join-Path $repoRoot 'src\msplatform\execution\resources\require_powershell7.ps1');. (Join-Path $repoRoot 'src\msplatform\execution\resources\run_artifact_support.ps1');. (Join-Path $repoRoot 'common\host_execution_lease.ps1')
-$python=Join-Path $repoRoot '.venv\Scripts\python.exe';if(-not$SimionExe){$SimionExe=Join-Path $env:ProgramFiles 'SIMION-2020\simion.exe'};if(-not(Test-Path $SimionExe)){throw 'SIMION executable is missing'}
+. (Join-Path $repoRoot 'src\msplatform\execution\resources\require_powershell7.ps1');. (Join-Path $repoRoot 'src\msplatform\execution\resources\run_artifact_support.ps1')
+$python=if($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit SIMULATION_PYTHON_EXE is required'};$hostState=if($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH}else{Join-Path $workspaceRoot 'artifacts/common/host_resources.sqlite3'};$hostContext=@{workspace=$workspaceRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $repoRoot 'src/msplatform/execution/resources/host_resource_policy.json')};. (Join-Path $repoRoot 'src/msplatform/execution/resources/host_execution_lease.ps1') -HostContext $hostContext
+if(-not$SimionExe){$SimionExe=Join-Path $env:ProgramFiles 'SIMION-2020\simion.exe'};if(-not(Test-Path $SimionExe)){throw 'SIMION executable is missing'}
 
 . (Join-Path $PSScriptRoot 'focus_python.ps1')
 

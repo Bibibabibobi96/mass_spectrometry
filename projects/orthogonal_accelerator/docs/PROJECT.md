@@ -17,6 +17,15 @@ provider plan, not a checkout profile. This source migration is not native quali
 
 # 正交脉冲加速器项目状态
 
+The component-focus workflow, PA and flight entries now require explicit Python
+and initialize the installed execution HostContext rather than the retired common
+host adapter. Their scientific campaign, native cache and full-cohort contracts
+are unchanged. Together with the RF/SFI consumers below, the affected selection
+passed 103 parents with 150 successful records in 106.974 seconds; no commercial
+solver was launched.
+
+The project verifier now loads the installed execution lease resource with an explicit HostContext. Callers must select Python through `-PythonExe` or `SIMULATION_PYTHON_EXE`; the verifier no longer assumes a checkout `.venv`. Its existing PYTHONPATH selection, tests and scientific behavior are unchanged.
+
 ## Installed legacy closed-focus PA planning
 
 `msplatform.backends.simion.oa_focus_plan` is the sole closed two-zone focus PA

@@ -1,5 +1,7 @@
 # RF多极杆离子光学项目状态
 
+The project verifier now loads the installed execution lease resource with an explicit HostContext. Callers must select Python through `-PythonExe` or `SIMULATION_PYTHON_EXE`; the verifier no longer assumes a checkout `.venv`. Its preflight, test selection and scientific behavior are unchanged.
+
 ## Installed publication owner
 
 `msplatform.workflows.rf_publication` owns the complete request compiler, freshness
@@ -21,6 +23,11 @@ The affected runner, frozen-closure, recovery, dual-backend and numerics fixture
 passed 132 parents with 197 successful records in 235.990 seconds. This verifies
 software wiring and original assertions only; no COMSOL/SIMION native execution
 or ordinary-install full-chain acceptance was run.
+
+The interface-readiness COMSOL entry now uses the same explicit HostContext and
+its resolved host-state path instead of the retired common adapter. This is an
+execution-source change only, covered by the shared 103-parent/150-record consumer
+selection; no new native result is claimed.
 
 
 ## Original finite-length L1 analysis-only successor
