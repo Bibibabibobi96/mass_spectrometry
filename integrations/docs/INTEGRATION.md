@@ -89,7 +89,21 @@ contacts are separate evidence and `mr_observations.status=not_recorded`. Writer
 stopped and scientific qualification is not granted. This closes the recorded
 support-stencil blocker and demonstrates native original-birth propagation only;
 it does not satisfy detector/MR terminal science, same-final-SHA recovery, or P4
-acceptance by itself.
+acceptance by itself. The first terminal is at 5.206814 us,
+`[-0.513436,-298.975013,-1.078206]` mm in native instance 2; the subsequent N1
+run `20261116_154959__sim__simion__track-a884e2660313` repeats the same state.
+Thus the retained outcome is an RF-region native splat, not an MR arrival.
+
+At `86bbe69d`, the real public recovery planner and
+`inspect_tracking_recovery` re-read this N100 manifest for 168.099 seconds and
+refused `tracking predecessor scientific applicability or partition differs`.
+The predecessor and current renderer bytes are not identical: at least
+`build_tracking_iob.lua`, `rf_tracking_program.py` and
+`rf_tracking_execution.py` changed, and the current applicability also includes
+`native_terminal_recording.lua`. This is an explicit renderer-version refusal,
+not evidence of a damaged parent or a successful current-SHA reuse. No assertion
+was relaxed; a new matching-renderer native result is still required for final
+same-candidate recovery acceptance.
 
 The original-source native attempts retain their individual failures: missing
 empty-surface evidence (`track-27a67896934c`), PA memory exhaustion
