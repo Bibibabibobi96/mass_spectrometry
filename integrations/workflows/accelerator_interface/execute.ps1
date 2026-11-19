@@ -67,11 +67,18 @@ function New-AcceleratorInterfaceRunId {
 $projectId='instrument_assembly'
 $software=@('Python 3.11')
 $repoRoot=(Resolve-Path -LiteralPath $RepoRoot).Path
+foreach($name in @('ContinuousReleaseRequest','ContinuousFieldsReference','ContinuousPropagation','ContinuousObservations',
+  'ContinuousNumerics','ContinuousHs1Request','ContinuousEnvironment','ContinuousWorkspace',
+  'ContinuousRecoveryReference','ContinuousDispatchProfiles')){
+  $value=Get-Variable -Name $name -ValueOnly
+  if($value){Set-Variable -Name $name -Value (Resolve-Path -LiteralPath $value).Path}
+}
+if($PythonExe){$PythonExe=(Resolve-Path -LiteralPath $PythonExe).Path}
 $script:pythonRoot=$repoRoot
 . (Join-Path $repoRoot 'common/require_powershell7.ps1')
 . (Join-Path $repoRoot 'integrations/runtime/dependencies.ps1')
 . (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
-$python=if($PythonExe){(Resolve-Path -LiteralPath $PythonExe).Path}else{Join-Path $repoRoot '.venv/Scripts/python.exe'}
+$python=if($PythonExe){$PythonExe}else{Join-Path $repoRoot '.venv/Scripts/python.exe'}
 . (Join-Path $repoRoot 'common/paths/workspace_paths.ps1')
 $pathContext=Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
 $artifactRoot=[string]$pathContext.artifact_root

@@ -104,6 +104,142 @@ if(-not$caught){throw 'segmented and continuous inputs were accepted together'}
             self.assertIn("STUDY_SCOPE=original_birth_to_terminal", result.stdout)
             self.assertIn("SIMULATION_PATH=continuous_assembly", result.stdout)
 
+    def test_continuous_full_joint_external_cwd_resolves_exact_inputs_before_repo_context(self):
+        powershell = shutil.which("pwsh")
+        if not powershell:
+            self.skipTest("PowerShell 7 required")
+        from common.contracts.test_simion_rf_tracking import rf_tracking_case
+        from msplatform import examples
+        from msplatform.ion_release import sample_release
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            caller = root / "caller"
+            repo = root / "checkout"
+            inputs = caller / "inputs"
+            workspace = caller / "workspace"
+            inputs.mkdir(parents=True)
+            workspace.mkdir()
+            _copy_path_consumer_repository(repo)
+
+            _, _, _, _, propagation, numerics = rf_tracking_case()
+            propagation["dynamics"]["collisions"] = "hs1"
+            numerics["grouped"] = 0
+            documents = {
+                "release.json": examples.load_example("rf_oatof_functional_v1").release,
+                "fields.json": {"source": "caller-fields"},
+                "propagation.json": propagation,
+                "observations.json": {"plane_observations": [], "source": "caller-observations"},
+                "numerics.json": numerics,
+                "recovery.json": {"source": "caller-recovery"},
+                "dispatch.json": [{"name": "caller-dispatch"}],
+                "environment.json": {
+                    "schema_version": 1, "role": "execution_environment",
+                    "tools": {"python": sys.executable, "powershell": powershell},
+                    "policy": {"host_state_path": str(root / "host.sqlite3")},
+                    "profiles": {"test": {"stage_policy_path": "stages.json"}},
+                },
+                "stages.json": {},
+            }
+            vendor = inputs / "vendor.lua"
+            vendor.write_text("-- caller vendor\n", encoding="utf-8")
+
+            def box(lo, hi):
+                return {"minimum_mm": lo, "maximum_mm": hi,
+                        "lower_closed": [True] * 3, "upper_closed": [True] * 3}
+
+            documents["hs1.json"] = {
+                "schema_version": 1,
+                "bath_domain": box([0, -10, -10], [211, 10, 10]),
+                "outer": {
+                    "field_id": "outer", "frame_id": "ip_local", "composition_id": "one_gas",
+                    "species": [{"species_id": "gas", "mass_amu": 28, "mole_fraction": 1}],
+                    "domain": box([-200, -40, -40], [300, 40, 40]),
+                    "source": {"kind": "prescribed", "source_id": "explicit", "assumptions": []},
+                    "uniform_state": {"status": "gas", "pressure_pa": 4, "temperature_k": 300,
+                                      "bulk_velocity_m_s": [1, 2, 3]},
+                },
+                "vendor_path": "vendor.lua", "numerics": {"seed": 40, "hs1_steps_per_mfp": 20},
+            }
+            for name, value in documents.items():
+                (inputs / name).write_text(json.dumps(value), encoding="utf-8")
+
+            checkout_inputs = repo / "inputs"
+            shutil.copytree(inputs, checkout_inputs)
+            for name in documents:
+                (checkout_inputs / name).write_text(json.dumps({"checkout_decoy": name}), encoding="utf-8")
+            (repo / "workspace").mkdir()
+            (repo / "workspace/decoy.txt").write_text("checkout", encoding="utf-8")
+            (workspace / "selected.txt").write_text("caller", encoding="utf-8")
+
+            capture = root / "observed.json"
+            artifact = root / "returned-trajectory.json"
+            artifact.write_text('{"artifact":"returned"}', encoding="utf-8")
+            owner_source = repo / "src/msplatform/workflows/multipole_ip/continuous.py"
+            source = owner_source.read_text(encoding="utf-8")
+            marker = "from msplatform.ion_release.authoring import ReleaseRealization\n"
+            injection = marker + f'''\nfrom types import SimpleNamespace as _InertNamespace\n\ndef _inert_native_track(fields, particles, **kwargs):\n    import json, sys\n    Path(r"{capture}").write_text(json.dumps({{\n        "executable": sys.executable, "fields": fields, "particles": particles.to_dict(),\n        "propagation": kwargs["propagation"], "observations": kwargs["observations"],\n        "numerics": kwargs["numerics"], "vendor": kwargs["hs1_request"]["vendor_record"]["path"],\n        "workspace": str(kwargs["context"].workspace), "environment": kwargs["context"].environment,\n        "recovery": kwargs["recovery_reference"], "dispatch": kwargs["dispatch_profiles"]}}), encoding="utf-8")\n    return _InertNamespace(reference={{"path": r"{artifact}"}})\n\noperations.track = _inert_native_track\n'''
+            self.assertIn(marker, source)
+            owner_source.write_text(source.replace(marker, injection, 1), encoding="utf-8", newline="\n")
+
+            entry = repo / "integrations/workflows/accelerator_interface/execute.ps1"
+            entry.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(REPO / "integrations/workflows/accelerator_interface/execute.ps1", entry)
+            continuous_entry = repo / "integrations/workflows/multipole_ip/continuous.ps1"
+            continuous_entry.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(REPO / "integrations/workflows/multipole_ip/continuous.ps1", continuous_entry)
+
+            def relative(path):
+                return os.path.relpath(path, caller)
+
+            arguments = [
+                "-FullJoint", "-ContinuousReleaseRequest", relative(inputs / "release.json"),
+                "-ContinuousFieldsReference", relative(inputs / "fields.json"),
+                "-ContinuousPropagation", relative(inputs / "propagation.json"),
+                "-ContinuousObservations", relative(inputs / "observations.json"),
+                "-ContinuousNumerics", relative(inputs / "numerics.json"),
+                "-ContinuousHs1Request", relative(inputs / "hs1.json"),
+                "-ContinuousEnvironment", relative(inputs / "environment.json"),
+                "-ContinuousWorkspace", relative(workspace), "-ContinuousProfile", "test",
+                "-ContinuousRecoveryReference", relative(inputs / "recovery.json"),
+                "-ContinuousDispatchProfiles", relative(inputs / "dispatch.json"),
+                "-ContinuousUnitSize", "2", "-PythonExe", relative(Path(sys.executable)),
+                "-RepoRoot", str(repo),
+            ]
+            environment = dict(os.environ, MASS_SPECTROMETRY_ARTIFACT_ROOT=str(root / "artifacts"),
+                MASS_SPECTROMETRY_EXECUTION_ROOT=str(root / "execution"),
+                MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(root / "host.sqlite3"))
+            command = [powershell, "-NoProfile", "-File", str(entry), *arguments]
+            result = subprocess.run(command, cwd=caller, env=environment, capture_output=True,
+                text=True, encoding="utf-8", errors="replace", timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            reference = {"path": str(artifact)}
+            self.assertIn("OWNER_RETURNED=" + json.dumps(reference), result.stdout)
+            self.assertIn("STUDY_SCOPE=original_birth_to_terminal", result.stdout)
+            self.assertEqual(json.loads(artifact.read_text()), {"artifact": "returned"})
+            observed = json.loads(capture.read_text(encoding="utf-8"))
+            self.assertEqual(Path(observed["executable"]), Path(sys.executable))
+            self.assertEqual(observed["fields"], documents["fields.json"])
+            expected_release = json.loads(json.dumps(sample_release(documents["release.json"]).to_dict()))
+            self.assertEqual(observed["particles"], expected_release)
+            self.assertEqual(observed["propagation"], propagation)
+            self.assertEqual(observed["observations"], documents["observations.json"])
+            self.assertEqual(observed["numerics"], numerics)
+            self.assertEqual(observed["vendor"], str(vendor.resolve()))
+            self.assertEqual(observed["workspace"], str(workspace))
+            self.assertEqual(observed["environment"]["source"]["path"], str(inputs / "environment.json"))
+            self.assertEqual(observed["recovery"], documents["recovery.json"])
+            self.assertEqual(observed["dispatch"], documents["dispatch.json"])
+
+            (inputs / "recovery.json").unlink()
+            capture.unlink()
+            missing = subprocess.run(command, cwd=caller, env=environment, capture_output=True,
+                text=True, encoding="utf-8", errors="replace", timeout=60)
+            self.assertNotEqual(missing.returncode, 0, missing.stdout + missing.stderr)
+            self.assertIn("recovery.json", missing.stdout + missing.stderr)
+            self.assertNotIn("OWNER_RETURNED=", missing.stdout)
+            self.assertFalse(capture.exists())
+
     def test_ip_recovery_compares_normalized_request_to_sealed_preparation(self):
         powershell = shutil.which("pwsh")
         if not powershell:
