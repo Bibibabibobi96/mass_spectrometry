@@ -44,7 +44,7 @@ $ErrorActionPreference = 'Stop'
 $projectId = 'parallel_mirror_dual_stripe_mr_tof'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
-$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
+$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } elseif ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) } else { throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required' }
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 environment is missing: $python" }
 $coverageManifest = (Resolve-Path -LiteralPath $CoverageRunManifest).Path
 $explicitSelection=@(@($ExpectedTopologySignatureSha256,$InitialP1V,$InitialP2LowerV,$InitialP2UpperV,
@@ -57,8 +57,11 @@ if ([string]::IsNullOrWhiteSpace($RunId)) {
   $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__analysis__python__mrtof-two-prism-segmented-continuation'
 }
 
-. (Join-Path $repoRoot 'common\host_execution_lease.ps1')
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
+$executionResources = Join-Path $repoRoot 'src/msplatform/execution/resources'
+$hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path $workspaceRoot 'artifacts/common/host_resources.sqlite3' }
+$hostContext = @{workspace=$workspaceRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
+. (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
+. (Join-Path $executionResources 'run_artifact_support.ps1')
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$projectId") `
   -RunId $RunId -Project $projectId -Mode 'two_prism_segmented_voltage_branch_continuation' `
@@ -227,10 +230,8 @@ try {
     'src\msplatform\contracts\particle_physics.py',
     'src\msplatform\io\file_identity.py',
     'src\msplatform\execution\manifest_verification.py',
-    'common\host_resource_python.py',
-    'common\host_resource_python.ps1',
-    'common\host_execution_lease.ps1',
-    'common\host_resource_scheduler.py',
+    'src\msplatform\execution\resources\host_execution_lease.ps1',
+    'src\msplatform\execution\host_resource_scheduler.py',
     'src\msplatform\execution\resources\host_resource_policy.json',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\run_two_prism_segmented_continuation.ps1',
     'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\prism_analytic.py',

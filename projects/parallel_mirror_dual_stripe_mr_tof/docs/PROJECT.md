@@ -78,6 +78,12 @@ unchanged; no SolidWorks, COMSOL or SIMION native execution was performed.
 The mirror L0/L1, exact-K and fixed-grid correction runners follow the same
 execution context and freeze canonical host resources. Their four modules passed
 51 parents with 98 successful records in 15.323 seconds, without a native solve.
+The downstream workpoint and two segmented-study consumers load the installed
+native-corridor owner and the same HostContext. Their frozen lists no longer name
+the retired `host_resource_python` helpers; host lease, scheduler and policy stay
+explicit. The downstream/prism selection passed 126 parents with 319 successes
+and one existing skip in 250.111 seconds. Segmented research remains bounded and
+is not relabeled as continuous original-birth production.
 Prepared-joint production responsibilities now have installed owners: native bunch serialization and event
 reading are in `msplatform.backends.simion.mr_bunch_source`; mixed IP assembly, joint L0 and event analysis
 are in `msplatform.workflows.prepared_joint`; source-control and plain-Lua process boundaries are in

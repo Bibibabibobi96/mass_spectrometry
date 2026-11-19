@@ -72,8 +72,6 @@ function Assert-FrozenSourcesUnchanged {
 
 try {
   $sourceRelativePaths = @(
-    'src\msplatform\execution\host_resource_python.py',
-    'src\msplatform\execution\resources\host_resource_python.ps1',
     'src\msplatform\execution\resources\host_execution_lease.ps1',
     'src\msplatform\execution\host_resource_scheduler.py',
     'src\msplatform\execution\resources\host_resource_policy.json',

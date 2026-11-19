@@ -107,8 +107,6 @@ try {
     'src\msplatform\execution\resources\__init__.py',
     'src\msplatform\execution\resources\artifact_retention.json',
     'src\msplatform\execution\resources\host_execution_lease.ps1',
-    'src\msplatform\execution\host_resource_python.py',
-    'src\msplatform\execution\resources\host_resource_python.ps1',
     'src\msplatform\execution\host_resource_scheduler.py',
     'src\msplatform\execution\resources\host_resource_policy.json',
     'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\dual_stripe_l0.py',
