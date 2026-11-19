@@ -15,7 +15,7 @@ $ErrorActionPreference='Stop'
 $projectRoot=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $repoRoot=(Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $workspaceRoot=(Resolve-Path (Join-Path $repoRoot '..')).Path
-. (Join-Path $repoRoot 'common\require_powershell7.ps1')
+. (Join-Path $repoRoot 'src\msplatform\execution\resources\require_powershell7.ps1')
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 . (Join-Path $PSScriptRoot 'focus_python.ps1')
 $python=Join-Path $repoRoot '.venv\Scripts\python.exe'

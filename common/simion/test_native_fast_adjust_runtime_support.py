@@ -64,7 +64,7 @@ if($args[4]-notin@('--controller','--append')){throw 'Unexpected software native
         driver.write_text(r'''
 param($Repo,$Python,$Root,$Transaction,$Key,$Inventory,$Owner,$Producer,$Shim)
 $ErrorActionPreference='Stop'
-. (Join-Path $Repo 'common/simion/native_fast_adjust_runtime_support.ps1')
+. (Join-Path $Repo 'src/msplatform/backends/simion/resources/native_fast_adjust_runtime_support.ps1')
 function Get-HostResourceBudget {param($Role,$Stage);return @{}}
 function Update-HostResourceStage {param($Lease,$Stage,$Budget,$RetainedMemoryBytes);return $Lease}
 function Invoke-RunToolRootContext {param($RepoRoot,$Operation);Push-Location $RepoRoot;try{&$Operation}finally{Pop-Location}}
@@ -159,7 +159,7 @@ if($env:NATIVE_FIXTURE_FAIL-eq'1'){exit 9}
             driver.write_text(r"""
 param($Repo,$Python,$Root,$Generation,$Key,$GenerationHash,$Shim)
 $ErrorActionPreference='Stop'
-. (Join-Path $Repo 'common/simion/native_fast_adjust_runtime_support.ps1')
+. (Join-Path $Repo 'src/msplatform/backends/simion/resources/native_fast_adjust_runtime_support.ps1')
 # Native execution and admission are fixture adapters here; the tests run
 # under the enclosing ordinary GATE lease and launch no commercial process.
 function Get-HostResourceBudget { param($Role,$Stage); return @{} }

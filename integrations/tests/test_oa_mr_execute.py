@@ -136,7 +136,7 @@ foreach($cpu in @(8,80)){{
 $ErrorActionPreference='Stop';$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
-$runtime=Join-Path $Repo 'projects/parallel_mirror_dual_stripe_mr_tof/simion/native_corridor_runtime_support.ps1'
+$runtime=Join-Path $Repo 'src/msplatform/backends/simion/resources/native_corridor_runtime_support.ps1'
 $ast=[Management.Automation.Language.Parser]::ParseFile($runtime,[ref]$null,[ref]$errors)
 $node=$ast.Find({param($a)$a-is[Management.Automation.Language.FunctionDefinitionAst]-and$a.Name-eq'Protect-MrtofContinuationEvidence'},$true)
 Invoke-Expression $node.Extent.Text
@@ -256,7 +256,7 @@ if(@($pendingSpecs).Count-ne1-or$pendingSpecs[0].index-ne3){{throw 'observed or 
         stages = "  if($isBunchFlight){\n" + source[start:source.index("  # Static component guards remain live", start)]
         python_helper = source[source.index("function Format-InvariantNumber {"):source.index("function Invoke-SimionStage {")]
         path_import = next(line for line in source.splitlines()
-                           if line.startswith(". ") and "common/paths/workspace_paths.ps1" in line)
+                           if line.startswith(". ") and "src/msplatform/execution/resources/workspace_paths.ps1" in line)
         pa_provenance = next(line for line in source.splitlines()
                              if line.strip().startswith("$config['provenance']['pa_bindings']="))
         final_inputs = source[source.index("  $flightInputs=[ordered]@{"):source.index("  foreach($entry in $flightInputs.GetEnumerator())")]
@@ -341,7 +341,7 @@ $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $OutputEncoding=[Text.UTF8Encoding]::new($false)
 $repoRoot=$Repo;$script:pythonRoot=$Repo;$python=$Python
 $simion=if($Case-eq'zero'){Join-Path $Root 'missing_simion.exe'}else{$Python}
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 """ + path_import + r"""
 $helperAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'src/msplatform/execution/resources/simion_dispatch_support.ps1'),[ref]$null,[ref]$null)
 $helper=$helperAst.Find({param($node) $node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-eq'Invoke-ObservedPreparationFailureDrain'},$true)
@@ -607,7 +607,7 @@ try {
             script = root/"batch_config.ps1"
             script.write_text(r'''param($Entry,$Repo,$Root)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$null)
 $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'New-MrtofBatchRecord'},$true)
 Invoke-Expression $node.Extent.Text
@@ -763,7 +763,7 @@ $repoRoot=$Repo;$runDir=$Root;$projectId='instrument_assembly';$ContractPath='';
 $AcceleratorComponentContractPath=$OaContract;$AcceleratorGeometryProfileId=$OaProfile
 $runConfig=Join-Path $Root 'run_config.json'
 @{project=$Owner;mode='oa_mr';inputs=@{};parameters=@{}}|ConvertTo-Json|Set-Content $runConfig
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $Repo 'integrations/runtime/dependencies.ps1')
 """ + copy_input + freeze + r"""
 $config=Get-Content -LiteralPath $runConfig -Raw|ConvertFrom-Json -AsHashtable
@@ -1005,7 +1005,7 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
                  "provenance": {"upstream_manifest_verification": {"static_field": {"windows": [window]}}}}
         publication = next(line.strip() for line in RUNNER.read_text(encoding="utf-8-sig").splitlines()
                            if line.strip().startswith("Write-RunJson -Path $runConfig -Value $config"))
-        writer = RUNNER.parents[3] / "common/contracts/run_artifact_support.ps1"
+        writer = RUNNER.parents[3] / "src/msplatform/execution/resources/run_artifact_support.ps1"
         with TemporaryDirectory() as directory:
             source, target = Path(directory) / "input.json", Path(directory) / "run_config.json"
             source.write_text(json.dumps(value), encoding="utf-8")
@@ -1106,7 +1106,7 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
             line.strip() for line in self.source.splitlines()
             if line.strip().startswith("Write-RunJson -Path $summary -Depth 100 ")
         )
-        writer = RUNNER.parents[3] / "common/contracts/run_artifact_support.ps1"
+        writer = RUNNER.parents[3] / "src/msplatform/execution/resources/run_artifact_support.ps1"
         with TemporaryDirectory() as directory:
             source = Path(directory) / "input.json"
             target = Path(directory) / "summary.json"
@@ -1658,7 +1658,7 @@ $rows|ConvertTo-Json -Compress
     def test_runtime_provider_forwards_existing_owned_native_callback(self):
         script = r'''
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $PWD 'projects/parallel_mirror_dual_stripe_mr_tof/simion/native_corridor_runtime_support.ps1')
+. (Join-Path $PWD 'src/msplatform/backends/simion/resources/native_corridor_runtime_support.ps1')
 $records=[Collections.Generic.List[object]]::new();$callback={throw 'must remain a callback'}
 function New-NativeFastAdjustRuntimeFamily {
  param($GenerationDirectory,$ExpectedResponseIds,$NativeOperationObservations,$InvokeNativeOperation)

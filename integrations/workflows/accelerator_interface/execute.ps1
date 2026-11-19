@@ -75,11 +75,11 @@ foreach($name in @('ContinuousReleaseRequest','ContinuousFieldsReference','Conti
 }
 if($PythonExe){$PythonExe=(Resolve-Path -LiteralPath $PythonExe).Path}
 $script:pythonRoot=$repoRoot
-. (Join-Path $repoRoot 'common/require_powershell7.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/require_powershell7.ps1')
 . (Join-Path $repoRoot 'integrations/runtime/dependencies.ps1')
-. (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $python=if($PythonExe){$PythonExe}else{Join-Path $repoRoot '.venv/Scripts/python.exe'}
-. (Join-Path $repoRoot 'common/paths/workspace_paths.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
 $pathContext=Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
 $artifactRoot=[string]$pathContext.artifact_root
 $pathEnvironment=@{MASS_SPECTROMETRY_ARTIFACT_ROOT=$artifactRoot;
@@ -354,7 +354,7 @@ if context.python_executable.resolve()!=pathlib.Path(sys.executable).resolve():
       if($SimionExe){$ipArguments.SimionExe=$SimionExe}
       if($IonProcessorFieldRunPath){$ipArguments.NativeFieldRun=(Resolve-Path -LiteralPath $IonProcessorFieldRunPath).Path}
       if($IonProcessorContinuationPredecessorManifestPath){$ipArguments.ContinuationPredecessorManifestPath=(Resolve-Path -LiteralPath $IonProcessorContinuationPredecessorManifestPath).Path}
-      try {Invoke-JointOwnerStage -Script (Join-Path $repoRoot 'projects/dual_pressure_rectilinear_ion_processor/simion/run_functional.ps1') -Arguments $ipArguments}
+      try {Invoke-JointOwnerStage -Script (Join-Path $repoRoot 'src/msplatform/workflows/resources/ip_functional.ps1') -Arguments $ipArguments}
       catch {
         $ipFailure=$_
         if(-not$ContinueOnIpScientificFailure-or$ipFailure.Exception.Message-cne'Analysis or required diagnostics incomplete; see frozen summary and logs'){throw $ipFailure}

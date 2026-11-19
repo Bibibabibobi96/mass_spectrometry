@@ -14,8 +14,8 @@ from matplotlib import pyplot as plt
 import numpy as np
 
 from msplatform.execution.retention import file_record
-from projects.dual_pressure_rectilinear_ion_processor.analysis import geometry_comparison as geometry
-from projects.dual_pressure_rectilinear_ion_processor.analysis import extraction_phase_space_comparison as recorded
+from msplatform.workflows.ion_processor import geometry_comparison as geometry
+from msplatform.workflows.ion_processor import extraction_phase_space_comparison as recorded
 
 
 def write_json(path: Path, value: dict) -> None:

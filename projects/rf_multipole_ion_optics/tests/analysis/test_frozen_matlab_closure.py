@@ -73,7 +73,7 @@ $selected=if($name-eq'taskScript'){$taskScript}else{$massScanTask}
 if(-not$selected.StartsWith($package.code_root+[IO.Path]::DirectorySeparatorChar)-or-not(Test-Path -LiteralPath $selected -PathType Leaf)){throw 'native task escaped frozen closure'}
 Assert-FrozenPythonPackage -Package $package
 exit 0
-'''.replace('SELECTED_PYTHON', ps(sys.executable)).replace('RUN_CONTEXT', ps(REPO / 'common/contracts/run_artifact_support.ps1')).replace('EXECUTOR_RESOURCE', ps(REPO / 'src/msplatform/execution/resources/frozen_python_package.ps1')).replace('SUPPORT', ps(support)).replace('ROOT', ps(root)).replace('RUNNER', ps(runner))
+'''.replace('SELECTED_PYTHON', ps(sys.executable)).replace('RUN_CONTEXT', ps(REPO / 'src/msplatform/execution/resources/run_artifact_support.ps1')).replace('EXECUTOR_RESOURCE', ps(REPO / 'src/msplatform/execution/resources/frozen_python_package.ps1')).replace('SUPPORT', ps(support)).replace('ROOT', ps(root)).replace('RUNNER', ps(runner))
 .replace('REPO', ps(REPO)).replace('PROJECT', ps(PROJECT)).replace('MISSING_DEPENDENCY', ps(missing_path) if missing_path else '$null')
 .replace('RELEASE_GATE', '$true' if release_gate else '$false').replace('WORKFLOW', ps(workflow)), encoding='utf-8', newline='\n')
             result = subprocess.run(['pwsh','-NoProfile','-File',str(script)], cwd=root,

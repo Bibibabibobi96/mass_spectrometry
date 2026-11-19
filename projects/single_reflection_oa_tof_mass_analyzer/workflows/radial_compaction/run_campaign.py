@@ -47,7 +47,7 @@ from common.host_resource_python import run_heavy_function, run_managed_python_p
 from msplatform.execution.recovery import WholeUnitReplayUnit, build_whole_unit_replay_plan
 from msplatform.backends.simion.native_completion import require_one_fly_completion
 from common.simion.process_observation import run_observed_process
-from common.simion.resource_profile import discover_case_resource_profiles
+from msplatform.execution.resource_profile import discover_case_resource_profiles
 from msplatform.execution.simion_dispatch import plan_simion_case_dispatch
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.compile_candidate_design import (
     compile_design_overrides,
@@ -93,7 +93,7 @@ EXTRA_SOURCE_IDS = (
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/compile_candidate_design.py",
     "src/msplatform/contracts/schemas/simion_batch_continuation.schema.json",
     "src/msplatform/execution/recovery.py",
-    "common/simion/resource_profile.py",
+    "src/msplatform/execution/resource_profile.py",
     "src/msplatform/execution/simion_dispatch.py",
 )
 # These sources are consumed only after native Fly in this workflow. All other
@@ -1456,7 +1456,7 @@ def _invoke_workflow_owner(request: dict[str, Any]) -> None:
             raise ValueError(f"Workflow Result already exists: {result_path}")
         _write_json(request_path, request)
         result, _ = run_observed_process(
-            ["pwsh.exe", "-NoProfile", "-File", str(REPO_ROOT / "common/contracts/run_artifact_workflow.ps1"),
+            ["pwsh.exe", "-NoProfile", "-File", str(REPO_ROOT / "src/msplatform/workflows/resources/run_artifact_workflow.ps1"),
              "-RequestPath", str(request_path), "-ResultPath", str(result_path)],
             cwd=REPO_ROOT, stdout=temporary / "owner.log", stderr=temporary / "owner.stderr.log",
             warning_seconds=1800,
@@ -1500,7 +1500,7 @@ def main() -> None:
         with tempfile.TemporaryDirectory(prefix="oatof-radial-finalize-") as directory:
             temporary = Path(directory)
             result, _ = run_observed_process(
-                ["pwsh.exe", "-NoProfile", "-File", str(REPO_ROOT / "common/contracts/run_artifact_workflow.ps1"),
+                ["pwsh.exe", "-NoProfile", "-File", str(REPO_ROOT / "src/msplatform/workflows/resources/run_artifact_workflow.ps1"),
                  "-RequestPath", str(request_path), "-ResultPath", str(result_path), "-ResumeFinalization"],
                 cwd=REPO_ROOT, stdout=temporary / "owner.log", stderr=temporary / "owner.stderr.log",
                 warning_seconds=1800,

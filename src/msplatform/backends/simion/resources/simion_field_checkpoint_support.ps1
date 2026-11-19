@@ -1,7 +1,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-. (Join-Path $PSScriptRoot '..\..\..\..\..\common\contracts\run_artifact_support.ps1')
-. (Join-Path $PSScriptRoot '..\..\..\..\..\common\simion\short_pa_path_support.ps1')
+. (Join-Path $PSScriptRoot '..\..\..\execution\resources\run_artifact_support.ps1')
+. (Join-Path $PSScriptRoot 'short_pa_path_support.ps1')
 
 function New-RfSimionFieldIdentity {
     param([Parameter(Mandatory)][string]$GemPath,[Parameter(Mandatory)][string]$SimionExe,

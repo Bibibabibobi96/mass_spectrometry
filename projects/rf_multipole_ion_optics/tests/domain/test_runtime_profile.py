@@ -56,7 +56,7 @@ class RuntimeProfileTests(unittest.TestCase):
             script = root/"prepare.ps1"
             script.write_text(r"""param($Repo,$Entry,$Snapshot,$Root)
 Set-StrictMode -Version Latest;$ErrorActionPreference='Stop'
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$null)
 $select=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Extent.Text.Contains('Compiled COMSOL runtime identity differs.')},$true)
 $inputs=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Extent.Text.Contains('Compiled COMSOL runtime omits its resolved design input definitions.')},$true)

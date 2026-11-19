@@ -40,7 +40,7 @@ if ($repositoryScope -or $ownerScope) {
     # retains its existing Core/Static selection; these scopes are distinct.
     if ($repositoryScope) { $FullScope = $true }
 }
-. (Join-Path $PSScriptRoot 'require_powershell7.ps1')
+. (Join-Path $PSScriptRoot '../src/msplatform/execution/resources/require_powershell7.ps1')
 . (Join-Path $PSScriptRoot 'parallel_gate_support.ps1')
 . (Join-Path $PSScriptRoot 'gate_catalog_support.ps1')
 

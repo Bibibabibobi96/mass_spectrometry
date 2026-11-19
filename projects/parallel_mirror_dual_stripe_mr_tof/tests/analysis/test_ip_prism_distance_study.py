@@ -78,7 +78,7 @@ Invoke-StudyPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_to
             script_path.write_text(script, encoding="utf-8", newline="\n")
             command = ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(script_path),
                        str(runner), str(code), sys.executable,
-                       str(repo / "common/contracts/run_artifact_support.ps1")]
+                       str(repo / "src/msplatform/execution/resources/run_artifact_support.ps1")]
             admitted = subprocess.run(command, cwd=root, capture_output=True, text=True,
                                       encoding="utf-8", errors="backslashreplace", timeout=60, check=False)
             self.assertEqual(admitted.returncode, 0, admitted.stdout + admitted.stderr)
@@ -355,7 +355,7 @@ class ContourPreparationTests(unittest.TestCase):
     def test_missing_original_placeholder_fails_without_adjacent_seed_fallback(self):
         original_copy=shutil.copyfile
         repo=Path(__file__).resolve().parents[4]
-        placeholder=repo/'common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0'
+        placeholder=repo/'src/msplatform/backends/simion/resources/iob_seed_placeholder_01.pa0'
         attempted=[]
         def missing_original(source,destination,*args,**kwargs):
             if Path(source).resolve()==placeholder.resolve():
@@ -391,7 +391,7 @@ class ContourPreparationTests(unittest.TestCase):
                  patch(MODULE+".load_particle_count_policy", return_value=dict(functional_check_count=2)), \
                  patch(MODULE+".freeze_code"):
                 result = prepare(run, cp)
-                placeholder=Path(__file__).resolve().parents[4]/'common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0'
+                placeholder=Path(__file__).resolve().parents[4]/'src/msplatform/backends/simion/resources/iob_seed_placeholder_01.pa0'
                 copied=run/'inputs/iob_seed_placeholder_01.pa0'
                 self.assertEqual(copied.stat().st_size,placeholder.stat().st_size)
                 self.assertEqual(file_sha256(copied),file_sha256(placeholder))
@@ -533,7 +533,7 @@ class ContourPreparationTests(unittest.TestCase):
             (source/"run_manifest.json").write_text(json.dumps(manifest))
             original=(source/"run_manifest.json").read_bytes()
             case=dict(source_records=[record], terminals={1: {}, 2: {}})
-            loader="projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_phase_space_comparison.load_recorded_case"
+            loader="msplatform.workflows.ion_processor.extraction_phase_space_comparison.load_recorded_case"
             with patch(loader, return_value=case) as measured:
                 result=_freeze_recorded_contour_source(source, "B", root/"frozen")
             measured.assert_called_once_with(source, "B", allow_failed=True)

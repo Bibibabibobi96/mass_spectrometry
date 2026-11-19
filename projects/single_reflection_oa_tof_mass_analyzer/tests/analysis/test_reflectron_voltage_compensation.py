@@ -46,7 +46,7 @@ class ReflectronVoltageCompensationTests(unittest.TestCase):
         builder = run / "inputs/code" / f"projects/{study.PROJECT}/simion/workbench/build_formal_iob.lua"
         builder.parent.mkdir(parents=True)
         builder.write_text("actual-builder", encoding="utf-8")
-        assembly = run / "inputs/code/common/simion/assemble_native_fast_adjust_family.lua"
+        assembly = run / "inputs/code/src/msplatform/backends/simion/resources/assemble_native_fast_adjust_family.lua"
         assembly.parent.mkdir(parents=True)
         assembly.write_text("actual-assembly", encoding="utf-8")
         (run / "results").mkdir()

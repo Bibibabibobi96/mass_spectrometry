@@ -106,7 +106,7 @@ class PairedStaticExecutionTests(unittest.TestCase):
         """Run the extracted owner function and real public context with Python."""
         script=r"""param($Source,$RepoRoot,$Python,$Directory)
 $ErrorActionPreference='Stop'
-. (Join-Path $RepoRoot 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $RepoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 $errors=$null;$tokens=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$tokens,[ref]$errors)
@@ -417,7 +417,7 @@ foreach($completed in @($true,$false)){
         script = r'''param($Source,$Directory,$Public,$Python)
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-. (Join-Path $Public 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Public 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Actual owner parse failed'}
@@ -426,7 +426,7 @@ $guard=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefiniti
 if($null-eq$branch-or$null-eq$guard){throw 'Actual COMSOL branch or guard is missing'}
 . ([scriptblock]::Create($guard.Extent.Text))
 $workflowTokens=$null;$workflowErrors=$null
-$workflowAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Public 'common/contracts/run_artifact_workflow.ps1'),[ref]$workflowTokens,[ref]$workflowErrors)
+$workflowAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Public 'src/msplatform/workflows/resources/run_artifact_workflow.ps1'),[ref]$workflowTokens,[ref]$workflowErrors)
 $release=$workflowAst.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Add-RunArtifactResourceRelease'},$true)
 if($workflowErrors.Count-or$null-eq$release){throw 'Actual release recorder unavailable'}
 . ([scriptblock]::Create($release.Extent.Text))
@@ -497,7 +497,7 @@ foreach($mode in @('success','failure')){
             script.write_text(r'''param([string]$RepoRoot,[string]$Run,[string]$Python)
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-. (Join-Path $RepoRoot 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $RepoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $RepoRoot 'integrations/runtime/dependencies.ps1')
 $tokens=$null;$errors=$null
 $owner=Join-Path $RepoRoot 'integrations/workflows/paired_accelerator_static_field/execute.ps1'
@@ -1110,7 +1110,7 @@ dofile('{Path(tasks['lua']).as_posix()}')
         """Execute actual owner statements/factory; native boundaries only inspect files."""
         script = r'''param($Owner,$Public,$Python,$Run)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $Public 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Public 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $ast=[Management.Automation.Language.Parser]::ParseFile($Owner,[ref]$null,[ref]$null)
 $function=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-PairedPython'},$true)
 Invoke-Expression $function.Extent.Text

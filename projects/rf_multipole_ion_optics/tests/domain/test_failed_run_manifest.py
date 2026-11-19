@@ -36,7 +36,7 @@ class FailedRunManifestTest(unittest.TestCase):
             capacity_root.mkdir()
             initialize_capacity_ledger(capacity_root, objects=[])
             artifact_root = capacity_root / "projects" / "fixture"
-            support = ROOT / "common/contracts/run_artifact_support.ps1"
+            support = ROOT / "src/msplatform/execution/resources/run_artifact_support.ps1"
             python = Path(sys.executable)
             command = (
                 f". '{support}'; "
@@ -91,7 +91,7 @@ class FailedRunManifestTest(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            support = ROOT / "common/contracts/run_artifact_support.ps1"
+            support = ROOT / "src/msplatform/execution/resources/run_artifact_support.ps1"
             python = Path(sys.executable)
             command = (
                 f". '{support}'; Complete-FailedRun -Python '{python}' "

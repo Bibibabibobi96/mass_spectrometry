@@ -79,7 +79,7 @@ class DualBackendCampaignTests(unittest.TestCase):
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(REPO / "config/project_registry.json", target)
         for relative in (
-            "common/require_powershell7.ps1",
+            "src/msplatform/execution/resources/require_powershell7.ps1",
             "common/host_execution_lease.ps1",
             "common/host_resource_scheduler.py",
             "src/msplatform/execution/resources/host_resource_policy.json",

@@ -290,7 +290,7 @@ try {
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             frozen = root / "snapshot"
-            frozen_helper = frozen / "common/simion/short_pa_path_support.ps1"
+            frozen_helper = frozen / "src/msplatform/backends/simion/resources/short_pa_path_support.ps1"
             frozen_helper.parent.mkdir(parents=True)
             shutil.copyfile(HELPER, frozen_helper)
             payload_resource = frozen / "src/msplatform/execution/resources/payload_file_support.ps1"

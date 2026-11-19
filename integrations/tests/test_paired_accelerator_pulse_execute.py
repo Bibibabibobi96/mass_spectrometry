@@ -203,7 +203,7 @@ ConvertTo-Json -InputObject $strings -Compress -Depth 4
     def test_predecessor_reuses_completed_stages_and_only_runs_missing_fly(self):
         script = r'''param($Owner,$PublicRepo,$Python,$Root,$Completed)
 $ErrorActionPreference='Stop'
-. (Join-Path $PublicRepo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $PublicRepo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($Owner,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
@@ -316,7 +316,7 @@ if([IO.File]::ReadAllText($sourceReceipt)-ne'TEST_ONLY_READONLY_SOURCE_RECEIPT'-
     def test_iob_callback_reopens_before_fly_and_keeps_original_control_identities(self):
         script = r'''param($Owner,$RepoRoot,$Python,$Root)
 $ErrorActionPreference='Stop'
-. (Join-Path $RepoRoot 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $RepoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $RepoRoot 'integrations/runtime/frontend_flight_support.ps1')
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($Owner,[ref]$tokens,[ref]$errors)
@@ -366,7 +366,7 @@ if(-not$rejected){throw 'Post-fly source mutation was silently rebound'}
         """Actual owner factory/argv, with file-inspecting inert vendor boundaries."""
         script = r'''param($Owner,$Public,$Python,$Root,$Plan)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $Public 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Public 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $ast=[Management.Automation.Language.Parser]::ParseFile($Owner,[ref]$null,[ref]$null)
 $function=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-PulsePython'},$true)
 Invoke-Expression $function.Extent.Text

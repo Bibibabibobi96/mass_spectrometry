@@ -158,7 +158,7 @@ class WorkbenchPathTests(unittest.TestCase):
     def test_gui_builder_uses_owned_relative_pair_after_original_source_is_unavailable(self) -> None:
         import json
         from projects.dual_pressure_rectilinear_ion_processor.tests.test_gui_replay_plan import GuiReplayPlanTests
-        from projects.dual_pressure_rectilinear_ion_processor.analysis.gui_replay import prepare_replay
+        from msplatform.backends.simion.ip_gui_replay import prepare_replay
         case = GuiReplayPlanTests()
         case.setUp()
         self.addCleanup(case.doCleanups)
@@ -192,7 +192,7 @@ class WorkbenchPathTests(unittest.TestCase):
         self.assertEqual((seed.read_bytes(), placeholder.read_bytes()), frozen_pair)
         self.assertFalse(original.exists())
         self.assertEqual((hidden / "src/msplatform/backends/simion/resources/1_instance_seed.iob").read_bytes(), frozen_pair[0])
-        self.assertEqual((hidden / "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0").read_bytes(), frozen_pair[1])
+        self.assertEqual((hidden / "src/msplatform/backends/simion/resources/iob_seed_placeholder_01.pa0").read_bytes(), frozen_pair[1])
         (solver / "processor.iob").unlink()
         placeholder.unlink()
         refused = subprocess.run([executable, str(harness), str(builder)], cwd=case.run,

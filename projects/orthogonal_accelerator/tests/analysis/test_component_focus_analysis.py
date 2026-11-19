@@ -282,7 +282,7 @@ class ComponentFocusAnalysisTests(unittest.TestCase):
         script = """$ErrorActionPreference='Stop'
 $repoRoot=REPO
 $solver=DESTINATION
-. (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $source=Join-Path $repoRoot 'projects/orthogonal_accelerator/simion/run_component_focus_flight.ps1'
 $tokens=$null;$errors=$null
 $tree=[System.Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)

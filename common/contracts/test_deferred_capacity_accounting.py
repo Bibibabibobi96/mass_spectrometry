@@ -11,7 +11,7 @@ from common.contracts.capacity_ledger import initialize_capacity_ledger, load_ca
 from common.contracts.capacity_protection import load_capacity_protection_leases
 
 ROOT = Path(__file__).resolve().parents[2]
-OWNER_SOURCE = ROOT/'common/contracts/run_artifact_workflow.ps1'
+OWNER_SOURCE = ROOT/'src/msplatform/workflows/resources/run_artifact_workflow.ps1'
 PWSH = shutil.which('pwsh')
 
 

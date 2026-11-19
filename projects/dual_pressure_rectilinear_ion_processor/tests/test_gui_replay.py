@@ -5,12 +5,13 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
 
 PROJECT = Path(__file__).resolve().parents[1]
-SCRIPT = PROJECT / "simion/prepare_gui_replay.ps1"
+SCRIPT = PROJECT.parents[1] / "src/msplatform/backends/simion/resources/ip_prepare_gui_replay.ps1"
 
 
 class GuiReplayEntrypointTests(unittest.TestCase):
@@ -28,7 +29,9 @@ class GuiReplayEntrypointTests(unittest.TestCase):
         return subprocess.run(
             [self.powershell, "-NoProfile", "-File", str(SCRIPT),
              "-RunId", "20261015_010000__test__simion__gui-source-rejection",
-             "-BaselineRun", str(self.source)],
+             "-BaselineRun", str(self.source),
+             "-RepositoryRoot", str(PROJECT.parents[1]),
+             "-PythonExe", sys.executable],
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30, check=False,
             cwd=self.source,
         )
@@ -40,10 +43,12 @@ class GuiReplayEntrypointTests(unittest.TestCase):
         self.assertEqual(list(self.source.iterdir()), [])
 
     def test_finalize_missing_plan_rejected_before_allocation(self) -> None:
-        script = PROJECT / "simion/finalize_gui_replay.ps1"
+        script = PROJECT.parents[1] / "src/msplatform/backends/simion/resources/ip_finalize_gui_replay.ps1"
         result = subprocess.run(
             [self.powershell, "-NoProfile", "-File", str(script),
-             "-RunPath", str(self.source)],
+             "-RunPath", str(self.source),
+             "-RepositoryRoot", str(PROJECT.parents[1]),
+             "-PythonExe", sys.executable],
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
             check=False, cwd=self.source,
         )

@@ -421,7 +421,7 @@ Canonical SHA-256 helpers live in [`msplatform.io.file_identity`](../../src/mspl
 
 `msplatform.execution.inputs.python_import_roots(source_root)` 返回快照内实际存在的 `src`、再返回快照根；
 历史扁平源码快照没有 `src` 时只返回根。PowerShell 对应入口为
-[`Get-RunPythonImportRoots -RepoRoot`](run_artifact_support.ps1)，调用者按平台路径分隔符组成 `PYTHONPATH`。
+[`Get-RunPythonImportRoots -RepoRoot`](../../src/msplatform/execution/resources/run_artifact_support.ps1)，调用者按平台路径分隔符组成 `PYTHONPATH`。
 二者不搜索安装环境，`src` 必须是来源树内的目录。prepared owner及RF冻结Python包核对实际已加载模块来源；
 新快照缺少核心时，不能借当前 installed／editable `msplatform` 填洞。旧快照继续消费自己冻结的原实现，
 不回写历史清单或从活动仓库补齐。

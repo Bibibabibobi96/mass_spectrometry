@@ -573,7 +573,7 @@ class CadPlanTests(unittest.TestCase):
 param([string]$PublicRoot,[string]$Python,[string]$Provider,[string]$PackageRoot,[string]$Case)
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-. (Join-Path $PublicRoot 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $PublicRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $repoRoot=$Provider
 $python=$Python
 $package=[pscustomobject]@{input_dir=(Join-Path $PackageRoot 'inputs');log_dir=(Join-Path $PackageRoot 'logs')}

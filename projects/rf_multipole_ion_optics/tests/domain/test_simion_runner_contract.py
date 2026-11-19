@@ -14,7 +14,7 @@ from pathlib import Path
 from msplatform.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
 from msplatform.components.rf_multipole.source_validation import COLUMNS
 from msplatform.backends.simion.rf_particle_source import render_canonical_source
-from common.simion.resource_profile import publish_resource_profile
+from msplatform.execution.resource_profile import publish_resource_profile
 
 
 RUNNER = Path(__file__).resolve().parents[4] / "src/msplatform/workflows/resources/run_simion_finite_3d_transport.ps1"
@@ -45,7 +45,7 @@ class SimionRunnerContractTests(unittest.TestCase):
             self.assertNotIn(removed, source)
         script = r'''
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $env:RF_TEST_REPO 'common/contracts/run_artifact_workflow.ps1')
+. (Join-Path $env:RF_TEST_REPO 'src/msplatform/workflows/resources/run_artifact_workflow.ps1')
 . (Join-Path $env:RF_TEST_REPO 'src/msplatform/backends/simion/resources/simion_execution.ps1')
 function Exit-HostResourceStage {param($Lease,[switch]$PassThru);$script:exits++;if($Lease.inherited){return $null};return @{status=$(if($scenario-eq'mismatch'){'retained'}else{'released'});token=$Lease.token}}
 function Invoke-HostResourceTransaction {param($StatePath,$Request);$script:inherits++;if($Request.operation-ne'inherit'-or$Request.token-cne'actual-token'){throw 'Actual inheritance identity changed'};return @{status=$(if($scenario-eq'inherited_unknown'){'unknown'}else{'acquired'});token=$Request.token}}
@@ -194,7 +194,7 @@ exit 0
                 script.write_text(f"""$ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 $codeRoot='{escaped_repo}';$python='{escaped_python}';$manifestRepoRoot=$codeRoot
-. (Join-Path $codeRoot 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $codeRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $tokens=$null;$parseErrors=$null
 $runnerAst=[Management.Automation.Language.Parser]::ParseFile(
  (Join-Path $codeRoot 'src/msplatform/workflows/resources/run_simion_finite_3d_transport.ps1'),[ref]$tokens,[ref]$parseErrors)
@@ -268,7 +268,7 @@ try {{
                               support.index("  Write-ResourceUsage -Usage $usage -Path $UsagePath", support.index("    $usage.first_formal_observation="))]
         terminal = source[source.index("  $caseResourceUsage=[ordered]@{}"):
                           source.index("  if($null-ne$dispatchPlan-and$resourceIdentityWasUnknown){", source.index("  $caseResourceUsage=[ordered]@{}"))]
-        owner = (REPO_ROOT / "common/contracts/run_artifact_workflow.ps1").read_text(encoding="utf-8-sig")
+        owner = (REPO_ROOT / "src/msplatform/workflows/resources/run_artifact_workflow.ps1").read_text(encoding="utf-8-sig")
         finish_usage = owner[owner.index("      foreach($item in $completion.resource_usage_paths){", owner.index("Set-WorkflowStage resource_finalization")):
                              owner.index("      if($null-ne$completion.resource_profile)", owner.index("Set-WorkflowStage resource_finalization"))]
         with tempfile.TemporaryDirectory() as directory:
@@ -357,7 +357,7 @@ ConvertTo-Json -InputObject $script:calls -Depth 6
 
         expected = {
             "common/host_execution_lease.ps1", "common/host_resource_scheduler.py",
-            "src/msplatform/execution/resources/host_resource_policy.json", "common/require_powershell7.ps1",
+            "src/msplatform/execution/resources/host_resource_policy.json", "src/msplatform/execution/resources/require_powershell7.ps1",
             "src/msplatform/analysis/particle_census.py", "config/project_registry.json",
         }
         expected |= {path.relative_to(REPO_ROOT).as_posix()
@@ -372,7 +372,7 @@ ConvertTo-Json -InputObject $script:calls -Depth 6
                 entry = RUNNER.parent / runner_name
                 script = r"""$ErrorActionPreference='Stop'
 $repoRoot=@@REPO@@;$inputDir=@@INPUT@@;$python=@@PYTHON@@
-. (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
 $ast=[Management.Automation.Language.Parser]::ParseFile(@@ENTRY@@,[ref]$null,[ref]$null)
 $declarations=@($ast.FindAll({param($n) $n-is[Management.Automation.Language.AssignmentStatementAst]-and
@@ -392,7 +392,7 @@ if('@@NAME@@'-eq'run_finite_3d_transport.ps1'){
  Invoke-Expression $source.Substring($begin.Extent.StartOffset,$finish.Extent.StartOffset-$begin.Extent.StartOffset)
 }
 $executionCapacityPaths|ConvertTo-Json|Set-Content @@CAPACITY@@
-. (Join-Path $codeRoot 'common/paths/workspace_paths.ps1')
+. (Join-Path $codeRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
 . (Join-Path $codeRoot 'common/host_execution_lease.ps1')
 $null=Get-HostResourceBudget -Role GATE -Stage snapshot-probe
 """.replace('@@PYTHON@@', quoted(Path(sys.executable))).replace('@@REPO@@', quoted(REPO_ROOT)).replace('@@INPUT@@', quoted(root)).replace('@@ENTRY@@', quoted(entry)).replace('@@NAME@@', runner_name).replace('@@CAPACITY@@', quoted(root / 'capacity.json'))
@@ -484,7 +484,7 @@ runpy.run_module('msplatform.workflows.rf_design_profiles', run_name='__main__')
                 self.assertNotEqual(refused_paths.returncode, 0)
                 self.assertIn("No module named 'common.paths.repository_root'", refused_paths.stderr)
                 missing_path_module.write_bytes(path_module_bytes)
-                workspace_paths = root / "code/common/paths/workspace_paths.ps1"
+                workspace_paths = root / "code/src/msplatform/execution/resources/workspace_paths.ps1"
                 workspace_bytes = workspace_paths.read_bytes()
                 workspace_paths.unlink()
                 refused_workspace = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command",
@@ -504,7 +504,7 @@ $package=[pscustomobject]@{code_root=$codeRoot;package_roots=@(Get-RunPythonImpo
  files=@($inventory|ForEach-Object{[pscustomobject]@{relative_path=$_.path;path=(Join-Path $codeRoot $_.path);sha256=$_.sha256}})}
 Invoke-IsolatedFrozenPythonModule -Python @@PYTHON@@ -Package $package -Module msplatform `
  -Arguments @('--help') -RequiredModuleNames @('msplatform') -ProbeOnly
-""".replace('@@SUPPORT@@', quoted(root / 'code/common/contracts/run_artifact_support.ps1')).replace(
+""".replace('@@SUPPORT@@', quoted(root / 'code/src/msplatform/execution/resources/run_artifact_support.ps1')).replace(
                     '@@HELPER@@', quoted(root / 'code/src/msplatform/execution/resources/frozen_python_package.ps1')).replace(
                     '@@CODE@@', quoted(root / 'code')).replace('@@INVENTORY@@', quoted(root / 'code_inventory.json')).replace(
                     '@@PYTHON@@', quoted(Path(sys.executable)))
@@ -569,7 +569,7 @@ Invoke-IsolatedFrozenPythonModule -Python @@PYTHON@@ -Package $package -Module m
      finally{Invoke-Expression $restore.Extent.Text}
      if($script:calls-ne1-or$env:SIMULATION_PYTHON_EXE-cne'prior-python'-or$env:PYTHONPATH-cne'prior-source'){throw 'Original environment was not restored'}
     }
-    """.replace('@@CODE@@', str(Path(directory))).replace('@@PYTHON@@', sys.executable).replace('@@POLICY@@', str(REPO_ROOT / 'src/msplatform/execution/resources/host_resource_policy.json')).replace('@@ENTRY@@', str(entry)).replace('@@SUPPORT@@', str(REPO_ROOT / 'common/contracts/run_artifact_support.ps1'))
+    """.replace('@@CODE@@', str(Path(directory))).replace('@@PYTHON@@', sys.executable).replace('@@POLICY@@', str(REPO_ROOT / 'src/msplatform/execution/resources/host_resource_policy.json')).replace('@@ENTRY@@', str(entry)).replace('@@SUPPORT@@', str(REPO_ROOT / 'src/msplatform/execution/resources/run_artifact_support.ps1'))
             result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
                                     cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -679,7 +679,7 @@ if($script:calls-ne1-or$state.finalization_started){throw 'Terminal outcome was 
             before = {name:(root/name).read_bytes() for name in ("batch.json", "request.json")}
             script = r"""
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $env:RF_TEST_REPO 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $env:RF_TEST_REPO 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $codeRoot=$env:RF_TEST_REPO;$runDir=$env:RF_TEST_ROOT;$logDir=$runDir;$solverDir=$runDir
 $dispatchPlan=Join-Path $runDir 'dispatch.json';$batchPlan=Join-Path $runDir 'batch.json'
 $dispatchRequest=Join-Path $runDir 'request.json';$resourceProfiles=Join-Path $runDir 'profiles.json'
@@ -1090,12 +1090,12 @@ exit 0
 
     def test_default_dispatch_retains_first_formal_batch_before_parallel_replan(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
-        discover = "common.simion.resource_profile discover"
+        discover = "msplatform.execution.resource_profile discover"
         schedule = "msplatform.execution.simion_dispatch"
-        publish = "common.simion.resource_profile publish"
+        publish = "msplatform.execution.resource_profile publish"
         self.assertIn(discover, source)
         self.assertIn("--profiles $resourceProfiles", source)
-        owner = (REPO_ROOT / "common/contracts/run_artifact_workflow.ps1").read_text(encoding="utf-8-sig")
+        owner = (REPO_ROOT / "src/msplatform/workflows/resources/run_artifact_workflow.ps1").read_text(encoding="utf-8-sig")
         self.assertIn(publish, owner)
         self.assertLess(source.index(discover), source.index(schedule))
         self.assertLess(owner.index("Complete-ResourceUsage"), owner.index(publish))
@@ -1173,7 +1173,7 @@ exit 0
     def test_manifest_lifecycle_preserves_partial_outputs(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
         support = (
-            REPO_ROOT / "common/contracts/run_artifact_support.ps1"
+            REPO_ROOT / "src/msplatform/execution/resources/run_artifact_support.ps1"
         ).read_text(encoding="utf-8")
         self.assertEqual(source.count("Complete-FailedRun"), 1)
         self.assertIn("Complete-RunArtifactPowerShellOwner -Context $ownerContext -Status $hostExecutionOutcome", source)

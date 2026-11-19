@@ -856,7 +856,7 @@ def select_postprocess_parent(parent: Path, consumer_artifact_root: Path) -> dic
             or completion.get("run_config", {}).get("sha256") != manifest["run_config"]["sha256"]):
         raise ValueError("Public completion and original request/config identity differ")
     import subprocess
-    validator = REPO_ROOT / "common/contracts/run_artifact_workflow.ps1"
+    validator = REPO_ROOT / "src/msplatform/workflows/resources/run_artifact_workflow.ps1"
     command = ". '"+str(validator).replace("'", "''")+"'; $value=Get-Content -Raw -Encoding UTF8 '"+str(record_path(completions[0], base_dir=parent)).replace("'", "''")+"'|ConvertFrom-Json -AsHashtable; Assert-WorkflowWriterCompletion $value.writer_completion"
     validation = subprocess.run(["pwsh.exe", "-NoProfile", "-NonInteractive", "-Command", command],
         cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=60)

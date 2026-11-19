@@ -462,7 +462,7 @@ def freeze_inputs(run: Path) -> dict[str, Any]:
     closure = freeze_candidate_source_closure(run / "inputs/code", run.parents[1], Path(sys.executable),
         extra_source_ids=(f"{RELATIVE}/run_compensation.py", f"{RELATIVE}/execute_compensation.ps1",
             "src/msplatform/execution/recovery.py", "src/msplatform/backends/simion/particle_batching.py", "src/msplatform/execution/simion_dispatch.py",
-            "common/simion/resource_profile.py", "src/msplatform/contracts/schemas/simion_batch_continuation.schema.json",
+            "src/msplatform/execution/resource_profile.py", "src/msplatform/contracts/schemas/simion_batch_continuation.schema.json",
             AXIS_EXPORTER_SOURCE) + authoring_sources)
     if plan.get("regularization_authoring_source"):
         frozen_default = run / "inputs/code/src/msplatform/backends/simion/resources/reflectron_voltage_fit_authoring.json"
@@ -570,7 +570,7 @@ def _scientific_identity(run: Path, plan: dict[str, Any]) -> dict[str, Any]:
             "simion_executable_sha256": plan["simion_executable"]["sha256"],
             "trajectory_quality": plan["trajectory_quality"], "modes": list(LABELS),
             "iob_builder_sha256": file_record(run / "inputs/code" / f"projects/{PROJECT}/simion/workbench/build_formal_iob.lua")["sha256"],
-            "native_assembly_sha256": file_record(run / "inputs/code/common/simion/assemble_native_fast_adjust_family.lua")["sha256"] if plan.get("producer") else None}
+            "native_assembly_sha256": file_record(run / "inputs/code/src/msplatform/backends/simion/resources/assemble_native_fast_adjust_family.lua")["sha256"] if plan.get("producer") else None}
 
 
 def fit_and_plan(run: Path) -> dict[str, Any]:

@@ -9,7 +9,7 @@ import unittest
 
 PROJECT = Path(__file__).resolve().parents[2]
 RUNNER = PROJECT / "simion" / "run_native_corridor_qualification.ps1"
-CONTROLLER = PROJECT.parents[1] / "common" / "simion" / "assemble_native_fast_adjust_family.lua"
+CONTROLLER = PROJECT.parents[1] / "src/msplatform/backends/simion/resources/assemble_native_fast_adjust_family.lua"
 REMOVED_STREAM = PROJECT / "simion" / "run_native_corridor_family_stream.ps1"
 
 

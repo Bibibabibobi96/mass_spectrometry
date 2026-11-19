@@ -9,11 +9,11 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import subprocess
 from pathlib import Path
 from typing import Any
 
 from msplatform.execution.retention import classify_file
+from msplatform.execution.source_identity import git_worktree_context
 from msplatform.execution.inputs import enumerate_python_sources, freeze_file
 from msplatform.backends.simion.workbench_seed import freeze_workbench_seed
 from msplatform.workflows.ion_processor import preparation
@@ -35,7 +35,7 @@ FROZEN_SCIENTIFIC_BRIDGE_MODULES = (
 # Actual runtime dependencies, independent of incidental imports in the author process.
 FROZEN_RUNTIME_MODULES = (
     "src/msplatform/execution/simion_dispatch.py",
-    "common/simion/resource_profile.py",
+    "src/msplatform/execution/resource_profile.py",
     "src/msplatform/backends/simion/particle_batching.py",
 )
 PROJECT = "dual_pressure_rectilinear_ion_processor"
@@ -63,6 +63,14 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
             injected_source: Path | None = None, protected_injected_paths: list[Path] | None = None) -> None:
     """Freeze contracts, official HS1, RF kernel and shared release for one run."""
     repo = project.parent.parent
+    package_root = Path(__file__).resolve().parents[3]
+    resource_root = package_root.parent if package_root.name == "src" else package_root
+
+    def installed_resource(relative: str) -> Path:
+        path = Path(relative)
+        installed_relative = path.relative_to("src") if path.parts[0] == "src" else path
+        return resource_root / relative if package_root.name == "src" else package_root / installed_relative
+
     configuration = configuration_directory.resolve() if configuration_directory is not None else project / "config"
     inputs, solver = run / "inputs", run / "simion"
     if source_profile not in {"functional", "exploration"}:
@@ -71,9 +79,9 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
                     ("baseline", "numerics", "source", "acceptance", "native_operating_point", "diagnostics", "field_diagnostics")}
     config_files["source"] = "source_exploration.json" if source_profile == "exploration" else "source.json"
     # Dynamic language inputs belong to the same runnable frozen package as Python.
-    runtime_resources = [repo / "src/msplatform/backends/simion/resources" / ("ip_" + name) for name in
+    runtime_resources = [installed_resource("src/msplatform/backends/simion/resources/" + "ip_" + name) for name in
         ("runtime.lua", "build_workbench.lua", "probe_native_field.lua", "extraction_force_audit.lua")]
-    runtime_resources.extend(repo / relative for relative in (
+    runtime_resources.extend(installed_resource(relative) for relative in (
         "src/msplatform/execution/resources/artifact_retention.json",
         "src/msplatform/contracts/particle_count_policy.json", "src/msplatform/execution/resources/host_resource_policy.json",
         "src/msplatform/backends/simion/resources/rf_drive.lua", "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
@@ -81,11 +89,11 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
         "src/msplatform/backends/simion/resources/scientific_event_csv.lua",
         "src/msplatform/backends/simion/resources/collision_hs1_gas.lua",
         "src/msplatform/backends/simion/resources/1_instance_seed.iob",
-        "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0"))
-    runtime_resources.append(repo / "src/msplatform/execution/resources/native_run_path.lua")
-    core_sources = [repo / relative for relative in enumerate_python_sources(
-        repo, package_roots=("src/msplatform",), provider_root="src/msplatform",
-        resource_suffixes=(".schema.json",))]
+        "src/msplatform/backends/simion/resources/iob_seed_placeholder_01.pa0"))
+    runtime_resources.append(installed_resource("src/msplatform/execution/resources/native_run_path.lua"))
+    source_selection = dict(package_roots=("src/msplatform",), provider_root="src/msplatform") if package_root.name == "src" else dict(package_roots=("msplatform",), provider_root="msplatform")
+    core_sources = [resource_root / relative for relative in enumerate_python_sources(
+        resource_root, **source_selection, resource_suffixes=(".schema.json",))]
     runtime_resources.extend(path for path in core_sources if path.suffix != ".py")
     required_resources = [*runtime_resources, *(configuration / name for name in config_files.values()),
         simion_dir / "examples/collision_hs1/collision_hs1.lua"]
@@ -116,16 +124,10 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
     compiled = preparation.materialize_inputs(run, config, configuration_files=authorities,
         hs1_source=simion_dir / "examples/collision_hs1/collision_hs1.lua", admission=admission)
     config, states = compiled["config"], compiled["states"]
-    git_context = {}
-    for key, arguments in (("git_sha", ["rev-parse", "HEAD"]), ("worktree_porcelain", ["status", "--porcelain"])):
-        result = subprocess.run(["git", "-C", str(repo), *arguments], capture_output=True,
-                                text=True, encoding="utf-8", errors="replace", check=False,
-                                cwd=repo, timeout=10)
-        git_context[key] = result.stdout.strip() if result.returncode == 0 else "unavailable"
-    git_context["worktree_dirty"] = bool(git_context["worktree_porcelain"])
+    git_context = git_worktree_context(repo)
     write_json(inputs / "source_context.json", git_context)
-    seed = freeze_workbench_seed(run, seed_path=repo / "src/msplatform/backends/simion/resources/1_instance_seed.iob",
-        placeholder_path=repo / "common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0")
+    seed = freeze_workbench_seed(run, seed_path=installed_resource("src/msplatform/backends/simion/resources/1_instance_seed.iob"),
+        placeholder_path=installed_resource("src/msplatform/backends/simion/resources/iob_seed_placeholder_01.pa0"))
     config["workbench_seed_path"] = seed["seed"]["frozen"]["path"]
     config["workbench_seed_records"] = seed
     config["native_field"]={"directory":str(solver),"source_manifest":None}
@@ -139,7 +141,7 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
     from msplatform.workflows.ion_processor import diagnostics, field_diagnostics
     assert callable(diagnostics.export_diagnostics)
     assert callable(field_diagnostics.export_field_diagnostics)
-    from projects.dual_pressure_rectilinear_ion_processor.analysis import batching
+    from msplatform.backends.simion import ip_batching as batching
     from msplatform.workflows.ion_processor import extraction_force_budget
     from msplatform.analysis.population_moments import population_pair_moments
     from msplatform.analysis.beam_focus_diagnostics import prepare_focus_diagnostics
@@ -156,8 +158,13 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
     # Freeze the loaded repository source closure after shared source generation.
     # Solver inputs remain independent of an editable working tree.
     source_paths = {path for path in core_sources if path.suffix == ".py"}
-    source_paths.update(repo / relative for relative in enumerate_python_sources(
-        repo, module_paths=(*FROZEN_SCIENTIFIC_BRIDGE_MODULES, *FROZEN_RUNTIME_MODULES)))
+    source_paths.update(installed_resource(relative) for relative in enumerate_python_sources(
+        resource_root,
+        module_paths=tuple(relative if package_root.name == "src" else relative.removeprefix("src/")
+                           for relative in (*FROZEN_SCIENTIFIC_BRIDGE_MODULES, *FROZEN_RUNTIME_MODULES))))
+
+    def frozen_relative(path: Path) -> Path:
+        return path.relative_to(resource_root) if package_root.name == "src" else Path("src") / path.relative_to(package_root)
     for module in tuple(sys.modules.values()):
         file=getattr(module,"__file__",None)
         if not file:
@@ -174,12 +181,11 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
         source_paths.add(path)
     # A module can have several import names; freeze each physical source once.
     for path in sorted(source_paths):
-        relative = path.relative_to(repo)
-        target=inputs/"code"/relative
+        target = inputs / "code" / frozen_relative(path)
         target.parent.mkdir(parents=True,exist_ok=True)
         freeze_file(path,target)
     for source in runtime_resources:
-        target = inputs / "code" / source.relative_to(repo)
+        target = inputs / "code" / frozen_relative(source)
         target.parent.mkdir(parents=True, exist_ok=True)
         freeze_file(source, target, retention_classifier=classify_file)
     # Preserve the selected author inputs at the package's normal project location.
@@ -226,23 +232,25 @@ def main() -> None:
     parser.add_argument("--configuration-directory",type=Path)
     parser.add_argument("--injected-source",type=Path)
     parser.add_argument("--protected-injected-path",type=Path,action="append")
+    parser.add_argument("--project-root",type=Path)
     args=parser.parse_args()
     if args.action=="compare-geometry-study":
-        from projects.dual_pressure_rectilinear_ion_processor.analysis.geometry_comparison import analyze_geometry_study
+        from msplatform.workflows.ion_processor.geometry_comparison import analyze_geometry_study
         print(json.dumps(analyze_geometry_study(args.run)))
     elif args.action=="compare-extraction-study":
-        from projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_phase_space_comparison import analyze_registered_study
+        from msplatform.workflows.ion_processor.extraction_phase_space_comparison import analyze_registered_study
         result=analyze_registered_study(args.run)
         print(json.dumps({key:result[key] for key in ("status","source_counts","extracted_counts")}))
     elif args.action=="prepare":
         if args.simion_dir is None: parser.error("prepare requires --simion-dir")
-        prepare(args.run,Path(__file__).resolve().parent.parent,args.simion_dir,args.native_field_run,args.source_profile,
+        project_root = args.project_root or Path("projects/dual_pressure_rectilinear_ion_processor")
+        prepare(args.run,project_root,args.simion_dir,args.native_field_run,args.source_profile,
                 args.configuration_directory,args.injected_source,args.protected_injected_path)
     elif args.action=="adopt-native-field":
         if args.native_field_run is None: parser.error("adopt-native-field requires --native-field-run")
         field_reference.adopt_native_field(args.run, args.native_field_run)
     elif args.action in {"prepare-dispatch", "prepare-continuation", "prepare-partial-continuation", "restore-partial-batches", "materialize-batches", "merge-batches", "publish-manifest"}:
-        from projects.dual_pressure_rectilinear_ion_processor.analysis import batching
+        from msplatform.backends.simion import ip_batching as batching
         if args.action == "publish-manifest":
             if args.status is None: parser.error("publish-manifest requires --status")
             batching.publish_manifest(args.run,args.status)
@@ -266,12 +274,13 @@ def main() -> None:
         result=analyze(args.run); print(json.dumps(result));
         if result["status"] != "success": raise SystemExit(2)
     elif args.action=="prepare-replay":
-        from projects.dual_pressure_rectilinear_ion_processor.analysis.gui_replay import prepare_replay
+        from msplatform.backends.simion.ip_gui_replay import prepare_replay
         if args.baseline_run is None: parser.error("prepare-replay requires --baseline-run")
         print(json.dumps(prepare_replay(args.run,args.baseline_run,args.repeat_fly_count)))
     else:
-        from projects.dual_pressure_rectilinear_ion_processor.analysis.gui_replay import finalize_replay
-        result=finalize_replay(args.run,args.manual_gui_confirmed)
+        from msplatform.backends.simion.ip_gui_replay import finalize_replay
+        from msplatform.workflows.ion_processor.analysis import analyze
+        result=finalize_replay(args.run,args.manual_gui_confirmed,analyzer=analyze)
         config=read_json(args.run/"run_config.json")
         config["parameters"]["manual_gui_confirmed"]=args.manual_gui_confirmed
         write_json(args.run/"run_config.json",config)

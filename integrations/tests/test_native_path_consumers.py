@@ -152,7 +152,7 @@ foreach($mode in @('success','science_failure','no_science','no_operations')){
             script = base/"check.ps1"
             script.write_text(r"""param($Repo,$Entry,$Python,$Request)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$null)
 foreach($name in @('Invoke-ProjectPython','Get-PreparedJointSourceReferences')){
  $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$name},$true)
@@ -222,16 +222,16 @@ try{
             script = Path(temporary)/"check.ps1"
             script.write_text(code, encoding="utf-8", newline="\n")
             result = subprocess.run(["pwsh", "-NoProfile", "-File", str(script),
-                str(CONSUMER_ROOT/"projects/parallel_mirror_dual_stripe_mr_tof/simion/native_corridor_runtime_support.ps1"),
-                temporary, sys.executable], cwd=REPO, capture_output=True, text=True, timeout=60)
+                str(CONSUMER_ROOT/"src/msplatform/backends/simion/resources/native_corridor_runtime_support.ps1"),
+                temporary, sys.executable], cwd=REPO, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60)
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
 
 
     def test_ip_and_prepared_joint_use_the_public_package_and_propagate_failure(self):
         code = r'''param($Ip,$Prepared,$Repo,$Python,$Root)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
-. (Join-Path $Repo 'common/paths/workspace_paths.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/workspace_paths.ps1')
 $run=Join-Path $Root ('canonical_'+('deep_'*40));New-Item -ItemType Directory -Path $run -Force|Out-Null
 $package=[pscustomobject]@{artifact_run_dir=$run;run_dir=$run;execution_alias=$null;execution_path_capacity=$null;python=$Python;log_dir=(Join-Path $run 'logs');
  path_context=[pscustomobject]@{source_root=$Repo;artifact_root=(Join-Path $Root 'artifacts');execution_root=(Join-Path $Root 'x');host_resource_state_path=(Join-Path $Root 'host.sqlite3')}}
@@ -272,7 +272,7 @@ try{
             path = root/"fixture.ps1"
             path.write_text(code, encoding="utf-8", newline="\n")
             result = subprocess.run(["pwsh", "-NoProfile", "-File", str(path),
-                str(CONSUMER_ROOT/"projects/dual_pressure_rectilinear_ion_processor/simion/run_functional.ps1"),
+                str(CONSUMER_ROOT/"src/msplatform/workflows/resources/ip_functional.ps1"),
                 str(CONSUMER_ROOT/"integrations/workflows/prepared_joint/execute.ps1"),
                 str(REPO), sys.executable, str(root)], cwd=REPO,
                 capture_output=True, text=True, encoding="utf-8", timeout=60, check=False)
@@ -283,8 +283,8 @@ try{
     def test_iob_process_fact_precedes_science_and_transport_keeps_canonical_case(self):
         code = r'''param($Source,$Repo,$Python,$Root,$Scenario)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
-. (Join-Path $Repo 'common/paths/workspace_paths.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/workspace_paths.ps1')
 $tokens=$null;$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$tokens,[ref]$errors)
 foreach($name in @('Add-FrontendNativeOperation','Invoke-FrontendIobBuild','New-FrontendFlightSpecification')){
  $node=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$name},$true))

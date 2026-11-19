@@ -27,7 +27,7 @@ class FrozenIonDeliveryTests(unittest.TestCase):
             script = root / "check.ps1"
             script.write_text(r'''param($Repo,$Code,$Lua,$Artifacts)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/build_formal_delivery.ps1'),[ref]$null,[ref]$null)
 $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-SimionLua'},$true)
 Invoke-Expression $node.Extent.Text
@@ -66,7 +66,7 @@ if(-not(Test-Path -LiteralPath $Lua)){throw 'Frozen input was deleted'}
             script = r'''
 param($Repo,$Producer,$RunRoot,$Python)
 $ErrorActionPreference='Stop'
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $ast=[Management.Automation.Language.Parser]::ParseFile($Producer,[ref]$null,[ref]$null)
 $function=$ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name-eq'Copy-ComponentFrozenIon'},$true)
 Invoke-Expression $function.Extent.Text

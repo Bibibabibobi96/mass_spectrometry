@@ -2,7 +2,7 @@
 param([Parameter(Mandatory)][string]$RunId,[Parameter(Mandatory)][string]$PABuildRunPath,[Parameter(Mandatory)][string]$RuntimeControllerPath,[Parameter(Mandatory)][string]$CampaignPath,[Parameter(Mandatory)][string]$ReleaseSpecPath,[ValidateSet('native','zone1_ideal','zone2_ideal','full_ideal')][string]$FieldMode='native',[string]$SimionExe='')
 Set-StrictMode -Version Latest;$ErrorActionPreference='Stop'
 $projectRoot=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path;$repoRoot=(Resolve-Path (Join-Path $projectRoot '..\..')).Path;$workspaceRoot=(Resolve-Path (Join-Path $repoRoot '..')).Path
-. (Join-Path $repoRoot 'common\require_powershell7.ps1');. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1');. (Join-Path $repoRoot 'common\host_execution_lease.ps1')
+. (Join-Path $repoRoot 'src\msplatform\execution\resources\require_powershell7.ps1');. (Join-Path $repoRoot 'src\msplatform\execution\resources\run_artifact_support.ps1');. (Join-Path $repoRoot 'common\host_execution_lease.ps1')
 $python=Join-Path $repoRoot '.venv\Scripts\python.exe';if(-not$SimionExe){$SimionExe=Join-Path $env:ProgramFiles 'SIMION-2020\simion.exe'};if(-not(Test-Path $SimionExe)){throw 'SIMION executable is missing'}
 
 . (Join-Path $PSScriptRoot 'focus_python.ps1')

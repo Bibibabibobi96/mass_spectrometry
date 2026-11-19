@@ -14,7 +14,7 @@ REPO = PROJECT.parents[1]
 HARNESS = r'''param($Repo,$Runner,$Directory,$Mode)
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
-. (Join-Path $Repo 'common/simion/short_pa_path_support.ps1')
+. (Join-Path $Repo 'src/msplatform/backends/simion/resources/short_pa_path_support.ps1')
 $errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
@@ -100,9 +100,9 @@ class NativeGuardTests(unittest.TestCase):
             script = Path(directory)/"prepare_observation.ps1"
             script.write_text(r'''param($Repo,$Runner,$Root,$Python)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $Repo 'common/simion/short_pa_path_support.ps1')
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
-. (Join-Path $Repo 'common/paths/workspace_paths.ps1')
+. (Join-Path $Repo 'src/msplatform/backends/simion/resources/short_pa_path_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/workspace_paths.ps1')
 $errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
 $preparation=$ast.Find({param($a)$a-is[Management.Automation.Language.ForEachStatementAst]-and$a.Extent.Text-match'ION_PROCESSOR_STAGE='},$true)
@@ -169,7 +169,7 @@ foreach($kind in @('prepare','template')){foreach($script:mode in @('success','n
 }}
 ''', encoding="utf-8")
             result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(REPO),
-                                     str(PROJECT/"simion/run_functional.ps1"), directory, sys.executable],
+                                     str(REPO/"src/msplatform/workflows/resources/ip_functional.ps1"), directory, sys.executable],
                                     cwd=REPO, timeout=30, capture_output=True, text=True,
                                     encoding="utf-8", errors="replace")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -182,8 +182,8 @@ foreach($kind in @('prepare','template')){foreach($script:mode in @('success','n
             script = Path(directory)/"combined_field_owner.ps1"
             script.write_text(r'''param($Repo,$Runner,$Root)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $Repo 'common/simion/short_pa_path_support.ps1')
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/backends/simion/resources/short_pa_path_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
 $definition=$ast.Find({param($a)$a-is[Management.Automation.Language.FunctionDefinitionAst]-and$a.Name-eq'Protect-IonProcessorPreviousField'},$true)
@@ -236,7 +236,7 @@ foreach($case in @(@{partial=$false;explicit=$true;missing=0},@{partial=$true;ex
 }
 ''', encoding="utf-8")
             result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(REPO),
-                                     str(PROJECT/"simion/run_functional.ps1"), directory],
+                                     str(REPO/"src/msplatform/workflows/resources/ip_functional.ps1"), directory],
                                     cwd=REPO, timeout=30, capture_output=True, text=True,
                                     encoding="utf-8", errors="replace")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -274,7 +274,7 @@ foreach($case in @(@{native='';templates=$false},@{native='explicit-parent';temp
 }
 ''', encoding="utf-8")
             result = subprocess.run([pwsh, "-NoProfile", "-File", str(script),
-                                     str(PROJECT/"simion/run_functional.ps1"), directory],
+                                     str(REPO/"src/msplatform/workflows/resources/ip_functional.ps1"), directory],
                                     cwd=REPO, timeout=30, capture_output=True, text=True,
                                     encoding="utf-8", errors="replace")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -303,7 +303,7 @@ if($summary.recovery_action-notmatch'confirm native writer completion'){throw 'u
 Set-IonProcessorRunObservation -Summary $summary -Context $context -Run $Root -NativeCompleted $true -WritersStopped $true
 if($null-ne$summary.failure_stage-or$summary.recovery_action-ne'none'){throw 'success observation retained failure'}
 ''', encoding="utf-8")
-            result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(PROJECT / "simion/run_functional.ps1"), temporary],
+            result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(REPO / "src/msplatform/workflows/resources/ip_functional.ps1"), temporary],
                 cwd=REPO, timeout=30, capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -315,7 +315,7 @@ if($null-ne$summary.failure_stage-or$summary.recovery_action-ne'none'){throw 'su
             script = Path(directory)/"finalization.ps1"
             script.write_text(r'''param($Runner,$Root,$Repo)
 $ErrorActionPreference='Stop';$errors=$null
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
 $node=$ast.Find({param($a)$a-is[Management.Automation.Language.TryStatementAst]-and$null-ne$a.Finally-and$a.Finally.Extent.Text-match'ion_processor_finalization_error'},$true)
@@ -340,7 +340,7 @@ try {
 if($caught.Exception.Message-ne'original science sentinel'){throw 'primary error was replaced'}
 if($caught.Exception.Data['ion_processor_finalization_error']-notmatch'finalization sentinel'){throw 'secondary error was not retained'}
 ''', encoding="utf-8")
-            result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(PROJECT/"simion/run_functional.ps1"), directory, str(REPO)],
+            result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(REPO/"src/msplatform/workflows/resources/ip_functional.ps1"), directory, str(REPO)],
                                     cwd=REPO, timeout=30, capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -372,7 +372,7 @@ foreach($path in @($csv,$archive,$sample,$gas,$binding,(Join-Path $Root 'run_man
 foreach($stream in $context.streams){$stream.Dispose()}
 foreach($path in @($gas,$binding)){$w=[IO.File]::Open($path,'Open','Write','ReadWrite');$w.Dispose()}
 ''', encoding="utf-8")
-            result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(PROJECT/"simion/run_functional.ps1"), directory],
+            result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(REPO/"src/msplatform/workflows/resources/ip_functional.ps1"), directory],
                                     cwd=REPO, timeout=30, capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -396,14 +396,15 @@ Invoke-Expression $node.Extent.Text
 $result=& $prepareRemaining $null
 if(@($result.pending).Count-ne1-or$result.pending[0].scheduler_batch.index-ne2-or$result.pending[0].scheduler_batch.count-ne2){throw 'missing batch selection differs'}
 ''', encoding="utf-8")
-            result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(PROJECT/"simion/run_functional.ps1"), directory],
+            result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(REPO/"src/msplatform/workflows/resources/ip_functional.ps1"), directory],
                                     cwd=REPO, timeout=30, capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_continuation_rechecks_frozen_science_before_reuse(self) -> None:
         import copy
         from msplatform.execution.retention import file_record
-        from projects.dual_pressure_rectilinear_ion_processor.analysis import batching, functional
+        from msplatform.backends.simion import ip_batching as batching
+        from msplatform.workflows.ion_processor import functional
         from projects.dual_pressure_rectilinear_ion_processor.tests.test_batching import BatchingTests
 
         fixture = BatchingTests("runTest")
@@ -569,8 +570,8 @@ Write-Output "IP_FIXED_RECOVERY=PASS SCENARIO=$scenario PEAK_CONCURRENCY=$peak R
 exit 0
 ''', encoding='utf-8')
             result = subprocess.run(['pwsh', '-NoProfile', '-File', str(script),
-                str(PROJECT/'simion/run_functional.ps1'), str(REPO), directory, sys.executable],
-                cwd=REPO, capture_output=True, text=True, encoding='utf-8', timeout=60)
+                str(REPO/'src/msplatform/workflows/resources/ip_functional.ps1'), str(REPO), directory, sys.executable],
+                cwd=REPO, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn('SCENARIO=ample', result.stdout)
             self.assertIn('SCENARIO=cpu_tight PEAK_CONCURRENCY=1', result.stdout)
@@ -587,8 +588,8 @@ exit 0
             script = Path(directory)/"all_reused.ps1"
             script.write_text(r'''param($Runner,$Root,$Repo,$PythonRuntime)
 $ErrorActionPreference='Stop';$errors=$null
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
-. (Join-Path $Repo 'common/paths/workspace_paths.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/workspace_paths.ps1')
 $pathContext=@{host_resource_state_path=(Join-Path $Root 'host.sqlite3')}
 $ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
@@ -608,7 +609,7 @@ if(-not$nativeCompleted-or$lease.stage-ne'postprocess'-or$script:called-notconta
 $usage=Get-Content (Join-Path $package.result_dir 'simion_batch_resource_usage.json') -Raw|ConvertFrom-Json
 if($usage.execution_wave.process_count-ne0-or$usage.execution_wave.reused_batch_count-ne2){throw 'reuse accounting differs'}
 ''', encoding="utf-8")
-            result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(PROJECT/"simion/run_functional.ps1"), directory,str(REPO),sys.executable],
+            result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(REPO/"src/msplatform/workflows/resources/ip_functional.ps1"), directory,str(REPO),sys.executable],
                                     cwd=REPO, timeout=30, capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -620,8 +621,8 @@ if($usage.execution_wave.process_count-ne0-or$usage.execution_wave.reused_batch_
             script = Path(directory)/"prior_field.ps1"
             script.write_text(r'''param($Repo,$Runner,$Root)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $Repo 'common/simion/short_pa_path_support.ps1')
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/backends/simion/resources/short_pa_path_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
 $node=$ast.Find({param($a)$a-is[Management.Automation.Language.FunctionDefinitionAst]-and$a.Name-eq'Protect-IonProcessorPreviousField'},$true)
@@ -663,7 +664,7 @@ Set-Content (Join-Path $Root '.run_terminal_publication.json') '{}'
 $caught=$false;try{Protect-IonProcessorPreviousField -FieldRun $Root -ResolvedModel $model -Context $context}catch{$caught=$true}
 if(-not$caught){throw 'pending source journal accepted'}
 ''', encoding="utf-8")
-            result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(REPO), str(PROJECT/"simion/run_functional.ps1"), directory],
+            result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(REPO), str(REPO/"src/msplatform/workflows/resources/ip_functional.ps1"), directory],
                                     cwd=REPO, timeout=30, capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -691,12 +692,12 @@ try {Write-IonProcessorBatchCompletion -Record $record -ResultDirectory $Directo
 if(-not$caught){throw 'uncompleted owner accepted'}
 if($ast.Extent.Text-notmatch '-OnProcessCompleted \$checkpoint'){throw 'checkpoint not wired to public wave'}
 ''', encoding="utf-8")
-            result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(PROJECT / "simion/run_functional.ps1"), directory],
+            result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(REPO / "src/msplatform/workflows/resources/ip_functional.ps1"), directory],
                                     cwd=REPO, timeout=30, capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_continuation_projects_ancestry_before_capacity_and_rechecks_after(self) -> None:
-        script = (PROJECT / "simion/run_functional.ps1").read_text(encoding="utf-8")
+        script = (REPO / "src/msplatform/workflows/resources/ip_functional.ps1").read_text(encoding="utf-8")
         first = script.index("continuation_protection_paths;print")
         capacity = script.index("$capacity=Enter-ArtifactWorkflowCapacitySession")
         second = script.index("continuation_protection_paths;print", first + 1)
@@ -714,8 +715,8 @@ if($ast.Extent.Text-notmatch '-OnProcessCompleted \$checkpoint'){throw 'checkpoi
             script = Path(directory) / "continuation_fixture.ps1"
             script.write_text(r'''param($Runner,$Root,$Repo,$PythonRuntime)
 $ErrorActionPreference='Stop';$errors=$null
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
-. (Join-Path $Repo 'common/paths/workspace_paths.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/workspace_paths.ps1')
 $pathContext=@{host_resource_state_path=(Join-Path $Root 'host.sqlite3')}
 $package=[pscustomobject]@{artifact_run_dir=$Root;run_dir=$Root;execution_alias=$null;execution_path_capacity=$null;python=$PythonRuntime}
 $ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]$errors)
@@ -729,7 +730,7 @@ function Invoke-ResourceBudgetedProcesses {throw 'native wave started'}
 $lease=Invoke-IonProcessorCompletedContinuation -Package $package -Python 'pythonFixture' -Run $Root -Predecessor (Join-Path $Root 'parent') -RepoRoot $Root
 if($lease.stage-ne'postprocess'-or$script:arguments-notcontains'prepare-continuation'){throw 'continuation routing differs'}
 ''', encoding="utf-8")
-            result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(PROJECT / "simion/run_functional.ps1"), directory,str(REPO),sys.executable],
+            result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(REPO / "src/msplatform/workflows/resources/ip_functional.ps1"), directory,str(REPO),sys.executable],
                                     cwd=REPO, timeout=30, capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -750,12 +751,12 @@ foreach($case in @(@{code=0;execution='completed';science='passed';data='valid';
  if($summary.execution_status-ne$case.execution-or$summary.science_status-ne$case.science-or$summary.data_validity-ne$case.data-or$summary.diagnostics_complete-ne$case.diagnostics-or-not$summary.native_completed-or$summary.analysis_exit_code-ne$case.code){throw 'analysis conclusion differs'}
 }
 ''', encoding="utf-8")
-            result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(PROJECT / "simion/run_functional.ps1")],
+            result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(REPO / "src/msplatform/workflows/resources/ip_functional.ps1")],
                                     cwd=REPO, timeout=30, capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_scientific_negative_summary_is_manifest_bound_after_owner_branch(self) -> None:
-        from projects.dual_pressure_rectilinear_ion_processor.analysis import batching
+        from msplatform.backends.simion import ip_batching as batching
         pwsh = shutil.which("pwsh")
         if pwsh is None:
             self.skipTest("PowerShell 7 required")
@@ -785,7 +786,7 @@ try {Invoke-Expression $text.Substring($start,$end-$start);throw 'negative exit 
 }
 if(-not$finished-or$runSucceeded){throw 'negative completion state differs'}
 ''', encoding="utf-8")
-            result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(PROJECT / "simion/run_functional.ps1"), str(summary)],
+            result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(REPO / "src/msplatform/workflows/resources/ip_functional.ps1"), str(summary)],
                                     cwd=REPO, timeout=30, capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             script.unlink()
@@ -803,7 +804,7 @@ if(-not$finished-or$runSucceeded){throw 'negative completion state differs'}
             script = Path(directory) / "unknown_fixture.ps1"
             script.write_text(r'''param($Runner,$Repo)
 $ErrorActionPreference='Stop'
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $pathEnvironmentNames=@('MASS_SPECTROMETRY_ARTIFACT_ROOT','MASS_SPECTROMETRY_EXECUTION_ROOT','MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH','MASS_SPECTROMETRY_RUN_DIRECTORY','MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY')
 $savedPathEnvironment=Save-RunEnvironment -Names $pathEnvironmentNames
 $errors=$null
@@ -820,9 +821,36 @@ $writersStopped=$false;$lease=@{};$capacity=@{};$package=@{artifact_run_dir=$PSS
 Push-Location .
 Invoke-Expression ('try {} finally '+$node.Finally.Extent.Text)
 ''', encoding="utf-8")
-            result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(PROJECT / "simion/run_functional.ps1"),str(REPO)],
+            result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(REPO / "src/msplatform/workflows/resources/ip_functional.ps1"),str(REPO)],
                                     cwd=REPO, timeout=30, capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_public_launcher_resolves_project_configuration_before_native_admission(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell 7 required")
+        with tempfile.TemporaryDirectory(prefix="ip_launcher_inputs_") as directory:
+            script = Path(directory) / "launcher_inputs.ps1"
+            script.write_text(r'''param($Repo,$Runner,$Python)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$source=Get-Content -LiteralPath $Runner -Raw
+$repoRoot=$Repo;$ConfigurationDirectory=''
+foreach($line in $source -split "\r?\n"){
+ if($line-match'^\$(projectRoot|runtimeRegistry|profiles|profile|configurationRoot)='){Invoke-Expression $line}
+}
+$expected=Join-Path $Repo 'projects/dual_pressure_rectilinear_ion_processor/config'
+if($configurationRoot-ne$expected){throw "default configuration root differs: $configurationRoot"}
+if($profile.profile_id-ne'native_functional'){throw 'runtime profile was not selected'}
+$runtimeRegistry=Get-Content (Join-Path $configurationRoot 'runtime_profiles.json') -Raw|ConvertFrom-Json
+if($runtimeRegistry.project_id-ne'dual_pressure_rectilinear_ion_processor'){throw 'project input identity differs'}
+'IP_LAUNCHER_INPUTS=PASS'
+''', encoding="utf-8")
+            result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(REPO),
+                str(REPO / "src/msplatform/workflows/resources/ip_functional.ps1"), sys.executable],
+                cwd=directory, timeout=30, capture_output=True, text=True,
+                encoding="utf-8", errors="replace")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("IP_LAUNCHER_INPUTS=PASS", result.stdout)
 
     def check_mode(self, mode: str) -> None:
         pwsh = shutil.which("pwsh")
@@ -837,7 +865,7 @@ Invoke-Expression ('try {} finally '+$node.Finally.Extent.Text)
             script = directory / "fixture.ps1"
             script.write_text(HARNESS, encoding="utf-8")
             result = subprocess.run([pwsh, "-NoLogo", "-NoProfile", "-File", str(script), str(REPO),
-                                     str(PROJECT / "simion/run_functional.ps1"), str(directory), mode],
+                                     str(REPO / "src/msplatform/workflows/resources/ip_functional.ps1"), str(directory), mode],
                                     cwd=REPO, timeout=30, capture_output=True, text=True,
                                     encoding="utf-8", errors="replace", check=False)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -874,7 +902,7 @@ Invoke-Expression ('try {} finally '+$node.Finally.Extent.Text)
             script.write_text(HEALTHY_FORMAL_FAILURE_HARNESS, encoding="utf-8")
             result = subprocess.run(
                 [pwsh, "-NoLogo", "-NoProfile", "-File", str(script),
-                 str(PROJECT / "simion/run_functional.ps1"), str(directory)],
+                 str(REPO / "src/msplatform/workflows/resources/ip_functional.ps1"), str(directory)],
                 cwd=REPO, timeout=30, capture_output=True, text=True,
                 encoding="utf-8", errors="replace", check=False,
             )

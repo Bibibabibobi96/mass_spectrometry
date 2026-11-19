@@ -166,7 +166,7 @@ def _record_postprocess_exports(analysis_request: Path | None, root: Path, closu
     import subprocess
     writer_path = root / "logs/postprocess_export_writer.json"
     writer_path.write_text(json.dumps(plan["writer_completion"]), encoding="utf-8")
-    validator = frozen_source_path(closure, "common/contracts/run_artifact_workflow.ps1")
+    validator = frozen_source_path(closure, "src/msplatform/workflows/resources/run_artifact_workflow.ps1")
     command = ". '"+validator.replace("'", "''")+"'; Assert-WorkflowWriterCompletion (Get-Content -Raw -Encoding UTF8 '"+str(writer_path).replace("'", "''")+"'|ConvertFrom-Json -AsHashtable)"
     plan["postprocess_evidence"]["writer_completion_unconfirmed"] = True
     checked = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],

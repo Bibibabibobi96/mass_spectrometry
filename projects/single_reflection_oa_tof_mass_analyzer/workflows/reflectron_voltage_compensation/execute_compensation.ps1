@@ -19,7 +19,7 @@ $project='single_reflection_oa_tof_mass_analyzer'
 $python=if($PythonExe){(Resolve-Path -LiteralPath $PythonExe).Path}elseif($env:SIMULATION_PYTHON_EXE){
   (Resolve-Path -LiteralPath $env:SIMULATION_PYTHON_EXE).Path
 }else{Join-Path $repoRoot '.venv/Scripts/python.exe'}
-. (Join-Path $repoRoot 'common/paths/workspace_paths.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
 $pathContext=$null;$artifactRoot='';$projectArtifacts=''
 if(-not($ResumeFinalization-and$ResultPath)){
   $pathContext=Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
@@ -38,7 +38,7 @@ if($null-ne$pathContext){
 $env:SIMULATION_PYTHON_EXE=$python
 # Every child imports the immutable frozen tree; it must not add bytecode files.
 $env:PYTHONDONTWRITEBYTECODE='1'
-. (Join-Path $repoRoot 'common/contracts/run_artifact_workflow.ps1') `
+. (Join-Path $repoRoot 'src/msplatform/workflows/resources/run_artifact_workflow.ps1') `
   -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
 $module='projects.single_reflection_oa_tof_mass_analyzer.workflows.reflectron_voltage_compensation.run_compensation'
 if($ResumeFinalization){
@@ -337,7 +337,7 @@ try{
       if(-not$script:writersStopped-or@($wave.processes|Where-Object{[int]$_.exit_code-ne0}).Count){throw 'Compensation native Fly wave failed.'}
       Complete-ResourceUsage -RunDir $script:run -UsagePath $usage|Out-Null
       Invoke-RunToolRootContext -RepoRoot $script:codeRoot -Operation {
-        & $python -B -m common.simion.resource_profile publish --run-id $RunId --resource-usage $usage `
+        & $python -B -m msplatform.execution.resource_profile publish --run-id $RunId --resource-usage $usage `
           --dispatch-plan $dispatch --resource-usage-relative-path ('results/'+$label+'.resource_usage.json') `
           --dispatch-plan-relative-path ('results/'+$label+'.dispatch_plan.json') `
           --output (Join-Path $script:run ('results/'+$label+'.resource_profile.json'))|Out-Host

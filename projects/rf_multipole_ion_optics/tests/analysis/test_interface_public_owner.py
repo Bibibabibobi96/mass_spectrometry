@@ -81,7 +81,7 @@ if($state.calls.Count-ne2-or@($state.calls|Where-Object{-not$_.wrapper_returned}
             target = root / "projects/rf_multipole_ion_optics/workflows/interface_readiness/run_comsol.ps1"
             target.parent.mkdir(parents=True)
             shutil.copyfile(CLI, target)
-            support = root / "common/contracts/run_artifact_workflow.ps1"
+            support = root / "src/msplatform/workflows/resources/run_artifact_workflow.ps1"
             support.parent.mkdir(parents=True)
             support.write_text("param($ResultPath,[switch]$ResumeFinalization)\n"
                                "function Invoke-RunArtifactWorkflow {param($RequestPath,$ResultPath,[switch]$ResumeFinalization)\n"
@@ -134,7 +134,7 @@ foreach($ignored in @('ReleaseConstructionGate','NumericalExperimentId','Startup
             command = r"""
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $repoRoot=REPO;$python=PYTHON
-. (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
 $t=$null;$e=$null;$ast=[Management.Automation.Language.Parser]::ParseFile(ENTRY,[ref]$t,[ref]$e)
 $list=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$frozenPythonRelativePaths'},$true)
@@ -167,7 +167,7 @@ foreach($name in @('metricsExecution','stateContractExecution')){
         with tempfile.TemporaryDirectory() as directory:
             command = r"""
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path REPO 'common/contracts/run_artifact_workflow.ps1')
+. (Join-Path REPO 'src/msplatform/workflows/resources/run_artifact_workflow.ps1')
 $t=$null;$e=$null;$ast=[Management.Automation.Language.Parser]::ParseFile(ENTRY,[ref]$t,[ref]$e)
 $function=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Complete-InterfaceOwner'},$true)
 . ([scriptblock]::Create($function.Extent.Text))
@@ -268,7 +268,7 @@ foreach($case in @('gui_failed','gui_succeeded','metadata_missing')){
             command = r"""
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $repoRoot=FACADE;$python=PYTHON;$artifact=ARTIFACT;[Environment]::SetEnvironmentVariable(('SIMULATION_'+'PY'+'THON_EXE'),$python,'Process')
-. (Join-Path $repoRoot 'common/contracts/run_artifact_workflow.ps1')
+. (Join-Path $repoRoot 'src/msplatform/workflows/resources/run_artifact_workflow.ps1')
 $t=$null;$e=$null;$ast=[Management.Automation.Language.Parser]::ParseFile(ENTRY,[ref]$t,[ref]$e)
 $assignment=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$runConfig'-and$n.Right.Extent.Text.Contains("role='rf_quadrupole_comsol_run_config'")},$true)
 $body=[IO.File]::ReadAllText(ENTRY)

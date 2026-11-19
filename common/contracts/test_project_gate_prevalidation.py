@@ -32,7 +32,9 @@ class ProjectGatePrevalidationTests(unittest.TestCase):
         self.log = self.root / "calls.jsonl"
         common = self.root / "common"
         common.mkdir()
-        shutil.copyfile(REPO / "common/require_powershell7.ps1", common / "require_powershell7.ps1")
+        preflight = self.root / "src/msplatform/execution/resources/require_powershell7.ps1"
+        preflight.parent.mkdir(parents=True)
+        shutil.copyfile(REPO / "src/msplatform/execution/resources/require_powershell7.ps1", preflight)
         # Admission is outside this fixture's responsibility. Actual project
         # dispatch, Python exits and PowerShell parsing remain real processes.
         (common / "host_execution_lease.ps1").write_text(
@@ -92,7 +94,7 @@ class ProjectGatePrevalidationTests(unittest.TestCase):
                      ProgramFiles=str(self.root / "no_vendor"), PYTHONPATH=str(self.root),
                      TEMP=str(lua_temporary) if lua_temporary else os.environ.get("TEMP", ""),
                      PATH=(str(lua_directory) + os.pathsep + os.environ.get("PATH", "")) if lua_directory else os.environ.get("PATH", "")),
-            capture_output=True, text=True, encoding="utf-8", timeout=30)
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
 
     def calls(self):
         return [json.loads(line) for line in self.log.read_text().splitlines()] if self.log.exists() else []

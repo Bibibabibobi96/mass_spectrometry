@@ -323,7 +323,7 @@ class SplitParticleStateComparisonTests(unittest.TestCase):
         script = f"""
 $ErrorActionPreference='Stop'
 $repoRoot={literal(REPO_ROOT)};$selectedRoot={literal(selected)};$python={literal(sys.executable)}
-. (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $selectedRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
 . (Join-Path $repoRoot 'projects/rf_multipole_ion_optics/runtime/cross_solver_analysis_lifecycle.ps1')
 $t=$null;$e=$null
@@ -403,7 +403,7 @@ exit 0
         script = f"""
 $ErrorActionPreference='Stop'
 $repoRoot={literal(REPO_ROOT)};$python={literal(sys.executable)};$root={literal(self.root)}
-. (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
 . (Join-Path $repoRoot 'projects/rf_multipole_ion_optics/runtime/cross_solver_analysis_lifecycle.ps1')
 $package=New-FrozenPythonPackage -Python $python -SourceRoot {literal(source)} -CodeRoot (Join-Path $root 'frozen') `

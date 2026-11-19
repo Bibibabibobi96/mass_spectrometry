@@ -15,7 +15,7 @@ from matplotlib import pyplot as plt
 from msplatform.workflows.ion_processor.preparation import derive_numerical_boundaries
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 
-from projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_phase_space_comparison import (
+from msplatform.workflows.ion_processor.extraction_phase_space_comparison import (
     analyze_registered_study, export_comparison, build_comparison_figures, build_spatial_figures, factorial_effects, prepare_statistics, prepare_velocity_changes, validate_controlled_cases, prepare_spatial_crossings, prepare_spatial_crossings_from_samples,
 )
 
@@ -86,7 +86,7 @@ class ExtractionPhaseSpaceComparisonTests(unittest.TestCase):
                         inputs=dict(study_contract=str(run/"study.json")),parameters=dict(planned_runs=source_map))
             (run/"study.json").write_text(json.dumps(study))
             (run/"run_config.json").write_text(json.dumps(config))
-            with patch("projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_phase_space_comparison.export_comparison",return_value={"role":"fixture"}) as export:
+            with patch("msplatform.workflows.ion_processor.extraction_phase_space_comparison.export_comparison",return_value={"role":"fixture"}) as export:
                 result=analyze_registered_study(run)
                 self.assertEqual(result["status"],"success")
                 self.assertEqual(set(export.call_args.args[0].values()),{Path(p) for p in source_map.values()})
@@ -105,15 +105,15 @@ class ExtractionPhaseSpaceComparisonTests(unittest.TestCase):
         study=dict(schema_version=1,role="ion_processor_extraction_control_study",analysis={},
                    cells=[dict(run_id="fixture",lp_length_mm=61.5,lift_v=4000)])
         with tempfile.TemporaryDirectory() as temporary, patch(
-                "projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_phase_space_comparison.load_recorded_case",return_value=case):
+                "msplatform.workflows.ion_processor.extraction_phase_space_comparison.load_recorded_case",return_value=case):
             with self.assertRaisesRegex(ValueError,"registered cell"):
                 export_comparison({"test":Path("fixture")},Path(temporary)/"results",study)
 
     def test_existing_functional_cli_routes_registered_analysis(self):
-        from projects.dual_pressure_rectilinear_ion_processor.analysis import functional
+        from msplatform.workflows.ion_processor import functional
         result=dict(status="success",source_counts={},extracted_counts={})
         with patch("sys.argv",["functional","compare-extraction-study","--run","fixture"]), patch(
-                "projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_phase_space_comparison.analyze_registered_study",return_value=result) as analyze, patch("builtins.print"):
+                "msplatform.workflows.ion_processor.extraction_phase_space_comparison.analyze_registered_study",return_value=result) as analyze, patch("builtins.print"):
             functional.main()
             analyze.assert_called_once_with(Path("fixture"))
 
@@ -298,10 +298,10 @@ class SpatialCrossingSamplesTests(unittest.TestCase):
     def test_pure_module_import_does_not_load_workflow_or_plotting(self):
         code = (
             "import sys; "
-            "from projects.dual_pressure_rectilinear_ion_processor.analysis.spatial_crossings "
+            "from msplatform.workflows.ion_processor.spatial_crossings "
             "import prepare_spatial_crossings_from_samples; "
             "assert callable(prepare_spatial_crossings_from_samples); "
-            "assert 'projects.dual_pressure_rectilinear_ion_processor.analysis.functional' not in sys.modules; "
+            "assert 'msplatform.workflows.ion_processor.functional' not in sys.modules; "
             "assert 'matplotlib.pyplot' not in sys.modules"
         )
         subprocess.run([sys.executable, "-c", code], cwd=Path(__file__).resolve().parents[3],
@@ -513,7 +513,7 @@ class SpatialCrossingSamplesTests(unittest.TestCase):
         self.assertEqual(zero["method"], "recorded_extraction_exit_event")
 
     def test_epoch_is_added_once_only_in_core_view_and_raw_interpolation_is_preserved(self):
-        from projects.dual_pressure_rectilinear_ion_processor.analysis import spatial_crossings as adapter
+        from msplatform.workflows.ion_processor import spatial_crossings as adapter
         case = case_fixture()
         case["config"]["baseline"]["clock"]["epoch_us"] = 1024.
         rows = [(2, sample(1, 10., 4., vx_mm_us=.49472944992699563)),

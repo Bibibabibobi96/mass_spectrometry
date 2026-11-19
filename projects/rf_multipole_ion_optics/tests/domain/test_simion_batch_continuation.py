@@ -83,7 +83,7 @@ exit 0
             script.write_text(r'''param($Repo,$Root,$Python)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'src/msplatform/workflows/resources/run_simion_finite_3d_transport.ps1'),[ref]$null,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
 $fixed=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Clauses[0].Item1.Extent.Text-eq'$continuationPredecessor-and$pendingRuns.Count-gt0'},$true)
@@ -173,9 +173,9 @@ if(-not$caught){throw 'Actual selector error was swallowed'}
                     parent / "run_config.json", "checkpoint", retention_api=_manifest_retention_api)), encoding="utf-8")
                 script = r"""
 $ErrorActionPreference='Stop'
-. (Join-Path $PWD 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $PWD 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $PWD 'src/msplatform/backends/simion/resources/simion_execution.ps1')
-. (Join-Path $PWD 'common/contracts/run_artifact_workflow.ps1')
+. (Join-Path $PWD 'src/msplatform/workflows/resources/run_artifact_workflow.ps1')
 function Remove-RunPackageExecutionAlias {}
 function Invoke-ArtifactCapacityGate {return @{satisfied=$true;fixture_admission=$true}}
 function Invoke-ResourceBudgetedProcess {throw 'NATIVE_MUST_NOT_START'}
@@ -293,7 +293,7 @@ exit 0
                     repo = Path(__file__).resolve().parents[4]
                     script = r"""
 $ErrorActionPreference='Stop'
-. (Join-Path $PWD 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $PWD 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $PWD 'src/msplatform/backends/simion/resources/simion_execution.ps1')
 function Enter-ArtifactWorkflowCapacitySession {param($ProtectedPaths) if(@($ProtectedPaths).Count-ne1){throw 'Missing source protection'};@{lease_id='fixture'}}
 function Exit-ArtifactWorkflowCapacitySession {}

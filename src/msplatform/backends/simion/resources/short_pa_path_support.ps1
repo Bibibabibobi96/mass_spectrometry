@@ -1,25 +1,22 @@
-# Legacy repository context only; byte copying and OS guards have one installed owner.
+# Byte copying and OS guards have one installed owner.
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-$script:LegacyPaIdentityRepoRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
+$script:PaIdentityPackageRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..\..'))
 function Invoke-LegacyPaUnbufferedIdentity {
   param([string]$Source,[int64]$Length)
-  $identityRepoRoot=$script:LegacyPaIdentityRepoRoot
-  # Select only when a large identity is actually requested, preserving old callers.
-  $identityPython=if($env:SIMULATION_PYTHON_EXE){$env:SIMULATION_PYTHON_EXE}else{
-    Join-Path $identityRepoRoot '.venv\Scripts\python.exe'
-  }
-  if(-not(Test-Path -LiteralPath $identityPython -PathType Leaf)){throw "Repository Python is unavailable: $identityPython"}
-  $identityModule=Join-Path $identityRepoRoot 'src/msplatform/io/file_identity.py'
+  if(-not$env:SIMULATION_PYTHON_EXE){throw 'PA identity verification requires an explicit Python executable.'}
+  $identityPython=[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)
+  if(-not(Test-Path -LiteralPath $identityPython -PathType Leaf)){throw "Selected Python is unavailable: $identityPython"}
+  $identityModule=Join-Path $script:PaIdentityPackageRoot 'msplatform/io/file_identity.py'
   if(-not(Test-Path -LiteralPath $identityModule -PathType Leaf)){throw "Frozen file identity module is unavailable: $identityModule"}
-  Push-Location -LiteralPath $identityRepoRoot
+  Push-Location -LiteralPath $script:PaIdentityPackageRoot
   try{
     $digest=@(& $identityPython -I -S -B -X utf8 $identityModule --unbuffered $Source)
     if($LASTEXITCODE-ne0){throw 'Unbuffered immutable PA source verification failed.'}
     return $digest
   }finally{Pop-Location}
 }
-$payloadResource=Join-Path $script:LegacyPaIdentityRepoRoot 'src/msplatform/execution/resources/payload_file_support.ps1'
+$payloadResource=Join-Path $script:PaIdentityPackageRoot 'msplatform/execution/resources/payload_file_support.ps1'
 if(-not(Test-Path -LiteralPath $payloadResource -PathType Leaf)){throw 'Frozen payload byte resource is unavailable.'}
 . $payloadResource -UnbufferedIdentityReader {
   param($Source,$Length)

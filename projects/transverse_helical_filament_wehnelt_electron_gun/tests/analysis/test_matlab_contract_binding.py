@@ -608,7 +608,7 @@ foreach($relative in $commonFrozenFiles.Values){
   $package=@{python=$env:DEPENDENCY_TEST_PYTHON}
   $frozenInputs=@{}
   $env:SIMULATION_PYTHON_EXE=$package.python
-  . (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
+  . (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 ''' + selector + r'''
 $destinations=@($commonFrozenFiles.Values)+@($coreSelection|ConvertFrom-Json)
 $resolved=@($destinations|ForEach-Object{[IO.Path]::GetFullPath((Join-Path $snapshotRoot $_))})
@@ -649,13 +649,13 @@ Write-Output 'FROZEN_BUDGET_OBSERVATION=PASS'
         )
         common_relatives = (
             "pyproject.toml",
-            "common/require_powershell7.ps1",
+            "src/msplatform/execution/resources/require_powershell7.ps1",
             "common/verify.ps1",
             "common/gate_catalog.json",
             "common/host_execution_lease.ps1",
             "common/host_resource_scheduler.py",
             "common/resource_budget_support.ps1",
-            "common/contracts/run_artifact_support.ps1",
+            "src/msplatform/execution/resources/run_artifact_support.ps1",
             "src/msplatform/execution/manifest_publication.py",
             "common/contracts/capacity_protection.py",
             "src/msplatform/execution/manifest_verification.py",
@@ -716,7 +716,7 @@ function Get-HostResourceSnapshot {
             )
             freeze_script = (
                 "$ErrorActionPreference='Stop';Set-StrictMode -Version Latest;"
-                f". '{REPO_ROOT / 'common/contracts/run_artifact_support.ps1'}';"
+                f". '{REPO_ROOT / 'src/msplatform/execution/resources/run_artifact_support.ps1'}';"
                 f"$repoRoot='{REPO_ROOT}';$snapshotRoot='{snapshot}';"
                 f"$package=@{{python='{sys.executable}'}};$frozenInputs=@{{}};"
                 + self.build_runner[selection_start:selection_end]
@@ -775,7 +775,7 @@ function Get-HostResourceSnapshot {
                 encoding="utf-8",
             )
             transition_script = (
-                f". '{snapshot / 'common/contracts/run_artifact_support.ps1'}';"
+                f". '{snapshot / 'src/msplatform/execution/resources/run_artifact_support.ps1'}';"
                 f"Write-VerifiedRunManifest -Python '{sys.executable}' "
                 f"-RepoRoot '{snapshot}' -RunConfig '{run_config}' "
                 f"-Manifest '{manifest}' -Status interrupted -Outputs @('{summary}')"
@@ -812,7 +812,7 @@ function Get-HostResourceSnapshot {
             admission = (
                 "$ErrorActionPreference='Stop';Set-StrictMode -Version Latest;"
                 f"$snapshotRoot='{snapshot}';$package=@{{python='{sys.executable}'}};"
-                f". '{snapshot / 'common/contracts/run_artifact_support.ps1'}';"
+                f". '{snapshot / 'src/msplatform/execution/resources/run_artifact_support.ps1'}';"
                 f"$frozenInputs=@{{baseline='{frozen_project / 'config/baseline.json'}';"
                 f"numerical_modes='{frozen_project / 'config/numerical_modes.json'}';"
                 f"resolved_contract='{frozen_project / 'config/resolved_model.json'}'}};"

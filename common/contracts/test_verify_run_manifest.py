@@ -31,11 +31,11 @@ class ManifestOutputListTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_same_producer_publication_checks_metadata_without_second_payload_reader(self):
         callers = (
-            ("parallel_mirror_dual_stripe_mr_tof/simion/run_native_static_field_provider.ps1",
+            ("projects/parallel_mirror_dual_stripe_mr_tof/simion/run_native_static_field_provider.ps1",
              "Write-RunManifest", "if($null-ne$capacity)", "parallel_mirror_dual_stripe_mr_tof", "native_fixture", ("success", "failed", "interrupted"), ()),
-            ("dual_pressure_rectilinear_ion_processor/simion/prepare_gui_replay.ps1",
+            ("src/msplatform/backends/simion/resources/ip_prepare_gui_replay.ps1",
              "Write-RunManifest", "", "dual_pressure_rectilinear_ion_processor", "gui_fixture", ("checkpoint", "failed"), ("project",)),
-            ("single_reflection_oa_tof_mass_analyzer/workflows/cross_solver_diagnostics/run_cross_solver_diagnostics.ps1",
+            ("projects/single_reflection_oa_tof_mass_analyzer/workflows/cross_solver_diagnostics/run_cross_solver_diagnostics.ps1",
              "& $python @manifestArgs", "$runRecordComplete", "single_reflection_oa_tof_mass_analyzer", "formal_cross_solver_diagnostics", ("success",), ("project", "mode")),
         )
         with tempfile.TemporaryDirectory(prefix="producer_manifest_boundary_") as directory:
@@ -44,7 +44,7 @@ class ManifestOutputListTests(unittest.TestCase):
             script.write_text(r'''param($RepoRoot,$RealPython,$Root,$CasePath)
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-. (Join-Path $RepoRoot 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $RepoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $case=Get-Content -LiteralPath $CasePath -Raw|ConvertFrom-Json
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($case.runner,[ref]$tokens,[ref]$errors)
@@ -108,7 +108,7 @@ ConvertTo-Json -InputObject @($results) -Depth 8 -Compress
                                 attempts.append(dict(status=statuses[0], document=document, field=field, value=value))
                     case_path = root / "case.json"
                     case_path.write_text(json.dumps(dict(
-                        runner=str(REPO_ROOT / "projects" / relative), start=start, end=end,
+                        runner=str(REPO_ROOT / relative), start=start, end=end,
                         project=project, mode=mode, attempts=attempts,
                     )), encoding="utf-8")
                     result = subprocess.run(
@@ -162,7 +162,7 @@ ConvertTo-Json -InputObject @($results) -Depth 8 -Compress
             script = root / "json_shapes.ps1"
             script.write_text('''param($Repo,$Output)
 $ErrorActionPreference='Stop'
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 Write-RunJson -Value @() -Path (Join-Path $Output 'empty.json')
 Write-RunJson -Value @('single') -Path (Join-Path $Output 'single.json')
 Write-RunJson -Value @('first','second') -Path (Join-Path $Output 'multiple.json')
@@ -299,7 +299,7 @@ Write-RunJson -Value @{logs=@('single');count=1} -Path (Join-Path $Output 'objec
             script = root / "fixture.ps1"
             script.write_text('''param($Repo,$Python,$Config,$List)
 $ErrorActionPreference='Stop'
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $outputs=@(Get-Content -LiteralPath $List -Raw -Encoding UTF8|ConvertFrom-Json)
 Write-VerifiedRunManifest -Python $Python -RepoRoot $Repo -RunConfig $Config -Status success -Outputs $outputs
 ''', encoding="utf-8")

@@ -124,7 +124,7 @@ function Exit-HostExecutionLease {param($Lease)}
 function Update-HostResourceStage {param($Lease,$Stage,$Budget,$RetainedMemoryBytes) return $Lease}
 function Get-HostResourceBudget {param($Role,$Stage) return @{}}
 ''')
-        write(repo/'common/contracts/run_artifact_support.ps1', r'''
+        write(repo/'src/msplatform/execution/resources/run_artifact_support.ps1', r'''
 . (Join-Path $PSScriptRoot '../host_execution_lease.ps1')
 $publicAst=[Management.Automation.Language.Parser]::ParseFile($env:DIAGNOSTIC_PUBLIC_SUPPORT,[ref]$null,[ref]$null)
 foreach($name in @('Save-RunEnvironment','Restore-RunEnvironment','Write-RunJson')){
@@ -174,7 +174,7 @@ return [pscustomobject]@{Distribution=$Distribution;Mode=$Mode;Hit=0;EfficiencyP
     def environment(self, root: Path, trace: Path):
         return dict(os.environ, PYTHONPATH=os.pathsep.join((str(ROOT/"src"), str(ROOT))), DIAGNOSTIC_TRACE=str(trace),
                     SIMULATION_PYTHON_EXE=sys.executable,
-                    DIAGNOSTIC_PUBLIC_SUPPORT=str(ROOT/'common/contracts/run_artifact_support.ps1'),
+                    DIAGNOSTIC_PUBLIC_SUPPORT=str(ROOT/'src/msplatform/execution/resources/run_artifact_support.ps1'),
                     MASS_SPECTROMETRY_ARTIFACT_ROOT=str(root/'artifacts'),
                     MASS_SPECTROMETRY_EXECUTION_ROOT=str(root/'configured-execution'),
                     MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(root/'configured-host.sqlite3'))

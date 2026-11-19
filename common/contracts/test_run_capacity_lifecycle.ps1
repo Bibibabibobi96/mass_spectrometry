@@ -11,7 +11,7 @@ $savedPython=$env:SIMULATION_PYTHON_EXE
 try{
   $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=Join-Path $temporary 'host.sqlite3'
   $env:SIMULATION_PYTHON_EXE=$python
-  . (Join-Path $PSScriptRoot 'run_artifact_support.ps1')
+  . (Join-Path $PSScriptRoot '../../src/msplatform/execution/resources/run_artifact_support.ps1')
   $artifactRoot=Join-Path $temporary 'artifacts'
   $projectRoot=Join-Path $artifactRoot 'projects\fixture'
   New-Item -ItemType Directory -Force -Path $projectRoot,(Join-Path $artifactRoot 'common')|Out-Null

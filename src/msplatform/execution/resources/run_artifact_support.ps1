@@ -1,8 +1,11 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-. (Join-Path (Split-Path -Parent $PSScriptRoot) 'require_powershell7.ps1')
-. (Join-Path (Split-Path -Parent $PSScriptRoot) 'host_execution_lease.ps1')
-. (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'src/msplatform/execution/resources/run_paths.ps1')
+. (Join-Path $PSScriptRoot 'require_powershell7.ps1')
+if(-not(Get-Command Invoke-HostResourceTransaction -ErrorAction SilentlyContinue) -and ((Get-Variable -Name HostResourceExecutionContext -Scope Script -ErrorAction SilentlyContinue)-or$env:MASS_SPECTROMETRY_HOST_CONTEXT_JSON)){
+  $hostContext=if(Get-Variable -Name HostResourceExecutionContext -Scope Script -ErrorAction SilentlyContinue){$script:HostResourceExecutionContext}else{$env:MASS_SPECTROMETRY_HOST_CONTEXT_JSON|ConvertFrom-Json -AsHashtable}
+  . (Join-Path $PSScriptRoot 'host_execution_lease.ps1') -HostContext $hostContext
+}
+. (Join-Path $PSScriptRoot 'run_paths.ps1')
 
 if(-not('RunTerminalSharedReadGuard'-as[type])){
   Add-Type -TypeDefinition @'
@@ -598,7 +601,7 @@ function Enter-ArtifactWorkflowCapacitySession {
   if($CommittedNewBytes-lt0-or$LeaseTtlSeconds-le0){throw 'Workflow capacity session requires nonnegative bytes and a positive TTL.'}
   if([string]::IsNullOrWhiteSpace($Owner)){$Owner="run-artifact-support:$([IO.Path]::GetFileName($RunDirectory))"}
   if(-not(Get-Command Resolve-WorkspacePaths -ErrorAction SilentlyContinue)){
-    . (Join-Path $PSScriptRoot '../paths/workspace_paths.ps1')
+    . (Join-Path $PSScriptRoot 'workspace_paths.ps1')
   }
   $ArtifactRoot=(Resolve-WorkspacePaths -SourceRoot $RepoRoot -ArtifactRoot $ArtifactRoot -Python $Python).artifact_root
   $session=Invoke-CanonicalCapacitySession -Python $Python -RepoRoot $RepoRoot -Request @{
@@ -837,10 +840,7 @@ function New-RunExecutionAlias {
     $ExecutionRoot=if($env:MASS_SPECTROMETRY_EXECUTION_ROOT){
       $env:MASS_SPECTROMETRY_EXECUTION_ROOT
     }else{
-      # Desktop children can be denied C:\tmp.  The shared artifact root is
-      # writable to every project workflow and keeps aliases in one audited
-      # disposable location rather than falling back to a long path.
-      Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))) 'artifacts\common\execution_aliases'
+      throw 'Native execution alias requires an explicit execution root.'
     }
   }
   $PSBoundParameters['ExecutionRoot']=$ExecutionRoot
@@ -1027,7 +1027,7 @@ function New-RunPackage {
   if(-not$CapacityLedgerLifecycleEnabled-and-not[string]::IsNullOrWhiteSpace($CapacityLedgerArtifactRoot)){
     throw 'CapacityLedgerArtifactRoot requires CapacityLedgerLifecycleEnabled.'
   }
-  . (Join-Path (Split-Path -Parent $PSScriptRoot) 'paths/workspace_paths.ps1')
+  . (Join-Path $PSScriptRoot 'workspace_paths.ps1')
   $projectDirectory=[IO.DirectoryInfo][IO.Path]::GetFullPath($ArtifactRoot)
   $structuredProject=$null-ne$projectDirectory.Parent-and$projectDirectory.Parent.Name-eq'projects'
   if($CapacityLedgerLifecycleEnabled-and-not$structuredProject){

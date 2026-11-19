@@ -15,7 +15,7 @@ RUNNER = Path(__file__).resolve().parents[2] / "analysis" / "run_native_candidat
 
 
 def _public_import_roots_function() -> str:
-    source = (REPO_ROOT / "common/contracts/run_artifact_support.ps1").read_text(encoding="utf-8-sig")
+    source = (REPO_ROOT / "src/msplatform/execution/resources/run_artifact_support.ps1").read_text(encoding="utf-8-sig")
     start = source.index("function Get-RunPythonImportRoots {")
     return source[start:source.index("\nfunction ", start + 1)] + "\n"
 
@@ -1758,7 +1758,7 @@ class ExplicitFrozenPythonTransportTests(unittest.TestCase):
     def test_actual_dispatch_helpers_use_selected_src_and_reject_missing_owner_with_foreign_host(self):
         import os
 
-        transport = (REPO_ROOT / "common/contracts/run_artifact_support.ps1").read_text(encoding="utf-8-sig")
+        transport = (REPO_ROOT / "src/msplatform/execution/resources/run_artifact_support.ps1").read_text(encoding="utf-8-sig")
         start = transport.index("function Get-RunPythonImportRoots {")
         import_roots = transport[start:transport.index("\nfunction ", start + 1)]
         for name in ("run_native_candidate_chain.ps1", "run_native_corridor_bunch_screening.ps1"):

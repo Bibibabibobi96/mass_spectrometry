@@ -10,7 +10,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
-. (Join-Path $repoRoot 'common/require_powershell7.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/require_powershell7.ps1')
 . (Join-Path $repoRoot 'common/host_execution_lease.ps1')
 $lease = Enter-HostExecutionLease -Role GATE
 try {

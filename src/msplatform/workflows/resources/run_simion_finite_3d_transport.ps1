@@ -210,7 +210,7 @@ if(-not(Test-Path -LiteralPath $simion -PathType Leaf)){
 $hostRuntimeSourcePaths=@(
   'config/project_registry.json',
   'common/host_execution_lease.ps1','common/host_resource_scheduler.py',
-  'src/msplatform/execution/resources/host_resource_policy.json','common/require_powershell7.ps1','common/resource_budget_support.ps1')
+  'src/msplatform/execution/resources/host_resource_policy.json','src/msplatform/execution/resources/require_powershell7.ps1','common/resource_budget_support.ps1')
 $analysisSourcePaths=@('src/msplatform/analysis/particle_census.py')
 $executionCapacityPaths=Get-RunPackageCopiedSourcePaths -RepoRoot $repoRoot `
   -SourceRelativeDirectories @('src/msplatform','common/contracts','common/paths','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/variants') `
@@ -335,7 +335,7 @@ try{
   $ownerRecord=Get-Item -LiteralPath $ownerSource
   $ownerInventory=@($inventory|Where-Object{$_.path-ceq'src/msplatform/workflows/resources/run_simion_finite_3d_transport.ps1'})
   if($ownerInventory.Count-ne1-or$ownerInventory[0].sha256-ine$entryScriptHash){throw 'Frozen PowerShell owner differs from the launched source.'}
-  . (Join-Path $codeRoot 'common/contracts/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization
+  . (Join-Path $codeRoot 'src/msplatform/workflows/resources/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization
   $ownerContext=Initialize-RunArtifactPowerShellOwner -Python $python -RepoRoot $repoRoot -Package $package `
     -CapacitySession $continuationCapacity -ResultPath $ResultPath -EntrypointPath $ownerSource `
     -EntrypointRecord @{path=$ownerSource;exists=$true;bytes=[long]$ownerRecord.Length;sha256=$entryScriptHash} `
@@ -635,7 +635,7 @@ try{
         rf_steps_per_period=$(if([string]$automaticDispatch.field_kind-eq'rf'){$RfStepsPerPeriod}else{$null})}
       $dispatchRequestDocument|ConvertTo-Json -Depth 5|Set-Content -LiteralPath $dispatchRequest -Encoding UTF8
       $projectRunsRoot=Join-Path $workspaceRoot "artifacts\projects\$ProjectId\runs"
-      & $python -m common.simion.resource_profile discover --runs-root $projectRunsRoot --output $resourceProfiles
+      & $python -m msplatform.execution.resource_profile discover --runs-root $projectRunsRoot --output $resourceProfiles
       if($LASTEXITCODE-ne 0){throw 'SIMION resource profile discovery failed.'}
       & $python -m msplatform.execution.simion_dispatch --request $dispatchRequest `
         --profiles $resourceProfiles --output $dispatchPlan

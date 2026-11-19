@@ -34,7 +34,7 @@ class ComsolOwnerFinalizationTests(unittest.TestCase):
             root = Path(directory)
             ps = r"""
 $ErrorActionPreference='Stop'
-. '@@REPO@@/common/contracts/run_artifact_workflow.ps1'
+. '@@REPO@@/src/msplatform/workflows/resources/run_artifact_workflow.ps1'
 $ast=[Management.Automation.Language.Parser]::ParseFile('@@CLI@@',[ref]$null,[ref]$null)
 $ast.FindAll({param($node) $node-is[Management.Automation.Language.FunctionDefinitionAst]},$true)|ForEach-Object{Invoke-Expression $_.Extent.Text}
 $outer=@($ast.EndBlock.Statements|Where-Object{
@@ -265,7 +265,7 @@ function Invoke-ResourceBudgetedProcess {
         return run, entry, budget
 
     def setup_ps(self, run, entry, budget, result):
-        return f""". '{REPO / "common/contracts/run_artifact_workflow.ps1"}'
+        return f""". '{REPO / "src/msplatform/workflows/resources/run_artifact_workflow.ps1"}'
 $ast=[Management.Automation.Language.Parser]::ParseFile('{CLI}',[ref]$null,[ref]$null)
 $ast.FindAll({{param($node) $node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-in@('Close-FiniteComsolStage','Get-FiniteComsolWriterCompletion','Complete-FiniteComsolOwner')}},$true)|ForEach-Object{{Invoke-Expression $_.Extent.Text}}
 $session=Get-Content -LiteralPath '{run / "logs/capacity_session.json"}' -Raw|ConvertFrom-Json
@@ -401,7 +401,7 @@ try{{$null=Complete-FiniteComsolOwner -Context $context -State $state -RunId '{r
             )
             for relative in (
                 "common/resource_budget_support.ps1",
-                "common/require_powershell7.ps1",
+                "src/msplatform/execution/resources/require_powershell7.ps1",
                 "common/host_execution_lease.ps1",
                 "common/host_resource_scheduler.py",
                 "src/msplatform/execution/resources/host_resource_policy.json",

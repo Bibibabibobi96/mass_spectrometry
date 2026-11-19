@@ -86,7 +86,7 @@ class NativeStaticProviderTest(unittest.TestCase):
 param($python,$repo,$RunDirectory,$planPath)
 $ErrorActionPreference='Stop';$isComposition=$false
 $overlayGuards=[Collections.Generic.List[IDisposable]]::new()
-. (Join-Path $repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $script:calls=0
 function Invoke-RunToolRootContext {param($RepoRoot,$Operation)
  $script:calls++
@@ -1813,7 +1813,7 @@ $data=@{};if($null-ne$caught){foreach($key in $caught.Exception.Data.Keys){$data
 param($repo,$python,$artifacts)
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-. (Join-Path $repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $runner=Join-Path $repo 'projects/parallel_mirror_dual_stripe_mr_tof/simion/run_native_static_field_provider.ps1'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($runner,[ref]$tokens,[ref]$errors)

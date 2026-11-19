@@ -622,7 +622,7 @@ native bank 的 `-TransactionCacheKey` 只恢复／复用指定事务；已发�
 公共 owner 负责单写者、库存、封存及退休；身份不符保留证据并停止，不静默重建。
 运行中断保留受管 checkpoint，恢复复用仍有效的 payload 身份和容量记录。
 
-长 PA 输入复用[公共短路径支持](../../../common/simion/short_pa_path_support.ps1)；
+长 PA 输入复用[公共短路径支持](../../../src/msplatform/backends/simion/resources/short_pa_path_support.ps1)；
 先查[已关闭的长路径结论](../../../docs/tools/SIMION_REFERENCE.md#长pa输入路径)，
 不要另建项目私有实现。只读、Junction、硬链接或复制本身不保证 native family 写隔离。
 published PA 不是 runtime 写目标；私有 family、standalone PA 的具体装配与封存由公共机制负责。

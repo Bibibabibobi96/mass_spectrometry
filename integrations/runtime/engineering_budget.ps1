@@ -1,7 +1,7 @@
 # Shared integration engineering-budget admission; no solver or run creation.
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot '../../common/contracts/run_artifact_support.ps1')
+. (Join-Path $PSScriptRoot '../../src/msplatform/execution/resources/run_artifact_support.ps1')
 
 function Get-IntegrationStageBudget {
   [CmdletBinding(DefaultParameterSetName='Connection')]

@@ -6,8 +6,8 @@ $ErrorActionPreference='Stop'
 [Console]::InputEncoding=[Text.UTF8Encoding]::new($false)
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 $OutputEncoding=[Console]::OutputEncoding
-. (Join-Path $PSScriptRoot 'run_artifact_support.ps1')
-. (Join-Path (Split-Path -Parent $PSScriptRoot) 'resource_budget_support.ps1')
+. (Join-Path $PSScriptRoot '../../execution/resources/run_artifact_support.ps1')
+. (Join-Path $PSScriptRoot '../../execution/resources/resource_process_support.ps1')
 
 function Assert-WorkflowFields {
   param($Value,[string[]]$Fields,[string]$Label)
@@ -564,7 +564,7 @@ function Invoke-RunArtifactWorkflow {
     # This is control-plane context, not a scientific input or a new reservation.
     $projectRoot=[IO.Path]::GetFullPath($request.package.artifact_project_root)
     $artifactRoot=Split-Path -Parent (Split-Path -Parent $projectRoot)
-    . (Join-Path $PSScriptRoot '../paths/workspace_paths.ps1')
+    . (Join-Path $PSScriptRoot '../../execution/resources/workspace_paths.ps1')
     $runRoot=Join-Path (Join-Path $projectRoot 'runs') $request.package.run_id
     $null=Get-RunPackagePathCapacity -RunDirectory $runRoot -ExpectedExecutionRelativePaths $expectedExecutionRelativePaths
     $recoveryConfig=$null
@@ -913,7 +913,7 @@ function Invoke-RunArtifactWorkflow {
       }
       if($null-ne$completion.resource_profile){
         Push-Location $repo
-        try{& $python -m common.simion.resource_profile publish --run-id $completion.run_id `
+        try{& $python -m msplatform.execution.resource_profile publish --run-id $completion.run_id `
           --resource-usage $completion.resource_profile.usage_path --dispatch-plan $completion.resource_profile.dispatch_plan `
           --output $completion.resource_profile.output | Out-Null
           if($LASTEXITCODE-ne0){throw 'PowerShell resource profile publication failed.'}}

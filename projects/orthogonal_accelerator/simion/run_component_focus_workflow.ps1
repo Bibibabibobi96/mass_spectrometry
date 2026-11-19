@@ -8,7 +8,7 @@ param(
 )
 Set-StrictMode -Version Latest;$ErrorActionPreference='Stop'
 $projectRoot=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path;$repoRoot=(Resolve-Path (Join-Path $projectRoot '..\..')).Path;$workspaceRoot=(Resolve-Path (Join-Path $repoRoot '..')).Path
-. (Join-Path $repoRoot 'common\require_powershell7.ps1');. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1');. (Join-Path $repoRoot 'common\host_execution_lease.ps1');. (Join-Path $repoRoot 'common\simion\native_fast_adjust_runtime_support.ps1')
+. (Join-Path $repoRoot 'src\msplatform\execution\resources\require_powershell7.ps1');. (Join-Path $repoRoot 'src\msplatform\execution\resources\run_artifact_support.ps1');. (Join-Path $repoRoot 'common\host_execution_lease.ps1');. (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\native_fast_adjust_runtime_support.ps1')
 $python=Join-Path $repoRoot '.venv\Scripts\python.exe';if(-not$SimionExe){$SimionExe=Join-Path $env:ProgramFiles 'SIMION-2020\simion.exe'}
 foreach($item in @($python,$SimionExe,$RequestPath,$ReleaseSpecPath)){if(-not(Test-Path -LiteralPath $item -PathType Leaf)){throw "Required workflow input is missing: $item"}}
 $artifactRoot=Join-Path $workspaceRoot 'artifacts';$package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot (Join-Path $artifactRoot 'projects\orthogonal_accelerator') -RunId $RunId -Project orthogonal_accelerator -Mode component_focus_workflow -Software @('SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass solver_review -RetentionReason 'Provider-owned two-zone component workflow: one cache-probed PA family and one N=100 flight from one frozen caller release.' -AdditionalDirectories @('simion') -UseShortExecutionPath -CapacityLedgerLifecycleEnabled

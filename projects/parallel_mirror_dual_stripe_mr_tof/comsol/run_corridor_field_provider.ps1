@@ -10,8 +10,8 @@ $RunDirectory=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromP
 if($RequestPath){$RequestPath=(Resolve-Path -LiteralPath $RequestPath).Path}
 $preparedConfig=Join-Path $RunDirectory 'run_config.json'
 $repo = if($Child){[string](Get-Content (Join-Path $PSScriptRoot 'plan.json') -Raw | ConvertFrom-Json).repo_root}elseif(Test-Path -LiteralPath $preparedConfig){[string](Get-Content (Join-Path $RunDirectory 'inputs/plan.json') -Raw | ConvertFrom-Json).repo_root}else{Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent}
-. (Join-Path $repo 'common/require_powershell7.ps1')
-. (Join-Path $repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $repo 'src/msplatform/execution/resources/require_powershell7.ps1')
+. (Join-Path $repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $python=Join-Path $repo '.venv/Scripts/python.exe'
 if($Child){
     $plan=Get-Content (Join-Path $PSScriptRoot 'plan.json') -Raw | ConvertFrom-Json

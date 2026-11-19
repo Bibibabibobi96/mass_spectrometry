@@ -107,7 +107,7 @@ class TerminalPublicationLockTests(unittest.TestCase):
             wrapper = root / "writer.ps1"
             wrapper.write_text("""param($Repo,$Python,$Config)
 $ErrorActionPreference='Stop'
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 Write-VerifiedRunManifest -Python $Python -RepoRoot $Repo -RunConfig $Config -Status success
 """, encoding="utf-8")
             standard_command = [shutil.which("pwsh"), "-NoProfile", "-NonInteractive", "-File", str(wrapper),
@@ -132,7 +132,7 @@ Write-VerifiedRunManifest -Python $Python -RepoRoot $Repo -RunConfig $Config -St
             reader = root / "reader.ps1"
             reader.write_text("""param($Repo,$Run,$Ready,$Release)
 $ErrorActionPreference='Stop'
-. (Join-Path $Repo 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $guard=Enter-RunTerminalConsumptionGuard -RunDirectory $Run
 try {
  [IO.File]::WriteAllText($Ready,'shared reader acquired')

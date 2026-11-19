@@ -152,7 +152,7 @@ class NativeCorridorPlanTest(unittest.TestCase):
         self.assertNotIn('local accelerator_instance = local_refinement.enabled and 7 or 2', source)
 
     def test_corridor_controller_and_verifier_require_exact_full_inventory(self) -> None:
-        creator = (PROJECT.parents[1] / 'common' / 'simion' / 'assemble_native_fast_adjust_family.lua').read_text(encoding='utf-8-sig')
+        creator = (PROJECT.parents[1] / 'src/msplatform/backends/simion/resources/assemble_native_fast_adjust_family.lua').read_text(encoding='utf-8-sig')
         self.assertIn("assert(not seen[identifier], 'controller adjustable inventory contains duplicates')", creator)
         self.assertIn("assert(seen[identifier], 'controller is missing adjustable electrode ' .. identifier)", creator)
         verifier = (PROJECT / 'simion' / 'verify_native_corridor_family.lua').read_text(encoding='utf-8-sig')

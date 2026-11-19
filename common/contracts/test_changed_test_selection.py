@@ -19,6 +19,15 @@ MR = "projects/parallel_mirror_dual_stripe_mr_tof"
 RF = "projects/rf_multipole_ion_optics"
 
 
+def copy_common_script(common: Path, name: str) -> None:
+    source = REPO_ROOT / ("src/msplatform/execution/resources" if name == "require_powershell7.ps1" else "common") / name
+    shutil.copyfile(source, common / name)
+    if name == "require_powershell7.ps1":
+        target = common.parent / "src/msplatform/execution/resources" / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(REPO_ROOT / "src/msplatform/execution/resources" / name, target)
+
+
 def powershell_literal(value: str | Path) -> str:
     """Quote a literal PowerShell argument without interpolation."""
     return "'" + str(value).replace("'", "''") + "'"
@@ -31,7 +40,7 @@ def write_planned_request(root: Path, request: Path, paths: list[str] | None) ->
                " -PlanOnly -InternalRequestPath " + powershell_literal(request))
     command += " -FullScope" if paths is None else " -ChangedPath @(" + ",".join(map(powershell_literal, paths)) + ")"
     result = subprocess.run(["pwsh", "-NoProfile", "-Command", command], cwd=root,
-                            capture_output=True, text=True, encoding="utf-8", timeout=60)
+                            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
     if result.returncode:
         raise AssertionError(result.stdout + result.stderr)
 
@@ -44,7 +53,7 @@ class ChangedTestSelectionTests(unittest.TestCase):
             common = root / "common"
             common.mkdir()
             for name in ("require_powershell7.ps1", "gate_unittest.py"):
-                shutil.copyfile(REPO_ROOT / "common" / name, common / name)
+                copy_common_script(common, name)
             (common / "host_execution_lease.ps1").write_text(
                 "function Enter-HostExecutionLease { param($Role,$Stage) return @{} }\n"
                 "function Exit-HostExecutionLease { param($Lease) }\n", encoding="utf-8")
@@ -78,7 +87,7 @@ class ChangedTestSelectionTests(unittest.TestCase):
                         result = subprocess.run(
                             ["pwsh", "-NoProfile", "-File", str(project_root / "verify_project.ps1"),
                              "-PythonExe", sys.executable], cwd=root, capture_output=True, text=True,
-                            encoding="utf-8", timeout=60,
+                            encoding="utf-8", errors="replace", timeout=60,
                         )
                         output = result.stdout + result.stderr
                         self.assertEqual(result.returncode != 0, fails, output)
@@ -98,7 +107,7 @@ class ChangedTestSelectionTests(unittest.TestCase):
                 (root / subdir).mkdir(parents=True)
             shutil.copyfile(REPO_ROOT / "integrations/verify_integration.ps1", root / "integrations/verify_integration.ps1")
             for name in ("require_powershell7.ps1", "gate_unittest.py"):
-                shutil.copyfile(REPO_ROOT / "common" / name, root / "common" / name)
+                copy_common_script(root / "common", name)
             (root / "common/host_execution_lease.ps1").write_text(
                 "function Enter-HostExecutionLease { param($Role) return @{} }\n"
                 "function Exit-HostExecutionLease { param($Lease) }\n", encoding="utf-8")
@@ -108,7 +117,7 @@ class ChangedTestSelectionTests(unittest.TestCase):
             result = subprocess.run(
                 ["pwsh", "-NoProfile", "-File", str(root / "integrations/verify_integration.ps1"),
                  "-PythonExe", sys.executable], cwd=root, capture_output=True, text=True,
-                encoding="utf-8", timeout=60,
+                encoding="utf-8", errors="replace", timeout=60,
             )
             output = result.stdout + result.stderr
             self.assertNotEqual(result.returncode, 0, output)
@@ -125,7 +134,7 @@ class ChangedTestSelectionTests(unittest.TestCase):
                 path.mkdir(parents=True)
             for name in ("verify.ps1", "parallel_gate_support.ps1",
                          "gate_catalog_support.ps1", "require_powershell7.ps1", "gate_unittest.py"):
-                shutil.copyfile(REPO_ROOT / "common" / name, common / name)
+                copy_common_script(common, name)
             shutil.copyfile(REPO_ROOT / "integrations/verify_integration.ps1",
                             root / "integrations/verify_integration.ps1")
             catalog = json.loads((REPO_ROOT / "common/gate_catalog.json").read_text(encoding="utf-8"))
@@ -237,7 +246,7 @@ class ChangedTestSelectionTests(unittest.TestCase):
         (root / "projects").mkdir()
         for name in ("verify.ps1", "parallel_gate_support.ps1", "gate_catalog_support.ps1",
                      "require_powershell7.ps1", "gate_unittest.py"):
-            shutil.copyfile(REPO_ROOT / "common" / name, common / name)
+            copy_common_script(common, name)
         (common / "host_execution_lease.ps1").write_text(
             "function Get-HostResourceBudget {param($Role,$Stage) @{}}\n"
             "function Enter-HostResourceStage {param($Role,$Stage,$Budget) @{}}\n"
@@ -2111,7 +2120,7 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
         (root / "integrations").mkdir()
         for name in ("verify.ps1", "parallel_gate_support.ps1", "gate_catalog_support.ps1",
                      "require_powershell7.ps1", "gate_unittest.py"):
-            shutil.copyfile(REPO_ROOT / "common" / name, common / name)
+            copy_common_script(common, name)
         owner = "projects/single_reflection_oa_tof_mass_analyzer"
         project = root / owner
         for directory in ("tests/analysis", "tests/simion", "config", "analysis", "docs"):
@@ -2233,7 +2242,7 @@ $reports|ConvertTo-Json -Depth 100|Set-Content -LiteralPath (Join-Path $Root 'pl
                 command = ["pwsh", "-NoProfile", "-File", str(root / "common/verify.ps1"), "-ChangedPath", leaf,
                            "-PythonExe", sys.executable, "-MaxConcurrency", "2", "-SummaryPath", str(root / (str(failed)+".json"))]
                 outcome = subprocess.run(command, cwd=root, env=environment, capture_output=True,
-                                         text=True, encoding="utf-8", timeout=90)
+                                         text=True, encoding="utf-8", errors="replace", timeout=90)
                 self.assertEqual(outcome.returncode != 0, failed, outcome.stdout + outcome.stderr)
                 self.assertEqual(Path(environment["LEAF_EVENTS"]).read_text().splitlines(), ["preflight"])
                 summary = json.loads((root / (str(failed)+".json")).read_text(encoding="utf-8-sig"))

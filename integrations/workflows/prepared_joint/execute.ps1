@@ -17,15 +17,15 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $repoRoot=(Resolve-Path -LiteralPath $RepoRoot).Path
-. (Join-Path $repoRoot 'common/require_powershell7.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/require_powershell7.ps1')
 $projectId='instrument_assembly'
 $workspaceRoot=Split-Path -Parent $repoRoot
 $script:pythonRoot=$repoRoot
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv/Scripts/python.exe'}
 if(-not(Test-Path -LiteralPath $python -PathType Leaf)){throw "Python executable is missing: $python"}
-. (Join-Path $repoRoot 'common/paths/workspace_paths.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
 $pathContext=Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
-. (Join-Path $repoRoot 'common/contracts/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
+. (Join-Path $repoRoot 'src/msplatform/workflows/resources/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
 if($ResumeFinalization){
   if(-not$RunId){throw 'Finalization recovery requires the existing RunId.'}
   $projectArtifacts=Join-Path $pathContext.artifact_root "projects/$projectId"
@@ -103,7 +103,7 @@ function Get-PreparedJointSourceReferences {
 function Invoke-PreparedJointTrial {
   # One public trial entry; common run/lease/capacity and batch executors own
   # lifecycle and admission. The compiler only freezes scientific inputs.
-  . (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
+  . (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
   . (Join-Path $repoRoot 'common/resource_budget_support.ps1')
   . (Join-Path $repoRoot 'integrations/runtime/dependencies.ps1')
   if(-not$ContractPath){throw 'Prepared joint flight requires an explicit observation ContractPath.'}
@@ -148,7 +148,7 @@ function Invoke-PreparedJointTrial {
     $entryIdentity=@($frozen.identities|Where-Object{$_.source_repo_path-ceq'integrations/workflows/prepared_joint/execute.ps1'})
     $frozenEntryRecord=if($entryIdentity.Count-eq1){@{path=$entryIdentity[0].snapshot_path;exists=$true;bytes=[long](Get-Item -LiteralPath $entryIdentity[0].snapshot_path).Length;sha256=$entryIdentity[0].sha256}}else{$null}
     if($parentRun){
-      . (Join-Path $script:pythonRoot 'projects/parallel_mirror_dual_stripe_mr_tof/simion/native_corridor_runtime_support.ps1')
+      . (Join-Path $script:pythonRoot 'src/msplatform/backends/simion/resources/native_corridor_runtime_support.ps1')
       $capacity=Protect-MrtofContinuationEvidence -Parent $parentRun -Session $capacity -Python $python -RepoRoot $script:pythonRoot -Guards $guards
     }
     $configuration=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable
@@ -187,7 +187,7 @@ function Invoke-PreparedJointTrial {
       $request=[string]$continuation.dispatch_request.path
       $profiles=[string]$continuation.resource_profiles.path
     }else{
-      Invoke-ProjectPython -Arguments @('-m','common.simion.resource_profile','discover','--runs-root',(Join-Path $pathContext.artifact_root "projects/$projectId/runs"),'--output',$profiles)
+      Invoke-ProjectPython -Arguments @('-m','msplatform.execution.resource_profile','discover','--runs-root',(Join-Path $pathContext.artifact_root "projects/$projectId/runs"),'--output',$profiles)
       Invoke-ProjectPython -Arguments @('-m','msplatform.execution.simion_dispatch','--request',$request,'--profiles',$profiles,'--output',$dispatch)
       Invoke-ProjectPython -Arguments @('-m','msplatform.backends.simion.particle_batching','--from-dispatch-plan',$dispatch,'--output',$plan)
     }
@@ -458,7 +458,7 @@ function Invoke-PreparedJointTrial {
   }
 }
 function Invoke-PreparedJointAnalysis {
-  . (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
+  . (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
   . (Join-Path $repoRoot 'integrations/runtime/dependencies.ps1')
   $source=(Resolve-Path -LiteralPath $AnalyzeRunPath).Path
   $contract=(Resolve-Path -LiteralPath $ContractPath).Path

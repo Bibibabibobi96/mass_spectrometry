@@ -602,7 +602,7 @@ class ArtifactRetentionTests(unittest.TestCase):
         self.assertIn("solver_native_binary", result.stderr)
 
     def test_shared_run_lifecycle_exposes_opt_in_compact_v2(self) -> None:
-        support = (Path(__file__).with_name("run_artifact_support.ps1")).read_text(
+        support = (REPO_ROOT / "src/msplatform/execution/resources/run_artifact_support.ps1").read_text(
             encoding="utf-8-sig"
         )
         self.assertIn(
@@ -615,7 +615,7 @@ class ArtifactRetentionTests(unittest.TestCase):
         self.assertIn("Apply-RunArtifactRetention", support)
 
     def test_capacity_gate_has_no_retired_baseline_or_raw_budget_compatibility(self) -> None:
-        support = (Path(__file__).with_name("run_artifact_support.ps1")).read_text(
+        support = (REPO_ROOT / "src/msplatform/execution/resources/run_artifact_support.ps1").read_text(
             encoding="utf-8-sig"
         )
         for retired in (
@@ -632,7 +632,7 @@ class ArtifactRetentionTests(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
     def test_verified_input_copy_preserves_path_kinds_readonly_identity_and_retry(self) -> None:
-        support = REPO_ROOT / "common/contracts/run_artifact_support.ps1"
+        support = REPO_ROOT / "src/msplatform/execution/resources/run_artifact_support.ps1"
         script = r'''param([string]$Support,[string]$Root)
 $ErrorActionPreference='Stop'
 . $Support
@@ -697,7 +697,7 @@ Write-Output 'VERIFIED_COPY_BEHAVIOR=PASS'
             self.assertIn("VERIFIED_COPY_BEHAVIOR=PASS", result.stdout)
 
     def test_verified_input_copy_can_retry_but_requires_three_way_hash_identity(self) -> None:
-        support = (Path(__file__).with_name("run_artifact_support.ps1")).read_text(
+        support = (REPO_ROOT / "src/msplatform/execution/resources/run_artifact_support.ps1").read_text(
             encoding="utf-8-sig"
         )
         self.assertIn("[ValidateRange(1,5)][int]$VerificationAttempts=1", support)

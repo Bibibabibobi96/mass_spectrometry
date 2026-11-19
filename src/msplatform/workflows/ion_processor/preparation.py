@@ -32,18 +32,7 @@ from msplatform.execution.inputs import freeze_file
 from msplatform.execution.clock_authority import validate_clock_authority
 from msplatform.io.file_identity import file_sha256
 from msplatform.io.manifest_records import file_record
-
-def lua_literal(value: Any) -> str:
-    """Serialize frozen JSON values into a data-only Lua companion."""
-    if isinstance(value, dict):
-        return "{" + ",".join("[" + json.dumps(k) + "]=" + lua_literal(v) for k, v in value.items()) + "}"
-    if isinstance(value, list):
-        return "{" + ",".join(map(lua_literal, value)) + "}"
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if value is None:
-        return "nil"
-    return json.dumps(value, allow_nan=False)
+from msplatform.backends.simion.lua_serialization import lua_literal
 
 def validate_source_profile(config: dict[str, Any]) -> str:
     """Validate explicit study scope and count without upgrading exploration."""

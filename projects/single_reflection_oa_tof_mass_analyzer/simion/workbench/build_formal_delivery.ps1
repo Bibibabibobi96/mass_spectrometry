@@ -113,7 +113,7 @@ else {
 }
 
 . (Join-Path $repoRoot 'common\host_execution_lease.ps1')
-. (Join-Path $repoRoot 'common\simion\native_fast_adjust_runtime_support.ps1')
+. (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\native_fast_adjust_runtime_support.ps1')
 . (Join-Path $repoRoot 'common\resource_budget_support.ps1')
 $capacitySession=Get-Content -LiteralPath $CapacitySessionPath -Raw|ConvertFrom-Json -Depth 80
 $runRoot=Join-Path $artifactRoot ('runs/'+$RunId)

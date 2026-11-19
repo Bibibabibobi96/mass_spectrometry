@@ -38,7 +38,7 @@ if($ResumeFinalization){
     Push-Location $repoRoot
     try{& $python -m msplatform.execution.artifact_naming run $RunId|Out-Null;if($LASTEXITCODE-ne0){throw 'Recovery requires a valid original RunId.'}}finally{Pop-Location}
     if(-not$ResultPath){$ResultPath=Join-Path $artifactRoot "scratch/workflow_results/$RunId/result.json"}
-    . (Join-Path $repoRoot 'common/contracts/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization
+    . (Join-Path $repoRoot 'src/msplatform/workflows/resources/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization
     $outcome=Invoke-RunArtifactWorkflow -RequestPath (Join-Path $artifactRoot "runs/$RunId/inputs/execution_request.json") -ResultPath $ResultPath -ResumeFinalization
     Write-Output "RF_FINALIZATION=$($outcome.status) RUN_ID=$RunId RESULT=$ResultPath"
     if($outcome.status-ne'success'){exit 1};return
@@ -369,7 +369,7 @@ $batchPlan = Join-Path $inputDir 'simion_execution_batch_plan.json'
 } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $dispatchRequest -Encoding UTF8
 Push-Location $repoRoot
 try {
-    & $python -m common.simion.resource_profile discover --runs-root (Join-Path $artifactRoot 'runs') --output $resourceProfiles
+    & $python -m msplatform.execution.resource_profile discover --runs-root (Join-Path $artifactRoot 'runs') --output $resourceProfiles
     if ($LASTEXITCODE -ne 0) { throw 'SIMION resource profile discovery failed.' }
     & $python -m msplatform.execution.simion_dispatch --request $dispatchRequest --profiles $resourceProfiles --output $dispatchPlan
     if ($LASTEXITCODE -ne 0) { throw 'SIMION repository dispatch planning failed.' }
@@ -534,7 +534,7 @@ if((Get-RunFileSha256 -Path $ownerSource)-cne$entryScriptHash){throw 'Frozen Pow
 $runConfig.inputs.powershell_owner=$ownerSource
 $runConfig.inputs.simion_execution_owner=Copy-VerifiedRunInput -Source (Join-Path $repoRoot 'src/msplatform/backends/simion/resources/simion_execution.ps1') -Destination (Join-Path $inputDir 'simion_execution_owner.ps1')
 Write-RunJson -Path $runConfigPath -Value $runConfig -Depth 20
-. (Join-Path $repoRoot 'common/contracts/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization
+. (Join-Path $repoRoot 'src/msplatform/workflows/resources/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization
 $ownerContext=Initialize-RunArtifactPowerShellOwner -Python $python -RepoRoot $repoRoot -Package $package -CapacitySession $ownerCapacity `
     -ResultPath $ResultPath -EntrypointPath $ownerSource -CommitmentInputPaths @($frozenNumericalContract) -Software @('SIMION 2020','Python 3.11')
 $ResultPath=$ownerContext.result_path

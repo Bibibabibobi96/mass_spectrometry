@@ -43,7 +43,7 @@ class SimionIobObservabilityTests(unittest.TestCase):
     def test_managed_inspection_keeps_kernel_exit_code_and_stopped_facts(self) -> None:
         script = r"""
 $ErrorActionPreference='Stop'
-. (Join-Path $PWD 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $PWD 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $PWD 'src/msplatform/backends/simion/resources/simion_execution.ps1')
 function Invoke-ResourceBudgetedProcess {
  param($ArgumentList,$Environment,$RedirectStandardOutput,$RedirectStandardError)

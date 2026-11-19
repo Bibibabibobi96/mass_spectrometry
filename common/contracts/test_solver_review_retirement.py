@@ -43,6 +43,8 @@ class RetirementWrapperTest(unittest.TestCase):
             root=Path(temporary);contracts=root/"contracts";contracts.mkdir()
             wrapper=contracts/"invoke_solver_review_retirement.ps1"
             wrapper.write_bytes(Path(__file__).with_name(wrapper.name).read_bytes())
+            support = root / "src/msplatform/execution/resources/run_artifact_support.ps1"
+            support.parent.mkdir(parents=True)
             (root/"host_execution_lease.ps1").write_text("""
 function Enter-HostExecutionLease { $global:calls.Add('host-enter');return @{} }
 function Exit-HostExecutionLease { $global:calls.Add('host-exit') }
@@ -54,6 +56,7 @@ function Enter-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Artifac
 }
 function Exit-ArtifactWorkflowCapacitySession {$global:calls.Add('capacity-exit');@{released=$true}}
 """)
+            support.write_bytes((contracts/"run_artifact_support.ps1").read_bytes())
             script=root/"test.ps1"
             script.write_text("""
 param($Root)
@@ -69,7 +72,7 @@ $out=@(& "$Root/contracts/invoke_solver_review_retirement.ps1" -ArtifactRoot $Ro
 if($out.Count-ne1-or($out[0]|ConvertFrom-Json).status-ne'complete'){throw 'repair stdout was polluted'}
 $global:calls|ConvertTo-Json -Compress
 """)
-            result=subprocess.run([pwsh,"-NoProfile","-File",str(script),str(root)],cwd=Path(__file__).resolve().parents[2],capture_output=True,text=True,timeout=30)
+            result=subprocess.run([pwsh,"-NoProfile","-File",str(script),str(root)],cwd=Path(__file__).resolve().parents[2],capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=30)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
             self.assertEqual(json.loads(result.stdout),["host-enter","plan","capacity-enter","repair","capacity-exit","host-exit"])
 

@@ -25,7 +25,7 @@ from msplatform.io.manifest_records import verify_record
 from msplatform.execution.manifest_publication import publish_run_manifest
 from msplatform.execution import retention as artifact_retention
 from msplatform.execution import run_capacity_lifecycle
-from common.simion import resource_profile
+from msplatform.backends.simion import resource_profile
 from msplatform.backends.simion import particle_batching
 from msplatform.execution import simion_dispatch as resource_scheduler
 from msplatform.backends.simion.source import render_standard_beams
@@ -289,7 +289,7 @@ def validate_contour_contract(contract: dict, *, recorded_author: bool = False) 
 
 def _freeze_recorded_contour_source(run: Path, label: str, destination: Path) -> dict:
     """Consume a complete physical cohort, retaining failed diagnostic identity."""
-    from projects.dual_pressure_rectilinear_ion_processor.analysis.extraction_phase_space_comparison import load_recorded_case
+    from msplatform.workflows.ion_processor.extraction_phase_space_comparison import load_recorded_case
     from msplatform.io.manifest_records import record_path
     from msplatform.execution.retention import verify_record
 
@@ -593,7 +593,7 @@ def prepare_contour_study(run: Path, contract_path: Path) -> dict:
     prism_voltage = authority["analyzer_electrode_voltages_v"][15]
     seed = repo/"src/msplatform/backends/simion/resources/1_instance_seed.iob"
     shutil.copyfile(seed, inputs/"workbench_seed.iob")
-    shutil.copyfile(repo/"common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0", inputs/"iob_seed_placeholder_01.pa0")
+    shutil.copyfile(repo/"src/msplatform/backends/simion/resources/iob_seed_placeholder_01.pa0", inputs/"iob_seed_placeholder_01.pa0")
     source_cache, fields, field_paths, pending = {}, {}, {}, []
     reused, reuse_cache, reuse_paths = {}, {}, {}
     policy = load_particle_count_policy()
@@ -779,7 +779,7 @@ def prepare(run: Path, contract_path: Path) -> dict:
     prism_voltage=authority["analyzer_electrode_voltages_v"][15]
     seed=repo/"src/msplatform/backends/simion/resources/1_instance_seed.iob"
     shutil.copyfile(seed,inputs/"workbench_seed.iob")
-    shutil.copyfile(repo/"common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0",inputs/"iob_seed_placeholder_01.pa0")
+    shutil.copyfile(repo/"src/msplatform/backends/simion/resources/iob_seed_placeholder_01.pa0",inputs/"iob_seed_placeholder_01.pa0")
     cases=[]
     for index,distance in enumerate(contract["distances_mm"],1):
         prepared=prepare_geometry(geometry,ip_voltage,prism_voltage,distance,contract["numerics"]["box_mm"],contract["numerics"]["pitch_mm"],contract["numerics"]["convergence_v"])
@@ -948,7 +948,7 @@ def prepare_replay_package(run: Path, contract_path: Path) -> dict:
                              payload_source=str(field.parent), payload_inventory=inventory))
         pending.append((case, resolved, directory, field, inventory, states))
     seed = repo/"src/msplatform/backends/simion/resources/1_instance_seed.iob"
-    for original, target in ((seed, inputs/"workbench_seed.iob"), (repo/"common/simion/assets/iob_instance_seeds/iob_seed_placeholder_01.pa0", inputs/"iob_seed_placeholder_01.pa0")):
+    for original, target in ((seed, inputs/"workbench_seed.iob"), (repo/"src/msplatform/backends/simion/resources/iob_seed_placeholder_01.pa0", inputs/"iob_seed_placeholder_01.pa0")):
         shutil.copyfile(original, target)
     cases = []
     for index, (case, resolved, directory, field, inventory, states) in enumerate(pending, 1):

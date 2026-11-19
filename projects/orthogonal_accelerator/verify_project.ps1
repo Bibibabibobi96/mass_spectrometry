@@ -4,7 +4,7 @@ param([string]$PythonExe = '', [string]$LuaExe = '')
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-. (Join-Path $repoRoot 'common\require_powershell7.ps1')
+. (Join-Path $repoRoot 'src\msplatform\execution\resources\require_powershell7.ps1')
 . (Join-Path $repoRoot 'common\host_execution_lease.ps1')
 $acceleratorGateLease = Enter-HostExecutionLease -Role GATE
 $previousPythonPath = $env:PYTHONPATH

@@ -372,7 +372,7 @@ function Invoke-NativeCorridorFamilyBuild {
       $controllerScratch=Join-Path ([string]$controllerAlias.execution_alias) 'mrtof_analyzer_corridor.pa0'
       Copy-Item -LiteralPath (Join-Path $buildDirectory 'mrtof_analyzer_corridor.pa#') -Destination $controllerRaw
       try{
-        & $simion --nogui --noprompt lua (Join-Path $repoRoot 'common\simion\assemble_native_fast_adjust_family.lua') --controller $controllerRawExecution $controllerScratch 8 2>&1|Add-Content -LiteralPath $buildLog
+        & $simion --nogui --noprompt lua (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\assemble_native_fast_adjust_family.lua') --controller $controllerRawExecution $controllerScratch 8 2>&1|Add-Content -LiteralPath $buildLog
         if($LASTEXITCODE-ne0){throw 'Native-corridor controller creation failed.'}
         Publish-NativeCorridorBuiltMember -ScratchPath (Join-Path $controllerDirectory 'mrtof_analyzer_corridor.pa0') -DestinationPath (Join-Path $buildDirectory 'mrtof_analyzer_corridor.pa0')
       }finally{

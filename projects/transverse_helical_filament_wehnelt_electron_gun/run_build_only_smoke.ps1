@@ -17,7 +17,7 @@ $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Pat
 $software = @('COMSOL 6.4 via MATLAB R2025b')
 
 $bootstrapFiles = [ordered]@{
-  powershell_runtime_gate = 'common\require_powershell7.ps1'
+  powershell_runtime_gate = 'src\msplatform\execution\resources\require_powershell7.ps1'
   artifact_support = 'common\contracts\run_artifact_support.ps1'
   manifest_writer = 'src\msplatform\execution\manifest_publication.py'
   recorded_file_removal = 'src\msplatform\execution\recorded_file_removal.py'
@@ -299,7 +299,7 @@ try {
 
   $commonFrozenFiles = [ordered]@{
     python_project_config = 'pyproject.toml'
-    powershell_runtime_gate = 'common\require_powershell7.ps1'
+    powershell_runtime_gate = 'src\msplatform\execution\resources\require_powershell7.ps1'
     changed_scope_gate = 'common\verify.ps1'
     gate_catalog = 'common\gate_catalog.json'
     host_resource_adapter = 'common\host_execution_lease.ps1'

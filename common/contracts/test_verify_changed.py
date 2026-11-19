@@ -629,7 +629,7 @@ ConvertTo-Json -Compress -InputObject $paths
 
     def test_workspace_paths_owner_and_sources_keep_protocol_and_workflow_coverage(self):
         module = "common.contracts.test_run_artifact_workflow_sources"
-        for path in ("common/paths/workspace_paths.py", "common/paths/workspace_paths.ps1"):
+        for path in ("src/msplatform/execution/resources/workspace_paths.py", "src/msplatform/execution/resources/workspace_paths.ps1"):
             with self.subTest(path=path):
                 request, _ = self.plan("-ChangedPath", path)
                 selected = [row for row in request["stages"] if row["selected"]]
@@ -1018,7 +1018,10 @@ exit 0
         (fixture_root / "projects").mkdir()
         (fixture_root / "integrations").mkdir()
         for name in ("verify.ps1", "parallel_gate_support.ps1", "gate_catalog_support.ps1", "require_powershell7.ps1"):
-            shutil.copyfile(REPO_ROOT / "common" / name, common / name)
+            source = REPO_ROOT / ("src/msplatform/execution/resources" if name == "require_powershell7.ps1" else "common") / name
+            destination = fixture_root / ("src/msplatform/execution/resources" if name == "require_powershell7.ps1" else "common") / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, destination)
         (common / "host_execution_lease.ps1").write_text("function Get-HostResourceBudget {param($Role,$Stage) @{}}\nfunction Enter-HostResourceStage {param($Role,$Stage,$Budget) @{}}\nfunction Exit-HostResourceStage {param($Lease)}\n",encoding="utf-8")
         (common / "gate_catalog.json").write_text('{"schema_version":2,"role":"repository_gate_catalog","routes":[{"stage":"unrelated_project","dependency_profile":"locked","repository_integration_group":"regression","matches":[{"exact":"projects/unrelated/source.py","reason":"unrelated"}],"command":{"runner":"python","arguments":["-c","print(42)"]}}]}',encoding="utf-8")
         (common / "verify_repository_hygiene.ps1").write_text("Write-Output 'REPOSITORY_HYGIENE=PASS'\n",encoding="utf-8")
@@ -1519,7 +1522,7 @@ $result|ConvertTo-Json -Compress
         return subprocess.run(
             [shutil.which("pwsh"), "-NoProfile", "-File", str(repo / "common/verify.ps1"),
              "-PythonExe", sys.executable, "-PlanOnly", "-ChangedPath", changed_path],
-            cwd=repo, capture_output=True, text=True, encoding="utf-8", timeout=30,
+            cwd=repo, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
         )
 
 
@@ -1698,7 +1701,10 @@ $full.parameters.PSObject.Properties.Remove('PreflightOnly')
             (root / "integrations").mkdir()
             for name in ("verify.ps1", "parallel_gate_support.ps1", "gate_catalog_support.ps1",
                          "require_powershell7.ps1"):
-                shutil.copyfile(REPO_ROOT / "common" / name, common / name)
+                source = REPO_ROOT / ("src/msplatform/execution/resources" if name == "require_powershell7.ps1" else "common") / name
+                destination = root / ("src/msplatform/execution/resources" if name == "require_powershell7.ps1" else "common") / name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, destination)
             (common / "host_execution_lease.ps1").write_text(
                 "function Get-HostResourceBudget { param($Stage,$Role) return @{} }\n"
                 "function Enter-HostResourceStage { param($Role,$Stage,$Budget) return @{} }\n"
@@ -1735,7 +1741,7 @@ $full.parameters.PSObject.Properties.Remove('PreflightOnly')
         self.assertEqual(set(stages), {"common_contracts", "single_reflection_oa_tof_mass_analyzer_static",
                                       "instrument_assembly_integration"})
         for path in ("src/msplatform/contracts/schemas/future_unknown.schema.json",
-                     "src/msplatform/contracts/machine_contracts.py", "common/contracts/run_artifact_support.ps1"):
+                     "src/msplatform/contracts/machine_contracts.py", "src/msplatform/execution/resources/run_artifact_support.ps1"):
             with self.subTest(path=path):
                 self.assertIn("common_contracts", self.routed_stages(path))
                 self.assertIn("rf_multipole_quadrupole_static", self.routed_stages(path))
@@ -2247,7 +2253,7 @@ exit ([int]$env:CI_FIXTURE_EXIT)
             "common/gate_catalog_support.ps1",
             "common/contracts/test_verify_changed.py",
             "common/verify.ps1",
-            "common/require_powershell7.ps1",
+            "src/msplatform/execution/resources/require_powershell7.ps1",
             ".github/workflows/lightweight-gate.yml",
         ):
             self.assertIn("common_contracts", self.routed_stages(path))
@@ -2595,7 +2601,10 @@ class RuntimeInventoryRouteTests(unittest.TestCase):
             (repo / "integrations/config").mkdir(parents=True)
             for name in ("verify.ps1", "gate_catalog_support.ps1", "parallel_gate_support.ps1",
                          "host_execution_lease.ps1", "require_powershell7.ps1"):
-                shutil.copyfile(REPO_ROOT / "common" / name, repo / "common" / name)
+                source = REPO_ROOT / ("src/msplatform/execution/resources" if name == "require_powershell7.ps1" else "common") / name
+                destination = repo / ("src/msplatform/execution/resources" if name == "require_powershell7.ps1" else "common") / name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, destination)
             for name in ("host_execution_lease.ps1", "host_resource_policy.json"):
                 relative = Path("src/msplatform/execution/resources") / name
                 destination = repo / relative

@@ -110,7 +110,7 @@ Pull与LP shield的狭缝是实体cutout，狭缝几何本身不是独立单位�
 
 ## 执行与验收边界
 
-生产入口为`simion/run_functional.ps1`，准备与分析由`analysis/functional.py`承担；
+生产入口为`src/msplatform/workflows/resources/ip_functional.ps1`薄委托，准备与分析由`msplatform.workflows.ion_processor.functional`承担；
 `verify_project.ps1`执行轻量unittest。从仓库根使用项目入口，先验证输入和计划，再启动真实SIMION。
 不得通过旧oaTOF或多极杆入口偷偷覆盖科学参数。终态发布run_config、summary和manifest，
 保留canonical粒子事件、必要日志与轻量图。
@@ -158,7 +158,7 @@ HP入口按论文2 mm钢孔解释为圆孔直径；LP outer以中心4 mm、端�
 ## GUI准备与批处理区别
 
 唯一入口仍为`simion/prepare_gui_replay.ps1`，从明确、完整核验的baseline创建独立`solver_review`准备run。
-`analysis/gui_replay.py`精确复制baseline冻结的GEM、source、HS1、RF、drive、builder和runtime；
+`msplatform.backends.simion.ip_gui_replay`精确复制baseline冻结的GEM、source、HS1、RF、drive、builder和runtime；
 不复制、哈希或向供应商重新打开baseline原生PA族。具名轻量消费投影仅核验实际所需的配置JSON、GEM、
 冻结程序/源、summary、events、samples及canonical状态；原manifest中的PA记录仅作历史来源，不声称重新核验。
 如baseline已由公共owner-retirement退役，先调用公共`verify_retirement`核验完整收尾及保留库存，再核验所需记录，
@@ -278,7 +278,7 @@ SIMION的`adjustable`具有独立作用域；不能用普通Lua全局赋值推�
 
 ## 自动分批与单工作台重放
 
-同几何纯调压使用 `run_functional.ps1 -ConfigurationDirectory <完整配置目录> -NativeFieldRun <已封存来源run>`。
+同几何纯调压使用 `ip_functional.ps1 -ConfigurationDirectory <完整配置目录> -NativeFieldRun <已封存来源run>`。
 原生 Refine 已建立15个可调电极的单位响应；`runtime.lua`的`segment.fast_adjust`每次按冻结
 `native_drive.voltages`写入全部`adj_elect`，包含RF、抬升、脉冲和E10／E11相对偏置。
 电势按单位响应线性叠加，轨迹、碰撞与束团状态仍需每组重新计算。
@@ -286,7 +286,7 @@ SIMION的`adjustable`具有独立作用域；不能用普通Lua全局赋值推�
 路径／字节／SHA；不一致失败关闭。成功后引用只读来源，runner跳过GEM／Refine，飞行前后保护并核验原生场族。
 改变实体、网格或求场设置则重新建场；GUI独立工作台的准备与手动验收继续使用其原合同。
 
-`run_functional.ps1 -ConfigurationDirectory <directory>`支持MR匹配候选的完整科学／数值配置目录；
+`ip_functional.ps1 -ConfigurationDirectory <directory>`支持MR匹配候选的完整科学／数值配置目录；
 未指定时仍消费本项目`config/`。显式目录要求自身包含坐标合同，冻结全部实际消费配置及可选的
 `component_matching_derivation.json`，不回退到封存基线拼接缺项。准备、资源调度、求场与自动诊断复用原入口。
 候选目录仅是求解输入，不表示已经求场或完成出口匹配。
@@ -333,7 +333,7 @@ The post-extraction common time is selected from recorded crossings and sampling
 
 ### Frozen GUI replay dependencies
 
-`analysis/gui_replay.py` uses the existing run-owned workbench pair freezer. Its resolved
+`msplatform.backends.simion.ip_gui_replay` uses the existing run-owned workbench pair freezer. Its resolved
 `workbench_seed_path`, seed records and replay-plan records refer to the same
 `simion/iob_seed/1_instance_seed.iob` and adjacent placeholder. A redundant IOB copy outside
 that pair is no longer produced.
@@ -401,3 +401,9 @@ baseline and freezes `collision_hs1_gas.lua` beside the unchanged official HS1 r
 See [current gas-input scope](PROJECT.md#v84-canonical-prescribed-gas--hs1-software-binding)
 for region/unit/callback guarantees and software-only acceptance limits. This does not
 add a new native launcher, implicit Refine/Fly, or boundary-resolved integration policy.
+
+The installed `ip_functional.ps1` launcher resolves the explicit research project root
+before reading `runtime_registry.json`, `runtime_profiles.json` and the selected
+configuration directory. Its production-source regression and the two affected modules
+passed 67 tests with one existing environment skip; this verifies configuration
+resolution before native admission, not an actual SIMION launcher or flight.

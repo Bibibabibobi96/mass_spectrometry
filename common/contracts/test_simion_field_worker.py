@@ -18,6 +18,7 @@ from msplatform.backends.simion.native_plans import plan_solve_fields, operating
 from msplatform.backends.simion.pa_family_cache import canonical_pa_family_cache_key
 from msplatform.backends.simion.resources import native_resource_path
 from msplatform.execution import owner
+from msplatform.execution.retention import classify_file
 from msplatform.execution.capacity_admission import _capacity_policy
 from msplatform.execution.context import ExecutionContext
 from msplatform.io.manifest_records import file_record
@@ -85,9 +86,10 @@ def frozen_worker_fixture(session, script: Path) -> Path:
     snapshot = session.input_dir / "field_worker_source"
     for relative in enumerate_python_sources(author, package_roots=["src/msplatform"],
             resource_suffixes=[".json", ".ps1", ".lua", ".gem", ".m", ".iob", ".pa0", ".pa"]):
-        destination = session.declare_file(snapshot / relative, "required_evidence")
+        role = "solver_native_binary" if relative.endswith(".pa0") else "required_evidence"
+        destination = session.declare_file(snapshot / relative, role)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        freeze_file(author / relative, destination)
+        freeze_file(author / relative, destination, retention_classifier=classify_file)
     selected = {}
     for name, relative in dict(worker="src/msplatform/backends/simion/field_worker.py",
                                native_plans="src/msplatform/backends/simion/native_plans.py").items():

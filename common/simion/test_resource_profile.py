@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from msplatform.io.file_identity import file_sha256
-from common.simion.resource_profile import (
+from msplatform.execution.resource_profile import (
     discover_case_resource_profiles,
     discover_resource_profiles,
     publish_resource_profile,
@@ -215,7 +215,7 @@ class ResourceProfileTests(unittest.TestCase):
             self.write_bootstrap_run(root)
             output = root / "profiles.json"
             result = subprocess.run(
-                [sys.executable, "-m", "common.simion.resource_profile", "discover", "--runs-root", str(root), "--output", str(output)],
+                [sys.executable, "-m", "msplatform.execution.resource_profile", "discover", "--runs-root", str(root), "--output", str(output)],
                 cwd=Path(__file__).resolve().parents[2], capture_output=True, text=True, timeout=30,
             )
             self.assertEqual(result.returncode, 0, result.stderr)

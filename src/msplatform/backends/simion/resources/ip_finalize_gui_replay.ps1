@@ -1,13 +1,13 @@
 [CmdletBinding()]
 param(
  [Parameter(Mandatory)][string]$RunPath,
+ [Parameter(Mandatory)][string]$RepositoryRoot,
  [switch]$ManualGuiConfirmed,
  [string]$PythonExe=''
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-$projectRoot=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$repoRoot=(Resolve-Path (Join-Path $projectRoot '..\..')).Path
+$repoRoot=$RepositoryRoot
 $workspaceRoot=Split-Path -Parent $repoRoot
 $run=(Resolve-Path -LiteralPath $RunPath).Path
 $planPath=Join-Path $run 'inputs/gui_replay_plan.json'
@@ -21,14 +21,15 @@ if($config.project-ne'dual_pressure_rectilinear_ion_processor'-or$config.mode-ne
 $plan=Get-Content -LiteralPath $planPath -Raw -Encoding UTF8|ConvertFrom-Json
 $baseline=(Resolve-Path -LiteralPath $plan.baseline_run).Path
 if($baseline-eq$run){throw 'GUI replay cannot finalize its baseline run'}
-. (Join-Path $repoRoot 'common/require_powershell7.ps1')
-. (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
-if(-not $PythonExe){$PythonExe=Join-Path $repoRoot '.venv/Scripts/python.exe'}
+. (Join-Path $PSScriptRoot '../../../execution/resources/require_powershell7.ps1')
+. (Join-Path $PSScriptRoot '../../../execution/resources/run_artifact_support.ps1')
+if(-not $PythonExe){$PythonExe=$env:SIMULATION_PYTHON_EXE}
+if(-not $PythonExe){throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
 $capacity=$null;$lease=$null;$published=$false;$accepted=$false
 $savedPythonPath=$env:PYTHONPATH;$env:PYTHONPATH=$repoRoot
 Push-Location $repoRoot
 try {
- $profileJson=& $PythonExe -c 'import json,sys; from pathlib import Path; from projects.dual_pressure_rectilinear_ion_processor.analysis.batching import frozen_runtime_profile; print(json.dumps(frozen_runtime_profile(Path(sys.argv[1]),allow_legacy=True)))' $run
+ $profileJson=& $PythonExe -c 'import json,sys; from pathlib import Path; from msplatform.backends.simion.ip_batching import frozen_runtime_profile; print(json.dumps(frozen_runtime_profile(Path(sys.argv[1]),allow_legacy=True)))' $run
  if($LASTEXITCODE-ne0){throw 'Replay frozen runtime profile is invalid'}
  $profile=$profileJson|ConvertFrom-Json
  if($profile.retention_class-ne'solver_review'){throw 'Replay requires the frozen solver_review profile'}
@@ -40,7 +41,7 @@ try {
  $committed=[long][Math]::Max(64MB,($committed-$resident))
  $capacity=Enter-ArtifactWorkflowCapacitySession -Python $PythonExe -RepoRoot $repoRoot -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -RunDirectory $run -CommittedNewBytes $committed -ProtectedPaths $protectedPaths
  $lease=Enter-HostExecutionLease -Role GATE -Stage postprocess
- $arguments=@('-m','projects.dual_pressure_rectilinear_ion_processor.analysis.functional','finalize-replay','--run',$run)
+ $arguments=@('-m','msplatform.workflows.ion_processor.functional','finalize-replay','--run',$run)
  if($ManualGuiConfirmed){$arguments+='--manual-gui-confirmed'}
  & $PythonExe @arguments
  $analysisExit=$LASTEXITCODE

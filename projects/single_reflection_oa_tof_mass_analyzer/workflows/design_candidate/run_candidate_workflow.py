@@ -1312,7 +1312,7 @@ def resume_candidate_finalization(run_root: Path, owner_result: Path | None = No
     with tempfile.TemporaryDirectory(prefix="oatof_candidate_finalize_") as directory:
         log_path = Path(directory) / "owner.log"
         try:
-            _run_command(_powershell(str(REPO_ROOT / "common/contracts/run_artifact_workflow.ps1"),
+            _run_command(_powershell(str(REPO_ROOT / "src/msplatform/workflows/resources/run_artifact_workflow.ps1"),
                                      ["-RequestPath", str(request_path), "-ResultPath", str(result_path),
                                       "-ResumeFinalization"]), log_path)
         except RuntimeError as exc:
@@ -1358,7 +1358,7 @@ def _invoke_candidate_owner_request(request: dict, pa_handoff_output: Path | Non
         write_json_atomic(request_path, request)
         failure = None
         try:
-            _run_command(_powershell(str(REPO_ROOT / "common/contracts/run_artifact_workflow.ps1"),
+            _run_command(_powershell(str(REPO_ROOT / "src/msplatform/workflows/resources/run_artifact_workflow.ps1"),
                                      ["-RequestPath", str(request_path), "-ResultPath", str(result_path)]),
                          Path(directory) / "owner.log")
         except BaseException as error:
@@ -1696,7 +1696,7 @@ def _record_candidate_native_completion(stage: dict, plan: dict) -> bool:
     project_comsol_native_implementation(closure)
     writer_path = root/'logs/native_save_writer_facts.json'
     write_json_atomic(writer_path, writer)
-    validator = frozen_source_path(closure, 'common/contracts/run_artifact_workflow.ps1')
+    validator = frozen_source_path(closure, 'src/msplatform/workflows/resources/run_artifact_workflow.ps1')
     script = ". '"+validator.replace("'", "''")+"'; Assert-WorkflowWriterCompletion (Get-Content -Raw -Encoding UTF8 '"+str(writer_path).replace("'", "''")+"'|ConvertFrom-Json -AsHashtable)"
     _run_command(['pwsh','-NoProfile','-NonInteractive','-Command',script], root/'logs/native_save_writer_validation.log')
     config = load_json(root/'run_config.json')

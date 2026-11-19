@@ -71,7 +71,7 @@ class AssemblyFinalizationRecoveryTests(unittest.TestCase):
                                      cli=cli, run_id=run_id, facade=facade, run=run, result=result))
             prepare = r'''
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $env:WF_REPO 'common/contracts/run_artifact_workflow.ps1')
+. (Join-Path $env:WF_REPO 'src/msplatform/workflows/resources/run_artifact_workflow.ps1')
 $package=New-RunPackage -Python $env:WF_PYTHON -RepoRoot $env:WF_REPO -ArtifactRoot $env:WF_PROJECT -RunId $env:WF_RUN_ID -Project instrument_assembly -Mode $env:WF_MODE -Software @('PowerShell software fixture') -RetentionContractEnabled -RetentionClass solver_review -RetentionReason 'inert public lifecycle fixture' -CapacityLedgerLifecycleEnabled
 $authority=Join-Path $package.input_dir 'authority.json';Write-RunJson -Path $authority -Value @{output_budget_bytes=1048576}
 $entry=Join-Path $package.input_dir 'owner.ps1';'throw "Scientific entrypoint must never execute during finalization"'|Set-Content $entry

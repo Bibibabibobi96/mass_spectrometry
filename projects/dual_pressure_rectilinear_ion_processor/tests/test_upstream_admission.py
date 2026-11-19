@@ -22,7 +22,8 @@ from msplatform.execution.retention import file_record
 from msplatform.backends.simion.ip_handoff import (
     FATE_COLUMNS, frozen_release_states, load_injected_source, release_states,
 )
-from projects.dual_pressure_rectilinear_ion_processor.analysis import functional, batching
+from msplatform.workflows.ion_processor import functional
+from msplatform.backends.simion import ip_batching as batching
 from projects.dual_pressure_rectilinear_ion_processor.tests.test_functional import HS1_SOURCE_FIXTURE
 
 PROJECT = Path(__file__).resolve().parents[1]

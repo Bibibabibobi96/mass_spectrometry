@@ -27,6 +27,7 @@ $sharedIobSeedFiles = @(
   'iob_seed_placeholder_07.pa0','iob_seed_placeholder_08.pa0',
   'iob_seed_placeholder_09.pa0','iob_seed_placeholder_10.pa0'
 ) | ForEach-Object { "$sharedIobSeedPrefix$_" }
+$sharedIobSeedFiles += 'src/msplatform/backends/simion/resources/iob_seed_placeholder_01.pa0'
 $installedStructuralSeeds = @{
   'src/msplatform/backends/simion/resources/1_instance_seed.iob' = @{ Bytes = 20856; Sha256 = '0b34d1277d4c65f62972e01a82d03705d1691113cbe87c52082d17abdf577917' }
   'src/msplatform/backends/simion/resources/2_instance_seed.iob' = @{ Bytes = 20884; Sha256 = '5a2ef00fd0b490f072af42ca7a23a944115e0f9e700f4a4355489d2a7c9dedb1' }

@@ -17,8 +17,8 @@ if ($AnalyzeOnly -and -not $SourceRunPath) { throw 'AnalyzeOnly requires an expl
 if (-not $AnalyzeOnly -and $SourceRunPath) { throw 'SourceRunPath is only valid with AnalyzeOnly.' }
 $python = if ($env:SIMULATION_PYTHON_EXE) { (Resolve-Path -LiteralPath $env:SIMULATION_PYTHON_EXE).Path }
   else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
-. (Join-Path $repoRoot 'common/contracts/run_artifact_support.ps1')
-. (Join-Path $repoRoot 'common/paths/workspace_paths.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
 $pathContext = Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
 $artifactRoot = Join-Path $pathContext.artifact_root 'projects/single_reflection_oa_tof_mass_analyzer'
 $environmentNames = @('SIMULATION_PYTHON_EXE','MASS_SPECTROMETRY_ARTIFACT_ROOT','MASS_SPECTROMETRY_EXECUTION_ROOT','MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH')

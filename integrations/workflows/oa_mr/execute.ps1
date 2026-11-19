@@ -216,12 +216,12 @@ function Get-ManifestOutputRecord {
 $projectId='instrument_assembly'
 $providerProjectId='parallel_mirror_dual_stripe_mr_tof'
 $repoRoot=(Resolve-Path -LiteralPath $RepoRoot).Path
-. (Join-Path $repoRoot 'common/require_powershell7.ps1')
-. (Join-Path $repoRoot 'common/paths/workspace_paths.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/require_powershell7.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
 $script:pythonRoot=$repoRoot
 $workspaceRoot=Split-Path -Parent $repoRoot
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
-. (Join-Path $repoRoot 'common/contracts/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
+. (Join-Path $repoRoot 'src/msplatform/workflows/resources/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
 if($ResumeFinalization){
   if(-not$RunId){throw 'Finalization recovery requires the existing RunId.'}
   $projectArtifacts=Join-Path $workspaceRoot "artifacts/projects/$projectId"
@@ -477,7 +477,7 @@ try{
     $trajectoryContractInput=Join-Path $script:pythonRoot 'projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json'
   }
   $providerSimionRoot=Join-Path $script:pythonRoot 'projects/parallel_mirror_dual_stripe_mr_tof/simion'
-  . (Join-Path $providerSimionRoot 'native_corridor_runtime_support.ps1')
+  . (Join-Path $repoRoot 'src/msplatform/backends/simion/resources/native_corridor_runtime_support.ps1')
   if($continuationParent){
     $capacitySession=Protect-MrtofContinuationEvidence -Parent $continuationParent -Session $capacitySession -Python $python -RepoRoot $script:pythonRoot -Guards $continuationEvidenceGuards
   }
@@ -649,7 +649,7 @@ try{
     $runtimeDispatchPlanPath=Join-Path $resultDir 'simion_repository_dispatch_plan.json'
     $batchPlanPath=Join-Path $resultDir 'simion_execution_batch_plan.json'
     $batchResourceUsagePath=Join-Path $logDir 'simion_batch_resource_usage.json'
-    Invoke-ProjectPython -Arguments @('-m','common.simion.resource_profile','discover','--runs-root',(Join-Path $artifactRoot "projects\$projectId\runs"),'--output',$resourceProfilesPath)
+    Invoke-ProjectPython -Arguments @('-m','msplatform.execution.resource_profile','discover','--runs-root',(Join-Path $artifactRoot "projects\$projectId\runs"),'--output',$resourceProfilesPath)
     Write-RunJson -Path $dispatchRequestPath -Depth 10 -Value ([ordered]@{
       solver='SIMION';field_kind='electrostatic';particle_count=[int]$trial.source_particle_count;independent_particles=$true
       frontend_grid_profile_id=$(if($staticFieldRequested){if($staticFieldMode-eq'native_static_pa'){'mrtof_native_static_pa_four_collision_instances'}else{'mrtof_static_comsol_four_collision_instances'}}else{'mrtof_native_corridor_four_instance__bank_'+[string]$nativeBankCache.generation_sha256})
@@ -843,7 +843,7 @@ try{
   $privateIobSeed=Join-Path $temporarySolverDir '4_instance_seed.iob'
   Copy-Item -LiteralPath (Join-Path $solverDir '4_instance_seed.iob') -Destination $privateIobSeed
   $privateSeedPlaceholder=Join-Path $temporarySolverDir 'iob_seed_placeholder_01.pa0'
-  Copy-Item -LiteralPath (Join-Path $script:pythonRoot 'common\simion\assets\iob_instance_seeds\iob_seed_placeholder_01.pa0') -Destination $privateSeedPlaceholder
+  Copy-Item -LiteralPath (Join-Path $script:pythonRoot 'src\msplatform\backends\simion\resources\iob_seed_placeholder_01.pa0') -Destination $privateSeedPlaceholder
   foreach($seedIndex in 2..4){
     $seedAlias=Join-Path $temporarySolverDir ('iob_seed_placeholder_{0:D2}.pa0'-f$seedIndex)
     $null=New-Item -ItemType HardLink -Path $seedAlias -Target $privateSeedPlaceholder
@@ -1149,7 +1149,7 @@ try{
     if(Test-Path -LiteralPath $batchResourceUsagePath -PathType Leaf){Complete-ResourceUsage -RunDir $runDir -UsagePath $batchResourceUsagePath|Out-Null}
     if($resourceIdentityWasUnknown-and(Test-Path -LiteralPath $batchResourceUsagePath -PathType Leaf)){
       $resourceProfilePath=Join-Path $resultDir 'simion_resource_profile.json'
-      Invoke-ProjectPython -Arguments @('-m','common.simion.resource_profile','publish','--run-id',$RunId,'--resource-usage',$batchResourceUsagePath,'--resource-usage-relative-path','logs/simion_batch_resource_usage.json','--dispatch-plan',$runtimeDispatchPlanPath,'--dispatch-plan-relative-path','results/simion_repository_dispatch_plan.json','--output',$resourceProfilePath)
+      Invoke-ProjectPython -Arguments @('-m','msplatform.execution.resource_profile','publish','--run-id',$RunId,'--resource-usage',$batchResourceUsagePath,'--resource-usage-relative-path','logs/simion_batch_resource_usage.json','--dispatch-plan',$runtimeDispatchPlanPath,'--dispatch-plan-relative-path','results/simion_repository_dispatch_plan.json','--output',$resourceProfilePath)
     }
     $rawLog=Join-Path $logDir 'native_two_prism_flight.log';$batchMergeReceipt=Join-Path $resultDir 'batch_log_merge_receipt.json'
     $mergeParticleIdMin=if($bunchSelectionRequested){$BunchParticleIdMin}else{1}

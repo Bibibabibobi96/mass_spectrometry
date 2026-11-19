@@ -10,7 +10,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
-$powerShellPreflight = Join-Path $repoRoot 'common\require_powershell7.ps1'
+$powerShellPreflight = Join-Path $repoRoot 'src\msplatform\execution\resources\require_powershell7.ps1'
 if (-not (Test-Path -LiteralPath $powerShellPreflight -PathType Leaf)) {
   throw "Missing PowerShell 7 preflight: $powerShellPreflight"
 }

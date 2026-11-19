@@ -29,13 +29,15 @@ from msplatform.contracts.particle_physics import kinetic_energy_ev
 from msplatform.backends.simion.native_completion import require_one_fly_completion
 from msplatform.backends.simion.particle_batching import merge_rebased_particle_csvs
 # Import public dependencies before prepare freezes the loaded source closure.
-from common.simion import resource_profile as resource_profile
+from msplatform.backends.simion import resource_profile as resource_profile
 from msplatform.execution import simion_dispatch as resource_scheduler
 from msplatform.backends.simion.source import project_direct_velocity, render_standard_beams, render_source_states
 from msplatform.backends.simion.ip_handoff import frozen_release_states
 from msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates import to_project_position, to_project_vector
 from msplatform.results import ip_continuation
 from msplatform.results.ip_continuation import continuation_ancestry, continuation_protection_paths
+from msplatform.backends.simion.lua_serialization import lua_literal
+from msplatform.backends.simion.ip_force_protocol import STEP_COLUMNS, IMPULSE_COLUMNS
 
 
 def _read(path: Path) -> dict:
@@ -450,7 +452,6 @@ def prepare_request(run: Path, native_pa0_record: dict | None = None) -> dict:
 
 def materialize_batches(run: Path, batch_plan: Path) -> dict:
     """Create isolated sibling workbenches; keep IOB relative PA references valid."""
-    from msplatform.workflows.ion_processor.preparation import lua_literal
     run = run.resolve()
     c = _read(run/"inputs/resolved_model.json")
     retain = frozen_runtime_profile(run)["retain_batch_trajectories"]
@@ -626,7 +627,6 @@ def merge_batches(run: Path, batch_plan: Path) -> dict:
     partial = _read(partial_path) if partial_path.exists() else None
     reused = {item["key"]: item for item in partial["units"] if item["action"] == "reuse"} if partial else {}
     events, samples, seeds, audits, log_parts = [], [], [], [], []
-    from msplatform.workflows.ion_processor.extraction_force_budget import STEP_COLUMNS, IMPULSE_COLUMNS
     force_headers = {"extraction_steps.csv":STEP_COLUMNS, "extraction_impulses.csv":IMPULSE_COLUMNS}
     force_sources = {name:[] for name in force_headers}
     original_fields = None

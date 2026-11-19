@@ -132,7 +132,7 @@ print(json.dumps(field_plan.build_field_plan(Path(sys.argv[2]),Path(sys.argv[3])
 $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{author}' -ContractPath '{contract}' -InputDir '{destination}' -OwnerId instrument_assembly -ConsumerId single_reflection_flight
 """
                     result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
-                        cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=60)
+                        cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
                     if not accepted:
                         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
                         self.assertIn("no production sources", result.stdout + result.stderr)
@@ -345,7 +345,7 @@ from pathlib import Path
 from integrations.workflows.accelerator_interface import prepare
 from msplatform.workflows.multipole_ip import prepare as handoff
 from msplatform.contracts.machine_contracts import ContractError
-from projects.dual_pressure_rectilinear_ion_processor.analysis import functional
+from msplatform.workflows.ion_processor import functional
 from msplatform.workflows.ion_processor import preparation
 import tempfile
 root = Path.cwd().resolve()
@@ -467,11 +467,11 @@ with tempfile.TemporaryDirectory() as request_directory:
     def test_joint_finalization_owners_freeze_the_existing_public_adapter(self) -> None:
         entries = {item["source_repo_path"]: set(item["consumers"])
                    for group in load(INVENTORY)["providers"] for item in group["files"]}
-        self.assertEqual(entries["common/contracts/run_artifact_workflow.ps1"],
+        self.assertEqual(entries["src/msplatform/workflows/resources/run_artifact_workflow.ps1"],
                          {"prepared_joint", "oa_mr", "paired_accelerator_static_field",
                           "paired_accelerator_pulse",
                           "single_reflection_flight"})
-        self.assertLessEqual(entries["common/contracts/run_artifact_workflow.ps1"],
+        self.assertLessEqual(entries["src/msplatform/workflows/resources/run_artifact_workflow.ps1"],
                              entries["common/resource_budget_support.ps1"])
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
@@ -483,7 +483,7 @@ with tempfile.TemporaryDirectory() as request_directory:
                                     capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=120)
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
             snapshot = inputs/"runtime_snapshot"
-            runtime = snapshot/"projects/parallel_mirror_dual_stripe_mr_tof/simion/native_corridor_runtime_support.ps1"
+            runtime = snapshot/"src/msplatform/backends/simion/resources/native_corridor_runtime_support.ps1"
             load_runtime = f". '{runtime}'; if(-not (Get-Command Protect-MrtofContinuationEvidence -ErrorAction SilentlyContinue)){{throw 'missing frozen guard'}}"
             result = subprocess.run([shutil.which("pwsh"),"-NoProfile","-Command",load_runtime],cwd=snapshot,
                                     capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=30)
@@ -578,8 +578,8 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_RO
             script = f"""
 . '{detached / 'integrations/runtime/dependencies.ps1'}'
 $dependency=[pscustomobject]@{{
- id='fixture';provider_scope='repository_common';provider_project='common';provider_repo_path='common'
- source_repo_path='common/contracts/run_artifact_support.ps1';frozen_filename='copied.ps1'
+ id='fixture';provider_scope='repository_core';provider_project='msplatform';provider_repo_path='src/msplatform'
+ source_repo_path='src/msplatform/execution/resources/run_artifact_support.ps1';frozen_filename='copied.ps1'
  run_input_name='fixture';consumers=@('prepared_joint')
 }}
 Copy-FrozenDependency -RepoRoot '{detached}' -InputDir '{destination}' -Dependency $dependency | ConvertTo-Json -Depth 5
@@ -590,7 +590,7 @@ Copy-FrozenDependency -RepoRoot '{detached}' -InputDir '{destination}' -Dependen
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             record = json.loads(result.stdout)
-            source = detached / "common/contracts/run_artifact_support.ps1"
+            source = detached / "src/msplatform/execution/resources/run_artifact_support.ps1"
             self.assertEqual((destination / "copied.ps1").read_bytes(), source.read_bytes())
             self.assertEqual(record["sha256"], hashlib.sha256(source.read_bytes()).hexdigest().upper())
             self.assertEqual(Path(record["snapshot_path"]), destination / "copied.ps1")
@@ -691,7 +691,7 @@ assert Path(write_run_manifest.__file__).is_relative_to(Path.cwd())
 assert Path(capacity_protection.__file__).is_relative_to(Path.cwd())
 """
                 if consumer == 'accelerator_interface':
-                    statement += "\nfrom projects.dual_pressure_rectilinear_ion_processor.analysis import batching\n"
+                    statement += "\nfrom msplatform.backends.simion import ip_batching as batching\n"
                     statement += "assert Path(batching.__file__).is_relative_to(Path.cwd())\n"
                 if consumer == 'accelerator_interface':
                     statement += "\nfrom msplatform.backends.simion import mr_bunch_source\n"

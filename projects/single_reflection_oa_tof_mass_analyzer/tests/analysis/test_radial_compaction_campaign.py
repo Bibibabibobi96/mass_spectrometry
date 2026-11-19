@@ -714,7 +714,7 @@ def run(case_root, run_id, context, managed):
                 validator.write_text(
                     "param([string]$Repo,[string]$CompletionPath)\n"
                     "$ErrorActionPreference='Stop'\n"
-                    ". (Join-Path $Repo 'common/contracts/run_artifact_workflow.ps1')\n"
+                    ". (Join-Path $Repo 'src/msplatform/workflows/resources/run_artifact_workflow.ps1')\n"
                     "$completion=Get-Content -LiteralPath $CompletionPath -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable\n"
                     "Assert-WorkflowWriterCompletion $completion.writer_completion\n",
                     encoding="utf-8",

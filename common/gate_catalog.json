@@ -166,6 +166,14 @@
           "reason": "workspace_paths_changed"
         },
         {
+          "exact": "src/msplatform/execution/resources/workspace_paths.py",
+          "reason": "workspace_path_transport_changed"
+        },
+        {
+          "exact": "src/msplatform/execution/resources/workspace_paths.ps1",
+          "reason": "workspace_path_transport_changed"
+        },
+        {
           "exact": "src/msplatform/execution/run_paths.py",
           "reason": "canonical_native_path_projection_changed"
         },
@@ -738,11 +746,11 @@
           "reason": "rf_event_or_axis_actual_consumer_changed"
         },
         {
-          "exact": "common/paths/workspace_paths.py",
+          "exact": "src/msplatform/execution/resources/workspace_paths.py",
           "reason": "workspace_path_transport_changed"
         },
         {
-          "exact": "common/paths/workspace_paths.ps1",
+          "exact": "src/msplatform/execution/resources/workspace_paths.ps1",
           "reason": "workspace_path_transport_changed"
         },
         {
@@ -846,7 +854,7 @@
           "reason": "changed_scope_contract_tests_changed"
         },
         {
-          "exact": "common/require_powershell7.ps1",
+          "exact": "src/msplatform/execution/resources/require_powershell7.ps1",
           "reason": "powershell_host_contract_changed"
         },
         {
@@ -1215,11 +1223,11 @@
           {
             "matches": [
               {
-                "exact": "common/paths/workspace_paths.py",
+                "exact": "src/msplatform/execution/resources/workspace_paths.py",
                 "reason": "workspace_path_transport_changed"
               },
               {
-                "exact": "common/paths/workspace_paths.ps1",
+                "exact": "src/msplatform/execution/resources/workspace_paths.ps1",
                 "reason": "workspace_path_transport_changed"
               }
             ],
@@ -1347,7 +1355,7 @@
                 "reason": "changed_scope_contract_tests_changed"
               },
               {
-                "exact": "common/require_powershell7.ps1",
+                "exact": "src/msplatform/execution/resources/require_powershell7.ps1",
                 "reason": "powershell_host_contract_changed"
               },
               {
@@ -4981,6 +4989,10 @@
         "rf_multipole_generated_publications"
       ],
       "matches": [
+        {
+          "exact": "src/msplatform/execution/resources/run_artifact_support.ps1",
+          "reason": "installed_run_artifact_support_changed"
+        },
         {
           "exact": "src/msplatform/workflows/rf_design_profiles.py",
           "reason": "installed_rf_configuration_or_analysis_changed"
