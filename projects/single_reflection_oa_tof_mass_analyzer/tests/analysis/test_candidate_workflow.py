@@ -1748,7 +1748,7 @@ print('FROZEN_ION_CONSUMER_PASS')
             )
             planning_root = Path(plan["planning_root"])
             code_root = Path(plan["execution_source_closure"]["code_root"])
-            target = code_root / "common" / "require_powershell7.ps1"
+            target = code_root / "src/msplatform/execution/resources/require_powershell7.ps1"
             original = target.read_bytes()
             extra = code_root / "undeclared.py"
             for case in ("modified", "extra"):
@@ -1776,7 +1776,7 @@ print('FROZEN_ION_CONSUMER_PASS')
             code_root = Path(
                 runtime_plan["execution_source_closure"]["code_root"]
             )
-            target = code_root / "common" / "require_powershell7.ps1"
+            target = code_root / "src/msplatform/execution/resources/require_powershell7.ps1"
             target.write_text(
                 target.read_text(encoding="utf-8") + "\n# tampered\n",
                 encoding="utf-8",

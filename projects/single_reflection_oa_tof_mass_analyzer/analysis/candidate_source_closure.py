@@ -33,7 +33,6 @@ RELATIVE_PATHS = (
     "common/host_resource_python.ps1",
     "src/msplatform/execution/resources/run_artifact_support.ps1",
     "common/paths/repository_root.py",
-    "src/msplatform/execution/resources/workspace_paths.py",
     "src/msplatform/execution/resources/workspace_paths.ps1",
     "common/contracts/gui_source_protection.py",
     "src/msplatform/execution/resources/artifact_retention.json",

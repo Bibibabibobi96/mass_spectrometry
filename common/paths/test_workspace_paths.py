@@ -9,7 +9,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from common.paths.workspace_paths import resolve_workspace_paths
+from msplatform.execution.resources import workspace_paths
+from msplatform.execution.resources.workspace_paths import resolve_workspace_paths
 from msplatform.execution.run_paths import project_native_run_path, project_run_path
 
 PWSH = shutil.which("pwsh")
@@ -17,7 +18,7 @@ PWSH = shutil.which("pwsh")
 
 class WorkspacePathsTests(unittest.TestCase):
     def test_canonical_projection_is_stdlib_only_and_root_bodies_are_retired(self):
-        from common.paths import workspace_paths
+        from msplatform.execution.resources import workspace_paths
 
         for name in ("project_run_path", "project_native_run_path", "_absolute"):
             self.assertFalse(hasattr(workspace_paths, name))
@@ -36,7 +37,7 @@ assert not any(name.split('.')[0] in {'common','projects','integrations'} for na
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_json_bridge_uses_utf8_for_both_pipe_directions(self):
-        bridge = Path(__file__).with_name("workspace_paths.py")
+        bridge = Path(workspace_paths.__file__)
         environment = dict(os.environ, PYTHONUTF8="0", PYTHONIOENCODING="cp1252",
                            PYTHONPATH=str(Path(__file__).resolve().parents[2] / "src"))
         with tempfile.TemporaryDirectory() as temporary:
@@ -126,13 +127,14 @@ assert not any(name.split('.')[0] in {'common','projects','integrations'} for na
                 project_run_path(persistent / "../escape", persistent, execution)
 
     def test_powershell_bridge_batches_projection_and_preserves_failure(self):
-        bridge = Path(__file__).with_name("workspace_paths.ps1")
+        bridge = Path(__file__).resolve().parents[2] / "src/msplatform/execution/resources/workspace_paths.ps1"
         canonical = Path(__file__).resolve().parents[2] / "src/msplatform/execution/resources/run_paths.ps1"
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "中文路径"
             root.mkdir()
             script = root / "probe.ps1"
             script.write_text(r"""
+[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 . $args[0]
 . $args[3]
 $python=$args[1];$root=$args[2]

@@ -476,7 +476,7 @@ def prepare_candidate_run(
     run_identity = validate_run_id(run_id)
     workflow = load_json(WORKFLOW_PATH)
     validate_workflow(workflow)
-    from common.paths.workspace_paths import resolve_workspace_paths
+    from msplatform.execution.resources.workspace_paths import resolve_workspace_paths
     artifact_project_root = (artifact_project_root or Path(resolve_workspace_paths(REPO_ROOT)["artifact_root"]) / "projects" / PROJECT_ROOT.name).resolve()
     formal_root = artifact_project_root / "formal"
     run_root = artifact_project_root / "runs" / run_id
@@ -1001,7 +1001,7 @@ def candidate_native_execution_relative_paths(closure: dict, *, code_relative_ro
 
 def prepare_postprocess_request(parent: Path, run_id: str) -> dict:
     """Freeze only an explicit COMSOL postprocessing child, using the public owner."""
-    from common.paths.workspace_paths import resolve_workspace_paths
+    from msplatform.execution.resources.workspace_paths import resolve_workspace_paths
     from msplatform.execution.retention import file_record
     validate_run_id(run_id)
     paths = resolve_workspace_paths(REPO_ROOT)
