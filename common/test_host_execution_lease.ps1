@@ -26,7 +26,7 @@ try {
   $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH = $statePath
   $env:SIMULATION_PYTHON_EXE = $PythonExe
   . $leaseSource
-  . (Join-Path $PSScriptRoot 'contracts/run_artifact_support.ps1')
+  . (Join-Path $PSScriptRoot '../src/msplatform/execution/resources/run_artifact_support.ps1')
   $realTransaction=${function:Invoke-HostResourceTransaction}
   try {
     # Capture both consumers without opening even the default live database.
