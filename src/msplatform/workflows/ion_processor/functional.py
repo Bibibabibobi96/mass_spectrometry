@@ -142,13 +142,15 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
     assert callable(diagnostics.export_diagnostics)
     assert callable(field_diagnostics.export_field_diagnostics)
     from msplatform.backends.simion import ip_batching as batching
+    from msplatform.execution import resource_profile
     from msplatform.workflows.ion_processor import extraction_force_budget
     from msplatform.analysis.population_moments import population_pair_moments
     from msplatform.analysis.beam_focus_diagnostics import prepare_focus_diagnostics
     from msplatform.io.figure_export import export_figures
     from msplatform.analysis.plane_crossings import iter_bounded_plane_crossings
     from msplatform.analysis.particle_census import partition_cohort
-    assert batching.resource_profile.PROFILE_ROLE == "simion_resource_profile"
+    assert resource_profile.PROFILE_ROLE == "simion_resource_profile"
+    assert callable(batching.prepare_request)
     assert callable(extraction_force_budget.export_force_budget)
     assert callable(population_pair_moments)
     assert callable(prepare_focus_diagnostics)

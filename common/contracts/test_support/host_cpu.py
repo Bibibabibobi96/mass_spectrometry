@@ -29,7 +29,7 @@ def install_controlled_cpu_snapshot(repository: Path, fixture: Path, *, cpu_perc
     marker = b"    cpu_percent = $load\n"
     if canonical_bytes.count(marker) != 1:
         raise ValueError("Controlled CPU snapshot requires the exact canonical host resource")
-    lookup = b"$hostResource=Join-Path $legacyRepo 'src/msplatform/execution/resources/host_execution_lease.ps1'"
+    lookup = b". (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext"
     if contents.count(lookup) != 1:
         raise ValueError("Controlled CPU snapshot requires the exact installed-resource bridge")
     private = fixture / "common/host_execution_lease.resource.ps1"
@@ -52,4 +52,4 @@ def install_controlled_cpu_snapshot(repository: Path, fixture: Path, *, cpu_perc
                         + f"$script:SoftwareFixtureCpuPercent={float(cpu_percent)!r}\n".encode("ascii")
                         + body.replace(marker, replacement))
     target.write_bytes(contents.replace(lookup,
-        b"$hostResource=Join-Path $PSScriptRoot 'host_execution_lease.resource.ps1'"))
+        b". (Join-Path $PSScriptRoot 'host_execution_lease.resource.ps1') -HostContext $hostContext"))
