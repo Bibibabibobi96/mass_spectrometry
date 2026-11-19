@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from msplatform.io import scientific_csv as io
-from common.paths import workspace_paths
+from msplatform.execution.resources import workspace_paths
 from msplatform.backends.simion import mrtof_batch_flight as merger
 from msplatform.workflows.prepared_joint import continuation
 from msplatform.workflows.prepared_joint import trial as prepared
@@ -338,7 +338,7 @@ assert(#events==2 and events[2].kind=='terminal' and events[2].t_us==0.018 and e
         with tempfile.TemporaryDirectory() as directory:
             script = Path(directory) / 'batch.ps1'
             script.write_text(code.replace('@@PYTHON@@', sys.executable.replace("'", "''")), encoding='utf-8')
-            result = subprocess.run([pwsh, '-NoProfile', '-File', str(script), str(ROOT / 'integrations/workflows/oa_mr/execute.ps1'), directory, str(Path(workspace_paths.__file__).resolve().parents[2])], cwd=script.parent, capture_output=True, text=True, timeout=30)
+            result = subprocess.run([pwsh, '-NoProfile', '-File', str(script), str(ROOT / 'integrations/workflows/oa_mr/execute.ps1'), directory, workspace_paths.resolve_workspace_paths(ROOT)["source_root"]], cwd=script.parent, capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn('PRIVATE_BATCH_LOCATORS=PASS', result.stdout)
 

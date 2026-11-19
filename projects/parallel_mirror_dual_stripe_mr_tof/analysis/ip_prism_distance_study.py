@@ -25,7 +25,7 @@ from msplatform.io.manifest_records import verify_record
 from msplatform.execution.manifest_publication import publish_run_manifest
 from msplatform.execution import retention as artifact_retention
 from msplatform.execution import run_capacity_lifecycle
-from msplatform.backends.simion import resource_profile
+from msplatform.execution import resource_profile
 from msplatform.backends.simion import particle_batching
 from msplatform.execution import simion_dispatch as resource_scheduler
 from msplatform.backends.simion.source import render_standard_beams

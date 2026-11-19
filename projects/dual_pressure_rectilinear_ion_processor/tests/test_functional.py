@@ -943,7 +943,7 @@ Invoke-RunToolRootContext -RepoRoot $Closure -Operation {
                 "assert Path(p.__file__).resolve().is_relative_to(Path('inputs/code/src').resolve()); "
                 "frozen = freeze_file(p.POLICY_PATH, Path('isolated_policy.json')); "
                 "assert frozen['source_path'] == str(p.POLICY_PATH.resolve()); "
-                "from msplatform.backends.simion import resource_profile; from msplatform.backends.simion import particle_batching; from msplatform.execution import simion_dispatch as resource_scheduler;assert Path(particle_batching.__file__).resolve().is_relative_to(Path('inputs/code/src').resolve());"
+                "from msplatform.execution import resource_profile; from msplatform.backends.simion import particle_batching; from msplatform.execution import simion_dispatch as resource_scheduler;assert Path(particle_batching.__file__).resolve().is_relative_to(Path('inputs/code/src').resolve());"
                 "assert resource_profile.PROFILE_ROLE == 'simion_resource_profile'; "
                 "from msplatform.backends.simion import ip_batching as batching; "
                 "completion = batching.require_one_fly_completion(['status,Fly completed. 10 splats, 2.19 seconds']); "
