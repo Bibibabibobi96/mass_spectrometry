@@ -8,9 +8,14 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '../../..')).Path
 . (Join-Path $repoRoot 'src/msplatform/execution/resources/require_powershell7.ps1')
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/resource_process_support.ps1')
+$executionResources=Join-Path $repoRoot 'src/msplatform/execution/resources'
+. (Join-Path $executionResources 'run_artifact_support.ps1')
 $python=if($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit SIMULATION_PYTHON_EXE is required'}
+$hostState=if($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH}else{Join-Path (Split-Path -Parent $repoRoot) 'artifacts/common/host_resources.sqlite3'}
+$hostContext=@{workspace=(Split-Path -Parent $repoRoot);python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
+. (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
+. (Join-Path $executionResources 'resource_process_support.ps1')
+. (Join-Path $executionResources 'simion_dispatch_support.ps1')
 $module='projects.parallel_mirror_dual_stripe_mr_tof.analysis.ip_prism_distance_study'
 $projectId='parallel_mirror_dual_stripe_mr_tof'
 $artifactRoot=Join-Path (Split-Path -Parent $repoRoot) 'artifacts'

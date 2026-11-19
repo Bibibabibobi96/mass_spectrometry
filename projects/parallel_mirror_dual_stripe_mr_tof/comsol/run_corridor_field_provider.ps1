@@ -11,8 +11,12 @@ if($RequestPath){$RequestPath=(Resolve-Path -LiteralPath $RequestPath).Path}
 $preparedConfig=Join-Path $RunDirectory 'run_config.json'
 $repo = if($Child){[string](Get-Content (Join-Path $PSScriptRoot 'plan.json') -Raw | ConvertFrom-Json).repo_root}elseif(Test-Path -LiteralPath $preparedConfig){[string](Get-Content (Join-Path $RunDirectory 'inputs/plan.json') -Raw | ConvertFrom-Json).repo_root}else{Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent}
 . (Join-Path $repo 'src/msplatform/execution/resources/require_powershell7.ps1')
-. (Join-Path $repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
+$executionResources=Join-Path $repo 'src/msplatform/execution/resources'
+. (Join-Path $executionResources 'run_artifact_support.ps1')
 $python=if($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit SIMULATION_PYTHON_EXE is required'}
+$hostState=if($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH}else{Join-Path (Split-Path -Parent $repo) 'artifacts/common/host_resources.sqlite3'}
+$hostContext=@{workspace=(Split-Path -Parent $repo);python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
+. (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 if($Child){
     $plan=Get-Content (Join-Path $PSScriptRoot 'plan.json') -Raw | ConvertFrom-Json
     $env:MRTOF_COMSOL_RESOURCE_DIRECTORY=[string]$plan.matlab_resource_directory

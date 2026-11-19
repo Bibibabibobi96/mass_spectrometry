@@ -78,6 +78,12 @@ of checkout `.venv` or retired host/budget adapters. Their five affected modules
 passed 142 parents with 252 successes and four existing external-asset skips in
 376.132 seconds. Scientific geometry, native requests and recovery semantics are
 unchanged; no SolidWorks, COMSOL or SIMION native execution was performed.
+IP/Prism additionally loads the installed SIMION dispatch owner, and the corridor
+parent initializes and propagates its explicit HostContext to the child. Fresh
+PowerShell processes with host-context variables cleared reached the analysis-only
+refusal and COMSOL task boundary respectively; corridor admission released before
+the intentionally absent task stopped any solver. The two affected modules passed
+55 parents with 85 successes and four existing skips in 299.916 seconds.
 The mirror L0/L1, exact-K and fixed-grid correction runners follow the same
 execution context and freeze canonical host resources. Their four modules passed
 51 parents with 98 successful records in 15.323 seconds, without a native solve.
