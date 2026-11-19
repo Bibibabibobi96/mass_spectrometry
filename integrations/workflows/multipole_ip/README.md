@@ -33,12 +33,12 @@ For an existing field, `continuous.ps1` invokes the same installed module with
 beside `continuous.py`; it explicitly describes the bath box, uniform outer
 field and vendor path, which may be absolute or relative to that document.
 Optional recovery, dispatch and unit-size inputs follow the public tracker.
-Relative file and workspace inputs are resolved from the caller's working
-directory before entering the public execution context. The PowerShell layer
-only forwards these inputs and the selected Python. For the named complete
-RF–IP–MR case, `accelerator_interface/execute.ps1 -FullJoint` accepts the same
-inputs with the `Continuous` prefix and delegates here without creating another
-field, tracking or recovery owner.
+Both PowerShell entries resolve relative file and workspace inputs from their
+caller's working directory before entering the repository execution context;
+an explicitly selected Python is resolved at the same boundary. For the named
+complete RF–IP–MR case, `accelerator_interface/execute.ps1 -FullJoint` accepts
+the same inputs with the `Continuous` prefix and delegates here without creating
+another field, tracking or recovery owner.
 
 Software tests cover the real compiler, field reader, managed tracking/recovery,
 typed HS1/CLI admission and failure guards using an inert native leaf. Real
