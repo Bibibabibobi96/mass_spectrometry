@@ -907,11 +907,13 @@ class MassSpectrumTestIsolationTests(unittest.TestCase):
         threading.excepthook = capture_thread_error
         def assert_decode_failure():
             if os.name == 'nt':
+                previous_error_count = len(thread_errors)
                 completed = subprocess.run(command, capture_output=True, text=True,
                                            encoding='utf-8', errors='strict',
                                            cwd=Path(__file__).parent, timeout=10)
                 self.assertEqual(completed.returncode, 0)
-                self.assertTrue(thread_errors)
+                self.assertGreater(len(thread_errors), previous_error_count)
+                self.assertIsInstance(thread_errors[-1], UnicodeDecodeError)
             else:
                 with self.assertRaises(UnicodeDecodeError):
                     subprocess.run(command, capture_output=True, text=True,

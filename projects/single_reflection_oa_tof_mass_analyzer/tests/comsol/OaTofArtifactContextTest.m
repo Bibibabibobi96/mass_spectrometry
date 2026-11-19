@@ -73,7 +73,8 @@ classdef OaTofArtifactContextTest < matlab.unittest.TestCase
             testCase.verifyEqual(paths.projectRoot,string(project));
             testCase.verifyEqual(paths.artifactRoot,expected);
             testCase.verifyEqual(paths.runsRoot,fullfile(expected,'runs'));
-            testCase.verifyEqual(string(paths.commonComsolDir),string(project));
+            testCase.verifyEqual(string(paths.commonComsolDir), ...
+                string(fullfile(fileparts(fileparts(project)),'src','msplatform','backends','comsol','matlab')));
         end
         function namedEntryAcceptsManagedScratchBeforeNativeBoundary(testCase)
             [~,artifact,contract]=testCase.snapshot();
@@ -142,8 +143,8 @@ classdef OaTofArtifactContextTest < matlab.unittest.TestCase
                 ContractPath=contract,OutputModelPath=output,AcceleratorGeometry=struct('invalid',1)), ...
                 'oatof:AcceleratorProjection');
         end
-        function frozenDefaultContractUsesCanonicalResourcesAndRestoresContext(testCase)
-            [project,artifact,~]=testCase.snapshot();
+        function frozenExplicitContractUsesCanonicalResourcesAndRestoresContext(testCase)
+            [project,artifact,contract]=testCase.snapshot();
             output=fullfile(artifact,'projects','single_reflection_oa_tof_mass_analyzer','scratch','default','model.mph');
             writeCoreTransportFixture(fullfile(project,'comsol','oatof_build_model_core.m'));
             clear run_oatof_model oatof_build_model_core load_oatof_contract
@@ -152,20 +153,29 @@ classdef OaTofArtifactContextTest < matlab.unittest.TestCase
             folderRestore=onCleanup(@() cd(originalFolder));
             backend=fullfile(fileparts(fileparts(project)),'src','msplatform','backends','comsol','matlab');
             addpath(backend);
-            result=run_oatof_model(ArtifactRoot=artifact,OutputModelPath=output);
+            result=run_oatof_model(ArtifactRoot=artifact,ContractPath=contract,OutputModelPath=output);
             testCase.verifyEqual(result.execution_output,string(output));
             testCase.verifyEqual(which('run_oatof_model'),fullfile(backend,'run_oatof_model.m'));
-            testCase.verifyEqual(which('load_oatof_contract'),fullfile(project,'load_oatof_contract.m'));
-            path(originalPath);cd(originalFolder);
+            testCase.verifyEqual(which('load_oatof_contract'),fullfile(backend,'load_oatof_contract.m'));
             testCase.verifyEqual(path,originalPath);
             testCase.verifyEqual(pwd,originalFolder);
         end
-        function missingDefaultContractIsRejectedBeforeNative(testCase)
-            [project,artifact,~]=testCase.snapshot();
+        function omittedOrMissingContractIsRejectedBeforeNativeWithContextRestored(testCase)
+            [~,artifact,~]=testCase.snapshot();
             output=fullfile(artifact,'projects','single_reflection_oa_tof_mass_analyzer','scratch','missing','model.mph');
-            delete(fullfile(project,'config','resolved_geometry.json'));
-            testCase.verifyError(@() run_oatof_model(ArtifactRoot=artifact,OutputModelPath=output), ...
+            originalPath=path;originalFolder=pwd;
+            for fieldDesignOnly=[false,true]
+                testCase.verifyError(@() run_oatof_model(ArtifactRoot=artifact, ...
+                    OutputModelPath=output,FieldDesignOnly=fieldDesignOnly), ...
+                    'oatof:MissingResolvedContract');
+                testCase.verifyEqual(path,originalPath);
+                testCase.verifyEqual(pwd,originalFolder);
+            end
+            testCase.verifyError(@() run_oatof_model(ArtifactRoot=artifact, ...
+                ContractPath=fullfile(testCase.folder,'absent.json'),OutputModelPath=output), ...
                 'oatof:MissingResolvedContract');
+            testCase.verifyEqual(path,originalPath);
+            testCase.verifyEqual(pwd,originalFolder);
         end
         function relativeArtifactRootIsRejected(testCase)
             testCase.verifyError(@() oatof_paths('relative/artifacts'),'workspace:ArtifactRoot');
@@ -174,19 +184,15 @@ classdef OaTofArtifactContextTest < matlab.unittest.TestCase
     methods (Access=private)
         function [project,artifact,contract]=snapshot(testCase)
             clear oatof_paths workspace_paths resolve_path_identity run_oatof_model oatof_build_model_core oatof_build_saved_particle_solution
-            repo=fileparts(fileparts(testCase.activeProject));
             snapshotRoot=fullfile(testCase.folder,'source_snapshot');
+            artifact=string(fullfile(testCase.folder,'artifacts'));
+            command=sprintf(['python -c "from pathlib import Path; ' ...
+                'from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import freeze_candidate_source_closure; ' ...
+                'freeze_candidate_source_closure(Path(r''%s''),Path(r''%s''))"'],snapshotRoot,artifact);
+            [status,output]=system(command);
+            assert(status==0,'fixture:SourceClosure','Could not create frozen source layout: %s',output);
             project=fullfile(snapshotRoot,'projects','single_reflection_oa_tof_mass_analyzer');
             mkdir(fullfile(project,'comsol'));
-            mkdir(fullfile(snapshotRoot,'common','paths'));
-            mkdir(fullfile(snapshotRoot,'common','comsol'));
-            copyfile(fullfile(repo,'src','msplatform','backends','comsol','matlab','workspace_paths.m'),fullfile(snapshotRoot,'common','paths'));
-            copyfile(fullfile(repo,'src','msplatform','backends','comsol','matlab','resolve_path_identity.m'),fullfile(snapshotRoot,'common','paths'));
-            copyfile(fullfile(repo,'src','msplatform','backends','comsol','matlab','oatof_paths.m'),project);
-            copyfile(fullfile(repo,'src','msplatform','backends','comsol','matlab','load_oatof_contract.m'),project);
-            mkdir(fullfile(snapshotRoot,'src','msplatform','backends','comsol','matlab'));
-            copyfile(fullfile(repo,'src','msplatform','backends','comsol','matlab','run_oatof_model.m'), ...
-                fullfile(snapshotRoot,'src','msplatform','backends','comsol','matlab'));
             copyfile(fullfile(testCase.activeProject,'comsol','oatof_build_model_core.m'),fullfile(project,'comsol'));
             copyfile(fullfile(testCase.activeProject,'comsol','oatof_build_saved_particle_solution.m'),fullfile(project,'comsol'));
             copyfile(fullfile(testCase.activeProject,'comsol','oatof_save_run_model.m'),fullfile(project,'comsol'));
@@ -195,10 +201,8 @@ classdef OaTofArtifactContextTest < matlab.unittest.TestCase
             copyfile(fullfile(testCase.activeProject,'config','resolved_geometry.json'),contract);
             mkdir(fullfile(project,'config'));
             copyfile(contract,fullfile(project,'config','resolved_geometry.json'));
-            artifact=string(fullfile(testCase.folder,'artifacts'));
             testCase.applyFixture(matlab.unittest.fixtures.PathFixture(project));
             testCase.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(project,'comsol')));
-            testCase.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(snapshotRoot,'common','paths')));
             testCase.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(snapshotRoot,'src','msplatform','backends','comsol','matlab')));
             testCase.applyFixture(matlab.unittest.fixtures.EnvironmentVariableFixture('OATOF_PROJECT_ROOT',project));
         end

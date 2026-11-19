@@ -272,7 +272,8 @@ Assert-Contains $deliveryBuilder 'run_finalization_deferred=$true' 'SIMION stage
 # Detector coordinates are covered by pure resolved geometry / MATLAB loader behavior.
 Assert-Contains $comsol 'contract = load_oatof_contract(contract_path);' 'COMSOL resolved-contract loader'
 Assert-Contains $comsol 'options.ContractPath (1,1) string = ""' 'COMSOL candidate contract option'
-Assert-Contains $comsol "contractPath = string(fullfile(projectRoot, 'config', 'resolved_geometry.json'));" 'COMSOL formal resolved-contract default'
+Assert-Contains $comsol "assert(strlength(contractPath) > 0, 'oatof:MissingResolvedContract', ..." 'COMSOL explicit resolved contract requirement'
+Assert-NotContains $comsol "contractPath = string(fullfile(projectRoot, 'config', 'resolved_geometry.json'));" 'COMSOL implicit project contract fallback'
 Assert-Contains $comsol 'contract = load_oatof_contract(contractPath);' 'COMSOL candidate contract binding'
 Assert-Contains $comsol 'char(options.OutputModelPath), char(contractPath)' 'COMSOL authoritative contract forwarding'
 Assert-Contains $comsol "p.set('detector_radius', sprintf('%.12g[mm]', geometryMm.detector_radius)" 'COMSOL detector radius parameter'

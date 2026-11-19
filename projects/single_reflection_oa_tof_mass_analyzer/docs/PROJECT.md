@@ -25,18 +25,21 @@ software migration, not native execution or scientific qualification.
 
 ## Installed MATLAB resource roots
 
-The independent `run_oatof_model` and `workspace_paths` entries now derive the
+The independent `run_oatof_model` and `workspace_paths` entries derive the
 repository from their installed MATLAB locations instead of stopping in `src`.
-The default resolved contract and backend helper directory therefore resolve
-without `src/projects` or `src/src` aliases. R2025b executed all 16
-`OaTofArtifactContextTest` methods successfully: the no-explicit-contract case
-loads the frozen project contract and confirms actual `which` origins, missing
-contract rejection and path/cwd restoration; the pre-existing source/output
-guards remain. No COMSOL model or native solve was launched. The strict
-mass-spectrum decode regression now asserts caller or reader-thread
-`UnicodeDecodeError` by platform while preserving `subprocess.run` identity
-across reloads. The mass-isolation and MR-history selections passed 30 Python
-parents / 88 records; no native worker was started.
+`run_oatof_model` requires an explicit scientific contract instead of inferring
+project defaults from a checkout, and restores the MATLAB path on success and
+early failure. The real candidate freezer supplies the isolated source layout;
+old common/project helpers are not added to its MATLAB path. R2025b executed all
+16 `OaTofArtifactContextTest` methods successfully in 147.709 seconds, including
+canonical `which` origins, explicit-contract use, default and `FieldDesignOnly`
+omission rejection, `GeometryOnly` argument guards and path/cwd restoration. No
+COMSOL model or native solve was launched. The strict mass-spectrum decode
+regression requires a new reader-thread `UnicodeDecodeError` on every Windows
+reload, or the caller exception on other platforms, while preserving
+`subprocess.run` identity and restoring the thread hook. The mass-isolation and
+MR-history selections passed 30 Python parents / 88 records; no native worker
+was started.
 
 ## Generic vector-field comparison owner
 

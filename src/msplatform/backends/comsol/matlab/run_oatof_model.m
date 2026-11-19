@@ -37,6 +37,8 @@ end
 matlabRoot = fileparts(mfilename('fullpath'));
 codeRoot = fileparts(fileparts(fileparts(fileparts(fileparts(matlabRoot)))));
 projectRoot = fullfile(codeRoot, 'projects', 'single_reflection_oa_tof_mass_analyzer');
+originalPath = path;
+pathRestore = onCleanup(@() path(originalPath));
 addpath(projectRoot, matlabRoot);
 contractPath = options.ContractPath;
 if options.GeometryOnly
@@ -47,9 +49,8 @@ if options.GeometryOnly
         strlength(options.CartesianRelease)==0, 'oatof:GeometryOnlyScope', ...
         'GeometryOnly cannot configure fields or particle sources.');
 end
-if strlength(contractPath) == 0
-    contractPath = string(fullfile(projectRoot, 'config', 'resolved_geometry.json'));
-end
+assert(strlength(contractPath) > 0, 'oatof:MissingResolvedContract', ...
+    'An explicit resolved contract path is required; project scientific inputs are not implicit package resources.');
 contract = load_oatof_contract(contractPath);
 assert(strlength(options.FixedParticleTable)==0 || strlength(options.CartesianRelease)==0, ...
     'oatof:ParticleSource','FixedParticleTable and CartesianRelease are mutually exclusive.');
