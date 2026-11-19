@@ -36,7 +36,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_c
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import (
     freeze_pa_producer_handoffs, plan_pa_producer_handoffs, validate_artifact_capacity,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.simion_component_pa_plan import compile_component_pa_plan, sum_component_commitments
+from msplatform.backends.simion.simion_component_pa_plan import compile_component_pa_plan, sum_component_commitments
 
 
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.candidate_stage_execution import execute_candidate_stage, _powershell

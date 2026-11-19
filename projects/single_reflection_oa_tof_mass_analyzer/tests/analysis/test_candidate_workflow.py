@@ -554,7 +554,7 @@ def execute_prepared_run(*args):
             from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.candidate_comsol_stage import _FROZEN_PYTHON_BOOTSTRAP
             imports = (
                 "from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import run_candidate_workflow; "
-                "from projects.single_reflection_oa_tof_mass_analyzer.analysis import simion_component_pa_plan; "
+                "from msplatform.backends.simion import simion_component_pa_plan; "
                 "from common.contracts import reconcile_artifact_capacity, verify_artifact_layout, capacity_ledger; from msplatform.execution import solver_review_retirement; "
                 "solver_review_retirement._assert_runtime_retirement_unprotected(Path.cwd()/'empty-artifacts', Path.cwd()/'empty-artifacts/run'); "
                 "from msplatform.backends.simion import accelerator_renderer; "

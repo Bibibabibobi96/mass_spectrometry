@@ -59,7 +59,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract 
     resolve_contract_documents,
     serialized,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.simion_component_pa_plan import (
+from msplatform.backends.simion.simion_component_pa_plan import (
     compile_component_pa_plan, sum_component_commitments,
 )
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.radial_compaction import analysis

@@ -1,5 +1,17 @@
 # 单次反射正交加速飞行时间质量分析器当前状态
 
+## Installed component PA-plan owner
+
+`msplatform.backends.simion.simion_component_pa_plan` now owns the pure
+four-component PA-plan compiler, commitment summation, constants and CLI. It
+uses the installed `tof_geometry` physical/instance projection directly; source
+paths, numeric commitments, cache identities and plan behavior are unchanged.
+The Candidate workflow, Formal delivery builder, radial campaign and reflectron
+compensation runner consume the installed owner. Their actual frozen consumers
+passed after switching from the retired project path; the old project module has
+no remaining production consumer. No native build/cache logic, PA, Refine, Fly
+or scientific qualification changed.
+
 ## Installed OA-TOF SIMION input renderer
 
 `msplatform.backends.simion.oatof_inputs` now solely owns pure resolved-contract
@@ -10,6 +22,21 @@ entry retains Formal paths, frozen-seed and authority updates as thin delegates;
 candidate preparation and reflectron compensation call the installed renderer.
 Generated Formal bytes and scientific inputs are unchanged. This is a pure
 software migration, not native execution or scientific qualification.
+
+## Installed MATLAB resource roots
+
+The independent `run_oatof_model` and `workspace_paths` entries now derive the
+repository from their installed MATLAB locations instead of stopping in `src`.
+The default resolved contract and backend helper directory therefore resolve
+without `src/projects` or `src/src` aliases. R2025b executed all 16
+`OaTofArtifactContextTest` methods successfully: the no-explicit-contract case
+loads the frozen project contract and confirms actual `which` origins, missing
+contract rejection and path/cwd restoration; the pre-existing source/output
+guards remain. No COMSOL model or native solve was launched. The strict
+mass-spectrum decode regression now asserts caller or reader-thread
+`UnicodeDecodeError` by platform while preserving `subprocess.run` identity
+across reloads. The mass-isolation and MR-history selections passed 30 Python
+parents / 88 records; no native worker was started.
 
 ## Generic vector-field comparison owner
 

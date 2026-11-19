@@ -10,7 +10,7 @@ from unittest.mock import patch
 from msplatform.io.file_identity import file_sha256
 
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract import derive_simion_geometry, resolve_physical_geometry
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.simion_component_pa_plan import (
+from msplatform.backends.simion.simion_component_pa_plan import (
     compile_component_pa_plan, sum_component_commitments,
 )
 
@@ -58,7 +58,7 @@ class ComponentPaPlanTests(unittest.TestCase):
                              file_sha256(REPO / contract))
         def changed_contract(path):
             return "A" * 64 if Path(path) == REPO / contract else file_sha256(path)
-        with patch("projects.single_reflection_oa_tof_mass_analyzer.analysis.simion_component_pa_plan.file_sha256",
+        with patch("msplatform.backends.simion.simion_component_pa_plan.file_sha256",
                    side_effect=changed_contract):
             after = {item["role"]: item for item in self.plan()["components"]}
         for role in ("accelerator", "reflectron"):

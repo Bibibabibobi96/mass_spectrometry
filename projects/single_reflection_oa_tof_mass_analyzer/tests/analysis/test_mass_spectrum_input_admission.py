@@ -896,17 +896,35 @@ class MassSpectrumTestIsolationTests(unittest.TestCase):
         import importlib
         original = subprocess.run
         command = [sys.executable, '-c', 'import sys;sys.stdout.buffer.write(bytes([255]))']
-        baseline = subprocess.run(command, capture_output=True, text=True,
-                                  encoding='utf-8', errors='strict',
-                                  cwd=Path(__file__).parent, timeout=10)
-        for _ in range(2):
-            importlib.reload(sys.modules[__name__])
-            self.assertIs(subprocess.run, original)
-            repeated = subprocess.run(command, capture_output=True, text=True,
-                                      encoding='utf-8', errors='strict',
-                                      cwd=Path(__file__).parent, timeout=10)
-            self.assertEqual((repeated.returncode, repeated.stdout, repeated.stderr),
-                             (baseline.returncode, baseline.stdout, baseline.stderr))
+        import threading
+        thread_errors = []
+        previous_hook = threading.excepthook
+        def capture_thread_error(args):
+            if isinstance(args.exc_value, UnicodeDecodeError):
+                thread_errors.append(args.exc_value)
+            else:
+                previous_hook(args)
+        threading.excepthook = capture_thread_error
+        def assert_decode_failure():
+            if os.name == 'nt':
+                completed = subprocess.run(command, capture_output=True, text=True,
+                                           encoding='utf-8', errors='strict',
+                                           cwd=Path(__file__).parent, timeout=10)
+                self.assertEqual(completed.returncode, 0)
+                self.assertTrue(thread_errors)
+            else:
+                with self.assertRaises(UnicodeDecodeError):
+                    subprocess.run(command, capture_output=True, text=True,
+                                   encoding='utf-8', errors='strict',
+                                   cwd=Path(__file__).parent, timeout=10)
+        try:
+            assert_decode_failure()
+            for _ in range(2):
+                importlib.reload(sys.modules[__name__])
+                self.assertIs(subprocess.run, original)
+                assert_decode_failure()
+        finally:
+            threading.excepthook = previous_hook
         self.assertIs(subprocess.run, original)
 
     def test_timeout_preserves_run_records_and_restores_subprocess(self):

@@ -127,7 +127,7 @@ $cacheRoot=Join-Path ([string]$capacitySession.artifact_root) 'common/simion/pa_
 $planCode=@'
 import json,sys
 from pathlib import Path
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.simion_component_pa_plan import compile_component_pa_plan
+from msplatform.backends.simion.simion_component_pa_plan import compile_component_pa_plan
 contract,plan,repo,exe=map(Path,sys.argv[1:])
 actual=compile_component_pa_plan(json.loads(contract.read_text(encoding='utf-8-sig')),repository_root=repo,simion_exe=exe)
 assert actual==json.loads(plan.read_text(encoding='utf-8-sig')), 'frozen component plan differs from the actual builder sources or geometry'
