@@ -85,8 +85,11 @@ function Get-SimionPaGridAudit {
 
 $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
 $workspaceRoot=Split-Path -Parent $repoRoot
-$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
+$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
+$executionResources=Join-Path $repoRoot 'src/msplatform/execution/resources'
+. (Join-Path $executionResources 'run_artifact_support.ps1')
+$hostState=if($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH}else{Join-Path $workspaceRoot 'artifacts/common/host_resources.sqlite3'}
+$hostContext=@{workspace=$workspaceRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $PSScriptRoot '../../backends/simion/resources/simion_execution.ps1')
 . (Join-Path $PSScriptRoot '../../backends/simion/resources/simion_field_checkpoint_support.ps1')
 . (Join-Path $PSScriptRoot 'finite_3d_transport_preflight.ps1')
@@ -209,8 +212,8 @@ if(-not(Test-Path -LiteralPath $simion -PathType Leaf)){
 }
 $hostRuntimeSourcePaths=@(
   'config/project_registry.json',
-  'common/host_execution_lease.ps1','common/host_resource_scheduler.py',
-  'src/msplatform/execution/resources/host_resource_policy.json','src/msplatform/execution/resources/require_powershell7.ps1','common/resource_budget_support.ps1')
+  'src/msplatform/execution/resources/host_execution_lease.ps1','src/msplatform/execution/host_resource_scheduler.py',
+  'src/msplatform/execution/resources/host_resource_policy.json','src/msplatform/execution/resources/require_powershell7.ps1','src/msplatform/execution/resources/resource_process_support.ps1')
 $analysisSourcePaths=@('src/msplatform/analysis/particle_census.py')
 $executionCapacityPaths=Get-RunPackageCopiedSourcePaths -RepoRoot $repoRoot `
   -SourceRelativeDirectories @('src/msplatform','common/contracts','common/paths','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/variants') `
@@ -278,7 +281,7 @@ $ownerContext=$null;$hostReleased=$false;$hostReleaseState=@{released=$false;com
 $fieldCheckpointGuard=$null;$fieldCheckpointOutputs=@();$layoutInspectionRequired=$false;$flightIobPath=Join-Path $physicalRunDir 'simion/quad_monolithic.iob'
 $runConfig=$package.run_config;$summary=$package.summary;$manifestRepoRoot=$repoRoot
 $resourceBudgetExceeded=$false
-. (Join-Path $repoRoot 'common\host_execution_lease.ps1')
+. (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 $hostExecutionOutcome='failed'
 $simionRunFailure=$null
 try{$hostExecutionLease=Enter-HostResourceStage -Role SIMION -Stage prepare -RunId $RunId `

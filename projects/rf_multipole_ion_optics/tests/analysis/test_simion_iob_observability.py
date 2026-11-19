@@ -13,7 +13,7 @@ PROJECT_ROOT = Path(__file__).parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 EXECUTION_SUPPORT = REPO_ROOT / "src/msplatform/backends/simion/resources/simion_execution.ps1"
 INSPECT_SCRIPT = REPO_ROOT / "src/msplatform/backends/simion/resources/inspect_builtin_quad_reference.lua"
-ARTIFACT_SUPPORT = REPO_ROOT / "common" / "contracts" / "run_artifact_support.ps1"
+ARTIFACT_SUPPORT = REPO_ROOT / "src" / "msplatform" / "execution" / "resources" / "run_artifact_support.ps1"
 INTERFACE_RUNNER = PROJECT_ROOT / "workflows" / "interface_readiness" / "run_simion.ps1"
 MASS_FILTER_RUNNER = PROJECT_ROOT / "workflows" / "mass_filter_reference" / "run_simion.ps1"
 

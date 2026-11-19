@@ -33,7 +33,11 @@ if($AnalyzeOnly-and[string]::IsNullOrWhiteSpace($EngineeringBudgetPath)){throw '
 $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
 $initialPythonPath=$env:PYTHONPATH
 $env:PYTHONPATH=(Join-Path $repoRoot 'src')+$(if($initialPythonPath){[IO.Path]::PathSeparator+$initialPythonPath}else{''})
-$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
+$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
+$executionResources=Join-Path $repoRoot 'src/msplatform/execution/resources'
+$workspaceRoot=Split-Path -Parent $repoRoot
+$hostState=if($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH}else{Join-Path $workspaceRoot 'artifacts/common/host_resources.sqlite3'}
+$hostContext=@{workspace=$workspaceRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $repoRoot 'src/msplatform/workflows/resources/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
 if($ResumeFinalization){
   . (Join-Path $repoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
@@ -81,8 +85,9 @@ if(-not [double]::IsNaN($WorkingRegionMaximumElementSizeMm) -and $WorkingRegionM
 . (Join-Path $repoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
 $workspacePaths=Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
 $projectArtifactRoot=if($ProjectId){Join-Path ([string]$workspacePaths.artifact_root) ('projects/'+$ProjectId)}else{$null}
-. (Join-Path $repoRoot 'common/resource_budget_support.ps1')
-. (Join-Path $repoRoot 'common/host_execution_lease.ps1')
+$hostContext.host_state_path=[string]$workspacePaths.host_resource_state_path
+. (Join-Path $executionResources 'resource_process_support.ps1')
+. (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 
 function Close-FiniteComsolStage {
   param([Collections.IDictionary]$State)
@@ -731,7 +736,7 @@ function Invoke-FiniteComsolAnalysisChild {
     $analysisAdditional=@()
     if($ReextractFromModel){
       $analysisAreas+=@('common/comsol')
-      $analysisAdditional=@('common/host_execution_lease.ps1','common/host_resource_scheduler.py','src/msplatform/execution/resources/host_resource_policy.json','src/msplatform/execution/resources/require_powershell7.ps1','common/resource_budget_support.ps1')
+      $analysisAdditional=@('src/msplatform/execution/resources/host_execution_lease.ps1','src/msplatform/execution/host_resource_scheduler.py','src/msplatform/execution/resources/host_resource_policy.json','src/msplatform/execution/resources/require_powershell7.ps1','src/msplatform/execution/resources/resource_process_support.ps1')
     }
     $copiedPaths=@(Get-RunPackageCopiedSourcePaths -RepoRoot $RepoRoot -SourceRelativeDirectories $analysisAreas -Extensions @('.py','.json','.ps1','.m','.lua'))
     $copiedPaths+=@($analysisAdditional|ForEach-Object{"inputs/code/$_"})
@@ -943,8 +948,8 @@ try{
 }
 $hostRuntimeSourcePaths=@(
   'config/project_registry.json',
-  'common/host_execution_lease.ps1','common/host_resource_scheduler.py',
-  'src/msplatform/execution/resources/host_resource_policy.json','src/msplatform/execution/resources/require_powershell7.ps1','common/resource_budget_support.ps1','common/resource_budget_support.ps1')
+  'src/msplatform/execution/resources/host_execution_lease.ps1','src/msplatform/execution/host_resource_scheduler.py',
+  'src/msplatform/execution/resources/host_resource_policy.json','src/msplatform/execution/resources/require_powershell7.ps1','src/msplatform/execution/resources/resource_process_support.ps1')
 $analysisSourcePaths=@('src/msplatform/analysis/particle_census.py','src/msplatform/backends/simion/native_completion.py')
 $executionCapacityPaths=Get-RunPackageCopiedSourcePaths -RepoRoot $repoRoot `
   -SourceRelativeDirectories @('src/msplatform','common/contracts','common/paths','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/variants') `
@@ -980,7 +985,8 @@ $runtimeDir=Join-Path $logDir 'runtime'
 $solverProgressDir=Join-Path $logDir 'solver_progress'
 New-Item -ItemType Directory -Force -Path $runtimeDir|Out-Null
 New-Item -ItemType Directory -Force -Path $solverProgressDir|Out-Null
-. (Join-Path $repoRoot 'common\host_execution_lease.ps1')
+$hostContext.host_state_path=[string]$workspacePaths.host_resource_state_path
+. (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 $hostExecutionOutcome='failed'
 $ownerState.host_lease=Enter-HostExecutionLease -StatePath $workspacePaths.host_resource_state_path -Role COMSOL -Stage prepare -RunId $RunId
 $comsolRunFailure=$null

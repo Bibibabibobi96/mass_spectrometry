@@ -1,6 +1,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot '..\..\..\..\..\common\resource_budget_support.ps1')
+. (Join-Path $PSScriptRoot '..\..\..\execution\resources\resource_process_support.ps1')
+. (Join-Path $PSScriptRoot '..\..\..\execution\resources\simion_dispatch_support.ps1')
 
 function Get-RfSimionStoppedWriterCompletion {
     param($HostLease,[Parameter(Mandatory)][AllowEmptyCollection()]$NativeOperations,[Parameter(Mandatory)][hashtable]$State)

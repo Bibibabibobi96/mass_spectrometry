@@ -22,7 +22,7 @@ from projects.rf_multipole_ion_optics.workflows.interface_readiness.particle_sou
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 HELPER = PROJECT_ROOT.parents[1] / "src/msplatform/execution/resources/frozen_python_package.ps1"
-SUPPORT = REPO_ROOT / "common" / "contracts" / "run_artifact_support.ps1"
+SUPPORT = REPO_ROOT / "src" / "msplatform" / "execution" / "resources" / "run_artifact_support.ps1"
 COMSOL_RUNNER = PROJECT_ROOT / "workflows" / "interface_readiness" / "run_comsol.ps1"
 SIMION_RUNNER = PROJECT_ROOT / "workflows" / "interface_readiness" / "run_simion.ps1"
 SOURCE_FAMILY = PROJECT_ROOT / "variants" / "quadrupole" / "config" / "interface_readiness_particle_source.json"

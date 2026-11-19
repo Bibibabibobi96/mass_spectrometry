@@ -356,8 +356,9 @@ ConvertTo-Json -InputObject $script:calls -Depth 6
         from msplatform.execution.inputs import python_import_roots
 
         expected = {
-            "common/host_execution_lease.ps1", "common/host_resource_scheduler.py",
+            "src/msplatform/execution/resources/host_execution_lease.ps1", "src/msplatform/execution/host_resource_scheduler.py",
             "src/msplatform/execution/resources/host_resource_policy.json", "src/msplatform/execution/resources/require_powershell7.ps1",
+            "src/msplatform/execution/resources/resource_process_support.ps1",
             "src/msplatform/analysis/particle_census.py", "config/project_registry.json",
         }
         expected |= {path.relative_to(REPO_ROOT).as_posix()
@@ -393,7 +394,8 @@ if('@@NAME@@'-eq'run_finite_3d_transport.ps1'){
 }
 $executionCapacityPaths|ConvertTo-Json|Set-Content @@CAPACITY@@
 . (Join-Path $codeRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
-. (Join-Path $codeRoot 'common/host_execution_lease.ps1')
+$hostContext=@{workspace=$inputDir;python_executable=$python;host_state_path=(Join-Path $inputDir 'host.sqlite3');policy_path=(Join-Path $codeRoot 'src/msplatform/execution/resources/host_resource_policy.json')}
+. (Join-Path $codeRoot 'src/msplatform/execution/resources/host_execution_lease.ps1') -HostContext $hostContext
 $null=Get-HostResourceBudget -Role GATE -Stage snapshot-probe
 """.replace('@@PYTHON@@', quoted(Path(sys.executable))).replace('@@REPO@@', quoted(REPO_ROOT)).replace('@@INPUT@@', quoted(root)).replace('@@ENTRY@@', quoted(entry)).replace('@@NAME@@', runner_name).replace('@@CAPACITY@@', quoted(root / 'capacity.json'))
                 completed = subprocess.run(
@@ -418,7 +420,8 @@ $null=Get-HostResourceBudget -Role GATE -Stage snapshot-probe
                     self.assertEqual(payload.read_bytes(), (REPO_ROOT / relative).read_bytes())
                     self.assertEqual(hashlib.sha256(payload.read_bytes()).hexdigest().upper(), by_path[relative]["sha256"])
                 roots_json = json.dumps(python_import_roots(root / "code"))
-                imports = "from common.host_resource_scheduler import load_policy; assert load_policy()"
+                policy_path = root / "code/src/msplatform/execution/resources/host_resource_policy.json"
+                imports = f"from msplatform.execution.host_resource_scheduler import load_policy; from pathlib import Path; assert load_policy(Path({str(policy_path)!r}))"
                 if "simion" in runner_name:
                     imports += "; from msplatform.execution import simion_dispatch as resource_scheduler; assert resource_scheduler.CPU_ADMISSION_PERCENT > 0"
                 probe = subprocess.run(

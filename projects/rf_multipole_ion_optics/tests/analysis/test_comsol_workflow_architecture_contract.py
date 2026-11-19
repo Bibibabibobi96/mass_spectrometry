@@ -53,7 +53,7 @@ SHARED_SOLVER = (
     REPO_ROOT / "src/msplatform/backends/comsol/matlab/solve_deterministic_rf_quadrupole_particles.m"
 )
 NUMERICS_SUPPORT = PROJECT_ROOT / "runtime" / "comsol_solver_numerics.ps1"
-RUN_ARTIFACT_SUPPORT = REPO_ROOT / "common" / "contracts" / "run_artifact_support.ps1"
+RUN_ARTIFACT_SUPPORT = REPO_ROOT / "src" / "msplatform" / "execution" / "resources" / "run_artifact_support.ps1"
 SHARED_LIVELINK_LAUNCHER = REPO_ROOT / "common" / "comsol" / "run_comsol_r2025b.ps1"
 RUN_PYTHON = Path(sys.executable).resolve()
 OFFICIAL_ION11 = PROJECT_ROOT / "variants" / "quadrupole" / "config" / "particles" / "official_fixed_100.ion"

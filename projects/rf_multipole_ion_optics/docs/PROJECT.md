@@ -12,6 +12,16 @@ ordinary wheel and sdist-rebuilt consumers also pass outside the checkout with
 project imports denied; final same-candidate acceptance remains open. No geometry, solver
 or scientific qualification changes follow from this ownership migration.
 
+The finite COMSOL and SIMION PowerShell runners now require an explicit Python
+selection and initialize host admission through the installed execution
+HostContext. Their frozen host scheduler, budgeted-process and SIMION dispatch
+resources come from the same public execution owner rather than the retired
+`common` adapters; no second scheduler or scientific default was introduced.
+The affected runner, frozen-closure, recovery, dual-backend and numerics fixtures
+passed 132 parents with 197 successful records in 235.990 seconds. This verifies
+software wiring and original assertions only; no COMSOL/SIMION native execution
+or ordinary-install full-chain acceptance was run.
+
 
 ## Original finite-length L1 analysis-only successor
 

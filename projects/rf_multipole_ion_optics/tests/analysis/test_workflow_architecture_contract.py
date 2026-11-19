@@ -24,7 +24,7 @@ SIMION_EXECUTION_SUPPORT = (
     REPO_ROOT / "src/msplatform/backends/simion/resources/simion_execution.ps1"
 )
 RUNTIME_ROOT = PROJECT_ROOT / "runtime"
-RUN_ARTIFACT_SUPPORT = REPO_ROOT / "common" / "contracts" / "run_artifact_support.ps1"
+RUN_ARTIFACT_SUPPORT = REPO_ROOT / "src" / "msplatform" / "execution" / "resources" / "run_artifact_support.ps1"
 SHARED_SIMION_LUA = REPO_ROOT / "src/msplatform/backends/simion/resources/simion_transport.lua"
 EXECUTION_PROFILES = PROJECT_ROOT / "config" / "execution_profiles.json"
 OFFICIAL_RESOLVED = PROJECT_ROOT / "variants" / "quadrupole" / "config" / "resolved_design_official.json"
@@ -468,11 +468,11 @@ Get-Content $specification.stdout|Write-Output
     def test_runners_only_orchestrate_registered_mechanisms(self) -> None:
         for runner_path in DEDICATED_RUNNERS:
             source = _read(runner_path)
-            self.assertLess(source.index("common\\contracts\\run_artifact_support.ps1"),
+            self.assertLess(source.index("src/msplatform/execution/resources/run_artifact_support.ps1"),
                             source.index("$entryScriptHash=Get-RunFileSha256 -Path $PSCommandPath"))
             self.assertIn("if((Get-RunFileSha256 -Path $ownerSource)-cne$entryScriptHash)", source)
             for support_path in (
-                "common\\contracts\\run_artifact_support.ps1",
+                "src/msplatform/execution/resources/run_artifact_support.ps1",
                 "src\\msplatform\\backends\\simion\\resources\\simion_layout_template_support.ps1",
                 "runtime\\simion_run_config.ps1",
                 "src/msplatform/backends/simion/resources/simion_execution.ps1",
@@ -722,7 +722,7 @@ Get-Content $specification.stdout|Write-Output
     def test_runners_use_shared_run_lifecycle(self) -> None:
         for runner_path in DEDICATED_RUNNERS:
             source = _read(runner_path)
-            self.assertIn("common\\contracts\\run_artifact_support.ps1", source)
+            self.assertIn("src/msplatform/execution/resources/run_artifact_support.ps1", source)
             for function in (
                 "New-RunPackage",
                 "Complete-FailedRun",
