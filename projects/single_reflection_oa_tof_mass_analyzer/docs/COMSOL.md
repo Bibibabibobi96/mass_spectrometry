@@ -12,7 +12,7 @@
 
 ## 活动入口
 
-- 具名生产入口：`../comsol/run_oatof_model.m`
+- 具名生产入口：`../../../src/msplatform/backends/comsol/matlab/run_oatof_model.m`，科学合同由调用方显式传入 `ContractPath`
 - 模型树内部实现：`../comsol/oatof_build_model_core.m`，不作为位置参数公开入口
 - MATLAB单元：`../tests/comsol/test_support/run_oatof_matlab_unit_tests.m`
 - Formal写入合同：`../tests/comsol/test_support/run_oatof_formal_write_contract_tests.m`

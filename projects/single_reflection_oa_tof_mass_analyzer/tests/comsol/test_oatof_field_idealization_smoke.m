@@ -3,6 +3,8 @@ testDir = fileparts(mfilename('fullpath'));
 projectRoot = fileparts(fileparts(testDir));
 addpath(projectRoot);
 addpath(fullfile(projectRoot, 'comsol'));
+paths = oatof_paths();
+modelPath = fullfile(tempname(paths.scratchRoot), 'model.mph');
 
 fid = fopen(reportPath, 'w');
 assert(fid >= 0, 'Could not open report: %s', reportPath);
@@ -11,7 +13,9 @@ cleanup = onCleanup(@() fclose(fid));
 selector = "ideal:accel.ez+stage2.ex+stage2.ey";
 result = run_oatof_model( ...
     MassAmu=524, Label="FieldIdealizationSmoke", SolverMode="cpu", ...
-    FieldMode=selector, ParticleCount=100);
+    FieldMode=selector, ParticleCount=100, ...
+    ContractPath=string(fullfile(projectRoot,'config','resolved_geometry.json')), ...
+    OutputModelPath=string(modelPath));
 assert(result.nP == 100 && result.nDet == 100, ...
     'Field idealization smoke detected only %d/%d particles.', result.nDet, result.nP);
 assert(result.field_idealization.canonical == selector, ...

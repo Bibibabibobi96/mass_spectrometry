@@ -2,6 +2,7 @@ classdef OaTofCartesianReleaseTest < matlab.unittest.TestCase
     properties
         path
         release
+        contractPath
     end
     methods (TestMethodSetup)
         function prepareRelease(testCase)
@@ -10,6 +11,7 @@ classdef OaTofCartesianReleaseTest < matlab.unittest.TestCase
             testCase.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(projectRoot,'comsol')));
             repositoryRoot=fileparts(fileparts(projectRoot));
             resourceRoot=fullfile(repositoryRoot,'src','msplatform','backends','comsol','matlab');
+            testCase.contractPath=string(fullfile(projectRoot,'config','resolved_geometry.json'));
             addpath(resourceRoot); testCase.addTeardown(@() rmpath(resourceRoot));
             testCase.assertEqual(which('oatof_read_cartesian_release'),fullfile(resourceRoot,'oatof_read_cartesian_release.m'));
             fixture=testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
@@ -51,10 +53,12 @@ classdef OaTofCartesianReleaseTest < matlab.unittest.TestCase
         end
         function rejectsTwoSourceFormatsBeforeNativeModelCreation(testCase)
             testCase.verifyError(@() run_oatof_model(FixedParticleTable="a.ion", ...
-                CartesianRelease="a.csv",FieldDesignOnly=true),'oatof:ParticleSource');
+                CartesianRelease="a.csv",FieldDesignOnly=true, ...
+                ContractPath=testCase.contractPath),'oatof:ParticleSource');
         end
         function rejectsCartesianFullBuildWithoutOriginalIdCensus(testCase)
-            testCase.verifyError(@() run_oatof_model(CartesianRelease="a.csv"),'oatof:CartesianBuildScope');
+            testCase.verifyError(@() run_oatof_model(CartesianRelease="a.csv", ...
+                ContractPath=testCase.contractPath),'oatof:CartesianBuildScope');
         end
     end
 end

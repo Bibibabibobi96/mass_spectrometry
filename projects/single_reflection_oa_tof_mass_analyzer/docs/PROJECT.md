@@ -41,6 +41,17 @@ reload, or the caller exception on other platforms, while preserving
 MR-history selections passed 30 Python parents / 88 records; no native worker
 was started.
 
+Retained MATLAB callers now pass their explicit resolved contract to the installed
+`run_oatof_model`; builder and field-idealization smoke also bind a managed
+scratch `OutputModelPath`. The two Cartesian negatives still require their
+original particle-source and build-scope errors, and Formal destination checks
+retain the original write-protection assertions. R2025b passed all 125 MATLAB
+unit tests and the Formal COMSOL/CAD write-contract smoke. The real builder N=100
+run reached COMSOL solver execution but did not return a completion report before
+the outer 1800-second process budget expired, including about nine minutes of I/O
+admission waiting. It remains interrupted and unverified, not a scientific failure
+or native pass; field-idealization and modular-candidate native smokes were not run.
+
 ## Generic vector-field comparison owner
 
 `msplatform.analysis.vector_field_samples` now owns static-sample validation,
