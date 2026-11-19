@@ -37,7 +37,7 @@ class ProjectGatePrevalidationTests(unittest.TestCase):
         shutil.copyfile(REPO / "src/msplatform/execution/resources/require_powershell7.ps1", preflight)
         # Admission is outside this fixture's responsibility. Actual project
         # dispatch, Python exits and PowerShell parsing remain real processes.
-        (common / "host_execution_lease.ps1").write_text(
+        (preflight.parent / "host_execution_lease.ps1").write_text(
             "function Enter-HostExecutionLease { param($Role) return @{} }\n"
             "function Exit-HostExecutionLease { param($Lease) }\n", encoding="utf-8")
         module = "import json,os,sys\nfrom pathlib import Path\n"
