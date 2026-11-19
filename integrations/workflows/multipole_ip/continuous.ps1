@@ -29,8 +29,8 @@ $Environment=(Resolve-Path -LiteralPath $Environment).Path
 $Workspace=(Resolve-Path -LiteralPath $Workspace).Path
 if($RecoveryReference){$RecoveryReference=(Resolve-Path -LiteralPath $RecoveryReference).Path}
 if($DispatchProfiles){$DispatchProfiles=(Resolve-Path -LiteralPath $DispatchProfiles).Path}
-. (Join-Path $RepoRoot 'common/require_powershell7.ps1')
-. (Join-Path $RepoRoot 'common/contracts/run_artifact_support.ps1')
+. (Join-Path $RepoRoot 'src/msplatform/execution/resources/require_powershell7.ps1')
+. (Join-Path $RepoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 if(-not $Python){
   $Python=if($env:SIMULATION_PYTHON_EXE){$env:SIMULATION_PYTHON_EXE}else{Join-Path $RepoRoot '.venv/Scripts/python.exe'}
 }

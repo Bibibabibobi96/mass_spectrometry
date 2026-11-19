@@ -203,7 +203,8 @@ if(-not$caught){throw 'segmented and continuous inputs were accepted together'}
                 "-ContinuousWorkspace", relative(workspace), "-ContinuousProfile", "test",
                 "-ContinuousRecoveryReference", relative(inputs / "recovery.json"),
                 "-ContinuousDispatchProfiles", relative(inputs / "dispatch.json"),
-                "-ContinuousUnitSize", "2", "-PythonExe", relative(Path(sys.executable)),
+                "-ContinuousUnitSize", "2", "-PythonExe",
+                relative(Path(sys.executable)) if Path(sys.executable).drive == caller.drive else str(Path(sys.executable)),
                 "-RepoRoot", str(repo),
             ]
             environment = dict(os.environ, MASS_SPECTROMETRY_ARTIFACT_ROOT=str(root / "artifacts"),
