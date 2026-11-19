@@ -3,6 +3,8 @@ testDir = fileparts(mfilename('fullpath'));
 projectRoot = fileparts(fileparts(testDir));
 addpath(projectRoot);
 addpath(fullfile(projectRoot, 'comsol'));
+paths = oatof_paths();
+modelPath = fullfile(tempname(paths.scratchRoot), 'model.mph');
 
 fid = fopen(reportPath, 'w');
 assert(fid >= 0, 'Could not open report: %s', reportPath);
@@ -10,7 +12,9 @@ cleanup = onCleanup(@() fclose(fid));
 
 result = run_oatof_model( ...
     MassAmu=524, Label="BuilderModuleSmoke", SolverMode="cpu", ...
-    FieldMode="real", ParticleCount=100);
+    FieldMode="real", ParticleCount=100, ...
+    ContractPath=string(fullfile(projectRoot,'config','resolved_geometry.json')), ...
+    OutputModelPath=string(modelPath));
 assert(result.nP == 100 && result.nDet == 100, ...
     'Modular builder detected only %d/%d particles.', result.nDet, result.nP);
 assert(isfile(result.raw_detector_events_path), 'Modular builder did not export raw detector events.');
