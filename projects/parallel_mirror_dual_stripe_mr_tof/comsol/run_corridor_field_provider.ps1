@@ -12,12 +12,12 @@ $preparedConfig=Join-Path $RunDirectory 'run_config.json'
 $repo = if($Child){[string](Get-Content (Join-Path $PSScriptRoot 'plan.json') -Raw | ConvertFrom-Json).repo_root}elseif(Test-Path -LiteralPath $preparedConfig){[string](Get-Content (Join-Path $RunDirectory 'inputs/plan.json') -Raw | ConvertFrom-Json).repo_root}else{Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent}
 . (Join-Path $repo 'src/msplatform/execution/resources/require_powershell7.ps1')
 . (Join-Path $repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
-$python=Join-Path $repo '.venv/Scripts/python.exe'
+$python=if($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit SIMULATION_PYTHON_EXE is required'}
 if($Child){
     $plan=Get-Content (Join-Path $PSScriptRoot 'plan.json') -Raw | ConvertFrom-Json
     $env:MRTOF_COMSOL_RESOURCE_DIRECTORY=[string]$plan.matlab_resource_directory
     if(-not(Test-Path -LiteralPath (Join-Path $env:MRTOF_COMSOL_RESOURCE_DIRECTORY 'update_corridor_workpoint_voltages.m'))){throw 'Installed COMSOL MATLAB resource closure is missing.'}
-    . (Join-Path $repo 'common/resource_budget_support.ps1')
+    . (Join-Path $repo 'src/msplatform/execution/resources/resource_process_support.ps1')
     $budget=Get-HostResourceBudget -Role COMSOL -Stage solver
     $launcherOptions=@{}
     if($plan.PSObject.Properties.Name -contains 'comsol_allocator'){
@@ -45,7 +45,7 @@ if(-not $Approved){return}
 $inputs=Join-Path $RunDirectory 'inputs'
 if((Test-Path (Join-Path $RunDirectory 'run_manifest.json')) -or (Test-Path (Join-Path $inputs 'provider.stdout.log'))){throw 'Existing attempt/terminal identity; no automatic retry.'}
 $plan=Get-Content (Join-Path $inputs 'plan.json') -Raw | ConvertFrom-Json
-. (Join-Path $repo 'common/resource_budget_support.ps1')
+. (Join-Path $repo 'src/msplatform/execution/resources/resource_process_support.ps1')
 $capacity=$null
 $process=$null
 $outcome='failed'

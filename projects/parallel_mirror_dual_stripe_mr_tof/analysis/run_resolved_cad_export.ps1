@@ -13,9 +13,12 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '../../..')).Path
-$python=Join-Path $repoRoot '.venv/Scripts/python.exe'
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
-. (Join-Path $repoRoot 'common/host_execution_lease.ps1')
+$python=if($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit SIMULATION_PYTHON_EXE is required'}
+$executionResources=Join-Path $repoRoot 'src/msplatform/execution/resources'
+. (Join-Path $executionResources 'run_artifact_support.ps1')
+$hostState=if($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH}else{Join-Path (Split-Path -Parent $repoRoot) 'artifacts/common/host_resources.sqlite3'}
+$hostContext=@{workspace=(Split-Path -Parent $repoRoot);python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
+. (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 $project='parallel_mirror_dual_stripe_mr_tof'
 $allArtifacts=Join-Path (Split-Path -Parent $repoRoot) 'artifacts'
 $projectArtifacts=Join-Path $allArtifacts "projects/$project"

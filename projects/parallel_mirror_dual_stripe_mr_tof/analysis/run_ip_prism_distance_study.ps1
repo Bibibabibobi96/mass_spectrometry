@@ -9,8 +9,8 @@ $ErrorActionPreference='Stop'
 $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '../../..')).Path
 . (Join-Path $repoRoot 'src/msplatform/execution/resources/require_powershell7.ps1')
 . (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
-. (Join-Path $repoRoot 'common/resource_budget_support.ps1')
-$python=Join-Path $repoRoot '.venv/Scripts/python.exe'
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/resource_process_support.ps1')
+$python=if($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit SIMULATION_PYTHON_EXE is required'}
 $module='projects.parallel_mirror_dual_stripe_mr_tof.analysis.ip_prism_distance_study'
 $projectId='parallel_mirror_dual_stripe_mr_tof'
 $artifactRoot=Join-Path (Split-Path -Parent $repoRoot) 'artifacts'

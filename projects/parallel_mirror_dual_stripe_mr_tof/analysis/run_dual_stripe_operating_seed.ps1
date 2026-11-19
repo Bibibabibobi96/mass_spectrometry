@@ -24,7 +24,7 @@ $inputModeCount = [int]$authorityOnly +
 if ($inputModeCount -ne 1) { throw 'Specify exactly one input: -MirrorRunManifest, -ExactKRunManifest, -FixedGridRunManifest, or -ExistingOperatingSeedManifest.' }
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
-$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
+$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } elseif ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) } else { throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required' }
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 environment is missing: $python" }
 $contract = if ($ContractPath) { (Resolve-Path -LiteralPath $ContractPath).Path } else { Join-Path $PSScriptRoot '..\config\simion_candidate_two_zone.json' }
 $parentManifest = if ($authorityOnly) {
@@ -51,8 +51,11 @@ $qualification = if ($authorityOnly) {
   'analytic_manufactured_basis_voltage_inverse__finite_3d_tuning_pending'
 }
 
-. (Join-Path $repoRoot 'common\host_execution_lease.ps1')
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
+$executionResources = Join-Path $repoRoot 'src/msplatform/execution/resources'
+$hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path $workspaceRoot 'artifacts/common/host_resources.sqlite3' }
+$hostContext = @{workspace=$workspaceRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
+. (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
+. (Join-Path $executionResources 'run_artifact_support.ps1')
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$projectId") `
   -RunId $RunId -Project $projectId -Mode $runMode `
