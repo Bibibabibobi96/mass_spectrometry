@@ -232,6 +232,14 @@
           ]
         },
         {
+          "id": "integrations_workflows_multipole_ip_continuous_ps1",
+          "source_repo_path": "integrations/workflows/multipole_ip/continuous.ps1",
+          "consumers": [
+            "accelerator_interface",
+            "multipole_ip"
+          ]
+        },
+        {
           "id": "integrations_workflows_oa_mr_execute_ps1",
           "source_repo_path": "integrations/workflows/oa_mr/execute.ps1",
           "consumers": [

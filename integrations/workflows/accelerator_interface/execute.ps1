@@ -39,6 +39,18 @@ param(
   [string]$FieldRequestPath='',
   [string]$ContinuationPredecessorManifestPath='',
   [string]$PreparedJointWorkbenchRunPath='',
+  [string]$ContinuousReleaseRequest='',
+  [string]$ContinuousFieldsReference='',
+  [string]$ContinuousPropagation='',
+  [string]$ContinuousObservations='',
+  [string]$ContinuousNumerics='',
+  [string]$ContinuousHs1Request='',
+  [string]$ContinuousEnvironment='',
+  [string]$ContinuousWorkspace='',
+  [string]$ContinuousProfile='',
+  [string]$ContinuousRecoveryReference='',
+  [string]$ContinuousDispatchProfiles='',
+  [int]$ContinuousUnitSize=0,
   [string]$SimionExe='',
   [string]$RunId='',
   [string]$LuaExe='',
@@ -212,6 +224,25 @@ function Invoke-JointAnalysisPreflight {
 }
 function Invoke-JointWorkflow {
   $totalWatch=[Diagnostics.Stopwatch]::StartNew()
+  $continuousRequested=$ContinuousReleaseRequest-or$ContinuousFieldsReference-or$ContinuousPropagation-or$ContinuousObservations-or$ContinuousNumerics-or$ContinuousHs1Request-or$ContinuousEnvironment-or$ContinuousWorkspace-or$ContinuousProfile-or$ContinuousRecoveryReference-or$ContinuousDispatchProfiles-or$ContinuousUnitSize -gt 0
+  if($continuousRequested){
+    if(-not$ContinuousReleaseRequest-or-not$ContinuousFieldsReference-or-not$ContinuousPropagation-or-not$ContinuousObservations-or-not$ContinuousNumerics-or-not$ContinuousHs1Request-or-not$ContinuousEnvironment-or-not$ContinuousWorkspace-or-not$ContinuousProfile){
+      throw 'Continuous FullJoint requires an original release, complete fields, propagation, observations, numerics, HS1 and an explicit execution environment.'
+    }
+    if($PreparedJointWorkbenchRunPath-or$ReferenceMrRunPath-or$ContractPath-or$MatchingRequestPath-or$FieldRequestPath-or$PreparedInterfaceRunPath-or$JointFieldRunPath-or$MultipoleIpRequestPath-or$MultipoleIpRunId-or$IonProcessorRunPath-or$IonProcessorRunId-or$IonProcessorConfigurationDirectory-or$IonProcessorFieldRunPath-or$IonProcessorContinuationPredecessorManifestPath-or$ContinueOnIpScientificFailure-or$FinalizeJointWorkbench-or$ContinuationPredecessorManifestPath-or$ResultPath-or$RunId){
+      throw 'Continuous FullJoint consumes only original-birth fields and cannot be combined with segmented production, workbench, recovery or run-ID inputs.'
+    }
+    $continuous=@{ReleaseRequest=$ContinuousReleaseRequest;FieldsReference=$ContinuousFieldsReference;Propagation=$ContinuousPropagation;
+      Observations=$ContinuousObservations;Numerics=$ContinuousNumerics;Hs1Request=$ContinuousHs1Request;
+      Environment=$ContinuousEnvironment;Workspace=$ContinuousWorkspace;Profile=$ContinuousProfile;RepoRoot=$repoRoot}
+    if($ContinuousRecoveryReference){$continuous.RecoveryReference=$ContinuousRecoveryReference}
+    if($ContinuousDispatchProfiles){$continuous.DispatchProfiles=$ContinuousDispatchProfiles}
+    if($ContinuousUnitSize -gt 0){$continuous.UnitSize=$ContinuousUnitSize}
+    if($PythonExe){$continuous.Python=$PythonExe}
+    Invoke-JointOwnerStage -Script (Join-Path $repoRoot 'integrations/workflows/multipole_ip/continuous.ps1') -Arguments $continuous
+    Write-Output ("JOINT_WORKFLOW EXECUTION=success SCIENCE=not_qualified STUDY_SCOPE=original_birth_to_terminal SIMULATION_PATH=continuous_assembly TRAJECTORY_EXECUTION=backend_returned TOTAL_SECONDS={0:F3}" -f $totalWatch.Elapsed.TotalSeconds)
+    return
+  }
   if($PreparedJointWorkbenchRunPath){
     if(-not$ContractPath-or$FinalizeJointWorkbench-or$PreparedInterfaceRunPath-or$JointFieldRunPath-or$MatchingRequestPath-or$FieldRequestPath-or$MultipoleIpRequestPath-or$MultipoleIpRunId-or$IonProcessorRunId-or$IonProcessorConfigurationDirectory-or$IonProcessorFieldRunPath-or$IonProcessorContinuationPredecessorManifestPath-or$ContinueOnIpScientificFailure){
       throw 'A prepared workbench requires ContractPath and cannot be combined with design or field inputs.'
@@ -383,7 +414,7 @@ if($ResumeFinalization){
   Invoke-JointOwnerStage -Script (Join-Path $repoRoot 'integrations/workflows/prepared_joint/execute.ps1') -Arguments $recovery
   return
 }
-if($FullJoint-and-not$PreparedJointWorkbenchRunPath){
+if($FullJoint-and-not$PreparedJointWorkbenchRunPath-and-not$ContinuousReleaseRequest){
   if($PSBoundParameters.ContainsKey('AcceleratorProvider')-and$AcceleratorProvider-ne'dual_pressure_rectilinear_ion_processor'){
     throw 'FullJoint supports only the dual_pressure_rectilinear_ion_processor provider.'
   }
@@ -391,6 +422,7 @@ if($FullJoint-and-not$PreparedJointWorkbenchRunPath){
 }
 if($ResultPath-and-not$FullJoint){throw 'ResultPath requires FullJoint.'}
 if($FullJoint){Invoke-JointWorkflow;return}
+if($ContinuousReleaseRequest-or$ContinuousFieldsReference-or$ContinuousPropagation-or$ContinuousObservations-or$ContinuousNumerics-or$ContinuousHs1Request-or$ContinuousEnvironment-or$ContinuousWorkspace-or$ContinuousProfile-or$ContinuousRecoveryReference-or$ContinuousDispatchProfiles-or$ContinuousUnitSize -gt 0){throw 'Continuous original-birth inputs require FullJoint.'}
 if($FieldRequestPath){throw 'FieldRequestPath requires FullJoint.'}
 if($ContinuationPredecessorManifestPath){throw 'ContinuationPredecessorManifestPath requires FullJoint.'}
 if($PreparedJointWorkbenchRunPath){throw 'PreparedJointWorkbenchRunPath requires FullJoint.'}

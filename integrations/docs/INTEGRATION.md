@@ -482,7 +482,12 @@ bath and uniform outer typed gas contracts and verifies the original vendor
 before tracking; optional recovery/dispatch inputs retain the public identity.
 Eight focused parents with nineteen successful records cover the original
 consumer and this CLI admission without a native claim. The segmented producer
-is not retired by this software-only adapter.
+is not retired by this software-only adapter. The named FullJoint continuous
+branch accepts the same original-birth, complete RF–IP–MR field and execution
+inputs with the `Continuous` prefix, and delegates to this consumer rather than
+adding another runner. Its PowerShell forwarding, missing-input and segmented-
+input rejection tests are software evidence only; native continuous acceptance
+and segmented retirement remain open.
 
 The installation harness now prepares a separate inert RF-IP field fixture for
 each ordinary-install arm. Both children call the installed consumer and real

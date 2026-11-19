@@ -55,6 +55,55 @@ def _copy_path_consumer_repository(target):
 
 
 class AcceleratorInterfaceTests(unittest.TestCase):
+    def test_continuous_full_joint_delegates_original_birth_fields_to_existing_consumer(self):
+        powershell = shutil.which("pwsh")
+        if not powershell:
+            self.skipTest("PowerShell 7 required")
+        with tempfile.TemporaryDirectory() as directory:
+            script = Path(directory) / "continuous.ps1"
+            script.write_text(r'''param($Entry,$SelectedPython)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$null)
+$definition=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-JointWorkflow'},$true)
+Invoke-Expression $definition.Extent.Text
+$repoRoot='C:\study';$PythonExe=$SelectedPython
+$ContinuousReleaseRequest='birth';$ContinuousFieldsReference='fields';$ContinuousPropagation='propagation'
+$ContinuousObservations='observations';$ContinuousNumerics='numerics';$ContinuousHs1Request='hs1'
+$ContinuousEnvironment='machine';$ContinuousWorkspace='workspace';$ContinuousProfile='standard'
+$ContinuousRecoveryReference='prior';$ContinuousDispatchProfiles='dispatch';$ContinuousUnitSize=2
+$PSBoundParameters['ContinuousUnitSize']=2
+$PreparedJointWorkbenchRunPath=$ReferenceMrRunPath=$ContractPath=$MatchingRequestPath=$FieldRequestPath=''
+$PreparedInterfaceRunPath=$JointFieldRunPath=$MultipoleIpRequestPath=$MultipoleIpRunId=''
+$IonProcessorRunPath=$IonProcessorRunId=$IonProcessorConfigurationDirectory=$IonProcessorFieldRunPath=''
+$IonProcessorContinuationPredecessorManifestPath=$ContinuationPredecessorManifestPath=$ResultPath=$RunId=''
+$FinalizeJointWorkbench=$ContinueOnIpScientificFailure=$false
+$script:calls=[Collections.Generic.List[string]]::new()
+function Invoke-JointOwnerStage {param($Script,$Arguments)
+ $script:calls.Add($Script)
+ if($Script-ne(Join-Path $repoRoot 'integrations/workflows/multipole_ip/continuous.ps1')){throw 'wrong continuous owner'}
+ foreach($key in @('ReleaseRequest','FieldsReference','Propagation','Observations','Numerics','Hs1Request','Environment','Workspace','Profile','RecoveryReference','DispatchProfiles','UnitSize','Python','RepoRoot')){
+  if(-not$Arguments.ContainsKey($key)){throw "missing continuous input $key"}
+ }
+ if($Arguments.Python-ne$SelectedPython-or$Arguments.UnitSize-ne2-or$Arguments.RepoRoot-ne$repoRoot){throw 'continuous execution context changed'}
+}
+Invoke-JointWorkflow
+if($script:calls.Count-ne1){throw 'continuous owner did not run exactly once'}
+$ContinuousHs1Request='';$script:calls.Clear();$caught=$false
+try{Invoke-JointWorkflow}catch{$caught=$_.Exception.Message-like'*requires an original release*'}
+if(-not$caught-or$script:calls.Count-ne0){throw 'missing HS1 reached the continuous owner'}
+$ContinuousHs1Request='hs1';$IonProcessorRunPath='legacy-segmented';$caught=$false
+try{Invoke-JointWorkflow}catch{$caught=$_.Exception.Message-like'*cannot be combined with segmented production*'}
+if(-not$caught){throw 'segmented and continuous inputs were accepted together'}
+'FULLJOINT_CONTINUOUS_FORWARDING=PASS'
+''', encoding="utf-8")
+            result = subprocess.run([powershell, "-NoProfile", "-File", str(script),
+                str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), sys.executable],
+                cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("FULLJOINT_CONTINUOUS_FORWARDING=PASS", result.stdout)
+            self.assertIn("STUDY_SCOPE=original_birth_to_terminal", result.stdout)
+            self.assertIn("SIMULATION_PATH=continuous_assembly", result.stdout)
+
     def test_ip_recovery_compares_normalized_request_to_sealed_preparation(self):
         powershell = shutil.which("pwsh")
         if not powershell:
@@ -138,9 +187,9 @@ if(-not$caught-or$script:calls-ne2){throw 'Recovery accepted a new solver option
 $PSBoundParameters.Remove('SimionExe');$PSBoundParameters.IonProcessorContinuationPredecessorManifestPath='unrelated-ip';$caught=$false
 try{Invoke-Expression $body}catch{$caught=$_.Exception.Message-like'*omit scientific*'}
 if(-not$caught-or$script:calls-ne2){throw 'Finalization accepted an IP predecessor'}
-$providerBranch=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Clauses[0].Item1.Extent.Text-eq'$FullJoint-and-not$PreparedJointWorkbenchRunPath'},$true)
+$providerBranch=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Clauses[0].Item1.Extent.Text-eq'$FullJoint-and-not$PreparedJointWorkbenchRunPath-and-not$ContinuousReleaseRequest'},$true)
 $providerBody=$providerBranch.Extent.Text
-$PSBoundParameters.Clear();$AcceleratorProvider='orthogonal_accelerator';$PreparedJointWorkbenchRunPath=''
+$PSBoundParameters.Clear();$AcceleratorProvider='orthogonal_accelerator';$PreparedJointWorkbenchRunPath='';$ContinuousReleaseRequest=''
 # Run in the current scope so the actual dispatch uses the selected provider.
 Invoke-Expression $providerBody
 if($AcceleratorProvider-ne'dual_pressure_rectilinear_ion_processor'){throw 'Segmented chain did not select its unique provider'}
@@ -421,6 +470,7 @@ function Invoke-JointOwnerStage {
 $context=Resolve-WorkspacePaths -SourceRoot $Repo -ArtifactRoot (Join-Path $Root 'selected-store') -Python $Python
 $artifactRoot=[string]$context.artifact_root;$pathEnvironment=@{}
 $MultipoleIpRequestPath='';$MultipoleIpRunId='';$IonProcessorRunId='';$IonProcessorConfigurationDirectory='';$IonProcessorFieldRunPath='';$ContinueOnIpScientificFailure=$false;$ResultPath=''
+$ContinuousReleaseRequest=$ContinuousFieldsReference=$ContinuousPropagation=$ContinuousObservations=$ContinuousNumerics=$ContinuousHs1Request=$ContinuousEnvironment=$ContinuousWorkspace=$ContinuousProfile=$ContinuousRecoveryReference=$ContinuousDispatchProfiles='';$ContinuousUnitSize=0
 $repoRoot=$Repo;$workspaceRoot=$Root;$PreparedInterfaceRunPath=$Root;$JointFieldRunPath='';$python=$Python
 $AcceleratorProvider='dual_pressure_rectilinear_ion_processor';$IonProcessorRunPath='source';$ReferenceMrRunPath='reference'
 $MatchingRequestPath='';$FieldRequestPath=$Template;$ContractPath='observation';$RunId='';$LuaExe='';$PythonExe='';$SimionExe=''
@@ -513,6 +563,7 @@ function Invoke-JointOwnerStage {
 . (Join-Path $SourceRoot 'common/paths/workspace_paths.ps1')
 $context=Resolve-WorkspacePaths -SourceRoot $SourceRoot -ArtifactRoot (Join-Path $Root 'selected-store') -Python $Python
 $MultipoleIpRequestPath='';$MultipoleIpRunId='';$IonProcessorRunId='';$IonProcessorConfigurationDirectory='';$IonProcessorFieldRunPath='';$ContinueOnIpScientificFailure=$false;$ResultPath=''
+$ContinuousReleaseRequest=$ContinuousFieldsReference=$ContinuousPropagation=$ContinuousObservations=$ContinuousNumerics=$ContinuousHs1Request=$ContinuousEnvironment=$ContinuousWorkspace=$ContinuousProfile=$ContinuousRecoveryReference=$ContinuousDispatchProfiles='';$ContinuousUnitSize=0
 $artifactRoot=[string]$context.artifact_root;$repoRoot=$Root;$AcceleratorProvider='dual_pressure_rectilinear_ion_processor'
 $IonProcessorRunPath='source';$MatchingRequestPath='matching';$ContractPath='observation';$ReferenceMrRunPath='reference'
 $FieldRequestPath=Join-Path $Root 'field.json';$RunId='design';$LuaExe='';$PythonExe='';$SimionExe=''

@@ -238,6 +238,88 @@
           "scientific_status": "not_evaluated"
         },
         {
+          "workflow_id": "rf_ip_mr_continuous",
+          "entrypoint": "integrations/workflows/accelerator_interface/execute.ps1",
+          "required_bindings": [
+            "release_request",
+            "fields_reference",
+            "propagation",
+            "observations",
+            "numerics",
+            "hs1_request",
+            "environment",
+            "workspace",
+            "profile"
+          ],
+          "arguments": [
+            "-FullJoint",
+            "-ContinuousReleaseRequest",
+            "{release_request}",
+            "-ContinuousFieldsReference",
+            "{fields_reference}",
+            "-ContinuousPropagation",
+            "{propagation}",
+            "-ContinuousObservations",
+            "{observations}",
+            "-ContinuousNumerics",
+            "{numerics}",
+            "-ContinuousHs1Request",
+            "{hs1_request}",
+            "-ContinuousEnvironment",
+            "{environment}",
+            "-ContinuousWorkspace",
+            "{workspace}",
+            "-ContinuousProfile",
+            "{profile}"
+          ],
+          "outputs": [
+            "trajectory_artifact_ref"
+          ],
+          "simulation_paths": [
+            "continuous_assembly"
+          ],
+          "recipes": [],
+          "limitations": [
+            "Requires an original birth request and an explicitly selected complete RF-IP-MR FieldBundle. Native acceptance and retirement of the segmented FullJoint producer remain open."
+          ],
+          "binding_types": {
+            "release_request": "file",
+            "fields_reference": "file",
+            "propagation": "file",
+            "observations": "file",
+            "numerics": "file",
+            "hs1_request": "file",
+            "environment": "file",
+            "workspace": "directory",
+            "profile": "string",
+            "recovery_reference": "file",
+            "dispatch_profiles": "file",
+            "unit_size": "number"
+          },
+          "optional_arguments": {
+            "recovery_reference": [
+              "-ContinuousRecoveryReference",
+              "{recovery_reference}"
+            ],
+            "dispatch_profiles": [
+              "-ContinuousDispatchProfiles",
+              "{dispatch_profiles}"
+            ],
+            "unit_size": [
+              "-ContinuousUnitSize",
+              "{unit_size}"
+            ]
+          },
+          "purpose": "assembly_propagation",
+          "action": "run",
+          "tools": [
+            "simion",
+            "python"
+          ],
+          "model": "完整RF、IP与MR共同场中的原始母群连续传播",
+          "scientific_status": "not_evaluated"
+        },
+        {
           "workflow_id": "multipole_ip_continuous",
           "entrypoint": "integrations/workflows/multipole_ip/continuous.ps1",
           "required_bindings": [
