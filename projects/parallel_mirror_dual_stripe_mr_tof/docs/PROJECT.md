@@ -68,7 +68,10 @@ fields, Fly or historical assets, and do not establish a complete MR/Repository 
 The project verifier now selects an explicit Python and initializes the installed
 execution HostContext instead of the retired common host adapter. Its actual
 preflight passed with confirmed lease release; the selected drift-phase partition
-passed four tests with six records. This is gate wiring, not native acceptance.
+passed four tests with six records. Cleanup releases only an acquired lease, so
+missing Python or admission failure no longer masks the original exception.
+Relative-path preflight also passed with one confirmed release. This is gate wiring,
+not native acceptance.
 The resolved-CAD, IP/prism-distance, dual-stripe-seed and COMSOL-corridor
 consumers likewise use explicit Python and canonical execution resources instead
 of checkout `.venv` or retired host/budget adapters. Their five affected modules

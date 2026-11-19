@@ -546,6 +546,9 @@ and native-path modules passed 56 parents with 125 records in 98.580 seconds.
 The integration verifier likewise selects explicit Python and the installed
 HostContext; its real preflight and selected dependency partition passed with
 confirmed lease release, including 19 parents and 76 records in 210.782 seconds.
+Cleanup now preserves the original missing-interpreter or admission failure and
+releases only an acquired lease; relative Python paths are resolved before the
+HostContext is constructed.
 
 The installation harness now prepares a separate inert RF-IP field fixture for
 each ordinary-install arm. Both children call the installed consumer and real

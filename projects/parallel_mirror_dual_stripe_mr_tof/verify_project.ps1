@@ -15,6 +15,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 . (Join-Path $repoRoot 'src\msplatform\execution\resources\require_powershell7.ps1')
+$lease = $null
 $savedPythonPath = $env:PYTHONPATH
 $savedNoBytecode = $env:PYTHONDONTWRITEBYTECODE
 $savedSimionExe = $env:SIMION_EXE
@@ -145,5 +146,5 @@ try {
   } else {
     $env:SIMION_EXE = $savedSimionExe
   }
-  Exit-HostExecutionLease -Lease $lease
+  if ($null -ne $lease) { Exit-HostExecutionLease -Lease $lease }
 }

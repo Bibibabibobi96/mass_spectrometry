@@ -24,6 +24,12 @@ passed 132 parents with 197 successful records in 235.990 seconds. This verifies
 software wiring and original assertions only; no COMSOL/SIMION native execution
 or ordinary-install full-chain acceptance was run.
 
+The no-collision SIMION recovery and project finite launcher now use the same
+explicit Python selection. The public recovery regression completes once, repeats
+from an outside cwd without another callback, and leaves every byte of the first
+terminal run unchanged. Verifier cleanup now preserves the original missing-Python
+or admission error and releases only an acquired lease.
+
 The interface-readiness COMSOL entry now uses the same explicit HostContext and
 its resolved host-state path instead of the retired common adapter. This is an
 execution-source change only, covered by the shared 103-parent/150-record consumer

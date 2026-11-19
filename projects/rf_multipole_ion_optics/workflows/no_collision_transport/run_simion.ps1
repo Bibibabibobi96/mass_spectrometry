@@ -29,7 +29,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
 if ($ResumeFinalization) {
-  $python = if ($PythonExe) {[IO.Path]::GetFullPath($PythonExe)} else {Join-Path $repoRoot '.venv\Scripts\python.exe'}
+  $python = if ($PythonExe) {[IO.Path]::GetFullPath($PythonExe)} elseif ($env:SIMULATION_PYTHON_EXE) {[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)} else {throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
   Push-Location $repoRoot
   try {& $python -m msplatform.execution.artifact_naming run $RunId | Out-Null
     if ($LASTEXITCODE -ne 0) {throw 'Recovery requires a valid existing RunId.'}}
@@ -38,7 +38,7 @@ if ($ResumeFinalization) {
   $runRoot=Join-Path $projectArtifacts "runs\$RunId"
   if (-not $ResultPath) {$ResultPath=Join-Path $projectArtifacts "scratch\workflow_results\$RunId\result.json"}
   New-Item -ItemType Directory -Force -Path (Split-Path -Parent ([IO.Path]::GetFullPath($ResultPath)))|Out-Null
-  . (Join-Path $repoRoot 'common\contracts\run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization
+  . (Join-Path $repoRoot 'src\msplatform\workflows\resources\run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization
   $recovery=Invoke-RunArtifactWorkflow -RequestPath (Join-Path $runRoot 'inputs/execution_request.json') `
     -ResultPath $ResultPath -ResumeFinalization
   Write-Output "MULTIPOLE_SIMION_FINALIZATION=$($recovery.status) RUN_ID=$RunId RESULT=$ResultPath"

@@ -12,6 +12,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $executionResources = Join-Path $repoRoot 'src/msplatform/execution/resources'
 . (Join-Path $executionResources 'require_powershell7.ps1')
+$lease = $null
 try {
     if (($PreflightOnly -and $SelectedTestModules.Count) -or
         (($PreflightOnly -or $SelectedTestModules.Count) -and $ChangedTestModules.Count) -or
@@ -22,6 +23,7 @@ try {
     if (-not (Test-Path -LiteralPath $PythonExe -PathType Leaf)) {
         throw "Python 3.11 executable not found: $PythonExe"
     }
+    $PythonExe = (Resolve-Path -LiteralPath $PythonExe).Path
     $version = (& $PythonExe -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')").Trim()
     if ($LASTEXITCODE -ne 0 -or $version -ne '3.11') {
         throw "Integration gate requires Python 3.11, found $version at $PythonExe"
@@ -66,5 +68,5 @@ try {
     }
     Write-Output 'INTEGRATION_GATE=PASS OWNER=instrument_assembly'
 } finally {
-    Exit-HostExecutionLease -Lease $lease
+    if ($null -ne $lease) { Exit-HostExecutionLease -Lease $lease }
 }

@@ -39,8 +39,10 @@ function Invoke-MultipoleProjectFinite3dTransport {
 
   $python = if ($PythonExe) {
     [IO.Path]::GetFullPath($PythonExe)
+  } elseif ($env:SIMULATION_PYTHON_EXE) {
+    [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)
   } else {
-    Join-Path $RepoRoot '.venv\Scripts\python.exe'
+    throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'
   }
   $resolutionPath = Join-Path ([IO.Path]::GetTempPath()) (
     "multipole_runtime_{0}_{1}.json" -f $ProjectId, [guid]::NewGuid()

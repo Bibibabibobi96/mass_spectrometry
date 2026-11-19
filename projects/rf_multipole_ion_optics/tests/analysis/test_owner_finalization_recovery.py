@@ -45,10 +45,21 @@ Write-RunJson -Atomic -Path '{run / 'logs/prepared_wait.json'}' -Value @{{schema
             cli = fixture_repo / relative
             cli.parent.mkdir(parents=True)
             shutil.copyfile(REPO / relative, cli)
-            outcome = subprocess.run([PWSH, "-NoProfile", "-File", str(cli), "-ResumeFinalization", "-RunId", run.name,
-                                      "-PythonExe", sys.executable, "-ResultPath", str(root / "result.json")],
-                                     cwd=fixture_repo, capture_output=True, text=True, encoding="utf-8", timeout=90)
+            command = [PWSH, "-NoProfile", "-File", str(cli), "-ResumeFinalization", "-RunId", run.name,
+                       "-PythonExe", sys.executable, "-ResultPath", str(root / "result.json")]
+            outcome = subprocess.run(command, cwd=fixture_repo, capture_output=True, text=True,
+                                     encoding="utf-8", errors="replace", timeout=90)
             self.assertEqual(outcome.returncode, 0, outcome.stdout + outcome.stderr)
             self.assertIn("MULTIPOLE_SIMION_FINALIZATION=success", outcome.stdout)
             self.assertEqual(json.loads((root / "result.json").read_text(encoding="utf-8-sig"))["status"], "success")
             self.assertEqual((root / "callback_count.txt").read_text(), "1")
+            after_first = {path.relative_to(run): path.read_bytes() for path in run.rglob("*") if path.is_file()}
+            outside = root / "outside"
+            outside.mkdir()
+            repeated = subprocess.run(command, cwd=outside, capture_output=True, text=True,
+                                      encoding="utf-8", errors="replace", timeout=90)
+            self.assertEqual(repeated.returncode, 0, repeated.stdout + repeated.stderr)
+            self.assertIn("MULTIPOLE_SIMION_FINALIZATION=success", repeated.stdout)
+            self.assertEqual((root / "callback_count.txt").read_text(), "1")
+            after = {path.relative_to(run): path.read_bytes() for path in run.rglob("*") if path.is_file()}
+            self.assertEqual(after, after_first)
