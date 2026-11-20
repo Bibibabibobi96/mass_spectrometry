@@ -586,6 +586,14 @@ class CandidateGateParameterContractTests(unittest.TestCase):
             shutil.copyfile(REPO_ROOT / "common/gate_unittest.py", support.parent / "gate_unittest.py")
             support.write_text(". " + quote(REPO_ROOT / "common/host_execution_lease.ps1") + "\n",
                                encoding="utf-8")
+            resources = root / "src/msplatform/execution/resources"
+            resources.mkdir(parents=True)
+            for name in ("require_powershell7.ps1", "host_execution_lease.ps1", "host_resource_policy.json"):
+                shutil.copyfile(REPO_ROOT / "src/msplatform/execution/resources" / name, resources / name)
+            for relative in ("__init__.py", "execution/__init__.py", "execution/host_resource_scheduler.py"):
+                destination = root / "src/msplatform" / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(REPO_ROOT / "src/msplatform" / relative, destination)
             modules = {}
             for relative in ("analysis/test_root.py", "analysis/new_area/test_nested.py",
                              "hexapole/test_hex.py", "octupole/test_oct.py", "new_area/test_forwarded.py"):
@@ -604,12 +612,14 @@ class CandidateGateParameterContractTests(unittest.TestCase):
                 )
             if failure == "syntax" or level == "Core":
                 (project / "invalid_fixture.ps1").write_text("function Broken {\n", encoding="utf-8")
-            shim = root / "python_probe.ps1"
-            shim.write_text(
+            shim_script = root / "python_probe.ps1"
+            shim = root / "python_probe.cmd"
+            shim.write_text(f"@echo off\r\n\"{shutil.which('pwsh')}\" -NoProfile -File \"{shim_script}\" %*\r\n", encoding="utf-8", newline="")
+            shim_script.write_text(
                 "$arguments = @($args)\n"
                 "[IO.File]::AppendAllText($env:RF_GATE_COMMAND_EVENTS, "
                 "((ConvertTo-Json -Compress -InputObject $arguments) + [Environment]::NewLine))\n"
-                "if ($arguments.Count -ge 2 -and $arguments[0] -eq '-m' -and $arguments[1] -eq 'common.gate_unittest') {\n"
+                "if ($arguments.Count -ge 2 -and $arguments[0] -eq '-m' -and $arguments[1] -in @('common.gate_unittest', 'msplatform.execution.host_resource_scheduler')) {\n"
                 "  & $env:RF_GATE_REAL_PYTHON @arguments\n  exit $LASTEXITCODE\n}\nexit 0\n",
                 encoding="utf-8",
             )
@@ -618,10 +628,7 @@ class CandidateGateParameterContractTests(unittest.TestCase):
                                RF_GATE_REAL_PYTHON=sys.executable,
                                RF_GATE_COMMAND_EVENTS=str(commands_path), RF_GATE_TEST_EVENTS=str(events_path),
                                PYTHONDONTWRITEBYTECODE="1", TEMP=directory, TMP=directory)
-            environment["MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH"] = os.environ.get(
-                "MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH",
-                str(REPO_ROOT.parent / "artifacts/common/host_resources.sqlite3"),
-            )
+            environment["MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH"] = str(root / "host.sqlite3")
             environment["RF_GATE_FAIL_TEST"] = (
                 modules["new_area/test_forwarded.py"] if failure == "test" else modules["analysis/test_root.py"]
             ) if level == "Core" else (
@@ -636,7 +643,9 @@ class CandidateGateParameterContractTests(unittest.TestCase):
             if selected:
                 script += " -ChangedTestModules @(" + ",".join(map(quote, selected)) + ")"
             result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=root, env=environment,
-                                    capture_output=True, text=True, encoding="utf-8", timeout=180)
+                                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180)
+            if not commands_path.exists():
+                raise AssertionError(result.stdout + result.stderr)
             return {"result": result, "modules": modules, "project": project,
                     "commands": [json.loads(line) for line in commands_path.read_text(encoding="utf-8").splitlines()],
                     "executed": events_path.read_text(encoding="utf-8").splitlines() if events_path.exists() else []}
@@ -653,7 +662,10 @@ class CandidateGateParameterContractTests(unittest.TestCase):
                 config = project / "variants/quadrupole/config"
                 # Check each scientific responsibility and its actual inputs,
                 # rather than locking an aggregate command count or ordering.
-                physical = [command for command in commands if command[:2] != ["-m", "common.gate_unittest"]]
+                physical = [command for command in commands if command[:2] not in (
+                    ["-m", "common.gate_unittest"],
+                    ["-m", "msplatform.execution.host_resource_scheduler"],
+                )]
                 self.assertCountEqual(physical, [
                     ["-m", analysis + "resolve_contract", "--structural-variant", "quadrupole", "--check"],
                     ["-m", analysis + "resolve_contract", "--check"],

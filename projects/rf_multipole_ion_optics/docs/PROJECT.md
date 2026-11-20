@@ -27,6 +27,10 @@ controls CPU through the installed host resource and intercepts the native
 boundary through the installed process owner rather than retired common files.
 Both ordinary and source-family preparation passed in 84.164 seconds with the
 expected inert refusal and no native process; production behavior is unchanged.
+The cross-solver gate fixture now copies the installed scheduler closure, uses
+an isolated host ledger, and forwards the actual scheduler and unittest runner
+while retaining inert scientific commands. Both Core and Static methods passed
+all six subcases in 67.045 seconds, including their original failure assertions.
 
 The no-collision SIMION recovery and project finite launcher now use the same
 explicit Python selection. The public recovery regression completes once, repeats
