@@ -589,7 +589,8 @@ class RadialCompactionCampaignTests(unittest.TestCase):
             host_record = next(record for record in closure["sources"] if record["source_id"] == host_id)
             self.assertEqual(host_record["source_sha256"], source_closure.sha256(controlled_host))
             self.assertEqual(host_record["sha256"], source_closure.sha256(code_root / host_id))
-            self.assertEqual(host_record["transformations"], ["python_runtime_binding"])
+            self.assertEqual(host_record["transformations"], [])
+            self.assertEqual((code_root / host_id).read_bytes(), original_host)
             private_record = next(record for record in closure["sources"]
                                   if record["source_id"] == private_host_id)
             self.assertEqual(private_record["source_sha256"], source_closure.sha256(private_host))

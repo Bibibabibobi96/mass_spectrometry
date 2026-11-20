@@ -66,11 +66,15 @@ The Changed fixtures now load canonical workspace resources, classify the
 Python using the actual explicit-runtime scripts. The three affected modules
 passed 27 parents with 57 successful records in 54.357 seconds, including frozen
 scheduler inheritance, zero-native refusals and source-missing protection.
-The subsequent host-lease migration changed its explicit interpreter selection;
-the freezer's recognized source expression now matches that implementation and
-continues to replace it with the run-selected interpreter. The actual three-stage
-frozen bootstrap regression passed in 37.399 seconds. This repair does not restore
-implicit `.venv` discovery or change frozen-source integrity checks; complete
+The subsequent host-lease migration changed its explicit interpreter selection.
+The freezer no longer matches or rewrites any PowerShell text: every frozen source
+retains its exact original bytes and declares no transformation. The selected
+interpreter is bound only by the existing runtime path and SHA-256 record, which
+is checked before consumption. A conflicting environment cannot replace that
+explicit interpreter. The payload/three-stage regressions passed in 29.820 seconds,
+the actual frozen radial worker passed in 9.121 seconds, and the outside-checkout
+frozen import plus missing-provider/source-tree refusals passed in 9.044 seconds.
+No implicit `.venv` discovery or live-package fallback was introduced; complete
 Changed and Repository acceptance remain separate.
 The follow-up remote Changed exposed three stale test contracts: the expected
 frozen interpreter variable, package-local host resources in the SFI fixture,

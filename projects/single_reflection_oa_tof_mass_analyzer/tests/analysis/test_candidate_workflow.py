@@ -20,7 +20,7 @@ from common.contracts.capacity_protection import load_capacity_protection_leases
 from common.contracts.verify_artifact_layout import verify_project
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_run_lifecycle import finalize_candidate_run, start_candidate_run
 from msplatform.execution.inputs import enumerate_python_sources
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import PYTHON_BOUND_SOURCES, RELATIVE_PATHS, freeze_candidate_source_closure, frozen_source_path, verify_candidate_source_closure, _execution_resource_source_ids
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import RELATIVE_PATHS, freeze_candidate_source_closure, frozen_source_path, verify_candidate_source_closure, _execution_resource_source_ids
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.prepare_candidate_consumers import prepare
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import _registered_candidate_template, prepare_candidate_run, validate_artifact_capacity, validate_workflow
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import run_candidate as candidate_entry
@@ -506,18 +506,16 @@ def execute_prepared_run(*args):
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            closure = freeze_candidate_source_closure(root / "code", root / "artifacts")
+            with mock.patch.dict(os.environ, {"SIMULATION_PYTHON_EXE": str(root / "conflicting-python.exe")}):
+                closure = freeze_candidate_source_closure(root / "code", root / "artifacts")
+            self.assertEqual(Path(closure["runtime"]["python_executable"]), Path(sys.executable).resolve())
+            self.assertEqual(closure["runtime"]["python_sha256"], sha256(Path(sys.executable).resolve()))
             records = {item["source_id"]: item for item in closure["sources"]}
             plain_id = "src/msplatform/contracts/particle_count_policy.json"
             bound_id = "common/host_execution_lease.ps1"
-            original = (REPO_ROOT / bound_id).read_bytes().decode("utf-8")
-            escaped = str(Path(sys.executable).resolve()).replace("'", "''")
-            expected_bound = original.replace(module.HOST_PYTHON_ASSIGNMENT,
-                f"$python = '{escaped}' # frozen candidate runtime binding").encode("utf-8")
-            self.assertEqual(original.count(module.HOST_PYTHON_ASSIGNMENT), 1)
             for source_id, expected, transformations in (
                 (plain_id, (REPO_ROOT / plain_id).read_bytes(), []),
-                (bound_id, expected_bound, ["python_runtime_binding"]),
+                (bound_id, (REPO_ROOT / bound_id).read_bytes(), []),
             ):
                 with self.subTest(source=source_id):
                     path = Path(frozen_source_path(closure, source_id))
@@ -1079,9 +1077,9 @@ print('FROZEN_ION_CONSUMER_PASS')
             transformed = {
                 item["source_id"]
                 for item in closure["sources"]
-                if "python_runtime_binding" in item["transformations"]
+                if item["transformations"]
             }
-            self.assertEqual(transformed, PYTHON_BOUND_SOURCES)
+            self.assertFalse(transformed)
             for source_id in (
                 "src/msplatform/backends/comsol/matlab/workspace_paths.m",
                 "src/msplatform/backends/comsol/matlab/oatof_paths.m",
@@ -1927,7 +1925,6 @@ print('FROZEN_ION_CONSUMER_PASS')
             "projects/single_reflection_oa_tof_mass_analyzer/analysis/solver_diagnostics.py",
         }
         self.assertTrue(required.issubset(set(RELATIVE_PATHS)))
-        self.assertIn("projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/analyze_ideal_field_log.ps1", PYTHON_BOUND_SOURCES)
 
 
     def test_functional_comsol_runner_uses_short_lived_execution_alias(self):
