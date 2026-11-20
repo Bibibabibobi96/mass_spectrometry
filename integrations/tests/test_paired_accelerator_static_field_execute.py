@@ -23,7 +23,7 @@ from common.contracts.capacity_protection import create_capacity_protection_leas
 from msplatform.execution.run_capacity_lifecycle import seal_checkpoint
 from common.simion import test_pa_family_cache as public_cache_tests
 from integrations.workflows.paired_accelerator_static_field import runtime
-from integrations.runtime import paired_accelerator_model
+from msplatform.backends.comsol import paired_static_model as paired_accelerator_model
 from projects.single_reflection_oa_tof_mass_analyzer.tests.analysis import test_paired_accelerator_static_field_prepare as preparation_tests
 
 ROOT = Path(__file__).resolve().parents[2]

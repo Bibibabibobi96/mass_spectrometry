@@ -559,7 +559,18 @@ requests, native scopes and recovery assertions are unchanged. The prepared-join
 analysis fixture loads its admission override from that same canonical owner and
 retains all six success/failure scenarios. The four affected modules passed 45
 parents with 159 successful records in 355.948 seconds. This is execution-resource
-migration, not a new runner, native result or scientific qualification. OA–MR now
+migration, not a new runner, native result or scientific qualification.
+
+The shared frozen COMSOL static-model metadata reader now has its sole owner at
+`msplatform.backends.comsol.paired_static_model`; paired static and paired pulse
+consume that installed implementation. The former
+`integrations/runtime/paired_accelerator_model.py` was removed without a forwarding
+bridge. Manifest binding, model/source identity and historical export reads are
+unchanged. Both actual consumer suites passed 35 tests in 249.928 seconds, with
+one optional frozen-source case skipped. No solver, native model or field
+qualification was run by this migration.
+
+OA–MR now
 uses the same installed HostContext/process and short-PA resources with explicit
 Python; its complete-component and LocalScope contracts are unchanged. The OA–MR
 and native-path modules passed 56 parents with 125 records in 98.580 seconds.

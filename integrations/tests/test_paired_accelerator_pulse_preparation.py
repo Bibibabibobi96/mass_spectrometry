@@ -16,7 +16,7 @@ from msplatform.io.strict_json import StrictJsonError
 from msplatform.execution.manifest_publication import build_run_manifest
 from msplatform.execution.retention import file_record
 from integrations.tests import test_paired_accelerator_static_field_execute as static_tests
-from integrations.runtime import paired_accelerator_model
+from msplatform.backends.comsol import paired_static_model as paired_accelerator_model
 from msplatform.backends.simion.source import GLOBAL_COLUMNS
 from integrations.workflows.paired_accelerator_static_field import runtime
 from integrations.workflows.paired_accelerator_pulse.prepare import prepare

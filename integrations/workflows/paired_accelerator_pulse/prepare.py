@@ -20,7 +20,7 @@ from msplatform.contracts.particle_physics import AMU_KG
 from msplatform.io.manifest_records import record_path
 from msplatform.io.manifest_records import require_completed_terminal_publication
 from msplatform.backends.comsol.prepulse_replay import build_comsol_prepulse_replay
-from integrations.runtime.paired_accelerator_model import load_paired_static_model_source
+from msplatform.backends.comsol.paired_static_model import load_paired_static_model_source
 from msplatform.results.single_reflection_source import published_producer_input, require_producer_manifest_binding, select_timed_pre_pulse_states
 
 
