@@ -36,6 +36,8 @@ ledger alone did not prevent an outer token from being reused, and the scheduler
 rejected its exited owner. The fixture now clears the inherited token, context
 and owner identity. All six subcases passed again in 57.936 seconds with a
 deliberately injected outer grant; production scheduler behavior is unchanged.
+The exact `d11886f1` Changed run `44731783549` then passed all selected stages;
+its complete job took 3 minutes 7 seconds, with Repository skipped by scope.
 
 The no-collision SIMION recovery and project finite launcher now use the same
 explicit Python selection. The public recovery regression completes once, repeats
