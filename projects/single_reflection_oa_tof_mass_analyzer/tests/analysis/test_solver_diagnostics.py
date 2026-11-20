@@ -80,22 +80,23 @@ class SolverDiagnosticsTest(unittest.TestCase):
             closure = freeze_candidate_source_closure(code, root / "artifacts", Path(sys.executable))
             verify_candidate_source_closure(closure)
             frozen_source = (code / source_id).read_text(encoding="utf-8")
-            self.assertNotIn("SIMULATION_PYTHON_EXE", frozen_source)
+            self.assertEqual(frozen_source, (repo / source_id).read_text(encoding="utf-8"))
+            self.assertIn("[string]$PythonExe", frozen_source)
             self.assertNotIn("Join-Path $repoRoot '.venv", frozen_source)
-            for label, wrapper, python_override in (
-                ("live", repo / source_id, sys.executable),
-                ("frozen", code / source_id, str(root / "unavailable-python.exe")),
+            for label, wrapper, selected_python, conflicting_python in (
+                ("live", repo / source_id, sys.executable, str(root / "unavailable-python.exe")),
+                ("frozen", code / source_id, sys.executable, str(root / "unavailable-python.exe")),
             ):
                 with self.subTest(label=label):
                     quoted_wrapper = str(wrapper).replace("'", "''")
                     command = (
                         f"& '{quoted_wrapper}' -Log simion.log -IonFile particles.ion "
                         f"-Mode test -Distribution fixed -ParticleCsv {label}.csv -AllowIncompleteCensus "
-                        "| ConvertTo-Json -Depth 5"
+                        f"-PythonExe '{selected_python}' | ConvertTo-Json -Depth 5"
                     )
                     result = subprocess.run(
                         ["pwsh", "-NoProfile", "-Command", command], cwd=root, check=True,
-                        env={**os.environ, "SIMULATION_PYTHON_EXE": python_override},
+                        env={**os.environ, "SIMULATION_PYTHON_EXE": conflicting_python},
                         capture_output=True, text=True, encoding="utf-8", timeout=60,
                     )
                     report = json.loads(result.stdout)

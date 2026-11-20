@@ -75,7 +75,13 @@ explicit interpreter. The payload/three-stage regressions passed in 29.820 secon
 the actual frozen radial worker passed in 9.121 seconds, and the outside-checkout
 frozen import plus missing-provider/source-tree refusals passed in 9.044 seconds.
 No implicit `.venv` discovery or live-package fallback was introduced; complete
-Changed and Repository acceptance remain separate.
+Changed and Repository acceptance remain separate. The follow-up Changed exposed
+three remaining interpreter assumptions. The frozen scheduler now loads its
+package-local host resource with the selected Python despite a conflicting
+environment; the analysis wrapper accepts an explicit `PythonExe`; and the radial
+fixture compares the frozen bytes with its actual controlled source. Their real
+regressions passed in 9.955, 9.978 and 27.065 seconds respectively. This is still
+software evidence, not native acceptance.
 The follow-up remote Changed exposed three stale test contracts: the expected
 frozen interpreter variable, package-local host resources in the SFI fixture,
 and managed-flight overrides of the installed process owner. These now match

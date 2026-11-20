@@ -385,7 +385,7 @@ foreach($nested in @($false,$true)) {
             self.assertTrue((code / "common/resource_budget_support.ps1").is_file())
             script = """
 $ErrorActionPreference='Stop'
-. ./common/host_execution_lease.ps1
+. ./src/msplatform/execution/resources/host_execution_lease.ps1 -HostContext @{workspace=(Get-Location).Path;python_executable=$env:FROZEN_TEST_PYTHON;host_state_path=$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH;policy_path=(Resolve-Path './src/msplatform/execution/resources/host_resource_policy.json').Path}
 . ./common/resource_budget_support.ps1
 $observationSource=(Get-Command New-RepositoryProcessObservation).ScriptBlock.File
 if($observationSource -ne [IO.Path]::GetFullPath('./src/msplatform/execution/resources/resource_process_support.ps1')){
@@ -426,10 +426,9 @@ if(@((Get-HostResourceStatus).records).Count){throw 'Frozen grant leaked'}
 Write-Output 'FROZEN_HOST_ENTRY=PASS'
 """
             environment = dict(os.environ, MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(root / "state.sqlite3"),
-                               SIMULATION_PYTHON_EXE="intentionally-absent-runtime")
+                               SIMULATION_PYTHON_EXE="intentionally-absent-runtime",
+                               FROZEN_TEST_PYTHON=str(Path(sys.executable).resolve()))
             environment.pop("MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN", None)
-            # Status's default path is initialized separately from the env.
-            script = script.replace(". ./common/host_execution_lease.ps1", ". ./common/host_execution_lease.ps1\n$script:HostResourceStatePath=$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH")
             result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
                                     cwd=code, env=environment, capture_output=True, text=True,
                                     encoding="utf-8", errors="replace", timeout=45, check=False)

@@ -5,6 +5,7 @@ param(
   [Parameter(Mandatory = $true)][string]$Distribution,
   [double]$DetectorRadiusMm = 40,
   [string]$ParticleCsv = '',
+  [string]$PythonExe = '',
   [switch]$AllowIncompleteCensus
 )
 
@@ -12,9 +13,10 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
-$python = if ($env:SIMULATION_PYTHON_EXE) { $env:SIMULATION_PYTHON_EXE } else {
-  throw 'Explicit SIMULATION_PYTHON_EXE is required'
+$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } elseif ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) } else {
+  throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'
 }
+if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python runtime missing: $python" }
 $pythonVersion = (& $python -c 'import sys; print(str(sys.version_info.major) + "." + str(sys.version_info.minor))').Trim()
 if ($LASTEXITCODE -ne 0 -or $pythonVersion -ne '3.11') { throw 'SIMION log analysis requires Python 3.11.' }
 $arguments = @(
