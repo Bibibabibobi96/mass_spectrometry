@@ -8,6 +8,13 @@ Current scope is P4 V8.7 (2026-11-12); historical evidence keeps its original ve
 
 ## 当前边界
 
+The FullJoint, RF–IP continuous and SFI recorded-birth thin PowerShell entries now
+select Python only through their explicit argument or `SIMULATION_PYTHON_EXE`;
+none falls back to a checkout `.venv`. Missing-selection refusal passed for all
+three real entries, and the RF–IP outside-cwd public-owner forwarding checks
+still pass. This changes execution-source selection only; it does not establish
+native flight or permit retirement of the segmented production path.
+
 The current RF–IP–MR functional case keeps the user-selected complete bare RF,
 LP60 IP (center 170 mm and declared rigid pose), identity-pose MR and approved
 finite IP bath plus explicit outer vacuum; no OA is added. The requested absolute

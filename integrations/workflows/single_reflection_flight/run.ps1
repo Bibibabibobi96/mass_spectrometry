@@ -25,7 +25,7 @@ $RepoRoot=(Resolve-Path -LiteralPath $RepoRoot).Path
 . (Join-Path $RepoRoot 'src/msplatform/execution/resources/require_powershell7.ps1')
 . (Join-Path $RepoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 if(-not $Python){
-  $Python=if($env:SIMULATION_PYTHON_EXE){$env:SIMULATION_PYTHON_EXE}else{Join-Path $RepoRoot '.venv/Scripts/python.exe'}
+  $Python=if($env:SIMULATION_PYTHON_EXE){$env:SIMULATION_PYTHON_EXE}else{throw 'Explicit Python or SIMULATION_PYTHON_EXE is required'}
 }
 $Python=(Resolve-Path -LiteralPath $Python).Path
 $arguments=@('-B','-X','utf8','-m','msplatform.workflows.single_reflection_flight.recorded_birth',

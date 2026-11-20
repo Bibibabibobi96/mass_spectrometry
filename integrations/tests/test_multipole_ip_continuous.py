@@ -314,3 +314,30 @@ class ContinuousInputTests(unittest.TestCase):
         self.assertEqual(observed['fields'], {'manifest': 'selected-fields'})
         self.assertEqual(observed['vendor'], str(self.vendor.resolve()))
         self.assertEqual(observed['workspace'], str(self.root))
+
+    def test_thin_powershell_entries_require_explicit_python(self):
+        import os
+        import shutil
+        import subprocess
+        from pathlib import Path
+        repo = Path(continuous.__file__).resolve().parents[4]
+        paths = {name: str(self.write(name + '.json', {})) for name in (
+            'release', 'fields', 'propagation', 'observations', 'numerics', 'hs1', 'environment')}
+        cases = [
+            (repo / 'integrations/workflows/multipole_ip/continuous.ps1',
+             ['-ReleaseRequest', paths['release'], '-FieldsReference', paths['fields'],
+              '-Propagation', paths['propagation'], '-Observations', paths['observations'],
+              '-Numerics', paths['numerics'], '-Hs1Request', paths['hs1'],
+              '-Environment', paths['environment'], '-Workspace', str(self.root), '-Profile', 'profile']),
+            (repo / 'integrations/workflows/single_reflection_flight/run.ps1',
+             ['-FieldsReference', paths['fields'], '-Observations', paths['observations'],
+              '-Environment', paths['environment'], '-Workspace', str(self.root), '-Profile', 'profile']),
+        ]
+        environment = {key: value for key, value in os.environ.items() if key != 'SIMULATION_PYTHON_EXE'}
+        for script, arguments in cases:
+            with self.subTest(script=script.name):
+                result = subprocess.run([shutil.which('pwsh'), '-NoProfile', '-File', str(script), *arguments],
+                    cwd=self.root, env=environment, capture_output=True, text=True, encoding='utf-8',
+                    errors='replace', timeout=30)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('SIMULATION_PYTHON_EXE is required', result.stdout + result.stderr)

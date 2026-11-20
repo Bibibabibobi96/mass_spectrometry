@@ -78,7 +78,7 @@ $script:pythonRoot=$repoRoot
 . (Join-Path $repoRoot 'src/msplatform/execution/resources/require_powershell7.ps1')
 . (Join-Path $repoRoot 'integrations/runtime/dependencies.ps1')
 . (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
-$python=if($PythonExe){$PythonExe}else{Join-Path $repoRoot '.venv/Scripts/python.exe'}
+$python=if($PythonExe){$PythonExe}elseif($env:SIMULATION_PYTHON_EXE){$env:SIMULATION_PYTHON_EXE}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
 . (Join-Path $repoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
 $pathContext=Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
 $artifactRoot=[string]$pathContext.artifact_root

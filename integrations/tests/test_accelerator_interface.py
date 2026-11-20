@@ -55,6 +55,14 @@ def _copy_path_consumer_repository(target):
 
 
 class AcceleratorInterfaceTests(unittest.TestCase):
+    def test_entry_requires_explicit_python(self):
+        environment = {key: value for key, value in os.environ.items() if key != "SIMULATION_PYTHON_EXE"}
+        result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File",
+                                 str(REPO / "integrations/workflows/accelerator_interface/execute.ps1")],
+            cwd=REPO, env=environment, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("SIMULATION_PYTHON_EXE is required", result.stdout + result.stderr)
+
     def test_continuous_full_joint_delegates_original_birth_fields_to_existing_consumer(self):
         powershell = shutil.which("pwsh")
         if not powershell:
