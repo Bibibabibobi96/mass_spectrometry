@@ -173,7 +173,7 @@ PYTHON_BOUND_SOURCES = frozenset({
     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/build_formal_delivery.ps1",
 })
 PYTHON_ASSIGNMENT = "$python = if ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) } else { throw 'Explicit SIMULATION_PYTHON_EXE is required' }"
-HOST_PYTHON_ASSIGNMENT = "$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } elseif ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) } else { throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required' }"
+HOST_PYTHON_ASSIGNMENT = "$python = if ($null-ne$explicitArgs-and$explicitArgs.Value.Count -gt 0 -and $explicitArgs.Value[0]) { [IO.Path]::GetFullPath([string]$explicitArgs.Value[0]) } elseif ($null-ne$callerPython-and$callerPython.Value) { [IO.Path]::GetFullPath([string]$callerPython.Value) } elseif ($null-ne$existingPython-and$existingPython.Value) { [IO.Path]::GetFullPath([string]$existingPython.Value) } elseif ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) } else { throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required' }"
 ANALYSIS_PYTHON_ASSIGNMENT = "$python = if ($env:SIMULATION_PYTHON_EXE) { $env:SIMULATION_PYTHON_EXE } else {\n  throw 'Explicit SIMULATION_PYTHON_EXE is required'\n}"
 
 GENERATOR_PYTHON_ASSIGNMENT = "$python = if ($PythonExe) {\n  [IO.Path]::GetFullPath($PythonExe)\n} elseif ($env:SIMULATION_PYTHON_EXE) {\n  [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)\n} else {\n  throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'\n}"

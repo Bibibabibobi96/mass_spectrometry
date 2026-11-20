@@ -66,6 +66,12 @@ The Changed fixtures now load canonical workspace resources, classify the
 Python using the actual explicit-runtime scripts. The three affected modules
 passed 27 parents with 57 successful records in 54.357 seconds, including frozen
 scheduler inheritance, zero-native refusals and source-missing protection.
+The subsequent host-lease migration changed its explicit interpreter selection;
+the freezer's recognized source expression now matches that implementation and
+continues to replace it with the run-selected interpreter. The actual three-stage
+frozen bootstrap regression passed in 37.399 seconds. This repair does not restore
+implicit `.venv` discovery or change frozen-source integrity checks; complete
+Changed and Repository acceptance remain separate.
 
 ## Generic vector-field comparison owner
 
