@@ -9,7 +9,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-$repo=Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent
+$repo=(Resolve-Path (Join-Path $PSScriptRoot '../../../../..')).Path
 $executionResources=Join-Path $repo 'src/msplatform/execution/resources'
 . (Join-Path $executionResources 'require_powershell7.ps1')
 . (Join-Path $executionResources 'run_artifact_support.ps1')
@@ -64,7 +64,7 @@ $fieldBinding=$null;$responseBasis=$null;$watch=[Diagnostics.Stopwatch]::StartNe
 $levelStatus=[ordered]@{}
 try{
     $capacity=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repo -ArtifactRoot $artifacts -RunDirectory $RunDirectory -Owner $plan.project -CommittedNewBytes ([int64]$plan.committed_new_bytes) -ProtectedPaths @($plan.protected_paths)
-    $copies=[ordered]@{request=$RequestPath;launcher=$PSCommandPath;compiler=(Join-Path $repo 'src/msplatform/backends/simion/native_static_field_provider.py');geometry_emitter=(Join-Path $repo 'src/msplatform/backends/simion/native_system_geometry.py');analyzer_shapes=(Join-Path $repo 'src/msplatform/backends/simion/mr_geometry.py');candidate_authority=(Join-Path $repo 'src/msplatform/backends/comsol/candidate_authority.py');binding_loader=(Join-Path $repo 'src/msplatform/backends/comsol/static_field_binding.py');scalar_adapter=(Join-Path $repo 'src/msplatform/backends/simion/resources/scalar_field_adapter.lua');builder=(Join-Path $repo 'common/simion/build_dirichlet_patch_basis.lua');executor=(Join-Path $executionResources 'resource_process_support.ps1')}
+    $copies=[ordered]@{request=$RequestPath;launcher=$PSCommandPath;compiler=(Join-Path $repo 'src/msplatform/backends/simion/native_static_field_provider.py');geometry_emitter=(Join-Path $repo 'src/msplatform/backends/simion/native_system_geometry.py');analyzer_shapes=(Join-Path $repo 'src/msplatform/backends/simion/mr_geometry.py');candidate_authority=(Join-Path $repo 'src/msplatform/backends/comsol/candidate_authority.py');binding_loader=(Join-Path $repo 'src/msplatform/backends/comsol/static_field_binding.py');scalar_adapter=(Join-Path $repo 'src/msplatform/backends/simion/resources/scalar_field_adapter.lua');builder=(Join-Path $PSScriptRoot 'build_dirichlet_patch_basis.lua');executor=(Join-Path $executionResources 'resource_process_support.ps1')}
     foreach($key in $plan.inputs.Keys){$copies[$key]=$plan.inputs[$key]}
     if($plan.ContainsKey('collision_build')){
         $copies.geometry_resolver=Join-Path $repo 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resolved_geometry.py'

@@ -245,7 +245,7 @@ function Invoke-NativeCorridorResponseMemberBuild {
     }elseif(Test-Path -LiteralPath $compiledSurface){
       throw "surface=none unexpectedly produced a surface companion for ID $ResponseId"
     }
-    & $simion --nogui --noprompt lua (Join-Path $repoRoot 'common\simion\build_dirichlet_patch_basis.lua') `
+    & $simion --nogui --noprompt lua (Join-Path $repoRoot 'src/msplatform/backends/simion/resources/build_dirichlet_patch_basis.lua') `
       $scratchMember $basis ($coarseOriginValues-join',') ($corridorOriginValues-join',') 'x_mirror_five_faces'
     if($LASTEXITCODE-ne0){throw "Native-corridor response build failed for ID $ResponseId"}
     Publish-NativeCorridorBuiltMember -ScratchPath $memberPath -DestinationPath $destination

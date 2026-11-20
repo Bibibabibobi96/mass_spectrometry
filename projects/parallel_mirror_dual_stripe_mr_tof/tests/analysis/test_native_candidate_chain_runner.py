@@ -1325,7 +1325,7 @@ $config|ConvertTo-Json -Compress
                                ("unknown", None)):
             script = ("Set-StrictMode -Version Latest;$ErrorActionPreference='Stop';"
                       "$staticFieldRepresentation='comsol_static_scalar_v';$fieldProviderRunner='comsol';"
-                      f"$fieldProviderRequest=@{{role='{role}'}};$PSScriptRoot='.';$caught='';try{{\n"
+                      f"$fieldProviderRequest=@{{role='{role}'}};$repoRoot=(Get-Location).Path;$caught='';try{{\n"
                       + source[start:end] + "}catch{$caught=$_.Exception.Message};"
                       "@{mode=$staticFieldRepresentation;runner=$fieldProviderRunner;caught=$caught}|ConvertTo-Json -Compress")
             result = subprocess.run([shell, "-NoProfile", "-NonInteractive", "-Command", script],

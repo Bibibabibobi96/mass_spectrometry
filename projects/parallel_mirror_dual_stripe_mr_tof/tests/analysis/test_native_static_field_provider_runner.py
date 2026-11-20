@@ -10,7 +10,7 @@ import tempfile
 import unittest
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-SIMION_ROOT = REPO_ROOT / 'projects/parallel_mirror_dual_stripe_mr_tof/simion'
+SIMION_ROOT = REPO_ROOT / 'src/msplatform/backends/simion/resources'
 RUNNER = SIMION_ROOT / 'run_native_static_field_provider.ps1'
 CROP = SIMION_ROOT / 'crop_native_static_field.lua'
 PWSH = shutil.which('pwsh') or 'C:/Program Files/PowerShell/7/pwsh.exe'
@@ -30,7 +30,7 @@ class NativeProviderRunnerTest(unittest.TestCase):
 
     @unittest.skipUnless(LUA.is_file(), 'Installed standalone Lua required')
     def test_iob_ordinary_collision_is_only_allowed_for_static_field(self):
-        source = (SIMION_ROOT.parents[2] / 'src/msplatform/backends/simion/resources/build_native_corridor_iob.lua').read_text(encoding='utf-8-sig')
+        source = (SIMION_ROOT / 'build_native_corridor_iob.lua').read_text(encoding='utf-8-sig')
         start = source.index('if operating.static_field then')
         # Stop before the following OA-only branch, retaining exactly the
         # shared static/family suffix guard as a complete Lua statement.

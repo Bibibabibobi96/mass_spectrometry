@@ -17,7 +17,7 @@ class SimionRefinePolicyTests(unittest.TestCase):
         lua = Path(shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe")
         if not lua.is_file():
             self.skipTest("installed Lua interpreter required; no SIMION process")
-        adapter = REPOSITORY_ROOT / "common/simion/build_dirichlet_patch_basis.lua"
+        adapter = REPOSITORY_ROOT / "src/msplatform/backends/simion/resources/build_dirichlet_patch_basis.lua"
         code = r'''
 local adapter,mode=arg[1],arg[2]
 local source={dx_mm=1,dy_mm=1,dz_mm=1}

@@ -77,7 +77,7 @@ class NativeStaticProviderTest(unittest.TestCase):
         with patch.object(p, "load_binding", wraps=load_binding), patch.object(Path, "open", no_payload_open):
             actual_inputs = p.native_input_binding(plan, run)
         self.assertEqual(len(actual_inputs["instances"]), 3)
-        runner = Path(__file__).resolve().parents[2] / "simion/run_native_static_field_provider.ps1"
+        runner = Path(__file__).resolve().parents[4] / "src/msplatform/backends/simion/resources/run_native_static_field_provider.ps1"
         text = runner.read_text()
         start = text.index("    $nativeInputs=Invoke-RunToolRootContext")
         block = text[start:text.index("    foreach($name in @('frozen_input','resolved_geometry'))", start)]
@@ -1667,7 +1667,7 @@ class NativeProviderCloseoutTest(unittest.TestCase):
         if powershell is None:
             self.skipTest("PowerShell 7 required")
         repo = Path(__file__).resolve().parents[4]
-        runner = repo / "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_native_static_field_provider.ps1"
+        runner = repo / "src/msplatform/backends/simion/resources/run_native_static_field_provider.ps1"
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             script = root / "closeout.ps1"
@@ -1814,7 +1814,7 @@ param($repo,$python,$artifacts)
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 . (Join-Path $repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
-$runner=Join-Path $repo 'projects/parallel_mirror_dual_stripe_mr_tof/simion/run_native_static_field_provider.ps1'
+$runner=Join-Path $repo 'src/msplatform/backends/simion/resources/run_native_static_field_provider.ps1'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($runner,[ref]$tokens,[ref]$errors)
 $outer=@($ast.EndBlock.Statements|Where-Object {$_-is[Management.Automation.Language.TryStatementAst]})

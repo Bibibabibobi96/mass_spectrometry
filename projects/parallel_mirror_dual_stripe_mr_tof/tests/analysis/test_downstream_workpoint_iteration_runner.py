@@ -1185,8 +1185,9 @@ function Invoke-RunToolRootContext {
  # control flow without invoking a commercial process or replacing the body.
  '{}'|Set-Content (Join-Path $Root 'parent/inputs/acquisition_field_request.json')
 }
-$provider=Join-Path $Root 'simion/run_native_static_field_provider.ps1'
+$provider=Join-Path $Root 'src/msplatform/backends/simion/resources/run_native_static_field_provider.ps1'
 $preparedProviderRunner=$provider
+New-Item -ItemType Directory -Path (Split-Path -Parent $provider) -Force|Out-Null
 @'
 param($RequestPath,$RunDirectory,[switch]$Approved)
 if(-not$Approved-or-not(Test-Path $RequestPath)){throw 'Public provider request missing'}

@@ -14,7 +14,11 @@ execution resources and requires an explicit Python selection instead of default
 to the checkout `.venv`. Existing host-state overrides, native input guards,
 failure closure and frozen scientific inputs remain unchanged. The 14 runner
 methods passed with 24 successful records; this software check did not launch
-SIMION or complete ordinary-install field production.
+SIMION or complete ordinary-install field production. The PowerShell execution
+owner, crop adapter and Dirichlet builder now also live in the installed SIMION
+backend. FullJoint, downstream-workpoint and candidate-chain callers select that
+same owner; the candidate chain requires explicit Python. Their former project
+entry and common Lua dependencies are removed without a forwarding duplicate.
 
 ## Installed resolved-CAD owner
 

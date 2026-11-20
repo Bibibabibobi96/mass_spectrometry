@@ -46,7 +46,7 @@ $ErrorActionPreference='Stop'
 $project='parallel_mirror_dual_stripe_mr_tof'
 $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $workspaceRoot=Split-Path -Parent $repoRoot
-$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
+$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
 $artifactRoot=Join-Path $workspaceRoot "artifacts\projects\$project"
 if(-not$RunId){$RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__sim__simion__mrtof-native-candidate-chain'}
 if(-not[double]::IsFinite($AcceleratorYAnchorMm)){throw 'AcceleratorYAnchorMm must be finite.'}
@@ -88,7 +88,7 @@ if($staticFieldMode){
     'mrtof_same_mesh_field_provider_request' {}
     'mrtof_native_static_field_provider_request' {
       $staticFieldRepresentation='native_static_pa'
-      $fieldProviderRunner=Join-Path $PSScriptRoot '../simion/run_native_static_field_provider.ps1'
+      $fieldProviderRunner=Join-Path $repoRoot 'src/msplatform/backends/simion/resources/run_native_static_field_provider.ps1'
     }
     default {throw 'Unsupported static field provider request role.'}
   }

@@ -419,7 +419,7 @@ record 摘要，但只打开调用方明确列出的文件并逐字节核验，�
 消费，不能替代完整 generation probe，也不能据此宣布整个原生 family 健康。
 
 局部Dirichlet PA使用
-[`build_dirichlet_patch_basis.lua`](build_dirichlet_patch_basis.lua)从一个或多个已解父basis复制六面边界响应。
+[`build_dirichlet_patch_basis.lua`](../../src/msplatform/backends/simion/resources/build_dirichlet_patch_basis.lua)从一个或多个已解父basis复制六面边界响应。
 父basis参数既可写成单一路径，也可写成 `PATH,COEFFICIENT|...` 的线性组合；系数由调用方已经冻结的
 工作电压提供，构建器只做同一点电势叠加，不推导电压或增加响应身份。
 构建器第五参数选择边界模式，第六参数可传有限正数的 Refine convergence（V）；省略时仍使用

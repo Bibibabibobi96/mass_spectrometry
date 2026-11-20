@@ -85,7 +85,7 @@ $artifactRoot = Join-Path (Split-Path -Parent $repoRoot) "artifacts\projects\$pr
 $artifactWorkspaceRoot = Join-Path (Split-Path -Parent $repoRoot) 'artifacts'
 $trialArtifactRoot = Join-Path $artifactWorkspaceRoot 'projects/instrument_assembly'
 $preparedCallerParameters=@($PSBoundParameters.Keys)
-$preparedProviderRunner=Join-Path $PSScriptRoot '../simion/run_native_static_field_provider.ps1'
+$preparedProviderRunner=Join-Path $repoRoot 'src/msplatform/backends/simion/resources/run_native_static_field_provider.ps1'
 $preparedStagedMode=$PSCmdlet.ParameterSetName-eq'Prepared'-and-not[string]::IsNullOrWhiteSpace($PreparedTargetAuthorityPath)
 
 function Invoke-PreparedWorkpointAcquisition {
@@ -187,7 +187,7 @@ if($staticFieldMode){
   if($fieldProviderRequest.schema_version-ne1-or$fieldProviderRequest.role-notin@('mrtof_same_mesh_field_provider_request','mrtof_native_static_field_provider_request')){throw 'Invalid static field provider request.'}
   if($fieldProviderRequest.role-eq'mrtof_native_static_field_provider_request'){
     $staticBindingMode='native_static_pa'
-    $fieldProviderRunner=Join-Path $PSScriptRoot '../simion/run_native_static_field_provider.ps1'
+    $fieldProviderRunner=Join-Path $repoRoot 'src/msplatform/backends/simion/resources/run_native_static_field_provider.ps1'
     if($ResponseFieldBindingPath){throw 'Native static field production does not consume COMSOL response fields.'}
     if($CompletedFieldProviderManifest){throw 'Native static provider replay is not yet supported; unchanged voltages reuse the source binding.'}
   }

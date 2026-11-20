@@ -167,5 +167,5 @@ def build_native_corridor_identity(contract_path: Path, gem_path: Path, simion_e
                              "native_fast_adjust_assembler_sha256": file_sha256(native_resource_path("assemble_native_fast_adjust_family.lua")),
                              "physical_basis_builder_sha256": file_sha256(simion_directory / "build_component_basis.lua"),
                              "id_remapper_sha256": file_sha256(common_simion / "remap_pa_electrode_ids.lua"),
-                             "dirichlet_builder_sha256": file_sha256(common_simion / "build_dirichlet_patch_basis.lua")},
+                             "dirichlet_builder_sha256": file_sha256(native_resource_path("build_dirichlet_patch_basis.lua"))},
     }

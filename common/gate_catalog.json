@@ -2577,7 +2577,7 @@
           "reason": "dirichlet_native_contract_changed"
         },
         {
-          "exact": "common/simion/build_dirichlet_patch_basis.lua",
+          "exact": "src/msplatform/backends/simion/resources/build_dirichlet_patch_basis.lua",
           "reason": "dirichlet_native_contract_changed"
         },
         {
@@ -4211,7 +4211,7 @@
           {
             "matches": [
               {
-                "exact": "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_native_static_field_provider.ps1",
+                "exact": "src/msplatform/backends/simion/resources/run_native_static_field_provider.ps1",
                 "reason": "native_scalar_provider_freezer_changed"
               }
             ],

@@ -16,7 +16,7 @@ from msplatform.backends.simion.native_io import _ASYNC_IO_PRELUDE, apply_native
 ROOT = Path(__file__).resolve().parents[2]
 SIMION = Path(os.environ.get("SIMION_EXE", r"C:\Program Files\SIMION-2020\simion.exe"))
 FIXTURE = Path(__file__).with_name("test_dirichlet_patch_basis_fixture.lua")
-BUILDER = Path(__file__).with_name("build_dirichlet_patch_basis.lua")
+BUILDER = ROOT / "src/msplatform/backends/simion/resources/build_dirichlet_patch_basis.lua"
 GEM2PA = Path(__file__).with_name("run_gem2pa.ps1")
 
 
