@@ -679,7 +679,7 @@ class CandidateGateParameterContractTests(unittest.TestCase):
                     ["-m", workflow + "theory", "--check-mode"],
                     ["-m", workflow + "run_finite_length", "--check-contract"],
                     [str(project / "analysis/entry_aperture_l0.py"), "--check"],
-                ])
+                ], msg=result.stdout + result.stderr + "\nRECORDED_COMMANDS=" + repr(commands))
                 unittest_commands = [command for command in commands if command[:2] == ["-m", "common.gate_unittest"]]
                 selected = [observed["modules"]["new_area/test_forwarded.py"]] if changed else []
                 self.assertEqual(unittest_commands, [["-m", "common.gate_unittest", *selected]] if changed else [])
@@ -704,7 +704,7 @@ class CandidateGateParameterContractTests(unittest.TestCase):
                     ["-m", "projects.rf_multipole_ion_optics.analysis.resolve_contract",
                      "--structural-variant", variant, "--check"]
                     for variant in ("quadrupole", "hexapole", "octupole")
-                ])
+                ], msg=result.stdout + result.stderr + "\nRECORDED_COMMANDS=" + repr(observed["commands"]))
                 expected = sorted(observed["modules"].values())
                 calls = [command for command in observed["commands"] if command[:2] == ["-m", "common.gate_unittest"]]
                 # Freshness now owns the tree parse before dispatch. A syntax
