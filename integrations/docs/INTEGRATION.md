@@ -568,7 +568,11 @@ consume that installed implementation. The former
 bridge. Manifest binding, model/source identity and historical export reads are
 unchanged. Both actual consumer suites passed 35 tests in 249.928 seconds, with
 one optional frozen-source case skipped. No solver, native model or field
-qualification was run by this migration.
+qualification was run by this migration. The unused
+`integrations/runtime/pure_boundary_validator.py` compatibility bridge was also
+removed after checking direct, dynamic and frozen references; the unique
+`msplatform.backends.simion.tracking_program` validator remains unchanged and
+passed all 44 single-reflection Program tests in 30.168 seconds.
 
 OA–MR now
 uses the same installed HostContext/process and short-PA resources with explicit
