@@ -9,7 +9,7 @@ import copy
 from msplatform.execution.inputs import freeze_file
 from msplatform.backends.comsol import static_field_binding as field_binding_module
 from msplatform.execution.retention import file_record
-from integrations.workflows.accelerator_interface.prepare import (
+from msplatform.workflows.accelerator_interface.prepare import (
     CONFIG, ION_PROCESSOR, load_selection, verified_reference,
     validate_execution_contract, finalize_interface, prepare_interface,
 )
@@ -83,7 +83,7 @@ class InterfacePreparationTests(unittest.TestCase):
                     validate_execution_contract(original, bounded, allow_controller_budget=allow_budget)
 
     def test_finalize_native_strategy_requires_matching_actual_parent_and_all_windows(self):
-        module = 'integrations.workflows.accelerator_interface.prepare'
+        module = 'msplatform.workflows.accelerator_interface.prepare'
         field_module = 'msplatform.backends.comsol.static_field_binding'
         from msplatform.backends.comsol.static_field_binding import resolve_native_refine_numerics
         from msplatform.io.file_identity import file_sha256
@@ -124,7 +124,7 @@ class InterfacePreparationTests(unittest.TestCase):
                          patch('msplatform.workflows.prepared_joint.ip_mr_handoff.prepare_handoff'), \
                          patch(field_module+'.load_binding', return_value=binding) as load, \
                          patch('msplatform.workflows.prepared_joint.ip_mr_handoff.compare_measured_exit_energy', return_value={}), \
-                         patch('integrations.workflows.accelerator_interface.prepare.bind_joint_workbench', return_value={}):
+                         patch('msplatform.workflows.accelerator_interface.prepare.bind_joint_workbench', return_value={}):
                         if bad_level is None:
                             receipt = finalize_interface(source_run=source, reference_mr_run=reference, design_run=design,
                                 field_run=fields, run_directory=run, contract_path=execution)
@@ -137,7 +137,7 @@ class InterfacePreparationTests(unittest.TestCase):
                         load.assert_called_once_with(fields/'results/field_binding.json')
 
     def test_explicit_ip_request_and_relative_recipe_are_frozen_without_a_default(self):
-        module = 'integrations.workflows.accelerator_interface.prepare'
+        module = 'msplatform.workflows.accelerator_interface.prepare'
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             reference, run = root/'reference', root/'run'
@@ -157,7 +157,7 @@ class InterfacePreparationTests(unittest.TestCase):
             explicit.write_text(json.dumps(dict(composition_plan=dict(path='recipe.json'), policies=dict(energy_adjustment='preserve_measured_workpoint'))))
             with patch(module+'.verified_reference', side_effect=lambda owner, relative, **kwargs: owner/relative), patch(module+'.verified_preparation_reference', side_effect=lambda owner, relative, **kwargs: owner/relative), \
                  patch(module+'._resolve_ip_matching', return_value={}), \
-                 patch('integrations.workflows.accelerator_interface.prepare.prepare_joint_flight', return_value={}):
+                 patch('msplatform.workflows.accelerator_interface.prepare.prepare_joint_flight', return_value={}):
                 result = prepare_interface(source_run=root/'source', reference_mr_run=reference,
                     run_directory=run, provider=ION_PROCESSOR, lua_executable=root/'lua.exe',
                     matching_request_path=explicit)
@@ -236,7 +236,7 @@ class InterfacePreparationTests(unittest.TestCase):
     def test_joint_analysis_preflight_binds_source_and_clock_before_field(self):
         from types import SimpleNamespace
         from msplatform.analysis.peak_metrics import AnalysisSettings
-        from integrations.workflows.accelerator_interface.prepare import preflight_joint_analysis
+        from msplatform.workflows.accelerator_interface.prepare import preflight_joint_analysis
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             reference, receipt_path, states, selected, timing = [root/name for name in
@@ -264,7 +264,7 @@ class InterfacePreparationTests(unittest.TestCase):
                 'results/ion_processor_exit/component_particle_state.csv': states}
             table = SimpleNamespace(report=dict(clock_epoch_ids=['epoch']),
                 rows=[dict(particle_id=7, instrument_time_us=11.)])
-            with patch('integrations.workflows.accelerator_interface.prepare.verified_preparation_reference',
+            with patch('msplatform.workflows.accelerator_interface.prepare.verified_preparation_reference',
                        side_effect=lambda run, relative: paths[relative]), \
                  patch('msplatform.contracts.particle_state.load_component_particle_state_csv', return_value=table):
                 preflight_joint_analysis(root, source, selected)
@@ -280,7 +280,7 @@ class InterfacePreparationTests(unittest.TestCase):
                     preflight_joint_analysis(root, source, selected)
 
     def test_finalize_freezes_selected_step_contract_and_rejects_other_changes(self):
-        module = 'integrations.workflows.accelerator_interface.prepare'
+        module = 'msplatform.workflows.accelerator_interface.prepare'
         original = dict(simion=dict(default_trajectory_profile_id='same', trajectory_profiles=dict(
             same=dict(trajectory_quality=3, maximum_step_us=.004, purpose='unit'))), source=dict(fixed=True),
             downstream_fixed_grid_workpoint_profile=dict(automatic_iteration=dict(
@@ -325,7 +325,7 @@ class InterfacePreparationTests(unittest.TestCase):
                  patch(module+'._resolve_ip_matching'), \
                  patch('msplatform.workflows.prepared_joint.ip_mr_handoff.prepare_handoff'), \
                  patch('msplatform.workflows.prepared_joint.ip_mr_handoff.compare_measured_exit_energy',return_value={}), \
-                 patch('integrations.workflows.accelerator_interface.prepare.bind_joint_workbench',return_value={}) as bind:
+                 patch('msplatform.workflows.accelerator_interface.prepare.bind_joint_workbench',return_value={}) as bind:
                 receipt = finalize_interface(source_run=source,reference_mr_run=reference,design_run=design,
                                              field_run=fields,run_directory=run,contract_path=execution)
             self.assertEqual(Path(receipt['inputs']['reference_trajectory']['path']).read_bytes(),execution.read_bytes())

@@ -21,7 +21,7 @@ from msplatform.workflows.prepared_joint.preparation import (
     ION_PROCESSOR, PROJECT, verified_reference, validate_execution_contract,
 )
 
-REPO = Path(__file__).resolve().parents[3]
+REPO = Path(__file__).resolve().parents[4]
 CONFIG = REPO / "projects" / PROJECT / "config"
 from msplatform.backends.simion.mr_prepared_field import collision_workbench_layout
 from msplatform.backends.simion.resources import native_resource_path
@@ -120,7 +120,7 @@ def prepare_joint_flight(*, reference_run: Path,
                         interface_results: Path, frozen_inputs: Path, lua_executable: Path,
                         matching: dict[str, Any]) -> dict[str, Any]:
     """Prepare the candidate assembly and field plan without a flight runtime."""
-    from integrations.workflows.accelerator_interface.geometry import prepare_ion_processor_assembly
+    from msplatform.workflows.accelerator_interface.geometry import prepare_ion_processor_assembly
 
     output = interface_results / "joint_flight"
     output.mkdir(exist_ok=False)
@@ -322,13 +322,19 @@ def bind_joint_workbench(*, design_run: Path, field_run: Path, source_run: Path,
     priority = layout["priority"]
     (runtime / "joint.priority.lua").write_text("return " + _lua(priority) + "\n", encoding="utf-8", newline="\n")
     # SIMION must load each seed slot under a distinct filename before the
-    # builder replaces its PA. Share the one frozen payload through private
-    # run-local hard links, leaving the dependency snapshot unchanged.
+    # builder replaces its PA. Cross-volume installations need independent
+    # copies because Windows cannot create hard links between volumes.
     seed = runtime / Path(layout["seed"]).name
     shutil.copyfile(layout["seed"], seed)
-    placeholder = REPO / "src/msplatform/backends/simion/resources/iob_seed_placeholder_01.pa0"
+    placeholder = native_resource_path("iob_seed_placeholder_01.pa0")
     for index in range(1, len(binding["instances"]) + 1):
-        os.link(placeholder, runtime / f"iob_seed_placeholder_{index:02d}.pa0")
+        target = runtime / f"iob_seed_placeholder_{index:02d}.pa0"
+        try:
+            os.link(placeholder, target)
+        except OSError as error:
+            if error.winerror != 17:
+                raise
+            shutil.copyfile(placeholder, target)
     build = dict(schema_version=1, role="mrtof_measured_source_workbench_build",
                  seed=str(seed),
                  paths=[item["pa_path"] for item in binding["instances"]],

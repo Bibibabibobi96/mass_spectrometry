@@ -342,7 +342,7 @@ print('FROZEN_SRC_CORE=PASS')
             snapshot = inputs / "runtime_snapshot"
             code = '''
 from pathlib import Path
-from integrations.workflows.accelerator_interface import prepare
+from msplatform.workflows.accelerator_interface import prepare
 from msplatform.workflows.multipole_ip import prepare as handoff
 from msplatform.contracts.machine_contracts import ContractError
 from msplatform.workflows.ion_processor import functional

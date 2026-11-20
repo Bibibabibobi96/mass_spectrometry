@@ -13,10 +13,10 @@ from unittest.mock import patch
 
 from msplatform.execution.retention import file_record
 from msplatform.assembly.resolve_assembly import compile_assembly_layout
-from integrations.workflows.accelerator_interface import geometry as assembly_geometry
+from msplatform.workflows.accelerator_interface import geometry as assembly_geometry
 from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
 from msplatform.workflows.prepared_joint.ip_mr_connection import resolve_ip_mr_connection
-from integrations.workflows.accelerator_interface.geometry import prepare_ion_processor_assembly
+from msplatform.workflows.accelerator_interface.geometry import prepare_ion_processor_assembly
 from msplatform.backends.simion import assembled_field_plan as assembly
 from msplatform.workflows.prepared_joint import ion_processor_assembly as assembly_workflow
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import resolve_geometry

@@ -15,6 +15,15 @@ three real entries, and the RF–IP outside-cwd public-owner forwarding checks
 still pass. This changes execution-source selection only; it does not establish
 native flight or permit retirement of the segmented production path.
 
+The accelerator-interface preparation and IP–MR materialization implementations now
+belong to `msplatform.workflows.accelerator_interface`; the integration tree
+keeps only its PowerShell CLI. The installed PA placeholder resource is used
+instead of a derived repository path, with same-volume hard links and an explicit
+cross-volume copy fallback. All 100 selected preparation, geometry, frozen-consumer
+and prepared-joint parent tests pass, including source/geometry rejection and
+outside-repository materialization. This is software ownership evidence, not
+native flight, ordinary-install full-chain or scientific qualification.
+
 The current RF–IP–MR functional case keeps the user-selected complete bare RF,
 LP60 IP (center 170 mm and declared rigid pose), identity-pose MR and approved
 finite IP bath plus explicit outer vacuum; no OA is added. The requested absolute

@@ -16,7 +16,7 @@ from jsonschema import ValidationError
 
 from msplatform.execution.manifest_publication import build_run_manifest
 from msplatform.execution.retention import file_record
-from integrations.workflows.accelerator_interface.prepare import (
+from msplatform.workflows.accelerator_interface.prepare import (
     CONFIG, _resolve_ip_matching, bind_joint_workbench, prepare_interface, prepare_joint_flight, verified_preparation_reference,
 )
 
@@ -548,7 +548,7 @@ if($receipt.exit_count-ne1){throw 'wrong receipt'}
         if not powershell:
             self.skipTest("PowerShell 7 required")
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_ion_processor_assembly import AssemblyTests
-        from integrations.workflows.accelerator_interface.geometry import prepare_ion_processor_assembly
+        from msplatform.workflows.accelerator_interface.geometry import prepare_ion_processor_assembly
         from msplatform.workflows.prepared_joint.ip_mr_connection import resolve_ip_mr_connection
 
         fixture = AssemblyTests("test_seed_target_geometry_and_oa_removed")
@@ -653,7 +653,7 @@ Write-Output 'REAL_FIELD_PROVIDER=PASS'
             zero = dict(role="ion_processor_component_exit_export", status="zero_exit",
                         counts=dict(source=3, transferred=0, not_transferred=3))
             connection = dict(upstream=dict(instance_id="ip"), downstream=dict(instance_id="mr"))
-            with patch('integrations.workflows.accelerator_interface.prepare.derive_assembly_scope', return_value={}), \
+            with patch('msplatform.workflows.accelerator_interface.prepare.derive_assembly_scope', return_value={}), \
                  patch('msplatform.workflows.prepared_joint.ip_mr_connection.resolve_ip_mr_connection', return_value=connection), \
                  patch('msplatform.workflows.prepared_joint.ip_mr_handoff.resolve_matching_request', side_effect=AssertionError('must not match')), \
                  patch('msplatform.backends.simion.ip_exit.export_component_exit', return_value=zero):
@@ -817,7 +817,7 @@ if(($Bad-eq'bad')-ne$caught-or($Bad-eq'bad')-eq$vendorAllowed){throw 'Live ident
 
     def test_final_binding_uses_private_four_and_five_slot_seeds_with_one_payload(self):
         """Tiny inert PA bytes test alias layout, not vendor PA loading or fields."""
-        from integrations.workflows.accelerator_interface import prepare as module
+        from msplatform.workflows.accelerator_interface import prepare as module
         for count in (4, 5):
             with self.subTest(slots=count), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
@@ -1282,9 +1282,9 @@ if($LASTEXITCODE-ne0){throw 'actual preparation command did not disable bytecode
                 composition_plan=request['composition_plan'],assembly_geometry_path=str(geometry),
                 field_plan_path=str(field_plan),energy_seed=dict(qualification='unvalidated_test_boundary'),geometry_changes=[])
             return dict(report=report,seed_configs=copy.deepcopy(configs))
-        module = 'integrations.workflows.accelerator_interface.prepare'
+        module = 'msplatform.workflows.accelerator_interface.prepare'
         with patch(module+'.freeze_field_reference',return_value=references) as freeze, \
-             patch('integrations.workflows.accelerator_interface.geometry.prepare_ion_processor_assembly',side_effect=geometry_boundary), \
+             patch('msplatform.workflows.accelerator_interface.geometry.prepare_ion_processor_assembly',side_effect=geometry_boundary), \
              patch('msplatform.workflows.prepared_joint.source.materialize_measured_source',
                    side_effect=AssertionError('design must not materialize a draft flight source')):
             receipt = prepare_joint_flight(reference_run=reference,
@@ -1360,7 +1360,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' 
         program = """
 import json,sys
 from pathlib import Path
-from integrations.workflows.accelerator_interface.prepare import _resolve_ip_matching
+from msplatform.workflows.accelerator_interface.prepare import _resolve_ip_matching
 from msplatform.workflows.prepared_joint.ip_mr_handoff import prepare_handoff
 from msplatform.workflows.prepared_joint.source import materialize_measured_source
 source,authorities,output=map(Path,sys.argv[1:])
@@ -1383,7 +1383,7 @@ print("DETACHED_IP_MR_COMPLETE_SOURCE=PASS")
         self.assertIn("DETACHED_IP_MR_COMPLETE_SOURCE=PASS", completed.stdout)
 
     def test_public_prepare_clis_reject_foreign_destination_before_writing(self):
-        from integrations.workflows.accelerator_interface import prepare as interface
+        from msplatform.workflows.accelerator_interface import prepare as interface
         from msplatform.workflows.prepared_joint import trial as joint
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1438,7 +1438,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' 
             snapshot = run / "inputs/runtime_snapshot"
             environment = dict(os.environ)
             environment["PYTHONPATH"] = str(snapshot / "src") + os.pathsep + str(snapshot)
-            completed = subprocess.run([sys.executable, "-B", "-s", "-m", "integrations.workflows.accelerator_interface.prepare",
+            completed = subprocess.run([sys.executable, "-B", "-s", "-m", "msplatform.workflows.accelerator_interface.prepare",
                 "--provider", "orthogonal_accelerator", "--reference-mr-run", str(reference), "--run-directory", str(run)],
                 cwd=snapshot, env=environment, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
             self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr)

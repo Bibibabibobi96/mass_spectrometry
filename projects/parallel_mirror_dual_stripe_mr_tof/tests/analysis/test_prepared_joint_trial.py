@@ -31,7 +31,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path.cwd() / "src"))
 class BlockIntegrationCli(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
-        if fullname == "integrations.workflows.accelerator_interface.prepare":
+        if fullname == "msplatform.workflows.accelerator_interface.prepare":
             raise AssertionError("MR component imported integration CLI")
 sys.meta_path.insert(0, BlockIntegrationCli())
 from msplatform.workflows.prepared_joint.trial import verified_preparation_reference
@@ -43,10 +43,10 @@ with tempfile.TemporaryDirectory() as directory:
     manifest=dict(project="instrument_assembly",mode="accelerator_interface_preparation",
                   status="success",inputs={"input":file_record(value)},outputs=[])
     assert verified_preparation_reference(root,value.name,manifest=manifest)==value
-    assert "integrations.workflows.accelerator_interface.prepare" not in sys.modules
+    assert "msplatform.workflows.accelerator_interface.prepare" not in sys.modules
 from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_downstream_workpoint_iteration import DownstreamWorkpointIterationTests
 DownstreamWorkpointIterationTests("test_measured_acquisition_uses_public_request_and_never_changes_source_energy").test_measured_acquisition_uses_public_request_and_never_changes_source_energy()
-assert "integrations.workflows.accelerator_interface.prepare" not in sys.modules
+assert "msplatform.workflows.accelerator_interface.prepare" not in sys.modules
 print("MR_REFERENCE_WITHOUT_INTEGRATION_CLI=PASS")
 '''
         result = subprocess.run([sys.executable, "-B", "-c", command],
@@ -800,7 +800,7 @@ Write-Output 'PUBLIC_97_PREPARATION=PASS'
         self.assertIn("fine_patch.pa",(root/"five_role_batch/joint.workbench_build.lua").read_text())
         # Pure finalization -> ordinary preparation: generated effective reference
         # must carry the selected contract rather than inherit the old .004 Lua.
-        from integrations.workflows.accelerator_interface.prepare import bind_joint_workbench
+        from msplatform.workflows.accelerator_interface.prepare import bind_joint_workbench
         from msplatform.workflows.prepared_joint.preparation import validate_execution_contract
         final = root / "finalized"
         (final / "results").mkdir(parents=True)
@@ -861,7 +861,7 @@ Write-Output 'PUBLIC_97_PREPARATION=PASS'
         def source_projection(_handoff, output):
             shutil.copytree(source, output)
             return dict(counts=dict(source=100,transferred=97,not_transferred=3))
-        compiler = "integrations.workflows.accelerator_interface.prepare"
+        compiler = "msplatform.workflows.accelerator_interface.prepare"
         with patch(compiler+".verified_reference",side_effect=lambda run,relative,**kwargs:run/relative), patch(compiler+".verified_preparation_reference",side_effect=lambda run,relative,**kwargs:run/relative), \
              patch("msplatform.backends.comsol.static_field_binding.load_binding",return_value=bound_field), \
              patch("msplatform.workflows.prepared_joint.source.materialize_measured_source",side_effect=source_projection), \

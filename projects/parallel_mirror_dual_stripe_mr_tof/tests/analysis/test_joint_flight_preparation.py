@@ -409,7 +409,7 @@ print('OA_BUILDER_MOCK=PASS')
 
 
     def test_final_sidecar_preserves_verified_source_field_voltages_and_unqualified_energy(self):
-        from integrations.workflows.accelerator_interface.prepare import bind_joint_workbench
+        from msplatform.workflows.accelerator_interface.prepare import bind_joint_workbench
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             design, fields, actual = [root / name for name in ("design", "fields", "actual")]
@@ -469,13 +469,13 @@ print('OA_BUILDER_MOCK=PASS')
                 for name in ("source_runtime.lua", "source.fly2"):
                     (output / name).write_text("-- new measured source", encoding="utf-8")
                 return {"counts": {"source": 100, "transferred": 97, "not_transferred": 3}}
-            with patch("integrations.workflows.accelerator_interface.prepare.verified_reference",
+            with patch("msplatform.workflows.accelerator_interface.prepare.verified_reference",
                        side_effect=lambda run, relative, **kwargs: run / relative), patch(
-                    "integrations.workflows.accelerator_interface.prepare.verified_preparation_reference", side_effect=lambda run, relative, **kwargs: run / relative), patch(
+                    "msplatform.workflows.accelerator_interface.prepare.verified_preparation_reference", side_effect=lambda run, relative, **kwargs: run / relative), patch(
                     "msplatform.backends.comsol.static_field_binding.load_binding", return_value=binding), patch(
                     "msplatform.workflows.prepared_joint.source.materialize_measured_source",
                     side_effect=source_projection), patch(
-                    "integrations.workflows.accelerator_interface.prepare.prepare_interface_field_audit",
+                    "msplatform.workflows.accelerator_interface.prepare.prepare_interface_field_audit",
                     return_value={"mock": "separately_tested_audit_compiler"}):
                 result = bind_joint_workbench(design_run=design, field_run=fields, source_run=actual,
                                               handoff_receipt=handoff, energy_comparison=comparison,

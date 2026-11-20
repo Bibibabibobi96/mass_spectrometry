@@ -204,14 +204,6 @@
             "paired_accelerator_static_field",
             "single_reflection_flight"
           ]
-        },
-        {
-          "source_repo_path": "integrations/workflows/accelerator_interface",
-          "consumers": [
-            "accelerator_interface",
-            "oa_mr",
-            "prepared_joint"
-          ]
         }
       ],
       "python_modules": []

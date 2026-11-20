@@ -94,7 +94,7 @@ function Invoke-JointOwnerStage {
 function Get-JointDesignReceipt {
   param([string]$Run)
   $path=Invoke-RunToolRootContext -RepoRoot $repoRoot -Environment $pathEnvironment -Operation {
-    & $python -B -c 'import sys;from pathlib import Path;from integrations.workflows.accelerator_interface.prepare import verified_preparation_reference;print(verified_preparation_reference(Path(sys.argv[1]),"results/accelerator_interface_preparation.json"))' $Run
+    & $python -B -c 'import sys;from pathlib import Path;from msplatform.workflows.accelerator_interface.prepare import verified_preparation_reference;print(verified_preparation_reference(Path(sys.argv[1]),"results/accelerator_interface_preparation.json"))' $Run
     if($LASTEXITCODE-ne0){throw 'Design preparation receipt failed its owner and manifest validation.'}
   }
   return Get-Content -LiteralPath ($path|Select-Object -Last 1) -Raw|ConvertFrom-Json -AsHashtable
@@ -225,7 +225,7 @@ function Write-JointWorkflowFlightResult {
 function Invoke-JointAnalysisPreflight {
   param([string]$Design,[string]$Source,[string]$Contract)
   Invoke-RunToolRootContext -RepoRoot $repoRoot -Environment $pathEnvironment -Operation {
-    & $python -B -c 'import sys;from pathlib import Path;from integrations.workflows.accelerator_interface.prepare import preflight_joint_analysis;preflight_joint_analysis(*map(Path,sys.argv[1:]))' $Design $Source $Contract
+    & $python -B -c 'import sys;from pathlib import Path;from msplatform.workflows.accelerator_interface.prepare import preflight_joint_analysis;preflight_joint_analysis(*map(Path,sys.argv[1:]))' $Design $Source $Contract
     if($LASTEXITCODE-ne 0){throw "Joint analysis preflight failed (exit $LASTEXITCODE)."}
   }
 }
@@ -500,7 +500,7 @@ try{
   Write-RunJson -Path $package.run_config -Depth 50 -Value $configuration
   $stage='prepare_only'
   $lease=Enter-HostExecutionLease -Role GATE
-  $arguments=@('-m','integrations.workflows.accelerator_interface.prepare',
+  $arguments=@('-m','msplatform.workflows.accelerator_interface.prepare',
     '--provider',$AcceleratorProvider,'--reference-mr-run',$reference,'--run-directory',$package.artifact_run_dir)
   if($sourceRun){$arguments+=@('--source-run',$sourceRun)}
   if($LuaExe){$arguments+=@('--lua-executable',$LuaExe)}
