@@ -21,6 +21,9 @@ same owner; the candidate chain requires explicit Python. Their former project
 entry and common Lua dependencies are removed without a forwarding duplicate.
 The Changed-selection regression now names the installed runner too; its original
 five consumer-routing cases passed in 1.126 seconds after the migration.
+The exact `4daf5458` Changed run `44732682334` passed all selected stages in
+9 minutes 20 seconds, with Repository skipped. Earlier RF and MR failures are
+retained as distinct source-epoch results, not combined into whole-P4 acceptance.
 
 ## Installed resolved-CAD owner
 
