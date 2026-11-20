@@ -1045,18 +1045,3 @@ function Invoke-ResourceBudgetedProcesses {
     throw $failure
   }
 }
-
-function Complete-ResourceUsage {
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory)][string]$RunDir,
-    [Parameter(Mandatory)][string]$UsagePath
-  )
-  $usage=Get-Content -LiteralPath $UsagePath -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
-  $finalBytes=Get-RunDirectoryBytes -RunDir $RunDir
-  $usage.final_retained_bytes=$finalBytes
-  $usage.peak_run_directory_bytes=[math]::Max([int64]$usage.peak_run_directory_bytes,$finalBytes)
-  if($usage.status-eq'running'){$usage.status='completed'}
-  Write-ResourceUsage -Usage $usage -Path $UsagePath
-  return $true
-}

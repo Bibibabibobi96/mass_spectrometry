@@ -1152,7 +1152,7 @@ Windows父PID可能已复用，其他旧分支的未知身份不否定这条已�
 
 单进程观察器`Invoke-ResourceBudgetedProcess`接收调用者在冻结边界解析的`-Limits`对象，
 观察收据记录完整limits；没有项目工程预算的入口可显式传`-Limits $null`，仍跟踪进程身份、退出及公共物理危险，
-不生成usage或虚构预算。`Complete-ResourceUsage`只读取已有usage收据收尾，不重新解析预算。
+不生成usage或虚构预算。通用`execution/resources/resource_process_support.ps1`的`Complete-ResourceUsage`只读取已有usage收据收尾，不重新解析预算；SIMION dispatch复用该实现，通用workflow不反向依赖SIMION。
 启动后的身份或采样异常先沿同一实际Process句柄等待根进程自然退出，再抛回原ErrorRecord；
 异常Data中的`observed_process_exit_confirmed`／`observed_process_returncode`仅证明该直接根进程；
 `observed_process_id`／`observed_process_started_at_utc_ticks`保留同一handle实际取得的身份，未取得启动时刻则为null。

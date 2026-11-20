@@ -2665,7 +2665,7 @@ foreach($fail in @($false,$true)){
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             command = f"""
-. '{REPO_ROOT / "common/resource_budget_support.ps1"}'
+. '{REPO_ROOT / "src/msplatform/execution/resources/resource_process_support.ps1"}'
 function Get-RunDirectoryBytes {{ param($RunDir) return [int64]128 }}
 $runDir='{root}';$runRoot=$runDir;$run=$runDir;$RunDirectory=$runDir;$OutputDirectory=$runDir;$phaseDirectory=$runDir
 $usage=Join-Path $runDir 'usage.json'
