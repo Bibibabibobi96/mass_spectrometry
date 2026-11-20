@@ -1933,7 +1933,15 @@ print('FROZEN_ION_CONSUMER_PASS')
         self.assertIn("Remove-RunPackageExecutionAlias -Package $package", runner)
         self.assertIn("-CapacityLedgerLifecycleEnabled", runner)
         self.assertIn("Apply-RunArtifactRetention", runner)
+        self.assertIn("-RetentionClass solver_review", runner)
+        self.assertIn("-RetentionReason", runner)
+        self.assertNotIn("-PreservePaths $outputs", runner)
+        self.assertIn("-Status checkpoint", runner)
+        self.assertNotIn("-Status interrupted", runner)
         self.assertIn("Write-VerifiedRunManifest", runner)
+        self.assertIn("-DeferCapacityFinalization", runner)
+        self.assertIn("--action seal-stopped-payload", runner)
+        self.assertIn("--confirm-writing-stopped", runner)
 
 
     def test_simion_candidate_requires_explicit_nonformal_frozen_template_before_builder(self):

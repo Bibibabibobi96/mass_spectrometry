@@ -57,9 +57,12 @@ arrival_times = (expected_tof-arrival_half_window):fine_tstep: ...
     (expected_tof+arrival_half_window);
 trajectory_times = linspace(0, Tsim, 2001);
 extract_times = unique([trajectory_times, arrival_times, Tsim, stored_times.']);
-% Fixed bounded I/O policy: at N5000 a 257-row XYZ payload is 30.84 MB.
-% This is not a solver timestep or an automatic process-RAM budget.
-window_samples=256;t=extract_times(:);nP=context.particle_count;
+% Keep each XYZ payload below the existing 30.84 MB bound while avoiding
+% unnecessary RPC calls on smaller populations. The 16384-row call ceiling
+% limits oversized requests; neither value changes scientific sampling.
+maximum_api_window_payload_bytes=30.84e6;
+window_samples=max(1,min(16384,floor(maximum_api_window_payload_bytes/(3*context.particle_count*8))-1));
+t=extract_times(:);nP=context.particle_count;
 plot_count=min(nP,50);plot_x=nan(numel(t),plot_count);plot_z=plot_x;
 settings=struct('detector_z',context.detector_z_mm,'freeze_tolerance_mm',1e-3, ...
  'approach_window_mm',0.5,'detector_x',context.detector_x_mm,'detector_y',0,'active_radius_mm',context.detector_radius_mm);
@@ -80,6 +83,8 @@ for pass=1:2
   assert(isequal(size(data.d1),[numel(selected) nP])&& ...
    isequal(size(data.d2),size(data.d1),size(data.d3)), ...
    'oatof:SavedPopulation','Stored solution population/shape differs from the frozen request.');
+  assert(3*numel(selected)*nP*8<=maximum_api_window_payload_bytes, ...
+   'oatof:SavedPopulation','Native coordinate window exceeds the frozen XYZ payload bound.');
   allocation=whos('data');maximum_api_payload_bytes=max(maximum_api_payload_bytes,allocation.bytes);
   x=data.d1;y=data.d2;z=data.d3;fresh=(1+double(first>1)):numel(selected);
   if pass==1

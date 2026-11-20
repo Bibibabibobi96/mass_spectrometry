@@ -4,7 +4,7 @@ classdef OaTofParticlePlotViewTest < matlab.unittest.TestCase
   invalidInventory=struct('allEqual',[0;0],'decreasing',[0;1;0],'nonfinite',[0;NaN;1]);
   sharedInventory=struct('allEqual',[0;0],'decreasing',[0;1;0], ...
    'nonfinite',[0;NaN;1],'complex',[0;1i;1],'matrix',[0 1;2 3]);
-  boundaryRow=struct('lastFresh',256,'nextFresh',257);
+  boundaryRow=struct('lastFresh',16384,'nextFresh',16385);
   detectorEvent=struct('freeze','frozen_on_detector','crossing','crossing');
  end
  methods (TestClassSetup)
@@ -47,10 +47,13 @@ classdef OaTofParticlePlotViewTest < matlab.unittest.TestCase
    testCase.verifyEqual(result.nP,population);testCase.verifyEqual(result.nDet,population);
    testCase.verifyEqual(phases.plot_count,50);
    testCase.verifyEqual(result.postprocess_extraction.passes,2);
-   testCase.verifyLessThanOrEqual(getappdata(0,'oatof_fixture_max_rows'),257);
+   windowSamples=max(1,min(16384,floor(30.84e6/(3*population*8))-1));
+   expectedCalls=2*ceil(numel(fullFixtureQuery(context))/windowSamples);
+   testCase.verifyEqual(result.postprocess_extraction.logical_window_samples,windowSamples);
+   testCase.verifyEqual(result.postprocess_extraction.api_calls,expectedCalls);
+   testCase.verifyLessThanOrEqual(getappdata(0,'oatof_fixture_max_rows'),windowSamples+1);
+   testCase.verifyLessThanOrEqual(3*getappdata(0,'oatof_fixture_max_rows')*population*8,30.84e6);
    testCase.verifyEqual(getappdata(0,'oatof_fixture_calls'),result.postprocess_extraction.api_calls);
-   testCase.verifyLessThan(result.postprocess_extraction.maximum_api_payload_bytes, ...
-    24*result.postprocess_extraction.original_query_rows*population);
    testCase.verifyLessThan(result.postprocess_extraction.reducer_state_bytes,1024*population+65536);
    events=readtable(result.raw_detector_events_path);
    testCase.verifyEqual(events.Ion,(1:population)');testCase.verifyTrue(all(events.Hit));
@@ -118,12 +121,12 @@ classdef OaTofParticlePlotViewTest < matlab.unittest.TestCase
    rows=readtable(result.raw_detector_events_path);
    testCase.verifyEqual(rows.Ion,[1;2]);testCase.verifyTrue(all(rows.Hit));
    testCase.verifyEqual(string(rows.Event),reference.event);
-   testCase.verifyLessThanOrEqual(getappdata(0,'oatof_fixture_max_rows'),257);
+   testCase.verifyLessThanOrEqual(getappdata(0,'oatof_fixture_max_rows'),16385);
    queries=getappdata(0,'oatof_fixture_queries');
    [first,second,overlap]=reconstructQueryPasses(queries);
    testCase.verifyEqual(first,fullTimes,'AbsTol',0);
    testCase.verifyEqual(second,fullTimes,'AbsTol',0);testCase.verifyTrue(overlap);
-   testCase.verifyEqual(mod(find(fullTimes==approachTime)-1,256),mod(boundaryRow-1,256));
+   testCase.verifyEqual(mod(find(fullTimes==approachTime)-1,16384),mod(boundaryRow-1,16384));
   end
   function invalidSharedInventoryFailsBeforeAnyParticleRead(testCase,sharedInventory)
    [context,folder]=postprocessFixture(testCase);
@@ -323,7 +326,7 @@ value.d1=zeros(size(value.d3));value.d2=value.d1;
 context.solution_times_s=value.t;
 approachTime=value.t(8);
 initial=fullFixtureQuery(context);index=find(initial==approachTime);
-target=256*ceil(index/256)+(boundaryRow-256);
+target=16384*ceil(index/16384)+(boundaryRow-16384);
 extra=(1:(target-index))'/(target-index+1)*1e-10;
 context.solution_times_s=sort([value.t;extra]);
 save(fullfile(folder,'read_fixture.mat'),'value');

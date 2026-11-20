@@ -90,6 +90,44 @@ managed-flight method passed all four cases in 16.520 seconds, and all three
 SFI entry methods passed in 7.772 seconds. These are software fixture results,
 not native solver or complete-gate acceptance.
 
+The first current-source N100 COMSOL run saved its raw 985,127,714-byte MPH and
+100-particle context, then spent hours in postprocessing rather than CPT solving.
+Its 163,970 unique stored/query times required about 1,282 two-pass
+`mphparticle` calls because every logical window contained only 256 fresh rows.
+The user authorized stopping that writer; its interrupted run and saved evidence
+remain unchanged. The shared reader now derives each logical window from the
+existing 30.84 MB XYZ bound, reserves one row for inter-window overlap, and caps
+small-population windows at 16,384 rows. Query times, both detection passes,
+particle identities and scientific gates are unchanged, and an explicit XYZ
+byte assertion protects the bound. N100 uses 12,849 fresh rows per window;
+N5000 retains 256. R2025b passed all 125 MATLAB tests with no incomplete tests,
+including exact call counts, payload bounds, cross-window events and complete
+cohorts. Native run
+`20261120_135534__test__comsol__oatof-candidate-functional__n100-read-batching`
+then completed CPT, GUI save, all 100 detections and Python analysis in
+600.743 seconds, but its original `interrupted` input-freeze manifest incorrectly
+blocked retention. That outer failure is preserved; the entry now uses the
+existing `checkpoint` state until terminal publication. Its independent cold
+child `20261120_140742__analysis__comsol__oatof-n100-cold-read-batching` completed
+in 536.606 seconds with 28 API calls and 446.1797491 API seconds, 100/100 hits,
+zero field/particle solves, no parent save and unchanged parent SHA-256. These
+measurements support removing redundant API calls, not a 49x wall-time claim.
+The next native run again passed all scientific checks, then compact retention
+removed its unprotected MPH and correctly refused the incomplete success
+manifest. A subsequent attempt also confirmed that retention preserve paths
+accept only native TRACE, not arbitrary MPH outputs. These failures remain. The
+entry now declares `solver_review`, defers capacity finalization after its
+success manifest, and seals the stopped heavy payload through the public owner.
+Small real fixture `20261120_144333__test__repo__oatof-retention-solver-review`
+passed that complete sequence with its MPH retained and ledger
+`ready/rebuildable_payload`. Final native run
+`20261120_144515__test__comsol__oatof-candidate-functional__n100-read-batching`
+then passed the complete public entry in 595.825 seconds: 100/100 detections,
+analysis receipt, success manifest and stopped-payload `ready` ledger. Its
+992,737,771-byte MPH remains present with a matching manifest SHA-256 record.
+This closes the shared-reader native/cold-recovery slice, not complete Changed,
+Repository, installation or other scientific acceptance.
+
 ## Generic vector-field comparison owner
 
 `msplatform.analysis.vector_field_samples` now owns static-sample validation,

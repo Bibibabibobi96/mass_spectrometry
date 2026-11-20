@@ -25,8 +25,9 @@ $hostContext = @{workspace=$workspaceRoot;python_executable=$python;host_state_p
 $software = @('COMSOL 6.4', 'MATLAB R2025b', 'Python 3.11')
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project 'single_reflection_oa_tof_mass_analyzer' -Mode 'comsol_n100_candidate_functional' `
-  -Software $software -RetentionContractEnabled -RetentionClass compact -CapacityLedgerLifecycleEnabled `
-  -AdditionalDirectories @('comsol') -UseShortExecutionPath
+  -Software $software -RetentionContractEnabled -RetentionClass solver_review `
+  -RetentionReason 'Retain the N100 native model for saved-solution cold extraction and independent review.' `
+  -CapacityLedgerLifecycleEnabled -AdditionalDirectories @('comsol') -UseShortExecutionPath
 $model = Join-Path $package.artifact_run_dir 'comsol\single_reflection_oa_tof_mass_analyzer__candidate_n100.mph'
 $report = Join-Path $package.log_dir 'comsol_candidate_report.txt'
 
@@ -68,7 +69,7 @@ $config.parameters = [ordered]@{
 }
 Write-RunJson -Value $config -Path $package.run_config
 Write-RunManifest -Python $package.python -RepoRoot $repoRoot `
-  -RunConfig $package.run_config -Status interrupted -Software $software
+  -RunConfig $package.run_config -Status checkpoint -Software $software
 
 $names = @(
   'OATOF_CANDIDATE_CONTRACT_PATH',
@@ -134,7 +135,14 @@ try {
     -RunConfig $package.run_config
   Write-VerifiedRunManifest -Python $package.python -RepoRoot $repoRoot `
     -RunConfig $package.run_config -Status success -Software $software `
-    -Outputs ($outputs+@($retentionActions))
+    -Outputs ($outputs+@($retentionActions)) -DeferCapacityFinalization
+  Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
+    & $package.python -m msplatform.execution.run_capacity_lifecycle --action seal-stopped-payload `
+      --artifact-root ([string]$config.capacity_ledger_lifecycle.artifact_root) `
+      --run-config $package.run_config --owner 'single_reflection_oa_tof_mass_analyzer' `
+      --confirm-writing-stopped --retention-reason 'Retain the N100 native model for saved-solution cold extraction and independent review.'
+    if ($LASTEXITCODE -ne 0) { throw 'N100 stopped-payload sealing failed.' }
+  }
   Write-Output "OATOF_COMSOL_N100=PASS RUN_ID=$RunId RUN_DIR=$($package.run_dir)"
 }
 catch {
