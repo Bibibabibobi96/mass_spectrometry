@@ -17,10 +17,11 @@ def install_controlled_cpu_snapshot(repository: Path, fixture: Path, *, cpu_perc
     if (fixture == repository or fixture.is_relative_to(repository)
             or not fixture.is_relative_to(Path(tempfile.gettempdir()).resolve())):
         raise ValueError("Controlled CPU snapshot requires a repository-external fixture copy")
-    target = fixture / "common/host_execution_lease.ps1"
+    canonical_target = fixture / "src/msplatform/execution/resources/host_execution_lease.ps1"
+    target = canonical_target if canonical_target.is_file() else fixture / "common/host_execution_lease.ps1"
     if not target.resolve().is_relative_to(fixture):
         raise ValueError("Controlled CPU snapshot cannot follow a link outside its fixture")
-    original = (repository / "common/host_execution_lease.ps1").read_bytes()
+    original = (repository / target.relative_to(fixture)).read_bytes()
     contents = target.read_bytes()
     if contents != original:
         raise ValueError("Controlled CPU snapshot requires the exact unmodified copied entrypoint")
@@ -30,7 +31,8 @@ def install_controlled_cpu_snapshot(repository: Path, fixture: Path, *, cpu_perc
     if canonical_bytes.count(marker) != 1:
         raise ValueError("Controlled CPU snapshot requires the exact canonical host resource")
     lookup = b". $hostResource -HostContext $hostContext"
-    if contents.count(lookup) != 1:
+    installed_layout = target == canonical_target
+    if not installed_layout and contents.count(lookup) != 1:
         raise ValueError("Controlled CPU snapshot requires the exact installed-resource bridge")
     private = fixture / "common/host_execution_lease.resource.ps1"
     if private.exists():
@@ -48,8 +50,12 @@ def install_controlled_cpu_snapshot(repository: Path, fixture: Path, *, cpu_perc
     )
 """
     parameter, body = canonical_bytes.split(b"\n", 1)
-    private.write_bytes(parameter+b"\n# TEST ONLY: controlled CPU; no native solver authorization.\n"
-                        + f"$script:SoftwareFixtureCpuPercent={float(cpu_percent)!r}\n".encode("ascii")
-                        + body.replace(marker, replacement))
-    target.write_bytes(contents.replace(lookup,
-        b". (Join-Path $PSScriptRoot 'host_execution_lease.resource.ps1') -HostContext $hostContext"))
+    controlled = (parameter+b"\n# TEST ONLY: controlled CPU; no native solver authorization.\n"
+                + f"$script:SoftwareFixtureCpuPercent={float(cpu_percent)!r}\n".encode("ascii")
+                + body.replace(marker, replacement))
+    if installed_layout:
+        target.write_bytes(controlled)
+    else:
+        private.write_bytes(controlled)
+        target.write_bytes(contents.replace(lookup,
+            b". (Join-Path $PSScriptRoot 'host_execution_lease.resource.ps1') -HostContext $hostContext"))

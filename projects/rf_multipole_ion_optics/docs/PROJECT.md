@@ -22,7 +22,11 @@ resources come from the same public execution owner rather than the retired
 The affected runner, frozen-closure, recovery, dual-backend and numerics fixtures
 passed 132 parents with 197 successful records in 235.990 seconds. This verifies
 software wiring and original assertions only; no COMSOL/SIMION native execution
-or ordinary-install full-chain acceptance was run.
+or ordinary-install full-chain acceptance was run. The public-prepare fixture now
+controls CPU through the installed host resource and intercepts the native
+boundary through the installed process owner rather than retired common files.
+Both ordinary and source-family preparation passed in 84.164 seconds with the
+expected inert refusal and no native process; production behavior is unchanged.
 
 The no-collision SIMION recovery and project finite launcher now use the same
 explicit Python selection. The public recovery regression completes once, repeats

@@ -175,7 +175,7 @@ ConvertTo-Json -InputObject $records -Compress
             artifacts = root / "artifacts"
             artifacts.mkdir()
             initialize_capacity_ledger(artifacts, objects=[])
-            support = source / "common/resource_budget_support.ps1"
+            support = source / "src/msplatform/execution/resources/resource_process_support.ps1"
             with support.open("a", encoding="utf-8", newline="\n") as stream:
                 stream.write(r"""
 function Invoke-ResourceBudgetedProcess {
