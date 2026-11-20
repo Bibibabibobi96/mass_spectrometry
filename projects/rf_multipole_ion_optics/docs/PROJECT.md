@@ -31,6 +31,11 @@ The cross-solver gate fixture now copies the installed scheduler closure, uses
 an isolated host ledger, and forwards the actual scheduler and unittest runner
 while retaining inert scientific commands. Both Core and Static methods passed
 all six subcases in 67.045 seconds, including their original failure assertions.
+Public CI then exposed an inherited host-grant defect: the fixture's private
+ledger alone did not prevent an outer token from being reused, and the scheduler
+rejected its exited owner. The fixture now clears the inherited token, context
+and owner identity. All six subcases passed again in 57.936 seconds with a
+deliberately injected outer grant; production scheduler behavior is unchanged.
 
 The no-collision SIMION recovery and project finite launcher now use the same
 explicit Python selection. The public recovery regression completes once, repeats

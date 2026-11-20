@@ -624,7 +624,10 @@ class CandidateGateParameterContractTests(unittest.TestCase):
                 encoding="utf-8",
             )
             commands_path, events_path = root / "commands.jsonl", root / "tests.txt"
-            environment = dict(os.environ, SIMULATION_PYTHON_EXE=sys.executable,
+            environment = {key: value for key, value in os.environ.items() if key not in {
+                "MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN", "MASS_SPECTROMETRY_HOST_CONTEXT_JSON",
+                "MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID", "MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE"}}
+            environment.update(SIMULATION_PYTHON_EXE=sys.executable,
                                RF_GATE_REAL_PYTHON=sys.executable,
                                RF_GATE_COMMAND_EVENTS=str(commands_path), RF_GATE_TEST_EVENTS=str(events_path),
                                PYTHONDONTWRITEBYTECODE="1", TEMP=directory, TMP=directory)
