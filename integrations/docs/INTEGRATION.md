@@ -572,7 +572,13 @@ qualification was run by this migration. The unused
 `integrations/runtime/pure_boundary_validator.py` compatibility bridge was also
 removed after checking direct, dynamic and frozen references; the unique
 `msplatform.backends.simion.tracking_program` validator remains unchanged and
-passed all 44 single-reflection Program tests in 30.168 seconds.
+passed all 44 single-reflection Program tests in 30.168 seconds. The paired
+static native preparation/reuse module now has its sole owner at
+`msplatform.workflows.paired_accelerator_static_field.runtime`; the real
+PowerShell entry consumes that installed owner and the former integration
+runtime file and empty Python-package declaration were removed. After correcting
+that declaration, both consumer suites passed 35 tests in 139.064 seconds with
+one optional skip, including frozen closure and invalid-source refusals.
 
 OA–MR now
 uses the same installed HostContext/process and short-PA resources with explicit

@@ -22,7 +22,7 @@ from common.contracts.capacity_ledger import initialize_capacity_ledger, record_
 from common.contracts.capacity_protection import create_capacity_protection_lease
 from msplatform.execution.run_capacity_lifecycle import seal_checkpoint
 from common.simion import test_pa_family_cache as public_cache_tests
-from integrations.workflows.paired_accelerator_static_field import runtime
+from msplatform.workflows.paired_accelerator_static_field import runtime
 from msplatform.backends.comsol import paired_static_model as paired_accelerator_model
 from projects.single_reflection_oa_tof_mass_analyzer.tests.analysis import test_paired_accelerator_static_field_prepare as preparation_tests
 
@@ -569,7 +569,7 @@ foreach($record in $selected){if((Get-RunFileSha256 -Path (Join-Path $RepoRoot $
             environment=dict(os.environ)
             environment['PYTHONPATH']=os.pathsep.join(python_import_roots(snapshot))
             result=subprocess.run([sys.executable,'-B','-s','-c',
-                "from pathlib import Path; from integrations.workflows.paired_accelerator_static_field import runtime; "
+                "from pathlib import Path; from msplatform.workflows.paired_accelerator_static_field import runtime; "
                 "assert Path(runtime.__file__).is_relative_to(Path.cwd()); "
                 "import msplatform.contracts.particle_physics as physics; "
                 "assert Path(physics.__file__).resolve().is_relative_to(Path.cwd().resolve() / 'src'), physics.__file__; "
@@ -612,7 +612,7 @@ foreach($record in $selected){if((Get-RunFileSha256 -Path (Join-Path $RepoRoot $
                     held.rename(selected)
             shutil.rmtree(resources)
             result=subprocess.run([sys.executable,'-B','-s','-c',
-                "from pathlib import Path; from integrations.workflows.paired_accelerator_static_field import runtime; "
+                "from pathlib import Path; from msplatform.workflows.paired_accelerator_static_field import runtime; "
                 "runtime.materialize_tasks(Path(__import__('sys').argv[1]),Path.cwd(),Path(__import__('sys').argv[2]))",
                 str(run),str(root/'ordinary.pa')],cwd=snapshot,env=environment,capture_output=True,text=True,
                 encoding="utf-8",errors="replace",timeout=60)

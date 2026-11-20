@@ -59,7 +59,7 @@ $plan=$null;$ownerContext=$null;$writersStopped=$true;$hostReleaseUnknown=$false
 $nativeOperations=[Collections.Generic.List[object]]::new();$resourceReleases=[Collections.Generic.List[object]]::new()
 $phaseTimings=[ordered]@{};$runClock=[Diagnostics.Stopwatch]::StartNew();$stageClock=[Diagnostics.Stopwatch]::StartNew()
 $protected=@();if($ComsolSourceManifest){$protected+=Split-Path -Parent (Resolve-Path -LiteralPath $ComsolSourceManifest).Path}
-$header="import json,sys; from pathlib import Path; from integrations.workflows.paired_accelerator_static_field.runtime import *; "
+$header="import json,sys; from pathlib import Path; from msplatform.workflows.paired_accelerator_static_field.runtime import *; "
 function Invoke-PairedPython {
   param([string]$Code,[string[]]$Arguments=@())
   $executionRoot=if($null-ne$frozen){$frozen.execution_root}else{$RepoRoot}

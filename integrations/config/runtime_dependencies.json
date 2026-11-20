@@ -218,12 +218,6 @@
           "consumers": [
             "paired_accelerator_pulse"
           ]
-        },
-        {
-          "source_repo_path": "integrations/workflows/paired_accelerator_static_field",
-          "consumers": [
-            "paired_accelerator_static_field"
-          ]
         }
       ],
       "python_modules": []
