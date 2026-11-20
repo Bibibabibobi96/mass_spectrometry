@@ -2503,7 +2503,7 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
         adapter = "src/msplatform/backends/simion/resources/scalar_field_adapter.lua"
         lookup = "src/msplatform/backends/simion/resources.py"
         prepared = "src/msplatform/workflows/prepared_joint/trial.py"
-        provider = MR + "/simion/run_native_static_field_provider.ps1"
+        provider = "src/msplatform/backends/simion/resources/run_native_static_field_provider.ps1"
         consumers = [MR + "/tests/analysis/" + name + ".py" for name in (
             "test_static_field_binding", "test_native_memory_consumer_crop",
             "test_prepared_joint_trial", "test_native_static_field_provider_runner")]

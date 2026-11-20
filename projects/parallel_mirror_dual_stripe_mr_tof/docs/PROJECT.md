@@ -19,6 +19,8 @@ owner, crop adapter and Dirichlet builder now also live in the installed SIMION
 backend. FullJoint, downstream-workpoint and candidate-chain callers select that
 same owner; the candidate chain requires explicit Python. Their former project
 entry and common Lua dependencies are removed without a forwarding duplicate.
+The Changed-selection regression now names the installed runner too; its original
+five consumer-routing cases passed in 1.126 seconds after the migration.
 
 ## Installed resolved-CAD owner
 
