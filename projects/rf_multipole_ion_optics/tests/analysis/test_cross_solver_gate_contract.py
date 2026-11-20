@@ -666,6 +666,7 @@ class CandidateGateParameterContractTests(unittest.TestCase):
                     ["-m", "common.gate_unittest"],
                     ["-m", "msplatform.execution.host_resource_scheduler"],
                 )]
+                self.maxDiff = None
                 self.assertCountEqual(physical, [
                     ["-m", analysis + "resolve_contract", "--structural-variant", "quadrupole", "--check"],
                     ["-m", analysis + "resolve_contract", "--check"],
