@@ -351,17 +351,16 @@ class ObservedExecutionTests(unittest.TestCase):
             canonical = root/'src/msplatform/execution/resources/host_execution_lease.ps1'
             canonical.parent.mkdir(parents=True)
             shutil.copyfile(resource_path('host_execution_lease.ps1'), canonical)
-            environment = dict(os.environ)
-            environment.pop('SIMULATION_PYTHON_EXE', None)
+            environment = dict(os.environ, SIMULATION_PYTHON_EXE=sys.executable)
             command = ". '"+str(bridge).replace("'", "''")+"'; Get-Command Enter-HostExecutionLease | Select-Object -ExpandProperty Name"
             result = subprocess.run([shutil.which('pwsh'), '-NoProfile', '-NonInteractive', '-Command', command],
-                cwd=root, env=environment, capture_output=True, encoding='utf-8', timeout=15)
+                cwd=root, env=environment, capture_output=True, encoding='utf-8', errors='replace', timeout=15)
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
             self.assertIn('Enter-HostExecutionLease', result.stdout)
             self.assertFalse((root/'.venv').exists())
             canonical.unlink()
             missing = subprocess.run([shutil.which('pwsh'), '-NoProfile', '-NonInteractive', '-Command', command],
-                cwd=root, env=environment, capture_output=True, encoding='utf-8', timeout=15)
+                cwd=root, env=environment, capture_output=True, encoding='utf-8', errors='replace', timeout=15)
             self.assertNotEqual(missing.returncode, 0)
             self.assertIn('Frozen execution host resource is unavailable', missing.stderr)
 

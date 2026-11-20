@@ -322,6 +322,8 @@ if([Convert]::ToBase64String([IO.File]::ReadAllBytes($leasePath))-cne$leaseBefor
             policy_copy = controlled / "src/msplatform/execution/resources/host_resource_policy.json"
             policy_copy.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(policy_source, policy_copy)
+            shutil.copyfile(REPO / "src/msplatform/execution/resources/host_execution_lease.ps1",
+                            policy_copy.parent / "host_execution_lease.ps1")
             install_controlled_cpu_snapshot(REPO, controlled)
             _, run, _, _ = self.invoke_fixture(root, {}, host_state=str(root / "host.json"), failure_stage="retention_before")
             request_path = run / "inputs/execution_request.json"

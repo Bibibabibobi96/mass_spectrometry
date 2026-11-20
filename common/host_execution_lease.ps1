@@ -11,4 +11,6 @@ $python = if ($null-ne$explicitArgs-and$explicitArgs.Value.Count -gt 0 -and $exp
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python runtime missing: $python" }
 $hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path (Split-Path -Parent $repoRoot) 'artifacts/common/host_resources.sqlite3' }
 $hostContext = @{workspace=(Split-Path -Parent $repoRoot);python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
-. (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
+$hostResource = Join-Path $executionResources 'host_execution_lease.ps1'
+if (-not (Test-Path -LiteralPath $hostResource -PathType Leaf)) { throw "Frozen execution host resource is unavailable: $hostResource" }
+. $hostResource -HostContext $hostContext

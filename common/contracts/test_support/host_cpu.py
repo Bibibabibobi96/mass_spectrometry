@@ -29,7 +29,7 @@ def install_controlled_cpu_snapshot(repository: Path, fixture: Path, *, cpu_perc
     marker = b"    cpu_percent = $load\n"
     if canonical_bytes.count(marker) != 1:
         raise ValueError("Controlled CPU snapshot requires the exact canonical host resource")
-    lookup = b". (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext"
+    lookup = b". $hostResource -HostContext $hostContext"
     if contents.count(lookup) != 1:
         raise ValueError("Controlled CPU snapshot requires the exact installed-resource bridge")
     private = fixture / "common/host_execution_lease.resource.ps1"
