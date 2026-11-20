@@ -14,7 +14,7 @@ import shutil
 import unittest
 from unittest.mock import patch
 
-from integrations.workflows.paired_accelerator_pulse.runtime import (
+from msplatform.workflows.paired_accelerator_pulse.runtime import (
     COLUMNS, ROW_PREFIX, collect_simion_batches, load_completed_pulse_stages, materialize_batches, materialize_simion_continuation,
     materialize_comsol_task, materialize_simion_batches, prepare_dispatch_request, plan_simion_replay_continuation,
 )

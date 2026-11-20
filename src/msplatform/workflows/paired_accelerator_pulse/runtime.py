@@ -610,7 +610,7 @@ def prepare_dispatch_request(run: Path,plan_path: Path,code_root: Path,field_pa:
     if len(members)!=1:
         raise ValueError("original standalone field metadata is ambiguous")
     code={name:_fingerprint(file_record(code_root/name)) for name in (
-        "integrations/workflows/paired_accelerator_pulse/runtime.py","src/msplatform/backends/simion/source.py",
+        "src/msplatform/workflows/paired_accelerator_pulse/runtime.py","src/msplatform/backends/simion/source.py",
         "src/msplatform/results/single_reflection_source.py",
         "src/msplatform/backends/simion/resources/single_flight_pulse_hook.lua","src/msplatform/backends/simion/resources/voltage_waveforms.lua",
         "src/msplatform/backends/simion/resources/paired_accelerator_pulse.lua")}

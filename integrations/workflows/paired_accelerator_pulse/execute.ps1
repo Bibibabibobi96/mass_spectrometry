@@ -56,7 +56,7 @@ $failure=$null;$stage='initialization';$reusedParticleSolution=$false;$reusedBas
 $plan=$null;$ownerContext=$null;$writersStopped=$true;$hostReleaseUnknown=$false
 $nativeOperations=[Collections.Generic.List[object]]::new();$resourceReleases=[Collections.Generic.List[object]]::new()
 $phaseTimings=[ordered]@{};$runClock=[Diagnostics.Stopwatch]::StartNew();$stageClock=[Diagnostics.Stopwatch]::StartNew()
-$header="import json,sys; from pathlib import Path; from integrations.workflows.paired_accelerator_pulse.prepare import prepare; from integrations.workflows.paired_accelerator_pulse.runtime import *; "
+$header="import json,sys; from pathlib import Path; from msplatform.workflows.paired_accelerator_pulse.prepare import prepare; from msplatform.workflows.paired_accelerator_pulse.runtime import *; "
 function Close-PairedHostStage {
   if(-not$lease){return}
   $token=[string]$lease.token
@@ -304,7 +304,7 @@ try{
         }
         Set-PairedStage 'simion_flight'
         $workbench=Invoke-FrontendFlightPhase -Package $package -RunDirectory $package.artifact_run_dir -ProjectRunsRoot (Split-Path -Parent $package.artifact_run_dir) `
-          -RepoRoot $frozen.execution_root -Python $Python -RuntimeModule integrations.workflows.paired_accelerator_pulse.runtime `
+          -RepoRoot $frozen.execution_root -Python $Python -RuntimeModule msplatform.workflows.paired_accelerator_pulse.runtime `
           -SimionExe $SimionExe -Limits ([pscustomobject]$budget.limits) -Phase pulse -RuntimeInputArguments $runtimeInputs -WorkbenchReceiptPath $workbenchPath `
           -IobVerification ${function:Confirm-PulseIobVerification} -NativeOperations $nativeOperations -NativeResourceReleaseId ([string]$lease.token) `
           -OnProcessCompleted {param($record) Write-FrontendBatchCheckpoint -Record $record -Phase 'pulse' -RunDirectory $package.artifact_run_dir `

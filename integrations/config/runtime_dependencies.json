@@ -212,12 +212,6 @@
             "oa_mr",
             "prepared_joint"
           ]
-        },
-        {
-          "source_repo_path": "integrations/workflows/paired_accelerator_pulse",
-          "consumers": [
-            "paired_accelerator_pulse"
-          ]
         }
       ],
       "python_modules": []

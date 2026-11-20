@@ -579,6 +579,12 @@ PowerShell entry consumes that installed owner and the former integration
 runtime file and empty Python-package declaration were removed. After correcting
 that declaration, both consumer suites passed 35 tests in 139.064 seconds with
 one optional skip, including frozen closure and invalid-source refusals.
+Paired pulse preparation and native-consumer helpers now have their sole owners
+at `msplatform.workflows.paired_accelerator_pulse.prepare` and `.runtime`; the
+real PowerShell entry and `-RuntimeModule` use those installed owners, and the
+old integration files and empty package declaration were removed. All 41
+preparation/runtime/execute/comparison tests passed in 95.988 seconds with one
+optional skip, preserving original IDs, clocks, batches and recovery semantics.
 
 OA–MR now
 uses the same installed HostContext/process and short-PA resources with explicit

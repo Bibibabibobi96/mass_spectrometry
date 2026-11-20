@@ -19,7 +19,7 @@ from integrations.tests import test_paired_accelerator_static_field_execute as s
 from msplatform.backends.comsol import paired_static_model as paired_accelerator_model
 from msplatform.backends.simion.source import GLOBAL_COLUMNS
 from msplatform.workflows.paired_accelerator_static_field import runtime
-from integrations.workflows.paired_accelerator_pulse.prepare import prepare
+from msplatform.workflows.paired_accelerator_pulse.prepare import prepare
 
 
 ROOT = Path(__file__).resolve().parents[2]
