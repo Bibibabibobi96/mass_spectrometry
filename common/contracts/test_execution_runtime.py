@@ -286,6 +286,16 @@ class ExecutionRuntimeTests(unittest.TestCase):
                                    "MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH": str(context.host_state_path)}):
             self.assertEqual(inherited_host_token(context, required=True), "actual-owner-token")
 
+    def test_host_admission_diagnostics_are_checked(self):
+        from msplatform.execution.process_transport import _host_release
+        release = dict(inherited=True, token='owner', result=None, error=None,
+                       admission_wait_seconds=1.25, initial_wait_reason='heavy_stage_active')
+        self.assertEqual(_host_release({'host_release': release}), release)
+        for field, value in (('admission_wait_seconds', -1), ('admission_wait_seconds', float('nan')),
+                             ('admission_wait_seconds', True), ('initial_wait_reason', None)):
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                _host_release({'host_release': {**release, field: value}})
+
     def test_raw_byte_locks_preserve_os_errors_and_cache_seek_failure(self):
         from msplatform.execution import file_lock
         from msplatform.backends.simion import pa_family_cache
@@ -636,6 +646,8 @@ Write-Output "REJECTED=$count"
             self.assertEqual(receipt['observation']['exit_code'], 0)
             self.assertTrue(receipt['host_release']['inherited'])
             self.assertIsNone(receipt['host_release']['result'])
+            self.assertGreaterEqual(receipt['host_release']['admission_wait_seconds'], 0)
+            self.assertIsInstance(receipt['host_release']['initial_wait_reason'], str)
             with self.assertRaisesRegex(ProcessExecutionError, 'exit 7') as raised:
                 run_observed_process(context, executable=Path(sys.executable),
                     arguments=['-c', 'import sys;print("original-failure",file=sys.stderr);sys.exit(7)'], **parameters)

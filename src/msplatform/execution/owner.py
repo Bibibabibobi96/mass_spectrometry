@@ -56,7 +56,9 @@ def validate_writer_completion(*, writers_stopped: bool, expected_operation_ids:
         if set(row) != {"release_id", "completion_receipt"} or row["release_id"] in releases:
             raise ValueError("Resource release identity is missing or duplicated")
         release = row["completion_receipt"]["host_release"]
-        if (set(release) != {"inherited", "token", "result", "error"}
+        if (not {"inherited", "token", "result", "error"}.issubset(release)
+                or set(release) - {"inherited", "token", "result", "error",
+                                   "admission_wait_seconds", "initial_wait_reason"}
                 or release["inherited"] is not False or release["error"] is not None
                 or not isinstance(release["token"], str) or not release["token"]
                 or release["token"] in tokens or release["result"] != {

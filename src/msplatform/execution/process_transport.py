@@ -1,6 +1,7 @@
 """Existing controlled-worker handshake and healthy owner failure drain."""
 from __future__ import annotations
 import json
+import math
 import os
 import re
 import subprocess
@@ -73,10 +74,20 @@ def _finish_bridge_after_failure(process: subprocess.Popen, failure: BaseExcepti
 def _host_release(receipt: dict[str, Any]) -> dict[str, Any]:
     """Validate transport/binding, without extending the scheduler's proof."""
     release = receipt.get("host_release")
-    if (not isinstance(release, dict) or set(release) != {"inherited", "token", "result", "error"}
+    if (not isinstance(release, dict)
+            or not {"inherited", "token", "result", "error"}.issubset(release)
+            or set(release) - {"inherited", "token", "result", "error",
+                               "admission_wait_seconds", "initial_wait_reason"}
             or type(release["inherited"]) is not bool or not isinstance(release["token"], str)
             or not release["token"] or (release["error"] is not None and not isinstance(release["error"], str))):
         raise ValueError("missing or invalid host release receipt")
+    if ("admission_wait_seconds" in release
+            and (type(release["admission_wait_seconds"]) not in {int, float}
+                 or not math.isfinite(release["admission_wait_seconds"])
+                 or release["admission_wait_seconds"] < 0)):
+        raise ValueError("invalid host admission wait duration")
+    if "initial_wait_reason" in release and not isinstance(release["initial_wait_reason"], str):
+        raise ValueError("invalid initial host admission wait reason")
     transaction = release["result"]
     if release["inherited"]:
         if transaction is not None:

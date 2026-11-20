@@ -22,9 +22,12 @@ class StaticPartitionEntryTests(unittest.TestCase):
         shutil.copyfile(PROJECT / "verify_project.ps1", self.project / "verify_project.ps1")
         (self.project / "config/project.json").write_text(json.dumps({"lifecycle_status": "formal_revalidation_pending"}))
         (self.project / "oatof_lifecycle_preflight.ps1").write_text("# Original preflight's domain fixture boundary.\n")
-        (self.root / "common/host_execution_lease.ps1").write_text(
+        resources = self.root / "src/msplatform/execution/resources"
+        resources.mkdir(parents=True)
+        (resources / "host_execution_lease.ps1").write_text(
             "function Enter-HostExecutionLease { param($Role,$Stage) return @{inherited=$false} }\n"
             "function Exit-HostExecutionLease { param($Lease) }\n")
+        (resources / "host_resource_policy.json").write_text("{}\n")
         self.python = self.root / "python_fixture.ps1"
         self.python.write_text(r"""
 Add-Content -LiteralPath $env:SFI_CALLS -Value ($args -join ' ')
@@ -46,7 +49,7 @@ if (($env:SFI_FAIL -eq 'preflight' -and ($args -join ' ') -match 'analysis.resol
         quote = lambda value: "'" + str(value).replace("'", "''") + "'"
         command = f"& {quote(self.project / 'verify_project.ps1')} -PythonExe {quote(self.python)} {options}"
         result = subprocess.run(["pwsh", "-NoProfile", "-Command", command], cwd=self.root,
-                                env=env, capture_output=True, text=True, encoding="utf-8", timeout=30)
+                                env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
         recorded = calls.read_text(encoding="utf-8-sig").splitlines() if calls.exists() else []
         return result, recorded
 

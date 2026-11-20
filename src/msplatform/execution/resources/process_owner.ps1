@@ -44,7 +44,8 @@ try{
       else{$failure.data['immutable_input_release_error']=$_.Exception.Message}}
   }
   if($null-ne$lease){
-    $release=@{inherited=[bool]$lease.inherited;token=[string]$lease.token;result=$null;error=$null}
+    $release=@{inherited=[bool]$lease.inherited;token=[string]$lease.token;result=$null;error=$null
+      admission_wait_seconds=[double]$lease.admission_wait_seconds;initial_wait_reason=[string]$lease.initial_wait_reason}
     try{$release.result=Exit-HostResourceStage -Lease $lease -PassThru}
     catch{$release.error=$_.Exception.Message}
   }

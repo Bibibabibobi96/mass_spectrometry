@@ -614,9 +614,9 @@ try{$null=Invoke-ComponentCache ($arguments+@('--action','not-an-action')) 'bad-
                 root = Path(directory)
                 repo = root / "repo"
                 relatives = (
-                    "common/host_execution_lease.ps1", "common/host_resource_python.py",
+                    "src/msplatform/execution/resources/host_execution_lease.ps1", "common/host_resource_python.py",
                     "src/msplatform/execution/resources/run_artifact_support.ps1", "src/msplatform/execution/resources/require_powershell7.ps1",
-                    "common/resource_budget_support.ps1", "src/msplatform/backends/simion/resources/short_pa_path_support.ps1",
+                    "src/msplatform/execution/resources/resource_process_support.ps1", "src/msplatform/backends/simion/resources/short_pa_path_support.ps1",
                     "common/simion/process_observation.py",
                     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/run_candidate_flight.ps1",
                 )
@@ -627,7 +627,7 @@ try{$null=Invoke-ComponentCache ($arguments+@('--action','not-an-action')) 'bad-
                 from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
                 from msplatform.execution.inputs import python_import_roots
                 copy_scientific_core(REPO, repo)
-                host = repo / "common/host_execution_lease.ps1"
+                host = repo / "src/msplatform/execution/resources/host_execution_lease.ps1"
                 host.write_text(host.read_text(encoding="utf-8") + r'''
 function Enter-HostExecutionLease {
  param($Role,$Stage,$RunId)
@@ -646,7 +646,7 @@ function Update-ArtifactWorkflowCapacitySession {
 function Invoke-RunToolRootContext {param($RepoRoot,$Operation);Push-Location $RepoRoot;try{&$Operation}finally{Pop-Location}}
 ''', encoding="utf-8")
                 if case == "unknown":
-                    resources = repo / "common/resource_budget_support.ps1"
+                    resources = repo / "src/msplatform/execution/resources/resource_process_support.ps1"
                     resources.write_text(resources.read_text(encoding="utf-8") +
                         "\nfunction Get-ManagedSolverProcessSample {throw 'deliberate initial identity observation failure'}\n", encoding="utf-8")
                 run = root / "artifacts/projects/fixture/runs/fixture-run"

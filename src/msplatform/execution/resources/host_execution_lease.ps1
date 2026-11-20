@@ -572,6 +572,8 @@ function Enter-HostResourceStage {
     registered_work_processes=@{};completed_work_processes=[Collections.Generic.List[object]]::new()
   }
     if (-not $NoWait) { $lease = Wait-HostResourceStage -Lease $lease }
+    $lease | Add-Member -NotePropertyName admission_wait_seconds -NotePropertyValue $waitTimer.Elapsed.TotalSeconds
+    $lease | Add-Member -NotePropertyName initial_wait_reason -NotePropertyValue ([string]$record.reason)
     if (-not $NoEnvironment) {
       if ($lease.status -ne 'acquired') { throw 'NoWait requires NoEnvironment until the stage is acquired.' }
       $env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN = $lease.token

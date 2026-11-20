@@ -72,6 +72,13 @@ continues to replace it with the run-selected interpreter. The actual three-stag
 frozen bootstrap regression passed in 37.399 seconds. This repair does not restore
 implicit `.venv` discovery or change frozen-source integrity checks; complete
 Changed and Repository acceptance remain separate.
+The follow-up remote Changed exposed three stale test contracts: the expected
+frozen interpreter variable, package-local host resources in the SFI fixture,
+and managed-flight overrides of the installed process owner. These now match
+the actual implementations. The freezer method passed in 14.639 seconds, the
+managed-flight method passed all four cases in 16.520 seconds, and all three
+SFI entry methods passed in 7.772 seconds. These are software fixture results,
+not native solver or complete-gate acceptance.
 
 ## Generic vector-field comparison owner
 

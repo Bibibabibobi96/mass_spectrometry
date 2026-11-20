@@ -525,6 +525,8 @@ it does not convert earlier unknown-writer receipts into confirmed exits.
 启动事实与最终退出收据的各自适用范围见集成正文。
 宿主事务stdin断管时保留原异常，并附加已启动子进程的退出码与stdout/stderr收集结果；
 这不推断旧CI断管根因。RF恢复测试的外部诊断采用UTF-8替换解码，正式JSON/CSV仍严格校验编码。
+单进程owner的host-release回执另保留首次准入等待原因及从申请到取得租约的实测秒数；
+这些诊断不改变准入或求解行为，也不能单独解释此前没有保留该字段的长等待。
 
 Structured batch failures retain captured bridge stderr as an exception note,
 including replacement decoding of invalid diagnostic UTF-8. The original error

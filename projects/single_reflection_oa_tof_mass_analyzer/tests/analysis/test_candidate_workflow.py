@@ -513,7 +513,7 @@ def execute_prepared_run(*args):
             original = (REPO_ROOT / bound_id).read_bytes().decode("utf-8")
             escaped = str(Path(sys.executable).resolve()).replace("'", "''")
             expected_bound = original.replace(module.HOST_PYTHON_ASSIGNMENT,
-                f"$legacyPython = '{escaped}' # frozen candidate runtime binding").encode("utf-8")
+                f"$python = '{escaped}' # frozen candidate runtime binding").encode("utf-8")
             self.assertEqual(original.count(module.HOST_PYTHON_ASSIGNMENT), 1)
             for source_id, expected, transformations in (
                 (plain_id, (REPO_ROOT / plain_id).read_bytes(), []),
