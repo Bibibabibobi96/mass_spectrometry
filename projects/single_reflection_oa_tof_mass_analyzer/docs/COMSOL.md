@@ -16,7 +16,7 @@
 - 模型树内部实现：`../comsol/oatof_build_model_core.m`，不作为位置参数公开入口
 - MATLAB单元：`../tests/comsol/test_support/run_oatof_matlab_unit_tests.m`
 - Formal写入合同：`../tests/comsol/test_support/run_oatof_formal_write_contract_tests.m`
-- N=100候选功能：`../tests/comsol/run_n100_candidate_functional.ps1`
+- N=100候选功能：`../tests/comsol/run_n100_candidate_functional.ps1`。显式`-PythonExe`（或现有`SIMULATION_PYTHON_EXE`）选择并校验同一Python，不再回退`.venv`；独立工作树缺Formal ION时用`-IonPath`显式绑定原科学输入。入口使用包内HostContext、policy和共享host账本，不以项目旧helper或当前安装位置替代。
 - 几何同步：`../workflows/formal_reference/verify_geometry_contract.ps1`
 
 版本与启动采用[仓库操作指南](../../../docs/OPERATIONS.md)，连接复用、重试和失败分类见
