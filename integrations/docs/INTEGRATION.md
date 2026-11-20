@@ -24,6 +24,14 @@ and prepared-joint parent tests pass, including source/geometry rejection and
 outside-repository materialization. This is software ownership evidence, not
 native flight, ordinary-install full-chain or scientific qualification.
 
+The original-N100 run `20261120_103246__sim__simion__track-922b3cba00c0`
+completed three native operations but did not establish MR arrival. All 100
+terminal rows remain `unknown`; 99 distinct original IDs also have
+`native_splat_minus_one` preaction contact states in the RF region, and
+`mr_observations.status=not_recorded`. These contact observations do not justify
+relabeling every unknown as a collision. Minimal follow-up must inspect the
+particle's actual RF contact and terminal callbacks before any larger run.
+
 The current RF–IP–MR functional case keeps the user-selected complete bare RF,
 LP60 IP (center 170 mm and declared rigid pose), identity-pose MR and approved
 finite IP bath plus explicit outer vacuum; no OA is added. The requested absolute
