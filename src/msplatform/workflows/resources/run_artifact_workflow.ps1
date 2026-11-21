@@ -316,7 +316,7 @@ function Invoke-PreparedWorkflowProcess {
 import os, sys
 # Import only from the validated frozen root, never the execution cwd.
 sys.path[:1] = os.environ['PYTHONPATH'].split(os.pathsep)
-from common.host_resource_python import await_managed_process_start
+from msplatform.execution.host_resource_python import await_managed_process_start
 await_managed_process_start()
 import importlib, json, sys
 from pathlib import Path
@@ -423,8 +423,8 @@ function Get-WorkflowRecoveryState {
   $inspect=@'
 import json, sys
 from pathlib import Path
-from common.contracts.capacity_ledger import load_capacity_ledger
-from common.contracts.capacity_protection import load_capacity_protection_leases
+from msplatform.execution.capacity_ledger import load_capacity_ledger
+from msplatform.execution.capacity_protection import load_capacity_protection_leases
 root, run = map(lambda x: Path(x).resolve(), sys.argv[1:3])
 lease_id, owner = sys.argv[3:]
 ledger = load_capacity_ledger(root)
@@ -495,7 +495,9 @@ function Invoke-RunArtifactWorkflow {
     $requestFile=(Resolve-Path -LiteralPath $RequestPath).Path
     $requestHash=(Get-FileHash -LiteralPath $requestFile -Algorithm SHA256).Hash
     $request=Get-Content -LiteralPath $requestFile -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
-    Assert-WorkflowFields $request @('schema_version','role','repository_root','python_executable','package','capacity','prepared','payload') 'Workflow request'
+    $requestFields=@('schema_version','role','repository_root','python_executable','package','capacity','prepared','payload')
+    foreach($field in @('host_context','execution_run_directory')){if($request.Contains($field)){$requestFields+=$field}}
+    Assert-WorkflowFields $request $requestFields 'Workflow request'
     if($request.schema_version-ne1-or$request.role-cne'run_artifact_workflow_request'){throw 'Workflow request identity differs.'}
     $packageFields=@('project','run_id','mode','artifact_project_root','software','retention_class','retention_reason')
     if($request.package-is[Collections.IDictionary]-and$request.package.Contains('expected_execution_relative_paths')){$packageFields+='expected_execution_relative_paths'}
@@ -560,6 +562,10 @@ function Invoke-RunArtifactWorkflow {
     }
     $repo=(Resolve-Path -LiteralPath $request.repository_root).Path
     $python=(Resolve-Path -LiteralPath $request.python_executable).Path
+    if(-not(Get-Command Resolve-HostResourceStatePath -ErrorAction SilentlyContinue)){
+      if($request.host_context-isnot[Collections.IDictionary]){throw 'Workflow request requires an explicit HostContext.'}
+      . (Join-Path $PSScriptRoot '../../execution/resources/host_execution_lease.ps1') -HostContext $request.host_context
+    }
     # Resolve from the live public owner before any frozen source is imported.
     # This is control-plane context, not a scientific input or a new reservation.
     $projectRoot=[IO.Path]::GetFullPath($request.package.artifact_project_root)

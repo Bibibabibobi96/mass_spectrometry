@@ -8,10 +8,10 @@ import unittest
 from pathlib import Path
 from unittest import mock
 from msplatform.contracts.machine_contracts import load_json
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import freeze_candidate_source_closure
+from msplatform.workflows.oa_candidate.candidate_source_closure import freeze_candidate_source_closure
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import run_candidate as candidate_entry
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import run_candidate_workflow as candidate_workflow
-from projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_support.candidate_fixtures import PROJECT_ROOT
+from projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_support.candidate_fixtures import CandidateFixtures, PROJECT_ROOT
 from projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_candidate_workflow import (
     cold_export_failed_child_fixture,
     postprocess_public_entry,
@@ -24,7 +24,7 @@ class CandidatePostprocessTests(unittest.TestCase):
         from types import SimpleNamespace
         from projects.single_reflection_oa_tof_mass_analyzer.analysis.native_stage_completion import append_native_stage_completion
         from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import select_postprocess_parent
-        from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import candidate_comsol_stage
+        from msplatform.workflows.oa_candidate import candidate_comsol_stage
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
             artifact,parent,_,_=postprocess_source_fixture(root/"source",cold=True)
@@ -37,6 +37,10 @@ class CandidatePostprocessTests(unittest.TestCase):
                 (child/name).mkdir(parents=True,exist_ok=True)
             plan={"run_id":child.name,"run_root":str(child),"context_sha256":"software-fixture",
                 "writer_completion":{"operations":[],"resource_releases":[]},"postprocess_evidence":{},
+                "host_context": dict(workspace=str(root), python_executable=sys.executable,
+                    host_state_path=str(root / "TEST_ONLY_HOST.sqlite3"),
+                    policy_path=str(PROJECT_ROOT.parents[1] / "src/msplatform/execution/resources/host_resource_policy.json")),
+                "execution_run_directory": str(child),
                 "source_execution_context":{"schema_version":1,"role":"run_source_execution_context",
                     "child_run_directory":str(child),"request_sha256":"software-fixture",
                     "sources":[{"target_directory":str(parent),"execution_directory":str(parent),
@@ -59,7 +63,11 @@ class CandidatePostprocessTests(unittest.TestCase):
                 receipt.write_text(json.dumps(observed),encoding="utf-8")
                 append_native_stage_completion(actual_plan["writer_completion"],receipt,role=role,run_id=child.name)
                 raise RuntimeError("EVENT_WINDOW_SENTINEL nP=100 nDet=99 complete=99")
-            with mock.patch.dict(os.environ,{"MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY":str(child)}), \
+            with mock.patch.dict(os.environ, {
+                "MASS_SPECTROMETRY_HOST_CONTEXT_JSON": json.dumps(dict(workspace=str(root), python_executable=sys.executable,
+                    host_state_path=str(root / "TEST_ONLY_HOST.sqlite3"), policy_path=str(PROJECT_ROOT.parents[1] / "src/msplatform/execution/resources/host_resource_policy.json"))),
+                "MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY": str(child),
+            }), \
                     mock.patch.object(candidate_comsol_stage,"analyze_detector_request") as analyze:
                 with self.assertRaisesRegex(RuntimeError,"EVENT_WINDOW_SENTINEL"):
                     candidate_comsol_stage.execute_saved_postprocess(selected,child,closure,plan,
@@ -88,7 +96,8 @@ class CandidatePostprocessTests(unittest.TestCase):
         from msplatform.execution.retention import file_record
         from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import select_postprocess_parent
         extra = '''    from unittest import mock
-    from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import run_candidate_workflow as workflow, candidate_comsol_stage
+    from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import run_candidate_workflow as workflow
+    from msplatform.workflows.oa_candidate import candidate_comsol_stage
     def inert_saved(selection, child, closure, plan, *, runtime):
         assert plan['run_root'] == str(root.resolve())
         argv, environment = workflow._native_stage_execution_view([sys.executable, '-I', '-B', '-c', 'pass'],
@@ -296,7 +305,7 @@ class CandidatePostprocessTests(unittest.TestCase):
 
     def test_normal_comsol_commands_transport_the_owner_runtime_directory(self):
         from types import SimpleNamespace
-        from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import candidate_comsol_stage as adapter
+        from msplatform.workflows.oa_candidate import candidate_comsol_stage as adapter
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);run=root/"run";(run/"logs").mkdir(parents=True)
             execution=root/"execution";execution.mkdir()
@@ -312,19 +321,21 @@ class CandidatePostprocessTests(unittest.TestCase):
             runtime=SimpleNamespace(_verify_frozen_cad_python=lambda *args:sys.executable,_run_managed_stage_command=observe,
                 _record_candidate_native_completion=lambda *args:True)
             stage={"environment":{},"report_path":str(run/"logs/build.txt"),"model_path":str(run/"model.mph"),"contract_path":str(PROJECT_ROOT/"config/resolved_geometry.json")}
-            with mock.patch.dict(os.environ,{"MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY":str(execution)}), \
+            with mock.patch.dict(os.environ,{"MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY":str(execution),"MASS_SPECTROMETRY_HOST_CONTEXT_JSON": json.dumps(dict(workspace=str(root), python_executable=sys.executable, host_state_path=str(root / "TEST_ONLY_HOST.sqlite3"), policy_path=str(PROJECT_ROOT.parents[1] / "src/msplatform/execution/resources/host_resource_policy.json")))}), \
                     mock.patch.object(adapter,"analyze_detector_request",return_value=run/"analysis_receipt.json"):
-                adapter.execute_comsol_stage(stage,{"execution_source_closure":closure,"run_root":str(run),"run_id":run.name},sys.executable,runtime=runtime)
+                adapter.execute_comsol_stage(stage,{"execution_source_closure":closure,"run_root":str(run),"run_id":run.name,
+                "host_context":CandidateFixtures.host_context(run),"execution_run_directory":str(execution)},sys.executable,runtime=runtime)
             self.assertEqual(len(commands),2)
-            from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.candidate_cad_stage import execute_cad_stage
+            from msplatform.workflows.oa_candidate.candidate_cad_stage import execute_cad_stage
             def stop_cad(command,*args):
                 commands.append(command)
                 raise RuntimeError("STOP_AT_CAD_NATIVE_BOUNDARY")
             runtime._run_managed_stage_command=stop_cad
-            with mock.patch.dict(os.environ,{"MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY":str(execution)}):
+            with mock.patch.dict(os.environ,{"MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY":str(execution),"MASS_SPECTROMETRY_HOST_CONTEXT_JSON": json.dumps(dict(workspace=str(root), python_executable=sys.executable, host_state_path=str(root / "TEST_ONLY_HOST.sqlite3"), policy_path=str(PROJECT_ROOT.parents[1] / "src/msplatform/execution/resources/host_resource_policy.json")))}):
                 with self.assertRaisesRegex(RuntimeError,"STOP_AT_CAD_NATIVE_BOUNDARY"):
                     execute_cad_stage(dict(stage,output_dir=str(run/"cad")),
-                        {"execution_source_closure":closure,"run_root":str(run),"run_id":run.name},sys.executable,runtime=runtime)
+                        {"execution_source_closure":closure,"run_root":str(run),"run_id":run.name,
+                         "host_context":CandidateFixtures.host_context(run),"execution_run_directory":str(execution)},sys.executable,runtime=runtime)
             self.assertEqual(len(commands),3)
             self.assertEqual([command[command.index("-RunDir")+1] for command in commands],[str(execution)]*3)
             self.assertFalse((run/"model.mph").exists())
@@ -369,7 +380,7 @@ class CandidatePostprocessTests(unittest.TestCase):
 
     def test_frozen_only_analyzer_consumes_small_export_and_parent_is_unchanged(self):
         from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import select_postprocess_parent
-        from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.candidate_comsol_stage import execute_saved_postprocess
+        from msplatform.workflows.oa_candidate.candidate_comsol_stage import execute_saved_postprocess
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
             artifact,parent,_,_=postprocess_source_fixture(root)
@@ -382,7 +393,8 @@ class CandidatePostprocessTests(unittest.TestCase):
             (child/"inputs").mkdir(parents=True)
             (child/"logs").mkdir()
             with mock.patch.object(candidate_workflow,"_run_managed_stage_command",side_effect=AssertionError("native must not start")):
-                result=execute_saved_postprocess(selected,child,frozen,{},runtime=candidate_workflow)
+                result=execute_saved_postprocess(selected,child,frozen,
+                    {"host_context":CandidateFixtures.host_context(child)},runtime=candidate_workflow)
             self.assertEqual(result["native_launch_count"],0)
             self.assertFalse(result["parent_model_saved"])
             self.assertTrue(Path(result["analysis_receipt"]).is_file())
@@ -412,7 +424,7 @@ class CandidatePostprocessTests(unittest.TestCase):
     def test_postprocess_failure_preserves_source_identity_and_reports_original_recovery_cli(self):
         from msplatform.execution.retention import file_record
         from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import select_postprocess_parent
-        from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import candidate_comsol_stage
+        from msplatform.workflows.oa_candidate import candidate_comsol_stage
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
             artifact,parent,_,_=postprocess_source_fixture(root)
@@ -426,7 +438,8 @@ class CandidatePostprocessTests(unittest.TestCase):
             selection_path=root/"selection.json"
             selection_path.write_text(json.dumps(selected),encoding="utf-8")
             request=child/"inputs/execution_request.json"
-            request.write_text(json.dumps({"payload":{"postprocess_selection":file_record(selection_path),
+            request.write_text(json.dumps({"host_context":CandidateFixtures.host_context(child),
+                "payload":{"postprocess_selection":file_record(selection_path),
                 "execution_source_closure":closure}}),encoding="utf-8")
             config=child/"run_config.json"
             config.write_text(json.dumps({"schema_version":2,"inputs":{"execution_request":str(request)},
@@ -472,7 +485,7 @@ class CandidatePostprocessTests(unittest.TestCase):
             self.assertEqual(blocked["required_output_paths"],[])
 
     def test_cold_dispatch_projects_actual_task_but_keeps_frozen_request_canonical(self):
-        from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.candidate_comsol_stage import execute_saved_postprocess
+        from msplatform.workflows.oa_candidate.candidate_comsol_stage import execute_saved_postprocess
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
             child=root/"child"
@@ -491,12 +504,17 @@ class CandidatePostprocessTests(unittest.TestCase):
             execution.mkdir()
             source_execution=root/"source_execution"
             source_execution.mkdir()
-            plan={"context_sha256":"a"*64,"source_execution_context":{
+            plan={"context_sha256":"a"*64,
+                "host_context": dict(workspace=str(root), python_executable=sys.executable,
+                    host_state_path=str(root / "TEST_ONLY_HOST.sqlite3"),
+                    policy_path=str(PROJECT_ROOT.parents[1] / "src/msplatform/execution/resources/host_resource_policy.json")),
+                "execution_run_directory": str(execution),
+                "source_execution_context":{
                 "schema_version":1,"role":"run_source_execution_context","request_sha256":"a"*64,
                 "child_run_directory":str(child),"execution_root":str(root),"sources":[{
                     "target_directory":selection["parent"],"execution_directory":str(source_execution),
                     "execution_alias":str(source_execution),"input_paths":[selection["model_record"]["path"],selection["context_record"]["path"]]}]}}
-            with mock.patch.dict(os.environ,{"MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY":str(execution)}), \
+            with mock.patch.dict(os.environ,{"MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY":str(execution),"MASS_SPECTROMETRY_HOST_CONTEXT_JSON": json.dumps(dict(workspace=str(root), python_executable=sys.executable, host_state_path=str(root / "TEST_ONLY_HOST.sqlite3"), policy_path=str(PROJECT_ROOT.parents[1] / "src/msplatform/execution/resources/host_resource_policy.json")))}), \
                     mock.patch.object(candidate_workflow,"_run_managed_stage_command",side_effect=stop):
                 with self.assertRaisesRegex(RuntimeError,"STOP_AT_NATIVE_BOUNDARY"):
                     execute_saved_postprocess(selection,child,frozen,plan,runtime=candidate_workflow)
@@ -523,7 +541,7 @@ class CandidatePostprocessTests(unittest.TestCase):
             self.assertIsNone(selected["model_record"])
             self.assertEqual(len(selected["source_references"]),2)
             invoke=postprocess_public_entry(root,artifact)
-            author_stage=root/"author/projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_comsol_stage.py"
+            author_stage=root/"author/src/msplatform/workflows/oa_candidate/candidate_comsol_stage.py"
             author_stage.write_text(author_stage.read_text(encoding="utf-8")+"\n# Explicit software-only cold-export/analysis-failure consumer fixture.\n_fixture_original_saved_postprocess = execute_saved_postprocess\n\ndef execute_saved_postprocess(selection, root, closure, plan, *, runtime):\n    if root.name != '20261031_123500__analysis__comsol__cold-analysis-failure':\n        return _fixture_original_saved_postprocess(selection, root, closure, plan, runtime=runtime)\n    import json, subprocess, sys\n    from types import SimpleNamespace\n    from projects.single_reflection_oa_tof_mass_analyzer.analysis.native_stage_completion import append_native_stage_completion\n    fake_model = Path(selection['parent'])/'inert_fixture_not_a_model.mph'\n    fake_context = Path(selection['parent'])/'inert_fixture_not_a_model.mph.postprocess.json'\n    cold = dict(selection, exports=None, model_record={'path':str(fake_model)}, context_record={'path':str(fake_context)})\n    plan['source_execution_context'] = {\n        'schema_version':1,'role':'run_source_execution_context','request_sha256':plan['context_sha256'],\n        'child_run_directory':str(root),'sources':[{'target_directory':selection['parent'],\n        'execution_directory':selection['parent'],'input_paths':[str(fake_model),str(fake_context)]}]}\n    def software_export(command, log, selected_plan, receipt_path, role):\n        # The process below is actual Python, never MATLAB/COMSOL. Its tiny data\n        # and closed release shape are explicit native-boundary fixture facts.\n        observed = subprocess.run([sys.executable,'-I','-B','-c','pass'],cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=60)\n        assert observed.returncode == 0\n        receipt={'schema_version':1,'role':role,'run_id':root.name,\n            'fixture':'SOFTWARE_ONLY_NOT_A_COMSOL_RUN',\n            'operations':[{'operation_id':'inert-software-export','observation':{'exit_confirmed':True,'returncode':observed.returncode}}],\n            'host_release':{'inherited':False,'token':'fixture-closed-release',\n            'result':{'status':'released','token':'fixture-closed-release'},'error':None}}\n        receipt_path.write_text(json.dumps(receipt),encoding='utf-8')\n        append_native_stage_completion(selected_plan['writer_completion'],receipt_path,role=role,run_id=root.name)\n        events=root/'results/comsol_detector_events_Fixture.csv'\n        events.write_bytes(Path(selection['exports']['events']['path']).read_bytes())\n        request=root/'results/comsol_detector_events_Fixture.analysis_request.json'\n        document=json.loads(Path(selection['exports']['request']['path']).read_text(encoding='utf-8'))\n        document.update(raw_events_csv=str(events),analysis_output_dir=str(root/'results/detector_analysis'))\n        request.write_text(json.dumps(document),encoding='utf-8')\n        result={'candidate_model_validation':'passed','model_path':str(fake_model),'raw_detector_events_path':str(events),\n            'analysis_request_path':str(request),'analysis_output_dir':document['analysis_output_dir']}\n        (root/'results/cold_postprocess_result.json').write_text(json.dumps(result),encoding='utf-8')\n        (root/'logs/cold_postprocess.txt').write_text('STATUS=PASS\\n',encoding='utf-8')\n        (root/'logs/inert_cold_boundary.txt').write_text('one software-only invocation\\n',encoding='utf-8')\n    def fail_analysis(*args, **kwargs):\n        raise RuntimeError('ANALYSIS_AFTER_COMPLETED_COLD_EXPORT')\n    original_analyzer=globals()['analyze_detector_request']\n    globals()['analyze_detector_request']=fail_analysis\n    try:\n        return _fixture_original_saved_postprocess(cold,root,closure,plan,\n            runtime=SimpleNamespace(_run_command=runtime._run_command,_run_managed_stage_command=software_export))\n    finally:\n        globals()['analyze_detector_request']=original_analyzer\n",encoding="utf-8")
             failed_id="20261031_123500__analysis__comsol__cold-analysis-failure"
             failed=invoke(["--postprocess-from",str(parent),"--run-id",failed_id])

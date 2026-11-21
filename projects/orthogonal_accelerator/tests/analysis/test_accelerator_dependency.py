@@ -6,7 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from projects.orthogonal_accelerator.analysis.component_contract import load_accelerator_dependency
+from msplatform.components.orthogonal_accelerator.component_contract import load_accelerator_dependency
 
 
 REPO = Path(__file__).resolve().parents[4]
@@ -34,7 +34,7 @@ class AcceleratorDependencyTest(unittest.TestCase):
         )
         self.assertEqual(result["api_version"], 2)
         self.assertTrue(all(path.is_file() for path in result["implementation_sources"]))
-        self.assertIn(Path(__file__).parents[2] / "analysis/component_contract.py",
+        self.assertIn(REPO / "src/msplatform/components/orthogonal_accelerator/component_contract.py",
                       result["implementation_sources"])
 
     def test_consumer_and_provider_version_drift_fail_closed(self) -> None:

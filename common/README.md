@@ -605,7 +605,7 @@ F5与continuous03的已发布inputs选择规范正文／资源，不证明其余
 
 |旧路径|规范所有者／资源|本轮精确生产引用|退出责任|
 |---|---|---|---|
-|`common/host_resource_python.py`|`msplatform.execution.process_transport`|`common/`：`gate_catalog.json`、`host_resource_python.ps1`<br>`common/contracts/`：`run_artifact_workflow.ps1`<br>`projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`mirror_exact_k_operating_point.py`、`mirror_fixed_grid_voltage_correction.py`、`mirror_l0_hardware_candidate.py`、`mirror_l0_l1_hardware_candidate.py`、`run_mirror_exact_k_operating_point.ps1`、`run_mirror_l0_l1_candidate.ps1`、`run_two_prism_segmented_continuation.ps1`、`run_two_prism_segmented_coverage.ps1`、`two_prism_segmented_coverage.py`、`two_prism_segmented_voltage_continuation.py`<br>`projects/rf_multipole_ion_optics/runtime/`：`run_ideal_transport.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_source_closure.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/`：`build_formal_delivery.ps1`、`run_candidate_flight.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/radial_compaction/`：`run_campaign.py`<br>`integrations/config/`：`runtime_dependencies.json`|公共执行／缓存／钟所有者；最迟P4|
+|`common/host_resource_python.py`（已退役）|`msplatform.execution.host_resource_python` 与包内 `resources/host_resource_python.ps1`；进程握手基础仍为 `process_transport`|OA/MR/RF、workflow owner、冻结闭包、门禁路由与测试均使用新来源；仅明确标注不执行的历史 AST fixture保留旧导入文本|生产实现已退出|
 |`projects/orthogonal_accelerator/analysis/accelerator_time_focus.py`|`msplatform.components.orthogonal_accelerator.accelerator_time_focus`|`projects/orthogonal_accelerator/analysis/`：`component_focus_workflow.py`、`three_zone_ideal_theory.py`、`two_zone_theory.py`<br>`projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`run_mirror_l0_l1_candidate.ps1`、`simion_candidate_reference.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/`：`verify_project.ps1`<br>`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_source_closure.py`、`oatof_oaaccelerator_coupling.py`、`three_zone_ideal_theory.py`、`three_zone_t5_simion_candidate.py`、`three_zone_theory_experiment.py`、`validate_longitudinal_prediction.py`、`verify_axial_ideal_closure.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/config/candidates/`：`accelerator_grid_aligned_strict_focus.json`<br>`projects/single_reflection_oa_tof_mass_analyzer/config/experiments/`：`three_zone_solver_free_funnel_v1.json`、`three_zone_solver_free_funnel_v2.json`<br>`projects/single_reflection_oa_tof_mass_analyzer/workflows/formal_reference/`：`verify_geometry_derivation.py`|OA所有者；最迟P4|
 |`projects/orthogonal_accelerator/analysis/two_zone_geometry.py`|`msplatform.components.orthogonal_accelerator.two_zone_geometry`|`projects/orthogonal_accelerator/analysis/`：`assembly_interface.py`、`component_focus_workflow.py`、`execution_binding.py`<br>`projects/orthogonal_accelerator/simion/`：`run_component_focus_flight.ps1`<br>`projects/parallel_mirror_dual_stripe_mr_tof/analysis/`：`run_mirror_l0_l1_candidate.ps1`、`simion_candidate_reference.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/analysis/`：`candidate_source_closure.py`、`three_zone_t5_simion_candidate.py`、`three_zone_theory_experiment.py`<br>`projects/single_reflection_oa_tof_mass_analyzer/config/experiments/`：`three_zone_solver_free_funnel_v1.json`、`three_zone_solver_free_funnel_v2.json`|OA所有者；最迟P4|
 |`projects/rf_multipole_ion_optics/core/compile_design_request.py`（已退役）|`msplatform.components.rf_multipole.design_request_files` 与 `msplatform.workflows.rf_design_profiles`、`rf_runtime_profiles`、`rf_resource_budget`|活动消费者已直接调用规范实现；COMSOL 指标归 `msplatform.analysis.rf_comsol_transport_metrics`。|已退出|
@@ -1049,7 +1049,7 @@ COMSOL公共入口已支持准备、求解和后处理边界，具体调用见
 此入口不再获取旧mutex；内层阶段继承
 父申请不会自动缩减其全程预算。当前接入不表示所有项目或内部求解阶段都已经完成资源细分。
 
-Python重阶段通过[`host_resource_python.py`](host_resource_python.py)现有request/result通道执行；
+Python重阶段通过[`host_resource_python.py`](../src/msplatform/execution/host_resource_python.py)现有request/result通道执行；规范PowerShell资源位于同包`execution/resources/`，HostContext随显式worker环境或owner请求运输，不从安装目录猜workspace；
 `run_heavy_function`的成功值仍使用原Path/tuple编码，失败仍向父调用者抛`RuntimeError`，同时保留worker的
 异常类型、消息、notes及其明确提供的`observed_process_exit_confirmed`/`observed_process_returncode`。
 缺失、损坏的结果或成功结果后的bridge非零退出均标为退出未确认，不能据此封存科学输出。
@@ -1066,7 +1066,7 @@ Python重阶段通过[`host_resource_python.py`](host_resource_python.py)现有r
 host释放不能覆盖worker明确报告的原生退出未知，也不替代局部PA guard所需的实际写入进程退出证据。
 CLI reentry在原前台输出流报告释放结果，释放未确认时非零退出，不另建结果文件。
 
-受控Python helper使用`common.host_resource_python.await_managed_process_start()`作为首个操作，随后才能
+受控Python helper使用`msplatform.execution.host_resource_python.await_managed_process_start()`作为首个操作，随后才能
 导入项目或启动native工作。公共`Invoke-RepositoryManagedPythonProcess`以同一stdio完成nonce、实际worker
 PID与创建身份的READY／ACK握手；Python调用方使用`run_managed_python_process`沿既有内部bridge访问它。
 两入口均不申请、继承核验或释放资源许可，不设置heavy reentry；科学入口仍负责既有准入。

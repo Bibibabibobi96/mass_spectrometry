@@ -8,6 +8,12 @@ Current scope is P4 V8.7 (2026-11-12); historical evidence keeps its original ve
 
 ## 当前边界
 
+OA–MR now consumes its four retired project Lua implementations only from the
+installed SIMION backend; the project voltage-map research input remains
+explicit. The real detached-provider fixture exercises that production resource
+root instead of replacing it. This repairs the frozen software wiring only; no
+native OA–MR flight or scientific acceptance was run.
+
 The FullJoint, RF–IP continuous and SFI recorded-birth thin PowerShell entries now
 select Python only through their explicit argument or `SIMULATION_PYTHON_EXE`;
 none falls back to a checkout `.venv`. Missing-selection refusal passed for all

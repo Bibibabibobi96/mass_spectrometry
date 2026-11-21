@@ -1158,12 +1158,12 @@ exit 0
 
     def test_python_host_bridge_uses_one_shared_scheduler_stage_in_l1_and_l2(self) -> None:
         stage = "host_resource_scheduler_tests"
-        for path in ("common/host_resource_python.py", "common/host_resource_python.ps1",
+        for path in ("src/msplatform/execution/host_resource_python.py", "src/msplatform/execution/resources/host_resource_python.ps1",
                      "common/test_host_resource_python.py"):
             expected = {stage}
-            if path in ("common/host_resource_python.py", "common/host_resource_python.ps1"):
-                expected.add("simion_dirichlet_native")
-            if path == "common/host_resource_python.py":
+            if path in ("src/msplatform/execution/host_resource_python.py", "src/msplatform/execution/resources/host_resource_python.ps1"):
+                expected.update({"simion_dirichlet_native", "host_resource_adapter_tests", "common_contracts"})
+            if path == "src/msplatform/execution/host_resource_python.py":
                 expected.add("instrument_assembly_integration")
             self.assertEqual(set(self.routed_stages(path)), expected, path)
         routes = [route for route in self.routes if route["stage"] == stage]
@@ -1177,7 +1177,7 @@ exit 0
         if pwsh is None:
             self.skipTest("PowerShell Core is unavailable")
         result = subprocess.run([pwsh, "-NoProfile", "-File", str(CHANGED_GATE), "-PythonExe", sys.executable,
-                                 "-PlanOnly", "-ChangedPath", "common/host_resource_python.ps1"],
+                                 "-PlanOnly", "-ChangedPath", "src/msplatform/execution/resources/host_resource_python.ps1"],
                                 cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8",
                                 timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

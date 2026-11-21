@@ -16,7 +16,7 @@ from msplatform.contracts.machine_contracts import load_json, sha256
 from msplatform.execution.resources.workspace_paths import resolve_workspace_paths
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.compile_candidate_design import write_candidate
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import prepare_candidate_run
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import verify_candidate_source_closure
+from msplatform.workflows.oa_candidate.candidate_source_closure import verify_candidate_source_closure
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate_workflow import (
     CandidateWorkflowError,
     CandidateWorkflowInterrupted,

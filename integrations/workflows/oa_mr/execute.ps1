@@ -479,7 +479,7 @@ try{
   if([string]::IsNullOrWhiteSpace($ContractPath)){
     $trajectoryContractInput=Join-Path $script:pythonRoot 'projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json'
   }
-  $providerSimionRoot=Join-Path $script:pythonRoot 'projects/parallel_mirror_dual_stripe_mr_tof/simion'
+  $backendSimionRoot=Join-Path $script:pythonRoot 'src/msplatform/backends/simion/resources'
   . (Join-Path $repoRoot 'src/msplatform/backends/simion/resources/native_corridor_runtime_support.ps1')
   if($continuationParent){
     $capacitySession=Protect-MrtofContinuationEvidence -Parent $continuationParent -Session $capacitySession -Python $python -RepoRoot $script:pythonRoot -Guards $continuationEvidenceGuards
@@ -520,11 +520,11 @@ try{
   $fixedMirrorStripeLoader=Join-Path $script:pythonRoot 'projects\parallel_mirror_dual_stripe_mr_tof\analysis\fixed_mirror_stripe_operating_point.py'
   $trialTool=Join-Path $script:pythonRoot 'src\msplatform\workflows\prepared_joint\prism_trial.py'
   $batchTool=Join-Path $script:pythonRoot 'src\msplatform\backends\simion\mrtof_batch_flight.py'
-  $programSource=Join-Path $providerSimionRoot 'mrtof_candidate.lua'
-  $waveformsSource=Join-Path $script:pythonRoot 'src/msplatform/backends/simion/resources/voltage_waveforms.lua'
-  $counterSource=Join-Path $providerSimionRoot 'mirror_cycle_counter.lua'
-  $mapSource=Join-Path $providerSimionRoot 'candidate_voltage_map.lua'
-  $launcherSource=Join-Path $providerSimionRoot 'run_iob_flight.lua'
+  $programSource=Join-Path $backendSimionRoot 'mrtof_candidate.lua'
+  $waveformsSource=Join-Path $backendSimionRoot 'voltage_waveforms.lua'
+  $counterSource=Join-Path $backendSimionRoot 'mirror_cycle_counter.lua'
+  $mapSource=Join-Path $script:pythonRoot 'projects/parallel_mirror_dual_stripe_mr_tof/simion/candidate_voltage_map.lua'
+  $launcherSource=Join-Path $backendSimionRoot 'run_iob_flight.lua'
   foreach($path in @($reviewedContract,$selectedContract,$acceleratorGeometryContract,$trajectoryContractSource,$mirrorSummary,$stripeSummary,$acceleratorReceipt,$acceleratorProviderPlan,$acceleratorResolvedCampaign,$fixedMirrorStripeLoader,$trialTool,$batchTool,$programSource,$waveformsSource,$counterSource,$mapSource,$launcherSource)){
     if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "Required native trial input is missing: $path"}
   }
@@ -576,7 +576,7 @@ try{
     $staticFieldLocal=Copy-RequiredInput $FieldBindingPath (Join-Path $solverDir 'static_field_binding.json') 'static COMSOL binding'
     Copy-RequiredInput (Join-Path $script:pythonRoot 'src\msplatform\backends\simion\resources\scalar_field_adapter.lua') (Join-Path $solverDir 'mrtof_three_component_candidate.scalar_field_adapter.lua') 'scalar field adapter'|Out-Null
   }
-  Copy-RequiredInput -Source (Join-Path $providerSimionRoot 'build_native_corridor_iob.lua') -Destination (Join-Path $solverDir 'build_native_corridor_iob.lua') -Label 'native corridor IOB builder'|Out-Null
+  Copy-RequiredInput -Source (Join-Path $backendSimionRoot 'build_native_corridor_iob.lua') -Destination (Join-Path $solverDir 'build_native_corridor_iob.lua') -Label 'native corridor IOB builder'|Out-Null
   Copy-RequiredInput -Source (Join-Path $script:pythonRoot 'src\msplatform\backends\simion\resources\4_instance_seed.iob') -Destination (Join-Path $solverDir '4_instance_seed.iob') -Label 'native four-instance seed'|Out-Null
   foreach($pair in @(@($programSource,'mrtof_three_component_candidate.lua'),@($waveformsSource,'mrtof_three_component_candidate.voltage_waveforms.lua'),@($counterSource,'mrtof_three_component_candidate.mirror_cycle_counter.lua'),@($mapSource,'mrtof_three_component_candidate.voltage_map.lua'),@($launcherSource,'run_iob_flight.lua'))){Copy-RequiredInput $pair[0] (Join-Path $solverDir $pair[1]) $pair[1]|Out-Null}
   $fly2Input=Join-Path $solverDir 'downstream_trial_source.input.fly2'

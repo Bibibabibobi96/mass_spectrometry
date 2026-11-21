@@ -217,7 +217,8 @@ class RunArtifactWorkflowFixture(unittest.TestCase):
         # Minimal fixture namespace for the real initial handshake. Production
         # prepared roots already carry this module in their frozen closure.
         (root / "common/contracts").mkdir(parents=True, exist_ok=True)
-        for relative in ("common/host_resource_python.py",):
+        for relative in ("src/msplatform/execution/host_resource_python.py",):
+            (root / relative).parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(REPO / relative, root / relative)
         copy_scientific_core(REPO, root)
         budget = root / "budget.json"
@@ -228,6 +229,10 @@ class RunArtifactWorkflowFixture(unittest.TestCase):
         request = {
             "schema_version": 1, "role": "run_artifact_workflow_request", "repository_root": str(REPO),
             "python_executable": sys.executable,
+            "host_context": {"workspace": str(root), "python_executable": sys.executable,
+                "host_state_path": str(root / "host_resources.sqlite3"),
+                "policy_path": str(REPO / "src/msplatform/execution/resources/host_resource_policy.json")},
+            "execution_run_directory": str(run),
             "package": {"project": project, "run_id": run.name, "mode": "software", "artifact_project_root": str(project_root),
                         "software": ["Python"], "retention_class": retention, "retention_reason": "review fixture" if retention != "compact" else ""},
             "capacity": {"committed_new_bytes": committed, "commitment_inputs": [file_record(budget)], "protected_paths": [], "protected_cache_keys": []},

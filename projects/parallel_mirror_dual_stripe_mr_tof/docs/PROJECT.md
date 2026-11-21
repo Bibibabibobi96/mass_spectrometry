@@ -58,6 +58,14 @@ continuation admission and native family construction retain their existing beha
 Dependency declarations use the scientific-core provider instead of the retired common
 or MR project paths. Focused frozen-consumer tests cover this migration; complete
 integration, ordinary-install and applicable native acceptance remain separately bounded.
+OA–MR now resolves `mrtof_candidate.lua`, `mirror_cycle_counter.lua`,
+`run_iob_flight.lua` and `build_native_corridor_iob.lua` from that installed
+backend; only `candidate_voltage_map.lua` remains a project scientific resource.
+The detached-provider fixture no longer overrides the production resource root.
+The bunch-screening entry likewise loads the installed corridor support and
+requires explicit Python or `SIMULATION_PYTHON_EXE` before reading scientific
+inputs. Forty-three focused runner/support records passed, with two unchanged
+optional skips; no native solver or full-chain acceptance follows.
 
 本页维护MR分析器的当前设计、资格、有效证据和开放动作。操作由[项目入口](../README.md)导航，
 推导见[理论索引](theory/index.md)。完整接口迁移、已完成研究、实现修复及原始证据链接冻结在

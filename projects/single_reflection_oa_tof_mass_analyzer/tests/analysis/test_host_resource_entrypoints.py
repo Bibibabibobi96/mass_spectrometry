@@ -372,7 +372,7 @@ foreach($nested in @($false,$true)) {
             self.assertIn("-" + name, transport)
 
     def test_frozen_scheduler_closure_uses_bound_python_and_shared_inheritance(self) -> None:
-        from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import (
+        from msplatform.workflows.oa_candidate.candidate_source_closure import (
             freeze_candidate_source_closure, verify_candidate_source_closure,
         )
         with tempfile.TemporaryDirectory(prefix="oa_frozen_resource_test_") as directory:

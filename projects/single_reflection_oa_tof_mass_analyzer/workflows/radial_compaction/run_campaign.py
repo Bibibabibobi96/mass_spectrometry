@@ -43,7 +43,7 @@ from msplatform.execution.recorded_file_removal import write_json_atomic
 from msplatform.execution.retention import verify_record
 from msplatform.io.manifest_records import TERMINAL_JOURNAL_NAME, require_completed_terminal_publication
 from msplatform.execution.retention import file_record
-from common.host_resource_python import run_heavy_function, run_managed_python_process
+from msplatform.execution.host_resource_python import run_heavy_function, run_managed_python_process
 from msplatform.execution.recovery import WholeUnitReplayUnit, build_whole_unit_replay_plan
 from msplatform.backends.simion.native_completion import require_one_fly_completion
 from common.simion.process_observation import run_observed_process
@@ -52,7 +52,7 @@ from msplatform.execution.simion_dispatch import plan_simion_case_dispatch
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.compile_candidate_design import (
     compile_design_overrides,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import (
+from msplatform.workflows.oa_candidate.candidate_source_closure import (
     RELATIVE_PATHS, freeze_candidate_source_closure, frozen_source_path, verify_candidate_source_closure,
 )
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract import (
@@ -1405,7 +1405,7 @@ def execute_prepared_run(
     if completion_path.exists() or provisional.exists():
         raise ValueError("prepared completion must be new for this run")
     worker = (
-        "from common.host_resource_python import await_managed_process_start; await_managed_process_start(); "
+        "from msplatform.execution.host_resource_python import await_managed_process_start; await_managed_process_start(); "
         "from pathlib import Path; import sys; "
         "from projects.single_reflection_oa_tof_mass_analyzer.workflows.radial_compaction.run_campaign "
         "import _execute_frozen_campaign; _execute_frozen_campaign(*(Path(p) for p in sys.argv[1:]))"

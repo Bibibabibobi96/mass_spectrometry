@@ -241,7 +241,7 @@ class RadialCompactionCampaignTests(unittest.TestCase):
         def managed(command, *, cwd, stdout, stderr, **kwargs):
             self.assertEqual(command[:2], ["-B", "-c"])
             self.assertTrue(command[2].startswith(
-                "from common.host_resource_python import await_managed_process_start; await_managed_process_start(); "))
+                "from msplatform.execution.host_resource_python import await_managed_process_start; await_managed_process_start(); "))
             exit_code = 0
             stdout.parent.mkdir(parents=True, exist_ok=True)
             stdout.write_text("software-only frozen-dispatch fixture; not a real handshake", encoding="utf-8")
@@ -528,7 +528,7 @@ class RadialCompactionCampaignTests(unittest.TestCase):
             )
             shared_state = root / "selected-host-state.sqlite3"
             worker = (
-                "from common.host_resource_python import await_managed_process_start; await_managed_process_start(); "
+                "from msplatform.execution.host_resource_python import await_managed_process_start; await_managed_process_start(); "
                 "import json, os; from projects.single_reflection_oa_tof_mass_analyzer.workflows.radial_compaction "
                 "import run_campaign; print(json.dumps({'source': run_campaign.__file__, "
                 "'host_state': os.environ['MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH'], 'pid': os.getpid()}), flush=True)"
@@ -559,14 +559,14 @@ class RadialCompactionCampaignTests(unittest.TestCase):
     @unittest.skipUnless(sys.platform == "win32" and shutil.which("pwsh"), "Windows resource bridge")
     def test_real_pool_bridge_reimport_binds_guard_to_selected_python(self) -> None:
         from common.contracts.test_support.host_cpu import install_controlled_cpu_snapshot
-        from projects.single_reflection_oa_tof_mass_analyzer.analysis import candidate_source_closure as source_closure
+        from msplatform.workflows.oa_candidate import candidate_source_closure as source_closure
 
         with tempfile.TemporaryDirectory(prefix="radial-pool-reimport-") as directory:
             root = Path(directory)
             artifacts = root / "artifacts"
             run = artifacts / "runs/20261028_120000__test__simion__pool-import"
             code_root = run / "inputs/code"
-            host_id = "common/host_execution_lease.ps1"
+            host_id = "src/msplatform/execution/resources/host_execution_lease.ps1"
             original_resolver = source_closure._source_path
             host_source = original_resolver(host_id)
             original_host = host_source.read_bytes()
@@ -575,15 +575,12 @@ class RadialCompactionCampaignTests(unittest.TestCase):
             controlled_host.parent.mkdir(parents=True)
             shutil.copyfile(host_source, controlled_host)
             install_controlled_cpu_snapshot(radial.REPO_ROOT, controlled)
-            private_host_id = "common/host_execution_lease.resource.ps1"
-            private_host = controlled / private_host_id
             # Author the controlled input before the real compiler hashes and binds it.
             with patch.object(source_closure, "_source_path", side_effect=lambda source_id:
-                              controlled_host if source_id == host_id else
-                              private_host if source_id == private_host_id else original_resolver(source_id)):
+                              controlled_host if source_id == host_id else original_resolver(source_id)):
                 closure = radial.freeze_candidate_source_closure(
                     code_root, artifacts, Path(sys.executable),
-                    extra_source_ids=(*radial.EXTRA_SOURCE_IDS, private_host_id),
+                    extra_source_ids=radial.EXTRA_SOURCE_IDS,
                 )
             source_closure.verify_candidate_source_closure(closure)
             host_record = next(record for record in closure["sources"] if record["source_id"] == host_id)
@@ -591,11 +588,6 @@ class RadialCompactionCampaignTests(unittest.TestCase):
             self.assertEqual(host_record["sha256"], source_closure.sha256(code_root / host_id))
             self.assertEqual(host_record["transformations"], [])
             self.assertEqual((code_root / host_id).read_bytes(), controlled_host.read_bytes())
-            private_record = next(record for record in closure["sources"]
-                                  if record["source_id"] == private_host_id)
-            self.assertEqual(private_record["source_sha256"], source_closure.sha256(private_host))
-            self.assertEqual(private_record["sha256"], source_closure.sha256(code_root / private_host_id))
-            self.assertEqual(private_record["transformations"], [])
             self.assertEqual(host_source.read_bytes(), original_host)
             case_root = run / "cases/shield260"
             (case_root / "simion").mkdir(parents=True)
@@ -642,8 +634,8 @@ def run(case_root, run_id, context, managed):
 '''
             (root / "pool_fixture.py").write_text(fixture, encoding="utf-8")
             controller = (
-                "from common.host_resource_python import await_managed_process_start; await_managed_process_start(); "
-                "import json, sys; from pathlib import Path; from common.host_resource_python import run_heavy_function; "
+                "from msplatform.execution.host_resource_python import await_managed_process_start; await_managed_process_start(); "
+                "import json, sys; from pathlib import Path; from msplatform.execution.host_resource_python import run_heavy_function; "
                 "receipt={}; result=run_heavy_function('pool_fixture','run',Path(sys.argv[1]),sys.argv[2],sys.argv[3],"
                 "json.loads(sys.argv[4]),role='GATE',stage='theory_compute',completion_receipt=receipt); "
                 "print(json.dumps({'result':result,'release':receipt}),flush=True)"
@@ -655,7 +647,11 @@ def run(case_root, run_id, context, managed):
                     **radial.os.environ, "PYTHONPATH": radial.os.pathsep.join((*radial.python_import_roots(code_root), str(root))),
                     "PYTHONDONTWRITEBYTECODE": "1", "MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN": "",
                     "MASS_SPECTROMETRY_PYTHON_HEAVY_REENTRY": "",
-                    "MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH": str(root / "fixture-host.sqlite3")},
+                    "MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH": str(root / "fixture-host.sqlite3"),
+                    "MASS_SPECTROMETRY_HOST_CONTEXT_JSON": json.dumps({
+                        "workspace": str(root), "python_executable": sys.executable,
+                        "host_state_path": str(root / "fixture-host.sqlite3"),
+                        "policy_path": str(code_root / "src/msplatform/execution/resources/host_resource_policy.json")})},
             )
             self.assertEqual(receipt["exit_code"], 0, stdout.read_text() + stderr.read_text())
             outcome = json.loads(stdout.read_text(encoding="utf-8").splitlines()[-1])

@@ -1,8 +1,19 @@
 """Pure argument transport and dispatch for the Candidate native stages."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
+
+
+def native_execution_context(plan: dict[str, Any], run_root: Path) -> tuple[str, str]:
+    """Return the explicitly supplied host context and execution directory."""
+    context = plan.get("host_context")
+    if not isinstance(context, dict):
+        raise ValueError("native execution requires an explicit host_context")
+    execution = Path(plan.get("execution_run_directory") or run_root)
+    return json.dumps(context), str(execution)
+
 
 def _powershell(entrypoint: str, arguments: list[str]) -> list[str]:
     # The shared COMSOL launcher uses ProcessStartInfo.ArgumentList, which is

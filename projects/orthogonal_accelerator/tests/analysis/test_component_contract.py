@@ -9,7 +9,7 @@ from pathlib import Path
 import unittest
 
 from common.contracts.build_project_registry import validate_descriptor
-from projects.orthogonal_accelerator.analysis.component_contract import load_accelerator_dependency, load_component_contract
+from msplatform.components.orthogonal_accelerator.component_contract import load_accelerator_dependency, load_component_contract
 
 
 PROJECT = Path(__file__).resolve().parents[2]

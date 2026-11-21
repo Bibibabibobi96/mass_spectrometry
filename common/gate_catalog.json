@@ -20,11 +20,11 @@
           "reason": "host_scheduler_tests_changed"
         },
         {
-          "exact": "common/host_resource_python.py",
+          "exact": "src/msplatform/execution/host_resource_python.py",
           "reason": "host_python_bridge_changed"
         },
         {
-          "exact": "common/host_resource_python.ps1",
+          "exact": "src/msplatform/execution/resources/host_resource_python.ps1",
           "reason": "host_python_bridge_changed"
         },
         {
@@ -2597,11 +2597,11 @@
           "reason": "dirichlet_native_resource_dependency_changed"
         },
         {
-          "exact": "common/host_resource_python.py",
+          "exact": "src/msplatform/execution/host_resource_python.py",
           "reason": "dirichlet_native_resource_dependency_changed"
         },
         {
-          "exact": "common/host_resource_python.ps1",
+          "exact": "src/msplatform/execution/resources/host_resource_python.ps1",
           "reason": "dirichlet_native_resource_dependency_changed"
         }
       ],

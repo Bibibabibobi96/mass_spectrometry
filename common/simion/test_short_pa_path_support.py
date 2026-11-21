@@ -336,7 +336,7 @@ if((Get-Location).Path-ne$before){throw 'Verification leaked the working directo
             self.assertEqual(result["length"], 8 * 1024 * 1024)
             # Exercise the existing OA parent source-closure verifier on the
             # actual selected files, before either missing or tampered launch.
-            from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import (
+            from msplatform.workflows.oa_candidate.candidate_source_closure import (
                 ROLE, verify_candidate_source_closure,
             )
             frozen_files = (frozen_helper, payload_resource, identity_module)

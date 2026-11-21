@@ -26,7 +26,7 @@ $ErrorActionPreference='Stop'
 $projectId='parallel_mirror_dual_stripe_mr_tof'
 $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $workspaceRoot=Split-Path -Parent $repoRoot
-$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
+$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
 $workpointRun=(Resolve-Path -LiteralPath $WorkpointRunPath).Path
 $workpointConfig=Get-Content -LiteralPath (Join-Path $workpointRun 'run_config.json') -Raw|ConvertFrom-Json -AsHashtable
 $staticFieldMode=$workpointConfig.parameters.ContainsKey('corridor_field')-and$workpointConfig.parameters.corridor_field-in@('comsol_static_scalar_v','native_static_pa')
@@ -56,7 +56,7 @@ if(($requiredDiagnosticCount -eq 0 -and $CohortParticleCount -notin @(100,1000))
 if([string]::IsNullOrWhiteSpace($RunId)){$RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__sim__simion__mrtof-native-corridor-bunch-screening'}
 
 . (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
-. (Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\simion\native_corridor_runtime_support.ps1')
+. (Join-Path $repoRoot 'src/msplatform/backends/simion/resources/native_corridor_runtime_support.ps1')
 
 function Get-VerifiedManifestOutput {
   param([Parameter(Mandatory)][string]$ManifestPath,[Parameter(Mandatory)][string]$Name)

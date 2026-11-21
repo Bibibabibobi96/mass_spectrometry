@@ -14,7 +14,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from common import host_resource_python as adapter
+from msplatform.execution import host_resource_python as adapter
 
 
 def result(value=None, code=0, stderr=b""):
@@ -354,7 +354,7 @@ function Exit-HostResourceStage {
 _TASK = '''
 import json, os, sys
 from pathlib import Path
-from common.host_resource_python import ensure_heavy_entry
+from msplatform.execution.host_resource_python import ensure_heavy_entry
 ensure_heavy_entry("fixture_task")
 assert Path.cwd() == Path(os.environ["FIXTURE_EVENTS"]).parent
 with Path(os.environ["FIXTURE_EVENTS"]).open("a", encoding="utf-8") as stream:
@@ -368,7 +368,7 @@ raise SystemExit(int(os.environ.get("FIXTURE_EXIT", "0")))
 _CALL_TASK = '''
 import json, os, sys, tempfile
 from pathlib import Path
-from common.host_resource_python import run_heavy_function
+from msplatform.execution.host_resource_python import run_heavy_function
 def pool(path, *, payload):
     assert isinstance(path, Path)
     print("POOL_PROGRESS", flush=True)
@@ -388,7 +388,7 @@ if __name__ == "__main__":
 _CALL_ERROR_TASK = '''
 import json, os
 from pathlib import Path
-from common.host_resource_python import run_heavy_function
+from msplatform.execution.host_resource_python import run_heavy_function
 def pool():
     with Path(os.environ["FIXTURE_EVENTS"]).open("a") as stream:
         stream.write("pool\\n")
@@ -419,7 +419,7 @@ if __name__ == "__main__":
 _CALL_COMPLETION_TASK = '''
 import json, os, subprocess, sys
 from pathlib import Path
-from common.host_resource_python import run_heavy_function
+from msplatform.execution.host_resource_python import run_heavy_function
 
 def pool():
     marker = Path(os.environ["FIXTURE_EVENTS"]).with_name("native-writes.txt")
@@ -588,10 +588,12 @@ class WindowsPythonHeavyBridgeTests(unittest.TestCase):
 
     def test_exit_pass_thru_returns_actual_record_and_inherited_returns_nothing(self):
         import base64
-        source = str(Path(adapter.__file__).with_name("host_execution_lease.ps1")).replace("'", "''")
+        source = str(Path(adapter.__file__).parent / "resources" / "host_execution_lease.ps1").replace("'", "''")
         script = """
 $ErrorActionPreference='Stop'
-. '__SOURCE__'
+$root=[IO.Path]::GetFullPath('.')
+$context=@{workspace=$root;python_executable=(Get-Command python).Source;host_state_path=(Join-Path $root 'fixture.sqlite3');policy_path=(Join-Path $root 'src/msplatform/execution/resources/host_resource_policy.json')}
+. '__SOURCE__' -HostContext $context
 $script:returned=[pscustomobject]@{status='acquired';token='fixture';reason='owner_released_descendants_still_live'}
 function Invoke-HostResourceTransaction { param($StatePath,$Request) return $script:returned }
 $lease=[pscustomobject]@{token='fixture';role='GATE';stage='fixture';inherited=$false;state_path='unused';
@@ -609,7 +611,7 @@ if($null-ne(Exit-HostResourceStage -Lease $lease -PassThru)){throw 'Inherited ca
 """.replace("__SOURCE__", source)
         encoded = base64.b64encode(script.encode("utf-16-le")).decode()
         completed = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
-                                   cwd=Path(adapter.__file__).resolve().parent.parent, capture_output=True, timeout=20)
+                                   cwd=Path(adapter.__file__).resolve().parents[2], capture_output=True, timeout=20)
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn(b"PASS_THRU=PASS", completed.stdout)
 
@@ -635,19 +637,21 @@ if($null-ne(Exit-HostResourceStage -Lease $lease -PassThru)){throw 'Inherited ca
     def run_fixture(self, *, flags=0, task=_TASK, real_scheduler=False, **extra):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            common = root / "common"
-            common.mkdir()
-            (common / "__init__.py").write_text("", encoding="utf-8")
-            for suffix in (".py", ".ps1"):
-                shutil.copyfile(Path(adapter.__file__).with_suffix(suffix), common / ("host_resource_python" + suffix))
+            execution = root / "src/msplatform/execution"
+            resources = execution / "resources"
+            resources.mkdir(parents=True)
+            (root / "src/msplatform/__init__.py").write_text("", encoding="utf-8")
+            (execution / "__init__.py").write_text("", encoding="utf-8")
+            for name in ("host_resource_python.py", "process_transport.py", "host_resource_scheduler.py"):
+                shutil.copyfile(Path(adapter.__file__).with_name(name), execution / name)
+            for name in ("host_resource_python.ps1", "resource_process_support.ps1", "host_resource_policy.json"):
+                shutil.copyfile(Path(adapter.__file__).parent / "resources" / name, resources / name)
             facade = _FACADE
             if real_scheduler:
-                for name in ("host_resource_scheduler.py",):
-                    shutil.copyfile(Path(adapter.__file__).with_name(name), common / name)
-                source = str(Path(adapter.__file__).with_name("host_execution_lease.ps1")).replace("'", "''")
+                source = str(Path(adapter.__file__).parent / "resources" / "host_execution_lease.ps1").replace("'", "''")
                 # Retain actual process identities and the actual scheduler;
                 # only fixture host pressure is fixed, in its own empty ledger.
-                facade = ". '" + source + "'\n" + r'''
+                facade = ". '" + source + "' -HostContext $request.host_context\n" + r'''
 $script:fixtureSnapshot=${function:Get-HostResourceSnapshot}
 function Get-HostResourceSnapshot {
     $value=& $script:fixtureSnapshot
@@ -655,14 +659,18 @@ function Get-HostResourceSnapshot {
     return $value
 }
 '''
-            (common / "host_execution_lease.ps1").write_text(facade, encoding="utf-8")
+            (resources / "host_execution_lease.ps1").write_text(facade, encoding="utf-8")
             (root / "fixture_task.py").write_text(task, encoding="utf-8")
             events = root / "events.txt"
             environment = os.environ.copy()
             for key in list(environment):
                 if key.startswith("MASS_SPECTROMETRY_") or key.startswith("FIXTURE_"):
                     del environment[key]
-            environment.update(PYTHONPATH=str(root), PYTHONIOENCODING="utf-8", FIXTURE_EVENTS=str(events), TMP=str(root), TEMP=str(root))
+            host_context = {"workspace": str(root), "python_executable": str(Path(sys.executable).resolve()),
+                "host_state_path": str(root / "state.sqlite3"),
+                "policy_path": str(resources / "host_resource_policy.json")}
+            environment.update(PYTHONPATH=str(root / "src"), PYTHONIOENCODING="utf-8", FIXTURE_EVENTS=str(events),
+                TMP=str(root), TEMP=str(root), MASS_SPECTROMETRY_HOST_CONTEXT_JSON=json.dumps(host_context))
             environment.update(extra)
             if real_scheduler:
                 environment["MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH"] = str(root / "state.sqlite3")

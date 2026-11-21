@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from common import host_resource_python as adapter
+from msplatform.execution import host_resource_python as adapter
 
 
 SUPPORT = Path(__file__).resolve().parents[1] / "resource_budget_support.ps1"
@@ -53,6 +53,7 @@ Write-Output 'COMPLETION={"passed":true}'
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(script), str(SUPPORT), *map(str, arguments)],
                 cwd=SUPPORT.parent.parent, capture_output=True, text=True, encoding="utf-8", timeout=30,
+                env={**os.environ, "SIMULATION_PYTHON_EXE": sys.executable},
             )
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
             line = next(line for line in completed.stdout.splitlines() if line.startswith("COMPLETION="))
@@ -192,7 +193,7 @@ if($Scenario-eq'ack_error'){
  Set-Item Function:\Invoke-RepositoryManagedPythonProcess -Value ([scriptblock]::Create($definition))
 }
 $receipt=$null;$errorText=$null
-$workerCommand='from common.host_resource_python import await_managed_process_start; await_managed_process_start(); import sys; exec(compile(open(sys.argv[1],encoding="utf-8").read(),sys.argv[1],"exec"))'
+$workerCommand='from msplatform.execution.host_resource_python import await_managed_process_start; await_managed_process_start(); import sys; exec(compile(open(sys.argv[1],encoding="utf-8").read(),sys.argv[1],"exec"))'
 try{
  $receipt=Invoke-RepositoryManagedPythonProcess -Python $Python -ArgumentList @('-B','-c',$workerCommand,(Join-Path $Root 'worker.py'),$Root,[string]$Code) `
   -WorkingDirectory (Split-Path -Parent (Split-Path -Parent $Support)) -StandardOutputPath (Join-Path $Root 'stdout.log') -StandardErrorPath (Join-Path $Root 'stderr.log')
@@ -246,7 +247,7 @@ raise SystemExit(int(sys.argv[3]))
     def test_worker_eof_or_wrong_ack_cannot_start_work(self):
         environment = os.environ.copy()
         environment["MASS_SPECTROMETRY_MANAGED_PROCESS_NONCE"] = "a" * 32
-        code = "from common.host_resource_python import await_managed_process_start; await_managed_process_start(); print('WORK_STARTED')"
+        code = "from msplatform.execution.host_resource_python import await_managed_process_start; await_managed_process_start(); print('WORK_STARTED')"
         for mode in ("eof", "wrong_nonce", "wrong_pid", "wrong_birth"):
             with self.subTest(mode=mode):
                 process = subprocess.Popen([sys.executable, "-B", "-c", code], cwd=SUPPORT.parent.parent,
@@ -274,7 +275,7 @@ raise SystemExit(int(sys.argv[3]))
                         stream.close()
 
     def test_python_nongrant_adapter_uses_same_actual_worker_and_logs(self):
-        command = ("from common.host_resource_python import await_managed_process_start; await_managed_process_start(); "
+        command = ("from msplatform.execution.host_resource_python import await_managed_process_start; await_managed_process_start(); "
                    "import os,sys,time; print('worker='+str(os.getpid()),flush=True); "
                    "time.sleep(.05); print('last stderr 中文',file=sys.stderr,flush=True); sys.exit(int(sys.argv[1]))")
         token = os.environ.get(adapter._TOKEN)
@@ -282,10 +283,14 @@ raise SystemExit(int(sys.argv[3]))
         for code in (0, 7):
             with self.subTest(code=code), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
-                receipt = adapter.run_managed_python_process(
-                    ["-B", "-c", command, str(code)], cwd=SUPPORT.parent.parent,
-                    stdout=root / "out.log", stderr=root / "err.log",
-                )
+                context = {"workspace": str(root), "python_executable": str(Path(sys.executable).resolve()),
+                    "host_state_path": str(root / "state.sqlite3"),
+                    "policy_path": str(SUPPORT.parents[2] / "src/msplatform/execution/resources/host_resource_policy.json")}
+                with patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_CONTEXT_JSON": json.dumps(context)}):
+                    receipt = adapter.run_managed_python_process(
+                        ["-B", "-c", command, str(code)], cwd=SUPPORT.parent.parent,
+                        stdout=root / "out.log", stderr=root / "err.log",
+                    )
                 self.assertEqual(receipt["exit_code"], code)
                 self.assertEqual((root / "out.log").read_text().strip(), "worker=" + str(receipt["worker_process_id"]))
                 self.assertIn("last stderr 中文", (root / "err.log").read_text(encoding="utf-8"))

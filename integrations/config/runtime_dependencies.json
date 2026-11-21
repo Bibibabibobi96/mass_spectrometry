@@ -81,7 +81,7 @@
       ],
       "python_modules": [
         {
-          "source_repo_path": "common/host_resource_python.py",
+          "source_repo_path": "src/msplatform/execution/host_resource_python.py",
           "consumers": [
             "accelerator_interface",
             "oa_mr",

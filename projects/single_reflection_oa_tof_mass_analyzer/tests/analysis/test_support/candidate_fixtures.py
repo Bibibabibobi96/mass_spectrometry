@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import tempfile
 from pathlib import Path
 from msplatform.contracts.machine_contracts import load_json, sha256
@@ -21,6 +22,13 @@ class CandidateFixtures:
             "ownership_confirmed": True, "worker_exit_confirmed": True, "launcher_exit_confirmed": True,
             "stdout_drained": True, "stderr_drained": True, "exit_code": exit_code,
             "worker_process_id": 123, "worker_started_at_utc_ticks": 456}
+
+
+    @staticmethod
+    def host_context(root: Path):
+        return {"workspace": str(root), "python_executable": sys.executable,
+            "host_state_path": str(root / "TEST_ONLY_HOST.sqlite3"),
+            "policy_path": str(REPO_ROOT / "src/msplatform/execution/resources/host_resource_policy.json")}
 
 
     def registered_template_run(self, artifact_root: Path, run_id: str = "20260726_120000__build__simion__candidate-layout-template") -> Path:
@@ -219,7 +227,7 @@ class CandidateFixtures:
                 return {"particle_table": str(path)}
             if stage_id == "comsol_candidate":
                 import csv
-                from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import frozen_source_path
+                from msplatform.workflows.oa_candidate.candidate_source_closure import frozen_source_path
                 output = run_root / "results"
                 output.mkdir(parents=True, exist_ok=True)
                 evidence = {}

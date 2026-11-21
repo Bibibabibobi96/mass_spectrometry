@@ -40,8 +40,12 @@ def _bridge(operation: str, **payload: Any) -> subprocess.CompletedProcess:
         raise RuntimeError("Host resource execution requires Windows PowerShell 7")
     request = {"schema_version": 1, "operation": operation,
                "python": str(Path(sys.executable).resolve()), **payload}
+    host_context = (payload.get("environment") or {}).get("MASS_SPECTROMETRY_HOST_CONTEXT_JSON",
+        os.environ.get("MASS_SPECTROMETRY_HOST_CONTEXT_JSON"))
+    if host_context:
+        request["host_context"] = json.loads(host_context)
     command = ["pwsh", "-NoLogo", "-NoProfile", "-NonInteractive", "-File",
-               str(Path(__file__).with_suffix(".ps1"))]
+               str(Path(__file__).parent / "resources" / "host_resource_python.ps1")]
     request_bytes = json.dumps(request, ensure_ascii=False).encode("utf-8")
     capture = operation not in {"enter", "call"}
     # subprocess.run kills its direct child after communication exceptions,

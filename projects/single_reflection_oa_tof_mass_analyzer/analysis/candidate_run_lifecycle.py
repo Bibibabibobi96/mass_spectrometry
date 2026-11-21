@@ -21,7 +21,7 @@ from msplatform.execution.manifest_publication import build_run_manifest
 from msplatform.execution.manifest_publication import publish_run_manifest
 from msplatform.execution.terminal_publication import publish_terminal_state
 from msplatform.execution.terminal_publication import replay_terminal_publication
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import verify_candidate_source_closure
+from msplatform.workflows.oa_candidate.candidate_source_closure import verify_candidate_source_closure
 
 
 FORMAL_BASELINE_PATH = PROJECT_ROOT / "config" / "baseline.json"

@@ -9,7 +9,7 @@ import tempfile
 import unittest
 
 from common.contracts.test_support import fixture_process
-from common.host_resource_python import ensure_heavy_entry
+from msplatform.execution.host_resource_python import ensure_heavy_entry
 from msplatform.backends.simion.native_io import _ASYNC_IO_PRELUDE, apply_native_io_mode
 
 

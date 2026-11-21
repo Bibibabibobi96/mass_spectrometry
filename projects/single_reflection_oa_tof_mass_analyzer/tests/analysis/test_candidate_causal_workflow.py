@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -9,7 +10,7 @@ from unittest import mock
 from msplatform.contracts.machine_contracts import load_json
 from common.contracts.capacity_ledger import load_capacity_ledger
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_run_lifecycle import start_candidate_run
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import frozen_source_path
+from msplatform.workflows.oa_candidate.candidate_source_closure import frozen_source_path
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import run_candidate_workflow as candidate_workflow
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate_workflow import CandidateWorkflowError, run_candidate_workflow
 from projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_support.candidate_fixtures import CandidateFixtures, PROJECT_ROOT, REPO_ROOT
@@ -23,7 +24,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_candida
 class CandidateAnalysisReuseTests(CandidateFixtures, unittest.TestCase):
     def test_normal_reuse_reuses_same_authority_and_reanalyzes_changed_authority(self):
         from projects.single_reflection_oa_tof_mass_analyzer.analysis import prepare_candidate_run as preparation
-        from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import candidate_comsol_stage
+        from msplatform.workflows.oa_candidate import candidate_comsol_stage
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
             _,plan=self.native_workflow_plan(root,"20261031_130000")
@@ -139,7 +140,7 @@ class CandidateCausalPhaseTests(CandidateFixtures, unittest.TestCase):
 
     def test_analysis_implementation_change_runs_only_frozen_csv_analysis(self):
         from msplatform.execution.retention import file_record
-        from projects.single_reflection_oa_tof_mass_analyzer.analysis import candidate_source_closure as source_owner
+        from msplatform.workflows.oa_candidate import candidate_source_closure as source_owner
         from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import run_candidate_workflow as workflow
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -208,7 +209,7 @@ class CandidateCausalPhaseTests(CandidateFixtures, unittest.TestCase):
         host=REPO_ROOT/'common/host_execution_lease.ps1'
         quote=lambda value:"'"+str(value).replace("'","''")+"'"
         script=("$ErrorActionPreference='Stop'; Remove-Item Env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN -ErrorAction SilentlyContinue; "
-            "$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH="+quote(root/'fixture_host.sqlite3')+"; . "+quote(host)+"; "
+            "$env:SIMULATION_PYTHON_EXE="+quote(sys.executable)+"; $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH="+quote(root/'fixture_host.sqlite3')+"; . "+quote(host)+"; "
             "$b=Get-HostResourceBudget -Role GATE -Stage software_validation;$b.cpu_cores=1;$b.memory_bytes=256MB;"
             "$lease=Enter-HostResourceStage -Role GATE -Stage software_validation -Budget $b;"
             "$p=$null;try{$p=Start-Process -FilePath "+quote(sys.executable)+" -ArgumentList @('-I','-B',"+quote('"'+str(worker)+'"')+","+quote('"'+str(payload)+'"')+","+quote('"'+str(ready)+'"')+") -WorkingDirectory "+quote(root)+" -WindowStyle Hidden -PassThru;"
@@ -244,14 +245,15 @@ class CandidateCausalPhaseTests(CandidateFixtures, unittest.TestCase):
                 if stage['stage_id'] != 'comsol_candidate':
                     return original(stage, plan, executable)
                 from types import SimpleNamespace
-                from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.candidate_comsol_stage import execute_comsol_native_build
+                from msplatform.workflows.oa_candidate.candidate_comsol_stage import execute_comsol_native_build
                 def fail_after_save(*args,**kwargs):
                     self._observed_raw_save_fixture(stage,plan,root)
                     raise RuntimeError('SAVED_BEFORE_EXTRACT')
                 return execute_comsol_native_build(stage,plan,runtime=SimpleNamespace(
                     _run_managed_stage_command=fail_after_save,
                     _record_candidate_native_completion=workflow._record_candidate_native_completion))
-            with self.assertRaisesRegex(workflow.CandidateWorkflowError,'SAVED_BEFORE_EXTRACT') as failure:
+            with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_CONTEXT_JSON": json.dumps({"workspace": str(root), "python_executable": sys.executable, "host_state_path": str(root / "TEST_ONLY_HOST.sqlite3"), "policy_path": str(REPO_ROOT / "src/msplatform/execution/resources/host_resource_policy.json")})}), \
+                    self.assertRaisesRegex(workflow.CandidateWorkflowError,'SAVED_BEFORE_EXTRACT') as failure:
                 workflow.run_candidate_workflow(plan_path,sys.executable,stage_executor=after_save)
             parent=failure.exception.run_root
             summary=load_json(parent/'summary.json')
@@ -358,7 +360,7 @@ class CandidateCausalPhaseTests(CandidateFixtures, unittest.TestCase):
 
     def test_report_and_cleanup_do_not_change_native_but_field_and_task_inputs_do(self):
         from msplatform.contracts.machine_contracts import sha256
-        from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import candidate_comsol_source_phases
+        from msplatform.workflows.oa_candidate.candidate_source_closure import candidate_comsol_source_phases
         with tempfile.TemporaryDirectory() as temporary:
             _,path=self.native_workflow_plan(Path(temporary),'20261031_213001')
             closure=load_json(path)['execution_source_closure']
@@ -378,7 +380,7 @@ class CandidateCausalPhaseTests(CandidateFixtures, unittest.TestCase):
                 lambda text:text.replace("es.selection.named('sel_vac');","es.selection.named('sel_all');"))
             field_changed=candidate_comsol_source_phases(closure)
             self.assertNotEqual(field_changed['native'],original['native'])
-            replace_source(prefix+'workflows/design_candidate/candidate_comsol_stage.py',
+            replace_source('src/msplatform/workflows/oa_candidate/candidate_comsol_stage.py',
                 lambda text:text.replace('return "src/msplatform/backends/comsol/matlab/run_candidate_contract_build.m", environment',
                     'environment["OATOF_CANDIDATE_CONTRACT_PATH"]="different-science"\n    return "src/msplatform/backends/comsol/matlab/run_candidate_contract_build.m", environment'))
             task_changed=candidate_comsol_source_phases(closure)
@@ -386,7 +388,7 @@ class CandidateCausalPhaseTests(CandidateFixtures, unittest.TestCase):
 
     def test_analysis_phase_preserves_only_recorded_historical_identity_source(self):
         from msplatform.contracts.machine_contracts import sha256
-        from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import candidate_comsol_source_phases
+        from msplatform.workflows.oa_candidate.candidate_source_closure import candidate_comsol_source_phases
         with tempfile.TemporaryDirectory() as temporary:
             _, path = self.native_workflow_plan(Path(temporary), '20261031_213010')
             closure = load_json(path)['execution_source_closure']
@@ -418,10 +420,14 @@ class CandidateCausalPhaseTests(CandidateFixtures, unittest.TestCase):
 
     def test_real_normal_native_and_sync_commands_consume_unique_task_environment_builders(self):
         from types import SimpleNamespace
-        from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import candidate_comsol_stage as adapter
+        from msplatform.workflows.oa_candidate import candidate_comsol_stage as adapter
         with tempfile.TemporaryDirectory() as temporary:
             _,path=self.native_workflow_plan(Path(temporary),'20261031_213002')
             plan=load_json(path);stage=next(row for row in plan['stages'] if row['stage_id']=='comsol_candidate')
+            plan["host_context"] = dict(workspace=temporary, python_executable=sys.executable,
+                host_state_path=str(Path(temporary) / "TEST_ONLY_HOST.sqlite3"),
+                policy_path=str(REPO_ROOT / "src/msplatform/execution/resources/host_resource_policy.json"))
+            plan["execution_run_directory"] = plan["run_root"]
             calls=[];publications=[]
             def observed(command,log,actual_plan,completion,role,environment):
                 report=Path(command[command.index('-ReportPath')+1]);report.parent.mkdir(parents=True,exist_ok=True)
@@ -429,8 +435,9 @@ class CandidateCausalPhaseTests(CandidateFixtures, unittest.TestCase):
                 calls.append((command,environment,role))
             runtime=SimpleNamespace(_run_managed_stage_command=observed,
                 _record_candidate_native_completion=lambda *args:publications.append('stopped-raw-proof-requested') or True)
-            adapter.execute_comsol_native_build(stage,plan,runtime=runtime)
-            adapter.execute_comsol_model_sync(stage,plan,runtime=runtime)
+            with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_CONTEXT_JSON": json.dumps({"workspace": str(temporary), "python_executable": sys.executable, "host_state_path": str(Path(temporary) / "TEST_ONLY_HOST.sqlite3"), "policy_path": str(REPO_ROOT / "src/msplatform/execution/resources/host_resource_policy.json")})}):
+                adapter.execute_comsol_native_build(stage,plan,runtime=runtime)
+                adapter.execute_comsol_model_sync(stage,plan,runtime=runtime)
             self.assertEqual(len(calls),2)
             self.assertEqual(publications,['stopped-raw-proof-requested'])
             closure=plan['execution_source_closure']
@@ -505,7 +512,7 @@ try{& $consumer}catch{$rejected=$true;$reason=$_.Exception.Message}
 
     def test_same_size_gui_save_failure_is_unknown_and_does_not_publish_native(self):
         from types import SimpleNamespace
-        from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import candidate_comsol_stage as adapter
+        from msplatform.workflows.oa_candidate import candidate_comsol_stage as adapter
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary)
             _,plan_path=self.native_workflow_plan(root,'20261031_223001')
@@ -518,7 +525,8 @@ try{& $consumer}catch{$rejected=$true;$reason=$_.Exception.Message}
                 return adapter.execute_comsol_native_build(stage,plan,runtime=SimpleNamespace(
                     _run_managed_stage_command=save_failed,
                     _record_candidate_native_completion=candidate_workflow._record_candidate_native_completion))
-            with self.assertRaisesRegex(CandidateWorkflowError,'GUI_SAVE_PRIMARY') as failed:
+            with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_CONTEXT_JSON": json.dumps({"workspace": str(root), "python_executable": sys.executable, "host_state_path": str(root / "TEST_ONLY_HOST.sqlite3"), "policy_path": str(REPO_ROOT / "src/msplatform/execution/resources/host_resource_policy.json")})}), \
+                    self.assertRaisesRegex(CandidateWorkflowError,'GUI_SAVE_PRIMARY') as failed:
                 run_candidate_workflow(plan_path,sys.executable,stage_executor=execute)
             parent=failed.exception.run_root;summary=load_json(parent/'summary.json')
             self.assertEqual(summary['data_validity'],'unknown')

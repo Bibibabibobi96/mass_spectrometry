@@ -536,7 +536,7 @@ class ReflectronVoltageCompensationTests(unittest.TestCase):
         self.assertFalse((run / "simion").exists())
 
     def test_authoring_resource_is_bound_and_frozen_tamper_is_rejected(self) -> None:
-        from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import verify_candidate_source_closure
+        from msplatform.workflows.oa_candidate.candidate_source_closure import verify_candidate_source_closure
 
         case, executable = self.published_source()
         value, resource, digest = study.load_authoring_default()
@@ -586,7 +586,7 @@ class ReflectronVoltageCompensationTests(unittest.TestCase):
 
     def test_predecessor_bytecode_evidence_is_derived_separately_from_current_code(self) -> None:
         import py_compile
-        from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import verify_candidate_source_closure
+        from msplatform.workflows.oa_candidate.candidate_source_closure import verify_candidate_source_closure
 
         case, executable = self.published_source()
         plan = study.inspect_source(case, executable, 8, 1e-4, particle_count=100)

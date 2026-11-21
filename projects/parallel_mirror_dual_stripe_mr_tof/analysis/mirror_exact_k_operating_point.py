@@ -27,7 +27,7 @@ from scipy.optimize import brentq, least_squares
 from msplatform.io.file_identity import canonical_json_sha256, file_sha256
 from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
-from common.host_resource_python import ensure_heavy_entry
+from msplatform.execution.host_resource_python import ensure_heavy_entry
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.drift_phase_contract import (
     resolve_drift_phase_contract,
 )

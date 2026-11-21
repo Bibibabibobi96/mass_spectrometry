@@ -78,7 +78,7 @@
   "coordinate_policy": "Each API declares its local axial convention; consumers must map positions with rotation and translation and velocities with rotation only. No instrument origin or focus plane is implicit.",
   "qualification_policy": "Independent component evidence only; no inheritance of instrument Formal qualification or sharing of evidence between structural variants.",
   "implementation_modules": [
-    "analysis/component_contract.py",
+    "src/msplatform/components/orthogonal_accelerator/component_contract.py",
     "analysis/assembly_interface.py",
     "analysis/electrode_topology.py",
     "analysis/accelerator_time_focus.py",

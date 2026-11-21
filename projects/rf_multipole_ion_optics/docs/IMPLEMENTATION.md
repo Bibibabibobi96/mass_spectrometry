@@ -255,7 +255,7 @@ dispatch plan 传递；PowerShell 检查合法范围及恢复闭合关系，不�
 `measurement_scope=single_transport_case_not_all_run_cases` 标明作用域，不能把其中一份当作整次 run 的资源总量。
 
 六/八极的理想场 Python 传输 CLI [`run_ideal_transport.py`](../runtime/run_ideal_transport.py) 复用
-[`host_resource_python`](../../../common/host_resource_python.py) 外层桥接取得并核验重许可，原串行积分和科学参数不变。
+[`host_resource_python`](../../../src/msplatform/execution/host_resource_python.py) 外层桥接取得并核验重许可，原串行积分和科学参数不变。
 许可分类与继承只遵循[主机资源调度](../../../docs/OPERATIONS.md#主机资源调度)；接入不代表新增动态粒子分批能力。
 
 两端消费同一resolved hash、杆阵列、接口、屏蔽、segmentation和完整drive。数值profile与物理设计分层；

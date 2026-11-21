@@ -68,7 +68,7 @@ class SolverDiagnosticsTest(unittest.TestCase):
         repo = Path(__file__).resolve().parents[4]
         if not shutil.which("pwsh"):
             self.skipTest("PowerShell wrapper requires pwsh")
-        from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import (
+        from msplatform.workflows.oa_candidate.candidate_source_closure import (
             freeze_candidate_source_closure, verify_candidate_source_closure,
         )
         source_id = "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/analyze_ideal_field_log.ps1"

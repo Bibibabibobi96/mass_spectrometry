@@ -52,6 +52,22 @@ class NativeCorridorBunchScreeningRunnerTest(unittest.TestCase):
                                             encoding="utf-8", errors="replace", timeout=30)
                     self.assertEqual(result.returncode == 0, accepted, result.stdout + result.stderr)
 
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+    def test_public_entry_requires_explicit_python_before_reading_scientific_inputs(self) -> None:
+        arguments = [RUNNER, "-WorkpointRunPath", "absent", "-BunchSourceReceiptPath", "absent",
+                     "-CompositionPlanPath", "absent"]
+        with patch.dict("os.environ", {"SIMULATION_PYTHON_EXE": ""}):
+            missing = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", *map(str, arguments)],
+                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
+            explicit = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", *map(str, arguments),
+                "-PythonExe", sys.executable], cwd=REPO_ROOT, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=30)
+        self.assertNotEqual(missing.returncode, 0)
+        self.assertIn("Explicit PythonExe or SIMULATION_PYTHON_EXE is required", missing.stderr)
+        self.assertNotEqual(explicit.returncode, 0)
+        self.assertNotIn("native_corridor_runtime_support", explicit.stderr)
+        self.assertIn("absent", explicit.stderr)
+
     def test_screening_runs_one_static_cohort_from_checkpointed_family(self) -> None:
         source = RUNNER.read_text(encoding="utf-8-sig")
         for token in (

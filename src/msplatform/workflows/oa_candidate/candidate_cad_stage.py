@@ -1,16 +1,16 @@
 """Frozen CAD Candidate construction and scientific completion checks."""
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import frozen_source_path, verify_candidate_source_closure
+from msplatform.workflows.oa_candidate.candidate_source_closure import frozen_source_path, verify_candidate_source_closure
 
 def execute_cad_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str, *, runtime: Any) -> dict[str, Any]:
     """Execute the declared frozen CAD stage using owner-managed processes."""
-    from .candidate_stage_execution import _powershell, _require_pass_report
+    from .candidate_stage_execution import _powershell, _require_pass_report, native_execution_context
     _run_managed_stage_command = runtime._run_managed_stage_command
+    host_context, execution = native_execution_context(plan, Path(plan["run_root"]))
     closure = plan.get("execution_source_closure")
     if closure is not None:
         verify_candidate_source_closure(closure)
@@ -32,8 +32,8 @@ def execute_cad_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: s
     command = _powershell(
         frozen_source_path(closure, "src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1"),
         [
-            "-HostContextJson", os.environ["MASS_SPECTROMETRY_HOST_CONTEXT_JSON"],
-            "-WorkingDirectory", os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY") or str(run_root),
+            "-HostContextJson", host_context,
+            "-WorkingDirectory", execution,
             "-TaskScript",
             frozen_source_path(
                 closure,
@@ -42,7 +42,7 @@ def execute_cad_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: s
             "-ReportPath",
             str(report),
             "-RunId", plan["run_id"],
-            "-RunDir", os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY") or str(run_root),
+            "-RunDir", execution,
             "-CompletionPath", str(logs / "cad_completion.json"),
         ],
     )

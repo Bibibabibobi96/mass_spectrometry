@@ -34,7 +34,7 @@ class ManagedCandidatePaTests(unittest.TestCase):
         from msplatform.execution.manifest_publication import build_run_manifest
         from msplatform.backends.simion import pa_family_cache
         from common.simion.test_pa_family_cache import PAFamilyCacheTest
-        from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import (
+        from msplatform.workflows.oa_candidate.candidate_source_closure import (
             freeze_candidate_source_closure, frozen_source_path, verify_candidate_source_closure,
         )
         from msplatform.backends.simion.simion_component_pa_plan import compile_component_pa_plan
@@ -439,7 +439,7 @@ write_json_atomic(run/'run_config.json',config)
         # Python deliberately rejects SIMION's first argument, before any PA.
         from common.contracts.capacity_ledger import initialize_capacity_ledger
         from common.contracts.capacity_protection import load_capacity_protection_leases
-        from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import (
+        from msplatform.workflows.oa_candidate.candidate_source_closure import (
             freeze_candidate_source_closure, frozen_source_path, verify_candidate_source_closure,
         )
         from msplatform.backends.simion.simion_component_pa_plan import compile_component_pa_plan
@@ -614,7 +614,7 @@ try{$null=Invoke-ComponentCache ($arguments+@('--action','not-an-action')) 'bad-
                 root = Path(directory)
                 repo = root / "repo"
                 relatives = (
-                    "src/msplatform/execution/resources/host_execution_lease.ps1", "common/host_resource_python.py",
+                    "src/msplatform/execution/resources/host_execution_lease.ps1", "src/msplatform/execution/host_resource_python.py",
                     "src/msplatform/execution/resources/run_artifact_support.ps1", "src/msplatform/execution/resources/require_powershell7.ps1",
                     "src/msplatform/execution/resources/resource_process_support.ps1", "src/msplatform/backends/simion/resources/short_pa_path_support.ps1",
                     "common/simion/process_observation.py",
@@ -728,7 +728,7 @@ foreach($path in @($global:MassSpectrometryImmutablePaSourceGuards.Keys)){Unprot
         with tempfile.TemporaryDirectory(prefix="candidate-pa-worker-") as directory:
             root = Path(directory)
             fixture_repo = root / "observer_failure_repo"
-            for relative in ("common/host_resource_python.py", "common/simion/__init__.py", "common/simion/process_observation.py",
+            for relative in ("src/msplatform/execution/host_resource_python.py", "common/simion/__init__.py", "common/simion/process_observation.py",
                              "src/msplatform/__init__.py", "src/msplatform/io/__init__.py",
                              "src/msplatform/io/file_identity.py"):
                 target = fixture_repo / relative

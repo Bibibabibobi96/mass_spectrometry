@@ -22,7 +22,7 @@ import numpy as np
 from scipy.optimize import brentq, least_squares, root as scipy_root
 
 from msplatform.io.file_identity import file_sha256
-from common.host_resource_python import ensure_heavy_entry
+from msplatform.execution.host_resource_python import ensure_heavy_entry
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_real_field_l1_screen import (
     CombinedField,
     ResponseBasis,

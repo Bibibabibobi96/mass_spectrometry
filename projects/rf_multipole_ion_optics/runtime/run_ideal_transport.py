@@ -48,7 +48,7 @@ def main() -> None:
     parser.add_argument("--run-id")
     parser.add_argument("--design-profile-id", required=True)
     args = parser.parse_args()
-    from common.host_resource_python import ensure_heavy_entry
+    from msplatform.execution.host_resource_python import ensure_heavy_entry
 
     ensure_heavy_entry("projects.rf_multipole_ion_optics.runtime.run_ideal_transport")
     project_root = args.project_root.resolve()

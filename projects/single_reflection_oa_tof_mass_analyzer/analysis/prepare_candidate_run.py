@@ -15,7 +15,7 @@ from msplatform.execution.artifact_naming import validate_run_id, validate_task_
 from msplatform.execution.inputs import python_import_roots
 from msplatform.contracts.machine_contracts import load_json, sha256, validate_schema
 from common.simion.process_observation import run_observed_process
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import (
+from msplatform.workflows.oa_candidate.candidate_source_closure import (
     freeze_candidate_source_closure,
     frozen_source_path,
 )
@@ -1028,6 +1028,7 @@ def prepare_postprocess_request(parent: Path, run_id: str) -> dict:
         prepared["native_input_paths"] = [selection["model_record"]["path"], selection["context_record"]["path"]]
     return {"schema_version": 1, "role": "run_artifact_workflow_request",
             "repository_root": str(REPO_ROOT), "python_executable": closure["runtime"]["python_executable"],
+            "host_context": json.loads(os.environ["MASS_SPECTROMETRY_HOST_CONTEXT_JSON"]),
             "package": {"project": PROJECT_ROOT.name, "run_id": run_id, "mode": "candidate_comsol_postprocess",
                         "artifact_project_root": str(project_root), "software": ["COMSOL 6.4", "MATLAB R2025b", "Python 3.11"],
                         "retention_class": "compact", "retention_reason": "",

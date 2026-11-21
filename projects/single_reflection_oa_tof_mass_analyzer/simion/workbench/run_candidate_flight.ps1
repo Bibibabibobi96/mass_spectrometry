@@ -77,7 +77,7 @@ try{
   # and measures its root working set; the public outer wait owns the actual
   # Python worker and drains its logs. Neither receipt claims arbitrary forks.
   $code=@'
-from common.host_resource_python import await_managed_process_start
+from msplatform.execution.host_resource_python import await_managed_process_start
 await_managed_process_start()
 import json,sys,time
 from pathlib import Path

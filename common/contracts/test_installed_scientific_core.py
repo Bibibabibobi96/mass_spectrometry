@@ -6866,7 +6866,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
         mrp_oa_path = REPO_ROOT / 'projects/orthogonal_accelerator/config/component_contract.json'
         mrp_contract_bytes, mrp_oa_bytes = mrp_contract_path.read_bytes(), mrp_oa_path.read_bytes()
         assert hashlib.sha256(mrp_contract_bytes).hexdigest() == '257e10f381b566db9eb85f63776081fbe8ada140bdc99eb44bda4e148fda066f'
-        assert hashlib.sha256(mrp_oa_bytes).hexdigest() == '38d9ad771bb8b194cf484de770d062cb1b1bdd3462da8730c3616c738f57ffed'
+        assert hashlib.sha256(mrp_oa_bytes).hexdigest() == '4aa417ad64e91e9eafdbffbaa958a35573c8b78262fac304355979d190a201dd'
         mrp_contract = load_contract(mrp_contract_path)
         mrp_authority = geometry_authority(mrp_contract)
         assert mrp_authority['geometry_profile_id'] == 'closed_two_zone_compact_mr_axial_r3_gap1_4mm'

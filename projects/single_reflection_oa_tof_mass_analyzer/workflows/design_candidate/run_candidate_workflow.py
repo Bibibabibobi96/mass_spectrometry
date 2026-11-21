@@ -32,14 +32,14 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_run_life
     start_candidate_run,
     update_candidate_progress,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import frozen_source_path, verify_candidate_source_closure
+from msplatform.workflows.oa_candidate.candidate_source_closure import frozen_source_path, verify_candidate_source_closure
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import (
     freeze_pa_producer_handoffs, plan_pa_producer_handoffs, validate_artifact_capacity,
 )
 from msplatform.backends.simion.simion_component_pa_plan import compile_component_pa_plan, sum_component_commitments
 
 
-from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.candidate_stage_execution import execute_candidate_stage, _powershell
+from msplatform.workflows.oa_candidate.candidate_stage_execution import execute_candidate_stage, _powershell
 
 StageExecutor = Callable[[dict[str, Any], dict[str, Any], str], dict[str, Any]]
 # A long candidate stage is evidence to inspect, never proof that a healthy
@@ -60,16 +60,16 @@ STAGE_SOURCE_PREFIXES = {
         "projects/single_reflection_oa_tof_mass_analyzer/oatof_lifecycle_preflight.ps1",
         "src/msplatform/backends/comsol/matlab/oatof_paths.m",
         "src/msplatform/backends/comsol/matlab/run_candidate_contract_build.m",
-        "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_stage_execution.py",
-        "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_comsol_stage.py",
+        "src/msplatform/workflows/oa_candidate/candidate_stage_execution.py",
+        "src/msplatform/workflows/oa_candidate/candidate_comsol_stage.py",
     ),
     "simion_candidate": (
         "projects/single_reflection_oa_tof_mass_analyzer/simion/",
         "src/msplatform/ion_release/dotnet_gaussian_box_ion11.py",
         "projects/single_reflection_oa_tof_mass_analyzer/oatof_lifecycle_preflight.ps1",
         "src/msplatform/backends/comsol/matlab/oatof_paths.m",
-        "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_stage_execution.py",
-        "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_simion_stage.py",
+        "src/msplatform/workflows/oa_candidate/candidate_stage_execution.py",
+        "src/msplatform/workflows/oa_candidate/candidate_simion_stage.py",
     ),
     "cad_candidate": (
         "common/comsol/",
@@ -80,8 +80,8 @@ STAGE_SOURCE_PREFIXES = {
         "projects/single_reflection_oa_tof_mass_analyzer/oatof_lifecycle_preflight.ps1",
         "src/msplatform/backends/comsol/matlab/oatof_paths.m",
         "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_cad_sync.m",
-        "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_stage_execution.py",
-        "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_cad_stage.py",
+        "src/msplatform/workflows/oa_candidate/candidate_stage_execution.py",
+        "src/msplatform/workflows/oa_candidate/candidate_cad_stage.py",
     ),
 }
 
@@ -363,7 +363,7 @@ def _stage_context(
     if stage_id == "comsol_candidate":
         # The delivery closure remains complete provenance. These four actual
         # implementations are independent reuse dependencies within this stage.
-        from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import candidate_comsol_source_phases
+        from msplatform.workflows.oa_candidate.candidate_source_closure import candidate_comsol_source_phases
         phases = candidate_comsol_source_phases(runtime_plan["execution_source_closure"])
         phase_root = inputs / "stage_contexts/comsol_candidate/phases"
         phase_paths = {}
@@ -752,6 +752,10 @@ def _execute_candidate_stages(
     run_root = start_candidate_run(plan_path, initialized_config_path=initialized_config_path)
     runtime_plan_path = run_root / "candidate_workflow_plan.json"
     runtime_plan = load_json(runtime_plan_path)
+    if "host_context" not in runtime_plan and os.environ.get("MASS_SPECTROMETRY_HOST_CONTEXT_JSON"):
+        runtime_plan["host_context"] = json.loads(os.environ["MASS_SPECTROMETRY_HOST_CONTEXT_JSON"])
+    runtime_plan.setdefault("execution_run_directory",
+                            os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY") or str(run_root))
     if execution_context is not None:
         runtime_plan.update(execution_context)
         component_path = run_root / "inputs" / "component_pa_plan.json"
@@ -893,7 +897,7 @@ def _execute_candidate_stages(
                 analysis_execution = None
                 phase_execution = None
                 if current_stage == "comsol_candidate":
-                    from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.candidate_comsol_stage import execute_reused_comsol_phases
+                    from msplatform.workflows.oa_candidate.candidate_comsol_stage import execute_reused_comsol_phases
                     disposition = runtime_plan.get("comsol_disposition")
                     if disposition is None:
                         disposition = _comsol_reuse_disposition(Path(reuse_parent), runtime_plan["execution_source_closure"], run_root.parents[3])
@@ -1096,6 +1100,7 @@ def _execute_candidate_stages(
 def _prepare_execution_request(
     plan_path: Path, simion_exe: str, reuse_parent: Path | None, reuse_through: str | None,
     pa_producer_handoffs: list[tuple[Path, Path]] | None = None,
+    host_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Read the frozen plan and reserve disk from its explicit authorities."""
     from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import candidate_native_execution_relative_paths
@@ -1168,6 +1173,8 @@ def _prepare_execution_request(
     return {
         "schema_version": 1, "role": "run_artifact_workflow_request",
         "repository_root": str(REPO_ROOT), "python_executable": closure["runtime"]["python_executable"],
+        "host_context": host_context if host_context is not None else json.loads(os.environ["MASS_SPECTROMETRY_HOST_CONTEXT_JSON"]),
+        "execution_run_directory": os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY") or str(run_root),
         "package": {
             "project": "single_reflection_oa_tof_mass_analyzer", "run_id": plan["run_id"],
             "mode": "design_candidate", "artifact_project_root": str(run_root.parent.parent),
@@ -1263,6 +1270,8 @@ def execute_prepared_run(
                                "reuse_stage_owners": payload.get("reuse_stage_owners"),
                                "comsol_disposition": payload.get("comsol_disposition"),
                                "source_execution_context": session.get("source_execution_context"),
+                               "host_context": request["host_context"],
+                               "execution_run_directory": request["execution_run_directory"],
                                "context_sha256": sha256(execution_request_path).lower(),
                                "writer_completion": writer_completion},
         )
@@ -1387,7 +1396,7 @@ def execute_prepared_postprocess(config_path: Path, session_path: Path, request_
     import shutil
     from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_run_lifecycle import _rewrite_paths
     from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import select_postprocess_parent
-    from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.candidate_comsol_stage import execute_saved_postprocess
+    from msplatform.workflows.oa_candidate.candidate_comsol_stage import execute_saved_postprocess
     root = config_path.resolve().parent
     request = load_json(request_path)
     initial = load_json(config_path)
@@ -1426,6 +1435,8 @@ def execute_prepared_postprocess(config_path: Path, session_path: Path, request_
         source_verified = True
         evidence = execute_saved_postprocess(selected, root, closure,
             {"run_id": root.name, "run_root": str(root), "context_sha256": sha256(request_path).lower(), "writer_completion": writer,
+             "host_context": request["host_context"],
+             "execution_run_directory": os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY") or str(root),
              "source_execution_context": session.get("source_execution_context"), "postprocess_evidence": evidence},
             runtime=sys.modules[__name__])
     except BaseException as error:
@@ -1647,7 +1658,7 @@ def _publish_comsol_phase_sources(run_root: Path, runtime_plan: dict, evidence: 
 
 def _comsol_reuse_disposition(parent: Path, closure: dict, artifact_root: Path) -> dict:
     """Freeze actual required post-solve operations before capacity admission."""
-    from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import candidate_comsol_source_phases
+    from msplatform.workflows.oa_candidate.candidate_source_closure import candidate_comsol_source_phases
     from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import select_postprocess_parent
     origins = _comsol_phase_sources(parent)
     current = candidate_comsol_source_phases(closure)
@@ -1692,7 +1703,7 @@ def _record_candidate_native_completion(stage: dict, plan: dict) -> bool:
         return False
     closure = plan['execution_source_closure']
     verify_candidate_source_closure(closure)
-    from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import project_comsol_native_implementation
+    from msplatform.workflows.oa_candidate.candidate_source_closure import project_comsol_native_implementation
     project_comsol_native_implementation(closure)
     writer_path = root/'logs/native_save_writer_facts.json'
     write_json_atomic(writer_path, writer)

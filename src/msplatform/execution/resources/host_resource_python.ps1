@@ -18,9 +18,10 @@ try {
         throw 'An absolute Python 3.11 executable is required.'
     }
     $env:SIMULATION_PYTHON_EXE = $python
-    . (Join-Path $PSScriptRoot 'host_execution_lease.ps1')
+    if ($request.host_context -isnot [hashtable]) { throw 'The managed request requires an explicit HostContext.' }
+    . (Join-Path $PSScriptRoot 'host_execution_lease.ps1') -HostContext $request.host_context
     if ($request.operation -eq 'managed_process') {
-        . (Join-Path $PSScriptRoot 'resource_budget_support.ps1')
+        . (Join-Path $PSScriptRoot 'resource_process_support.ps1')
         $completion=Invoke-RepositoryManagedPythonProcess -Python $python -ArgumentList @($request.argv) `
             -WorkingDirectory $request.working_directory -StandardOutputPath $request.stdout_path `
             -StandardErrorPath $request.stderr_path -Environment $request.environment
@@ -45,7 +46,7 @@ try {
         # semantics; its CLI reentry verifies ownership before doing any work.
         if ($request.operation -eq 'call') {
             if ($request.function -notmatch '^[A-Za-z_]\w*$') { throw 'A simple function name is required.' }
-            $request | ConvertTo-Json -Depth 100 -Compress | & $python -c 'from common.host_resource_python import _execute_call; _execute_call()'
+            $request | ConvertTo-Json -Depth 100 -Compress | & $python -c 'from msplatform.execution.host_resource_python import _execute_call; _execute_call()'
         } else {
             $arguments = @('-m', [string]$request.module) + @($request.argv)
             & $python @arguments
@@ -84,7 +85,7 @@ try {
         try {
             if ($request.operation -eq 'call') {
                 @{result_path=$request.result_path;host_release=$hostRelease} | ConvertTo-Json -Depth 100 -Compress |
-                    & $python -c 'from common.host_resource_python import _attach_host_release; _attach_host_release()'
+                    & $python -c 'from msplatform.execution.host_resource_python import _attach_host_release; _attach_host_release()'
                 if ($LASTEXITCODE -ne 0) { throw 'Host release receipt publication failed.' }
             } else {
                 [Console]::Out.WriteLine('HOST_RESOURCE_PYTHON_RELEASE=' + ($hostRelease | ConvertTo-Json -Depth 100 -Compress))

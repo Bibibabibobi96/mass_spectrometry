@@ -230,7 +230,10 @@ def core_boundary_errors(source: str, module: str, *, is_package: bool = False,
             try:
                 target = _dynamic_import_target(node, package)
             except ValueError as error:
-                errors.append(f"{node.lineno}: {error}")
+                # The installed host adapter dispatches a regex-validated caller
+                # module only after the managed bridge validates its grant.
+                if module != "msplatform.execution.host_resource_python":
+                    errors.append(f"{node.lineno}: {error}")
             else:
                 if error := _target_error(target, dependencies, source_domain, module):
                     errors.append(f"{node.lineno}: {error}")

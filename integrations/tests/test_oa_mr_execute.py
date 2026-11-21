@@ -660,7 +660,6 @@ foreach($staticFieldRequested in @($false,$true)){
  $fieldKind=if($staticFieldRequested){'static'}else{'native'}
  $solverDir=Join-Path $Root ($fieldKind+'_'+[string]$fixtureBunch)
  New-Item -ItemType Directory -Path $solverDir|Out-Null
- $providerSimionRoot=Join-Path $script:pythonRoot 'src/msplatform/backends/simion/resources'
  $contract=$trajectoryContractInput;$acceleratorGeometry='geometry';$trajectoryContract='numerics';$reviewed='reviewed'
  $mirrorLocal='mirror';$stripeLocal='stripe';$acceleratorLocal='accelerator'
  $acceleratorProviderPlanLocal='provider';$compositionPlanLocal='composition-plan';$localScopeLocal=$null;$acceleratorResolvedCampaignLocal='campaign'

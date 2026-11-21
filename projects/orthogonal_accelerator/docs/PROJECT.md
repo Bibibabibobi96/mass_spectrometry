@@ -58,7 +58,11 @@ resolves that explicit package namespace from the source root while preserving
 project-relative declarations in historical frozen contracts. Scientific roles,
 variants, geometry requests and old frozen bytes are unchanged; no deleted
 forwarder is restored. Candidate and reflectron source freezing use the canonical
-renderer and its installed dependency closure.
+renderer and its installed dependency closure. The API2/API3
+`component_contract.py` reader now belongs to
+`msplatform.components.orthogonal_accelerator`, and both provider manifests name
+that actual source. Source validation, historical declarations and variant
+semantics are unchanged; no native qualification follows from this migration.
 
 Component-focus flight preparation now selects its three-instance structural IOB from the installed
 SIMION resource owner. The template bytes, placeholder PA inputs and scientific flight configuration

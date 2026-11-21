@@ -20,7 +20,7 @@ from common.contracts.capacity_protection import load_capacity_protection_leases
 from common.contracts.verify_artifact_layout import verify_project
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_run_lifecycle import finalize_candidate_run, start_candidate_run
 from msplatform.execution.inputs import enumerate_python_sources
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import RELATIVE_PATHS, freeze_candidate_source_closure, frozen_source_path, verify_candidate_source_closure, _execution_resource_source_ids
+from msplatform.workflows.oa_candidate.candidate_source_closure import RELATIVE_PATHS, freeze_candidate_source_closure, frozen_source_path, verify_candidate_source_closure, _execution_resource_source_ids
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.prepare_candidate_consumers import prepare
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import _registered_candidate_template, prepare_candidate_run, validate_artifact_capacity, validate_workflow
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import run_candidate as candidate_entry
@@ -187,7 +187,8 @@ class CandidateDesignTests(CandidateFixtures, unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             _, plan_path = self.native_workflow_plan(root, "20261029_030002")
-            request = candidate_workflow._prepare_execution_request(plan_path, sys.executable, None, None)
+            request = candidate_workflow._prepare_execution_request(plan_path, sys.executable, None, None,
+                host_context=self.host_context(plan_path.parent))
             handoff_plan = {"sources": ["explicit fixture selection"]}
             session_path = root / "session.json"
             session_path.write_text('{"fixture": "selected session"}', encoding="utf-8")
@@ -285,7 +286,8 @@ class CandidateDesignTests(CandidateFixtures, unittest.TestCase):
     def test_managed_request_uses_frozen_disk_authorities_before_creating_run(self):
         with tempfile.TemporaryDirectory() as directory:
             _, plan_path = self.native_workflow_plan(Path(directory), "20261028_130000")
-            request = candidate_workflow._prepare_execution_request(plan_path, sys.executable, None, None)
+            request = candidate_workflow._prepare_execution_request(plan_path, sys.executable, None, None,
+                host_context=self.host_context(plan_path.parent))
             plan = load_json(plan_path)
             self.assertFalse(Path(plan["run_root"]).exists())
             expected = candidate_workflow.sum_component_commitments([request["payload"]["component_pa_plan"]])
@@ -299,7 +301,8 @@ class CandidateDesignTests(CandidateFixtures, unittest.TestCase):
             handoff = {"source_records": [_canonical_retention.file_record(plan_path)],
                        "protected_paths": [str(Path(directory) / "prior-run")], "sources": []}
             with mock.patch.object(candidate_workflow, "plan_pa_producer_handoffs", return_value=handoff) as preflight:
-                selected = candidate_workflow._prepare_execution_request(plan_path, sys.executable, None, None, pairs)
+                selected = candidate_workflow._prepare_execution_request(plan_path, sys.executable, None, None, pairs,
+                    host_context=self.host_context(plan_path.parent))
                 self.assertEqual(preflight.call_args.args[0], pairs)
                 self.assertEqual(preflight.call_args.kwargs["expected_cache_keys"], set(request["capacity"]["protected_cache_keys"]))
                 self.assertEqual(preflight.call_args.kwargs["artifact_root"], Path(plan["run_root"]).parents[3])
@@ -309,13 +312,15 @@ class CandidateDesignTests(CandidateFixtures, unittest.TestCase):
                 self.assertEqual(selected["capacity"]["commitment_inputs"][-1], handoff["source_records"][0])
             with mock.patch.object(candidate_workflow, "plan_pa_producer_handoffs", side_effect=ValueError("unknown component")):
                 with self.assertRaisesRegex(ValueError, "unknown component"):
-                    candidate_workflow._prepare_execution_request(plan_path, sys.executable, None, None, pairs)
+                    candidate_workflow._prepare_execution_request(plan_path, sys.executable, None, None, pairs,
+                    host_context=self.host_context(plan_path.parent))
             self.assertFalse(Path(plan["run_root"]).exists())
             document = load_json(runtime)
             document["artifact_capacity"]["comsol_bytes"] *= 2
             runtime.write_text(json.dumps(document), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "planned candidate input changed before admission"):
-                candidate_workflow._prepare_execution_request(plan_path, sys.executable, None, None)
+                candidate_workflow._prepare_execution_request(plan_path, sys.executable, None, None,
+                host_context=self.host_context(plan_path.parent))
             self.assertFalse(Path(plan["run_root"]).exists())
 
 
@@ -328,13 +333,14 @@ class CandidateDesignTests(CandidateFixtures, unittest.TestCase):
                 artifact_project, plan_path = self.native_workflow_plan(root, "20261028_130100")
                 artifacts = artifact_project.parent.parent
                 initialize_capacity_ledger(artifacts, objects=[])
-                request = candidate_workflow._prepare_execution_request(plan_path, sys.executable, None, None)
+                request = candidate_workflow._prepare_execution_request(plan_path, sys.executable, None, None,
+                host_context=self.host_context(plan_path.parent))
                 from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
                 copy_scientific_core(Path(request["prepared"]["import_root"]), root)
                 # This explicit software callback has a separate import root;
                 # copy the common handshake bootstrap from the frozen closure.
                 (root / "common/contracts").mkdir(parents=True)
-                for relative in ("common/host_resource_python.py",):
+                for relative in ("src/msplatform/execution/host_resource_python.py",):
                     shutil.copyfile(Path(request["prepared"]["import_root"]) / relative, root / relative)
                 helper_relative = Path("projects") / PROJECT_ROOT.name / "tests/analysis/test_support/candidate_fixtures.py"
                 helper = root / "fixture_source" / helper_relative
@@ -436,7 +442,7 @@ def execute_prepared_run(*args):
 
 
     def test_candidate_policy_has_one_canonical_source_and_resource_without_weakening_duplicate_guard(self):
-        from projects.single_reflection_oa_tof_mass_analyzer.analysis import candidate_source_closure as module
+        from msplatform.workflows.oa_candidate import candidate_source_closure as module
         policy_source = "src/msplatform/contracts/particle_count_policy.py"
         policy_resource = "src/msplatform/contracts/particle_count_policy.json"
         with tempfile.TemporaryDirectory() as directory:
@@ -454,8 +460,8 @@ def execute_prepared_run(*args):
                     self.assertEqual(record["source_sha256"], sha256(original))
                     self.assertEqual(record["sha256"], sha256(copied))
                     self.assertEqual(record["bytes"], original.stat().st_size)
-            with mock.patch.object(module, "RELATIVE_PATHS", (*module.RELATIVE_PATHS, policy_source)):
-                with self.assertRaisesRegex(ValueError, "duplicate candidate source id: " + policy_source):
+            with mock.patch.object(module, "RELATIVE_PATHS", (*module.RELATIVE_PATHS, module.RELATIVE_PATHS[0])):
+                with self.assertRaisesRegex(ValueError, "duplicate candidate source id: " + module.RELATIVE_PATHS[0]):
                     freeze_candidate_source_closure(root / "duplicate", root / "artifacts")
 
     def test_candidate_freeze_loads_installed_solidworks_and_rejects_drift(self):
@@ -498,11 +504,11 @@ def execute_prepared_run(*args):
             with self.assertRaisesRegex(ValueError, "frozen candidate source changed"):
                 verify_candidate_source_closure(closure)
             with self.assertRaisesRegex(ValueError, "invalid candidate source path"):
-                from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import _source_path
+                from msplatform.workflows.oa_candidate.candidate_source_closure import _source_path
                 _source_path("../outside.py")
 
     def test_freezer_payload_records_and_write_corruption(self):
-        from projects.single_reflection_oa_tof_mass_analyzer.analysis import candidate_source_closure as module
+        from msplatform.workflows.oa_candidate import candidate_source_closure as module
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -549,7 +555,7 @@ def execute_prepared_run(*args):
             self.assertEqual(Path(frozen_source_path(closure, renderer_source)).read_bytes(), (REPO_ROOT / renderer_source).read_bytes())
             report_source = "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_report_model_timing.m"
             self.assertEqual(Path(frozen_source_path(closure, report_source)).read_bytes(), (REPO_ROOT / report_source).read_bytes())
-            from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.candidate_comsol_stage import _FROZEN_PYTHON_BOOTSTRAP
+            from msplatform.workflows.oa_candidate.candidate_comsol_stage import _FROZEN_PYTHON_BOOTSTRAP
             imports = (
                 "from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import run_candidate_workflow; "
                 "from msplatform.backends.simion import simion_component_pa_plan; "
@@ -601,7 +607,7 @@ def execute_prepared_run(*args):
             ion.write_text("0,524,1,0,0,0,0,0,5,1,0\n", encoding="ascii")
             log = root / "flight.log"
             log.write_text("", encoding="utf-8")
-            from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.candidate_comsol_stage import _FROZEN_PYTHON_BOOTSTRAP
+            from msplatform.workflows.oa_candidate.candidate_comsol_stage import _FROZEN_PYTHON_BOOTSTRAP
             child = _FROZEN_PYTHON_BOOTSTRAP + r"""
 sys.path.extend([str(Path(sys.argv[4])/'src'), sys.argv[4]])  # Live checkout is available but not authority.
 from projects.single_reflection_oa_tof_mass_analyzer.analysis import solver_diagnostics as diagnostics
@@ -676,7 +682,7 @@ print('FROZEN_ION_CONSUMER_PASS')
 
 
     def test_particle_table_reader_changes_only_its_recorded_analysis_projection(self):
-        from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import candidate_comsol_source_phases
+        from msplatform.workflows.oa_candidate.candidate_source_closure import candidate_comsol_source_phases
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             closure = freeze_candidate_source_closure(root / "code", root / "artifacts",
@@ -707,7 +713,7 @@ print('FROZEN_ION_CONSUMER_PASS')
                 self.assertEqual(before[phase], historical[phase])
 
     def test_canonical_peak_change_invalidates_only_its_analysis_projection(self):
-        from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import candidate_comsol_source_phases
+        from msplatform.workflows.oa_candidate.candidate_source_closure import candidate_comsol_source_phases
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             closure = freeze_candidate_source_closure(root/"code", root/"artifacts",
@@ -730,7 +736,7 @@ print('FROZEN_ION_CONSUMER_PASS')
 
 
     def test_comsol_mesh_phase_selects_frozen_historical_or_current_identity(self):
-        from projects.single_reflection_oa_tof_mass_analyzer.analysis import candidate_source_closure as source
+        from msplatform.workflows.oa_candidate import candidate_source_closure as source
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             closure = freeze_candidate_source_closure(root / "code", root / "artifacts",
@@ -790,7 +796,7 @@ print('FROZEN_ION_CONSUMER_PASS')
                 source.candidate_comsol_source_phases(closure)
 
     def test_comsol_phase_projection_uses_one_fresh_verified_snapshot_per_operation(self):
-        from projects.single_reflection_oa_tof_mass_analyzer.analysis import candidate_source_closure as source
+        from msplatform.workflows.oa_candidate import candidate_source_closure as source
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             closure = freeze_candidate_source_closure(root/"code", root/"artifacts",
@@ -903,7 +909,7 @@ print('FROZEN_ION_CONSUMER_PASS')
 
 
     def test_frozen_path_resolution_does_not_rehash_or_scan(self):
-        from projects.single_reflection_oa_tof_mass_analyzer.analysis import candidate_source_closure as module
+        from msplatform.workflows.oa_candidate import candidate_source_closure as module
         closure = {"schema_version": 2, "role": module.ROLE,
                    "code_root": str(PROJECT_ROOT), "sources": [{"source_id": "analysis/reference_analysis.py"}]}
         with mock.patch.object(module, "sha256") as digest, mock.patch.object(Path, "rglob") as scan:
@@ -922,7 +928,7 @@ print('FROZEN_ION_CONSUMER_PASS')
 
 
     def test_candidate_freeze_rejects_provider_api_version_before_copy(self):
-        from projects.single_reflection_oa_tof_mass_analyzer.analysis import candidate_source_closure as closure
+        from msplatform.workflows.oa_candidate import candidate_source_closure as closure
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for relative in (
@@ -1056,7 +1062,7 @@ print('FROZEN_ION_CONSUMER_PASS')
             })
             self.assertTrue({
                 "projects/orthogonal_accelerator/analysis/accelerator_time_focus.py",
-                "projects/orthogonal_accelerator/analysis/component_contract.py",
+                "src/msplatform/components/orthogonal_accelerator/component_contract.py",
                 "projects/orthogonal_accelerator/config/component_contract.json",
                 "projects/single_reflection_oa_tof_mass_analyzer/config/accelerator_dependency.json",
                 "src/msplatform/components/orthogonal_accelerator/three_zone_ideal_theory.py",
@@ -1152,7 +1158,7 @@ print('FROZEN_ION_CONSUMER_PASS')
                     "sha256": "B" * 64,
                 },
                 {
-                    "source_id": "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_stage_execution.py",
+                    "source_id": "src/msplatform/workflows/oa_candidate/candidate_stage_execution.py",
                     "bytes": 1,
                     "sha256": "C" * 64,
                 },
@@ -2112,6 +2118,7 @@ print('FROZEN_ION_CONSUMER_PASS')
                 result = subprocess.run(
                     ["pwsh", "-NoProfile", "-File", str(builder), "-OutputDir", str(output), *managed, *arguments],
                     cwd=REPO_ROOT, capture_output=True, timeout=20,
+                    env={**os.environ, "SIMULATION_PYTHON_EXE": sys.executable},
                 )
                 self.assertNotEqual(result.returncode, 0)
                 text = (result.stdout + result.stderr).decode("utf-8", errors="replace")
@@ -2132,6 +2139,7 @@ print('FROZEN_ION_CONSUMER_PASS')
                 root_path, "20260720_145000"
             )
             plan = load_json(plan_path)
+            plan["host_context"] = self.host_context(root_path)
             plan["context_sha256"] = sha256(plan_path)
             stage = next(
                 item
@@ -2222,6 +2230,10 @@ print('FROZEN_ION_CONSUMER_PASS')
             plan = load_json(plan_path)
             plan["context_sha256"] = sha256(plan_path)
             stage = next(item for item in plan["stages"] if item["stage_id"] == "cad_candidate")
+            plan["host_context"] = dict(workspace=root, python_executable=sys.executable,
+                host_state_path=str(Path(root) / "TEST_ONLY_HOST.sqlite3"),
+                policy_path=str(REPO_ROOT / "src/msplatform/execution/resources/host_resource_policy.json"))
+            plan["execution_run_directory"] = plan["run_root"]
             environments = []
 
             def fake_run(command, _log_path, environment):
@@ -2233,7 +2245,10 @@ print('FROZEN_ION_CONSUMER_PASS')
                 output.mkdir(parents=True, exist_ok=True)
                 (output / "oaTOF_solidworks_export_report.json").write_text("{}", encoding="utf-8")
 
-            with mock.patch(
+            with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_CONTEXT_JSON": json.dumps(dict(
+                workspace=root, python_executable=sys.executable,
+                host_state_path=str(Path(root) / "TEST_ONLY_HOST.sqlite3"),
+                policy_path=str(REPO_ROOT / "src/msplatform/execution/resources/host_resource_policy.json")))}), mock.patch(
                 "projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate_workflow._run_command",
                 side_effect=fake_run,
             ), mock.patch.object(candidate_workflow, "append_native_stage_completion",
@@ -2356,7 +2371,9 @@ print('FROZEN_ION_CONSUMER_PASS')
 
             def changed_freeze(*args, **kwargs):
                 closure = freeze(*args, **kwargs)
-                source_id = 'projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/'+changed_name
+                source_id = ('projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/'+changed_name
+                    if changed_name == 'run_candidate_workflow.py'
+                    else 'src/msplatform/workflows/oa_candidate/'+changed_name)
                 record = next(r for r in closure['sources'] if r['source_id'] == source_id)
                 target = Path(closure['code_root'])/source_id
                 content = target.read_text(encoding='utf-8')
@@ -2863,12 +2880,15 @@ def postprocess_public_entry(root, artifact):
     (author/"src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1").write_text("throw 'COMSOL_MUST_NOT_START'",encoding="utf-8")
     env=os.environ.copy()
     env.update(SIMULATION_PYTHON_EXE=sys.executable,MASS_SPECTROMETRY_ARTIFACT_ROOT=str(artifact),
-               MASS_SPECTROMETRY_EXECUTION_ROOT=str(root/"native"))
-    from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.candidate_comsol_stage import _FROZEN_PYTHON_BOOTSTRAP
+               MASS_SPECTROMETRY_EXECUTION_ROOT=str(root/"native"),
+               MASS_SPECTROMETRY_HOST_CONTEXT_JSON=json.dumps(dict(workspace=str(author),
+                   python_executable=sys.executable, host_state_path=str(root/"TEST_ONLY_HOST.sqlite3"),
+                   policy_path=str(REPO_ROOT/"src/msplatform/execution/resources/host_resource_policy.json"))))
+    from msplatform.workflows.oa_candidate.candidate_comsol_stage import _FROZEN_PYTHON_BOOTSTRAP
     bootstrap=_FROZEN_PYTHON_BOOTSTRAP + "sys.argv=sys.argv[2:];from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate import main;check_frozen_core();main()"
     def invoke(arguments):
         return subprocess.run([sys.executable,"-I","-B","-c",bootstrap,str(author),"run_candidate.py",*arguments],
-            cwd=author,env=env,capture_output=True,text=True,encoding="utf-8",timeout=240)
+            cwd=author,env=env,capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=240)
     return invoke
 
 

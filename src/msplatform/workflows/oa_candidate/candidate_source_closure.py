@@ -19,18 +19,18 @@ from msplatform.execution.inputs import enumerate_python_sources
 from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
 from msplatform.execution.retention import file_record
-from projects.orthogonal_accelerator.analysis.component_contract import load_accelerator_dependency
+from msplatform.components.orthogonal_accelerator.component_contract import load_accelerator_dependency
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-REPO_ROOT = PROJECT_ROOT.parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[4]
+PROJECT_ROOT = REPO_ROOT / "projects/single_reflection_oa_tof_mass_analyzer"
 ROLE = "oa_tof_candidate_execution_source_closure"
 
 # This is intentionally an auditable allowlist, not dependency discovery.
 # Keep paths repository-relative and use forward slashes in the machine record.
 RELATIVE_PATHS = (
-    "common/host_resource_python.py",
-    "common/host_resource_python.ps1",
+    "src/msplatform/execution/host_resource_python.py",
+    "src/msplatform/execution/resources/host_resource_python.ps1",
     "src/msplatform/execution/resources/run_artifact_support.ps1",
     "common/paths/repository_root.py",
     "src/msplatform/execution/resources/workspace_paths.ps1",
@@ -54,7 +54,7 @@ RELATIVE_PATHS = (
     "src/msplatform/backends/simion/resources/export_standalone_pa.lua",
     "common/simion/voltageize_pa0.lua",
     "src/msplatform/workflows/resources/run_artifact_workflow.ps1",
-    "projects/single_reflection_oa_tof_mass_analyzer/analysis/candidate_source_closure.py",
+    "src/msplatform/workflows/oa_candidate/candidate_source_closure.py",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/native_stage_completion.py",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/compile_candidate_design.py",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/oatof_oaaccelerator_coupling.py",
@@ -94,7 +94,7 @@ RELATIVE_PATHS = (
     "src/msplatform/execution/resources/require_powershell7.ps1",
     "common/solidworks/import_step_to_solidworks.m",
     "projects/orthogonal_accelerator/analysis/accelerator_time_focus.py",
-    "projects/orthogonal_accelerator/analysis/component_contract.py",
+    "src/msplatform/components/orthogonal_accelerator/component_contract.py",
     "projects/orthogonal_accelerator/analysis/two_zone_geometry.py",
     "src/msplatform/backends/comsol/matlab/build_sectioned_geometry.m",
     "projects/orthogonal_accelerator/config/component_contract.json",
@@ -159,10 +159,10 @@ RELATIVE_PATHS = (
     "src/msplatform/backends/comsol/matlab/run_candidate_contract_build.m",
     "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate.py",
     "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_workflow.py",
-    "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_stage_execution.py",
-    "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_comsol_stage.py",
-    "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_simion_stage.py",
-    "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_cad_stage.py",
+    "src/msplatform/workflows/oa_candidate/candidate_stage_execution.py",
+    "src/msplatform/workflows/oa_candidate/candidate_comsol_stage.py",
+    "src/msplatform/workflows/oa_candidate/candidate_simion_stage.py",
+    "src/msplatform/workflows/oa_candidate/candidate_cad_stage.py",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/solver_diagnostics.py",
 )
 
@@ -218,11 +218,18 @@ def freeze_candidate_source_closure(
     ):
         raise ValueError("extra candidate source ids must be a tuple of relative paths")
     declarations = list(RELATIVE_PATHS)
+    explicit_seen: set[str] = set()
+    for source_id in declarations:
+        if source_id in explicit_seen:
+            raise ValueError(f"duplicate candidate source id: {source_id}")
+        explicit_seen.add(source_id)
     for source_id in _execution_resource_source_ids(REPO_ROOT):
         if source_id not in declarations:
             declarations.append(source_id)
-    declarations.extend(enumerate_python_sources(REPO_ROOT,
-        package_roots=("src/msplatform",), resource_suffixes=(".schema.json",)))
+    for source_id in enumerate_python_sources(REPO_ROOT,
+            package_roots=("src/msplatform",), resource_suffixes=(".schema.json",)):
+        if source_id not in declarations:
+            declarations.append(source_id)
     for source_id in extra_source_ids:
         normalized = source_id.replace("\\", "/")
         _source_path(normalized)
@@ -542,7 +549,7 @@ def candidate_comsol_source_phases(closure: dict[str, Any]) -> dict[str, Any]:
     sync_names = (prefix+"comsol/verify_oatof_comsol_sync.m",
                   "src/msplatform/backends/comsol/matlab/load_oatof_contract.m", "src/msplatform/backends/comsol/matlab/oatof_cpt_solver_policy.m")
     import ast
-    identifier = "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_comsol_stage.py"
+    identifier = "src/msplatform/workflows/oa_candidate/candidate_comsol_stage.py"
     tree = ast.parse(candidate_frozen_source_text(closure)[identifier])
     return {"native": {"sources": records(native_names),
                         "implementation": project_comsol_native_implementation(closure),
@@ -561,7 +568,7 @@ def project_comsol_dispatch(closure: dict[str, Any], phase: str) -> str:
     import ast
     if phase not in {"native", "sync"}:
         raise ValueError("COMSOL dispatch needs native or sync")
-    identifier = "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/candidate_comsol_stage.py"
+    identifier = "src/msplatform/workflows/oa_candidate/candidate_comsol_stage.py"
     source = candidate_frozen_source_text(closure)[identifier]
     return _comsol_dispatch_from_tree(ast.parse(source), phase)
 

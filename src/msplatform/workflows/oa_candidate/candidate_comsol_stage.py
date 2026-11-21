@@ -7,7 +7,7 @@ from typing import Any
 
 from msplatform.contracts.machine_contracts import load_json
 from msplatform.execution.inputs import python_import_roots
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import frozen_source_path, verify_candidate_source_closure
+from msplatform.workflows.oa_candidate.candidate_source_closure import frozen_source_path, verify_candidate_source_closure
 
 _FROZEN_PYTHON_BOOTSTRAP = """
 import sys
@@ -48,7 +48,7 @@ def execute_comsol_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe
     build_report = execute_comsol_native_build(stage, plan, runtime=runtime)
     from msplatform.execution.run_paths import project_run_path
     analysis_request = Path(project_run_path(_report_value(build_report, "PYTHON_ANALYSIS_REQUEST"),
-        os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY") or str(run_root), run_root))
+        plan.get("execution_run_directory") or str(run_root), run_root))
     if not analysis_request.is_file():
         raise RuntimeError(f"COMSOL detector-event analysis request is missing: {analysis_request}")
     analysis_receipt = analyze_detector_request(analysis_request, closure, logs / "comsol_detector_event_analysis.log", runtime=runtime)
@@ -80,23 +80,24 @@ def comsol_sync_inputs(stage: dict[str, Any], closure: dict[str, Any]) -> tuple[
 
 def execute_comsol_native_build(stage: dict[str, Any], plan: dict[str, Any], *, runtime: Any) -> Path:
     """Run the sole ordinary saved-model build command with frozen inputs."""
-    from .candidate_stage_execution import _powershell, _require_pass_report
+    from .candidate_stage_execution import _powershell, _require_pass_report, native_execution_context
     closure = plan["execution_source_closure"]
     logs = Path(plan["run_root"]) / "logs"
     _run_managed_stage_command = runtime._run_managed_stage_command
     task_source_id, environment = comsol_native_inputs(stage, closure)
+    host_context, execution = native_execution_context(plan, Path(plan["run_root"]))
     build_report = Path(stage["report_path"])
     build_command = _powershell(
         frozen_source_path(closure, "src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1"),
         [
-            "-HostContextJson", os.environ["MASS_SPECTROMETRY_HOST_CONTEXT_JSON"],
-            "-WorkingDirectory", os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY") or str(Path(plan["run_root"])),
+            "-HostContextJson", host_context,
+            "-WorkingDirectory", execution,
             "-TaskScript",
             frozen_source_path(closure, task_source_id),
             "-ReportPath",
             str(build_report),
             "-RunId", plan["run_id"],
-            "-RunDir", os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY") or str(Path(plan["run_root"])),
+            "-RunDir", execution,
             "-CompletionPath", str(logs / "comsol_build_completion.json"),
         ],
     )
@@ -117,23 +118,24 @@ def execute_comsol_native_build(stage: dict[str, Any], plan: dict[str, Any], *, 
 
 def execute_comsol_model_sync(stage: dict[str, Any], plan: dict[str, Any], *, runtime: Any) -> Path:
     """Run only the declared read-only saved-model synchronization check."""
-    from .candidate_stage_execution import _powershell, _require_pass_report
+    from .candidate_stage_execution import _powershell, _require_pass_report, native_execution_context
     closure = plan["execution_source_closure"]
     logs = Path(plan["run_root"]) / "logs"
     _run_managed_stage_command = runtime._run_managed_stage_command
     sync_report = logs / "comsol_sync.txt"
     task_source_id, sync_environment = comsol_sync_inputs(stage, closure)
+    host_context, execution = native_execution_context(plan, Path(plan["run_root"]))
     sync_command = _powershell(
         frozen_source_path(closure, "src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1"),
         [
-            "-HostContextJson", os.environ["MASS_SPECTROMETRY_HOST_CONTEXT_JSON"],
-            "-WorkingDirectory", os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY") or str(Path(plan["run_root"])),
+            "-HostContextJson", host_context,
+            "-WorkingDirectory", execution,
             "-TaskScript",
             frozen_source_path(closure, task_source_id),
             "-ReportPath",
             str(sync_report),
             "-RunId", plan["run_id"],
-            "-RunDir", os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY") or str(Path(plan["run_root"])),
+            "-RunDir", execution,
             "-CompletionPath", str(logs / "comsol_sync_completion.json"),
         ],
     )
@@ -157,25 +159,20 @@ def analyze_detector_request(request: Path, closure: dict[str, Any], log: Path, 
     return receipt
 
 
-def _record_postprocess_exports(analysis_request: Path | None, root: Path, closure: dict, plan: dict) -> Path:
+def _record_postprocess_exports(analysis_request: Path | None, root: Path, closure: dict, plan: dict,
+                                *, runtime: Any) -> Path:
     """Retain actual full-mother observations, independently of scientific acceptance."""
     import csv
     import json
-    from projects.single_reflection_oa_tof_mass_analyzer.analysis.analyze_comsol_detector_events import _load_request
+    from .detector_request import load_request
     plan.setdefault("postprocess_evidence", {})
-    import subprocess
     writer_path = root / "logs/postprocess_export_writer.json"
     writer_path.write_text(json.dumps(plan["writer_completion"]), encoding="utf-8")
     validator = frozen_source_path(closure, "src/msplatform/workflows/resources/run_artifact_workflow.ps1")
     command = ". '"+validator.replace("'", "''")+"'; Assert-WorkflowWriterCompletion (Get-Content -Raw -Encoding UTF8 '"+str(writer_path).replace("'", "''")+"'|ConvertFrom-Json -AsHashtable)"
     plan["postprocess_evidence"]["writer_completion_unconfirmed"] = True
-    checked = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
-        cwd=os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY", str(root)),
-        capture_output=True, text=True, encoding="utf-8", timeout=60)
-    (root / "logs/postprocess_export_writer.log").write_text(checked.stdout+checked.stderr, encoding="utf-8")
-    if checked.returncode:
-        plan["postprocess_evidence"]["writer_completion_unconfirmed"] = True
-        raise RuntimeError("POSTPROCESS_EXPORT_WRITER_UNCONFIRMED: "+checked.stderr.strip())
+    runtime._run_command(["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                         root / "logs/postprocess_export_writer.log")
     plan["postprocess_evidence"].pop("writer_completion_unconfirmed")
     if analysis_request is None:
         requests = list((root / "results").glob("*.analysis_request.json"))
@@ -184,7 +181,7 @@ def _record_postprocess_exports(analysis_request: Path | None, root: Path, closu
         analysis_request = requests[0]
     if not analysis_request.resolve().is_relative_to(root.resolve()):
         raise ValueError("Postprocess export request must belong to this child")
-    document = _load_request(analysis_request)
+    document = load_request(analysis_request)
     events = Path(document["raw_events_csv"])
     if not events.is_absolute() or not events.resolve().is_relative_to(root.resolve()):
         raise ValueError("Postprocess raw observations must belong to this child")
@@ -207,9 +204,9 @@ def execute_saved_postprocess(selection: dict, root: Path, closure: dict, plan: 
     """Postprocess one admitted parent; no parent save or solver dispatch exists."""
     import csv
     import json
-    import os
     from msplatform.execution.run_paths import project_run_path
-    from .candidate_stage_execution import _powershell, _require_pass_report
+    from .candidate_stage_execution import _powershell, _require_pass_report, native_execution_context
+    host_context, execution = native_execution_context(plan, root)
     output = root / "results"
     output.mkdir(exist_ok=True)
     runtime._run_command([closure["runtime"]["python_executable"], "-I", "-B", "-c",
@@ -226,7 +223,6 @@ def execute_saved_postprocess(selection: dict, root: Path, closure: dict, plan: 
         analysis_request = root / "inputs/postprocess_analysis_request.json"
         analysis_request.write_text(json.dumps(document, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
     else:
-        execution = Path(os.environ["MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY"])
         def execution_path(value: Path) -> str:
             return project_run_path(value, root, execution)
         request = {"model_path": selection["model_record"]["path"],
@@ -273,7 +269,7 @@ def execute_saved_postprocess(selection: dict, root: Path, closure: dict, plan: 
         report = root / "logs/cold_postprocess.txt"
         receipt_path = root / "logs/cold_postprocess_completion.json"
         command = _powershell(execution_path(Path(frozen_source_path(closure, "src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1"))),
-            ["-HostContextJson", os.environ["MASS_SPECTROMETRY_HOST_CONTEXT_JSON"], "-WorkingDirectory", str(execution),
+            ["-HostContextJson", host_context, "-WorkingDirectory", execution,
              "-TaskScript", execution_path(task), "-ReportPath", execution_path(report), "-RunId", root.name,
              "-RunDir", str(execution),
              "-StartupAttempts", "1", "-CompletionPath", execution_path(receipt_path)])
@@ -282,11 +278,11 @@ def execute_saved_postprocess(selection: dict, root: Path, closure: dict, plan: 
                                                 receipt_path, "comsol_launcher_completion")
         except BaseException as error:
             try:
-                _record_postprocess_exports(None, root, closure, plan)
+                _record_postprocess_exports(None, root, closure, plan, runtime=runtime)
             except BaseException as export_error:
                 error.add_note(f"Stopped raw export validation also failed: {export_error}")
             raise
-        _record_postprocess_exports(None, root, closure, plan)
+        _record_postprocess_exports(None, root, closure, plan, runtime=runtime)
         _require_pass_report(report)
         result = load_json(result_path)
         if result.get("candidate_model_validation") != "passed":
