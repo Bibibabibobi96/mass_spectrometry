@@ -269,6 +269,13 @@ function Get-RunPythonImportRoots {
   return @($src,$root)
 }
 
+function Get-RunPythonBootstrap {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$RepoRoot)
+  $roots=ConvertTo-Json -InputObject @(Get-RunPythonImportRoots -RepoRoot $RepoRoot) -Compress
+  return 'import sys;sys.path[:0]='+$roots+';'
+}
+
 function Invoke-RunToolRootContext {
   [CmdletBinding()]
   param(
@@ -522,11 +529,10 @@ function Invoke-RunCapacityLifecycleAdapter {
     }
     $runArgument=@('--run-config',$RunConfig)
   }
-  $output=@(Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
-    & $Python -m msplatform.execution.run_capacity_lifecycle --action $Action `
-      --artifact-root $ArtifactRoot @runArgument
-    if($LASTEXITCODE-ne 0){throw "Run capacity lifecycle $Action failed."}
-  })
+  $bootstrap=Get-RunPythonBootstrap -RepoRoot $RepoRoot
+  $output=@(& $Python -I -B -c ($bootstrap+'from msplatform.execution.run_capacity_lifecycle import main;raise SystemExit(main())') `
+    --action $Action --artifact-root $ArtifactRoot @runArgument)
+  if($LASTEXITCODE-ne 0){throw "Run capacity lifecycle $Action failed: $($output -join [Environment]::NewLine)"}
   return ((@($output)-join "`n")|ConvertFrom-Json)
 }
 
@@ -686,7 +692,8 @@ function Write-RunManifest {
     [switch]$PassThru
   )
   Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
-    $arguments=@('-c','from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)','--run-config',$RunConfig,'--status',$Status)
+    $bootstrap=Get-RunPythonBootstrap -RepoRoot $RepoRoot
+    $arguments=@('-I','-B','-c',($bootstrap+'from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)'),'--run-config',$RunConfig,'--status',$Status)
     if(-not[string]::IsNullOrWhiteSpace($Manifest)){$arguments+=@('--manifest',$Manifest)}
     foreach($item in $Software){$arguments+=@('--software',$item)}
     # CreateProcessW limits the command line to 32,767 UTF-16 characters.
@@ -1006,6 +1013,7 @@ function New-RunPackage {
     [string[]]$AdditionalDirectories=@(),
     [switch]$CapacityLedgerLifecycleEnabled,
     [string]$CapacityLedgerArtifactRoot='',
+    [string]$CapacityPolicyPath='',
     [switch]$UseShortExecutionPath,
     [string]$ExecutionRoot='',
     [string[]]$ExpectedExecutionRelativePaths=@(),
@@ -1092,7 +1100,16 @@ function New-RunPackage {
   if($LASTEXITCODE-ne 0 -or -not($identityCheck-match '^NEW_RUN_PROJECT=PASS ')){
     throw "Run project identity rejected before package creation: $($identityCheck -join [Environment]::NewLine)"
   }
-  $validation=& $python -m msplatform.execution.artifact_naming run $RunId
+  $resourceRoot=Split-Path -Parent ([string]$identityData)
+  $lightBudget=0L
+  if($CapacityLedgerLifecycleEnabled){
+    $capacityPolicyPath=if($CapacityPolicyPath){(Resolve-Path -LiteralPath $CapacityPolicyPath).Path}else{Join-Path $resourceRoot 'artifact_capacity_policy.json'}
+    $capacityPolicy=Get-Content -LiteralPath $capacityPolicyPath -Raw -Encoding UTF8|ConvertFrom-Json
+    [int64]$lightBudget=$capacityPolicy.light_evidence_budget_bytes
+    if($lightBudget-le0){throw 'Artifact capacity policy light-evidence budget must be positive.'}
+  }
+  $bootstrap=Get-RunPythonBootstrap -RepoRoot $RepoRoot
+  $validation=& $python -I -B -c ($bootstrap+'import runpy;runpy.run_module("msplatform.execution.artifact_naming",run_name="__main__")') run $RunId
   if($LASTEXITCODE-ne 0 -or -not($validation-match '^ARTIFACT_ID=PASS ')){throw "Invalid run_id: $RunId"}
   $artifactRunDir=Join-Path $ArtifactRoot "runs\$RunId"
   if(Test-Path -LiteralPath $artifactRunDir){throw "Run already exists: $artifactRunDir"}
@@ -1148,10 +1165,6 @@ function New-RunPackage {
       reason=$(if($RetentionClass-eq'compact'){$null}else{$RetentionReason})}
   }
   if($CapacityLedgerLifecycleEnabled){
-    $capacityPolicy=Get-Content -LiteralPath (Join-Path $RepoRoot 'src\msplatform\execution\resources\artifact_capacity_policy.json') `
-      -Raw -Encoding UTF8|ConvertFrom-Json
-    [int64]$lightBudget=$capacityPolicy.light_evidence_budget_bytes
-    if($lightBudget-le0){throw 'Artifact capacity policy light-evidence budget must be positive.'}
     $initialConfig.capacity_ledger_lifecycle=[ordered]@{
       schema_version=1;enabled=$true;artifact_root=$CapacityLedgerArtifactRoot
       light_evidence_budget_bytes=$lightBudget

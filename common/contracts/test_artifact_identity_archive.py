@@ -165,6 +165,26 @@ class ArtifactIdentityArchiveTests(unittest.TestCase):
                          new_run_project_identity_registry(repository))
 
     @unittest.skipUnless(shutil.which("pwsh") and sys.version_info[:2] == (3, 11), "requires pwsh and Python 3.11")
+    def test_invalid_capacity_policy_leaves_no_run_or_ledger(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            policy = root / "invalid.json"
+            policy.write_text('{"light_evidence_budget_bytes": 0}\n', encoding="utf-8")
+            support = Path(__file__).resolve().parents[2] / "src/msplatform/execution/resources/run_artifact_support.ps1"
+            script = f"""
+. '{support}'
+New-RunPackage -Python '{sys.executable}' -RepoRoot '{root}' -ArtifactRoot '{root}/artifacts/projects/instrument_assembly' `
+  -RunId '20261121_120000__test__python__invalid-policy' -Project instrument_assembly `
+  -Mode fixture -Software @('python') -RetentionContractEnabled -CapacityLedgerLifecycleEnabled `
+  -CapacityPolicyPath '{policy}'
+"""
+            result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=root,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("light-evidence budget must be positive", result.stdout + result.stderr)
+            self.assertFalse((root / "artifacts").exists())
+
+    @unittest.skipUnless(shutil.which("pwsh") and sys.version_info[:2] == (3, 11), "requires pwsh and Python 3.11")
     def test_run_package_guard_precedes_directory_and_capacity_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             fixture = Path(directory)
