@@ -75,7 +75,7 @@ artifacts/projects/<project>/
 | `artifacts/common/capacity_protection_leases/<lease-id>.json` | 公共容量TTL保护租约；只临时钉住精确cache key或artifact-root相对路径，过期自动失效，损坏则门禁失败关闭 |
 | `artifacts/common/capacity_disposal_receipts/*.json` | 容量或卫生处置收据；保存精确路径、身份、原因和结果，仅允许直接JSON记录，不存放求解器载荷；保留在被清理树之外 |
 | `cache/simion_pa_basis/<cache-key>/generations/<generation-sha256>/` | `simion_pa_family_cache`（multipole PA-basis 适配器） |
-| `cache/<registered-role>/<SHA-256>/` | 集成PA及已验证脉冲收据；目录名与允许角色的唯一对应表为[`verify_artifact_layout.py`](../common/contracts/verify_artifact_layout.py)的`INTEGRATION_CACHE_ROLES`，新增角色同步机器校验及测试，不在文档抄写第二份名单 |
+| `cache/<registered-role>/<SHA-256>/` | 集成PA及已验证脉冲收据；目录名与允许角色的唯一对应表为[`verify_artifact_layout.py`](../src/msplatform/execution/verify_artifact_layout.py)的`INTEGRATION_CACHE_ROLES`，新增角色同步机器校验及测试，不在文档抄写第二份名单 |
 
 不得在`cache/`保存唯一输入、canonical结果、正式资产或未登记的任意文件。所有`formal/` PA无条件按
 正式资产合同保留，禁止作为cache清理；当前实验仍引用的cache PA和无法由冻结输入重建的唯一来源同样

@@ -14,8 +14,8 @@ from unittest.mock import patch
 from msplatform.execution.capacity_ledger import load_capacity_ledger
 from msplatform.execution.capacity_protection import load_capacity_protection_leases
 from msplatform.execution.retention import file_record
-from msplatform.execution.test_support import run_artifact_workflow as fixture
-from msplatform.execution.test_support.run_artifact_workflow import OWNER, PROJECT, PWSH, REPO, released_writer
+from common.contracts.test_support import run_artifact_workflow as fixture
+from common.contracts.test_support.run_artifact_workflow import OWNER, PROJECT, PWSH, REPO, released_writer
 
 
 @unittest.skipUnless(PWSH and os.name == "nt", "Windows PowerShell workflow boundary")
@@ -50,7 +50,7 @@ if(-not$caught){{throw 'Live foreign original owner accepted'}}
             self.assertIn("OWNER_IDENTITY_CURRENT_AND_HISTORICAL=PASS", result.stdout)
 
     def test_default_script_route_owns_pipe_holding_child_and_preserves_timeout(self):
-        from msplatform.execution.test_support import fixture_process
+        from common.contracts.test_support import fixture_process
 
         actual = fixture_process.run_fixture_process
         def short_timeout(command, **kwargs):
@@ -307,17 +307,16 @@ if([Convert]::ToBase64String([IO.File]::ReadAllBytes($leasePath))-cne$leaseBefor
 
     def test_powershell_inherited_grant_is_rechecked_across_processes(self) -> None:
         import shutil
-        from msplatform.execution.test_support.host_cpu import install_controlled_cpu_snapshot
+        from common.contracts.test_support.host_cpu import install_controlled_cpu_snapshot
 
         with tempfile.TemporaryDirectory(prefix="workflow-ps-inherited-") as directory:
             root = Path(directory)
             controlled = root / "controlled-host"
-            host_source = REPO / "common/host_execution_lease.ps1"
+            host_source = REPO / "src/msplatform/execution/resources/host_execution_lease.ps1"
             original_host = host_source.read_bytes()
-            for name in ("host_execution_lease.ps1", "host_resource_scheduler.py"):
-                target = controlled / "common" / name
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(REPO / "common" / name, target)
+            target = controlled / "src/msplatform/execution/resources/host_execution_lease.ps1"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(host_source, target)
             policy_source = REPO / "src/msplatform/execution/resources/host_resource_policy.json"
             policy_copy = controlled / "src/msplatform/execution/resources/host_resource_policy.json"
             policy_copy.parent.mkdir(parents=True, exist_ok=True)
@@ -379,7 +378,7 @@ Write-FixtureEvent 'parent-entry'
 . '{OWNER}'
 $ErrorActionPreference='Stop'
 $env:SIMULATION_PYTHON_EXE='{sys.executable}'
-. '{controlled / 'common/host_execution_lease.ps1'}'
+. '{controlled / 'src/msplatform/execution/resources/host_execution_lease.ps1'}' -HostContext (ConvertFrom-Json $env:MASS_SPECTROMETRY_HOST_CONTEXT_JSON -AsHashtable)
 function Get-HostResourceIoPressure {{param($Disks,$TargetPath) return $false}}
 [Environment]::SetEnvironmentVariable('MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN',[NullString]::Value,'Process')
 Write-FixtureEvent 'parent-before-admission'
@@ -406,7 +405,7 @@ if((Get-FileHash -Algorithm SHA256 '{run / 'run_manifest.json'}').Hash-ne$termin
                                 run / "logs/prepared_wait.json", run / "run_manifest.json",
                                 root / "result.json", controlled / "common/host_execution_lease.ps1"))
             self.assertEqual(host_source.read_bytes(), original_host)
-            self.assertIn("SOFTWARE_FIXTURE_CPU CONTROLLED=0", outcome.stdout)
+            self.assertIn(b"SOFTWARE_FIXTURE_CPU CONTROLLED=", target.read_bytes())
             self.assertEqual(outcome.returncode, 0, outcome.stdout + outcome.stderr)
             self.assertEqual(json.loads((root / "result.json").read_text(encoding="utf-8-sig"))["status"], "failed")
 

@@ -13,7 +13,8 @@ import unittest
 import uuid
 
 
-HELPER = Path(__file__).with_name("short_pa_path_support.ps1")
+HELPER = Path(__file__).resolve().parents[2] / "src/msplatform/backends/simion/resources/short_pa_path_support.ps1"
+TEST_ENV = {**os.environ, "SIMULATION_PYTHON_EXE": sys.executable}
 
 # Count successful complete identity reads while delegating to the real readers.
 # Copy traffic and SIMION reads are deliberately outside this logical byte count.
@@ -83,9 +84,9 @@ if($global:MassSpectrometryShortPaCopies.Count-or$global:MassSpectrometryShortPa
 @{same_handle=$sameHandle;already_protected=$protected.already_protected;blocked=$blocked;reads=$checks}|ConvertTo-Json -Depth 6 -Compress
 '''
                 completed = subprocess.run(
-                    ['pwsh', '-NoProfile', '-Command', script], cwd=HELPER.parents[2],
+                    ['pwsh', '-NoProfile', '-Command', script], cwd=HELPER.parents[5],
                     capture_output=True, text=True, encoding='utf-8', check=False, timeout=60,
-                    env={**os.environ, 'PA_HELPER': str(HELPER), 'PA_SOURCE': str(source),
+                    env={**TEST_ENV, 'PA_HELPER': str(HELPER), 'PA_SOURCE': str(source),
                          'PA_DESTINATION': str(destination), 'PA_SHA': digest, 'PA_BYTES': str(size)},
                 )
                 self.assertEqual(completed.returncode, 0, completed.stderr)
@@ -152,9 +153,9 @@ Unprotect-ImmutablePaSource -Source $first|Out-Null
 if($global:MassSpectrometryShortPaCopies.Count-or$global:MassSpectrometryShortPaSourceGuards.Count-or$global:MassSpectrometryImmutablePaSourceGuards.Count){throw 'registry leaked'}
 '''
             completed = subprocess.run(
-                ['pwsh', '-NoProfile', '-Command', script], cwd=HELPER.parents[2],
+                ['pwsh', '-NoProfile', '-Command', script], cwd=HELPER.parents[5],
                 capture_output=True, text=True, encoding='utf-8', check=False, timeout=60,
-                env={**os.environ, 'PA_HELPER': str(HELPER), 'PA_SOURCE': str(source)},
+                env={**TEST_ENV, 'PA_HELPER': str(HELPER), 'PA_SOURCE': str(source)},
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)
 
@@ -178,9 +179,9 @@ if($global:MassSpectrometryShortPaCopies.Count-or$global:MassSpectrometryShortPa
 $s=[IO.File]::OpenWrite($env:PA_SOURCE);$s.Dispose()
 '''
             completed = subprocess.run(
-                ['pwsh', '-NoProfile', '-Command', script], cwd=HELPER.parents[2],
+                ['pwsh', '-NoProfile', '-Command', script], cwd=HELPER.parents[5],
                 capture_output=True, text=True, encoding='utf-8', check=False, timeout=60,
-                env={**os.environ, 'PA_HELPER': str(HELPER), 'PA_SOURCE': str(source),
+                env={**TEST_ENV, 'PA_HELPER': str(HELPER), 'PA_SOURCE': str(source),
                      'PA_DESTINATION': str(destination)},
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)
@@ -223,7 +224,7 @@ try {
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
                 capture_output=True, text=True, encoding="utf-8", errors="replace",
-                env={**os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
+                env={**TEST_ENV, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
                      "PA_SHORT_SOURCE": str(short_source), "PA_SHA": hashlib.sha256(payload).hexdigest()},
                 timeout=30,
             )
@@ -273,7 +274,7 @@ try {
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
                 capture_output=True, text=True, encoding="utf-8", errors="replace",
-                env={**os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
+                env={**TEST_ENV, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
                      "PA_SHORT_SOURCE": str(short_source), "PA_ROOT": str(root),
                      "PA_SHORT_ROOT": str(short_root), "PA_DESTINATION": str(destination),
                      "PA_SHORT_DESTINATION": str(short_destination),
@@ -295,10 +296,10 @@ try {
             shutil.copyfile(HELPER, frozen_helper)
             payload_resource = frozen / "src/msplatform/execution/resources/payload_file_support.ps1"
             payload_resource.parent.mkdir(parents=True)
-            shutil.copyfile(HELPER.parents[2] / "src/msplatform/execution/resources/payload_file_support.ps1", payload_resource)
+            shutil.copyfile(HELPER.parents[5] / "src/msplatform/execution/resources/payload_file_support.ps1", payload_resource)
             identity_module = frozen / "src/msplatform/io/file_identity.py"
             identity_module.parent.mkdir(parents=True)
-            shutil.copyfile(HELPER.parents[2] / "src/msplatform/io/file_identity.py", identity_module)
+            shutil.copyfile(HELPER.parents[5] / "src/msplatform/io/file_identity.py", identity_module)
             ambient = root / "ambient"
             ambient_module = ambient / "msplatform/io/file_identity.py"
             ambient_module.parent.mkdir(parents=True)
@@ -323,7 +324,7 @@ try{
 if((Get-Location).Path-ne$before){throw 'Verification leaked the working directory'}
 [pscustomobject]@{sha=$digest;length=(Get-Item -LiteralPath $env:PA_SOURCE).Length}|ConvertTo-Json -Compress
 """
-            common_env = {**os.environ, "PA_SOURCE": str(source), "PYTHONPATH": str(ambient)}
+            common_env = {**TEST_ENV, "PA_SOURCE": str(source), "PYTHONPATH": str(ambient)}
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-Command", script], cwd=root,
                 capture_output=True, text=True, encoding="utf-8", errors="replace",
@@ -379,7 +380,7 @@ if((Get-Location).Path-ne$before){throw 'Verification leaked the working directo
                 timeout=30,
             )
             self.assertNotEqual(invalid.returncode, 0)
-            self.assertIn("Repository Python is unavailable", invalid.stdout + invalid.stderr)
+            self.assertIn("Selected Python is unavailable", invalid.stdout + invalid.stderr)
             self.assertIn(str(root / "missing/python.exe"), invalid.stdout + invalid.stderr)
 
     def test_immutable_source_guard_blocks_write_delete_and_replace_until_release(self) -> None:
@@ -409,7 +410,7 @@ Unprotect-ImmutablePaSource -Source $env:PA_SOURCE|Out-Null
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
                 check=True, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                env={**os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
+                env={**TEST_ENV, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
                      "PA_REPLACEMENT": str(replacement), "PA_BYTES": str(len(payload)),
                      "PA_SHA": hashlib.sha256(payload).hexdigest()}, timeout=30,
             )
@@ -445,7 +446,7 @@ Unprotect-AllImmutablePaSources|Out-Null
 """
             result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
-                env={**os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source)})
+                env={**TEST_ENV, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source)})
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("NEW_SOURCE_SINGLE_READ=PASS", result.stdout)
 
@@ -467,7 +468,7 @@ Unprotect-ImmutablePaSource -Source $env:PA_SOURCE|Out-Null
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
                 check=True, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                env={**os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
+                env={**TEST_ENV, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
                      "PA_BYTES": str(len(payload)), "PA_SHA": hashlib.sha256(payload).hexdigest()},
                 timeout=30,
             )
@@ -495,7 +496,7 @@ try{Protect-ImmutablePaSource -Source $env:PA_SOURCE -ExpectedBytes ([int64]$env
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
                 check=True, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                env={**os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
+                env={**TEST_ENV, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
                      "PA_BYTES": str(len(payload))}, timeout=30,
             )
             result = json.loads(completed.stdout.strip().splitlines()[-1])
@@ -524,7 +525,7 @@ Unprotect-ImmutablePaSource -Source $env:PA_SOURCE|Out-Null
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
                 check=True, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                env={**os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
+                env={**TEST_ENV, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
                      "PA_BYTES": str(len(payload)), "PA_SHA": hashlib.sha256(payload).hexdigest()},
                 timeout=30,
             )
@@ -559,7 +560,7 @@ if((Get-Location).Path-ne$before){throw 'Verification leaked the working directo
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
                 capture_output=True, text=True, encoding="utf-8", errors="replace",
-                env={**os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source)}, timeout=30,
+                env={**TEST_ENV, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source)}, timeout=30,
             )
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
             result = json.loads(completed.stdout.strip().splitlines()[-1])
@@ -595,7 +596,7 @@ Remove-ShortPaCopyDirectory -Path $env:PA_COPY_DIR -ExpectedNamePrefix 'simion_p
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
                 check=True, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                env={**os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
+                env={**TEST_ENV, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
                      "PA_DESTINATION": str(destination), "PA_COPY_DIR": str(copy_dir),
                      "PA_BYTES": str(len(payload)), "PA_SHA": hashlib.sha256(payload).hexdigest()},
                 timeout=30,
@@ -648,7 +649,7 @@ Remove-ShortPaCopyDirectory -Path $env:PA_COPY_DIR -ExpectedNamePrefix 'simion_p
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
                 check=True, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                env={**os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
+                env={**TEST_ENV, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
                      "PA_DESTINATION": str(destination), "PA_COPY_DIR": str(copy_dir),
                      "PA_BYTES": str(len(payload)), "PA_SHA": hashlib.sha256(payload).hexdigest()},
                 timeout=30,
@@ -690,7 +691,7 @@ foreach($item in $items){[IO.File]::Open($item.path,[IO.FileMode]::Open,[IO.File
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
                 check=True, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                env={**os.environ, "PA_HELPER": str(HELPER), "PA_IDENTITIES": str(identity_path),
+                env={**TEST_ENV, "PA_HELPER": str(HELPER), "PA_IDENTITIES": str(identity_path),
                      "PA_FIRST_DIR": str(first_dir)}, timeout=30,
             )
             result = json.loads(completed.stdout.strip().splitlines()[-1])
@@ -728,7 +729,7 @@ Remove-ShortPaCopy -Path $env:PA_DESTINATION
                 ["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
                 check=True, capture_output=True, text=True, encoding="utf-8",
                 errors="replace", env={
-                    **os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
+                    **TEST_ENV, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
                     "PA_DESTINATION": str(destination),
                     "PA_EXPECTED_BYTES": str(len(payload)), "PA_EXPECTED_SHA256": expected,
                 }, timeout=30,
@@ -763,7 +764,7 @@ $result|ConvertTo-Json -Compress
                 check=True,
                 capture_output=True,
                 text=True,
-                env={**os.environ, "PA_HELPER": str(HELPER), "PA_DIRECTORY": str(root)},
+                env={**TEST_ENV, "PA_HELPER": str(HELPER), "PA_DIRECTORY": str(root)},
                 timeout=30,
             )
             result = json.loads(completed.stdout.strip())
@@ -897,7 +898,7 @@ $result|ConvertTo-Json -Compress
         environment.update(
             PA_HELPER=str(HELPER), PA_SOURCE=str(source),
             PA_DESTINATION=str(destination), PA_EXPECTED_BYTES=str(len(payload)),
-            PA_EXPECTED_SHA256=expected,
+            PA_EXPECTED_SHA256=expected, SIMULATION_PYTHON_EXE=sys.executable,
         )
         try:
             completed = subprocess.run(
@@ -947,7 +948,7 @@ New-ShortPaCopy -Source $env:PA_SOURCE -Destination $env:PA_DESTINATION `
                 ["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
                 capture_output=True, text=True, encoding="utf-8", errors="replace",
                 env={
-                    **os.environ,
+                    **TEST_ENV,
                     "PA_HELPER": str(HELPER),
                     "PA_SOURCE": str(source),
                     "PA_DESTINATION": str(destination),
@@ -999,7 +1000,7 @@ $writer.Dispose()
                 encoding="utf-8",
                 errors="replace",
                 env={
-                    **os.environ,
+                    **TEST_ENV,
                     "PA_HELPER": str(HELPER),
                     "PA_SOURCE": str(source),
                     "PA_DESTINATION": str(destination),
@@ -1049,7 +1050,7 @@ $writer.Dispose()
                 cwd=HELPER.parent, check=True, capture_output=True, text=True,
                 encoding="utf-8", errors="replace",
                 env={
-                    **os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
+                    **TEST_ENV, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
                     "PA_FIRST": str(first), "PA_SECOND": str(second),
                 }, timeout=30,
             )
@@ -1091,7 +1092,7 @@ Remove-ShortPaCopy -Path $copy
                 ["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
                 check=True, capture_output=True, text=True, encoding="utf-8",
                 errors="replace", env={
-                    **os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
+                    **TEST_ENV, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
                     "PA_DESTINATION": str(destination),
                 }, timeout=30,
             )
@@ -1137,7 +1138,7 @@ Remove-ShortPaCopy -Path $copy
                 cwd=HELPER.parent, check=True, capture_output=True, text=True,
                 encoding="utf-8", errors="replace",
                 env={
-                    **os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
+                    **TEST_ENV, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
                     "PA_DESTINATION": str(destination),
                 }, timeout=30,
             )
@@ -1173,17 +1174,17 @@ Remove-ShortPaCopy -Path $copy
         try:
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-Command", script],
-                cwd=HELPER.parents[2], check=True, capture_output=True, text=True,
+                cwd=HELPER.parents[5], check=True, capture_output=True, text=True,
                 encoding="utf-8", errors="replace",
                 env={
-                    **os.environ,
+                    **TEST_ENV,
                     "PA_HELPER": str(HELPER),
                     "PA_SOURCE": str(source),
                     "PA_DESTINATION": str(destination),
                     "PA_BYTES": str(len(payload)),
                     "PA_SHA": hashlib.sha256(payload).hexdigest(),
                     "PYTHON": sys.executable,
-                    "PYTHONPATH": str(HELPER.parents[2]),
+                    "PYTHONPATH": str(HELPER.parents[5]),
                 },
                 timeout=30,
             )
@@ -1223,7 +1224,7 @@ Remove-ShortPaCopyDirectory -Path $env:BUNDLE -ExpectedNamePrefix 'simion_pa_lin
                 ["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
                 check=True, capture_output=True, text=True, encoding="utf-8",
                 errors="replace", env={
-                    **os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
+                    **TEST_ENV, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
                     "BUNDLE": str(bundle), "MOVED": str(moved),
                 }, timeout=30,
             )
@@ -1323,7 +1324,7 @@ Remove-ShortPaCopiesUnderDirectory -Path $env:BATCH_DIR -ExpectedNamePrefix 'bat
                 cwd=HELPER.parent, check=True, capture_output=True, text=True,
                 encoding="utf-8", errors="replace",
                 env={
-                    **os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
+                    **TEST_ENV, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
                     "BATCH_DIR": str(batch_dir),
                 }, timeout=30,
             )
@@ -1365,7 +1366,7 @@ Remove-ShortPaCopyDirectory -Path $env:PA_COPY_DIR -ExpectedNamePrefix 'simion_p
                 cwd=HELPER.parent, capture_output=True, text=True,
                 encoding="utf-8", errors="replace",
                 env={
-                    **os.environ,
+                    **TEST_ENV,
                     "PA_HELPER": str(HELPER),
                     "PA_SOURCE": str(source),
                     "PA_DESTINATION": str(destination),
@@ -1399,7 +1400,7 @@ Remove-ShortPaCopyDirectory -Path $env:PA_COPY_DIR -ExpectedNamePrefix 'simion_p
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
                 check=True, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                env={**os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
+                env={**TEST_ENV, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
                      "PA_DESTINATION": str(destination), "PA_COPY_DIR": str(copy_dir)}, timeout=30,
             )
             result = json.loads(completed.stdout.strip().splitlines()[-1])
@@ -1431,7 +1432,7 @@ if(-not$failed){throw 'persistent destination change was accepted'}
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-Command", script], cwd=HELPER.parent,
                 capture_output=True, text=True, encoding="utf-8", errors="replace",
-                env={**os.environ, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
+                env={**TEST_ENV, "PA_HELPER": str(HELPER), "PA_SOURCE": str(source),
                      "PA_DESTINATION": str(destination), "PA_COPY_DIR": str(copy_dir)}, timeout=30,
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)

@@ -140,7 +140,7 @@ class LiveLinkResourceStageTests(unittest.TestCase):
 
             copy_scientific_core(ROOT, root)
             comsol = root / "src/msplatform/backends/comsol/launcher"
-            comsol.mkdir(parents=True)
+            comsol.mkdir(parents=True, exist_ok=True)
             (root / "common").mkdir(exist_ok=True)
             (root / "src/msplatform/execution/resources/host_execution_lease.ps1").write_text(
                 (ROOT / "src/msplatform/execution/resources/host_execution_lease.ps1").read_text(encoding="utf-8") + SCHEDULER,
@@ -500,7 +500,10 @@ while(-not(Test-Path -LiteralPath '{release}')){{if([DateTime]::UtcNow-ge$deadli
 """, encoding="utf-8")
                 script = f"""
 $ErrorActionPreference='Stop'
-. '{ROOT / 'common/resource_budget_support.ps1'}'
+$executionResources='{ROOT / 'src/msplatform/execution/resources'}'
+$hostContext=@{{workspace=(Get-Location).Path;python_executable='{sys.executable}';host_state_path=(Join-Path (Get-Location) 'host.sqlite3');policy_path=(Join-Path $executionResources 'host_resource_policy.json')}}
+. (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
+. (Join-Path $executionResources 'resource_process_support.ps1')
 function Get-CimInstance {{throw 'TEST_ONLY forced CIM denial'}}
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile('{ROOT / 'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1'}',[ref]$tokens,[ref]$errors)

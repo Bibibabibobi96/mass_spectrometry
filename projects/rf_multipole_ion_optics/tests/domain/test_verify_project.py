@@ -41,6 +41,10 @@ class VerifyProjectTests(unittest.TestCase):
         common = self.root / "common"
         common.mkdir()
         (common / "gate_unittest.py").write_text(module, encoding="utf-8")
+        resources = self.root / "src/msplatform/execution/resources"
+        resources.mkdir(parents=True)
+        for name in ("require_powershell7.ps1", "host_execution_lease.ps1", "host_resource_policy.json"):
+            shutil.copyfile(REPO / "src/msplatform/execution/resources" / name, resources / name)
         for folder in ("analysis", "hexapole", "octupole"):
             tests = self.project / "tests" / folder
             tests.mkdir(parents=True)
@@ -61,7 +65,7 @@ class VerifyProjectTests(unittest.TestCase):
             script += " -SelectedTestModules @(" + ",".join(quote(value) for value in selected) + ")"
             command = [PWSH, "-NoProfile", "-Command", script]
         return subprocess.run(command, cwd=self.root,
-                              env=env, capture_output=True, text=True, encoding="utf-8", timeout=30)
+                              env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
 
     def test_partition_preflight_and_selected_workers_do_not_repeat_prerequisites(self):
         modules = [f"projects.rf_multipole_ion_optics.tests.{folder}.test_variant"
