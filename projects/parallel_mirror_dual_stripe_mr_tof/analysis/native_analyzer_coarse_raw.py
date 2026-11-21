@@ -3,6 +3,7 @@ from __future__ import annotations
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.accelerator_requirements import read_accelerator_geometry_authority
 
 import argparse
+from importlib.resources import files
 import json
 import math
 from pathlib import Path
@@ -37,7 +38,7 @@ def derive(contract_path: Path, simion_executable: Path, simion_release: str, *,
         "refine_policy": {"operation": "gem2pa_raw_geometry_only", "refine_performed": False},
         "builder_identity": {
             "geometry_generator_sha256": file_sha256(Path(__file__).with_name("native_system_geometry.py")).upper(),
-            "gem2pa_runner_sha256": file_sha256(Path(__file__).resolve().parents[3] / "common/simion/run_gem2pa.ps1").upper(),
+            "gem2pa_runner_sha256": file_sha256(Path(str(files("msplatform") / "backends/simion/resources/run_gem2pa.ps1"))).upper(),
         },
     }
     if math.prod(shape) <= 0:

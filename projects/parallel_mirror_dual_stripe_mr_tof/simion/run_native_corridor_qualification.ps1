@@ -229,7 +229,7 @@ function Invoke-NativeCorridorResponseMemberBuild {
     $responseGem=Join-Path $memberScratch 'prebiased_response.gem'
     Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_geometry','--accelerator-component-contract',$script:oaComponentContractFrozen,'--accelerator-geometry-profile-id',$script:oaGeometryProfileId,'--contract',$contract,'--output',$responseGem,'--active-physical-ids',$sourceActive,'--basis-voltage-v','10000')|Out-Null
     $compiledMemberExecution=Join-Path ([string]$scratchAlias.execution_alias) 'prebiased_response.pa#'
-    & (Join-Path $repoRoot 'common\simion\run_gem2pa.ps1') -SimionExe $simion `
+    & (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\run_gem2pa.ps1') -SimionExe $simion `
       -GemPath (Join-Path ([string]$scratchAlias.execution_alias) 'prebiased_response.gem') `
       -OutputPaPath $compiledMemberExecution
     $compiledMember=Join-Path $memberScratch 'prebiased_response.pa#'
@@ -360,7 +360,7 @@ function Invoke-NativeCorridorFamilyBuild {
       Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_geometry','--accelerator-component-contract',$script:oaComponentContractFrozen,'--accelerator-geometry-profile-id',$script:oaGeometryProfileId,'--contract',$contract,'--output',$gem)|Out-Null
       $mapping=@($plan.physical_to_local_electrode_id.PSObject.Properties|Sort-Object {[int]$_.Name}|ForEach-Object{"$($_.Name):$($_.Value)"})-join','
       Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_geometry','--accelerator-component-contract',$script:oaComponentContractFrozen,'--accelerator-geometry-profile-id',$script:oaGeometryProfileId,'--contract',$contract,'--output',$mappedGem,'--physical-to-local-map',$mapping)|Out-Null
-      & (Join-Path $repoRoot 'common\simion\run_gem2pa.ps1') -SimionExe $simion -GemPath $mappedGem -OutputPaPath $rawScratch 2>&1|Set-Content -LiteralPath $buildLog
+      & (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\run_gem2pa.ps1') -SimionExe $simion -GemPath $mappedGem -OutputPaPath $rawScratch 2>&1|Set-Content -LiteralPath $buildLog
       Publish-NativeCorridorBuiltMember -ScratchPath (Join-Path $scratchDirectory 'mrtof_analyzer_corridor.pa#') -DestinationPath (Join-Path $buildDirectory 'mrtof_analyzer_corridor.pa#')
     }
     if('mrtof_analyzer_corridor.pa0'-in$missing){

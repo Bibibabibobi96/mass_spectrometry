@@ -68,7 +68,7 @@ try{
     if($state.action_required-ne'build'){throw "Coarse raw transaction cannot build: $($state.action_required)"}
     $raw=Join-Path ([string]$state.build_directory) 'mrtof_analyzer.pa#'
     $lease=Enter-HostExecutionLease -Role SIMION -Stage prepare -RunId $RunId
-    & (Join-Path $repoRoot 'common\simion\run_gem2pa.ps1') -SimionExe $simion -GemPath $gem -OutputPaPath $raw
+    & (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\run_gem2pa.ps1') -SimionExe $simion -GemPath $gem -OutputPaPath $raw
     Exit-HostExecutionLease -Lease $lease -Outcome success -RunId $RunId;$lease=$null
     $state=Invoke-Transaction $identity
     if($state.action_required-ne'verify'){throw "Coarse raw transaction cannot verify: $($state.action_required)"}

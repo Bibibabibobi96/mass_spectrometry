@@ -284,7 +284,7 @@ function Build-RawGeometry {
     $mapping=@($plan.physical_to_local_electrode_id.PSObject.Properties|Sort-Object {[int]$_.Name}|ForEach-Object{"$($_.Name):$($_.Value)"})-join','
     Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_geometry','--accelerator-component-contract',$script:oaComponentContractFrozen,'--accelerator-geometry-profile-id',$script:oaGeometryProfileId,'--contract',(Join-Path $projectRoot 'config\simion_candidate_two_zone.json'),'--output',$mappedGem,'--physical-to-local-map',$mapping)|Out-Null
     $lease=Enter-HostExecutionLease -Role SIMION -Stage pa_refine -RunId $RunId
-    & (Join-Path $repoRoot 'common\simion\run_gem2pa.ps1') -SimionExe $simion -GemPath $mappedGem -OutputPaPath $raw
+    & (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\run_gem2pa.ps1') -SimionExe $simion -GemPath $mappedGem -OutputPaPath $raw
     Move-NewMember -Source (Join-Path $ScratchDirectory 'mrtof_analyzer_corridor.pa#') -Destination $destination
     Exit-HostExecutionLease -Lease $lease -Outcome success -RunId $RunId;$lease=$null
   } finally {

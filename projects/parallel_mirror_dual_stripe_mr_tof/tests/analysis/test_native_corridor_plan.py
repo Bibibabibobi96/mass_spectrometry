@@ -178,7 +178,7 @@ class NativeCorridorPlanTest(unittest.TestCase):
         self.assertLess(source.index("--action','probe'"), source.rindex('Invoke-NativeCorridorTransactionLoop'))
         self.assertIn('build_dirichlet_patch_basis.lua', source)
         self.assertIn("'--active-physical-ids',$sourceActive,'--basis-voltage-v','10000'", source)
-        self.assertIn("common\\simion\\run_gem2pa.ps1", source)
+        self.assertIn("src\\msplatform\\backends\\simion\\resources\\run_gem2pa.ps1", source)
         self.assertIn("$scratchMember $basis ($coarseOriginValues-join',') ($corridorOriginValues-join',')", source)
         self.assertNotIn("($corridorOriginValues-join',') '10000'", source)
         self.assertIn('response_recipes', source)
