@@ -15,6 +15,7 @@ from unittest.mock import patch
 from msplatform.execution import capacity_maintenance as capacity_ledger
 from msplatform.execution import recorded_file_removal
 from msplatform.execution import artifact_capacity_maintenance as capacity
+from msplatform.backends.simion import capacity_maintenance as public_capacity
 from msplatform.execution.capacity_protection import create_capacity_protection_lease
 
 
@@ -66,7 +67,7 @@ class CapacityMaintenanceOrchestrationTests(unittest.TestCase):
                           "--protect-path", str(root / ("unprotected" if invalid == "scope" else "protected")),
                       ]), redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as stderr):
                     with self.assertRaises(SystemExit) as failure:
-                        capacity.main()
+                        public_capacity.main()
                 self.assertEqual(failure.exception.code, 2)
                 self.assertIn(reason, stderr.getvalue())
                 owners.assert_not_called()
@@ -126,10 +127,10 @@ class CapacityMaintenanceOrchestrationTests(unittest.TestCase):
                 stack.enter_context(redirect_stderr(io.StringIO()))
                 if apply_requested:
                     with self.assertRaises(SystemExit):
-                        capacity.main()
+                        public_capacity.main()
                     planner.assert_not_called()
                 else:
-                    capacity.main()
+                    public_capacity.main()
                     planner.assert_called_once()
                 for mutation in mocks:
                     mutation.assert_not_called()
@@ -148,7 +149,7 @@ class CapacityMaintenanceOrchestrationTests(unittest.TestCase):
               patch.object(capacity, "_resume_partial_run_retirement_owner", return_value={
                   "completed_count": 0, "removed_bytes": 0, "blocked_count": 0,
               }),
-              patch.object(capacity, "_audit_pa_transaction_owner", return_value={
+              patch.object(public_capacity, "_audit_transactions", return_value={
                   "checked_count": 1, "replayable_count": 0, "awaiting_verification_count": 0,
                   "missing_failure_evidence_count": 0, "invalid_count": 0,
               }) as audited,
@@ -162,13 +163,13 @@ class CapacityMaintenanceOrchestrationTests(unittest.TestCase):
                   "corrected_count": 0, "released_bytes": 0,
               }),
               patch.object(capacity, "plan", return_value={"execution_mode": "maintenance"}),
-              patch.object(capacity, "apply", side_effect=lambda receipt: receipt),
+              patch.object(capacity, "apply", side_effect=lambda receipt, **_kwargs: receipt),
               patch.object(sys, "argv", [
                   "capacity", "--artifact-root", "unused", "--execution-mode", "maintenance",
                   "--apply", "--detailed-output",
               ]),
               redirect_stdout(io.StringIO()) as stdout):
-            capacity.main()
+            public_capacity.main()
         rendered = json.loads(stdout.getvalue())
         resumed.assert_called_once()
         audited.assert_called_once()
@@ -196,7 +197,7 @@ class CapacityMaintenanceOrchestrationTests(unittest.TestCase):
             clock[0] += 2.0
             return {"execution_mode": "maintenance", "satisfied": True}
 
-        def apply(receipt):
+        def apply(receipt, **_kwargs):
             clock[0] += 3.5
             return receipt | {"timing": {"phases_seconds": {"plan": 2.0, "apply": 3.0, "post_verify": 0.5}}}
 
@@ -204,6 +205,7 @@ class CapacityMaintenanceOrchestrationTests(unittest.TestCase):
             stack.enter_context(patch.object(capacity.time, "perf_counter", side_effect=lambda: clock[0]))
             for name in actions.values():
                 stack.enter_context(patch.object(capacity, name, side_effect=owner_action))
+            stack.enter_context(patch.object(public_capacity, "_audit_transactions", side_effect=owner_action))
             stack.enter_context(patch.object(capacity, "plan", side_effect=plan))
             stack.enter_context(patch.object(capacity, "apply", side_effect=apply))
             stack.enter_context(patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "1"}))
@@ -211,7 +213,7 @@ class CapacityMaintenanceOrchestrationTests(unittest.TestCase):
                 "capacity", "--artifact-root", "unused", "--execution-mode", "maintenance", "--apply",
             ]))
             stdout = stack.enter_context(redirect_stdout(io.StringIO()))
-            capacity.main()
+            public_capacity.main()
         rendered = json.loads(stdout.getvalue())
         self.assertEqual(set(rendered["owner_actions"]), set(actions))
         self.assertEqual(rendered["owner_actions"]["partial_run_retirement"]["removed_bytes"], 17)
@@ -484,7 +486,7 @@ class CapacityMaintenanceOrchestrationTests(unittest.TestCase):
                     "--execution-mode", "maintenance",
                 ],
             ), redirect_stdout(output):
-                capacity.main()
+                public_capacity.main()
 
             rendered = output.getvalue()
             document = json.loads(rendered)

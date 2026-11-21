@@ -326,6 +326,66 @@ try {
   Assert-Equal $governedEntry[0].status 'writing' 'Governed package range must remain writing after initialization.'
   Assert-Equal $governedEntry[0].recovery_reason 'run_manifest_not_terminal' 'Initialization must replace the pre-write recovery reason.'
 
+  & {
+    $ordinaryRoot=Join-Path $testRoot 'ordinary_workspace'
+    $poisonPaths=@('src/msplatform/execution/artifact_naming.py','src/msplatform/backends/comsol/static_field_binding.py')
+    foreach($relative in $poisonPaths){
+      $path=Join-Path $ordinaryRoot $relative
+      New-Item -ItemType Directory -Path (Split-Path -Parent $path) -Force|Out-Null
+      [IO.File]::WriteAllText($path,"raise RuntimeError('ordinary workspace source hijack: $relative')")
+    }
+    $ordinaryBootstrap=Get-RunPythonBootstrap -RepoRoot $ordinaryRoot
+    Assert-Equal $ordinaryBootstrap '' 'Ordinary workspace must not inject source roots into isolated Python.'
+    $origins=@(& $python -I -B -c ($ordinaryBootstrap+'from pathlib import Path;from msplatform.execution import artifact_naming;from msplatform.backends.comsol import static_field_binding;print(Path(artifact_naming.__file__).resolve());print(Path(static_field_binding.__file__).resolve())'))
+    if($LASTEXITCODE-ne0){throw "Installed MR naming/binding probe failed: $($origins-join'`n')"}
+    Assert-Equal $origins.Count 2 'MR naming/binding probe must import both real installed modules.'
+    foreach($origin in $origins){
+      if([IO.Path]::GetFullPath($origin).StartsWith($ordinaryRoot+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){
+        throw "Ordinary workspace supplied a same-name module: $origin"
+      }
+    }
+    $mrProjectRoot=Join-Path $governedRoot 'projects\parallel_mirror_dual_stripe_mr_tof'
+    $mrPackage=New-RunPackage -Python $python -RepoRoot $ordinaryRoot -ArtifactRoot $mrProjectRoot `
+      -RunId '20260723_165957__test__python__installed-mr-binding' -Project parallel_mirror_dual_stripe_mr_tof `
+      -Mode native_static_field_provider -Software @('contract test') -RetentionContractEnabled `
+      -CapacityLedgerLifecycleEnabled
+    Assert-Equal (Get-Content (Join-Path $mrPackage.run_dir 'run_manifest.json') -Raw|ConvertFrom-Json).status checkpoint `
+      'Approved MR run-package initialization did not retain checkpoint behavior.'
+    $mrLedger=Get-Content -LiteralPath (Join-Path $governedRoot 'common\capacity_ledger.json') -Raw|ConvertFrom-Json
+    Assert-Equal @($mrLedger.objects|Where-Object{$_.path-eq'projects/parallel_mirror_dual_stripe_mr_tof/runs/20260723_165957__test__python__installed-mr-binding'}).Count 1 `
+      'Approved MR package did not retain capacity preflight registration.'
+
+    $frozenRoot=Join-Path $testRoot 'verified_frozen_code'
+    $frozenFiles=@('src/msplatform/__init__.py','src/msplatform/execution/__init__.py','src/msplatform/execution/artifact_naming.py')
+    foreach($relative in $frozenFiles){
+      $path=Join-Path $frozenRoot $relative
+      New-Item -ItemType Directory -Path (Split-Path -Parent $path) -Force|Out-Null
+      $content=if($relative.EndsWith('artifact_naming.py')){"print('VERIFIED_FROZEN_BOOTSTRAP=PASS')"}else{''}
+      [IO.File]::WriteAllText($path,$content)
+    }
+    $inventory=@($frozenFiles|ForEach-Object{
+      $path=Join-Path $frozenRoot $_
+      @{relative_path=$_;path=$path;sha256=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash}
+    })
+    $frozenEvidence=[pscustomobject]@{code_root=$frozenRoot;package_roots=@((Join-Path $frozenRoot 'src'),$frozenRoot);files=$inventory}
+    $frozenBootstrap=Get-RunPythonBootstrap -RepoRoot $frozenRoot -FrozenPythonPackage $frozenEvidence
+    $frozenOutput=@(& $python -I -B -c ($frozenBootstrap+'import runpy;runpy.run_module("msplatform.execution.artifact_naming",run_name="__main__")'))
+    if($LASTEXITCODE-ne0-or$frozenOutput-notcontains'VERIFIED_FROZEN_BOOTSTRAP=PASS'){
+      throw "Verified frozen package did not supply its explicit module: $($frozenOutput-join'`n')"
+    }
+    $frozenEvidence.files[0].sha256='0'*64
+    $invalidRunId='20260723_165956__test__python__invalid-frozen-policy'
+    $invalidFailure=$null
+    try{
+      New-RunPackage -Python $python -RepoRoot $frozenRoot -ArtifactRoot $mrProjectRoot -RunId $invalidRunId `
+        -Project parallel_mirror_dual_stripe_mr_tof -Mode native_static_field_provider -Software @('contract test') `
+        -RetentionContractEnabled -CapacityLedgerLifecycleEnabled -FrozenPythonPackage $frozenEvidence|Out-Null
+    }catch{$invalidFailure=$_.Exception.Message}
+    if($invalidFailure-notlike '*Frozen Python dependency hash differs*'){throw "Invalid frozen policy was not rejected: $invalidFailure"}
+    Assert-Equal (Test-Path -LiteralPath (Join-Path $mrProjectRoot ('runs/'+$invalidRunId))) $false `
+      'Invalid frozen policy left run-package residue.'
+  }
+
   # Heavy evidence stays with its owner after atomic manifest publication.
   # The owner closes the stopped range after releasing its own protection.
   foreach($status in @('success','failed')){

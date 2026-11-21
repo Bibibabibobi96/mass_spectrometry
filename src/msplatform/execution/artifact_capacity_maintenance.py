@@ -772,16 +772,17 @@ def _remove_approved_disposition(
     return receipt_path, int(entry["bytes"])
 
 
-def _apply_ledger_object(root: Path, item: dict[str, Any], ledger_path: Path) -> dict[str, Any]:
+def _apply_ledger_object(
+    root: Path, item: dict[str, Any], ledger_path: Path,
+    *, approve_retirement: Callable[[Path, str, str], None] | None = None,
+) -> dict[str, Any]:
     target, _ = capacity_ledger.capacity_object_path(root, item["path"])
     if item.get("operation") == "request_retirement":
         if item.get("manager") != capacity_ledger.PA_CACHE_MANAGER:
             raise ValueError("published cache manager is not registered")
-        from msplatform.backends.simion.pa_family_cache import approve_pa_family_cache_retirement
-
-        approve_pa_family_cache_retirement(
-            target.parent, item["cache_key"], item["generation"],
-        )
+        if approve_retirement is None:
+            raise ValueError("PA retirement requires its explicit backend owner")
+        approve_retirement(target.parent, item["cache_key"], item["generation"])
         ledger = capacity_ledger.load_capacity_ledger(root, ledger_path)
         entry = next(
             (value for value in ledger["objects"] if value.get("path") == capacity_ledger.capacity_object_path(root, target)[1]),
@@ -877,9 +878,7 @@ def _recover_capacity_ledger_owner(root: Path) -> dict[str, int]:
 
 
 def _audit_pa_transaction_owner(root: Path) -> dict[str, int]:
-    from msplatform.backends.simion.pa_family_cache import audit_pa_transaction_maintenance
-
-    return audit_pa_transaction_maintenance(root / "common" / "simion" / "pa_family_cache")
+    raise ValueError("PA transaction audit requires its explicit backend owner")
 
 
 def activate_owner_dispositions(root: Path) -> dict[str, Any]:
@@ -892,6 +891,7 @@ def activate_owner_dispositions(root: Path) -> dict[str, Any]:
 def _run_maintenance_owner_actions(
     root: Path, timings: _PhaseTimings,
     *, protection_check: Callable[[], None] | None = None,
+    pa_transaction_audit: Callable[[Path], dict[str, int]] | None = None,
 ) -> tuple[dict[str, dict[str, int]], list[dict[str, str]]]:
     """Run independent owner continuations without masking later safe work."""
 
@@ -908,7 +908,7 @@ def _run_maintenance_owner_actions(
         ("partial_run_retirement", _resume_partial_run_retirement_owner, {
             "completed_count": 0, "removed_bytes": 0, "blocked_count": 0,
         }),
-        ("pa_transaction_audit", _audit_pa_transaction_owner, {
+        ("pa_transaction_audit", pa_transaction_audit or _audit_pa_transaction_owner, {
             "checked_count": 0, "replayable_count": 0, "awaiting_verification_count": 0,
             "missing_failure_evidence_count": 0, "invalid_count": 0,
         }),
@@ -1032,7 +1032,9 @@ def _complete_startup_decision(receipt: dict[str, Any]) -> dict[str, Any]:
     return receipt
 
 
-def apply(receipt: dict[str, Any]) -> dict[str, Any]:
+def apply(
+    receipt: dict[str, Any], *, approve_retirement: Callable[[Path, str, str], None] | None = None,
+) -> dict[str, Any]:
     """Apply a startup recheck or exact ledger retirement plan."""
 
     root = Path(receipt["artifact_root"])
@@ -1061,7 +1063,9 @@ def apply(receipt: dict[str, Any]) -> dict[str, Any]:
                     receipt.get("required_input_cache_keys", ()),
                 )
             try:
-                removed.append(_apply_ledger_object(root, item, ledger_path))
+                removed.append(_apply_ledger_object(
+                    root, item, ledger_path, approve_retirement=approve_retirement,
+                ))
             except (OSError, ValueError, RuntimeError, protection.CapacityProtectionLeaseError) as exc:
                 # Each target has a durable pending receipt before its bytes are
                 # removed.  A target-local failure is therefore resumable and
@@ -1259,7 +1263,10 @@ def _lease_action(args: argparse.Namespace, parser: argparse.ArgumentParser) -> 
     return None
 
 
-def main() -> None:
+def main(
+    *, approve_retirement: Callable[[Path, str, str], None] | None = None,
+    pa_transaction_audit: Callable[[Path], dict[str, int]] | None = None,
+) -> None:
     started = time.perf_counter()
     policy = _capacity_policy()
     timings = _timings(policy)
@@ -1352,6 +1359,7 @@ def main() -> None:
                 )
             owner_actions, owner_action_failures = _run_maintenance_owner_actions(
                 args.artifact_root, timings, protection_check=protection_check,
+                pa_transaction_audit=pa_transaction_audit,
             )
         with timings.phase("plan"):
             receipt = plan(
@@ -1374,7 +1382,7 @@ def main() -> None:
                 # caller. Separate plan/apply API calls still recheck in apply.
                 receipt = _complete_startup_decision(receipt)
             else:
-                receipt = apply(receipt)
+                receipt = apply(receipt, approve_retirement=approve_retirement)
                 for name, seconds in receipt.get("timing", {}).get("phases_seconds", {}).items():
                     if name != "plan":
                         timings.phases[name] = seconds

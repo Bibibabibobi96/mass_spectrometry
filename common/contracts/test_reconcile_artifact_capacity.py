@@ -24,6 +24,7 @@ from msplatform.execution.capacity_protection import (
 from msplatform.execution.capacity_lease_maintenance import prune_expired_capacity_protection_leases
 from msplatform.execution import capacity_maintenance as capacity_ledger
 from msplatform.execution import artifact_capacity_maintenance as normal_capacity
+from msplatform.backends.simion import capacity_maintenance as public_capacity
 from msplatform.execution import capacity_admission
 from common.contracts import legacy_capacity_backfill as capacity
 from common.contracts.legacy_capacity_backfill import (
@@ -212,7 +213,7 @@ New-Item -ItemType Junction -Path (Join-Path $env:ALIAS_ROOT 'external_dangling'
             with self.subTest(arguments=arguments), patch.object(
                 sys, "argv", ["capacity", "--artifact-root", "unused", *arguments]
             ), patch.object(normal_capacity, "plan", return_value={}) as planner, redirect_stdout(io.StringIO()):
-                normal_capacity.main()
+                public_capacity.main()
                 self.assertEqual(planner.call_args.kwargs["target_bytes"], int(expected * normal_capacity.GIB))
                 self.assertEqual(planner.call_args.kwargs["minimum_free_bytes"], int(policy["minimum_free_gib"] * normal_capacity.GIB))
 
@@ -294,7 +295,7 @@ New-Item -ItemType Junction -Path (Join-Path $env:ALIAS_ROOT 'external_dangling'
             ), patch.object(normal_capacity, "plan") as planner, patch.object(
                 normal_capacity, "_lease_action"
             ) as lease_action, redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised:
-                normal_capacity.main()
+                public_capacity.main()
             self.assertEqual(raised.exception.code, 2)
             planner.assert_not_called()
             lease_action.assert_not_called()
@@ -838,12 +839,7 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
                     commit_owner_retirement=lambda _: None,
                 )
 
-            with patch(
-                "msplatform.backends.simion.pa_family_cache.approve_pa_family_cache_retirement",
-                side_effect=approve,
-            ) as manager:
-                applied = normal_capacity.apply(planned)
-            manager.assert_called_once_with(target.parent, cache_key, generation)
+            applied = normal_capacity.apply(planned, approve_retirement=approve)
             self.assertEqual(applied["removed_bytes"], 7)
             self.assertFalse(target.exists())
             entry = capacity_ledger.load_capacity_ledger(root)["objects"][0]
@@ -2933,22 +2929,22 @@ class RetiredDispositionRecoveryCliTests(unittest.TestCase):
         args = ["capacity", "--artifact-root", "unused", "--restore-ledger-object-key-receipt", "receipt.json",
                 "--expected-ledger-sha256", "A"*64, "--expected-receipt-sha256", "B"*64]
         with patch.object(sys, "argv", args), patch.object(capacity_ledger, "restore_ledger_object_key", return_value={}) as recover:
-            with redirect_stdout(io.StringIO()):normal_capacity.main()
+            with redirect_stdout(io.StringIO()):public_capacity.main()
             self.assertFalse(recover.call_args.kwargs["apply"])
             self.assertEqual(recover.call_args.kwargs["receipt_path"], Path("receipt.json"))
         with patch.object(sys, "argv", args+["--apply"]), patch.dict(os.environ, {}, clear=True):
-            with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):normal_capacity.main()
+            with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):public_capacity.main()
 
     def test_public_cli_defaults_to_dryrun_and_keeps_existing_apply_lease_gate(self):
         args=["capacity", "--artifact-root", "unused", "--restore-retired-disposition-receipt", "receipt.json",
               "--expected-ledger-sha256", "A"*64, "--expected-receipt-sha256", "B"*64]
         with patch.object(sys,"argv",args), patch.object(capacity_ledger,"restore_retired_disposition_paths",return_value={}) as recover:
             with redirect_stdout(io.StringIO()):
-                normal_capacity.main()
+                public_capacity.main()
             self.assertFalse(recover.call_args.kwargs["apply"])
         with patch.object(sys,"argv",args+["--apply"]), patch.dict(os.environ,{},clear=True):
             with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
-                normal_capacity.main()
+                public_capacity.main()
 
 
 if __name__ == "__main__":

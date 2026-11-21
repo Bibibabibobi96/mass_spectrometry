@@ -1062,8 +1062,9 @@ Euler顺序或器件参数反写到公共刚体语义。供应商局部坐标映
 `new_run_project_identity_registry`，不将HostContext workspace当作checkout或回读其实现。项目身份变化时由
 `new_run_project_identity_registry`重新生成该资源，一致性回归核对完整闭包。
 容量生命周期所需`artifact_capacity_policy.json`同样从安装包读取并在任何目录、别名或台账写入前校验；
-公开维护／测试调用可用`CapacityPolicyPath`显式选择另一份机器策略。命名、容量与manifest子进程通过
-显式冻结导入根选择实现，隔离宿主`PYTHONPATH`；无冻结实现时使用当前普通安装，不回读workspace源码。
+公开维护／测试调用可用`CapacityPolicyPath`显式选择另一份机器策略。命名、容量与manifest子进程默认使用
+当前普通安装；只有显式`FrozenPythonPackage`经既有完整库存、路径和SHA核验后才选择冻结实现，不把workspace或其
+`src`加入导入路径。压力维护由`msplatform.backends.simion.capacity_maintenance`组合通用调度和PA退休／审计接口。
 其他项目、`instrument_assembly`及未声明退休的既有调用边界保持不变。历史读取与验证继续允许，
 发现旧描述符字节、路径或只读策略不符时失败关闭，不重写manifest或晋级原结果。
 

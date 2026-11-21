@@ -271,8 +271,20 @@ function Get-RunPythonImportRoots {
 
 function Get-RunPythonBootstrap {
   [CmdletBinding()]
-  param([Parameter(Mandatory)][string]$RepoRoot)
-  $roots=ConvertTo-Json -InputObject @(Get-RunPythonImportRoots -RepoRoot $RepoRoot) -Compress
+  param([Parameter(Mandatory)][string]$RepoRoot,$FrozenPythonPackage=$null)
+  if($null-eq$FrozenPythonPackage){return ''}
+  . (Join-Path $PSScriptRoot 'frozen_python_package.ps1')
+  Assert-FrozenPythonPackage -Package $FrozenPythonPackage
+  $root=(Resolve-Path -LiteralPath $RepoRoot).Path
+  $codeRoot=[IO.Path]::GetFullPath([string]$FrozenPythonPackage.code_root)
+  if($codeRoot-ne$root){throw 'Frozen Python package code root differs from RepoRoot.'}
+  $expected=@(Get-RunPythonImportRoots -RepoRoot $root)
+  $actual=@($FrozenPythonPackage.package_roots|ForEach-Object{[IO.Path]::GetFullPath([string]$_)})
+  if($actual.Count-ne$expected.Count){throw 'Frozen Python package roots differ from its code root.'}
+  for($index=0;$index-lt$expected.Count;$index++){
+    if($actual[$index]-ne$expected[$index]){throw 'Frozen Python package roots differ from its code root.'}
+  }
+  $roots=ConvertTo-Json -InputObject $actual -Compress
   return 'import sys;sys.path[:0]='+$roots+';'
 }
 
@@ -397,7 +409,7 @@ function Invoke-ArtifactCapacityGate {
   $capacityLease=Enter-HostExecutionLease -Role GATE
   $capacityFailure=$null
   try{
-  $module=if($ExecutionMode-eq'maintenance'){'msplatform.execution.artifact_capacity_maintenance'}else{'msplatform.execution.reconcile_artifact_capacity'}
+  $module=if($ExecutionMode-eq'maintenance'){'msplatform.backends.simion.capacity_maintenance'}else{'msplatform.execution.reconcile_artifact_capacity'}
   $arguments=@(
     '-m',$module,
     '--artifact-root',$ArtifactRoot,
@@ -517,7 +529,8 @@ function Invoke-RunCapacityLifecycleAdapter {
     [Parameter(Mandatory)][ValidateSet('register-writing-range','register-writing','assert-retention','finalize-ready')][string]$Action,
     [Parameter(Mandatory)][string]$ArtifactRoot,
     [string]$RunConfig='',
-    [string]$RunDirectory=''
+    [string]$RunDirectory='',
+    $FrozenPythonPackage=$null
   )
   if($Action-eq'register-writing-range'){
     if([string]::IsNullOrWhiteSpace($RunDirectory)-or-not[string]::IsNullOrWhiteSpace($RunConfig)){
@@ -530,7 +543,7 @@ function Invoke-RunCapacityLifecycleAdapter {
     }
     $runArgument=@('--run-config',$RunConfig)
   }
-  $bootstrap=Get-RunPythonBootstrap -RepoRoot $RepoRoot
+  $bootstrap=Get-RunPythonBootstrap -RepoRoot $RepoRoot -FrozenPythonPackage $FrozenPythonPackage
   $output=@(& $Python -I -B -c ($bootstrap+'from msplatform.execution.run_capacity_lifecycle import main;raise SystemExit(main())') `
     --action $Action --artifact-root $ArtifactRoot @runArgument)
   if($LASTEXITCODE-ne 0){throw "Run capacity lifecycle $Action failed: $($output -join [Environment]::NewLine)"}
@@ -690,10 +703,11 @@ function Write-RunManifest {
     [string[]]$Software=@(),
     [string]$Manifest='',
     [string[]]$Outputs=@(),
-    [switch]$PassThru
+    [switch]$PassThru,
+    $FrozenPythonPackage=$null
   )
   Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
-    $bootstrap=Get-RunPythonBootstrap -RepoRoot $RepoRoot
+    $bootstrap=Get-RunPythonBootstrap -RepoRoot $RepoRoot -FrozenPythonPackage $FrozenPythonPackage
     $arguments=@('-I','-B','-c',($bootstrap+'from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)'),'--run-config',$RunConfig,'--status',$Status)
     if(-not[string]::IsNullOrWhiteSpace($Manifest)){$arguments+=@('--manifest',$Manifest)}
     foreach($item in $Software){$arguments+=@('--software',$item)}
@@ -730,7 +744,8 @@ function Write-VerifiedRunManifest {
     [string[]]$Software=@(),
     [string]$Manifest='',
     [string[]]$Outputs=@(),
-    [switch]$DeferCapacityFinalization
+    [switch]$DeferCapacityFinalization,
+    $FrozenPythonPackage=$null
   )
   if([string]::IsNullOrWhiteSpace($Manifest)){
     $Manifest=Join-Path (Split-Path -Parent $RunConfig) 'run_manifest.json'
@@ -744,18 +759,19 @@ function Write-VerifiedRunManifest {
       $capacityLifecycle=$runConfiguration.capacity_ledger_lifecycle
       $null=Invoke-RunCapacityLifecycleAdapter -Python $Python -RepoRoot $RepoRoot `
         -Action assert-retention -ArtifactRoot ([string]$capacityLifecycle.artifact_root) `
-        -RunConfig $RunConfig
+        -RunConfig $RunConfig -FrozenPythonPackage $FrozenPythonPackage
     }
   }
   $manifestPublished=$false
   try{
     Write-RunManifest -Python $Python -RepoRoot $RepoRoot -RunConfig $RunConfig `
-      -Status $Status -Software $Software -Manifest $Manifest -Outputs $Outputs -PassThru
+      -Status $Status -Software $Software -Manifest $Manifest -Outputs $Outputs -PassThru `
+      -FrozenPythonPackage $FrozenPythonPackage
     $manifestPublished=$true
     if($null-ne$capacityLifecycle-and-not$DeferCapacityFinalization){
       $capacityFinal=Invoke-RunCapacityLifecycleAdapter -Python $Python -RepoRoot $RepoRoot `
         -Action finalize-ready -ArtifactRoot ([string]$capacityLifecycle.artifact_root) `
-        -RunConfig $RunConfig
+        -RunConfig $RunConfig -FrozenPythonPackage $FrozenPythonPackage
       if([bool]$capacityFinal.light_evidence_budget_exceeded){
         $largest=@($capacityFinal.largest_files|ForEach-Object{"$($_.path)=$($_.bytes)B"})-join', '
         Write-Warning ("RUN_LIGHT_EVIDENCE_BUDGET_EXCEEDED RUN={0} BYTES={1} BUDGET={2} LARGEST=[{3}]"-f `
@@ -1018,7 +1034,8 @@ function New-RunPackage {
     [switch]$UseShortExecutionPath,
     [string]$ExecutionRoot='',
     [string[]]$ExpectedExecutionRelativePaths=@(),
-    $PathContext=$null
+    $PathContext=$null,
+    $FrozenPythonPackage=$null
   )
   if($RetentionContractEnabled-and$RetentionClass-ne'compact'-and[string]::IsNullOrWhiteSpace($RetentionReason)){
     throw "RetentionReason is required for artifact retention class $RetentionClass."
@@ -1109,7 +1126,7 @@ function New-RunPackage {
     [int64]$lightBudget=$capacityPolicy.light_evidence_budget_bytes
     if($lightBudget-le0){throw 'Artifact capacity policy light-evidence budget must be positive.'}
   }
-  $bootstrap=Get-RunPythonBootstrap -RepoRoot $RepoRoot
+  $bootstrap=Get-RunPythonBootstrap -RepoRoot $RepoRoot -FrozenPythonPackage $FrozenPythonPackage
   $validation=& $python -I -B -c ($bootstrap+'import runpy;runpy.run_module("msplatform.execution.artifact_naming",run_name="__main__")') run $RunId
   if($LASTEXITCODE-ne 0 -or -not($validation-match '^ARTIFACT_ID=PASS ')){throw "Invalid run_id: $RunId"}
   $artifactRunDir=Join-Path $ArtifactRoot "runs\$RunId"
@@ -1118,7 +1135,8 @@ function New-RunPackage {
     New-Item -ItemType Directory -Path $artifactRunDir -ErrorAction Stop|Out-Null
     try{
       $null=Invoke-RunCapacityLifecycleAdapter -Python $python -RepoRoot $RepoRoot `
-        -Action register-writing-range -ArtifactRoot $CapacityLedgerArtifactRoot -RunDirectory $artifactRunDir
+        -Action register-writing-range -ArtifactRoot $CapacityLedgerArtifactRoot -RunDirectory $artifactRunDir `
+        -FrozenPythonPackage $FrozenPythonPackage
     }catch{
       [IO.Directory]::Delete($artifactRunDir,$false)
       throw
@@ -1177,10 +1195,11 @@ function New-RunPackage {
     reason='Run package initialized; task-specific inputs are not frozen yet.'
   })
   $null=Write-VerifiedRunManifest -Python $python -RepoRoot $RepoRoot -RunConfig $package.run_config `
-    -Status checkpoint -Software $Software -Outputs @($package.summary)
+    -Status checkpoint -Software $Software -Outputs @($package.summary) -FrozenPythonPackage $FrozenPythonPackage
   if($CapacityLedgerLifecycleEnabled){
     $null=Invoke-RunCapacityLifecycleAdapter -Python $python -RepoRoot $RepoRoot `
-      -Action register-writing -ArtifactRoot $CapacityLedgerArtifactRoot -RunConfig $package.run_config
+      -Action register-writing -ArtifactRoot $CapacityLedgerArtifactRoot -RunConfig $package.run_config `
+      -FrozenPythonPackage $FrozenPythonPackage
   }
   return [pscustomobject]$package
   }finally{Restore-RunEnvironment -Names @('MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH') -Snapshot $hostEnvironment}

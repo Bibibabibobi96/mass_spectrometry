@@ -16,6 +16,7 @@ from unittest.mock import Mock, patch
 
 from msplatform.execution import capacity_maintenance as capacity_ledger
 from msplatform.execution import artifact_capacity_maintenance as capacity
+from msplatform.backends.simion import capacity_maintenance as public_capacity
 from msplatform.execution.capacity_protection import create_capacity_protection_lease
 
 
@@ -138,6 +139,7 @@ Write-Output ('HOST_RELEASE_RESULT='+($results|ConvertTo-Json -Depth 15 -Compres
                 from datetime import datetime, timedelta
                 from pathlib import Path
                 from msplatform.execution import artifact_capacity_maintenance as capacity
+                from msplatform.backends.simion import capacity_maintenance as public_capacity
                 from msplatform.execution import capacity_protection as protection
                 args = sys.argv[1:]
                 root = Path(args[args.index("--artifact-root") + 1])
@@ -171,7 +173,7 @@ Write-Output ('HOST_RELEASE_RESULT='+($results|ConvertTo-Json -Depth 15 -Compres
                         free=1 if (root / "disposable").exists() else 9)
                 if scenario == "unrelated_owner_failure":
                     def fail_owner(_root): raise ValueError("unrelated historical fixture")
-                    capacity._audit_pa_transaction_owner = fail_owner
+                    public_capacity._audit_transactions = fail_owner
                 if scenario == "maintenance_failure" and mode == "maintenance":
                     def fail_plan(*args, **kwargs): raise RuntimeError("fixture maintenance failure")
                     capacity._maintenance_plan = fail_plan
@@ -194,7 +196,7 @@ Write-Output ('HOST_RELEASE_RESULT='+($results|ConvertTo-Json -Depth 15 -Compres
                     record({"guard": "active", "input_preserved": True})
                 capacity._assert_maintenance_input_lease = observed_check
                 sys.argv = ["fixture-capacity", *args]
-                capacity.main()
+                public_capacity.main()
                 '''), encoding="utf-8")
             for scenario, accepted, maintenance_count, startup_count in cases:
                 with self.subTest(scenario=scenario):
@@ -355,7 +357,7 @@ if fixture_scenario == "cleanup_failure" and fixture_action == "delete":
                       patch.object(sys, "argv", [
                           "capacity", "--artifact-root", str(root), "--capacity-protection-lease-id", "current", "--apply",
                       ]), redirect_stdout(io.StringIO()) as stdout):
-                    capacity.main()
+                    public_capacity.main()
                 rendered = json.loads(stdout.getvalue())
                 self.assertEqual(rendered["satisfied_after_apply"], accepted)
                 self.assertEqual(rendered["applied"], accepted)
@@ -813,7 +815,7 @@ for name in (
                     option, "1",
                 ]):
                     with self.assertRaises(SystemExit) as raised:
-                        capacity.main()
+                        public_capacity.main()
                     self.assertEqual(raised.exception.code, 2)
 
     def test_maintenance_reads_only_ready_unpinned_heavy_ledger_objects(self) -> None:
