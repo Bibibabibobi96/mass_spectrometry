@@ -79,24 +79,7 @@
           ]
         }
       ],
-      "python_modules": [
-        {
-          "source_repo_path": "src/msplatform/execution/host_resource_python.py",
-          "consumers": [
-            "accelerator_interface",
-            "oa_mr",
-            "prepared_joint"
-          ]
-        },
-        {
-          "source_repo_path": "src/msplatform/execution/host_resource_scheduler.py",
-          "consumers": [
-            "paired_accelerator_pulse",
-            "paired_accelerator_static_field",
-            "single_reflection_flight"
-          ]
-        }
-      ]
+      "python_modules": []
     },
     {
       "provider_scope": "integration",
