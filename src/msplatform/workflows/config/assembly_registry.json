@@ -8,7 +8,7 @@
       "workflows": [
         {
           "workflow_id": "single_reflection_flight",
-          "entrypoint": "integrations/workflows/single_reflection_flight/run.ps1",
+          "entrypoint": "src/msplatform/workflows/resources/single_reflection_flight.ps1",
           "required_bindings": [
             "release_request",
             "fields_reference",
@@ -321,7 +321,7 @@
         },
         {
           "workflow_id": "multipole_ip_continuous",
-          "entrypoint": "integrations/workflows/multipole_ip/continuous.ps1",
+          "entrypoint": "src/msplatform/workflows/resources/multipole_ip_continuous.ps1",
           "required_bindings": [
             "release_request",
             "fields_reference",

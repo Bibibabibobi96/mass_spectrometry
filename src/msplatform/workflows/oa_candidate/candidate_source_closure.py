@@ -30,7 +30,7 @@ ROLE = "oa_tof_candidate_execution_source_closure"
 SCIENCE_RELATIVE_PATHS = (
     "projects/single_reflection_oa_tof_mass_analyzer/config/candidate_consumers.json",
     "projects/single_reflection_oa_tof_mass_analyzer/config/design_variables.json",
-    "projects/orthogonal_accelerator/config/component_contract.json",
+    "src/msplatform/components/orthogonal_accelerator/component_contract.json",
     "projects/orthogonal_accelerator/simion/two_zone_accelerator.gem",
     "projects/single_reflection_oa_tof_mass_analyzer/config/accelerator_dependency.json",
 )

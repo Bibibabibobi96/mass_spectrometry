@@ -962,7 +962,7 @@
           "reason": "sfi_public_entry_consumer_changed"
         },
         {
-          "exact": "integrations/workflows/single_reflection_flight/run.ps1",
+          "exact": "src/msplatform/workflows/resources/single_reflection_flight.ps1",
           "reason": "sfi_public_entry_consumer_changed"
         },
         {
@@ -2275,7 +2275,7 @@
                 "reason": "sfi_public_entry_consumer_changed"
               },
               {
-                "exact": "integrations/workflows/single_reflection_flight/run.ps1",
+                "exact": "src/msplatform/workflows/resources/single_reflection_flight.ps1",
                 "reason": "sfi_public_entry_consumer_changed"
               },
               {

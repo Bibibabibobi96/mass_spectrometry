@@ -88,7 +88,7 @@ $FinalizeJointWorkbench=$ContinueOnIpScientificFailure=$false
 $script:calls=[Collections.Generic.List[string]]::new()
 function Invoke-JointOwnerStage {param($Script,$Arguments)
  $script:calls.Add($Script)
- if($Script-ne(Join-Path $repoRoot 'integrations/workflows/multipole_ip/continuous.ps1')){throw 'wrong continuous owner'}
+ if($Script-ne(Join-Path $repoRoot 'src/msplatform/workflows/resources/multipole_ip_continuous.ps1')){throw 'wrong continuous owner'}
  foreach($key in @('ReleaseRequest','FieldsReference','Propagation','Observations','Numerics','Hs1Request','Environment','Workspace','Profile','RecoveryReference','DispatchProfiles','UnitSize','Python','RepoRoot','ExpectedComponentScope')){
   if(-not$Arguments.ContainsKey($key)){throw "missing continuous input $key"}
  }
@@ -195,9 +195,9 @@ if(-not$caught){throw 'segmented and continuous inputs were accepted together'}
             entry = repo / "integrations/workflows/accelerator_interface/execute.ps1"
             entry.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(REPO / "integrations/workflows/accelerator_interface/execute.ps1", entry)
-            continuous_entry = repo / "integrations/workflows/multipole_ip/continuous.ps1"
+            continuous_entry = repo / "src/msplatform/workflows/resources/multipole_ip_continuous.ps1"
             continuous_entry.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(REPO / "integrations/workflows/multipole_ip/continuous.ps1", continuous_entry)
+            shutil.copyfile(REPO / "src/msplatform/workflows/resources/multipole_ip_continuous.ps1", continuous_entry)
 
             def relative(path):
                 return os.path.relpath(path, caller)
@@ -1520,7 +1520,7 @@ foreach($key in $before.Keys){if([Environment]::GetEnvironmentVariable($key)-cne
             profiles=dict(prepare=dict(stage_policy_path=str(context.stage_policy_path))))), encoding="utf-8")
         entry = fixture.root / "thin-cli/execute.ps1"
         entry.parent.mkdir()
-        shutil.copyfile(REPO / "integrations/workflows/multipole_ip/execute.ps1", entry)
+        shutil.copyfile(REPO / "src/msplatform/workflows/resources/multipole_ip.ps1", entry)
         parents = {str(path): path.read_bytes() for base in (fixture.source, fixture.receiver)
                    for path in base.rglob("*") if path.is_file()}
         environment = dict(os.environ, PYTHONPATH=str(REPO / "src"))

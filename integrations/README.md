@@ -211,7 +211,7 @@ and engineering profile below; fields and budgets are explicit and are not disco
 
 ```powershell
 $case = 'C:\path\selected-study'
-& integrations/workflows/single_reflection_flight/run.ps1 `
+& src/msplatform/workflows/resources/single_reflection_flight.ps1 `
   -ReleaseRequest (Join-Path $case 'birth-request.json') `
   -FieldsReference (Join-Path $case 'fields.json') `
   -Propagation (Join-Path $case 'propagation.json') `

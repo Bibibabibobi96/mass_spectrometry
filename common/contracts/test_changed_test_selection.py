@@ -855,7 +855,7 @@ foreach($scope in @('Owner','Repository')){
 
     def test_sfi_normal_entry_selects_public_consumer_and_planner(self) -> None:
         paths = ['src/msplatform/workflows/single_reflection_flight/recorded_birth.py',
-                 'integrations/workflows/single_reflection_flight/run.ps1',
+                 'src/msplatform/workflows/resources/single_reflection_flight.ps1',
                  'src/msplatform/workflows/config/assembly_registry.json', 'src/msplatform/workflows/config/runtime_dependencies.json']
         results = self.selections(REPO_ROOT, [dict(stage='common_contracts', paths=[path]) for path in paths])
         for path, result in zip(paths, results, strict=True):

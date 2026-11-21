@@ -97,7 +97,7 @@ class MrProviderFreezeTests(unittest.TestCase):
             snapshot = Path(json.loads(frozen.stdout)['execution_root'])
             for name, source in {
                 'candidate.json': ROOT / 'projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json',
-                'oa.json': ROOT / 'projects/orthogonal_accelerator/config/component_contract.json',
+                'oa.json': ROOT / 'src/msplatform/components/orthogonal_accelerator/component_contract.json',
                 'campaign.json': ROOT / 'projects/orthogonal_accelerator/config/two_zone_component_focus_campaign.json',
                 'plan.json': ROOT / 'integrations/config/recipes/oa_mr_two_zone_gap30_plan.json',
             }.items():
@@ -145,7 +145,7 @@ class MrProviderFreezeTests(unittest.TestCase):
             self.assertNotEqual(no_collision_backfill.returncode, 0, no_collision_backfill.stdout + no_collision_backfill.stderr)
             self.assertIn('msplatform.backends.simion.collision_overlay', no_collision_backfill.stderr)
             collision.write_bytes(collision_original)
-            for name, source in {'candidate.json': ROOT / 'projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json', 'oa.json': ROOT / 'projects/orthogonal_accelerator/config/component_contract.json', 'campaign.json': ROOT / 'projects/orthogonal_accelerator/config/two_zone_component_focus_campaign.json', 'plan.json': ROOT / 'integrations/config/recipes/oa_mr_two_zone_gap30_plan.json'}.items():
+            for name, source in {'candidate.json': ROOT / 'projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json', 'oa.json': ROOT / 'src/msplatform/components/orthogonal_accelerator/component_contract.json', 'campaign.json': ROOT / 'projects/orthogonal_accelerator/config/two_zone_component_focus_campaign.json', 'plan.json': ROOT / 'integrations/config/recipes/oa_mr_two_zone_gap30_plan.json'}.items():
                 self.assertEqual((fixture / name).read_bytes(), source.read_bytes())
 
 

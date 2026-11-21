@@ -23,12 +23,12 @@ from msplatform.workflows.single_reflection_flight import recorded_birth
 
 class RecordedBirthEntryTests(unittest.TestCase):
     def test_old_request_parameter_is_rejected_before_entry(self):
-        script = Path(__file__).resolve().parents[2] / 'integrations/workflows/single_reflection_flight/run.ps1'
+        script = Path(__file__).resolve().parents[2] / 'src/msplatform/workflows/resources/single_reflection_flight.ps1'
         command = [shutil.which('pwsh'), '-NoProfile', '-NonInteractive', '-File', str(script),
                    '-PreparationManifest', 'unused', '-FieldsReference', 'unused', '-SpeciesId', 'unused',
                    '-ExpectedParticleIds', 'unused', '-Observations', 'unused', '-Environment', 'unused',
                    '-Workspace', 'unused', '-Profile', 'unused', '-Request', 'old.json']
-        result = subprocess.run(command, cwd=script.parents[3], capture_output=True, text=True,
+        result = subprocess.run(command, cwd=script.parents[4], capture_output=True, text=True,
                                 encoding='utf-8', errors='replace', timeout=30, check=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('Request', result.stderr)
@@ -141,14 +141,14 @@ finally:
 ''', encoding='utf-8')
             shim = root / 'inert_python.cmd'
             shim.write_text(f'@"{sys.executable}" -B -X utf8 "{bootstrap}" %*\r\n', encoding='utf-8')
-            script = Path(__file__).resolve().parents[2] / 'integrations/workflows/single_reflection_flight/run.ps1'
+            script = Path(__file__).resolve().parents[2] / 'src/msplatform/workflows/resources/single_reflection_flight.ps1'
             command = [shutil.which('pwsh'), '-NoProfile', '-NonInteractive', '-File', str(script),
                        '-Python', str(shim), '-ReleaseRequest', fresh[2], '-FieldsReference', fields,
                        '-Propagation', fresh[6], '-Numerics', fresh[8], '-Observations', observations,
                        '-Environment', env, '-Workspace', values['workspace'], '-Profile', 'fixture',
                        '-ScalarFieldBasis', basis]
             child_env = dict(os.environ, **inherited, SFI_ENTRY_CHILD_EVIDENCE=str(evidence))
-            child = subprocess.run(command, cwd=script.parents[3], env=child_env, capture_output=True,
+            child = subprocess.run(command, cwd=script.parents[4], env=child_env, capture_output=True,
                                    text=True, encoding='utf-8', errors='replace', timeout=300, check=False)
             self.assertEqual(child.returncode, 0, child.stdout + child.stderr)
             self.assertEqual(json.loads(evidence.read_text(encoding='utf-8'))['operations'], 3)
@@ -156,7 +156,7 @@ finally:
             origin = json.loads(origin_line.split('=', 1)[1])
             self.assertGreater(origin['pid'], 0)
             self.assertEqual(Path(origin['python']).resolve(), Path(sys.executable).resolve())
-            self.assertEqual(Path(origin['module']).resolve(), script.parents[3] / 'src/msplatform/workflows/single_reflection_flight/recorded_birth.py')
+            self.assertEqual(Path(origin['module']).resolve(), script.parents[4] / 'src/msplatform/workflows/single_reflection_flight/recorded_birth.py')
             self.assertEqual(origin['argv'][origin['argv'].index('--release-request') + 1], fresh[2])
             print('SFI_CHILD_EVIDENCE=' + json.dumps(origin), flush=True)
             output_line = next(line for line in child.stdout.splitlines() if line.startswith('OWNER_RETURNED='))
@@ -180,7 +180,7 @@ finally:
                                ('-FieldsReference', save('ps-bad-fields', invalid))):
                 rejected_command = list(command)
                 rejected_command[rejected_command.index(flag) + 1] = path
-                rejected = subprocess.run(rejected_command, cwd=script.parents[3], env=child_env,
+                rejected = subprocess.run(rejected_command, cwd=script.parents[4], env=child_env,
                     capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=300, check=False)
                 self.assertNotEqual(rejected.returncode, 0)
                 self.assertNotIn('OWNER_RETURNED=', rejected.stdout)
@@ -189,7 +189,7 @@ finally:
             original_scalar = scalar_path.read_bytes()
             try:
                 scalar_path.write_bytes(bytes([original_scalar[0] ^ 1]) + original_scalar[1:])
-                rejected = subprocess.run(command, cwd=script.parents[3], env=child_env,
+                rejected = subprocess.run(command, cwd=script.parents[4], env=child_env,
                     capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=300, check=False)
                 self.assertNotEqual(rejected.returncode, 0)
                 self.assertNotIn('OWNER_RETURNED=', rejected.stdout)
@@ -207,7 +207,7 @@ finally:
             try:
                 from msplatform.execution.capacity_protection import _lease_path
                 failed_env = dict(child_env, SFI_ENTRY_EXPECTED_FAILURE='1')
-                failed = subprocess.run(failed_command, cwd=script.parents[3], env=failed_env,
+                failed = subprocess.run(failed_command, cwd=script.parents[4], env=failed_env,
                     capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=300, check=False)
                 self.assertNotEqual(failed.returncode, 0)
                 self.assertIn('exit 7', failed.stderr)

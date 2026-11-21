@@ -342,7 +342,7 @@ print('FROZEN_SRC_CORE=PASS')
             snapshot = inputs / "runtime_snapshot"
             required_companions = {
                 "integrations/workflows/prepared_joint/execute.ps1",
-                "integrations/workflows/multipole_ip/execute.ps1",
+                "src/msplatform/workflows/resources/multipole_ip.ps1",
                 "src/msplatform/workflows/resources/ip_functional.ps1",
                 "src/msplatform/workflows/resources/run_artifact_workflow.ps1",
                 "src/msplatform/backends/simion/resources/run_native_static_field_provider.ps1",

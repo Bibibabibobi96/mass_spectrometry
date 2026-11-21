@@ -77,7 +77,7 @@ def frozen_bindings(root: Path, interfaces: dict, sources: dict) -> tuple[dict, 
     rf_path = write_json(root / "rf_resolved.json", sources["rf"])
     oa_path = write_json(root / "oa_requirements.json", sources["oa_request"])
     profile = root / "oa_component_contract.json"
-    shutil.copyfile(ROOT / "projects/orthogonal_accelerator/config/component_contract_v3.json", profile)
+    shutil.copyfile(ROOT / "src/msplatform/components/orthogonal_accelerator/component_contract_v3.json", profile)
     inputs, rows = {}, []
     for instance, interface in interfaces.items():
         interface_path = write_json(root / (instance + "_interface.json"), interface)

@@ -11,7 +11,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 if($PSVersionTable.PSEdition-ne'Core'-or$PSVersionTable.PSVersion.Major-ne7){throw 'PowerShell Core 7 is required.'}
 $python=(Resolve-Path -LiteralPath $PythonExe).Path
-$arguments=@('-B','-m','msplatform.workflows.multipole_ip.prepare','--request',(Resolve-Path -LiteralPath $Request).Path,
+$arguments=@('-I','-B','-m','msplatform.workflows.multipole_ip.prepare','--request',(Resolve-Path -LiteralPath $Request).Path,
   '--environment',(Resolve-Path -LiteralPath $EnvironmentPath).Path,'--workspace',[IO.Path]::GetFullPath($Workspace),
   '--profile',$EngineeringProfile)
 if($RunId){$arguments+=@('--run-id',$RunId)}

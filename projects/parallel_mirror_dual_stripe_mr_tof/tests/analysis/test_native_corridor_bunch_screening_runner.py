@@ -655,7 +655,7 @@ class SelectedOaAuthorityInputTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             root = Path(directory)
             authority = root / "oa.json"
-            original = (REPO_ROOT / "projects/orthogonal_accelerator/config/component_contract.json").read_bytes()
+            original = (REPO_ROOT / "src/msplatform/components/orthogonal_accelerator/component_contract.json").read_bytes()
             configuration = root / "run_config.json"
             manifest = root / "run_manifest.json"
             for case in ("new", "missing_record", "tampered", "historical"):

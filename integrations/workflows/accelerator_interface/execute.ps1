@@ -247,7 +247,7 @@ function Invoke-JointWorkflow {
     if($ContinuousDispatchProfiles){$continuous.DispatchProfiles=$ContinuousDispatchProfiles}
     if($ContinuousUnitSize -gt 0){$continuous.UnitSize=$ContinuousUnitSize}
     if($PythonExe){$continuous.Python=$PythonExe}
-    Invoke-JointOwnerStage -Script (Join-Path $repoRoot 'integrations/workflows/multipole_ip/continuous.ps1') -Arguments $continuous
+    Invoke-JointOwnerStage -Script (Join-Path $repoRoot 'src/msplatform/workflows/resources/multipole_ip_continuous.ps1') -Arguments $continuous
     Write-Output ("JOINT_WORKFLOW EXECUTION=success SCIENCE=not_qualified STUDY_SCOPE=original_birth_to_terminal SIMULATION_PATH=continuous_assembly TRAJECTORY_EXECUTION=backend_returned TOTAL_SECONDS={0:F3}" -f $totalWatch.Elapsed.TotalSeconds)
     return
   }
@@ -342,7 +342,7 @@ if context.python_executable.resolve()!=pathlib.Path(sys.executable).resolve():
       if($IonProcessorContinuationPredecessorManifestPath){
         Assert-MultipoleIpRecoveryRequest -Run $sourceRun -Request $sourceRequest
       }else{
-        Invoke-JointOwnerStage -Script (Join-Path $repoRoot 'integrations/workflows/multipole_ip/execute.ps1') -Arguments $sourceArguments
+        Invoke-JointOwnerStage -Script (Join-Path $repoRoot 'src/msplatform/workflows/resources/multipole_ip.ps1') -Arguments $sourceArguments
       }
       $sourceReceipt=Get-MultipoleIpPreparation -Run $sourceRun -ConfigurationDirectory $ipConfiguration
       if([int]$sourceReceipt.exit_count-eq0){

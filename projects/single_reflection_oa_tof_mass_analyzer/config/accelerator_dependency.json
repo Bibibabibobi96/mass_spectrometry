@@ -4,7 +4,7 @@
   "consumer_project_id": "single_reflection_oa_tof_mass_analyzer",
   "provider_project_id": "orthogonal_accelerator",
   "api_version": 2,
-  "provider_contract": "projects/orthogonal_accelerator/config/component_contract.json",
+  "provider_contract": "src/msplatform/components/orthogonal_accelerator/component_contract.json",
   "structural_variants": ["two_zone", "three_zone"],
   "ownership": "Provider owns accelerator physics and device geometry; consumer owns instrument parameters, placement, reflectron coupling and qualification. Run builders freeze the actually consumed source closure."
 }

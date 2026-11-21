@@ -248,13 +248,13 @@ class ContinuousInputTests(unittest.TestCase):
         numerics = self.write('numerics.json', {})
         hs1 = self.write('hs1.json', self.request)
         environment = self.write('environment.json', {})
-        script = repo / 'integrations/workflows/multipole_ip/continuous.ps1'
+        script = repo / 'src/msplatform/workflows/resources/multipole_ip_continuous.ps1'
         command = [shutil.which('pwsh'), '-NoProfile', '-File', str(script),
             '-ReleaseRequest', str(release), '-FieldsReference', str(fields),
             '-Propagation', str(propagation), '-Observations', str(observations),
             '-Numerics', str(numerics), '-Hs1Request', str(hs1),
             '-Environment', str(environment), '-Workspace', str(self.root), '-Profile', 'test',
-            '-Python', sys.executable, '-RepoRoot', str(repo)]
+            '-Python', sys.executable]
         result = subprocess.run(command, cwd=self.root, capture_output=True, text=True, encoding='utf-8',
                                 errors='replace', timeout=60)
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -281,10 +281,15 @@ class ContinuousInputTests(unittest.TestCase):
         outside = self.root / 'external-cwd'
         outside.mkdir()
         runtime = self.root / 'runtime'
-        shutil.copytree(repo / 'src', runtime / 'src')
-        shutil.copytree(repo / 'common', runtime / 'common', ignore=shutil.ignore_patterns('assets', '__pycache__'))
+        subprocess.run([sys._base_executable, '-m', 'venv', '--system-site-packages', str(runtime)],
+            check=True, cwd=self.root, timeout=120)
+        installed_python = runtime / 'Scripts/python.exe'
+        subprocess.run([str(installed_python), '-m', 'pip', 'install', '--no-deps', str(repo)], check=True,
+            cwd=self.root, capture_output=True, text=True, timeout=120)
+        locked = Path(sys.executable).resolve().parents[1] / 'Lib/site-packages'
+        (runtime / 'Lib/site-packages/_p4_test_lock.pth').write_text(str(locked) + '\n', encoding='utf-8')
         capture = self.root / 'observed.json'
-        owner_source = runtime / 'src/msplatform/workflows/multipole_ip/continuous.py'
+        owner_source = runtime / 'Lib/site-packages/msplatform/workflows/multipole_ip/continuous.py'
         source = owner_source.read_text(encoding='utf-8')
         start = source.index('def track_existing_fields(')
         end = source.index('\ndef run_continuous(', start)
@@ -299,13 +304,13 @@ class ContinuousInputTests(unittest.TestCase):
             'context=SimpleNamespace(workspace=args.workspace),')
         source = source.replace('from typing import Any', 'from typing import Any\nfrom types import SimpleNamespace')
         owner_source.write_text(source, encoding='utf-8')
-        script = repo / 'integrations/workflows/multipole_ip/continuous.ps1'
+        script = runtime / 'Lib/site-packages/msplatform/workflows/resources/multipole_ip_continuous.ps1'
         arguments = ['-ReleaseRequest', '../release.json', '-FieldsReference', '../fields.json',
             '-Propagation', '../propagation.json', '-Observations', '../observations.json',
             '-Numerics', '../numerics.json', '-Hs1Request', '../hs1.json',
             '-Environment', '../environment.json', '-Workspace', '..', '-Profile', 'test',
-            '-Python', sys.executable, '-RepoRoot', str(runtime)]
-        environment = dict(os.environ, PYTHONPATH=os.pathsep.join((str(runtime / 'src'), str(runtime))))
+            '-Python', str(installed_python)]
+        environment = {key: value for key, value in os.environ.items() if key != 'PYTHONPATH'}
         result = subprocess.run([shutil.which('pwsh'), '-NoProfile', '-File', str(script), *arguments],
             cwd=outside, env=environment, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -324,12 +329,12 @@ class ContinuousInputTests(unittest.TestCase):
         paths = {name: str(self.write(name + '.json', {})) for name in (
             'release', 'fields', 'propagation', 'observations', 'numerics', 'hs1', 'environment')}
         cases = [
-            (repo / 'integrations/workflows/multipole_ip/continuous.ps1',
+            (repo / 'src/msplatform/workflows/resources/multipole_ip_continuous.ps1',
              ['-ReleaseRequest', paths['release'], '-FieldsReference', paths['fields'],
               '-Propagation', paths['propagation'], '-Observations', paths['observations'],
               '-Numerics', paths['numerics'], '-Hs1Request', paths['hs1'],
               '-Environment', paths['environment'], '-Workspace', str(self.root), '-Profile', 'profile']),
-            (repo / 'integrations/workflows/single_reflection_flight/run.ps1',
+            (repo / 'src/msplatform/workflows/resources/single_reflection_flight.ps1',
              ['-FieldsReference', paths['fields'], '-Observations', paths['observations'],
               '-Environment', paths['environment'], '-Workspace', str(self.root), '-Profile', 'profile']),
         ]

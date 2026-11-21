@@ -964,7 +964,7 @@ print('FROZEN_ION_CONSUMER_PASS')
             for relative in (
                 "config/project_registry.json",
                 "projects/single_reflection_oa_tof_mass_analyzer/config",
-                "projects/orthogonal_accelerator/config/component_contract.json",
+                "src/msplatform/components/orthogonal_accelerator/component_contract.json",
                 "projects/orthogonal_accelerator/simion/two_zone_accelerator.gem",
             ):
                 source = REPO_ROOT / relative
@@ -1028,13 +1028,13 @@ print('FROZEN_ION_CONSUMER_PASS')
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for relative in (
-                "projects/orthogonal_accelerator/config/component_contract.json",
+                "src/msplatform/components/orthogonal_accelerator/component_contract.json",
                 "projects/single_reflection_oa_tof_mass_analyzer/config/accelerator_dependency.json",
             ):
                 path = root / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes((REPO_ROOT / relative).read_bytes())
-            provider_path = root / "projects/orthogonal_accelerator/config/component_contract.json"
+            provider_path = root / "src/msplatform/components/orthogonal_accelerator/component_contract.json"
             provider = json.loads(provider_path.read_text(encoding="utf-8"))
             provider["api_version"] = 3
             provider_path.write_text(json.dumps(provider), encoding="utf-8")
@@ -1157,7 +1157,7 @@ print('FROZEN_ION_CONSUMER_PASS')
             self.assertTrue({
                 "src/msplatform/components/orthogonal_accelerator/accelerator_time_focus.py",
                 "src/msplatform/components/orthogonal_accelerator/component_contract.py",
-                "projects/orthogonal_accelerator/config/component_contract.json",
+                "src/msplatform/components/orthogonal_accelerator/component_contract.json",
                 "projects/single_reflection_oa_tof_mass_analyzer/config/accelerator_dependency.json",
                 "src/msplatform/components/orthogonal_accelerator/three_zone_ideal_theory.py",
                 "src/msplatform/components/orthogonal_accelerator/two_zone_geometry.py",
