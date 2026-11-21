@@ -70,9 +70,9 @@ $results=@(foreach($scenario in @('receipt','native','success','workflow_initial
     try{
       if($Scenario-like'workflow*'){
         $session=[pscustomobject]@{artifact_root=$RepoRoot;lease_id='fixture';protected_paths=@();protected_cache_keys=@()}
-        Invoke-ArtifactWorkflowCapacityAdmission -Python fixture -RepoRoot $RepoRoot -Session $session|Out-Null
+        Invoke-ArtifactWorkflowCapacityAdmission -Python $env:SIMULATION_PYTHON_EXE -RepoRoot $RepoRoot -Session $session|Out-Null
       }else{
-        Invoke-ArtifactCapacityGate -Python fixture -RepoRoot $RepoRoot -ArtifactRoot $RepoRoot -CapacityProtectionLeaseId fixture|Out-Null
+        Invoke-ArtifactCapacityGate -Python $env:SIMULATION_PYTHON_EXE -RepoRoot $RepoRoot -ArtifactRoot $RepoRoot -CapacityProtectionLeaseId fixture|Out-Null
       }
     }catch{
       $result.failure=$_.Exception.Message
@@ -92,7 +92,8 @@ $results=@(foreach($scenario in @('receipt','native','success','workflow_initial
 Write-Output ('HOST_RELEASE_RESULT='+($results|ConvertTo-Json -Depth 15 -Compress))
 '''
         completed = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=repo,
-                                   env=dict(os.environ, CAPACITY_FIXTURE_REPO=str(repo)),
+                                   env=dict(os.environ, CAPACITY_FIXTURE_REPO=str(repo),
+                                            SIMULATION_PYTHON_EXE=sys.executable),
                                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30, check=False)
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         line = next(line for line in completed.stdout.splitlines() if line.startswith("HOST_RELEASE_RESULT="))

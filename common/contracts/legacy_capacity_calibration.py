@@ -18,7 +18,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
-from msplatform.execution import capacity_ledger, capacity_protection
+from msplatform.execution import capacity_ledger, capacity_maintenance, capacity_protection
 from msplatform.execution.execution_aliases import execution_alias_root_is_valid
 from msplatform.execution.legacy_owner_disposition import load_legacy_owner_disposition
 from msplatform.execution.retention import classify_file
@@ -1725,7 +1725,7 @@ def migrate_canonical_v2_ledger_to_v3(
                 existing, review_deadline=review_deadline,
                 pending_receipt_path=pending_relative,
             )
-            target = capacity_ledger.migrate_v2_ledger_document(
+            target = capacity_maintenance.migrate_v2_ledger_document(
                 root, existing, lifecycle_by_path=duties,
             )
             target_sha256 = _canonical_json_sha256(target)

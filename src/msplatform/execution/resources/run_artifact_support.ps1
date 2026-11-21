@@ -397,8 +397,9 @@ function Invoke-ArtifactCapacityGate {
   $capacityLease=Enter-HostExecutionLease -Role GATE
   $capacityFailure=$null
   try{
+  $module=if($ExecutionMode-eq'maintenance'){'msplatform.execution.artifact_capacity_maintenance'}else{'msplatform.execution.reconcile_artifact_capacity'}
   $arguments=@(
-    '-m','msplatform.execution.reconcile_artifact_capacity',
+    '-m',$module,
     '--artifact-root',$ArtifactRoot,
     '--execution-mode',$ExecutionMode,
     '--capacity-ledger',(Join-Path $ArtifactRoot 'common\capacity_ledger.json'),
