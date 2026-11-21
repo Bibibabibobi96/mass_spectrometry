@@ -406,7 +406,7 @@ class ChangedGateContractTests(unittest.TestCase):
                           ('-Scope', 'Owner', '-Owner', 'common/simion'),
                           ('-ChangedPath', module),
                           ('-ChangedPath', 'common/resource_budget_support.ps1'),
-                          ('-ChangedPath', 'common/host_resource_scheduler.py')):
+                          ('-ChangedPath', 'src/msplatform/execution/host_resource_scheduler.py')):
             with self.subTest(arguments=arguments):
                 plan, _ = self.plan(*arguments)
                 native = [row for row in plan['stages'] if row['name'] == 'simion_dirichlet_native']
@@ -1147,7 +1147,7 @@ exit 0
 
     def test_host_scheduler_and_adapters_keep_regression_routes(self) -> None:
         for path, expected in (
-            ("common/host_resource_scheduler.py", {"host_resource_scheduler_tests", "host_resource_adapter_tests"}),
+            ("src/msplatform/execution/host_resource_scheduler.py", {"host_resource_scheduler_tests", "host_resource_adapter_tests"}),
             ("src/msplatform/execution/resources/host_resource_policy.json", {"host_resource_scheduler_tests", "host_resource_adapter_tests"}),
             ("src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1", {"livelink_resource_stages_tests"}),
         ):

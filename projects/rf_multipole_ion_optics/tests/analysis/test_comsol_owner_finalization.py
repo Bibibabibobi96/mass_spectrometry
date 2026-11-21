@@ -403,7 +403,7 @@ try{{$null=Complete-FiniteComsolOwner -Context $context -State $state -RunId '{r
                 "common/resource_budget_support.ps1",
                 "src/msplatform/execution/resources/require_powershell7.ps1",
                 "common/host_execution_lease.ps1",
-                "common/host_resource_scheduler.py",
+                "src/msplatform/execution/host_resource_scheduler.py",
                 "src/msplatform/execution/resources/host_resource_policy.json",
             ):
                 destination = tree / relative

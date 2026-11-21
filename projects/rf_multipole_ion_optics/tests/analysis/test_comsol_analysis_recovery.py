@@ -203,36 +203,36 @@ class ComsolAnalysisRecoveryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='rf controlled cpu ') as directory:
             root = Path(directory)
             source = capacity_fixture_source(REPO, root/'fixture_source')
-            original = (source/'common/host_execution_lease.ps1').read_bytes()
-            production_before = (REPO/'common/host_execution_lease.ps1').read_bytes()
+            original = (source/'src/msplatform/execution/resources/host_execution_lease.ps1').read_bytes()
+            production_before = (REPO/'src/msplatform/execution/resources/host_execution_lease.ps1').read_bytes()
             for invalid in (True, False, None, '0', float('nan'), float('inf'), -float('inf'), -1., 101.):
                 with self.subTest(controlled_cpu=invalid):
                     with self.assertRaisesRegex(ValueError, 'finite number'):
                         install_controlled_cpu_snapshot(REPO, source, cpu_percent=invalid)
-                    self.assertEqual((source/'common/host_execution_lease.ps1').read_bytes(), original)
-                    self.assertEqual((REPO/'common/host_execution_lease.ps1').read_bytes(), production_before)
+                    self.assertEqual((source/'src/msplatform/execution/resources/host_execution_lease.ps1').read_bytes(), original)
+                    self.assertEqual((REPO/'src/msplatform/execution/resources/host_execution_lease.ps1').read_bytes(), production_before)
             install_controlled_cpu_snapshot(REPO, source)
-            controlled = (source/'common/host_execution_lease.ps1').read_bytes()
+            controlled = (source/'src/msplatform/execution/resources/host_execution_lease.ps1').read_bytes()
             self.assertIn(b'cpu_percent = $load\n', resource_path('host_execution_lease.ps1').read_bytes())
-            self.assertNotIn(b'cpu_percent = $load\n', (source/'common/host_execution_lease.resource.ps1').read_bytes())
+            self.assertNotIn(b'cpu_percent = $load\n', (source/'src/msplatform/execution/resources/host_execution_lease.ps1').read_bytes())
             self.assertEqual((source/'src/msplatform/execution/resources/host_resource_policy.json').read_bytes(),
                              (REPO/'src/msplatform/execution/resources/host_resource_policy.json').read_bytes())
             with self.assertRaisesRegex(ValueError, 'exact unmodified'):
                 install_controlled_cpu_snapshot(REPO, source)
             with self.assertRaisesRegex(ValueError, 'repository-external'):
                 install_controlled_cpu_snapshot(REPO, REPO)
-            self.assertEqual((source/'common/host_execution_lease.ps1').read_bytes(), controlled)
-            self.assertEqual((REPO/'common/host_execution_lease.ps1').read_bytes(), production_before)
+            self.assertEqual((source/'src/msplatform/execution/resources/host_execution_lease.ps1').read_bytes(), controlled)
+            self.assertEqual((REPO/'src/msplatform/execution/resources/host_execution_lease.ps1').read_bytes(), production_before)
             script = root/'controlled-cpu.ps1'
             script.write_text(r"""
 param($Repo,$Python,$Root)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $env:SIMULATION_PYTHON_EXE=$Python
 $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=Join-Path $Root 'host.sqlite3'
-. (Join-Path $Repo 'common/host_execution_lease.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/host_execution_lease.ps1') -HostContext @{workspace=$Root;python_executable=$Python;host_state_path=$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH;policy_path=(Join-Path $Repo 'src/msplatform/execution/resources/host_resource_policy.json')}
 . (Join-Path $Repo 'common/resource_budget_support.ps1')
 # Evaluate the copied entrypoint's actual CPU expression, not a reimplementation.
-$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'common/host_execution_lease.resource.ps1'),[ref]$null,[ref]$null)
+$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'src/msplatform/execution/resources/host_execution_lease.ps1'),[ref]$null,[ref]$null)
 $function=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-ceq'Get-HostResourceSnapshot'},$true)
 $pairs=@($function.FindAll({param($n)$n-is[Management.Automation.Language.HashtableAst]},$true)|ForEach-Object{$_.KeyValuePairs}|Where-Object{$_.Item1.Extent.Text-ceq'cpu_percent'})
 if($pairs.Count-ne1){throw 'Actual controlled CPU field is missing or ambiguous'}
@@ -589,8 +589,8 @@ function Write-ColdFixtureEvent {
             root = Path(directory)
             run = root/('deep-'+'a'*65)/('deep-'+'b'*65)/('deep-'+'c'*65)/'run'
             code = run/'inputs/code'
-            for relative in ('common/host_execution_lease.ps1', 'src/msplatform/execution/resources/host_resource_policy.json',
-                             'common/host_resource_scheduler.py', 'src/msplatform/execution/resources/require_powershell7.ps1'):
+            for relative in ('src/msplatform/execution/resources/host_execution_lease.ps1', 'src/msplatform/execution/resources/host_resource_policy.json',
+                             'src/msplatform/execution/host_resource_scheduler.py', 'src/msplatform/execution/resources/require_powershell7.ps1'):
                 target = code/relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(REPO/relative, target)
@@ -633,7 +633,7 @@ function Write-ColdFixtureEvent {
             launcher.write_text(r"""
 param($HostContextJson,$WorkingDirectory,$ComsolLauncherPath,$MatlabRootPath,$TaskScript,$ReportPath,$StartupAttempts,$RunId,$RunDir,$CompletionPath,$ResourceBudgets)
 $ErrorActionPreference='Stop'
-. (Join-Path $PSScriptRoot '../../../../../common/host_execution_lease.resource.ps1') -HostContext (ConvertFrom-Json -InputObject $HostContextJson -AsHashtable)
+. (Join-Path $PSScriptRoot '../../../../../src/msplatform/execution/resources/host_execution_lease.ps1') -HostContext (ConvertFrom-Json -InputObject $HostContextJson -AsHashtable)
 $request=Get-Content -LiteralPath $env:RF_FINITE_REEXTRACTION_REQUEST -Raw|ConvertFrom-Json
 if($ResourceBudgets.solver.memory_bytes-ne2147483648){throw 'EXPLICIT_HOST_BUDGET_LOST'}
 if($request.context.acceptance.exit_interface.cross_section.shape-cne'open_rod_envelope'){throw 'OPEN_PORT_CHANGED'}
@@ -674,9 +674,9 @@ param($Repo,$Python,$Root)
 $ErrorActionPreference='Stop'
 . (Join-Path $Repo 'src/msplatform/workflows/resources/run_artifact_workflow.ps1')
 . (Join-Path $Repo 'common/resource_budget_support.ps1')
-. (Join-Path $Repo 'common/host_execution_lease.ps1')
 $env:SIMULATION_PYTHON_EXE=$Python
 $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=Join-Path $Root 'host.sqlite3'
+. (Join-Path $Repo 'src/msplatform/execution/resources/host_execution_lease.ps1') -HostContext @{workspace=$Root;python_executable=$Python;host_state_path=$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH;policy_path=(Join-Path $Repo 'src/msplatform/execution/resources/host_resource_policy.json')}
 $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'src/msplatform/workflows/resources/run_finite_3d_transport.ps1'),[ref]$null,[ref]$null)
 $ast.FindAll({param($node)$node-is[Management.Automation.Language.FunctionDefinitionAst]},$true)|ForEach-Object{Invoke-Expression $_.Extent.Text}
 $fixture=Get-Content -LiteralPath (Join-Path $Root 'fixture.json') -Raw|ConvertFrom-Json -AsHashtable

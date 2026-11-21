@@ -8,7 +8,7 @@
       "repository_integration_group": "fast",
       "matches": [
         {
-          "exact": "common/host_resource_scheduler.py",
+          "exact": "src/msplatform/execution/host_resource_scheduler.py",
           "reason": "host_scheduler_changed"
         },
         {
@@ -70,7 +70,7 @@
       "repository_integration_group": "fast",
       "matches": [
         {
-          "exact": "common/host_resource_scheduler.py",
+          "exact": "src/msplatform/execution/host_resource_scheduler.py",
           "reason": "host_scheduler_changed"
         },
         {
@@ -2589,7 +2589,7 @@
           "reason": "dirichlet_native_resource_dependency_changed"
         },
         {
-          "exact": "common/host_resource_scheduler.py",
+          "exact": "src/msplatform/execution/host_resource_scheduler.py",
           "reason": "dirichlet_native_resource_dependency_changed"
         },
         {

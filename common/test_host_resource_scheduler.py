@@ -16,7 +16,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from common.host_resource_scheduler import ReservedIdentityUnavailable, StaleSnapshotError, _same_creation_time, load_policy, transact, validate_budget
+from msplatform.execution.host_resource_scheduler import ReservedIdentityUnavailable, StaleSnapshotError, _same_creation_time, load_policy, transact, validate_budget
 
 GIB = 1024**3
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,8 +33,8 @@ class HostSnapshotContentionTests(unittest.TestCase):
     def prelude(self, state: Path) -> str:
         return f"""
 $ErrorActionPreference='Stop'
-. {_ps_quote(ROOT / 'common/host_execution_lease.ps1')}
 $env:SIMULATION_PYTHON_EXE={_ps_quote(sys.executable)}
+. {_ps_quote(ROOT / 'common/host_execution_lease.ps1')}
 $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH={_ps_quote(state)}
 Remove-Item Env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN -ErrorAction SilentlyContinue
 function Get-TestSnapshot {{
@@ -253,7 +253,7 @@ function Get-HostResourceSnapshot {{
     $competitor=$snapshot.Clone()
     $competitor.observed_at_ticks=[DateTime]::UtcNow.Ticks
     $payload=@{{request=@{{operation='status'}};snapshot=$competitor}} | ConvertTo-Json -Depth 8 -Compress
-    $null=$payload | & $env:SIMULATION_PYTHON_EXE -m common.host_resource_scheduler --state {_ps_quote(state)}
+    $null=$payload | & $env:SIMULATION_PYTHON_EXE -m msplatform.execution.host_resource_scheduler --state {_ps_quote(state)} --policy {_ps_quote(ROOT / 'src/msplatform/execution/resources/host_resource_policy.json')}
     if ($LASTEXITCODE -ne 0) {{ throw 'competing transaction failed' }}
   }}
   return $snapshot
@@ -332,7 +332,7 @@ class HostResourceSchedulerTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory(prefix="host_resource_test_")
         self.addCleanup(self.temporary.cleanup)
         self.path = Path(self.temporary.name) / "state.sqlite3"
-        self.policy = load_policy()
+        self.policy = load_policy(ROOT / "src/msplatform/execution/resources/host_resource_policy.json")
         # Capacity tests model a fully idle synthetic host; live-headroom tests use the production ceiling.
         self.policy["cpu_admission_percent"] = 100
         self.snapshot = dict(complete=True, logical_processors=4, cpu_percent=0,
@@ -432,7 +432,7 @@ class HostResourceSchedulerTests(unittest.TestCase):
             validate_budget({**budget(), "heavy_stage": "false"})
 
     def test_light_can_fill_heavy_headroom_but_cannot_exceed_live_pressure(self) -> None:
-        self.policy["cpu_admission_percent"] = load_policy()["cpu_admission_percent"]
+        self.policy["cpu_admission_percent"] = load_policy(ROOT / "src/msplatform/execution/resources/host_resource_policy.json")["cpu_admission_percent"]
         with self.assertRaisesRegex(ValueError, "idle host"):
             self.acquire(4, budget(cpu=4), role="SIMION")
         self.acquire(1, self.policy["profiles"]["heavy-compute"])

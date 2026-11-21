@@ -89,7 +89,7 @@
           ]
         },
         {
-          "source_repo_path": "common/host_resource_scheduler.py",
+          "source_repo_path": "src/msplatform/execution/host_resource_scheduler.py",
           "consumers": [
             "paired_accelerator_pulse",
             "paired_accelerator_static_field",

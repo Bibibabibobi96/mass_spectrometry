@@ -562,14 +562,18 @@ function Invoke-RunArtifactWorkflow {
     }
     $repo=(Resolve-Path -LiteralPath $request.repository_root).Path
     $python=(Resolve-Path -LiteralPath $request.python_executable).Path
-    if(-not(Get-Command Resolve-HostResourceStatePath -ErrorAction SilentlyContinue)){
-      if($request.host_context-isnot[Collections.IDictionary]){throw 'Workflow request requires an explicit HostContext.'}
-      . (Join-Path $PSScriptRoot '../../execution/resources/host_execution_lease.ps1') -HostContext $request.host_context
-    }
     # Resolve from the live public owner before any frozen source is imported.
     # This is control-plane context, not a scientific input or a new reservation.
     $projectRoot=[IO.Path]::GetFullPath($request.package.artifact_project_root)
     $artifactRoot=Split-Path -Parent (Split-Path -Parent $projectRoot)
+    if(-not(Get-Command Resolve-HostResourceStatePath -ErrorAction SilentlyContinue)){
+      $hostContext=if($request.Contains('host_context')){$request.host_context}else{$null}
+      if($hostContext-isnot[Collections.IDictionary]){
+        $hostState=if($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH}else{Join-Path $artifactRoot 'common/host_resources.sqlite3'}
+        $hostContext=@{workspace=(Split-Path -Parent $artifactRoot);python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $repo 'src/msplatform/execution/resources/host_resource_policy.json')}
+      }
+      . (Join-Path $PSScriptRoot '../../execution/resources/host_execution_lease.ps1') -HostContext $hostContext
+    }
     . (Join-Path $PSScriptRoot '../../execution/resources/workspace_paths.ps1')
     $runRoot=Join-Path (Join-Path $projectRoot 'runs') $request.package.run_id
     $null=Get-RunPackagePathCapacity -RunDirectory $runRoot -ExpectedExecutionRelativePaths $expectedExecutionRelativePaths

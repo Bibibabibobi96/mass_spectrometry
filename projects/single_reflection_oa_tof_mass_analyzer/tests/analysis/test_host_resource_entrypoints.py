@@ -380,7 +380,7 @@ foreach($nested in @($false,$true)) {
             code = root / "code"
             closure = freeze_candidate_source_closure(code, root / "artifacts", Path(sys.executable))
             verify_candidate_source_closure(closure)
-            self.assertTrue((code / "common/host_resource_scheduler.py").is_file())
+            self.assertTrue((code / "src/msplatform/execution/host_resource_scheduler.py").is_file())
             self.assertTrue((code / "src/msplatform/execution/resources/host_resource_policy.json").is_file())
             self.assertTrue((code / "common/resource_budget_support.ps1").is_file())
             script = """

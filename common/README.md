@@ -9,7 +9,7 @@
 | 要做的事 | 实现与说明 |
 |---|---|
 | 排查软件验证选了哪些阶段、失败退出或日志 | [门禁编排](#门禁编排)、[唯一目录](gate_catalog.json)、[并行调用器](parallel_gate_support.ps1) |
-| 排查资源等待、进程归属、阶段切换和释放 | [主机资源实现](#主机资源实现)、[PowerShell入口](host_execution_lease.ps1)、[调度器](host_resource_scheduler.py) |
+| 排查资源等待、进程归属、阶段切换和释放 | [主机资源实现](#主机资源实现)、[PowerShell入口](host_execution_lease.ps1)、[调度器](../src/msplatform/execution/host_resource_scheduler.py) |
 | 创建run、冻结输入、发布manifest、保护来源或恢复收尾 | [机器合同与生命周期API](contracts/README.md#python工作流的公共生命周期owner)；小Result保存在run外，原CLI的ResumeFinalization只恢复收尾 |
 | 发现项目、校验设计请求与预览执行计划 | [项目发现与规划](contracts/README.md#项目发现) |
 | 连接组件、解析完整配方与局部范围 | [公共连接合同](integration/README.md) |
@@ -596,7 +596,7 @@ F5与continuous03的已发布inputs选择规范正文／资源，不证明其余
 |三份单反射variant Lua旧转发器（已退役）|`msplatform/backends/simion/resources/build_{reflectron,detector,flight_tube}_variant.lua`|实际CLI、冻结依赖、集成与物理测试均已直接消费安装实现；旧项目路径无转发|已退出|
 
 |`projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/candidates/oatof_analyzer_component.lua`|`msplatform/backends/simion/resources/oatof_analyzer_component.lua`|未确认精确字面生产引用；须核动态／CLI／冻结入口，不据此判死代码<br>跨语言／路径静态候选（未证实调用）：`integrations/config/`：`runtime_dependencies.json`<br>`integrations/workflows/single_reflection_flight/`：`runtime.py`|单反射TOF所有者；最迟P4|
-|`common/host_resource_scheduler.py`|`msplatform.execution.host_resource_scheduler`<br>`msplatform.execution.resources`|未确认精确字面生产引用；须核动态／CLI／冻结入口，不据此判死代码|公共执行／缓存／钟所有者；最迟P4|
+|`common/host_resource_scheduler.py`（已退役）|`msplatform.execution.host_resource_scheduler`<br>`msplatform.execution.resources`|scheduler 测试直接调用规范实现；OA/RF、integration 与 build-only 冻结声明已切换。规范 CLI 显式接收 policy 路径|生产包装器已退出|
 
 </details>
 
@@ -987,7 +987,7 @@ cooled 路径夹具在较短 CI TEMP 下未达到原生长度边界，却要求 
 PA等昂贵阶段复用及中断恢复遵循[统一复用与恢复规则](../docs/DEVELOPMENT_STANDARDS.md#昂贵阶段复用与中断恢复)。
 
 本机门禁与SIMION/COMSOL运行通过[`host_execution_lease.ps1`](host_execution_lease.ps1)
-进入同一[`主机调度器`](host_resource_scheduler.py)。当前默认账本位于工作区同级产物根的
+进入同一[`主机调度器`](../src/msplatform/execution/host_resource_scheduler.py)。当前默认账本位于工作区同级产物根的
 `artifacts/common/host_resources.sqlite3`；同一父目录中的工作树共用该默认值，跨父目录不能假定自动共用。
 准入和status按显式绝对路径、`MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH`、默认路径的顺序选择；
 不同工作树必须显式部署到同一绝对账本，不能各建一份而重复分配资源。环境路径只用于受控部署或隔离测试，

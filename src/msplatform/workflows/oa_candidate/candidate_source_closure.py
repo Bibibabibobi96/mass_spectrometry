@@ -78,7 +78,7 @@ RELATIVE_PATHS = (
     "src/msplatform/execution/resources/run_paths.ps1",
     "src/msplatform/execution/resources/run_paths_owner.ps1",
     "common/host_execution_lease.ps1",
-    "common/host_resource_scheduler.py",
+    "src/msplatform/execution/host_resource_scheduler.py",
     "src/msplatform/execution/resources/host_resource_policy.json",
     "common/resource_budget_support.ps1",
     "src/msplatform/backends/comsol/matlab/add_comsol_size_feature.m",
