@@ -202,7 +202,7 @@ try{
 '''
         worker = """from pathlib import Path
 import os,subprocess,sys,time
-from common.simion.process_observation import run_observed_process
+from msplatform.execution.process_observation import run_observed_process
 root=Path(sys.argv[2])
 (root/'work_started').write_text(str(os.getpid()))
 result,_=run_observed_process([sys._base_executable,'-B','-c',"import time;time.sleep(.15);print('native finished')"],cwd=root,stdout=root/'native.log',stderr=root/'native.err')

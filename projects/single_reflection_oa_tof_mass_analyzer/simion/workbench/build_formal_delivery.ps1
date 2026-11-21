@@ -220,7 +220,7 @@ from msplatform.execution.host_resource_python import await_managed_process_star
 await_managed_process_start()
 import json,sys,time
 from pathlib import Path
-from common.simion.process_observation import run_observed_process
+from msplatform.execution.process_observation import run_observed_process
 from msplatform.execution.recorded_file_removal import write_json_atomic
 r=json.loads(sys.argv[1]);d={'exit_confirmed':False,'returncode':None};started=time.perf_counter();exit_code=1
 try:

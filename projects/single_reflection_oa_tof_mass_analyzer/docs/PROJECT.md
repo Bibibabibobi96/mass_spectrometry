@@ -21,10 +21,12 @@ raw-writer validation, and is no longer left to an ambient gate. Targeted
 negative and public-lifecycle regressions pass; the full three-module regression
 is pending. The Python host adapter now also has its sole production sources in
 `msplatform.execution.host_resource_python` and its packaged resource directory;
-HostContext is transported with the selected worker environment. Its 41 protocol,
-managed-worker and real-scheduler tests pass. One pre-existing radial-pool fixture
-wait remains separately unresolved and is not claimed as a pass. This ownership
-migration grants no new native or scientific result.
+HostContext is transported with the selected worker environment. Its 37 protocol,
+managed-worker and real-scheduler tests pass. The existing single-process observer
+now also belongs to `msplatform.execution.process_observation`; its OA/native-stage
+consumers and twelve focused observation/native-boundary records pass. One
+pre-existing radial-pool fixture wait remains separately unresolved and is not
+claimed as a pass. This ownership migration grants no new native or scientific result.
 
 ## Installed OA-TOF SIMION input renderer
 

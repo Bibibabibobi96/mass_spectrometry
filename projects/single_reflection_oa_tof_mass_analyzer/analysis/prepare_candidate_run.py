@@ -14,7 +14,7 @@ REPO_ROOT = PROJECT_ROOT.parents[1]
 from msplatform.execution.artifact_naming import validate_run_id, validate_task_id
 from msplatform.execution.inputs import python_import_roots
 from msplatform.contracts.machine_contracts import load_json, sha256, validate_schema
-from common.simion.process_observation import run_observed_process
+from msplatform.execution.process_observation import run_observed_process
 from msplatform.workflows.oa_candidate.candidate_source_closure import (
     freeze_candidate_source_closure,
     frozen_source_path,

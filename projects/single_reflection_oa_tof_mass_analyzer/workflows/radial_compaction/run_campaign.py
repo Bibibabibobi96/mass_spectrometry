@@ -46,7 +46,7 @@ from msplatform.execution.retention import file_record
 from msplatform.execution.host_resource_python import run_heavy_function, run_managed_python_process
 from msplatform.execution.recovery import WholeUnitReplayUnit, build_whole_unit_replay_plan
 from msplatform.backends.simion.native_completion import require_one_fly_completion
-from common.simion.process_observation import run_observed_process
+from msplatform.execution.process_observation import run_observed_process
 from msplatform.execution.resource_profile import discover_case_resource_profiles
 from msplatform.execution.simion_dispatch import plan_simion_case_dispatch
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.compile_candidate_design import (

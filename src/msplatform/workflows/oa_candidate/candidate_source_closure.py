@@ -61,7 +61,7 @@ RELATIVE_PATHS = (
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/reflectron_dual_stage_solver.py",
     "projects/single_reflection_oa_tof_mass_analyzer/simion/reflectron/refine_single_pa.lua",
     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/verify_component_pa.lua",
-    "common/simion/process_observation.py",
+    "src/msplatform/execution/process_observation.py",
     "projects/rf_multipole_ion_optics/core/grounded_shield.py",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/geometry_contract.py",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/accelerator_geometry.py",

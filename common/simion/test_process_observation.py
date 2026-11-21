@@ -10,8 +10,8 @@ import warnings
 from pathlib import Path
 from unittest.mock import patch
 
-from common.simion import process_observation
-from common.simion.process_observation import run_observed_process
+from msplatform.execution import process_observation
+from msplatform.execution.process_observation import run_observed_process
 
 
 class ProcessObservationTests(unittest.TestCase):

@@ -617,7 +617,7 @@ try{$null=Invoke-ComponentCache ($arguments+@('--action','not-an-action')) 'bad-
                     "src/msplatform/execution/resources/host_execution_lease.ps1", "src/msplatform/execution/host_resource_python.py",
                     "src/msplatform/execution/resources/run_artifact_support.ps1", "src/msplatform/execution/resources/require_powershell7.ps1",
                     "src/msplatform/execution/resources/resource_process_support.ps1", "src/msplatform/backends/simion/resources/short_pa_path_support.ps1",
-                    "common/simion/process_observation.py",
+                    "src/msplatform/execution/process_observation.py",
                     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/run_candidate_flight.ps1",
                 )
                 for relative in relatives:
@@ -728,13 +728,15 @@ foreach($path in @($global:MassSpectrometryImmutablePaSourceGuards.Keys)){Unprot
         with tempfile.TemporaryDirectory(prefix="candidate-pa-worker-") as directory:
             root = Path(directory)
             fixture_repo = root / "observer_failure_repo"
-            for relative in ("src/msplatform/execution/host_resource_python.py", "common/simion/__init__.py", "common/simion/process_observation.py",
+            for relative in ("src/msplatform/execution/host_resource_python.py", "common/simion/__init__.py", "src/msplatform/execution/process_observation.py",
                              "src/msplatform/__init__.py", "src/msplatform/io/__init__.py",
                              "src/msplatform/io/file_identity.py"):
                 target = fixture_repo / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(REPO / relative, target)
-            observer = fixture_repo / "common/simion/process_observation.py"
+            from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
+            copy_scientific_core(REPO, fixture_repo)
+            observer = fixture_repo / "src/msplatform/execution/process_observation.py"
             loaded = root / "observer_failure_loaded.txt"
             # Preserve the real package boundary even when the public gate adds
             # its repository to PYTHONPATH; prove the injected module executed.
@@ -770,6 +772,7 @@ foreach($code in @(0,7)){
  }
 }
 $repoRoot=$ObserverFailureRepo
+$env:PYTHONPATH=(Join-Path $ObserverFailureRepo 'src')+[IO.Path]::PathSeparator+$ObserverFailureRepo+[IO.Path]::PathSeparator+$env:PYTHONPATH
 try{
  $result=Invoke-OwnedSimionArguments -ArgumentList @('-c',"import time;time.sleep(0.3)") -OperationId 'observer_failure'
  $report.Add(@{label='observer_failure';returned=$true;facts=$result;stopped=$script:allOperationsStopped})
@@ -778,6 +781,7 @@ try{
    stopped=$script:allOperationsStopped;error=$_.Exception.Message})
 }
 $repoRoot=$Repo
+$env:PYTHONPATH=(Join-Path $Repo 'src')+[IO.Path]::PathSeparator+$Repo
 function Get-ManagedSolverProcessSample {throw 'deliberate initial observation failure'}
 $marker=Join-Path $Root 'must_not_start.txt'
 try{
@@ -791,7 +795,7 @@ $report.ToArray()|ConvertTo-Json -Depth 32|Set-Content -LiteralPath (Join-Path $
 ''', encoding="utf-8")
             result = subprocess.run(["pwsh", "-NoProfile", "-File", str(driver), str(REPO), sys.executable,
                 str(root), str(BUILDER), str(fixture_repo)], cwd=REPO,
-                env=dict(os.environ, PYTHONPATH=str(REPO)),
+                env=dict(os.environ, PYTHONPATH=os.pathsep.join((str(REPO / "src"), str(REPO)))),
                 capture_output=True, text=True, encoding="utf-8", errors="replace", check=False, timeout=90)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             rows = {row["label"]: row for row in json.loads((root / "report.json").read_text(encoding="utf-8-sig"))}
@@ -807,7 +811,7 @@ $report.ToArray()|ConvertTo-Json -Depth 32|Set-Content -LiteralPath (Join-Path $
                 for key in ("ownership_confirmed", "worker_exit_confirmed", "launcher_exit_confirmed", "stdout_drained", "stderr_drained"):
                     self.assertTrue(completion[key], completion)
             failure = rows["observer_failure"]
-            self.assertTrue(loaded.is_file(), "The fault observer was bypassed by another package import")
+            self.assertTrue(loaded.is_file(), f"The fault observer was bypassed by another package import: {failure}")
             self.assertEqual(Path(loaded.read_text(encoding="utf-8")), observer.resolve())
             self.assertFalse(failure["returned"], failure)
             self.assertTrue(failure["stopped"], failure)
