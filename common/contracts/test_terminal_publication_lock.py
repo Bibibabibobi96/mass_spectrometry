@@ -13,7 +13,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from common.contracts.capacity_protection import process_file_lock
+from msplatform.execution.capacity_protection import process_file_lock
 from msplatform.io.manifest_records import TERMINAL_JOURNAL_NAME
 from msplatform.execution.terminal_publication import TERMINAL_LOCK_NAME
 from msplatform.execution.manifest_publication import build_run_manifest
@@ -236,7 +236,7 @@ try {
             lock = Path(directory) / TERMINAL_LOCK_NAME
             command = [sys.executable, "-c", (
                 "import os,sys;from pathlib import Path;"
-                "from common.contracts.capacity_protection import process_file_lock;"
+                "from msplatform.execution.capacity_protection import process_file_lock;"
                 "lock=process_file_lock(Path(sys.argv[1]));lock.__enter__();os._exit(0)"), str(lock)]
             self.assertEqual(subprocess.run(command, cwd=repo, timeout=30).returncode, 0)
             with process_file_lock(lock, timeout_seconds=1):

@@ -14,7 +14,7 @@ from common.contracts import capacity_ledger
 from common.contracts import capacity_protection
 from msplatform.execution import run_capacity_lifecycle
 from msplatform.execution import run_capacity_lifecycle as execution_lifecycle
-from common.contracts.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
+from msplatform.execution.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
 from msplatform.execution.run_capacity_lifecycle import (
     assert_retention_complete,
     finalize_ready,

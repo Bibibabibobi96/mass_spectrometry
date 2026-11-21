@@ -12,8 +12,8 @@ import unittest
 from unittest.mock import patch
 
 from msplatform.execution import run_capacity_lifecycle as lifecycle
-from common.contracts.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
-from common.contracts.capacity_protection import load_capacity_protection_leases
+from msplatform.execution.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
+from msplatform.execution.capacity_protection import load_capacity_protection_leases
 from msplatform.execution.manifest_publication import build_run_manifest
 from msplatform.execution.retention import file_record
 from msplatform.workflows.single_reflection_flight.continuation import source_capacity_projection
@@ -68,7 +68,7 @@ def owner_overlay(destination):
                 path = name.replace(".", "/") + ".py"
                 if name.startswith("common.") and (REPO / path).is_file():
                     pending.append(path)
-    from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
+    from msplatform.execution.test_support.run_artifact_workflow import copy_scientific_core
 
     copy_scientific_core(REPO, destination)
     for relative in ("src/msplatform/execution/resources/run_artifact_support.ps1", "common/host_execution_lease.ps1",

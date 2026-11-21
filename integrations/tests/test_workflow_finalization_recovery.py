@@ -9,7 +9,7 @@ import sys
 import tempfile
 import unittest
 
-from common.contracts.capacity_ledger import initialize_capacity_ledger
+from msplatform.execution.capacity_ledger import initialize_capacity_ledger
 
 
 REPO = Path(__file__).resolve().parents[2]

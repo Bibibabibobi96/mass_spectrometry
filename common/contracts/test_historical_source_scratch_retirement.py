@@ -4,9 +4,9 @@ import unittest
 from unittest import mock
 from pathlib import Path
 
-from common.contracts import capacity_ledger
+from msplatform.execution import capacity_maintenance as capacity_ledger
 from msplatform.io.file_identity import file_sha256
-from common.contracts.historical_source_scratch_retirement import apply, plan
+from msplatform.execution.historical_source_scratch_retirement import apply, plan
 
 
 def auth(path, owner, source, *, targets, consumers=None, protected_paths=None):
@@ -125,7 +125,7 @@ class SourceScratchRetirementTests(unittest.TestCase):
         disposition = self.disposition()
         self.assertNotIn("sha256", disposition["files"][0])
         with mock.patch(
-            "common.contracts.historical_source_scratch_retirement.file_sha256",
+            "msplatform.execution.historical_source_scratch_retirement.file_sha256",
             side_effect=lambda path: file_sha256(path),
         ) as digest:
             apply(disposition)

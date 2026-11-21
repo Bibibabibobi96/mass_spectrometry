@@ -9,7 +9,7 @@ import subprocess
 import sys
 import tomllib
 import unittest
-from common.contracts.capacity_ledger import initialize_capacity_ledger
+from msplatform.execution.capacity_ledger import initialize_capacity_ledger
 from msplatform.execution.inputs import enumerate_python_sources
 from msplatform.execution.retention import file_record
 
@@ -49,7 +49,7 @@ CALLBACK = '''import json, os, sys, time
 from pathlib import Path
 sys.path.insert(0, REPOSITORY)
 from msplatform.execution.retention import file_record
-from common.contracts.capacity_protection import load_capacity_protection_leases
+from msplatform.execution.capacity_protection import load_capacity_protection_leases
 
 def execute_prepared_run(config_path, session_path, request_path, completion_path):
     config = json.loads(config_path.read_text(encoding="utf-8-sig"))

@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 from msplatform.contracts.machine_contracts import load_json
-from common.contracts.capacity_ledger import load_capacity_ledger
+from msplatform.execution.capacity_ledger import load_capacity_ledger
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_run_lifecycle import start_candidate_run
 from msplatform.workflows.oa_candidate.candidate_source_closure import frozen_source_path
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import run_candidate_workflow as candidate_workflow

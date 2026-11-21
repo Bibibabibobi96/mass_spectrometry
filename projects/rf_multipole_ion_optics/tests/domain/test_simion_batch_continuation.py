@@ -14,7 +14,7 @@ from pathlib import Path
 
 from msplatform.contracts.machine_contracts import ContractError
 from msplatform.execution.manifest_publication import build_run_manifest
-from common.contracts.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
+from msplatform.execution.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
 from msplatform.execution.run_capacity_lifecycle import register_writing
 from msplatform.workflows.rf_batch_continuation import prepare
 

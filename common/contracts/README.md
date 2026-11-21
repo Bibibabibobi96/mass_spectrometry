@@ -559,7 +559,7 @@ audit须为同项目规范run、`mode=owned_payload_view_repair`、solver_review
 
 `New-RunPackage`在创建前要求受管`ArtifactRoot`精确指向`artifacts/projects/<Project>`。
 历史误传导致的`projects/<owner>/runs/runs/<run-id>`轻证据包，可显式用
-`python -m common.contracts.legacy_owner_disposition --action retire-misplaced-light-run --artifact-root <root> --run-config <original-config> --backup-manifest <backup-manifest> --owner <project>`预检。
+`python -m msplatform.execution.legacy_owner_disposition --action retire-misplaced-light-run --artifact-root <root> --run-config <original-config> --backup-manifest <backup-manifest> --owner <project>`预检。
 备份须为同项目规范run、模式`misplaced_light_run_backup`，其完整manifest绑定
 `results/misplaced_run_backup_receipt.json`及`inputs/misplaced_run_snapshot/`下全部原始文件副本。
 原包必须为无租约／消费者的ready light证据，且保留原错误账本owner=`runs`；不改身份或分类。
@@ -593,7 +593,7 @@ PowerShell入口使用精确RepoRoot上下文。独立writer/verifier的直接�
 ### 容量准入与维护
 
 `reconcile_artifact_capacity.py`与[`artifact_capacity_policy.json`](../../src/msplatform/execution/resources/artifact_capacity_policy.json)实现日常容量治理，只有三项职责：
-启动检查、生命周期登记和维护清理。唯一权威状态是[`capacity_ledger.py`](capacity_ledger.py)维护的
+启动检查、生命周期登记和维护清理。唯一权威状态是[`capacity_ledger.py`](../../src/msplatform/execution/capacity_ledger.py)维护的
 `capacity_ledger.json`及[`capacity_protection.py`](capacity_protection.py)维护的公共租约，不存在第二套项目级门禁。
 artifact布局检查接受该精确台账文件并复用台账校验器；租约目录的既有decision lock由公共租约读取器识别，
 它是内核互斥所用的保留文件，不是JSON证据。其他未登记common文件仍拒绝。
@@ -1079,7 +1079,7 @@ OA的二区／三区和RF的四／六／八极使用同一选择语义；极数�
 显式`target.mode`先在所选结构内筛选对应能力，再判断其成熟度；未知模式不能回退同结构的其他能力。
 
 ```powershell
-.\.venv\Scripts\python.exe -m common.contracts.validate_design_request <request.json>
+.\.venv\Scripts\python.exe -m msplatform.workflows.design_request <request.json>
 .\.venv\Scripts\python.exe -m common.contracts.plan_design_request <request.json> `
   --run-id 20260720_120000__analysis__repo__design-request `
   --output-dir <new-run-directory>
@@ -1158,7 +1158,7 @@ Python owner执行使用编译计划记录的`python_executable`（编译器当�
 的唯一资产清单，记录来源run三件套、Git内正式验证合同及各正式资产的相对路径、字节数和SHA-256：
 
 ```powershell
-python common/contracts/write_formal_asset_manifest.py `
+python -m msplatform.execution.write_formal_asset_manifest `
   --project-root <artifacts-project-root> --repository-root <repository-root> `
   --project <project_id> --source-run-id <run_id> `
   --validation-contract <formal-validation-json> `
@@ -1166,7 +1166,7 @@ python common/contracts/write_formal_asset_manifest.py `
 ```
 
 结构门禁（包括公共PA缓存）默认只查元数据和大小，不声明载荷内容正确；正式发布或资产变更后再
-从仓库根运行`python -m common.contracts.verify_artifact_layout <artifacts-projects-root> --verify-hashes`
+从仓库根运行`python -m msplatform.execution.verify_artifact_layout <artifacts-projects-root> --verify-hashes`
 做完整哈希复核。`--cache-entry`窄消费验证始终核对载荷哈希；它不继承结构预览的浅检查范围。正式结果本体不复制回
 来源run；为便于独立交付，可在结果包保留三份小型来源JSON快照，但它们不能替代原始run或正式清单。
 只复核当前正式发布而不审计旧run命名时使用`--formal-only --repository-root <repository-root>`。

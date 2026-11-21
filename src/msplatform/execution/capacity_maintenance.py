@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from common.contracts import capacity_protection as protection
+from msplatform.execution import capacity_protection as protection
 from msplatform.execution.recorded_file_removal import write_json_atomic
 
 

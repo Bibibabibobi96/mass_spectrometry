@@ -8,6 +8,14 @@ Current scope is P4 V8.7 (2026-11-12); historical evidence keeps its original ve
 
 ## 当前边界
 
+Assembly frozen snapshots no longer select the legacy `common/contracts`,
+`common/paths`, `common/simion`, host-adapter or budget-adapter production sources.
+Generic stage, design, formal-asset and artifact-maintenance implementations have
+canonical installed owners. The 18 unaffected freezer tests passed in 250.566
+seconds; the remaining detached planning/lease case then passed in 15.004 seconds
+after its frozen CLI was routed to the canonical lease API. This is software
+closure evidence; the same-candidate full gate and native acceptance remain open.
+
 The Assembly dependency freezer and paired frontend process support now have their
 sole PowerShell owners under `msplatform.execution/resources` and
 `msplatform/workflows/resources`. The former `integrations/runtime` files and

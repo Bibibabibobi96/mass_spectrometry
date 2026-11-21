@@ -11,7 +11,7 @@ import json
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from common.contracts import capacity_ledger
+from msplatform.execution import capacity_maintenance as capacity_ledger
 from msplatform.io.file_identity import file_sha256
 from msplatform.execution.recorded_file_removal import remove_recorded_files, write_json_atomic
 

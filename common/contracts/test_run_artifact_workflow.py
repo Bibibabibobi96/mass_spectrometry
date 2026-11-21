@@ -11,11 +11,11 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
-from common.contracts.capacity_ledger import load_capacity_ledger
-from common.contracts.capacity_protection import load_capacity_protection_leases
+from msplatform.execution.capacity_ledger import load_capacity_ledger
+from msplatform.execution.capacity_protection import load_capacity_protection_leases
 from msplatform.execution.retention import file_record
-from common.contracts.test_support import run_artifact_workflow as fixture
-from common.contracts.test_support.run_artifact_workflow import OWNER, PROJECT, PWSH, REPO, released_writer
+from msplatform.execution.test_support import run_artifact_workflow as fixture
+from msplatform.execution.test_support.run_artifact_workflow import OWNER, PROJECT, PWSH, REPO, released_writer
 
 
 @unittest.skipUnless(PWSH and os.name == "nt", "Windows PowerShell workflow boundary")
@@ -50,7 +50,7 @@ if(-not$caught){{throw 'Live foreign original owner accepted'}}
             self.assertIn("OWNER_IDENTITY_CURRENT_AND_HISTORICAL=PASS", result.stdout)
 
     def test_default_script_route_owns_pipe_holding_child_and_preserves_timeout(self):
-        from common.contracts.test_support import fixture_process
+        from msplatform.execution.test_support import fixture_process
 
         actual = fixture_process.run_fixture_process
         def short_timeout(command, **kwargs):
@@ -307,7 +307,7 @@ if([Convert]::ToBase64String([IO.File]::ReadAllBytes($leasePath))-cne$leaseBefor
 
     def test_powershell_inherited_grant_is_rechecked_across_processes(self) -> None:
         import shutil
-        from common.contracts.test_support.host_cpu import install_controlled_cpu_snapshot
+        from msplatform.execution.test_support.host_cpu import install_controlled_cpu_snapshot
 
         with tempfile.TemporaryDirectory(prefix="workflow-ps-inherited-") as directory:
             root = Path(directory)

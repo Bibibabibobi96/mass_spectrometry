@@ -18,8 +18,8 @@ from unittest.mock import patch
 from msplatform.execution.resources import resource_path
 from msplatform.execution.manifest_publication import build_run_manifest
 from msplatform.execution.retention import file_record
-from common.contracts.capacity_ledger import initialize_capacity_ledger, record_capacity_object
-from common.contracts.capacity_protection import create_capacity_protection_lease
+from msplatform.execution.capacity_ledger import initialize_capacity_ledger, record_capacity_object
+from msplatform.execution.capacity_protection import create_capacity_protection_lease
 from msplatform.execution.run_capacity_lifecycle import seal_checkpoint
 from common.simion import test_pa_family_cache as public_cache_tests
 from msplatform.workflows.paired_accelerator_static_field import runtime

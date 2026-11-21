@@ -16,7 +16,7 @@ from unittest.mock import Mock, patch
 
 from common.contracts import capacity_ledger
 from common.contracts import reconcile_artifact_capacity as capacity
-from common.contracts.capacity_protection import create_capacity_protection_lease
+from msplatform.execution.capacity_protection import create_capacity_protection_lease
 
 
 READY_DUTIES = {

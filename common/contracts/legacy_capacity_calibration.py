@@ -18,9 +18,9 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
-from common.contracts import capacity_ledger, capacity_protection
-from common.contracts.execution_aliases import execution_alias_root_is_valid
-from common.contracts.legacy_owner_disposition import load_legacy_owner_disposition
+from msplatform.execution import capacity_ledger, capacity_protection
+from msplatform.execution.execution_aliases import execution_alias_root_is_valid
+from msplatform.execution.legacy_owner_disposition import load_legacy_owner_disposition
 from msplatform.execution.retention import classify_file
 from msplatform.execution.artifact_retention import validate_retention
 from msplatform.execution.recorded_file_removal import write_json_atomic

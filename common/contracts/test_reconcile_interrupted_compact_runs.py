@@ -8,10 +8,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 from msplatform.io.file_identity import file_sha256
-from common.contracts.capacity_ledger import initialize_capacity_ledger
+from msplatform.execution.capacity_ledger import initialize_capacity_ledger
 from common.contracts import reconcile_interrupted_compact_runs as reconciliation
-from common.contracts.reconcile_interrupted_compact_runs import reconcile, summarize
-from common.contracts.capacity_protection import create_capacity_protection_lease
+from msplatform.execution.reconcile_interrupted_compact_runs import reconcile, summarize
+from msplatform.execution.capacity_protection import create_capacity_protection_lease
 
 
 class InterruptedCompactReconciliationTests(unittest.TestCase):

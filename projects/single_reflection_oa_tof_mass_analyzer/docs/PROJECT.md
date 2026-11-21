@@ -6,6 +6,12 @@ host/freezer entrypoint regressions passed in 28.144 seconds, including bound
 Python, grant inheritance, failure release and unknown-writer protection. This
 is software closure evidence, not a new native or scientific qualification.
 
+Candidate stage reuse, design admission, capacity reading, Formal publication
+and solver-free expected-value comparisons now import canonical `msplatform`
+owners. The source freezer names those installed resources instead of retired
+`common` modules. Existing behavior and missing/tamper tests remain; no native
+result or scientific qualification is added by this ownership migration.
+
 ## Installed component PA-plan owner
 
 `msplatform.backends.simion.simion_component_pa_plan` now owns the pure

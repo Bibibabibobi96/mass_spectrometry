@@ -183,7 +183,7 @@ if os.environ.get('TEST_MASS_FINALIZATION_SENTINEL'):
 
 def sealed_mass_source(root):
     """Small real producer-shaped manifest and calibrated private capacity owner."""
-    from common.contracts.capacity_ledger import initialize_capacity_ledger, record_capacity_object
+    from msplatform.execution.capacity_ledger import initialize_capacity_ledger, record_capacity_object
     from msplatform.execution.manifest_publication import publish_run_manifest
 
     artifacts = root / 'artifacts'
@@ -319,7 +319,7 @@ def mass_native_fixture(root):
     (formal/'simion').mkdir(parents=True, exist_ok=True)
     (formal/'comsol/single_reflection_oa_tof_mass_analyzer__model.mph').write_bytes(b'inert formal model')
     (formal/'simion/oatof_ideal_grounded.iob').write_bytes(b'inert formal IOB')
-    from common.contracts.capacity_ledger import initialize_capacity_ledger
+    from msplatform.execution.capacity_ledger import initialize_capacity_ledger
     initialize_capacity_ledger(artifacts, objects=[])
     fake_simion = root/'inert-simion.exe'
     fake_simion.write_bytes(b'inert native selector')
@@ -479,7 +479,7 @@ def run_mass_native(owner, fixture, env, run_id, simion, *extra, timeout=180):
 
 class MassSpectrumReanalysisTests(unittest.TestCase):
     def test_consumed_projection_rejects_unsealed_tampered_and_incomplete_records(self):
-        from common.contracts.capacity_ledger import record_capacity_object
+        from msplatform.execution.capacity_ledger import record_capacity_object
         from msplatform.execution.manifest_publication import publish_run_manifest
         from msplatform.workflows.single_reflection_mass_spectrum_study import select_analysis_source as select_source
 

@@ -791,7 +791,7 @@ def _manifest_alias_record(records: list[dict], path: Path, *, base_dir: Path) -
 
 def select_postprocess_parent(parent: Path, consumer_artifact_root: Path) -> dict:
     """Admit only sealed Candidate inputs/exports, never a guessed old model."""
-    from common.contracts.capacity_ledger import load_capacity_ledger
+    from msplatform.execution.capacity_ledger import load_capacity_ledger
     from msplatform.execution.run_capacity_lifecycle import resolve_consumed_run_capacity_owner
     from msplatform.io.manifest_records import record_path
     from msplatform.execution.retention import verify_record

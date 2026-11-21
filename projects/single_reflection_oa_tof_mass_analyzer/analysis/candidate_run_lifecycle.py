@@ -363,7 +363,7 @@ def finalize_candidate_run(
     native_record = config.get("provenance", {}).get("comsol_native_completion")
     if native_record is not None:
         from msplatform.execution.retention import verify_record
-        from common.contracts.stage_reuse import SCHEMA_VERSION, RECEIPT_ROLE
+        from msplatform.execution.stage_reuse import SCHEMA_VERSION, RECEIPT_ROLE
         receipt_path = run_root / "stage_receipts/comsol_native.json"
         if Path(native_record.get("path", "")).resolve() != receipt_path:
             raise ValueError("Native completion must be this run's original public phase receipt")

@@ -16,7 +16,7 @@ try{
   $projectRoot=Join-Path $artifactRoot 'projects\fixture'
   New-Item -ItemType Directory -Force -Path $projectRoot,(Join-Path $artifactRoot 'common')|Out-Null
   Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
-    & $python -c "from pathlib import Path; from common.contracts.capacity_ledger import initialize_capacity_ledger; initialize_capacity_ledger(Path(r'$artifactRoot'), objects=[])"
+    & $python -c "from pathlib import Path; from msplatform.execution.capacity_ledger import initialize_capacity_ledger; initialize_capacity_ledger(Path(r'$artifactRoot'), objects=[])"
     if($LASTEXITCODE-ne0){throw 'Fixture ledger initialization failed.'}
   }
 

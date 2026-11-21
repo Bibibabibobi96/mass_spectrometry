@@ -15,9 +15,9 @@ from pathlib import Path
 from unittest import mock
 from msplatform.contracts.machine_contracts import load_json, sha256
 from msplatform.io.manifest_records import TERMINAL_JOURNAL_NAME
-from common.contracts.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
-from common.contracts.capacity_protection import load_capacity_protection_leases
-from common.contracts.verify_artifact_layout import verify_project
+from msplatform.execution.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
+from msplatform.execution.capacity_protection import load_capacity_protection_leases
+from msplatform.execution.verify_artifact_layout import verify_project
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_run_lifecycle import finalize_candidate_run, start_candidate_run
 from msplatform.execution.inputs import enumerate_python_sources
 from msplatform.workflows.oa_candidate.candidate_source_closure import RELATIVE_PATHS, freeze_candidate_source_closure, frozen_source_path, verify_candidate_source_closure, _execution_resource_source_ids
@@ -407,7 +407,7 @@ def execute_prepared_run(*args):
                 self.assertEqual(config["run_id"], request["package"]["run_id"])
                 self.assertTrue(config["capacity_ledger_lifecycle"]["enabled"])
                 self.assertEqual(config["artifact_retention"]["class"], "solver_review")
-                from common.contracts.stage_reuse import validate_and_write_stage_reuse
+                from msplatform.execution.stage_reuse import validate_and_write_stage_reuse
                 receipt = load_json(run / "stage_receipts/comsol_candidate.json")
                 child = root / "runs/20261028_140100__analysis__python__candidate-v2-reuse"
                 child.mkdir(parents=True)
@@ -2729,7 +2729,7 @@ print('FROZEN_ION_CONSUMER_PASS')
 def postprocess_source_fixture(directory, *, unknown=False, cold=False, comsol_bytes=None, retain_model=False, save_state="raw_complete", legacy_save_complete=False, solution_times=None, resolved_alias=False, request_record_transform=None):
     """Producer-shaped small records; no vendor process or model is fabricated."""
     import csv
-    from common.contracts.capacity_ledger import record_capacity_object
+    from msplatform.execution.capacity_ledger import record_capacity_object
     from msplatform.execution.manifest_publication import publish_run_manifest
     from projects.single_reflection_oa_tof_mass_analyzer.analysis.native_stage_completion import append_native_stage_completion
     artifact = directory / "artifacts"
@@ -2894,7 +2894,7 @@ def postprocess_public_entry(root, artifact):
 
 def cold_export_failed_child_fixture(directory, *, unknown=False, wrong_source=False, normal_phase=False, resolved_alias=False, science_alias_conflict=False):
     """Small stopped-cold-export producer fixture; this executes no solver."""
-    from common.contracts.capacity_ledger import record_capacity_object
+    from msplatform.execution.capacity_ledger import record_capacity_object
     from msplatform.execution.retention import file_record
     from msplatform.execution.manifest_publication import publish_run_manifest
     from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import select_postprocess_parent

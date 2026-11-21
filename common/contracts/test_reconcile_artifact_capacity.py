@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock, Mock, patch
 from pathlib import Path
 
-from common.contracts.capacity_protection import (
+from msplatform.execution.capacity_protection import (
     CapacityProtectionLeaseError,
     create_capacity_protection_lease as _create_capacity_protection_lease,
     load_capacity_protection_leases,

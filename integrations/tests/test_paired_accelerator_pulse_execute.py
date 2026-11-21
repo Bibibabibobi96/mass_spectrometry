@@ -10,7 +10,7 @@ import sys
 import tempfile
 import unittest
 
-from common.contracts.capacity_ledger import initialize_capacity_ledger
+from msplatform.execution.capacity_ledger import initialize_capacity_ledger
 from integrations.tests import test_paired_accelerator_pulse_preparation as preparation_tests
 
 ROOT = Path(__file__).resolve().parents[2]

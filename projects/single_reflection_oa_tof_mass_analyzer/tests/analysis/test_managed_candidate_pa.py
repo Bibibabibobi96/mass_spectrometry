@@ -29,7 +29,7 @@ class ManagedCandidatePaTests(unittest.TestCase):
     def _exercise_detached_handoff(self, cases, *, small_reflectron=False):
         """Real PS/cache/lease; inert native bytes never claim a solved field."""
         from unittest.mock import patch
-        from common.contracts.capacity_ledger import record_capacity_object
+        from msplatform.execution.capacity_ledger import record_capacity_object
         from msplatform.execution.run_capacity_lifecycle import seal_checkpoint
         from msplatform.execution.manifest_publication import build_run_manifest
         from msplatform.backends.simion import pa_family_cache
@@ -437,8 +437,8 @@ write_json_atomic(run/'run_config.json',config)
         # Keep the frozen producer byte-identical. Only host admission is an
         # explicit software adapter; the outer test keeps its real GATE grant.
         # Python deliberately rejects SIMION's first argument, before any PA.
-        from common.contracts.capacity_ledger import initialize_capacity_ledger
-        from common.contracts.capacity_protection import load_capacity_protection_leases
+        from msplatform.execution.capacity_ledger import initialize_capacity_ledger
+        from msplatform.execution.capacity_protection import load_capacity_protection_leases
         from msplatform.workflows.oa_candidate.candidate_source_closure import (
             freeze_candidate_source_closure, frozen_source_path, verify_candidate_source_closure,
         )

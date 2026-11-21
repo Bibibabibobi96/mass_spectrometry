@@ -12,7 +12,7 @@ import unittest
 from projects.rf_multipole_ion_optics.tests.test_support.capacity_fixture import capacity_fixture_source
 from pathlib import Path
 
-from common.contracts.capacity_ledger import initialize_capacity_ledger
+from msplatform.execution.capacity_ledger import initialize_capacity_ledger
 from msplatform.workflows.rf_runtime_profiles import resolve_runtime_profile
 from projects.rf_multipole_ion_optics.analysis.validate_release_construction_gate import (
     _expected_release_state,

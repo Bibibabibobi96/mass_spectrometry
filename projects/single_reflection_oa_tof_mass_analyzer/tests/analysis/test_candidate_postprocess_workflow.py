@@ -617,7 +617,7 @@ class CandidatePostprocessTests(unittest.TestCase):
                         self.assertEqual(budget_record[key], selected["budget_record"][key])
 
     def test_flat_exporter_cannot_substitute_another_science_owner(self):
-        from common.contracts.capacity_ledger import record_capacity_object
+        from msplatform.execution.capacity_ledger import record_capacity_object
         from msplatform.execution.retention import file_record
         from msplatform.execution.manifest_publication import publish_run_manifest
         from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import select_postprocess_parent

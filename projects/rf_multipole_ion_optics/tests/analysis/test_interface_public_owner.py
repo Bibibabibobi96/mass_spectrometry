@@ -236,7 +236,7 @@ foreach($case in @('gui_failed','gui_succeeded','metadata_missing')){
 """.replace('ENTRY', literal(CLI)).replace('ROOT', literal(directory))
             self.run_ps(command)
     def test_actual_config_rewrite_preserves_public_schema_and_finalizes(self):
-        from common.contracts.capacity_ledger import initialize_capacity_ledger
+        from msplatform.execution.capacity_ledger import initialize_capacity_ledger
         repo = PROJECT.parents[1]
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

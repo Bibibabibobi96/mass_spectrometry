@@ -13,7 +13,7 @@ from typing import Callable
 
 from msplatform.execution.artifact_naming import validate_archive_id
 from msplatform.io.file_identity import file_sha256 as sha256
-from common.contracts.write_formal_asset_manifest import (
+from msplatform.execution.write_formal_asset_manifest import (
     record as file_record,
     write_formal_asset_manifest,
 )

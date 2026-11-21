@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from common.contracts.expected_values import assert_expected_values
+from msplatform.contracts.expected_values import assert_expected_values
 
 
 class ExpectedValuesTests(unittest.TestCase):

@@ -23,7 +23,8 @@ import stat
 from pathlib import Path
 from typing import Any
 
-from common.contracts import capacity_ledger, capacity_protection
+from msplatform.execution import capacity_maintenance as capacity_ledger
+from msplatform.execution import capacity_protection
 from msplatform.execution.retention import classify_file
 from msplatform.execution.run_capacity_lifecycle import (
     HEAVY_RETENTION_ROLES, TERMINAL_STATUSES, _load_json, _inventory,

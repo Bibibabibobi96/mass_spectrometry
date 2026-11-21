@@ -10,9 +10,9 @@ from pathlib import Path
 from unittest import mock
 
 from msplatform.io.file_identity import file_sha256, guarded_file_identity
-from common.contracts import stage_reuse
+from msplatform.execution import stage_reuse
 from msplatform.io import file_identity
-from common.contracts.stage_reuse import (
+from msplatform.execution.stage_reuse import (
     StageReuseError,
     validate_and_write_stage_reuse,
     write_stage_receipt,

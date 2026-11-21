@@ -5,7 +5,7 @@ from pathlib import Path
 
 from common.paths.repository_root import REPO_ROOT
 from msplatform.contracts.machine_contracts import load_json
-from common.contracts.validate_design_request import validate_request
+from msplatform.workflows.design_request import validate_request
 
 
 HERE = Path(__file__).resolve().parent

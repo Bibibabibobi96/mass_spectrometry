@@ -12,9 +12,9 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from common.contracts import capacity_ledger
-from common.contracts.capacity_protection import create_capacity_protection_lease
-from common.contracts.verify_artifact_layout import (
+from msplatform.execution import capacity_ledger
+from msplatform.execution.capacity_protection import create_capacity_protection_lease
+from msplatform.execution.verify_artifact_layout import (
     legacy_identity,
     main,
     verify_artifacts_root,
@@ -53,12 +53,12 @@ def record(path: Path, root: Path) -> dict[str, object]:
 
 
 class ArtifactLayoutIdentityTests(unittest.TestCase):
-    def test_module_help_without_pythonpath(self) -> None:
+    def test_module_help_with_explicit_source_root(self) -> None:
         repo = Path(__file__).resolve().parents[2]
         env = dict(os.environ)
-        env.pop("PYTHONPATH", None)
+        env["PYTHONPATH"] = str(repo / "src")
         result = subprocess.run(
-            [sys.executable, "-m", "common.contracts.verify_artifact_layout", "--help"],
+            [sys.executable, "-m", "msplatform.execution.verify_artifact_layout", "--help"],
             cwd=repo, env=env, capture_output=True, text=True, check=False, timeout=30,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -301,7 +301,7 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
             with patch("msplatform.backends.simion.pa_family_cache._verify_payload_record",
                        side_effect=AssertionError("metadata read PA or parity payload")):
                 verify_artifacts_root(projects)
-            with patch("common.contracts.verify_artifact_layout.validate_pa_family_cache_generation",
+            with patch("msplatform.execution.verify_artifact_layout.validate_pa_family_cache_generation",
                        wraps=validate_pa_family_cache_generation) as verify:
                 verify_artifacts_root(projects, verify_hashes=True)
             self.assertEqual(verify.call_count, 1)
@@ -370,7 +370,7 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
                     moved.rmdir()
                 try:
                     with self.assertRaisesRegex(AssertionError, "generation differs"), patch(
-                        "common.contracts.verify_artifact_layout.validate_pa_family_cache_generation",
+                        "msplatform.execution.verify_artifact_layout.validate_pa_family_cache_generation",
                         side_effect=AssertionError("followed recovery reparse before rejecting it"),
                     ):
                         verify_artifacts_root(projects)
@@ -401,7 +401,7 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
             self.assertIn("duplicate case-insensitive", str(caught.exception.__cause__))
 
     def test_recovery_projection_validates_noncurrent_generations_only_by_metadata(self) -> None:
-        from common.contracts.verify_artifact_layout import _verify_pa_family_recovery_tree
+        from msplatform.execution.verify_artifact_layout import _verify_pa_family_recovery_tree
         from msplatform.backends.simion.pa_family_cache import publish_pa_family_cache, repair_pa_family_cache_generation
 
         with tempfile.TemporaryDirectory() as directory:
@@ -414,7 +414,7 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
             damaged.chmod(damaged.stat().st_mode | 0o200)
             damaged.write_bytes(b"bad")
             current = repair_pa_family_cache_generation(old).generation_directory
-            with patch("common.contracts.verify_artifact_layout.validate_pa_family_cache_generation",
+            with patch("msplatform.execution.verify_artifact_layout.validate_pa_family_cache_generation",
                        wraps=validate_pa_family_cache_generation) as verify:
                 manifest = _verify_pa_family_recovery_tree(
                     current.parents[1], [old, current], current, verify_hashes=True

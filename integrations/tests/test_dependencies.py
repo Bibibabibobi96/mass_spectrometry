@@ -244,7 +244,7 @@ $null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath 
             loader.write_text("""param($Snapshot)
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 $ErrorActionPreference='Stop'
-. (Join-Path $Snapshot 'common/resource_budget_support.ps1')
+. (Join-Path $Snapshot 'src/msplatform/execution/resources/simion_dispatch_support.ps1')
 $expected=[IO.Path]::GetFullPath((Join-Path $Snapshot 'src/msplatform/execution/resources/simion_dispatch_support.ps1'))
 foreach($name in @('Start-ObservedFormalProcess','Invoke-SimionBatchPhase','Invoke-ResourceBudgetedProcesses')){
  $command=Get-Command -Name $name -CommandType Function -ErrorAction Stop
@@ -471,8 +471,8 @@ with tempfile.TemporaryDirectory() as request_directory:
                          {"prepared_joint", "oa_mr", "paired_accelerator_static_field",
                           "paired_accelerator_pulse",
                           "single_reflection_flight"})
-        self.assertLessEqual(entries["src/msplatform/workflows/resources/run_artifact_workflow.ps1"],
-                             entries["common/resource_budget_support.ps1"])
+        self.assertNotIn("common/resource_budget_support.ps1", entries)
+        self.assertNotIn("common/host_execution_lease.ps1", entries)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
     def test_prepared_joint_loads_shared_mr_continuation_guard_from_snapshot(self) -> None:
@@ -543,8 +543,8 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_RO
             code = '''
 import sys
 from pathlib import Path
-from common.contracts import capacity_ledger, verify_artifact_layout
-from common.contracts import gui_source_protection
+from msplatform.execution import capacity_ledger, verify_artifact_layout
+from msplatform.execution import gui_source_protection
 from msplatform.execution import artifact_cache_contract, solver_review_retirement
 root=Path(sys.argv[1]).resolve()
 for module in (capacity_ledger,solver_review_retirement,verify_artifact_layout,artifact_cache_contract,gui_source_protection):
@@ -672,7 +672,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_RO
                 selected = load(output / "code_inventory.json")["dependencies"]
                 paths = {row["source_repo_path"] for row in selected}
                 self.assertIn("src/msplatform/execution/manifest_publication.py", paths)
-                self.assertIn("common/contracts/capacity_protection.py", paths)
+                self.assertIn("src/msplatform/execution/capacity_protection.py", paths)
                 self.assertIn("src/msplatform/execution/retention.py", paths)
                 self.assertNotIn("common/contracts/artifact_retention.py", paths)
                 self.assertEqual(len({row["id"] for row in selected}), len(selected))
@@ -685,7 +685,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_RO
 from pathlib import Path
 from msplatform.backends.simion import native_completion
 from msplatform.execution import retention as write_run_manifest
-from common.contracts import capacity_protection
+from msplatform.execution import capacity_protection
 assert Path(native_completion.__file__).is_relative_to(Path.cwd())
 assert Path(write_run_manifest.__file__).is_relative_to(Path.cwd())
 assert Path(capacity_protection.__file__).is_relative_to(Path.cwd())
@@ -780,7 +780,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_RO
                 cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
             self.assertEqual(frozen.returncode, 0, frozen.stdout + frozen.stderr)
             selected = load(run / "inputs/code_inventory.json")["dependencies"]
-            self.assertIn("common/contracts/reconcile_artifact_capacity.py",
+            self.assertIn("src/msplatform/execution/reconcile_artifact_capacity.py",
                           {row["source_repo_path"] for row in selected})
             snapshot = run / "inputs/runtime_snapshot"
             environment = dict(os.environ)
@@ -789,7 +789,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_RO
             protected = artifact_root / "projects/instrument_assembly/runs/test"
             protected.mkdir(parents=True)
             command = [sys.executable, "-B", "-s", "-m",
-                       "common.contracts.reconcile_artifact_capacity",
+                       "msplatform.execution.capacity_lease_cli",
                        "--artifact-root", str(artifact_root)]
             created = subprocess.run(command + ["--create-protection-lease", "frozen-test",
                 "--lease-owner", "instrument_assembly", "--lease-ttl-seconds", "60",

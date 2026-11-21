@@ -8,7 +8,6 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from common.paths.repository_root import REPO_ROOT
 from msplatform.contracts.machine_contracts import ContractError, load_json, validate_schema
 
 
@@ -163,7 +162,7 @@ def validate_path(request_path: Path, registry_path: Path) -> dict[str, Any]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("request", type=Path)
-    parser.add_argument("--registry", type=Path, default=REPO_ROOT / "config" / "project_registry.json")
+    parser.add_argument("--registry", type=Path, default=Path.cwd() / "config" / "project_registry.json")
     args = parser.parse_args()
     result = validate_path(args.request, args.registry)
     print(json.dumps(result, ensure_ascii=False, indent=2))

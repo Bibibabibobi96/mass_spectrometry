@@ -1797,7 +1797,7 @@ $data=@{};if($null-ne$caught){foreach($key in $caught.Exception.Data.Keys){$data
         import shutil
         import subprocess
         import sys
-        from common.contracts.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
+        from msplatform.execution.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
 
         powershell = shutil.which("pwsh")
         if powershell is None:

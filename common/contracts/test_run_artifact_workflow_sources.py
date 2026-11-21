@@ -11,11 +11,11 @@ import tempfile
 import unittest
 import unittest.mock
 from common.contracts import capacity_ledger
-from common.contracts.capacity_ledger import initialize_capacity_ledger
-from common.contracts.capacity_protection import load_capacity_protection_leases
+from msplatform.execution.capacity_ledger import initialize_capacity_ledger
+from msplatform.execution.capacity_protection import load_capacity_protection_leases
 from msplatform.execution.retention import file_record
-from common.contracts.test_support import run_artifact_workflow as fixture
-from common.contracts.test_support.run_artifact_workflow import CALLBACK, OWNER, PROJECT, PWSH, REPO, released_writer
+from msplatform.execution.test_support import run_artifact_workflow as fixture
+from msplatform.execution.test_support.run_artifact_workflow import CALLBACK, OWNER, PROJECT, PWSH, REPO, released_writer
 
 
 @unittest.skipUnless(PWSH and os.name == "nt", "Windows PowerShell workflow boundary")
@@ -312,7 +312,7 @@ try{{
 
 
     def test_native_source_default_execution_root_accepts_cross_root_and_resumes_without_new_alias(self) -> None:
-        from common.contracts.execution_aliases import execution_alias_root_is_valid
+        from msplatform.execution.execution_aliases import execution_alias_root_is_valid
         from common.contracts import legacy_capacity_calibration as calibration
         from common.contracts import reconcile_artifact_capacity as maintenance
         with tempfile.TemporaryDirectory(prefix='native-source-default-') as directory:
@@ -402,7 +402,7 @@ catch{{if($_.Exception.Message-notmatch'only for Python prepared'){{throw}}}}
             hooks = f"""$originalPublisher=${{function:Publish-WorkflowTerminal}}
 function Publish-WorkflowTerminal {{
  param($Python,$RepoRoot,$CompletionPath,$SessionPath,$WaitPath,$MaximumRunBytes)
- & $Python -B -c 'from pathlib import Path;from common.contracts.capacity_protection import load_capacity_protection_leases;import sys;p=load_capacity_protection_leases(Path(sys.argv[1]));assert Path(sys.argv[2]).resolve() in p["protected_paths"];assert p["committed_new_bytes"]==0' '{source_root}' '{parent_run}'
+ & $Python -B -c 'from pathlib import Path;from msplatform.execution.capacity_protection import load_capacity_protection_leases;import sys;p=load_capacity_protection_leases(Path(sys.argv[1]));assert Path(sys.argv[2]).resolve() in p["protected_paths"];assert p["committed_new_bytes"]==0' '{source_root}' '{parent_run}'
  if($LASTEXITCODE-ne0){{throw 'Recovery source protection was absent'}}
  & $originalPublisher @PSBoundParameters
 }}"""

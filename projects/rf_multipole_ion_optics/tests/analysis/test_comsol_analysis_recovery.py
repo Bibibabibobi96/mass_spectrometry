@@ -16,7 +16,7 @@ from common.contracts.test_support.run_artifact_workflow import copy_scientific_
 
 from msplatform.execution.resources import resource_path
 from msplatform.execution.retention import file_record
-from common.contracts.capacity_ledger import initialize_capacity_ledger
+from msplatform.execution.capacity_ledger import initialize_capacity_ledger
 from projects.rf_multipole_ion_optics.tests.domain.test_analyze_comsol_transport_metrics import scenario
 
 REPO = Path(__file__).resolve().parents[4]

@@ -180,7 +180,7 @@ if(-not$caught){throw 'unknown writer failed to reach retaining owner boundary'}
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_actual_cli_reuses_checkpoint_exports_and_resumes_without_compute(self):
-        from common.contracts.capacity_ledger import initialize_capacity_ledger
+        from msplatform.execution.capacity_ledger import initialize_capacity_ledger
         from msplatform.components.rf_multipole.event_table import PARTICLE_STATE_COLUMNS
         from msplatform.backends.simion.rf_ion11_source import read_ion11_source_states as ion11_sources
 

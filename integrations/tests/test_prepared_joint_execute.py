@@ -17,7 +17,7 @@ MR = REPO / "projects/parallel_mirror_dual_stripe_mr_tof"
 
 def analysis_source_fixture(workspace, *, status="failed", owner="instrument_assembly", complete=True):
     """Public manifest/ledger with synthetic native-completion evidence, no solver."""
-    from common.contracts.capacity_ledger import initialize_capacity_ledger
+    from msplatform.execution.capacity_ledger import initialize_capacity_ledger
     from msplatform.execution.manifest_publication import build_run_manifest
     from msplatform.execution.retention import file_record
     root = workspace / "artifacts"

@@ -19,7 +19,7 @@ REPO = Path(__file__).resolve().parents[2]
 
 class NativeFastAdjustRuntimeSupportTests(unittest.TestCase):
     def test_governed_transaction_uses_guarded_private_copy_without_generation(self):
-        from common.contracts.capacity_protection import create_capacity_protection_lease
+        from msplatform.execution.capacity_protection import create_capacity_protection_lease
         from common.simion.test_pa_family_cache import PAFamilyCacheTest
 
         fixture = PAFamilyCacheTest()

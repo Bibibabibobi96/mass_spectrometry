@@ -472,7 +472,7 @@ if($env:FIXTURE_MODE-eq'producer_failure'){throw 'PRODUCER_ORIGINAL_SENTINEL'}
             evidence = diagnostics_root
             if evidence is None and os.environ.get("OATOF_TEST_DIAGNOSTICS_ROOT"):
                 evidence = Path(os.environ["OATOF_TEST_DIAGNOSTICS_ROOT"])
-            from common.contracts.capacity_ledger import initialize_capacity_ledger
+            from msplatform.execution.capacity_ledger import initialize_capacity_ledger
             initialize_capacity_ledger(root / "configured_artifacts", objects=[])
             result = fixture_process.run_fixture_process(command, root=root, environment=env, mode=mode,
                                                          timeout=timeout, diagnostics_root=evidence)

@@ -60,7 +60,7 @@ ELEMENTARY_CHARGE_C = _ELEMENTARY_CHARGE_C
 def _assert_expected(
     actual: Any, expected: Any, path: str, *, abs_tol: float, rel_tol: float
 ) -> None:
-    from common.contracts.expected_values import assert_expected_values
+    from msplatform.contracts.expected_values import assert_expected_values
 
     assert_expected_values(
         actual, expected, path, abs_tol=abs_tol, rel_tol=rel_tol,

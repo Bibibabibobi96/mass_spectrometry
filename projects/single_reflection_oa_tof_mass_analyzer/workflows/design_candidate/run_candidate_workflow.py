@@ -25,7 +25,7 @@ from msplatform.execution.recorded_file_removal import write_json_atomic
 from msplatform.execution.retention import verify_record
 from msplatform.execution.retention import file_record
 from msplatform.io.manifest_records import require_completed_terminal_publication
-from common.contracts.stage_reuse import validate_and_write_stage_reuse, write_stage_receipt
+from msplatform.execution.stage_reuse import validate_and_write_stage_reuse, write_stage_receipt
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_run_lifecycle import (
     finalize_candidate_run,
     refresh_candidate_provisional_manifest,

@@ -14,10 +14,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from common.contracts import capacity_ledger, capacity_protection, legacy_owner_disposition
+from msplatform.execution import capacity_maintenance as capacity_ledger
+from msplatform.execution import capacity_protection, legacy_owner_disposition
 from msplatform.execution.run_capacity_lifecycle import resume_partial_retirements
-from common.contracts.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
-from common.contracts.legacy_owner_disposition import retire_misplaced_light_run
+from msplatform.execution.capacity_maintenance import initialize_capacity_ledger, load_capacity_ledger
+from msplatform.execution.legacy_owner_disposition import retire_misplaced_light_run
 
 
 class OwnerDispositionAuthoringTests(unittest.TestCase):
@@ -319,8 +320,8 @@ class MisplacedLightRunRecoveryTests(unittest.TestCase):
                             and document.get("status") == "complete")):
                         raise OSError("injected publication interruption")
                     write_json_atomic(path, document)
-                with patch("common.contracts.legacy_owner_disposition.write_json_atomic", side_effect=interrupted_write), \
-                     patch("common.contracts.legacy_owner_disposition.remove_recorded_files",
+                with patch("msplatform.execution.legacy_owner_disposition.write_json_atomic", side_effect=interrupted_write), \
+                     patch("msplatform.execution.legacy_owner_disposition.remove_recorded_files",
                            side_effect=interrupted_remove if scenario == "remove" else remove_recorded_files):
                     with self.assertRaises(OSError):
                         retire_misplaced_light_run(root, source / "run_config.json", backup_manifest=manifest, owner="p", apply=True)
@@ -331,16 +332,16 @@ class MisplacedLightRunRecoveryTests(unittest.TestCase):
                 self.assertFalse(source.exists())
 
     def test_public_cli_requires_explicit_action_and_host_lease_for_apply(self):
-        from common.contracts.legacy_owner_disposition import main
+        from msplatform.execution.legacy_owner_disposition import main
         arguments = ["lifecycle", "--action", "retire-misplaced-light-run", "--artifact-root", "unused",
                      "--run-config", "config.json", "--backup-manifest", "backup.json", "--owner", "p"]
         with patch.object(sys, "argv", arguments), patch(
-                "common.contracts.legacy_owner_disposition.retire_misplaced_light_run", return_value={}) as retire:
+                "msplatform.execution.legacy_owner_disposition.retire_misplaced_light_run", return_value={}) as retire:
             self.assertEqual(main(), 0)
             self.assertFalse(retire.call_args.kwargs["apply"])
         with patch.object(sys, "argv", arguments + ["--apply"]), patch.dict(os.environ, {
                 "MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": ""}), patch(
-                "common.contracts.legacy_owner_disposition.retire_misplaced_light_run") as retire:
+                "msplatform.execution.legacy_owner_disposition.retire_misplaced_light_run") as retire:
             with self.assertRaises(SystemExit):
                 main()
             retire.assert_not_called()

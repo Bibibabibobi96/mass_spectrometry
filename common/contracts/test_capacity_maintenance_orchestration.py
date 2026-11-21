@@ -15,7 +15,7 @@ from unittest.mock import patch
 from common.contracts import capacity_ledger
 from msplatform.execution import recorded_file_removal
 from common.contracts import reconcile_artifact_capacity as capacity
-from common.contracts.capacity_protection import create_capacity_protection_lease
+from msplatform.execution.capacity_protection import create_capacity_protection_lease
 
 
 DEADLINE = "2026-10-22"

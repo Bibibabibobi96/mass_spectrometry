@@ -10,8 +10,8 @@ import re
 import stat
 from pathlib import Path
 
-from common.contracts import capacity_protection as protection
-from common.contracts import capacity_ledger
+from msplatform.execution import capacity_protection as protection
+from msplatform.execution import capacity_ledger
 from msplatform.execution.artifact_retention import validate_retention
 from msplatform.execution.artifact_cache_contract import (
     INTEGRATION_CACHE_ROLES, INTEGRATION_CACHE_ROOT_BY_ROLE,
@@ -25,7 +25,7 @@ from msplatform.execution.artifact_naming import (
 )
 
 from msplatform.io.file_identity import file_sha256
-from common.contracts.execution_aliases import execution_alias_root_is_valid
+from msplatform.execution.execution_aliases import execution_alias_root_is_valid
 
 from msplatform.backends.simion.pa_family_cache import (
     PAFamilyCacheError,

@@ -136,9 +136,9 @@ foreach($mode in @('success','science_failure','no_science','no_operations')){
 
     def test_prepared_joint_explicit_source_uses_its_original_root_lease(self):
         import json
-        from common.contracts.capacity_ledger import initialize_capacity_ledger
-        from common.contracts.capacity_protection import load_capacity_protection_leases
-        from common.contracts.test_cross_root_protection import CrossRootProtectionTests
+        from msplatform.execution.capacity_ledger import initialize_capacity_ledger
+        from msplatform.execution.capacity_protection import load_capacity_protection_leases
+        from msplatform.execution.test_cross_root_protection import CrossRootProtectionTests
 
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)

@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from common.contracts.capacity_ledger import initialize_capacity_ledger
+from msplatform.execution.capacity_ledger import initialize_capacity_ledger
 from msplatform.execution.retention import file_record
 from projects.rf_multipole_ion_optics.runtime import _transport_run_artifacts as artifacts
 from projects.rf_multipole_ion_optics.runtime.run_round_rod_transport import execute as execute_round_rod

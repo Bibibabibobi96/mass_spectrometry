@@ -192,7 +192,7 @@ class IdealSourceComparisonTests(unittest.TestCase):
         self.assertFalse(root.exists(), "a fully closed healthy owned workspace must be cleaned")
 
     def legacy_ideal_parent(self, root):
-        from common.contracts.capacity_ledger import initialize_capacity_ledger
+        from msplatform.execution.capacity_ledger import initialize_capacity_ledger
         from msplatform.execution.manifest_publication import publish_run_manifest
         import hashlib
         from msplatform.workflows.oa_tof_design import source_experiment
@@ -269,7 +269,7 @@ class IdealSourceComparisonTests(unittest.TestCase):
         return artifact_root, parent, config_path, cases, input_root, context
 
     def test_legacy_numeric_csv_is_referenced_through_public_source_owner_without_resampling(self):
-        from common.contracts.capacity_protection import load_capacity_protection_leases
+        from msplatform.execution.capacity_protection import load_capacity_protection_leases
         with retained_workspace() as root:
             artifact_root, parent, config_path, cases, input_root, context = self.legacy_ideal_parent(root)
             before = {path: path.read_bytes() for path in parent.rglob("*") if path.is_file()}
@@ -603,7 +603,7 @@ $r | ConvertTo-Json -Depth 20 -Compress
     def test_legacy_ideal_projection_rejects_unproven_inputs_environment_settings_and_owner(self):
         from msplatform.execution.manifest_publication import build_run_manifest
         from msplatform.execution.retention import file_record
-        from common.contracts.capacity_protection import load_capacity_protection_leases
+        from msplatform.execution.capacity_protection import load_capacity_protection_leases
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             artifact_root, parent, config_path, cases, input_root, context = self.legacy_ideal_parent(root)

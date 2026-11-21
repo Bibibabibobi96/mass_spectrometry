@@ -9,7 +9,7 @@ import tempfile
 import unittest
 
 from common.contracts.test_support import run_artifact_workflow as owner_fixture
-from common.contracts.capacity_protection import load_capacity_protection_leases
+from msplatform.execution.capacity_protection import load_capacity_protection_leases
 
 REPO = owner_fixture.REPO
 OWNER = owner_fixture.OWNER

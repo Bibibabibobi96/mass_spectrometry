@@ -10,8 +10,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from common.contracts.capacity_ledger import initialize_capacity_ledger
-from common.contracts.capacity_protection import load_capacity_protection_leases
+from msplatform.execution.capacity_ledger import initialize_capacity_ledger
+from msplatform.execution.capacity_protection import load_capacity_protection_leases
 from msplatform.execution.manifest_publication import build_run_manifest
 from msplatform.execution.retention import file_record
 from msplatform.execution.run_capacity_lifecycle import resolve_consumed_run_capacity_owner

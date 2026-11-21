@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from common.contracts.write_formal_asset_manifest import (
+from msplatform.execution.write_formal_asset_manifest import (
     write_formal_asset_manifest,
 )
 

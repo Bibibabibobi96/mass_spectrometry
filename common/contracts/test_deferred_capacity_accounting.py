@@ -7,8 +7,8 @@ import sys
 import tempfile
 import unittest
 
-from common.contracts.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
-from common.contracts.capacity_protection import load_capacity_protection_leases
+from msplatform.execution.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
+from msplatform.execution.capacity_protection import load_capacity_protection_leases
 
 ROOT = Path(__file__).resolve().parents[2]
 OWNER_SOURCE = ROOT/'src/msplatform/workflows/resources/run_artifact_workflow.ps1'
