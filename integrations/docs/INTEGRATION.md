@@ -2641,6 +2641,8 @@ PowerShell消费者共用 `Get-RunPythonImportRoots`。没有 `src` 的旧扁平
 执行时核对已加载核心模块位于本次冻结树内，缺少核心或资源即拒绝，不从 installed／editable 包填补。
 较宽的源码交付不替代场、Fly、Analysis 的实际科学依赖投影，不能据此让未受影响结果失效。
 OA 纯几何仍归项目提供者，OA→MR 和单反射等消费者从同一冻结闭包执行准备，不回退活动仓库。
+paired static/pulse 与 single-reflection 的公开冻结不再复制 `integrations/runtime` 或 `integrations/analysis`
+实现；它们使用已安装的公共科学和后端owner。原历史输入读取及维护编译器不在此次运行时删除范围内。
 普通小输入的复制与身份校验统一调用`Copy-VerifiedRunInput`，直接使用其已核验SHA生成来源收据；
 集成适配器继续验证提供者边界、显式清单与目标不存在，公共复制失败的实测摘要保留在依赖错误中。
 冻结清单已包含PowerShell公共复制入口及直接导入，`prepared_joint`快照可脱离活动仓库继续冻结输入。

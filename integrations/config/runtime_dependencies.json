@@ -86,22 +86,7 @@
           ]
         }
       ],
-      "python_packages": [
-        {
-          "source_repo_path": "integrations/analysis",
-          "consumers": [
-            "paired_accelerator_pulse"
-          ]
-        },
-        {
-          "source_repo_path": "integrations/runtime",
-          "consumers": [
-            "paired_accelerator_pulse",
-            "paired_accelerator_static_field",
-            "single_reflection_flight"
-          ]
-        }
-      ],
+      "python_packages": [],
       "python_modules": []
     },
     {
