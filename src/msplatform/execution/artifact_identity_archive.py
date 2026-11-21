@@ -119,6 +119,50 @@ def assert_new_run_project_allowed(repository_root: Path, project_id: str) -> No
                 raise ValueError(f"{project_id}: retired project identity is read-only; new runs are forbidden")
 
 
+def new_run_project_identity_registry(repository_root: Path) -> dict:
+    """Project the verified read-only identity closure for installed run creation."""
+    identities = []
+    for path in sorted((repository_root / "projects").glob("*/config/project.json")):
+        descriptor = json.loads(path.read_text(encoding="utf-8-sig"))
+        if descriptor.get("project_id") != path.parents[1].name:
+            raise ValueError(f"project descriptor identity differs: {path}")
+        for identity in historical_project_identities(descriptor, repository_root):
+            identities.append({
+                "project_id": identity.project_id,
+                "artifact_owner_project_id": identity.artifact_owner_project_id,
+                "policy": identity.policy,
+            })
+    return {
+        "schema_version": 1,
+        "role": "new_run_project_identity_registry",
+        "identities": sorted(identities, key=lambda row: row["project_id"]),
+    }
+
+
+def assert_new_run_project_identity_allowed(identity_data: dict, project_id: str) -> None:
+    """Reject retired identities in explicit installed data without reading a checkout."""
+    if identity_data.get("schema_version") != 1 or identity_data.get("role") != "new_run_project_identity_registry":
+        raise ValueError("new-run project identity registry differs")
+    rows = identity_data.get("identities")
+    if not isinstance(rows, list):
+        raise ValueError("new-run project identities must be a list")
+    seen = set()
+    for row in rows:
+        if (not isinstance(row, dict) or set(row) != {"project_id", "artifact_owner_project_id", "policy"}
+                or not isinstance(row["project_id"], str)
+                or re.fullmatch(r"[a-z][a-z0-9]*(?:_[a-z0-9]+)*", row["project_id"]) is None
+                or row["project_id"] in seen
+                or not isinstance(row["artifact_owner_project_id"], str)
+                or not isinstance(row["policy"], dict)):
+            raise ValueError("new-run project identity record differs")
+        seen.add(row["project_id"])
+        if row["project_id"] == project_id:
+            for field, expected in READ_ONLY_IDENTITY_POLICY.items():
+                if row["policy"].get(field) != expected:
+                    raise ValueError(f"{project_id}: retired identity field {field} differs")
+            raise ValueError(f"{project_id}: retired project identity is read-only; new runs are forbidden")
+
+
 def _relative_path(value: str) -> Path:
     path = Path(value)
     if path.is_absolute() or ".." in path.parts:
@@ -383,11 +427,17 @@ def verify_pruned_inventory(
 def main() -> None:
     """Expose the read-only project guard used before creating a run package."""
     parser = argparse.ArgumentParser()
-    parser.add_argument("--repository-root", type=Path, required=True)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--repository-root", type=Path)
+    source.add_argument("--identity-data", type=Path)
     parser.add_argument("--check-new-run-project", required=True)
     args = parser.parse_args()
     try:
-        assert_new_run_project_allowed(args.repository_root.resolve(), args.check_new_run_project)
+        if args.identity_data is not None:
+            identity_data = json.loads(args.identity_data.read_text(encoding="utf-8-sig"))
+            assert_new_run_project_identity_allowed(identity_data, args.check_new_run_project)
+        else:
+            assert_new_run_project_allowed(args.repository_root.resolve(), args.check_new_run_project)
     except (OSError, TypeError, ValueError) as exc:
         parser.exit(1, f"NEW_RUN_PROJECT=FAIL {exc}\n")
     print(f"NEW_RUN_PROJECT=PASS PROJECT={args.check_new_run_project}")

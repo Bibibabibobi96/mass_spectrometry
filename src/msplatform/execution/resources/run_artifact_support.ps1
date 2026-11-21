@@ -1085,8 +1085,10 @@ function New-RunPackage {
   if($LASTEXITCODE-ne 0 -or $pythonVersion-ne '3.11'){
     throw "Run package requires Python 3.11, found $pythonVersion at $python"
   }
-  $identityCheck=& $python (Join-Path $RepoRoot 'src\msplatform\execution\artifact_identity_archive.py') `
-    --repository-root $RepoRoot --check-new-run-project $Project 2>&1
+  $identityData=& $python -I -B -c 'from importlib.resources import files;print(files("msplatform")/"execution/resources/new_run_project_identities.json")'
+  if($LASTEXITCODE-ne 0){throw "Installed run project identity data is unavailable: $($identityData -join [Environment]::NewLine)"}
+  $identityCheck=& $python -I -B -m msplatform.execution.artifact_identity_archive `
+    --identity-data ([string]$identityData) --check-new-run-project $Project 2>&1
   if($LASTEXITCODE-ne 0 -or -not($identityCheck-match '^NEW_RUN_PROJECT=PASS ')){
     throw "Run project identity rejected before package creation: $($identityCheck -join [Environment]::NewLine)"
   }

@@ -11,7 +11,9 @@ from pathlib import Path
 from msplatform.execution.artifact_identity_archive import (
     READ_ONLY_IDENTITY_POLICY,
     assert_new_run_project_allowed,
+    assert_new_run_project_identity_allowed,
     historical_project_identities,
+    new_run_project_identity_registry,
     legacy_artifact_location,
     load_retired_project_descriptors,
     relocated_manifest_path,
@@ -142,6 +144,26 @@ class ArtifactIdentityArchiveTests(unittest.TestCase):
             after = {path: path.read_bytes() for path in repository.rglob("*") if path.is_file()}
             self.assertEqual(before, after)
 
+    def test_installed_identity_registry_preserves_retired_owner_and_alias_closure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+            retirement_fixture(repository)
+            registry = new_run_project_identity_registry(repository)
+            for project in (CURRENT, LEGACY):
+                with self.assertRaisesRegex(ValueError, "new runs are forbidden"):
+                    assert_new_run_project_identity_allowed(registry, project)
+            for project in (CONSOLIDATED, "instrument_assembly"):
+                assert_new_run_project_identity_allowed(registry, project)
+            for malformed in ({}, {**registry, "identities": [{}]}):
+                with self.assertRaises(ValueError):
+                    assert_new_run_project_identity_allowed(malformed, "instrument_assembly")
+
+    def test_packaged_identity_registry_is_current(self) -> None:
+        repository = Path(__file__).resolve().parents[2]
+        resource = repository / "src/msplatform/execution/resources/new_run_project_identities.json"
+        self.assertEqual(json.loads(resource.read_text(encoding="utf-8")),
+                         new_run_project_identity_registry(repository))
+
     @unittest.skipUnless(shutil.which("pwsh") and sys.version_info[:2] == (3, 11), "requires pwsh and Python 3.11")
     def test_run_package_guard_precedes_directory_and_capacity_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -175,7 +197,7 @@ $ErrorActionPreference='Stop'
 . {quote(repository / 'src/msplatform/execution/resources/run_artifact_support.ps1')}
 $script:capacityCalls=0
 function Invoke-RunCapacityLifecycleAdapter {{ $script:capacityCalls++; throw 'CAPACITY_CALLED' }}
-foreach($owner in @('{CURRENT}','{LEGACY}')) {{
+foreach($owner in @('electron_impact_ion_source','mr_tof')) {{
   $rejected=$false
   try {{
     New-RunPackage -Python {quote(sys.executable)} -RepoRoot {quote(repository)} `

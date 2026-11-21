@@ -1058,6 +1058,9 @@ Euler顺序或器件参数反写到公共刚体语义。供应商局部坐标映
 [`artifact_identity_archive.py`](../../src/msplatform/execution/artifact_identity_archive.py)只读展开这些身份；旧capabilities不进入活动项目注册，
 行政改名的`legacy_identities`也不因合并改写为新的归档owner。
 `New-RunPackage`在创建目录和登记容量前调用同一身份检查，拒绝明确退休owner及其aliases创建新run；
+普通安装从包内`execution/resources/new_run_project_identities.json`显式读取由上述完整描述符闭包生成的
+`new_run_project_identity_registry`，不将HostContext workspace当作checkout或回读其实现。项目身份变化时由
+`new_run_project_identity_registry`重新生成该资源，一致性回归核对完整闭包。
 其他项目、`instrument_assembly`及未声明退休的既有调用边界保持不变。历史读取与验证继续允许，
 发现旧描述符字节、路径或只读策略不符时失败关闭，不重写manifest或晋级原结果。
 
