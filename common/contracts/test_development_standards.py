@@ -139,7 +139,7 @@ class DevelopmentStandardsCoverageTests(unittest.TestCase):
     def test_repository_entrypoints_do_not_repair_import_paths_at_runtime(self):
         for relative_path in (
             "src/msplatform/components/apertured_tube_electron_impact_ion_source/resolve_contract.py",
-            "integrations/runtime/refresh_repository_bindings.py",
+            "tools/repository/refresh_repository_bindings.py",
         ):
             source = (standards.REPO_ROOT / relative_path).read_text(encoding="utf-8")
             tree = ast.parse(source)

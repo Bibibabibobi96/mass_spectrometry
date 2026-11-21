@@ -13,7 +13,7 @@ def prepare(repo: Path, root: Path) -> None:
         "program_current.lua": native / "mrtof_candidate.lua",
         "program_current.voltage_waveforms.lua": native / "voltage_waveforms.lua",
         "program_current.mirror_cycle_counter.lua": native / "mirror_cycle_counter.lua",
-        "voltage_map_current.lua": project / "simion/candidate_voltage_map.lua",
+        "voltage_map_current.lua": project.parents[1] / "src/msplatform/backends/simion/resources/candidate_voltage_map.lua",
         "scientific_event_csv.lua": repo / "src/msplatform/backends/simion/resources/scientific_event_csv.lua",
         "scientific_event_reconciliation.lua": repo / "src/msplatform/backends/simion/resources/scientific_event_reconciliation.lua",
     }

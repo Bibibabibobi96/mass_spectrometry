@@ -9,7 +9,7 @@ flight, collision or scientific qualification.
 
 本页维护独立器件的输入、有效结论、资格和开放动作。操作见[项目入口](../README.md)与
 [SIMION说明](SIMION.md)；完整局部实验、接口迁移及实现修复见
-[文档收口里程碑](history/20261026__assembly-documentation-consolidation.md)。
+[文档收口里程碑](../../../docs/history/projects/dual_pressure_rectilinear_ion_processor/20261026__assembly-documentation-consolidation.md)。
 
 ## 当前状态与封存边界
 
@@ -114,7 +114,7 @@ MP→IP准备RunId、未变请求和接收配置。复用前核验原准备包�
 
 功能参考为`20261016_121423__sim__simion__ion-processor-thermal-n100-auto`，用户确认包为
 `20261016_122844__test__simion__ion-processor-thermal-user-workbench/simion/processor.iob`。
-两者身份与科学边界见[功能里程碑](history/20261016__thermal-source-gui-accepted.md)。
+两者身份与科学边界见[功能里程碑](../../../docs/history/projects/dual_pressure_rectilinear_ion_processor/20261016__thermal-source-gui-accepted.md)。
 
 | 指标 | 封存参考 |
 |---|---:|
@@ -200,7 +200,7 @@ component-exit回归覆盖原生等权、注入等权3.5与非等权0.125／8、
 
 以下都是已完成的具名N100研究，源、几何、场、网格、数值与时钟分别由各自冻结study和原run绑定。
 它们不替换封存独立基线，不自动启动整机联合、优化或GUI。详细矩阵及证据链接保存在
-[收口前原文](history/20261026__assembly-documentation-consolidation.md)。
+[收口前原文](../../../docs/history/projects/dual_pressure_rectilinear_ion_processor/20261026__assembly-documentation-consolidation.md)。
 
 | 科学问题 | 可保留结论 | 不支持的解释 |
 |---|---|---|
@@ -212,7 +212,7 @@ component-exit回归覆盖原生等权、注入等权3.5与非等权0.125／8、
 | D基准调压／Outer覆盖对称 | 三组分别96／97／34引出；对称覆盖形成不利入口势垒 | 仅凭外观对称保证性能 |
 | 出口后时间焦点与假想小孔 | 保留t–vz相关可估计零场RMS焦点；小孔以传输损失换条件宽度 | 真实Prism焦点、粒子冷却或MR分辨率 |
 
-完整D对照见[独立里程碑](history/20261020__d-auxiliary-voltage-and-symmetric-coverage.md)。
+完整D对照见[独立里程碑](../../../docs/history/projects/dual_pressure_rectilinear_ion_processor/20261020__d-auxiliary-voltage-and-symmetric-coverage.md)。
 轮廓尺寸中未知坡角、唇厚、圆角和抽气窗仍是作者假设；LP61.5 mm裁短不等于对称光学优化。
 连续辅助片的弦近似几何误差不是场或轨迹误差界。
 

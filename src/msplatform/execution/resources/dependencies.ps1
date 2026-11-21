@@ -2,13 +2,31 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'run_artifact_support.ps1')
 
+function Get-DependencyCoreRoot {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [string]$CorePackageRoot=''
+  )
+  if (-not $CorePackageRoot) {
+    return [IO.Path]::GetFullPath((Join-Path $RepoRoot 'src/msplatform'))
+  }
+  $core = [IO.Path]::GetFullPath($CorePackageRoot)
+  if (-not (Test-Path -LiteralPath $core -PathType Container)) {
+    throw "Installed dependency core package is missing: $core"
+  }
+  return $core
+}
+
 function Get-DependencyIntegrationRoot {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)][string]$RepoRoot,
-    [Parameter(Mandatory)][string]$OwnerId
+    [Parameter(Mandatory)][string]$OwnerId,
+    [string]$CorePackageRoot=''
   )
-  $registry = Get-Content -LiteralPath (Join-Path $RepoRoot 'src/msplatform/workflows/config/assembly_registry.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+  $core = Get-DependencyCoreRoot -RepoRoot $RepoRoot -CorePackageRoot $CorePackageRoot
+  $registry = Get-Content -LiteralPath (Join-Path $core 'workflows/config/assembly_registry.json') -Raw -Encoding UTF8 | ConvertFrom-Json
   $entries = @($registry.integrations | Where-Object { $_.integration_id -ceq $OwnerId })
   if ($entries.Count -ne 1) {
     throw "Dependency integration owner must be registered exactly once: $OwnerId"
@@ -33,6 +51,27 @@ function Test-DependencyPathWithin {
   )
 }
 
+function Resolve-DependencySourcePath {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][string]$Scope,
+    [Parameter(Mandatory)][string]$SourceRelative,
+    [string]$CorePackageRoot=''
+  )
+  if ($Scope -eq 'repository_core' -and $CorePackageRoot) {
+    $canonical = $SourceRelative.Replace('\','/')
+    $prefix = 'src/msplatform'
+    if ($canonical -ne $prefix -and -not $canonical.StartsWith($prefix+'/',[StringComparison]::OrdinalIgnoreCase)) {
+      throw "Scientific-core dependency escapes its canonical provider: $SourceRelative"
+    }
+    $core = Get-DependencyCoreRoot -RepoRoot $RepoRoot -CorePackageRoot $CorePackageRoot
+    $packageRelative = $canonical.Substring($prefix.Length).TrimStart('/')
+    return [IO.Path]::GetFullPath((Join-Path $core $packageRelative))
+  }
+  return [IO.Path]::GetFullPath((Join-Path $RepoRoot $SourceRelative))
+}
+
 function Assert-DependencyProviderIdentity {
   [CmdletBinding()]
   param(
@@ -40,7 +79,8 @@ function Assert-DependencyProviderIdentity {
     [Parameter(Mandatory)][string]$DependencyId,
     [Parameter(Mandatory)][string]$Scope,
     [Parameter(Mandatory)][string]$Provider,
-    [Parameter(Mandatory)][string]$ProviderRelative
+    [Parameter(Mandatory)][string]$ProviderRelative,
+    [string]$CorePackageRoot=''
   )
   $normalized = $ProviderRelative.Replace('\','/')
   if ($Scope -eq 'project') {
@@ -56,7 +96,7 @@ function Assert-DependencyProviderIdentity {
       throw "Dependency $DependencyId has an invalid scientific-core provider."
     }
   } elseif ($Scope -eq 'integration') {
-    $registeredRoot = Get-DependencyIntegrationRoot -RepoRoot $RepoRoot -OwnerId $Provider
+    $registeredRoot = Get-DependencyIntegrationRoot -RepoRoot $RepoRoot -OwnerId $Provider -CorePackageRoot $CorePackageRoot
     if ($normalized -ne $registeredRoot) {
       throw "Dependency $DependencyId provider root differs from integration $Provider."
     }
@@ -70,7 +110,8 @@ function Copy-FrozenDependency {
   param(
     [Parameter(Mandatory)][string]$RepoRoot,
     [Parameter(Mandatory)][string]$InputDir,
-    [Parameter(Mandatory)][pscustomobject]$Dependency
+    [Parameter(Mandatory)][pscustomobject]$Dependency,
+    [string]$CorePackageRoot=''
   )
   $required = @(
     'id','provider_scope','provider_project','provider_repo_path',
@@ -88,19 +129,24 @@ function Copy-FrozenDependency {
   $provider = [string]$Dependency.provider_project
   $providerRelative = [string]$Dependency.provider_repo_path
   Assert-DependencyProviderIdentity -RepoRoot $RepoRoot -DependencyId $Dependency.id `
-    -Scope $scope -Provider $provider -ProviderRelative $providerRelative
+    -Scope $scope -Provider $provider -ProviderRelative $providerRelative -CorePackageRoot $CorePackageRoot
 
   $repo = [IO.Path]::GetFullPath($RepoRoot)
   $inputs = [IO.Path]::GetFullPath($InputDir)
-  $providerRoot = [IO.Path]::GetFullPath((Join-Path $repo $providerRelative))
-  if (-not (Test-DependencyPathWithin -Path $providerRoot -Root $repo)) {
+  $installedCore = $scope -eq 'repository_core' -and $CorePackageRoot
+  $providerRoot = if ($installedCore) {
+    Get-DependencyCoreRoot -RepoRoot $repo -CorePackageRoot $CorePackageRoot
+  } else {
+    [IO.Path]::GetFullPath((Join-Path $repo $providerRelative))
+  }
+  if (-not $installedCore -and -not (Test-DependencyPathWithin -Path $providerRoot -Root $repo)) {
     throw "Dependency $($Dependency.id) provider root escapes the repository."
   }
   $sourceRelative = [string]$Dependency.source_repo_path
   if ([IO.Path]::IsPathRooted($sourceRelative)) {
     throw "Dependency $($Dependency.id) source path must be repository-relative."
   }
-  $source = [IO.Path]::GetFullPath((Join-Path $repo $sourceRelative))
+  $source = Resolve-DependencySourcePath -RepoRoot $repo -Scope $scope -SourceRelative $sourceRelative -CorePackageRoot $CorePackageRoot
   if (-not (Test-DependencyPathWithin -Path $source -Root $providerRoot)) {
     throw "Dependency $($Dependency.id) escapes provider $provider."
   }
@@ -153,7 +199,8 @@ function Publish-DependencyInventory {
     [Parameter(Mandatory)][string]$ContractPath,
     [Parameter(Mandatory)][string]$InputDir,
     [Parameter(Mandatory)][string]$OwnerId,
-    [Parameter(Mandatory)][psobject]$ResolvedDependencies
+    [Parameter(Mandatory)][psobject]$ResolvedDependencies,
+    [string]$CorePackageRoot=''
   )
   $dependencies = @($ResolvedDependencies.dependencies)
   if ($dependencies.Count -lt 1) {
@@ -166,19 +213,25 @@ function Publish-DependencyInventory {
       throw "Resolved code inventory contains empty or duplicate $field values."
     }
   }
-  $relative = [IO.Path]::GetRelativePath([IO.Path]::GetFullPath($RepoRoot), [IO.Path]::GetFullPath($ContractPath)).Replace('\','/')
-  $isCanonicalContract=$relative-ceq'src/msplatform/workflows/config/runtime_dependencies.json'
+  $core = Get-DependencyCoreRoot -RepoRoot $RepoRoot -CorePackageRoot $CorePackageRoot
+  $canonicalContract = [IO.Path]::GetFullPath((Join-Path $core 'workflows/config/runtime_dependencies.json'))
+  $isCanonicalContract = [IO.Path]::GetFullPath($ContractPath) -eq $canonicalContract
+  $relative = if ($isCanonicalContract) {
+    'src/msplatform/workflows/config/runtime_dependencies.json'
+  } else {
+    [IO.Path]::GetRelativePath([IO.Path]::GetFullPath($RepoRoot), [IO.Path]::GetFullPath($ContractPath)).Replace('\','/')
+  }
   $contractDependency = [pscustomobject]@{
     id = 'dependency_contract'
     provider_scope = $(if($isCanonicalContract){'repository_core'}else{'integration'})
     provider_project = $(if($isCanonicalContract){'msplatform'}else{$OwnerId})
-    provider_repo_path = $(if($isCanonicalContract){'src/msplatform'}else{Get-DependencyIntegrationRoot -RepoRoot $RepoRoot -OwnerId $OwnerId})
+    provider_repo_path = $(if($isCanonicalContract){'src/msplatform'}else{Get-DependencyIntegrationRoot -RepoRoot $RepoRoot -OwnerId $OwnerId -CorePackageRoot $CorePackageRoot})
     source_repo_path = $relative
     frozen_filename = 'runtime_snapshot/' + $relative
     run_input_name = 'dependency_contract'
     consumers = @($ResolvedDependencies.consumer_ids)
   }
-  $contractIdentity = Copy-FrozenDependency -RepoRoot $RepoRoot -InputDir $InputDir -Dependency $contractDependency
+  $contractIdentity = Copy-FrozenDependency -RepoRoot $RepoRoot -InputDir $InputDir -Dependency $contractDependency -CorePackageRoot $CorePackageRoot
   $inventory = [ordered]@{
     schema_version = 1
     role = 'integration_resolved_code_inventory'
@@ -206,7 +259,8 @@ function Freeze-ConsumerDependencies {
     [Parameter(Mandatory)][string]$InputDir,
     [Parameter(Mandatory)][string]$OwnerId,
     [Parameter(Mandatory)][string]$ConsumerId,
-    [Parameter(Mandatory)][string]$Python
+    [Parameter(Mandatory)][string]$Python,
+    [string]$CorePackageRoot=''
   )
   $contract = Get-Content -LiteralPath $ContractPath -Raw -Encoding UTF8 | ConvertFrom-Json -Depth 100
   if (@(Compare-Object @('schema_version','role','owner_id','consumer_ids','providers') @($contract.PSObject.Properties.Name)).Count -ne 0 -or
@@ -220,10 +274,13 @@ function Freeze-ConsumerDependencies {
     throw "Unregistered or invalid runtime dependency consumer: $ConsumerId"
   }
   $repo = [IO.Path]::GetFullPath($RepoRoot)
-  $ownerRoot = Get-DependencyIntegrationRoot -RepoRoot $repo -OwnerId $OwnerId
-  $contractRelative = [IO.Path]::GetRelativePath($repo, [IO.Path]::GetFullPath($ContractPath)).Replace('\','/')
-  $canonicalContract=[IO.Path]::GetFullPath((Join-Path $repo 'src/msplatform/workflows/config/runtime_dependencies.json'))
-  if ([IO.Path]::GetFullPath($ContractPath)-ne$canonicalContract-and
+  $core = Get-DependencyCoreRoot -RepoRoot $repo -CorePackageRoot $CorePackageRoot
+  $ownerRoot = Get-DependencyIntegrationRoot -RepoRoot $repo -OwnerId $OwnerId -CorePackageRoot $CorePackageRoot
+  $canonicalContract=[IO.Path]::GetFullPath((Join-Path $core 'workflows/config/runtime_dependencies.json'))
+  $isCanonicalContract=[IO.Path]::GetFullPath($ContractPath)-eq$canonicalContract
+  $contractRelative=if($isCanonicalContract){'src/msplatform/workflows/config/runtime_dependencies.json'}else{
+    [IO.Path]::GetRelativePath($repo, [IO.Path]::GetFullPath($ContractPath)).Replace('\','/')}
+  if (-not $isCanonicalContract-and
       -not (Test-DependencyPathWithin -Path $ContractPath -Root (Join-Path $repo $ownerRoot))) {
     throw 'Dependency contract escapes its registered integration owner or canonical package resource.'
   }
@@ -245,11 +302,12 @@ function Freeze-ConsumerDependencies {
       'repository_common' { if ($provider -cne 'common') { throw "Invalid repository-common provider: $provider" }; 'common' }
       'repository_core' { if ($provider -cne 'msplatform') { throw "Invalid scientific-core provider: $provider" }; 'src/msplatform' }
       'project' { "projects/$provider" }
-      'integration' { Get-DependencyIntegrationRoot -RepoRoot $repo -OwnerId $provider }
+      'integration' { Get-DependencyIntegrationRoot -RepoRoot $repo -OwnerId $provider -CorePackageRoot $CorePackageRoot }
       default { throw "Unsupported dependency provider scope: $scope" }
     }
-    $providerRoot = [IO.Path]::GetFullPath((Join-Path $repo $providerRelative))
-    if (-not (Test-DependencyPathWithin -Path $providerRoot -Root $repo)) {
+    $installedCore = $scope -eq 'repository_core' -and $CorePackageRoot
+    $providerRoot = if ($installedCore) { $core } else { [IO.Path]::GetFullPath((Join-Path $repo $providerRelative)) }
+    if (-not $installedCore -and -not (Test-DependencyPathWithin -Path $providerRoot -Root $repo)) {
       throw "Dependency provider root escapes the repository: $provider"
     }
     if (-not (@($group.files).Count + @($group.python_packages).Count + @($group.python_modules).Count)) {
@@ -263,7 +321,7 @@ function Freeze-ConsumerDependencies {
         throw "Python source selection fields differ for provider: $provider"
       }
       $selectionPath = [string]$selection.source_repo_path
-      $selectionAbsolute=[IO.Path]::GetFullPath((Join-Path $repo $selectionPath))
+      $selectionAbsolute=Resolve-DependencySourcePath -RepoRoot $repo -Scope $scope -SourceRelative $selectionPath -CorePackageRoot $CorePackageRoot
       if ([string]::IsNullOrWhiteSpace($selectionPath) -or $selectionPath.Contains('\') -or
           [IO.Path]::IsPathRooted($selectionPath) -or $selectionPath -match '(^|/)\.\.?(/|$)' -or
           (-not $selectionAbsolute.Equals($providerRoot,[StringComparison]::OrdinalIgnoreCase) -and
@@ -276,10 +334,20 @@ function Freeze-ConsumerDependencies {
         throw "Python source selection declares invalid consumers: $provider"
       }
     }
+    $canonicalPackages=@($group.python_packages | Where-Object { @($_.consumers) -ccontains $ConsumerId })
+    $canonicalModules=@($group.python_modules | Where-Object { @($_.consumers) -ccontains $ConsumerId })
+    $enumerationPackages=$canonicalPackages;$enumerationModules=$canonicalModules
+    if ($installedCore) {
+      $enumerationPackages=@($canonicalPackages | ForEach-Object {$copy=$_|Select-Object *;$copy.source_repo_path=$copy.source_repo_path.Substring(4);$copy})
+      $enumerationModules=@($canonicalModules | ForEach-Object {$copy=$_|Select-Object *;$copy.source_repo_path=$copy.source_repo_path.Substring(4);$copy})
+    }
     $packageGroups.Add([ordered]@{
       provider_scope=$scope; provider_project=$provider; provider_repo_path=$providerRelative
-      python_packages=@($group.python_packages | Where-Object { @($_.consumers) -ccontains $ConsumerId })
-      python_modules=@($group.python_modules | Where-Object { @($_.consumers) -ccontains $ConsumerId })
+      python_packages=$enumerationPackages; python_modules=$enumerationModules
+      canonical_python_packages=$canonicalPackages; canonical_python_modules=$canonicalModules
+      source_root=$(if($installedCore){Split-Path -Parent $core}else{$repo})
+      enumeration_provider_root=$(if($installedCore){'msplatform'}else{$providerRelative})
+      output_prefix=$(if($installedCore){'src/'}else{''})
     })
     foreach ($file in $group.files) {
       if (@(Compare-Object @('id','source_repo_path','consumers') @($file.PSObject.Properties.Name)).Count -ne 0) {
@@ -296,7 +364,7 @@ function Freeze-ConsumerDependencies {
       if ([IO.Path]::GetExtension($relative) -ieq '.py') {
         throw "Python source must use a package or module declaration: $relative"
       }
-      $source = [IO.Path]::GetFullPath((Join-Path $repo $relative))
+      $source = Resolve-DependencySourcePath -RepoRoot $repo -Scope $scope -SourceRelative $relative -CorePackageRoot $CorePackageRoot
       if (-not (Test-DependencyPathWithin -Path $source -Root $providerRoot)) {
         throw "Dependency $id escapes provider $provider."
       }
@@ -321,8 +389,9 @@ function Freeze-ConsumerDependencies {
   # Enumeration is one interpreter call; verified copying keeps its existing owner.
   $enumerator = @'
 import json, pathlib, sys
-root = pathlib.Path(sys.argv[1]).resolve()
-sys.path[:0] = [str(root / "src"), str(root)] if (root / "src").is_dir() else [str(root)]
+workspace = pathlib.Path(sys.argv[1]).resolve()
+core_import_root = pathlib.Path(sys.argv[2]).resolve() if len(sys.argv) > 2 else workspace / "src"
+sys.path.insert(0, str(core_import_root))
 from msplatform.execution.inputs import enumerate_python_sources
 request = json.load(sys.stdin)
 records = []
@@ -330,23 +399,28 @@ for group in request["providers"]:
     packages, modules = group["python_packages"], group["python_modules"]
     if not packages and not modules:
         continue
+    source_root = pathlib.Path(group.get("source_root", request.get("source_root")))
+    provider_root = group.get("enumeration_provider_root", group["provider_repo_path"])
     # A sole package can include its declared resources in the same traversal.
     # Mixed package selections retain their individual resource boundaries.
     single_package = len(packages) == 1
-    paths = set(enumerate_python_sources(pathlib.Path(request["source_root"]),
+    paths = set(enumerate_python_sources(source_root,
         package_roots=[row["source_repo_path"] for row in packages],
         module_paths=[row["source_repo_path"] for row in modules],
-        provider_root=group["provider_repo_path"], require_python_source=True,
+        provider_root=provider_root, require_python_source=True,
         resource_suffixes=packages[0].get("resource_suffixes", ()) if single_package else ()))
     for row in (() if single_package else packages):
         if "resource_suffixes" in row:
-            paths.update(enumerate_python_sources(pathlib.Path(request["source_root"]),
-                package_roots=[row["source_repo_path"]], provider_root=group["provider_repo_path"],
+            paths.update(enumerate_python_sources(source_root,
+                package_roots=[row["source_repo_path"]], provider_root=provider_root,
                 resource_suffixes=row["resource_suffixes"], require_python_source=True))
-    for path in sorted(paths):
+    canonical_packages = group.get("canonical_python_packages", packages)
+    canonical_modules = group.get("canonical_python_modules", modules)
+    for enumerated_path in sorted(paths):
+        path = group.get("output_prefix", "") + enumerated_path
         consumers = set()
         source = pathlib.PurePosixPath(path)
-        for row in packages + modules:
+        for row in canonical_packages + canonical_modules:
             selected = pathlib.PurePosixPath(row["source_repo_path"])
             if (source == selected or selected in source.parents
                     or (source.name == "__init__.py" and source.parent in (selected, *selected.parents))):
@@ -359,19 +433,20 @@ for group in request["providers"]:
             "source_repo_path": path, "consumers": sorted(consumers)})
 print(json.dumps(records, ensure_ascii=False))
 '@
-  $enumerationRequest = @{source_root=$repo; providers=@($packageGroups.ToArray())} | ConvertTo-Json -Depth 30 -Compress
+  $enumerationRequest = @{providers=@($packageGroups.ToArray())} | ConvertTo-Json -Depth 30 -Compress
+  $coreImportRoot = if ($CorePackageRoot) { Split-Path -Parent $core } else { Join-Path $repo 'src' }
   $priorEncoding = $OutputEncoding
   $PSNativeCommandUseErrorActionPreference = $false
   try {
     $OutputEncoding = [Text.UTF8Encoding]::new($false)
-    $enumeratedJson = @($enumerationRequest | & $Python -X utf8 -I -B -c $enumerator $repo 2>&1)
+    $enumeratedJson = @($enumerationRequest | & $Python -X utf8 -I -B -c $enumerator $repo $coreImportRoot 2>&1)
     if ($LASTEXITCODE -ne 0) { throw "Python package enumeration failed: $($enumeratedJson -join [Environment]::NewLine)" }
   } finally { $OutputEncoding = $priorEncoding }
   $enumerated = @((($enumeratedJson | ForEach-Object { [string]$_ }) -join "`n") | ConvertFrom-Json -Depth 30)
   foreach ($dependency in $enumerated) {
     $relative = [string]$dependency.source_repo_path
     $id = [string]$dependency.id
-    $source = [IO.Path]::GetFullPath((Join-Path $repo $relative))
+    $source = Resolve-DependencySourcePath -RepoRoot $repo -Scope ([string]$dependency.provider_scope) -SourceRelative $relative -CorePackageRoot $CorePackageRoot
     if (-not $ids.Add($id)) { throw "Duplicate derived Python dependency id: $id" }
     if (-not $sources.Add($source)) {
       continue
@@ -386,9 +461,9 @@ print(json.dumps(records, ensure_ascii=False))
   if (-not $selected.Count) { throw "Runtime dependency consumer has no declared files: $ConsumerId" }
   $ResolvedDependencies = [pscustomobject]@{ consumer_ids=@($ConsumerId); dependencies=@($selected.ToArray()) }
   $publication = Publish-DependencyInventory -RepoRoot $RepoRoot -ContractPath $ContractPath `
-    -InputDir $InputDir -OwnerId $OwnerId -ResolvedDependencies $ResolvedDependencies
+    -InputDir $InputDir -OwnerId $OwnerId -ResolvedDependencies $ResolvedDependencies -CorePackageRoot $CorePackageRoot
   $identities = @(foreach ($dependency in $ResolvedDependencies.dependencies) {
-    Copy-FrozenDependency -RepoRoot $RepoRoot -InputDir $InputDir -Dependency $dependency
+    Copy-FrozenDependency -RepoRoot $RepoRoot -InputDir $InputDir -Dependency $dependency -CorePackageRoot $CorePackageRoot
   })
   return [pscustomobject]@{
     execution_root = Join-Path $InputDir 'runtime_snapshot'

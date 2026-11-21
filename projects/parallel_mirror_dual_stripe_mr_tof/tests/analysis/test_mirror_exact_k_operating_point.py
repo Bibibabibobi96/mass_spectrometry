@@ -36,7 +36,7 @@ from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract
 )
 
 
-CONTRACT = Path(__file__).resolve().parents[2] / "config" / "simion_candidate_two_zone.json"
+CONTRACT = Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json"
 
 
 class MirrorExactKOperatingPointTest(unittest.TestCase):

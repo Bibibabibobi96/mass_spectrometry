@@ -42,7 +42,7 @@ from msplatform.workflows.prepared_joint.prism_handoff import (
 
 
 PROJECT = Path(__file__).resolve().parents[2]
-CONTRACT = PROJECT / "config" / "simion_candidate_two_zone.json"
+CONTRACT = PROJECT.parents[1] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json"
 ZERO = lambda _z: 0.0
 NUMERICS = TransportNumerics(
     relative_tolerance=1.0e-10,

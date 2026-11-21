@@ -47,12 +47,12 @@
 | MR 场对照失败被描述为“COMSOL 原生追踪慢／不收敛” | 先确认轨迹实际由谁积分，以及 FEM→电势导出→PA→事件各环节的身份和误差 | [MR 电场表示与数值资格][mr-field-route]区分独立求场和 SIMION 消费；不能用 OA CPT 的求解器设置解释这条路线，也不能由跨来源差异指定真值。 |
 | 求解已有结果，轨迹图片导出卡死或服务端崩溃 | 先检查数值数据和已保存解；核对失败是否在 Plot/Export，而非 Study | 见[批处理粒子轨迹图片](#批处理粒子轨迹图片)；软件渲染开关曾伴随原生崩溃，不作为默认修复，环境升级后须重新验证。 |
 
-[oa-policy-case]: ../../projects/single_reflection_oa_tof_mass_analyzer/docs/history/20261021__oatof-cpt-fixed-policy-reference-and-full-flow.md#1-本次修复了什么
-[oa-event-case]: ../../projects/single_reflection_oa_tof_mass_analyzer/docs/history/20261022__native-event-readback-and-counter-validation.md#已关闭的问题
-[oa-extractor-case]: ../../projects/single_reflection_oa_tof_mass_analyzer/docs/history/20261021__oatof-cpt-fixed-policy-reference-and-full-flow.md#真实窗口暴露的第二个下界缺陷与修复
-[rf-release-case]: ../../projects/rf_multipole_ion_optics/docs/history/retired_projects/rf_quadrupole_ion_optics/docs/history/20260911__solver-sensitivity-and-retired-interface.md#comsol-数值与物理边界
+[oa-policy-case]: ../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20261021__oatof-cpt-fixed-policy-reference-and-full-flow.md#1-本次修复了什么
+[oa-event-case]: ../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20261022__native-event-readback-and-counter-validation.md#已关闭的问题
+[oa-extractor-case]: ../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20261021__oatof-cpt-fixed-policy-reference-and-full-flow.md#真实窗口暴露的第二个下界缺陷与修复
+[rf-release-case]: ../../docs/history/projects/rf_multipole_ion_optics/retired_projects/rf_quadrupole_ion_optics/docs/history/20260911__solver-sensitivity-and-retired-interface.md#comsol-数值与物理边界
 [octupole-state]: ../../projects/rf_multipole_ion_optics/docs/PROJECT.md#oct
-[oa-small-n-case]: ../../projects/single_reflection_oa_tof_mass_analyzer/docs/history/COMSOL_EXTREME_N_CRASH_CLOSURE_20260719.md
+[oa-small-n-case]: ../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/COMSOL_EXTREME_N_CRASH_CLOSURE_20260719.md
 [mr-field-route]: ../../projects/parallel_mirror_dual_stripe_mr_tof/docs/PROJECT.md#电场表示与数值资格
 
 ## 属性和Feature发现

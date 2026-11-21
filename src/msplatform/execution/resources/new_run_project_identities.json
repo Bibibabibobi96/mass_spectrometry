@@ -91,7 +91,7 @@
       "artifact_owner_project_id": "rf_hexapole_ion_optics",
       "policy": {
         "project_id": "rf_hexapole_ion_optics",
-        "path": "projects/rf_multipole_ion_optics/docs/history/retired_projects/rf_hexapole_ion_optics/config/project.json",
+        "path": "docs/history/projects/rf_multipole_ion_optics/retired_projects/rf_hexapole_ion_optics/config/project.json",
         "bytes": 3942,
         "sha256": "318fb3300bb4ebcbe4f66daa781882e073bfe17d2b3842a4eacab9feb49da6dd",
         "source_commit": "3647bcae1f20682c2d3e9ca164bf945645316d09",
@@ -127,7 +127,7 @@
       "artifact_owner_project_id": "rf_octupole_ion_optics",
       "policy": {
         "project_id": "rf_octupole_ion_optics",
-        "path": "projects/rf_multipole_ion_optics/docs/history/retired_projects/rf_octupole_ion_optics/config/project.json",
+        "path": "docs/history/projects/rf_multipole_ion_optics/retired_projects/rf_octupole_ion_optics/config/project.json",
         "bytes": 3942,
         "sha256": "0f48c0340c4c80d1d5bdeeb292dc51e8bbeb226e5c3dc75e3866d664468b4e27",
         "source_commit": "3647bcae1f20682c2d3e9ca164bf945645316d09",
@@ -163,7 +163,7 @@
       "artifact_owner_project_id": "rf_quadrupole_ion_optics",
       "policy": {
         "project_id": "rf_quadrupole_ion_optics",
-        "path": "projects/rf_multipole_ion_optics/docs/history/retired_projects/rf_quadrupole_ion_optics/config/project.json",
+        "path": "docs/history/projects/rf_multipole_ion_optics/retired_projects/rf_quadrupole_ion_optics/config/project.json",
         "bytes": 4178,
         "sha256": "8cfb5b07ebddc1944f3ee0af5f56b168c98aa6bf4b26ae8dc98f466123c96c8a",
         "source_commit": "3647bcae1f20682c2d3e9ca164bf945645316d09",

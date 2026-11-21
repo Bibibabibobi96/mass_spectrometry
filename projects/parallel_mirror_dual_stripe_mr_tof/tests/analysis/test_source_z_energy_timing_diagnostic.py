@@ -20,7 +20,7 @@ from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract
 from msplatform.backends.simion.mr_bunch_source import (
     resolve_bunch_source_interval,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.source_z_energy_timing_diagnostic import (
+from msplatform.workflows.oa_mr.source_z_energy_timing_diagnostic import (
     _association,
     _distribution,
     _time_plane_distribution,
@@ -47,7 +47,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.source_z_energy_timing
 )
 
 
-PEAK_CONTRACT = json.loads((Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json").read_text(encoding="utf-8"))["peak_analysis"]
+PEAK_CONTRACT = json.loads((Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json").read_text(encoding="utf-8"))["peak_analysis"]
 
 
 def _sha(path: Path) -> str:
@@ -1982,7 +1982,7 @@ ConvertTo-Json -InputObject $results -Depth 20 -Compress
                        detector_fwhm=None, focus=dict(sample={"median_tof_us": 800., "slope_us_per_mm": None},
                        minimum_resolution=100000., source_span_mm=1.))
         command = [sys.executable, "-B", "-X", "utf8", "-m",
-                   "projects.parallel_mirror_dual_stripe_mr_tof.analysis.source_z_energy_timing_diagnostic",
+                   "msplatform.workflows.oa_mr.source_z_energy_timing_diagnostic",
                    "--policy-request", "-", "--output", "-"]
         for extra in ([], ["--run-dir", "unused"]):
             result = subprocess.run(command + extra, input=json.dumps(request, ensure_ascii=False),

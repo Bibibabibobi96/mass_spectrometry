@@ -19,7 +19,7 @@
 - $D = 0$ 的特殊紧凑边界及其适用范围；
 - 机器合同、参考程序和最低验证要求。
 
-本文不保存当前项目电压、尺寸、候选状态或正式结果。当前事实仍以项目 `config/` 和 [`docs/PROJECT.md`](../PROJECT.md) 为准。本文从单次反射 oa-TOF 项目迁入；此前取代的[`三栅加速器总长度符号推导.docx`](../../../single_reflection_oa_tof_mass_analyzer/docs/history/20260721__superseded-theory-docx/三栅加速器总长度符号推导.docx)仍按原项目身份只读保留，不能继续作为当前公式权威。
+本文不保存当前项目电压、尺寸、候选状态或正式结果。当前事实仍以项目 `config/` 和 [`docs/PROJECT.md`](../PROJECT.md) 为准。本文从单次反射 oa-TOF 项目迁入；此前取代的[`三栅加速器总长度符号推导.docx`](../../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20260721__superseded-theory-docx/三栅加速器总长度符号推导.docx)仍按原项目身份只读保留，不能继续作为当前公式权威。
 
 配套求解器无关参考实现为：
 

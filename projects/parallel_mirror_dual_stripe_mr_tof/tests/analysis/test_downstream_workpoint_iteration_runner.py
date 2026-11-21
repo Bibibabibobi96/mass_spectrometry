@@ -431,7 +431,7 @@ $modelPath=Join-Path $Root 'iteration_local_s_model.json'
  [Console]::Out.Flush()
 }
 '''
-        contract = json.loads((PROJECT / 'config/simion_candidate_two_zone.json').read_text(encoding='utf-8'))
+        contract = json.loads((PROJECT.parents[1] / 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json').read_text(encoding='utf-8'))
         policy = json.loads((PROJECT / 'config/local_model_recovery_policy.json').read_text(encoding='utf-8'))
         anchor = dict(voltages_v=[-27., 54., 190., -190.], maximum_scaled_abs_residual=20.)
         decision = dict(iteration=6, recovery_state=dict(accepted_anchor=anchor, model_invalid_reason='topology_loss'))
@@ -549,7 +549,7 @@ foreach($round in 1..4){
 $topology=Get-InterruptedSOnlyTopologyRecoveryDecision -History @{decisions=@()}
 @{states=$states;actions=$script:actions;flights=$script:flights;saves=$script:saves;topology=$topology}|ConvertTo-Json -Depth 100 -Compress
 '''
-        profile = json.loads((PROJECT / 'config/simion_candidate_two_zone.json').read_text(encoding='utf-8'))
+        profile = json.loads((PROJECT.parents[1] / 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json').read_text(encoding='utf-8'))
         policy = json.loads((PROJECT / 'config/local_model_recovery_policy.json').read_text(encoding='utf-8'))
         anchor = dict(voltages_v=[-27., 54., 190., -190.], maximum_scaled_abs_residual=20.)
         for hint in (None, [-1, 1]):

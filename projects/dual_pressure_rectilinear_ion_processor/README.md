@@ -39,6 +39,6 @@
 
 ## History 索引
 
-[历史索引](docs/history/README.md)集中列出已冻结实验、迁移和旧方案；需要追溯证据时按需进入。
+[历史索引](../../docs/history/projects/dual_pressure_rectilinear_ion_processor/README.md)集中列出已冻结实验、迁移和旧方案；需要追溯证据时按需进入。
 
 科学CSV的冻结与读取边界见[结构化记录](docs/PROJECT.md#结构化记录与默认诊断)。

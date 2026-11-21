@@ -72,7 +72,7 @@ try{
   Push-Location -LiteralPath $repoRoot;$saved=$env:PYTHONPATH
   try{
     $env:PYTHONPATH=$repoRoot
-    & $python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.source_z_energy_timing_diagnostic `
+    & $python -m msplatform.workflows.oa_mr.source_z_energy_timing_diagnostic `
       --run-dir $sourceRun --output $result 2>&1|Tee-Object -FilePath $log
     if($LASTEXITCODE-ne 0){throw 'Source-z energy/timing analysis failed.'}
     if(-not(Test-Path -LiteralPath $log -PathType Leaf)){

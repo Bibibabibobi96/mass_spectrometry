@@ -27,7 +27,7 @@ from msplatform.backends.comsol import paired_static_model as paired_accelerator
 from projects.single_reflection_oa_tof_mass_analyzer.tests.analysis import test_paired_accelerator_static_field_prepare as preparation_tests
 
 ROOT = Path(__file__).resolve().parents[2]
-WORKFLOW = ROOT/'integrations/workflows/paired_accelerator_static_field'
+WORKFLOW = ROOT/'src/msplatform/workflows/resources'
 
 
 class PairedStaticExecutionTests(unittest.TestCase):
@@ -71,10 +71,13 @@ class PairedStaticExecutionTests(unittest.TestCase):
 
     def capacity_isolated_owner(self, root):
         """Startup capacity admission is inert; lease and lifecycle operations remain real."""
-        source=(WORKFLOW/'execute.ps1').read_text(encoding='utf-8')
+        source=(WORKFLOW/'paired_accelerator_static_field.ps1').read_text(encoding='utf-8')
+        package_assignment='$packageRoot=Split-Path -Parent (Split-Path -Parent $PSScriptRoot)'
+        self.assertEqual(source.count(package_assignment),1)
+        source=source.replace(package_assignment,f"$packageRoot='{(ROOT/'src/msplatform').as_posix()}'")
         # dependencies.ps1 reloads the public capacity adapter. Install the
         # fixture after that import so host disk policy stays outside this test.
-        boundary=". (Join-Path $RepoRoot 'src/msplatform/execution/resources/dependencies.ps1')"
+        boundary=". (Join-Path $packageRoot 'execution/resources/dependencies.ps1')"
         self.assertEqual(source.count(boundary),1)
         owner=root/'inert_capacity_owner.ps1'
         owner.write_text(source.replace(boundary,boundary+"\nfunction Invoke-ArtifactCapacityGate { Write-Host 'TEST_CAPACITY_ADMISSION=ISOLATED'; [pscustomobject]@{satisfied_after_apply=$true} }"),
@@ -160,7 +163,7 @@ Get-Content -LiteralPath $outer
             root=Path(directory);wrapper=root/'python_transport.ps1'
             wrapper.write_text(script,encoding='utf-8',newline='\n')
             result=subprocess.run(['pwsh','-NoProfile','-NonInteractive','-File',str(wrapper),
-                str(WORKFLOW/'execute.ps1'),str(ROOT),sys.executable,str(root)],
+                str(WORKFLOW/'paired_accelerator_static_field.ps1'),str(ROOT),sys.executable,str(root)],
                 cwd=ROOT,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=60)
             outer=root/'outer.log'
             self.assertEqual(result.returncode,0,result.stdout+result.stderr+
@@ -196,7 +199,7 @@ if(($script:stages-join',')-ne'pa_refine,prepare'){throw 'wrong stage sequence'}
             path=Path(directory)/'stage_parameters.ps1'
             path.write_text(script,encoding='utf-8',newline='\n')
             result=subprocess.run(['pwsh','-NoProfile','-NonInteractive','-File',str(path),
-                str(WORKFLOW/'execute.ps1'),str(resource_path('host_execution_lease.ps1'))],
+                str(WORKFLOW/'paired_accelerator_static_field.ps1'),str(resource_path('host_execution_lease.ps1'))],
                 cwd=ROOT,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
             self.assertIn('STAGE_PARAMETERS=PASS',result.stdout)
@@ -342,7 +345,7 @@ $branch=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]
 $summaryNode=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and
  $n.Left.Extent.Text-eq'$summary'-and$n.Extent.Text-like"*role='paired_accelerator_static_field_summary'*"},$true)
 if($null-eq$branch-or$null-eq$summaryNode){throw 'Actual owner boundaries missing'}
-$RepoRoot=$Directory;$RunId='inert';$stage='inert';$DryRun=$false
+$RepoRoot=$Directory;$packageRoot=Join-Path $RepoRoot 'src/msplatform';$RunId='inert';$stage='inert';$DryRun=$false
 $package=@{run_dir=$Directory;artifact_run_dir=$Directory;input_dir=$Directory;log_dir=$Directory;summary='unused'}
 $null=New-Item -ItemType Directory -Path (Join-Path $Directory logs) -Force
 $nativeOperations=[Collections.Generic.List[object]]::new();$nativeOperations.Add(@{TEST_ONLY='inert SIMION boundary'})
@@ -396,7 +399,7 @@ foreach($completed in @($true,$false)){
             root=Path(directory);wrapper=root/'owner_export_reuse.ps1'
             wrapper.write_text(script,encoding='utf-8',newline='\n')
             result=subprocess.run(['pwsh','-NoProfile','-File',str(wrapper),
-                str(WORKFLOW/'execute.ps1'),str(root),str(ROOT),sys.executable],cwd=ROOT,capture_output=True,
+                str(WORKFLOW/'paired_accelerator_static_field.ps1'),str(root),str(ROOT),sys.executable],cwd=ROOT,capture_output=True,
                 text=True,encoding='utf-8',errors='replace',timeout=30)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
             self.assertIn('OWNER_EXPORT_REUSE=PASS',result.stdout)
@@ -438,7 +441,7 @@ $null=New-Item -ItemType Directory -Force -Path (Split-Path -Parent $selected)
 [IO.File]::WriteAllBytes($selected,$sourceBytes)
 $identity=@{source_repo_path=$relative;frozen_path=$selected;bytes=$sourceBytes.Length;sha256=(Get-RunFileSha256 -Path $selected)}
 $frozen=@{execution_root=$Directory;identities=@($identity)}
-$RepoRoot=$Directory;$RunId='inert';$completedComsolExports=$null
+$RepoRoot=$Directory;$packageRoot=Join-Path $RepoRoot 'src/msplatform';$RunId='inert';$completedComsolExports=$null
 $package=@{run_dir=$Directory;artifact_run_dir=$Directory;log_dir=(Join-Path $Directory 'logs');result_dir=(Join-Path $Directory 'results')}
 $null=New-Item -ItemType Directory -Force -Path $package.log_dir,$package.result_dir
 $budget=@{host_budgets=@{comsol=@{}};limits=@{}};$tasks=@{matlab='inert task'}
@@ -483,7 +486,7 @@ foreach($mode in @('success','failure')){
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);wrapper=root/'post-exit-guard.ps1'
             wrapper.write_text(script,encoding='utf-8',newline='\n')
-            result=subprocess.run(['pwsh','-NoProfile','-File',str(wrapper),str(WORKFLOW/'execute.ps1'),
+            result=subprocess.run(['pwsh','-NoProfile','-File',str(wrapper),str(WORKFLOW/'paired_accelerator_static_field.ps1'),
                 str(root),str(ROOT),sys.executable],cwd=ROOT,capture_output=True,text=True,
                 encoding='utf-8',errors='replace',timeout=30)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
@@ -500,7 +503,7 @@ $ErrorActionPreference='Stop'
 . (Join-Path $RepoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $RepoRoot 'src/msplatform/execution/resources/dependencies.ps1')
 $tokens=$null;$errors=$null
-$owner=Join-Path $RepoRoot 'integrations/workflows/paired_accelerator_static_field/execute.ps1'
+$owner=Join-Path $RepoRoot 'src/msplatform/workflows/resources/paired_accelerator_static_field.ps1'
 $ast=[System.Management.Automation.Language.Parser]::ParseFile($owner,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Actual owner did not parse'}
 $text=[IO.File]::ReadAllText($owner)
@@ -848,7 +851,7 @@ dofile('{Path(tasks['lua']).as_posix()}')
     def test_native_authorization_rejected_before_run_or_vendor(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);run,author=self.prepared(root)
-            result=subprocess.run(['pwsh','-NoProfile','-File',str(WORKFLOW/'execute.ps1'),
+            result=subprocess.run(['pwsh','-NoProfile','-File',str(WORKFLOW/'paired_accelerator_static_field.ps1'),
                 '-Request',str(author/'request.json'),'-ArtifactRoot',str(root/'artifacts')],
                 cwd=ROOT,capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=30)
             self.assertNotEqual(result.returncode,0)
@@ -875,6 +878,40 @@ dofile('{Path(tasks['lua']).as_posix()}')
             self.assertTrue((run/'inputs/bvp/paired_accelerator.gem').is_file())
             self.assertFalse(any(run.rglob('*.pa')))
             self.assertFalse(any(run.rglob('*.mph')))
+
+    def test_external_site_packages_freezes_and_prepares_without_workspace_core_sources(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory).resolve();fixture=root/'fixture';fixture.mkdir()
+            _,author=self.prepared(fixture)
+            package_root=root/'installation/Lib/site-packages/msplatform'
+            shutil.copytree(ROOT/'src/msplatform',package_root)
+            owner=package_root/'workflows/resources/paired_accelerator_static_field.ps1'
+            source=(WORKFLOW/'paired_accelerator_static_field.ps1').read_text(encoding='utf-8')
+            boundary=". (Join-Path $packageRoot 'execution/resources/dependencies.ps1')"
+            owner.write_text(source.replace(boundary,boundary+"\nfunction Invoke-ArtifactCapacityGate { [pscustomobject]@{satisfied_after_apply=$true} }"),
+                encoding='utf-8',newline='\n')
+            workspace=root/'workspace';workspace.mkdir()
+            for relative in ('projects/orthogonal_accelerator/analysis',
+                    'projects/single_reflection_oa_tof_mass_analyzer/analysis',
+                    'projects/rf_multipole_ion_optics/core','projects/rf_multipole_ion_optics/runtime'):
+                shutil.copytree(ROOT/relative,workspace/relative)
+            matlab='projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_grid_geometry.m'
+            (workspace/matlab).parent.mkdir(parents=True)
+            shutil.copyfile(ROOT/matlab,workspace/matlab)
+            artifacts=root/'artifacts';artifacts.mkdir();initialize_capacity_ledger(artifacts,objects=[])
+            run_id='20261025_010004__test__python__paired-static-external-package'
+            result=subprocess.run(['pwsh','-NoProfile','-File',str(owner),
+                '-Request',str(author/'request.json'),'-ArtifactRoot',str(artifacts),
+                '-Python',sys.executable,'-RunId',run_id,'-DryRun','-RepoRoot',str(workspace)],
+                cwd=ROOT,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=240)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            self.assertFalse((workspace/'src').exists())
+            run=artifacts/'projects/instrument_assembly/runs'/run_id
+            self.assertEqual(runtime.read(run/'run_manifest.json')['status'],'success')
+            snapshot=run/'inputs/runtime_snapshot/src/msplatform'
+            self.assertEqual((snapshot/'workflows/resources/paired_accelerator_static_field.ps1').read_bytes(),owner.read_bytes())
+            self.assertTrue((run/'inputs/bvp/paired_accelerator.gem').is_file())
+            self.assertFalse(any(run.rglob('dependency_source_view')))
 
     def test_invalid_saved_model_source_fails_before_any_vendor_and_seals_failure(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1131,6 +1168,7 @@ $parameters=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentS
 if($null-eq$resolver-or$null-eq$parameters){throw 'Actual COMSOL deployment boundary missing'}
 $steps=@($statements)+@($native[0],$native[-1],$resolver,$parameters,$comsol)
 $RepoRoot=Join-Path $Run consumer
+$packageRoot=Join-Path $RepoRoot 'src/msplatform'
 $launcher=Join-Path $RepoRoot 'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1'
 New-Item -ItemType Directory (Split-Path $launcher) -Force|Out-Null
 Copy-Item (Join-Path $Public 'src/msplatform/backends/comsol/launcher/resolve_comsol_64.ps1') (Join-Path (Split-Path $launcher) 'resolve_comsol_64.ps1')
@@ -1184,7 +1222,7 @@ $cases|ConvertTo-Json -Compress
             wrapper = root / 'early_task.ps1'
             wrapper.write_text(script, encoding='utf-8')
             result = subprocess.run(['pwsh', '-NoProfile', '-File', str(wrapper),
-                str(WORKFLOW / 'execute.ps1'), str(ROOT), sys.executable, str(run)], cwd=ROOT,
+                str(WORKFLOW / 'paired_accelerator_static_field.ps1'), str(ROOT), sys.executable, str(run)], cwd=ROOT,
                 capture_output=True, text=True, encoding='utf-8', timeout=60)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 

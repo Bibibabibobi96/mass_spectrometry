@@ -3,9 +3,9 @@
 The project verifier now loads the installed execution lease resource with an explicit HostContext. Callers must select Python through `-PythonExe` or `SIMULATION_PYTHON_EXE`; the verifier no longer assumes a checkout `.venv`. Contract checks, tests and scientific behavior are unchanged.
 
 本文件是项目当前事实、资格与开放任务的唯一权威。COMSOL实现见[`COMSOL.md`](COMSOL.md)；选型依据
-和旧实验见[`history/PROJECT_HISTORY.md`](history/PROJECT_HISTORY.md)；2026-07-28以前的完整runner
+和旧实验见[`../../../docs/history/projects/transverse_helical_filament_wehnelt_electron_gun/PROJECT_HISTORY.md`](../../../docs/history/projects/transverse_helical_filament_wehnelt_electron_gun/PROJECT_HISTORY.md)；2026-07-28以前的完整runner
 故障与修复时间线冻结在
-[`history/20260728__pre-document-consolidation-project.md`](history/20260728__pre-document-consolidation-project.md)。
+[`../../../docs/history/projects/transverse_helical_filament_wehnelt_electron_gun/20260728__pre-document-consolidation-project.md`](../../../docs/history/projects/transverse_helical_filament_wehnelt_electron_gun/20260728__pre-document-consolidation-project.md)。
 
 The build-only freezer no longer adds the two retired `common` host/process
 adapters. Its canonical package selector supplies those resources exactly once.
@@ -50,7 +50,7 @@ freezing evidence, with no MATLAB or COMSOL execution or new model qualification
 The explicit archive input now names `src/msplatform/execution/artifact_identity_archive.py`;
 its original frozen-freshness method passed in 18.094 s without changing the declared input set.
 实心阴极与轴向线圈源码已冻结到
-[`history/20260713__pre-transverse-wehnelt-lineages.md`](history/20260713__pre-transverse-wehnelt-lineages.md)。
+[`../../../docs/history/projects/transverse_helical_filament_wehnelt_electron_gun/20260713__pre-transverse-wehnelt-lineages.md`](../../../docs/history/projects/transverse_helical_filament_wehnelt_electron_gun/20260713__pre-transverse-wehnelt-lineages.md)。
 
 The registered project build-only task retains its explicit run/contract adapter and delegates its existing phase checks and text report writer to the installed COMSOL MATLAB resource. The project owner and its three MPH outputs and report contract remain unchanged; this ownership change adds no native qualification.
 

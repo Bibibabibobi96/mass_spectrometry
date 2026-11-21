@@ -50,7 +50,7 @@ def _states(count: int, mother: int = 1000):
 
 
 PROJECT = Path(__file__).resolve().parents[2]
-GEOMETRY_CONTRACT = PROJECT / "config" / "simion_candidate_two_zone.json"
+GEOMETRY_CONTRACT = PROJECT.parents[1] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json"
 CANDIDATE_DEFINITION = PROJECT / "config" / "candidate_bunch_source_n100.json"
 
 

@@ -341,7 +341,7 @@ print('FROZEN_SRC_CORE=PASS')
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             snapshot = inputs / "runtime_snapshot"
             required_companions = {
-                "integrations/workflows/prepared_joint/execute.ps1",
+                "src/msplatform/workflows/resources/prepared_joint_execute.ps1",
                 "src/msplatform/workflows/resources/multipole_ip.ps1",
                 "src/msplatform/workflows/resources/ip_functional.ps1",
                 "src/msplatform/workflows/resources/run_artifact_workflow.ps1",
@@ -624,7 +624,7 @@ Copy-FrozenDependency -RepoRoot '{detached}' -InputDir '{destination}' -Dependen
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
             parent = output / "parent.json"
-            shutil.copyfile(INTEGRATION_ROOT / "config/recipes/multipole_ip_mr_y_minus55_plan.json", parent)
+            shutil.copyfile(REPO_ROOT / "src/msplatform/workflows/config/multipole_ip_mr_y_minus55_plan.json", parent)
             freeze = f"""
 . '{DEPENDENCIES}'
 $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId prepared_joint

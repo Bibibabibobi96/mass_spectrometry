@@ -30,7 +30,7 @@
     "solidworks"
   ],
   "contracts": {
-    "baseline": "config/simion_candidate_two_zone.json",
+    "baseline": "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json",
     "resolved": null,
     "analysis": null,
     "interface": null,

@@ -145,7 +145,7 @@ function New-ManagedFrozenInputs {
   Invoke-ProjectPython -Arguments @(
     '-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_freeze',
     '--accelerator-component-contract',$script:oaComponentContractFrozen,'--accelerator-geometry-profile-id',$script:oaGeometryProfileId,
-    '--contract',(Join-Path $projectRoot 'config\simion_candidate_two_zone.json'),
+    '--contract',(Join-Path $repoRoot 'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json'),
     '--coarse-generation-manifest',$source.coarse_manifest,
     '--simion-executable',$simion,'--simion-release','SIMION 2020',
     '--output-directory',$destination,'--run-config',[string]$Package.run_config
@@ -273,7 +273,7 @@ function Build-RawGeometry {
     $gem=Join-Path ([string]$scratchAlias.execution_alias) 'mrtof_analyzer_corridor.gem'
     $mappedGem=Join-Path ([string]$scratchAlias.execution_alias) 'mrtof_analyzer_corridor.local.gem'
     $raw=Join-Path ([string]$scratchAlias.execution_alias) 'mrtof_analyzer_corridor.pa#'
-    Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_geometry','--accelerator-component-contract',$script:oaComponentContractFrozen,'--accelerator-geometry-profile-id',$script:oaGeometryProfileId,'--contract',(Join-Path $projectRoot 'config\simion_candidate_two_zone.json'),'--output',$gem)|Out-Null
+    Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_geometry','--accelerator-component-contract',$script:oaComponentContractFrozen,'--accelerator-geometry-profile-id',$script:oaGeometryProfileId,'--contract',(Join-Path $repoRoot 'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json'),'--output',$gem)|Out-Null
     # The generator reads the current contract only as a deterministic compiler;
     # the frozen package remains authoritative.  A changed contract must fail
     # here rather than silently create a bank under stale frozen identity.
@@ -282,7 +282,7 @@ function Build-RawGeometry {
     if($generatedGemHash-ne[string]$frozenIdentity.gem.sha256){throw 'Current corridor compiler output differs from the frozen native geometry identity.'}
     $plan=Get-Content -LiteralPath $planPath -Raw -Encoding UTF8|ConvertFrom-Json -Depth 30
     $mapping=@($plan.physical_to_local_electrode_id.PSObject.Properties|Sort-Object {[int]$_.Name}|ForEach-Object{"$($_.Name):$($_.Value)"})-join','
-    Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_geometry','--accelerator-component-contract',$script:oaComponentContractFrozen,'--accelerator-geometry-profile-id',$script:oaGeometryProfileId,'--contract',(Join-Path $projectRoot 'config\simion_candidate_two_zone.json'),'--output',$mappedGem,'--physical-to-local-map',$mapping)|Out-Null
+    Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_corridor_geometry','--accelerator-component-contract',$script:oaComponentContractFrozen,'--accelerator-geometry-profile-id',$script:oaGeometryProfileId,'--contract',(Join-Path $repoRoot 'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json'),'--output',$mappedGem,'--physical-to-local-map',$mapping)|Out-Null
     $lease=Enter-HostExecutionLease -Role SIMION -Stage pa_refine -RunId $RunId
     & (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\run_gem2pa.ps1') -SimionExe $simion -GemPath $mappedGem -OutputPaPath $raw
     Move-NewMember -Source (Join-Path $ScratchDirectory 'mrtof_analyzer_corridor.pa#') -Destination $destination

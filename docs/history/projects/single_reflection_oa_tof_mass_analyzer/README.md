@@ -1,6 +1,7 @@
 # 单次反射正交加速飞行时间质量分析器历史索引
 
-返回[项目入口](../../README.md)；当前结论、资格与开放任务见[PROJECT](../PROJECT.md)。
+返回[项目入口](../../../../projects/single_reflection_oa_tof_mass_analyzer/README.md)；当前结论、资格与开放任务见[PROJECT](../../../../projects/single_reflection_oa_tof_mass_analyzer/docs/PROJECT.md)。
+路径迁移：`projects/single_reflection_oa_tof_mass_analyzer/docs/history/` → `docs/history/projects/single_reflection_oa_tof_mass_analyzer/`；冻结正文保持原字节。
 本页是可更新导航。以下记录按归档时点解释，不作为当前运行指令；各档案正文及证据身份保持冻结。
 
 ## 归档记录

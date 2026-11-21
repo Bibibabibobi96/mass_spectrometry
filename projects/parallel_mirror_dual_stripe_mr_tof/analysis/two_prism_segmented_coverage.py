@@ -22,7 +22,7 @@ from msplatform.execution.host_resource_python import ensure_heavy_entry
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_exit_transport_source import (
     materialize_accelerator_exit_transport_source,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.fixed_mirror_stripe_operating_point import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.fixed_mirror_stripe_operating_point import (
     load_fixed_mirror_stripe_operating_point,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_exact_k_operating_point import (

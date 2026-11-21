@@ -34,7 +34,7 @@ Paper 1 固定给定源分布；Paper 2 主动改变源分布并需要独立的�
 - [核心全文逐式 claim chart](prior_art_equation_claim_chart_20260825.md)
 - [Connector-gap 机制实验及脉冲相对时钟勘误](paper_1_jasms/connector_gap_working_point_mechanism_20260827.md)
 - [已被三臂合同接替的双臂定义](paper_1_jasms/connector_gap_paired_source_contract.md)
-- [阶段状态沿革](../history/20260911__publication-status-consolidation.md)
+- [阶段状态沿革](../../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20260911__publication-status-consolidation.md)
 
 研究范围、阶段执行状态、科学公式与历史结果各在上述唯一正文维护。两份旧 scope 页的正文已合并到
 各自研究计划；普通编辑与原路径通过 Git 追溯，当前目录不再保留只作转跳的副本。

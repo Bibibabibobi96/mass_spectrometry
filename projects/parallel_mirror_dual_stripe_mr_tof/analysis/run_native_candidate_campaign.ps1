@@ -478,7 +478,7 @@ function New-CampaignComparison {
   try{
     $env:PYTHONPATH=(Join-Path $repoRoot 'src')+[IO.Path]::PathSeparator+$repoRoot+$(if($saved){[IO.Path]::PathSeparator+$saved}else{''})
     $output=@(@{action='campaign_comparison';conditions=@($rows)}|ConvertTo-Json -Depth 100 -Compress|
-      & $python -X utf8 -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.source_z_energy_timing_diagnostic --policy-request - --output -)
+      & $python -X utf8 -m msplatform.workflows.oa_mr.source_z_energy_timing_diagnostic --policy-request - --output -)
     if($LASTEXITCODE-ne0){throw 'Candidate campaign comparison failed.'}
     return ($output-join"`n")|ConvertFrom-Json -AsHashtable -Depth 100
   }finally{$env:PYTHONPATH=$saved;Pop-Location}

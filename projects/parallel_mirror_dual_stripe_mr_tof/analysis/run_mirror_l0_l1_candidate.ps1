@@ -16,7 +16,7 @@ $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } elseif ($env:SI
 $contractInput = if ($ContractPath) {
   (Resolve-Path -LiteralPath $ContractPath).Path
 } else {
-  Join-Path $projectRoot 'config\simion_candidate_two_zone.json'
+  Join-Path $repoRoot 'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json'
 }
 if ([string]::IsNullOrWhiteSpace($RunId)) {
   $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__analysis__python__mirror-l0-l1-family'

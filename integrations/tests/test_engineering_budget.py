@@ -13,7 +13,7 @@ class EngineeringBudgetTests(unittest.TestCase):
     def test_shared_budget_admission(self):
         code = r"""param($RepoRoot,$Temporary)
 $ErrorActionPreference='Stop'
-. (Join-Path $RepoRoot 'integrations/runtime/engineering_budget.ps1')
+. (Join-Path $RepoRoot 'src/msplatform/workflows/resources/engineering_budget.ps1')
 $document=@{schema_version=2;role='integration_resolved_engineering_budget';integration_id='instrument_assembly';workflow_id='fixture';retention_class='solver_review';particle_count=100;stage_limits=@{transport=@{solver='simion';automatic_retry_count=0;wall_clock_seconds=60;transient_run_directory_bytes=1000;process_tree_working_set_bytes=2000;minimum_system_available_memory_bytes=1;compact_final_retained_bytes=800}}}
 $source=Join-Path $Temporary budget.json
 $document|ConvertTo-Json -Depth 20|Set-Content -LiteralPath $source
@@ -69,7 +69,7 @@ foreach($mutation in @('schema','owner','solver','retry','positive','retention',
             script.write_text(code, encoding="utf-8")
             result = subprocess.run(
                 ["pwsh", "-NoProfile", "-File", str(script), str(REPO), temporary],
-                cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=60,
+                cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
             )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("BUDGET_BEHAVIOR=PASS", result.stdout)

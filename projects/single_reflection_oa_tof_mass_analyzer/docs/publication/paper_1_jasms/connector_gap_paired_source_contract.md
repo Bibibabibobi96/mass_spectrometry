@@ -47,7 +47,7 @@ transmitted terminal handoff 数，不是为加速而缩小的统计样本；完
 ## 历史证据与后继
 
 双臂脉冲种子失配、窗口修复和候选确认过程已冻结到
-[状态沿革](../../history/20260911__publication-status-consolidation.md#connector_gap_paired_source_contract)。
+[状态沿革](../../../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20260911__publication-status-consolidation.md#connector_gap_paired_source_contract)。
 这些证据仅用于解释本合同的前驱与失败边界；新工作按三臂合同进入，不沿用旧文中的“下一步”。
 
 ## 机制主张与边界

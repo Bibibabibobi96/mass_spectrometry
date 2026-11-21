@@ -71,7 +71,7 @@
 | 发表主张、实验计划、阶段合同与证据矩阵 | [oa-TOF发表研究](../projects/single_reflection_oa_tof_mass_analyzer/docs/publication/README.md)；仅该项目实际维护此类研究，不要求其他项目复制模板 |
 | 书、论文与供应商手册 | [外部参考资料](references/README.md)；只保存来源定位，应用假设写回知识所有者 |
 | 已完成全仓审计与迁移 | [审计索引](AUDITS.md) |
-| 项目研究、旧方案和负结果 | 所属项目README的历史入口；[组装历史索引](../integrations/docs/history/README.md) |
+| 项目研究、旧方案和负结果 | 所属项目README的历史入口；[组装历史索引](history/integrations/README.md) |
 | 某次运行的原始输入、结果、图表和日志 | 所属artifacts run的manifest及summary；不复制进当前指导或理论 |
 
 普通编辑通过Git固定提交追溯。历史索引可以维护，冻结记录按当时身份解释；实际移动或退役遵循

@@ -35,7 +35,7 @@ campaign、阈值、seed、前驱关系和输出结构由
 [`three_zone_solver_free_funnel_v2.json`](../../config/experiments/three_zone_solver_free_funnel_v2.json)
 管理；公式参考实现为
 [`three_zone_ideal_theory.py`](../../../../src/msplatform/components/single_reflection_oa_tof/three_zone_ideal_theory.py)。外部输入的审阅与处置记录见
-[`20260817__three-zone-accelerator-external-document-review.md`](../history/20260817__three-zone-accelerator-external-document-review.md)。
+[`20260817__three-zone-accelerator-external-document-review.md`](../../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20260817__three-zone-accelerator-external-document-review.md)。
 
 本工作流的 `Functional` 只表示一维精确时间、解析导数、冻结离散域和阶段receipt能够在不调用商业
 求解器的条件下闭合；`PROVISIONAL` 表示它仍是既见过先导结果后的受控理论评估。它不是COMSOL、
@@ -125,7 +125,7 @@ T5 receipt的显式桥接由
 `three_zone_accelerator_ideal_v1`拓扑下接受三区region/plane/field；电极拓扑注册表保持旧双区
 `0..19`不变，仅为三区新增ID `20`。隔离理论不得直接复用双区profile，也不得把现有`grid2`静默改成
 中间电极。successor布局、真实PA与N=1/N=100完成结果只查
-[冻结完成快照](../history/20260823__three-zone-completed-results-snapshot.md)；当前资格查[PROJECT](../PROJECT.md)。
+[冻结完成快照](../../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20260823__three-zone-completed-results-snapshot.md)；当前资格查[PROJECT](../PROJECT.md)。
 
 ## 8. T0—T5阶段漏斗
 
@@ -164,7 +164,7 @@ T4c的 `32,955` 只是离散外层域笛卡尔积的点数：
 
 2026-08-17已完成的canonical solver-free链、真实SIMION PA后继、observed-source顺序归因、全部数值、
 run身份和限制已冻结在
-[`20260823__three-zone-completed-results-snapshot.md`](../history/20260823__three-zone-completed-results-snapshot.md)。
+[`20260823__three-zone-completed-results-snapshot.md`](../../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20260823__three-zone-completed-results-snapshot.md)。
 本理论正文不再复制日期化结果。
 
 该历史证据最高仍为100 Th、N=100真实PA或求解器无关post-pilot结论，不改变524 Da Formal，也未完成
@@ -328,11 +328,11 @@ f_M(m)=f_T\!\left(\bar T\sqrt{m/m_0}\right)
 ### 10.6 200 mm 实用长度约束下的已测范围
 
 200 mm 科学配置和边界加密是上述方法的冻结实例；完整参数、数值结果、负结果与来源见
-[200 mm 扫描快照](../history/20260827__200mm-ideal-acceptance-scan.md)。
+[200 mm 扫描快照](../../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20260827__200mm-ideal-acceptance-scan.md)。
 当前允许结论见[PROJECT](../PROJECT.md#理想场探索的已验证范围)，不在理论正文维护第二份结果表。
 
 ### 10.7 300 mm 对照：长度是有价值的设计自由度，但非单调定律
 
 300 mm 配置只改变总长，并保持主扫描的源、离散宽度、控制域与数值／粒子合同；
-完整比较见[300 mm 扫描快照](../history/20260827__300mm-ideal-acceptance-scan.md)。
+完整比较见[300 mm 扫描快照](../../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20260827__300mm-ideal-acceptance-scan.md)。
 该实例不能外推长度单调律、连续域最大宽度或工程接受度。

@@ -258,7 +258,7 @@ class JointMirrorStripeL0Test(unittest.TestCase):
 
     def test_contract_adapter_evaluates_the_frozen_bspline_not_a_resampled_shape(self) -> None:
         root = Path(__file__).resolve().parents[2]
-        contract = json.loads((root / "config" / "simion_candidate_two_zone.json").read_text(encoding="utf-8"))
+        contract = json.loads((root.parents[1] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json").read_text(encoding="utf-8"))
         first, second = stripes_from_contract(contract, (-40.0, 60.0))
         y0, y1 = contract["dual_stripe"]["theory_profile"]["active_y_span_mm"]
         self.assertGreater(first.width_mm(y0), 0.0)
@@ -268,7 +268,7 @@ class JointMirrorStripeL0Test(unittest.TestCase):
 
     def test_contract_adapter_derives_total_path_from_both_reflection_axis_bands(self) -> None:
         root = Path(__file__).resolve().parents[2]
-        contract = json.loads((root / "config" / "simion_candidate_two_zone.json").read_text(encoding="utf-8"))
+        contract = json.loads((root.parents[1] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json").read_text(encoding="utf-8"))
         first, second = stripes_from_contract(contract, (-40.0, 60.0))
         raw_first = compile_dual_stripe_width_evaluator(contract, "set_1")
         raw_second = compile_dual_stripe_width_evaluator(contract, "set_2")
@@ -326,7 +326,7 @@ class JointMirrorStripeL0Test(unittest.TestCase):
 
     def test_current_hardware_problem_declares_derived_quantities_separately(self) -> None:
         root = Path(__file__).resolve().parents[2]
-        contract = json.loads((root / "config" / "simion_candidate_two_zone.json").read_text(encoding="utf-8"))
+        contract = json.loads((root.parents[1] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json").read_text(encoding="utf-8"))
         problem = contract["dual_stripe_l0"]["current_fixed_hardware_l0_l1_problem"]
         self.assertEqual(problem["mirror_independent_unknowns"], [
             "mirror_voltage_B_v", "mirror_voltage_C_v", "mirror_voltage_D_v", "mirror_voltage_E_v",

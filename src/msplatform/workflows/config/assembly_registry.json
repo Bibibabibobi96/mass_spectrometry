@@ -76,7 +76,7 @@
         },
         {
           "workflow_id": "prepared_joint_flight",
-          "entrypoint": "integrations/workflows/prepared_joint/execute.ps1",
+          "entrypoint": "src/msplatform/workflows/resources/prepared_joint_execute.ps1",
           "required_bindings": [
             "prepared_joint_workbench_run_path",
             "contract_path"
@@ -119,7 +119,7 @@
         },
         {
           "workflow_id": "ip_mr_chain",
-          "entrypoint": "integrations/workflows/accelerator_interface/execute.ps1",
+          "entrypoint": "src/msplatform/workflows/resources/accelerator_interface.ps1",
           "required_bindings": [
             "ion_processor_run_path",
             "reference_mr_run_path",
@@ -239,7 +239,7 @@
         },
         {
           "workflow_id": "rf_ip_mr_continuous",
-          "entrypoint": "integrations/workflows/accelerator_interface/execute.ps1",
+          "entrypoint": "src/msplatform/workflows/resources/accelerator_interface.ps1",
           "required_bindings": [
             "release_request",
             "fields_reference",

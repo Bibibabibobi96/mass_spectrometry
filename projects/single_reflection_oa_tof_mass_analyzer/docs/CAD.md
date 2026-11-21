@@ -64,4 +64,4 @@ CAD不直接解析候选JSON：
 当前Formal CAD由vNext原子发布绑定，SolidWorks 2022独立evidence已通过；精确组件数、revision、路径、
 SHA和来源run只认`formal_assets.json`与Formal manifest。已完成Candidate闭合、模板故障和旧load-only
 探针的运行时间线保存在
-[`history/`](history/)及2026-07-28文档快照，current不复制run ID或结果表。
+[`../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/`](../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/)及2026-07-28文档快照，current不复制run ID或结果表。

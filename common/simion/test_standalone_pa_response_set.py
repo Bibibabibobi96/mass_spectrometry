@@ -156,7 +156,7 @@ class StandalonePaResponseSetTests(unittest.TestCase):
         self._write_receipt()
         manifest = self.root / 'cache_manifest.json'
         manifest.write_text(json.dumps(self._manifest()), encoding='utf-8', newline='\n')
-        command = [sys.executable, '-B', '-m', 'integrations.runtime.standalone_pa_family',
+        command = [sys.executable, '-B', '-m', 'msplatform.backends.simion.standalone_pa_family_cli',
                    '--directory', str(self.root), '--prefix', 'field', '--response-ids', '36,37',
                    '--manifest', str(manifest), '--output', str(self.root / 'selection.json')]
         def run(metadata: bool) -> subprocess.CompletedProcess:

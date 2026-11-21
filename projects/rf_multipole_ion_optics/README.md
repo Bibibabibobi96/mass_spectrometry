@@ -27,7 +27,7 @@ COMSOL 正常无碰撞入口支持 `-AnalyzeOnly -ParentManifestPath <原封存m
 3. 选择下表中的变体入口；涉及物理解释时读[理论索引](docs/theory/index.md)。
 4. 实现与运行查[多极杆实现说明](docs/IMPLEMENTATION.md)；按所用求解器查
    [COMSOL说明](docs/COMSOL.md)或[SIMION说明](docs/SIMION.md)，各workflow分别声明变体范围。
-5. 仅在追溯旧结论、run或资格身份时读[历史索引](docs/history/README.md)。
+5. 仅在追溯旧结论、run或资格身份时读[历史索引](../../docs/history/projects/rf_multipole_ion_optics/README.md)。
 
 ## 设计变体
 
@@ -111,7 +111,7 @@ fixture／未知目录的owner发现沿公共目录；Core／Static内部集合�
 
 新运行的owner为`rf_multipole_ion_optics`，产物进入工作区
 `artifacts/projects/rf_multipole_ion_optics/`。旧run、manifest、源和资格保留原owner与字节身份，
-由[历史索引](docs/history/README.md)定位；旧结果不会因目录合并变成新项目已通过的证据。
+由[历史索引](../../docs/history/projects/rf_multipole_ion_optics/README.md)定位；旧结果不会因目录合并变成新项目已通过的证据。
 
 The same installed `solve_fields` now plans independent RF fields with explicit
 `numerics={"refine_policy":"vendor_default"}` or `{"refine_policy":"explicit_convergence",

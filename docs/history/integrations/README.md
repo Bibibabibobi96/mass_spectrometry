@@ -1,6 +1,6 @@
 # 组装历史索引
 
-返回[组装入口](../../README.md)或[当前状态](../INTEGRATION.md)。本索引允许维护；以下记录保持冻结，
+返回[组装入口](../../../integrations/README.md)或[当前状态](../../../integrations/docs/INTEGRATION.md)。本索引允许维护；以下记录保持冻结，
 其旧路径、运行身份、失败和资格边界按记录当时的语境解释。
 历史记录中的MR `simion/README.md`已迁至当前[MR SIMION说明](../../../projects/parallel_mirror_dual_stripe_mr_tof/docs/SIMION.md)；冻结正文保留当时路径。
 
@@ -13,7 +13,7 @@
 旧项目式目录已退出活动树。以下291件冻结记录及载荷逐件保持原始Git blob字节，
 来源提交为 `6ad471d3a63c94cbb72b8ac046fb82a9961181eb`，迁位映射为：
 
-`integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/` → `integrations/docs/history/`。
+`integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/` → `integrations/docs/history/` → `docs/history/integrations/`。
 
 包内相对结构保持不变；正文中的原相对引用仍以旧位置及上述固定提交为解释基址。
 旧运行、产物owner、科学结论和资格不改写；旧命令仅供追溯，新运行从统一组装入口进入。

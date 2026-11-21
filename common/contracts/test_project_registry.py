@@ -205,7 +205,7 @@ class ProjectRegistryTests(unittest.TestCase):
         self.assertEqual(descriptor["lifecycle_status"], "candidate")
         self.assertEqual(
             descriptor["contracts"]["baseline"],
-            "config/simion_candidate_two_zone.json",
+            "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json",
         )
         self.assertIsNone(descriptor["contracts"]["resolved"])
         self.assertIn("simion", descriptor["toolchains"])

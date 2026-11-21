@@ -35,7 +35,7 @@ class TwoPrismTrialRunnerTest(unittest.TestCase):
             script = root/'fixed_joint.ps1'
             script.write_text(r'''param($Repo,$Root,$Python,$Owner,$Covered)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-$errors=$null;$entry=Join-Path $Repo "integrations/workflows/$Owner/execute.ps1"
+$errors=$null;$entry=if($Owner-eq'prepared_joint'){Join-Path $Repo 'src/msplatform/workflows/resources/prepared_joint_execute.ps1'}else{Join-Path $Repo "integrations/workflows/$Owner/execute.ps1"}
 $ast=[Management.Automation.Language.Parser]::ParseFile($entry,[ref]$null,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
 $env:PYTHONPATH=$Repo
@@ -74,7 +74,7 @@ exit 0
                         (root/'profiles.json').write_text(json.dumps([current]), encoding='utf-8')
                         result = subprocess.run(['pwsh', '-NoProfile', '-File', str(script), str(REPO), directory,
                             sys.executable, owner, 'yes' if covered else 'no'], cwd=REPO,
-                            capture_output=True, text=True, encoding='utf-8', timeout=30)
+                            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30)
                         self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
@@ -714,7 +714,7 @@ foreach($staticFieldRequested in @($false,$true)){
             from msplatform.components.parallel_mirror_dual_stripe_mr_tof.accelerator_requirements import read_accelerator_geometry_authority
             from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
             expected_authority = read_accelerator_geometry_authority(
-                load_contract(REPO / "projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json"),
+                load_contract(REPO / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json"),
                 component_contract_path=oa_contract, geometry_profile_id=oa_profile,
             )
             (root / "expected_oa_authority.json").write_text(json.dumps(expected_authority), encoding="utf-8")
@@ -775,9 +775,9 @@ Push-Location -LiteralPath $script:pythonRoot
 try{
  & $Python -B -s -c "from pathlib import Path; from msplatform.workflows.prepared_joint import prism_trial as two_prism_simion_trial; from msplatform.backends.simion import mrtof_batch_flight; assert Path(two_prism_simion_trial.__file__).is_relative_to(Path.cwd()); assert Path(mrtof_batch_flight.__file__).is_relative_to(Path.cwd()); from msplatform.contracts import trajectory_recording; assert Path(trajectory_recording.__file__).is_relative_to(Path.cwd()/'src')"
  if($LASTEXITCODE-ne0){throw 'Detached provider import failed'}
- & $Python -B -s -m msplatform.contracts.trajectory_recording --contract (Join-Path $script:pythonRoot 'projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json')
+ & $Python -B -s -m msplatform.contracts.trajectory_recording --contract (Join-Path $script:pythonRoot 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json')
  if($LASTEXITCODE-ne0){throw 'Detached provider compilation failed'}
- & $Python -B -s -c "import json; from pathlib import Path; from msplatform.contracts.particle_count_policy import validate_standard_particle_count; from msplatform.components.parallel_mirror_dual_stripe_mr_tof.accelerator_requirements import read_accelerator_geometry_authority; import sys; validate_standard_particle_count(100); c=json.loads(Path('projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json').read_text(encoding='utf-8')); selected=read_accelerator_geometry_authority(c,component_contract_path=Path(sys.argv[1]),geometry_profile_id=sys.argv[2]); assert selected['accelerator_requirements']['variant_id']=='two_zone'; assert selected['source_refs'][0]['path']==str(Path(sys.argv[1]).resolve())" $oaComponentContractLocal $AcceleratorGeometryProfileId
+ & $Python -B -s -c "import json; from pathlib import Path; from msplatform.contracts.particle_count_policy import validate_standard_particle_count; from msplatform.components.parallel_mirror_dual_stripe_mr_tof.accelerator_requirements import read_accelerator_geometry_authority; import sys; validate_standard_particle_count(100); c=json.loads(Path('src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json').read_text(encoding='utf-8')); selected=read_accelerator_geometry_authority(c,component_contract_path=Path(sys.argv[1]),geometry_profile_id=sys.argv[2]); assert selected['accelerator_requirements']['variant_id']=='two_zone'; assert selected['source_refs'][0]['path']==str(Path(sys.argv[1]).resolve())" $oaComponentContractLocal $AcceleratorGeometryProfileId
  if($LASTEXITCODE-ne0){throw 'Detached source policy or physical provider requirements failed'}
 """ + stage_fixture + r"""
 }finally{Pop-Location}

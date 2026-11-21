@@ -14,7 +14,7 @@ from msplatform.workflows.prepared_joint.prism_operating_point import (
 
 class TwoPrismOperatingPointTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.contract = Path(__file__).resolve().parents[2] / "config" / "simion_candidate_two_zone.json"
+        self.contract = Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json"
 
     def test_shared_measured_model_accepts_signed_columns_and_rejects_mixed_problem(self):
         def record(voltage, residual):

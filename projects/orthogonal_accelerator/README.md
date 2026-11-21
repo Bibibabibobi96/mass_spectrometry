@@ -50,7 +50,7 @@
 
 ## History索引
 
-[历史索引](docs/history/README.md)集中列出已冻结实验、迁移和旧方案；需要追溯证据时按需进入。
+[历史索引](../../docs/history/projects/orthogonal_accelerator/README.md)集中列出已冻结实验、迁移和旧方案；需要追溯证据时按需进入。
 
 The installed SIMION `compile_geometry` now accepts standalone two/three-zone OA assemblies.
 Supply per-instance `component_domains` with explicit `cell_mm_xyz` and six `pa_bounds_mm` values,

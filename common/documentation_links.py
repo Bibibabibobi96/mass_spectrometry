@@ -85,7 +85,7 @@ def migrated_history(root: Path, changed_paths: set[str] | None = None) -> tuple
     Only verified records retain the existing-history diagnostic treatment.
     """
     verified, errors = _staged_history_moves(root)
-    for directory in root.glob("projects/*/docs/history/retired_projects"):
+    for directory in root.glob("docs/history/projects/*/retired_projects"):
         manifest_path = directory / "migration_manifest.json"
         label = manifest_path.relative_to(root).as_posix()
         prefix = directory.relative_to(root).as_posix() + "/"

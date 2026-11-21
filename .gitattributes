@@ -16,9 +16,8 @@
 # Root-history TXT uses the history bytes/SHA contract to verify original bytes.
 docs/history/*/*.txt -text -eol -whitespace
 docs/history/20261105__phase03-installed-pipeline/** -text -eol -whitespace
-projects/*/docs/history/** -text -eol
-integrations/*/docs/history/** -text -eol
-integrations/docs/history/** -text -eol
+docs/history/projects/** -text -eol
+docs/history/integrations/** -text -eol
 # Entry indexes remain editable guidance; frozen records below them keep -text.
-projects/*/docs/history/README.md text eol=lf
-integrations/docs/history/README.md text eol=lf
+docs/history/projects/*/README.md text eol=lf
+docs/history/integrations/README.md text eol=lf

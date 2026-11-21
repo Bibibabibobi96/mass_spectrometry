@@ -70,14 +70,14 @@ $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } elseif ($env:SI
 $hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path (Split-Path -Parent $repoRoot) 'artifacts/common/host_resources.sqlite3' }
 $hostContext = @{workspace=(Split-Path -Parent $repoRoot);python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
-$contract = if ($ContractPath) { (Resolve-Path -LiteralPath $ContractPath).Path } else { Join-Path $PSScriptRoot '..\config\simion_candidate_two_zone.json' }
+$contract = if ($ContractPath) { (Resolve-Path -LiteralPath $ContractPath).Path } else { Join-Path $PSScriptRoot '..\..\src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json' }
 $frozenPrismControllerPolicyPath=''
 $frozenPreparedTargetAuthorityPath=''
 $frozenPreparedInitialProposalPath=''
 $recoveryPolicySource=if($LocalModelRecoveryPolicyPath){(Resolve-Path -LiteralPath $LocalModelRecoveryPolicyPath).Path}else{Join-Path $PSScriptRoot '../config/local_model_recovery_policy.json'}
 if($PrismControllerPolicyPath){$PrismControllerPolicyPath=(Resolve-Path -LiteralPath $PrismControllerPolicyPath).Path}
 $trialRunner = if($PSCmdlet.ParameterSetName-eq'Prepared'){
-  Join-Path $repoRoot 'integrations/workflows/prepared_joint/execute.ps1'
+  Join-Path $repoRoot 'src/msplatform/workflows/resources/prepared_joint_execute.ps1'
 }else{Join-Path $repoRoot 'integrations/workflows/oa_mr/execute.ps1'}
 $auditRunner = Join-Path $PSScriptRoot 'run_downstream_fixed_grid_workpoint.ps1'
 $bunchScreeningRunner = Join-Path $PSScriptRoot 'run_native_corridor_bunch_screening.ps1'
@@ -2177,7 +2177,7 @@ try {
     [IO.File]::WriteAllText($nativeIdentityPath, (([ordered]@{schema_version=1;role='mrtof_private_native_corridor_family';status='prepared';response_refine_performed=$false;published_native_members_opened=$false;controller_refine='solutions={0}';cache_key=[string]$bankForProviderBinding.cache_key;generation_sha256=[string]$bankForProviderBinding.generation_sha256}|ConvertTo-Json -Compress)), [Text.UTF8Encoding]::new($false))
     Push-Location $repoRoot
     try {
-      & $python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_runtime rebind-accelerator `
+      & $python -m msplatform.workflows.oa_mr.native_system_runtime rebind-accelerator `
         --native-corridor-runtime-receipt $nativeIdentityPath --base-bundle $baseNativeSystemRuntimeBundle `
         --accelerator-provider-receipt $AcceleratorProviderReceiptPath --bundle-output $providerBoundBundle
       if($LASTEXITCODE-ne0){throw 'OA provider accelerator binding failed.'}

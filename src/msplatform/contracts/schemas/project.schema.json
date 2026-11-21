@@ -295,7 +295,7 @@
           },
           "path": {
             "type": "string",
-            "pattern": "^projects/[a-z][a-z0-9_]*/docs/history/retired_projects/[a-z][a-z0-9_]*/config/project\\.json$"
+            "pattern": "^docs/history/projects/[a-z][a-z0-9_]*/retired_projects/[a-z][a-z0-9_]*/config/project\\.json$"
           },
           "bytes": {
             "type": "integer",

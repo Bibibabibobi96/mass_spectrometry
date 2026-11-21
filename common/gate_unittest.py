@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import ast
 from collections import Counter
 import hashlib
+import importlib.util
 import inspect
 import json
 from pathlib import Path
@@ -185,6 +187,37 @@ def _publish(path, document):
         temporary.unlink(missing_ok=True)
 
 
+def _retain_migrated_direct_imports(arguments):
+    """Expose unique in-checkout sources retained by direct test imports."""
+    names = set()
+    for argument in arguments:
+        path = Path(argument)
+        if path.suffix != ".py":
+            continue
+        path = path.resolve()
+        if not path.is_relative_to(REPO_ROOT) or not path.is_file():
+            continue
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8-sig"))):
+            if isinstance(node, ast.Import):
+                names.update(alias.name for alias in node.names if "." not in alias.name)
+            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module and "." not in node.module:
+                names.add(node.module)
+    source_root = REPO_ROOT / "src/msplatform"
+    for name in sorted(names):
+        if importlib.util.find_spec(name) is not None:
+            continue
+        sources = list(source_root.glob(f"**/{name}.py"))
+        if len(sources) > 1:
+            raise RuntimeError(f"Ambiguous migrated direct import: {name}")
+        if sources:
+            spec = importlib.util.spec_from_file_location(name, sources[0])
+            if spec is None or spec.loader is None:
+                raise RuntimeError(f"Cannot load migrated direct import: {name}")
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[name] = module
+            spec.loader.exec_module(module)
+
+
 def main(argv=None):
     """Run the existing unittest CLI; explicit metadata is never inherited."""
     parser = argparse.ArgumentParser(add_help=False)
@@ -192,6 +225,8 @@ def main(argv=None):
     parser.add_argument("--source-sha")
     parser.add_argument("--stage")
     metadata, arguments = parser.parse_known_args(sys.argv[1:] if argv is None else argv)
+    _retain_migrated_direct_imports(arguments)
+
     def result_class(*args, **kwargs):
         result = TimedResult(*args, source_sha=metadata.source_sha, stage=metadata.stage, **kwargs)
         return result

@@ -30,8 +30,8 @@ MR拥有分析器设计、匹配目标、场消费合同和P/S控制；跨项目
 
 | 任务 | 权威入口 | MR侧须提供或核对 |
 |---|---|---|
-| OA／IP接口设计及实际场／IOB绑定 | [接口准备与绑定](../../../integrations/docs/INTEGRATION.md#oaip接口准备与绑定)、[execute.ps1](../../../integrations/workflows/accelerator_interface/execute.ps1) | 显式provider、原始封存MR参考run；IP使用当前schema 3 matching request。Finalize消费设计阶段冻结输入，准备不等于Fly |
-| 已准备IP→MR飞行、整批恢复或重新分析 | [联合飞行与分析](../../../integrations/docs/INTEGRATION.md#已准备ipmr联合飞行)、[prepared_joint入口](../../../integrations/workflows/prepared_joint/execute.ps1) | 已完成准备包、冻结轨迹合同；结果保留源ID、仪器clock和完整母群 |
+| OA／IP接口设计及实际场／IOB绑定 | [接口准备与绑定](../../../integrations/docs/INTEGRATION.md#oaip接口准备与绑定)、[accelerator_interface.ps1](../../../src/msplatform/workflows/resources/accelerator_interface.ps1) | 显式provider、原始封存MR参考run；IP使用当前schema 3 matching request。Finalize消费设计阶段冻结输入，准备不等于Fly |
+| 已准备IP→MR飞行、整批恢复或重新分析 | [联合飞行与分析](../../../integrations/docs/INTEGRATION.md#已准备ipmr联合飞行)、[prepared_joint入口](../../../src/msplatform/workflows/resources/prepared_joint_execute.ps1) | 已完成准备包、冻结轨迹合同；结果保留源ID、仪器clock和完整母群 |
 | OA→MR完整飞行 | [OA→MR入口](../../../integrations/workflows/oa_mr/execute.ps1)及上述集成状态 | 冻结CompositionPlan及显式局部范围，OA receipt、源与MR科学合同 |
 
 [accelerator_interfaces.json](../config/accelerator_interfaces.json)只声明MR支持的provider选择与依赖，
@@ -47,7 +47,7 @@ IP采用`state_handoff`，继承实测状态与到达时刻，后段为RF为零�
 
 ### MR几何与OA提供者合同
 
-[候选合同](../config/simion_candidate_two_zone.json)提供 MR 物理输入和机械约束，
+[候选合同](../../../src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json)提供 MR 物理输入和机械约束，
 [resolved_geometry.py](../../../src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resolved_geometry.py)生成求解器无关的毫米几何；
 [native_system_geometry.py](../../../src/msplatform/backends/simion/native_system_geometry.py)及
 [native_corridor_geometry.py](../analysis/native_corridor_geometry.py)只派生 SIMION 副本。
@@ -728,7 +728,7 @@ schedule 冻结要求全部粒子唯一负 z 安全出口，按 `max(exit)+guard
 
 旧局域五区／八实例、旧拓扑、逐轮 Jacobian、native 缓存修复和旧束团结果均为只读历史，
 不能恢复为活动入口。完整整理前原文见
-[场响应工程里程碑归档](history/20261008__field-response-engineering-milestone.md)；
+[场响应工程里程碑归档](../../../docs/history/projects/parallel_mirror_dual_stripe_mr_tof/20261008__field-response-engineering-milestone.md)；
 其他历史入口由[项目导航](../README.md#历史补充索引)集中索引。
 旧历史中的`simion/README.md`为当时活动说明路径；当前说明统一迁到本页，
 `加速器选择与接口准备`和`事件与分析`锚点保留。冻结历史正文与运行输入不改写。

@@ -7,16 +7,17 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 PROJECT_ROOT = REPO_ROOT / "projects/rf_multipole_ion_optics"
+HISTORY_ROOT = REPO_ROOT / "docs/history/projects/rf_multipole_ion_optics"
 MATLAB_CORE = REPO_ROOT / "src/msplatform/backends/comsol/matlab/solve_finite_3d_transport.m"
 RUNNER = REPO_ROOT / "src/msplatform/workflows/resources/run_finite_3d_transport.ps1"
 RUNTIME_PROFILES = PROJECT_ROOT / "config/runtime_profiles.json"
 PREREGISTRATION = (
-    PROJECT_ROOT
-    / "docs/history/retired_projects/rf_quadrupole_ion_optics/config/family_experiment/vectorized_release_validation/preregistration_v3.json"
+    HISTORY_ROOT
+    / "retired_projects/rf_quadrupole_ion_optics/config/family_experiment/vectorized_release_validation/preregistration_v3.json"
 )
 FAILED_PREREGISTRATION = (
-    PROJECT_ROOT
-    / "docs/history/retired_projects/rf_quadrupole_ion_optics/config/family_experiment/vectorized_release_validation/preregistration.json"
+    HISTORY_ROOT
+    / "retired_projects/rf_quadrupole_ion_optics/config/family_experiment/vectorized_release_validation/preregistration.json"
 )
 
 
@@ -34,8 +35,8 @@ class ComsolVectorizedReleaseContractTests(unittest.TestCase):
         self.assertFalse(failed["observed_result"]["n1000_promotion_allowed"])
         failed_v2 = json.loads(
             (
-                PROJECT_ROOT
-                / "docs/history/retired_projects/rf_quadrupole_ion_optics/config/family_experiment/vectorized_release_validation/"
+                HISTORY_ROOT
+                / "retired_projects/rf_quadrupole_ion_optics/config/family_experiment/vectorized_release_validation/"
                 "preregistration_v2.json"
             ).read_text(encoding="utf-8")
         )

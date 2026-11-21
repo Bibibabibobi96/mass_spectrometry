@@ -426,7 +426,7 @@ Study/Solver 执行；GUI Compute 指 Desktop 重开后操作，二者不能互�
 
 | 能力 | 官方语义与本地实现入口 | 已登记验证 | 尚不能证明 |
 |---|---|---|---|
-| 活动 Time 步策略 | [Time API](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_solver.51.51.html)；[活动键映射](../../docs/tools/COMSOL_API.md#time-节点的活动步策略) | [OA 修复记录第 2 节](../../projects/single_reflection_oa_tof_mass_analyzer/docs/history/20261021__oatof-cpt-fixed-policy-reference-and-full-flow.md#2-已完成的实现验证及其边界)：GA/BDF/DP5 空模型写入、保存重开、回读；DP5/GA 小模型另有真实 Study.run 前后回读 | 空模型不是轨迹求解；诊断配置未完成正式资产保存重开与 GUI Compute 晋升 |
+| 活动 Time 步策略 | [Time API](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_solver.51.51.html)；[活动键映射](../../docs/tools/COMSOL_API.md#time-节点的活动步策略) | [OA 修复记录第 2 节](../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20261021__oatof-cpt-fixed-policy-reference-and-full-flow.md#2-已完成的实现验证及其边界)：GA/BDF/DP5 空模型写入、保存重开、回读；DP5/GA 小模型另有真实 Study.run 前后回读 | 空模型不是轨迹求解；诊断配置未完成正式资产保存重开与 GUI Compute 晋升 |
 | 固定网格的代数停止误差 | [CG-AMG](../../docs/tools/COMSOL_API.md#稳态cg-amg与电势阶次)；[场探针冻结结果][api-field] | 同一 4,879 四面体、7,292 DOF 的线性电势模型，真实 CG 默认/加严及 PARDISO 参考三案，保存活动引用与采样误差 | 未做仪器空间收敛；不能据此规定全仓 stol 或直接法 |
 | 原生粒子读取 | [mphparticle 官方参考](https://doc.comsol.com/6.4/doc/com.comsol.help.llmatlab/llmatlab_ug_ref.9.51.html)；[数值提取](../../docs/tools/COMSOL_API.md#数值提取) | [输出双通道小模型][api-output]核对默认 p/v 与显式坐标/速度；[OA README](../../projects/single_reflection_oa_tof_mass_analyzer/README.md)导航到真实 N100 配对与事件回归 | 数组有限不代表数值准确；固定 t 查询不能自动获得精确壁面位置或停止时间 |
 | 原生插值函数驱动 CPT | [函数 API](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_general.47.34.html)；[小模型结果][api-interpolation] | 规则线性表、显式单位、范围外行为和解析轨迹的真实 Compute | 非均匀三维仪器场的采样收敛、能量一致性及整体提速仍未验证 |
@@ -436,11 +436,11 @@ Study/Solver 执行；GUI Compute 指 Desktop 重开后操作，二者不能互�
 上述场、插值和输出小模型由 OA 容器承载，仅用于组件诊断；不能算作第二个仪器项目验证。
 共享组件测试的源码分组见[测试分组](#测试分组)。
 
-后续[原生回读与 Counter 五案](../../projects/single_reflection_oa_tof_mass_analyzer/docs/history/20261022__native-event-readback-and-counter-validation.md)
+后续[原生回读与 Counter 五案](../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20261022__native-event-readback-and-counter-validation.md)
 另验证了普通时刻库存、实际停止时刻查询，以及 Counter 的求解前／后创建与输出敏感性；
 其中稀疏 Counter 两案为 failed。它补充接口证据，不授予生产检测器资格。
 
-[后续原因隔离与原生事件候选](../../projects/single_reflection_oa_tof_mass_analyzer/docs/history/20261022__sparse-counter-cause-and-native-event-reader.md)
+[后续原因隔离与原生事件候选](../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20261022__sparse-counter-cause-and-native-event-reader.md)
 区分了保存状态、Counter、原生 st 查询与辅助变量记录：GA／Newtonian 稀疏终态候选通过两真实壁面及重复，
 DP5 晚期辅助表和交点身份路径保留失败。evaluate 数量抽样、all-solnum 缺 t、Particle expr 单字符串等
 接口实证见[数值提取](../../docs/tools/COMSOL_API.md#数值提取)。这仍不是第二个仪器项目或整机性能验证。

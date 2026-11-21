@@ -58,25 +58,27 @@ $historyScopes = @(
         IndexLabel = 'docs/AUDITS.md'
         IndexPrefix = 'history/'
     }
-    if (Test-Path -LiteralPath (Join-Path $repoRoot 'integrations\docs\history') -PathType Container) {
-        [pscustomobject]@{
-            Directory = Get-Item -LiteralPath (Join-Path $repoRoot 'integrations\docs\history')
-            IndexPath = Join-Path $repoRoot 'integrations\docs\history\README.md'
-            IndexLabel = 'integrations/docs/history/README.md'
-            IndexPrefix = ''
-        }
-    }
-) + @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'projects') -Directory | ForEach-Object {
-    $candidate = Join-Path $_.FullName 'docs\history'
-    if (-not (Test-Path -LiteralPath $candidate -PathType Container)) { return }
-    $projectPath = $_.FullName
-    [pscustomobject]@{
-        Directory = Get-Item -LiteralPath $candidate
-        IndexPath = Join-Path $candidate 'README.md'
-        IndexLabel = "$($_.Name)/docs/history/README.md"
+)
+$integrationHistory = Join-Path $repoRoot 'docs\history\integrations'
+if (Test-Path -LiteralPath $integrationHistory -PathType Container) {
+    $historyScopes += [pscustomobject]@{
+        Directory = Get-Item -LiteralPath $integrationHistory
+        IndexPath = Join-Path $integrationHistory 'README.md'
+        IndexLabel = 'docs/history/integrations/README.md'
         IndexPrefix = ''
     }
-})
+}
+$projectHistoryRoot = Join-Path $repoRoot 'docs\history\projects'
+if (Test-Path -LiteralPath $projectHistoryRoot -PathType Container) {
+    $historyScopes += @(Get-ChildItem -LiteralPath $projectHistoryRoot -Directory | ForEach-Object {
+        [pscustomobject]@{
+            Directory = Get-Item -LiteralPath $_.FullName
+            IndexPath = Join-Path $_.FullName 'README.md'
+            IndexLabel = "docs/history/projects/$($_.Name)/README.md"
+            IndexPrefix = ''
+        }
+    })
+}
 foreach ($historyScope in $historyScopes) {
     $historyDir = $historyScope.Directory
     $historyPrefix=[IO.Path]::GetRelativePath($repoRoot,$historyDir.FullName).Replace('\','/')+'/'
@@ -120,8 +122,9 @@ foreach ($historyScope in $historyScopes) {
     $historyRelative = [IO.Path]::GetRelativePath($repoRoot, $historyDir.FullName).Replace('\', '/')
     foreach ($payloadDir in @(Get-ChildItem -LiteralPath $historyDir.FullName -Directory |
         Where-Object { $_.Name -ne 'retired_campaigns' })) {
+        if ($historyRelative -eq 'docs/history' -and $payloadDir.Name -in @('integrations', 'projects')) { continue }
         if ($payloadDir.Name -eq 'retired_projects' -and
-            $historyRelative -match '^projects/[^/]+/docs/history$') { continue }
+            $historyRelative -match '^docs/history/projects/[^/]+$') { continue }
         if(-not$AuditHistory-and-not@($selectedHistory|Where-Object{$_.StartsWith($historyPrefix+$payloadDir.Name+'/')-or$_-eq($historyPrefix+$payloadDir.Name+'.md')}).Count){continue}
         $manifestPath = Join-Path $historyDir.FullName ($payloadDir.Name + '.md')
         if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {

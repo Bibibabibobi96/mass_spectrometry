@@ -21,7 +21,7 @@
 | 选择OA／IP并准备或执行跨器件链 | [统一集成入口](../../integrations/README.md)、[组装当前边界](docs/PROJECT.md#统一组装迁移任务) |
 | 处理原始装配、曲线或机械证据 | [CAD 实施说明](docs/CAD.md) |
 | 查项目身份、旧资产位置、Candidate 成熟度和机器登记的 baseline | [项目描述符](config/project.json) |
-| 查活动几何与 CAD 变换 | [候选几何合同](config/simion_candidate_two_zone.json)、[坐标合同](config/cad_to_theory_frame.json) |
+| 查活动几何与 CAD 变换 | [候选几何合同](../../src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json)、[坐标合同](config/cad_to_theory_frame.json) |
 
 COMSOL 或其他求解器是否已有可执行入口，以 PROJECT 的当前说明为准，不从目录名或理论计划推定。
 实际执行的前提、输入、资源限制与产物检查由对应实施说明提供。
@@ -58,4 +58,4 @@ including when the Python 3.11 executable belongs to another environment. It res
 
 ## 历史补充索引
 
-[历史索引](docs/history/README.md)集中列出已冻结实验、迁移和旧方案；需要追溯证据时按需进入。
+[历史索引](../../docs/history/projects/parallel_mirror_dual_stripe_mr_tof/README.md)集中列出已冻结实验、迁移和旧方案；需要追溯证据时按需进入。

@@ -58,7 +58,7 @@ class TwoPrismHandoffTest(unittest.TestCase):
     def setUpClass(cls) -> None:
         project = Path(__file__).resolve().parents[2]
         cls.contract = json.loads(
-            (project / "config" / "simion_candidate_two_zone.json").read_text(
+            (project.parents[1] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json").read_text(
                 encoding="utf-8"
             )
         )

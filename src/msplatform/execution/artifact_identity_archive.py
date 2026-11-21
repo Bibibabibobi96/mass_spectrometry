@@ -64,7 +64,7 @@ def load_retired_project_descriptors(descriptor: dict, repository_root: Path) ->
         for field, value in READ_ONLY_IDENTITY_POLICY.items():
             if record.get(field) != value or (field == "new_runs_allowed" and record[field] is not False):
                 raise ValueError(f"{retired_id}: invalid retired identity field {field}")
-        expected_path = f"projects/{current_id}/docs/history/retired_projects/{retired_id}/config/project.json"
+        expected_path = f"docs/history/projects/{current_id}/retired_projects/{retired_id}/config/project.json"
         if record["path"] != expected_path:
             raise ValueError(f"{retired_id}: retired descriptor path differs")
         if re.fullmatch(r"[0-9a-fA-F]{40}", str(record["source_commit"])) is None:

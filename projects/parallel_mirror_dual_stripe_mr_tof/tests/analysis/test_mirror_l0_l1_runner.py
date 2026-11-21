@@ -15,7 +15,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0_l1_run_summa
     L1_STATUS,
     validate_and_summarize,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_candidate_receipt import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_candidate_receipt import (
     MIRROR_MODE,
     MIRROR_QUALIFICATION,
     PROJECT_ID,
@@ -26,7 +26,7 @@ from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract
 
 
 PROJECT = Path(__file__).resolve().parents[2]
-CONTRACT = PROJECT / "config" / "simion_candidate_two_zone.json"
+CONTRACT = PROJECT.parents[1] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json"
 RUNNER = PROJECT / "analysis" / "run_mirror_l0_l1_candidate.ps1"
 OPERATING_SEED_RUNNER = PROJECT / "analysis" / "run_dual_stripe_operating_seed.ps1"
 EXACT_K_RUNNER = PROJECT / "analysis" / "run_mirror_exact_k_operating_point.ps1"

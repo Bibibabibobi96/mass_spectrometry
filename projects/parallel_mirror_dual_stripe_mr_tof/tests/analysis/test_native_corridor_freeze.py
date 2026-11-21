@@ -28,7 +28,7 @@ from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract
 
 
 PROJECT = Path(__file__).resolve().parents[2]
-CONTRACT = PROJECT / "config" / "simion_candidate_two_zone.json"
+CONTRACT = PROJECT.parents[1] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json"
 
 
 def _identity(role: str) -> dict[str, object]:

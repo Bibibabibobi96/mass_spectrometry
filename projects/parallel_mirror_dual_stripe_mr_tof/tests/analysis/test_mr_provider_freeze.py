@@ -96,7 +96,7 @@ class MrProviderFreezeTests(unittest.TestCase):
             self.assertEqual(frozen.returncode, 0, frozen.stdout + frozen.stderr)
             snapshot = Path(json.loads(frozen.stdout)['execution_root'])
             for name, source in {
-                'candidate.json': ROOT / 'projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json',
+                'candidate.json': ROOT / 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json',
                 'oa.json': ROOT / 'src/msplatform/components/orthogonal_accelerator/component_contract.json',
                 'campaign.json': ROOT / 'projects/orthogonal_accelerator/config/two_zone_component_focus_campaign.json',
                 'plan.json': ROOT / 'src/msplatform/workflows/config/oa_mr_two_zone_gap30_plan.json',
@@ -145,7 +145,7 @@ class MrProviderFreezeTests(unittest.TestCase):
             self.assertNotEqual(no_collision_backfill.returncode, 0, no_collision_backfill.stdout + no_collision_backfill.stderr)
             self.assertIn('msplatform.backends.simion.collision_overlay', no_collision_backfill.stderr)
             collision.write_bytes(collision_original)
-            for name, source in {'candidate.json': ROOT / 'projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json', 'oa.json': ROOT / 'src/msplatform/components/orthogonal_accelerator/component_contract.json', 'campaign.json': ROOT / 'projects/orthogonal_accelerator/config/two_zone_component_focus_campaign.json', 'plan.json': ROOT / 'src/msplatform/workflows/config/oa_mr_two_zone_gap30_plan.json'}.items():
+            for name, source in {'candidate.json': ROOT / 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json', 'oa.json': ROOT / 'src/msplatform/components/orthogonal_accelerator/component_contract.json', 'campaign.json': ROOT / 'projects/orthogonal_accelerator/config/two_zone_component_focus_campaign.json', 'plan.json': ROOT / 'src/msplatform/workflows/config/oa_mr_two_zone_gap30_plan.json'}.items():
                 self.assertEqual((fixture / name).read_bytes(), source.read_bytes())
 
 

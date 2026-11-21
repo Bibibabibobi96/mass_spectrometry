@@ -256,7 +256,7 @@ $acceleratorRun=Split-Path -Parent (Split-Path -Parent $acceleratorProviderRecei
 $acceleratorPulseSchedule=if([string]::IsNullOrWhiteSpace($AcceleratorPulseSchedulePath)){$null}else{(Resolve-Path -LiteralPath $AcceleratorPulseSchedulePath).Path}
 $mirrorVoltageVariation=if([string]::IsNullOrWhiteSpace($MirrorVoltageVariationPath)){$null}else{(Resolve-Path -LiteralPath $MirrorVoltageVariationPath).Path}
 $trajectoryContractInput=if([string]::IsNullOrWhiteSpace($ContractPath)){
-  Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\config\simion_candidate_two_zone.json'
+  Join-Path $repoRoot 'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json'
 }else{(Resolve-Path -LiteralPath $ContractPath).Path}
 $trajectoryRecording=((@(Invoke-ProjectPython -Arguments @('-m','msplatform.contracts.trajectory_recording','--contract',$trajectoryContractInput))-join"`n")|ConvertFrom-Json)
 $trajectoryRetentionClass=if($null-eq$trajectoryRecording){'compact'}else{[string]$trajectoryRecording.retention_class}
@@ -390,7 +390,7 @@ $nativeBankManifest=Join-Path $nativeCorridorRun 'run_manifest.json'
   $identityPath=Join-Path ([IO.Path]::GetTempPath()) ('mrtof_native_system_identity_'+[guid]::NewGuid().ToString('N')+'.json')
   try{
     [IO.File]::WriteAllText($identityPath,(([ordered]@{schema_version=1;role='mrtof_private_native_corridor_family';status='prepared';run_id=$RunId;cache_key=$nativeBankKey;generation_sha256=[string]$nativeBankCache.generation_sha256;response_refine_performed=$false;controller_refine='solutions={0}';published_native_members_opened=$false}|ConvertTo-Json -Compress)),[Text.UTF8Encoding]::new($false))
-    $nativeSystemRuntimePaths=((@(Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_runtime','resolve','--native-corridor-runtime-receipt',$identityPath,'--bundle',$nativeSystemRuntimeBundle))-join"`n")|ConvertFrom-Json -Depth 10)
+    $nativeSystemRuntimePaths=((@(Invoke-ProjectPython -Arguments @('-m','msplatform.workflows.oa_mr.native_system_runtime','resolve','--native-corridor-runtime-receipt',$identityPath,'--bundle',$nativeSystemRuntimeBundle))-join"`n")|ConvertFrom-Json -Depth 10)
   }finally{
     if(Test-Path -LiteralPath $identityPath){Remove-Item -LiteralPath $identityPath -Force}
   }
@@ -477,7 +477,7 @@ try{
   $entryIdentity=@($frozen.identities|Where-Object{$_.source_repo_path-ceq'integrations/workflows/oa_mr/execute.ps1'})
   $frozenEntryRecord=if($entryIdentity.Count-eq1){@{path=$entryIdentity[0].snapshot_path;exists=$true;bytes=[long](Get-Item -LiteralPath $entryIdentity[0].snapshot_path).Length;sha256=$entryIdentity[0].sha256}}else{$null}
   if([string]::IsNullOrWhiteSpace($ContractPath)){
-    $trajectoryContractInput=Join-Path $script:pythonRoot 'projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json'
+    $trajectoryContractInput=Join-Path $script:pythonRoot 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json'
   }
   $backendSimionRoot=Join-Path $script:pythonRoot 'src/msplatform/backends/simion/resources'
   . (Join-Path $repoRoot 'src/msplatform/backends/simion/resources/native_corridor_runtime_support.ps1')
@@ -517,13 +517,13 @@ try{
   $acceleratorReceipt=$acceleratorProviderReceipt
   $acceleratorProviderPlan=[string]$providerAccelerator.provider_plan.path
   $acceleratorResolvedCampaign=[string]$providerAccelerator.resolved_campaign.path
-  $fixedMirrorStripeLoader=Join-Path $script:pythonRoot 'projects\parallel_mirror_dual_stripe_mr_tof\analysis\fixed_mirror_stripe_operating_point.py'
+  $fixedMirrorStripeLoader=Join-Path $script:pythonRoot 'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\fixed_mirror_stripe_operating_point.py'
   $trialTool=Join-Path $script:pythonRoot 'src\msplatform\workflows\prepared_joint\prism_trial.py'
   $batchTool=Join-Path $script:pythonRoot 'src\msplatform\backends\simion\mrtof_batch_flight.py'
   $programSource=Join-Path $backendSimionRoot 'mrtof_candidate.lua'
   $waveformsSource=Join-Path $backendSimionRoot 'voltage_waveforms.lua'
   $counterSource=Join-Path $backendSimionRoot 'mirror_cycle_counter.lua'
-  $mapSource=Join-Path $script:pythonRoot 'projects/parallel_mirror_dual_stripe_mr_tof/simion/candidate_voltage_map.lua'
+  $mapSource=Join-Path $backendSimionRoot 'candidate_voltage_map.lua'
   $launcherSource=Join-Path $backendSimionRoot 'run_iob_flight.lua'
   foreach($path in @($reviewedContract,$selectedContract,$acceleratorGeometryContract,$trajectoryContractSource,$mirrorSummary,$stripeSummary,$acceleratorReceipt,$acceleratorProviderPlan,$acceleratorResolvedCampaign,$fixedMirrorStripeLoader,$trialTool,$batchTool,$programSource,$waveformsSource,$counterSource,$mapSource,$launcherSource)){
     if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "Required native trial input is missing: $path"}
@@ -532,7 +532,7 @@ try{
   if([string]$stripeRunConfig.mode-eq'dual_stripe_fixed_grid_native_downstream_seed'){
     $fixedMirrorStripeAuthority=Join-Path $resultDir 'fixed_mirror_stripe_downstream_authority.json'
     Invoke-ProjectPython -Arguments @(
-      '-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.fixed_mirror_stripe_operating_point',
+      '-m','msplatform.components.parallel_mirror_dual_stripe_mr_tof.fixed_mirror_stripe_operating_point',
       '--manifest',$stripeManifest,'--output',$fixedMirrorStripeAuthority
     )|Out-Host
     $authority=Get-Content -Raw -LiteralPath $fixedMirrorStripeAuthority|ConvertFrom-Json -Depth 30
@@ -1021,7 +1021,7 @@ try{
          $null-eq$transversePair-or$null-eq$transversePair.Value-or
          (Test-Path -LiteralPath $earlyAberrationReport -PathType Leaf)){return}
       $aberrationArguments=@(
-        '-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.source_z_energy_timing_diagnostic',
+        '-m','msplatform.workflows.oa_mr.source_z_energy_timing_diagnostic',
         '--first-batch-log',$Record.stdout,'--source-receipt',$bunchSourceLocal,
         '--output',$earlyAberrationReport
       )
@@ -1432,7 +1432,7 @@ return t
     $sourceTimingDiagnostic=Join-Path $resultDir 'source_z_energy_timing_diagnostic.json'
     $sourceTimingDiagnosticLog=Join-Path $logDir 'source_z_energy_timing_diagnostic.log'
     & {
-      Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.source_z_energy_timing_diagnostic',
+      Invoke-ProjectPython -Arguments @('-m','msplatform.workflows.oa_mr.source_z_energy_timing_diagnostic',
         '--completed-run-config',$runConfig,'--observation',$observation,
         '--batch-merge-receipt',$batchMergeReceipt,'--output',$sourceTimingDiagnostic)
       # The analyzer writes JSON without stdout; materialize its required log.

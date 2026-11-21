@@ -17,46 +17,10 @@
       "provider_project": "instrument_assembly",
       "files": [
         {
-          "id": "prepared_joint_integrations_workflows_prepared_joint_execute_ps1",
-          "source_repo_path": "integrations/workflows/prepared_joint/execute.ps1",
-          "consumers": [
-            "prepared_joint",
-            "accelerator_interface"
-          ]
-        },
-        {
-          "id": "accelerator_interface_integrations_workflows_accelerator_interface_execute_ps1",
-          "source_repo_path": "integrations/workflows/accelerator_interface/execute.ps1",
-          "consumers": [
-            "accelerator_interface"
-          ]
-        },
-        {
           "id": "integrations_workflows_oa_mr_execute_ps1",
           "source_repo_path": "integrations/workflows/oa_mr/execute.ps1",
           "consumers": [
             "oa_mr"
-          ]
-        },
-        {
-          "id": "integration_engineering_budget",
-          "source_repo_path": "integrations/runtime/engineering_budget.ps1",
-          "consumers": [
-            "single_reflection_flight"
-          ]
-        },
-        {
-          "id": "integrations_workflows_paired_accelerator_static_field_execute_ps1",
-          "source_repo_path": "integrations/workflows/paired_accelerator_static_field/execute.ps1",
-          "consumers": [
-            "paired_accelerator_static_field"
-          ]
-        },
-        {
-          "id": "paired_pulse_integrations_workflows_paired_accelerator_pulse_execute_ps1",
-          "source_repo_path": "integrations/workflows/paired_accelerator_pulse/execute.ps1",
-          "consumers": [
-            "paired_accelerator_pulse"
           ]
         }
       ],
@@ -135,20 +99,6 @@
           "consumers": [
             "accelerator_interface"
           ]
-        },
-        {
-          "id": "projects_parallel_mirror_dual_stripe_mr_tof_simion_candidate_voltage_map_lua",
-          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/simion/candidate_voltage_map.lua",
-          "consumers": [
-            "oa_mr"
-          ]
-        },
-        {
-          "id": "projects_parallel_mirror_dual_stripe_mr_tof_config_simion_candidate_two_zone_json",
-          "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json",
-          "consumers": [
-            "oa_mr"
-          ]
         }
       ],
       "python_packages": [
@@ -156,7 +106,6 @@
           "source_repo_path": "projects/parallel_mirror_dual_stripe_mr_tof/analysis",
           "consumers": [
             "accelerator_interface",
-            "oa_mr",
             "prepared_joint"
           ]
         }
@@ -203,6 +152,42 @@
       "provider_scope": "repository_core",
       "provider_project": "msplatform",
       "files": [
+        {
+          "id": "msplatform_workflows_engineering_budget_ps1",
+          "source_repo_path": "src/msplatform/workflows/resources/engineering_budget.ps1",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
+          "id": "msplatform_workflows_prepared_joint_execute_ps1",
+          "source_repo_path": "src/msplatform/workflows/resources/prepared_joint_execute.ps1",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface"
+          ]
+        },
+        {
+          "id": "msplatform_workflows_accelerator_interface_ps1",
+          "source_repo_path": "src/msplatform/workflows/resources/accelerator_interface.ps1",
+          "consumers": [
+            "accelerator_interface"
+          ]
+        },
+        {
+          "id": "msplatform_workflows_paired_accelerator_static_field_ps1",
+          "source_repo_path": "src/msplatform/workflows/resources/paired_accelerator_static_field.ps1",
+          "consumers": [
+            "paired_accelerator_static_field"
+          ]
+        },
+        {
+          "id": "msplatform_workflows_paired_accelerator_pulse_ps1",
+          "source_repo_path": "src/msplatform/workflows/resources/paired_accelerator_pulse.ps1",
+          "consumers": [
+            "paired_accelerator_pulse"
+          ]
+        },
         {
           "id": "single_reflection_flight_public_entry",
           "source_repo_path": "src/msplatform/workflows/resources/single_reflection_flight.ps1",
@@ -289,6 +274,20 @@
           "consumers": [
             "prepared_joint",
             "accelerator_interface",
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "msplatform_backends_simion_resources_candidate_voltage_map_lua",
+          "source_repo_path": "src/msplatform/backends/simion/resources/candidate_voltage_map.lua",
+          "consumers": [
+            "oa_mr"
+          ]
+        },
+        {
+          "id": "msplatform_components_mr_simion_candidate_two_zone_json",
+          "source_repo_path": "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json",
+          "consumers": [
             "oa_mr"
           ]
         },

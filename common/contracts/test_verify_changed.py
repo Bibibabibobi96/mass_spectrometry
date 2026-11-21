@@ -1222,7 +1222,7 @@ exit 0
                 "-PythonExe",
                 sys.executable,
                 "-ChangedPath",
-                integration_root + "runtime/refresh_repository_bindings.py",
+                integration_root + "workflows/oa_mr/execute.ps1",
                 "-PlanOnly",
             ],
             cwd=REPO_ROOT,

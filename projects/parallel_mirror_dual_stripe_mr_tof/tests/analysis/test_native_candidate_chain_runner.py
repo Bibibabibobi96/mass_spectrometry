@@ -43,7 +43,7 @@ class NativeCandidateChainRunnerTests(unittest.TestCase):
             contract = {"downstream_fixed_grid_workpoint_profile": {"automatic_iteration": {
                 "acceptance_tolerances": dict.fromkeys(names, .1)}}}
             script = ("param($Root,$Repo,$Python)\n$ErrorActionPreference='Stop';Set-StrictMode -Version Latest\n"
-                      + "$repoRoot=$Repo;$python=$Python;$analysisModule='projects.parallel_mirror_dual_stripe_mr_tof.analysis.source_z_energy_timing_diagnostic'\n"
+                      + "$repoRoot=$Repo;$python=$Python;$analysisModule='msplatform.workflows.oa_mr.source_z_energy_timing_diagnostic'\n"
                       + helpers + "$calls=0\n" + ("$focusContract='" + json.dumps(contract) + "'|ConvertFrom-Json -AsHashtable\n")
                       + "$minimumMassResolution=100000.;$sourceZSpanMm=1.;$bestFocusMetric=[double]::PositiveInfinity;$focusIterations=@()\n"
                       + "$rootFocusResult=@{half_span_percent=20};$rootAttempt=0\n"
@@ -212,7 +212,7 @@ if($caught-notlike'*frozen numerical contract*'){throw 'Centre projection omitte
             helper += source[start:source.index("\nfunction ", start+1)]+"\n"
         helper = _public_import_roots_function() + helper
         helper = ("$repoRoot='" + str(REPO_ROOT).replace("'", "''") + "';$python='" + sys.executable.replace("'", "''")
-                  + "';$analysisModule='projects.parallel_mirror_dual_stripe_mr_tof.analysis.source_z_energy_timing_diagnostic'\n" + helper)
+                  + "';$analysisModule='msplatform.workflows.oa_mr.source_z_energy_timing_diagnostic'\n" + helper)
         names = ["P1_P2_positive_mirror_turn_y_mm", "P1_P2_P2_shield_low_field_angle_degrees",
                  "Stripe_slow_turn_y_minus_L_mm", "Stripe_target_phase_y_minus_origin_mm"]
         energy = "P1_P2_clean_phase_effective_slow_energy_error_per_charge_v"
@@ -289,7 +289,7 @@ if($caught-notlike'*frozen numerical contract*'){throw 'Centre projection omitte
                 + "$mirrorPeriod=Join-Path $fixture 'period.json';"
                 + "$mirrorCorrection=Join-Path $fixture 'correction.json';"
                 + "$focusContractPath=Join-Path $fixture 'contract.json';"
-                + "$analysisModule='projects.parallel_mirror_dual_stripe_mr_tof.analysis.source_z_energy_timing_diagnostic';"
+                + "$analysisModule='msplatform.workflows.oa_mr.source_z_energy_timing_diagnostic';"
                 + "function Invoke-ProjectPython {param([string[]]$Arguments) & $python @Arguments;"
                 + "if($LASTEXITCODE-ne0){throw 'Python materialization failed'}};"
                 + probe
@@ -381,7 +381,7 @@ if($caught-notlike'*frozen numerical contract*'){throw 'Centre projection omitte
             helpers += source[start:source.index("\nfunction ", start+1)]+"\n"
         helpers = _public_import_roots_function() + helpers
         helpers += ("$repoRoot='" + str(REPO_ROOT).replace("'", "''") + "';$python='" + sys.executable.replace("'", "''")
-                    + "';$analysisModule='projects.parallel_mirror_dual_stripe_mr_tof.analysis.source_z_energy_timing_diagnostic'\n")
+                    + "';$analysisModule='msplatform.workflows.oa_mr.source_z_energy_timing_diagnostic'\n")
         with TemporaryDirectory() as temporary:
             definition = Path(temporary) / "source.json"
             definition.write_text(json.dumps({"position_radius_mm": 0.375}), encoding="utf-8")

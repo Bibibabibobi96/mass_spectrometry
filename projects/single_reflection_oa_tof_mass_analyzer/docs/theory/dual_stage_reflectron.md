@@ -36,7 +36,7 @@
 - 三阶能量像差的正确定位；
 - 与整机耦合模型的职责边界。
 
-本文件替代已归档的[`单次反射TOF二级反射镜等时聚焦推导.docx`](../history/20260721__superseded-theory-docx/单次反射TOF二级反射镜等时聚焦推导.docx)。旧 DOCX 中的勘误过程和已关闭偏差只在该带日期的history快照追溯，不能留在当前理论正文中。
+本文件替代已归档的[`单次反射TOF二级反射镜等时聚焦推导.docx`](../../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20260721__superseded-theory-docx/单次反射TOF二级反射镜等时聚焦推导.docx)。旧 DOCX 中的勘误过程和已关闭偏差只在该带日期的history快照追溯，不能留在当前理论正文中。
 
 配套求解器无关参考实现为：
 

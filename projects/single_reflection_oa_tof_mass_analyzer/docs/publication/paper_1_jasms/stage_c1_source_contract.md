@@ -20,7 +20,7 @@ validation选择。阶段 1 分析还会报告条件分箱协方差、残差主�
 ## 当前资格与重新进入条件
 
 历史输入拒绝、时序修复、完整母群损失、模型选择与关闭经过见
-[冻结状态沿革](../../history/20260911__publication-status-consolidation.md#stage_c1_source_contract)。
+[冻结状态沿革](../../../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20260911__publication-status-consolidation.md#stage_c1_source_contract)。
 历史或重放输入不能作为新 J2/J3 的锁定输入。
 
 新的阶段 1 只有在两份独立母cohort的 source assessment 均显式标为`PROSPECTIVE`时才可为`PASS_CONTINUE`；

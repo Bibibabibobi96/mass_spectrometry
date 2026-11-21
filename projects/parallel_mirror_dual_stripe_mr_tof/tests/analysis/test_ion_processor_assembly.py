@@ -28,7 +28,7 @@ IP_CONFIG = ROOT / "projects/dual_pressure_rectilinear_ion_processor/config"
 
 @lru_cache(maxsize=1)
 def complete_mr_geometry():
-    return resolve_geometry(load_contract(ROOT / "projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json"), **pure_geometry_inputs(load_contract(ROOT / "projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json")))
+    return resolve_geometry(load_contract(ROOT / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json"), **pure_geometry_inputs(load_contract(ROOT / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json")))
 
 
 class AssemblyTests(unittest.TestCase):

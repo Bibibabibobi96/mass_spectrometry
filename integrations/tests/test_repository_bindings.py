@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 from msplatform.io.file_identity import repository_text_sha256
-from integrations.runtime.refresh_repository_bindings import (
+from tools.repository.refresh_repository_bindings import (
     _PORT, compile_publications, publication_differences, write_publications,
 )
 
@@ -21,7 +21,7 @@ class RepositoryBindingsTests(unittest.TestCase):
             return path
         provider = save("projects/provider/resolved.json", dict(geometry_mm=[1, 2, 3]))
         port = save(_PORT, dict(authority=dict(source_contract="projects/provider/resolved.json", source_sha256="0" * 64)))
-        historical = save("integrations/docs/history/frozen.json", dict(sha256="0" * 64))
+        historical = save("docs/history/integrations/frozen.json", dict(sha256="0" * 64))
         return provider, port, historical
 
     def test_refreshes_only_port_without_writing_provider_or_history(self):

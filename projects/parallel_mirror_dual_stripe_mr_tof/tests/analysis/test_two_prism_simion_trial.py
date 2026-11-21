@@ -107,7 +107,7 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
                                           selected_static=None, p1_extension=False):
         """Exercise the real materializer with small inputs, without solver assets."""
         project = Path(__file__).resolve().parents[2]
-        contract = json.loads((project / "config/simion_candidate_two_zone.json").read_text(encoding="utf-8"))
+        contract = json.loads((project.parents[1] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json").read_text(encoding="utf-8"))
         contract["simion"]["nonaccelerator_scale"] = scale
         if p1_extension:
             contract["prisms"]["ground_shields"][0]["extension_to_accelerator_exit"] = {"clearance_mm": 1.0}
@@ -916,7 +916,7 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
                 charge_state=1, slow_energy_per_charge_v=5.3,
                 source_origin_project_mm=(0.0, -55.0, 32.0), composition_plan={}, local_scope=None,
                 direct_pose={"exit_project_mm": (0.0, -55.0, 0.0)},
-            accelerator_geometry_authority=geometry_authority(Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json"))
+            accelerator_geometry_authority=geometry_authority(Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json"))
         row = result["particle_rows"][0]
         self.assertEqual(result["source_frame_origin_project_mm"], [0.0, -55.0, 0.0])
         self.assertAlmostEqual(row["source_position_provider_mm"][1], -1.35182899425077)
@@ -927,7 +927,7 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_simion_candidate_reference import reframe_oa_mr_plan
         project = Path(__file__).resolve().parents[2]
         actual_provider = derive(project.parent / "orthogonal_accelerator/config/two_zone_component_focus_campaign.json", geometry_profile=load_geometry_profile(json.loads((project.parent / "orthogonal_accelerator/config/two_zone_component_focus_campaign.json").read_text(encoding="utf-8"))["geometry_profile_id"]), mesh_mm_per_gu=[0.25, 0.25, 0.1])
-        actual_contract = two_prism_simion_trial.load_contract(project / "config/simion_candidate_two_zone.json")
+        actual_contract = two_prism_simion_trial.load_contract(project.parents[1] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json")
         parent = json.loads((project.parent.parent / "src/msplatform/workflows/config/oa_mr_two_zone_gap30_plan.json").read_text())
         original_states = copy.deepcopy(selection)
         for plan in (parent, reframe_oa_mr_plan(parent, ((1, 0, 0), (0, 1, 0), (0, 0, 1))),
@@ -938,7 +938,7 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
                 contract=actual_contract, provider_plan=actual_provider, resolved_campaign=campaign,
                 bunch_source=None, bunch_selection=selection, mass_th=524., charge_state=1,
                 slow_energy_per_charge_v=5.3, source_origin_project_mm=(0., -55., 32.),
-                composition_plan=plan, local_scope=None, direct_pose=direct, accelerator_geometry_authority=geometry_authority(Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json"))
+                composition_plan=plan, local_scope=None, direct_pose=direct, accelerator_geometry_authority=geometry_authority(Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json"))
             self.assertEqual(json.dumps(actual, sort_keys=True), json.dumps(result, sort_keys=True))
             self.assertEqual(selection, original_states)
             self.assertEqual(json.dumps(plan, sort_keys=True), before)
@@ -957,7 +957,7 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
                 source_origin_project_mm=(0.0, -55.0, 32.0), composition_plan={}, local_scope=None,
                 direct_pose={"exit_project_mm": (0.0, -55.0, 0.0)},
                 validated_provider_origin=(0.0, -72.25, -6.0),
-            accelerator_geometry_authority=geometry_authority(Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json"))
+            accelerator_geometry_authority=geometry_authority(Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json"))
             self.assertEqual(reused, result)
             with self.assertRaisesRegex(CandidateContractError, "exit-plane mapping differs"):
                 _accelerator_geometric_exit_reference(
@@ -967,7 +967,7 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
                     source_origin_project_mm=(0.0, -55.0, 32.0), composition_plan={}, local_scope=None,
                     direct_pose={"exit_project_mm": (0.0, -55.0, 0.0)},
                     validated_provider_origin=(0.0, -72.25, -5.0),
-                accelerator_geometry_authority=geometry_authority(Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json"))
+                accelerator_geometry_authority=geometry_authority(Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json"))
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1002,7 +1002,7 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
                     charge_state=1, slow_energy_per_charge_v=5.3,
                     source_origin_project_mm=(0.0, -55.0, 32.0), composition_plan={}, local_scope=None,
                     direct_pose={"exit_project_mm": (0.0, -55.0, 0.0)},
-                accelerator_geometry_authority=geometry_authority(Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json"))
+                accelerator_geometry_authority=geometry_authority(Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json"))
             self.assertEqual(full["expected_particle_ids"], list(range(1, 101)))
             self.assertAlmostEqual(
                 full["particle_rows"][0]["source_position_provider_mm"][1], -0.1,
@@ -1322,7 +1322,7 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
         self.assertNotIn("derive_two_zone_placement", source)
 
     def test_terminal_mirror_variation_is_authority_bound_and_envelope_checked(self) -> None:
-        contract_path = Path(__file__).resolve().parents[2] / "config" / "simion_candidate_two_zone.json"
+        contract_path = Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json"
         contract = two_prism_simion_trial.load_contract(contract_path)
         base = [0.0, -5920.610006, -2612.981546, 4190.462801, 6029.159820]
         variation = {
@@ -1361,7 +1361,7 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
             )
 
     def test_active_screening_default_is_four_ns_and_scales_from_its_contract(self) -> None:
-        contract_path = Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json"
+        contract_path = Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json"
         numerics = json.loads(contract_path.read_text(encoding="utf-8"))["simion"]
         self.assertEqual(numerics["default_trajectory_profile_id"], "center_screening")
         base = dict(numerics["trajectory_profiles"]["center_screening"], profile_id="center_screening")
@@ -1448,7 +1448,7 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
             },
         }
         expected = {"resolved": True}
-        selected_authority = geometry_authority(Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json")
+        selected_authority = geometry_authority(Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json")
         with patch.object(
             two_prism_simion_trial, "resolve_geometry", return_value=expected,
         ) as resolver:
@@ -1473,7 +1473,7 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
         )
 
     def test_trial_geometry_forwards_frozen_oa_assembly_to_real_p1_extension(self) -> None:
-        path = Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json"
+        path = Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json"
         contract = json.loads(path.read_text(encoding="utf-8"))
         contract["prisms"]["ground_shields"][0]["extension_to_accelerator_exit"] = {"clearance_mm": 1.0}
         original = copy.deepcopy(contract)
@@ -1525,7 +1525,7 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
         from msplatform.components.parallel_mirror_dual_stripe_mr_tof.accelerator_requirements import read_accelerator_geometry_authority
 
         project = Path(__file__).resolve().parents[2]
-        contract = json.loads((project / "config/simion_candidate_two_zone.json").read_text(encoding="utf-8"))
+        contract = json.loads((project.parents[1] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json").read_text(encoding="utf-8"))
         contract["prisms"]["ground_shields"][0]["extension_to_accelerator_exit"] = {"clearance_mm": 1.0}
         authority = geometry_authority(contract)
         requirements = authority["accelerator_requirements"]

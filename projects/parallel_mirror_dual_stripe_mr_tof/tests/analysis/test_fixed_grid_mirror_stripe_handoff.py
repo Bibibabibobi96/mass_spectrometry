@@ -13,10 +13,10 @@ from dataclasses import FrozenInstanceError, asdict, fields, replace
 from pathlib import Path
 from typing import Any
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.fixed_grid_mirror_stripe_handoff import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.fixed_grid_mirror_stripe_handoff import (
     load_fixed_grid_mirror_point,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_candidate_receipt import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_candidate_receipt import (
     FixedHardwareMirrorPoint,
 )
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import MirrorL0Design
@@ -49,7 +49,7 @@ DOWNSTREAM_CONTRACT = (
     / "inputs"
     / "simion_candidate_two_zone.json"
 )
-CURRENT_CONTRACT = PROJECT / "config" / "simion_candidate_two_zone.json"
+CURRENT_CONTRACT = PROJECT.parents[1] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json"
 
 
 class FixedHardwareMirrorPointContractTests(unittest.TestCase):
@@ -156,7 +156,7 @@ prefix = 'projects.parallel_mirror_dual_stripe_mr_tof.analysis.'
 for name in ('mirror_exact_k_operating_point', 'dual_stripe_operating_seed'):
     module = importlib.import_module(prefix + name)
     assert Path(module.__file__).is_relative_to(Path(sys.argv[1]))
-assert prefix + 'fixed_grid_mirror_stripe_handoff' not in sys.modules
+assert 'msplatform.components.parallel_mirror_dual_stripe_mr_tof.fixed_grid_mirror_stripe_handoff' not in sys.modules
 core = importlib.import_module('msplatform.contracts.particle_physics')
 assert Path(core.__file__).is_relative_to(Path(sys.argv[1]) / 'src')
 for name, module in tuple(sys.modules.items()):
@@ -197,7 +197,7 @@ import importlib.abc
 import json
 import pickle
 import sys
-prefix = 'projects.parallel_mirror_dual_stripe_mr_tof.analysis.'
+prefix = 'msplatform.components.parallel_mirror_dual_stripe_mr_tof.'
 class RejectSeed(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path, target=None):
         if fullname == prefix + 'dual_stripe_operating_seed':
@@ -216,7 +216,7 @@ print(json.dumps({'owner': type(point).__module__, 'seed_loaded': prefix + 'dual
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(json.loads(result.stdout), {
-            "owner": "projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_candidate_receipt",
+            "owner": "msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_candidate_receipt",
             "seed_loaded": False,
         })
 

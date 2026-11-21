@@ -3,7 +3,7 @@
 返回[集成入口](../README.md)。本页维护当前入口、有效证据、限制与开放动作，组件自身资格归各PROJECT。
 Current scope is P4 V8.7 (2026-11-12); historical evidence keeps its original version.
 原始输入和终态仍以各run的manifest为准。早期阶段见
-[迁移证据](history/20261026__assembly-migration-execution-evidence.md)，后续重试和门禁过程可从
+[迁移证据](../../docs/history/integrations/20261026__assembly-migration-execution-evidence.md)，后续重试和门禁过程可从
 [收口前固定版本](https://github.com/Bibibabibobi96/mass_spectrometry/blob/09d7dec5a6802f47df791a3239ed75e5b73321fd/integrations/docs/INTEGRATION.md)追溯；不复制另一套全文快照。
 
 ## 当前边界
@@ -24,11 +24,14 @@ resource declarations retain them in frozen snapshots. Detached snapshot,
 prepared-joint recovery and all seven registered consumer import checks passed
 in 104.113 seconds. No solver execution or new scientific qualification follows.
 
-OA–MR now consumes its four retired project Lua implementations only from the
-installed SIMION backend; the project voltage-map research input remains
-explicit. The real detached-provider fixture exercises that production resource
-root instead of replacing it. This repairs the frozen software wiring only; no
-native OA–MR flight or scientific acceptance was run.
+OA–MR consumes its five retired project Lua implementations only from the
+installed SIMION backend. The default candidate scientific JSON is packaged with
+the canonical MR component; native-system runtime, fixed-mirror/Stripe authority
+and source-z/timing analysis now have installed workflow/component owners. The
+OA–MR freezer no longer selects the project analysis package. The real
+detached-provider fixture exercises those production resources instead of replacing
+their root. Scientific values and run evidence are unchanged; this repairs frozen
+software wiring only and grants no native OA–MR flight or scientific acceptance.
 
 The FullJoint, RF–IP continuous and SFI recorded-birth thin PowerShell entries now
 select Python only through their explicit argument or `SIMULATION_PYTHON_EXE`;
@@ -1579,13 +1582,13 @@ N3薄片局部探针与carrier发布不构成完整场、工作台或Fly验收�
 
 ## 共同场与有限脉冲
 
-[共同静态场owner](../workflows/paired_accelerator_static_field/execute.ps1)消费同一OA-only实体、ON电压、边界、数值box和样点。
+[共同静态场owner](../../src/msplatform/workflows/resources/paired_accelerator_static_field.ps1)消费同一OA-only实体、ON电压、边界、数值box和样点。
 `-Request -DryRun`仅准备，原生执行另须`-SolverAuthorized`和显式预算。
 `-ComsolSourceManifest`选择已保存prepared或solved来源：prepared只补solve，solved只导出，不重建几何／mesh。
 同BVP且原采样、CSV与native facts完整匹配时直接借用原导出，不读取／哈希MPH或启动COMSOL；
 采样改变或导出缺失才重开保存模型。已声明损坏的输出不静默回退，模型始终归原producer。
 
-[有限脉冲owner](../workflows/paired_accelerator_pulse/execute.ps1)只接受显式static producer、实录源、绝对观察时刻与numerics；
+[有限脉冲owner](../../src/msplatform/workflows/resources/paired_accelerator_pulse.ps1)只接受显式static producer、实录源、绝对观察时刻与numerics；
 脉冲、物种、原母群和OFF电压从原权威派生。`-PredecessorManifest`按完成事实复用阶段和完整批，
 已发布CSV直接分析，保存模型只补缺失导出。完整输出按原ID与时刻外配对，只发布`diagnostic_only`差异。
 Current paired-pulse comparison is owned by installed
@@ -1647,7 +1650,7 @@ installation and native coupled-field/continuous-flight acceptance remain OPEN.
 
 原 `-FullJoint` 入口的内部控制与输出统一称 `JOINT_WORKFLOW`，按上游源至MR终点和prepared源至终点分别报告实际范围；全复用明确为 `reused_completed_results_no_new_fly`。新IP设计分支自动选择唯一适用provider，显式不匹配先拒绝，prepared下游分支不受此默认选择影响。正式Changed验证完整accelerator_interface模块23项PASS（66.088秒，摘要区间91.560秒），含真实provider准备、失败阶段、源／恢复、双路径输出及根上下文接线；未因此新增原生求解或科学资格。
 
-[accelerator_interface入口](../workflows/accelerator_interface/execute.ps1)拥有跨项目准备与绑定；
+[accelerator_interface入口](../../src/msplatform/workflows/resources/accelerator_interface.ps1)拥有跨项目准备与绑定；
 OA、IP和MR分别拥有自身设计与科学约束。IP设计必须显式提供schema 3 `-MatchingRequestPath`；
 `-FinalizeJointWorkbench`只消费设计run已冻结的父plan、matching request及实际源／场，不回读活动默认。
 它会建立／重开IOB和做场审计，**不执行Fly**。完整输入参数以该入口为准。
@@ -2500,7 +2503,7 @@ evidence. No OA is synthesized to resolve this scope distinction.
 
 ## 已准备IP→MR联合飞行
 
-[prepared_joint入口](../workflows/prepared_joint/execute.ps1)消费`-PreparedJointWorkbenchRunPath`与`-ContractPath`。
+[prepared_joint入口](../../src/msplatform/workflows/resources/prepared_joint_execute.ps1)消费`-PreparedJointWorkbenchRunPath`与`-ContractPath`。
 同入口`-AnalyzeRunPath`从封存原生日志建立新分析run，不重飞、不复制PA或改写原run。
 两条原CLI的`-ResumeFinalization -RunId <原run_id> [-ResultPath <小Result>]`沿公共PowerShell owner收尾；
 默认Result位于`artifacts/projects/instrument_assembly/scratch/workflow_results/<run_id>/result.json`。
@@ -2592,7 +2595,7 @@ rejection without author-source access. No IP Fly, GUI, performance or scientifi
 qualification was run for this migration.
 
 
-[multipole_ip入口](../workflows/multipole_ip/execute.ps1)只准备真实出口到接收方的状态交接，
+[multipole_ip入口](../../src/msplatform/workflows/resources/multipole_ip.ps1)只准备真实出口到接收方的状态交接，
 schema 2请求显式引用来源／接收manifest、冻结父plan与可选local。保留原6D、物种、出生／到达时钟及母群；
 接收方设计与驱动继续归IP，不以旧出口分布或冷却前端代替真实多极杆源。
 

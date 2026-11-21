@@ -5,7 +5,7 @@
 下表中的无碰撞传输支持三变体；接口就绪和质量过滤保留四极杆范围，不由家族名称扩大资格。
 本文只说明COMSOL模型入口、模型树边界、当前数值限制和GUI验收。跨求解器状态与开放任务只见
 [`PROJECT.md`](PROJECT.md)；2026-07-28以前的完整诊断过程冻结在
-[`retired_projects/rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-comsol.md`](history/retired_projects/rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-comsol.md)。
+[`retired_projects/rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-comsol.md`](../../../docs/history/projects/rf_multipole_ion_optics/retired_projects/rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-comsol.md)。
 多极杆各轴向实体与事件面只采用
 [实现与运行合同](IMPLEMENTATION.md)的统一术语。
 
@@ -172,7 +172,7 @@ MATLAB/COMSOL 只导出原始状态、事件和求解器元数据；传输率、
 - 两个生产 solver 使用精确同 birth／release 属性分组的 `ReleaseFromDataFile`；不同 birth 不合并，
   unique-birth 源仍有 N 个节点。旧不等价向量化试验不作为生产入口；分组、映射及验收范围见下节。
 - 已完成的空间／时间敏感性、资源中断和 release 诊断见
-  [历史记录](history/retired_projects/rf_quadrupole_ion_optics/docs/history/20260911__solver-sensitivity-and-retired-interface.md)；当前资格见 [PROJECT](PROJECT.md)。
+  [历史记录](../../../docs/history/projects/rf_multipole_ion_optics/retired_projects/rf_quadrupole_ion_optics/docs/history/20260911__solver-sensitivity-and-retired-interface.md)；当前资格见 [PROJECT](PROJECT.md)。
 - oa-TOF 连接归 integration；本软件文档不维护下游场、运行阶段或整机资格。
 
 ## GUI验收

@@ -411,7 +411,7 @@ continuation 解或裸 CSV 都不是可执行证据入口。
 项目建立时的 `pressure_drag_screening_v1` 使用规定压力、规定气速、低场迁移率阻尼和理想近轴 RF 场。
 它已退出活动 mode 和 execution profile，相关 Python 积分器不再属于生产主链。其两次历史 run、原
 声明边界和可恢复源码身份冻结在
-[`20260908__superseded-python-pressure-drag-screening.md`](history/20260908__superseded-python-pressure-drag-screening.md)。
+[`20260908__superseded-python-pressure-drag-screening.md`](../../../docs/history/projects/dual_cone_tandem_quadrupole_ion_interface/20260908__superseded-python-pressure-drag-screening.md)。
 旧 run 继续按原 manifest 保留，但不得作为 COMSOL 气体场或 SIMION 轨迹资格输入。
 
 ## 当前资格
@@ -432,7 +432,7 @@ continuation 解或裸 CSV 都不是可执行证据入口。
 | GUI / Candidate / Formal | BLOCKED |
 
 已完成的气流失败链、质量守恒与粒子统计保存在
-[原型记录](history/20260911__empty-enclosure-gas-transport-prototype.md)。
+[原型记录](../../../docs/history/projects/dual_cone_tandem_quadrupole_ion_interface/20260911__empty-enclosure-gas-transport-prototype.md)。
 
 上述快速对照使用规定的后端均匀 `400 Pa`、`300 K`、`100 m/s` 氮气场，不是 COMSOL 压力/速度分布。
 其 0% 只说明该控制场在 570 kHz、每组对地峰值 300 V、半径 1.5 mm 源下未传到终止面；不得替代“上游大气储气腔到后端 400 Pa”的自然压降结果，也不得解释为实机绝对传输率。

@@ -41,7 +41,7 @@ from msplatform.workflows.prepared_joint.joint_mirror_stripe_l0 import (
     derive_coupled_drift_state,
     spatial_return_kappa_derivative_residual,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_candidate_receipt import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_candidate_receipt import (
     ManagedMirrorRoot,
     load_managed_mirror_candidate,
 )

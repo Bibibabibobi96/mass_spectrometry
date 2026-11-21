@@ -18,7 +18,7 @@ PROJECT = Path(__file__).resolve().parents[2]
 
 class PrismShieldExitExtensionTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.contract = load_contract(PROJECT / "config/simion_candidate_two_zone.json")
+        self.contract = load_contract(PROJECT.parents[1] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json")
         # Small solver-neutral fixture in the existing OA resolved projection.
         authority = geometry_authority(self.contract)
         oa = resolve_closed_two_zone_electrodes(

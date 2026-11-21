@@ -356,7 +356,7 @@ try {
                              mirror_electrodes=[{"box": [-1, -1, -1, 1, 1, 1]}],
                              mirror_ground_shields=[], mirror_e_closures=[])
         self.authority["assembly"] = {"detector": self.geometry["detector"],
-            "accelerator_geometry_authority": geometry_authority(Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json")}
+            "accelerator_geometry_authority": geometry_authority(Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json")}
         collision = Path(self.source["instances"][1]["pa_path"])
         header = PaHeader(-2, 1, 100000, 3, 5, 5, 1, 1, 1, 1)
         collision.write_bytes(header.pack() + b"\0" * (header.node_count * 8))
@@ -953,7 +953,7 @@ try {
             self.skipTest("external successful A binding unavailable")
         if not Path(p.read(binding_path)["parent"]["pa_path"]).is_file():
             self.skipTest("external A parent payload retired; small evidence remains")
-        contract_path = repo / "projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json"
+        contract_path = repo / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json"
         with (patch.object(p, "load_binding", side_effect=load_binding),
               patch.object(p, "_record", side_effect=_record),
               patch.object(p, "verify_record", side_effect=verify_record),
@@ -1912,7 +1912,7 @@ class CurrentNeutralGeometryAuthorityTests(unittest.TestCase):
         from msplatform.backends.simion.two_zone_candidate import resolve_closed_two_zone_electrodes
         from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
 
-        contract_path = Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json"
+        contract_path = Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json"
         contract = load_contract(contract_path)
         authority = geometry_authority(contract)
         electrodes = resolve_closed_two_zone_electrodes(

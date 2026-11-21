@@ -1,6 +1,7 @@
 # 多极杆历史索引
 
-返回[项目入口](../../README.md)或[当前状态](../PROJECT.md)。本索引可以维护；下列来源记录冻结原字节。
+返回[项目入口](../../../../projects/rf_multipole_ion_optics/README.md)或[当前状态](../../../../projects/rf_multipole_ion_optics/docs/PROJECT.md)。本索引可以维护；下列来源记录冻结原字节。
+路径迁移：`projects/rf_multipole_ion_optics/docs/history/` → `docs/history/projects/rf_multipole_ion_optics/`；既有来源提交映射保持不变。
 
 三个原项目的运行继续使用其原项目身份及外部 artifacts 位置。结构变体合并不赋予新身份原有科学资格。
 旧相对链接保留当时语境；每个原项目附固定 Git 提交入口，便于读取当时完整源码与关联材料。

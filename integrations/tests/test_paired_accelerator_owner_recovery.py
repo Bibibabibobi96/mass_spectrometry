@@ -36,8 +36,10 @@ class PairedOwnerRecoveryTests(unittest.TestCase):
                         result = root / (owner + status + ".json")
                         payload = json.dumps(dict(run_directory=str(run), expected_status=status)).encode("utf-8")
                         result.write_bytes(payload)
+                        packaged_owner = workflow_resources / f"{owner}.ps1"
+                        shutil.copyfile(ROOT / f"src/msplatform/workflows/resources/{owner}.ps1", packaged_owner)
                         actual = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(launcher),
-                            str(ROOT / f"integrations/workflows/{owner}/execute.ps1"),
+                            str(packaged_owner),
                             "-ResumeFinalization", "-ResultPath", str(result), "-RunId", "managed_run",
                             "-RepoRoot", str(root / "repository")], cwd=ROOT, capture_output=True,
                             text=True, encoding="utf-8", timeout=30)
@@ -76,7 +78,7 @@ if($Failure-eq'throw'-and$failure.Exception.Message-ne'PRIMARY_RELEASE_FAILURE')
             script=Path(directory)/"release.ps1";script.write_text(code,encoding="utf-8",newline="\n")
             for owner,failure in (("paired_accelerator_static_field","throw"),("paired_accelerator_pulse","retained")):
                 with self.subTest(owner=owner):
-                    result=subprocess.run([shutil.which("pwsh"),"-NoProfile","-File",str(script),str(ROOT/f"integrations/workflows/{owner}/execute.ps1"),failure,str(ROOT)],cwd=ROOT,capture_output=True,text=True,encoding="utf-8",timeout=30)
+                    result=subprocess.run([shutil.which("pwsh"),"-NoProfile","-File",str(script),str(ROOT/f"src/msplatform/workflows/resources/{owner}.ps1"),failure,str(ROOT)],cwd=ROOT,capture_output=True,text=True,encoding="utf-8",timeout=30)
                     self.assertEqual(result.returncode,0,result.stdout+result.stderr)
                     self.assertIn("UNKNOWN_RELEASE_PRESERVED=PASS",result.stdout)
 
@@ -120,6 +122,6 @@ if(-not$called-or$failure.Exception.Message-ne'PRIMARY_EXTRACTION_FAILURE'-or[IO
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);script=root/"complete.ps1";script.write_text(code,encoding="utf-8",newline="\n")
             for owner in ("paired_accelerator_static_field","paired_accelerator_pulse"):
-                result=subprocess.run([shutil.which("pwsh"),"-NoProfile","-File",str(script),str(ROOT/f"integrations/workflows/{owner}/execute.ps1"),str(root/owner),str(ROOT)],cwd=ROOT,capture_output=True,text=True,encoding="utf-8",timeout=30)
+                result=subprocess.run([shutil.which("pwsh"),"-NoProfile","-File",str(script),str(ROOT/f"src/msplatform/workflows/resources/{owner}.ps1"),str(root/owner),str(ROOT)],cwd=ROOT,capture_output=True,text=True,encoding="utf-8",timeout=30)
                 self.assertEqual(result.returncode,0,result.stdout+result.stderr)
                 self.assertIn("RAW_COMPLETION_ADAPTER=PASS",result.stdout)

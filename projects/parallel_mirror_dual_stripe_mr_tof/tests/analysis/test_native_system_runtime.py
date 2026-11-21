@@ -10,7 +10,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_runtime import (
+from msplatform.workflows.oa_mr.native_system_runtime import (
     build_native_system_runtime_bundle,
     rebind_accelerator_provider,
     rebind_analyzer,
@@ -156,7 +156,7 @@ class NativeSystemRuntimeTest(unittest.TestCase):
             provider = self._provider(root)
             requests = {role: self._request(root, role) for role in ("global_fallback", "detector")}
             bundle_path = root / "native-system-bundle.json"
-            build = [sys.executable, "-m", "projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_runtime",
+            build = [sys.executable, "-m", "msplatform.workflows.oa_mr.native_system_runtime",
                      "build", "--native-corridor-runtime-receipt", str(receipt_path), "--bundle-output", str(bundle_path),
                      "--accelerator-provider-receipt", str(provider)]
             for role, request in requests.items():
@@ -167,7 +167,7 @@ class NativeSystemRuntimeTest(unittest.TestCase):
             self.assertEqual(json.loads(built.stdout)["status"], "prepared")
             self.assertTrue(bundle_path.is_file())
             resolved = subprocess.run([
-                sys.executable, "-m", "projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_runtime",
+                sys.executable, "-m", "msplatform.workflows.oa_mr.native_system_runtime",
                 "resolve", "--native-corridor-runtime-receipt", str(receipt_path), "--bundle", str(bundle_path),
             ], cwd=Path(__file__).resolve().parents[4], text=True, capture_output=True, check=False, timeout=30)
             self.assertEqual(resolved.returncode, 0, resolved.stderr)

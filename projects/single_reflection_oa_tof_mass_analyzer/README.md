@@ -17,7 +17,7 @@
 5. 涉及COMSOL实现、事件读取或数值审查时，按[`docs/COMSOL.md`](docs/COMSOL.md)开头的任务表选章节；
    通用API、排错与误差预算从[COMSOL阅读入口](../../docs/tools/COMSOL_GUIDE.md)选择，不作为无关任务的前置阅读。
    SIMION或CAD任务只进入相应[`docs/SIMION.md`](docs/SIMION.md)或[`docs/CAD.md`](docs/CAD.md)。
-6. 只有追溯旧结论、run ID或失败链时才进入[历史索引](docs/history/README.md)。
+6. 只有追溯旧结论、run ID或失败链时才进入[历史索引](../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/README.md)。
 
 ## 机器权威
 
@@ -105,6 +105,6 @@ single_reflection_oa_tof_mass_analyzer/
 
 ## History索引
 
-[历史索引](docs/history/README.md)集中列出已冻结实验、迁移和旧方案；需要追溯证据时按需进入。
+[历史索引](../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/README.md)集中列出已冻结实验、迁移和旧方案；需要追溯证据时按需进入。
 
 补偿入口沿公共 workspace context 冻结产物根与主机状态；原生参数、工作目录、环境及日志由运行包的公共执行 context 投影，未知释放保留保护与原始失败。

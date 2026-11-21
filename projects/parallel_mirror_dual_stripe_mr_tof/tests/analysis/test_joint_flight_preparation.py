@@ -393,7 +393,7 @@ print('OA_BUILDER_MOCK=PASS')
                 (root / 'operating.lua').write_text('return ' + _lua(scenario), encoding='utf-8')
                 result = subprocess.run(
                     [lua, str(root / 'fixture.lua'), str(root), str(native_resource_path("build_native_corridor_iob.lua")),
-                     str(PROJECT / 'simion/candidate_voltage_map.lua'), str(root / 'priority.lua'),
+                     str(PROJECT.parents[1] / 'src/msplatform/backends/simion/resources/candidate_voltage_map.lua'), str(root / 'priority.lua'),
                      invalid],
                     cwd=root, capture_output=True, text=True, timeout=30, check=False)
                 if invalid in ('none', 'static'):
@@ -506,7 +506,7 @@ assert(t.source_clock_marker==7500.6370908093995)
 print('FINALIZED_FIELD_VOLTAGES=PASS')
 """, encoding="utf-8")
                     evaluated = subprocess.run([lua, str(check), str(root / "bound/runtime/joint.operating_point.lua"),
-                                               str(PROJECT / "simion/candidate_voltage_map.lua")],
+                                               str(PROJECT.parents[1] / "src/msplatform/backends/simion/resources/candidate_voltage_map.lua")],
                                               cwd=root, capture_output=True, text=True, timeout=30)
                     self.assertEqual(evaluated.returncode, 0, evaluated.stdout + evaluated.stderr)
                     self.assertIn('FINALIZED_FIELD_VOLTAGES=PASS', evaluated.stdout)

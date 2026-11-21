@@ -25,7 +25,7 @@ PROJECT = Path(__file__).resolve().parents[2]
 class MirrorConvergenceGeometryTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.contract = load_contract(PROJECT / "config/simion_candidate_two_zone.json")
+        cls.contract = load_contract(PROJECT.parents[1] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json")
         cls.parallel = resolve_geometry(cls.contract, **pure_geometry_inputs(cls.contract))
         cls.authored = copy.deepcopy(cls.contract)
         cls.authored["mirror"]["convergence_transform"] = {"angle_deg": 0.025688743, "pivot_y_mm": 0.0}

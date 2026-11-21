@@ -72,7 +72,7 @@ def _plan(records: list[dict]) -> dict:
 
 def retirement_fixture(repository: Path) -> tuple[dict, Path]:
     """Freeze an original owner and its already archived alias in a small fixture."""
-    path = repository / "projects" / CONSOLIDATED / "docs/history/retired_projects" / CURRENT / "config/project.json"
+    path = repository / "docs/history/projects" / CONSOLIDATED / "retired_projects" / CURRENT / "config/project.json"
     path.parent.mkdir(parents=True)
     alias = {**_location("archived_verified"), **READ_ONLY_IDENTITY_POLICY,
              "migration_kind": "administrative_rename_only"}

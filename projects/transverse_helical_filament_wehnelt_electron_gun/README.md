@@ -13,7 +13,7 @@
 | 生成唯一 MATLAB 输入 | [安装包 resolve_contract.py](../../src/msplatform/components/transverse_helical_filament_wehnelt_electron_gun/resolve_contract.py) → [resolved_model.json](config/resolved_model.json) |
 | 项目发现与可执行能力 | [project.json](config/project.json)、[execution_profiles.json](config/execution_profiles.json) |
 | 静态检查 | [verify_project.ps1](verify_project.ps1) |
-| 选型及旧谱系 | [历史索引](docs/history/README.md) |
+| 选型及旧谱系 | [历史索引](../../docs/history/projects/transverse_helical_filament_wehnelt_electron_gun/README.md) |
 
 ## 执行与产物
 
@@ -36,4 +36,4 @@ returned artifact includes the final model and both intermediate MPH files.
 
 ## History索引
 
-[历史索引](docs/history/README.md)集中列出已冻结实验、迁移和旧方案；需要追溯证据时按需进入。
+[历史索引](../../docs/history/projects/transverse_helical_filament_wehnelt_electron_gun/README.md)集中列出已冻结实验、迁移和旧方案；需要追溯证据时按需进入。

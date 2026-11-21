@@ -94,7 +94,7 @@ try {
   $startupPath = Join-Path $resultDir 'artifact_capacity_gate_startup.json'
   Write-RunJson -Path $startupPath -Depth 14 -Value $capacitySession
   $contract = Copy-VerifiedRunInput `
-    -Source (Join-Path $repoRoot "projects\$projectId\config\simion_candidate_two_zone.json") `
+    -Source (Join-Path $repoRoot "src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json") `
     -Destination (Join-Path $inputDir 'simion_candidate_two_zone.json')
   $result = Join-Path $resultDir 'fixed_grid_multifidelity_voltage_correction.json'
   Push-Location -LiteralPath $repoRoot

@@ -3256,7 +3256,7 @@
               "integrations/tests/test_oa_mr_source_context.py",
               "integrations/tests/test_accelerator_interface.py",
               "integrations/tests/test_oa_mr_execute.py",
-              "integrations/tests/test_prepared_joint_execute.py"
+              "tests/test_prepared_joint_execute.py"
             ],
             "dependency_profile": "locked"
           },
@@ -3280,7 +3280,7 @@
               }
             ],
             "modules": [
-              "integrations/tests/test_prepared_joint_execute.py"
+              "tests/test_prepared_joint_execute.py"
             ],
             "dependency_profile": "locked"
           },
@@ -3306,7 +3306,7 @@
             "modules": [
               "integrations/tests/test_accelerator_interface.py",
               "integrations/tests/test_accelerator_interface_geometry.py",
-              "integrations/tests/test_prepared_joint_execute.py"
+              "tests/test_prepared_joint_execute.py"
             ],
             "dependency_profile": "locked"
           },

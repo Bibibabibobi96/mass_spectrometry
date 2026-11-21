@@ -5,6 +5,7 @@ import ast
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -14,7 +15,7 @@ from msplatform.execution.capacity_ledger import initialize_capacity_ledger
 from integrations.tests import test_paired_accelerator_pulse_preparation as preparation_tests
 
 ROOT = Path(__file__).resolve().parents[2]
-OWNER = ROOT / 'integrations/workflows/paired_accelerator_pulse/execute.ps1'
+OWNER = ROOT / 'src/msplatform/workflows/resources/paired_accelerator_pulse.ps1'
 
 
 class PairedPulseOwnerTests(unittest.TestCase):
@@ -77,9 +78,12 @@ exit 0
     def capacity_isolated_owner(self, root):
         """Startup capacity admission is inert; lease and lifecycle operations remain real."""
         source=OWNER.read_text(encoding='utf-8')
+        package_assignment='$packageRoot=Split-Path -Parent (Split-Path -Parent $PSScriptRoot)'
+        self.assertEqual(source.count(package_assignment),1)
+        source=source.replace(package_assignment,f"$packageRoot='{(ROOT/'src/msplatform').as_posix()}'")
         # dependencies.ps1 reloads the public capacity adapter. Install the
         # fixture after that import so host disk policy stays outside this test.
-        boundary=". (Join-Path $RepoRoot 'src/msplatform/execution/resources/dependencies.ps1')"
+        boundary=". (Join-Path $packageRoot 'execution/resources/dependencies.ps1')"
         self.assertEqual(source.count(boundary),1)
         owner=root/'inert_capacity_owner.ps1'
         owner.write_text(source.replace(boundary,boundary+"\nfunction Invoke-ArtifactCapacityGate { Write-Host 'TEST_CAPACITY_ADMISSION=ISOLATED'; [pscustomobject]@{satisfied_after_apply=$true} }"),
@@ -200,6 +204,48 @@ ConvertTo-Json -InputObject $strings -Compress -Depth 4
                 cwd=frozen, env=environment, capture_output=True, text=True, encoding='utf-8', timeout=60, check=False)
             self.assertEqual(analysis_import.returncode, 0, analysis_import.stdout + analysis_import.stderr)
 
+    def test_external_site_packages_freezes_and_prepares_without_workspace_sources(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'fixture').mkdir()
+            request, _, _, _ = preparation_tests.PairedPulsePreparationTests().fixture(root / 'fixture')
+            package_root = root / 'installation/Lib/site-packages/msplatform'
+            shutil.copytree(ROOT / 'src/msplatform', package_root)
+            owner = package_root / 'workflows/resources/paired_accelerator_pulse.ps1'
+            source = OWNER.read_text(encoding='utf-8')
+            boundary = ". (Join-Path $packageRoot 'execution/resources/dependencies.ps1')"
+            owner.write_text(source.replace(boundary, boundary + "\nfunction Invoke-ArtifactCapacityGate { [pscustomobject]@{satisfied_after_apply=$true} }"),
+                encoding='utf-8', newline='\n')
+            workspace = root / 'workspace'
+            workspace.mkdir()
+            artifacts = root / 'artifacts'
+            artifacts.mkdir()
+            initialize_capacity_ledger(artifacts, objects=[])
+            run_id = '20261026_060002__test__python__paired-pulse-external-package'
+            result = self.invoke(['-File', str(owner), '-Request', str(request), '-DryRun',
+                '-ArtifactRoot', str(artifacts), '-Python', sys.executable, '-RunId', run_id,
+                '-RepoRoot', str(workspace)], timeout=240)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertFalse((workspace / 'src').exists())
+            run = artifacts / 'projects/instrument_assembly/runs' / run_id
+            self.assertEqual(json.loads((run / 'run_manifest.json').read_text())['status'], 'success')
+            snapshot = run / 'inputs/runtime_snapshot/src/msplatform'
+            self.assertEqual((snapshot / 'workflows/resources/paired_accelerator_pulse.ps1').read_bytes(), owner.read_bytes())
+            self.assertTrue((run / 'inputs/pulse/paired_accelerator_pulse_plan.json').is_file())
+            self.assertFalse(any(run.rglob('dependency_source_view')))
+
+            selected = package_root / 'execution/resources/payload_file_support.ps1'
+            fallback = workspace / 'src/msplatform/execution/resources/payload_file_support.ps1'
+            fallback.parent.mkdir(parents=True)
+            fallback.write_bytes(selected.read_bytes())
+            selected.unlink()
+            rejected = self.invoke(['-File', str(owner), '-Request', str(request), '-DryRun',
+                '-ArtifactRoot', str(artifacts), '-Python', sys.executable,
+                '-RunId', '20261026_060003__test__python__paired-pulse-missing-core',
+                '-RepoRoot', str(workspace)], timeout=240)
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn('Frozen payload byte resource is unavailable', rejected.stderr)
+
     def test_predecessor_reuses_completed_stages_and_only_runs_missing_fly(self):
         script = r'''param($Owner,$PublicRepo,$Python,$Root,$Completed)
 $ErrorActionPreference='Stop'
@@ -211,6 +257,7 @@ $ownerBody=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.TryStat
 $native=@($ownerBody.Body.Statements|Where-Object{$_.Extent.Text.StartsWith('if(-not$DryRun){')-and$_.Extent.Text.Contains('Invoke-FrontendFlightPhase')})[0]
 $execute=[scriptblock]::Create(($native.Clauses[0].Item2.Statements.Extent.Text-join"`n"))
 $RepoRoot=Join-Path $Root repo
+$packageRoot=Join-Path $RepoRoot 'src/msplatform'
 $run=Join-Path $Root run
 foreach($name in @('inputs','logs','results','comsol','simion')){$null=New-Item -ItemType Directory -Path (Join-Path $run $name) -Force}
 $comsolStub=Join-Path $RepoRoot 'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1'
@@ -389,6 +436,7 @@ $parameters=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentS
 if($null-eq$resolver-or$null-eq$parameters){throw 'Actual COMSOL deployment boundary missing'}
 $steps=@($task,$flight,$resolver,$parameters,$comsol)
 $RepoRoot=Join-Path $Root consumer
+$packageRoot=Join-Path $RepoRoot 'src/msplatform'
 $launcher=Join-Path $RepoRoot 'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1'
 New-Item -ItemType Directory (Split-Path $launcher) -Force|Out-Null
 Copy-Item (Join-Path $Public 'src/msplatform/backends/comsol/launcher/resolve_comsol_64.ps1') (Join-Path (Split-Path $launcher) 'resolve_comsol_64.ps1')

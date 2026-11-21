@@ -58,7 +58,7 @@ class AcceleratorInterfaceTests(unittest.TestCase):
     def test_entry_requires_explicit_python(self):
         environment = {key: value for key, value in os.environ.items() if key != "SIMULATION_PYTHON_EXE"}
         result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File",
-                                 str(REPO / "integrations/workflows/accelerator_interface/execute.ps1")],
+                                 str(REPO / "src/msplatform/workflows/resources/accelerator_interface.ps1")],
             cwd=REPO, env=environment, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("SIMULATION_PYTHON_EXE is required", result.stdout + result.stderr)
@@ -74,7 +74,7 @@ $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$null)
 $definition=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-JointWorkflow'},$true)
 Invoke-Expression $definition.Extent.Text
-$repoRoot='C:\study';$PythonExe=$SelectedPython
+$repoRoot='C:\study';$sourceRoot=Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $Entry));$PythonExe=$SelectedPython
 $ContinuousReleaseRequest='birth';$ContinuousFieldsReference='fields';$ContinuousPropagation='propagation'
 $ContinuousObservations='observations';$ContinuousNumerics='numerics';$ContinuousHs1Request='hs1'
 $ContinuousEnvironment='machine';$ContinuousWorkspace='workspace';$ContinuousProfile='standard'
@@ -88,11 +88,11 @@ $FinalizeJointWorkbench=$ContinueOnIpScientificFailure=$false
 $script:calls=[Collections.Generic.List[string]]::new()
 function Invoke-JointOwnerStage {param($Script,$Arguments)
  $script:calls.Add($Script)
- if($Script-ne(Join-Path $repoRoot 'src/msplatform/workflows/resources/multipole_ip_continuous.ps1')){throw 'wrong continuous owner'}
- foreach($key in @('ReleaseRequest','FieldsReference','Propagation','Observations','Numerics','Hs1Request','Environment','Workspace','Profile','RecoveryReference','DispatchProfiles','UnitSize','Python','RepoRoot','ExpectedComponentScope')){
+ if($Script-ne(Join-Path $sourceRoot 'msplatform/workflows/resources/multipole_ip_continuous.ps1')){throw 'wrong continuous owner'}
+ foreach($key in @('ReleaseRequest','FieldsReference','Propagation','Observations','Numerics','Hs1Request','Environment','Workspace','Profile','RecoveryReference','DispatchProfiles','UnitSize','Python','ExpectedComponentScope')){
   if(-not$Arguments.ContainsKey($key)){throw "missing continuous input $key"}
  }
- if($Arguments.Python-ne$SelectedPython-or$Arguments.UnitSize-ne2-or$Arguments.RepoRoot-ne$repoRoot-or$Arguments.ExpectedComponentScope-ne'rf_ip_mr'){throw 'continuous execution context or component scope changed'}
+ if($Arguments.Python-ne$SelectedPython-or$Arguments.UnitSize-ne2-or$Arguments.ExpectedComponentScope-ne'rf_ip_mr'){throw 'continuous execution context or component scope changed'}
 }
 Invoke-JointWorkflow
 if($script:calls.Count-ne1){throw 'continuous owner did not run exactly once'}
@@ -105,7 +105,7 @@ if(-not$caught){throw 'segmented and continuous inputs were accepted together'}
 'FULLJOINT_CONTINUOUS_FORWARDING=PASS'
 ''', encoding="utf-8")
             result = subprocess.run([powershell, "-NoProfile", "-File", str(script),
-                str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), sys.executable],
+                str(REPO / "src/msplatform/workflows/resources/accelerator_interface.ps1"), sys.executable],
                 cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("FULLJOINT_CONTINUOUS_FORWARDING=PASS", result.stdout)
@@ -124,18 +124,63 @@ if(-not$caught){throw 'segmented and continuous inputs were accepted together'}
             root = Path(directory)
             caller = root / "caller"
             repo = root / "checkout"
+            output = root / "output"
             inputs = caller / "inputs"
             workspace = caller / "workspace"
             inputs.mkdir(parents=True)
             workspace.mkdir()
+            output.mkdir()
             _copy_path_consumer_repository(repo)
+            shutil.copyfile(REPO / "pyproject.toml", repo / "pyproject.toml")
+            python_home = root / "fixture-python"
+            subprocess.run([sys._base_executable, "-m", "venv", "--system-site-packages", str(python_home)],
+                cwd=root, check=True, capture_output=True, text=True, timeout=60)
+            python_executable = python_home / "Scripts/python.exe"
+            site_packages = python_home / "Lib/site-packages"
+            parent_site_packages = next(Path(path) for path in sys.path
+                                        if (Path(path) / "referencing").is_dir())
+            (site_packages / "parent-test-environment.pth").write_text(
+                str(parent_site_packages) + "\n", encoding="utf-8")
+            installed = subprocess.run([str(python_executable), "-m", "pip", "install", "--no-deps",
+                "--no-build-isolation", "--editable", str(repo)], cwd=root, capture_output=True, text=True, timeout=60)
+            self.assertEqual(installed.returncode, 0, installed.stdout + installed.stderr)
 
             _, _, _, _, propagation, numerics = rf_tracking_case()
             propagation["dynamics"]["collisions"] = "hs1"
             numerics["grouped"] = 0
+            from msplatform.backends.simion.compiler import _content_sha256
+            projects = {
+                "rf": "rf_multipole_ion_optics",
+                "ip": "dual_pressure_rectilinear_ion_processor",
+                "mr": "parallel_mirror_dual_stripe_mr_tof",
+            }
+            model = {
+                "role": "compiled_prepared_simion_model", "field_status": "not_solved",
+                "geometry": {"frontend_geometry": {"composition_plan": {
+                    "scope": {"instance_ids": list(projects)},
+                    "components": {name: {"project_id": project} for name, project in projects.items()},
+                }}},
+                "components_resolved": {name: {} for name in projects},
+            }
+            model["model_identity_sha256"] = _content_sha256(model)
+            field_run = inputs / "selected-field"
+            field_run.mkdir()
+            model_path = field_run / "compiled_model.json"
+            model_path.write_text(json.dumps(model), encoding="utf-8")
+            data = {"compiled_model": file_record(model_path)}
+            field_manifest = {
+                "schema_version": 2, "role": "simulation_run_manifest", "run_id": "selected-field",
+                "project": "instrument_assembly", "mode": "software-fixture", "status": "success",
+                "inputs": data, "outputs": [],
+                "products": {"fields": {
+                    "schema_version": 1, "kind": "field_bundle", "status": "complete",
+                    "metadata": {"fixture_only": True}, "data": data,
+                }},
+            }
+            (field_run / "run_manifest.json").write_text(json.dumps(field_manifest), encoding="utf-8")
             documents = {
                 "release.json": examples.load_example("rf_oatof_functional_v1").release,
-                "fields.json": {"source": "caller-fields"},
+                "fields.json": {"manifest": file_record(field_run / "run_manifest.json"), "product_id": "fields"},
                 "propagation.json": propagation,
                 "observations.json": {"plane_observations": [], "source": "caller-observations"},
                 "numerics.json": numerics,
@@ -143,7 +188,7 @@ if(-not$caught){throw 'segmented and continuous inputs were accepted together'}
                 "dispatch.json": [{"name": "caller-dispatch"}],
                 "environment.json": {
                     "schema_version": 1, "role": "execution_environment",
-                    "tools": {"python": sys.executable, "powershell": powershell},
+                    "tools": {"python": str(python_executable), "powershell": powershell},
                     "policy": {"host_state_path": str(root / "host.sqlite3")},
                     "profiles": {"test": {"stage_policy_path": "stages.json"}},
                 },
@@ -186,15 +231,14 @@ if(-not$caught){throw 'segmented and continuous inputs were accepted together'}
             owner_source = repo / "src/msplatform/workflows/multipole_ip/continuous.py"
             source = owner_source.read_text(encoding="utf-8")
             marker = "from msplatform.ion_release.authoring import ReleaseRealization\n"
-            injection = marker + f'''\nfrom types import SimpleNamespace as _InertNamespace\n\ndef _inert_native_track(fields, particles, **kwargs):\n    import json, sys\n    Path(r"{capture}").write_text(json.dumps({{\n        "executable": sys.executable, "fields": fields, "particles": particles.to_dict(),\n        "propagation": kwargs["propagation"], "observations": kwargs["observations"],\n        "numerics": kwargs["numerics"], "vendor": kwargs["hs1_request"]["vendor_record"]["path"],\n        "workspace": str(kwargs["context"].workspace), "environment": kwargs["context"].environment,\n        "recovery": kwargs["recovery_reference"], "dispatch": kwargs["dispatch_profiles"]}}), encoding="utf-8")\n    return _InertNamespace(reference={{"path": r"{artifact}"}})\n\noperations.track = _inert_native_track\n\ndef _inert_component_scope(fields, expected):\n    if expected != "rf_ip_mr":\n        raise ValueError("FullJoint component scope was not forwarded")\n    return fields\n'''
+            injection = marker + f'''\nfrom types import SimpleNamespace as _InertNamespace\n\ndef _inert_native_track(fields, particles, **kwargs):\n    import json, sys\n    Path(r"{capture}").write_text(json.dumps({{\n        "executable": sys.executable, "fields": fields.reference, "particles": particles.to_dict(),\n        "propagation": kwargs["propagation"], "observations": kwargs["observations"],\n        "numerics": kwargs["numerics"], "vendor": kwargs["hs1_request"]["vendor_record"]["path"],\n        "workspace": str(kwargs["context"].workspace), "environment": kwargs["context"].environment,\n        "recovery": kwargs["recovery_reference"], "dispatch": kwargs["dispatch_profiles"]}}), encoding="utf-8")\n    return _InertNamespace(reference={{"path": r"{artifact}"}})\n\noperations.track = _inert_native_track\n'''
             self.assertIn(marker, source)
-            instrumented = source.replace(marker, injection, 1).replace(
-                '\ndef track_existing_fields(', '\n_admit_component_scope = _inert_component_scope\n\ndef track_existing_fields(', 1)
+            instrumented = source.replace(marker, injection, 1)
             owner_source.write_text(instrumented, encoding="utf-8", newline="\n")
 
-            entry = repo / "integrations/workflows/accelerator_interface/execute.ps1"
+            entry = repo / "src/msplatform/workflows/resources/accelerator_interface.ps1"
             entry.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(REPO / "integrations/workflows/accelerator_interface/execute.ps1", entry)
+            shutil.copyfile(REPO / "src/msplatform/workflows/resources/accelerator_interface.ps1", entry)
             continuous_entry = repo / "src/msplatform/workflows/resources/multipole_ip_continuous.ps1"
             continuous_entry.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(REPO / "src/msplatform/workflows/resources/multipole_ip_continuous.ps1", continuous_entry)
@@ -213,9 +257,8 @@ if(-not$caught){throw 'segmented and continuous inputs were accepted together'}
                 "-ContinuousWorkspace", relative(workspace), "-ContinuousProfile", "test",
                 "-ContinuousRecoveryReference", relative(inputs / "recovery.json"),
                 "-ContinuousDispatchProfiles", relative(inputs / "dispatch.json"),
-                "-ContinuousUnitSize", "2", "-PythonExe",
-                relative(Path(sys.executable)) if Path(sys.executable).drive == caller.drive else str(Path(sys.executable)),
-                "-RepoRoot", str(repo),
+                "-ContinuousUnitSize", "2", "-PythonExe", relative(python_executable),
+                "-RepoRoot", str(output),
             ]
             environment = dict(os.environ, MASS_SPECTROMETRY_ARTIFACT_ROOT=str(root / "artifacts"),
                 MASS_SPECTROMETRY_EXECUTION_ROOT=str(root / "execution"),
@@ -224,12 +267,13 @@ if(-not$caught){throw 'segmented and continuous inputs were accepted together'}
             result = subprocess.run(command, cwd=caller, env=environment, capture_output=True,
                 text=True, encoding="utf-8", errors="replace", timeout=60)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertFalse((output / "src").exists())
             reference = {"path": str(artifact)}
             self.assertIn("OWNER_RETURNED=" + json.dumps(reference), result.stdout)
             self.assertIn("STUDY_SCOPE=original_birth_to_terminal", result.stdout)
             self.assertEqual(json.loads(artifact.read_text()), {"artifact": "returned"})
             observed = json.loads(capture.read_text(encoding="utf-8"))
-            self.assertEqual(Path(observed["executable"]), Path(sys.executable))
+            self.assertEqual(Path(observed["executable"]), python_executable)
             self.assertEqual(observed["fields"], documents["fields.json"])
             expected_release = json.loads(json.dumps(sample_release(documents["release.json"]).to_dict()))
             self.assertEqual(observed["particles"], expected_release)
@@ -285,11 +329,11 @@ function Invoke-RunToolRootContext {param($RepoRoot,$Environment,$Operation)
  $previous=$env:PYTHONPATH
  try{$env:PYTHONPATH=(Join-Path $RepoRoot 'src')+[IO.Path]::PathSeparator+$RepoRoot;& $Operation}finally{$env:PYTHONPATH=$previous}
 }
-$repoRoot=$Repo;$python=$Python;$pathEnvironment=@{}
+$repoRoot=$Repo;$sourceRoot=$Repo;$python=$Python;$pathEnvironment=@{}
 Assert-MultipoleIpRecoveryRequest -Run $Run -Request $Request
 ''', encoding="utf-8")
             command = [powershell, "-NoProfile", "-File", str(script),
-                str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), str(REPO), str(run), str(author), sys.executable]
+                str(REPO / "src/msplatform/workflows/resources/accelerator_interface.ps1"), str(REPO), str(run), str(author), sys.executable]
             equal = subprocess.run(command, cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False, timeout=30)
             self.assertEqual(equal.returncode, 0, equal.stdout + equal.stderr)
             request["particle_weight"] = 2
@@ -311,14 +355,14 @@ $ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$
 $branch=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Clauses[0].Item1.Extent.Text-eq'$ResumeFinalization'},$true)
 if($null-eq$branch){throw 'Missing original CLI recovery branch'}
 $body=(@($branch.Clauses[0].Item2.Statements|Where-Object{$_-isnot[Management.Automation.Language.ReturnStatementAst]}|ForEach-Object{$_.Extent.Text})-join"`n")
-$ResumeFinalization=$true;$FullJoint=$true;$RunId='existing-flight';$ResultPath='external-result';$PythonExe='python-runtime';$repoRoot='repository'
+$ResumeFinalization=$true;$FullJoint=$true;$RunId='existing-flight';$ResultPath='external-result';$PythonExe='python-runtime';$repoRoot='repository';$sourceRoot=Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $Entry))
 $PSBoundParameters.Clear()
 foreach($key in @('ResumeFinalization','FullJoint','RunId','ResultPath')){$PSBoundParameters[$key]=(Get-Variable -Name $key -ValueOnly)}
 $script:calls=0;$script:inject=$false
 function Invoke-JointOwnerStage {
  param($Script,$Arguments)
  $script:calls++
- if($Script-ne(Join-Path $repoRoot 'integrations/workflows/prepared_joint/execute.ps1')-or
+ if($Script-ne(Join-Path $sourceRoot 'msplatform/workflows/resources/prepared_joint_execute.ps1')-or
     -not$Arguments.ResumeFinalization-or$Arguments.RunId-ne$RunId-or$Arguments.ResultPath-ne$ResultPath-or
     $Arguments.PythonExe-ne$PythonExe-or$Arguments.Count-ne5){throw 'Recovery forwarded new scientific or native inputs'}
  if($script:inject){throw 'original owner finalization error'}
@@ -349,7 +393,7 @@ if($AcceleratorProvider-ne'orthogonal_accelerator'){throw 'Prepared-workbench br
 'JOINT_WORKFLOW_FINALIZATION=PASS'
 ''', encoding="utf-8")
             result = subprocess.run([powershell, "-NoProfile", "-File", str(script),
-                str(REPO / "integrations/workflows/accelerator_interface/execute.ps1")],
+                str(REPO / "src/msplatform/workflows/resources/accelerator_interface.ps1")],
                 cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("JOINT_WORKFLOW_FINALIZATION=PASS", result.stdout)
@@ -374,12 +418,12 @@ $ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$
 $definition=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Assert-CompletedIpScientificFailure'},$true)
 Invoke-Expression $definition.Extent.Text
 function Invoke-RunToolRootContext {param($RepoRoot,$Operation) & $Operation}
-$repoRoot=$Repo;$python=$Python
+$repoRoot=$Repo;$sourceRoot=$Repo;$python=$Python
 $summary=Assert-CompletedIpScientificFailure -Run $Run
 if($summary.analysis_exit_code-ne2){throw 'wrong status'}
 ''', encoding="utf-8")
         command = [powershell, "-NoProfile", "-File", str(script),
-                   str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), str(REPO), str(fixture.run), sys.executable]
+                   str(REPO / "src/msplatform/workflows/resources/accelerator_interface.ps1"), str(REPO), str(fixture.run), sys.executable]
         okay = subprocess.run(command, cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
         self.assertEqual(okay.returncode, 0, okay.stdout + okay.stderr)
         fixture.summary["diagnostics_complete"] = False
@@ -459,7 +503,7 @@ function Invoke-JointOwnerStage {param($Script,$Arguments)
   }
   $script:calls.Add('flight')
 }
-$workspaceRoot=$Root;$artifactRoot=Join-Path $Root 'artifacts';$repoRoot=$Root;$AcceleratorProvider='dual_pressure_rectilinear_ion_processor'
+$workspaceRoot=$Root;$artifactRoot=Join-Path $Root 'artifacts';$repoRoot=$Root;$sourceRoot=$Root;$AcceleratorProvider='dual_pressure_rectilinear_ion_processor'
 $python=$SelectedPython;$pathContext=@{host_resource_state_path=(Join-Path $Root 'shared-host.sqlite3')}
 $MultipoleIpWorkspace=$Root;$MultipoleIpEngineeringProfile='prepare';$MultipoleIpEnvironmentPath=Join-Path $Root 'machine.json'
 @{schema_version=1;role='execution_environment';tools=@{python=$SelectedPython;powershell=(Get-Process -Id $PID).Path};policy=@{host_state_path=$pathContext.host_resource_state_path};profiles=@{prepare=@{stage_policy_path=(Join-Path $Root 'stages.json')}}}|ConvertTo-Json -Depth 6|Set-Content $MultipoleIpEnvironmentPath
@@ -495,7 +539,7 @@ Write-Output 'MP_IP_JOINT=PASS'
                 case = root / scenario
                 case.mkdir()
                 result = subprocess.run([powershell, "-NoProfile", "-File", str(script),
-                    str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), str(case), scenario, sys.executable],
+                    str(REPO / "src/msplatform/workflows/resources/accelerator_interface.ps1"), str(case), scenario, sys.executable],
                     cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn("MP_IP_JOINT=PASS", result.stdout)
@@ -529,12 +573,12 @@ $ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$
 $definition=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Get-MultipoleIpPreparation'},$true)
 Invoke-Expression $definition.Extent.Text
 function Invoke-RunToolRootContext {param($RepoRoot,$Operation) & $Operation}
-$repoRoot=$Repo;$python=$Python
+$repoRoot=$Repo;$sourceRoot=$Repo;$python=$Python
 $receipt=Get-MultipoleIpPreparation -Run $Run -ConfigurationDirectory $Config
 if($receipt.exit_count-ne1){throw 'wrong receipt'}
 ''', encoding="utf-8")
         command = [powershell, "-NoProfile", "-File", str(script),
-                   str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), str(REPO), str(root), str(configuration), sys.executable]
+                   str(REPO / "src/msplatform/workflows/resources/accelerator_interface.ps1"), str(REPO), str(root), str(configuration), sys.executable]
         result_ok = subprocess.run(command, cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
         self.assertEqual(result_ok.returncode, 0, result_ok.stdout + result_ok.stderr)
         model["baseline"]["native_geometry"]["domain_start_x_mm"] += 1
@@ -603,7 +647,7 @@ function Invoke-JointOwnerStage {
   $script:ownerCalls++
   if($Arguments.ContainsKey('RequestPath')){
     if($Arguments.PythonExe-cne$Python){throw 'Provider interpreter differs from caller runtime'}
-    $output=@(& $Script -RequestPath $Arguments.RequestPath -RunDirectory $Arguments.RunDirectory -PythonExe $Arguments.PythonExe)
+    $output=@(& $Script -RequestPath $Arguments.RequestPath -RunDirectory $Arguments.RunDirectory -PythonExe $Arguments.PythonExe -HostContextJson $Arguments.HostContextJson)
     $plan=($output-join"`n")|ConvertFrom-Json
     if($plan.project-ne'parallel_mirror_dual_stripe_mr_tof'-or$plan.run_id-ne'20261029_120000__sim__simion__field-fixture'-or$plan.fly_authorized-ne$false){throw 'provider plan mismatch'}
     New-Item -ItemType Directory -Force $Arguments.RunDirectory|Out-Null
@@ -619,7 +663,8 @@ $context=Resolve-WorkspacePaths -SourceRoot $Repo -ArtifactRoot (Join-Path $Root
 $artifactRoot=[string]$context.artifact_root;$pathEnvironment=@{}
 $MultipoleIpRequestPath='';$MultipoleIpRunId='';$IonProcessorRunId='';$IonProcessorConfigurationDirectory='';$IonProcessorFieldRunPath='';$ContinueOnIpScientificFailure=$false;$ResultPath=''
 $ContinuousReleaseRequest=$ContinuousFieldsReference=$ContinuousPropagation=$ContinuousObservations=$ContinuousNumerics=$ContinuousHs1Request=$ContinuousEnvironment=$ContinuousWorkspace=$ContinuousProfile=$ContinuousRecoveryReference=$ContinuousDispatchProfiles='';$ContinuousUnitSize=0
-$repoRoot=$Repo;$workspaceRoot=$Root;$PreparedInterfaceRunPath=$Root;$JointFieldRunPath='';$python=$Python
+$repoRoot=$Repo;$sourceRoot=Join-Path $Repo 'src';$workspaceRoot=$Root;$PreparedInterfaceRunPath=$Root;$JointFieldRunPath='';$python=$Python
+$hostContextJson=@{workspace=$Repo;python_executable=$Python;host_state_path=[string]$context.host_resource_state_path;policy_path=(Join-Path $Repo 'src/msplatform/execution/resources/host_resource_policy.json')}|ConvertTo-Json -Compress
 $AcceleratorProvider='dual_pressure_rectilinear_ion_processor';$IonProcessorRunPath='source';$ReferenceMrRunPath='reference'
 $MatchingRequestPath='';$FieldRequestPath=$Template;$ContractPath='observation';$RunId='';$LuaExe='';$PythonExe='';$SimionExe=''
 $PreparedJointWorkbenchRunPath='';$ContinuationPredecessorManifestPath='';$IonProcessorContinuationPredecessorManifestPath='';$FinalizeJointWorkbench=$false
@@ -632,7 +677,7 @@ if(-not$rejected-or$script:ownerCalls-ne$before){throw 'invalid field run_id was
 Write-Output 'REAL_FIELD_PROVIDER=PASS'
 ''', encoding="utf-8")
         result = subprocess.run([powershell, "-NoProfile", "-File", str(script),
-            str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), str(REPO), str(root), str(template), sys.executable],
+            str(REPO / "src/msplatform/workflows/resources/accelerator_interface.ps1"), str(REPO), str(root), str(template), sys.executable],
             cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("REAL_FIELD_PROVIDER=PASS", result.stdout)
@@ -712,7 +757,7 @@ function Invoke-JointOwnerStage {
 $context=Resolve-WorkspacePaths -SourceRoot $SourceRoot -ArtifactRoot (Join-Path $Root 'selected-store') -Python $Python
 $MultipoleIpRequestPath='';$MultipoleIpRunId='';$IonProcessorRunId='';$IonProcessorConfigurationDirectory='';$IonProcessorFieldRunPath='';$ContinueOnIpScientificFailure=$false;$ResultPath=''
 $ContinuousReleaseRequest=$ContinuousFieldsReference=$ContinuousPropagation=$ContinuousObservations=$ContinuousNumerics=$ContinuousHs1Request=$ContinuousEnvironment=$ContinuousWorkspace=$ContinuousProfile=$ContinuousRecoveryReference=$ContinuousDispatchProfiles='';$ContinuousUnitSize=0
-$artifactRoot=[string]$context.artifact_root;$repoRoot=$Root;$AcceleratorProvider='dual_pressure_rectilinear_ion_processor'
+$artifactRoot=[string]$context.artifact_root;$repoRoot=$Root;$sourceRoot=$Root;$hostContextJson='{}';$AcceleratorProvider='dual_pressure_rectilinear_ion_processor'
 $IonProcessorRunPath='source';$MatchingRequestPath='matching';$ContractPath='observation';$ReferenceMrRunPath='reference'
 $FieldRequestPath=Join-Path $Root 'field.json';$RunId='design';$LuaExe='';$PythonExe='';$SimionExe=''
 $FinalizeJointWorkbench=$false;$PreparedInterfaceRunPath='';$JointFieldRunPath=''
@@ -755,7 +800,7 @@ Write-Output 'JOINT_WORKFLOW_DISPATCH=PASS'
                 case = root / (failure or "success")
                 case.mkdir()
                 result = subprocess.run([powershell, "-NoProfile", "-File", str(script),
-                    str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), str(case), failure, str(REPO), sys.executable],
+                    str(REPO / "src/msplatform/workflows/resources/accelerator_interface.ps1"), str(case), failure, str(REPO), sys.executable],
                     cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn("JOINT_WORKFLOW_DISPATCH=PASS", result.stdout)
@@ -810,7 +855,7 @@ if(($Bad-eq'bad')-ne$caught-or($Bad-eq'bad')-eq$vendorAllowed){throw 'Live ident
                 if state == "bad":
                     (fields / "parent/field.pa").write_bytes(b"XX")
                 completed = subprocess.run([powershell, "-NoProfile", "-File", str(script),
-                    str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), str(root), str(REPO),
+                    str(REPO / "src/msplatform/workflows/resources/accelerator_interface.ps1"), str(root), str(REPO),
                     sys.executable, state], cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=40)
                 self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
                 self.assertIn("ACTUAL_IOB_ASSET_BOUNDARY_PASS", completed.stdout)
@@ -1015,7 +1060,7 @@ if(($Bad-eq'bad')-ne$caught-or($Bad-eq'bad')-eq$vendorAllowed){throw 'Live ident
             # Execute the actual runner's publication projection, without its solver stages.
             command = f"""
 $tokens=$null;$errors=$null
-$ast=[System.Management.Automation.Language.Parser]::ParseFile('{REPO / 'integrations/workflows/accelerator_interface/execute.ps1'}',[ref]$tokens,[ref]$errors)
+$ast=[System.Management.Automation.Language.Parser]::ParseFile('{REPO / 'src/msplatform/workflows/resources/accelerator_interface.ps1'}',[ref]$tokens,[ref]$errors)
 if($errors.Count){{throw 'Runner parsing failed'}}
 $loops=@($ast.FindAll({{param($node) $node -is [System.Management.Automation.Language.ForEachStatementAst] -and $node.Condition.Extent.Text -eq '$receipt.inputs.Keys'}},$true))
 if($loops.Count-ne1){{throw 'Expected one consumed-input publication boundary'}}
@@ -1049,7 +1094,7 @@ $configuration|ConvertTo-Json -Depth 50|Set-Content -LiteralPath '{config}' -Enc
 $ErrorActionPreference='Stop'
 . (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $errors=$null;$tokens=$null
-$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'integrations/workflows/accelerator_interface/execute.ps1'),[ref]$tokens,[ref]$errors)
+$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'src/msplatform/workflows/resources/accelerator_interface.ps1'),[ref]$tokens,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
 $owner=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.TryStatementAst]-and$n.CatchClauses.Count-gt0},$false))[0]
 $statements=@($owner.Body.Statements)
@@ -1059,7 +1104,7 @@ $publish=[scriptblock]::Create(($statements[$start[0]..($statements.Count-1)]|Fo
 $handler=[scriptblock]::Create(($owner.CatchClauses[0].Body.Statements.Extent.Text)-join"`n")
 $finalizer=[scriptblock]::Create(($owner.Finally.Statements.Extent.Text)-join"`n")
 $package=@{run_config=(Join-Path $Run 'run_config.json');summary=(Join-Path $Run 'summary.json');result_dir=(Join-Path $Run 'results');artifact_run_dir=$Run}
-$repoRoot=$Repo;$workspaceRoot=Split-Path -Parent $Run;$python=$Python
+$repoRoot=$Repo;$sourceRoot=$Repo;$workspaceRoot=Split-Path -Parent $Run;$python=$Python
 $expectedArtifactRoot=[string](Get-Content $package.run_config -Raw|ConvertFrom-Json).capacity_ledger_lifecycle.artifact_root
 $artifactRoot=$expectedArtifactRoot
 $terminalized=$false;$stage='fixture';$software=@('Python inert boundary');$extraOutputs=@()
@@ -1150,7 +1195,7 @@ if($LASTEXITCODE-ne0){throw 'actual preparation command did not disable bytecode
             script = Path(directory) / "bytecode.ps1"
             script.write_text(command, encoding="utf-8", newline="\n")
             result = subprocess.run([pwsh, "-NoProfile", "-File", str(script),
-                str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), sys.executable],
+                str(REPO / "src/msplatform/workflows/resources/accelerator_interface.ps1"), sys.executable],
                 cwd=directory, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("SNAPSHOT_BYTECODE_DISABLED=PASS", result.stdout)
@@ -1454,11 +1499,11 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' 
             root = Path(directory)
             repo = root / "repo"
             _copy_path_consumer_repository(repo)
-            entry = repo / "integrations/workflows/accelerator_interface/execute.ps1"
+            entry = repo / "src/msplatform/workflows/resources/accelerator_interface.ps1"
             entry.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(REPO / "integrations/workflows/accelerator_interface/execute.ps1", entry)
-            child = repo / "integrations/workflows/prepared_joint/execute.ps1"
-            child.parent.mkdir(parents=True)
+            shutil.copyfile(REPO / "src/msplatform/workflows/resources/accelerator_interface.ps1", entry)
+            child = entry.parent / "prepared_joint_execute.ps1"
+            child.parent.mkdir(parents=True, exist_ok=True)
             child.write_text(r"""param($PreparedJointWorkbenchRunPath,$ContractPath,$RunId,$RepoRoot,$PythonExe)
 $ErrorActionPreference='Stop'
 $run=Join-Path $env:MASS_SPECTROMETRY_ARTIFACT_ROOT "projects/instrument_assembly/runs/$RunId"
@@ -1559,7 +1604,7 @@ foreach($key in $before.Keys){if([Environment]::GetEnvironmentVariable($key)-cne
             driver.write_text(r"""param($Repo,$Entry,$Python,$Root)
 $ErrorActionPreference='Stop'
 . (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
-$repoRoot=$Repo;$artifactRoot=Join-Path $Root 'selected';$package=@{artifact_run_dir=(Join-Path $artifactRoot 'projects/instrument_assembly/runs/new')};$RunId='new';$python=$Python
+$repoRoot=$Repo;$sourceRoot=$Repo;$artifactRoot=Join-Path $Root 'selected';$package=@{artifact_run_dir=(Join-Path $artifactRoot 'projects/instrument_assembly/runs/new')};$RunId='new';$python=$Python
 $reference,$sourceRun,$designRun,$fieldRun=@('reference','ip','design','field')|ForEach-Object{Join-Path $Root "other-root/$_"}
 $pathEnvironment=@{MASS_SPECTROMETRY_ARTIFACT_ROOT=$artifactRoot};$script:admissions=0
 function Enter-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$ArtifactRoot,$RunDirectory,$CommittedNewBytes,$ProtectedPaths,$SourceReferences,$Owner)
@@ -1583,7 +1628,7 @@ $failed=$false;try {foreach($statement in $selected){Invoke-Expression $statemen
 if(-not$failed-or$script:admissions-ne1){throw 'missing parent did not reject before admission'}
 """, encoding="utf-8")
             result = subprocess.run(["pwsh", "-NoProfile", "-File", str(driver), str(REPO),
-                str(REPO / "integrations/workflows/accelerator_interface/execute.ps1"), sys.executable, str(root)],
+                str(REPO / "src/msplatform/workflows/resources/accelerator_interface.ps1"), sys.executable, str(root)],
                 cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             references = json.loads((root / "references.json").read_text(encoding="utf-8-sig"))

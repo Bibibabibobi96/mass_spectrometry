@@ -197,7 +197,7 @@ checkpoint只表示准备完成，不表示GUI视觉通过、轨迹等价或功�
 碰撞采样及弹性碰撞方程不因生命周期适配改变。项目runtime顶层只import一次，在Fly回调中调用reset，
 不在回调内重新import；SIMION曾拒绝后一用法。
 
-早期r04进入Fly后被外部中止，仅支持不完整探索观察，见[原生运行历史](history/20261016__native-flight-and-source-identity.md)。
+早期r04进入Fly后被外部中止，仅支持不完整探索观察，见[原生运行历史](../../../docs/history/projects/dual_pressure_rectilinear_ion_processor/20261016__native-flight-and-source-identity.md)。
 该记录不代表当前功能或GUI状态；后继封存参考与用户确认只查[PROJECT](PROJECT.md#有效结果与默认诊断)。
 新工作台的重复Fly仍按其冻结数值身份分别验收，不能由历史确认自动推定逐轨迹等价。
 
@@ -236,7 +236,7 @@ FLY2与工作台姿态使用同一合同；runtime将SIMION世界状态逆转到
 输出事件和samples再转世界。canonical快轴z，半径及散角按世界z计算；原生接受参数另行注明，压缩使用慢轴y。
 旧无合同冻结运行保留原坐标解释，不通过重命名旧CSV伪造新证据。
 
-历史r07/r10运行、源身份与旧碰撞绑定边界见[历史记录](history/20261016__native-flight-and-source-identity.md)。旧N=10结果不作为当前N=100已验证N2结果。当前真实统计与功能判据统一见[项目状态](PROJECT.md)。
+历史r07/r10运行、源身份与旧碰撞绑定边界见[历史记录](../../../docs/history/projects/dual_pressure_rectilinear_ion_processor/20261016__native-flight-and-source-identity.md)。旧N=10结果不作为当前N=100已验证N2结果。当前真实统计与功能判据统一见[项目状态](PROJECT.md)。
 
 原生场另输出`native_field_samples_project.csv`，保存转换后的项目位置/电场向量；
 原生局部场CSV保留，电势为旋转不变量。默认全过程图角色和元数据区分全母群、条件LP子群及unknown，

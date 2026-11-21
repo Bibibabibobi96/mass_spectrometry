@@ -24,7 +24,7 @@ and the existing Assembly/STEP exporter; see [CAD usage and profile limits](docs
 3. 操作 COMSOL 时读 [`docs/COMSOL.md`](docs/COMSOL.md)。
 4. 操作 SIMION 时读 [docs/SIMION.md](docs/SIMION.md)。
 5. 修改代码时按[开发标准阅读导航](../../docs/DEVELOPMENT_STANDARDS.md#阅读导航)读通用章节及任务触发专题。
-6. 只有追溯已退役 Python 筛选时才进入 [历史索引](docs/history/README.md)。
+6. 只有追溯已退役 Python 筛选时才进入 [历史索引](../../docs/history/projects/dual_cone_tandem_quadrupole_ion_interface/README.md)。
 
 ## 机器权威
 
@@ -76,7 +76,7 @@ dual_cone_tandem_quadrupole_ion_interface/
 
 ## History索引
 
-[历史索引](docs/history/README.md)集中列出已冻结实验、迁移和旧方案；需要追溯证据时按需进入。
+[历史索引](../../docs/history/projects/dual_cone_tandem_quadrupole_ion_interface/README.md)集中列出已冻结实验、迁移和旧方案；需要追溯证据时按需进入。
 
 Named target planning and explicit saved-product continuation use
 `msplatform.workflows.dual_cone_stages.plan_to` / `run_to`; request groups call the

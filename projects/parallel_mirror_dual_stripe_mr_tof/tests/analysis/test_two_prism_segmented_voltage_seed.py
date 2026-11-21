@@ -26,7 +26,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_segmented_vo
 
 
 PROJECT = Path(__file__).resolve().parents[2]
-CONTRACT = PROJECT / "config" / "simion_candidate_two_zone.json"
+CONTRACT = PROJECT.parents[1] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json"
 
 
 def diagnostic(first: float, second: float, *, turn_boundary: str = "stripe_11_set_1.lower"):

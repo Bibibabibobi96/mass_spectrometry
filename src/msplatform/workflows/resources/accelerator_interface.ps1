@@ -55,7 +55,7 @@ param(
   [string]$RunId='',
   [string]$LuaExe='',
   [string]$PythonExe='',
-  [string]$RepoRoot=(Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)))
+  [string]$RepoRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../..'))
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
@@ -74,26 +74,32 @@ foreach($name in @('ContinuousReleaseRequest','ContinuousFieldsReference','Conti
   if($value){Set-Variable -Name $name -Value (Resolve-Path -LiteralPath $value).Path}
 }
 if($PythonExe){$PythonExe=(Resolve-Path -LiteralPath $PythonExe).Path}
-$script:pythonRoot=$repoRoot
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/require_powershell7.ps1')
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/dependencies.ps1')
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
+$packageRoot=Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$sourceRoot=Split-Path -Parent $packageRoot
+$executionResources=Join-Path $packageRoot 'execution/resources'
+$script:pythonRoot=$sourceRoot
+. (Join-Path $executionResources 'require_powershell7.ps1')
+. (Join-Path $executionResources 'dependencies.ps1')
+. (Join-Path $executionResources 'run_artifact_support.ps1')
 $python=if($PythonExe){$PythonExe}elseif($env:SIMULATION_PYTHON_EXE){$env:SIMULATION_PYTHON_EXE}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
+. (Join-Path $executionResources 'workspace_paths.ps1')
 $pathContext=Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
 $artifactRoot=[string]$pathContext.artifact_root
 $pathEnvironment=@{MASS_SPECTROMETRY_ARTIFACT_ROOT=$artifactRoot;
   MASS_SPECTROMETRY_EXECUTION_ROOT=[string]$pathContext.execution_root;
   MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=[string]$pathContext.host_resource_state_path}
+$hostContextJson=@{workspace=$repoRoot;python_executable=$python;
+  host_state_path=[string]$pathContext.host_resource_state_path;
+  policy_path=(Join-Path $executionResources 'host_resource_policy.json')}|ConvertTo-Json -Compress
 function Invoke-JointOwnerStage {
   param([string]$Script,[hashtable]$Arguments)
   $watch=[Diagnostics.Stopwatch]::StartNew()
-  try{Invoke-RunToolRootContext -RepoRoot $repoRoot -Environment $pathEnvironment -Operation {& $Script @Arguments}}
+  try{Invoke-RunToolRootContext -RepoRoot $sourceRoot -Environment $pathEnvironment -Operation {& $Script @Arguments}}
   finally{Write-Output ("JOINT_STAGE OWNER={0} ELAPSED_SECONDS={1:F3}" -f $Script,$watch.Elapsed.TotalSeconds)}
 }
 function Get-JointDesignReceipt {
   param([string]$Run)
-  $path=Invoke-RunToolRootContext -RepoRoot $repoRoot -Environment $pathEnvironment -Operation {
+  $path=Invoke-RunToolRootContext -RepoRoot $sourceRoot -Environment $pathEnvironment -Operation {
     & $python -B -c 'import sys;from pathlib import Path;from msplatform.workflows.accelerator_interface.prepare import verified_preparation_reference;print(verified_preparation_reference(Path(sys.argv[1]),"results/accelerator_interface_preparation.json"))' $Run
     if($LASTEXITCODE-ne0){throw 'Design preparation receipt failed its owner and manifest validation.'}
   }
@@ -125,7 +131,7 @@ if record_path(receipt['injected_source'], base_dir=run) != source:
 verify_record('injected source', receipt['injected_source'], base_dir=run)
 print(json.dumps(receipt))
 '@
-  $output=Invoke-RunToolRootContext -RepoRoot $repoRoot -Environment $pathEnvironment -Operation {
+  $output=Invoke-RunToolRootContext -RepoRoot $sourceRoot -Environment $pathEnvironment -Operation {
     & $python -B -c $code $Run $ConfigurationDirectory
     if($LASTEXITCODE-ne0){throw 'MP-to-IP preparation or receiver configuration failed validation.'}
   }
@@ -143,7 +149,7 @@ frozen = verified_successful_run_reference(run, 'inputs/multipole_ip_request.jso
 if load_request(request) != load_request(frozen):
     raise ValueError('MP-to-IP recovery request differs from the explicit sealed preparation')
 '@
-  Invoke-RunToolRootContext -RepoRoot $repoRoot -Environment $pathEnvironment -Operation {
+  Invoke-RunToolRootContext -RepoRoot $sourceRoot -Environment $pathEnvironment -Operation {
     & $python -B -c $code $Run $Request
     if($LASTEXITCODE-ne0){throw 'MP-to-IP recovery requires the unchanged request and its explicit sealed preparation.'}
   }
@@ -159,7 +165,7 @@ if not (summary.get('status') == 'failed' and summary.get('execution_status') ==
     raise ValueError('IP failure lacks completed native and analysis evidence')
 print(json.dumps(summary))
 '@
-  $output=Invoke-RunToolRootContext -RepoRoot $repoRoot -Environment $pathEnvironment -Operation {
+  $output=Invoke-RunToolRootContext -RepoRoot $sourceRoot -Environment $pathEnvironment -Operation {
     & $python -B -c $code $Run
     if($LASTEXITCODE-ne0){throw 'IP failure is not a verified completed scientific negative result.'}
   }
@@ -167,7 +173,7 @@ print(json.dumps(summary))
 }
 function Assert-JointFieldRunId {
   param([string]$Id)
-  Invoke-RunToolRootContext -RepoRoot $repoRoot -Environment $pathEnvironment -Operation {
+  Invoke-RunToolRootContext -RepoRoot $sourceRoot -Environment $pathEnvironment -Operation {
     & $python -B -m msplatform.execution.artifact_naming run $Id|Out-Null
     if($LASTEXITCODE-ne0){throw "Run ID '$Id' does not satisfy the repository run naming contract."}
   }
@@ -224,7 +230,7 @@ function Write-JointWorkflowFlightResult {
 }
 function Invoke-JointAnalysisPreflight {
   param([string]$Design,[string]$Source,[string]$Contract)
-  Invoke-RunToolRootContext -RepoRoot $repoRoot -Environment $pathEnvironment -Operation {
+  Invoke-RunToolRootContext -RepoRoot $sourceRoot -Environment $pathEnvironment -Operation {
     & $python -B -c 'import sys;from pathlib import Path;from msplatform.workflows.accelerator_interface.prepare import preflight_joint_analysis;preflight_joint_analysis(*map(Path,sys.argv[1:]))' $Design $Source $Contract
     if($LASTEXITCODE-ne 0){throw "Joint analysis preflight failed (exit $LASTEXITCODE)."}
   }
@@ -241,13 +247,13 @@ function Invoke-JointWorkflow {
     }
     $continuous=@{ReleaseRequest=$ContinuousReleaseRequest;FieldsReference=$ContinuousFieldsReference;Propagation=$ContinuousPropagation;
       Observations=$ContinuousObservations;Numerics=$ContinuousNumerics;Hs1Request=$ContinuousHs1Request;
-      Environment=$ContinuousEnvironment;Workspace=$ContinuousWorkspace;Profile=$ContinuousProfile;RepoRoot=$repoRoot;
+      Environment=$ContinuousEnvironment;Workspace=$ContinuousWorkspace;Profile=$ContinuousProfile;
       ExpectedComponentScope='rf_ip_mr'}
     if($ContinuousRecoveryReference){$continuous.RecoveryReference=$ContinuousRecoveryReference}
     if($ContinuousDispatchProfiles){$continuous.DispatchProfiles=$ContinuousDispatchProfiles}
     if($ContinuousUnitSize -gt 0){$continuous.UnitSize=$ContinuousUnitSize}
     if($PythonExe){$continuous.Python=$PythonExe}
-    Invoke-JointOwnerStage -Script (Join-Path $repoRoot 'src/msplatform/workflows/resources/multipole_ip_continuous.ps1') -Arguments $continuous
+    Invoke-JointOwnerStage -Script (Join-Path $sourceRoot 'msplatform/workflows/resources/multipole_ip_continuous.ps1') -Arguments $continuous
     Write-Output ("JOINT_WORKFLOW EXECUTION=success SCIENCE=not_qualified STUDY_SCOPE=original_birth_to_terminal SIMULATION_PATH=continuous_assembly TRAJECTORY_EXECUTION=backend_returned TOTAL_SECONDS={0:F3}" -f $totalWatch.Elapsed.TotalSeconds)
     return
   }
@@ -263,7 +269,7 @@ function Invoke-JointWorkflow {
     if($PythonExe){$flight.PythonExe=$PythonExe};if($SimionExe){$flight.SimionExe=$SimionExe}
     if($ContinuationPredecessorManifestPath){$flight.ContinuationPredecessorManifestPath=$ContinuationPredecessorManifestPath}
     try{
-      Invoke-JointOwnerStage -Script (Join-Path $repoRoot 'integrations/workflows/prepared_joint/execute.ps1') -Arguments $flight
+      Invoke-JointOwnerStage -Script (Join-Path $sourceRoot 'msplatform/workflows/resources/prepared_joint_execute.ps1') -Arguments $flight
       Write-JointWorkflowFlightResult -Workbench $workbench -Flight $flightRun -Elapsed $totalWatch.Elapsed.TotalSeconds -StudyScope prepared_source_to_terminal
     }catch{
       Write-JointWorkflowFailure -Stage 'flight_and_analysis' -Flight $flightRun -Reason $_.Exception.Message -Elapsed $totalWatch.Elapsed.TotalSeconds
@@ -342,7 +348,7 @@ if context.python_executable.resolve()!=pathlib.Path(sys.executable).resolve():
       if($IonProcessorContinuationPredecessorManifestPath){
         Assert-MultipoleIpRecoveryRequest -Run $sourceRun -Request $sourceRequest
       }else{
-        Invoke-JointOwnerStage -Script (Join-Path $repoRoot 'src/msplatform/workflows/resources/multipole_ip.ps1') -Arguments $sourceArguments
+        Invoke-JointOwnerStage -Script (Join-Path $sourceRoot 'msplatform/workflows/resources/multipole_ip.ps1') -Arguments $sourceArguments
       }
       $sourceReceipt=Get-MultipoleIpPreparation -Run $sourceRun -ConfigurationDirectory $ipConfiguration
       if([int]$sourceReceipt.exit_count-eq0){
@@ -355,7 +361,7 @@ if context.python_executable.resolve()!=pathlib.Path(sys.executable).resolve():
       if($SimionExe){$ipArguments.SimionExe=$SimionExe}
       if($IonProcessorFieldRunPath){$ipArguments.NativeFieldRun=(Resolve-Path -LiteralPath $IonProcessorFieldRunPath).Path}
       if($IonProcessorContinuationPredecessorManifestPath){$ipArguments.ContinuationPredecessorManifestPath=(Resolve-Path -LiteralPath $IonProcessorContinuationPredecessorManifestPath).Path}
-      try {Invoke-JointOwnerStage -Script (Join-Path $repoRoot 'src/msplatform/workflows/resources/ip_functional.ps1') -Arguments $ipArguments}
+      try {Invoke-JointOwnerStage -Script (Join-Path $sourceRoot 'msplatform/workflows/resources/ip_functional.ps1') -Arguments $ipArguments}
       catch {
         $ipFailure=$_
         if(-not$ContinueOnIpScientificFailure-or$ipFailure.Exception.Message-cne'Analysis or required diagnostics incomplete; see frozen summary and logs'){throw $ipFailure}
@@ -391,7 +397,7 @@ if context.python_executable.resolve()!=pathlib.Path(sys.executable).resolve():
       $fieldRequest.replacement_assembly_manifest=$manifest
       $temporary=Join-Path ([IO.Path]::GetTempPath()) ('ip-mr-field-'+[guid]::NewGuid().ToString('N')+'.json')
       $fieldRequest|ConvertTo-Json -Depth 100|Set-Content -LiteralPath $temporary -Encoding utf8
-      Invoke-JointOwnerStage -Script (Join-Path $repoRoot 'src/msplatform/backends/simion/resources/run_native_static_field_provider.ps1') -Arguments @{RequestPath=$temporary;RunDirectory=$fieldRun;Approved=$true;PythonExe=$python}
+      Invoke-JointOwnerStage -Script (Join-Path $sourceRoot 'msplatform/backends/simion/resources/run_native_static_field_provider.ps1') -Arguments @{RequestPath=$temporary;RunDirectory=$fieldRun;Approved=$true;PythonExe=$python;HostContextJson=$hostContextJson}
     }
     if(-not(Test-Path -LiteralPath (Join-Path $fieldRun 'run_manifest.json') -PathType Leaf)){throw 'Field owner did not publish its manifest.'}
     $stage='binding'
@@ -402,7 +408,7 @@ if context.python_executable.resolve()!=pathlib.Path(sys.executable).resolve():
     if($ResultPath){$flight.ResultPath=$ResultPath}
     if($PythonExe){$flight.PythonExe=$PythonExe};if($SimionExe){$flight.SimionExe=$SimionExe}
     if($ContinuationPredecessorManifestPath){$flight.ContinuationPredecessorManifestPath=$ContinuationPredecessorManifestPath}
-    Invoke-JointOwnerStage -Script (Join-Path $repoRoot 'integrations/workflows/prepared_joint/execute.ps1') -Arguments $flight
+    Invoke-JointOwnerStage -Script (Join-Path $sourceRoot 'msplatform/workflows/resources/prepared_joint_execute.ps1') -Arguments $flight
     Write-Output "JOINT_WORKFLOW_INPUTS DESIGN=$designRun FIELD=$fieldRun"
     Write-JointWorkflowFlightResult -Workbench $finalRun -Flight $flightRun -Elapsed $totalWatch.Elapsed.TotalSeconds -StudyScope upstream_source_to_mr_terminal
   }catch{
@@ -419,7 +425,7 @@ if($ResumeFinalization){
   $recovery=@{ResumeFinalization=$true;RunId=$RunId;RepoRoot=$repoRoot}
   if($ResultPath){$recovery.ResultPath=$ResultPath}
   if($PythonExe){$recovery.PythonExe=$PythonExe}
-  Invoke-JointOwnerStage -Script (Join-Path $repoRoot 'integrations/workflows/prepared_joint/execute.ps1') -Arguments $recovery
+  Invoke-JointOwnerStage -Script (Join-Path $sourceRoot 'msplatform/workflows/resources/prepared_joint_execute.ps1') -Arguments $recovery
   return
 }
 if($FullJoint-and-not$PreparedJointWorkbenchRunPath-and-not$ContinuousReleaseRequest){
@@ -480,7 +486,7 @@ try{
   # One frozen PA template plus up to five temporary hard-linked companions
   # count toward the logical-file peak; no field PA or samples are copied.
   $parents=@(@($reference,$sourceRun,$designRun,$fieldRun)|Where-Object{$_}|Select-Object -Unique)
-  $sourceRecords=Invoke-RunToolRootContext -RepoRoot $repoRoot -Environment $pathEnvironment -Operation {
+  $sourceRecords=Invoke-RunToolRootContext -RepoRoot $sourceRoot -Environment $pathEnvironment -Operation {
     & $python -B -c 'import json,sys;from pathlib import Path;from msplatform.execution.retention import file_record;print(json.dumps([dict(manifest_record=file_record(Path(p)/"run_manifest.json"),protected_paths=[p]) for p in json.loads(sys.argv[1])]))' ($parents|ConvertTo-Json -Compress -AsArray)
     if($LASTEXITCODE-ne0){throw 'Interface source manifest binding failed.'}
   }
@@ -491,8 +497,8 @@ try{
   $startup=Join-Path $package.result_dir 'artifact_capacity_gate_startup.json'
   Write-RunJson -Path $startup -Depth 14 -Value $capacitySession
   $stage='freeze_executable_dependencies'
-  $dependencyPath=Join-Path $repoRoot 'src/msplatform/workflows/config/runtime_dependencies.json'
-  $frozen=Freeze-ConsumerDependencies -Python $Python -RepoRoot $repoRoot -ContractPath $dependencyPath -InputDir $package.input_dir -OwnerId $projectId -ConsumerId accelerator_interface
+  $dependencyPath=Join-Path $sourceRoot 'msplatform/workflows/config/runtime_dependencies.json'
+  $frozen=Freeze-ConsumerDependencies -Python $Python -RepoRoot $sourceRoot -ContractPath $dependencyPath -InputDir $package.input_dir -OwnerId $projectId -ConsumerId accelerator_interface
   $script:pythonRoot=[string]$frozen.execution_root
   $configuration=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable
   $configuration.inputs=[ordered]@{code_inventory=$frozen.code_inventory_path;dependency_contract=$frozen.dependency_contract_path}

@@ -124,7 +124,7 @@ only particles with trajectory samples and reports terminal records without
 tracks; it is not a complete mother cohort or transmission-rate estimate.
 
 原型粒子数和当前资格见 [PROJECT](PROJECT.md#当前资格)，束斑统计与原记录的限制见
-[原型历史记录](history/20260911__empty-enclosure-gas-transport-prototype.md)。
+[原型历史记录](../../../docs/history/projects/dual_cone_tandem_quadrupole_ion_interface/20260911__empty-enclosure-gas-transport-prototype.md)。
 
 [返回项目状态](PROJECT.md)
 

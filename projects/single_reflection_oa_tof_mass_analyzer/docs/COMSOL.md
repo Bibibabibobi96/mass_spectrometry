@@ -1,7 +1,7 @@
 # 单次反射正交加速飞行时间质量分析器：COMSOL实施与验证
 
 本文只记录COMSOL入口、模型树和独立验收。当前项目资格、跨求解器结论与开放任务只见
-[`PROJECT.md`](PROJECT.md)。先按下表读取本次需要的章节；完成记录从[历史索引](history/README.md)追溯。
+[`PROJECT.md`](PROJECT.md)。先按下表读取本次需要的章节；完成记录从[历史索引](../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/README.md)追溯。
 
 | 本次任务 | 章节 |
 |---|---|

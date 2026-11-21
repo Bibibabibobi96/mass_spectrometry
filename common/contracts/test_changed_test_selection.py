@@ -1483,7 +1483,7 @@ $results|ConvertTo-Json -Depth 8 -Compress
                     for name, stage in stages.items():
                         if name.startswith("instrument_assembly_integration"):
                             integration.update(stage["command"]["parameters"].get("SelectedTestModules", []))
-                    self.assertIn("integrations.tests.test_prepared_joint_execute", integration)
+                    self.assertIn("tests.test_prepared_joint_execute", integration)
                     if path.endswith("strict_json.py"):
                         self.assertIn("rf_multipole_domain_tests", stages)
                     if not path.endswith("frozen_python_package.ps1"):

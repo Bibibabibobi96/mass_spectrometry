@@ -777,7 +777,7 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
 
     @staticmethod
     def _contract():
-        path = Path(__file__).resolve().parents[2] / "config" / "simion_candidate_two_zone.json"
+        path = Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json"
         contract = json.loads(path.read_text(encoding="utf-8-sig"))
         contract["downstream_fixed_grid_workpoint_profile"]["active_stripe_axes"] = list(UNKNOWN_NAMES[:2])
         # Synthetic frozen trials below deliberately describe K=25.5.

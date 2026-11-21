@@ -12,13 +12,14 @@ param(
   [string]$SimionExe='',
   [string]$Python='',
   [string]$ArtifactRoot='',
-  [string]$RepoRoot=(Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)))
+  [string]$RepoRoot=(Get-Location).Path
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
+$packageRoot=Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $RepoRoot=(Resolve-Path -LiteralPath $RepoRoot).Path
-. (Join-Path $RepoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
-. (Join-Path $RepoRoot 'src/msplatform/workflows/resources/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
+. (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
+. (Join-Path $packageRoot 'workflows/resources/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
 if($ResumeFinalization){
   if(-not$ResultPath){throw 'ResumeFinalization requires the original ResultPath.'}
   $prior=Get-Content -LiteralPath $ResultPath -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
@@ -32,13 +33,13 @@ $Request=(Resolve-Path -LiteralPath $Request).Path
 if(-not$DryRun-and(-not$SolverAuthorized-or-not$ExecutionBudgetPath)){
   throw 'Native paired field execution requires SolverAuthorized and an explicit ExecutionBudgetPath.'
 }
-$executionResources=Join-Path $RepoRoot 'src/msplatform/execution/resources'
+$executionResources=Join-Path $packageRoot 'execution/resources'
 . (Join-Path $executionResources 'require_powershell7.ps1')
 . (Join-Path $executionResources 'run_artifact_support.ps1')
-. (Join-Path $RepoRoot 'src/msplatform/execution/resources/dependencies.ps1')
+. (Join-Path $packageRoot 'execution/resources/dependencies.ps1')
 . (Join-Path $executionResources 'resource_process_support.ps1')
-. (Join-Path $RepoRoot 'src/msplatform/backends/simion/resources/short_pa_path_support.ps1')
-. (Join-Path $RepoRoot 'src/msplatform/workflows/resources/frontend_flight_support.ps1')
+. (Join-Path $packageRoot 'backends/simion/resources/short_pa_path_support.ps1')
+. (Join-Path $packageRoot 'workflows/resources/frontend_flight_support.ps1')
 if(-not$Python){$Python=if($env:SIMULATION_PYTHON_EXE){$env:SIMULATION_PYTHON_EXE}else{throw 'Explicit Python or SIMULATION_PYTHON_EXE is required'}}
 . (Join-Path $executionResources 'workspace_paths.ps1')
 $pathArguments=@{SourceRoot=$RepoRoot;Python=$Python}
@@ -166,7 +167,8 @@ try{
     if(-not[IO.Path]::IsPathRooted($source)){$source=Join-Path (Split-Path -Parent $Request) $source}
     $null=Copy-VerifiedRunInput -Source $source -Destination (Join-Path $package.input_dir "sources/$name.json")
   }
-  $frozen=Freeze-ConsumerDependencies -Python $Python -RepoRoot $RepoRoot -ContractPath (Join-Path $RepoRoot 'src/msplatform/workflows/config/runtime_dependencies.json') `
+  $frozen=Freeze-ConsumerDependencies -Python $Python -RepoRoot $RepoRoot -CorePackageRoot $packageRoot `
+    -ContractPath (Join-Path $packageRoot 'workflows/config/runtime_dependencies.json') `
     -InputDir $package.input_dir -OwnerId $project -ConsumerId $consumer
   $config=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable -Depth 100
   $config.inputs.code_inventory=Convert-WorkflowOwnerPath $ownerContext $frozen.code_inventory_path
@@ -283,9 +285,9 @@ try{
       Set-PairedStage 'comsol_field';$comsolNativeExecuted=$true
       $comsolCompletion=Join-Path $package.artifact_run_dir 'logs/comsol_completion.json';$writersStopped=$false;$comsolFailure=$null
       try{
-        . (Join-Path (Split-Path -Parent ((Join-Path $RepoRoot 'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1'))) 'resolve_comsol_64.ps1')
+        . (Join-Path (Split-Path -Parent ((Join-Path $packageRoot 'backends/comsol/launcher/run_comsol_r2025b.ps1'))) 'resolve_comsol_64.ps1')
         $comsolLauncherParameters=Get-ComsolLauncherParameters -HostContext $script:HostResourceExecutionContext -WorkingDirectory $script:HostResourceExecutionContext.workspace
-        & (Join-Path $RepoRoot 'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1') @comsolLauncherParameters -TaskScript $tasks.matlab `
+        & (Join-Path $packageRoot 'backends/comsol/launcher/run_comsol_r2025b.ps1') @comsolLauncherParameters -TaskScript $tasks.matlab `
           -ReportPath (Join-Path $package.log_dir 'comsol_bootstrap.txt') -ResourceBudgets $budget.host_budgets.comsol -RunId $RunId -CompletionPath $comsolCompletion `
           -Limits ([pscustomobject]$budget.limits) -RunDir $package.artifact_run_dir -UsagePath (Join-Path $package.log_dir 'comsol.resource_usage.json')
       }catch{$comsolFailure=$_}finally{

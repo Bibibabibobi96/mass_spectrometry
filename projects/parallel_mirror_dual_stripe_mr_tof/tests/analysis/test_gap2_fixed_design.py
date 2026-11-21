@@ -18,7 +18,7 @@ PROJECT = Path(__file__).resolve().parents[2]
 
 class Gap2FixedDesignTests(unittest.TestCase):
     def test_mesh_change_keeps_selected_design_focus_and_real_provider_geometry(self):
-        original = load_contract(PROJECT / "config/simion_candidate_two_zone.json")
+        original = load_contract(PROJECT.parents[1] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json")
         before = copy.deepcopy(original)
         changed = copy.deepcopy(original)
         changed["simion"]["component_mesh_mm_per_gu"]["accelerator"][2] = .2
@@ -49,7 +49,7 @@ class Gap2FixedDesignTests(unittest.TestCase):
         self.assertEqual(original, before)
 
     def test_bad_design_still_rejected_and_off_grid_keeps_the_selected_geometry(self):
-        original = load_contract(PROJECT / "config/simion_candidate_two_zone.json")
+        original = load_contract(PROJECT.parents[1] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json")
         bad = copy.deepcopy(original)
         ideal = derive_compact_accelerator_acceptance_design(original)["ideal_gap2_mm"]
         bad["accelerator"]["gap_2_mm"] = ideal + 1

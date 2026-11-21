@@ -73,7 +73,7 @@ $workpointRunner=Join-Path $PSScriptRoot 'run_downstream_workpoint_iteration.ps1
 $sourceRunner=Join-Path $PSScriptRoot 'run_publish_bunch_source.ps1'
 $screeningRunner=Join-Path $PSScriptRoot 'run_native_corridor_bunch_screening.ps1'
 $diagnosticRunner=Join-Path $PSScriptRoot 'run_source_z_energy_timing_diagnostic.ps1'
-$analysisModule='projects.parallel_mirror_dual_stripe_mr_tof.analysis.source_z_energy_timing_diagnostic'
+$analysisModule='msplatform.workflows.oa_mr.source_z_energy_timing_diagnostic'
 $focusFallbackSources=@{}
 $staticFieldMode=-not[string]::IsNullOrWhiteSpace($FieldProviderRequestPath)
 $staticCandidateFields=@{}
@@ -1314,7 +1314,7 @@ try{
   $workpointProfile=$focusContract.downstream_fixed_grid_workpoint_profile
   if(-not($workpointProfile-is[Collections.IDictionary])-or
      -not$workpointProfile.ContainsKey('jacobian_relative_step_tiers')){
-    $currentContractPath=Join-Path $PSScriptRoot '..\config\simion_candidate_two_zone.json'
+    $currentContractPath=Join-Path $PSScriptRoot '..\..\src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json'
     $currentContract=Get-Content -LiteralPath $currentContractPath -Raw|ConvertFrom-Json -AsHashtable
     $currentTiers=$currentContract.downstream_fixed_grid_workpoint_profile.jacobian_relative_step_tiers
     if(-not($workpointProfile-is[Collections.IDictionary])-or-not($currentTiers-is[Collections.IDictionary])){

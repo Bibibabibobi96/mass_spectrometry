@@ -401,7 +401,7 @@ try{
     })
     Push-Location $repoRoot
     try{
-      & $python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.native_system_runtime rebind-accelerator `
+      & $python -m msplatform.workflows.oa_mr.native_system_runtime rebind-accelerator `
         --native-corridor-runtime-receipt $nativeIdentityPath --base-bundle $nativeBundle `
         --accelerator-provider-receipt $acceleratorReceipt --bundle-output $providerBoundBundle
       if($LASTEXITCODE-ne0){throw 'OA provider accelerator binding failed.'}

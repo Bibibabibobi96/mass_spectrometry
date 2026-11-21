@@ -73,18 +73,25 @@ continuation admission and native family construction retain their existing beha
 Dependency declarations use the scientific-core provider instead of the retired common
 or MR project paths. Focused frozen-consumer tests cover this migration; complete
 integration, ordinary-install and applicable native acceptance remain separately bounded.
-OA–MR now resolves `mrtof_candidate.lua`, `mirror_cycle_counter.lua`,
-`run_iob_flight.lua` and `build_native_corridor_iob.lua` from that installed
-backend; only `candidate_voltage_map.lua` remains a project scientific resource.
-The detached-provider fixture no longer overrides the production resource root.
+OA–MR resolves `mrtof_candidate.lua`, `mirror_cycle_counter.lua`,
+`run_iob_flight.lua`, `build_native_corridor_iob.lua` and
+`candidate_voltage_map.lua` from that installed backend. Its default scientific
+contract is packaged with the canonical MR component. Native-system bundle
+operations and source-z/timing diagnostics belong to `msplatform.workflows.oa_mr`;
+fixed-mirror/Stripe evidence readers and mirror Candidate receipts belong to the
+canonical MR component. The detached-provider fixture consumes these same frozen
+installed owners rather than project production paths. Scientific bytes, thresholds,
+run identities and native qualification boundaries are unchanged. The migrated
+module/consumer selection passed 228 tests with 20 explicit unavailable-evidence
+skips; Ruff and the affected PowerShell parsing also passed. Complete OA–MR and
+dependency acceptance remain separate from this focused result.
 The bunch-screening entry likewise loads the installed corridor support and
 requires explicit Python or `SIMULATION_PYTHON_EXE` before reading scientific
-inputs. Forty-three focused runner/support records passed, with two unchanged
-optional skips; no native solver or full-chain acceptance follows.
+inputs. No native solver or full-chain acceptance follows from this ownership migration.
 
 本页维护MR分析器的当前设计、资格、有效证据和开放动作。操作由[项目入口](../README.md)导航，
 推导见[理论索引](theory/index.md)。完整接口迁移、已完成研究、实现修复及原始证据链接冻结在
-[文档收口里程碑](history/20261026__assembly-documentation-consolidation.md)，历史语气不作为当前执行指令。
+[文档收口里程碑](../../../docs/history/projects/parallel_mirror_dual_stripe_mr_tof/20261026__assembly-documentation-consolidation.md)，历史语气不作为当前执行指令。
 
 项目门禁由[verify_project.ps1](../verify_project.ps1)进入，逐测试输出耗时并保留失败传播；
 不同门禁等级和实际选择范围仍以该入口为准，不把软件门禁通过当作求解或科学资格。
@@ -347,7 +354,7 @@ MR拥有Prism、镜组、Stripe、检测、系统布局约束与匹配判据；�
 `_fixed_hardware_joint_trial`；其余转折位置推导与试验构造路径保持原实现，资格仍以上述证据为界。
 该清理通过语法、Ruff及82项既有求解器无关回归；没有新增原生求解或GUI／CAD资格。
 
-固定硬件镜点的六字段不可变值型`FixedHardwareMirrorPoint`由既有`mirror_candidate_receipt.py`拥有；
+固定硬件镜点的六字段不可变值型`FixedHardwareMirrorPoint`由规范MR组件的`mirror_candidate_receipt.py`拥有；
 固定网格handoff与Stripe seed共用它，handoff不再反向导入求解器。字段、构造顺序、数值和worker序列化保持，
 与携带资格证据的`ManagedMirrorCandidate`仍为不同类型；依赖调整不改变镜点校验或Stripe算法。
 
@@ -450,7 +457,7 @@ IP峰形必须绑定真实共同提取脉冲，不能沿用OA零出生时钟、�
 | 原97出口IP联合链 | 100母群含3上游损失，19检测、78下游损失；旧源脉冲相对KDE FWHM 15.717136 ns、R≈24280.5 | 质心闭合不等于整束匹配；不是零交叉新源或Formal性能 |
 | 524 Da真实多极杆→IP→MR | 100母群为19上游未交接、61下游损失、20检测，timeout为0 | 状态／时钟链功能闭合；IP原0.81捕获／提取门限failed保持 |
 
-前者见[联合母群里程碑](history/20261017__ion-processor-closure-and-joint-population.md)，后者见
+前者见[联合母群里程碑](../../../docs/history/projects/parallel_mirror_dual_stripe_mr_tof/20261017__ion-processor-closure-and-joint-population.md)，后者见
 [真实状态交接](../../../integrations/docs/INTEGRATION.md#真实多极杆ip状态交接)。不同源、场、工作点与母群不能混并。
 
 零交叉实测源的大型重新闭合研究按2026-10-20用户决定暂停。185918完整场对照未复现先前NaN，
@@ -460,8 +467,8 @@ IP后续方向是实际横向相空间与慢轴返回匹配，不能只调平均
 ## B/C/D局部研究的有效边界
 
 轮廓、局部时间焦点、孔口筛选及默认回放见
-[局部里程碑](history/20261020__ip-bcd-local-focus-and-replay.md)与
-[三路线里程碑](history/20261020__d-routes-theory-local-validation-and-replay.md)。
+[局部里程碑](../../../docs/history/projects/parallel_mirror_dual_stripe_mr_tof/20261020__ip-bcd-local-focus-and-replay.md)与
+[三路线里程碑](../../../docs/history/projects/parallel_mirror_dual_stripe_mr_tof/20261020__d-routes-theory-local-validation-and-replay.md)。
 D保持较高原生到达计数，但未同时优于两轴角宽和最小时宽；各路线必须使用各自冻结出口。
 厂家未知尺寸、连续孔口碰撞及局部离散限制仍有效，不由新增透镜覆盖。
 
@@ -477,7 +484,7 @@ prepared-joint与IP局部诊断的PNG／SVG保存复用[公共图形导出](../.
 同92颗P1到达群相对旧偏置，x角宽降低6.318%，y角宽增加278.669%，y束宽增加128.206%，未满足三目标。
 ID11绕到第二镜杆外侧并贡献完整群约95.25%的y角方差，不能删除后宣布改善。
 没有可推荐的同时满足三目标的参数；完整数据、轴模型残差和保留负结果见
-[双透镜里程碑](history/20261021__doublet-phase-space-and-wide-spacing-validation.md)。
+[双透镜里程碑](../../../docs/history/projects/parallel_mirror_dual_stripe_mr_tof/20261021__doublet-phase-space-and-wide-spacing-validation.md)。
 
 ### 数值、诊断与复现边界
 
@@ -515,8 +522,8 @@ C0为指定外边界假设，完整内表面x=[-162.5,162.5]、y=[-242,558]、z=
 制造及探测器响应未覆盖。高斯sigma是释放动能标准差，不是速度sigma。
 
 以下同一候选电压、镜区z=0.02 mm场、4 ns／Q8与common KDE，完整来源见
-[会聚场及性能里程碑](history/20261015__converging-field-and-performance-milestone.md)及
-[收口前证据索引](history/20261026__assembly-documentation-consolidation.md)。
+[会聚场及性能里程碑](../../../docs/history/projects/parallel_mirror_dual_stripe_mr_tof/20261015__converging-field-and-performance-milestone.md)及
+[收口前证据索引](../../../docs/history/projects/parallel_mirror_dual_stripe_mr_tof/20261026__assembly-documentation-consolidation.md)。
 
 | 高斯sigma(Ey)，eV | 平均TOF，μs | KDE FWHM，ns | R | 检测／母群 |
 |---|---:|---:|---:|---:|
@@ -613,7 +620,7 @@ started／实测结果，并在必要模型改写后才计算其实际 SHA。每
 inactive S2 的冻结身份校验仍由 PowerShell 执行；这不更改历史恢复输入的表示规则。
 
 Candidate chain 的源直径焦点预算、受控对 fallback 配方、焦点收敛／严格最佳候选选择、
-z=0 诊断分类与最终资格优先级由现有 `source_z_energy_timing_diagnostic.py` 提供。
+z=0 诊断分类与最终资格优先级由 `msplatform.workflows.oa_mr.source_z_energy_timing_diagnostic` 提供。
 centre 残差容差判定复用工作点控制模块，已发布 collection receipt 的接受判定归原束团 gate；
 PowerShell 继续核验实际身份并保留读取、执行和保存顺序，最佳候选携带其原场与工作点引用。
 反馈经现有分析入口按完整决策包传输，不建立常驻解释器或新的科学 mode；z=0 仍只作诊断。
@@ -674,8 +681,8 @@ COMSOL对完整C0独立求场，经标量电势→规则PA→SIMION求导／插�
 | mesh4→native，同入口正镜五颗 | 0.037722 | 0.071485 |
 
 同入口单段继承原6D及时钟，不能把局部差乘49当整程误差或性能。
-准确冻结输入、场来源及run映射见[匹配比较](history/20261015__matched-solve-and-trajectory-comparison.md)
-和[边界隔离](history/20261015__boundary-input-isolation.md)。
+准确冻结输入、场来源及run映射见[匹配比较](../../../docs/history/projects/parallel_mirror_dual_stripe_mr_tof/20261015__matched-solve-and-trajectory-comparison.md)
+和[边界隔离](../../../docs/history/projects/parallel_mirror_dual_stripe_mr_tof/20261015__boundary-input-isolation.md)。
 
 ### 当前已隔离的差异与下一决策
 
@@ -683,8 +690,8 @@ COMSOL对完整C0独立求场，经标量电势→规则PA→SIMION求导／插�
 五面边界单因素试验把所查正镜空间／速度差缩小约30／12倍，但相对计时与横向差未同步缩小，
 仅证明该段慢向状态受边界影响，不授整程资格或指定FEM为真值。
 父层同U直接／组合场及停止对照不足以解释跨源差，父z方向的实际查询敏感性明显高于y方向。
-详见[边界与父场](history/20261015__boundary-and-parent-consistency-isolation.md)及
-[父场拆轴](history/20261015__parent-axis-field-isolation.md)。
+详见[边界与父场](../../../docs/history/projects/parallel_mirror_dual_stripe_mr_tof/20261015__boundary-and-parent-consistency-isolation.md)及
+[父场拆轴](../../../docs/history/projects/parallel_mirror_dual_stripe_mr_tof/20261015__parent-axis-field-isolation.md)。
 
 原文曾写“正在执行”的中央层`20261016_000829__build__simion__zparent-full-central`已由
 [终态summary](../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261016_000829__build__simion__zparent-full-central/summary.json)
@@ -709,7 +716,7 @@ S1单独-0.1 V对Ey改善弱且空间相位变差，保留负结果，不重复�
 5. 非单位scale先统一科学定义，真实几何碰撞疑点关闭前不得将原生到达数发布为物理收集率。
 
 当前场、响应库、GUI和CAD按公共owner及实际消费者保护；旧场退役、容量异常及重建路径见
-[收口前记录](history/20261026__assembly-documentation-consolidation.md)，不得由运行终态推断可删除。
+[收口前记录](../../../docs/history/projects/parallel_mirror_dual_stripe_mr_tof/20261026__assembly-documentation-consolidation.md)，不得由运行终态推断可删除。
 prepared joint 续跑按冻结 Fly 依赖判断批次复用；已验证的 v1 峰分析合同可在新 run 中
 切换为完整验证的 v2 分析合同，历史合同和结果保留原身份。已完成批次须有 owner 的退出
 证据；历史成功批仅在现有终态、聚合 usage 和已核验的原 owner 版本共同支持时兼容。

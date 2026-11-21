@@ -5,7 +5,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.fixed_mirror_stripe_operating_point import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.fixed_mirror_stripe_operating_point import (
     build_downstream_authority_receipt,
     load_fixed_mirror_stripe_operating_point,
 )

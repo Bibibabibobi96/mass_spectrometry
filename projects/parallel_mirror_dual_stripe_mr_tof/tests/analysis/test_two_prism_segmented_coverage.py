@@ -93,7 +93,7 @@ class TwoPrismSegmentedCoverageTests(unittest.TestCase):
                 context=self._context(),
                 sobol_pairs=((1.0, 1.0), (2.0, 2.0), (3.0, 2.0)),
                 local_pairs=((1.0, 2.0),), worker_count=1,
-            accelerator_geometry_authority=geometry_authority(Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json"))
+            accelerator_geometry_authority=geometry_authority(Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json"))
         self.assertEqual(result["sobol"]["legal_topology_count"], 2)
         self.assertEqual(result["sobol"]["invalid_topology_count"], 1)
         self.assertEqual(result["combined"]["sample_count"], 4)
@@ -117,7 +117,7 @@ class TwoPrismSegmentedCoverageTests(unittest.TestCase):
                 run_coverage(
                     context=self._context(), sobol_pairs=((1.0, 1.0),),
                     local_pairs=(), worker_count=1,
-                accelerator_geometry_authority=geometry_authority(Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json"))
+                accelerator_geometry_authority=geometry_authority(Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json"))
 
     def test_exit_source_receipt_is_bound_to_observation_and_exact_k_energy(self) -> None:
         value = {

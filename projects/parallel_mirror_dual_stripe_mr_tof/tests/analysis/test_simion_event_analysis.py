@@ -22,7 +22,7 @@ from msplatform.backends.simion.resources import native_resource_path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
 PROGRAM = native_resource_path("mrtof_candidate.lua")
-PEAK_CONTRACT = json.loads((Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json").read_text(encoding="utf-8"))["peak_analysis"]
+PEAK_CONTRACT = json.loads((Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json").read_text(encoding="utf-8"))["peak_analysis"]
 
 
 def terminal(ion: int, **changes: object) -> dict[str, object]:

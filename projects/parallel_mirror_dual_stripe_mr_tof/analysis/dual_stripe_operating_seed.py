@@ -58,7 +58,7 @@ from msplatform.workflows.prepared_joint.joint_mirror_stripe_l0 import (
     stripes_from_contract,
     time_platform_derivative_residuals,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_candidate_receipt import (
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_candidate_receipt import (
     FixedHardwareMirrorPoint,
     ManagedMirrorCandidate,
     load_managed_mirror_candidate,
@@ -1960,7 +1960,7 @@ def build_operating_seed_report_from_fixed_grid(fixed_grid_manifest: Path, downs
     then still determined analytically by the spatial-return and turning-energy
     equations; Stripe never back-fits the independent mirror voltages.
     """
-    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.fixed_grid_mirror_stripe_handoff import (
+    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.fixed_grid_mirror_stripe_handoff import (
         load_fixed_grid_mirror_point,
     )
 

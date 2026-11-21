@@ -136,7 +136,7 @@ $repoRoot=$Repo
 . (Join-Path $Repo 'src/msplatform/execution/resources/dependencies.ps1')
 . (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $frozen=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath (Join-Path $Repo 'src/msplatform/workflows/config/runtime_dependencies.json') -InputDir $Destination -OwnerId instrument_assembly -ConsumerId prepared_joint
-$source=Get-Content -LiteralPath (Join-Path $Repo 'integrations/workflows/prepared_joint/execute.ps1') -Raw
+$source=Get-Content -LiteralPath (Join-Path $Repo 'src/msplatform/workflows/resources/prepared_joint_execute.ps1') -Raw
 $tokens=$null;$errors=$null
 $tree=[System.Management.Automation.Language.Parser]::ParseInput($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'launcher parser errors'}
@@ -350,7 +350,7 @@ $ErrorActionPreference='Stop';$repoRoot=$Repo
 . (Join-Path $Repo 'src/msplatform/execution/resources/dependencies.ps1')
 . (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $frozen=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath (Join-Path $Repo 'src/msplatform/workflows/config/runtime_dependencies.json') -InputDir $Destination -OwnerId instrument_assembly -ConsumerId prepared_joint
-$source=Get-Content -LiteralPath (Join-Path $Repo 'integrations/workflows/prepared_joint/execute.ps1') -Raw
+$source=Get-Content -LiteralPath (Join-Path $Repo 'src/msplatform/workflows/resources/prepared_joint_execute.ps1') -Raw
 $tokens=$null;$errors=$null;$tree=[System.Management.Automation.Language.Parser]::ParseInput($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'launcher parser errors'}
 $function=@($tree.FindAll({param($node)$node-is[System.Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-ceq'Invoke-ProjectPython'},$true))

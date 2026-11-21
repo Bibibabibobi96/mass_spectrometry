@@ -211,7 +211,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
         # Real complete provider solids support the actual loss classifier. Only
         # this synthetic binding's frame label and IP placeholder are test-owned;
         # the tiny fields do not claim a solve of this full physical analyzer.
-        geometry = resolve_geometry(load_contract(Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json"), **pure_geometry_inputs(load_contract(Path(__file__).resolve().parents[2] / "config/simion_candidate_two_zone.json")))
+        geometry = resolve_geometry(load_contract(Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json"), **pure_geometry_inputs(load_contract(Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json")))
         geometry.pop("accelerator_component_layout", None)
         geometry.pop("accelerator_component_geometry", None)
         geometry.update(frame_id="mr_frame.v2", ion_processor_electrodes=[])

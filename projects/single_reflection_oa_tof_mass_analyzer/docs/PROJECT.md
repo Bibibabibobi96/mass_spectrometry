@@ -195,7 +195,7 @@ SolidWorks native smoke result.
 本文件维护项目当前事实、资格与开放任务。精确输入以[机器合同](../README.md#机器权威)为准，
 执行入口由[项目README](../README.md#活动入口)导航；跨项目整机状态只查[统一集成状态](../../../integrations/docs/INTEGRATION.md)。
 Paper 1 专用研究准备API的归属与退出条件见[分析说明](../analysis/README.md#核心分析)。
-已闭合的提供者迁移、回归及失败链冻结在[文档收口记录](history/20261026__assembly-documentation-consolidation.md)，
+已闭合的提供者迁移、回归及失败链冻结在[文档收口记录](../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20261026__assembly-documentation-consolidation.md)，
 不把实现迁移、局部验证或旧运行自动提升为新整机资格。
 
 ## OA mass-spectrum installed full-study owner
@@ -722,9 +722,9 @@ COMSOL普通构建的绘图现只取原始完整解中的最多50列，不修改
 2026-07-29以零物理变化的同源N=1000输入完成vNext发布；[项目身份](../config/project.json)、
 [Formal资产](../config/formal_assets.json)、[验证合同](../config/formal_validation.json)和
 [SIMION稳定入口](../config/simion_stable_entry.json)共同冻结该release，GUI/CAD证据由独立run及SHA绑定。
-2026-07-20旧基线保持历史身份；[零变化发布请求](history/20260729__formal-vnext-zero-change-requests.md)已归档。
+2026-07-20旧基线保持历史身份；[零变化发布请求](../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20260729__formal-vnext-zero-change-requests.md)已归档。
 2026-08-02的PA漂移已从原validation run精确恢复；当前SIMION入口只运行manifest验证后的scratch副本，
-处置见[恢复证据](history/20260802__formal-simion-integrity-recovery.md)。
+处置见[恢复证据](../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20260802__formal-simion-integrity-recovery.md)。
 
 Formal加速器为闭合屏蔽结构，没有RF注入侧孔。新连接使用run-local组合几何，不修改原baseline、
 MPH、SIMION包或CAD；原Formal、Candidate组件与新整机分别验收。
@@ -894,14 +894,14 @@ Candidate唯一公开入口为`../workflows/design_candidate/run_candidate.py`�
 首个声明式midgrid campaign以同seed、N=100完成COMSOL、SIMION、SolidWorks与结构验收。诊断电压
 显著破坏时间聚焦而未明显改变最大命中半径，支持保留理论名义值；它不含COMSOL粒子级比较、统计重复
 或数值收敛，仍是`candidate_accepted_not_promoted`。完整数值与授权边界见
-[`history/20260802__reflectron-midgrid-campaign-authorization.md`](history/20260802__reflectron-midgrid-campaign-authorization.md)。
+[`../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20260802__reflectron-midgrid-campaign-authorization.md`](../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20260802__reflectron-midgrid-campaign-authorization.md)。
 
 历史2.2 mm源宽候选仅验证变量合同、理论闭合和run-local PA重构，不改变本项目Formal；
-旧连接证据查[已退役集成记录](../../../integrations/docs/history/20261024__legacy-family-retirement.md)，
+旧连接证据查[已退役集成记录](../../../docs/history/integrations/20261024__legacy-family-retirement.md)，
 新装配状态查[统一集成状态](../../../integrations/docs/INTEGRATION.md)。三区真实PA及源敏感性的有效范围见
-[完成快照](history/20260823__three-zone-completed-results-snapshot.md)，不继承为当前Formal。
-理想源的[残差／束宽](history/20260827__ideal-source-residual-and-width-comparison.md)与
-[斜率比较](history/20260827__synthetic-affine-slope-scan.md)仅证明受控一维机制，不授权真实三维接受或性能声明。
+[完成快照](../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20260823__three-zone-completed-results-snapshot.md)，不继承为当前Formal。
+理想源的[残差／束宽](../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20260827__ideal-source-residual-and-width-comparison.md)与
+[斜率比较](../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20260827__synthetic-affine-slope-scan.md)仅证明受控一维机制，不授权真实三维接受或性能声明。
 
 径向压缩入口的构建父进程与单次 Fly 均以 1800 s 作耗时告警，不以该阈值终止健康求解。
 恢复接口使用新 `--run-id` 与显式 `--resume-from`，读取父运行冻结合同与公共 whole-unit continuation
@@ -1042,9 +1042,9 @@ frozen worker 内分析，未登记孤立的 native operation／release；父输
 | 小模型读取与曲面表示已隔离 | 平面 GA 两种方程形式终态均正确，DP5 两种均丢失终态辅助记录，排除仅由方程形式造成。解析球面二／四／六次表示的原生时间误差约 605／5.07／0.256 ps，六次 GA 终态通过、DP5 仍失败；粗线性边界将 12 个 CAD 内源排除出离散域并未释放。均只证明具名解析夹具，不是整机精度或默认参数 |
 | 极小粒子数兼容绕行 | COMSOL 6.4 当前模型存在非单调原生不稳定；日常用同源 N100，无粒子间耦合时才能分析其小样本前缀。调查已关闭，不据此继续扫描极小 N |
 
-参考、完整流程成本、失败候选和复现分别查[修复后完成记录](history/20261021__oatof-cpt-fixed-policy-reference-and-full-flow.md)
-及[原生事件候选记录](history/20261022__sparse-counter-cause-and-native-event-reader.md)；更早阶段由这些快照回溯。
-小模型控制变量、12 次 Compute、全部负结果与复现见[曲面与方程形式隔离](history/20261022__curved-events-and-formulation-isolation.md)。
+参考、完整流程成本、失败候选和复现分别查[修复后完成记录](../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20261021__oatof-cpt-fixed-policy-reference-and-full-flow.md)
+及[原生事件候选记录](../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20261022__sparse-counter-cause-and-native-event-reader.md)；更早阶段由这些快照回溯。
+小模型控制变量、12 次 Compute、全部负结果与复现见[曲面与方程形式隔离](../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20261022__curved-events-and-formulation-isolation.md)。
 COMSOL 实施步骤只在 COMSOL 文档维护，完整逐轮矩阵不再进入当前状态页。
 
 - SIMION四个理想透明栅统一使用官方零grid-unit厚度的一行raw-PA电极点并由引擎原生穿越；任何Program
@@ -1064,8 +1064,8 @@ COMSOL 实施步骤只在 COMSOL 文档维护，完整逐轮矩阵不再进入�
 
 | 冻结扫描 | 可支持的结论 | 证据 |
 |---|---|---|
-| 200 mm 总长 | 声明离散域内总体最大已测通过宽度 4.0 mm；三次独立 5000 粒子重复为 3.6 mm | [200 mm 快照](history/20260827__200mm-ideal-acceptance-scan.md) |
-| 300 mm 总长 | 公平对照的 4.0 mm 冻结候选通过总体及三组粒子检查；支持总长是该受限域的有效自由度 | [300 mm 快照](history/20260827__300mm-ideal-acceptance-scan.md) |
+| 200 mm 总长 | 声明离散域内总体最大已测通过宽度 4.0 mm；三次独立 5000 粒子重复为 3.6 mm | [200 mm 快照](../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20260827__200mm-ideal-acceptance-scan.md) |
+| 300 mm 总长 | 公平对照的 4.0 mm 冻结候选通过总体及三组粒子检查；支持总长是该受限域的有效自由度 | [300 mm 快照](../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20260827__300mm-ideal-acceptance-scan.md) |
 
 最大已测宽度、单一冻结设计的接受范围与连续域全局上界是不同结论。上述证据不证明长度单调更优、
 真实三维孔径接受或实测性能。重现与配置选择见[分析入口](../analysis/README.md#自动理想场比较)。
@@ -1100,8 +1100,8 @@ COMSOL 实施步骤只在 COMSOL 文档维护，完整逐轮矩阵不再进入�
    关闭条件是目标样本验证、保存重开及 GUI Compute 对等完成并按原发布机制留证，
    不能凭上述 N100 诊断的局部收益更新 Formal。
 
-以上为未完成动作；已闭合的实现及失败前驱见[整治快照](history/20261026__assembly-documentation-consolidation.md)，
-更早证据由[项目历史索引](history/README.md)追溯。
+以上为未完成动作；已闭合的实现及失败前驱见[整治快照](../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20261026__assembly-documentation-consolidation.md)，
+更早证据由[项目历史索引](../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/README.md)追溯。
 
 ## 产物与历史
 
@@ -1110,7 +1110,7 @@ Candidate run及归档已以原manifest项目身份只读迁入该根的
 `archive/20260801_130003__migration-snapshot__repo__oa-tof/legacy-project-root/`。保留证据保持原文件名、
 SHA、身份、资格和声明边界；迁移后按根README独立裁剪的可重建重型载荷只由pruning manifest追溯，
 不得追加新run。current文档不复制完整run ID清单。旧RF投影诊断只见
-[`history/20260727__superseded-rf-handoff-diagnostics.md`](history/20260727__superseded-rf-handoff-diagnostics.md)，
+[`../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20260727__superseded-rf-handoff-diagnostics.md`](../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20260727__superseded-rf-handoff-diagnostics.md)，
 不得恢复为活动生产入口。
 
 [reflectron-api-isolation]: ../../../../artifacts/projects/instrument_assembly/runs/20261026_045007__test__simion__reflectron-api-isolation/summary.json

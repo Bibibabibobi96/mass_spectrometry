@@ -1,6 +1,6 @@
 -- Plain Lua regression: native-corridor runtime only; no SIMION process or PA mutation.
 local repo=assert(arg[1],'repository root required')
-local directory=repo..'/projects/parallel_mirror_dual_stripe_mr_tof/simion/'
+local directory=repo..'/src/msplatform/backends/simion/resources/'
 -- Exercise the production CSV writer; the fixture owns only this temporary file.
 local events_path=os.tmpname()
 -- MSVC tmpnam may return a drive-root-relative name; keep test CSVs writable.

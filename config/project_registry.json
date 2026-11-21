@@ -20,11 +20,11 @@
     },
     {
       "descriptor": "projects/parallel_mirror_dual_stripe_mr_tof/config/project.json",
-      "sha256": "48BD85BC2ECFC80A3DE8D59EA7BDBAC0F9A5331D0FACDD663C097F5CBEEDAFCF"
+      "sha256": "166A9C2DA20C85CFF23A2088258CF8A875E558FB16933C7821C76415E78CA5F7"
     },
     {
       "descriptor": "projects/rf_multipole_ion_optics/config/project.json",
-      "sha256": "8B68382247795EC29583AE7E78F551AB0DCDC3E724A72018F590B6E9EF5D9AD7"
+      "sha256": "AA6D1C0491FDEBD72B03D2C4102A638903FBFD647F426BE1BF6E36FEEA50195A"
     },
     {
       "descriptor": "projects/single_reflection_oa_tof_mass_analyzer/config/project.json",
@@ -335,7 +335,7 @@
         "solidworks"
       ],
       "contracts": {
-        "baseline": "config/simion_candidate_two_zone.json",
+        "baseline": "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json",
         "resolved": null,
         "analysis": null,
         "interface": null,
@@ -664,7 +664,7 @@
       "retired_project_descriptors": [
         {
           "project_id": "rf_quadrupole_ion_optics",
-          "path": "projects/rf_multipole_ion_optics/docs/history/retired_projects/rf_quadrupole_ion_optics/config/project.json",
+          "path": "docs/history/projects/rf_multipole_ion_optics/retired_projects/rf_quadrupole_ion_optics/config/project.json",
           "bytes": 4178,
           "sha256": "8cfb5b07ebddc1944f3ee0af5f56b168c98aa6bf4b26ae8dc98f466123c96c8a",
           "source_commit": "3647bcae1f20682c2d3e9ca164bf945645316d09",
@@ -675,7 +675,7 @@
         },
         {
           "project_id": "rf_hexapole_ion_optics",
-          "path": "projects/rf_multipole_ion_optics/docs/history/retired_projects/rf_hexapole_ion_optics/config/project.json",
+          "path": "docs/history/projects/rf_multipole_ion_optics/retired_projects/rf_hexapole_ion_optics/config/project.json",
           "bytes": 3942,
           "sha256": "318fb3300bb4ebcbe4f66daa781882e073bfe17d2b3842a4eacab9feb49da6dd",
           "source_commit": "3647bcae1f20682c2d3e9ca164bf945645316d09",
@@ -686,7 +686,7 @@
         },
         {
           "project_id": "rf_octupole_ion_optics",
-          "path": "projects/rf_multipole_ion_optics/docs/history/retired_projects/rf_octupole_ion_optics/config/project.json",
+          "path": "docs/history/projects/rf_multipole_ion_optics/retired_projects/rf_octupole_ion_optics/config/project.json",
           "bytes": 3942,
           "sha256": "0f48c0340c4c80d1d5bdeeb292dc51e8bbeb226e5c3dc75e3866d664468b4e27",
           "source_commit": "3647bcae1f20682c2d3e9ca164bf945645316d09",

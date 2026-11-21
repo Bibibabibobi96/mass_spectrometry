@@ -14,7 +14,7 @@ from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract
 
 @lru_cache(maxsize=1)
 def complete_geometry():
-    return resolve_geometry(load_contract(Path(__file__).resolve().parents[2] / "config" / "simion_candidate_two_zone.json"), **pure_geometry_inputs(load_contract(Path(__file__).resolve().parents[2] / "config" / "simion_candidate_two_zone.json")))
+    return resolve_geometry(load_contract(Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json"), **pure_geometry_inputs(load_contract(Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json")))
 
 
 def geometry():
@@ -50,7 +50,7 @@ class PrismEntryInterfaceTests(unittest.TestCase):
 
     def test_provider_emits_complete_current_groups_from_explicit_authority(self):
         from msplatform.components.parallel_mirror_dual_stripe_mr_tof.provider import resolve_component
-        contract = load_contract(Path(__file__).resolve().parents[2] / "config" / "simion_candidate_two_zone.json")
+        contract = load_contract(Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json")
         authority = pure_geometry_inputs(contract)
         design = {"contract": contract, "accelerator_requirements": authority["accelerator_requirements"],
                   "geometry_profile": authority["geometry_profile"]}
@@ -97,7 +97,7 @@ class PrismEntryInterfaceTests(unittest.TestCase):
         import json
         from tempfile import TemporaryDirectory
         from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import validate_contract
-        contract = load_contract(Path(__file__).resolve().parents[2] / "config" / "simion_candidate_two_zone.json")
+        contract = load_contract(Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json")
         cases = {"valid": copy.deepcopy(contract)}
         for name in ("project", "count", "width", "energy", "voltage", "source_acceptance"):
             cases[name] = copy.deepcopy(contract)

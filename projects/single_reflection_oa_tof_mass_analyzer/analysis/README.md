@@ -298,7 +298,7 @@ their original meaning and bytes. No commercial solver or new qualification is i
 [`ideal_acceptance_200mm.json`](../config/experiments/ideal_acceptance_200mm.json)把三区总长固定为200 mm；
 [`ideal_acceptance_200mm_boundary.json`](../config/experiments/ideal_acceptance_200mm_boundary.json)只加密该扫描
 的3.2--5.0 mm过渡区。两者保持相同源、能量、反射器、门槛和粒子政策，结果见
-[`200 mm扫描快照`](../docs/history/20260827__200mm-ideal-acceptance-scan.md)。
+[`200 mm扫描快照`](../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20260827__200mm-ideal-acceptance-scan.md)。
 
 [`ideal_acceptance_300mm.json`](../config/experiments/ideal_acceptance_300mm.json)与200 mm主扫描使用完全
 相同的离散宽度点、控制域、源、能量、反射器和数值/粒子合同，唯一科学变量是总加速器长度300 mm；

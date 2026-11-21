@@ -17,7 +17,7 @@ $workspaceRoot = Split-Path -Parent $repoRoot
 $contract = if ($ContractPath) {
   (Resolve-Path -LiteralPath $ContractPath).Path
 } else {
-  Join-Path $PSScriptRoot '..\config\simion_candidate_two_zone.json'
+  Join-Path $PSScriptRoot '..\..\src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json'
 }
 $mirrorManifest = (Resolve-Path -LiteralPath $MirrorRunManifest).Path
 if ([string]::IsNullOrWhiteSpace($ChainStamp)) {

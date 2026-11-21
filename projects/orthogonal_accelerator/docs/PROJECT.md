@@ -69,7 +69,7 @@ SIMION resource owner. The template bytes, placeholder PA inputs and scientific 
 are unchanged; this path migration does not establish a new OA native-flight result.
 
 本页维护独立器件的能力、资格和开放动作。理论、源码和操作从[项目入口](../README.md)进入；
-完整迁移、组件实验及实现修复记录见[文档收口里程碑](history/20261026__assembly-documentation-consolidation.md)。
+完整迁移、组件实验及实现修复记录见[文档收口里程碑](../../../docs/history/projects/orthogonal_accelerator/20261026__assembly-documentation-consolidation.md)。
 
 The accelerator-only three-zone ideal theory has its sole implementation in
 `msplatform.components.orthogonal_accelerator.three_zone_ideal_theory`; the old project
@@ -254,7 +254,7 @@ SIMION 2020所附Lua 5.1.5和官方 `testplanelib.lua`；不把历史反例的Lu
 2026-10-03的注册缓存提供者保持原冻结请求、释放、几何、网格和电压，完成15环／19电极真实构建，
 N100全部穿过出口；后续私有runtime恢复及K=25.5、23.5工况也各自完成100/100。
 三轴出口残差通过各自冻结的0.05 V/q门槛；不同K的源与资格分别绑定，不相互借用。
-原9环及仅减薄框的负结果、15环演进、准确数值、run与SHA见[收口前证据](history/20261026__assembly-documentation-consolidation.md)。
+原9环及仅减薄框的负结果、15环演进、准确数值、run与SHA见[收口前证据](../../../docs/history/projects/orthogonal_accelerator/20261026__assembly-documentation-consolidation.md)。
 “十五环仍待首次N100”的旧步骤已被这些证据接替，不再作为当前下一步。
 
 PA发布沿[公共缓存事务](../../../common/simion/README.md#pa-缓存与工作点)。现有cache HIT及显式
@@ -281,7 +281,7 @@ runtime checkpoint复用已经使用，但未发布事务的跨run重入仍未�
 | COMSOL新投影 | 纯回归及静态接线；新几何／选择集／保存重开尚未验收 |
 | 数值收敛、独立GUI/CAD、Candidate／Formal | 未完成，BLOCKED |
 
-旧迁移细节见[迁移记录](history/20260911__component-migration-evidence.md)。
+旧迁移细节见[迁移记录](../../../docs/history/projects/orthogonal_accelerator/20260911__component-migration-evidence.md)。
 
 ## 开放任务
 

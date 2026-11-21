@@ -5917,7 +5917,7 @@ class InstalledScientificCoreTests(unittest.TestCase):
         import copy
         from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.test_support.mr_geometry_inputs import pure_geometry_inputs
-        stripe_contract=load_contract(REPO_ROOT/'projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json')
+        stripe_contract=load_contract(REPO_ROOT/'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json')
         stripe_converging=copy.deepcopy(stripe_contract)
         stripe_converging['mirror']['convergence_transform']={'angle_deg':.025688744787259285,'pivot_y_mm':0.}
         stripe_converging['downstream_fixed_grid_workpoint_profile']['active_stripe_axes']=['stripe_1_voltage_v']
@@ -5969,7 +5969,7 @@ class InstalledScientificCoreTests(unittest.TestCase):
         """Transport explicit original MR reference inputs, never author paths to clients."""
         from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract as prism_load_contract
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_prism_analytic import PrismAnalyticTest as prism_reference
-        prism_contract = prism_load_contract(REPO_ROOT/'projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json')
+        prism_contract = prism_load_contract(REPO_ROOT/'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json')
         prism_contract['accelerator']['focus_y_anchor']['project_y_mm'] = -45.0
         prism_trace, prism_direction, prism_beta = prism_reference._right_angle_trace()
         assert prism_trace.status == 'transmitted'
@@ -6366,7 +6366,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                     expected=collect_log(case.preparation,case.workbench,case.run,case.log))
 
     def prepared_joint_admission_probe_fixture(self, root: Path) -> list[dict]:
-        from integrations.tests.test_prepared_joint_execute import analysis_source_fixture
+        from tests.test_prepared_joint_execute import analysis_source_fixture
         result = []
         for scenario in ("success", "failed_analysis", "wrong_owner", "incomplete_native"):
             workspace = root / ("sealed-analysis-source-" + scenario)
@@ -6831,7 +6831,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             resolve_geometry, build_two_zone_accelerator_requirements)
         from msplatform.components.orthogonal_accelerator.two_zone_geometry import validate_geometry_profile
         from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
-        contract = load_contract(REPO_ROOT / "projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json")
+        contract = load_contract(REPO_ROOT / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json")
         provider_path = REPO_ROOT / "src/msplatform/components/orthogonal_accelerator/component_contract.json"
         provider_bytes = provider_path.read_bytes()
         profile_id = "closed_two_zone_compact_mr_axial_r3_gap1_4mm"
@@ -6862,11 +6862,11 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
     def mr_public_provider_probe_fixture(self) -> dict:
         from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.test_support.mr_geometry_inputs import geometry_authority
-        mrp_contract_path = REPO_ROOT / 'projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json'
+        mrp_contract_path = REPO_ROOT / 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json'
         mrp_oa_path = REPO_ROOT / 'src/msplatform/components/orthogonal_accelerator/component_contract.json'
         mrp_contract_bytes, mrp_oa_bytes = mrp_contract_path.read_bytes(), mrp_oa_path.read_bytes()
         assert hashlib.sha256(mrp_contract_bytes).hexdigest() == '257e10f381b566db9eb85f63776081fbe8ada140bdc99eb44bda4e148fda066f'
-        assert hashlib.sha256(mrp_oa_bytes).hexdigest() == '4aa417ad64e91e9eafdbffbaa958a35573c8b78262fac304355979d190a201dd'
+        assert hashlib.sha256(mrp_oa_bytes).hexdigest() == '37737f38204ae6698cbcd56fd4b465bec86c3db0771156fd12ea573d7c32839c'
         mrp_contract = load_contract(mrp_contract_path)
         mrp_authority = geometry_authority(mrp_contract)
         assert mrp_authority['geometry_profile_id'] == 'closed_two_zone_compact_mr_axial_r3_gap1_4mm'

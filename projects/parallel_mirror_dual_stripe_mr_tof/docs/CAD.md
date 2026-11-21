@@ -2,7 +2,7 @@
 
 本页提供当前工程交换的操作入口与验收边界；参数、有效证据和开放任务以
 [PROJECT](PROJECT.md)为准，不维护第二份电压或坐标表。
-旧平行镜53件交付、审批及失败处理全过程保存在[只读交付里程碑](history/20261015__cad-exchange-delivery-milestone.md)。
+旧平行镜53件交付、审批及失败处理全过程保存在[只读交付里程碑](../../../docs/history/projects/parallel_mirror_dual_stripe_mr_tof/20261015__cad-exchange-delivery-milestone.md)。
 
 ## 当前交付与适用范围
 
@@ -32,7 +32,7 @@ STEP复用163154封存字节，未新增商业CAD冷读或第三方消费资格�
 | 原始用户CAD | [项目描述符](../config/project.json)的legacy artifact位置；保留原身份和引用，只读使用 |
 | CAD—项目坐标 | [坐标合同](../config/cad_to_theory_frame.json)；位置用完整变换，方向只应用旋转 |
 | 当前物理几何 | 成功场run冻结的resolved几何与完整电压authority，而非当前可变配置或旧CAD推断 |
-| 曲线恢复与被否定构造 | [原始审计](CAD_AUDIT_20260902.md)及[交付里程碑](history/20261015__cad-exchange-delivery-milestone.md)，不授当前资格 |
+| 曲线恢复与被否定构造 | [原始审计](CAD_AUDIT_20260902.md)及[交付里程碑](../../../docs/history/projects/parallel_mirror_dual_stripe_mr_tof/20261015__cad-exchange-delivery-milestone.md)，不授当前资格 |
 
 原始ion foil零件名、电极编号或同为接地都不能替代物理部件身份。
 五个曲线实例须按namespace及完整父子变换映射；mirror shield不因ID相同就成为central foil。

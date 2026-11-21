@@ -40,7 +40,7 @@ class NativeGemSlotTest(unittest.TestCase):
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         cls.pa_type = module.PA
-        cls.resolved = resolve_geometry(load_contract(PROJECT / "config/simion_candidate_two_zone.json"), **pure_geometry_inputs(load_contract(PROJECT / "config/simion_candidate_two_zone.json")))
+        cls.resolved = resolve_geometry(load_contract(PROJECT.parents[1] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json"), **pure_geometry_inputs(load_contract(PROJECT.parents[1] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json")))
 
     def compile_shapes(self, lines: list[str], origin: tuple[float, float, float],
                        dimensions: tuple[int, int, int], mesh_mm: tuple[float, float, float] = (2.0, 2.0, 2.0)):

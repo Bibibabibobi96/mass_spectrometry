@@ -27,7 +27,7 @@ PROJECT = REPO / "projects/parallel_mirror_dual_stripe_mr_tof"
 
 
 def _plans():
-    contract = json.loads((PROJECT / "config/simion_candidate_two_zone.json").read_text(encoding="utf-8"))
+    contract = json.loads((PROJECT.parents[1] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json").read_text(encoding="utf-8"))
     authority = geometry_authority(contract)
     campaign = REPO / "projects/orthogonal_accelerator/config/two_zone_component_focus_campaign.json"
     profile_id = json.loads(campaign.read_text(encoding="utf-8"))["geometry_profile_id"]

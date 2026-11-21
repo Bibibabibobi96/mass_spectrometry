@@ -387,7 +387,7 @@ package、容量 session、冻结 PS 入口、原生退出和实际 host release
 ### 开发诊断证据边界
 
 源分组、分窗读取和N100局部性能的当前结论以上述及后文具名证据为准；小模型机制验证不授予完整传输、数值、GUI/CAD或Formal资格。
-早期mesh失败、6D冷读修正、节点退役及多行释放探针保留于[开发诊断历史记录](history/20261103__rf-development-diagnostics-review.md)，
+早期mesh失败、6D冷读修正、节点退役及多行释放探针保留于[开发诊断历史记录](../../../docs/history/projects/rf_multipole_ion_optics/20261103__rf-development-diagnostics-review.md)，
 其中旧时点的待办不作为当前执行指令，原失败终态不改写。
 
 下表原生功能结果来自冻结旧几何；当前schema 3裸杆与新壳体不继承这些资格。
@@ -487,7 +487,7 @@ package、容量 session、冻结 PS 入口、原生退出和实际 host release
 | 六极机械、变量及工程合同 | [hexapole/config](../variants/hexapole/config/) |
 | 八极机械、显式壳体、来源模型及工程合同 | [octupole/config](../variants/octupole/config/) |
 | 可执行入口与绑定要求 | [execution_profiles.json](../config/execution_profiles.json) |
-| 旧资格、原身份与冻结记录 | [历史索引](history/README.md) |
+| 旧资格、原身份与冻结记录 | [历史索引](../../../docs/history/projects/rf_multipole_ion_optics/README.md) |
 
 活动runtime编译完整输入后执行；不能用命令行自由覆盖几何、RF/DC、源或已绑定数值语义。
 公共命令预览通过execution profile的`runtime_binding`调用本项目
@@ -573,7 +573,7 @@ N=1000 COMSOL bridge曾在release构造阶段资源中断，向量化release候�
 待原冻结分析及输入可独立重放，或完成同输入等价替代后，连同私有测试
 退役此CLI。保留不构成永久兼容承诺，也不授权恢复N1000研究。
 相关数值、释放诊断及旧接口证据见
-[四极历史](history/retired_projects/rf_quadrupole_ion_optics/docs/history/20260911__solver-sensitivity-and-retired-interface.md)。
+[四极历史](../../../docs/history/projects/rf_multipole_ion_optics/retired_projects/rf_quadrupole_ion_optics/docs/history/20260911__solver-sensitivity-and-retired-interface.md)。
 当前适用操作保留在[COMSOL](COMSOL.md)与[SIMION](SIMION.md)说明中。
 既有四极→oaTOF功能链不授予连续相空间、分辨率、机械或整机Formal资格。
 
@@ -584,14 +584,14 @@ N=1000 COMSOL bridge曾在release构造阶段资源中断，向量化release候�
 六极杆保留理想场、圆杆场筛选与有限三维传输的模型层级。三模式功能证据不改变
 `DEFERRED_NOT_WAIVED`／`INCONCLUSIVE`的连续量资格。相位匹配的RF幅值—频率筛选及N=1000复核
 显示微小排序不稳定，继续保留P0 RF基线，不据此优选参数或扩展扫描；证据见
-[RF复核](history/retired_projects/rf_hexapole_ion_optics/docs/history/20260803__hex-rf-drive-phase-matched-h15-n1000.md)。
+[RF复核](../../../docs/history/projects/rf_multipole_ion_optics/retired_projects/rf_hexapole_ion_optics/docs/history/20260803__hex-rf-drive-phase-matched-h15-n1000.md)。
 源能量与加速方式的比较保持描述性，数值只见
-[源能量记录](history/retired_projects/rf_hexapole_ion_optics/docs/history/20260803__multipole-four-mode-source-energy-h15-n100.md)。
+[源能量记录](../../../docs/history/projects/rf_multipole_ion_optics/retired_projects/rf_hexapole_ion_optics/docs/history/20260803__multipole-four-mode-source-energy-h15-n100.md)。
 
 旧oaTOF零长度直连、接地圆套筒与带孔法兰结论属于冻结旧几何。当前外部部件及直接位姿由装配配方声明，
 零间隙仅在真实端面上的独立导体互不接触时允许；发生接触须显式修改几何或间隙，具体距离没有默认值。
 旧逐臂profile、预登记和专用诊断测试的结论从
-[退役campaign](history/retired_projects/rf_hexapole_ion_optics/docs/history/20260802__retired-comsol-qualification-campaigns.md)
+[退役campaign](../../../docs/history/projects/rf_multipole_ion_optics/retired_projects/rf_hexapole_ion_optics/docs/history/20260802__retired-comsol-qualification-campaigns.md)
 追溯，新的研究只使用当前注册的runtime与窄变量campaign，不恢复一次性诊断树。
 
 <a id="oct"></a>
@@ -623,7 +623,7 @@ schema 3的同一提供者始终发布实际入口／出口：裸杆按杆端面
 [集成状态](../../../integrations/docs/INTEGRATION.md)维护，不以新上游配置关闭旧负结果。
 
 平面冻结源与轴向体积快照的N=1000 SIMION两臂均全传输，出口位置与角分布不同；这是描述性来源模型比较，
-详见[源模型记录](history/retired_projects/rf_octupole_ion_optics/docs/history/20260911__source-model-comparison.md)。
+详见[源模型记录](../../../docs/history/projects/rf_multipole_ion_optics/retired_projects/rf_octupole_ion_optics/docs/history/20260911__source-model-comparison.md)。
 后续更改该比较仍须固定设计、下游端口、数值及完整粒子母队列，仅改变receipt绑定的source model。
 
 ## 已记录轨迹相位诊断
@@ -666,7 +666,7 @@ IP自身提供的裸八杆导引与本项目八极杆保持不同来源，不能
 
 新运行的owner是`rf_multipole_ion_optics`，只写`artifacts/projects/rf_multipole_ion_optics/`。
 旧三个项目的run、manifest和冻结资格继续使用原身份与原artifact解析位置，不提供猜测旧路径的fallback。
-[历史索引](history/README.md)登记原owner、原路径、固定Git版本及迁移映射；冻结内容不改字节。
+[历史索引](../../../docs/history/projects/rf_multipole_ion_optics/README.md)登记原owner、原路径、固定Git版本及迁移映射；冻结内容不改字节。
 普通README／PROJECT编辑由Git保留版本，不因本次合并再复制一套全文快照或逐会话状态历史。
 
 圆杆 L2 传输使用已认证 field-screen run 的冻结设计、合同与采样结果，要求与当前解析设计的真实杆阵列、坐标、r0 和极数一致，并仅采用杆半径比例严格匹配且通过场筛选检查的唯一候选；缺失或不匹配时拒绝，不以最优候选替代既定几何。场筛选为带接地外边界的二维场，传输使用其有限余弦谐波沿 z 均匀延拓，不代表三维真实求解或科学资格。当前 octupole 的既有扫参不含基准设计比例 0.5，需要匹配该设计的已认证场数据。

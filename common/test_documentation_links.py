@@ -172,9 +172,8 @@ class PowerShellHistoryScopeTests(unittest.TestCase):
 
     def prepare_root(self, directory):
         root = Path(directory)
-        (root / 'docs/history').mkdir(parents=True)
-        (root / 'projects').mkdir()
-        (root / 'integrations/docs/history').mkdir(parents=True)
+        (root / 'docs/history/projects').mkdir(parents=True)
+        (root / 'docs/history/integrations').mkdir(parents=True)
         return root
 
     def test_root_and_existing_history_scopes_share_checks(self):
@@ -182,8 +181,8 @@ class PowerShellHistoryScopeTests(unittest.TestCase):
             root = self.prepare_root(directory)
             scopes = (
                 ('docs/history', 'docs/AUDITS.md', 'history/'),
-                ('integrations/docs/history', 'integrations/docs/history/README.md', ''),
-                ('projects/p/docs/history', 'projects/p/docs/history/README.md', ''),
+                ('docs/history/integrations', 'docs/history/integrations/README.md', ''),
+                ('docs/history/projects/p', 'docs/history/projects/p/README.md', ''),
             )
             for history, index, prefix in scopes:
                 folder = root / history
@@ -199,28 +198,15 @@ class PowerShellHistoryScopeTests(unittest.TestCase):
                     self.assertIn(f"does not index '{prefix}snapshot.md'", errors[0])
                     (root / index).write_text(prefix + 'snapshot.md\n', encoding='utf-8')
 
-    def test_root_integration_history_rejects_missing_banner_index_and_loose_payload(self):
+    def test_root_retired_project_named_directory_does_not_hide_payloads(self):
         with tempfile.TemporaryDirectory(prefix='documentation_history_test_') as directory:
             root = self.prepare_root(directory)
-            history = root / 'integrations/docs/history'
-            (history / 'snapshot.md').write_text('# Snapshot\n', encoding='utf-8')
-            (history / 'loose.json').write_text('{}\n', encoding='utf-8')
+            target = root / 'docs/history/retired_projects/old'
+            target.mkdir(parents=True)
+            (target / 'unregistered.json').write_text('{}', encoding='utf-8')
             errors = self.check_history(root)
-            self.assertEqual(len(errors), 3)
-            self.assertTrue(any('missing read-only archive banner' in item for item in errors))
-            self.assertTrue(any("integrations/docs/history/README.md does not index 'snapshot.md'" in item for item in errors))
-            self.assertTrue(any('history payload must be inside a same-name manifest directory' in item for item in errors))
-
-    def test_retired_project_exemption_cannot_hide_other_history_payloads(self):
-        with tempfile.TemporaryDirectory(prefix='documentation_history_test_') as directory:
-            root = self.prepare_root(directory)
-            for scope in ('docs/history', 'integrations/docs/history'):
-                target = root / scope / 'retired_projects/old'
-                target.mkdir(parents=True)
-                (target / 'unregistered.json').write_text('{}', encoding='utf-8')
-            errors = self.check_history(root)
-            self.assertEqual(len(errors), 2)
-            self.assertTrue(all('payload directory has no same-name flat Markdown manifest' in message for message in errors))
+            self.assertEqual(len(errors), 1)
+            self.assertIn('payload directory has no same-name flat Markdown manifest', errors[0])
 
 
 class MarkdownNavigationTests(unittest.TestCase):
@@ -277,7 +263,7 @@ class MarkdownNavigationTests(unittest.TestCase):
             subprocess.run(['git', '-C', str(root), 'add', '.'], check=True, cwd=root, timeout=30)
             subprocess.run(['git', '-C', str(root), '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '--quiet', '-m', 'Freeze source'], check=True, cwd=root, timeout=30)
             commit = subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True, cwd=root, timeout=30).strip()
-            archive = root / 'projects/new/docs/history/retired_projects'
+            archive = root / 'docs/history/projects/new/retired_projects'
             moved = archive / 'old/docs/history/snapshot.md'
             moved.parent.mkdir(parents=True)
             moved.write_bytes(content)

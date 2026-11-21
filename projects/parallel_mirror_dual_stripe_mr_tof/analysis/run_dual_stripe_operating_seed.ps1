@@ -26,7 +26,7 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } elseif ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) } else { throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required' }
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 environment is missing: $python" }
-$contract = if ($ContractPath) { (Resolve-Path -LiteralPath $ContractPath).Path } else { Join-Path $PSScriptRoot '..\config\simion_candidate_two_zone.json' }
+$contract = if ($ContractPath) { (Resolve-Path -LiteralPath $ContractPath).Path } else { Join-Path $PSScriptRoot '..\..\src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json' }
 $parentManifest = if ($authorityOnly) {
   (Resolve-Path -LiteralPath $ExistingOperatingSeedManifest).Path
 } elseif ($exactKMode) {
@@ -130,10 +130,10 @@ try {
     'src\msplatform\execution\manifest_verification.py',
     'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\dual_stripe_l0.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\dual_stripe_operating_seed.py',
-    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\fixed_grid_mirror_stripe_handoff.py',
+    'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\fixed_grid_mirror_stripe_handoff.py',
     'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\drift_phase_contract.py',
     'src\msplatform\workflows\prepared_joint\joint_mirror_stripe_l0.py',
-    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_candidate_receipt.py',
+    'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\mirror_candidate_receipt.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_exact_k_operating_point.py',
     'src\msplatform\backends\simion\native_stripe_shape_adapter.py',
     'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\mirror_geometry_parameters.py',

@@ -172,7 +172,7 @@ $artifacts = Join-Path (Split-Path -Parent (Get-Location).Path) 'artifacts'
 $assembly = Join-Path $artifacts 'projects/instrument_assembly'
 $mr = Join-Path $artifacts 'projects/parallel_mirror_dual_stripe_mr_tof'
 $ip = Join-Path $artifacts 'projects/dual_pressure_rectilinear_ion_processor'
-& integrations/workflows/accelerator_interface/execute.ps1 -FullJoint `
+& src/msplatform/workflows/resources/accelerator_interface.ps1 -FullJoint `
   -IonProcessorRunPath (Join-Path $ip 'runs/20261023_095324__sim__simion__multipole-524da-injected-ip-n100') `
   -ReferenceMrRunPath (Join-Path $mr 'runs/20261015_040845__sim__simion__converging-y360-z002-gaussian-ey-sigma0p15-n100') `
   -PreparedInterfaceRunPath (Join-Path $assembly 'runs/20261025_090904__analysis__python__accelerator-interface-ip-f3a137ee') `
@@ -200,7 +200,7 @@ $ip = Join-Path $artifacts 'projects/dual_pressure_rectilinear_ion_processor'
 ```powershell
 $artifacts = Join-Path (Split-Path -Parent (Get-Location).Path) 'artifacts'
 $assembly = Join-Path $artifacts 'projects/instrument_assembly'
-& integrations/workflows/accelerator_interface/execute.ps1 -FullJoint `
+& src/msplatform/workflows/resources/accelerator_interface.ps1 -FullJoint `
   -PreparedJointWorkbenchRunPath (Join-Path $assembly 'runs/20261025_115429__analysis__python__accelerator-interface-ip-81ed4b78') `
   -ContractPath (Join-Path $assembly 'scratch/20261029__joint-v2-analysis-contract.json') `
   -ContinuationPredecessorManifestPath (Join-Path $assembly 'runs/20261029_225500__sim__simion__ip-mr-reuse-01fc842a/run_manifest.json')
@@ -230,14 +230,14 @@ do not qualify native flight, field coverage or scientific accuracy.
 
 | 科学工作流 | 公开入口与显式输入 | 状态及操作边界 |
 |---|---|---|
-| Multipole → OA → single-reflection TOF | [single_reflection_flight/run.ps1](workflows/single_reflection_flight/run.ps1), explicit births, fields and environment | [Inputs and historical-reader boundary](docs/INTEGRATION.md#单反射整机); public tracking owner publishes trajectories |
-| OA／IP→MR接口准备与执行 | [accelerator_interface/execute.ps1](workflows/accelerator_interface/execute.ps1)，准备时明确提供者与参考run；`-FullJoint`按源链或prepared workbench分支执行 | [输入及设计／Finalize边界](docs/INTEGRATION.md#oaip接口准备与绑定) |
-| 已准备IP→MR飞行／分析 | [prepared_joint/execute.ps1](workflows/prepared_joint/execute.ps1)，准备run与观测合同 | [联合执行及Analysis](docs/INTEGRATION.md#已准备ipmr联合飞行) |
+| Multipole → OA → single-reflection TOF | [single_reflection_flight.ps1](../src/msplatform/workflows/resources/single_reflection_flight.ps1), explicit births, fields and environment | [Inputs and historical-reader boundary](docs/INTEGRATION.md#单反射整机); public tracking owner publishes trajectories |
+| OA／IP→MR接口准备与执行 | [accelerator_interface.ps1](../src/msplatform/workflows/resources/accelerator_interface.ps1)，准备时明确提供者与参考run；`-FullJoint`按源链或prepared workbench分支执行 | [输入及设计／Finalize边界](docs/INTEGRATION.md#oaip接口准备与绑定) |
+| 已准备IP→MR飞行／分析 | [prepared_joint_execute.ps1](../src/msplatform/workflows/resources/prepared_joint_execute.ps1)，准备run与观测合同 | [联合执行及Analysis](docs/INTEGRATION.md#已准备ipmr联合飞行) |
 | OA→MR | [oa_mr/execute.ps1](workflows/oa_mr/execute.ps1)，`-CompositionPlanPath`及可选`-LocalScopePath` | [支持范围与证据](docs/INTEGRATION.md#已准备ipmr联合飞行) |
-| 真实多极杆→IP状态准备 | [multipole_ip/execute.ps1](workflows/multipole_ip/execute.ps1)，explicit `-Request -EnvironmentPath -Workspace -EngineeringProfile -PythonExe` | [真实源／母群与负结果](docs/INTEGRATION.md#真实多极杆ip状态交接) |
-| Complete RF–IP or RF–IP–MR continuous flight | [multipole_ip/continuous.ps1](workflows/multipole_ip/continuous.ps1), or `accelerator_interface/execute.ps1 -FullJoint -ContinuousReleaseRequest ...` for the named full-instrument case | Original births and an explicitly selected complete FieldBundle; the FullJoint branch delegates to the same installed consumer. Native qualification and replacement of segmented producers remain open |
-| OA共同静态场 | [paired_accelerator_static_field/execute.ps1](workflows/paired_accelerator_static_field/execute.ps1)，`-Request` | [prepared／solved恢复及资格](docs/INTEGRATION.md#共同场与有限脉冲) |
-| OA共同场有限脉冲 | [paired_accelerator_pulse/execute.ps1](workflows/paired_accelerator_pulse/execute.ps1)，`-Request`及显式来源 | [阶段／整批恢复与诊断](docs/INTEGRATION.md#共同场与有限脉冲) |
+| 真实多极杆→IP状态准备 | [multipole_ip.ps1](../src/msplatform/workflows/resources/multipole_ip.ps1)，explicit `-Request -EnvironmentPath -Workspace -EngineeringProfile -PythonExe` | [真实源／母群与负结果](docs/INTEGRATION.md#真实多极杆ip状态交接) |
+| Complete RF–IP or RF–IP–MR continuous flight | [multipole_ip_continuous.ps1](../src/msplatform/workflows/resources/multipole_ip_continuous.ps1), or `accelerator_interface/execute.ps1 -FullJoint -ContinuousReleaseRequest ...` for the named full-instrument case | Original births and an explicitly selected complete FieldBundle; the FullJoint branch delegates to the same installed consumer. Native qualification and replacement of segmented producers remain open |
+| OA共同静态场 | [paired_accelerator_static_field.ps1](../src/msplatform/workflows/resources/paired_accelerator_static_field.ps1)，`-Request` | [prepared／solved恢复及资格](docs/INTEGRATION.md#共同场与有限脉冲) |
+| OA共同场有限脉冲 | [paired_accelerator_pulse.ps1](../src/msplatform/workflows/resources/paired_accelerator_pulse.ps1)，`-Request`及显式来源 | [阶段／整批恢复与诊断](docs/INTEGRATION.md#共同场与有限脉冲) |
 
 直属静态入口为[verify_integration.ps1](verify_integration.ps1)，不启动商业求解器。
 入口默认递归枚举`integrations/tests`中的测试模块；公共验证按统一目录传入`SelectedTestModules`时仅执行选定集合，
@@ -248,10 +248,10 @@ do not qualify native flight, field coverage or scientific accuracy.
 
 ## 当前文本绑定编译
 
-唯一入口为`python -m integrations.runtime.refresh_repository_bindings [--check]`。
+唯一入口为`python -m tools.repository.refresh_repository_bindings [--check]`。
 它刷新oaTOF required port的受管文本绑定，不改科学设计或历史证据；
 运行依赖只由[runtime_dependencies.json](../src/msplatform/workflows/config/runtime_dependencies.json)声明，冻结机制见状态页。
 
 ## 历史追溯
 
-[历史索引](docs/history/README.md)维护冻结阶段证据及旧工作流入口；当前操作和能力继续由本页与集成状态维护。
+[历史索引](../docs/history/integrations/README.md)维护冻结阶段证据及旧工作流入口；当前操作和能力继续由本页与集成状态维护。

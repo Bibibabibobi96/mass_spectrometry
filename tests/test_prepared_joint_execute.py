@@ -11,8 +11,18 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = Path(__file__).resolve().parents[1]
 MR = REPO / "projects/parallel_mirror_dual_stripe_mr_tof"
+PREPARED_ENTRY = Path("src/msplatform/workflows/resources/prepared_joint_execute.ps1")
+PREPARED_ENTRY_ID = "msplatform_workflows_prepared_joint_execute_ps1"
+
+
+def prepared_joint_dependency_inventory():
+    inventory = json.loads((REPO / "src/msplatform/workflows/config/runtime_dependencies.json").read_text())
+    records = [record for provider in inventory["providers"] for record in provider.get("files", [])
+               if record["source_repo_path"] == PREPARED_ENTRY.as_posix()]
+    assert len(records) == 1 and records[0]["id"] == PREPARED_ENTRY_ID
+    return inventory
 
 
 def analysis_source_fixture(workspace, *, status="failed", owner="instrument_assembly", complete=True):
@@ -103,10 +113,10 @@ class PreparedJointAnalysisTests(unittest.TestCase):
             self.skipTest("PowerShell 7 is unavailable")
         from common.contracts.test_support.fixture_process import run_fixture_process
 
-        inventory = json.loads((REPO / "src/msplatform/workflows/config/runtime_dependencies.json").read_text())
+        inventory = prepared_joint_dependency_inventory()
         from integrations.tests.test_support.single_reflection_execute_fixture import declared_dependency_paths
         records = [{'source_repo_path': path} for path in declared_dependency_paths(REPO, inventory, 'prepared_joint')]
-        support = {"src/msplatform/execution/resources/run_artifact_support.ps1", "src/msplatform/execution/resources/require_powershell7.ps1", "src/msplatform/execution/resources/host_execution_lease.ps1"}
+        support = {"src/msplatform/execution/resources/run_artifact_support.ps1", "src/msplatform/execution/resources/require_powershell7.ps1", "src/msplatform/execution/resources/host_execution_lease.ps1", "src/msplatform/execution/artifact_identity_archive.py"}
         capacity_fixture = r'''
 function Invoke-RunCapacityLifecycleAdapter {return @{light_evidence_budget_exceeded=$false}}
 function Assert-AnalysisFixtureSourceProtection {
@@ -151,7 +161,12 @@ function Exit-HostExecutionLease {
         owner_fixture = r'''
 # Explicit lifecycle boundary fixture; the real adapter and CLI recovery run
 # separately in test_workflow_finalization_recovery.
-function Initialize-RunArtifactPowerShellOwner {param($Package,$CapacitySession) @{package=$Package;capacity_session=$CapacitySession;result_path='inert-result'}}
+function Initialize-RunArtifactPowerShellOwner {
+ param($Package,$CapacitySession,$EntrypointPath,$EntrypointRecord)
+ $expected=Join-Path $script:pythonRoot 'src/msplatform/workflows/resources/prepared_joint_execute.ps1'
+ if($EntrypointPath-ne$expected-or$EntrypointRecord.path-ne$expected){throw 'Analysis frozen entrypoint owner differs'}
+ @{package=$Package;capacity_session=$CapacitySession;result_path='inert-result'}
+}
 function Complete-RunArtifactPowerShellOwner {
  param($Context,$Status,$Summary,$OutputPaths,$WritersStopped,$WriterCompletion,$OriginalFailure)
  if(-not$WritersStopped-or$WriterCompletion.operations.Count-or$WriterCompletion.resource_releases.Count){throw 'Analysis fabricated native execution'}
@@ -190,19 +205,31 @@ if os.environ['ANALYSIS_TEST_SEAL_FAIL']=='1': raise RuntimeError('Explicit iner
             with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as directory:
                 workspace = Path(directory)
                 repo = workspace / "simulation_repo"
-                for relative in support | {item["source_repo_path"] for item in records}:
+                installed = workspace / "installed/msplatform"
+                selected_paths = support | {item["source_repo_path"] for item in records}
+                for relative in selected_paths:
                     target = repo / relative
                     target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(REPO / relative, target)
+                    if relative.startswith("src/msplatform/"):
+                        installed_target = installed / Path(relative).relative_to("src/msplatform")
+                        installed_target.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copyfile(REPO / relative, installed_target)
                 dependency = repo / "src/msplatform/workflows/config/runtime_dependencies.json"
                 dependency.parent.mkdir(parents=True, exist_ok=True)
                 dependency.write_text(json.dumps(inventory))
+                installed_dependency = installed / "workflows/config/runtime_dependencies.json"
+                installed_dependency.parent.mkdir(parents=True, exist_ok=True)
+                installed_dependency.write_text(json.dumps(inventory))
                 helpers = repo / "src/msplatform/execution/resources/run_artifact_support.ps1"
                 helpers.write_text(helpers.read_text() + capacity_fixture)
+                shutil.copyfile(helpers, installed / "execution/resources/run_artifact_support.ps1")
                 host_support = repo / "src/msplatform/execution/resources/host_execution_lease.ps1"
                 host_support.write_text(host_support.read_text() + host_fixture)
+                shutil.copyfile(host_support, installed / "execution/resources/host_execution_lease.ps1")
                 workflow_owner = repo / "src/msplatform/workflows/resources/run_artifact_workflow.ps1"
                 workflow_owner.write_text(workflow_owner.read_text() + owner_fixture)
+                shutil.copyfile(workflow_owner, installed / "workflows/resources/run_artifact_workflow.ps1")
                 (repo / "src/msplatform/workflows/prepared_joint/diagnostics.py").write_text(analyzer_fixture)
                 (repo / "src/msplatform/execution/run_capacity_lifecycle.py").write_text(seal_fixture)
                 source, contract = analysis_source_fixture(workspace,
@@ -213,7 +240,7 @@ if os.environ['ANALYSIS_TEST_SEAL_FAIL']=='1': raise RuntimeError('Explicit iner
                 run = source.parent / run_id
                 # The wrapper cannot start this synthetic workflow or any child
                 # until the public helper assigns it to its owned Job and ACKs.
-                arguments = [str(repo / "integrations/workflows/prepared_joint/execute.ps1"),
+                arguments = [str(installed / PREPARED_ENTRY.relative_to("src/msplatform")),
                     "-AnalyzeRunPath", str(source), "-ContractPath", str(contract), "-RunId", run_id,
                     "-RepoRoot", str(repo), "-PythonExe", sys.executable]
                 argvfile = workspace / "fixture-argv.json"
@@ -263,7 +290,7 @@ try { & $entry @forwardParameters } finally { Write-AnalysisFixtureEvent 'actual
                     self.assertEqual(analysis.count(token), 1, token)
                     analysis = analysis.replace(token, "Write-AnalysisFixtureEvent '" + label + "'\n  " + token, 1)
                 entry.write_text(prefix + analysis, encoding="utf-8")
-                environment = {**os.environ, "PYTHONPATH": str(repo), "PYTHONNOUSERSITE": "1",
+                environment = {**os.environ, "PYTHONPATH": str(repo / "src") + os.pathsep + str(repo), "PYTHONNOUSERSITE": "1",
                     "ProgramFiles": str(workspace / "NO_SIMION"),
                     "ANALYSIS_TEST_HOST_EVENTS": str(workspace / "host_events.txt"),
                     "ANALYSIS_TEST_SOURCE_RUN": str(source),
@@ -320,6 +347,9 @@ try { & $entry @forwardParameters } finally { Write-AnalysisFixtureEvent 'actual
                     self.assertEqual(Path(configuration["inputs"]["analysis_contract"]).read_bytes(), contract.read_bytes())
                     self.assertEqual((configuration["parameters"]["mother_particle_count"],
                                       configuration["parameters"]["launched_particle_count"]), (100, 97))
+                    snapshot_entry = run / "inputs/runtime_snapshot" / PREPARED_ENTRY
+                    self.assertEqual(snapshot_entry.read_text(), (repo / PREPARED_ENTRY).read_text())
+                    self.assertEqual(Path(configuration["inputs"][PREPARED_ENTRY_ID]), snapshot_entry)
                     self.assertTrue((run / "inputs/runtime_snapshot/src/msplatform/workflows/prepared_joint/analysis_inputs.py").is_file())
                 else:
                     self.assertEqual(summary["failure_stage"], "admit_completed_native_source")
@@ -336,7 +366,7 @@ class PreparedJointExecuteTests(unittest.TestCase):
         import io
         from msplatform.workflows.prepared_joint import trial as prepared_joint_trial
         from msplatform.workflows.prepared_joint import flight as prepared_flight
-        runner = REPO / "integrations/workflows/prepared_joint/execute.ps1"
+        runner = REPO / PREPARED_ENTRY
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             script = root / "arguments.ps1"
@@ -382,7 +412,7 @@ ConvertTo-Json -InputObject @($script:calls) -Depth 10 -Compress
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_reused_csv_paths_bind_and_legacy_receipts_remain_unchanged(self):
-        runner = REPO / "integrations/workflows/prepared_joint/execute.ps1"
+        runner = REPO / PREPARED_ENTRY
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             paths = dict(events_path=str(root/"events.csv"), trajectory_path=str(root/"trajectory.csv"))
@@ -432,7 +462,7 @@ $configuration.inputs|ConvertTo-Json -Depth 10 -Compress
         fallback = plan_recovered_formal_followup(provisional, {"natural_exit": True, "exit_code": 0,
             "count": first["count"], "source_row_range": [first["particle_id_min"], first["particle_id_max"]],
             "resource_observation": None})
-        source = (REPO / "integrations/workflows/prepared_joint/execute.ps1").read_text()
+        source = (REPO / PREPARED_ENTRY).read_text()
         start = source.index("    $dispatchValue=Get-Content -LiteralPath $dispatch -Raw|ConvertFrom-Json")
         end = source.index("    $checkpoint={", start)
         block = source[start:end]
@@ -468,7 +498,7 @@ if(($calibrated.waves[0].batches|ConvertTo-Json -Compress)-cne($initial.batches|
         powershell = shutil.which("pwsh")
         if not powershell:
             self.skipTest("PowerShell 7 is unavailable")
-        runner = REPO / "integrations/workflows/prepared_joint/execute.ps1"
+        runner = REPO / PREPARED_ENTRY
         with tempfile.TemporaryDirectory() as directory:
             script = Path(directory) / "mock.ps1"
             script.write_text(r'''param($Runner,$TestRoot,$PythonRuntime,$Repository,$Scenario)
@@ -490,7 +520,7 @@ $code=$function.Extent.Text -replace '(?m)^  \. \(Join-Path[^\r\n]+',''
 Invoke-Expression $code
 $sourceRefFunction=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Get-PreparedJointSourceReferences'},$true)
 Invoke-Expression $sourceRefFunction.Extent.Text
-$repoRoot=$TestRoot;$workspaceRoot=$TestRoot;$projectId='instrument_assembly'
+$repoRoot=$TestRoot;$workspaceRoot=$TestRoot;$projectId='instrument_assembly';$packageRoot=Join-Path $Repository 'src/msplatform'
 New-Item -ItemType Directory -Path (Join-Path $repoRoot 'src/msplatform/workflows/config')|Out-Null
 @{schema_version=2;role='integration_runtime_dependencies';owner_id='instrument_assembly';consumer_ids=@('prepared_joint');providers=@()}|ConvertTo-Json -Depth 5|Set-Content (Join-Path $repoRoot 'src/msplatform/workflows/config/runtime_dependencies.json')
 function Freeze-ConsumerDependencies {
@@ -538,7 +568,12 @@ function Write-VerifiedRunManifest {
  if($m.inputs.PSObject.Properties.Value.exists-contains$false){throw 'Actual manifest has an unbound input'}
 }
 function Complete-FailedRun {throw 'Unexpected light-evidence finalizer used'}
-function Initialize-RunArtifactPowerShellOwner {param($Package) return @{package=$Package;result_path='inert-result'}}
+function Initialize-RunArtifactPowerShellOwner {
+ param($Package,$EntrypointPath)
+ $expected=Join-Path $Repository 'src/msplatform/workflows/resources/prepared_joint_execute.ps1'
+ if($EntrypointPath-ne$expected){throw 'Flight frozen entrypoint owner differs'}
+ return @{package=$Package;result_path='inert-result'}
+}
 # This science-routing fixture replaces only the public lifecycle boundary;
 # separate recovery tests execute the actual common owner and original CLI.
 function Complete-RunArtifactPowerShellOwner {
@@ -716,7 +751,7 @@ foreach($kind in @('Prepared','Legacy')){
  $selection=@{ParameterSetName=$kind}
  foreach($assignment in $selected){Invoke-Expression ($assignment.Extent.Text.Replace('$PSCmdlet','$selection').Replace('$PSScriptRoot','$controllerDirectory'))}
  if($kind-eq'Prepared'){
-  if($trialRunner-ne(Join-Path $Repository 'integrations/workflows/prepared_joint/execute.ps1')-or$trialArtifactRoot-ne(Join-Path $artifactWorkspaceRoot 'projects/instrument_assembly')){throw 'Prepared route differs'}
+  if($trialRunner-ne(Join-Path $Repository 'src/msplatform/workflows/resources/prepared_joint_execute.ps1')-or$trialArtifactRoot-ne(Join-Path $artifactWorkspaceRoot 'projects/instrument_assembly')){throw 'Prepared route differs'}
  }elseif([IO.Path]::GetFullPath($trialRunner)-ne[IO.Path]::GetFullPath((Join-Path $Repository 'integrations/workflows/oa_mr/execute.ps1'))-or$trialArtifactRoot-ne(Join-Path $artifactWorkspaceRoot 'projects/instrument_assembly')){throw 'Ordinary OA route changed'}
 }
 'PREPARED_ROUTE=PASS'
@@ -749,15 +784,28 @@ foreach($kind in @('Prepared','Legacy')){
         self.addCleanup(fixture.doCleanups)
         fixture._materialize()
         inputs = fixture.root / "inputs"
+        frozen_repo = fixture.root / "frozen_repo"
+        inventory = prepared_joint_dependency_inventory()
+        from integrations.tests.test_support.single_reflection_execute_fixture import declared_dependency_paths
+        for relative in declared_dependency_paths(REPO, inventory, "prepared_joint") | {
+                "src/msplatform/workflows/config/assembly_registry.json"}:
+            target = frozen_repo / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(REPO / relative, target)
+        dependency = frozen_repo / "src/msplatform/workflows/config/runtime_dependencies.json"
+        dependency.parent.mkdir(parents=True, exist_ok=True)
+        dependency.write_text(json.dumps(inventory), encoding="utf-8")
         freeze = f"""
 . '{REPO / 'src/msplatform/execution/resources/dependencies.ps1'}'
-$path='{REPO / 'src/msplatform/workflows/config/runtime_dependencies.json'}'
-$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' -ContractPath $path -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId prepared_joint
+$path='{dependency}'
+$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{frozen_repo}' -ContractPath $path -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId prepared_joint
 """
         completed = subprocess.run([pwsh, "-NoProfile", "-Command", freeze], cwd=REPO,
                                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
         self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr)
         snapshot = inputs / "runtime_snapshot"
+        self.assertEqual((snapshot / PREPARED_ENTRY).read_bytes(), (REPO / PREPARED_ENTRY).read_bytes())
+        self.assertFalse((snapshot / "integrations/workflows/prepared_joint/execute.ps1").exists())
         relative = Path("src/msplatform/backends/simion/resources")
         for name in ("mrtof_candidate.lua", "run_iob_flight.lua", "build_native_corridor_iob.lua"):
             self.assertEqual((snapshot / relative / name).read_bytes(), (REPO / relative / name).read_bytes())

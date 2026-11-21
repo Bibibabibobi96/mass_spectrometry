@@ -17,7 +17,7 @@ PROJECT = Path(__file__).resolve().parents[2]
 
 class FirstPrismL0Test(unittest.TestCase):
     def setUp(self) -> None:
-        self.contract = load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")
+        self.contract = load_contract(PROJECT.parents[1] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json")
 
     def test_derives_total_energy_partition_triangle_crossings_and_static_seed(self) -> None:
         self.contract["accelerator"]["focus_y_anchor"]["project_y_mm"] = -45.0

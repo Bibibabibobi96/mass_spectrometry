@@ -1,7 +1,7 @@
 # 横置螺旋灯丝Wehnelt电子枪：COMSOL实施与验证
 
 本文只说明COMSOL三阶段模型、活动入口和GUI验收。当前项目资格与开放任务只见
-[`PROJECT.md`](PROJECT.md)；历史选型与旧数值见[`history/PROJECT_HISTORY.md`](history/PROJECT_HISTORY.md)。
+[`PROJECT.md`](PROJECT.md)；历史选型与旧数值见[`../../../docs/history/projects/transverse_helical_filament_wehnelt_electron_gun/PROJECT_HISTORY.md`](../../../docs/history/projects/transverse_helical_filament_wehnelt_electron_gun/PROJECT_HISTORY.md)。
 
 ## 活动入口
 

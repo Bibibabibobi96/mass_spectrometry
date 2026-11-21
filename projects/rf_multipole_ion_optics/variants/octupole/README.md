@@ -24,5 +24,5 @@
 
 ## 来源与产物
 
-原项目ID为`rf_octupole_ion_optics`，旧资格与run由[历史索引](../../docs/history/README.md)追溯。
+原项目ID为`rf_octupole_ion_optics`，旧资格与run由[历史索引](../../../../docs/history/projects/rf_multipole_ion_optics/README.md)追溯。
 新运行owner与产物规则见[项目目录与产物](../../README.md#目录与产物)。

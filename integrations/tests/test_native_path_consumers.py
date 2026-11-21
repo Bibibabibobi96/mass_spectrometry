@@ -173,7 +173,7 @@ try{
 }finally{$null=Exit-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $Repo -Session $session}
 """, encoding="utf-8", newline="\n")
             result = subprocess.run(["pwsh", "-NoProfile", "-File", str(script), str(REPO),
-                str(CONSUMER_ROOT/"integrations/workflows/prepared_joint/execute.ps1"), sys.executable,
+                str(CONSUMER_ROOT/"src/msplatform/workflows/resources/prepared_joint_execute.ps1"), sys.executable,
                 str(request)], cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=60)
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
             self.assertEqual((source/"run_manifest.json").read_bytes(), before)
@@ -273,7 +273,7 @@ try{
             path.write_text(code, encoding="utf-8", newline="\n")
             result = subprocess.run(["pwsh", "-NoProfile", "-File", str(path),
                 str(CONSUMER_ROOT/"src/msplatform/workflows/resources/ip_functional.ps1"),
-                str(CONSUMER_ROOT/"integrations/workflows/prepared_joint/execute.ps1"),
+                str(CONSUMER_ROOT/"src/msplatform/workflows/resources/prepared_joint_execute.ps1"),
                 str(REPO), sys.executable, str(root)], cwd=REPO,
                 capture_output=True, text=True, encoding="utf-8", timeout=60, check=False)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

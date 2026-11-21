@@ -12,22 +12,23 @@ param(
   [string]$RunId='',
   [Parameter(ParameterSetName='Flight')][string]$SimionExe='',
   [string]$PythonExe='',
-  [string]$RepoRoot=(Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)))
+  [string]$RepoRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../..'))
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $repoRoot=(Resolve-Path -LiteralPath $RepoRoot).Path
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/require_powershell7.ps1')
+$packageRoot=Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+. (Join-Path $PSScriptRoot '../../execution/resources/require_powershell7.ps1')
 $projectId='instrument_assembly'
 $workspaceRoot=Split-Path -Parent $repoRoot
 $script:pythonRoot=$repoRoot
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
 if(-not(Test-Path -LiteralPath $python -PathType Leaf)){throw "Python executable is missing: $python"}
-$executionResources=Join-Path $repoRoot 'src/msplatform/execution/resources'
+$executionResources=Join-Path $packageRoot 'execution/resources'
 . (Join-Path $executionResources 'workspace_paths.ps1')
 $pathContext=Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
 $hostContext=@{workspace=$workspaceRoot;python_executable=$python;host_state_path=[string]$pathContext.host_resource_state_path;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
-. (Join-Path $repoRoot 'src/msplatform/workflows/resources/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
+. (Join-Path $PSScriptRoot 'run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
 if($ResumeFinalization){
   if(-not$RunId){throw 'Finalization recovery requires the existing RunId.'}
   $projectArtifacts=Join-Path $pathContext.artifact_root "projects/$projectId"
@@ -107,7 +108,7 @@ function Invoke-PreparedJointTrial {
   # lifecycle and admission. The compiler only freezes scientific inputs.
   . (Join-Path $executionResources 'run_artifact_support.ps1')
   . (Join-Path $executionResources 'resource_process_support.ps1')
-  . (Join-Path $repoRoot 'src/msplatform/execution/resources/dependencies.ps1')
+  . (Join-Path $executionResources 'dependencies.ps1')
   if(-not$ContractPath){throw 'Prepared joint flight requires an explicit observation ContractPath.'}
   $prepared=(Resolve-Path -LiteralPath $PreparedJointWorkbenchRunPath).Path
   $observation=(Resolve-Path -LiteralPath $ContractPath).Path
@@ -147,10 +148,10 @@ function Invoke-PreparedJointTrial {
     $dependencyPath=Join-Path $repoRoot 'src/msplatform/workflows/config/runtime_dependencies.json'
     $frozen=Freeze-ConsumerDependencies -Python $Python -RepoRoot $repoRoot -ContractPath $dependencyPath -InputDir (Join-Path $runDir 'inputs') -OwnerId $projectId -ConsumerId prepared_joint
     $script:pythonRoot=[string]$frozen.execution_root
-    $entryIdentity=@($frozen.identities|Where-Object{$_.source_repo_path-ceq'integrations/workflows/prepared_joint/execute.ps1'})
+    $entryIdentity=@($frozen.identities|Where-Object{$_.source_repo_path-ceq'src/msplatform/workflows/resources/prepared_joint_execute.ps1'})
     $frozenEntryRecord=if($entryIdentity.Count-eq1){@{path=$entryIdentity[0].snapshot_path;exists=$true;bytes=[long](Get-Item -LiteralPath $entryIdentity[0].snapshot_path).Length;sha256=$entryIdentity[0].sha256}}else{$null}
     if($parentRun){
-      . (Join-Path $script:pythonRoot 'src/msplatform/backends/simion/resources/native_corridor_runtime_support.ps1')
+      . (Join-Path $packageRoot 'backends/simion/resources/native_corridor_runtime_support.ps1')
       $capacity=Protect-MrtofContinuationEvidence -Parent $parentRun -Session $capacity -Python $python -RepoRoot $script:pythonRoot -Guards $guards
     }
     $configuration=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable
@@ -272,7 +273,7 @@ function Invoke-PreparedJointTrial {
     $configuration.parameters=[ordered]@{parent_prepared_run=$prepared;trajectory_equivalence_reference_run=$TrajectoryEquivalenceReferenceRunPath;accelerator_provider='dual_pressure_rectilinear_ion_processor';particle_count=[int]$trial.launched_particle_count;mother_particle_count=[int]$trial.mother_particle_count;expected_particle_ids=@($trial.expected_particle_ids);trajectory_recording=$recording;source_mode=$PreparedSourceMode;prism_voltages_v=@($trial.prism_voltages_v);stripe_biases_v=@($trial.stripe_biases_v);energy_target_acceptance='not_declared';gui_executed=$false}
     Write-RunJson -Path $package.run_config -Depth 50 -Value $configuration
     $owner=Initialize-RunArtifactPowerShellOwner -Python $python -RepoRoot $repoRoot -Package $package -CapacitySession $capacity `
-      -ResultPath $ResultPath -EntrypointPath (Join-Path $script:pythonRoot 'integrations/workflows/prepared_joint/execute.ps1') -EntrypointRecord $frozenEntryRecord `
+      -ResultPath $ResultPath -EntrypointPath (Join-Path $script:pythonRoot 'src/msplatform/workflows/resources/prepared_joint_execute.ps1') -EntrypointRecord $frozenEntryRecord `
       -CommitmentInputPaths @([string]$trial.trajectory_contract.path) -Software @('SIMION 2020','Python 3.11')
     Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Status checkpoint `
       -Software @('SIMION 2020','Python 3.11') -Outputs @($preparationPath,$request,$profiles,$dispatch,$plan)|Out-Null
@@ -460,8 +461,8 @@ function Invoke-PreparedJointTrial {
   }
 }
 function Invoke-PreparedJointAnalysis {
-  . (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
-  . (Join-Path $repoRoot 'src/msplatform/execution/resources/dependencies.ps1')
+  . (Join-Path $executionResources 'run_artifact_support.ps1')
+  . (Join-Path $executionResources 'dependencies.ps1')
   $source=(Resolve-Path -LiteralPath $AnalyzeRunPath).Path
   $contract=(Resolve-Path -LiteralPath $ContractPath).Path
   $recording=(@(Invoke-ProjectPython -Arguments @('-m','msplatform.contracts.trajectory_recording','--contract',$contract))-join"`n")|ConvertFrom-Json
@@ -483,7 +484,7 @@ function Invoke-PreparedJointAnalysis {
     $dependencyPath=Join-Path $repoRoot 'src/msplatform/workflows/config/runtime_dependencies.json'
     $frozen=Freeze-ConsumerDependencies -Python $Python -RepoRoot $repoRoot -ContractPath $dependencyPath -InputDir $inputDir -OwnerId $projectId -ConsumerId prepared_joint
     $script:pythonRoot=[string]$frozen.execution_root
-    $entryIdentity=@($frozen.identities|Where-Object{$_.source_repo_path-ceq'integrations/workflows/prepared_joint/execute.ps1'})
+    $entryIdentity=@($frozen.identities|Where-Object{$_.source_repo_path-ceq'src/msplatform/workflows/resources/prepared_joint_execute.ps1'})
     $frozenEntryRecord=if($entryIdentity.Count-eq1){@{path=$entryIdentity[0].snapshot_path;exists=$true;bytes=[long](Get-Item -LiteralPath $entryIdentity[0].snapshot_path).Length;sha256=$entryIdentity[0].sha256}}else{$null}
     $configuration=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable
     $configuration.inputs=[ordered]@{code_inventory=$frozen.code_inventory_path;dependency_contract=$frozen.dependency_contract_path}
@@ -491,7 +492,7 @@ function Invoke-PreparedJointAnalysis {
     Write-RunJson -Path $package.run_config -Depth 50 -Value $configuration
     $frozenAnalysisContract=Copy-VerifiedRunInput -Source $contract -Destination (Join-Path $inputDir 'analysis_contract.json')
     $owner=Initialize-RunArtifactPowerShellOwner -Python $python -RepoRoot $repoRoot -Package $package -CapacitySession $capacity `
-      -ResultPath $ResultPath -EntrypointPath (Join-Path $script:pythonRoot 'integrations/workflows/prepared_joint/execute.ps1') -EntrypointRecord $frozenEntryRecord `
+      -ResultPath $ResultPath -EntrypointPath (Join-Path $script:pythonRoot 'src/msplatform/workflows/resources/prepared_joint_execute.ps1') -EntrypointRecord $frozenEntryRecord `
       -CommitmentInputPaths @($frozenAnalysisContract) -Software @('Python 3.11')
     $configuration=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable
     $stage='admit_completed_native_source'

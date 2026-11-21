@@ -5,7 +5,7 @@
 下表中的无碰撞传输支持三变体；接口就绪和质量过滤保留四极杆范围，不由家族名称扩大资格。
 本文只说明SIMION几何、Program、运行入口与独立验收。跨求解器状态和开放任务只见
 [`PROJECT.md`](PROJECT.md)；2026-07-28以前的完整run、数值和故障链冻结在
-[`retired_projects/rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-simion.md`](history/retired_projects/rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-simion.md)。
+[`retired_projects/rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-simion.md`](../../../docs/history/projects/rf_multipole_ion_optics/retired_projects/rf_quadrupole_ion_optics/docs/history/20260728__pre-document-consolidation-simion.md)。
 多极杆各轴向实体、事件面和`numerical_census_marker`只采用
 [实现与运行合同](IMPLEMENTATION.md)的统一术语。
 
@@ -93,7 +93,7 @@ IOB加载门禁必须检查：
 
 已完成的敏感性、资源终态及接口比较只以 [PROJECT](PROJECT.md) 和其资格合同为准。
 旧数值表与已退役接口叙述保存在
-[历史记录](history/retired_projects/rf_quadrupole_ion_optics/docs/history/20260911__solver-sensitivity-and-retired-interface.md)，不构成活动运行授权。
+[历史记录](../../../docs/history/projects/rf_multipole_ion_optics/retired_projects/rf_quadrupole_ion_optics/docs/history/20260911__solver-sensitivity-and-retired-interface.md)，不构成活动运行授权。
 
 RF 多极杆到 oa-TOF 的连接由 integration 拥有；项目只提供端口与 canonical handoff。
 公开入口由[项目 README](../README.md#工作流入口)导航，不再使用本项目旧 pulse_capture 链。
