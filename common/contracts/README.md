@@ -1172,7 +1172,7 @@ python -m msplatform.execution.write_formal_asset_manifest `
 ```
 
 结构门禁（包括公共PA缓存）默认只查元数据和大小，不声明载荷内容正确；正式发布或资产变更后再
-从仓库根运行`python -m msplatform.execution.verify_artifact_layout <artifacts-projects-root> --verify-hashes`
+从仓库根运行`python -m msplatform.backends.simion.verify_artifact_layout <artifacts-projects-root> --verify-hashes`
 做完整哈希复核。`--cache-entry`窄消费验证始终核对载荷哈希；它不继承结构预览的浅检查范围。正式结果本体不复制回
 来源run；为便于独立交付，可在结果包保留三份小型来源JSON快照，但它们不能替代原始run或正式清单。
 只复核当前正式发布而不审计旧run命名时使用`--formal-only --repository-root <repository-root>`。

@@ -195,7 +195,7 @@ ledger-only日常startup/maintenance。首次校准或台账失准时，必须�
 本机存在artifacts时运行：
 
 ```powershell
-.\.venv\Scripts\python.exe -m msplatform.execution.verify_artifact_layout ..\artifacts\projects
+.\.venv\Scripts\python.exe -m msplatform.backends.simion.verify_artifact_layout ..\artifacts\projects
 ```
 
 它默认检查目录合同、`run_id/archive_id`、三件套、manifest身份和文件类型/大小；公共SIMION缓存也不默认
