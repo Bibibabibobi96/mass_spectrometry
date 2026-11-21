@@ -16,7 +16,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from common.contracts import capacity_protection as protection
+from msplatform.execution import capacity_protection as protection
 from msplatform.execution.artifact_retention import _execute_removals
 from msplatform.execution.artifact_retention import _publish_removal_preflight
 from msplatform.execution.retention import classify_file

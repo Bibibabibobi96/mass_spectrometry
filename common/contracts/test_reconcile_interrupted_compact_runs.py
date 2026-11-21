@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from msplatform.io.file_identity import file_sha256
 from msplatform.execution.capacity_ledger import initialize_capacity_ledger
-from common.contracts import reconcile_interrupted_compact_runs as reconciliation
+from msplatform.execution import reconcile_interrupted_compact_runs as reconciliation
 from msplatform.execution.reconcile_interrupted_compact_runs import reconcile, summarize
 from msplatform.execution.capacity_protection import create_capacity_protection_lease
 

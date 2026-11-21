@@ -94,6 +94,29 @@ class StationaryRecoveryManagedTests(unittest.TestCase):
                 self.assertTrue(completion['writer_completion']['operations'][0]['observation']['exit_confirmed'])
                 self.assertEqual(completion['writer_completion']['operations'][0]['observation']['returncode'], 0)
                 self.assertIsNone(completion['writer_completion']['resource_releases'][0]['completion_receipt']['host_release']['error'])
+                failed_completion_path = failed_path.parent / 'results/execution_completion.json'
+                failed_completion_bytes = failed_completion_path.read_bytes()
+                failed_completion = json.loads(failed_completion_bytes)
+                failed_host = failed_completion['writer_completion']['resource_releases'][0]['completion_receipt']['host_release']
+                for inherited in (False, True):
+                    try:
+                        failed_host['inherited'] = inherited
+                        failed_host['result'] = None if inherited else {'status': 'released', 'token': failed_host['token']}
+                        failed_host['error'] = 'synthetic release failure'
+                        failed_completion_path.write_text(json.dumps(failed_completion), encoding='utf-8')
+                        changed_manifest = json.loads(failed_bytes)
+                        for output_record in changed_manifest['outputs']:
+                            if Path(output_record['path']) == failed_completion_path:
+                                output_record.update(file_record(failed_completion_path, 'required_evidence'))
+                        failed_path.write_text(json.dumps(changed_manifest), encoding='utf-8')
+                        changed_record = file_record(failed_path, 'required_evidence')
+                        with patch.object(RunSession, 'run_process', side_effect=AssertionError('must not launch')) as launch:
+                            with self.assertRaisesRegex(ValueError, 'source host release reports an error'):
+                                assembly_field_solution.recover_stationary(changed_record, selected_output=selected, context=context)
+                            launch.assert_not_called()
+                    finally:
+                        failed_completion_path.write_bytes(failed_completion_bytes)
+                        failed_path.write_bytes(failed_bytes)
                 self.assertEqual(failed_path.read_bytes(), failed_bytes)
                 self.assertEqual({key: source.data_path(key).read_bytes() for key in source.data_records}, source_bytes)
                 selected_path.write_bytes(selected_bytes + b'tampered')

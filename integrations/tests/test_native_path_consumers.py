@@ -138,7 +138,7 @@ foreach($mode in @('success','science_failure','no_science','no_operations')){
         import json
         from msplatform.execution.capacity_ledger import initialize_capacity_ledger
         from msplatform.execution.capacity_protection import load_capacity_protection_leases
-        from msplatform.execution.test_cross_root_protection import CrossRootProtectionTests
+        from common.contracts.test_cross_root_protection import CrossRootProtectionTests
 
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)

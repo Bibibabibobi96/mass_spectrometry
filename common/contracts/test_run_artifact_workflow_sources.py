@@ -10,12 +10,12 @@ import sys
 import tempfile
 import unittest
 import unittest.mock
-from common.contracts import capacity_ledger
+from msplatform.execution import capacity_ledger
 from msplatform.execution.capacity_ledger import initialize_capacity_ledger
 from msplatform.execution.capacity_protection import load_capacity_protection_leases
 from msplatform.execution.retention import file_record
-from msplatform.execution.test_support import run_artifact_workflow as fixture
-from msplatform.execution.test_support.run_artifact_workflow import CALLBACK, OWNER, PROJECT, PWSH, REPO, released_writer
+from common.contracts.test_support import run_artifact_workflow as fixture
+from common.contracts.test_support.run_artifact_workflow import CALLBACK, OWNER, PROJECT, PWSH, REPO, released_writer
 
 
 @unittest.skipUnless(PWSH and os.name == "nt", "Windows PowerShell workflow boundary")
@@ -314,7 +314,7 @@ try{{
     def test_native_source_default_execution_root_accepts_cross_root_and_resumes_without_new_alias(self) -> None:
         from msplatform.execution.execution_aliases import execution_alias_root_is_valid
         from common.contracts import legacy_capacity_calibration as calibration
-        from common.contracts import reconcile_artifact_capacity as maintenance
+        from msplatform.execution import execution_aliases as maintenance
         with tempfile.TemporaryDirectory(prefix='native-source-default-') as directory:
             root = Path(directory)
             with unittest.mock.patch.dict(os.environ, {'MASS_SPECTROMETRY_EXECUTION_ROOT': str(root / 'parent_execution')}):
@@ -337,7 +337,7 @@ try{{
                 with unittest.mock.patch.object(Path, 'rglob', side_effect=AssertionError('source payload inventoried')):
                     measured, pending = calibration._execution_alias_root(artifacts, aliases, '2026-11-01')
                     self.assertIsNone(pending); self.assertEqual(measured['bytes'], 0)
-                    self.assertEqual(maintenance._reconcile_execution_alias_root(artifacts),
+                    self.assertEqual(maintenance.reconcile_execution_alias_root(artifacts),
                                      {'corrected_count': 0, 'released_bytes': 0})
                 recovered, process = self.resume_fixture(consumer, run)
                 self.assertEqual(process.returncode, 0, process.stdout + process.stderr)

@@ -68,7 +68,7 @@ def owner_overlay(destination):
                 path = name.replace(".", "/") + ".py"
                 if name.startswith("common.") and (REPO / path).is_file():
                     pending.append(path)
-    from msplatform.execution.test_support.run_artifact_workflow import copy_scientific_core
+    from common.contracts.test_support.run_artifact_workflow import copy_scientific_core
 
     copy_scientific_core(REPO, destination)
     for relative in ("src/msplatform/execution/resources/run_artifact_support.ps1", "common/host_execution_lease.ps1",

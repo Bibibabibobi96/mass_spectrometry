@@ -339,6 +339,8 @@ def recover_stationary(failed_manifest: Mapping[str, Any], *, selected_output: M
     for item in releases:
         from msplatform.execution.process_transport import _host_release
         host = _host_release(item['completion_receipt'])
+        if host['error'] is not None:
+            raise ValueError('source host release reports an error')
         if host['inherited']:
             if host['result'] is not None:
                 raise ValueError('inherited host receipt cannot attest owner release')
