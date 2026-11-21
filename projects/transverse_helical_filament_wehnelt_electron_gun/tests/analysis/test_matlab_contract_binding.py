@@ -661,7 +661,7 @@ Write-Output 'FROZEN_BUDGET_OBSERVATION=PASS'
             "src/msplatform/execution/resources/resource_process_support.ps1",
             "src/msplatform/execution/resources/run_artifact_support.ps1",
             "src/msplatform/execution/manifest_publication.py",
-            "common/contracts/capacity_protection.py",
+            "src/msplatform/execution/capacity_protection.py",
             "src/msplatform/execution/manifest_verification.py",
             "src/msplatform/execution/artifact_naming.py",
             "src/msplatform/io/file_identity.py",
