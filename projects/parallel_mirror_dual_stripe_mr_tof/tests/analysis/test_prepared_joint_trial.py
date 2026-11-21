@@ -78,7 +78,7 @@ $null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath 
                 "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_prepared_joint_trial.py",
                 "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_measured_component_source.py",
                 "projects/parallel_mirror_dual_stripe_mr_tof/tests/analysis/test_ion_processor_handoff.py",
-                "integrations/config/recipes/ip_mr_y_minus55_plan.json",
+                "src/msplatform/workflows/config/ip_mr_y_minus55_plan.json",
                 "projects/parallel_mirror_dual_stripe_mr_tof/config/ion_processor_matching_request.json",
                 "src/msplatform/workflows/config/ion_processor_matching_request.schema.json",
             ):

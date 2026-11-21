@@ -62,7 +62,7 @@
                 },
                 "entrypoint": {
                   "type": "string",
-                  "pattern": "^integrations/workflows/.+\\.ps1$"
+                  "pattern": "^(?:integrations/workflows/.+|src/msplatform/workflows/resources/[A-Za-z0-9_]+)\\.ps1$"
                 },
                 "required_bindings": {
                   "type": "array",

@@ -426,7 +426,8 @@ def compile_integration_execution(owner: str, workflow_id: str, run_id: str,
                 authorities.append(dict(name=key, path=str(manifest.resolve()), bytes=manifest.stat().st_size, sha256=sha256(manifest)))
     status = "NEEDS_RUNTIME_INPUTS" if missing or unavailable else "NEEDS_SOURCE_FREEZE" if needs_freeze else "EXECUTION_READY"
     entry = (REPO_ROOT/workflow["entrypoint"]).resolve()
-    if not entry.is_relative_to((REPO_ROOT/owners[0]["root"]).resolve()) or not entry.is_file():
+    package_owned = entry.is_relative_to((REPO_ROOT / "src/msplatform").resolve())
+    if not (package_owned or entry.is_relative_to((REPO_ROOT/owners[0]["root"]).resolve())) or not entry.is_file():
         raise ValueError("Integration entrypoint is outside its owner or missing")
     run_identity = workflow.get('run_identity', 'caller_selected')
     declared_arguments = [*workflow['arguments'], *(item for values in optional.values() for item in values)]

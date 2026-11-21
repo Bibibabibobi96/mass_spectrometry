@@ -21,7 +21,7 @@ from msplatform.workflows.prepared_joint.ip_mr_handoff import prepare_handoff, r
 
 def handoff_plan(recipe):
     """Frozen mechanical provider fixture; no solver or external run dependency."""
-    baseline = json.loads((Path(__file__).parents[4] / 'integrations/config/recipes/ip_mr_y_minus55_plan.json').read_text())
+    baseline = json.loads((Path(__file__).parents[4] / 'src/msplatform/workflows/config/ip_mr_y_minus55_plan.json').read_text())
     by_project = {value['project_id']: value for value in baseline['components'].values()}
     components = {}
     for item in recipe['instances']:
@@ -42,7 +42,7 @@ class IonProcessorHandoffTests(unittest.TestCase):
         self.request = self.root / "request.json"
         self.output = self.root / "prepared"
         self.recipe_path = self.root / "recipe.json"
-        recipe = json.loads((Path(__file__).parents[4] / "integrations/config/recipes/ip_mr_y_minus55_plan.json").read_text())["recipe"]
+        recipe = json.loads((Path(__file__).parents[4] / "src/msplatform/workflows/config/ip_mr_y_minus55_plan.json").read_text())["recipe"]
         recipe["assembly_frame_id"] = "mr_frame.v2"
         for instance in recipe["instances"]:
             instance["transform"]["to_frame_id"] = "mr_frame.v2"

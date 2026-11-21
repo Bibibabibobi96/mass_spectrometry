@@ -32,7 +32,7 @@ def _plans():
     campaign = REPO / "projects/orthogonal_accelerator/config/two_zone_component_focus_campaign.json"
     profile_id = json.loads(campaign.read_text(encoding="utf-8"))["geometry_profile_id"]
     provider = derive(campaign, geometry_profile=load_geometry_profile(profile_id), mesh_mm_per_gu=[.25, .25, .1])
-    legacy = json.loads((REPO / "integrations/config/recipes/oa_mr_two_zone_gap30_plan.json").read_text(encoding="utf-8"))
+    legacy = json.loads((REPO / "src/msplatform/workflows/config/oa_mr_two_zone_gap30_plan.json").read_text(encoding="utf-8"))
     pose = resolve_oa_mr_direct_pose(provider, legacy)
     oa = oa_interface(provider["requirements"], geometry_profile_id=provider["layout"]["geometry_profile_id"],
                       geometry_profile=authority["geometry_profile"])

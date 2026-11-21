@@ -508,7 +508,8 @@ def query_capabilities(registry: dict[str, Any], *, repo_root: Path = REPO_ROOT,
             for workflow in integration.get("workflows", []):
                 for relative in [workflow["entrypoint"], *workflow["recipes"]]:
                     path = (repo_root/relative).resolve()
-                    if not path.is_relative_to((repo_root/integration["root"]).resolve()) or not path.is_file():
+                    package_owned = path.is_relative_to((repo_root / "src/msplatform").resolve())
+                    if not (package_owned or path.is_relative_to((repo_root/integration["root"]).resolve())) or not path.is_file():
                         raise ContractError(f"Integration capability input is outside its owner or missing: {relative}")
             result.append(dict(owner_kind="integration", owner_id=identity,
                                profiles=integration.get("workflows", [])))

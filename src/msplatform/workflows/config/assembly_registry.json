@@ -99,7 +99,7 @@
             "continuous_assembly"
           ],
           "recipes": [
-            "integrations/config/recipes/ip_mr_y_minus55_plan.json"
+            "src/msplatform/workflows/config/ip_mr_y_minus55_plan.json"
           ],
           "limitations": [
             "Only the declared downstream prepared-source scope is continuous; no upstream history is newly executed."
@@ -152,8 +152,8 @@
             "segmented_handoff"
           ],
           "recipes": [
-            "integrations/config/recipes/multipole_ip_mr_y_minus55_plan.json",
-            "integrations/config/recipes/ip_mr_y_minus55_plan.json"
+            "src/msplatform/workflows/config/multipole_ip_mr_y_minus55_plan.json",
+            "src/msplatform/workflows/config/ip_mr_y_minus55_plan.json"
           ],
           "limitations": [
             "Existing IP source is handed off to the downstream joint field; IP own partial recovery is not automatic full-chain recovery."
@@ -214,7 +214,7 @@
             "continuous_assembly"
           ],
           "recipes": [
-            "integrations/config/recipes/oa_mr_two_zone_gap30_plan.json"
+            "src/msplatform/workflows/config/oa_mr_two_zone_gap30_plan.json"
           ],
           "limitations": [
             "Continuous only within the declared prepared-source propagation and supported field/interface domain."

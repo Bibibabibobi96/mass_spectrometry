@@ -363,7 +363,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
             PROJECT.parent / "orthogonal_accelerator/config/two_zone_component_focus_campaign.json"
         , geometry_profile=load_geometry_profile(json.loads((PROJECT.parent / "orthogonal_accelerator/config/two_zone_component_focus_campaign.json").read_text(encoding="utf-8"))["geometry_profile_id"]), mesh_mm_per_gu=[0.25, 0.25, 0.1])
         composition_plan = json.loads((
-            PROJECT.parent.parent / "integrations/config/recipes/oa_mr_two_zone_gap30_plan.json"
+            PROJECT.parent.parent / "src/msplatform/workflows/config/oa_mr_two_zone_gap30_plan.json"
         ).read_text(encoding="utf-8"))
         from msplatform.components.orthogonal_accelerator.assembly_interface import resolve_assembly_interface
         with patch("msplatform.backends.simion.native_system_geometry.resolve_oa_assembly_interface",

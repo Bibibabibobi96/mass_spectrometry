@@ -91,7 +91,7 @@ class MrProviderFreezeTests(unittest.TestCase):
             config = base / 'request.json'
             environment = {**os.environ, 'PYTHONPATH': str(ROOT / 'src')}
             def invoke(mode):
-                return subprocess.run([pwsh, '-NoProfile', '-File', str(script), str(ROOT), str(inputs), str(config), mode, sys.executable], cwd=fixture, env=environment, capture_output=True, text=True, encoding='utf-8', timeout=180)
+                return subprocess.run([pwsh, '-NoProfile', '-File', str(script), str(ROOT), str(inputs), str(config), mode, sys.executable], cwd=fixture, env=environment, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=180)
             frozen = invoke('freeze')
             self.assertEqual(frozen.returncode, 0, frozen.stdout + frozen.stderr)
             snapshot = Path(json.loads(frozen.stdout)['execution_root'])
@@ -99,7 +99,7 @@ class MrProviderFreezeTests(unittest.TestCase):
                 'candidate.json': ROOT / 'projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json',
                 'oa.json': ROOT / 'src/msplatform/components/orthogonal_accelerator/component_contract.json',
                 'campaign.json': ROOT / 'projects/orthogonal_accelerator/config/two_zone_component_focus_campaign.json',
-                'plan.json': ROOT / 'integrations/config/recipes/oa_mr_two_zone_gap30_plan.json',
+                'plan.json': ROOT / 'src/msplatform/workflows/config/oa_mr_two_zone_gap30_plan.json',
             }.items():
                 shutil.copyfile(source, fixture / name)
                 self.assertEqual((fixture / name).read_bytes(), source.read_bytes())
@@ -145,7 +145,7 @@ class MrProviderFreezeTests(unittest.TestCase):
             self.assertNotEqual(no_collision_backfill.returncode, 0, no_collision_backfill.stdout + no_collision_backfill.stderr)
             self.assertIn('msplatform.backends.simion.collision_overlay', no_collision_backfill.stderr)
             collision.write_bytes(collision_original)
-            for name, source in {'candidate.json': ROOT / 'projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json', 'oa.json': ROOT / 'src/msplatform/components/orthogonal_accelerator/component_contract.json', 'campaign.json': ROOT / 'projects/orthogonal_accelerator/config/two_zone_component_focus_campaign.json', 'plan.json': ROOT / 'integrations/config/recipes/oa_mr_two_zone_gap30_plan.json'}.items():
+            for name, source in {'candidate.json': ROOT / 'projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json', 'oa.json': ROOT / 'src/msplatform/components/orthogonal_accelerator/component_contract.json', 'campaign.json': ROOT / 'projects/orthogonal_accelerator/config/two_zone_component_focus_campaign.json', 'plan.json': ROOT / 'src/msplatform/workflows/config/oa_mr_two_zone_gap30_plan.json'}.items():
                 self.assertEqual((fixture / name).read_bytes(), source.read_bytes())
 
 
@@ -204,7 +204,7 @@ Invoke-FrozenCollectionGate -Frozen $frozen -Observation $Observation -Output $O
                 return subprocess.run([pwsh, '-NoProfile', '-File', str(script),
                     str(ROOT / 'integrations/workflows/oa_mr/execute.ps1'), str(descriptor),
                     str(observation), str(output), sys.executable, str(author)], cwd=fixture,
-                    env=env, capture_output=True, text=True, encoding='utf-8', timeout=90)
+                    env=env, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=90)
             positive = invoke()
             self.assertEqual(positive.returncode, 0, positive.stdout + positive.stderr)
             self.assertEqual(json.loads(output.read_text(encoding='utf-8'))['status'], 'accepted')
@@ -255,7 +255,7 @@ class PublicFrozenCollectionGateTests(unittest.TestCase):
             environment = {**os.environ, 'PYTHONPATH': str(ROOT / 'src')}
             frozen = subprocess.run([pwsh, '-NoProfile', '-File', str(freeze_script), str(ROOT),
                 str(inputs), str(descriptor), 'freeze', sys.executable], cwd=fixture,
-                env=environment, capture_output=True, text=True, encoding='utf-8', timeout=180)
+                env=environment, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=180)
             self.assertEqual(frozen.returncode, 0, frozen.stdout + frozen.stderr)
             data = json.loads(frozen.stdout)
             snapshot = Path(data['execution_root'])
@@ -286,7 +286,7 @@ Invoke-FrozenCollectionGate -Frozen $frozen -Observation $Observation -Output $O
             def invoke():
                 return subprocess.run([pwsh, '-NoProfile', '-File', str(runner), str(ROOT), str(descriptor),
                     str(observation), str(output), sys.executable], cwd=fixture, env=environment,
-                    capture_output=True, text=True, encoding='utf-8', timeout=180)
+                    capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=180)
             accepted = invoke()
             self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
             self.assertEqual(json.loads(output.read_text(encoding='utf-8'))['status'], 'accepted')

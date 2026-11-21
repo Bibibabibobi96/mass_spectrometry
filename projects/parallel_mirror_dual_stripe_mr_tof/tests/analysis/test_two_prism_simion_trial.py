@@ -297,7 +297,7 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
     def test_whole_parent_motion_preserves_materialized_local_controls(self):
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_simion_candidate_reference import reframe_oa_mr_plan
         project = Path(__file__).resolve().parents[2]
-        parent = json.loads((project.parent.parent / "integrations/config/recipes/oa_mr_two_zone_gap30_plan.json").read_text())
+        parent = json.loads((project.parent.parent / "src/msplatform/workflows/config/oa_mr_two_zone_gap30_plan.json").read_text())
         original = json.dumps(parent, sort_keys=True)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -928,7 +928,7 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
         project = Path(__file__).resolve().parents[2]
         actual_provider = derive(project.parent / "orthogonal_accelerator/config/two_zone_component_focus_campaign.json", geometry_profile=load_geometry_profile(json.loads((project.parent / "orthogonal_accelerator/config/two_zone_component_focus_campaign.json").read_text(encoding="utf-8"))["geometry_profile_id"]), mesh_mm_per_gu=[0.25, 0.25, 0.1])
         actual_contract = two_prism_simion_trial.load_contract(project / "config/simion_candidate_two_zone.json")
-        parent = json.loads((project.parent.parent / "integrations/config/recipes/oa_mr_two_zone_gap30_plan.json").read_text())
+        parent = json.loads((project.parent.parent / "src/msplatform/workflows/config/oa_mr_two_zone_gap30_plan.json").read_text())
         original_states = copy.deepcopy(selection)
         for plan in (parent, reframe_oa_mr_plan(parent, ((1, 0, 0), (0, 1, 0), (0, 0, 1))),
                      reframe_oa_mr_plan(parent, ((0, -1, 0), (1, 0, 0), (0, 0, 1)))):

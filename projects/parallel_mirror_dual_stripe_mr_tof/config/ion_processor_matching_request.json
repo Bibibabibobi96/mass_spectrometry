@@ -58,6 +58,6 @@
     "field_assembly": "replace_old_oa_and_rebuild_affected_boundaries"
   },
   "composition_plan": {
-    "path": "../../../integrations/config/recipes/ip_mr_y_minus55_plan.json"
+    "path": "../../../src/msplatform/workflows/config/ip_mr_y_minus55_plan.json"
   }
 }

@@ -204,6 +204,13 @@
       "provider_project": "msplatform",
       "files": [
         {
+          "id": "single_reflection_flight_public_entry",
+          "source_repo_path": "src/msplatform/workflows/resources/single_reflection_flight.ps1",
+          "consumers": [
+            "single_reflection_flight"
+          ]
+        },
+        {
           "id": "orthogonal_accelerator_component_contract",
           "source_repo_path": "src/msplatform/components/orthogonal_accelerator/component_contract.json",
           "consumers": [

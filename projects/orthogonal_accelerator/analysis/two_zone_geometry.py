@@ -22,7 +22,7 @@ from msplatform.components.orthogonal_accelerator.two_zone_geometry import (
 
 def load_geometry_profile(profile_id: str = CLOSED_TWO_ZONE_PROFILE_ID) -> Mapping[str, float | int]:
     """Load the sole component-owned physical profile from its frozen contract."""
-    path = Path(__file__).parents[1] / "config" / "component_contract.json"
+    path = Path(__file__).parents[3] / "src/msplatform/components/orthogonal_accelerator/component_contract.json"
     try:
         document = json.loads(path.read_text(encoding="utf-8"))
         profiles = document["geometry_profiles"]

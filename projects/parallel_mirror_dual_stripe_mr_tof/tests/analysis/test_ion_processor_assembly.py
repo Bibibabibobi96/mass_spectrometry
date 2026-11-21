@@ -135,7 +135,7 @@ class AssemblyTests(unittest.TestCase):
             "target": {"axial_energy_per_charge_v": 4372.010347796, "frame_id": "astral.xyz.reflection_z.drift_y.transverse_x.v2"},
             "current_measured_baseline": {"directional_energy": {"z": {"mean": 3891.9665569516114}}},
             "requirements": {"energy_definition": "exit_axial_kinetic_energy_per_charge"},
-            "composition_plan": json.loads((ROOT / "integrations/config/recipes/ip_mr_y_minus55_plan.json").read_text()),
+            "composition_plan": json.loads((ROOT / "src/msplatform/workflows/config/ip_mr_y_minus55_plan.json").read_text()),
             "field_assembly_reference": refs,
         }
         self.rebuild_parent()

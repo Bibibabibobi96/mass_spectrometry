@@ -858,7 +858,7 @@ if(($Bad-eq'bad')-ne$caught-or($Bad-eq'bad')-eq$vendorAllowed){throw 'Live ident
                     write(path, value)
                     paths[name] = str(path)
                 from msplatform.workflows.prepared_joint.ip_mr_connection import resolve_ip_mr_connection
-                plan = json.loads((REPO/"integrations/config/recipes/ip_mr_y_minus55_plan.json").read_text())
+                plan = json.loads((REPO/"src/msplatform/workflows/config/ip_mr_y_minus55_plan.json").read_text())
                 connection = resolve_ip_mr_connection(plan)
                 pose = plan["recipe"]["instances"][0]["transform"]
                 write(design/"inputs/composition_plan.json", plan)
@@ -1195,7 +1195,7 @@ if($LASTEXITCODE-ne0){throw 'actual preparation command did not disable bytecode
         fixture.setUp()
         self.addCleanup(fixture.doCleanups)
         fixture._negative_population()
-        plan_path = REPO / "integrations/config/recipes/ip_mr_y_minus55_plan.json"
+        plan_path = REPO / "src/msplatform/workflows/config/ip_mr_y_minus55_plan.json"
         plan = json.loads(plan_path.read_text())
         mr_provider = next(component for component in plan["components"].values()
                            if component["project_id"] == MR.name)
