@@ -419,7 +419,7 @@ if([string]::IsNullOrWhiteSpace($RunId)){$RunId=(Get-Date -Format 'yyyyMMdd_HHmm
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 . (Join-Path $executionResources 'resource_process_support.ps1')
 . (Join-Path $repoRoot 'src/msplatform/backends/simion/resources/short_pa_path_support.ps1')
-. (Join-Path $repoRoot 'integrations/runtime/dependencies.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/dependencies.ps1')
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$projectId") `
   -RunId $RunId -Project $projectId -Mode 'oa_mr' -Software @('SIMION 2020','Python 3.11') `
   -RetentionContractEnabled -RetentionClass $trajectoryRetentionClass -RetentionReason $trajectoryRetentionReason `

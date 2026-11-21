@@ -76,7 +76,7 @@ class SingleReflectionScientificFreezeTests(unittest.TestCase):
             script = root / "freeze.ps1"
             script.write_text("""
 param($Python,$Repo,$Output)
-. (Join-Path $Repo 'integrations/runtime/dependencies.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/dependencies.ps1')
 $frozen=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo `
  -ContractPath (Join-Path $Repo 'integrations/config/runtime_dependencies.json') `
  -InputDir $Output -OwnerId instrument_assembly -ConsumerId single_reflection_flight

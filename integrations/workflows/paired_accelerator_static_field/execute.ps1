@@ -35,10 +35,10 @@ if(-not$DryRun-and(-not$SolverAuthorized-or-not$ExecutionBudgetPath)){
 $executionResources=Join-Path $RepoRoot 'src/msplatform/execution/resources'
 . (Join-Path $executionResources 'require_powershell7.ps1')
 . (Join-Path $executionResources 'run_artifact_support.ps1')
-. (Join-Path $RepoRoot 'integrations/runtime/dependencies.ps1')
+. (Join-Path $RepoRoot 'src/msplatform/execution/resources/dependencies.ps1')
 . (Join-Path $executionResources 'resource_process_support.ps1')
 . (Join-Path $RepoRoot 'src/msplatform/backends/simion/resources/short_pa_path_support.ps1')
-. (Join-Path $RepoRoot 'integrations/runtime/frontend_flight_support.ps1')
+. (Join-Path $RepoRoot 'src/msplatform/workflows/resources/frontend_flight_support.ps1')
 if(-not$Python){$Python=if($env:SIMULATION_PYTHON_EXE){$env:SIMULATION_PYTHON_EXE}else{throw 'Explicit Python or SIMULATION_PYTHON_EXE is required'}}
 . (Join-Path $executionResources 'workspace_paths.ps1')
 $pathArguments=@{SourceRoot=$RepoRoot;Python=$Python}

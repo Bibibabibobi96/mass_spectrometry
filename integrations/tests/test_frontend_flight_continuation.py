@@ -10,7 +10,7 @@ import unittest
 
 
 REPO = Path(__file__).resolve().parents[2]
-SUPPORT = REPO / "integrations/runtime/frontend_flight_support.ps1"
+SUPPORT = REPO / "src/msplatform/workflows/resources/frontend_flight_support.ps1"
 
 
 @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 unavailable")

@@ -491,7 +491,7 @@ class MultipoleIPPreparationTests(unittest.TestCase):
         write_json(self.request_path, self.request)
         inventory = REPO / "integrations/config/runtime_dependencies.json"
         script = f"""
-. '{REPO / 'integrations/runtime/dependencies.ps1'}'
+. '{REPO / 'src/msplatform/execution/resources/dependencies.ps1'}'
 $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' -ContractPath '{inventory}' -InputDir '{self.run / 'inputs'}' -OwnerId instrument_assembly -ConsumerId multipole_ip
 """
         frozen = subprocess.run([pwsh, "-NoProfile", "-Command", script], cwd=REPO,

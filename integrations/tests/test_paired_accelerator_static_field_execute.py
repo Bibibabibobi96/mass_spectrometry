@@ -74,7 +74,7 @@ class PairedStaticExecutionTests(unittest.TestCase):
         source=(WORKFLOW/'execute.ps1').read_text(encoding='utf-8')
         # dependencies.ps1 reloads the public capacity adapter. Install the
         # fixture after that import so host disk policy stays outside this test.
-        boundary=". (Join-Path $RepoRoot 'integrations/runtime/dependencies.ps1')"
+        boundary=". (Join-Path $RepoRoot 'src/msplatform/execution/resources/dependencies.ps1')"
         self.assertEqual(source.count(boundary),1)
         owner=root/'inert_capacity_owner.ps1'
         owner.write_text(source.replace(boundary,boundary+"\nfunction Invoke-ArtifactCapacityGate { Write-Host 'TEST_CAPACITY_ADMISSION=ISOLATED'; [pscustomobject]@{satisfied_after_apply=$true} }"),
@@ -498,7 +498,7 @@ foreach($mode in @('success','failure')){
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 . (Join-Path $RepoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
-. (Join-Path $RepoRoot 'integrations/runtime/dependencies.ps1')
+. (Join-Path $RepoRoot 'src/msplatform/execution/resources/dependencies.ps1')
 $tokens=$null;$errors=$null
 $owner=Join-Path $RepoRoot 'integrations/workflows/paired_accelerator_static_field/execute.ps1'
 $ast=[System.Management.Automation.Language.Parser]::ParseFile($owner,[ref]$tokens,[ref]$errors)
@@ -559,7 +559,7 @@ foreach($record in $selected){if((Get-RunFileSha256 -Path (Join-Path $RepoRoot $
     def test_real_frozen_closure_prepares_and_materializes_tasks(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);run,author=self.prepared(root)
-            command=f". '{ROOT}/integrations/runtime/dependencies.ps1'; $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{ROOT}' -ContractPath '{ROOT}/integrations/config/runtime_dependencies.json' -InputDir '{run}/inputs' -OwnerId instrument_assembly -ConsumerId paired_accelerator_static_field"
+            command=f". '{ROOT}/src/msplatform/execution/resources/dependencies.ps1'; $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{ROOT}' -ContractPath '{ROOT}/integrations/config/runtime_dependencies.json' -InputDir '{run}/inputs' -OwnerId instrument_assembly -ConsumerId paired_accelerator_static_field"
             result=subprocess.run(['pwsh','-NoProfile','-Command',command],cwd=ROOT,capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=60)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
             snapshot=run/'inputs/runtime_snapshot'

@@ -2,6 +2,15 @@
 
 The project verifier now loads the installed execution lease resource with an explicit HostContext. Callers must select Python through `-PythonExe` or `SIMULATION_PYTHON_EXE`; the verifier no longer assumes a checkout `.venv`. Its preflight, test selection and scientific behavior are unchanged.
 
+The finite COMSOL and SIMION frozen-source closures no longer copy the retired
+`common/contracts`, `common/paths` or `common/comsol` directories. They retain
+the canonical `msplatform` implementation and explicit RF research inputs.
+The real two-runner frozen closure passed in 29.437 seconds, with the canonical
+science input still required. All 15 analysis/recovery methods passed, including
+saved extraction and source-mismatch refusal; 14 completed before the outer
+300-second command ended and the final method passed separately in 49.999 seconds.
+No native COMSOL/SIMION execution or new scientific qualification follows.
+
 ## Installed publication owner
 
 `msplatform.workflows.rf_publication` owns the complete request compiler, freshness

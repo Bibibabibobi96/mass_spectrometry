@@ -86,26 +86,6 @@
       "provider_project": "instrument_assembly",
       "files": [
         {
-          "id": "instrument_assembly_runtime_frontend_flight_support_ps1",
-          "source_repo_path": "integrations/runtime/frontend_flight_support.ps1",
-          "consumers": [
-            "single_reflection_flight",
-            "paired_accelerator_pulse"
-          ]
-        },
-        {
-          "id": "instrument_assembly_dependency_runtime",
-          "source_repo_path": "integrations/runtime/dependencies.ps1",
-          "consumers": [
-            "prepared_joint",
-            "accelerator_interface",
-            "oa_mr",
-            "multipole_ip",
-            "paired_accelerator_static_field",
-            "paired_accelerator_pulse"
-          ]
-        },
-        {
           "id": "integration_registry",
           "source_repo_path": "integrations/registry.json",
           "consumers": [
@@ -339,6 +319,21 @@
       "provider_scope": "repository_core",
       "provider_project": "msplatform",
       "files": [
+        {
+          "id": "msplatform_execution_dependency_runtime",
+          "source_repo_path": "src/msplatform/execution/resources/dependencies.ps1",
+          "consumers": [
+            "prepared_joint", "accelerator_interface", "oa_mr", "multipole_ip",
+            "paired_accelerator_static_field", "paired_accelerator_pulse"
+          ]
+        },
+        {
+          "id": "msplatform_workflows_frontend_flight_support",
+          "source_repo_path": "src/msplatform/workflows/resources/frontend_flight_support.ps1",
+          "consumers": [
+            "single_reflection_flight", "paired_accelerator_pulse", "paired_accelerator_static_field"
+          ]
+        },
         {
           "id": "prepared_joint_msplatform_backends_simion_resources_build_native_corridor_iob_lua",
           "source_repo_path": "src/msplatform/backends/simion/resources/build_native_corridor_iob.lua",

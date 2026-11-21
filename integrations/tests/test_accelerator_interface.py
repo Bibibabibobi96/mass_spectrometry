@@ -47,7 +47,7 @@ def _copy_path_consumer_repository(target):
     from integrations.tests.test_support.single_reflection_execute_fixture import declared_dependency_paths
     paths = declared_dependency_paths(REPO, contract, 'multipole_ip')
     paths.update({"integrations/config/runtime_dependencies.json", "integrations/registry.json",
-                  "integrations/runtime/dependencies.ps1"})
+                  "src/msplatform/execution/resources/dependencies.ps1"})
     for relative in paths:
         destination = target / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -1349,7 +1349,7 @@ if($LASTEXITCODE-ne0){throw 'actual preparation command did not disable bytecode
         pwsh = shutil.which("pwsh")
         self.assertIsNotNone(pwsh)
         command = f"""
-. '{REPO / 'integrations/runtime/dependencies.ps1'}'
+. '{REPO / 'src/msplatform/execution/resources/dependencies.ps1'}'
 $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' -ContractPath '{REPO / 'integrations/config/runtime_dependencies.json'}' -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId accelerator_interface
 """
         frozen = subprocess.run([pwsh, "-NoProfile", "-Command", command], cwd=REPO,
@@ -1428,7 +1428,7 @@ print("DETACHED_IP_MR_COMPLETE_SOURCE=PASS")
             (run / "run_config.json").write_text(json.dumps(dict(project="instrument_assembly",
                 mode="accelerator_interface_preparation", run_id=run.name)))
             command = f"""
-. '{REPO / 'integrations/runtime/dependencies.ps1'}'
+. '{REPO / 'src/msplatform/execution/resources/dependencies.ps1'}'
 $path='{REPO / 'integrations/config/runtime_dependencies.json'}'
 $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' -ContractPath $path -InputDir '{run / 'inputs'}' -OwnerId instrument_assembly -ConsumerId accelerator_interface
 """

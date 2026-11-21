@@ -19,7 +19,7 @@ from msplatform.execution.inputs import python_import_roots
 REPO_ROOT = Path(__file__).resolve().parents[2]
 INTEGRATION_ROOT = REPO_ROOT / "integrations"
 INVENTORY = INTEGRATION_ROOT / "config/runtime_dependencies.json"
-DEPENDENCIES = INTEGRATION_ROOT / "runtime/dependencies.ps1"
+DEPENDENCIES = REPO_ROOT / "src/msplatform/execution/resources/dependencies.ps1"
 
 
 def snapshot_environment(snapshot: Path) -> dict[str, str]:
@@ -44,7 +44,7 @@ class DependencyTests(unittest.TestCase):
             destination = root / "snapshot_inputs"
             script = root / "freeze.ps1"
             script.write_text("""param($Repo,$Destination,$Python)
-. (Join-Path $Repo 'integrations/runtime/dependencies.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/dependencies.ps1')
 $null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath (Join-Path $Repo 'integrations/config/runtime_dependencies.json') -InputDir $Destination -OwnerId instrument_assembly -ConsumerId single_reflection_flight
 """, encoding="utf-8")
             frozen = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(script),
@@ -226,7 +226,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{author}
             freeze_script = root / "freeze.ps1"
             freeze_script.write_text("""param($Repo,$Destination,$Python)
 $ErrorActionPreference='Stop'
-. (Join-Path $Repo 'integrations/runtime/dependencies.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/dependencies.ps1')
 $null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath (Join-Path $Repo 'integrations/config/runtime_dependencies.json') -InputDir $Destination -OwnerId instrument_assembly -ConsumerId single_reflection_flight
 """, encoding="utf-8", newline="\n")
             environment = dict(os.environ, PYTHONPATH="", PYTHONNOUSERSITE="1",
@@ -400,7 +400,7 @@ with tempfile.TemporaryDirectory() as request_directory:
                             paths.update(enumerate_python_sources(REPO_ROOT,
                                 package_roots=[row["source_repo_path"]], resource_suffixes=row["resource_suffixes"]))
             paths.update({"integrations/registry.json", "integrations/config/runtime_dependencies.json",
-                          "integrations/runtime/dependencies.ps1"})
+                          "src/msplatform/execution/resources/dependencies.ps1"})
             for relative in paths:
                 destination = author / relative
                 destination.parent.mkdir(parents=True, exist_ok=True)
@@ -576,7 +576,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_RO
             # New process, no live-repository import. The source is an existing
             # frozen contract; the copy and receipt must bind its actual bytes.
             script = f"""
-. '{detached / 'integrations/runtime/dependencies.ps1'}'
+. '{detached / 'src/msplatform/execution/resources/dependencies.ps1'}'
 $dependency=[pscustomobject]@{{
  id='fixture';provider_scope='repository_core';provider_project='msplatform';provider_repo_path='src/msplatform'
  source_repo_path='src/msplatform/execution/resources/run_artifact_support.ps1';frozen_filename='copied.ps1'

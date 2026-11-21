@@ -760,7 +760,7 @@ class WorkbenchMaterializationTests(unittest.TestCase):
         inputs = self.root / "cold_inputs"
         script = self.root / "freeze_runtime.ps1"
         script.write_text("""param($Repo,$Inputs,$Python)
-. (Join-Path $Repo 'integrations/runtime/dependencies.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/dependencies.ps1')
 $null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath (Join-Path $Repo 'integrations/config/runtime_dependencies.json') -InputDir $Inputs -OwnerId instrument_assembly -ConsumerId single_reflection_flight
 """, encoding="utf-8")
         frozen = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(script),

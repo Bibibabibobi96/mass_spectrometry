@@ -8,6 +8,14 @@ Current scope is P4 V8.7 (2026-11-12); historical evidence keeps its original ve
 
 ## 当前边界
 
+The Assembly dependency freezer and paired frontend process support now have their
+sole PowerShell owners under `msplatform.execution/resources` and
+`msplatform/workflows/resources`. The former `integrations/runtime` files and
+their duplicate provider registrations are retired; the installed core's explicit
+resource declarations retain them in frozen snapshots. Detached snapshot,
+prepared-joint recovery and all seven registered consumer import checks passed
+in 104.113 seconds. No solver execution or new scientific qualification follows.
+
 OA–MR now consumes its four retired project Lua implementations only from the
 installed SIMION backend; the project voltage-map research input remains
 explicit. The real detached-provider fixture exercises that production resource

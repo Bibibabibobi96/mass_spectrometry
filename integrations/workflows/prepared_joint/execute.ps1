@@ -107,7 +107,7 @@ function Invoke-PreparedJointTrial {
   # lifecycle and admission. The compiler only freezes scientific inputs.
   . (Join-Path $executionResources 'run_artifact_support.ps1')
   . (Join-Path $executionResources 'resource_process_support.ps1')
-  . (Join-Path $repoRoot 'integrations/runtime/dependencies.ps1')
+  . (Join-Path $repoRoot 'src/msplatform/execution/resources/dependencies.ps1')
   if(-not$ContractPath){throw 'Prepared joint flight requires an explicit observation ContractPath.'}
   $prepared=(Resolve-Path -LiteralPath $PreparedJointWorkbenchRunPath).Path
   $observation=(Resolve-Path -LiteralPath $ContractPath).Path
@@ -461,7 +461,7 @@ function Invoke-PreparedJointTrial {
 }
 function Invoke-PreparedJointAnalysis {
   . (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
-  . (Join-Path $repoRoot 'integrations/runtime/dependencies.ps1')
+  . (Join-Path $repoRoot 'src/msplatform/execution/resources/dependencies.ps1')
   $source=(Resolve-Path -LiteralPath $AnalyzeRunPath).Path
   $contract=(Resolve-Path -LiteralPath $ContractPath).Path
   $recording=(@(Invoke-ProjectPython -Arguments @('-m','msplatform.contracts.trajectory_recording','--contract',$contract))-join"`n")|ConvertFrom-Json

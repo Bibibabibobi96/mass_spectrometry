@@ -763,7 +763,7 @@ $AcceleratorComponentContractPath=$OaContract;$AcceleratorGeometryProfileId=$OaP
 $runConfig=Join-Path $Root 'run_config.json'
 @{project=$Owner;mode='oa_mr';inputs=@{};parameters=@{}}|ConvertTo-Json|Set-Content $runConfig
 . (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
-. (Join-Path $Repo 'integrations/runtime/dependencies.ps1')
+. (Join-Path $Repo 'src/msplatform/execution/resources/dependencies.ps1')
 """ + copy_input + freeze + r"""
 $config=Get-Content -LiteralPath $runConfig -Raw|ConvertFrom-Json -AsHashtable
 if($config.inputs.code_inventory-ne$frozen.code_inventory_path){throw 'Frozen code identity was lost'}

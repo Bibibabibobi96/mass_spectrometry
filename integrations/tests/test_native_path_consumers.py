@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 
 REPO = Path(__file__).resolve().parents[2]
-FRONTEND = REPO/"integrations/runtime/frontend_flight_support.ps1"
+FRONTEND = REPO/"src/msplatform/workflows/resources/frontend_flight_support.ps1"
 CONSUMER_ROOT = REPO
 
 

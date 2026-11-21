@@ -732,10 +732,9 @@ function Invoke-FiniteComsolAnalysisChild {
       if($LASTEXITCODE-ne0){throw 'Analysis engineering budget differs from frozen parent authority.'}
     }
     $analysisBudget=($budgetText-join"`n")|ConvertFrom-Json -AsHashtable -Depth 100
-    $analysisAreas=@('src/msplatform','common/contracts','common/paths','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/variants')
+    $analysisAreas=@('src/msplatform','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/variants')
     $analysisAdditional=@()
     if($ReextractFromModel){
-      $analysisAreas+=@('common/comsol')
       $analysisAdditional=@('src/msplatform/execution/resources/host_execution_lease.ps1','src/msplatform/execution/host_resource_scheduler.py','src/msplatform/execution/resources/host_resource_policy.json','src/msplatform/execution/resources/require_powershell7.ps1','src/msplatform/execution/resources/resource_process_support.ps1')
     }
     $copiedPaths=@(Get-RunPackageCopiedSourcePaths -RepoRoot $RepoRoot -SourceRelativeDirectories $analysisAreas -Extensions @('.py','.json','.ps1','.m','.lua'))
@@ -952,7 +951,7 @@ $hostRuntimeSourcePaths=@(
   'src/msplatform/execution/resources/host_resource_policy.json','src/msplatform/execution/resources/require_powershell7.ps1','src/msplatform/execution/resources/resource_process_support.ps1')
 $analysisSourcePaths=@('src/msplatform/analysis/particle_census.py','src/msplatform/backends/simion/native_completion.py')
 $executionCapacityPaths=Get-RunPackageCopiedSourcePaths -RepoRoot $repoRoot `
-  -SourceRelativeDirectories @('src/msplatform','common/contracts','common/paths','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/variants') `
+  -SourceRelativeDirectories @('src/msplatform','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/variants') `
   -Extensions @('.py','.json','.ps1','.m','.lua')
 $executionCapacityPaths+=@(($hostRuntimeSourcePaths+$analysisSourcePaths)|ForEach-Object{"inputs/code/$_"})
 $entryScriptHash=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash
@@ -992,7 +991,7 @@ $ownerState.host_lease=Enter-HostExecutionLease -StatePath $workspacePaths.host_
 $comsolRunFailure=$null
 
   $copied=Copy-FiniteComsolRuntime -RepoRoot $repoRoot -InputDir $inputDir -SourceAreas @(
-    'src/msplatform','common/contracts','common/paths','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/variants') -AdditionalPaths @($hostRuntimeSourcePaths+$analysisSourcePaths)
+    'src/msplatform','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/variants') -AdditionalPaths @($hostRuntimeSourcePaths+$analysisSourcePaths)
   $codeRoot=$copied.code_root;$codeInventory=$copied.inventory_path;$inventory=$copied.files
 
   $profileResolution=Join-Path $inputDir 'design_profile_resolution.json'

@@ -362,7 +362,7 @@ ConvertTo-Json -InputObject $script:calls -Depth 6
             "src/msplatform/analysis/particle_census.py", "config/project_registry.json",
         }
         expected |= {path.relative_to(REPO_ROOT).as_posix()
-                     for root_name in ("common/paths", "projects/rf_multipole_ion_optics/variants")
+                     for root_name in ("projects/rf_multipole_ion_optics/variants",)
                      for path in (REPO_ROOT / root_name).rglob("*")
                      if path.is_file() and path.suffix in {".py", ".ps1", ".json"}}
         for runner_name in ("run_finite_3d_transport.ps1", RUNNER.name):
@@ -465,9 +465,7 @@ print(json.dumps(dict(mother=result["mother_particle_ids"], non_exit=result["non
                 design_program = """
 import json, pathlib, runpy, sys
 sys.path[:0] = json.loads(sys.argv[2])
-from common.paths.repository_root import REPO_ROOT as frozen_repo
 import msplatform.workflows.rf_design_profiles as design_profile
-assert pathlib.Path(frozen_repo).resolve() == pathlib.Path(sys.argv[1]).resolve()
 assert pathlib.Path(design_profile.__file__).resolve().is_relative_to(pathlib.Path(sys.argv[1]).resolve())
 sys.argv = ['design_profile', '--repo-root', sys.argv[1], '--project-id', 'rf_multipole_ion_optics',
             '--design-profile-id', 'octupole_no_acceleration_full_length', '--output', sys.argv[3]]
@@ -479,14 +477,13 @@ runpy.run_module('msplatform.workflows.rf_design_profiles', run_name='__main__')
                                               timeout=30, check=False)
                 self.assertEqual(design_probe.returncode, 0, design_probe.stderr)
                 self.assertTrue((root / "design-resolution.json").is_file())
-                missing_path_module = root / "code/common/paths/repository_root.py"
-                path_module_bytes = missing_path_module.read_bytes()
-                missing_path_module.unlink()
-                refused_paths = subprocess.run(design_command, cwd=root, capture_output=True, text=True,
-                                               timeout=30, check=False)
-                self.assertNotEqual(refused_paths.returncode, 0)
-                self.assertIn("No module named 'common.paths.repository_root'", refused_paths.stderr)
-                missing_path_module.write_bytes(path_module_bytes)
+                missing_design = root / "code/projects/rf_multipole_ion_optics/config/design_profiles.json"
+                design_bytes = missing_design.read_bytes()
+                missing_design.unlink()
+                refused_design = subprocess.run(design_command, cwd=root, capture_output=True, text=True,
+                                                timeout=30, check=False)
+                self.assertNotEqual(refused_design.returncode, 0)
+                missing_design.write_bytes(design_bytes)
                 workspace_paths = root / "code/src/msplatform/execution/resources/workspace_paths.ps1"
                 workspace_bytes = workspace_paths.read_bytes()
                 workspace_paths.unlink()

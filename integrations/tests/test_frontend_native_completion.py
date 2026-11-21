@@ -13,7 +13,7 @@ class FrontendNativeCompletionTests(unittest.TestCase):
     def test_known_failure_unknown_and_callback_preserve_each_actual_fact(self):
         code = r'''param($Repo)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $Repo 'integrations/runtime/frontend_flight_support.ps1')
+. (Join-Path $Repo 'src/msplatform/workflows/resources/frontend_flight_support.ps1')
 $facts=[Collections.Generic.List[object]]::new()
 $birth=(Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks
 $unknown=@{observed_process_exit_confirmed=$false;observed_process_returncode=$null;observed_process_id=$PID;observed_process_started_at_utc_ticks=$birth}
@@ -26,7 +26,7 @@ Add-FrontendNativeOperation -NativeOperations $facts -NativeResourceReleaseId OW
 if($facts.Count-ne2-or$facts[1].observation.returncode-ne7-or-not$facts[1].observation.exit_confirmed){throw 'Failed natural exit fact lost'}
 $NativeOperations=$facts;$NativeResourceReleaseId='OWNER';$Phase='baseline'
 $OnProcessCompleted={param($record);throw 'SCIENTIFIC_CALLBACK_FAILURE'}
-$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'integrations/runtime/frontend_flight_support.ps1'),[ref]$null,[ref]$null)
+$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'src/msplatform/workflows/resources/frontend_flight_support.ps1'),[ref]$null,[ref]$null)
 $function=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-FrontendFlightPhase'},$true)
 foreach($statement in $function.Body.EndBlock.Statements){
  if($statement.Extent.Text-match '^\$completion(?:Writer|Operations|ReleaseId|Phase)?='-or$statement.Extent.Text-match '^\$scientificCompletion='){. ([scriptblock]::Create($statement.Extent.Text))}

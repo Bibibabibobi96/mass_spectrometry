@@ -1425,7 +1425,7 @@ $result|ConvertTo-Json -Compress
         for path in ("integrations/tests/test_dependencies.py",
                      "integrations/config/runtime_dependencies.json",
                      "integrations/verify_integration.ps1",
-                     "integrations/runtime/dependencies.ps1",
+                     "src/msplatform/execution/resources/dependencies.ps1",
                      "integrations/runtime/single_flight_frontend.py",
                      "integrations/analysis/plot_single_flight_spatial_six_panel.py"):
             with self.subTest(path=path):

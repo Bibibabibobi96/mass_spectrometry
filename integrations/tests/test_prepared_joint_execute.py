@@ -750,7 +750,7 @@ foreach($kind in @('Prepared','Legacy')){
         fixture._materialize()
         inputs = fixture.root / "inputs"
         freeze = f"""
-. '{REPO / 'integrations/runtime/dependencies.ps1'}'
+. '{REPO / 'src/msplatform/execution/resources/dependencies.ps1'}'
 $path='{REPO / 'integrations/config/runtime_dependencies.json'}'
 $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' -ContractPath $path -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId prepared_joint
 """

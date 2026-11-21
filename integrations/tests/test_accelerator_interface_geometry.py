@@ -269,7 +269,7 @@ class AcceleratorGeometryTests(unittest.TestCase):
         inputs = fixture.root / "inputs"
         inputs.mkdir()
         command = f"""
-. '{repo / 'integrations/runtime/dependencies.ps1'}'
+. '{repo / 'src/msplatform/execution/resources/dependencies.ps1'}'
 $path='{repo / 'integrations/config/runtime_dependencies.json'}'
 $snapshot=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{repo}' -ContractPath $path -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId accelerator_interface
 ConvertTo-Json -InputObject @($snapshot.import_roots) | Out-File -LiteralPath '{inputs / "import_roots.json"}' -Encoding utf8NoBOM

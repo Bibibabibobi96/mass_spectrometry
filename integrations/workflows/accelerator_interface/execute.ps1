@@ -76,7 +76,7 @@ foreach($name in @('ContinuousReleaseRequest','ContinuousFieldsReference','Conti
 if($PythonExe){$PythonExe=(Resolve-Path -LiteralPath $PythonExe).Path}
 $script:pythonRoot=$repoRoot
 . (Join-Path $repoRoot 'src/msplatform/execution/resources/require_powershell7.ps1')
-. (Join-Path $repoRoot 'integrations/runtime/dependencies.ps1')
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/dependencies.ps1')
 . (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $python=if($PythonExe){$PythonExe}elseif($env:SIMULATION_PYTHON_EXE){$env:SIMULATION_PYTHON_EXE}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
 . (Join-Path $repoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')

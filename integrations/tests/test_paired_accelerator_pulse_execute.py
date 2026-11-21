@@ -79,7 +79,7 @@ exit 0
         source=OWNER.read_text(encoding='utf-8')
         # dependencies.ps1 reloads the public capacity adapter. Install the
         # fixture after that import so host disk policy stays outside this test.
-        boundary=". (Join-Path $RepoRoot 'integrations/runtime/dependencies.ps1')"
+        boundary=". (Join-Path $RepoRoot 'src/msplatform/execution/resources/dependencies.ps1')"
         self.assertEqual(source.count(boundary),1)
         owner=root/'inert_capacity_owner.ps1'
         owner.write_text(source.replace(boundary,boundary+"\nfunction Invoke-ArtifactCapacityGate { Write-Host 'TEST_CAPACITY_ADMISSION=ISOLATED'; [pscustomobject]@{satisfied_after_apply=$true} }"),
@@ -240,7 +240,7 @@ $RunId='TEST_ONLY_OWNER_BRANCH';$SimionExe=Join-Path $Root 'never-executed.exe';
 $ExecutionBudgetPath=Join-Path $Root 'budget.json';$budgetPath=$ExecutionBudgetPath
 Write-RunJson -Path $ExecutionBudgetPath -Value @{committed_new_bytes=10000;limits=@{wall_clock_seconds=100;transient_run_directory_bytes=10000;process_tree_working_set_bytes=10000;minimum_system_available_memory_bytes=10000;compact_final_retained_bytes=10000};host_budgets=@{simion_flight=@{};comsol=@{}}}
 $script:simionCalls=0;$script:replayCalls=0;$script:modelVerifications=0;$script:collected=0
-. (Join-Path $PublicRepo 'integrations/runtime/frontend_flight_support.ps1')
+. (Join-Path $PublicRepo 'src/msplatform/workflows/resources/frontend_flight_support.ps1')
 $oldIob=Join-Path $Root 'original.iob';[IO.File]::WriteAllText($oldIob,'TEST_ONLY_ORIGINAL_IOB_IDENTITY')
 $sourceReceipt=Join-Path $Root 'original_case.json';[IO.File]::WriteAllText($sourceReceipt,'TEST_ONLY_READONLY_SOURCE_RECEIPT')
 $case=[pscustomobject]@{index=1;case_id='borrowed';count=2;expected_particle_ids=@(100,99);source_row_range=@(1,2);simion_particle_id_offset=0;merge_offset=0;iob_path=$oldIob;working_directory=$Root;environment=@{};stdout='TEST_ONLY_original.stdout';stderr='TEST_ONLY_original.stderr';fly_arguments=@('--nogui','--noprompt','fly',$oldIob);receipt_path=$sourceReceipt;control_records=@(@{path=$oldIob});iob_reopen_record=@{path=$priorResults}}
@@ -317,7 +317,7 @@ if([IO.File]::ReadAllText($sourceReceipt)-ne'TEST_ONLY_READONLY_SOURCE_RECEIPT'-
         script = r'''param($Owner,$RepoRoot,$Python,$Root)
 $ErrorActionPreference='Stop'
 . (Join-Path $RepoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
-. (Join-Path $RepoRoot 'integrations/runtime/frontend_flight_support.ps1')
+. (Join-Path $RepoRoot 'src/msplatform/workflows/resources/frontend_flight_support.ps1')
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($Owner,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
