@@ -616,7 +616,11 @@ $duplicates=@($resolved|Group-Object|Where-Object Count -gt 1)
 if($duplicates.Count -ne 0){throw "Duplicate frozen destinations: $($duplicates.Name)"}
 }
 Set-Location $env:FROZEN_DEPENDENCY_TEST_ROOT
-. ./common/resource_budget_support.ps1
+$hostContext=@{workspace=$env:FROZEN_DEPENDENCY_TEST_ROOT;python_executable=$env:DEPENDENCY_TEST_PYTHON;
+ host_state_path=(Join-Path $env:FROZEN_DEPENDENCY_TEST_ROOT 'host.sqlite3');
+ policy_path=(Join-Path $env:FROZEN_DEPENDENCY_TEST_ROOT 'src/msplatform/execution/resources/host_resource_policy.json')}
+. ./src/msplatform/execution/resources/host_execution_lease.ps1 -HostContext $hostContext
+. ./src/msplatform/execution/resources/resource_process_support.ps1
 if((Get-Command New-RepositoryProcessObservation).ScriptBlock.File -ne
     (Join-Path $env:FROZEN_DEPENDENCY_TEST_ROOT 'src/msplatform/execution/resources/resource_process_support.ps1')){
   throw 'Observation did not load from the frozen source table'
@@ -652,9 +656,9 @@ Write-Output 'FROZEN_BUDGET_OBSERVATION=PASS'
             "src/msplatform/execution/resources/require_powershell7.ps1",
             "common/verify.ps1",
             "common/gate_catalog.json",
-            "common/host_execution_lease.ps1",
+            "src/msplatform/execution/resources/host_execution_lease.ps1",
             "src/msplatform/execution/host_resource_scheduler.py",
-            "common/resource_budget_support.ps1",
+            "src/msplatform/execution/resources/resource_process_support.ps1",
             "src/msplatform/execution/resources/run_artifact_support.ps1",
             "src/msplatform/execution/manifest_publication.py",
             "common/contracts/capacity_protection.py",
@@ -683,7 +687,7 @@ Write-Output 'FROZEN_BUDGET_OBSERVATION=PASS'
                 freeze(REPO_ROOT / relative, snapshot / relative)
             # Isolate admission telemetry as well as its ledger: this checks frozen
             # imports/writes, not whether another real scientific run leaves capacity.
-            with (snapshot / "common/host_execution_lease.ps1").open("a", encoding="utf-8") as stream:
+            with (snapshot / "src/msplatform/execution/resources/host_execution_lease.ps1").open("a", encoding="utf-8") as stream:
                 stream.write(r'''
 function Get-HostResourceSnapshot {
   return @{

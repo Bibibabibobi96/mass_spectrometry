@@ -382,11 +382,11 @@ foreach($nested in @($false,$true)) {
             verify_candidate_source_closure(closure)
             self.assertTrue((code / "src/msplatform/execution/host_resource_scheduler.py").is_file())
             self.assertTrue((code / "src/msplatform/execution/resources/host_resource_policy.json").is_file())
-            self.assertTrue((code / "common/resource_budget_support.ps1").is_file())
+            self.assertTrue((code / "src/msplatform/execution/resources/resource_process_support.ps1").is_file())
             script = """
 $ErrorActionPreference='Stop'
 . ./src/msplatform/execution/resources/host_execution_lease.ps1 -HostContext @{workspace=(Get-Location).Path;python_executable=$env:FROZEN_TEST_PYTHON;host_state_path=$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH;policy_path=(Resolve-Path './src/msplatform/execution/resources/host_resource_policy.json').Path}
-. ./common/resource_budget_support.ps1
+. ./src/msplatform/execution/resources/resource_process_support.ps1
 $observationSource=(Get-Command New-RepositoryProcessObservation).ScriptBlock.File
 if($observationSource -ne [IO.Path]::GetFullPath('./src/msplatform/execution/resources/resource_process_support.ps1')){
   throw 'Process observation did not load from the frozen closure'

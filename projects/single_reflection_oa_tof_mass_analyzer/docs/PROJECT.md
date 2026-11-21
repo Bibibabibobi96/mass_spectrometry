@@ -1,5 +1,11 @@
 # 单次反射正交加速飞行时间质量分析器当前状态
 
+The Candidate source closure now names only the canonical host lease and process
+resources, replacing the two retired `common` PowerShell adapters. Its nine real
+host/freezer entrypoint regressions passed in 28.144 seconds, including bound
+Python, grant inheritance, failure release and unknown-writer protection. This
+is software closure evidence, not a new native or scientific qualification.
+
 ## Installed component PA-plan owner
 
 `msplatform.backends.simion.simion_component_pa_plan` now owns the pure

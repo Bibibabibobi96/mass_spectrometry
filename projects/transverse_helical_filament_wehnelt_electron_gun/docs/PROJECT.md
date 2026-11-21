@@ -7,6 +7,11 @@ The project verifier now loads the installed execution lease resource with an ex
 故障与修复时间线冻结在
 [`history/20260728__pre-document-consolidation-project.md`](history/20260728__pre-document-consolidation-project.md)。
 
+The build-only freezer no longer adds the two retired `common` host/process
+adapters. Its canonical package selector supplies those resources exactly once.
+The actual selector and frozen-input/tamper checks passed in 22.383 seconds with
+an explicit HostContext; no MATLAB/COMSOL execution or qualification follows.
+
 ## 当前基线
 
 当前物理基线为5匝横置螺旋钨丝、2700 K热发射的Wehnelt电子枪，面向EI离子源的电子利用率，不声明

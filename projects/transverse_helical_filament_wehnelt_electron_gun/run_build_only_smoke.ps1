@@ -301,8 +301,6 @@ try {
     python_project_config = 'pyproject.toml'
     changed_scope_gate = 'common\verify.ps1'
     gate_catalog = 'common\gate_catalog.json'
-    host_resource_adapter = 'common\host_execution_lease.ps1'
-    resource_budget_support = 'common\resource_budget_support.ps1'
     capacity_protection = 'common\contracts\capacity_protection.py'
     project_registry_builder = 'common\contracts\build_project_registry.py'
   }
