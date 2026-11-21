@@ -30,7 +30,8 @@
           "id": "prepared_joint_integrations_workflows_prepared_joint_execute_ps1",
           "source_repo_path": "integrations/workflows/prepared_joint/execute.ps1",
           "consumers": [
-            "prepared_joint"
+            "prepared_joint",
+            "accelerator_interface"
           ]
         },
         {
@@ -59,7 +60,8 @@
           "id": "integrations_workflows_multipole_ip_execute_ps1",
           "source_repo_path": "integrations/workflows/multipole_ip/execute.ps1",
           "consumers": [
-            "multipole_ip"
+            "multipole_ip",
+            "accelerator_interface"
           ]
         },
         {
@@ -695,6 +697,34 @@
           ]
         },
         {
+          "id": "accelerator_interface_msplatform_ip_functional",
+          "source_repo_path": "src/msplatform/workflows/resources/ip_functional.ps1",
+          "consumers": [
+            "accelerator_interface"
+          ]
+        },
+        {
+          "id": "accelerator_interface_msplatform_native_static_field_provider",
+          "source_repo_path": "src/msplatform/backends/simion/resources/run_native_static_field_provider.ps1",
+          "consumers": [
+            "accelerator_interface"
+          ]
+        },
+        {
+          "id": "accelerator_interface_msplatform_dirichlet_patch_basis",
+          "source_repo_path": "src/msplatform/backends/simion/resources/build_dirichlet_patch_basis.lua",
+          "consumers": [
+            "accelerator_interface"
+          ]
+        },
+        {
+          "id": "accelerator_interface_msplatform_native_static_crop",
+          "source_repo_path": "src/msplatform/backends/simion/resources/crop_native_static_field.lua",
+          "consumers": [
+            "accelerator_interface"
+          ]
+        },
+        {
           "id": "msplatform_execution_run_paths_owner",
           "source_repo_path": "src/msplatform/execution/resources/run_paths_owner.ps1",
           "consumers": [
@@ -712,6 +742,7 @@
           "source_repo_path": "src/msplatform/execution/resources/simion_dispatch_support.ps1",
           "consumers": [
             "prepared_joint",
+            "accelerator_interface",
             "oa_mr",
             "single_reflection_flight",
             "paired_accelerator_static_field",
@@ -839,6 +870,7 @@
           "source_repo_path": "src/msplatform/workflows/resources/run_artifact_workflow.ps1",
           "consumers": [
             "prepared_joint",
+            "accelerator_interface",
             "oa_mr",
             "paired_accelerator_static_field",
             "paired_accelerator_pulse",
@@ -873,6 +905,7 @@
           "consumers": [
             "oa_mr",
             "prepared_joint",
+            "accelerator_interface",
             "single_reflection_flight",
             "paired_accelerator_static_field",
             "paired_accelerator_pulse"

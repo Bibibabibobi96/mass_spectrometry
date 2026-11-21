@@ -21,7 +21,12 @@ unchanged. This ownership migration does not launch SIMION or grant a new field,
 trajectory or scientific qualification. Its PowerShell execution owner now loads
 host admission, budgeted processes and lifecycle support directly from the installed
 execution resources and requires an explicit Python selection instead of defaulting
-to the checkout `.venv`. Existing host-state overrides, native input guards,
+to the checkout `.venv`. The execution helper root is resolved beneath that installed
+package; SIMION Lua companions remain under its backend resource directory. FullJoint's
+frozen consumer closure now includes its prepared-joint, multipole-IP, IP-functional and
+native-provider children plus their required PowerShell/Lua companions. The full provider
+preparation/recovery suite and frozen dependency suite pass; no native solver was started.
+Existing host-state overrides, native input guards,
 failure closure and frozen scientific inputs remain unchanged. The 14 runner
 methods passed with 24 successful records; this software check did not launch
 SIMION or complete ordinary-install field production. The PowerShell execution

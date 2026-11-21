@@ -10,9 +10,6 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-$executionResources=$PSScriptRoot
-. (Join-Path $executionResources 'require_powershell7.ps1')
-. (Join-Path $executionResources 'run_artifact_support.ps1')
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
 $contextJson=if($HostContextJson){$HostContextJson}elseif($env:MASS_SPECTROMETRY_HOST_CONTEXT_JSON){$env:MASS_SPECTROMETRY_HOST_CONTEXT_JSON}else{throw 'Explicit HostContextJson or MASS_SPECTROMETRY_HOST_CONTEXT_JSON is required'}
 $hostContext=ConvertFrom-Json $contextJson -AsHashtable
@@ -20,6 +17,9 @@ $repo=[string]$hostContext.workspace
 $packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
 if($LASTEXITCODE-ne0){throw 'Installed msplatform package is unavailable.'}
 $packageRoot=(Resolve-Path -LiteralPath $packageRootText).Path
+$executionResources=Join-Path $packageRoot 'execution/resources'
+. (Join-Path $executionResources 'require_powershell7.ps1')
+. (Join-Path $executionResources 'run_artifact_support.ps1')
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 . (Join-Path $executionResources 'resource_process_support.ps1')
 $module='msplatform.backends.simion.native_static_field_provider'

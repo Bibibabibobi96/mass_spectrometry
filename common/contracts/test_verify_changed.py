@@ -1432,6 +1432,9 @@ $result|ConvertTo-Json -Compress
                 expected = {"instrument_assembly_integration"}
                 if path == "integrations/config/runtime_dependencies.json":
                     expected.add("common_contracts")
+                elif path == "src/msplatform/execution/resources/dependencies.ps1":
+                    expected.update(("common_contracts", "host_resource_adapter_tests",
+                                     "host_resource_scheduler_tests"))
                 self.assertEqual(set(self.routed_stages(path)), expected)
 
 

@@ -340,6 +340,21 @@ print('FROZEN_SRC_CORE=PASS')
                 cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=120)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             snapshot = inputs / "runtime_snapshot"
+            required_companions = {
+                "integrations/workflows/prepared_joint/execute.ps1",
+                "integrations/workflows/multipole_ip/execute.ps1",
+                "src/msplatform/workflows/resources/ip_functional.ps1",
+                "src/msplatform/workflows/resources/run_artifact_workflow.ps1",
+                "src/msplatform/backends/simion/resources/run_native_static_field_provider.ps1",
+                "src/msplatform/backends/simion/resources/build_dirichlet_patch_basis.lua",
+                "src/msplatform/backends/simion/resources/crop_native_static_field.lua",
+                "src/msplatform/backends/simion/resources/short_pa_path_support.ps1",
+                "src/msplatform/execution/resources/simion_dispatch_support.ps1",
+            }
+            self.assertTrue(all((snapshot / relative).is_file() for relative in required_companions))
+            inventory = json.loads((inputs / "code_inventory.json").read_text(encoding="utf-8"))
+            self.assertTrue(required_companions.issubset(
+                {row["source_repo_path"] for row in inventory["dependencies"]}))
             code = '''
 from pathlib import Path
 from msplatform.workflows.accelerator_interface import prepare
@@ -468,8 +483,8 @@ with tempfile.TemporaryDirectory() as request_directory:
         entries = {item["source_repo_path"]: set(item["consumers"])
                    for group in load(INVENTORY)["providers"] for item in group["files"]}
         self.assertEqual(entries["src/msplatform/workflows/resources/run_artifact_workflow.ps1"],
-                         {"prepared_joint", "oa_mr", "paired_accelerator_static_field",
-                          "paired_accelerator_pulse",
+                         {"prepared_joint", "accelerator_interface", "oa_mr",
+                          "paired_accelerator_static_field", "paired_accelerator_pulse",
                           "single_reflection_flight"})
         self.assertNotIn("common/resource_budget_support.ps1", entries)
         self.assertNotIn("common/host_execution_lease.ps1", entries)

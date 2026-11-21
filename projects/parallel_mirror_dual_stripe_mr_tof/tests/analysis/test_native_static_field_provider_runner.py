@@ -21,6 +21,8 @@ LUA = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(os.environ.get
 class NativeProviderRunnerTest(unittest.TestCase):
     def test_runner_uses_explicit_execution_resources_without_checkout_python(self):
         source = RUNNER.read_text(encoding='utf-8-sig')
+        self.assertIn("$executionResources=Join-Path $packageRoot 'execution/resources'", source)
+        self.assertLess(source.index("$packageRoot=(Resolve-Path"), source.index("$executionResources="))
         self.assertIn("host_execution_lease.ps1') -HostContext $hostContext", source)
         self.assertIn("resource_process_support.ps1", source)
         self.assertIn("executor=(Join-Path $executionResources 'resource_process_support.ps1')", source)
