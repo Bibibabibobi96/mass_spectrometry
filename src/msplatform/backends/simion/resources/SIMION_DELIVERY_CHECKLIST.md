@@ -1,0 +1,74 @@
+# oa-TOF SIMION交付检查单
+
+本文件随 SIMION 交付构建复制到独立包，是面向 GUI 复核人员的**交付检查单**，不是参数权威，也不能驱动Candidate、PA重建或Formal发布。
+精确几何、电压、网格、粒子和资产SHA必须在复现时从下列机器合同读取；若本文与合同冲突，以合同为准。
+新构建包使用本文件名。既有冻结包中的 `SIMION_REPRODUCTION_PARAMETERS.md` 保持原字节和身份，
+按其来源 manifest 解释；重命名不重新验收或改写历史 Formal 资产。
+
+## 包内与仓库输入
+
+在独立交付包中，先读取同目录的 `baseline.json`、`resolved_geometry.json`；Formal 构建还包含
+`formal_mode.json`。其余精确数值、资产身份与验收记录由交付来源的 run／asset manifest 定位。
+下面的相对链接仅适用于源码仓库；独立包中不得把失效的仓库链接当作文件已随包交付。
+如缺少来源清单或所需合同，应先补齐交接，不能按文档摘要重建或验收。
+
+### 仓库合同入口
+
+| 职责 | 机器合同 |
+|---|---|
+| 物理设计 | [`baseline.json`](../../../../../projects/single_reflection_oa_tof_mass_analyzer/config/baseline.json) |
+| Formal科学模式 | [`modes/formal.json`](../../../../../projects/single_reflection_oa_tof_mass_analyzer/config/modes/formal.json) |
+| 求解器数值 | [`formal_solver_numerics.json`](../../../../../projects/single_reflection_oa_tof_mass_analyzer/config/formal_solver_numerics.json) |
+| resolved几何 | [`resolved_geometry.json`](../../../../../projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json) |
+| Formal资产清单 | [`formal_assets.json`](../../../../../projects/single_reflection_oa_tof_mass_analyzer/config/formal_assets.json) |
+| SIMION稳定入口 | [`simion_stable_entry.json`](../../../../../projects/single_reflection_oa_tof_mass_analyzer/config/simion_stable_entry.json) |
+| 冻结验证结果 | [`formal_validation.json`](../../../../../projects/single_reflection_oa_tof_mass_analyzer/config/formal_validation.json) |
+
+完整参数由`baseline + formal science + solver numerics → resolved`单向派生。不要从本文件抄录旧电极表
+后分别手改GEM、Lua或IOB。
+
+## 坐标与四PA
+
+- 全局`+z`从加速器指向反射器，检测有效面中心和一阶时间焦点为全局`z=0`。
+- 正式独立oaTOF Workbench恰好有4个实例：
+  `1 flight_tube`、`2 reflectron`、`3 accelerator`、`4 detector`。
+- 实例顺序、GUI priority、PA路径和数组身份以Formal manifest与稳定入口为准。
+- detector PA是GUI可见数值终止层，不是机械检测器厚度。
+- grid1、grid2、entgrid和midgrid统一使用SIMION官方零grid-unit厚度构造；编译后的raw PA应各形成一行电极点并由SIMION原生穿越，Program不得移动粒子或补偿飞行时间。
+
+RF多极杆集成的第3槽可以替换为combined frontend，但那是run-local integration候选，不是本项目独立
+Formal包。其电极映射和PA重构只查
+[统一集成当前状态](../../../../../integrations/docs/INTEGRATION.md)。
+
+## GUI复核步骤
+
+1. 复制完整Formal SIMION目录，不单独移动IOB或只复制`pa0`。
+2. 先用`simion_stable_entry.json`和asset manifest复核IOB、CON、Lua、Fly2、ION及全部PA家族SHA。
+3. 打开IOB，确认4个PA实例、角色、相对路径、变换、数组尺寸和GUI priority与manifest一致。
+4. 确认Program与Data Recording均启用；关闭设置窗口不等于Disable Program。
+5. 核对栅网跨越、Fast Adjust电极角色、detector捕获参数和trajectory quality。
+6. 日常功能使用机器合同绑定的N=100前缀；峰形、尾部和Formal统计使用同源N=1000。
+7. 保存Ion Number、TOF、位置、PA instance和Event，运行后用
+   `formal_validation.json`而不是本文数值进行复核。
+
+## PA重建
+
+包含四个理想栅的加速器和反射器GEM采用SIMION官方ideal-grid路线的PA级`surface=none`；生成的完整
+PA家族必须包含`pa#`和`pa0..paN`，不得要求或生成`.pa-surf`。Refine 必须从头执行，不得 Resume 旧解；活动入口使用所安装 SIMION 的官方默认 convergence，不传入覆盖值。
+Lua Fast Adjust 仍依赖完整电极基函数数组；旧 Formal 验证按其冻结数值身份解释，不能把重建自动视为原资格复验。
+
+任何源宽、加速器、无场长度或反射器变量变化都属于隔离Candidate。候选编译器根据变量目录自动重算
+理论派生量和rebuild plan，只重建run-local受影响PA；通过Candidate、GUI和独立晋升前，不得覆盖Formal。
+
+## 复现完成条件
+
+文件存在不等于复现。至少需要：
+
+- manifest与全部输入SHA通过；
+- IOB重开后4实例、路径、变换和priority正确；
+- Program/Recording真实启用；
+- PA Refine设置和完整数组族一致；
+- 固定粒子表真实Fly完成；
+- 输出由项目正式分析与门禁复核。
+
+当前Formal性能、资格和兼容边界只查[`PROJECT.md`](../../../../../projects/single_reflection_oa_tof_mass_analyzer/docs/PROJECT.md)。

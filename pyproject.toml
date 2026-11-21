@@ -42,11 +42,12 @@ namespaces = false
 "msplatform.workflows.multipole_ip" = ["*.json"]
 "msplatform.contracts" = ["schemas/*.schema.json", "particle_count_policy.json"]
 "msplatform.examples" = ["*.json"]
-"msplatform.backends.simion" = ["resources/*.gem", "resources/*.lua", "resources/*.iob", "resources/*.pa0", "resources/*.ps1", "resources/*.schema.json", "resources/reflectron_voltage_fit_authoring.json"]
+"msplatform.backends.simion" = ["resources/*.gem", "resources/*.lua", "resources/*.iob", "resources/*.pa0", "resources/*.ps1", "resources/*.md", "resources/*.schema.json", "resources/reflectron_voltage_fit_authoring.json"]
 "msplatform.workflows" = ["resources/*.ps1", "config/*.json"]
 "msplatform.backends.comsol" = ["matlab/*.m", "matlab/interface_readiness/*.m", "matlab/mass_filter_reference/*.m", "launcher/*.ps1"]
 "msplatform.workflows.single_reflection_flight" = ["*.schema.json"]
 "msplatform.execution" = ["resources/*.ps1", "resources/*.lua", "resources/*.json"]
+"msplatform.exporters.solidworks" = ["resources/*.m"]
 
 [tool.ruff]
 target-version = "py311"

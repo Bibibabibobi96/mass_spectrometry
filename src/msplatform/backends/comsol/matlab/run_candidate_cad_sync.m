@@ -1,0 +1,36 @@
+%RUN_CANDIDATE_CAD_SYNC Export an isolated candidate MPH to candidate CAD.
+reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
+modelPath = getenv('OATOF_CANDIDATE_MODEL_PATH');
+outputDir = getenv('OATOF_CANDIDATE_CAD_DIR');
+artifactRoot = string(getenv('OATOF_CANDIDATE_ARTIFACT_ROOT'));
+assert(strlength(artifactRoot)>0,'Candidate lifecycle ArtifactRoot is required.');
+assert(~isempty(reportPath), 'COMSOL_BOOTSTRAP_REPORT is required.');
+assert(isfile(modelPath), 'Candidate MPH is missing: %s', modelPath);
+assert(~isempty(outputDir), 'OATOF_CANDIDATE_CAD_DIR is required.');
+
+matlabRoot = fileparts(mfilename('fullpath'));
+codeRoot = fileparts(fileparts(fileparts(fileparts(fileparts(matlabRoot)))));
+projectRoot = fullfile(codeRoot, 'projects', 'single_reflection_oa_tof_mass_analyzer');
+addpath(projectRoot, matlabRoot);
+solidworksRoot = fullfile(codeRoot, 'src', 'msplatform', 'exporters', 'solidworks', 'resources');
+addpath(solidworksRoot);
+
+fid = fopen(reportPath, 'w');
+assert(fid >= 0, 'Could not open report: %s', reportPath);
+cleanup = onCleanup(@() fclose(fid));
+try
+    result = ms_export_oatof_to_solidworks(string(modelPath), string(outputDir), false,ArtifactRoot=artifactRoot);
+    sw = result.solidWorks;
+    assert(startsWith(string(sw.solidWorksRevision), '30.'), ...
+        'Candidate CAD did not use SolidWorks 2022.');
+    assert(sw.partCount == sw.assembly.componentCount, ...
+        'Candidate CAD part/component counts differ.');
+    assert(sw.assembly.saveErrors == 0 && sw.assembly.saveWarnings == 0, ...
+        'Candidate assembly save reported errors or warnings.');
+    fprintf(fid, 'MODEL=%s\nOUTPUT_DIR=%s\nASSEMBLY=%s\nCOMPONENTS=%d\nSTATUS=PASS\n', ...
+        modelPath, outputDir, sw.assembly.sldasmPath, sw.assembly.componentCount);
+catch exception
+    fprintf(fid, 'STATUS=FAIL\nERROR=%s\n', getReport(exception, 'extended', 'hyperlinks', 'off'));
+    rethrow(exception)
+end
+clear cleanup

@@ -47,7 +47,7 @@ from msplatform.backends.simion.oatof_inputs import render_program
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.sync_geometry_contract import PROGRAM_PATH
 
 PROJECT = "single_reflection_oa_tof_mass_analyzer"
-MODULE = "projects.single_reflection_oa_tof_mass_analyzer.workflows.reflectron_voltage_compensation.run_compensation"
+MODULE = "msplatform.workflows.oa_candidate.run_compensation"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 RELATIVE = f"projects/{PROJECT}/workflows/reflectron_voltage_compensation"
@@ -313,7 +313,7 @@ def producer_specification(run: Path, capacity_session: Path, context_sha256: st
         "CompletionPath": str(run / "results/field_provider_completion.json"), "ContextSha256": context_sha256,
         "ParticleCount": plan["particle_count"], "SourceIonPath": str(run / "inputs/source.ion"),
         "DeferRunFinalization": True}
-    return {"name": "field_provider", "script_path": str(run / "inputs/code" / f"projects/{PROJECT}/simion/workbench/build_formal_delivery.ps1"),
+    return {"name": "field_provider", "script_path": str(run / "inputs/code/src/msplatform/backends/simion/resources/build_formal_delivery.ps1"),
             "parameters": parameters, "completion_path": parameters["CompletionPath"], "context_sha256": context_sha256,
             "environment": {"OATOF_REFLECTRON_VOLTAGE_COMPENSATION": "0"}}
 
@@ -460,7 +460,8 @@ def freeze_inputs(run: Path) -> dict[str, Any]:
     freeze_file(Path(plan["source_manifest"]["path"]), run / "inputs/source_manifest.json")
     authoring_sources = ("src/msplatform/backends/simion/resources/reflectron_voltage_fit_authoring.json",) if plan.get("regularization_authoring_source") else ()
     closure = freeze_candidate_source_closure(run / "inputs/code", run.parents[1], Path(sys.executable), science_root=REPO_ROOT,
-        extra_source_ids=(f"{RELATIVE}/run_compensation.py", f"{RELATIVE}/execute_compensation.ps1",
+        extra_source_ids=("src/msplatform/workflows/oa_candidate/run_compensation.py",
+            "src/msplatform/workflows/resources/execute_oatof_compensation.ps1",
             "src/msplatform/execution/recovery.py", "src/msplatform/backends/simion/particle_batching.py", "src/msplatform/execution/simion_dispatch.py",
             "src/msplatform/execution/resource_profile.py", "src/msplatform/contracts/schemas/simion_batch_continuation.schema.json",
             AXIS_EXPORTER_SOURCE) + authoring_sources)
@@ -569,7 +570,7 @@ def _scientific_identity(run: Path, plan: dict[str, Any]) -> dict[str, Any]:
             "profile_sha256": file_record(run / "inputs/reflectron_voltage_profile.lua")["sha256"],
             "simion_executable_sha256": plan["simion_executable"]["sha256"],
             "trajectory_quality": plan["trajectory_quality"], "modes": list(LABELS),
-            "iob_builder_sha256": file_record(run / "inputs/code" / f"projects/{PROJECT}/simion/workbench/build_formal_iob.lua")["sha256"],
+            "iob_builder_sha256": file_record(run / "inputs/code/src/msplatform/backends/simion/resources/build_formal_iob.lua")["sha256"],
             "native_assembly_sha256": file_record(run / "inputs/code/src/msplatform/backends/simion/resources/assemble_native_fast_adjust_family.lua")["sha256"] if plan.get("producer") else None}
 
 

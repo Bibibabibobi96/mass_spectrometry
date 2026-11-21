@@ -96,7 +96,7 @@ def execute_simion_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe
         arguments.extend(["-ProducerHandoffPath", plan["producer_handoff_path"]])
     _run_managed_stage_command(
         _powershell(
-            frozen_source_path(closure, "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/build_formal_delivery.ps1"), arguments
+            frozen_source_path(closure, "src/msplatform/backends/simion/resources/build_formal_delivery.ps1"), arguments
         ),
         logs / "simion_build.log",
         plan, logs / "simion_build_completion.json", "oatof_component_build_completion",
@@ -120,10 +120,10 @@ def execute_simion_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe
     diagnostics = run_root / "results" / "simion_transport_diagnostics.json"
     transport_summary = run_root / "results" / "simion_transport_summary.json"
     transport = frozen_source_path(
-        closure, "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/run_n100_transport.ps1"
+        closure, "src/msplatform/backends/simion/resources/run_n100_transport.ps1"
     )
     analyzer = frozen_source_path(
-        closure, "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/analyze_ideal_field_log.ps1"
+        closure, "src/msplatform/backends/simion/resources/analyze_ideal_field_log.ps1"
     )
     _run_managed_stage_command(
         _powershell(

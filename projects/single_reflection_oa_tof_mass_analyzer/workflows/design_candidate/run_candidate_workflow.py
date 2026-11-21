@@ -50,40 +50,36 @@ CAD_PYTHON_PREFLIGHT_TIMEOUT_S = 30
 REUSABLE_STAGES = ("comsol_candidate", "simion_candidate", "cad_candidate")
 STAGE_SOURCE_PREFIXES = {
     "comsol_candidate": (
-        "common/comsol/",
-        "projects/single_reflection_oa_tof_mass_analyzer/comsol/",
-        "projects/single_reflection_oa_tof_mass_analyzer/analysis/analyze_comsol_detector_events.py",
-        "projects/single_reflection_oa_tof_mass_analyzer/analysis/reference_analysis.py",
-        "projects/single_reflection_oa_tof_mass_analyzer/analysis/reference_analysis_core.py",
-        "src/msplatform/backends/comsol/matlab/load_oatof_contract.m",
-        "projects/single_reflection_oa_tof_mass_analyzer/oatof_assert_formal_write_authorized.m",
-        "projects/single_reflection_oa_tof_mass_analyzer/oatof_lifecycle_preflight.ps1",
-        "src/msplatform/backends/comsol/matlab/oatof_paths.m",
-        "src/msplatform/backends/comsol/matlab/run_candidate_contract_build.m",
+        "src/msplatform/backends/comsol/",
+        "src/msplatform/workflows/oa_candidate/analyze_comsol_detector_events.py",
+        "src/msplatform/workflows/oa_candidate/reference_analysis.py",
+        "src/msplatform/workflows/oa_candidate/reference_analysis_core.py",
+        "src/msplatform/workflows/resources/oatof_lifecycle_preflight.ps1",
         "src/msplatform/workflows/oa_candidate/candidate_stage_execution.py",
         "src/msplatform/workflows/oa_candidate/candidate_comsol_stage.py",
     ),
     "simion_candidate": (
-        "projects/single_reflection_oa_tof_mass_analyzer/simion/",
+        "src/msplatform/backends/simion/",
         "src/msplatform/ion_release/dotnet_gaussian_box_ion11.py",
-        "projects/single_reflection_oa_tof_mass_analyzer/oatof_lifecycle_preflight.ps1",
+        "src/msplatform/workflows/resources/oatof_lifecycle_preflight.ps1",
         "src/msplatform/backends/comsol/matlab/oatof_paths.m",
         "src/msplatform/workflows/oa_candidate/candidate_stage_execution.py",
         "src/msplatform/workflows/oa_candidate/candidate_simion_stage.py",
     ),
     "cad_candidate": (
-        "common/comsol/",
-        "common/solidworks/",
-        "projects/single_reflection_oa_tof_mass_analyzer/cad/",
-        "src/msplatform/backends/comsol/matlab/load_oatof_contract.m",
-        "projects/single_reflection_oa_tof_mass_analyzer/oatof_assert_formal_write_authorized.m",
-        "projects/single_reflection_oa_tof_mass_analyzer/oatof_lifecycle_preflight.ps1",
-        "src/msplatform/backends/comsol/matlab/oatof_paths.m",
-        "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_cad_sync.m",
+        "src/msplatform/backends/comsol/",
+        "src/msplatform/exporters/solidworks/",
+        "src/msplatform/workflows/resources/oatof_lifecycle_preflight.ps1",
         "src/msplatform/workflows/oa_candidate/candidate_stage_execution.py",
         "src/msplatform/workflows/oa_candidate/candidate_cad_stage.py",
     ),
 }
+CAD_MATLAB_SOURCES = frozenset({
+    "src/msplatform/backends/comsol/matlab/" + name for name in (
+        "export_oatof_cad_step.m", "ms_export_oatof_to_solidworks.m",
+        "oatof_cad_export_manifest.m", "run_candidate_cad_sync.m",
+    )
+})
 
 
 class CandidateWorkflowError(RuntimeError):
@@ -258,7 +254,7 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
         output = Path(stage["pending_output"])
         output.parent.mkdir(parents=True, exist_ok=True)
         command = _powershell(
-            frozen_source_path(closure, "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/generate_comsol_consistent_ions.ps1"),
+            frozen_source_path(closure, "src/msplatform/backends/simion/resources/generate_comsol_consistent_ions.ps1"),
             _ps_arguments(stage["arguments"]),
         )
         _run_command(command, logs / "static_inputs.log")
@@ -343,6 +339,8 @@ def _stage_source_paths(closure: dict[str, Any], stage_id: str) -> list[Path]:
     code_root = Path(closure["code_root"])
     for source in closure.get("sources", []):
         source_id = str(source.get("source_id", ""))
+        if stage_id == "comsol_candidate" and source_id in CAD_MATLAB_SOURCES:
+            continue
         if any(source_id == prefix or source_id.startswith(prefix) for prefix in prefixes):
             paths.append(code_root / source_id)
     if not paths:
@@ -1169,7 +1167,7 @@ def _prepare_execution_request(
     if handoff_plan:
         protected.extend(handoff_plan["protected_paths"])
     entrypoint = Path(frozen_source_path(closure,
-        "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_workflow.py"))
+        "src/msplatform/workflows/oa_candidate/run_candidate_workflow.py"))
     return {
         "schema_version": 1, "role": "run_artifact_workflow_request",
         "repository_root": str(REPO_ROOT), "python_executable": closure["runtime"]["python_executable"],
@@ -1199,8 +1197,8 @@ def _prepare_execution_request(
             "protected_cache_keys": sorted(cache_keys),
         },
         "prepared": {
-            "module": "projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate_workflow",
-            "function": "execute_prepared_run", "import_root": str(code_root), "entrypoint": file_record(entrypoint),
+            "module": "msplatform.workflows.oa_candidate.run_candidate_workflow",
+            "function": "execute_prepared_run", "import_root": str(code_root / "src"), "entrypoint": file_record(entrypoint),
             **({"native_input_paths": sorted(set(native_input_paths))} if native_input_paths else {}),
         },
         "payload": {"plan": file_record(plan_path), "run_config_template": file_record(template_path),
@@ -1388,7 +1386,7 @@ def _invoke_candidate_owner_request(request: dict, pa_handoff_output: Path | Non
 def run_candidate_postprocess(parent: Path, run_id: str) -> tuple[Path, dict]:
     """Original Candidate CLI's explicit new-child postprocessing action."""
     from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import prepare_postprocess_request
-    return _invoke_candidate_owner_request(prepare_postprocess_request(parent, run_id))
+    return _invoke_candidate_owner_request(prepare_postprocess_request(parent, run_id, science_root=REPO_ROOT))
 
 
 def execute_prepared_postprocess(config_path: Path, session_path: Path, request_path: Path, completion_path: Path) -> None:

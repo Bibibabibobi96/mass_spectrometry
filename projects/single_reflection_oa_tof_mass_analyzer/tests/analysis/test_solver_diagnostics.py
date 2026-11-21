@@ -71,7 +71,7 @@ class SolverDiagnosticsTest(unittest.TestCase):
         from msplatform.workflows.oa_candidate.candidate_source_closure import (
             freeze_candidate_source_closure, verify_candidate_source_closure,
         )
-        source_id = "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/analyze_ideal_field_log.ps1"
+        source_id = "src/msplatform/backends/simion/resources/analyze_ideal_field_log.ps1"
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "particles.ion").write_text("0,524,1,0,0,0,0,0,5,1,0\n", encoding="ascii")

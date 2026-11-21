@@ -23,7 +23,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.tests.analysis.test_candida
 
 class CandidateAnalysisReuseTests(CandidateFixtures, unittest.TestCase):
     def test_normal_reuse_reuses_same_authority_and_reanalyzes_changed_authority(self):
-        from projects.single_reflection_oa_tof_mass_analyzer.analysis import prepare_candidate_run as preparation
+        from msplatform.workflows.oa_candidate import prepare_candidate_run as preparation
         from msplatform.workflows.oa_candidate import candidate_comsol_stage
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
@@ -165,12 +165,12 @@ class CandidateCausalPhaseTests(CandidateFixtures, unittest.TestCase):
                 return evidence
             parent, _ = workflow.run_candidate_workflow(first_plan, sys.executable, stage_executor=produce)
             before = {path:path.read_bytes() for path in parent.rglob('*') if path.is_file()}
-            source_id = 'projects/single_reflection_oa_tof_mass_analyzer/analysis/reference_analysis_core.py'
+            source_id = 'src/msplatform/workflows/oa_candidate/reference_analysis_core.py'
             old_source_path = source_owner._source_path
             changed = root/'current_analysis.py'
-            changed.write_bytes(old_source_path(source_id).read_bytes()+b'\n# explicit analysis-only source fixture revision\n')
-            def author_source(identifier):
-                return changed if identifier == source_id else old_source_path(identifier)
+            changed.write_bytes(old_source_path(source_id, REPO_ROOT).read_bytes()+b'\n# explicit analysis-only source fixture revision\n')
+            def author_source(identifier, science_root):
+                return changed if identifier == source_id else old_source_path(identifier, science_root)
             with mock.patch.object(source_owner, '_source_path', side_effect=author_source):
                 _, second_plan = self.native_workflow_plan(root, '20261031_202002')
                 calls = []
@@ -372,11 +372,11 @@ class CandidateCausalPhaseTests(CandidateFixtures, unittest.TestCase):
                 source.write_text(transform(text),encoding='utf-8',newline='\n')
                 record=next(row for row in closure['sources'] if row['source_id']==identifier)
                 record.update(bytes=source.stat().st_size,sha256=sha256(source))
-            prefix='projects/single_reflection_oa_tof_mass_analyzer/'
-            replace_source(prefix+'comsol/oatof_report_model_timing.m',lambda text:text+'\n% display-only change\n')
-            replace_source(prefix+'workflows/design_candidate/run_candidate_workflow.py',lambda text:text+'\n# cleanup presentation only\n')
+            prefix='src/msplatform/backends/comsol/matlab/'
+            replace_source(prefix+'oatof_report_model_timing.m',lambda text:text+'\n% display-only change\n')
+            replace_source('src/msplatform/workflows/oa_candidate/run_candidate_workflow.py',lambda text:text+'\n# cleanup presentation only\n')
             self.assertEqual(candidate_comsol_source_phases(closure),original)
-            replace_source(prefix+'comsol/oatof_build_saved_particle_solution.m',
+            replace_source(prefix+'oatof_build_saved_particle_solution.m',
                 lambda text:text.replace("es.selection.named('sel_vac');","es.selection.named('sel_all');"))
             field_changed=candidate_comsol_source_phases(closure)
             self.assertNotEqual(field_changed['native'],original['native'])

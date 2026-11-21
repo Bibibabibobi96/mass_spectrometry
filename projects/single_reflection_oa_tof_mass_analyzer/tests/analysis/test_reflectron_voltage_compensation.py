@@ -43,11 +43,11 @@ class ReflectronVoltageCompensationTests(unittest.TestCase):
         (run / "inputs").mkdir(parents=True)
         self.write(run / "inputs/candidate_resolved_geometry.json", CONTRACT)
         (run / "inputs/source.ion").write_text("\n".join(str(i) for i in range(1000))+"\n", encoding="ascii")
-        builder = run / "inputs/code" / f"projects/{study.PROJECT}/simion/workbench/build_formal_iob.lua"
+        builder = run / "inputs/code/src/msplatform/backends/simion/resources/build_formal_iob.lua"
         builder.parent.mkdir(parents=True)
         builder.write_text("actual-builder", encoding="utf-8")
         assembly = run / "inputs/code/src/msplatform/backends/simion/resources/assemble_native_fast_adjust_family.lua"
-        assembly.parent.mkdir(parents=True)
+        assembly.parent.mkdir(parents=True, exist_ok=True)
         assembly.write_text("actual-assembly", encoding="utf-8")
         (run / "results").mkdir()
         (run / "logs").mkdir()
@@ -505,7 +505,7 @@ class ReflectronVoltageCompensationTests(unittest.TestCase):
         self.assertNotIn("regularization_authoring_source", plan)
         self.assertFalse((code / "src/msplatform/backends/simion/resources/reflectron_voltage_fit_authoring.json").exists())
         command = ("import sys,json;from pathlib import Path;sys.path[:0]=json.loads(sys.argv.pop(1));import "+study.MODULE+
-                   " as m;assert Path(m.__file__).resolve()==Path(sys.argv[1])/'projects/single_reflection_oa_tof_mass_analyzer/workflows/reflectron_voltage_compensation/run_compensation.py';"
+                   " as m;assert Path(m.__file__).resolve()==Path(sys.argv[1])/'src/msplatform/workflows/oa_candidate/run_compensation.py';"
                    "assert all(Path(v.__file__).resolve().is_relative_to(Path(sys.argv[1])/'src') for k,v in sys.modules.items() if k.startswith('msplatform') and getattr(v,'__file__',None));"
                    "spec=m.export_specification(Path(sys.argv[2]));"
                    "assert spec['name']=='reflectron_axis_basis';"

@@ -72,7 +72,7 @@ def comsol_native_inputs(stage: dict[str, Any], closure: dict[str, Any]) -> tupl
 
 def comsol_sync_inputs(stage: dict[str, Any], closure: dict[str, Any]) -> tuple[str, dict[str, str]]:
     """Construct the sole read-only sync task and its actual model/contract."""
-    return "projects/single_reflection_oa_tof_mass_analyzer/comsol/verify_oatof_comsol_sync.m", {
+    return "src/msplatform/backends/comsol/matlab/verify_oatof_comsol_sync.m", {
         "OATOF_COMSOL_MODEL_PATH": stage["model_path"],
         "OATOF_CONTRACT_PATH": stage["contract_path"],
     }
@@ -150,7 +150,7 @@ def analyze_detector_request(request: Path, closure: dict[str, Any], log: Path, 
     runtime._run_command([
         str(Path(closure["runtime"]["python_executable"]).resolve()), "-I", "-B", "-c",
         _FROZEN_PYTHON_BOOTSTRAP +
-        "from projects.single_reflection_oa_tof_mass_analyzer.analysis.analyze_comsol_detector_events import main;"
+        "from msplatform.workflows.oa_candidate.analyze_comsol_detector_events import main;"
         "check_frozen_core();sys.exit(main(['--request',sys.argv[2]]))", str(closure["code_root"]), str(request),
     ], log, {"PYTHONPATH": os.pathsep.join(python_import_roots(Path(closure["code_root"]))), "PYTHONDONTWRITEBYTECODE": "1"})
     receipt = Path(load_json(request)["analysis_output_dir"]) / "analysis_receipt.json"
@@ -211,8 +211,8 @@ def execute_saved_postprocess(selection: dict, root: Path, closure: dict, plan: 
     output.mkdir(exist_ok=True)
     runtime._run_command([closure["runtime"]["python_executable"], "-I", "-B", "-c",
         _FROZEN_PYTHON_BOOTSTRAP +
-        "from projects.single_reflection_oa_tof_mass_analyzer.analysis.analyze_comsol_detector_events import analyze_request;"
-        "from projects.single_reflection_oa_tof_mass_analyzer.analysis.reference_analysis_core import load_contract,DEFAULT_CONTRACT;check_frozen_core();load_contract(DEFAULT_CONTRACT)",
+        "from msplatform.workflows.oa_candidate.analyze_comsol_detector_events import analyze_request;"
+        "from msplatform.workflows.oa_candidate.reference_analysis_core import load_contract,DEFAULT_CONTRACT;check_frozen_core();load_contract(DEFAULT_CONTRACT)",
         str(closure["code_root"])], root / "logs/analysis_import_preflight.log")
     exports = selection["exports"]
     receipt_path = None
@@ -254,7 +254,7 @@ def execute_saved_postprocess(selection: dict, root: Path, closure: dict, plan: 
             return "'"+value.replace("'", "''")+"'"
         task = root / "inputs/cold_postprocess.m"
         result_path = output / "cold_postprocess_result.json"
-        task.write_text("addpath("+quote(project)+","+quote(str(Path(project)/"comsol"))+","
+        task.write_text("addpath("+quote(project)+","
                         +quote(str(Path(code)/"src/msplatform/backends/comsol/matlab"))+");\n"
                         "request=jsondecode(fileread("+quote(execution_path(request_path))+"));\n"
                         "request.output_dir="+quote(execution_path(output))+";request.child_run_directory="+quote(str(execution))+";\n"

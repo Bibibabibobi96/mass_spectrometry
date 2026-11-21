@@ -88,9 +88,9 @@ FROZEN_INPUTS = (
     "template_registration_manifest", "template_registration_report", "template_iob", "template_con",
 )
 EXTRA_SOURCE_IDS = (
-    "projects/single_reflection_oa_tof_mass_analyzer/workflows/radial_compaction/run_campaign.py",
-    "projects/single_reflection_oa_tof_mass_analyzer/workflows/radial_compaction/analysis.py",
-    "projects/single_reflection_oa_tof_mass_analyzer/analysis/compile_candidate_design.py",
+    "src/msplatform/workflows/oa_candidate/radial_compaction.py",
+    "src/msplatform/workflows/oa_candidate/radial_analysis.py",
+    "src/msplatform/workflows/oa_candidate/compile_candidate_design.py",
     "src/msplatform/contracts/schemas/simion_batch_continuation.schema.json",
     "src/msplatform/execution/recovery.py",
     "src/msplatform/execution/resource_profile.py",
@@ -101,8 +101,8 @@ EXTRA_SOURCE_IDS = (
 ANALYSIS_ONLY_SOURCES = frozenset({
     "src/msplatform/analysis/peak_metrics.py",
     "src/msplatform/backends/simion/detector_census.py",
-    "projects/single_reflection_oa_tof_mass_analyzer/analysis/solver_diagnostics.py",
-    "projects/single_reflection_oa_tof_mass_analyzer/workflows/radial_compaction/analysis.py",
+    "src/msplatform/workflows/oa_candidate/solver_diagnostics.py",
+    "src/msplatform/workflows/oa_candidate/radial_analysis.py",
 })
 
 
@@ -320,7 +320,11 @@ def _freeze_run(
     )
     context["sources"] = {row["source_id"]: row["source_sha256"] for row in closure["sources"]}
     if execution_request is not None and context["sources"] != execution_request["source_sha256"]:
-        raise ValueError("execution sources changed after capacity planning")
+        expected = execution_request["source_sha256"]
+        changed = {name: [expected.get(name), context["sources"].get(name)]
+                   for name in set(expected) | set(context["sources"])
+                   if expected.get(name) != context["sources"].get(name)}
+        raise ValueError(f"execution sources changed after capacity planning: {changed}")
     if parent_data and not _same_flight_dependencies(context, load_json(Path(parent_data[0]["inputs"]["recovery_context"]))):
         raise ValueError("predecessor frozen execution identity differs; continuation is refused")
     for index, source in enumerate(closure["sources"]):
@@ -580,7 +584,7 @@ def _compile_case_contract(
     mode: dict[str, Any], mode_sha256: str, default_mesh: dict[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     """Share the same governed case compilation before admission and execution."""
-    candidate, _ = compile_design_overrides(baseline, _overrides(case))
+    candidate, _ = compile_design_overrides(baseline, _overrides(case), science_root=REPO_ROOT)
     _assert_only_allowed_changes(
         baseline, candidate, allow_ring_counts="stage1_count" in case,
         allowed_geometry_keys={
@@ -633,7 +637,7 @@ def _prepare_case(
     _write_json(numerics_path, numerics)
     resolved_path.write_text(serialized(resolved), encoding="utf-8")
     prepared = case_root / "prepared"
-    prepare(resolved_path, prepared, particle_source_seed=seed)
+    prepare(resolved_path, prepared, particle_source_seed=seed, science_root=REPO_ROOT)
     return {
         **case,
         "case_root": case_root,
@@ -726,7 +730,7 @@ def _build_case(
     run_config = load_json(case["case_root"].parents[1] / "run_config.json")
     builder = Path(frozen_source_path(
         load_json(Path(run_config["inputs"]["execution_source_closure"])),
-        "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/build_formal_delivery.ps1",
+        "src/msplatform/backends/simion/resources/build_formal_delivery.ps1",
     ))
     logs = case["case_root"] / "logs"
     command = [
@@ -780,7 +784,7 @@ def _run_guarded_flight(
     config = load_json(run_root / "run_config.json")
     closure = load_json(Path(config["inputs"]["execution_source_closure"]))
     wrapper = frozen_source_path(closure,
-        "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/run_candidate_flight.ps1")
+        "src/msplatform/backends/simion/resources/run_candidate_flight.ps1")
     request_path = case["case_root"] / "results" / f"{mode}_flight_request.json"
     process_receipt = case["case_root"] / "results" / f"{mode}_process_result.json"
     observation_path = case["case_root"] / "results" / f"{mode}_native_operation.json"
@@ -1103,7 +1107,7 @@ def _run_flight_stage(
     for case in cases:
         case["_resource_release_id"] = release_id
     return run_heavy_function(
-        "projects.single_reflection_oa_tof_mass_analyzer.workflows.radial_compaction.run_campaign",
+        "msplatform.workflows.oa_candidate.radial_compaction",
         "_run_parallel_flights", cases, mode, simion_exe, count, quality, profiles,
         completion_receipt=receipt,
     )
@@ -1407,7 +1411,7 @@ def execute_prepared_run(
     worker = (
         "from msplatform.execution.host_resource_python import await_managed_process_start; await_managed_process_start(); "
         "from pathlib import Path; import sys; "
-        "from projects.single_reflection_oa_tof_mass_analyzer.workflows.radial_compaction.run_campaign "
+        "from msplatform.workflows.oa_candidate.radial_compaction "
         "import _execute_frozen_campaign; _execute_frozen_campaign(*(Path(p) for p in sys.argv[1:]))"
     )
     wait_path = run_root / "logs/frozen_execution_wait.json"
@@ -1539,8 +1543,8 @@ def main() -> None:
                      + (payload["pa_producer_handoffs"]["source_records"] if payload["pa_producer_handoffs"] else []),
                      "protected_paths": payload["dependency_run_dirs"],
                      "protected_cache_keys": [] if args.dry_run else payload["protected_cache_keys"]},
-        "prepared": {"module": "projects.single_reflection_oa_tof_mass_analyzer.workflows.radial_compaction.run_campaign",
-                     "function": "execute_prepared_run", "import_root": str(REPO_ROOT),
+        "prepared": {"module": "msplatform.workflows.oa_candidate.radial_compaction",
+                     "function": "execute_prepared_run", "import_root": str(REPO_ROOT / "src"),
                      "entrypoint": file_record(Path(__file__).resolve())},
         "payload": payload,
     }

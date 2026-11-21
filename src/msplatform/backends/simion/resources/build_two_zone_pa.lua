@@ -1,0 +1,216 @@
+-- Build a size-guarded two-zone accelerator PA from the parameterized GEM.
+-- All arguments below are required; callers serialize their frozen contract.
+-- Usage:
+--   simion.exe --nogui lua build_two_zone_pa.lua source.gem output.pa#
+--     [xy_mm] [z_mm] [bore_half_mm] [ring_width_mm] [gap_mm]
+--     [rear_gap_mm] [wall_mm] [vacuum_margin_mm] [max_GiB]
+--     [back_domain_margin_mm] [front_domain_margin_mm] [grid_phase_z_mm]
+--     [stage1_length_mm] [stage2_length_mm] [ring_count]
+--     [repeller_thickness_mm] [ring_thickness_mm] [front_vacuum_margin_mm]
+--     [repeller_voltage_v] [grid1_voltage_v]
+--     [interface_port_enable] [interface_port_width_y_mm]
+--     [interface_port_height_z_mm] [interface_port_center_z_mm]
+
+assert(#arg == 26, 'all 26 accelerator builder arguments are required')
+local source = assert(arg[1], 'missing source GEM')
+local output = assert(arg[2], 'missing output PA#')
+local mmgu_xy = assert(tonumber(arg[3]), 'mmgu_xy is required')
+local mmgu_z = assert(tonumber(arg[4]), 'mmgu_z is required')
+local bore_half = assert(tonumber(arg[5]), 'bore_half is required')
+local ring_width = assert(tonumber(arg[6]), 'ring_width is required')
+local insulation_gap = assert(tonumber(arg[7]), 'insulation_gap is required')
+local rear_gap = assert(tonumber(arg[8]), 'rear_gap is required')
+local shield_wall = assert(tonumber(arg[9]), 'shield_wall is required')
+local vacuum_margin = assert(tonumber(arg[10]), 'vacuum_margin is required')
+local max_gib = assert(tonumber(arg[11]), 'max_gib is required')
+local back_domain_margin = assert(tonumber(arg[12]), 'back_domain_margin is required')
+local front_domain_margin = assert(tonumber(arg[13]), 'front_domain_margin is required')
+local grid_phase_z = assert(tonumber(arg[14]), 'grid_phase_z is required')
+local stage1_length = assert(tonumber(arg[15]), 'stage1_length is required')
+local stage2_length = assert(tonumber(arg[16]), 'stage2_length is required')
+local ring_count = assert(tonumber(arg[17]), 'ring_count is required')
+local repeller_thickness = assert(tonumber(arg[18]), 'repeller_thickness is required')
+local ring_thickness = assert(tonumber(arg[19]), 'ring_thickness is required')
+local front_vacuum_margin = assert(tonumber(arg[20]), 'front_vacuum_margin is required')
+local repeller_voltage = assert(tonumber(arg[21]), 'repeller_voltage is required')
+local grid1_voltage = assert(tonumber(arg[22]), 'grid1_voltage is required')
+local interface_port_enable = assert(tonumber(arg[23]), 'interface_port_enable is required')
+local interface_port_width_y = assert(tonumber(arg[24]), 'interface_port_width_y is required')
+local interface_port_height_z = assert(tonumber(arg[25]), 'interface_port_height_z is required')
+local interface_port_center_z = assert(tonumber(arg[26]), 'interface_port_center_z is required')
+local function timed_stage(name,action)
+  local started=os.time()
+  print(string.format('BUILD_TIMING: stage=%s event=start utc=%s',name,os.date('!%Y-%m-%dT%H:%M:%SZ',started)))
+  action()
+  local finished=os.time()
+  print(string.format('BUILD_TIMING: stage=%s event=complete utc=%s wall_seconds=%d',name,os.date('!%Y-%m-%dT%H:%M:%SZ',finished),finished-started))
+end
+local shield_outer_width = 2*(bore_half+ring_width+insulation_gap+shield_wall)
+local xy_span = shield_outer_width+2*vacuum_margin
+local geometry_z_min = -repeller_thickness-rear_gap-shield_wall
+local z_min = geometry_z_min-back_domain_margin
+local z_max = stage1_length+stage2_length+front_vacuum_margin+front_domain_margin
+local z_span = z_max-z_min
+assert(source:match('^%a:[/\\]') or source:match('^/'), 'source GEM path must be absolute')
+assert(output:match('^%a:[/\\]') or output:match('^/'), 'output PA# path must be absolute')
+assert(output:match('%.pa#$'), 'output must end in .pa#')
+assert(mmgu_xy and mmgu_xy > 0, 'mmgu_xy must be positive')
+assert(mmgu_z and mmgu_z > 0, 'mmgu_z must be positive')
+assert(bore_half and bore_half > 0, 'bore_half must be positive')
+assert(ring_width and ring_width > 0, 'ring_width must be positive')
+assert(insulation_gap and insulation_gap > 0, 'insulation_gap must be positive')
+assert(rear_gap and rear_gap > 0, 'rear_gap must be positive')
+assert(shield_wall and shield_wall > 0, 'shield_wall must be positive')
+assert(vacuum_margin and vacuum_margin >= 0, 'vacuum_margin must be nonnegative')
+assert(max_gib and max_gib > 0, 'max_GiB must be positive')
+assert(back_domain_margin and back_domain_margin >= 0,
+  'back_domain_margin must be nonnegative')
+assert(front_domain_margin and front_domain_margin >= 0,
+  'front_domain_margin must be nonnegative')
+assert(grid_phase_z and grid_phase_z >= 0 and grid_phase_z < mmgu_z,
+  'grid_phase_z must be in [0, mmgu_z)')
+assert(stage1_length and stage1_length > 0, 'stage1_length must be positive')
+assert(stage2_length and stage2_length > 0, 'stage2_length must be positive')
+assert(ring_count and ring_count >= 1 and ring_count == math.floor(ring_count),
+  'ring_count must be a positive integer')
+assert(repeller_thickness and repeller_thickness > 0,
+  'repeller_thickness must be positive')
+assert(ring_thickness and ring_thickness > 0,
+  'ring_thickness must be positive')
+assert(front_vacuum_margin and front_vacuum_margin > 0,
+  'front_vacuum_margin must be positive')
+assert(interface_port_enable == 0 or interface_port_enable == 1,
+  'interface_port_enable must be zero or one')
+if interface_port_enable == 1 then
+  assert(interface_port_width_y and interface_port_width_y > 0,
+    'enabled interface port width must be positive')
+  assert(interface_port_height_z and interface_port_height_z > 0,
+    'enabled interface port height must be positive')
+  assert(interface_port_center_z and interface_port_center_z > 0 and
+    interface_port_center_z < stage1_length,
+    'enabled interface port center must lie inside the first acceleration gap')
+end
+assert(stage1_length+stage2_length < z_max,
+  'grid2 must remain inside the PA domain; increase front_domain_margin')
+
+local grid1_gu=(-z_min+stage1_length+grid_phase_z)/mmgu_z
+local grid2_gu=(-z_min+stage1_length+stage2_length+grid_phase_z)/mmgu_z
+assert(math.abs(grid1_gu-math.floor(grid1_gu+0.5))<1e-8,
+  'grid1 zero-width sheet must lie on a raw PA row')
+assert(math.abs(grid2_gu-math.floor(grid2_gu+0.5))<1e-8,
+  'grid2 zero-width sheet must lie on a raw PA row')
+
+local aligned_edge_count,off_grid_edge_count,max_abs_offset=0,0,0
+local function report_edge(axis,label,value,cell)
+  local grid_coordinate=(axis=='z' and (value-z_min+grid_phase_z) or value)/cell
+  local nearest_grid_coordinate=math.floor(grid_coordinate+0.5)
+  local raw_origin=axis=='z' and z_min-grid_phase_z or 0
+  local nearest_node=raw_origin+nearest_grid_coordinate*cell
+  local offset=value-nearest_node
+  max_abs_offset=math.max(max_abs_offset,math.abs(offset))
+  if math.abs(grid_coordinate-nearest_grid_coordinate)<=1e-8 then
+    aligned_edge_count=aligned_edge_count+1
+  else
+    off_grid_edge_count=off_grid_edge_count+1
+    print(string.format(
+      'WARNING: accelerator_geometry_edge_not_on_grid_node axis=%s label=%s value_mm=%.12g cell_mm=%.12g grid_coordinate=%.12g nearest_node_mm=%.12g offset_mm=%+.12g surface=none action=continue',
+      axis,label,value,cell,grid_coordinate,nearest_node,offset))
+  end
+end
+report_edge('z','repeller_back',-repeller_thickness,mmgu_z)
+report_edge('z','repeller_front',0,mmgu_z)
+report_edge('z','grid1',stage1_length,mmgu_z)
+for ring_index=1,ring_count do
+  local center=stage1_length+ring_index*stage2_length/(ring_count+1)
+  report_edge('z','ring_'..ring_index..'_front',center-ring_thickness/2,mmgu_z)
+  report_edge('z','ring_'..ring_index..'_back',center+ring_thickness/2,mmgu_z)
+end
+report_edge('z','grid2',stage1_length+stage2_length,mmgu_z)
+for _,edge in ipairs({
+  {'bore_half',bore_half},{'electrode_half',bore_half+ring_width},
+  {'shield_inner_half',bore_half+ring_width+insulation_gap},
+  {'shield_outer_half',bore_half+ring_width+insulation_gap+shield_wall}
+}) do report_edge('xy',edge[1],edge[2],mmgu_xy) end
+print(string.format(
+  'BUILD: grid_alignment aligned_edges=%d off_grid_edges=%d max_abs_offset_mm=%.12g policy=warn_and_continue surface=none',
+  aligned_edge_count,off_grid_edge_count,max_abs_offset))
+
+local nx = math.floor(xy_span/mmgu_xy + 0.5) + 1
+local ny = nx
+local nz = math.floor(z_span/mmgu_z + 0.5) + 1
+-- Ten refined/adjusted arrays plus PA# and surface metadata. The 11.25 factor
+-- slightly exceeds both measured diagnostic sets, so the limit covers files
+-- actually written rather than only the ten voltage arrays.
+local estimated_gib = nx*ny*nz*8*11.25/1024^3
+print(string.format('BUILD: bore_half=%.12g ring_width=%.12g insulation_gap=%.12g rear_gap=%.12g wall=%.12g shield_outer=%.12g',
+  bore_half,ring_width,insulation_gap,rear_gap,shield_wall,shield_outer_width))
+print(string.format('BUILD: dimensions=%dx%dx%d cell_mm=(%.12g,%.12g,%.12g) span_mm=(%.12g,%.12g) origin_z=%.12g estimated_total_GiB=%.6f limit_GiB=%.6f',
+  nx,ny,nz,mmgu_xy,mmgu_xy,mmgu_z,xy_span,z_span,z_min,estimated_gib,max_gib))
+print(string.format('BUILD: domain_margin_back_front_mm=(%.12g,%.12g) grid_phase_z_mm=%.12g compensated_instance_z_mm=%.12g',
+  back_domain_margin,front_domain_margin,grid_phase_z,z_min-grid_phase_z))
+print(string.format('BUILD: accelerator_stage_lengths_mm=(%.12g,%.12g) ring_count=%d ring_pitch_mm=%.12g grid2_local_z_mm=%.12g',
+  stage1_length,stage2_length,ring_count,stage2_length/(ring_count+1),stage1_length+stage2_length))
+print(string.format('BUILD: interface_port_enable=%d width_y_mm=%.12g height_z_mm=%.12g center_z_mm=%.12g',
+  interface_port_enable,interface_port_width_y,interface_port_height_z,interface_port_center_z))
+assert(estimated_gib <= max_gib, string.format('estimated PA set %.3f GiB exceeds limit %.3f GiB',estimated_gib,max_gib))
+
+local staged_source=output:gsub('%.pa#$','.source.gem')
+local input=assert(io.open(source,'rb'))
+local content=input:read('*a')
+input:close()
+local staged=assert(io.open(staged_source,'wb'))
+staged:write(content)
+staged:close()
+_G.var={mmgu_xy=mmgu_xy,mmgu_z=mmgu_z,xy_span=xy_span,z_min=z_min,z_span=z_span,
+  bore_half=bore_half,ring_width=ring_width,insulation_gap=insulation_gap,
+  rear_gap=rear_gap,shield_wall=shield_wall,grid_phase_z=grid_phase_z,
+  interface_port_enable=interface_port_enable,
+  interface_port_width_y=interface_port_width_y,
+  interface_port_height_z=interface_port_height_z,
+  interface_port_center_z=interface_port_center_z,
+  stage1_length=stage1_length,stage2_length=stage2_length,
+  ring_count=ring_count,repeller_thickness=repeller_thickness,
+  ring_thickness=ring_thickness,front_vacuum_margin=front_vacuum_margin}
+timed_stage('gem2pa',function()
+  simion.command(string.format('gem2pa %q %q',staged_source,output))
+end)
+_G.var=nil
+os.remove(staged_source)
+os.remove(staged_source:gsub('%.gem$','.processed.gem'))
+local function audit_raw_grid(electrode_id,label,expected_row)
+  simion.pas:close()
+  local pa=assert(simion.pas:open(output))
+  local rows,point_count={},0
+  for z=0,pa.nz-1 do for y=0,pa.ny-1 do for x=0,pa.nx-1 do
+    local potential,is_electrode=pa:point(x,y,z)
+    if is_electrode and math.abs(potential-electrode_id)<1e-9 then
+      rows[z]=true; point_count=point_count+1
+    end
+  end end end
+  local row_count,actual_row=0,nil
+  for row in pairs(rows) do row_count=row_count+1; actual_row=row end
+  pa:close()
+  assert(point_count>0,string.format('%s electrode %d has zero raw PA points',label,electrode_id))
+  assert(row_count==1,string.format('%s electrode %d occupies %d raw PA rows',label,electrode_id,row_count))
+  assert(actual_row==expected_row,string.format('%s electrode %d raw row %d differs from expected %d',label,electrode_id,actual_row,expected_row))
+  print(string.format('BUILD: native_grid_raw_pa grid=%s electrode=%d row=%d points=%d',label,electrode_id,actual_row,point_count))
+end
+timed_stage('raw_grid_audit',function()
+  audit_raw_grid(2,'grid1',math.floor(grid1_gu+0.5))
+  audit_raw_grid(3+ring_count,'grid2',math.floor(grid2_gu+0.5))
+end)
+timed_stage('refine',function()
+  simion.command(string.format('refine --resume=0 %q',output))
+end)
+local voltage_assignments={string.format('1=%.12g',repeller_voltage),
+  string.format('2=%.12g',grid1_voltage)}
+for ring_index=1,ring_count do
+  voltage_assignments[#voltage_assignments+1]=string.format('%d=%.12g',2+ring_index,
+    grid1_voltage*(ring_count+1-ring_index)/(ring_count+1))
+end
+voltage_assignments[#voltage_assignments+1]=string.format('%d=0',3+ring_count)
+voltage_assignments[#voltage_assignments+1]=string.format('%d=0',4+ring_count)
+timed_stage('fastadj',function()
+  simion.command(string.format('fastadj %q %s',output:gsub('#$','0'),table.concat(voltage_assignments,',')))
+end)
+print('BUILD: PASS')

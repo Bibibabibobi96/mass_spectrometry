@@ -14,10 +14,10 @@ REPO_ROOT = PROJECT_ROOT.parents[1]
 from msplatform.execution.artifact_naming import validate_run_id
 from msplatform.contracts.machine_contracts import load_json, sha256
 from msplatform.execution.resources.workspace_paths import resolve_workspace_paths
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.compile_candidate_design import write_candidate
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import prepare_candidate_run
+from msplatform.workflows.oa_candidate.compile_candidate_design import write_candidate
+from msplatform.workflows.oa_candidate.prepare_candidate_run import prepare_candidate_run
 from msplatform.workflows.oa_candidate.candidate_source_closure import verify_candidate_source_closure
-from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate_workflow import (
+from msplatform.workflows.oa_candidate.run_candidate_workflow import (
     CandidateWorkflowError,
     CandidateWorkflowInterrupted,
     CandidateWorkflowTimedOut,
@@ -44,7 +44,7 @@ def validate_candidate_runtime(
     template_run_id = str(runtime.get("simion_template_run_id", ""))
     validate_run_id(template_run_id)
     template = artifact_root / "runs" / template_run_id
-    from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import (
+    from msplatform.workflows.oa_candidate.prepare_candidate_run import (
         _registered_candidate_template,
     )
 
@@ -247,7 +247,7 @@ def prepare_execution(
         raise ValueError(f"Candidate entry preparation is incomplete: {preparation}; use a new run identity")
     numeric_arguments = ({"solver_numerics_contract": solver_numerics_contract}
                          if solver_numerics_contract is not None else {})
-    baseline, resolved, diff = write_candidate(proposal, contracts, **numeric_arguments)
+    baseline, resolved, diff = write_candidate(proposal, contracts, science_root=REPO_ROOT, **numeric_arguments)
     _runtime_coverage(request, diff)
     runtime_preflight = validate_candidate_runtime(artifact_root)
     template = runtime_preflight["template"]
@@ -261,6 +261,7 @@ def prepare_execution(
         simion_template_run=template,
         campaign_table=campaign_table,
         campaign_selection=campaign_selection,
+        science_root=REPO_ROOT,
     )
     plan_path = Path(plan["planning_root"]) / "candidate_workflow_plan.json"
     document = load_json(plan_path)
@@ -353,7 +354,7 @@ def main() -> None:
                 args.pa_handoff_output, args.pa_producer_handoff, args.campaign_table, args.campaign_selection,
                 args.solver_numerics_contract)):
             parser.error("--postprocess-from requires new --run-id and rejects new execution/reuse/finalization options")
-        from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate_workflow import run_candidate_postprocess
+        from msplatform.workflows.oa_candidate.run_candidate_workflow import run_candidate_postprocess
         try:
             root, summary = run_candidate_postprocess(args.postprocess_from, args.run_id)
         except (OSError, KeyError, ValueError, CandidateWorkflowError) as error:
@@ -366,7 +367,7 @@ def main() -> None:
                 args.pa_producer_handoff, args.campaign_table, args.campaign_selection,
                 args.solver_numerics_contract)):
             parser.error("--resume-finalization rejects new scientific/execution inputs")
-        from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate_workflow import (
+        from msplatform.workflows.oa_candidate.run_candidate_workflow import (
             resume_candidate_finalization,
         )
         try:

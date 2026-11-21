@@ -5,9 +5,9 @@ import sys
 import tempfile
 from pathlib import Path
 from msplatform.contracts.machine_contracts import load_json, sha256
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_run_lifecycle import start_candidate_run
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.compile_candidate_design import compile_proposal, write_candidate
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import prepare_candidate_run
+from msplatform.workflows.oa_candidate.candidate_run_lifecycle import start_candidate_run
+from msplatform.workflows.oa_candidate.compile_candidate_design import compile_proposal, write_candidate
+from msplatform.workflows.oa_candidate.prepare_candidate_run import prepare_candidate_run
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 REPO_ROOT = PROJECT_ROOT.parents[1]
@@ -93,9 +93,9 @@ class CandidateFixtures:
             }
             proposal_path.write_text(json.dumps(proposal), encoding="utf-8")
             if not write:
-                return compile_proposal(proposal_path)
+                return compile_proposal(proposal_path, science_root=REPO_ROOT)
             output = root_path / "candidate"
-            paths = write_candidate(proposal_path, output)
+            paths = write_candidate(proposal_path, output, science_root=REPO_ROOT)
             return [load_json(path) for path in paths]
 
 
@@ -155,7 +155,7 @@ class CandidateFixtures:
         inputs = self.candidate_run_inputs(source)
         run_id = f"{stamp}__build__cross__design-candidate__lifecycle"
         plan = prepare_candidate_run(
-            *inputs, run_id, artifact_root, particle_source_seed=20260713
+            *inputs, run_id, artifact_root, particle_source_seed=20260713, science_root=REPO_ROOT
         )
         run_root = start_candidate_run(Path(plan["planning_root"]) / "candidate_workflow_plan.json")
         return artifact_root, run_root, plan
@@ -185,7 +185,7 @@ class CandidateFixtures:
         inputs = self.candidate_run_inputs(source)
         plan = prepare_candidate_run(
             *inputs, f"{stamp}__build__cross__design-candidate__integrated",
-            artifact_root, particle_source_seed=20260713,
+            artifact_root, particle_source_seed=20260713, science_root=REPO_ROOT,
         )
         return artifact_root, Path(plan["planning_root"]) / "candidate_workflow_plan.json"
 
@@ -207,6 +207,7 @@ class CandidateFixtures:
             artifact_root,
             particle_source_seed=particle_source_seed,
             simion_template_run=registration,
+            science_root=REPO_ROOT,
         )
         return artifact_root, Path(plan["planning_root"]) / "candidate_workflow_plan.json"
 

@@ -153,7 +153,7 @@ class RadialCompactionCampaignTests(unittest.TestCase):
                    "native_calls": [], "build_calls": [], "stage_calls": [], "owner_requests": []}
         original_request = radial._prepare_execution_request
         source_id = radial.EXTRA_SOURCE_IDS[0]
-        analysis_id = "projects/single_reflection_oa_tof_mass_analyzer/workflows/radial_compaction/analysis.py"
+        analysis_id = "src/msplatform/workflows/oa_candidate/radial_analysis.py"
         analysis_source = root / "analysis_fixture.py"
         analysis_source.write_text("# software analysis revision 1\n", encoding="utf-8")
         control["analysis_source"] = analysis_source
@@ -167,7 +167,7 @@ class RadialCompactionCampaignTests(unittest.TestCase):
         def freeze(code, artifact, python, **kwargs):
             target = code / source_id
             target.parent.mkdir(parents=True)
-            shutil.copyfile(Path(radial.__file__), target)
+            shutil.copyfile(radial.REPO_ROOT / source_id, target)
             digest = radial.sha256(target)
             analysis_target = code / analysis_id
             analysis_target.parent.mkdir(parents=True, exist_ok=True)
@@ -529,8 +529,8 @@ class RadialCompactionCampaignTests(unittest.TestCase):
             shared_state = root / "selected-host-state.sqlite3"
             worker = (
                 "from msplatform.execution.host_resource_python import await_managed_process_start; await_managed_process_start(); "
-                "import json, os; from projects.single_reflection_oa_tof_mass_analyzer.workflows.radial_compaction "
-                "import run_campaign; print(json.dumps({'source': run_campaign.__file__, "
+                "import json, os; from msplatform.workflows.oa_candidate "
+                "import radial_compaction as run_campaign; print(json.dumps({'source': run_campaign.__file__, "
                 "'host_state': os.environ['MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH'], 'pid': os.getpid()}), flush=True)"
             )
             stdout, stderr = root / "stdout.log", root / "stderr.log"
@@ -568,7 +568,7 @@ class RadialCompactionCampaignTests(unittest.TestCase):
             code_root = run / "inputs/code"
             host_id = "src/msplatform/execution/resources/host_execution_lease.ps1"
             original_resolver = source_closure._source_path
-            host_source = original_resolver(host_id)
+            host_source = original_resolver(host_id, radial.REPO_ROOT)
             original_host = host_source.read_bytes()
             controlled = root / "controlled-author"
             controlled_host = controlled / host_id
@@ -605,7 +605,7 @@ class RadialCompactionCampaignTests(unittest.TestCase):
             fixture = '''import json, subprocess, sys
 from pathlib import Path
 def run(case_root, run_id, context, managed):
-    from projects.single_reflection_oa_tof_mass_analyzer.workflows.radial_compaction import run_campaign as radial
+    from msplatform.workflows.oa_candidate import radial_compaction as radial
     before=str(radial.PYTHON)
     assert not radial.PYTHON.exists(), 'fixture did not start from a fresh frozen import'
     case={'case_root':case_root,'simion_dir':case_root/'simion','case_id':case_root.name,
@@ -1104,7 +1104,7 @@ def run(case_root, run_id, context, managed):
                 receipts = []
                 with patch.object(radial, "run_heavy_function", return_value={}) as stage:
                     radial._run_flight_stage(cases, "actual", Path(sys.executable), 100, 8, [], receipts)
-                stage.assert_called_once_with(radial.__name__, "_run_parallel_flights", cases,
+                stage.assert_called_once_with("msplatform.workflows.oa_candidate.radial_compaction", "_run_parallel_flights", cases,
                     "actual", Path(sys.executable), 100, 8, [], completion_receipt=receipts[0]["completion_receipt"])
                 self.assertEqual({case["_resource_release_id"] for case in cases}, {receipts[0]["release_id"]})
 
@@ -1486,7 +1486,7 @@ def run(case_root, run_id, context, managed):
             simion.mkdir(parents=True)
             for name in ("reflectron.pa#", "reflectron.pa0", "reflectron.pa1"):
                 (simion / name).write_text("incomplete native fixture", encoding="utf-8")
-            source_id = "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/build_formal_delivery.ps1"
+            source_id = "src/msplatform/backends/simion/resources/build_formal_delivery.ps1"
             closure = root / "inputs" / "closure.json"
             radial._write_json(closure, {"schema_version": 2,
                 "role": "oa_tof_candidate_execution_source_closure", "code_root": str(root / "frozen"),

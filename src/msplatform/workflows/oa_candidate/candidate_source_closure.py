@@ -27,57 +27,23 @@ ROLE = "oa_tof_candidate_execution_source_closure"
 
 # This is intentionally an auditable allowlist, not dependency discovery.
 # Keep paths repository-relative and use forward slashes in the machine record.
+SCIENCE_RELATIVE_PATHS = (
+    "projects/single_reflection_oa_tof_mass_analyzer/config/candidate_consumers.json",
+    "projects/single_reflection_oa_tof_mass_analyzer/config/design_variables.json",
+    "projects/orthogonal_accelerator/config/component_contract.json",
+    "projects/orthogonal_accelerator/simion/two_zone_accelerator.gem",
+    "projects/single_reflection_oa_tof_mass_analyzer/config/accelerator_dependency.json",
+)
+
 RELATIVE_PATHS = (
-    "src/msplatform/execution/host_resource_python.py",
-    "src/msplatform/execution/resources/host_resource_python.ps1",
-    "src/msplatform/execution/resources/run_artifact_support.ps1",
-    "src/msplatform/execution/resources/workspace_paths.ps1",
-    "src/msplatform/execution/gui_source_protection.py",
-    "src/msplatform/execution/resources/artifact_retention.json",
-    "src/msplatform/execution/resources/artifact_capacity_policy.json",
-    "src/msplatform/execution/capacity_ledger.py",
-    "src/msplatform/execution/capacity_maintenance.py",
-    "src/msplatform/execution/capacity_protection.py",
-    "src/msplatform/execution/execution_aliases.py",
-    "src/msplatform/contracts/expected_values.py",
-    "src/msplatform/execution/historical_source_scratch_retirement.py",
-    "src/msplatform/execution/legacy_owner_disposition.py",
-    "src/msplatform/execution/reconcile_artifact_capacity.py",
-    "src/msplatform/execution/stage_reuse.py",
-    "src/msplatform/workflows/design_request.py",
-    "src/msplatform/execution/verify_artifact_layout.py",
+    "src/msplatform/contracts/particle_count_policy.json",
+    "src/msplatform/workflows/resources/run_artifact_workflow.ps1",
+    "src/msplatform/workflows/resources/oatof_lifecycle_preflight.ps1",
     "src/msplatform/backends/simion/resources/short_pa_path_support.ps1",
     "src/msplatform/backends/simion/resources/native_fast_adjust_runtime_support.ps1",
     "src/msplatform/backends/simion/resources/assemble_native_fast_adjust_family.lua",
     "src/msplatform/backends/simion/resources/export_standalone_pa.lua",
     "src/msplatform/backends/simion/resources/voltageize_pa0.lua",
-    "src/msplatform/workflows/resources/run_artifact_workflow.ps1",
-    "src/msplatform/workflows/oa_candidate/candidate_source_closure.py",
-    "projects/single_reflection_oa_tof_mass_analyzer/analysis/native_stage_completion.py",
-    "projects/single_reflection_oa_tof_mass_analyzer/analysis/compile_candidate_design.py",
-    "projects/single_reflection_oa_tof_mass_analyzer/analysis/oatof_oaaccelerator_coupling.py",
-    "projects/single_reflection_oa_tof_mass_analyzer/analysis/reflectron_dual_stage_solver.py",
-    "projects/single_reflection_oa_tof_mass_analyzer/simion/reflectron/refine_single_pa.lua",
-    "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/verify_component_pa.lua",
-    "src/msplatform/execution/process_observation.py",
-    "projects/rf_multipole_ion_optics/core/grounded_shield.py",
-    "projects/single_reflection_oa_tof_mass_analyzer/analysis/geometry_contract.py",
-    "projects/single_reflection_oa_tof_mass_analyzer/analysis/accelerator_geometry.py",
-    "projects/single_reflection_oa_tof_mass_analyzer/analysis/accelerator_electrical.py",
-    "projects/single_reflection_oa_tof_mass_analyzer/analysis/sync_geometry_contract.py",
-    "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/prepare_candidate_consumers.py",
-    "projects/single_reflection_oa_tof_mass_analyzer/config/candidate_consumers.json",
-    "projects/single_reflection_oa_tof_mass_analyzer/config/design_variables.json",
-    "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/formal/oatof_ideal_grounded.lua",
-    "pyproject.toml",
-    "src/msplatform/execution/resources/host_execution_lease.ps1",
-    "src/msplatform/execution/resources/resource_process_support.ps1",
-    "src/msplatform/execution/resources/process_owner.ps1",
-    "src/msplatform/execution/resources/run_paths.ps1",
-    "src/msplatform/execution/resources/run_paths_owner.ps1",
-    "src/msplatform/execution/host_resource_scheduler.py",
-    "src/msplatform/execution/resources/host_resource_policy.json",
-    "src/msplatform/execution/resources/simion_dispatch_support.ps1",
     "src/msplatform/backends/comsol/matlab/add_comsol_size_feature.m",
     "src/msplatform/backends/comsol/matlab/read_comsol_mesh_size_controls.m",
     "src/msplatform/backends/comsol/launcher/livelink_environment.ps1",
@@ -87,80 +53,61 @@ RELATIVE_PATHS = (
     "src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1",
     "src/msplatform/backends/comsol/matlab/workspace_paths.m",
     "src/msplatform/backends/comsol/matlab/resolve_path_identity.m",
-    "src/msplatform/contracts/particle_count_policy.json",
-    "src/msplatform/execution/resources/require_powershell7.ps1",
-    "common/solidworks/import_step_to_solidworks.m",
-    "projects/orthogonal_accelerator/analysis/accelerator_time_focus.py",
-    "src/msplatform/components/orthogonal_accelerator/component_contract.py",
-    "projects/orthogonal_accelerator/analysis/two_zone_geometry.py",
     "src/msplatform/backends/comsol/matlab/build_sectioned_geometry.m",
-    "projects/orthogonal_accelerator/config/component_contract.json",
     "src/msplatform/backends/comsol/matlab/build_accelerator_grids.m",
-    "projects/orthogonal_accelerator/simion/build_two_zone_pa.lua",
-    "projects/orthogonal_accelerator/simion/two_zone_accelerator.gem",
-    "projects/single_reflection_oa_tof_mass_analyzer/config/accelerator_dependency.json",
-    "projects/single_reflection_oa_tof_mass_analyzer/analysis/candidate_run_lifecycle.py",
-    "projects/single_reflection_oa_tof_mass_analyzer/analysis/analyze_comsol_detector_events.py",
-    "projects/single_reflection_oa_tof_mass_analyzer/analysis/prepare_candidate_run.py",
-    "projects/single_reflection_oa_tof_mass_analyzer/analysis/reference_analysis.py",
-    "projects/single_reflection_oa_tof_mass_analyzer/analysis/reference_analysis_core.py",
-    "projects/single_reflection_oa_tof_mass_analyzer/cad/export_oatof_cad_step.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/cad/ms_export_oatof_to_solidworks.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/cad/oatof_cad_export_manifest.m",
     "src/msplatform/backends/comsol/matlab/configure_oatof_segmented_output.m",
     "src/msplatform/backends/comsol/matlab/oatof_build_accelerator_geometry.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_detector_geometry.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_drift_geometry.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_grid_geometry.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_mesh.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_model_core.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_validate_candidate_solution.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_saved_particle_solution.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_save_run_model.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_write_saved_particle_context.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_postprocess_saved_solution.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_report_model_timing.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/comsol/reextract_oatof_saved_solution.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_particle_plot_view.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_reflectron_geometry.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_configure_particle_model.m",
     "src/msplatform/backends/comsol/matlab/oatof_cpt_solver_policy.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_create_result_nodes.m",
     "src/msplatform/backends/comsol/matlab/oatof_extract_detector_arrivals.m",
     "src/msplatform/backends/comsol/matlab/oatof_detector_arrival_reducer.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_export_detector_events.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_parse_field_idealization.m",
     "src/msplatform/backends/comsol/matlab/oatof_read_cartesian_release.m",
     "src/msplatform/backends/comsol/matlab/run_oatof_model.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/comsol/verify_oatof_comsol_sync.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/docs/SIMION_DELIVERY_CHECKLIST.md",
     "src/msplatform/backends/comsol/matlab/load_oatof_contract.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/oatof_lifecycle_preflight.ps1",
-    "projects/single_reflection_oa_tof_mass_analyzer/oatof_assert_formal_write_authorized.m",
     "src/msplatform/backends/comsol/matlab/oatof_paths.m",
+    "src/msplatform/backends/comsol/matlab/run_candidate_contract_build.m",
     "src/msplatform/backends/simion/resources/build_reflectron_variant.lua",
     "src/msplatform/backends/simion/resources/oatof_reflectron_ideal_10_5.gem",
     "src/msplatform/backends/simion/resources/build_detector_variant.lua",
     "src/msplatform/backends/simion/resources/build_flight_tube_variant.lua",
-    "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/generate_comsol_consistent_ions.ps1",
-    "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/analyze_ideal_field_log.ps1",
-    "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/build_formal_delivery.ps1",
-    "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/build_formal_iob.lua",
-    "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/run_n100_transport.ps1",
-    "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/run_candidate_flight.ps1",
     "src/msplatform/backends/simion/resources/oatof_detector_ground.gem",
     "src/msplatform/backends/simion/resources/oatof_flight_tube_ground.gem",
-    "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/verify_iob_runtime_contract.lua",
-    "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/verify_iob_runtime_contract.ps1",
-    "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_cad_sync.m",
-    "src/msplatform/backends/comsol/matlab/run_candidate_contract_build.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate.py",
-    "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_workflow.py",
-    "src/msplatform/workflows/oa_candidate/candidate_stage_execution.py",
-    "src/msplatform/workflows/oa_candidate/candidate_comsol_stage.py",
-    "src/msplatform/workflows/oa_candidate/candidate_simion_stage.py",
-    "src/msplatform/workflows/oa_candidate/candidate_cad_stage.py",
-    "projects/single_reflection_oa_tof_mass_analyzer/analysis/solver_diagnostics.py",
+    "src/msplatform/backends/simion/resources/refine_single_pa.lua",
+    "src/msplatform/backends/simion/resources/verify_component_pa.lua",
+    "src/msplatform/backends/simion/resources/SIMION_DELIVERY_CHECKLIST.md",
+    "src/msplatform/backends/simion/resources/oatof_ideal_grounded.lua",
+    "src/msplatform/exporters/solidworks/resources/import_step_to_solidworks.m",
+    "src/msplatform/backends/simion/resources/build_two_zone_pa.lua",
+    *SCIENCE_RELATIVE_PATHS,
+    "src/msplatform/backends/comsol/matlab/oatof_build_detector_geometry.m",
+    "src/msplatform/backends/comsol/matlab/oatof_build_drift_geometry.m",
+    "src/msplatform/backends/comsol/matlab/oatof_build_grid_geometry.m",
+    "src/msplatform/backends/comsol/matlab/oatof_build_mesh.m",
+    "src/msplatform/backends/comsol/matlab/oatof_build_model_core.m",
+    "src/msplatform/backends/comsol/matlab/oatof_validate_candidate_solution.m",
+    "src/msplatform/backends/comsol/matlab/oatof_build_saved_particle_solution.m",
+    "src/msplatform/backends/comsol/matlab/oatof_save_run_model.m",
+    "src/msplatform/backends/comsol/matlab/oatof_write_saved_particle_context.m",
+    "src/msplatform/backends/comsol/matlab/oatof_postprocess_saved_solution.m",
+    "src/msplatform/backends/comsol/matlab/oatof_report_model_timing.m",
+    "src/msplatform/backends/comsol/matlab/reextract_oatof_saved_solution.m",
+    "src/msplatform/backends/comsol/matlab/oatof_particle_plot_view.m",
+    "src/msplatform/backends/comsol/matlab/oatof_build_reflectron_geometry.m",
+    "src/msplatform/backends/comsol/matlab/oatof_configure_particle_model.m",
+    "src/msplatform/backends/comsol/matlab/oatof_create_result_nodes.m",
+    "src/msplatform/backends/comsol/matlab/oatof_export_detector_events.m",
+    "src/msplatform/backends/comsol/matlab/oatof_parse_field_idealization.m",
+    "src/msplatform/backends/comsol/matlab/verify_oatof_comsol_sync.m",
+    "src/msplatform/backends/comsol/matlab/oatof_assert_formal_write_authorized.m",
+    "src/msplatform/backends/simion/resources/generate_comsol_consistent_ions.ps1",
+    "src/msplatform/backends/simion/resources/analyze_ideal_field_log.ps1",
+    "src/msplatform/backends/simion/resources/build_formal_delivery.ps1",
+    "src/msplatform/backends/simion/resources/build_formal_iob.lua",
+    "src/msplatform/backends/simion/resources/run_n100_transport.ps1",
+    "src/msplatform/backends/simion/resources/run_candidate_flight.ps1",
+    "src/msplatform/backends/simion/resources/verify_iob_runtime_contract.lua",
+    "src/msplatform/backends/simion/resources/verify_iob_runtime_contract.ps1",
+    "src/msplatform/backends/comsol/matlab/run_candidate_cad_sync.m",
+    "src/msplatform/workflows/oa_candidate/solver_diagnostics.py",
 )
 
 def _package_root() -> Path:
@@ -175,6 +122,8 @@ def _source_path(source_id: str, science_root: Path) -> Path:
         root = _package_root()
         source = root.joinpath(*relative.parts[2:]).resolve()
     else:
+        if source_id not in SCIENCE_RELATIVE_PATHS:
+            raise ValueError(f"candidate science input is not explicitly declared: {source_id}")
         root = science_root.resolve(strict=True)
         source = root.joinpath(*relative.parts).resolve()
     if not source.is_file() or root not in source.parents:
@@ -219,7 +168,7 @@ def freeze_candidate_source_closure(
     science_root = science_root.resolve(strict=True)
     load_accelerator_dependency(
         science_root, science_root / f"projects/{PROJECT_ID}/config/accelerator_dependency.json",
-        consumer_project_id=PROJECT_ID, required_variant="two_zone",
+        consumer_project_id=PROJECT_ID, required_variant="two_zone", validate_implementation_sources=False,
     )
 
     if not isinstance(extra_source_ids, tuple) or any(
@@ -255,14 +204,14 @@ def freeze_candidate_source_closure(
             "projects/single_reflection_oa_tof_mass_analyzer/config/analysis_contract.json": analysis_contract.resolve(strict=True),
         }
         declarations.extend(analysis_resources)
-    records: list[dict[str, Any]] = []
-    seen: set[str] = set()
+    selected: dict[str, Path] = {}
     for declared in declarations:
         source_id = declared.replace("\\", "/")
-        if source_id in seen:
+        if source_id in selected:
             raise ValueError(f"duplicate candidate source id: {source_id}")
-        seen.add(source_id)
-        source = analysis_resources.get(source_id) or _source_path(source_id, science_root)
+        selected[source_id] = analysis_resources.get(source_id) or _source_path(source_id, science_root)
+    records: list[dict[str, Any]] = []
+    for source_id, source in selected.items():
         source_digest = sha256(source)
         payload = source.read_bytes()
         if sha256(source) != source_digest:
@@ -491,7 +440,9 @@ def derive_candidate_source_closure(
 def project_comsol_native_implementation(closure: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """Reuse the actual freezer identities of the sole raw builder/save owners."""
     declared={item["source_id"]:item for item in closure["sources"]}
-    prefix="projects/single_reflection_oa_tof_mass_analyzer/comsol/"
+    current = "src/msplatform/backends/comsol/matlab/"
+    historical = "projects/single_reflection_oa_tof_mass_analyzer/comsol/"
+    prefix = current if current + "oatof_build_saved_particle_solution.m" in declared else historical
     names={"native_builder":"oatof_build_saved_particle_solution.m",
            "save_model":"oatof_save_run_model.m"}
     result={}
@@ -512,6 +463,11 @@ def candidate_comsol_source_phases(closure: dict[str, Any]) -> dict[str, Any]:
     """
     prefix = "projects/single_reflection_oa_tof_mass_analyzer/"
     sources = {item["source_id"]: item for item in closure["sources"]}
+    matlab_prefix = "src/msplatform/backends/comsol/matlab/"
+    workflow_prefix = "src/msplatform/workflows/oa_candidate/"
+    if matlab_prefix + "oatof_build_model_core.m" not in sources:
+        matlab_prefix = prefix + "comsol/"
+        workflow_prefix = prefix + "analysis/"
     def records(names: tuple[str, ...]) -> list[dict[str, Any]]:
         missing = set(names)-sources.keys()
         if missing:
@@ -520,11 +476,11 @@ def candidate_comsol_source_phases(closure: dict[str, Any]) -> dict[str, Any]:
                 for name in sorted(names)]
     native_names = ("src/msplatform/backends/comsol/matlab/load_oatof_contract.m",
         "src/msplatform/backends/comsol/matlab/configure_oatof_segmented_output.m")
-    native_names += tuple(prefix+name for name in (
-        "comsol/oatof_build_detector_geometry.m", "comsol/oatof_build_drift_geometry.m",
-        "comsol/oatof_build_grid_geometry.m", "comsol/oatof_build_mesh.m",
-        "comsol/oatof_build_reflectron_geometry.m", "comsol/oatof_configure_particle_model.m",
-        "comsol/oatof_parse_field_idealization.m"))
+    native_names += tuple(matlab_prefix+name for name in (
+        "oatof_build_detector_geometry.m", "oatof_build_drift_geometry.m",
+        "oatof_build_grid_geometry.m", "oatof_build_mesh.m",
+        "oatof_build_reflectron_geometry.m", "oatof_configure_particle_model.m",
+        "oatof_parse_field_idealization.m"))
     old_mesh = "common/comsol/add_comsol_size_feature.m"
     new_mesh = ("src/msplatform/backends/comsol/matlab/add_comsol_size_feature.m",
                 "src/msplatform/backends/comsol/matlab/read_comsol_mesh_size_controls.m")
@@ -539,12 +495,12 @@ def candidate_comsol_source_phases(closure: dict[str, Any]) -> dict[str, Any]:
     export_names = ("src/msplatform/backends/comsol/matlab/oatof_extract_detector_arrivals.m",
         "src/msplatform/backends/comsol/matlab/oatof_detector_arrival_reducer.m")
     export_names += ("src/msplatform/backends/comsol/matlab/run_candidate_contract_build.m",)
-    export_names += tuple(prefix+name for name in (
-        "comsol/oatof_build_model_core.m", "comsol/oatof_postprocess_saved_solution.m", "comsol/reextract_oatof_saved_solution.m",
-        "comsol/oatof_write_saved_particle_context.m", "comsol/oatof_export_detector_events.m",
-        "comsol/oatof_particle_plot_view.m", "comsol/oatof_create_result_nodes.m",
-        "comsol/oatof_validate_candidate_solution.m"))
-    analysis_names = tuple(prefix+"analysis/"+name for name in (
+    export_names += tuple(matlab_prefix+name for name in (
+        "oatof_build_model_core.m", "oatof_postprocess_saved_solution.m", "reextract_oatof_saved_solution.m",
+        "oatof_write_saved_particle_context.m", "oatof_export_detector_events.m",
+        "oatof_particle_plot_view.m", "oatof_create_result_nodes.m",
+        "oatof_validate_candidate_solution.m"))
+    analysis_names = tuple(workflow_prefix+name for name in (
         "analyze_comsol_detector_events.py", "reference_analysis.py", "reference_analysis_core.py"))
     analysis_names += tuple(name for name in sources if name.startswith("common/analysis/"))
     analysis_names += tuple(name for name in sources if (
@@ -556,7 +512,7 @@ def candidate_comsol_source_phases(closure: dict[str, Any]) -> dict[str, Any]:
     # Historical closures retain the source authority they actually froze.
     analysis_names += tuple(name for name in sources if name == "common/contracts/file_identity.py")
     analysis_names += (prefix+"config/analysis_contract.json",)
-    sync_names = (prefix+"comsol/verify_oatof_comsol_sync.m",
+    sync_names = (matlab_prefix+"verify_oatof_comsol_sync.m",
                   "src/msplatform/backends/comsol/matlab/load_oatof_contract.m", "src/msplatform/backends/comsol/matlab/oatof_cpt_solver_policy.m")
     import ast
     identifier = "src/msplatform/workflows/oa_candidate/candidate_comsol_stage.py"

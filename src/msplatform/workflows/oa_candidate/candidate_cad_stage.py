@@ -37,7 +37,7 @@ def execute_cad_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: s
             "-TaskScript",
             frozen_source_path(
                 closure,
-                "projects/single_reflection_oa_tof_mass_analyzer/workflows/design_candidate/run_candidate_cad_sync.m",
+                "src/msplatform/backends/comsol/matlab/run_candidate_cad_sync.m",
             ),
             "-ReportPath",
             str(report),

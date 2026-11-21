@@ -67,7 +67,9 @@ def _provider_path(api_version: int) -> str:
             else "projects/orthogonal_accelerator/config/component_contract_v3.json")
 
 
-def load_component_contract(repository_root: Path, *, api_version: int = 3) -> dict[str, Any]:
+def load_component_contract(
+    repository_root: Path, *, api_version: int = 3, validate_implementation_sources: bool = True,
+) -> dict[str, Any]:
     """Read one explicit provider API for freezing; API3 is the current default.
 
     API2 preserves its historical scientific roles; current implementation
@@ -120,7 +122,7 @@ def load_component_contract(repository_root: Path, *, api_version: int = 3) -> d
     sources = tuple(_source_path(
         root if Path(value).parts[:2] == ("src", "msplatform") else provider_root,
         value, "provider implementation",
-    ) for value in modules)
+    ) for value in modules) if validate_implementation_sources else ()
     return {
         "provider": provider, "api_version": api_version,
         "provider_contract_path": provider_path,
@@ -131,7 +133,7 @@ def load_component_contract(repository_root: Path, *, api_version: int = 3) -> d
 
 def load_accelerator_dependency(
     repository_root: Path, dependency_path: Path, *,
-    consumer_project_id: str, required_variant: str,
+    consumer_project_id: str, required_variant: str, validate_implementation_sources: bool = True,
 ) -> dict[str, Any]:
     """Validate an explicitly versioned dependency and its provider for freezing.
 
@@ -153,7 +155,9 @@ def load_accelerator_dependency(
     api_version = dependency["api_version"]
     if dependency["provider_contract"] != _provider_path(api_version):
         raise ValueError("accelerator provider contract path differs from declared api_version")
-    result = load_component_contract(root, api_version=api_version)
+    result = load_component_contract(
+        root, api_version=api_version, validate_implementation_sources=validate_implementation_sources,
+    )
     variants = dependency["structural_variants"]
     if (not isinstance(variants, list) or not variants
             or any(not isinstance(value, str) for value in variants)

@@ -16,7 +16,7 @@ from msplatform.io.file_identity import file_sha256
 
 
 REPO = Path(__file__).resolve().parents[4]
-BUILDER = REPO / "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/build_formal_delivery.ps1"
+BUILDER = REPO / "src/msplatform/backends/simion/resources/build_formal_delivery.ps1"
 
 
 class ManagedCandidatePaTests(unittest.TestCase):
@@ -200,11 +200,11 @@ try{
   -RetentionClass solver_review -RetentionReason 'inert retained-payload handoff fixture'
  $sessionPath=Join-Path $package.log_dir 'capacity_session.json'
  Write-RunJson -Path $sessionPath -Value $session -Depth 32
- $env:PYTHONPATH=$FrozenRepo;$env:PYTHONDONTWRITEBYTECODE='1'
+ $env:PYTHONPATH=(Join-Path $FrozenRepo 'src');$env:PYTHONDONTWRITEBYTECODE='1'
  $freeze=@'
 import json,sys
 from pathlib import Path
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.prepare_candidate_run import freeze_pa_producer_handoffs,plan_pa_producer_handoffs
+from msplatform.workflows.oa_candidate.prepare_candidate_run import freeze_pa_producer_handoffs,plan_pa_producer_handoffs
 from msplatform.execution.recorded_file_removal import write_json_atomic
 run,inputs,session=map(Path,sys.argv[1:]);plan=json.loads((inputs/'plan.json').read_text())
 keys={c['cache_key'] for c in plan['components'] if c['cacheable']};capacity=json.loads(session.read_text(encoding='utf-8-sig'))
@@ -256,7 +256,8 @@ write_json_atomic(run/'run_config.json',config)
                         calls = root / f"native_calls{attempt}.jsonl"
                         process = subprocess.run(["pwsh", "-NoProfile", "-File", str(driver), str(REPO), closure["code_root"],
                             sys.executable, str(artifact_project), str(inputs), frozen_builder, str(native), str(predecessor), str(report), str(attempt)],
-                            cwd=root, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "FIXTURE_CALLS": str(calls), "FIXTURE_NATIVE": str(native),
+                            cwd=root, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "SIMULATION_PYTHON_EXE": sys.executable,
+                                "FIXTURE_CALLS": str(calls), "FIXTURE_NATIVE": str(native),
                                 "FIXTURE_COUNTS": json.dumps({c["stem"]: len(c["response_ids"]) for c in plan["components"][:2]}),
                                 "FIXTURE_VERIFY_FAIL": "1" if case == "verification_fails" else "0"},
                             capture_output=True, text=True, encoding="utf-8", errors="replace", check=False, timeout=300)
@@ -278,7 +279,7 @@ write_json_atomic(run/'run_config.json',config)
                             self.assertEqual(origin["run_id"], fixture.producer_run_config.parent.name)
                             self.assertNotIn("response_build_completion", origin["components"][0])
                             retained = [p for p in predecessor.rglob("*") if p.is_file() and p.name not in {"run_manifest.json", "run_config.json"}]
-                            retained.append(Path(frozen_source_path(closure, "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/verify_component_pa.lua")))
+                            retained.append(Path(frozen_source_path(closure, "src/msplatform/backends/simion/resources/verify_component_pa.lua")))
                             config_path = predecessor / "run_config.json"
                             retained_config = json.loads(config_path.read_text(encoding="utf-8-sig"))
                             retained_config.setdefault("inputs", {})["original_build_completion"] = component["response_build_completion"]["path"]
@@ -503,7 +504,7 @@ try{
  Set-Alias Exit-HostResourceStage Exit-FixtureHost
  $completion=Join-Path $package.result_dir 'builder_completion.json'
  $failure=$null
- $env:PYTHONPATH=$FrozenRepo;$env:PYTHONDONTWRITEBYTECODE='1'
+ $env:PYTHONPATH=(Join-Path $FrozenRepo 'src');$env:PYTHONDONTWRITEBYTECODE='1'
  try{
   & $Builder -SimionExe $Python -OutputDir (Join-Path $run 'simion') -ArtifactProjectRoot $ArtifactProject `
    -RunId $runId -ContractPath (Join-Path $Inputs 'resolved.json') -CandidateBaselinePath (Join-Path $Inputs 'baseline.json') `
@@ -520,7 +521,7 @@ try{
             report = root / "report.json"
             process = subprocess.run(["pwsh", "-NoProfile", "-File", str(driver), str(REPO), closure["code_root"],
                 sys.executable, str(artifact_project), str(inputs), frozen_builder, str(report)], cwd=root,
-                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}, capture_output=True, text=True,
+                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "SIMULATION_PYTHON_EXE": sys.executable}, capture_output=True, text=True,
                 encoding="utf-8", errors="replace", check=False, timeout=180)
             self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
             result = json.loads(report.read_text(encoding="utf-8-sig"))
@@ -618,7 +619,7 @@ try{$null=Invoke-ComponentCache ($arguments+@('--action','not-an-action')) 'bad-
                     "src/msplatform/execution/resources/run_artifact_support.ps1", "src/msplatform/execution/resources/require_powershell7.ps1",
                     "src/msplatform/execution/resources/resource_process_support.ps1", "src/msplatform/backends/simion/resources/short_pa_path_support.ps1",
                     "src/msplatform/execution/process_observation.py",
-                    "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/run_candidate_flight.ps1",
+                    "src/msplatform/backends/simion/resources/run_candidate_flight.ps1",
                 )
                 for relative in relatives:
                     target = repo / relative
@@ -691,7 +692,7 @@ function Invoke-RunToolRootContext {param($RepoRoot,$Operation);Push-Location $R
                 driver.write_text(r'''
 param($Repo,$Python,$Request,$Runtime,$Session,$Report)
 $ErrorActionPreference='Stop';$failure=$null
-try{& (Join-Path $Repo 'projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/run_candidate_flight.ps1') `
+try{& (Join-Path $Repo 'src/msplatform/backends/simion/resources/run_candidate_flight.ps1') `
  -ExecutionRequestPath $Request -RuntimeReceiptPath $Runtime -CapacitySessionPath $Session -PythonExe $Python -RepositoryRoot $Repo}
 catch{$failure=$_.Exception.Message}
 @{error=$failure;guard_count=$global:MassSpectrometryImmutablePaSourceGuards.Count}|

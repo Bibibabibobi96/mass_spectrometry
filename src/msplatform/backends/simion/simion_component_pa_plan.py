@@ -28,7 +28,7 @@ ROLE = "oatof_simion_component_pa_plan"
 COMPONENTS = {
     "accelerator": (
         "accelerator", "accelerator", True,
-        "projects/orthogonal_accelerator/simion/build_two_zone_pa.lua",
+        "src/msplatform/backends/simion/resources/build_two_zone_pa.lua",
         "projects/orthogonal_accelerator/simion/two_zone_accelerator.gem",
     ),
     "reflectron": (
@@ -118,7 +118,7 @@ def compile_component_pa_plan(
             raise ValueError(f"{role} has invalid electrode or mesh metadata")
         source_ids = [builder, gem]
         if role == "reflectron":
-            source_ids.append(PROJECT + "/simion/reflectron/refine_single_pa.lua")
+            source_ids.append("src/msplatform/backends/simion/resources/refine_single_pa.lua")
         if cacheable:
             source_ids += ["src/msplatform/backends/simion/resources/export_standalone_pa.lua", "src/msplatform/backends/simion/standalone_pa_response_set.py"]
         identity = {
