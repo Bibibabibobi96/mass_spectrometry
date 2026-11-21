@@ -52,7 +52,7 @@ RELATIVE_PATHS = (
     "src/msplatform/backends/simion/resources/native_fast_adjust_runtime_support.ps1",
     "src/msplatform/backends/simion/resources/assemble_native_fast_adjust_family.lua",
     "src/msplatform/backends/simion/resources/export_standalone_pa.lua",
-    "common/simion/voltageize_pa0.lua",
+    "src/msplatform/backends/simion/resources/voltageize_pa0.lua",
     "src/msplatform/workflows/resources/run_artifact_workflow.ps1",
     "src/msplatform/workflows/oa_candidate/candidate_source_closure.py",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/native_stage_completion.py",

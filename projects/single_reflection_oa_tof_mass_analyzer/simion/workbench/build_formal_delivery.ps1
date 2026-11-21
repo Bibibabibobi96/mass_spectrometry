@@ -595,7 +595,7 @@ foreach($component in $componentPlan.components){
     $value=[double]$component.operating_voltages_v.([string]$_)
     ([string]$_+'='+$value.ToString('G17',[Globalization.CultureInfo]::InvariantCulture))
   })
-  Invoke-SimionLua (Join-Path $repoRoot 'common/simion/voltageize_pa0.lua') (@($private.controller_path,$adjusted)+$assignments)
+  Invoke-SimionLua (Join-Path $repoRoot 'src/msplatform/backends/simion/resources/voltageize_pa0.lua') (@($private.controller_path,$adjusted)+$assignments)
   Move-Item -LiteralPath $adjusted -Destination $private.controller_path -Force
   $private.receipt.controller_path=Join-Path $outputFull ($stem+'.pa0')
   $componentReceipts+=@{role=$role;source='published_standalone_responses';cache_hit=$cacheHit;
