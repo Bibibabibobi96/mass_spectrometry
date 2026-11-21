@@ -447,7 +447,7 @@ def execute_prepared_run(*args):
         policy_resource = "src/msplatform/contracts/particle_count_policy.json"
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            closure = freeze_candidate_source_closure(root / "code", root / "artifacts")
+            closure = freeze_candidate_source_closure(root / "code", root / "artifacts", science_root=PROJECT_ROOT.parents[1])
             ids = [row["source_id"] for row in closure["sources"]]
             self.assertEqual(len(ids), len(set(ids)))
             for source_id in (policy_source, policy_resource):
@@ -462,7 +462,7 @@ def execute_prepared_run(*args):
                     self.assertEqual(record["bytes"], original.stat().st_size)
             with mock.patch.object(module, "RELATIVE_PATHS", (*module.RELATIVE_PATHS, module.RELATIVE_PATHS[0])):
                 with self.assertRaisesRegex(ValueError, "duplicate candidate source id: " + module.RELATIVE_PATHS[0]):
-                    freeze_candidate_source_closure(root / "duplicate", root / "artifacts")
+                    freeze_candidate_source_closure(root / "duplicate", root / "artifacts", science_root=PROJECT_ROOT.parents[1])
 
     def test_candidate_freeze_loads_installed_solidworks_and_rejects_drift(self):
         installed = (
@@ -475,7 +475,7 @@ def execute_prepared_run(*args):
         )
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            closure = freeze_candidate_source_closure(root / "code", root / "artifacts")
+            closure = freeze_candidate_source_closure(root / "code", root / "artifacts", science_root=PROJECT_ROOT.parents[1])
             ids = [row["source_id"] for row in closure["sources"]]
             self.assertFalse(set(retired).intersection(ids))
             for source_id in installed:
@@ -505,7 +505,7 @@ def execute_prepared_run(*args):
                 verify_candidate_source_closure(closure)
             with self.assertRaisesRegex(ValueError, "invalid candidate source path"):
                 from msplatform.workflows.oa_candidate.candidate_source_closure import _source_path
-                _source_path("../outside.py")
+                _source_path("../outside.py", REPO_ROOT)
 
     def test_freezer_payload_records_and_write_corruption(self):
         from msplatform.workflows.oa_candidate import candidate_source_closure as module
@@ -513,7 +513,7 @@ def execute_prepared_run(*args):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             with mock.patch.dict(os.environ, {"SIMULATION_PYTHON_EXE": str(root / "conflicting-python.exe")}):
-                closure = freeze_candidate_source_closure(root / "code", root / "artifacts")
+                closure = freeze_candidate_source_closure(root / "code", root / "artifacts", science_root=PROJECT_ROOT.parents[1])
             self.assertEqual(Path(closure["runtime"]["python_executable"]), Path(sys.executable).resolve())
             self.assertEqual(closure["runtime"]["python_sha256"], sha256(Path(sys.executable).resolve()))
             records = {item["source_id"]: item for item in closure["sources"]}
@@ -544,13 +544,13 @@ def execute_prepared_run(*args):
             with mock.patch.object(Path, "write_bytes", corrupt_after_write), \
                     mock.patch.object(module, "verify_candidate_source_closure", wraps=verify_candidate_source_closure) as verifier:
                 with self.assertRaisesRegex(ValueError, "frozen candidate source changed: " + corrupt_id):
-                    freeze_candidate_source_closure(root / "corrupt", root / "artifacts")
+                    freeze_candidate_source_closure(root / "corrupt", root / "artifacts", science_root=PROJECT_ROOT.parents[1])
                 verifier.assert_called_once()
 
     def test_frozen_sources_import_managed_build_and_lifecycle_without_live_repo(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            closure = freeze_candidate_source_closure(root / "code", root / "artifacts")
+            closure = freeze_candidate_source_closure(root / "code", root / "artifacts", science_root=PROJECT_ROOT.parents[1])
             renderer_source = "src/msplatform/backends/simion/accelerator_renderer.py"
             self.assertEqual(Path(frozen_source_path(closure, renderer_source)).read_bytes(), (REPO_ROOT / renderer_source).read_bytes())
             report_source = "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_report_model_timing.m"
@@ -559,7 +559,7 @@ def execute_prepared_run(*args):
             imports = (
                 "from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate import run_candidate_workflow; "
                 "from msplatform.backends.simion import simion_component_pa_plan; "
-                "from common.contracts import reconcile_artifact_capacity, verify_artifact_layout, capacity_ledger; from msplatform.execution import solver_review_retirement; "
+                "from msplatform.execution import reconcile_artifact_capacity, verify_artifact_layout, capacity_ledger, solver_review_retirement; "
                 "solver_review_retirement._assert_runtime_retirement_unprotected(Path.cwd()/'empty-artifacts', Path.cwd()/'empty-artifacts/run'); "
                 "from msplatform.backends.simion import accelerator_renderer; "
                 "assert Path(accelerator_renderer.__file__).resolve()==source_root/'src/msplatform/backends/simion/accelerator_renderer.py'; "
@@ -598,7 +598,7 @@ def execute_prepared_run(*args):
     def test_frozen_ion_reader_executes_actual_diagnostics_without_live_fallback(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            closure = freeze_candidate_source_closure(root / "code", root / "artifacts")
+            closure = freeze_candidate_source_closure(root / "code", root / "artifacts", science_root=PROJECT_ROOT.parents[1])
             identifier = "src/msplatform/backends/simion/ion_table.py"
             frozen = Path(frozen_source_path(closure, identifier))
             self.assertEqual(frozen.read_bytes(), (REPO_ROOT / identifier).read_bytes())
@@ -685,7 +685,7 @@ print('FROZEN_ION_CONSUMER_PASS')
         from msplatform.workflows.oa_candidate.candidate_source_closure import candidate_comsol_source_phases
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            closure = freeze_candidate_source_closure(root / "code", root / "artifacts",
+            closure = freeze_candidate_source_closure(root / "code", root / "artifacts", science_root=PROJECT_ROOT.parents[1],
                 resolved_contract=PROJECT_ROOT / "config/resolved_geometry.json",
                 analysis_contract=PROJECT_ROOT / "config/analysis_contract.json")
             reader = "src/msplatform/results/single_reflection_particle_table.py"
@@ -716,7 +716,7 @@ print('FROZEN_ION_CONSUMER_PASS')
         from msplatform.workflows.oa_candidate.candidate_source_closure import candidate_comsol_source_phases
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            closure = freeze_candidate_source_closure(root/"code", root/"artifacts",
+            closure = freeze_candidate_source_closure(root/"code", root/"artifacts", science_root=PROJECT_ROOT.parents[1],
                 resolved_contract=PROJECT_ROOT/"config/resolved_geometry.json",
                 analysis_contract=PROJECT_ROOT/"config/analysis_contract.json")
             before = candidate_comsol_source_phases(closure)
@@ -739,7 +739,7 @@ print('FROZEN_ION_CONSUMER_PASS')
         from msplatform.workflows.oa_candidate import candidate_source_closure as source
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            closure = freeze_candidate_source_closure(root / "code", root / "artifacts",
+            closure = freeze_candidate_source_closure(root / "code", root / "artifacts", science_root=PROJECT_ROOT.parents[1],
                 resolved_contract=PROJECT_ROOT / "config/resolved_geometry.json",
                 analysis_contract=PROJECT_ROOT / "config/analysis_contract.json")
             code = Path(closure["code_root"])
@@ -799,7 +799,7 @@ print('FROZEN_ION_CONSUMER_PASS')
         from msplatform.workflows.oa_candidate import candidate_source_closure as source
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            closure = freeze_candidate_source_closure(root/"code", root/"artifacts",
+            closure = freeze_candidate_source_closure(root/"code", root/"artifacts", science_root=PROJECT_ROOT.parents[1],
                 resolved_contract=PROJECT_ROOT/"config/resolved_geometry.json",
                 analysis_contract=PROJECT_ROOT/"config/analysis_contract.json")
             expected = {phase: source.project_comsol_dispatch(closure, phase) for phase in ("native", "sync")}
@@ -821,33 +821,38 @@ print('FROZEN_ION_CONSUMER_PASS')
 
 
     def test_execution_resource_declaration_rejects_missing_patterns_and_package_escape(self):
+        from msplatform.workflows.oa_candidate import candidate_source_closure as source
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / "src/msplatform/execution/resources").mkdir(parents=True)
-            shutil.copyfile(REPO_ROOT / "pyproject.toml", root / "pyproject.toml")
-            with self.assertRaisesRegex(FileNotFoundError, "Declared execution resource pattern has no files"):
-                _execution_resource_source_ids(root)
-            outside = root / "outside.ps1"
-            outside.write_text("# explicitly outside the declared execution package", encoding="utf-8")
-            with mock.patch.object(Path, "glob", return_value=[outside]):
-                with self.assertRaisesRegex(ValueError, "execution resource escapes its package"):
-                    _execution_resource_source_ids(root)
+            package = root / "src/msplatform"
+            resources = package / "execution/resources"
+            resources.mkdir(parents=True)
+            declaration = REPO_ROOT / "src/msplatform/execution/resources/package_resources.json"
+            shutil.copyfile(declaration, resources / declaration.name)
+            with mock.patch.object(source, "_package_root", return_value=package):
+                with self.assertRaisesRegex(FileNotFoundError, "Declared execution resource pattern has no files"):
+                    _execution_resource_source_ids()
+                outside = root / "outside.ps1"
+                outside.write_text("# explicitly outside the declared execution package", encoding="utf-8")
+                with mock.patch.object(Path, "glob", return_value=[outside]):
+                    with self.assertRaisesRegex(ValueError, "execution resource escapes its package"):
+                        _execution_resource_source_ids()
 
     def test_source_closure_explicit_workflow_extras_share_freezing_and_identity(self):
         extra = "src/msplatform/execution/recovery.py"
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             closure = freeze_candidate_source_closure(
-                root / "code", root / "artifacts",
+                root / "code", root / "artifacts", science_root=PROJECT_ROOT.parents[1],
                 extra_source_ids=(extra, extra, RELATIVE_PATHS[0]),
             )
             records = {item["source_id"]: item for item in closure["sources"]}
             self.assertEqual(len(records), len(set(RELATIVE_PATHS)
-                | set(_execution_resource_source_ids(REPO_ROOT)) | {extra}
+                | set(_execution_resource_source_ids()) | {extra}
                 | set(enumerate_python_sources(REPO_ROOT, package_roots=("src/msplatform",),
                                                resource_suffixes=(".schema.json",)))))
             self.assertEqual(records[extra]["source_sha256"], sha256(REPO_ROOT / extra))
-            for source_id in _execution_resource_source_ids(REPO_ROOT):
+            for source_id in _execution_resource_source_ids():
                 resource = Path(frozen_source_path(closure, source_id))
                 self.assertEqual(resource.read_bytes(), (REPO_ROOT / source_id).read_bytes())
                 self.assertEqual(records[source_id]["source_sha256"], sha256(REPO_ROOT / source_id))
@@ -875,7 +880,7 @@ print('FROZEN_ION_CONSUMER_PASS')
     def test_source_closure_loads_installed_solidworks_owner_in_cold_process(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            closure = freeze_candidate_source_closure(root / "code", root / "artifacts")
+            closure = freeze_candidate_source_closure(root / "code", root / "artifacts", science_root=PROJECT_ROOT.parents[1])
             source_ids = {item["source_id"] for item in closure["sources"]}
             self.assertIn("src/msplatform/exporters/solidworks/import_step_to_solidworks.py", source_ids)
             self.assertIn("src/msplatform/exporters/solidworks/installation.py", source_ids)
@@ -903,7 +908,7 @@ print('FROZEN_ION_CONSUMER_PASS')
                 root = Path(directory)
                 with self.assertRaises(ValueError):
                     freeze_candidate_source_closure(
-                        root / "code", root / "artifacts", extra_source_ids=(extra,),
+                        root / "code", root / "artifacts", science_root=PROJECT_ROOT.parents[1], extra_source_ids=(extra,),
                     )
                 self.assertFalse((root / "code").exists())
 
@@ -928,7 +933,6 @@ print('FROZEN_ION_CONSUMER_PASS')
 
 
     def test_candidate_freeze_rejects_provider_api_version_before_copy(self):
-        from msplatform.workflows.oa_candidate import candidate_source_closure as closure
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for relative in (
@@ -942,10 +946,8 @@ print('FROZEN_ION_CONSUMER_PASS')
             provider = json.loads(provider_path.read_text(encoding="utf-8"))
             provider["api_version"] = 3
             provider_path.write_text(json.dumps(provider), encoding="utf-8")
-            with mock.patch.multiple(closure, REPO_ROOT=root,
-                                     PROJECT_ROOT=root / "projects/single_reflection_oa_tof_mass_analyzer"):
-                with self.assertRaisesRegex(ValueError, "api_version"):
-                    freeze_candidate_source_closure(root / "frozen", root / "artifacts")
+            with self.assertRaisesRegex(ValueError, "api_version"):
+                freeze_candidate_source_closure(root / "frozen", root / "artifacts", science_root=root)
             self.assertFalse((root / "frozen").exists())
 
 
@@ -1055,7 +1057,7 @@ print('FROZEN_ION_CONSUMER_PASS')
             closure = plan["execution_source_closure"]
             verify_candidate_source_closure(closure)
             source_ids = {item["source_id"] for item in closure["sources"]}
-            self.assertEqual(source_ids, set(RELATIVE_PATHS) | set(_execution_resource_source_ids(REPO_ROOT)) | set(enumerate_python_sources(
+            self.assertEqual(source_ids, set(RELATIVE_PATHS) | set(_execution_resource_source_ids()) | set(enumerate_python_sources(
                 REPO_ROOT, package_roots=("src/msplatform",), resource_suffixes=(".schema.json",))) | {
                 "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json",
                 "projects/single_reflection_oa_tof_mass_analyzer/config/analysis_contract.json",
@@ -2830,7 +2832,7 @@ def postprocess_public_entry(root, artifact):
     # The real CLI must perform its own runtime binding. Copy original authors,
     # not the transformed output of freeze_candidate_source_closure.
     selected=set(RELATIVE_PATHS)
-    selected.update(_execution_resource_source_ids(REPO_ROOT))
+    selected.update(_execution_resource_source_ids())
     selected.update(enumerate_python_sources(REPO_ROOT, package_roots=("src/msplatform",),
         resource_suffixes=(".schema.json",)))
     dependency=load_json(PROJECT_ROOT/"config/accelerator_dependency.json")

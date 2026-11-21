@@ -1,5 +1,15 @@
 # 开放路径平行镜双条带 MR-TOF 项目状态
 
+The native static-field PowerShell owner now resolves implementation resources
+from the installed package and obtains workspace, Python, ledger and policy from
+an explicit HostContext. Prepare, metadata binding and validation use isolated
+installed Python calls, without checkout-root discovery or `PYTHONPATH` injection.
+Real payload-guard and closeout tests remain in force. The seal-failure fixture
+now publishes its intended successful parent through the actual public writer,
+then verifies two idempotent seals and unchanged manifest identity; it no longer
+leaves an initial `checkpoint` source. This is software recovery evidence only;
+no native execution follows.
+
 ## Installed native static-field provider
 
 `msplatform.backends.simion.native_static_field_provider` and `native_corridor_plan`

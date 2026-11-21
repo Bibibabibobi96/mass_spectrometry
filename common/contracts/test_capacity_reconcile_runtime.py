@@ -14,8 +14,8 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from common.contracts import capacity_ledger
-from common.contracts import reconcile_artifact_capacity as capacity
+from msplatform.execution import capacity_maintenance as capacity_ledger
+from msplatform.execution import artifact_capacity_maintenance as capacity
 from msplatform.execution.capacity_protection import create_capacity_protection_lease
 
 
@@ -40,6 +40,8 @@ class DailyCapacityReconcileTest(unittest.TestCase):
         script = r'''
 $ErrorActionPreference='Stop'
 $RepoRoot=$env:CAPACITY_FIXTURE_REPO
+$hostContext=@{workspace=$RepoRoot;python_executable=$env:SIMULATION_PYTHON_EXE;host_state_path=(Join-Path $RepoRoot 'capacity-fixture-host.sqlite3');policy_path=(Join-Path $RepoRoot 'src/msplatform/execution/resources/host_resource_policy.json')}
+. (Join-Path $RepoRoot 'src/msplatform/execution/resources/host_execution_lease.ps1') -HostContext $hostContext
 . (Join-Path $RepoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $results=@(foreach($scenario in @('receipt','native','success','workflow_initial','workflow')){
   & {
@@ -47,7 +49,6 @@ $results=@(foreach($scenario in @('receipt','native','success','workflow_initial
     $script:releaseCount=0
     $script:capacityCount=0
     $script:renewCount=0
-    function Enter-HostExecutionLease { return [pscustomobject]@{} }
     function Exit-HostExecutionLease {
       param($Lease)
       $script:releaseCount++
@@ -92,7 +93,7 @@ Write-Output ('HOST_RELEASE_RESULT='+($results|ConvertTo-Json -Depth 15 -Compres
 '''
         completed = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=repo,
                                    env=dict(os.environ, CAPACITY_FIXTURE_REPO=str(repo)),
-                                   capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
+                                   capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30, check=False)
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         line = next(line for line in completed.stdout.splitlines() if line.startswith("HOST_RELEASE_RESULT="))
         results = {row["scenario"]: row for row in json.loads(line.split("=", 1)[1])}
@@ -135,8 +136,8 @@ Write-Output ('HOST_RELEASE_RESULT='+($results|ConvertTo-Json -Depth 15 -Compres
                 import json, sys
                 from datetime import datetime, timedelta
                 from pathlib import Path
-                from common.contracts import reconcile_artifact_capacity as capacity
-                from common.contracts import capacity_protection as protection
+                from msplatform.execution import artifact_capacity_maintenance as capacity
+                from msplatform.execution import capacity_protection as protection
                 args = sys.argv[1:]
                 root = Path(args[args.index("--artifact-root") + 1])
                 scenario = root.name
@@ -214,6 +215,8 @@ $ErrorActionPreference='Stop'
 $fixturePython={quote(sys.executable)}
 $fixtureDriver={quote(driver)}
 $fixtureHostState={quote(root / 'host.sqlite3')}
+$hostContext=@{{workspace={quote(root)};python_executable=$fixturePython;host_state_path=$fixtureHostState;policy_path={quote(repo / 'src/msplatform/execution/resources/host_resource_policy.json')}}}
+. {quote(repo / 'src/msplatform/execution/resources/host_execution_lease.ps1')} -HostContext $hostContext
 function Get-HostResourceSnapshot {{
   # This capacity-owner matrix needs scheduler admission, not another full
   # live-CIM fault matrix. Keep real current-owner identity and real SQLite
@@ -294,7 +297,7 @@ if fixture_scenario == "cleanup_failure" and fixture_action == "delete":
                                        SIMULATION_PYTHON_EXE=sys.executable)
                     completed = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=repo,
                                                env=environment, capture_output=True, text=True,
-                                               encoding="utf-8", timeout=90, check=False)
+                                               encoding="utf-8", errors="replace", timeout=90, check=False)
                     self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
                     line = next(line for line in completed.stdout.splitlines() if line.startswith("PRESSURE_RESULT="))
                     result = json.loads(line.split("=", 1)[1])
@@ -625,7 +628,7 @@ if fixture_scenario == "cleanup_failure" and fixture_action == "delete":
             self.assertNotIn(forbidden, source)
         script = """
 import sys
-from common.contracts import reconcile_artifact_capacity
+from msplatform.execution import reconcile_artifact_capacity
 for name in (
     'common.contracts.legacy_capacity_backfill',
     'common.contracts.reconcile_interrupted_compact_runs',

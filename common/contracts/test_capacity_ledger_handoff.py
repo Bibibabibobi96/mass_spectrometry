@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from common.contracts import capacity_ledger
+from msplatform.execution import capacity_ledger
 
 
 IDENTITY = "a" * 64

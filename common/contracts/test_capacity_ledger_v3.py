@@ -10,7 +10,7 @@ from unittest.mock import patch
 import unittest
 from pathlib import Path
 
-from common.contracts import capacity_ledger
+from msplatform.execution import capacity_maintenance as capacity_ledger
 
 
 IDENTITY = "a" * 64
@@ -519,7 +519,7 @@ class CapacityLedgerV3Test(unittest.TestCase):
 
 class ProjectCacheApprovalTest(unittest.TestCase):
     def test_exact_owner_approval_preserves_bytes_and_rechecks_consumers(self):
-        from common.contracts import capacity_protection
+        from msplatform.execution import capacity_protection
         from unittest.mock import Mock
         owner = "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
         relative = "projects/"+owner+"/cache/simion_single_flight_accelerator_main/"+"a"*64

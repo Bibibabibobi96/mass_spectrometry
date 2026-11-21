@@ -9,8 +9,8 @@ import sys
 import tempfile
 import unittest
 
-from common.contracts import reconcile_artifact_capacity as capacity
-from common.contracts.gui_source_protection import current_gui_source_retention
+from msplatform.execution import artifact_capacity_maintenance as capacity
+from msplatform.execution.gui_source_protection import current_gui_source_retention
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -24,7 +24,8 @@ import sys,tempfile
 from pathlib import Path
 sys.modules['common.contracts.verify_artifact_layout']=None
 sys.modules['common.contracts.reconcile_artifact_capacity']=None
-from common.contracts import capacity_ledger, legacy_capacity_calibration
+from msplatform.execution import capacity_maintenance as capacity_ledger
+from common.contracts import legacy_capacity_calibration
 from msplatform.execution.solver_review_retirement import _assert_runtime_retirement_unprotected
 with tempfile.TemporaryDirectory() as temporary:
     root=Path(temporary)

@@ -79,7 +79,7 @@ class NativeStaticProviderTest(unittest.TestCase):
         self.assertEqual(len(actual_inputs["instances"]), 3)
         runner = Path(__file__).resolve().parents[4] / "src/msplatform/backends/simion/resources/run_native_static_field_provider.ps1"
         text = runner.read_text()
-        start = text.index("    $nativeInputs=Invoke-RunToolRootContext")
+        start = text.index("    $nativeInputs=& {")
         block = text[start:text.index("    foreach($name in @('frozen_input','resolved_geometry'))", start)]
         script = run / "guarded_native_inputs.ps1"
         script.write_text(r"""
@@ -1717,6 +1717,12 @@ function Invoke-RunToolRootContext {param($RepoRoot,$Operation)
 }
 function Exit-ArtifactWorkflowCapacitySession {$script:events.Add('capacity_release')}
 function Remove-RunPackageExecutionAlias {$script:events.Add('alias')}
+function Invoke-FakeInstalledPython {
+ param([Parameter(ValueFromRemainingArguments)]$Arguments)
+ $script:events.Add($(if($Arguments-contains'seal-stopped-payload'){'seal'}else{'verify'}))
+ $global:LASTEXITCODE=0
+}
+$python='Invoke-FakeInstalledPython'
 $catchText=($outer[0].CatchClauses|ForEach-Object {$_.Extent.Text})-join"`n"
 $body=if($PrimaryError-eq'yes'){"throw [IO.IOException]::new('ORIGINAL_NATIVE_FAILURE')"}else{"`$status='success'"}
 if($NormalReleaseIndex-ne'none'){
@@ -1840,11 +1846,11 @@ function Invoke-ResourceBudgetedProcess {$script:nativeCalls++;throw 'Native ree
 function Exit-ArtifactWorkflowCapacitySession {$script:capacityReleases++}
 $originalAlias=${function:Remove-RunPackageExecutionAlias}
 function Remove-RunPackageExecutionAlias {param($Package);$script:aliases++;& $originalAlias -Package $Package}
-$originalRootContext=${function:Invoke-RunToolRootContext}
-function Invoke-RunToolRootContext {param($RepoRoot,$Operation)
- if($Operation.ToString().Contains('seal-stopped-payload')){throw 'TEST_ONLY seal unavailable after publication'}
- & $originalRootContext -RepoRoot $RepoRoot -Operation $Operation
+$script:realPython=$python
+function Invoke-FailingSealPython {
+ throw 'TEST_ONLY seal unavailable after publication'
 }
+$python='Invoke-FailingSealPython'
 $caught=$null
 try{. ([scriptblock]::Create($outer[0].Finally.Extent.Text.Trim().TrimStart('{').TrimEnd('}')))}catch{$caught=$_}
 if($null-eq$caught-or$caught.Exception.Message-ne'TEST_ONLY seal unavailable after publication'){
@@ -1855,13 +1861,22 @@ if($null-eq$caught-or$caught.Exception.Message-ne'TEST_ONLY seal unavailable aft
 """, encoding="utf-8")
             result = subprocess.run(
                 [powershell, "-NoProfile", "-File", str(script), str(repo), sys.executable, str(artifact_root)],
-                cwd=repo, capture_output=True, text=True, encoding="utf-8", timeout=60, check=False,
+                cwd=repo, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60, check=False,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             outcome = json.loads(next(line[7:] for line in result.stdout.splitlines() if line.startswith("RESULT=")))
             self.assertEqual((outcome["native_calls"], outcome["capacity_releases"], outcome["aliases"]), (0, 1, 1))
             run = Path(outcome["run_directory"])
             self.assertEqual(load_capacity_ledger(artifact_root)["objects"][0]["status"], "writing")
+            published = subprocess.run(
+                [powershell, "-NoProfile", "-Command",
+                 f". '{repo / 'src/msplatform/execution/resources/run_artifact_support.ps1'}'; "
+                 f"$outputs=@(Get-ChildItem -LiteralPath '{run}' -Recurse -File|Where-Object {{$_.Name-notin@('run_config.json','run_manifest.json','.terminal-publication.lock')}}|ForEach-Object FullName); "
+                 f"Write-RunManifest -Python '{sys.executable}' -RepoRoot '{repo}' -RunConfig '{run / 'run_config.json'}' "
+                 "-Status success -Software @('Python 3.11','SIMION 2020') -Outputs $outputs"],
+                cwd=repo, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30, check=False)
+            self.assertEqual(published.returncode, 0, published.stdout + published.stderr)
+            self.assertEqual(json.loads((run / "run_manifest.json").read_text(encoding="utf-8-sig"))["status"], "success")
             config = json.loads((run / "run_config.json").read_text(encoding="utf-8-sig"))
             before = {path.relative_to(run): path.read_bytes() for path in run.rglob("*") if path.is_file()}
             command = [sys.executable, "-B", "-m", "msplatform.execution.run_capacity_lifecycle",
@@ -1873,7 +1888,7 @@ if($null-eq$caught-or$caught.Exception.Message-ne'TEST_ONLY seal unavailable aft
                 sealed = subprocess.run(command, cwd=repo, capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
                 self.assertEqual(sealed.returncode, 0, sealed.stdout + sealed.stderr)
                 receipt = json.loads(sealed.stdout)
-                self.assertEqual((receipt["action"], receipt["status"], receipt["run_status"]), ("seal_stopped_payload", "ready", "success"))
+                self.assertEqual((receipt["action"], receipt["status"], receipt["run_status"]), ("seal_stopped_payload", "ready", "success"), result.stdout + sealed.stdout + (run / "summary.json").read_text() + (run / "run_manifest.json").read_text())
                 self.assertTrue(receipt["ledger_entry"]["pin"])
                 current = load_capacity_ledger(artifact_root)
                 if ledger is not None:

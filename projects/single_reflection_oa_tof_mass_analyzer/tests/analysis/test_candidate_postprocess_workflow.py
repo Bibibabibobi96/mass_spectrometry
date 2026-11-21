@@ -29,7 +29,7 @@ class CandidatePostprocessTests(unittest.TestCase):
             root=Path(directory)
             artifact,parent,_,_=postprocess_source_fixture(root/"source",cold=True)
             selected=select_postprocess_parent(parent,artifact)
-            closure=freeze_candidate_source_closure(root/"code",artifact/"projects"/PROJECT_ROOT.name,
+            closure=freeze_candidate_source_closure(root/"code",artifact/"projects"/PROJECT_ROOT.name, science_root=PROJECT_ROOT.parents[1],
                 resolved_contract=Path(selected["inputs"]["contract_path"]["path"]),
                 analysis_contract=PROJECT_ROOT/"config/analysis_contract.json")
             child=root/"child"
@@ -131,7 +131,7 @@ class CandidatePostprocessTests(unittest.TestCase):
             root = Path(directory)
             artifact, parent, _, _ = postprocess_source_fixture(root / "source", cold=True)
             selected = select_postprocess_parent(parent, artifact)
-            closure = freeze_candidate_source_closure(root / "code", artifact / "projects" / PROJECT_ROOT.name,
+            closure = freeze_candidate_source_closure(root / "code", artifact / "projects" / PROJECT_ROOT.name, science_root=PROJECT_ROOT.parents[1],
                 resolved_contract=Path(selected["inputs"]["contract_path"]["path"]),
                 analysis_contract=PROJECT_ROOT / "config/analysis_contract.json")
             selection = root / "selection.json"
@@ -309,7 +309,7 @@ class CandidatePostprocessTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);run=root/"run";(run/"logs").mkdir(parents=True)
             execution=root/"execution";execution.mkdir()
-            closure=freeze_candidate_source_closure(run/"inputs/code",root/"artifacts",
+            closure=freeze_candidate_source_closure(run/"inputs/code",root/"artifacts", science_root=PROJECT_ROOT.parents[1],
                 resolved_contract=PROJECT_ROOT/"config/resolved_geometry.json",
                 analysis_contract=PROJECT_ROOT/"config/analysis_contract.json")
             request=run/"analysis_request.json";request.write_text("{}",encoding="utf-8")
@@ -386,7 +386,7 @@ class CandidatePostprocessTests(unittest.TestCase):
             artifact,parent,_,_=postprocess_source_fixture(root)
             before={str(path.relative_to(parent)):path.read_bytes() for path in parent.rglob("*") if path.is_file()}
             selected=select_postprocess_parent(parent,artifact)
-            frozen=freeze_candidate_source_closure(root/"code",artifact/"projects"/PROJECT_ROOT.name,
+            frozen=freeze_candidate_source_closure(root/"code",artifact/"projects"/PROJECT_ROOT.name, science_root=PROJECT_ROOT.parents[1],
                 resolved_contract=Path(selected["inputs"]["contract_path"]["path"]),
                 analysis_contract=PROJECT_ROOT/"config/analysis_contract.json")
             child=root/"child"
@@ -429,7 +429,7 @@ class CandidatePostprocessTests(unittest.TestCase):
             root=Path(directory)
             artifact,parent,_,_=postprocess_source_fixture(root)
             selected=select_postprocess_parent(parent,artifact)
-            closure=freeze_candidate_source_closure(root/"code",artifact/"projects"/PROJECT_ROOT.name,
+            closure=freeze_candidate_source_closure(root/"code",artifact/"projects"/PROJECT_ROOT.name, science_root=PROJECT_ROOT.parents[1],
                 resolved_contract=Path(selected["inputs"]["contract_path"]["path"]),
                 analysis_contract=PROJECT_ROOT/"config/analysis_contract.json")
             child=root/"child"
@@ -491,7 +491,7 @@ class CandidatePostprocessTests(unittest.TestCase):
             child=root/"child"
             (child/"inputs").mkdir(parents=True)
             (child/"logs").mkdir()
-            frozen=freeze_candidate_source_closure(child/"inputs/code",root/"artifacts",
+            frozen=freeze_candidate_source_closure(child/"inputs/code",root/"artifacts", science_root=PROJECT_ROOT.parents[1],
                 resolved_contract=PROJECT_ROOT/"config/resolved_geometry.json",
                 analysis_contract=PROJECT_ROOT/"config/analysis_contract.json")
             selection={"exports":None,"model_record":{"path":str(root/"parent/model.mph")},

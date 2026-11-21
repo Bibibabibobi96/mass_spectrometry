@@ -316,7 +316,7 @@ def _freeze_run(
             raise ValueError(f"scientific input changed while freezing: {name}")
         declared[name] = str(target)
     closure = freeze_candidate_source_closure(
-        inputs / "code", ARTIFACT_ROOT, Path(sys.executable), extra_source_ids=EXTRA_SOURCE_IDS,
+        inputs / "code", ARTIFACT_ROOT, Path(sys.executable), science_root=REPO_ROOT, extra_source_ids=EXTRA_SOURCE_IDS,
     )
     context["sources"] = {row["source_id"]: row["source_sha256"] for row in closure["sources"]}
     if execution_request is not None and context["sources"] != execution_request["source_sha256"]:

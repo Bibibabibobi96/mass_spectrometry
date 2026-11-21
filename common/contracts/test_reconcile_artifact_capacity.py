@@ -19,11 +19,11 @@ from msplatform.execution.capacity_protection import (
     create_capacity_protection_lease as _create_capacity_protection_lease,
     load_capacity_protection_leases,
     path_is_protected,
-    prune_expired_capacity_protection_leases,
     renew_capacity_protection_lease,
 )
-from common.contracts import capacity_ledger
-from common.contracts import reconcile_artifact_capacity as normal_capacity
+from msplatform.execution.capacity_lease_maintenance import prune_expired_capacity_protection_leases
+from msplatform.execution import capacity_maintenance as capacity_ledger
+from msplatform.execution import artifact_capacity_maintenance as normal_capacity
 from msplatform.execution import capacity_admission
 from common.contracts import legacy_capacity_backfill as capacity
 from common.contracts.legacy_capacity_backfill import (
@@ -509,7 +509,7 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
 import sys
 import tempfile
 from pathlib import Path
-from common.contracts import reconcile_artifact_capacity as capacity
+from msplatform.execution import reconcile_artifact_capacity as capacity
 with tempfile.TemporaryDirectory() as temporary:
     assert Path(temporary).is_dir()
 assert 'common.contracts.reconcile_interrupted_compact_runs' not in sys.modules
@@ -1553,7 +1553,7 @@ assert 'common.contracts.legacy_capacity_backfill' not in sys.modules
 
             self.assertEqual(audit["findings"], [])
             policy = capacity._capacity_policy()
-            from common.contracts import reconcile_interrupted_compact_runs as compact
+            from msplatform.execution import reconcile_interrupted_compact_runs as compact
 
             with patch.object(
                 compact,

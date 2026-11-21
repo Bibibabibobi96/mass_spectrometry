@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "role": "execution_package_resource_declaration",
+  "package": "msplatform.execution",
+  "patterns": ["resources/*.ps1", "resources/*.lua", "resources/*.json"]
+}

@@ -52,7 +52,7 @@ class ManagedCandidatePaTests(unittest.TestCase):
                     predecessor = fixture.producer_run_config.parent
                     artifact_project = predecessor.parent.parent
                     project = REPO / "projects/single_reflection_oa_tof_mass_analyzer"
-                    closure = freeze_candidate_source_closure(root / "code", artifact_project)
+                    closure = freeze_candidate_source_closure(root / "code", artifact_project, science_root=REPO)
                     frozen_builder = frozen_source_path(closure, BUILDER.relative_to(REPO).as_posix())
                     inputs = root / "science"
                     inputs.mkdir()
@@ -454,7 +454,7 @@ write_json_atomic(run/'run_config.json',config)
             artifact_project = artifacts / "projects/single_reflection_oa_tof_mass_analyzer"
             artifact_project.mkdir(parents=True)
             initialize_capacity_ledger(artifacts, objects=[])
-            closure = freeze_candidate_source_closure(root / "code", artifact_project)
+            closure = freeze_candidate_source_closure(root / "code", artifact_project, science_root=REPO)
             frozen_builder = frozen_source_path(closure, BUILDER.relative_to(REPO).as_posix())
             inputs = root / "science"
             inputs.mkdir()

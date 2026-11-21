@@ -16,7 +16,7 @@ if ($ProjectId -ne 'rf_multipole_ion_optics' -or $DesignProfileId -notin @('hexa
 $registryPreflight = Get-Content -LiteralPath (Join-Path $repoRoot 'config\project_registry.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $projectMatches = @($registryPreflight.projects | Where-Object { [string]$_.project_id -eq $ProjectId })
 if ($projectMatches.Count -ne 1) { throw "ProjectId is not unique in the canonical project registry: $ProjectId" }
-& $python (Join-Path $repoRoot 'common\contracts\artifact_project.py') `
+& $python -I -B -m msplatform.execution.artifact_project `
   --artifact-projects-root (Join-Path $workspaceRoot 'artifacts\projects') --project-id $ProjectId
 if ($LASTEXITCODE -ne 0) { throw 'Multipole artifact project initialization failed.' }
 if ([string]::IsNullOrWhiteSpace($RunId)) {

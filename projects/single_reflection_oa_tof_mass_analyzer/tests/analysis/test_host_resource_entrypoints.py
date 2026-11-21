@@ -378,7 +378,7 @@ foreach($nested in @($false,$true)) {
         with tempfile.TemporaryDirectory(prefix="oa_frozen_resource_test_") as directory:
             root = Path(directory)
             code = root / "code"
-            closure = freeze_candidate_source_closure(code, root / "artifacts", Path(sys.executable))
+            closure = freeze_candidate_source_closure(code, root / "artifacts", Path(sys.executable), science_root=Path(__file__).resolve().parents[4])
             verify_candidate_source_closure(closure)
             self.assertTrue((code / "src/msplatform/execution/host_resource_scheduler.py").is_file())
             self.assertTrue((code / "src/msplatform/execution/resources/host_resource_policy.json").is_file())

@@ -313,7 +313,7 @@ try {
   if(Test-Path -LiteralPath $prewriteRun){throw 'Governed pre-write rejection created an unmanaged run range.'}
   New-Item -ItemType Directory -Path $governedProjectRoot -Force|Out-Null
   Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
-    & $python -c "from pathlib import Path; from common.contracts import capacity_ledger; import sys; capacity_ledger.initialize_capacity_ledger(Path(sys.argv[1]), objects=[])" $governedRoot
+    & $python -c "from pathlib import Path; from msplatform.execution import capacity_ledger; import sys; capacity_ledger.initialize_capacity_ledger(Path(sys.argv[1]), objects=[])" $governedRoot
     if($LASTEXITCODE-ne0){throw 'Governed pre-write ledger fixture initialization failed.'}
   } | Out-Null
   $governedPackage=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $governedProjectRoot `
@@ -361,11 +361,11 @@ try {
   New-Item -ItemType Directory -Path (Join-Path $capacityRoot 'projects') -Force|Out-Null
   New-Item -ItemType Directory -Path (Join-Path $capacityRoot 'common') -Force|Out-Null
   Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
-    & $python -c "from pathlib import Path; from common.contracts import capacity_ledger; import sys; capacity_ledger.initialize_capacity_ledger(Path(sys.argv[1]), objects=[])" $capacityRoot
+    & $python -c "from pathlib import Path; from msplatform.execution import capacity_ledger; import sys; capacity_ledger.initialize_capacity_ledger(Path(sys.argv[1]), objects=[])" $capacityRoot
     if($LASTEXITCODE-ne0){throw 'Capacity ledger fixture initialization failed.'}
   } | Out-Null
   Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
-    & $python -m common.contracts.reconcile_artifact_capacity `
+    & $python -m msplatform.execution.artifact_capacity_maintenance `
       --artifact-root $capacityRoot --create-protection-lease test-capacity `
       --lease-owner run-artifact-support --lease-ttl-seconds 3600 --protect-path projects
     if($LASTEXITCODE-ne 0){throw 'Capacity protection lease fixture creation failed.'}
@@ -375,7 +375,7 @@ try {
   $capacityTestLease=Enter-HostExecutionLease -Role GATE
   try{
     $capacityOutput=@(Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
-      & $python -m common.contracts.reconcile_artifact_capacity --artifact-root $capacityRoot `
+      & $python -m msplatform.execution.artifact_capacity_maintenance --artifact-root $capacityRoot `
         --execution-mode startup --capacity-protection-lease-id test-capacity --apply
       if($LASTEXITCODE-ne0){throw 'Capacity CLI fixture failed.'}
     })

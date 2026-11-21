@@ -13,7 +13,7 @@ from types import SimpleNamespace
 from typing import Any, Iterator, Mapping
 
 from msplatform.execution.artifact_naming import validate_run_id
-from common.contracts.artifact_project import ensure_artifact_project
+from msplatform.execution.artifact_project import ensure_artifact_project
 from msplatform.execution.manifest_publication import build_run_manifest
 from msplatform.execution.manifest_publication import publish_run_manifest
 from msplatform.execution.terminal_publication import publish_terminal_state

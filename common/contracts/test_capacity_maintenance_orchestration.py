@@ -12,9 +12,9 @@ from contextlib import ExitStack, redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from common.contracts import capacity_ledger
+from msplatform.execution import capacity_maintenance as capacity_ledger
 from msplatform.execution import recorded_file_removal
-from common.contracts import reconcile_artifact_capacity as capacity
+from msplatform.execution import artifact_capacity_maintenance as capacity
 from msplatform.execution.capacity_protection import create_capacity_protection_lease
 
 

@@ -407,9 +407,9 @@ while (-not (Test-Path -LiteralPath '$quotedFixtureExitSignal') -and `$deadline.
   $capacityRoot = Join-Path $testRoot 'artifacts'
   New-Item -ItemType Directory -Path $capacityRoot | Out-Null
   Invoke-RunToolRootContext -RepoRoot (Split-Path -Parent $PSScriptRoot) -Operation {
-    & $PythonExe -c "from pathlib import Path; from common.contracts import capacity_ledger; import sys; capacity_ledger.initialize_capacity_ledger(Path(sys.argv[1]), objects=[])" $capacityRoot
+    & $PythonExe -c "from pathlib import Path; from msplatform.execution import capacity_ledger; import sys; capacity_ledger.initialize_capacity_ledger(Path(sys.argv[1]), objects=[])" $capacityRoot
     if ($LASTEXITCODE -ne 0) { throw 'Host lease capacity ledger fixture initialization failed.' }
-    & $PythonExe -m common.contracts.reconcile_artifact_capacity `
+    & $PythonExe -m msplatform.execution.artifact_capacity_maintenance `
       --artifact-root $capacityRoot --create-protection-lease host-lease-capacity `
       --lease-owner host-lease-test --lease-ttl-seconds 3600 --protect-path projects
     if ($LASTEXITCODE -ne 0) { throw 'Host lease capacity protection fixture creation failed.' }

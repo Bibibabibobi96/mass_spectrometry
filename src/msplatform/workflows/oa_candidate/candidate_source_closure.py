@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from importlib.resources import files
 import importlib.util
 import io
 import json
@@ -10,7 +11,6 @@ import marshal
 import struct
 import sys
 import types
-import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -22,8 +22,7 @@ from msplatform.execution.retention import file_record
 from msplatform.components.orthogonal_accelerator.component_contract import load_accelerator_dependency
 
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
-PROJECT_ROOT = REPO_ROOT / "projects/single_reflection_oa_tof_mass_analyzer"
+PROJECT_ID = "single_reflection_oa_tof_mass_analyzer"
 ROLE = "oa_tof_candidate_execution_source_closure"
 
 # This is intentionally an auditable allowlist, not dependency discovery.
@@ -164,22 +163,32 @@ RELATIVE_PATHS = (
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/solver_diagnostics.py",
 )
 
-def _source_path(source_id: str) -> Path:
+def _package_root() -> Path:
+    return Path(str(files("msplatform"))).resolve(strict=True)
+
+
+def _source_path(source_id: str, science_root: Path) -> Path:
     relative = Path(source_id)
     if relative.is_absolute() or ".." in relative.parts:
         raise ValueError(f"invalid candidate source path: {source_id}")
-    source = (REPO_ROOT / relative).resolve()
-    if not source.is_file() or REPO_ROOT not in source.parents:
-        raise ValueError(f"candidate source is absent or escapes repository: {source_id}")
+    if relative.parts[:2] == ("src", "msplatform"):
+        root = _package_root()
+        source = root.joinpath(*relative.parts[2:]).resolve()
+    else:
+        root = science_root.resolve(strict=True)
+        source = root.joinpath(*relative.parts).resolve()
+    if not source.is_file() or root not in source.parents:
+        raise ValueError(f"candidate source is absent or escapes its declared owner: {source_id}")
     return source
 
 
-def _execution_resource_source_ids(repo_root: Path) -> tuple[str, ...]:
-    """Expand only the authoritative execution package-data, without imports/probes."""
-    declaration = tomllib.loads((repo_root / "pyproject.toml").read_text(encoding="utf-8"))
-    package = (repo_root / "src/msplatform/execution").resolve(strict=True)
+def _execution_resource_source_ids() -> tuple[str, ...]:
+    declaration = json.loads((_package_root() / "execution/resources/package_resources.json").read_text(encoding="utf-8"))
+    package = _package_root() / "execution"
     selected: set[str] = set()
-    for pattern in declaration["tool"]["setuptools"]["package-data"]["msplatform.execution"]:
+    if declaration.get("package") != "msplatform.execution":
+        raise ValueError("execution package resource declaration has the wrong owner")
+    for pattern in declaration["patterns"]:
         matches = [source for source in package.glob(pattern) if source.is_file()]
         if not matches:
             raise FileNotFoundError(f"Declared execution resource pattern has no files: {pattern}")
@@ -187,7 +196,7 @@ def _execution_resource_source_ids(repo_root: Path) -> tuple[str, ...]:
             actual = source.resolve(strict=True)
             if not actual.is_relative_to(package):
                 raise ValueError(f"Declared execution resource escapes its package: {source}")
-            selected.add(source.relative_to(repo_root).as_posix())
+            selected.add("src/msplatform/execution/" + actual.relative_to(package).as_posix())
     return tuple(sorted(selected))
 
 
@@ -196,6 +205,7 @@ def freeze_candidate_source_closure(
     artifact_root: Path,
     python_executable: Path | None = None,
     *,
+    science_root: Path,
     extra_source_ids: tuple[str, ...] = (),
     resolved_contract: Path | None = None,
     analysis_contract: Path | None = None,
@@ -206,9 +216,10 @@ def freeze_candidate_source_closure(
     if not python_path.is_file():
         raise ValueError(f"candidate Python runtime is unavailable: {python_path}")
     artifact_path = artifact_root.resolve()
+    science_root = science_root.resolve(strict=True)
     load_accelerator_dependency(
-        REPO_ROOT, PROJECT_ROOT / "config/accelerator_dependency.json",
-        consumer_project_id=PROJECT_ROOT.name, required_variant="two_zone",
+        science_root, science_root / f"projects/{PROJECT_ID}/config/accelerator_dependency.json",
+        consumer_project_id=PROJECT_ID, required_variant="two_zone",
     )
 
     if not isinstance(extra_source_ids, tuple) or any(
@@ -221,16 +232,17 @@ def freeze_candidate_source_closure(
         if source_id in explicit_seen:
             raise ValueError(f"duplicate candidate source id: {source_id}")
         explicit_seen.add(source_id)
-    for source_id in _execution_resource_source_ids(REPO_ROOT):
+    for source_id in _execution_resource_source_ids():
         if source_id not in declarations:
             declarations.append(source_id)
-    for source_id in enumerate_python_sources(REPO_ROOT,
-            package_roots=("src/msplatform",), resource_suffixes=(".schema.json",)):
-        if source_id not in declarations:
-            declarations.append(source_id)
+    for source_id in enumerate_python_sources(_package_root().parent,
+            package_roots=("msplatform",), provider_root="msplatform", resource_suffixes=(".schema.json",)):
+        normalized = "src/" + source_id
+        if normalized not in declarations:
+            declarations.append(normalized)
     for source_id in extra_source_ids:
         normalized = source_id.replace("\\", "/")
-        _source_path(normalized)
+        _source_path(normalized, science_root)
         if normalized not in declarations:
             declarations.append(normalized)
 
@@ -250,7 +262,7 @@ def freeze_candidate_source_closure(
         if source_id in seen:
             raise ValueError(f"duplicate candidate source id: {source_id}")
         seen.add(source_id)
-        source = analysis_resources.get(source_id) or _source_path(source_id)
+        source = analysis_resources.get(source_id) or _source_path(source_id, science_root)
         source_digest = sha256(source)
         payload = source.read_bytes()
         if sha256(source) != source_digest:
@@ -400,7 +412,7 @@ def derive_candidate_source_closure(
         raise ValueError("embedded Candidate plan selection must be boolean")
     if embedded_candidate_plan:
         if (closure.get("schema_version") != 1 or closure.get("role") != "oa_tof_candidate_run_plan"
-                or closure.get("run_id") != parent.name or manifest.get("project") != PROJECT_ROOT.name
+                or closure.get("run_id") != parent.name or manifest.get("project") != PROJECT_ID
                 or Path(str(closure.get("run_root", ""))).resolve() != parent
                 or not isinstance(closure.get("execution_source_closure"), dict)):
             raise ValueError("parent source container is not the bound Candidate runtime plan")

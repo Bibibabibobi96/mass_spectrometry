@@ -5,18 +5,21 @@ param(
     [Parameter(Mandatory)][string]$RequestPath,
     [Parameter(Mandatory)][string]$RunDirectory,
     [switch]$Approved,
-    [string]$PythonExe=''
+    [string]$PythonExe='',
+    [string]$HostContextJson=''
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-$repo=(Resolve-Path (Join-Path $PSScriptRoot '../../../../..')).Path
-$executionResources=Join-Path $repo 'src/msplatform/execution/resources'
+$executionResources=$PSScriptRoot
 . (Join-Path $executionResources 'require_powershell7.ps1')
 . (Join-Path $executionResources 'run_artifact_support.ps1')
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
-$workspace=Split-Path -Parent $repo
-$hostState=if($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH}else{Join-Path $workspace 'artifacts/common/host_resources.sqlite3'}
-$hostContext=@{workspace=$workspace;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
+$contextJson=if($HostContextJson){$HostContextJson}elseif($env:MASS_SPECTROMETRY_HOST_CONTEXT_JSON){$env:MASS_SPECTROMETRY_HOST_CONTEXT_JSON}else{throw 'Explicit HostContextJson or MASS_SPECTROMETRY_HOST_CONTEXT_JSON is required'}
+$hostContext=ConvertFrom-Json $contextJson -AsHashtable
+$repo=[string]$hostContext.workspace
+$packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
+if($LASTEXITCODE-ne0){throw 'Installed msplatform package is unavailable.'}
+$packageRoot=(Resolve-Path -LiteralPath $packageRootText).Path
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 . (Join-Path $executionResources 'resource_process_support.ps1')
 $module='msplatform.backends.simion.native_static_field_provider'
@@ -29,8 +32,8 @@ function Exit-NativeProviderHostStage {
 }
 $RequestPath=(Resolve-Path -LiteralPath $RequestPath).Path
 $RunDirectory=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($RunDirectory)
-$compiled=Invoke-RunToolRootContext -RepoRoot $repo -Operation {
-    & $python -B -m $module --request $RequestPath
+$compiled=& {
+    & $python -I -B -m $module --request $RequestPath
     if($LASTEXITCODE-ne0){throw 'Native static request compilation failed.'}
 }
 $plan=($compiled-join"`n")|ConvertFrom-Json -AsHashtable
@@ -64,23 +67,23 @@ $fieldBinding=$null;$responseBasis=$null;$watch=[Diagnostics.Stopwatch]::StartNe
 $levelStatus=[ordered]@{}
 try{
     $capacity=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repo -ArtifactRoot $artifacts -RunDirectory $RunDirectory -Owner $plan.project -CommittedNewBytes ([int64]$plan.committed_new_bytes) -ProtectedPaths @($plan.protected_paths)
-    $copies=[ordered]@{request=$RequestPath;launcher=$PSCommandPath;compiler=(Join-Path $repo 'src/msplatform/backends/simion/native_static_field_provider.py');geometry_emitter=(Join-Path $repo 'src/msplatform/backends/simion/native_system_geometry.py');analyzer_shapes=(Join-Path $repo 'src/msplatform/backends/simion/mr_geometry.py');candidate_authority=(Join-Path $repo 'src/msplatform/backends/comsol/candidate_authority.py');binding_loader=(Join-Path $repo 'src/msplatform/backends/comsol/static_field_binding.py');scalar_adapter=(Join-Path $repo 'src/msplatform/backends/simion/resources/scalar_field_adapter.lua');builder=(Join-Path $PSScriptRoot 'build_dirichlet_patch_basis.lua');executor=(Join-Path $executionResources 'resource_process_support.ps1')}
+    $copies=[ordered]@{request=$RequestPath;launcher=$PSCommandPath;compiler=(Join-Path $packageRoot 'backends/simion/native_static_field_provider.py');geometry_emitter=(Join-Path $packageRoot 'backends/simion/native_system_geometry.py');analyzer_shapes=(Join-Path $packageRoot 'backends/simion/mr_geometry.py');candidate_authority=(Join-Path $packageRoot 'backends/comsol/candidate_authority.py');binding_loader=(Join-Path $packageRoot 'backends/comsol/static_field_binding.py');scalar_adapter=(Join-Path $packageRoot 'backends/simion/resources/scalar_field_adapter.lua');builder=(Join-Path $PSScriptRoot 'build_dirichlet_patch_basis.lua');executor=(Join-Path $executionResources 'resource_process_support.ps1')}
     foreach($key in $plan.inputs.Keys){$copies[$key]=$plan.inputs[$key]}
     if($plan.ContainsKey('collision_build')){
-        $copies.geometry_resolver=Join-Path $repo 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resolved_geometry.py'
-        $copies.geometry_contract_loader=Join-Path $repo 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/candidate_contract.py'
-        $copies.oa_physical_geometry=Join-Path $repo 'src/msplatform/components/orthogonal_accelerator/two_zone_geometry.py'
-        $copies.oa_time_focus=Join-Path $repo 'src/msplatform/components/orthogonal_accelerator/accelerator_time_focus.py'
-        $copies.mr_geometry_contract=Join-Path $repo 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/geometry_contract.py'
-        $copies.rigid_transform=Join-Path $repo 'src/msplatform/contracts/rigid_transform.py'
-        $copies.oa_assembly_interface=Join-Path $repo 'src/msplatform/components/orthogonal_accelerator/assembly_interface.py'
-        $copies.oa_electrode_topology=Join-Path $repo 'src/msplatform/components/orthogonal_accelerator/electrode_topology.py'
-        $copies.oa_sectioned_geometry=Join-Path $repo 'src/msplatform/components/orthogonal_accelerator/sectioned_geometry.py'
+        $copies.geometry_resolver=Join-Path $packageRoot 'components/parallel_mirror_dual_stripe_mr_tof/resolved_geometry.py'
+        $copies.geometry_contract_loader=Join-Path $packageRoot 'components/parallel_mirror_dual_stripe_mr_tof/candidate_contract.py'
+        $copies.oa_physical_geometry=Join-Path $packageRoot 'components/orthogonal_accelerator/two_zone_geometry.py'
+        $copies.oa_time_focus=Join-Path $packageRoot 'components/orthogonal_accelerator/accelerator_time_focus.py'
+        $copies.mr_geometry_contract=Join-Path $packageRoot 'components/parallel_mirror_dual_stripe_mr_tof/geometry_contract.py'
+        $copies.rigid_transform=Join-Path $packageRoot 'contracts/rigid_transform.py'
+        $copies.oa_assembly_interface=Join-Path $packageRoot 'components/orthogonal_accelerator/assembly_interface.py'
+        $copies.oa_electrode_topology=Join-Path $packageRoot 'components/orthogonal_accelerator/electrode_topology.py'
+        $copies.oa_sectioned_geometry=Join-Path $packageRoot 'components/orthogonal_accelerator/sectioned_geometry.py'
     }
     $copies.crop_adapter=Join-Path $PSScriptRoot 'crop_native_static_field.lua'
-    foreach($name in @('two_zone_candidate','rectangular_accelerator','bare_three_zone_component')){$copies["oa_backend_$name"]=Join-Path $repo ("src/msplatform/backends/simion/$name.py")}
-    $copies.collision_overlay=Join-Path $repo 'src/msplatform/backends/simion/collision_overlay.py'
-    if($isComposition){$copies.composer=Join-Path $repo 'src/msplatform/backends/simion/standalone_pa_composition.py'}
+    foreach($name in @('two_zone_candidate','rectangular_accelerator','bare_three_zone_component')){$copies["oa_backend_$name"]=Join-Path $packageRoot ("backends/simion/$name.py")}
+    $copies.collision_overlay=Join-Path $packageRoot 'backends/simion/collision_overlay.py'
+    if($isComposition){$copies.composer=Join-Path $packageRoot 'backends/simion/standalone_pa_composition.py'}
     $frozen=[ordered]@{}
     foreach($key in $copies.Keys){
         $destination=Join-Path $RunDirectory ('inputs/'+$key+[IO.Path]::GetExtension($copies[$key]))
@@ -91,13 +94,13 @@ try{
     Write-RunJson -Path $planPath -Value $plan -Depth 40
     $frozen.plan=$planPath
     $stage='prepare_native_field'
-    Invoke-RunToolRootContext -RepoRoot $repo -Operation {
-        & $python -B -m $module --plan $planPath --run-directory $RunDirectory --prepare
+    & {
+        & $python -I -B -m $module --plan $planPath --run-directory $RunDirectory --prepare
         if($LASTEXITCODE-ne0){throw 'Target native field preparation failed.'}
     }
     $plan=Get-Content -LiteralPath $planPath -Raw|ConvertFrom-Json -AsHashtable
-    $nativeInputs=Invoke-RunToolRootContext -RepoRoot $repo -Operation {
-        $text=& $python -B -c 'import json,sys;from pathlib import Path;from msplatform.backends.simion.native_static_field_provider import native_input_binding,read;print(json.dumps(native_input_binding(read(Path(sys.argv[1])),Path(sys.argv[2]))))' $planPath $RunDirectory
+    $nativeInputs=& {
+        $text=& $python -I -B -c 'import json,sys;from pathlib import Path;from msplatform.backends.simion.native_static_field_provider import native_input_binding,read;print(json.dumps(native_input_binding(read(Path(sys.argv[1])),Path(sys.argv[2]))))' $planPath $RunDirectory
         if($LASTEXITCODE-ne0){throw 'Native input metadata selection failed.'}
         ($text-join"`n")|ConvertFrom-Json -Depth 50
     }
@@ -109,8 +112,8 @@ try{
         $overlayGuards.Add([IO.File]::Open([string]$path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read))
     }
     if(-not$isComposition){
-        Invoke-RunToolRootContext -RepoRoot $repo -Operation {
-            & $python -B -c 'import sys;from pathlib import Path;from msplatform.backends.simion.native_static_field_provider import read,verify_native_provider_inputs;verify_native_provider_inputs(read(Path(sys.argv[1])),Path(sys.argv[2]));print("NATIVE_INPUT_ASSETS=PASS")' $planPath $RunDirectory
+        & {
+            & $python -I -B -c 'import sys;from pathlib import Path;from msplatform.backends.simion.native_static_field_provider import read,verify_native_provider_inputs;verify_native_provider_inputs(read(Path(sys.argv[1])),Path(sys.argv[2]));print("NATIVE_INPUT_ASSETS=PASS")' $planPath $RunDirectory
             if($LASTEXITCODE-ne0){throw 'Native input asset verification failed before vendor use.'}
         }
     }
@@ -139,7 +142,7 @@ try{
     if($plan.ContainsKey('consumer_view')){$cfg.parameters.collision_role1='unchanged full source collision PA';$cfg.parameters.consumer_view=$plan.consumer_view}
     if($isResponse){$cfg.parameters.response_basis=$plan.response_basis;$cfg.parameters.fly_authorized=$false}
     Write-RunJson -Path $pkg.run_config -Value $cfg -Depth 40
-    foreach($name in @('two_zone_candidate','rectangular_accelerator','bare_three_zone_component')){$copies["oa_backend_$name"]=Join-Path $repo ("src/msplatform/backends/simion/$name.py")}
+    foreach($name in @('two_zone_candidate','rectangular_accelerator','bare_three_zone_component')){$copies["oa_backend_$name"]=Join-Path $packageRoot ("backends/simion/$name.py")}
     if($isComposition){
         $budget=Get-HostResourceBudget -Role GATE -Stage prepare
         $budget.io_slots=1 # Bulk sequential PA reads/writes; still a light, bounded-memory stage.
@@ -268,8 +271,8 @@ try{
     }
     $stage='binding_publication'
     if($isResponse){$responseBasis=Join-Path $RunDirectory 'results/response_basis.json'}else{$fieldBinding=Join-Path $RunDirectory 'results/field_binding.json'}
-    Invoke-RunToolRootContext -RepoRoot $repo -Operation {
-        & $python -B -m $module --plan $planPath --run-directory $RunDirectory --binding
+    & {
+        & $python -I -B -m $module --plan $planPath --run-directory $RunDirectory --binding
         if($LASTEXITCODE-ne0){throw 'Native binding metadata failed.'}
     }
     $status='success'
@@ -305,7 +308,7 @@ try{
         $published=Get-Content -LiteralPath (Join-Path $RunDirectory 'run_manifest.json') -Raw|ConvertFrom-Json
         if($published.status-cne$status){throw 'Native provider manifest status differs.'}
         if($null-ne$capacity){Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repo -Session $capacity;$capacity=$null}
-        Invoke-RunToolRootContext -RepoRoot $repo -Operation {
+        & {
             & $python -m msplatform.execution.run_capacity_lifecycle --action seal-stopped-payload --artifact-root $artifacts --run-config $pkg.run_config --owner $plan.project --confirm-writing-stopped --retention-reason $reason
             if($LASTEXITCODE-ne0){throw 'Native provider heavy payload sealing failed.'}
         }

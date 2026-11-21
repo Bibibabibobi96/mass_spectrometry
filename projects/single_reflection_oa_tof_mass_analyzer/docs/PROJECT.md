@@ -12,6 +12,16 @@ owners. The source freezer names those installed resources instead of retired
 `common` modules. Existing behavior and missing/tamper tests remain; no native
 result or scientific qualification is added by this ownership migration.
 
+Candidate first-prepare freezing has three explicit input classes. Installed
+`msplatform` Python and non-Python resources resolve only from the package;
+`science_root` is the caller-supplied root for named project research inputs;
+newly built PA/MPH and working files remain run-owned, reconstructible outputs.
+The source closure records every relative path, bytes and SHA-256. Missing,
+duplicate, changed or out-of-owner sources fail before native work. It does not
+read a source `pyproject.toml`, infer a checkout, or reuse an ambient frozen tree.
+Focused freezer, negative and detached-import tests pass. Ordinary wheel/sdist
+first-prepare and native/scientific acceptance require the same final candidate.
+
 ## Installed component PA-plan owner
 
 `msplatform.backends.simion.simion_component_pa_plan` now owns the pure

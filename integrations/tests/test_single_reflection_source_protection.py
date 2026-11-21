@@ -44,7 +44,7 @@ def source(root, *, legacy=False, status="success"):
 
 def owner_overlay(destination):
     """Only the public capacity owner's executable Python dependency closure."""
-    pending = ["src/msplatform/execution/run_capacity_lifecycle.py", "common/contracts/reconcile_artifact_capacity.py",
+    pending = ["src/msplatform/execution/run_capacity_lifecycle.py", "src/msplatform/execution/artifact_capacity_maintenance.py",
                "src/msplatform/execution/resources/workspace_paths.py"]
     selected = set()
     while pending:

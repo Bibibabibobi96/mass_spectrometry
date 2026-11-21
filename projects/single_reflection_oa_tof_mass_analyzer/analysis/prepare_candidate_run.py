@@ -525,7 +525,7 @@ def prepare_candidate_run(
     planning_root.mkdir(parents=True)
     inputs_dir = planning_root / "inputs"
     inputs_dir.mkdir()
-    source_closure = freeze_candidate_source_closure(inputs_dir / "code", artifact_project_root,
+    source_closure = freeze_candidate_source_closure(inputs_dir / "code", artifact_project_root, science_root=REPO_ROOT,
         resolved_contract=candidate_resolved.resolve(), analysis_contract=PROJECT_ROOT / "config/analysis_contract.json")
     frozen_code_root = Path(source_closure["code_root"])
     frozen = {"candidate_analysis_contract.json": Path(frozen_source_path(source_closure,
@@ -1015,7 +1015,7 @@ def prepare_postprocess_request(parent: Path, run_id: str) -> dict:
     if planning.exists():
         raise FileExistsError(f"Postprocessing frozen preparation already exists: {planning}")
     planning.mkdir(parents=True)
-    closure = freeze_candidate_source_closure(planning / "code", project_root,
+    closure = freeze_candidate_source_closure(planning / "code", project_root, science_root=REPO_ROOT,
         resolved_contract=Path(selection["inputs"]["contract_path"]["path"]),
         analysis_contract=PROJECT_ROOT / "config/analysis_contract.json")
     selection_path = planning / "source_selection.json"

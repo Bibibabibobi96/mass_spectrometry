@@ -11,8 +11,8 @@ from pathlib import Path
 from datetime import datetime, timezone
 from unittest import mock
 
-from common.contracts import capacity_ledger
-from common.contracts import legacy_owner_disposition
+from msplatform.execution import capacity_maintenance as capacity_ledger
+from msplatform.execution import legacy_owner_disposition
 from common.contracts import legacy_capacity_calibration as calibration
 from common.contracts.legacy_capacity_calibration import (
     CalibrationError,

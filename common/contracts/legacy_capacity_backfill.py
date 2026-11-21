@@ -23,8 +23,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-from common.contracts import reconcile_artifact_capacity as daily_capacity
-from common.contracts import capacity_protection as protection
+from msplatform.execution import reconcile_artifact_capacity as daily_capacity
+from msplatform.execution import capacity_protection as protection
 from msplatform.execution.retention import classify_file
 from msplatform.execution.artifact_retention import validate_retention
 from msplatform.execution.recorded_file_removal import remove_recorded_files, write_json_atomic as _write_json_atomic
@@ -637,7 +637,7 @@ def _cache_candidates(root: Path, protected_keys: set[str], last_successful_uses
 
 
 def _compact_candidates(root: Path, protected_paths: Iterable[Path], policy: dict[str, Any]) -> list[dict[str, Any]]:
-    from common.contracts import reconcile_interrupted_compact_runs as compact
+    from msplatform.execution import reconcile_interrupted_compact_runs as compact
 
     candidates: list[dict[str, Any]] = []
     for run_dir in _run_directories(root):
@@ -1223,7 +1223,7 @@ def apply(receipt: dict[str, Any]) -> dict[str, Any]:
                                 "disposal_receipt": str(receipt_path)})
             continue
         else:
-            from common.contracts import reconcile_interrupted_compact_runs as compact
+            from msplatform.execution import reconcile_interrupted_compact_runs as compact
 
             actions = compact.apply_run(path)
             removed.append({"path": str(path), "level": item["level"], "bytes": item["bytes"],

@@ -459,7 +459,7 @@ def freeze_inputs(run: Path) -> dict[str, Any]:
         freeze_file(Path(plan[name]["path"]), run / "inputs" / ("source_case_resolved_geometry.json" if name == "contract" and plan.get("producer") else destination))
     freeze_file(Path(plan["source_manifest"]["path"]), run / "inputs/source_manifest.json")
     authoring_sources = ("src/msplatform/backends/simion/resources/reflectron_voltage_fit_authoring.json",) if plan.get("regularization_authoring_source") else ()
-    closure = freeze_candidate_source_closure(run / "inputs/code", run.parents[1], Path(sys.executable),
+    closure = freeze_candidate_source_closure(run / "inputs/code", run.parents[1], Path(sys.executable), science_root=REPO_ROOT,
         extra_source_ids=(f"{RELATIVE}/run_compensation.py", f"{RELATIVE}/execute_compensation.ps1",
             "src/msplatform/execution/recovery.py", "src/msplatform/backends/simion/particle_batching.py", "src/msplatform/execution/simion_dispatch.py",
             "src/msplatform/execution/resource_profile.py", "src/msplatform/contracts/schemas/simion_batch_continuation.schema.json",

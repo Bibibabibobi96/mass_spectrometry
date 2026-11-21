@@ -14,12 +14,12 @@ from msplatform.execution.resources import resource_path
 from typing import Any, Callable, Iterable
 
 from msplatform.execution import capacity_admission as _admission
-from common.contracts import capacity_ledger
-from common.contracts.gui_source_protection import current_gui_source_paths, current_gui_source_retention
-from common.contracts import capacity_protection as protection
-from common.contracts.execution_aliases import execution_alias_root_is_valid
-from common.contracts.historical_source_scratch_retirement import apply as apply_source_scratch_disposition
-from common.contracts.historical_source_scratch_retirement import plan as plan_source_scratch_disposition
+from msplatform.execution import capacity_maintenance as capacity_ledger
+from msplatform.execution.gui_source_protection import current_gui_source_paths, current_gui_source_retention
+from msplatform.execution import capacity_protection as protection
+from msplatform.execution.execution_aliases import execution_alias_root_is_valid
+from msplatform.execution.historical_source_scratch_retirement import apply as apply_source_scratch_disposition
+from msplatform.execution.historical_source_scratch_retirement import plan as plan_source_scratch_disposition
 from msplatform.io.file_identity import file_sha256
 from msplatform.execution.recorded_file_removal import remove_recorded_files, write_json_atomic
 
@@ -885,7 +885,7 @@ def _audit_pa_transaction_owner(root: Path) -> dict[str, int]:
 def activate_owner_dispositions(root: Path) -> dict[str, Any]:
     """Load owner-retirement logic only for an actual maintenance action."""
 
-    from common.contracts.legacy_owner_disposition import activate_owner_dispositions as activate
+    from msplatform.execution.legacy_owner_disposition import activate_owner_dispositions as activate
     return activate(root)
 
 

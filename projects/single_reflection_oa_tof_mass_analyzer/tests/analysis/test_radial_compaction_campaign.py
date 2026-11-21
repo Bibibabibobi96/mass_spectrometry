@@ -524,7 +524,7 @@ class RadialCompactionCampaignTests(unittest.TestCase):
             root = Path(directory)
             code_root = root / "code"
             closure = radial.freeze_candidate_source_closure(
-                code_root, root / "artifacts", Path(sys.executable), extra_source_ids=radial.EXTRA_SOURCE_IDS,
+                code_root, root / "artifacts", Path(sys.executable), science_root=radial.REPO_ROOT, extra_source_ids=radial.EXTRA_SOURCE_IDS,
             )
             shared_state = root / "selected-host-state.sqlite3"
             worker = (
@@ -576,10 +576,10 @@ class RadialCompactionCampaignTests(unittest.TestCase):
             shutil.copyfile(host_source, controlled_host)
             install_controlled_cpu_snapshot(radial.REPO_ROOT, controlled)
             # Author the controlled input before the real compiler hashes and binds it.
-            with patch.object(source_closure, "_source_path", side_effect=lambda source_id:
-                              controlled_host if source_id == host_id else original_resolver(source_id)):
+            with patch.object(source_closure, "_source_path", side_effect=lambda source_id, science_root:
+                              controlled_host if source_id == host_id else original_resolver(source_id, science_root)):
                 closure = radial.freeze_candidate_source_closure(
-                    code_root, artifacts, Path(sys.executable),
+                    code_root, artifacts, Path(sys.executable), science_root=radial.REPO_ROOT,
                     extra_source_ids=radial.EXTRA_SOURCE_IDS,
                 )
             source_closure.verify_candidate_source_closure(closure)

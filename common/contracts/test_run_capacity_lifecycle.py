@@ -10,8 +10,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from common.contracts import capacity_ledger
-from common.contracts import capacity_protection
+from msplatform.execution import capacity_ledger
+from msplatform.execution import capacity_protection
 from msplatform.execution import run_capacity_lifecycle
 from msplatform.execution import run_capacity_lifecycle as execution_lifecycle
 from msplatform.execution.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger

@@ -77,7 +77,7 @@ class SolverDiagnosticsTest(unittest.TestCase):
             (root / "particles.ion").write_text("0,524,1,0,0,0,0,0,5,1,0\n", encoding="ascii")
             (root / "simion.log").write_text("", encoding="utf-8")
             code = root / "frozen code"
-            closure = freeze_candidate_source_closure(code, root / "artifacts", Path(sys.executable))
+            closure = freeze_candidate_source_closure(code, root / "artifacts", Path(sys.executable), science_root=Path(__file__).resolve().parents[4])
             verify_candidate_source_closure(closure)
             frozen_source = (code / source_id).read_text(encoding="utf-8")
             self.assertEqual(frozen_source, (repo / source_id).read_text(encoding="utf-8"))
