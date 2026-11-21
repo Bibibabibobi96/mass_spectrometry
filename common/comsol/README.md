@@ -145,7 +145,9 @@ run cold-verifies the saved physics, selections, study, solution and dataset wit
 zero Compute or save. It publishes a `field_solution` borrowing that model as a
 verified input; it does not rewrite the failed run or copy the large MPH. Missing
 datasets and incompatible or changed sources refuse. The corresponding engineering
-policy key is `recover_assembly_stationary`.
+policy key is `recover_assembly_stationary`. Host-release receipts use the shared
+`process_transport` validator, so admitted wait/initial-reason telemetry is preserved
+without weakening token, release or inherited-owner checks.
 
 Native evidence and the retained numerical and engineering limits are recorded in
 the [integration state](../../integrations/docs/INTEGRATION.md#current-stationary-field-evidence).

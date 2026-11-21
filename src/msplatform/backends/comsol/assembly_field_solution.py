@@ -337,9 +337,8 @@ def recover_stationary(failed_manifest: Mapping[str, Any], *, selected_output: M
     if len(set(release_ids)) != len(release_ids) or any(not isinstance(item, str) or not item for item in release_ids) or set(release_ids) != {op.get('resource_release_id') for op in ops}:
         raise ValueError('source host release identities differ')
     for item in releases:
-        host = item['completion_receipt']['host_release']
-        if not isinstance(host, dict) or set(host) != {'inherited', 'token', 'result', 'error'} or type(host['inherited']) is not bool or not isinstance(host['token'], str) or not host['token'] or host['error'] is not None:
-            raise ValueError('source host receipt differs')
+        from msplatform.execution.process_transport import _host_release
+        host = _host_release(item['completion_receipt'])
         if host['inherited']:
             if host['result'] is not None:
                 raise ValueError('inherited host receipt cannot attest owner release')
