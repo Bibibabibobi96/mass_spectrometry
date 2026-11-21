@@ -445,9 +445,9 @@ $ErrorActionPreference='Stop'
 $OutputEncoding=[Text.ASCIIEncoding]::new()
 $before=$OutputEncoding
 $one=Get-FrozenPythonPackageRelativePaths -SourceRoot {_ps(junction)} `
- -Python {_ps(sys.executable)} -PythonPackages @('common/contracts')
+ -Python {_ps(sys.executable)} -PythonPackages @('src/msplatform/execution')
 $two=Get-FrozenPythonPackageRelativePaths -SourceRoot {_ps(REPO_ROOT)} `
- -Python {_ps(sys.executable)} -PythonPackages @('common/contracts')
+ -Python {_ps(sys.executable)} -PythonPackages @('src/msplatform/execution')
 @{{one=@($one);two=@($two);restored=[object]::ReferenceEquals($before,$OutputEncoding)}}|ConvertTo-Json -Compress
 """
                 completed = subprocess.run(
@@ -458,7 +458,7 @@ $two=Get-FrozenPythonPackageRelativePaths -SourceRoot {_ps(REPO_ROOT)} `
                 self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
                 result = json.loads(completed.stdout)
                 self.assertEqual(result['one'], result['two'])
-                self.assertIn('common/contracts/capacity_ledger.py', result['one'])
+                self.assertIn('src/msplatform/execution/capacity_ledger.py', result['one'])
                 self.assertTrue(result['restored'])
             finally:
                 # Remove only this verified directory junction, never its source target.
