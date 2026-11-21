@@ -19,7 +19,7 @@ CAMPAIGN = ROOT / "config" / "two_zone_component_focus_campaign.json"
 def _geometry_profile():
     import json
     from pathlib import Path
-    document=json.loads((Path(__file__).resolve().parents[2]/"config/component_contract.json").read_text(encoding="utf-8"))
+    document=json.loads((ROOT.parents[1]/"src/msplatform/components/orthogonal_accelerator/component_contract.json").read_text(encoding="utf-8"))
     return document["geometry_profiles"]["closed_two_zone_compact_mr_axial_r3_gap1_4mm"]
 
 
@@ -376,13 +376,13 @@ finally {$guard.Dispose()}
         self.assertEqual(summary["runtime_controller_bytes"], controller.stat().st_size)
         self.assertEqual(summary["status"], "candidate_incomplete")
         arguments = observed["analysis"]["arguments"]
-        self.assertEqual(arguments, ["--component-contract", str(self.root / "frozen code/projects/orthogonal_accelerator/config/component_contract.json"), "--events", str(events), "--release-receipt", str(self.receipt),
+        self.assertEqual(arguments, ["--component-contract", str(self.root / "frozen code/src/msplatform/components/orthogonal_accelerator/component_contract.json"), "--events", str(events), "--release-receipt", str(self.receipt),
                                     "--campaign", str(self.campaign), "--output", str(self.root / "analysis.json")])
         self.assertEqual(observed["analysis"]["code_root"], str(self.root / "frozen code"))
         self.assertEqual(observed["analysis"]["python"], sys.executable)
-        frozen_contract = self.root / "frozen code/projects/orthogonal_accelerator/config/component_contract.json"
+        frozen_contract = self.root / "frozen code/src/msplatform/components/orthogonal_accelerator/component_contract.json"
         frozen_contract.parent.mkdir(parents=True, exist_ok=True)
-        frozen_contract.write_bytes((repo / "projects/orthogonal_accelerator/config/component_contract.json").read_bytes())
+        frozen_contract.write_bytes((repo / "src/msplatform/components/orthogonal_accelerator/component_contract.json").read_bytes())
         actual = subprocess.run([sys.executable, "-m", observed["analysis"]["module"], *arguments],
             cwd=repo, capture_output=True, text=True, encoding="utf-8", timeout=30)
         self.assertEqual(actual.returncode, 0, actual.stdout + actual.stderr)

@@ -19,7 +19,7 @@ CAMPAIGN = PROJECT / "config" / "two_zone_component_focus_campaign.json"
 def _geometry_profile():
     import json
     from pathlib import Path
-    document=json.loads((Path(__file__).resolve().parents[2]/"config/component_contract.json").read_text(encoding="utf-8"))
+    document=json.loads((Path(__file__).resolve().parents[4]/"src/msplatform/components/orthogonal_accelerator/component_contract.json").read_text(encoding="utf-8"))
     return document["geometry_profiles"]["closed_two_zone_compact_mr_axial_r3_gap1_4mm"]
 
 

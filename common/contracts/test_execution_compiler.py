@@ -104,7 +104,7 @@ class ExecutionCompilerTests(unittest.TestCase):
                 body[key] = str(small)
             body.update(oa_base_release_spec_path=str(release),
                         oa_request_path=str(source/"accelerator_component_request_n100.json"),
-                        accelerator_component_contract_path=str(REPO_ROOT/"projects/orthogonal_accelerator/config/component_contract.json"),
+                        accelerator_component_contract_path=str(REPO_ROOT/"src/msplatform/components/orthogonal_accelerator/component_contract.json"),
                         accelerator_geometry_profile_id="closed_two_zone_compact_mr_axial_r3_gap1_4mm")
             context.write_text(json.dumps(body), encoding="utf-8")
             guards.enter_context(patch.object(two_zone_candidate, "compile_closed_two_zone_accelerator",
@@ -131,7 +131,7 @@ class ExecutionCompilerTests(unittest.TestCase):
                     protected = {row["path"] for row in ready["binding_authorities"]}
                     self.assertIn(str(release.resolve()), protected)
                     if owner == "orthogonal_accelerator":
-                        self.assertIn(str((REPO_ROOT/"projects"/owner/"config/component_contract.json").resolve()), protected)
+                        self.assertIn(str((REPO_ROOT/"src/msplatform/components/orthogonal_accelerator/component_contract.json").resolve()), protected)
                     else:
                         self.assertIn(str(small.resolve()), protected)
                         self.assertIn(str(Path(body["accelerator_component_contract_path"]).resolve()), protected)

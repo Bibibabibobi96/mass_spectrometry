@@ -32,26 +32,10 @@
           ]
         },
         {
-          "id": "integrations_workflows_multipole_ip_continuous_ps1",
-          "source_repo_path": "integrations/workflows/multipole_ip/continuous.ps1",
-          "consumers": [
-            "accelerator_interface",
-            "multipole_ip"
-          ]
-        },
-        {
           "id": "integrations_workflows_oa_mr_execute_ps1",
           "source_repo_path": "integrations/workflows/oa_mr/execute.ps1",
           "consumers": [
             "oa_mr"
-          ]
-        },
-        {
-          "id": "integrations_workflows_multipole_ip_execute_ps1",
-          "source_repo_path": "integrations/workflows/multipole_ip/execute.ps1",
-          "consumers": [
-            "multipole_ip",
-            "accelerator_interface"
           ]
         },
         {
@@ -82,15 +66,7 @@
     {
       "provider_scope": "project",
       "provider_project": "orthogonal_accelerator",
-      "files": [
-        {
-          "id": "orthogonal_accelerator_component_contract",
-          "source_repo_path": "projects/orthogonal_accelerator/config/component_contract.json",
-          "consumers": [
-            "oa_mr"
-          ]
-        }
-      ],
+      "files": [],
       "python_packages": [
         {
           "source_repo_path": "projects/orthogonal_accelerator/analysis",
@@ -228,6 +204,13 @@
       "provider_project": "msplatform",
       "files": [
         {
+          "id": "orthogonal_accelerator_component_contract",
+          "source_repo_path": "src/msplatform/components/orthogonal_accelerator/component_contract.json",
+          "consumers": [
+            "oa_mr"
+          ]
+        },
+        {
           "id": "integration_registry",
           "source_repo_path": "src/msplatform/workflows/config/assembly_registry.json",
           "consumers": [
@@ -235,6 +218,22 @@
             "accelerator_interface",
             "oa_mr",
             "multipole_ip"
+          ]
+        },
+        {
+          "id": "integrations_workflows_multipole_ip_continuous_ps1",
+          "source_repo_path": "src/msplatform/workflows/resources/multipole_ip_continuous.ps1",
+          "consumers": [
+            "accelerator_interface",
+            "multipole_ip"
+          ]
+        },
+        {
+          "id": "integrations_workflows_multipole_ip_execute_ps1",
+          "source_repo_path": "src/msplatform/workflows/resources/multipole_ip.ps1",
+          "consumers": [
+            "multipole_ip",
+            "accelerator_interface"
           ]
         },
         {

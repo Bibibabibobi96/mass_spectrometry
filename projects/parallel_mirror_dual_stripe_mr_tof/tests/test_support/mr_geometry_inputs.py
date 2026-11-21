@@ -9,7 +9,7 @@ from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import build_two_zone_accelerator_requirements
 
 
-_PROFILE_PATH = Path(__file__).resolve().parents[3] / "orthogonal_accelerator/config/component_contract.json"
+_PROFILE_PATH = Path(__file__).resolve().parents[4] / "src/msplatform/components/orthogonal_accelerator/component_contract.json"
 _PROFILE_BYTES = _PROFILE_PATH.read_bytes()
 _PROFILE_ID = "closed_two_zone_compact_mr_axial_r3_gap1_4mm"
 

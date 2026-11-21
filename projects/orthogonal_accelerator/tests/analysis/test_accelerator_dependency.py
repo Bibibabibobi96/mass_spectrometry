@@ -16,13 +16,13 @@ CONSUMER = "single_reflection_oa_tof_mass_analyzer"
 class AcceleratorDependencyTest(unittest.TestCase):
     def fixture(self, root: Path) -> tuple[Path, Path]:
         dependency_path = root / "projects" / CONSUMER / "config/accelerator_dependency.json"
-        provider_path = root / "projects/orthogonal_accelerator/config/component_contract.json"
+        provider_path = root / "src/msplatform/components/orthogonal_accelerator/component_contract.json"
         for path in (dependency_path, provider_path):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes((REPO / path.relative_to(root)).read_bytes())
         provider = json.loads(provider_path.read_text(encoding="utf-8"))
         for relative in provider["implementation_modules"]:
-            path = (root if Path(relative).parts[:2] == ("src", "msplatform") else provider_path.parents[1]) / relative
+            path = root / relative
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("# module fixture\n", encoding="utf-8")
         return dependency_path, provider_path

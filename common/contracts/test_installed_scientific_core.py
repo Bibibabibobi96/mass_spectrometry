@@ -6832,7 +6832,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
         from msplatform.components.orthogonal_accelerator.two_zone_geometry import validate_geometry_profile
         from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
         contract = load_contract(REPO_ROOT / "projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json")
-        provider_path = REPO_ROOT / "projects/orthogonal_accelerator/config/component_contract.json"
+        provider_path = REPO_ROOT / "src/msplatform/components/orthogonal_accelerator/component_contract.json"
         provider_bytes = provider_path.read_bytes()
         profile_id = "closed_two_zone_compact_mr_axial_r3_gap1_4mm"
         profile = dict(validate_geometry_profile(json.loads(provider_bytes)["geometry_profiles"][profile_id]))
@@ -6863,7 +6863,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
         from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
         from projects.parallel_mirror_dual_stripe_mr_tof.tests.test_support.mr_geometry_inputs import geometry_authority
         mrp_contract_path = REPO_ROOT / 'projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json'
-        mrp_oa_path = REPO_ROOT / 'projects/orthogonal_accelerator/config/component_contract.json'
+        mrp_oa_path = REPO_ROOT / 'src/msplatform/components/orthogonal_accelerator/component_contract.json'
         mrp_contract_bytes, mrp_oa_bytes = mrp_contract_path.read_bytes(), mrp_oa_path.read_bytes()
         assert hashlib.sha256(mrp_contract_bytes).hexdigest() == '257e10f381b566db9eb85f63776081fbe8ada140bdc99eb44bda4e148fda066f'
         assert hashlib.sha256(mrp_oa_bytes).hexdigest() == '4aa417ad64e91e9eafdbffbaa958a35573c8b78262fac304355979d190a201dd'
@@ -7174,7 +7174,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
         self.addCleanup(case.tearDown)
         events = case.write_events()
         profile = fixtures._geometry_profile()
-        contract = json.loads((fixtures.ROOT / "config/component_contract.json").read_text(encoding="utf-8"))
+        contract = json.loads((fixtures.ROOT.parents[1] / "src/msplatform/components/orthogonal_accelerator/component_contract.json").read_text(encoding="utf-8"))
         return dict(events=str(events), release_receipt=str(case.receipt), campaign=str(case.campaign),
                     geometry_profile=profile, component_contract=contract,
                     expected=analyze(events, case.receipt, case.campaign, geometry_profile=profile))

@@ -55,7 +55,7 @@ try{
  if(-not[object]::ReferenceEquals($OutputEncoding,$savedEncoding)){throw 'Package enumeration changed caller OutputEncoding'}
  if($Mode-eq'failure'){
   $cases=@()
-  foreach($relative in @('projects/orthogonal_accelerator/config/component_contract.json','src/msplatform/components/orthogonal_accelerator/accelerator_time_focus.py','src/msplatform/ion_release/cylinder.py','src/msplatform/backends/simion/oa_focus_source.py')){
+  foreach($relative in @('src/msplatform/components/orthogonal_accelerator/component_contract.json','src/msplatform/components/orthogonal_accelerator/accelerator_time_focus.py','src/msplatform/ion_release/cylinder.py','src/msplatform/backends/simion/oa_focus_source.py')){
    $path=Join-Path $context.code_root $relative;$bytes=[IO.File]::ReadAllBytes($path);Remove-Item -LiteralPath $path
    try{
     $vendorCalls=0
@@ -72,7 +72,7 @@ try{
   if($LASTEXITCODE-ne0){throw 'Frozen release failed'}
   Invoke-FocusFrozenPython -Python $Python -CodeRoot $context.code_root -OriginsPath $context.origins_path -Module msplatform.backends.simion.oa_focus_source -Arguments @('--release-receipt',$receipt,'--campaign',(Join-Path $Root 'inputs/campaign.json'),'--provider-plan',(Join-Path $Root 'inputs/component_focus_pa_plan.json'),'--resolved-projection',(Join-Path $Root 'inputs/resolved_projection.json'),'--fly2',(Join-Path $Root 'simion/source.fly2'),'--source-states',(Join-Path $Root 'simion/source.lua'),'--receipt',(Join-Path $Root 'results/source_projection.json'))
   if($LASTEXITCODE-ne0){throw 'Frozen projection failed'}
-  Invoke-FocusFrozenPython -Python $Python -CodeRoot $context.code_root -OriginsPath $context.origins_path -Module msplatform.workflows.oa_focus_analysis -Arguments @('--component-contract',(Join-Path $context.code_root 'projects/orthogonal_accelerator/config/component_contract.json'),'--events',(Join-Path $Root 'inputs/events.csv'),'--release-receipt',$receipt,'--campaign',(Join-Path $Root 'inputs/campaign.json'),'--output',(Join-Path $Root 'results/analysis.json'))
+  Invoke-FocusFrozenPython -Python $Python -CodeRoot $context.code_root -OriginsPath $context.origins_path -Module msplatform.workflows.oa_focus_analysis -Arguments @('--component-contract',(Join-Path $context.code_root 'src/msplatform/components/orthogonal_accelerator/component_contract.json'),'--events',(Join-Path $Root 'inputs/events.csv'),'--release-receipt',$receipt,'--campaign',(Join-Path $Root 'inputs/campaign.json'),'--output',(Join-Path $Root 'results/analysis.json'))
   if($LASTEXITCODE-ne0){throw 'Frozen scientific analysis failed'}
  }
  if($env:PYTHONPATH-cne$Repo){throw 'Scientific adapter changed caller environment'}
@@ -83,7 +83,7 @@ try{
 def _geometry_profile():
     import json
     from pathlib import Path
-    document=json.loads((Path(__file__).resolve().parents[2]/"config/component_contract.json").read_text(encoding="utf-8"))
+    document=json.loads((REPO/"src/msplatform/components/orthogonal_accelerator/component_contract.json").read_text(encoding="utf-8"))
     return document["geometry_profiles"]["closed_two_zone_compact_mr_axial_r3_gap1_4mm"]
 
 

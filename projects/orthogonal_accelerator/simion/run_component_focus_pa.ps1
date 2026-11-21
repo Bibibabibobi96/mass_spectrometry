@@ -13,7 +13,7 @@ function Invoke-RootPython([string[]]$Arguments){Push-Location $repoRoot;try{&$p
 try{
  $capacity=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RunDirectory $package.artifact_run_dir -CommittedNewBytes 0 -Owner "orthogonal-accelerator-focus-pa:$RunId"
  $stage='freeze_inputs';$frozenCampaign=Copy-VerifiedRunInput $campaign (Join-Path $package.input_dir 'campaign.json');$frozenCacheSource=Copy-VerifiedRunInput (Join-Path $projectRoot 'analysis\component_focus_pa_cache.py') (Join-Path $package.input_dir 'component_focus_pa_cache.py');$frozenBuilder=Copy-VerifiedRunInput $builder (Join-Path $package.input_dir 'build_component_focus_pa.lua');$frozenVerifier=Copy-VerifiedRunInput (Join-Path $projectRoot 'simion\verify_component_focus_pa.lua') (Join-Path $package.input_dir 'verify_component_focus_pa.lua');$frozenExporter=Copy-VerifiedRunInput (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\export_standalone_pa.lua') (Join-Path $package.input_dir 'export_standalone_pa.lua')
- $frozenContract=Copy-VerifiedRunInput (Join-Path $projectRoot 'config/component_contract.json') (Join-Path $package.input_dir 'component_contract.json')
+ $frozenContract=Copy-VerifiedRunInput (Join-Path $RepoRoot 'src/msplatform/components/orthogonal_accelerator/component_contract.json') (Join-Path $package.input_dir 'component_contract.json')
  $planConfig=Get-Content -LiteralPath $package.run_config -Raw -Encoding utf8|ConvertFrom-Json -AsHashtable
  $planConfig.parameters.pa_mesh_mm_per_gu=@($MeshMmPerGu)
  $planConfig|ConvertTo-Json -Depth 100|Set-Content -LiteralPath $package.run_config -Encoding utf8

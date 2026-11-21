@@ -15,7 +15,7 @@
     "baseline": null,
     "resolved": null,
     "analysis": null,
-    "interface": "config/component_contract.json",
+    "interface": "src/msplatform/components/orthogonal_accelerator/component_contract.json",
     "execution": "config/execution_profiles.json",
     "design_variables": null,
     "optimization_envelope": null

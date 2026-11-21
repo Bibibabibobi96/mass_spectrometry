@@ -709,7 +709,7 @@ foreach($staticFieldRequested in @($false,$true)){
 """
         with TemporaryDirectory() as directory:
             root = Path(directory)
-            oa_contract = REPO / "projects/orthogonal_accelerator/config/component_contract.json"
+            oa_contract = REPO / "src/msplatform/components/orthogonal_accelerator/component_contract.json"
             oa_profile = "closed_two_zone_compact_mr_axial_r3_gap1_4mm"
             from msplatform.components.parallel_mirror_dual_stripe_mr_tof.accelerator_requirements import read_accelerator_geometry_authority
             from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract

@@ -11,7 +11,7 @@
 2. 当前事实：[`docs/PROJECT.md`](docs/PROJECT.md)。
 3. 理论：[`docs/theory/README.md`](docs/theory/README.md)。
 4. 项目身份：[`config/project.json`](config/project.json)；器件API语义：
-   [`config/component_contract.json`](config/component_contract.json)。
+   [`component_contract.json`](../../src/msplatform/components/orthogonal_accelerator/component_contract.json)。
 
 公共设计请求用`target.structural_variant_id`显式选择`two_zone`或`three_zone`；未选择时返回
 `NEEDS_CLARIFICATION`，不会依据目标指标代选。能力声明、器件接口和各变体证据分别校验。

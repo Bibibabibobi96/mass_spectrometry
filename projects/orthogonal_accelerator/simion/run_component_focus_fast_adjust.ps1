@@ -33,7 +33,7 @@ try {
     $flightRunner=Join-Path $PSScriptRoot 'run_component_focus_flight.ps1'
     $state=Join-Path $package.result_dir 'fast_adjust_controller_state.json'
     $focusPython=Initialize-FocusFrozenPython -RepoRoot $repoRoot -RunConfig $package.run_config -Python $python -CampaignPath $campaign -InputNames @('campaign.json','release_spec.json')
-    $componentContract=Join-Path $focusPython.code_root 'projects/orthogonal_accelerator/config/component_contract.json'
+    $componentContract=Join-Path $focusPython.code_root 'src/msplatform/components/orthogonal_accelerator/component_contract.json'
     $stateArguments=@('--component-contract',$componentContract,'--campaign',$campaign,'--state',$state,'--maximum-trials',$MaximumTrials)
     Invoke-FocusFrozenPython -Python $python -CodeRoot $focusPython.code_root -OriginsPath $focusPython.origins_path -Module msplatform.workflows.oa_focus_fast_adjust -Arguments $stateArguments;if($LASTEXITCODE-ne0){throw 'Fast-Adjust controller initialization failed'}
     if($InitialAnalysisPath){

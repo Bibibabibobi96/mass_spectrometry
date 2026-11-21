@@ -1545,7 +1545,7 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
         extension = result["prism_ground_shields"][0]["extension_to_accelerator_exit"]
         self.assertEqual(extension["exit_support_downstream_z_mm"], 2.0)
         self.assertEqual(extension["resolved_end_z_mm"], 1.0)
-        provider = json.loads((project.parent / "orthogonal_accelerator/config/component_contract.json").read_text(encoding="utf-8"))
+        provider = json.loads((project.parents[1] / "src/msplatform/components/orthogonal_accelerator/component_contract.json").read_text(encoding="utf-8"))
         profile = provider["geometry_profiles"][authority["geometry_profile_id"]]
         profile["ring_thickness_z_mm"] += 0.2
         with tempfile.TemporaryDirectory() as directory:

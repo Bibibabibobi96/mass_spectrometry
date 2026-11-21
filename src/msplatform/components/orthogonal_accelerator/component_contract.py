@@ -63,8 +63,8 @@ def _provider_variants(provider: dict[str, Any]) -> set[str]:
 def _provider_path(api_version: int) -> str:
     if type(api_version) is not int or api_version not in (2, 3):
         raise ValueError("accelerator api_version must be explicitly 2 or 3")
-    return ("projects/orthogonal_accelerator/config/component_contract.json" if api_version == 2
-            else "projects/orthogonal_accelerator/config/component_contract_v3.json")
+    return ("src/msplatform/components/orthogonal_accelerator/component_contract.json" if api_version == 2
+            else "src/msplatform/components/orthogonal_accelerator/component_contract_v3.json")
 
 
 def load_component_contract(
@@ -118,10 +118,8 @@ def load_component_contract(
         raise ValueError("provider implementation_modules must be nonempty paths")
     if len(set(modules)) != len(modules):
         raise ValueError("provider implementation_modules contain duplicates")
-    provider_root = provider_path.parents[1]
     sources = tuple(_source_path(
-        root if Path(value).parts[:2] == ("src", "msplatform") else provider_root,
-        value, "provider implementation",
+        root, value, "provider implementation",
     ) for value in modules) if validate_implementation_sources else ()
     return {
         "provider": provider, "api_version": api_version,

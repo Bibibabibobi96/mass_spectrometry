@@ -21,7 +21,7 @@ class ComponentContractTest(unittest.TestCase):
         path = PROJECT / "config/project.json"
         descriptor = json.loads(path.read_text(encoding="utf-8"))
         validate_descriptor(descriptor, path, REPO)
-        api = json.loads((PROJECT / descriptor["contracts"]["interface"]).read_text(encoding="utf-8"))
+        api = json.loads((REPO / descriptor["contracts"]["interface"]).read_text(encoding="utf-8"))
         self.assertEqual(api["schema_version"], 1)
         self.assertEqual(api["api_version"], 2)
         self.assertEqual(api["project_id"], descriptor["project_id"])
@@ -34,7 +34,7 @@ class ComponentContractTest(unittest.TestCase):
             self.assertEqual(variants[variant]["field_region_count"], count)
             self.assertEqual(len(variants[variant]["primary_electrode_roles"]), count + 1)
         for relative in api["implementation_modules"]:
-            self.assertTrue(((REPO if Path(relative).parts[:2] == ("src", "msplatform") else PROJECT) / relative).is_file(), relative)
+            self.assertTrue((REPO / relative).is_file(), relative)
         self.assertEqual(api["request_api"]["two_zone"]["role"],
                          "orthogonal_accelerator_two_zone_requirements")
         self.assertEqual(api["request_api"]["two_zone"]["requirements_schema_versions"], {
@@ -88,7 +88,7 @@ class ComponentContractTest(unittest.TestCase):
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, target)
         dependency = json.loads((REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/accelerator_dependency.json").read_text(encoding="utf-8"))
-        dependency.update(api_version=3, provider_contract="projects/orthogonal_accelerator/config/component_contract_v3.json")
+        dependency.update(api_version=3, provider_contract="src/msplatform/components/orthogonal_accelerator/component_contract_v3.json")
         path = root / "projects/single_reflection_oa_tof_mass_analyzer/config/accelerator_dependency.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(dependency), encoding="utf-8")
@@ -106,7 +106,7 @@ class ComponentContractTest(unittest.TestCase):
             self.assertEqual(result["api_version"], 3)
             original = json.loads(dependency.read_text(encoding="utf-8"))
             for changed in ({**original, "api_version": 99},
-                            {**original, "provider_contract": "projects/orthogonal_accelerator/config/component_contract.json"}):
+                            {**original, "provider_contract": "src/msplatform/components/orthogonal_accelerator/component_contract.json"}):
                 dependency.write_text(json.dumps(changed), encoding="utf-8")
                 with self.subTest(changed=changed), self.assertRaises(ValueError):
                     load_accelerator_dependency(root, dependency, consumer_project_id="single_reflection_oa_tof_mass_analyzer", required_variant="three_zone")
@@ -159,12 +159,12 @@ class ComponentContractTest(unittest.TestCase):
             frozen_bytes=(json.dumps(document)+"\n").encode("utf-8")
             provider.write_bytes(frozen_bytes)
             for relative in document["implementation_modules"]:
-                target=(root/relative if relative.startswith('src/msplatform/') else provider.parents[1]/relative)
+                target=root/relative
                 target.parent.mkdir(parents=True,exist_ok=True)
                 target.write_text("# Historical declared-source identity fixture; never executed.\n")
             result=load_component_contract(root, api_version=2)
             self.assertEqual(provider.read_bytes(),frozen_bytes)
-            self.assertIn(provider.parents[1]/historical,result["implementation_sources"])
+            self.assertIn(root/historical,result["implementation_sources"])
             self.assertEqual(result["provider"]["implementation_modules"],document["implementation_modules"])
             self.assertNotIn(root/canonical,result["implementation_sources"])
 

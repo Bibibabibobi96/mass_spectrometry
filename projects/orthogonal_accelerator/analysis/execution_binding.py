@@ -13,7 +13,7 @@ def resolve_execution_binding(repo_root: Path, project_id: str, bindings: dict[s
     request = _load_request(Path(bindings["component_request_path"]))
     release = _load_release(Path(bindings["release_spec_path"]))
     load_geometry_profile(request["geometry_profile_id"])
-    contract = repo_root/"projects"/project_id/"config/component_contract.json"
+    contract = repo_root/"src/msplatform/components/orthogonal_accelerator/component_contract.json"
     return dict(project_id=project_id, structural_variant_id="two_zone", authorized_run_id=None,
                 operating_points=[dict(mass=dict(value=release["species"]["mass_amu"], unit="Da"),
                                        charge_state=release["species"]["charge_state"])],

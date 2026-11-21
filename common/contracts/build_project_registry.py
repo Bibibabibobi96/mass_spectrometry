@@ -168,7 +168,9 @@ def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path)
     validate_structural_variants(descriptor, None, path)
 
     for role, relative in descriptor["contracts"].items():
-        if relative is not None and not (project_root / relative).is_file():
+        contract_path = (project_root.parents[1] / relative if relative is not None and relative.startswith("src/")
+                         else project_root / relative if relative is not None else None)
+        if contract_path is not None and not contract_path.is_file():
             raise ContractError(f"{path}: {role} contract is missing: {relative}")
 
     profile_identity: dict[str, Any] | None = None

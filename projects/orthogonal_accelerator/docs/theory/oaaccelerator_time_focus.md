@@ -46,7 +46,7 @@ projects/orthogonal_accelerator/analysis/accelerator_time_focus.py
 - “空间聚焦”比“加速器”更准确地说明该部件补偿的是初始释放位置造成的到达时间差。
 
 上述名称用于理论叙述；机器 provider、API 与结构变体标识只由
-[component_contract.json](../../config/component_contract.json) 定义，不从理论名称派生第二套 ID。
+[component_contract.json](../../../../src/msplatform/components/orthogonal_accelerator/component_contract.json) 定义，不从理论名称派生第二套 ID。
 
 ## 3. 坐标、电压和几何约定
 

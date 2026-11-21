@@ -27,7 +27,7 @@ try:
             importlib.import_module(name)
         campaign=json.loads(Path(arguments[0]).read_text(encoding="utf-8-sig"))
         from msplatform.components.orthogonal_accelerator.focus_campaign import validate_campaign
-        contract=json.loads((root/"projects/orthogonal_accelerator/config/component_contract.json").read_text(encoding="utf-8"))
+        contract=json.loads((root/"src/msplatform/components/orthogonal_accelerator/component_contract.json").read_text(encoding="utf-8"))
         validate_campaign(campaign,geometry_profile=contract["geometry_profiles"][campaign["geometry_profile_id"]])
 finally:
     paths={name:str(Path(value.__file__).resolve()) for name,value in sys.modules.items()
@@ -37,7 +37,7 @@ finally:
     if any(not Path(path).is_relative_to(root) for path in paths.values()):
         raise RuntimeError("Focus Python imported code outside its frozen package")
     fact={"module":module or "preflight","code_root":str(root),"module_paths":paths,
-          "geometry_contract_path":str(root/"projects/orthogonal_accelerator/config/component_contract.json")}
+          "geometry_contract_path":str(root/"src/msplatform/components/orthogonal_accelerator/component_contract.json")}
     facts=json.loads(origins.read_text(encoding="utf-8")) if origins.exists() else []
     facts.append(fact)
     origins.write_text(json.dumps(facts,indent=2)+"\n",encoding="utf-8")
@@ -75,7 +75,7 @@ print(json.dumps(paths))
   }finally{$OutputEncoding=$savedOutputEncoding}
   if($LASTEXITCODE-ne0){throw 'Focus Python package enumeration failed'}
   $files=@($selection|ConvertFrom-Json)
-  $files+='projects/orthogonal_accelerator/config/component_contract.json'
+  $files+='src/msplatform/components/orthogonal_accelerator/component_contract.json'
   $files+='projects/orthogonal_accelerator/simion/focus_python.ps1'
   foreach($relative in @($files|Sort-Object)){
     $destination=Join-Path $code $relative

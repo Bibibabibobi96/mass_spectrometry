@@ -89,7 +89,7 @@ the retained historical v1 file keeps its exact pre-migration bytes and is rejec
 | 对象 | 唯一入口与边界 |
 |---|---|
 | 公共发现、结构变体与能力 | [project.json](../config/project.json)，二区／三区分别登记，不能隐式代选 |
-| 器件API、变体和具名几何profile | [component_contract_v3.json](../config/component_contract_v3.json)；旧API2来源保留原合同 |
+| 器件API、变体和具名几何profile | [component_contract_v3.json](../../../src/msplatform/components/orthogonal_accelerator/component_contract_v3.json)；旧API2来源保留原合同 |
 | 机械端口与物理电极视图 | `msplatform.components.orthogonal_accelerator.assembly_interface`拥有唯一实现；[项目适配器](../analysis/assembly_interface.py)只加载具名profile |
 | 组件焦点实验 | [two_zone_component_focus_campaign.json](../config/two_zone_component_focus_campaign.json) |
 | 二区／三区及有符号源理论 | [理论导航](theory/README.md) |

@@ -2,14 +2,14 @@
   "schema_version": 1,
   "role": "orthogonal_accelerator_component_api",
   "project_id": "orthogonal_accelerator",
-  "api_version": 2,
+  "api_version": 3,
   "structural_variants": [
     {
       "variant_id": "two_zone",
       "field_region_count": 2,
       "primary_electrode_roles": [
         "repeller",
-        "grid1",
+        "intermediate_grid_1",
         "exit_grid"
       ]
     },
@@ -18,8 +18,8 @@
       "field_region_count": 3,
       "primary_electrode_roles": [
         "repeller",
-        "grid1",
-        "grid2",
+        "intermediate_grid_1",
+        "intermediate_grid_2",
         "exit_grid"
       ]
     }
@@ -79,26 +79,27 @@
   "qualification_policy": "Independent component evidence only; no inheritance of instrument Formal qualification or sharing of evidence between structural variants.",
   "implementation_modules": [
     "src/msplatform/components/orthogonal_accelerator/component_contract.py",
-    "analysis/assembly_interface.py",
-    "analysis/electrode_topology.py",
-    "analysis/accelerator_time_focus.py",
-    "analysis/two_zone_theory.py",
+    "projects/orthogonal_accelerator/analysis/assembly_interface.py",
+    "projects/orthogonal_accelerator/analysis/electrode_topology.py",
+    "projects/orthogonal_accelerator/analysis/accelerator_time_focus.py",
+    "projects/orthogonal_accelerator/analysis/two_zone_theory.py",
     "src/msplatform/components/orthogonal_accelerator/three_zone_ideal_theory.py",
-    "analysis/two_zone_geometry.py",
+    "projects/orthogonal_accelerator/analysis/two_zone_geometry.py",
     "src/msplatform/workflows/oa_focus_analysis.py",
     "src/msplatform/backends/simion/oa_focus_source.py",
-    "simion/component_focus.lua",
-    "simion/build_component_focus_iob.lua",
-    "simion/run_component_focus_flight.ps1",
-    "analysis/component_focus_workflow.py",
-    "simion/run_component_focus_workflow.ps1",
+    "projects/orthogonal_accelerator/simion/component_focus.lua",
+    "projects/orthogonal_accelerator/simion/build_component_focus_iob.lua",
+    "projects/orthogonal_accelerator/simion/run_component_focus_flight.ps1",
+    "projects/orthogonal_accelerator/analysis/component_focus_workflow.py",
+    "projects/orthogonal_accelerator/simion/run_component_focus_workflow.ps1",
     "src/msplatform/workflows/oa_focus_fast_adjust.py",
-    "simion/run_component_focus_fast_adjust.ps1",
-    "analysis/component_focus_field_contrast.py",
-    "simion/run_component_focus_field_contrast.ps1",
+    "projects/orthogonal_accelerator/simion/run_component_focus_fast_adjust.ps1",
+    "projects/orthogonal_accelerator/analysis/component_focus_field_contrast.py",
+    "projects/orthogonal_accelerator/simion/run_component_focus_field_contrast.ps1",
     "src/msplatform/backends/simion/accelerator_renderer.py",
+    "projects/orthogonal_accelerator/analysis/sectioned_geometry.py",
     "src/msplatform/backends/simion/oa_focus_plan.py",
     "src/msplatform/components/orthogonal_accelerator/focus_campaign.py",
-    "simion/focus_python.ps1"
+    "projects/orthogonal_accelerator/simion/focus_python.ps1"
   ]
 }

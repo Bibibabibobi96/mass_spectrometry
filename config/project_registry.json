@@ -16,7 +16,7 @@
     },
     {
       "descriptor": "projects/orthogonal_accelerator/config/project.json",
-      "sha256": "AC2213548374B7F7CE10EA175BD97BD0B067F211860340CE68E15EA0F7DF5012"
+      "sha256": "6319CB332787DBDDE0BCF1A0711FA858E43990A7F2B2A3AA0302273958B306B8"
     },
     {
       "descriptor": "projects/parallel_mirror_dual_stripe_mr_tof/config/project.json",
@@ -244,7 +244,7 @@
         "baseline": null,
         "resolved": null,
         "analysis": null,
-        "interface": "config/component_contract.json",
+        "interface": "src/msplatform/components/orthogonal_accelerator/component_contract.json",
         "execution": "config/execution_profiles.json",
         "design_variables": null,
         "optimization_envelope": null
