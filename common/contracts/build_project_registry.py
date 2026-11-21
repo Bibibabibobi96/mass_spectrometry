@@ -495,7 +495,7 @@ def query_capabilities(registry: dict[str, Any], *, repo_root: Path = REPO_ROOT,
                            capabilities=capabilities, profiles=profiles,
                            execution_support="declared_owner_entries" if profiles else "no_registered_physical_entry",
                            limitations=project["known_gaps"]))
-    integration_path = repo_root/"integrations/registry.json"
+    integration_path = repo_root/"src/msplatform/workflows/config/assembly_registry.json"
     if integration_path.is_file():
         integrations = load_json(integration_path)
         validate_schema(integrations, "integration_registry.schema.json")

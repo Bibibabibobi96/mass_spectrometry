@@ -2625,7 +2625,7 @@ MR的`load-workbench`与batch Fly共用碰撞PA预载并保持不可Refine状态
 
 ## 依赖冻结与门禁
 
-[运行依赖清单](../config/runtime_dependencies.json)与[冻结器](../../src/msplatform/execution/resources/dependencies.ps1)按明确owner／consumer复制实际来源。
+[运行依赖清单](../../src/msplatform/workflows/config/runtime_dependencies.json)与[冻结器](../../src/msplatform/execution/resources/dependencies.ps1)按明确owner／consumer复制实际来源。
 schema 3 按提供者声明 `python_packages`／`python_modules`，由公共
 [`enumerate_python_sources`](../../src/msplatform/execution/inputs.py)派生交付闭包，默认只枚举生产Python源码。
 Integration `python_packages` selections require at least one production Python source inside each selected package; resources and ancestor initializers do not satisfy that requirement. The generic selector retains its default resource-only closure.

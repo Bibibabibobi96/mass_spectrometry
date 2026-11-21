@@ -43,10 +43,10 @@ def reference_fixture(root, *, frame_id="astral.xyz.v2"):
 def _copy_path_consumer_repository(target):
     shutil.copytree(REPO / "common", target / "common", ignore=shutil.ignore_patterns("assets", "__pycache__"))
     shutil.copytree(REPO / "config", target / "config", ignore=shutil.ignore_patterns("__pycache__"))
-    contract = json.loads((REPO / "integrations/config/runtime_dependencies.json").read_text(encoding="utf-8"))
+    contract = json.loads((REPO / "src/msplatform/workflows/config/runtime_dependencies.json").read_text(encoding="utf-8"))
     from integrations.tests.test_support.single_reflection_execute_fixture import declared_dependency_paths
     paths = declared_dependency_paths(REPO, contract, 'multipole_ip')
-    paths.update({"integrations/config/runtime_dependencies.json", "integrations/registry.json",
+    paths.update({"src/msplatform/workflows/config/runtime_dependencies.json", "src/msplatform/workflows/config/assembly_registry.json",
                   "src/msplatform/execution/resources/dependencies.ps1"})
     for relative in paths:
         destination = target / relative
@@ -1350,7 +1350,7 @@ if($LASTEXITCODE-ne0){throw 'actual preparation command did not disable bytecode
         self.assertIsNotNone(pwsh)
         command = f"""
 . '{REPO / 'src/msplatform/execution/resources/dependencies.ps1'}'
-$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' -ContractPath '{REPO / 'integrations/config/runtime_dependencies.json'}' -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId accelerator_interface
+$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' -ContractPath '{REPO / 'src/msplatform/workflows/config/runtime_dependencies.json'}' -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId accelerator_interface
 """
         frozen = subprocess.run([pwsh, "-NoProfile", "-Command", command], cwd=REPO,
             capture_output=True, encoding="utf-8", errors="replace", timeout=120)
@@ -1429,7 +1429,7 @@ print("DETACHED_IP_MR_COMPLETE_SOURCE=PASS")
                 mode="accelerator_interface_preparation", run_id=run.name)))
             command = f"""
 . '{REPO / 'src/msplatform/execution/resources/dependencies.ps1'}'
-$path='{REPO / 'integrations/config/runtime_dependencies.json'}'
+$path='{REPO / 'src/msplatform/workflows/config/runtime_dependencies.json'}'
 $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' -ContractPath $path -InputDir '{run / 'inputs'}' -OwnerId instrument_assembly -ConsumerId accelerator_interface
 """
             completed = subprocess.run([pwsh, "-NoProfile", "-Command", command], cwd=REPO,

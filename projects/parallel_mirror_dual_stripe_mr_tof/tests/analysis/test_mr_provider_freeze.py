@@ -67,7 +67,7 @@ $ErrorActionPreference='Stop'
 . (Join-Path $Repo 'src/msplatform/execution/resources/dependencies.ps1')
 . (Join-Path $Repo 'src/msplatform/execution/resources/frozen_python_package.ps1')
 if ($Mode -eq 'freeze') {
-  $f=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath (Join-Path $Repo 'integrations/config/runtime_dependencies.json') -InputDir $Inputs -OwnerId instrument_assembly -ConsumerId oa_mr
+  $f=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath (Join-Path $Repo 'src/msplatform/workflows/config/runtime_dependencies.json') -InputDir $Inputs -OwnerId instrument_assembly -ConsumerId oa_mr
   $f | ConvertTo-Json -Depth 40 -Compress
   exit 0
 }

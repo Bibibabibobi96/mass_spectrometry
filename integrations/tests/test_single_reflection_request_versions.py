@@ -95,7 +95,7 @@ class SingleReflectionRequestVersionTests(unittest.TestCase):
 param($Python,$Repo,$Output)
 . (Join-Path $Repo 'src/msplatform/execution/resources/dependencies.ps1')
 $null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo `
- -ContractPath (Join-Path $Repo 'integrations/config/runtime_dependencies.json') `
+ -ContractPath (Join-Path $Repo 'src/msplatform/workflows/config/runtime_dependencies.json') `
  -InputDir $Output -OwnerId instrument_assembly -ConsumerId single_reflection_flight
 """
             entry = Path(directory) / "freeze.ps1"

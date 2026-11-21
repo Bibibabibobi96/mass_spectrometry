@@ -281,7 +281,7 @@ class ComsolPrePulseReplayTests(unittest.TestCase):
             freeze_script.write_text(
                 """param($Repo,$Destination,$Python)
 . (Join-Path $Repo 'src/msplatform/execution/resources/dependencies.ps1')
-$null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath (Join-Path $Repo 'integrations/config/runtime_dependencies.json') -InputDir $Destination -OwnerId instrument_assembly -ConsumerId paired_accelerator_pulse
+$null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath (Join-Path $Repo 'src/msplatform/workflows/config/runtime_dependencies.json') -InputDir $Destination -OwnerId instrument_assembly -ConsumerId paired_accelerator_pulse
 """,
                 encoding="utf-8",
             )

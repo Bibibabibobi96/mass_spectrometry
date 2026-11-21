@@ -17,16 +17,6 @@
       "provider_project": "instrument_assembly",
       "files": [
         {
-          "id": "integration_registry",
-          "source_repo_path": "integrations/registry.json",
-          "consumers": [
-            "prepared_joint",
-            "accelerator_interface",
-            "oa_mr",
-            "multipole_ip"
-          ]
-        },
-        {
           "id": "prepared_joint_integrations_workflows_prepared_joint_execute_ps1",
           "source_repo_path": "integrations/workflows/prepared_joint/execute.ps1",
           "consumers": [
@@ -237,6 +227,16 @@
       "provider_scope": "repository_core",
       "provider_project": "msplatform",
       "files": [
+        {
+          "id": "integration_registry",
+          "source_repo_path": "src/msplatform/workflows/config/assembly_registry.json",
+          "consumers": [
+            "prepared_joint",
+            "accelerator_interface",
+            "oa_mr",
+            "multipole_ip"
+          ]
+        },
         {
           "id": "msplatform_execution_dependency_runtime",
           "source_repo_path": "src/msplatform/execution/resources/dependencies.ps1",

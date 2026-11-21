@@ -489,7 +489,7 @@ class MultipoleIPPreparationTests(unittest.TestCase):
         self.rename_instances()
         self.write_parent()
         write_json(self.request_path, self.request)
-        inventory = REPO / "integrations/config/runtime_dependencies.json"
+        inventory = REPO / "src/msplatform/workflows/config/runtime_dependencies.json"
         script = f"""
 . '{REPO / 'src/msplatform/execution/resources/dependencies.ps1'}'
 $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' -ContractPath '{inventory}' -InputDir '{self.run / 'inputs'}' -OwnerId instrument_assembly -ConsumerId multipole_ip

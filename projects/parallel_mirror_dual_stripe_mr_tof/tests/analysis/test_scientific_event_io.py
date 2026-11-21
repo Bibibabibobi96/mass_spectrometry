@@ -504,7 +504,7 @@ scientific_events:close();scientific_trajectory:close()
             with self.subTest(consumer=consumer), tempfile.TemporaryDirectory() as directory:
                 output = Path(directory)
                 script = output / 'freeze.ps1'
-                script.write_text("param($Repo,$Output,$Consumer,$Python)\n$ErrorActionPreference='Stop'\n. (Join-Path $Repo 'src/msplatform/execution/resources/dependencies.ps1')\n$null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath (Join-Path $Repo 'integrations/config/runtime_dependencies.json') -InputDir $Output -OwnerId instrument_assembly -ConsumerId $Consumer\n", encoding='utf-8')
+                script.write_text("param($Repo,$Output,$Consumer,$Python)\n$ErrorActionPreference='Stop'\n. (Join-Path $Repo 'src/msplatform/execution/resources/dependencies.ps1')\n$null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath (Join-Path $Repo 'src/msplatform/workflows/config/runtime_dependencies.json') -InputDir $Output -OwnerId instrument_assembly -ConsumerId $Consumer\n", encoding='utf-8')
                 result = subprocess.run([pwsh, '-NoProfile', '-File', str(script), str(ROOT), str(output), consumer, sys.executable],
                     cwd=ROOT, capture_output=True, text=True, encoding='utf-8', timeout=120)
                 self.assertEqual(result.returncode, 0, result.stdout+result.stderr)

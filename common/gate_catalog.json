@@ -966,11 +966,11 @@
           "reason": "sfi_public_entry_consumer_changed"
         },
         {
-          "exact": "integrations/registry.json",
+          "exact": "src/msplatform/workflows/config/assembly_registry.json",
           "reason": "sfi_public_entry_consumer_changed"
         },
         {
-          "exact": "integrations/config/runtime_dependencies.json",
+          "exact": "src/msplatform/workflows/config/runtime_dependencies.json",
           "reason": "sfi_public_entry_consumer_changed"
         }
       ],
@@ -2279,11 +2279,11 @@
                 "reason": "sfi_public_entry_consumer_changed"
               },
               {
-                "exact": "integrations/registry.json",
+                "exact": "src/msplatform/workflows/config/assembly_registry.json",
                 "reason": "sfi_public_entry_consumer_changed"
               },
               {
-                "exact": "integrations/config/runtime_dependencies.json",
+                "exact": "src/msplatform/workflows/config/runtime_dependencies.json",
                 "reason": "sfi_public_entry_consumer_changed"
               }
             ],
@@ -3126,7 +3126,7 @@
           "PythonExe": "{python}"
         }
       },
-      "runtime_dependencies_path": "integrations/config/runtime_dependencies.json",
+      "runtime_dependencies_path": "src/msplatform/workflows/config/runtime_dependencies.json",
       "repository_integration_command": {
         "runner": "powershell",
         "script": "integrations/verify_integration.ps1",

@@ -250,7 +250,7 @@ do not qualify native flight, field coverage or scientific accuracy.
 
 唯一入口为`python -m integrations.runtime.refresh_repository_bindings [--check]`。
 它刷新oaTOF required port的受管文本绑定，不改科学设计或历史证据；
-运行依赖只由[runtime_dependencies.json](config/runtime_dependencies.json)声明，冻结机制见状态页。
+运行依赖只由[runtime_dependencies.json](../src/msplatform/workflows/config/runtime_dependencies.json)声明，冻结机制见状态页。
 
 ## 历史追溯
 

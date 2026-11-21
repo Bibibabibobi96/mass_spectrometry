@@ -1423,14 +1423,14 @@ $result|ConvertTo-Json -Compress
 
     def test_direct_integration_gate_owns_only_its_tests(self) -> None:
         for path in ("integrations/tests/test_dependencies.py",
-                     "integrations/config/runtime_dependencies.json",
+                     "src/msplatform/workflows/config/runtime_dependencies.json",
                      "integrations/verify_integration.ps1",
                      "src/msplatform/execution/resources/dependencies.ps1",
                      "integrations/runtime/single_flight_frontend.py",
                      "integrations/analysis/plot_single_flight_spatial_six_panel.py"):
             with self.subTest(path=path):
                 expected = {"instrument_assembly_integration"}
-                if path == "integrations/config/runtime_dependencies.json":
+                if path == "src/msplatform/workflows/config/runtime_dependencies.json":
                     expected.add("common_contracts")
                 elif path == "src/msplatform/execution/resources/dependencies.ps1":
                     expected.update(("common_contracts", "host_resource_adapter_tests",
@@ -1452,7 +1452,7 @@ $result|ConvertTo-Json -Compress
                           "orthogonal_accelerator_static"})
 
     def test_direct_integration_gate_routes_its_declared_frozen_dependencies(self) -> None:
-        inventory = json.loads((REPO_ROOT / "integrations/config/runtime_dependencies.json").read_text(encoding="utf-8"))
+        inventory = json.loads((REPO_ROOT / "src/msplatform/workflows/config/runtime_dependencies.json").read_text(encoding="utf-8"))
         for group in inventory["providers"]:
             for dependency in group["files"] + group["python_modules"]:
                 with self.subTest(dependency=dependency["source_repo_path"]):
@@ -2615,7 +2615,7 @@ class RuntimeInventoryRouteTests(unittest.TestCase):
                 shutil.copyfile(REPO_ROOT / relative, destination)
             gate = repo / "integrations/verify_integration.ps1"
             gate.write_text("throw 'PlanOnly must not execute stages'\n", encoding="utf-8")
-            inventory_path = "integrations/config/runtime_dependencies.json"
+            inventory_path = "src/msplatform/workflows/config/runtime_dependencies.json"
             route = dict(stage="instrument_assembly_integration", dependency_profile="locked",
                          repository_integration_group="regression",
                          matches=[dict(prefix="integrations/", reason="integration_changed")],

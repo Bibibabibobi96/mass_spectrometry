@@ -491,7 +491,7 @@ try{
   $startup=Join-Path $package.result_dir 'artifact_capacity_gate_startup.json'
   Write-RunJson -Path $startup -Depth 14 -Value $capacitySession
   $stage='freeze_executable_dependencies'
-  $dependencyPath=Join-Path $repoRoot 'integrations/config/runtime_dependencies.json'
+  $dependencyPath=Join-Path $repoRoot 'src/msplatform/workflows/config/runtime_dependencies.json'
   $frozen=Freeze-ConsumerDependencies -Python $Python -RepoRoot $repoRoot -ContractPath $dependencyPath -InputDir $package.input_dir -OwnerId $projectId -ConsumerId accelerator_interface
   $script:pythonRoot=[string]$frozen.execution_root
   $configuration=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable

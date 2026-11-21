@@ -18,7 +18,7 @@ from msplatform.execution.inputs import python_import_roots
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 INTEGRATION_ROOT = REPO_ROOT / "integrations"
-INVENTORY = INTEGRATION_ROOT / "config/runtime_dependencies.json"
+INVENTORY = REPO_ROOT / "src/msplatform/workflows/config/runtime_dependencies.json"
 DEPENDENCIES = REPO_ROOT / "src/msplatform/execution/resources/dependencies.ps1"
 
 
@@ -45,7 +45,7 @@ class DependencyTests(unittest.TestCase):
             script = root / "freeze.ps1"
             script.write_text("""param($Repo,$Destination,$Python)
 . (Join-Path $Repo 'src/msplatform/execution/resources/dependencies.ps1')
-$null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath (Join-Path $Repo 'integrations/config/runtime_dependencies.json') -InputDir $Destination -OwnerId instrument_assembly -ConsumerId single_reflection_flight
+$null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath (Join-Path $Repo 'src/msplatform/workflows/config/runtime_dependencies.json') -InputDir $Destination -OwnerId instrument_assembly -ConsumerId single_reflection_flight
 """, encoding="utf-8")
             frozen = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(script),
                                     str(REPO_ROOT), str(destination), sys.executable], cwd=root,
@@ -100,9 +100,9 @@ print(json.dumps(field_plan.build_field_plan(Path(sys.argv[2]),Path(sys.argv[3])
             root = Path(directory)
             author = root / "author"
             copy_scientific_core(REPO_ROOT, author)
-            registry = author / "integrations/registry.json"
+            registry = author / "src/msplatform/workflows/config/assembly_registry.json"
             registry.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(REPO_ROOT / "integrations/registry.json", registry)
+            shutil.copyfile(REPO_ROOT / "src/msplatform/workflows/config/assembly_registry.json", registry)
             contract = author / "integrations/config/dependencies.json"
             contract.parent.mkdir(parents=True)
             provider = author / "projects/device"
@@ -227,7 +227,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{author}
             freeze_script.write_text("""param($Repo,$Destination,$Python)
 $ErrorActionPreference='Stop'
 . (Join-Path $Repo 'src/msplatform/execution/resources/dependencies.ps1')
-$null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath (Join-Path $Repo 'integrations/config/runtime_dependencies.json') -InputDir $Destination -OwnerId instrument_assembly -ConsumerId single_reflection_flight
+$null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath (Join-Path $Repo 'src/msplatform/workflows/config/runtime_dependencies.json') -InputDir $Destination -OwnerId instrument_assembly -ConsumerId single_reflection_flight
 """, encoding="utf-8", newline="\n")
             environment = dict(os.environ, PYTHONPATH="", PYTHONNOUSERSITE="1",
                                SIMULATION_PYTHON_EXE=sys.executable,
@@ -414,7 +414,7 @@ with tempfile.TemporaryDirectory() as request_directory:
                         if row.get("resource_suffixes"):
                             paths.update(enumerate_python_sources(REPO_ROOT,
                                 package_roots=[row["source_repo_path"]], resource_suffixes=row["resource_suffixes"]))
-            paths.update({"integrations/registry.json", "integrations/config/runtime_dependencies.json",
+            paths.update({"src/msplatform/workflows/config/assembly_registry.json", "src/msplatform/workflows/config/runtime_dependencies.json",
                           "src/msplatform/execution/resources/dependencies.ps1"})
             for relative in paths:
                 destination = author / relative
@@ -426,7 +426,7 @@ with tempfile.TemporaryDirectory() as request_directory:
 
             def freeze(name):
                 output = root / name
-                script = f". '{DEPENDENCIES}'; $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{author}' -ContractPath '{author / 'integrations/config/runtime_dependencies.json'}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId single_reflection_flight"
+                script = f". '{DEPENDENCIES}'; $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{author}' -ContractPath '{author / 'src/msplatform/workflows/config/runtime_dependencies.json'}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId single_reflection_flight"
                 result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
                     cwd=author, capture_output=True, text=True, encoding="utf-8", timeout=120)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -961,7 +961,9 @@ try {{
                 {"integration_id": "instrument_assembly", "root": "integrations"},
                 {"integration_id": "legacy", "root": "integrations/legacy"},
             ]}
-            (root / "integrations/registry.json").write_text(json.dumps(registry), encoding="utf-8")
+            registry_path = root / "src/msplatform/workflows/config/assembly_registry.json"
+            registry_path.parent.mkdir(parents=True)
+            registry_path.write_text(json.dumps(registry), encoding="utf-8")
             for path in (REPO_ROOT / "common").rglob("*"):
                 if (path.is_file() and path.suffix in {".py", ".ps1", ".json"}
                         and not any(part in {"assets", "__pycache__", "history", "vendor"}
@@ -969,8 +971,9 @@ try {{
                     target = root / path.relative_to(REPO_ROOT)
                     target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(path, target)
-            shutil.copytree(REPO_ROOT / "src/msplatform", root / "src/msplatform",
+            shutil.copytree(REPO_ROOT / "src/msplatform", root / "src/msplatform", dirs_exist_ok=True,
                             ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+            registry_path.write_text(json.dumps(registry), encoding="utf-8")
             groups = []
             for number, (scope, owner, provider) in enumerate((
                 ("integration", "instrument_assembly", "integrations"),

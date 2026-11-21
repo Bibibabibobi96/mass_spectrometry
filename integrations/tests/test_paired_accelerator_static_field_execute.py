@@ -524,7 +524,7 @@ foreach($name in @('header','taskArguments','taskCode')){
 $package=@{run_dir=$Run;log_dir=(Join-Path $Run 'logs')}
 $null=New-Item -ItemType Directory -Force -Path $package.log_dir
 $stage='prepare_comsol_task';$savedModel='';$comsolSourceStage='';$completedComsolExports=$null
-$frozen=Freeze-ConsumerDependencies -Python $Python -RepoRoot $RepoRoot -ContractPath (Join-Path $RepoRoot 'integrations/config/runtime_dependencies.json') -InputDir (Join-Path $Run 'inputs') -OwnerId instrument_assembly -ConsumerId paired_accelerator_static_field
+$frozen=Freeze-ConsumerDependencies -Python $Python -RepoRoot $RepoRoot -ContractPath (Join-Path $RepoRoot 'src/msplatform/workflows/config/runtime_dependencies.json') -InputDir (Join-Path $Run 'inputs') -OwnerId instrument_assembly -ConsumerId paired_accelerator_static_field
 Invoke-Expression $actual_header
 $plan=Invoke-PairedPython 'print(json.dumps(prepare_run(Path(sys.argv[1]))))' @($package.run_dir)
 Invoke-Expression $actual_taskArguments
@@ -559,7 +559,7 @@ foreach($record in $selected){if((Get-RunFileSha256 -Path (Join-Path $RepoRoot $
     def test_real_frozen_closure_prepares_and_materializes_tasks(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);run,author=self.prepared(root)
-            command=f". '{ROOT}/src/msplatform/execution/resources/dependencies.ps1'; $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{ROOT}' -ContractPath '{ROOT}/integrations/config/runtime_dependencies.json' -InputDir '{run}/inputs' -OwnerId instrument_assembly -ConsumerId paired_accelerator_static_field"
+            command=f". '{ROOT}/src/msplatform/execution/resources/dependencies.ps1'; $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{ROOT}' -ContractPath '{ROOT}/src/msplatform/workflows/config/runtime_dependencies.json' -InputDir '{run}/inputs' -OwnerId instrument_assembly -ConsumerId paired_accelerator_static_field"
             result=subprocess.run(['pwsh','-NoProfile','-Command',command],cwd=ROOT,capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=60)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
             snapshot=run/'inputs/runtime_snapshot'

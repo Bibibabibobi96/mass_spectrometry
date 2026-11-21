@@ -103,7 +103,7 @@ class PreparedJointAnalysisTests(unittest.TestCase):
             self.skipTest("PowerShell 7 is unavailable")
         from common.contracts.test_support.fixture_process import run_fixture_process
 
-        inventory = json.loads((REPO / "integrations/config/runtime_dependencies.json").read_text())
+        inventory = json.loads((REPO / "src/msplatform/workflows/config/runtime_dependencies.json").read_text())
         from integrations.tests.test_support.single_reflection_execute_fixture import declared_dependency_paths
         records = [{'source_repo_path': path} for path in declared_dependency_paths(REPO, inventory, 'prepared_joint')]
         support = {"src/msplatform/execution/resources/run_artifact_support.ps1", "src/msplatform/execution/resources/require_powershell7.ps1", "src/msplatform/execution/resources/host_execution_lease.ps1"}
@@ -194,7 +194,7 @@ if os.environ['ANALYSIS_TEST_SEAL_FAIL']=='1': raise RuntimeError('Explicit iner
                     target = repo / relative
                     target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(REPO / relative, target)
-                dependency = repo / "integrations/config/runtime_dependencies.json"
+                dependency = repo / "src/msplatform/workflows/config/runtime_dependencies.json"
                 dependency.parent.mkdir(parents=True, exist_ok=True)
                 dependency.write_text(json.dumps(inventory))
                 helpers = repo / "src/msplatform/execution/resources/run_artifact_support.ps1"
@@ -491,8 +491,8 @@ Invoke-Expression $code
 $sourceRefFunction=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Get-PreparedJointSourceReferences'},$true)
 Invoke-Expression $sourceRefFunction.Extent.Text
 $repoRoot=$TestRoot;$workspaceRoot=$TestRoot;$projectId='instrument_assembly'
-New-Item -ItemType Directory -Path (Join-Path $repoRoot 'integrations/config')|Out-Null
-@{schema_version=2;role='integration_runtime_dependencies';owner_id='instrument_assembly';consumer_ids=@('prepared_joint');providers=@()}|ConvertTo-Json -Depth 5|Set-Content (Join-Path $repoRoot 'integrations/config/runtime_dependencies.json')
+New-Item -ItemType Directory -Path (Join-Path $repoRoot 'src/msplatform/workflows/config')|Out-Null
+@{schema_version=2;role='integration_runtime_dependencies';owner_id='instrument_assembly';consumer_ids=@('prepared_joint');providers=@()}|ConvertTo-Json -Depth 5|Set-Content (Join-Path $repoRoot 'src/msplatform/workflows/config/runtime_dependencies.json')
 function Freeze-ConsumerDependencies {
  param($RepoRoot,$ContractPath,$InputDir,$OwnerId,$ConsumerId,$Python)
  if($Python-ne'mock'-or$OwnerId-ne'instrument_assembly'-or$ConsumerId-ne'prepared_joint'){throw 'Wrong freeze owner/consumer'}
@@ -751,7 +751,7 @@ foreach($kind in @('Prepared','Legacy')){
         inputs = fixture.root / "inputs"
         freeze = f"""
 . '{REPO / 'src/msplatform/execution/resources/dependencies.ps1'}'
-$path='{REPO / 'integrations/config/runtime_dependencies.json'}'
+$path='{REPO / 'src/msplatform/workflows/config/runtime_dependencies.json'}'
 $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO}' -ContractPath $path -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId prepared_joint
 """
         completed = subprocess.run([pwsh, "-NoProfile", "-Command", freeze], cwd=REPO,

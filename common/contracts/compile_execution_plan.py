@@ -388,7 +388,7 @@ def compile_integration_execution(owner: str, workflow_id: str, run_id: str,
                                   qualification: str = "none") -> dict[str, Any]:
     """Select one declared assembly owner entry; no component physics is synthesized."""
     validate_run_id(run_id)
-    path = REPO_ROOT/"integrations/registry.json"
+    path = REPO_ROOT/"src/msplatform/workflows/config/assembly_registry.json"
     document = load_json(path)
     validate_schema(document, "integration_registry.schema.json")
     owners = [item for item in document["integrations"] if item["integration_id"] == owner]

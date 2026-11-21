@@ -144,7 +144,7 @@ function Invoke-PreparedJointTrial {
       -SourceReferences @(Get-PreparedJointSourceReferences -RunDirectories @($prepared,$parentRun,$TrajectoryEquivalenceReferenceRunPath)) -Owner "run-artifact-workflow:${projectId}:$jointRunId"
     Write-RunJson -Path (Join-Path $resultDir 'artifact_capacity_gate_startup.json') -Depth 14 -Value $capacity
     $stage='freeze_executable_dependencies'
-    $dependencyPath=Join-Path $repoRoot 'integrations/config/runtime_dependencies.json'
+    $dependencyPath=Join-Path $repoRoot 'src/msplatform/workflows/config/runtime_dependencies.json'
     $frozen=Freeze-ConsumerDependencies -Python $Python -RepoRoot $repoRoot -ContractPath $dependencyPath -InputDir (Join-Path $runDir 'inputs') -OwnerId $projectId -ConsumerId prepared_joint
     $script:pythonRoot=[string]$frozen.execution_root
     $entryIdentity=@($frozen.identities|Where-Object{$_.source_repo_path-ceq'integrations/workflows/prepared_joint/execute.ps1'})
@@ -480,7 +480,7 @@ function Invoke-PreparedJointAnalysis {
       -RunDirectory $runDir -CommittedNewBytes ([int64]$recording.output_budget_bytes) -ProtectedPaths @($runDir) `
       -SourceReferences @(Get-PreparedJointSourceReferences -RunDirectories @($source)) -Owner "run-artifact-workflow:${projectId}:$analysisRunId"
     $stage='freeze_executable_dependencies'
-    $dependencyPath=Join-Path $repoRoot 'integrations/config/runtime_dependencies.json'
+    $dependencyPath=Join-Path $repoRoot 'src/msplatform/workflows/config/runtime_dependencies.json'
     $frozen=Freeze-ConsumerDependencies -Python $Python -RepoRoot $repoRoot -ContractPath $dependencyPath -InputDir $inputDir -OwnerId $projectId -ConsumerId prepared_joint
     $script:pythonRoot=[string]$frozen.execution_root
     $entryIdentity=@($frozen.identities|Where-Object{$_.source_repo_path-ceq'integrations/workflows/prepared_joint/execute.ps1'})

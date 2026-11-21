@@ -471,7 +471,7 @@ try{
     if(-not$ownsCapacitySession){$capacitySession=(Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession -ProtectedPaths @($continuationParent)).session}
   }
   $failureStage='freeze_executable_dependencies'
-  $dependencyPath=Join-Path $repoRoot 'integrations/config/runtime_dependencies.json'
+  $dependencyPath=Join-Path $repoRoot 'src/msplatform/workflows/config/runtime_dependencies.json'
   $frozen=Freeze-ConsumerDependencies -Python $Python -RepoRoot $repoRoot -ContractPath $dependencyPath -InputDir (Join-Path $runDir 'inputs') -OwnerId $projectId -ConsumerId oa_mr
   $script:pythonRoot=[string]$frozen.execution_root
   $entryIdentity=@($frozen.identities|Where-Object{$_.source_repo_path-ceq'integrations/workflows/oa_mr/execute.ps1'})

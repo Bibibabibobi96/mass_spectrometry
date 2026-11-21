@@ -8,7 +8,7 @@ function Get-DependencyIntegrationRoot {
     [Parameter(Mandatory)][string]$RepoRoot,
     [Parameter(Mandatory)][string]$OwnerId
   )
-  $registry = Get-Content -LiteralPath (Join-Path $RepoRoot 'integrations/registry.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+  $registry = Get-Content -LiteralPath (Join-Path $RepoRoot 'src/msplatform/workflows/config/assembly_registry.json') -Raw -Encoding UTF8 | ConvertFrom-Json
   $entries = @($registry.integrations | Where-Object { $_.integration_id -ceq $OwnerId })
   if ($entries.Count -ne 1) {
     throw "Dependency integration owner must be registered exactly once: $OwnerId"
@@ -167,11 +167,12 @@ function Publish-DependencyInventory {
     }
   }
   $relative = [IO.Path]::GetRelativePath([IO.Path]::GetFullPath($RepoRoot), [IO.Path]::GetFullPath($ContractPath)).Replace('\','/')
+  $isCanonicalContract=$relative-ceq'src/msplatform/workflows/config/runtime_dependencies.json'
   $contractDependency = [pscustomobject]@{
     id = 'dependency_contract'
-    provider_scope = 'integration'
-    provider_project = $OwnerId
-    provider_repo_path = Get-DependencyIntegrationRoot -RepoRoot $RepoRoot -OwnerId $OwnerId
+    provider_scope = $(if($isCanonicalContract){'repository_core'}else{'integration'})
+    provider_project = $(if($isCanonicalContract){'msplatform'}else{$OwnerId})
+    provider_repo_path = $(if($isCanonicalContract){'src/msplatform'}else{Get-DependencyIntegrationRoot -RepoRoot $RepoRoot -OwnerId $OwnerId})
     source_repo_path = $relative
     frozen_filename = 'runtime_snapshot/' + $relative
     run_input_name = 'dependency_contract'
@@ -221,8 +222,10 @@ function Freeze-ConsumerDependencies {
   $repo = [IO.Path]::GetFullPath($RepoRoot)
   $ownerRoot = Get-DependencyIntegrationRoot -RepoRoot $repo -OwnerId $OwnerId
   $contractRelative = [IO.Path]::GetRelativePath($repo, [IO.Path]::GetFullPath($ContractPath)).Replace('\','/')
-  if (-not (Test-DependencyPathWithin -Path $ContractPath -Root (Join-Path $repo $ownerRoot))) {
-    throw 'Dependency contract escapes its registered integration owner.'
+  $canonicalContract=[IO.Path]::GetFullPath((Join-Path $repo 'src/msplatform/workflows/config/runtime_dependencies.json'))
+  if ([IO.Path]::GetFullPath($ContractPath)-ne$canonicalContract-and
+      -not (Test-DependencyPathWithin -Path $ContractPath -Root (Join-Path $repo $ownerRoot))) {
+    throw 'Dependency contract escapes its registered integration owner or canonical package resource.'
   }
   $ids = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
   $sources = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)

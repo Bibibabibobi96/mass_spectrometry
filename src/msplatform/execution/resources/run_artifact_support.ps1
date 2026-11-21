@@ -65,7 +65,7 @@ function Invoke-CompiledExecutionPlan {
     $contractPath=[IO.Path]::GetFullPath([string]$plan.execution_contract.path)
     if(-not$contractPath.StartsWith($repository+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'Execution contract is outside the repository.'}
     if($plan.ContainsKey('owner_kind')-and$plan.owner_kind-eq'integration'){
-      if($contractPath-ne[IO.Path]::GetFullPath((Join-Path $repository 'integrations/registry.json'))){throw 'Integration execution must use the registered owner contract.'}
+      if($contractPath-ne[IO.Path]::GetFullPath((Join-Path $repository 'src/msplatform/workflows/config/assembly_registry.json'))){throw 'Integration execution must use the registered owner contract.'}
     }else{
       $registryPath=Join-Path $repository 'config/project_registry.json'
       $registryStream=[IO.File]::Open($registryPath,'Open','Read','Read');$streams.Add($registryStream)

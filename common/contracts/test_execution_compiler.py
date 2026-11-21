@@ -300,8 +300,9 @@ foreach($record in $compiledInputs.files){
                 outputs=["trajectory_artifact_ref"], simulation_paths=["continuous_assembly"], recipes=[],
                 limitations=[], purpose="assembly_propagation", action="run", tools=["python"],
                 model="public stage", run_identity="backend_generated")
-            registry = root / "integrations/registry.json"
+            registry = root / "src/msplatform/workflows/config/assembly_registry.json"
             def write_registry():
+                registry.parent.mkdir(parents=True, exist_ok=True)
                 registry.write_text(json.dumps(dict(schema_version=1, role="integration_registry",
                     integrations=[dict(integration_id="instrument_assembly", root="integrations",
                                        workflows=[workflow])])), encoding="utf8")
@@ -363,7 +364,8 @@ foreach($record in $compiledInputs.files){
                 optional_arguments={"scalar_field_basis": ["-ScalarFieldBasis", "{scalar_field_basis}"]},
                 outputs=["trajectory_artifact_ref"], simulation_paths=["continuous_assembly"], recipes=[],
                 limitations=[], purpose="assembly_propagation", action="run", tools=["python"], model="public stage")
-            registry = root / "integrations/registry.json"
+            registry = root / "src/msplatform/workflows/config/assembly_registry.json"
+            registry.parent.mkdir(parents=True)
             registry.write_text(json.dumps(dict(schema_version=1, role="integration_registry",
                 integrations=[dict(integration_id="instrument_assembly", root="integrations", workflows=[workflow])])), encoding="utf8")
             with patch("common.contracts.compile_execution_plan.REPO_ROOT", root):
@@ -412,9 +414,10 @@ foreach($record in $compiledInputs.files){
                 simulation_paths=['continuous_assembly'], recipes=[], limitations=[],
                 purpose='assembly_propagation', action='run', tools=['python'], model='public stage',
                 run_identity='backend_generated')
-            registry = root / 'integrations/registry.json'
+            registry = root / 'src/msplatform/workflows/config/assembly_registry.json'
 
             def write_registry():
+                registry.parent.mkdir(parents=True, exist_ok=True)
                 registry.write_text(json.dumps(dict(schema_version=1, role='integration_registry',
                     integrations=[dict(integration_id='instrument_assembly', root='integrations',
                                        workflows=[workflow])])), encoding='utf8')
@@ -459,7 +462,9 @@ $input=Get-Content $Request -Raw|ConvertFrom-Json
                 arguments=["-Request", "{request}", "-PrismVoltage", "{voltage}", "-RunId", "{run_id}"],
                 outputs=["receipt"], simulation_paths=["continuous_assembly"], recipes=[], limitations=[],
                 purpose="assembly_propagation", action="run", tools=["python"], model="inert fixture")
-            (integration/"registry.json").write_text(json.dumps(dict(schema_version=1, role="integration_registry",
+            registry = root / "src/msplatform/workflows/config/assembly_registry.json"
+            registry.parent.mkdir(parents=True)
+            registry.write_text(json.dumps(dict(schema_version=1, role="integration_registry",
                 integrations=[dict(integration_id="instrument_assembly", root="integrations", workflows=[workflow])])))
             with patch("common.contracts.compile_execution_plan.REPO_ROOT", root):
                 result = compile_integration_execution("instrument_assembly", "fixture", self.run_id,
