@@ -448,7 +448,7 @@ record 摘要，但只打开调用方明确列出的文件并逐字节核验，�
 这是项目对官方 `point`／`refine` API的边界组装，不是新的场求解算法；2026-10-22核对的SIMION 2020
 本机依据为 `examples/field_emission/refinelib.lua`、`fe_geom.lua` 与 `examples/misc/pa_move_electrode.lua`。
 计算域大小、零远边界适用性、透明理想网格和实际飞行验证仍由调用项目负责。
-[`voltageize_pa0.lua`](voltageize_pa0.lua)使用SIMION原生PA-family Fast Adjust，把调用方明确给出的
+[`voltageize_pa0.lua`](../../src/msplatform/backends/simion/resources/voltageize_pa0.lua)使用SIMION原生PA-family Fast Adjust，把调用方明确给出的
 `ID=V`稀疏电压表另存为临时工作点PA0；它不Refine、不覆盖源family，也不拥有电极分组或电压选择。
 该入口只适用于新建、可写、一次性的 build staging family，禁止对已发布 cache 或其物化副本执行。
 它可避免构建期逐节点Lua叠加和重复建场；调用方仍须验证family identity、
