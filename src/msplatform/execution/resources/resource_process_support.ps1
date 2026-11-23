@@ -1,6 +1,11 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 
+function ConvertTo-GateProcessArgument {
+  param([Parameter(Mandatory)][string]$Value)
+  return '"' + $Value.Replace('"', '\"') + '"'
+}
+
 if(-not('MultipoleMemoryStatus' -as[type])){
   Add-Type -TypeDefinition @'
 using System;

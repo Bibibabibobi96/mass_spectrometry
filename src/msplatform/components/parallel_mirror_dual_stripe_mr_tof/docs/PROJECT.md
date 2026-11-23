@@ -5,6 +5,8 @@
 完整 MR 几何、固定镜、IP LP60 平移接口、原 ID/clock/6D/weight、未知终态、接触/损失及五质量
 合同保持原实现。本次所有权迁移不重跑原生求解，不改变 N100 无 MR 到达时的标签、物理或资格边界。
 
+The coarse-raw, corridor-qualification and response-bank entrypoints resolve code and scientific defaults from the selected Python's installed `msplatform` package. Their `WorkspaceRoot`, `ArtifactRoot` and `PythonExe` are explicit and independent; response workers retain separate admission, split logs, stop-dispatch and natural-drain behavior. Focused software regression passed 48 MR tests and 49 public-gate tests. No native solver or complete outside-install acceptance follows from those tests.
+
 The native static-field PowerShell owner now resolves implementation resources
 from the installed package and obtains workspace, Python, ledger and policy from
 an explicit HostContext. Prepare, metadata binding and validation use isolated

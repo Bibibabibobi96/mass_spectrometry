@@ -18,6 +18,24 @@ class NativeCorridorQualificationRunnerTest(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.source = RUNNER.read_text(encoding="utf-8-sig")
 
+    def test_native_runners_separate_installed_code_from_output_roots(self) -> None:
+        runners = [RUNNER.parent / name for name in (
+            "run_native_analyzer_coarse_raw.ps1",
+            "run_native_corridor_qualification.ps1",
+            "run_native_corridor_response_bank.ps1",
+        )]
+        for runner in runners:
+            source = runner.read_text(encoding="utf-8-sig")
+            for parameter in ("WorkspaceRoot", "ArtifactRoot", "PythonExe"):
+                self.assertIn(f"[Parameter(Mandatory)][string]${parameter}", source)
+            self.assertIn("import msplatform", source)
+            self.assertIn("Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1'", source)
+            self.assertNotIn("parallel_gate_support.ps1", source)
+            self.assertNotIn(".venv", source)
+            self.assertNotIn("Split-Path -Parent $repoRoot", source)
+            self.assertNotIn("Join-Path $repoRoot 'src", source)
+        self.assertIn("resource_process_support.ps1", self.source)
+
     def test_one_owner_and_one_common_transaction(self) -> None:
         source = self.source
         self.assertFalse(REMOVED_STREAM.exists())

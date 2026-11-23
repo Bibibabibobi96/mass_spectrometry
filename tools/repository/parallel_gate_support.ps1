@@ -1,6 +1,10 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+$processResource=Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'src/msplatform/execution/resources/resource_process_support.ps1'
+if(-not(Test-Path -LiteralPath $processResource -PathType Leaf)){throw 'Execution process resource is unavailable.'}
+. $processResource
+
 function Get-GateResourceDeclaration {
     <# Catalog/item/plan metadata selects an existing public admission profile. #>
     param([Parameter(Mandatory)][string]$Name, $Metadata=$null)
@@ -414,11 +418,6 @@ function Resolve-GateConcurrency {
     param([Parameter(Mandatory)][ValidateRange(0, 32)][int]$Requested)
     if ($Requested -gt 0) { return $Requested }
     return [Math]::Max(1, [Math]::Min(8, [Environment]::ProcessorCount))
-}
-
-function ConvertTo-GateProcessArgument {
-    param([Parameter(Mandatory)][string]$Value)
-    return '"' + $Value.Replace('"', '\"') + '"'
 }
 
 function Remove-GateTemporaryDirectory {

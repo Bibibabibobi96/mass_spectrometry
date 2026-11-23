@@ -130,12 +130,12 @@ $commands=@($ast.FindAll({param($n) $n -is [System.Management.Automation.Languag
 if($commands.Count-ne1){throw 'Expected one actual response recipe writer'}
 $responseReceiptPath=$Output
 function Write-RunJson {param($Path,$Depth,$Value) $Value|ConvertTo-Json -Depth $Depth|Set-Content -LiteralPath $Path -Encoding utf8}
-Invoke-Expression $commands[0].Extent.Text
+. ([scriptblock]::Create($commands[0].Extent.Text.Replace('$PSScriptRoot',"'$(Split-Path -Parent $Source)'")))
 '''
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
             fixture = root / 'fixture.ps1'
-            fixture.write_text(script, encoding='utf-8')
+            fixture.write_text(script, encoding='utf-8-sig')
             output = root / 'recipe.json'
             result = subprocess.run(['pwsh', '-NoProfile', '-NonInteractive', '-File', str(fixture),
                 str(PROJECT.parents[3] / 'src/msplatform/backends/simion/resources/run_native_corridor_response_bank.ps1'), str(PROJECT.parents[3]), str(output)],
@@ -260,7 +260,7 @@ if($fallbackCalls){throw 'Registered receipt was written outside the public owne
             self.assertEqual(before["geometry"], after["geometry"])
 
     def test_cache_identity_excludes_run_specific_freeze_manifest_hash(self) -> None:
-        source = (PROJECT.parents[3] / 'src/msplatform/workflows/resources/native_corridor_response_bank.py').read_text(encoding='utf-8-sig')
+        source = (PROJECT.parents[3] / 'src/msplatform/backends/simion/native_corridor_response_bank.py').read_text(encoding='utf-8-sig')
         self.assertIn('for name in FROZEN_NAMES[:3]', source)
         self.assertNotIn('for name in FROZEN_NAMES\n', source)
 
@@ -307,6 +307,8 @@ if($fallbackCalls){throw 'Registered receipt was written outside the public owne
         self.assertIn("+$frozenOutputs+$continuationOutputs", source)
         self.assertNotIn("--source-generation-manifest", source)
         self.assertIn("-InternalCoarseBasisDirectory $CoarseBasisDirectory", source)
+        self.assertIn("-WorkspaceRoot $workspaceRoot", source)
+        self.assertIn("-ArtifactRoot $artifactRoot", source)
         self.assertIn("$coarseBasisDirectory=[string]$coarseBank.directory", source)
         self.assertIn("Ensure-CoarseBasisBank", source)
         self.assertIn("native_corridor_coarse_basis_bank", source)

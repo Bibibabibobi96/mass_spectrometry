@@ -1,10 +1,12 @@
 [CmdletBinding()]
 param(
   [Parameter(Mandatory)][string]$FrozenInputDirectory,
+  [Parameter(Mandatory)][string]$WorkspaceRoot,
+  [Parameter(Mandatory)][string]$ArtifactRoot,
+  [Parameter(Mandatory)][string]$PythonExe,
   [string]$ContractPath='',
   [string]$RunId='',
   [string]$SimionExe='',
-  [string]$PythonExe='',
   [ValidateRange(0,8)][int]$InternalResponseId=0,
   [string]$InternalBuildDirectory='',
   [string]$InternalScratchDirectory='',
@@ -16,16 +18,18 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $projectId='parallel_mirror_dual_stripe_mr_tof'
-$repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
-$workspaceRoot=Split-Path -Parent $repoRoot
-$projectRoot=Join-Path $repoRoot "src\msplatform\components\$projectId"
-$artifactRoot=Join-Path $workspaceRoot 'artifacts'
+$workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path
+$artifactRoot=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)
 $projectArtifactRoot=Join-Path $artifactRoot "projects\$projectId"
 $cacheRoot=Join-Path $artifactRoot 'common\simion\pa_family_cache'
 $publishedPinReason='MR-TOF native adjustable analyzer PA family; rebuild only on frozen geometry identity change'
-$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
+$python=[IO.Path]::GetFullPath($PythonExe)
 $simion=if($SimionExe){[IO.Path]::GetFullPath($SimionExe)}else{Join-Path $env:ProgramFiles 'SIMION-2020\simion.exe'}
-$contract=if($ContractPath){[IO.Path]::GetFullPath($ContractPath)}else{Join-Path $repoRoot 'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json'}
+$packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
+if($LASTEXITCODE-ne0){throw 'Installed msplatform package is unavailable.'}
+$packageRoot=(Resolve-Path -LiteralPath $packageRootText).Path
+$repoRoot=$workspaceRoot
+$contract=if($ContractPath){[IO.Path]::GetFullPath($ContractPath)}else{Join-Path $packageRoot 'components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json'}
 $frozenDirectory=(Resolve-Path -LiteralPath $FrozenInputDirectory).Path
 $identityPath=Join-Path $frozenDirectory 'native_corridor_identity.json'
 $planPath=Join-Path $frozenDirectory 'native_corridor_plan.json'
@@ -37,15 +41,13 @@ foreach($path in @($python,$identityPath,$planPath,$recipePath,$freezeManifestPa
 }
 if(-not$RunId){$RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__build__simion__mrtof-native-corridor-qualification'}
 
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
-. (Join-Path $repoRoot 'tools\repository\parallel_gate_support.ps1')
+. (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
+. (Join-Path $packageRoot 'execution/resources/resource_process_support.ps1')
 
 function Invoke-ProjectPython {
   param([Parameter(Mandatory)][string[]]$Arguments)
-  $lines=@(Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
-    & $python @Arguments
-    if($LASTEXITCODE-ne0){throw "Python stage failed: $($Arguments -join ' ')"}
-  })
+  $lines=@(& $python -I -B @Arguments)
+  if($LASTEXITCODE-ne0){throw "Python stage failed: $($Arguments -join ' ')"}
   return $lines
 }
 
@@ -229,7 +231,7 @@ function Invoke-NativeCorridorResponseMemberBuild {
     $responseGem=Join-Path $memberScratch 'prebiased_response.gem'
     Invoke-ProjectPython -Arguments @('-m','msplatform.backends.simion.native_corridor_geometry','--accelerator-component-contract',$script:oaComponentContractFrozen,'--accelerator-geometry-profile-id',$script:oaGeometryProfileId,'--contract',$contract,'--output',$responseGem,'--active-physical-ids',$sourceActive,'--basis-voltage-v','10000')|Out-Null
     $compiledMemberExecution=Join-Path ([string]$scratchAlias.execution_alias) 'prebiased_response.pa#'
-    & (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\run_gem2pa.ps1') -SimionExe $simion `
+    & (Join-Path $PSScriptRoot 'run_gem2pa.ps1') -SimionExe $simion `
       -GemPath (Join-Path ([string]$scratchAlias.execution_alias) 'prebiased_response.gem') `
       -OutputPaPath $compiledMemberExecution
     $compiledMember=Join-Path $memberScratch 'prebiased_response.pa#'
@@ -245,7 +247,7 @@ function Invoke-NativeCorridorResponseMemberBuild {
     }elseif(Test-Path -LiteralPath $compiledSurface){
       throw "surface=none unexpectedly produced a surface companion for ID $ResponseId"
     }
-    & $simion --nogui --noprompt lua (Join-Path $repoRoot 'src/msplatform/backends/simion/resources/build_dirichlet_patch_basis.lua') `
+    & $simion --nogui --noprompt lua (Join-Path $PSScriptRoot 'build_dirichlet_patch_basis.lua') `
       $scratchMember $basis ($coarseOriginValues-join',') ($corridorOriginValues-join',') 'x_mirror_five_faces'
     if($LASTEXITCODE-ne0){throw "Native-corridor response build failed for ID $ResponseId"}
     Publish-NativeCorridorBuiltMember -ScratchPath $memberPath -DestinationPath $destination
@@ -272,7 +274,8 @@ function Invoke-NativeCorridorResponseWave {
       $stdout=Join-Path $resultDir ('native_corridor_response_{0:D2}.stdout.log'-f$id)
       $stderr=Join-Path $resultDir ('native_corridor_response_{0:D2}.stderr.log'-f$id)
       $arguments=@('-NoProfile','-File',$PSCommandPath,'-FrozenInputDirectory',$frozenDirectory,
-        '-RunId',$RunId,'-SimionExe',$simion,'-PythonExe',$python,'-InternalResponseId',([string]$id),
+        '-RunId',$RunId,'-SimionExe',$simion,'-PythonExe',$python,
+        '-WorkspaceRoot',$workspaceRoot,'-ArtifactRoot',$artifactRoot,'-InternalResponseId',([string]$id),
         '-InternalBuildDirectory',$BuildDirectory,'-InternalScratchDirectory',$ScratchDirectory,
         '-InternalCoarseRawGeometryPath',$CoarseRawGeometryPath,'-InternalCoarseBasisDirectory',$CoarseBasisDirectory,
         '-InternalCoarseOrigin',$CoarseOrigin)
@@ -280,6 +283,8 @@ function Invoke-NativeCorridorResponseWave {
       $process=Start-Process -FilePath (Get-Process -Id $PID).Path -ArgumentList $argumentText `
         -WorkingDirectory $repoRoot -WindowStyle Hidden -RedirectStandardOutput $stdout `
         -RedirectStandardError $stderr -Environment @{
+          PYTHONPATH=''
+          PYTHONNOUSERSITE='1'
           MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN=''
           MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID=''
           MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE=''
@@ -360,7 +365,7 @@ function Invoke-NativeCorridorFamilyBuild {
       Invoke-ProjectPython -Arguments @('-m','msplatform.backends.simion.native_corridor_geometry','--accelerator-component-contract',$script:oaComponentContractFrozen,'--accelerator-geometry-profile-id',$script:oaGeometryProfileId,'--contract',$contract,'--output',$gem)|Out-Null
       $mapping=@($plan.physical_to_local_electrode_id.PSObject.Properties|Sort-Object {[int]$_.Name}|ForEach-Object{"$($_.Name):$($_.Value)"})-join','
       Invoke-ProjectPython -Arguments @('-m','msplatform.backends.simion.native_corridor_geometry','--accelerator-component-contract',$script:oaComponentContractFrozen,'--accelerator-geometry-profile-id',$script:oaGeometryProfileId,'--contract',$contract,'--output',$mappedGem,'--physical-to-local-map',$mapping)|Out-Null
-      & (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\run_gem2pa.ps1') -SimionExe $simion -GemPath $mappedGem -OutputPaPath $rawScratch 2>&1|Set-Content -LiteralPath $buildLog
+      & (Join-Path $PSScriptRoot 'run_gem2pa.ps1') -SimionExe $simion -GemPath $mappedGem -OutputPaPath $rawScratch 2>&1|Set-Content -LiteralPath $buildLog
       Publish-NativeCorridorBuiltMember -ScratchPath (Join-Path $scratchDirectory 'mrtof_analyzer_corridor.pa#') -DestinationPath (Join-Path $buildDirectory 'mrtof_analyzer_corridor.pa#')
     }
     if('mrtof_analyzer_corridor.pa0'-in$missing){
@@ -372,7 +377,7 @@ function Invoke-NativeCorridorFamilyBuild {
       $controllerScratch=Join-Path ([string]$controllerAlias.execution_alias) 'mrtof_analyzer_corridor.pa0'
       Copy-Item -LiteralPath (Join-Path $buildDirectory 'mrtof_analyzer_corridor.pa#') -Destination $controllerRaw
       try{
-        & $simion --nogui --noprompt lua (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\assemble_native_fast_adjust_family.lua') --controller $controllerRawExecution $controllerScratch 8 2>&1|Add-Content -LiteralPath $buildLog
+        & $simion --nogui --noprompt lua (Join-Path $PSScriptRoot 'assemble_native_fast_adjust_family.lua') --controller $controllerRawExecution $controllerScratch 8 2>&1|Add-Content -LiteralPath $buildLog
         if($LASTEXITCODE-ne0){throw 'Native-corridor controller creation failed.'}
         Publish-NativeCorridorBuiltMember -ScratchPath (Join-Path $controllerDirectory 'mrtof_analyzer_corridor.pa0') -DestinationPath (Join-Path $buildDirectory 'mrtof_analyzer_corridor.pa0')
       }finally{

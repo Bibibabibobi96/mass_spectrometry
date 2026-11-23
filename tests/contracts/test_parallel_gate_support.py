@@ -255,6 +255,8 @@ catch{{if($_.Exception.Message-eq'accepted missing invocation'){{throw}};$reject
         preflight.parent.mkdir(parents=True)
         (root / "src/msplatform/components").mkdir(parents=True)
         shutil.copyfile(ROOT / preflight.relative_to(root), preflight)
+        process_support = root / "src/msplatform/execution/resources/resource_process_support.ps1"
+        shutil.copyfile(ROOT / process_support.relative_to(root), process_support)
         with (common/"gate_catalog_support.ps1").open("a",encoding="utf-8",newline="\n") as stream:
             stream.write("\n$script:originalCatalogReader=${function:Read-GateCatalog}\nfunction Read-GateCatalog {param($RepoRoot);Add-Content -LiteralPath $env:PLAN_READ_COUNT -Value 'read';& $script:originalCatalogReader -RepoRoot $RepoRoot}\n")
         (common/"host_execution_lease.ps1").write_text("function Get-HostResourceBudget {param($Role,$Stage) @{}}\nfunction Enter-HostResourceStage {param($Role,$Stage,$Budget);Add-Content -LiteralPath $env:PLAN_ADMISSION_COUNT -Value 'enter';@{}}\nfunction Exit-HostResourceStage {param($Lease)}\n",encoding="utf-8",newline="\n")
@@ -745,8 +747,8 @@ if($script:released-ne0){{throw 'unacquired lease was released'}}
             for path in (common, temporary, root / "src/msplatform/components", root / "tests"):
                 path.mkdir(parents=True)
             for name in ("verify.ps1", "parallel_gate_support.ps1",
-                         "require_powershell7.ps1"):
-                source = ROOT / ("src/msplatform/execution/resources" if name == "require_powershell7.ps1" else "tools/repository") / name
+                         "require_powershell7.ps1", "resource_process_support.ps1"):
+                source = ROOT / ("src/msplatform/execution/resources" if name in ("require_powershell7.ps1", "resource_process_support.ps1") else "tools/repository") / name
                 destination = root / source.relative_to(ROOT)
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(source, destination)
@@ -825,8 +827,8 @@ exit $LASTEXITCODE
                 common = root / 'tools/repository'
                 for path in (common, root / 'temporary'):
                     path.mkdir(parents=True)
-                for name in ('verify.ps1', 'parallel_gate_support.ps1', 'require_powershell7.ps1'):
-                    source = ROOT / ('src/msplatform/execution/resources' if name == 'require_powershell7.ps1' else 'tools/repository') / name
+                for name in ('verify.ps1', 'parallel_gate_support.ps1', 'require_powershell7.ps1', 'resource_process_support.ps1'):
+                    source = ROOT / ('src/msplatform/execution/resources' if name in ('require_powershell7.ps1', 'resource_process_support.ps1') else 'tools/repository') / name
                     destination = root / source.relative_to(ROOT)
                     destination.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(source, destination)
@@ -1046,8 +1048,8 @@ Write-Output 'ORIGINAL_LAUNCH_FAILURE_PRESERVED'
             common = root / "tools/repository"
             common.mkdir(parents=True)
             for name in ("verify.ps1", "parallel_gate_support.ps1",
-                         "require_powershell7.ps1"):
-                source = ROOT / ("src/msplatform/execution/resources" if name == "require_powershell7.ps1" else "tools/repository") / name
+                         "require_powershell7.ps1", "resource_process_support.ps1"):
+                source = ROOT / ("src/msplatform/execution/resources" if name in ("require_powershell7.ps1", "resource_process_support.ps1") else "tools/repository") / name
                 destination = root / source.relative_to(ROOT)
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(source, destination)
@@ -1356,8 +1358,8 @@ if ($script:performed -ne 1) {{ throw 'nested action did not execute once' }}
             common = root / "tools/repository"
             common.mkdir(parents=True)
             (root / "src/msplatform/components").mkdir(parents=True)
-            for name in ("verify.ps1", "parallel_gate_support.ps1", "gate_catalog_support.ps1", "require_powershell7.ps1"):
-                source = ROOT / ("src/msplatform/execution/resources" if name == "require_powershell7.ps1" else "tools/repository") / name
+            for name in ("verify.ps1", "parallel_gate_support.ps1", "gate_catalog_support.ps1", "require_powershell7.ps1", "resource_process_support.ps1"):
+                source = ROOT / ("src/msplatform/execution/resources" if name in ("require_powershell7.ps1", "resource_process_support.ps1") else "tools/repository") / name
                 destination = root / source.relative_to(ROOT)
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(source, destination)
@@ -1913,6 +1915,9 @@ try {{
             (root/"src/msplatform/components").mkdir(parents=True)
             for name in ("gate_catalog_support.ps1", "parallel_gate_support.ps1"):
                 shutil.copyfile(ROOT / "tools/repository" / name, common / name)
+            process_support = root / "src/msplatform/execution/resources/resource_process_support.ps1"
+            process_support.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / process_support.relative_to(root), process_support)
             route=dict(stage="fixture",owner="fixture",dependency_profile="locked",repository_integration_group="regression",
                 matches=[dict(prefix="tools/repository/",reason="fixture")],
                 command=dict(runner="python",arguments=["-m","unittest","discover","-s","tests/contracts","-p","test_*.py"]),
@@ -1986,8 +1991,8 @@ ConvertTo-Json -InputObject $parts -Depth 32 -Compress
             (root/"tests/__init__.py").write_text("", encoding="utf-8")
             (modules_root/"__init__.py").write_text("", encoding="utf-8")
             (root/"temporary").mkdir(); (root/"src").mkdir()
-            for name in ("verify.ps1","parallel_gate_support.ps1","require_powershell7.ps1","gate_unittest.py"):
-                source = ROOT / ("src/msplatform/execution/resources" if name == "require_powershell7.ps1" else "tools/repository") / name
+            for name in ("verify.ps1","parallel_gate_support.ps1","require_powershell7.ps1","resource_process_support.ps1","gate_unittest.py"):
+                source = ROOT / ("src/msplatform/execution/resources" if name in ("require_powershell7.ps1", "resource_process_support.ps1") else "tools/repository") / name
                 destination = root / source.relative_to(ROOT)
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(source, destination)
@@ -2073,8 +2078,8 @@ function Read-GateCatalog {param($RepoRoot)
             for path in (common, root / "temporary", root / "tests/projects/fixture/tests"):
                 path.mkdir(parents=True)
             for name in ("verify.ps1", "parallel_gate_support.ps1",
-                         "require_powershell7.ps1"):
-                source = ROOT / ("src/msplatform/execution/resources" if name == "require_powershell7.ps1" else "tools/repository") / name
+                         "require_powershell7.ps1", "resource_process_support.ps1"):
+                source = ROOT / ("src/msplatform/execution/resources" if name in ("require_powershell7.ps1", "resource_process_support.ps1") else "tools/repository") / name
                 destination = root / source.relative_to(ROOT)
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(source, destination)

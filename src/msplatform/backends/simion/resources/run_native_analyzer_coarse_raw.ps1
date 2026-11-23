@@ -1,24 +1,35 @@
 [CmdletBinding()]
-param([Parameter(Mandatory)][string]$AcceleratorComponentContractPath,[Parameter(Mandatory)][string]$AcceleratorGeometryProfileId,[string]$RunId='',[string]$SimionExe='',[string]$PythonExe='')
+param(
+  [Parameter(Mandatory)][string]$AcceleratorComponentContractPath,
+  [Parameter(Mandatory)][string]$AcceleratorGeometryProfileId,
+  [Parameter(Mandatory)][string]$WorkspaceRoot,
+  [Parameter(Mandatory)][string]$ArtifactRoot,
+  [Parameter(Mandatory)][string]$PythonExe,
+  [string]$RunId='',
+  [string]$SimionExe=''
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $projectId='parallel_mirror_dual_stripe_mr_tof'
-$repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
-$workspaceRoot=Split-Path -Parent $repoRoot
-$artifactRoot=Join-Path $workspaceRoot 'artifacts'
+$workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path
+$artifactRoot=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)
 $projectArtifactRoot=Join-Path $artifactRoot "projects\$projectId"
 $cacheRoot=Join-Path $artifactRoot 'common\simion\pa_family_cache'
-$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
+$python=[IO.Path]::GetFullPath($PythonExe)
 $simion=if($SimionExe){[IO.Path]::GetFullPath($SimionExe)}else{Join-Path $env:ProgramFiles 'SIMION-2020\simion.exe'}
-$contract=Join-Path $repoRoot 'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json'
+$packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
+if($LASTEXITCODE-ne0){throw 'Installed msplatform package is unavailable.'}
+$packageRoot=(Resolve-Path -LiteralPath $packageRootText).Path
+$repoRoot=$workspaceRoot
+$contract=Join-Path $packageRoot 'components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json'
 if(-not$RunId){$RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__build__simion__mrtof-symmetric-coarse-raw'}
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
-. (Join-Path $repoRoot 'tools\repository\parallel_gate_support.ps1')
+. (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
 . (Join-Path $PSScriptRoot 'short_pa_path_support.ps1')
 
 function Invoke-RootPython([string[]]$Arguments){
-  $lines=@(Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {& $python @Arguments;if($LASTEXITCODE-ne0){throw "Python stage failed: $($Arguments-join' ')"}})
+  $lines=@(& $python -I -B @Arguments)
+  if($LASTEXITCODE-ne0){throw "Python stage failed: $($Arguments-join' ')"}
   return $lines
 }
 function Invoke-Transaction([string]$Identity,[string]$Owner='',[string]$Evidence=''){
@@ -68,7 +79,7 @@ try{
     if($state.action_required-ne'build'){throw "Coarse raw transaction cannot build: $($state.action_required)"}
     $raw=Join-Path ([string]$state.build_directory) 'mrtof_analyzer.pa#'
     $lease=Enter-HostExecutionLease -Role SIMION -Stage prepare -RunId $RunId
-    & (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\run_gem2pa.ps1') -SimionExe $simion -GemPath $gem -OutputPaPath $raw
+    & (Join-Path $PSScriptRoot 'run_gem2pa.ps1') -SimionExe $simion -GemPath $gem -OutputPaPath $raw
     Exit-HostExecutionLease -Lease $lease -Outcome success -RunId $RunId;$lease=$null
     $state=Invoke-Transaction $identity
     if($state.action_required-ne'verify'){throw "Coarse raw transaction cannot verify: $($state.action_required)"}

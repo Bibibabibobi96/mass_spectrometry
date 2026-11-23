@@ -8,9 +8,11 @@ param(
   [string[]]$RecoverMembers=@(),
   [string[]]$RecoverRetainedInventoryMembers=@(),
   [string]$CorrectPublishedInventoryMember='',
+  [Parameter(Mandatory)][string]$WorkspaceRoot,
+  [Parameter(Mandatory)][string]$ArtifactRoot,
+  [Parameter(Mandatory)][string]$PythonExe,
   [string]$RunId='',
-  [string]$SimionExe='',
-  [string]$PythonExe=''
+  [string]$SimionExe=''
 )
 
 Set-StrictMode -Version Latest
@@ -21,13 +23,11 @@ $ErrorActionPreference='Stop'
 # this transaction's private staging, exported as new standalone PA objects,
 # verified, then atomically published with the response-set receipt.
 $projectId='parallel_mirror_dual_stripe_mr_tof'
-$repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
-$workspaceRoot=Split-Path -Parent $repoRoot
-$projectRoot=Join-Path $repoRoot "src\msplatform\components\$projectId"
-$artifactRoot=Join-Path $workspaceRoot 'artifacts'
+$workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path
+$artifactRoot=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)
 $projectArtifactRoot=Join-Path $artifactRoot "projects\$projectId"
 $cacheRoot=Join-Path $artifactRoot 'common\simion\pa_family_cache'
-$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
+$python=[IO.Path]::GetFullPath($PythonExe)
 $simion=if($SimionExe){[IO.Path]::GetFullPath($SimionExe)}else{Join-Path $env:ProgramFiles 'SIMION-2020\simion.exe'}
 $legacyFrozen=if($FrozenInputDirectory){(Resolve-Path -LiteralPath $FrozenInputDirectory).Path}else{''}
 $directCoarseManifest=if($CoarseRawGenerationManifest){(Resolve-Path -LiteralPath $CoarseRawGenerationManifest).Path}else{''}
@@ -38,15 +38,16 @@ $pinReason='MR-TOF detached native-corridor response bank required to construct 
 foreach($path in @($python,$simion)){if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "Required response-bank executable is missing: $path"}}
 if(-not$RunId){$RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__build__simion__mrtof-native-corridor-response-bank'}
 
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
-. (Join-Path $repoRoot 'tools\repository\parallel_gate_support.ps1')
+$packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
+if($LASTEXITCODE-ne0){throw 'Installed msplatform package is unavailable.'}
+$packageRoot=(Resolve-Path -LiteralPath $packageRootText).Path
+$repoRoot=$workspaceRoot
+. (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
 
 function Invoke-ProjectPython {
   param([Parameter(Mandatory)][string[]]$Arguments)
-  $output=@(Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
-    & $python @Arguments
-    if($LASTEXITCODE-ne0){throw "Python stage failed: $($Arguments -join ' ')"}
-  })
+  $output=@(& $python -I -B @Arguments)
+  if($LASTEXITCODE-ne0){throw "Python stage failed: $($Arguments -join ' ')"}
   return $output
 }
 
@@ -145,7 +146,7 @@ function New-ManagedFrozenInputs {
   Invoke-ProjectPython -Arguments @(
     '-m','msplatform.backends.simion.native_corridor_freeze',
     '--accelerator-component-contract',$script:oaComponentContractFrozen,'--accelerator-geometry-profile-id',$script:oaGeometryProfileId,
-    '--contract',(Join-Path $repoRoot 'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json'),
+    '--contract',(Join-Path $packageRoot 'components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json'),
     '--coarse-generation-manifest',$source.coarse_manifest,
     '--simion-executable',$simion,'--simion-release','SIMION 2020',
     '--output-directory',$destination,'--run-config',[string]$Package.run_config
@@ -273,7 +274,7 @@ function Build-RawGeometry {
     $gem=Join-Path ([string]$scratchAlias.execution_alias) 'mrtof_analyzer_corridor.gem'
     $mappedGem=Join-Path ([string]$scratchAlias.execution_alias) 'mrtof_analyzer_corridor.local.gem'
     $raw=Join-Path ([string]$scratchAlias.execution_alias) 'mrtof_analyzer_corridor.pa#'
-    Invoke-ProjectPython -Arguments @('-m','msplatform.backends.simion.native_corridor_geometry','--accelerator-component-contract',$script:oaComponentContractFrozen,'--accelerator-geometry-profile-id',$script:oaGeometryProfileId,'--contract',(Join-Path $repoRoot 'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json'),'--output',$gem)|Out-Null
+    Invoke-ProjectPython -Arguments @('-m','msplatform.backends.simion.native_corridor_geometry','--accelerator-component-contract',$script:oaComponentContractFrozen,'--accelerator-geometry-profile-id',$script:oaGeometryProfileId,'--contract',(Join-Path $packageRoot 'components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json'),'--output',$gem)|Out-Null
     # The generator reads the current contract only as a deterministic compiler;
     # the frozen package remains authoritative.  A changed contract must fail
     # here rather than silently create a bank under stale frozen identity.
@@ -282,9 +283,9 @@ function Build-RawGeometry {
     if($generatedGemHash-ne[string]$frozenIdentity.gem.sha256){throw 'Current corridor compiler output differs from the frozen native geometry identity.'}
     $plan=Get-Content -LiteralPath $planPath -Raw -Encoding UTF8|ConvertFrom-Json -Depth 30
     $mapping=@($plan.physical_to_local_electrode_id.PSObject.Properties|Sort-Object {[int]$_.Name}|ForEach-Object{"$($_.Name):$($_.Value)"})-join','
-    Invoke-ProjectPython -Arguments @('-m','msplatform.backends.simion.native_corridor_geometry','--accelerator-component-contract',$script:oaComponentContractFrozen,'--accelerator-geometry-profile-id',$script:oaGeometryProfileId,'--contract',(Join-Path $repoRoot 'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json'),'--output',$mappedGem,'--physical-to-local-map',$mapping)|Out-Null
+    Invoke-ProjectPython -Arguments @('-m','msplatform.backends.simion.native_corridor_geometry','--accelerator-component-contract',$script:oaComponentContractFrozen,'--accelerator-geometry-profile-id',$script:oaGeometryProfileId,'--contract',(Join-Path $packageRoot 'components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json'),'--output',$mappedGem,'--physical-to-local-map',$mapping)|Out-Null
     $lease=Enter-HostExecutionLease -Role SIMION -Stage pa_refine -RunId $RunId
-    & (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\run_gem2pa.ps1') -SimionExe $simion -GemPath $mappedGem -OutputPaPath $raw
+    & (Join-Path $PSScriptRoot 'run_gem2pa.ps1') -SimionExe $simion -GemPath $mappedGem -OutputPaPath $raw
     Move-NewMember -Source (Join-Path $ScratchDirectory 'mrtof_analyzer_corridor.pa#') -Destination $destination
     Exit-HostExecutionLease -Lease $lease -Outcome success -RunId $RunId;$lease=$null
   } finally {
@@ -301,7 +302,8 @@ function Build-DetachedResponse {
   if(-not(Test-Path -LiteralPath $native -PathType Leaf)){
     $responseLog=Join-Path $resultDir ('native_corridor_response_{0:D2}.log'-f$ResponseId)
     & (Join-Path $PSScriptRoot 'run_native_corridor_qualification.ps1') -FrozenInputDirectory $frozen -RunId $RunId `
-      -SimionExe $simion -PythonExe $python -InternalResponseId $ResponseId -InternalBuildDirectory $BuildDirectory `
+      -SimionExe $simion -PythonExe $python -WorkspaceRoot $workspaceRoot -ArtifactRoot $artifactRoot `
+      -InternalResponseId $ResponseId -InternalBuildDirectory $BuildDirectory `
       -InternalScratchDirectory $ScratchDirectory -InternalCoarseRawGeometryPath $Coarse.raw `
       -InternalCoarseBasisDirectory $CoarseBasisDirectory -InternalCoarseOrigin $Coarse.origin *>&1 `
       | Tee-Object -FilePath $responseLog | Out-Host
@@ -312,7 +314,7 @@ function Build-DetachedResponse {
   try {
     $alias=New-RunExecutionAlias -TargetDirectory $BuildDirectory
     $lease=Enter-HostExecutionLease -Role SIMION -Stage prepare -RunId $RunId
-    & $simion --nogui --noprompt lua (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\export_standalone_pa.lua') `
+    & $simion --nogui --noprompt lua (Join-Path $PSScriptRoot 'export_standalone_pa.lua') `
       (Join-Path ([string]$alias.execution_alias) $nativeName) (Join-Path ([string]$alias.execution_alias) $detachedName)
     if($LASTEXITCODE-ne0){throw "Detached response export failed for ID $ResponseId"}
     Exit-HostExecutionLease -Lease $lease -Outcome success -RunId $RunId;$lease=$null
@@ -410,7 +412,7 @@ try {
     $responseReceiptPath=Join-Path $resultDir 'response_bank_receipt_recipe.json'
     Write-RunJson -Path $responseReceiptPath -Depth 20 -Value ([ordered]@{
       schema_version=2;source_location='payload';receipt_name='mrtof_analyzer_corridor.standalone_responses.json'
-      exporter_path=(Join-Path $repoRoot 'src\msplatform\backends\simion\resources\export_standalone_pa.lua')
+      exporter_path=(Join-Path $PSScriptRoot 'export_standalone_pa.lua')
       exports=@(1..8|ForEach-Object{[ordered]@{
         response_id=$_;source_name=('mrtof_analyzer_corridor.pa{0}'-f$_)
         standalone_name=('mrtof_analyzer_corridor.response{0}.pa'-f$_)
