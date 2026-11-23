@@ -122,5 +122,5 @@ STEP-only不传Word参数，不启动SolidWorks，
 不得夹带待验收Word。该文档必须匹配倾镜几何与完整电压；旧53件native＋Word分支不是当前STEP交付。
 文档结构检查仅证明链接与归档结构，不代替CAD冷读、第三方消费或制造资格。
 
-[delivery]: ../../../../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261014_163154__build__cad__mrtof-tilted-step-publication-recovery/delivery_publication.json
-[pulsar-handoff]: ../../../../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261016_140921__build__python__pulsar-trajectory-handoff/summary.json
+[delivery]: ../../../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261014_163154__build__cad__mrtof-tilted-step-publication-recovery/delivery_publication.json
+[pulsar-handoff]: ../../../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261016_140921__build__python__pulsar-trajectory-handoff/summary.json

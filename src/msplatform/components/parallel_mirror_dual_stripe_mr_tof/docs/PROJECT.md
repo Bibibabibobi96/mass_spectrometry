@@ -226,7 +226,7 @@ template bytes and PA placeholders; opt-in native tests remain separately report
 同机同资源单次对照，两方法unittest合计24.841→12.239秒；逆序24案及逐single24案的原断言也全部通过。
 这只是局部测试工作减少，不外推完整MR或Repository性能。本版Changed的162项通过，公开外层413.683秒，
 复杂反馈五分钟目标仍未达；此前CLR崩溃根因未定，最终提交的完整Repository验收仍待取得。
-[测试证据](../../../../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/scratch/20261101__runner-fixture-cost/agent5/READOUT.md)
+[测试证据](../../../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/scratch/20261101__runner-fixture-cost/agent5/READOUT.md)
 保留RED、GREEN、原失败和异常优先级记录。本项不改变生产控制器、资源准入或科学资格。
 
 checkpoint恢复20场景及compose回收30调用在各自原测试方法内共享PowerShell宿主与一次生产AST读取，
@@ -541,8 +541,8 @@ C0为指定外边界假设，完整内表面x=[-162.5,162.5]、y=[-242,558]、z=
 
 | 高斯sigma(Ey)，eV | 平均TOF，μs | KDE FWHM，ns | R | 检测／母群 |
 |---|---:|---:|---:|---:|
-| [0.15原run](../../../../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_040845__sim__simion__converging-y360-z002-gaussian-ey-sigma0p15-n100/summary.json) | 764.216444815 | 3.768379855 | 101398.541848 | 98／100 |
-| [0.20原run](../../../../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_044251__sim__simion__converging-y360-z002-gaussian-ey-sigma0p2-n100/summary.json) | 764.216316535 | 4.721538636 | 80928.736944 | 95／100 |
+| [0.15原run](../../../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_040845__sim__simion__converging-y360-z002-gaussian-ey-sigma0p15-n100/summary.json) | 764.216444815 | 3.768379855 | 101398.541848 | 98／100 |
+| [0.20原run](../../../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261015_044251__sim__simion__converging-y360-z002-gaussian-ey-sigma0p2-n100/summary.json) | 764.216316535 | 4.721538636 | 80928.736944 | 95／100 |
 
 主条件sigma=0.2未达十万，0.15的名义结果不能替代主条件或大样本资格。
 镜z网格0.04→0.02 mm时峰宽改变约-0.006／-0.005 ns，损失身份不变；公共TOF漂移单列，
@@ -708,7 +708,7 @@ COMSOL对完整C0独立求场，经标量电势→规则PA→SIMION求导／插�
 [父场拆轴](../../../../../docs/history/projects/parallel_mirror_dual_stripe_mr_tof/20261015__parent-axis-field-isolation.md)。
 
 原文曾写“正在执行”的中央层`20261016_000829__build__simion__zparent-full-central`已由
-[终态summary](../../../../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261016_000829__build__simion__zparent-full-central/summary.json)
+[终态summary](../../../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261016_000829__build__simion__zparent-full-central/summary.json)
 记录success、5106.1064271秒、Refine完成；未Fly、COMSOL或crop，qualification仍false。
 它只用z=0.50 mm父场重建中央层并查询原25点，旧中央为物化、新中央为直接解；
 不能把该终态当作纯全局误差界、镜重建或束团资格。
@@ -743,15 +743,15 @@ OA→MR 和 prepared joint 共用 MR `Protect-MrtofContinuationEvidence`：沿�
 其声明库存同时保留raw、8个原生response、8个standalone和receipt。已有v1响应库按公共严格版本reader读取，
 仍要求原source的manifest身份、publication pin及冻结bank身份；不会用当前编译器输出冒用旧cache key。
 显式transaction续跑／member recovery若已登记recipe，由公共owner沿原journal重放，不提交新recipe或旁路重写receipt。
-保留的[IP联合加载包](../../../../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261018_132106__analysis__python__ip-collision-overlay-workbench/results/joint_workbench/runtime/joint.iob)
+保留的[IP联合加载包](../../../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261018_132106__analysis__python__ip-collision-overlay-workbench/results/joint_workbench/runtime/joint.iob)
 复现原97出口／19检测链，含0.05 mm碰撞占据patch；它不是524 Da新链的GUI验收。
 手动Fly须使用独立可写的工作台控制／日志目录并核对永久PA绑定；未变大PA按封存身份只读复用。
 当前 launcher 的 `load-workbench` 与批处理 Fly 共用碰撞 PA 预载，打开同一 IOB／Program／Fly2，
 保持 RAM 中的不可 Refine 标志；使用方法和官方依据见[SIMION说明](SIMION.md#事件与分析)。
 这补齐代码中的装载状态差异，不追认旧包已人工打开，也不使普通 PA 查询等于程序回调场。
-[STEP交付](../../../../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261014_163154__build__cad__mrtof-tilted-step-publication-recovery/summary.json)
+[STEP交付](../../../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261014_163154__build__cad__mrtof-tilted-step-publication-recovery/summary.json)
 含40独立电极、6个C0参考面及装配概览；5 μm交换精度不是场或制造精度，第三方消费未验收。
-[Pulsar英文交接包](../../../../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261016_140921__build__python__pulsar-trajectory-handoff/summary.json)
+[Pulsar英文交接包](../../../../../../artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs/20261016_140921__build__python__pulsar-trajectory-handoff/summary.json)
 与待用户发送的邮件保持原发布身份。
 
 ## 机器能力与解析输入

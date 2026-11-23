@@ -321,7 +321,7 @@ COMSOL官方，2026-10-22复核。这里列的是当前 wrapper 接受的值；�
 替身参数传递测试、成功启动和小模型 Compute 分别只证明各自范围，不能据此声称修复 MR 矩阵装配断言、
 降低大型模型内存峰值、提高性能或获得数值收敛资格。
 
-[assembly-evidence]: ../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261021_104700__test__comsol__quick-unknown-closure__r03/run_config.json
+[assembly-evidence]: ../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261021_104700__test__comsol__quick-unknown-closure__r03/run_config.json
 
 ### 主机资源阶段
 
@@ -445,11 +445,11 @@ Study/Solver 执行；GUI Compute 指 Desktop 重开后操作，二者不能互�
 DP5 晚期辅助表和交点身份路径保留失败。evaluate 数量抽样、all-solnum 缺 t、Particle expr 单字符串等
 接口实证见[数值提取](tools/COMSOL_API.md#数值提取)。这仍不是第二个仪器项目或整机性能验证。
 
-[api-field]: ../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261021_102831__test__comsol__field-and-cpt-followup__r02/results/field_followup_summary.json
-[api-output]: ../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261021_104700__test__comsol__quick-unknown-closure__r03/results/output_controls_summary.json
-[api-interpolation]: ../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261021_104700__test__comsol__quick-unknown-closure__r03/results/interpolation_summary.json
-[api-wall]: ../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261021_104700__test__comsol__quick-unknown-closure__r04/summary.json
-[api-assembly]: ../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261021_104700__test__comsol__quick-unknown-closure__r03/run_config.json
+[api-field]: ../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261021_102831__test__comsol__field-and-cpt-followup__r02/results/field_followup_summary.json
+[api-output]: ../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261021_104700__test__comsol__quick-unknown-closure__r03/results/output_controls_summary.json
+[api-interpolation]: ../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261021_104700__test__comsol__quick-unknown-closure__r03/results/interpolation_summary.json
+[api-wall]: ../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261021_104700__test__comsol__quick-unknown-closure__r04/summary.json
+[api-assembly]: ../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261021_104700__test__comsol__quick-unknown-closure__r03/run_config.json
 
 ### 组件测试的输出上下文
 
