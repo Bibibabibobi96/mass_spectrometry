@@ -30,12 +30,24 @@ ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW = ROOT/'src/msplatform/workflows/resources'
 
 
+def selected_python(root, package_root):
+    python_home=root/'python'
+    subprocess.run([sys._base_executable,'-m','venv','--system-site-packages',str(python_home)],
+                   check=True,capture_output=True,text=True,timeout=60,cwd=ROOT)
+    executable=python_home/'Scripts/python.exe'
+    parent_site_packages=next(Path(path) for path in sys.path if (Path(path)/'referencing').is_dir())
+    (python_home/'Lib/site-packages/selected-msplatform.pth').write_text(
+        str(package_root.parent)+'\n'+str(parent_site_packages)+'\n',encoding='utf-8')
+    return executable
+
+
 class PairedStaticExecutionTests(unittest.TestCase):
-    def test_default_repository_root_does_not_depend_on_cwd(self):
+    def test_default_root_uses_selected_installed_package_not_package_ancestors(self):
         source = (WORKFLOW/'paired_accelerator_static_field.ps1').read_text(encoding='utf-8')
         self.assertIn("[string]$RepoRoot=''", source)
-        self.assertIn("if(-not$RepoRoot){$RepoRoot=Split-Path -Parent (Split-Path -Parent $packageRoot)}", source)
-        self.assertNotIn("$RepoRoot=(Get-Location).Path", source)
+        self.assertIn("$packageRootText=& $Python -I -B", source)
+        self.assertIn("else{(Get-Location).Path}", source)
+        self.assertNotIn("Split-Path -Parent (Split-Path -Parent $packageRoot)}", source)
 
     def test_completed_simion_samples_reuse_bound_identity_without_pa_or_model_read(self):
         for exporter_relative in (
@@ -870,9 +882,10 @@ dofile('{Path(tasks['lua']).as_posix()}')
             artifacts.mkdir()
             initialize_capacity_ledger(artifacts,objects=[])
             run_id='20261025_010001__test__python__paired-static-entry'
+            python=selected_python(root,ROOT/'src/msplatform')
             result=subprocess.run(['pwsh','-NoProfile','-File',str(self.capacity_isolated_owner(root)),
                 '-Request',str(author/'request.json'),'-ArtifactRoot',str(artifacts),
-                '-Python',sys.executable,'-RunId',run_id,'-DryRun','-RepoRoot',str(ROOT)],
+                '-Python',str(python),'-RunId',run_id,'-DryRun','-RepoRoot',str(ROOT)],
                 cwd=ROOT,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=180)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
             run=artifacts/'projects/instrument_assembly/runs'/run_id
@@ -896,12 +909,13 @@ dofile('{Path(tasks['lua']).as_posix()}')
             owner.write_text(source.replace(boundary,boundary+"\nfunction Invoke-ArtifactCapacityGate { [pscustomobject]@{satisfied_after_apply=$true} }"),
                 encoding='utf-8',newline='\n')
             workspace=root/'workspace';workspace.mkdir()
+            python=selected_python(root,package_root)
             artifacts=root/'artifacts';artifacts.mkdir();initialize_capacity_ledger(artifacts,objects=[])
             run_id='20261025_010004__test__python__paired-static-external-package'
             result=subprocess.run(['pwsh','-NoProfile','-File',str(owner),
                 '-Request',str(author/'request.json'),'-ArtifactRoot',str(artifacts),
-                '-Python',sys.executable,'-RunId',run_id,'-DryRun','-RepoRoot',str(workspace)],
-                cwd=ROOT,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=240)
+                '-Python',str(python),'-RunId',run_id,'-DryRun'],
+                cwd=workspace,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=240)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
             self.assertFalse((workspace/'src').exists())
             run=artifacts/'projects/instrument_assembly/runs'/run_id
@@ -921,9 +935,10 @@ dofile('{Path(tasks['lua']).as_posix()}')
             run_id='20261025_010002__test__python__paired-static-invalid-source'
             budget=root/'budget_not_parsed.json'
             runtime.write(budget,{'TEST_ONLY':'source rejected before budget interpretation'})
+            python=selected_python(root,ROOT/'src/msplatform')
             result=subprocess.run(['pwsh','-NoProfile','-File',str(self.capacity_isolated_owner(root)),
                 '-Request',str(author/'request.json'),'-ArtifactRoot',str(artifacts),
-                '-Python',sys.executable,'-RunId',run_id,'-SolverAuthorized',
+                '-Python',str(python),'-RunId',run_id,'-SolverAuthorized',
                 '-ExecutionBudgetPath',str(budget),'-ComsolSourceManifest',str(wrong),'-RepoRoot',str(ROOT)],
                 cwd=ROOT,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=180)
             self.assertNotEqual(result.returncode,0)

@@ -77,15 +77,13 @@ class AssemblyInterfaceTests(unittest.TestCase):
         projection = projected_candidate()
         before = copy.deepcopy(projection)
         interface = resolve_assembly_interface(candidate_300mm_fixture(), projection=projection, geometry_profile_id=None, schema_version=3)
-        validate_schema(interface, "component_geometry_interface.schema.json")
+        validate_schema(interface, "component_geometry_interface_v3.schema.json")
         self.assertEqual(interface["variant_id"], "three_zone_square")
         self.assertEqual(interface["local_frame_id"], "oatof_global")
         electrodes = interface["component_electrodes"]
-        self.assertEqual(electrodes[0], dict(component_electrode_id=1,
-            role="accelerator_side_shield", electrical_group_id=1))
-        self.assertIn("reflectron_entry_grid", [item["role"] for item in electrodes])
-        self.assertIn("detector", [item["role"] for item in electrodes])
-        self.assertEqual(len({item["component_electrode_id"] for item in electrodes}), len(electrodes))
+        self.assertEqual(electrodes[0], dict(electrode_group_id="common_ground", role="grounded_boundary"))
+        self.assertIn("common_ground", [item["electrode_group_id"] for item in electrodes])
+        self.assertEqual(len({item["electrode_group_id"] for item in electrodes}), len(electrodes))
         self.assertFalse(any("marker" in item["role"] for item in electrodes))
         port = interface["ports"]["side_entry"]
         self.assertEqual(port["center_mm"], [-122.8, 0, -340.74261546154855])
@@ -176,11 +174,16 @@ class AssemblyInterfaceTests(unittest.TestCase):
         validate_schema(current, "component_geometry_interface_v3.schema.json")
         self.assertEqual(current["ports"], old["ports"])
         self.assertEqual(current["local_frame_id"], old["local_frame_id"])
-        self.assertEqual(len(old["component_electrodes"]), 45)
         self.assertEqual(len(current["component_electrodes"]), 42)
         self.assertTrue(all(set(row) == {"electrode_group_id", "role"} for row in current["component_electrodes"]))
         ids = {row["electrode_group_id"] for row in current["component_electrodes"]}
-        self.assertTrue({"common_ground", "accelerator_exit_grid", "reflectron_midgrid", "reflectron_backplate"} <= ids)
+        expected = {"common_ground", "accelerator_repeller", "accelerator_intermediate_grid_1",
+                    "accelerator_intermediate_grid_2", "accelerator_exit_grid",
+                    "reflectron_midgrid", "reflectron_backplate"}
+        expected.update(f"accelerator_ring_{index:04d}" for index in range(1, 21))
+        expected.update(f"reflectron_stage1_ring_{index}" for index in range(1, 11))
+        expected.update(f"reflectron_stage2_ring_{index}" for index in range(1, 6))
+        self.assertEqual(ids, expected)
         self.assertNotIn("detector", ids)  # Its physical cylinder remains a member of common_ground.
         for version in (0, 2, 4, True, 3.0):
             with self.subTest(version=version), self.assertRaisesRegex(ValueError, "schema_version"):

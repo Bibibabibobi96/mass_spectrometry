@@ -16,8 +16,6 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $packageRoot=Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-if(-not$RepoRoot){$RepoRoot=Split-Path -Parent (Split-Path -Parent $packageRoot)}
-$RepoRoot=(Resolve-Path -LiteralPath $RepoRoot).Path
 . (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
 if(-not$ResumeFinalization){
   $Request=(Resolve-Path -LiteralPath $Request).Path
@@ -29,11 +27,18 @@ $executionResources=Join-Path $packageRoot 'execution/resources'
 . (Join-Path $executionResources 'require_powershell7.ps1')
 . (Join-Path $executionResources 'run_artifact_support.ps1')
 if(-not$Python){$Python=if($env:SIMULATION_PYTHON_EXE){$env:SIMULATION_PYTHON_EXE}else{throw 'Explicit Python or SIMULATION_PYTHON_EXE is required'}}
+$packageRootText=& $Python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
+if($LASTEXITCODE-ne0-or[string]::IsNullOrWhiteSpace([string]$packageRootText)){throw 'Installed msplatform package is unavailable.'}
+$selectedPackageRoot=(Resolve-Path -LiteralPath ([string]$packageRootText).Trim()).Path
+$researchRootExplicit=[bool]$RepoRoot
+if(-not$researchRootExplicit-and-not[string]::Equals($selectedPackageRoot,[IO.Path]::GetFullPath($packageRoot),[StringComparison]::OrdinalIgnoreCase)){throw 'Selected Python msplatform package differs from the entry package.'}
+$RepoRoot=if($RepoRoot){(Resolve-Path -LiteralPath $RepoRoot).Path}else{(Get-Location).Path}
+$workspaceRoot=if($researchRootExplicit){Split-Path -Parent $RepoRoot}else{$RepoRoot}
 . (Join-Path $executionResources 'workspace_paths.ps1')
 $pathArguments=@{SourceRoot=$RepoRoot;Python=$Python}
 if($ArtifactRoot){$pathArguments.ArtifactRoot=$ArtifactRoot}
 $pathContext=Resolve-WorkspacePaths @pathArguments
-$hostContext=@{workspace=(Split-Path -Parent $RepoRoot);python_executable=$Python;host_state_path=[string]$pathContext.host_resource_state_path;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
+$hostContext=@{workspace=$workspaceRoot;python_executable=$Python;host_state_path=[string]$pathContext.host_resource_state_path;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 . (Join-Path $packageRoot 'workflows/resources/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
 if($ResumeFinalization){

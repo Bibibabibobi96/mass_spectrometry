@@ -116,7 +116,7 @@ class PreparedJointAnalysisTests(unittest.TestCase):
         inventory = prepared_joint_dependency_inventory()
         from tests.workflows.single_reflection.test_support.single_reflection_execute_fixture import declared_dependency_paths
         records = [{'source_repo_path': path} for path in declared_dependency_paths(REPO, inventory, 'prepared_joint')]
-        support = {"src/msplatform/execution/resources/run_artifact_support.ps1", "src/msplatform/execution/resources/require_powershell7.ps1", "src/msplatform/execution/resources/host_execution_lease.ps1", "src/msplatform/execution/artifact_identity_archive.py"}
+        support = {"src/msplatform/execution/resources/run_artifact_support.ps1", "src/msplatform/execution/resources/require_powershell7.ps1", "src/msplatform/execution/resources/host_execution_lease.ps1", "src/msplatform/execution/resources/new_run_project_identities.json", "src/msplatform/execution/artifact_identity_archive.py"}
         capacity_fixture = r'''
 function Invoke-RunCapacityLifecycleAdapter {return @{light_evidence_budget_exceeded=$false}}
 function Assert-AnalysisFixtureSourceProtection {
@@ -248,9 +248,16 @@ if os.environ['ANALYSIS_TEST_SEAL_FAIL']=='1': raise RuntimeError('Explicit iner
                 run = source.parent / run_id
                 # The wrapper cannot start this synthetic workflow or any child
                 # until the public helper assigns it to its owned Job and ACKs.
+                python_home = workspace / "python"
+                subprocess.run([sys._base_executable, "-m", "venv", "--system-site-packages", str(python_home)],
+                               check=True, capture_output=True, text=True, timeout=60, cwd=workspace)
+                selected_python = python_home / "Scripts/python.exe"
+                parent_site_packages = next(Path(path) for path in sys.path if (Path(path) / "referencing").is_dir())
+                (python_home / "Lib/site-packages/selected-msplatform.pth").write_text(
+                    str(installed.parent) + "\n" + str(parent_site_packages) + "\n", encoding="utf-8")
                 arguments = [str(installed / PREPARED_ENTRY.relative_to("src/msplatform")),
                     "-AnalyzeRunPath", str(source), "-ContractPath", str(contract), "-RunId", run_id,
-                    "-RepoRoot", str(repo), "-PythonExe", sys.executable]
+                    "-RepoRoot", str(repo), "-PythonExe", str(selected_python)]
                 argvfile = workspace / "fixture-argv.json"
                 argvfile.write_text(json.dumps(arguments), encoding="utf-8")
                 launcher = workspace / "invoke-owned.ps1"
@@ -391,6 +398,47 @@ try { & $entry @forwardParameters } finally { Write-AnalysisFixtureEvent 'actual
 
 
 class PreparedJointExecuteTests(unittest.TestCase):
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
+    def test_default_entry_uses_selected_package_and_rejects_missing_or_mismatch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = root / "installation/Lib/site-packages/msplatform"
+            shutil.copytree(REPO / "src/msplatform", package)
+            python_home = root / "python"
+            subprocess.run([sys._base_executable, "-m", "venv", "--system-site-packages", str(python_home)],
+                           check=True, capture_output=True, text=True, timeout=60, cwd=root)
+            python = python_home / "Scripts/python.exe"
+            selection = python_home / "Lib/site-packages/selected-msplatform.pth"
+            selection.write_text(str(package.parent) + "\n", encoding="utf-8")
+            workspace = root / "workspace"
+            workspace.mkdir()
+            environment = {key: value for key, value in os.environ.items()
+                           if key not in {"PYTHONPATH", "SIMULATION_PYTHON_EXE"}}
+            command = [shutil.which("pwsh"), "-NoProfile", "-File",
+                       str(package / "workflows/resources/prepared_joint_execute.ps1"),
+                       "-AnalyzeRunPath", str(root / "missing-source"),
+                       "-ContractPath", str(root / "missing-contract.json"), "-PythonExe", str(python)]
+            boundary = subprocess.run(command, cwd=workspace, env=environment, capture_output=True,
+                                      text=True, encoding="utf-8", errors="replace", timeout=30)
+            self.assertNotEqual(boundary.returncode, 0)
+            self.assertIn("missing-source", boundary.stdout + boundary.stderr)
+            self.assertFalse((workspace / "artifacts").exists())
+
+            selection.write_text(str(REPO / "src") + "\n", encoding="utf-8")
+            mismatch = subprocess.run(command, cwd=workspace, env=environment, capture_output=True,
+                                      text=True, encoding="utf-8", errors="replace", timeout=30)
+            self.assertNotEqual(mismatch.returncode, 0)
+            self.assertIn("package differs from the entry package", mismatch.stdout + mismatch.stderr)
+
+            empty_python_home = root / "empty-python"
+            subprocess.run([sys._base_executable, "-m", "venv", str(empty_python_home)],
+                           check=True, capture_output=True, text=True, timeout=60, cwd=root)
+            command[-1] = str(empty_python_home / "Scripts/python.exe")
+            missing = subprocess.run(command, cwd=workspace, env=environment, capture_output=True,
+                                     text=True, encoding="utf-8", errors="replace", timeout=30)
+            self.assertNotEqual(missing.returncode, 0)
+            self.assertIn("Installed msplatform package is unavailable", missing.stdout + missing.stderr)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_scientific_receipt_arguments_reach_actual_probe_and_equivalence_clis(self):

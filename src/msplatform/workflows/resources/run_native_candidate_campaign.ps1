@@ -11,7 +11,7 @@ param(
   [string]$InitialProviderReuseMapPath='',
   [string]$ConditionReuseMapPath='',
   [string]$CampaignStamp='',
-  [string]$PythonExe='',
+  [Parameter(Mandatory)][string]$PythonExe,
   [string]$SimionExe=''
 )
 
@@ -22,13 +22,12 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $project='parallel_mirror_dual_stripe_mr_tof'
-$repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
-$workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path;$artifactRoot=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)
+$workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path;$artifactRoot=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot);$repoRoot=$workspaceRoot
 $artifactRuns=Join-Path $artifactRoot "projects\$project\runs"
-$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
+$python=[IO.Path]::GetFullPath($PythonExe)
 $packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
 if($LASTEXITCODE-ne0){throw 'Installed msplatform package is unavailable.'};$packageRoot=(Resolve-Path -LiteralPath $packageRootText).Path
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
+. (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
 $campaign=(Resolve-Path -LiteralPath $CampaignPath).Path
 $conditionRunner=if($ConditionRunnerPath){
   (Resolve-Path -LiteralPath $ConditionRunnerPath).Path
@@ -478,15 +477,10 @@ function New-CampaignComparison {
       }
     $rows+=,[ordered]@{baseline=$baselineInput;focused=$focusedInput;row=$row}
   }
-  Push-Location -LiteralPath $repoRoot;$saved=$env:PYTHONPATH
-  try{
-    $env:PYTHONPATH=(Join-Path $repoRoot 'src')+[IO.Path]::PathSeparator+$repoRoot+$(if($saved){[IO.Path]::PathSeparator+$saved}else{''})
-    $output=@(@{action='campaign_comparison';conditions=@($rows)}|ConvertTo-Json -Depth 100 -Compress|
-      & $python -X utf8 -m msplatform.workflows.oa_mr.source_z_energy_timing_diagnostic --policy-request - --output -)
-    if($LASTEXITCODE-ne0){throw 'Candidate campaign comparison failed.'}
-    return ($output-join"`n")|ConvertFrom-Json -AsHashtable -Depth 100
-  }finally{$env:PYTHONPATH=$saved;Pop-Location}
-
+  $output=@(@{action='campaign_comparison';conditions=@($rows)}|ConvertTo-Json -Depth 100 -Compress|
+    & $python -I -B -X utf8 -m msplatform.workflows.oa_mr.source_z_energy_timing_diagnostic --policy-request - --output -)
+  if($LASTEXITCODE-ne0){throw 'Candidate campaign comparison failed.'}
+  return ($output-join"`n")|ConvertFrom-Json -AsHashtable -Depth 100
 }
 
 $requested=@(Read-ConditionList -Path $campaign)

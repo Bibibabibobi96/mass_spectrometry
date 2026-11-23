@@ -96,7 +96,7 @@ class SimionLayoutTemplateContractTests(unittest.TestCase):
             with self.subTest(runner=runner):
                 source = runner.read_text(encoding="utf-8-sig")
                 self.assertIn(
-                    "src\\msplatform\\backends\\simion\\resources\\simion_layout_template_support.ps1", source
+                    "simion_layout_template_support.ps1", source
                 )
                 self.assertIn("Resolve-MultipoleSimionLayoutTemplate", source)
                 self.assertNotRegex(source, r"\[string\]\$TemplateIob(?:Path)?\b")

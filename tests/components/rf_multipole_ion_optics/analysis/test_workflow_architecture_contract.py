@@ -284,7 +284,13 @@ Get-Content $specification.stdout|Write-Output
         )
         reverse_dependency = re.compile(
             r"projects\.rf_multipole_ion_optics\.workflows|"
-            r"Join-Path[^\r\n]*['\"]workflows[/\\]"
+            r"Join-Path\s+\$(?!packageRoot\b)[\w.]+\s+['\"]workflows[/\\]"
+        )
+        self.assertIsNotNone(
+            reverse_dependency.search("Join-Path $repoRoot 'workflows/rf_ideal_transport.py'")
+        )
+        self.assertIsNone(
+            reverse_dependency.search("Join-Path $packageRoot 'workflows/rf_ideal_transport.py'")
         )
         for root in (
             REPO_ROOT / "src/msplatform/analysis",
@@ -470,14 +476,14 @@ Get-Content $specification.stdout|Write-Output
     def test_runners_only_orchestrate_registered_mechanisms(self) -> None:
         for runner_path in DEDICATED_RUNNERS:
             source = _read(runner_path)
-            self.assertLess(source.index("src/msplatform/execution/resources/run_artifact_support.ps1"),
+            self.assertLess(source.index("run_artifact_support.ps1"),
                             source.index("$entryScriptHash=Get-RunFileSha256 -Path $PSCommandPath"))
             self.assertIn("if((Get-RunFileSha256 -Path $ownerSource)-cne$entryScriptHash)", source)
             for support_path in (
-                "src/msplatform/execution/resources/run_artifact_support.ps1",
-                "src\\msplatform\\backends\\simion\\resources\\simion_layout_template_support.ps1",
+                "run_artifact_support.ps1",
+                "simion_layout_template_support.ps1",
                 "simion_run_config.ps1",
-                "src/msplatform/backends/simion/resources/simion_execution.ps1",
+                "simion_execution.ps1",
             ):
                 self.assertIn(support_path, source)
             for function in (
@@ -724,7 +730,7 @@ Get-Content $specification.stdout|Write-Output
     def test_runners_use_shared_run_lifecycle(self) -> None:
         for runner_path in DEDICATED_RUNNERS:
             source = _read(runner_path)
-            self.assertIn("src/msplatform/execution/resources/run_artifact_support.ps1", source)
+            self.assertIn("run_artifact_support.ps1", source)
             for function in (
                 "New-RunPackage",
                 "Complete-FailedRun",

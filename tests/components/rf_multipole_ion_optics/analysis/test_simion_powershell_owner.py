@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from tests.contracts.test_support import run_artifact_workflow as fixtures
 
@@ -34,11 +35,24 @@ if(-not$blocked-or$NativeOperations.Count-ne1){throw 'Unknown native exit was re
 
     def test_original_clis_resume_publication_seal_and_reject_unknown_without_source_arguments(self):
         helper = fixtures.RunArtifactWorkflowFixture()
+        base_python = sys.executable
         for workflow, failure in (("interface_readiness", "publication"),
                                   ("mass_filter_reference", "seal"),
                                   ("interface_readiness", "unknown")):
             with self.subTest(workflow=workflow, failure=failure), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
+                venv = root / "venv"
+                subprocess.run(
+                    [base_python, "-m", "venv", "--system-site-packages", str(venv)],
+                    check=True, capture_output=True, text=True, cwd=root, timeout=60,
+                )
+                selected_python = venv / "Scripts/python.exe"
+                shutil.copytree(
+                    REPO / "src/msplatform",
+                    venv / "Lib/site-packages/msplatform",
+                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+                )
+                self.enterContext(patch.object(fixtures.sys, "executable", str(selected_python)))
                 _, run, _, _ = helper.invoke_fixture(root, {}, project=PROJECT,
                     retention="solver_review", failure_stage="retention_before")
                 for relative in ("inputs/execution_request.json", "results/execution_completion.json", "logs/prepared_wait.json"):
@@ -73,6 +87,8 @@ try{{
                 command = [shutil.which("pwsh"), "-NoProfile", "-File", str(cli),
                     "-ArtifactRootPath", str(run.parent.parent), "-RunId", run.name,
                     "-PythonExe", sys.executable, "-ResultPath", str(result_path), "-ResumeFinalization"]
+                if workflow == "interface_readiness":
+                    command.extend(["-WorkspaceRoot", str(REPO)])
                 resumed = subprocess.run(command, cwd=REPO, capture_output=True, text=True,
                     encoding="utf-8", errors="replace", timeout=90)
                 if failure == "unknown":

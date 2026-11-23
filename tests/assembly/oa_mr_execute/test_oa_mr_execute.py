@@ -13,11 +13,24 @@ from msplatform.execution.retention import file_record
 REPO = Path(__file__).resolve().parents[3]
 RUNNER = REPO / "src/msplatform/workflows/resources/oa_mr.ps1"
 
+def selected_python(root, package_root):
+    python_home = root / "python"
+    subprocess.run([sys._base_executable, "-m", "venv", "--system-site-packages", str(python_home)],
+                   cwd=root, check=True, capture_output=True, text=True, timeout=60)
+    executable = python_home / "Scripts/python.exe"
+    parent_site_packages = next(Path(path) for path in sys.path if (Path(path) / "referencing").is_dir())
+    (python_home / "Lib/site-packages/selected-msplatform.pth").write_text(
+        str(package_root.parent) + "\n" + str(parent_site_packages) + "\n", encoding="utf-8")
+    return executable
+
+
 class TwoPrismTrialRunnerTest(unittest.TestCase):
-    def test_default_repository_root_is_derived_from_package_location(self):
+    def test_default_root_uses_selected_installed_package_not_package_ancestors(self):
         source = RUNNER.read_text(encoding="utf-8")
-        self.assertIn("[string]$RepoRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../..'))", source)
-        self.assertNotIn("Join-Path $PSScriptRoot '../../..')", source)
+        self.assertIn("[string]$RepoRoot=''", source)
+        self.assertIn("$packageRootText=& $python -I -B", source)
+        self.assertIn("else{(Get-Location).Path}", source)
+        self.assertNotIn("Join-Path $PSScriptRoot '../../../..'", source)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_joint_owners_transport_profiles_for_actual_fixed_missing_intervals(self):
@@ -345,7 +358,7 @@ $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 [Console]::InputEncoding=[Text.UTF8Encoding]::new($false)
 $OutputEncoding=[Text.UTF8Encoding]::new($false)
-$sourceRoot=$Repo;$script:pythonRoot=$Repo;$python=$Python
+$sourceRoot=$Repo;$script:pythonRoot=$Repo;$python=$Python;$packageParent='frozen-snapshot'
 $executionResources=Join-Path $Repo 'src/msplatform/execution/resources'
 $packageRoot=Join-Path $Repo 'src/msplatform'
 $simion=if($Case-eq'zero'){Join-Path $Root 'missing_simion.exe'}else{$Python}
@@ -653,15 +666,16 @@ foreach($record in @($first,$second)){
             root = Path(directory)
             package_root = root / "installation/Lib/site-packages/msplatform"
             shutil.copytree(REPO / "src/msplatform", package_root)
-            source_root = root / "source"
-            source_root.mkdir()
+            workspace = root / "workspace"
+            workspace.mkdir()
+            python = selected_python(root, package_root)
             environment = os.environ.copy()
             environment.pop("PYTHONPATH", None)
             environment.pop("SIMULATION_PYTHON_EXE", None)
             result = subprocess.run([
                 shutil.which("pwsh"), "-NoProfile", "-File",
                 str(package_root / "workflows/resources/oa_mr.ps1"),
-                "-RepoRoot", str(source_root), "-PythonExe", sys.executable,
+                "-PythonExe", str(python),
                 "-AcceleratorComponentContractPath",
                 str(package_root / "components/orthogonal_accelerator/component_contract.json"),
                 "-AcceleratorGeometryProfileId", "closed_two_zone_compact_mr_axial_r3_gap1_4mm",
@@ -671,12 +685,12 @@ foreach($record in @($first,$second)){
                 "-AcceleratorProviderReceiptPath", str(root / "unapproved_provider.json"),
                 "-CompositionPlanPath", str(root / "unapproved_composition.json"),
                 "-Prism1VoltageV", "190", "-Prism2VoltageV", "-186",
-            ], cwd=root, env=environment, capture_output=True, text=True,
+            ], cwd=workspace, env=environment, capture_output=True, text=True,
                 encoding="utf-8", errors="replace", timeout=60)
-            self.assertFalse((source_root / "src").exists())
+            self.assertFalse((workspace / "src").exists())
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("unapproved_geometry", result.stderr)
-            self.assertFalse((root / "artifacts").exists())
+            self.assertFalse((workspace / "artifacts").exists())
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_new_owner_freezes_and_executes_detached_provider(self):
@@ -752,11 +766,6 @@ foreach($staticFieldRequested in @($false,$true)){
             shutil.copytree(REPO / "src/msplatform", package_root)
             source_root = root / "author"
             source_root.mkdir()
-            for relative in (
-                "projects/rf_multipole_ion_optics/analysis",
-                "projects/rf_multipole_ion_optics/core",
-            ):
-                shutil.copytree(REPO / relative, source_root / relative)
             oa_contract = package_root / "components/orthogonal_accelerator/component_contract.json"
             oa_profile = "closed_two_zone_compact_mr_axial_r3_gap1_4mm"
             from msplatform.components.parallel_mirror_dual_stripe_mr_tof.accelerator_requirements import read_accelerator_geometry_authority
@@ -861,7 +870,7 @@ try{
         # materializer can turn it into a scientifically different source.
         command = r"""
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-$python='Check-Source';$sourceRoot='repo';$workspaceRoot='workspace';$RunId='fixture'
+$python='Check-Source';$sourceRoot='repo';$workspaceRoot='workspace';$artifactRoot='workspace/artifacts';$RunId='fixture'
 $trajectoryRetentionClass='compact';$trajectoryRetentionReason='fixture'
 $bunchSourceManifest='source';$mirrorManifest='source';$stripeManifest='source';$manifest='source';$nativeBankManifest='source'
 function New-RunPackage {
@@ -949,7 +958,7 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
                     script_path.write_text(script, encoding="utf-8")
                     result = subprocess.run(
                         ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(script_path)],
-                        cwd=RUNNER.parents[5], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
+                        cwd=RUNNER.parents[4], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
                     )
                     actual = json.loads(result.stdout.splitlines()[-1])
                     self.assertEqual(actual["writes"], writes)
@@ -1053,7 +1062,7 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
                  "provenance": {"upstream_manifest_verification": {"static_field": {"windows": [window]}}}}
         publication = next(line.strip() for line in RUNNER.read_text(encoding="utf-8-sig").splitlines()
                            if line.strip().startswith("Write-RunJson -Path $runConfig -Value $config"))
-        writer = RUNNER.parents[5] / "src/msplatform/execution/resources/run_artifact_support.ps1"
+        writer = RUNNER.parents[4] / "src/msplatform/execution/resources/run_artifact_support.ps1"
         with TemporaryDirectory() as directory:
             source, target = Path(directory) / "input.json", Path(directory) / "run_config.json"
             source.write_text(json.dumps(value), encoding="utf-8")
@@ -1103,7 +1112,7 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
                     )
                     completed = subprocess.run(
                         ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
-                        cwd=RUNNER.parents[5], capture_output=True, text=True,
+                        cwd=RUNNER.parents[4], capture_output=True, text=True,
                         encoding="utf-8", timeout=30,
                     )
                     self.assertEqual(completed.returncode, 0, completed.stderr)
@@ -1154,7 +1163,7 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
             line.strip() for line in self.source.splitlines()
             if line.strip().startswith("Write-RunJson -Path $summary -Depth 100 ")
         )
-        writer = RUNNER.parents[5] / "src/msplatform/execution/resources/run_artifact_support.ps1"
+        writer = RUNNER.parents[4] / "src/msplatform/execution/resources/run_artifact_support.ps1"
         with TemporaryDirectory() as directory:
             source = Path(directory) / "input.json"
             target = Path(directory) / "summary.json"
@@ -1185,12 +1194,12 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_all_step_scale_boundaries_allow_coarser_finite_positive_values(self):
-        project = REPO / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof"
+        resources = REPO / "src/msplatform/workflows/resources"
         for path, variable, guard in (
             (RUNNER, "TrajectoryStepScale", "if([double]::IsNaN($TrajectoryStepScale)"),
-            (project / "analysis/run_native_candidate_chain.ps1", "TrajectoryStepScaleOverride",
+            (resources / "run_native_candidate_chain.ps1", "TrajectoryStepScaleOverride",
              "if($null-ne$TrajectoryStepScaleOverride-and("),
-            (project / "analysis/run_native_corridor_bunch_screening.ps1", "trajectoryStepScale",
+            (resources / "run_native_corridor_bunch_screening.ps1", "trajectoryStepScale",
              "if($null-ne$trajectoryStepScale-and("),
         ):
             source = path.read_text(encoding="utf-8-sig")
@@ -1205,7 +1214,7 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
                           + validator + ";'accepted'")
                 completed = subprocess.run(
                     ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
-                    cwd=project.parents[2], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
+                    cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
                 )
                 self.assertEqual(completed.returncode == 0, valid, completed.stdout + completed.stderr)
 
@@ -1320,7 +1329,7 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
         )
         result = subprocess.run(
             ["pwsh", "-NoProfile", "-Command", command],
-            cwd=RUNNER.parents[5], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
+            cwd=RUNNER.parents[4], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual([int(value) for value in result.stdout.split()], [0, 1, 0, 1, 1, 1, 1, 1])

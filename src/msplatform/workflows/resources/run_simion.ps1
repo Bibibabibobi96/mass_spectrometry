@@ -1,5 +1,10 @@
 [CmdletBinding(DefaultParameterSetName='Execute')]
 param(
+    [Parameter(Mandatory=$true)][string]$WorkspaceRoot,
+    [Parameter(Mandatory=$true)][string]$ArtifactRootPath,
+    [Parameter(Mandatory=$true,ParameterSetName='Execute')][string]$ScientificModePath,
+    [Parameter(Mandatory=$true,ParameterSetName='Execute')][string]$InterfaceContractPath,
+    [Parameter(Mandatory=$true,ParameterSetName='Execute')][string]$LayoutTemplateRegistryPath,
     [Nullable[int]]$RfStepsPerPeriod = $null,
     [Nullable[int]]$TrajectoryQuality = $null,
     [string]$RunId = '',
@@ -9,7 +14,6 @@ param(
     [Parameter(Mandatory=$true,ParameterSetName='Execute')][string]$ParticleDistributionPath,
     [Parameter(Mandatory=$true,ParameterSetName='Execute')][string]$SolverNumericsContractPath,
     [Parameter(Mandatory=$true,ParameterSetName='Execute')][string]$OperatingPoint,
-    [string]$ArtifactRootPath = '',
     [string]$PythonExe = '',
     [string]$SimionExe = '',
     [string]$ContinuationPredecessorManifestPath = '',
@@ -23,34 +27,39 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $execution=@{clock=[Diagnostics.Stopwatch]::StartNew();phase='prepare';phase_started=0.0;phase_seconds=[ordered]@{};elapsed_seconds=0.0}
 $executionStatus='failed';$dataValidity='unavailable';$scienceStatus='not_evaluated';$failureStage=$null
-$projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../components/rf_multipole'))
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../../..')).Path
-$workspaceRoot = Split-Path -Parent $repoRoot
-$artifactRoot = if ($ArtifactRootPath) {
-    [IO.Path]::GetFullPath($ArtifactRootPath)
+$workspaceRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
+$repoRoot = $workspaceRoot
+$artifactRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRootPath)
+$python = if ($PythonExe) {
+    [IO.Path]::GetFullPath($PythonExe)
+} elseif ($env:SIMULATION_PYTHON_EXE) {
+    [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)
 } else {
-    Join-Path $workspaceRoot 'artifacts\projects\rf_multipole_ion_optics'
+    throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'
 }
-$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
+$packageRootText = & $python -I -B -c 'from importlib.resources import files;print(files("msplatform"))'
+if ($LASTEXITCODE -ne 0) { throw 'Installed msplatform package is unavailable.' }
+$packageRoot = (Resolve-Path -LiteralPath $packageRootText).Path
+$projectRoot = Join-Path $packageRoot 'components/rf_multipole'
 $mode = 'transport_interface_readiness'
 if($ResumeFinalization){
     if(-not$RunId){throw 'Finalization recovery requires the original RunId.'}
     Push-Location $repoRoot
     try{& $python -m msplatform.execution.artifact_naming run $RunId|Out-Null;if($LASTEXITCODE-ne0){throw 'Recovery requires a valid original RunId.'}}finally{Pop-Location}
     if(-not$ResultPath){$ResultPath=Join-Path $artifactRoot "scratch/workflow_results/$RunId/result.json"}
-    . (Join-Path $repoRoot 'src/msplatform/workflows/resources/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization
+    . (Join-Path $packageRoot 'workflows/resources/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization
     $outcome=Invoke-RunArtifactWorkflow -RequestPath (Join-Path $artifactRoot "runs/$RunId/inputs/execution_request.json") -ResultPath $ResultPath -ResumeFinalization
     Write-Output "RF_FINALIZATION=$($outcome.status) RUN_ID=$RunId RESULT=$ResultPath"
     if($outcome.status-ne'success'){exit 1};return
 }
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
+. (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
 $entryScriptHash=Get-RunFileSha256 -Path $PSCommandPath
-. (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\simion_layout_template_support.ps1')
-. (Join-Path $PSScriptRoot 'simion_run_config.ps1')
-. (Join-Path $repoRoot 'src/msplatform/backends/simion/resources/simion_execution.ps1')
-. (Join-Path $repoRoot 'src/msplatform/backends/simion/resources/simion_field_checkpoint_support.ps1')
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
-. (Join-Path $repoRoot 'src/msplatform/workflows/resources/rf_publication.ps1')
+. (Join-Path $packageRoot 'backends/simion/resources/simion_layout_template_support.ps1')
+. (Join-Path $packageRoot 'workflows/resources/simion_run_config.ps1')
+. (Join-Path $packageRoot 'backends/simion/resources/simion_execution.ps1')
+. (Join-Path $packageRoot 'backends/simion/resources/simion_field_checkpoint_support.ps1')
+. (Join-Path $packageRoot 'execution/resources/frozen_python_package.ps1')
+. (Join-Path $packageRoot 'workflows/resources/rf_publication.ps1')
 $frozenPythonRelativePaths = Get-FrozenPythonPackageRelativePaths -SourceRoot $repoRoot -Python $python `
     -PythonPackages @(
         'src/msplatform/analysis',
@@ -111,7 +120,6 @@ if (-not (Test-Path -LiteralPath $sourceFamilyInput -PathType Leaf)) {
 if (-not (Test-Path -LiteralPath $distributionInput -PathType Leaf)) {
     throw "Particle source distribution is missing: $distributionInput"
 }
-$modeInput = 'config/modes/quadrupole_transport_interface_readiness.json'
 $expectedParticles = 0
 
 $frozenMode = Join-Path $inputDir 'mode.json'
@@ -122,27 +130,27 @@ $sourceBinding = Join-Path $inputDir 'particle_source_binding.json'
 $frozenNumericalContract = Join-Path $inputDir 'simion_solver_numerics.json'
 $templateDir = Join-Path $inputDir 'simion_layout_template'
 $template = Resolve-MultipoleSimionLayoutTemplate -Python $python `
-    -RepositoryRoot $repoRoot -TemplateDirectory $templateDir
+    -RepositoryRoot $repoRoot -TemplateDirectory $templateDir -RegistryPath $LayoutTemplateRegistryPath
 $templateResolution = $template.resolution
 $templateProfile = $template.profile
 $templateRegistry = $template.registry
 $templateManifest = $template.registration_manifest
 $templateIob = $template.iob
 $templateCon = $template.con
-Copy-VerifiedRunInput -Source (Join-Path $projectRoot ($modeInput -replace '/', '\')) `
+Copy-VerifiedRunInput -Source (Resolve-Path -LiteralPath $ScientificModePath).Path `
     -Destination $frozenMode | Out-Null
     $frozenPythonSupport = Copy-VerifiedRunInput `
-        -Source (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1') `
+        -Source (Join-Path $packageRoot 'execution/resources/frozen_python_package.ps1') `
         -Destination (Join-Path $inputDir 'frozen_python_package.ps1')
     . $frozenPythonSupport
-    . (Join-Path $repoRoot 'src/msplatform/workflows/resources/rf_publication.ps1')
+    . (Join-Path $packageRoot 'workflows/resources/rf_publication.ps1')
     $publishedDesignFreshness = New-RfPublishedDesignFreshnessPackage `
         -Python $python -SourceRoot $repoRoot `
         -SnapshotRoot (Join-Path $inputDir 'published_design_snapshot') -Profile interface
     $frozenResolved = $publishedDesignFreshness.resolved_path
     $publishedDesignFreshnessPath = Join-Path $inputDir 'published_design_freshness.json'
     Write-RunJson -Path $publishedDesignFreshnessPath -Value $publishedDesignFreshness -Depth 16
-Copy-VerifiedRunInput -Source (Join-Path $projectRoot 'variants\quadrupole\config\interface_contract.json') `
+Copy-VerifiedRunInput -Source (Resolve-Path -LiteralPath $InterfaceContractPath).Path `
     -Destination $frozenInterface | Out-Null
 Copy-VerifiedRunInput -Source ([IO.Path]::GetFullPath($SolverNumericsContractPath)) `
     -Destination $frozenNumericalContract | Out-Null
@@ -227,17 +235,17 @@ $frozenParticleGenerator = Get-FrozenPythonPackageFile `
 $frozenBundleMechanism = Get-FrozenPythonPackageFile `
     -Package $frozenPythonPackage -RelativePath `
     'src/msplatform/components/rf_multipole/paired_particle_source_bundle.py'
-Copy-VerifiedRunInput -Source (Join-Path $repoRoot 'src/msplatform/backends/simion/resources/quad_include.gem') `
+Copy-VerifiedRunInput -Source (Join-Path $packageRoot 'backends/simion/resources/quad_include.gem') `
     -Destination (Join-Path $candidateDir 'quad_include.gem') | Out-Null
-Copy-VerifiedRunInput -Source (Join-Path $repoRoot 'src/msplatform/backends/simion/resources/quad_monolithic.gem') `
+Copy-VerifiedRunInput -Source (Join-Path $packageRoot 'backends/simion/resources/quad_monolithic.gem') `
     -Destination (Join-Path $candidateDir 'quad_monolithic.gem') | Out-Null
 $programSource = Copy-VerifiedRunInput `
-    -Source (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\simion_transport.lua') `
+    -Source (Join-Path $packageRoot 'backends/simion/resources/simion_transport.lua') `
     -Destination (Join-Path $candidateDir 'multipole_runtime_program.lua')
-$rfDriveKernel=Copy-VerifiedRunInput -Source (Join-Path $repoRoot 'src/msplatform/backends/simion/resources/rf_drive.lua') `
+$rfDriveKernel=Copy-VerifiedRunInput -Source (Join-Path $packageRoot 'backends/simion/resources/rf_drive.lua') `
     -Destination (Join-Path $inputDir 'multipole_rf_drive_kernel.lua')
 $iobBuilder = Copy-VerifiedRunInput `
-    -Source (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\build_simion_runtime_iob.lua') `
+    -Source (Join-Path $packageRoot 'backends/simion/resources/build_simion_runtime_iob.lua') `
     -Destination (Join-Path $candidateDir 'build_simion_runtime_iob.lua')
 $flyPath = Join-Path $candidateDir 'quad_monolithic.fly2'
 $sourceStatesLua = Join-Path $inputDir 'source_states.lua'
@@ -519,7 +527,7 @@ $luaConfig = ConvertTo-RfSimionLuaConfig -CoreConfig $coreConfig `
 # parser treats that BOM as source text.  This generated table is ASCII-only.
 $luaConfig | Set-Content -LiteralPath $runConfigLua -Encoding ASCII
 
-$inspectScript = Join-Path $repoRoot 'src/msplatform/backends/simion/resources/inspect_builtin_quad_reference.lua'
+$inspectScript = Join-Path $packageRoot 'backends/simion/resources/inspect_builtin_quad_reference.lua'
 
 $ownerCapacity=if($null-ne$continuation){$continuation.capacity}else{
     Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -ArtifactRoot (Split-Path (Split-Path $artifactRoot -Parent) -Parent) `
@@ -528,9 +536,9 @@ $ownerCapacity=if($null-ne$continuation){$continuation.capacity}else{
 $ownerSource=Copy-VerifiedRunInput -Source $PSCommandPath -Destination (Join-Path $package.artifact_run_dir 'inputs/powershell_owner.ps1')
 if((Get-RunFileSha256 -Path $ownerSource)-cne$entryScriptHash){throw 'Frozen PowerShell owner differs from launched source.'}
 $runConfig.inputs.powershell_owner=$ownerSource
-$runConfig.inputs.simion_execution_owner=Copy-VerifiedRunInput -Source (Join-Path $repoRoot 'src/msplatform/backends/simion/resources/simion_execution.ps1') -Destination (Join-Path $inputDir 'simion_execution_owner.ps1')
+$runConfig.inputs.simion_execution_owner=Copy-VerifiedRunInput -Source (Join-Path $packageRoot 'backends/simion/resources/simion_execution.ps1') -Destination (Join-Path $inputDir 'simion_execution_owner.ps1')
 Write-RunJson -Path $runConfigPath -Value $runConfig -Depth 20
-. (Join-Path $repoRoot 'src/msplatform/workflows/resources/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization
+. (Join-Path $packageRoot 'workflows/resources/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization
 $ownerContext=Initialize-RunArtifactPowerShellOwner -Python $python -RepoRoot $repoRoot -Package $package -CapacitySession $ownerCapacity `
     -ResultPath $ResultPath -EntrypointPath $ownerSource -CommitmentInputPaths @($frozenNumericalContract) -Software @('SIMION 2020','Python 3.11')
 $ResultPath=$ownerContext.result_path

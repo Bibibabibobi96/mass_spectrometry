@@ -18,12 +18,24 @@ ROOT = Path(__file__).resolve().parents[3]
 OWNER = ROOT / 'src/msplatform/workflows/resources/paired_accelerator_pulse.ps1'
 
 
+def selected_python(root, package_root):
+    python_home=root/'python'
+    subprocess.run([sys._base_executable,'-m','venv','--system-site-packages',str(python_home)],
+                   check=True,capture_output=True,text=True,timeout=60,cwd=ROOT)
+    executable=python_home/'Scripts/python.exe'
+    parent_site_packages=next(Path(path) for path in sys.path if (Path(path)/'referencing').is_dir())
+    (python_home/'Lib/site-packages/selected-msplatform.pth').write_text(
+        str(package_root.parent)+'\n'+str(parent_site_packages)+'\n',encoding='utf-8')
+    return executable
+
+
 class PairedPulseOwnerTests(unittest.TestCase):
-    def test_default_repository_root_does_not_depend_on_cwd(self):
+    def test_default_root_uses_selected_installed_package_not_package_ancestors(self):
         source = OWNER.read_text(encoding='utf-8')
         self.assertIn("[string]$RepoRoot=''", source)
-        self.assertIn("if(-not$RepoRoot){$RepoRoot=Split-Path -Parent (Split-Path -Parent $packageRoot)}", source)
-        self.assertNotIn("$RepoRoot=(Get-Location).Path", source)
+        self.assertIn("$packageRootText=& $Python -I -B", source)
+        self.assertIn("else{(Get-Location).Path}", source)
+        self.assertNotIn("Split-Path -Parent (Split-Path -Parent $packageRoot)}", source)
 
     def test_baseline_reuse_rebinds_ancestor_outputs_from_hashtable_cases(self):
         script=r'''param($Owner)
@@ -118,8 +130,9 @@ exit 0
             artifacts.mkdir()
             initialize_capacity_ledger(artifacts, objects=[])
             run_id = '20261026_060001__test__python__paired-pulse-owner'
+            python = selected_python(root, ROOT / 'src/msplatform')
             result = self.invoke(['-File', str(self.capacity_isolated_owner(root)), '-Request', str(request), '-DryRun',
-                '-ArtifactRoot', str(artifacts), '-Python', sys.executable, '-RunId', run_id,'-RepoRoot',str(ROOT)])
+                '-ArtifactRoot', str(artifacts), '-Python', str(python), '-RunId', run_id,'-RepoRoot',str(ROOT)])
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn('TEST_CAPACITY_ADMISSION=ISOLATED', result.stdout)
             run = artifacts / 'projects/instrument_assembly/runs' / run_id
@@ -224,13 +237,15 @@ ConvertTo-Json -InputObject $strings -Compress -Depth 4
                 encoding='utf-8', newline='\n')
             workspace = root / 'workspace'
             workspace.mkdir()
+            python = selected_python(root, package_root)
             artifacts = root / 'artifacts'
             artifacts.mkdir()
             initialize_capacity_ledger(artifacts, objects=[])
             run_id = '20261026_060002__test__python__paired-pulse-external-package'
-            result = self.invoke(['-File', str(owner), '-Request', str(request), '-DryRun',
-                '-ArtifactRoot', str(artifacts), '-Python', sys.executable, '-RunId', run_id,
-                '-RepoRoot', str(workspace)], timeout=240)
+            result = subprocess.run(['pwsh', '-NoProfile', '-NonInteractive', '-File', str(owner),
+                '-Request', str(request), '-DryRun', '-ArtifactRoot', str(artifacts),
+                '-Python', str(python), '-RunId', run_id], cwd=workspace,
+                capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=240, check=False)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertFalse((workspace / 'src').exists())
             run = artifacts / 'projects/instrument_assembly/runs' / run_id
@@ -245,10 +260,10 @@ ConvertTo-Json -InputObject $strings -Compress -Depth 4
             fallback.parent.mkdir(parents=True)
             fallback.write_bytes(selected.read_bytes())
             selected.unlink()
-            rejected = self.invoke(['-File', str(owner), '-Request', str(request), '-DryRun',
-                '-ArtifactRoot', str(artifacts), '-Python', sys.executable,
-                '-RunId', '20261026_060003__test__python__paired-pulse-missing-core',
-                '-RepoRoot', str(workspace)], timeout=240)
+            rejected = subprocess.run(['pwsh', '-NoProfile', '-NonInteractive', '-File', str(owner),
+                '-Request', str(request), '-DryRun', '-ArtifactRoot', str(artifacts), '-Python', str(python),
+                '-RunId', '20261026_060003__test__python__paired-pulse-missing-core'], cwd=workspace,
+                capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=240, check=False)
             self.assertNotEqual(rejected.returncode, 0)
             self.assertIn('Frozen payload byte resource is unavailable', rejected.stderr)
 

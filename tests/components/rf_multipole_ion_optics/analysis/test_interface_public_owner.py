@@ -55,7 +55,7 @@ foreach($name in @('Read-InterfaceExecutionLimits','Invoke-InterfaceComsolTask')
 $Limits=Read-InterfaceExecutionLimits LIMITS
 try{$null=Read-InterfaceExecutionLimits MISSING;throw 'missing accepted'}catch{if($_.Exception.Message-cne'Interface execution LimitsPath is missing.'){throw}}
 function Get-RunNativeExecutionContext {param($Package,$Paths,$Tool); $script:requestedPaths=$Paths; @{environment=@{};projected_paths=@($Paths|ForEach-Object{([string]$_).Replace($repoRoot,(Join-Path $repoRoot 'execution'))})}}
-$repoRoot=ROOT;$logDir=ROOT;$RunId='fixture';$StartupAttempts=1
+$repoRoot=ROOT;$packageRoot=(Join-Path ROOT 'src/msplatform');$logDir=ROOT;$RunId='fixture';$StartupAttempts=1
 $script:HostResourceExecutionContext=@{workspace=ROOT;python_executable=PYTHON;host_state_path=(Join-Path ROOT 'state.sqlite3');policy_path=(Join-Path ROOT 'host-policy.json')}
 $package=@{artifact_run_dir=ROOT;run_config='frozen/config.json'};$ResourceBudgets=@{solver=@{memory_bytes=4096}}
 $state=@{calls=[Collections.Generic.List[object]]::new();timer=[Diagnostics.Stopwatch]::StartNew()};$global:LASTEXITCODE=0
@@ -92,17 +92,23 @@ if($state.calls.Count-ne2-or@($state.calls|Where-Object{-not$_.wrapper_returned}
             result = root / "result.json"
             result.write_text(json.dumps(dict(role="run_artifact_workflow_result", run_directory=str(run))), encoding="utf-8")
             original = result.read_bytes()
+            python = root / "selected-python.cmd"
+            python.write_text(
+                "@echo off\r\necho " + str(root / "src/msplatform") + "\r\n",
+                encoding="utf-8",
+            )
             command = r"""
 $ErrorActionPreference='Stop';$env:OWNER_FIXTURE_STATUS='success'
-& CLI -ResumeFinalization -ResultPath RESULT -PythonExe PYTHON
+$roots=@{WorkspaceRoot=ROOT;ArtifactRootPath=(Join-Path ROOT 'artifacts')}
+& CLI @roots -ResumeFinalization -ResultPath RESULT -PythonExe PYTHON
 $env:OWNER_FIXTURE_STATUS='failed';$caught=$false
-try{& CLI -ResumeFinalization -ResultPath RESULT -PythonExe PYTHON}catch{if($_.Exception.Message-notlike'*Original execution terminal status=failed*'){throw};$caught=$true}
+try{& CLI @roots -ResumeFinalization -ResultPath RESULT -PythonExe PYTHON}catch{if($_.Exception.Message-notlike'*Original execution terminal status=failed*'){throw};$caught=$true}
 if(-not$caught){throw 'failed terminal exit swallowed'}
 foreach($ignored in @('ReleaseConstructionGate','NumericalExperimentId','StartupAttempts')){
- $args=@{ResumeFinalization=$true;ResultPath=RESULT;PythonExe=PYTHON};$args[$ignored]=$(if($ignored-eq'ReleaseConstructionGate'){$true}elseif($ignored-eq'StartupAttempts'){1}else{'ignored'})
+ $args=@{WorkspaceRoot=ROOT;ArtifactRootPath=(Join-Path ROOT 'artifacts');ResumeFinalization=$true;ResultPath=RESULT;PythonExe=PYTHON};$args[$ignored]=$(if($ignored-eq'ReleaseConstructionGate'){$true}elseif($ignored-eq'StartupAttempts'){1}else{'ignored'})
  $rejected=$false;try{& CLI @args}catch{if($_.Exception.Message-notlike'*does not accept new execution options*'){throw};$rejected=$true};if(-not$rejected){throw 'ignored option accepted'}
 }
-""".replace('CLI', literal(target)).replace('RESULT', literal(result)).replace('PYTHON', literal(sys.executable))
+""".replace('CLI', literal(target)).replace('RESULT', literal(result)).replace('PYTHON', literal(python)).replace('ROOT', literal(root))
             self.run_ps(command)
             self.assertEqual(result.read_bytes(), original)
 
@@ -253,6 +259,16 @@ foreach($case in @('gui_failed','gui_succeeded','metadata_missing')){
             from tests.contracts.test_support.run_artifact_workflow import copy_scientific_core
 
             copy_scientific_core(repo, facade)
+            venv = root / "venv"
+            subprocess.run(
+                [sys.executable, "-m", "venv", "--system-site-packages", str(venv)],
+                check=True, capture_output=True, text=True, cwd=root, timeout=60,
+            )
+            selected_python = venv / "Scripts/python.exe"
+            shutil.copytree(
+                facade / "src/msplatform",
+                venv / "Lib/site-packages/msplatform",
+            )
             policy = facade/"src/msplatform/execution/resources/artifact_capacity_policy.json"
             document = json.loads(policy.read_text(encoding="utf-8"))
             document.update(target_gib=.125, minimum_free_gib=0)
@@ -263,6 +279,7 @@ foreach($case in @('gui_failed','gui_succeeded','metadata_missing')){
             command = r"""
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $repoRoot=FACADE;$python=PYTHON;$artifact=ARTIFACT;[Environment]::SetEnvironmentVariable(('SIMULATION_'+'PY'+'THON_EXE'),$python,'Process')
+$script:HostResourceExecutionContext=@{workspace=$repoRoot;python_executable=$python;host_state_path=(Join-Path $artifact 'host.sqlite3');policy_path=(Join-Path $repoRoot 'src/msplatform/execution/resources/host_resource_policy.json')}
 . (Join-Path $repoRoot 'src/msplatform/workflows/resources/run_artifact_workflow.ps1')
 $t=$null;$e=$null;$ast=[Management.Automation.Language.Parser]::ParseFile(ENTRY,[ref]$t,[ref]$e)
 $assignment=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$runConfig'-and$n.Right.Extent.Text.Contains("role='rf_quadrupole_comsol_run_config'")},$true)
@@ -336,7 +353,7 @@ foreach($status in @('success','failed')){
  if($manifest.status-cne$status){throw 'terminal publication differs'}
  Write-Output ('ACTUAL_INTERFACE_REWRITE_FINALIZED='+$status)
 }
-""".replace('FACADE', literal(facade)).replace('PYTHON', literal(sys.executable)).replace('ARTIFACT', literal(artifact)).replace('ENTRY', literal(CLI))
+""".replace('FACADE', literal(facade)).replace('PYTHON', literal(selected_python)).replace('ARTIFACT', literal(artifact)).replace('ENTRY', literal(CLI))
             output = self.run_ps(command)
             self.assertIn("ACTUAL_INTERFACE_REWRITE_FINALIZED=success", output)
             self.assertIn("ACTUAL_INTERFACE_REWRITE_FINALIZED=failed", output)

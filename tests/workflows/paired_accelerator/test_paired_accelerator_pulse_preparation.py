@@ -103,7 +103,7 @@ class PairedPulsePreparationTests(unittest.TestCase):
             observation_times_us=[10., 11., 12., 13.], numerics=dict(maximum_step_us=.1, relative_tolerance=1e-5, absolute_tolerance=1e-6, simion_trajectory_quality=10))
         path = root / "pulse_request.json"
         runtime.write(path, author)
-        self.assertEqual(len(binding["accelerator_ring_ids"]), 20)
+        self.assertEqual(len([key for key in binding if key.startswith("accelerator_ring_")]), 20)
         return path, author, producer, model
 
     @staticmethod

@@ -191,9 +191,8 @@ class ComsolWorkflowArchitectureContractTests(unittest.TestCase):
         self.assertIn("[string]$SolverNumericsContractPath", parameter_block)
         self.assertIn("[string]$SolverNumericsProfileId", parameter_block)
         self.assertIn("Compile-RfComsolSolverNumerics", source)
-        self.assertIn(
-            "variants\quadrupole\config\\comsol_solver_numerics.json", source
-        )
+        self.assertIn("$OfficialSolverNumericsContractPath", source)
+        self.assertNotIn("variants\\quadrupole\\config\\comsol_solver_numerics.json", source)
         self.assertNotRegex(source, r"(?i)(?:mesh|steps|time)\w*\s*=\s*(?:1|80|160)\b")
 
     def test_active_profile_binds_numerics_identity_and_path_only(self) -> None:
@@ -990,12 +989,26 @@ $results | ConvertTo-Json -Depth 32 -Compress
                 MASS_SPECTROMETRY_EXECUTION_ROOT=str(root / "execution"),
                 MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(root / "host.sqlite3"))
             fixture_source = capacity_fixture_source(REPO_ROOT, root/"fixture_source")
+            venv = root / "venv"
+            subprocess.run(
+                [str(RUN_PYTHON), "-m", "venv", "--system-site-packages", str(venv)],
+                check=True, capture_output=True, text=True, cwd=root, timeout=60,
+            )
+            selected_python = venv / "Scripts/python.exe"
+            shutil.copytree(
+                fixture_source / "src/msplatform",
+                venv / "Lib/site-packages/msplatform",
+            )
             command = ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(fixture_source/RUNNER.relative_to(REPO_ROOT)),
+                "-WorkspaceRoot", str(fixture_source), "-ArtifactRootPath", str(artifacts),
+                "-ScientificModePath", str(MODE),
+                "-InterfaceContractPath", str(PROJECT_ROOT/"variants/quadrupole/config/interface_contract.json"),
+                "-OfficialSolverNumericsContractPath", str(NUMERICS),
                 "-RunId", run_id, "-ParticleTablePath", str(invalid_path),
                 "-ParticleBundleMetadataPath", str(invalid_path),
                 "-SourceFamilyPath", str(invalid_path), "-ParticleDistributionPath", str(invalid_path),
                 "-SolverNumericsContractPath", str(invalid_path), "-SolverNumericsProfileId", "baseline",
-                "-OperatingPoint", "forged", "-PythonExe", str(RUN_PYTHON),
+                "-OperatingPoint", "forged", "-PythonExe", str(selected_python),
                 "-LimitsPath", str(limits), "-ResultPath", str(result_path)]
             outcome = subprocess.run(command, cwd=REPO_ROOT, env=environment,
                 capture_output=True, text=True, encoding="utf-8", timeout=120)

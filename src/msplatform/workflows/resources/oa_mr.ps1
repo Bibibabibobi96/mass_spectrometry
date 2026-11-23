@@ -47,7 +47,7 @@ param(
   [string]$RunId='',
   [string]$SimionExe='',
   [string]$PythonExe='',
-  [string]$RepoRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../..'))
+  [string]$RepoRoot=''
 )
 
 Set-StrictMode -Version Latest
@@ -66,11 +66,17 @@ function Format-InvariantNumber {
 
 function Invoke-ProjectPython {
   param([string[]]$Arguments)
-  Push-Location -LiteralPath $script:pythonRoot;$saved=$env:PYTHONPATH
+  Push-Location -LiteralPath $script:pythonRoot
   try{
-    $importRoots=if($script:pythonRoot-eq$sourceRoot){@((Split-Path -Parent $packageRoot),$sourceRoot)}else{@(Get-RunPythonImportRoots -RepoRoot $script:pythonRoot)}
-    $env:PYTHONPATH=$importRoots-join[IO.Path]::PathSeparator;& $python -B @Arguments;if($LASTEXITCODE-ne 0){throw "Python stage failed: $($Arguments -join ' ')"}
-  }finally{$env:PYTHONPATH=$saved;Pop-Location}
+    if($script:pythonRoot-eq$packageParent){
+      & $python -I -B @Arguments
+    }else{
+      $saved=$env:PYTHONPATH
+      try{$env:PYTHONPATH=(Get-RunPythonImportRoots -RepoRoot $script:pythonRoot)-join[IO.Path]::PathSeparator;& $python -B @Arguments}
+      finally{$env:PYTHONPATH=$saved}
+    }
+    if($LASTEXITCODE-ne 0){throw "Python stage failed: $($Arguments -join ' ')"}
+  }finally{Pop-Location}
 }
 function Invoke-FrozenCollectionGate {
   param([Parameter(Mandatory)]$Frozen,[Parameter(Mandatory)][string]$Observation,
@@ -218,20 +224,27 @@ function Get-ManifestOutputRecord {
 $projectId='instrument_assembly'
 $providerProjectId='parallel_mirror_dual_stripe_mr_tof'
 $packageRoot=Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$sourceRoot=(Resolve-Path -LiteralPath $RepoRoot).Path
+$packageParent=Split-Path -Parent $packageRoot
+$researchRootExplicit=[bool]$RepoRoot
+$sourceRoot=if($RepoRoot){(Resolve-Path -LiteralPath $RepoRoot).Path}else{(Get-Location).Path}
 $executionResources=Join-Path $packageRoot 'execution/resources'
 . (Join-Path $executionResources 'require_powershell7.ps1')
 . (Join-Path $executionResources 'workspace_paths.ps1')
-$script:pythonRoot=$sourceRoot
-$workspaceRoot=Split-Path -Parent $sourceRoot
+$script:pythonRoot=$packageParent
+$workspaceRoot=if($researchRootExplicit){Split-Path -Parent $sourceRoot}else{$sourceRoot}
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
-$hostState=if($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH}else{Join-Path $workspaceRoot 'artifacts/common/host_resources.sqlite3'}
+$packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
+if($LASTEXITCODE-ne0-or[string]::IsNullOrWhiteSpace([string]$packageRootText)){throw 'Installed msplatform package is unavailable.'}
+$selectedPackageRoot=(Resolve-Path -LiteralPath ([string]$packageRootText).Trim()).Path
+if(-not$researchRootExplicit-and-not[string]::Equals($selectedPackageRoot,[IO.Path]::GetFullPath($packageRoot),[StringComparison]::OrdinalIgnoreCase)){throw 'Selected Python msplatform package differs from the entry package.'}
+$artifactRoot=if($env:MASS_SPECTROMETRY_ARTIFACT_ROOT){[IO.Path]::GetFullPath($env:MASS_SPECTROMETRY_ARTIFACT_ROOT)}else{Join-Path $workspaceRoot 'artifacts'}
+$hostState=if($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH}else{Join-Path $artifactRoot 'common/host_resources.sqlite3'}
 $hostContext=@{workspace=$workspaceRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 . (Join-Path $PSScriptRoot 'run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
 if($ResumeFinalization){
   if(-not$RunId){throw 'Finalization recovery requires the existing RunId.'}
-  $projectArtifacts=Join-Path $workspaceRoot "artifacts/projects/$projectId"
+  $projectArtifacts=Join-Path $artifactRoot "projects/$projectId"
   if(-not$ResultPath){$ResultPath=Join-Path $projectArtifacts "scratch/workflow_results/$RunId/result.json"}
   $result=Invoke-RunArtifactWorkflow -RequestPath (Join-Path $projectArtifacts "runs/$RunId/inputs/execution_request.json") -ResultPath $ResultPath -ResumeFinalization
   Write-Output $result
@@ -424,13 +437,13 @@ if([string]::IsNullOrWhiteSpace($RunId)){$RunId=(Get-Date -Format 'yyyyMMdd_HHmm
 . (Join-Path $executionResources 'resource_process_support.ps1')
 . (Join-Path $packageRoot 'backends/simion/resources/short_pa_path_support.ps1')
 . (Join-Path $packageRoot 'execution/resources/dependencies.ps1')
-$package=New-RunPackage -Python $python -RepoRoot $sourceRoot -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$projectId") `
+$package=New-RunPackage -Python $python -RepoRoot $sourceRoot -ArtifactRoot (Join-Path $artifactRoot "projects\$projectId") `
   -RunId $RunId -Project $projectId -Mode 'oa_mr' -Software @('SIMION 2020','Python 3.11') `
   -RetentionContractEnabled -RetentionClass $trajectoryRetentionClass -RetentionReason $trajectoryRetentionReason `
   -CapacityLedgerLifecycleEnabled -AdditionalDirectories @('simion') -UseShortExecutionPath
 $runDir=$package.run_dir;$resultDir=$package.result_dir;$logDir=$package.log_dir;$solverDir=Join-Path $runDir 'simion'
 $artifactSolverDir=Join-Path ([string]$package.artifact_run_dir) 'simion'
-$runConfig=$package.run_config;$summary=$package.summary;$artifactRoot=Join-Path $workspaceRoot 'artifacts'
+$runConfig=$package.run_config;$summary=$package.summary
 $terminalStatus='interrupted';$failureStage='preflight';$resourceLease=$InheritedHostResourceLease;$ownsHostResourceLease=$null-eq$InheritedHostResourceLease;$hostOutcome='failed';$temporarySolverDir=$null;$temporaryAcceleratorRuntimeSession=$null
 $owner=$null;$ownerOutputs=@();$nativeOperations=[Collections.Generic.List[object]]::new();$resourceReleases=[Collections.Generic.List[object]]::new()
 $terminalPublicationClosed=$false;$failureRecord=$null

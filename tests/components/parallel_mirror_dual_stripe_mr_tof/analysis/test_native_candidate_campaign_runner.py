@@ -27,7 +27,11 @@ class NativeCandidateCampaignRunnerTests(unittest.TestCase):
         self.assertIn("run_native_candidate_condition.ps1", self.source)
         self.assertIn("[Parameter(Mandatory)][string]$WorkspaceRoot", self.source)
         self.assertIn("[Parameter(Mandatory)][string]$ArtifactRoot", self.source)
+        self.assertIn("[Parameter(Mandatory)][string]$PythonExe", self.source)
         self.assertIn("Join-Path $packageRoot 'workflows/resources/run_native_candidate_condition.ps1'", self.source)
+        self.assertIn("Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1'", self.source)
+        self.assertNotIn("PYTHONPATH", self.source)
+        self.assertNotIn("SIMULATION_PYTHON_EXE", self.source)
         self.assertIn("WorkspaceRoot=$workspaceRoot;ArtifactRoot=$artifactRoot;PythonExe=$python", self.source)
         self.assertIn("& $conditionRunner @arguments|Out-Host", self.source)
         self.assertNotIn("run_target_operating_point_chain.ps1", self.source)
@@ -133,10 +137,6 @@ class NativeCandidateCampaignBehaviorTests(unittest.TestCase):
         self.artifact_runs = self.root / "artifacts" / "runs"
         self.artifact_runs.mkdir(parents=True)
         source = RUNNER.read_text(encoding="utf-8-sig")
-        source = source.replace(
-            "$repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\\..\\..\\..')).Path",
-            f"$repoRoot='{RUNNER.parents[4].as_posix()}'",
-        )
         source = source.replace(
             '$artifactRuns=Join-Path $artifactRoot "projects\\$project\\runs"',
             f"$artifactRuns='{self.artifact_runs.as_posix()}'",
@@ -282,7 +282,7 @@ if($status-eq'success'){
             command.extend(["-ConditionReuseMapPath", str(condition_reuse_map)])
         return subprocess.run(
             command,
-            cwd=RUNNER.parent,
+            cwd=self.root,
             timeout=120,
             text=True,
             encoding="utf-8",

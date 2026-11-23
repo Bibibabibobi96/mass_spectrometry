@@ -1,5 +1,10 @@
 [CmdletBinding(DefaultParameterSetName="Run")]
 param(
+    [Parameter(Mandatory = $true)][string]$WorkspaceRoot,
+    [Parameter(Mandatory = $true)][string]$ArtifactRootPath,
+    [Parameter(Mandatory = $true,ParameterSetName="Run")][string]$ScientificModePath,
+    [Parameter(Mandatory = $true,ParameterSetName="Run")][string]$InterfaceContractPath,
+    [Parameter(Mandatory = $true,ParameterSetName="Run")][string]$OfficialSolverNumericsContractPath,
     [string]$RunId = '',
     [Parameter(Mandatory = $true,ParameterSetName="Run")][string]$ParticleTablePath,
     [Parameter(Mandatory = $true,ParameterSetName="Run")][string]$ParticleBundleMetadataPath,
@@ -22,8 +27,9 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../components/rf_multipole'))
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../../..')).Path
+$workspaceRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
+$repoRoot = $workspaceRoot
+$artifactRootPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRootPath)
 $python = if ($PythonExe) {
     [IO.Path]::GetFullPath($PythonExe)
 } elseif ($env:SIMULATION_PYTHON_EXE) {
@@ -31,9 +37,13 @@ $python = if ($PythonExe) {
 } else {
     throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'
 }
-. (Join-Path $repoRoot 'src/msplatform/workflows/resources/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
+$packageRootText = & $python -I -B -c 'from importlib.resources import files;print(files("msplatform"))'
+if ($LASTEXITCODE -ne 0) { throw 'Installed msplatform package is unavailable.' }
+$packageRoot = (Resolve-Path -LiteralPath $packageRootText).Path
+$projectRoot = Join-Path $packageRoot 'components/rf_multipole'
+. (Join-Path $packageRoot 'workflows/resources/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
 if($ResumeFinalization){
-    $allowed=@('ResumeFinalization','RunId','ResultPath','PythonExe')
+    $allowed=@('ResumeFinalization','RunId','ResultPath','PythonExe','WorkspaceRoot','ArtifactRootPath')
     $ignored=@($PSBoundParameters.Keys|Where-Object{$_-notin$allowed})
     if($ignored.Count){throw ('ResumeFinalization does not accept new execution options: '+($ignored-join', '))}
     if(-not$ResultPath){throw 'ResumeFinalization requires the original ResultPath.'}
@@ -59,20 +69,20 @@ function Read-InterfaceExecutionLimits {
     }
     return $value
 }
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
-$pathContext=Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
+. (Join-Path $packageRoot 'execution/resources/workspace_paths.ps1')
+$pathContext=Resolve-WorkspacePaths -SourceRoot $repoRoot -ArtifactRoot $artifactRootPath -Python $python
 $artifactRoot=Join-Path ([string]$pathContext.artifact_root) 'projects/rf_multipole_ion_optics'
 $Limits=Read-InterfaceExecutionLimits -Path $LimitsPath
 $CommittedNewBytes=[long]$Limits.transient_run_directory_bytes
-$executionResources = Join-Path $repoRoot 'src/msplatform/execution/resources'
-$hostContext = @{workspace=(Split-Path -Parent $repoRoot);python_executable=$python;host_state_path=[string]$pathContext.host_resource_state_path;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
+$executionResources = Join-Path $packageRoot 'execution/resources'
+$hostContext = @{workspace=$workspaceRoot;python_executable=$python;host_state_path=[string]$pathContext.host_resource_state_path;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 $ResourceBudgets=@{}
 foreach($stage in @('prepare','solver','postprocess')){$ResourceBudgets[$stage]=(Get-HostResourceBudget -Role COMSOL -Stage $stage).Clone()}
 $ResourceBudgets.solver.memory_bytes=[long]$Limits.process_tree_working_set_bytes
-. (Join-Path $PSScriptRoot 'comsol_solver_numerics.ps1')
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
-. (Join-Path $repoRoot 'src/msplatform/workflows/resources/rf_publication.ps1')
+. (Join-Path $packageRoot 'workflows/resources/comsol_solver_numerics.ps1')
+. (Join-Path $executionResources 'frozen_python_package.ps1')
+. (Join-Path $packageRoot 'workflows/resources/rf_publication.ps1')
 $frozenPythonRelativePaths = Get-FrozenPythonPackageRelativePaths -SourceRoot $repoRoot -Python $python `
     -PythonPackages @(
         'src/msplatform/analysis',
@@ -118,9 +128,9 @@ function Invoke-InterfaceComsolTask {
     if($State.calls.Count-eq0){$State.prepare_seconds=$State.timer.Elapsed.TotalSeconds}
     $State.calls.Add($call);$callTimer=[Diagnostics.Stopwatch]::StartNew()
     try{
-        . (Join-Path (Split-Path -Parent ((Join-Path $repoRoot 'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1'))) 'resolve_comsol_64.ps1')
+        . (Join-Path $packageRoot 'backends/comsol/launcher/resolve_comsol_64.ps1')
         $comsolLauncherParameters=Get-ComsolLauncherParameters -HostContext $script:HostResourceExecutionContext -WorkingDirectory $script:HostResourceExecutionContext.workspace
-        & (Join-Path $repoRoot 'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1') @comsolLauncherParameters -TaskScript $Task -ReportPath $Report `
+        & (Join-Path $packageRoot 'backends/comsol/launcher/run_comsol_r2025b.ps1') @comsolLauncherParameters -TaskScript $Task -ReportPath $Report `
           -StartupAttempts $StartupAttempts -Limits $Limits -ResourceBudgets $ResourceBudgets `
           -RunId $RunId -RunDir $package.artifact_run_dir -UsagePath $usage -CompletionPath $receipt
         $call.wrapper_returned=$true
@@ -427,7 +437,7 @@ runpy.run_module(modules[1],run_name='__main__')
 }
 
 if($AnalyzeOnly){
-    $allowed=@('AnalyzeOnly','ParentManifestPath','StoppedReceiptPath','LimitsPath','RunId','ResultPath','PythonExe')
+    $allowed=@('AnalyzeOnly','ParentManifestPath','StoppedReceiptPath','LimitsPath','RunId','ResultPath','PythonExe','WorkspaceRoot','ArtifactRootPath')
     $ignored=@($PSBoundParameters.Keys|Where-Object{$_-notin$allowed})
     if($ignored.Count){throw ('AnalyzeOnly consumes parent frozen scientific inputs; new options are not accepted: '+($ignored-join', '))}
     Invoke-InterfacePostprocessChild
@@ -494,7 +504,7 @@ try {
     $capacity=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -ArtifactRoot ([string]$pathContext.artifact_root) -RunDirectory $package.artifact_run_dir -CommittedNewBytes $CommittedNewBytes -ProtectedPaths @($package.artifact_run_dir) -Owner ('run-artifact-workflow:rf_multipole_ion_optics:'+$RunId)
     $ownerContext=Initialize-RunArtifactPowerShellOwner -Python $python -RepoRoot $repoRoot -Package $package -CapacitySession $capacity -ResultPath $ResultPath -EntrypointPath $entry -CommitmentInputPaths @($authority,$hostAuthority) -Software $software
     $packageOwnedConfig=Get-Content -LiteralPath $package.run_config -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
-    $officialNumerics = Join-Path $projectRoot 'variants\quadrupole\config\comsol_solver_numerics.json'
+    $officialNumerics = (Resolve-Path -LiteralPath $OfficialSolverNumericsContractPath).Path
     $liveParticleTable = [IO.Path]::GetFullPath($ParticleTablePath)
     $liveBundleMetadata = [IO.Path]::GetFullPath($ParticleBundleMetadataPath)
     $liveSourceFamily = [IO.Path]::GetFullPath($SourceFamilyPath)
@@ -520,10 +530,10 @@ try {
     }
 
     $frozenPythonSupport = Copy-VerifiedRunInput `
-        -Source (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1') `
+        -Source (Join-Path $executionResources 'frozen_python_package.ps1') `
         -Destination (Join-Path $inputDir 'frozen_python_package.ps1')
     . $frozenPythonSupport
-    . (Join-Path $repoRoot 'src/msplatform/workflows/resources/rf_publication.ps1')
+    . (Join-Path $packageRoot 'workflows/resources/rf_publication.ps1')
     $publishedDesignFreshness = New-RfPublishedDesignFreshnessPackage `
         -Python $python -SourceRoot $repoRoot `
         -SnapshotRoot (Join-Path $inputDir 'published_design_snapshot') -Profile interface
@@ -531,10 +541,10 @@ try {
     $publishedDesignFreshnessPath = Join-Path $inputDir 'published_design_freshness.json'
     Write-RunJson -Path $publishedDesignFreshnessPath -Value $publishedDesignFreshness -Depth 16
     $frozenScientificMode = Copy-VerifiedRunInput `
-        -Source (Join-Path $projectRoot 'config\modes\quadrupole_transport_interface_readiness.json') `
+        -Source (Resolve-Path -LiteralPath $ScientificModePath).Path `
         -Destination (Join-Path $inputDir 'transport_interface_readiness.json')
     $frozenInterface = Copy-VerifiedRunInput `
-        -Source (Join-Path $projectRoot 'variants\quadrupole\config\interface_contract.json') `
+        -Source (Resolve-Path -LiteralPath $InterfaceContractPath).Path `
         -Destination (Join-Path $inputDir 'interface_contract.json')
     $frozenSourceFamily = Copy-VerifiedRunInput -Source $liveSourceFamily `
         -Destination (Join-Path $inputDir 'particle_source_family.json')

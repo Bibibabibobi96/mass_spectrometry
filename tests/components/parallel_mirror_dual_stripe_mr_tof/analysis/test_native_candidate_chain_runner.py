@@ -14,13 +14,42 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 RUNNER = Path(__file__).resolve().parents[4] / "src/msplatform/workflows/resources" / "run_native_candidate_chain.ps1"
 
 
-def _public_import_roots_function() -> str:
-    source = (REPO_ROOT / "src/msplatform/execution/resources/run_artifact_support.ps1").read_text(encoding="utf-8-sig")
-    start = source.index("function Get-RunPythonImportRoots {")
-    return source[start:source.index("\nfunction ", start + 1)] + "\n"
-
-
 class NativeCandidateChainRunnerTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+    def test_off_checkout_launch_uses_installed_resources_and_fails_before_native_work(self):
+        import os
+
+        source = RUNNER.read_text(encoding="utf-8-sig")
+        self.assertIn("[Parameter(Mandatory)][string]$WorkspaceRoot", source)
+        self.assertIn("[Parameter(Mandatory)][string]$ArtifactRoot", source)
+        self.assertIn("[Parameter(Mandatory)][string]$PythonExe", source)
+        self.assertNotIn("PYTHONPATH", source)
+        self.assertNotIn("SIMULATION_PYTHON_EXE", source)
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            request = root / "request.json"
+            request.write_text(json.dumps({"role": "unsupported_fixture"}), encoding="utf-8")
+            foreign = root / "foreign/msplatform"
+            foreign.mkdir(parents=True)
+            (foreign / "__init__.py").write_text("raise RuntimeError('foreign PYTHONPATH loaded')\n", encoding="utf-8")
+            command = [
+                shutil.which("pwsh"), "-NoProfile", "-NonInteractive", "-File", str(RUNNER),
+                "-WorkspaceRoot", str(root), "-ArtifactRoot", str(root / "artifacts"),
+                "-PythonExe", sys.executable, "-GeometryReviewRunPath", "geometry",
+                "-MirrorRunPath", "mirror", "-StripeRunPath", "stripe",
+                "-AcceleratorProviderReceiptPath", "provider", "-CompositionPlanPath", "plan",
+                "-QualifiedWorkpointRunPath", "qualified", "-SourceDefinitionPath", "source",
+                "-AcceleratorYAnchorMm", "-55", "-FieldProviderRequestPath", str(request),
+                "-CenterSourceReceiptPath", "center",
+            ]
+            result = subprocess.run(
+                command, cwd=root, env=dict(os.environ, PYTHONPATH=str(root / "foreign")),
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30, check=False,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Unsupported static field provider request role", result.stdout + result.stderr)
+            self.assertFalse((root / "artifacts").exists())
+
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_actual_root_feedback_keeps_one_request_and_matching_best_identity(self):
         source = RUNNER.read_text(encoding="utf-8-sig")
@@ -28,7 +57,7 @@ class NativeCandidateChainRunnerTests(unittest.TestCase):
         for name in ("Invoke-ProjectPython", "Invoke-CandidatePolicyRequest", "Read-CenterWorkpointGate"):
             start = source.index("function " + name + " {")
             helpers += source[start:source.index("\nfunction ", start+1)] + "\n"
-        helpers = _public_import_roots_function() + helpers
+
         helpers = helpers.replace("  $output=@(Invoke-ProjectPython", "  $script:calls++;$output=@(Invoke-ProjectPython")
         start = source.index("    $candidateEnvelopeAvailable=[bool]$focused.envelope_available")
         block = source[start:source.index("    if(-not$candidateCenterGate.passed)", start)]
@@ -210,7 +239,7 @@ if($caught-notlike'*frozen numerical contract*'){throw 'Centre projection omitte
         for name in ("Invoke-ProjectPython", "Invoke-CandidatePolicyRequest"):
             start = source.index("function " + name + " {")
             helper += source[start:source.index("\nfunction ", start+1)]+"\n"
-        helper = _public_import_roots_function() + helper
+
         helper = ("$repoRoot='" + str(REPO_ROOT).replace("'", "''") + "';$python='" + sys.executable.replace("'", "''")
                   + "';$analysisModule='msplatform.workflows.oa_mr.source_z_energy_timing_diagnostic'\n" + helper)
         names = ["P1_P2_positive_mirror_turn_y_mm", "P1_P2_P2_shield_low_field_angle_degrees",
@@ -379,7 +408,7 @@ if($caught-notlike'*frozen numerical contract*'){throw 'Centre projection omitte
         for name in ("Invoke-ProjectPython", "Invoke-CandidatePolicyRequest"):
             start = source.index("function " + name + " {")
             helpers += source[start:source.index("\nfunction ", start+1)]+"\n"
-        helpers = _public_import_roots_function() + helpers
+
         helpers += ("$repoRoot='" + str(REPO_ROOT).replace("'", "''") + "';$python='" + sys.executable.replace("'", "''")
                     + "';$analysisModule='msplatform.workflows.oa_mr.source_z_energy_timing_diagnostic'\n")
         with TemporaryDirectory() as temporary:
@@ -1325,7 +1354,7 @@ $config|ConvertTo-Json -Compress
                                ("unknown", None)):
             script = ("Set-StrictMode -Version Latest;$ErrorActionPreference='Stop';"
                       "$staticFieldRepresentation='comsol_static_scalar_v';$fieldProviderRunner='comsol';"
-                      f"$fieldProviderRequest=@{{role='{role}'}};$repoRoot=(Get-Location).Path;$caught='';try{{\n"
+                      f"$fieldProviderRequest=@{{role='{role}'}};$packageRoot=(Get-Location).Path;$caught='';try{{\n"
                       + source[start:end] + "}catch{$caught=$_.Exception.Message};"
                       "@{mode=$staticFieldRepresentation;runner=$fieldProviderRunner;caught=$caught}|ConvertTo-Json -Compress")
             result = subprocess.run([shell, "-NoProfile", "-NonInteractive", "-Command", script],
@@ -1753,46 +1782,32 @@ if __name__ == "__main__":
     unittest.main()
 
 
-class ExplicitFrozenPythonTransportTests(unittest.TestCase):
+class ExplicitInstalledPythonTransportTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
-    def test_actual_dispatch_helpers_use_selected_src_and_reject_missing_owner_with_foreign_host(self):
+    def test_actual_dispatch_helper_ignores_foreign_pythonpath_outside_checkout(self):
+        import msplatform
         import os
 
-        transport = (REPO_ROOT / "src/msplatform/execution/resources/run_artifact_support.ps1").read_text(encoding="utf-8-sig")
-        start = transport.index("function Get-RunPythonImportRoots {")
-        import_roots = transport[start:transport.index("\nfunction ", start + 1)]
-        for name in ("run_native_candidate_chain.ps1", "run_native_corridor_bunch_screening.ps1"):
-            source = (RUNNER.parent / name).read_text(encoding="utf-8-sig")
-            start = source.index("function Invoke-ProjectPython {")
-            helper = source[start:source.index("\nfunction ", start + 1)]
-            with self.subTest(runner=name), TemporaryDirectory() as directory:
-                root = Path(directory)
-                selected = root / "selected"
-                foreign = root / "foreign"
-                shutil.copytree(REPO_ROOT / "src/msplatform", selected / "src/msplatform")
-                shutil.copytree(REPO_ROOT / "src/msplatform", foreign / "msplatform")
-                target = Path("src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/resolved_geometry.py")
-                script = root / "transport.ps1"
-                script.write_text(
-                    "param($Repo,$Python)\nSet-StrictMode -Version Latest;$ErrorActionPreference='Stop';"
-                    "$repoRoot=$Repo;$python=$Python;\n" + import_roots + "\n" + helper
-                    + "\nInvoke-ProjectPython -Arguments @('-c','import msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry as m; print(m.__file__)')\n",
-                    encoding="utf-8", newline="\n",
-                )
-                env = dict(os.environ, PYTHONPATH=str(foreign))
-                command = [shutil.which("pwsh"), "-NoProfile", "-File", str(script), str(selected), sys.executable]
-                actual = subprocess.run(command, cwd=root, env=env, capture_output=True,
-                                        text=True, encoding="utf-8", errors="replace", timeout=30, check=False)
-                self.assertEqual(actual.returncode, 0, actual.stdout + actual.stderr)
-                self.assertEqual(Path(actual.stdout.strip()).resolve(), (selected / target).resolve())
-                original = (selected / target).read_bytes()
-                (selected / target).unlink()
-                try:
-                    missing = subprocess.run(command, cwd=root, env=env, capture_output=True,
-                                             text=True, encoding="utf-8", errors="replace", timeout=30, check=False)
-                    self.assertNotEqual(missing.returncode, 0)
-                    self.assertIn("ModuleNotFoundError", missing.stdout + missing.stderr)
-                    self.assertTrue((foreign / target.relative_to("src")).is_file())
-                finally:
-                    (selected / target).write_bytes(original)
-                self.assertEqual((selected / target).read_bytes(), original)
+        source = RUNNER.read_text(encoding="utf-8-sig")
+        start = source.index("function Invoke-ProjectPython {")
+        helper = source[start:source.index("\nfunction ", start + 1)]
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            foreign = root / "foreign/msplatform/components/parallel_mirror_dual_stripe_mr_tof"
+            foreign.mkdir(parents=True)
+            (foreign / "resolved_geometry.py").write_text("raise RuntimeError('foreign PYTHONPATH loaded')\n", encoding="utf-8")
+            script = root / "transport.ps1"
+            script.write_text(
+                "param($Python)\nSet-StrictMode -Version Latest;$ErrorActionPreference='Stop';$python=$Python;\n"
+                + helper
+                + "\nInvoke-ProjectPython -Arguments @('-c','import msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry as m; print(m.__file__)')\n",
+                encoding="utf-8", newline="\n",
+            )
+            result = subprocess.run(
+                [shutil.which("pwsh"), "-NoProfile", "-File", str(script), sys.executable],
+                cwd=root, env=dict(os.environ, PYTHONPATH=str(root / "foreign")), capture_output=True,
+                text=True, encoding="utf-8", errors="replace", timeout=30, check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            expected = Path(msplatform.__file__).resolve().parent / "components/parallel_mirror_dual_stripe_mr_tof/resolved_geometry.py"
+            self.assertEqual(Path(result.stdout.strip()).resolve(), expected)

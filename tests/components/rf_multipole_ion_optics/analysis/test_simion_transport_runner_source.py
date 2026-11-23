@@ -1216,6 +1216,16 @@ exit 0
             artifact_root.mkdir(parents=True)
             initialize_capacity_ledger(artifact_workspace, objects=[])
             run_id = "20260725_120000__test__simion__source-preflight"
+            venv = root / "venv"
+            subprocess.run(
+                [sys.executable, "-m", "venv", "--system-site-packages", str(venv)],
+                check=True, capture_output=True, text=True, cwd=root, timeout=60,
+            )
+            selected_python = venv / "Scripts/python.exe"
+            shutil.copytree(
+                fixture_source / "src/msplatform",
+                venv / "Lib/site-packages/msplatform",
+            )
             result = subprocess.run(
                 [
                     "pwsh",
@@ -1223,6 +1233,14 @@ exit 0
                     "-NonInteractive",
                     "-File",
                     str(fixture_source/RUNNER.relative_to(REPO_ROOT)),
+                    "-WorkspaceRoot",
+                    str(fixture_source),
+                    "-ScientificModePath",
+                    str(PROJECT_ROOT / "config/modes/quadrupole_transport_interface_readiness.json"),
+                    "-InterfaceContractPath",
+                    str(INTERFACE_CONTRACT),
+                    "-LayoutTemplateRegistryPath",
+                    str(PROJECT_ROOT / "config/simion_layout_template.json"),
                     "-RunId",
                     run_id,
                     "-ParticleTablePath",
@@ -1240,7 +1258,7 @@ exit 0
                     "-ArtifactRootPath",
                     str(artifact_root),
                     "-PythonExe",
-                    sys.executable,
+                    str(selected_python),
                 ],
                 cwd=REPO_ROOT,
                 capture_output=True,
@@ -1297,7 +1315,8 @@ exit 0
             "$summary.transmission -ge $minimumTransmission",
             source,
         )
-        self.assertEqual(source.count("transport_interface_readiness.json"), 1)
+        self.assertIn("$ScientificModePath", source)
+        self.assertNotIn("config/modes/quadrupole_transport_interface_readiness.json", source)
         self.assertIn(
             "-LiteralPath $frozenMode -Raw -Encoding UTF8 | ConvertFrom-Json",
             source,

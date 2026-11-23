@@ -61,6 +61,46 @@ class AcceleratorInterfaceTests(unittest.TestCase):
         self.assertIn("-RepoRoot $repoRoot -CorePackageRoot $packageRoot -ContractPath $dependencyPath", source)
         self.assertNotIn("-RepoRoot $sourceRoot -ContractPath $dependencyPath", source)
 
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
+    def test_default_entry_uses_selected_package_and_rejects_missing_or_mismatch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = root / "installation/Lib/site-packages/msplatform"
+            shutil.copytree(REPO / "src/msplatform", package)
+            python_home = root / "python"
+            subprocess.run([sys._base_executable, "-m", "venv", "--system-site-packages", str(python_home)],
+                           check=True, capture_output=True, text=True, timeout=60, cwd=root)
+            python = python_home / "Scripts/python.exe"
+            selection = python_home / "Lib/site-packages/selected-msplatform.pth"
+            selection.write_text(str(package.parent) + "\n", encoding="utf-8")
+            workspace = root / "workspace"
+            workspace.mkdir()
+            environment = {key: value for key, value in os.environ.items()
+                           if key not in {"PYTHONPATH", "SIMULATION_PYTHON_EXE"}}
+            command = [shutil.which("pwsh"), "-NoProfile", "-File",
+                       str(package / "workflows/resources/accelerator_interface.ps1"), "-PythonExe", str(python)]
+            boundary = subprocess.run(command, cwd=workspace, env=environment, capture_output=True,
+                                      text=True, encoding="utf-8", errors="replace", timeout=30)
+            self.assertNotEqual(boundary.returncode, 0)
+            self.assertIn("ReferenceMrRunPath is required", boundary.stdout + boundary.stderr)
+            self.assertFalse((workspace / "artifacts").exists())
+
+            selection.write_text(str(REPO / "src") + "\n", encoding="utf-8")
+            mismatch = subprocess.run(command, cwd=workspace, env=environment, capture_output=True,
+                                      text=True, encoding="utf-8", errors="replace", timeout=30)
+            self.assertNotEqual(mismatch.returncode, 0)
+            self.assertIn("package differs from the entry package", mismatch.stdout + mismatch.stderr)
+
+            empty_python_home = root / "empty-python"
+            subprocess.run([sys._base_executable, "-m", "venv", str(empty_python_home)],
+                           check=True, capture_output=True, text=True, timeout=60, cwd=root)
+            missing_command = command.copy()
+            missing_command[-1] = str(empty_python_home / "Scripts/python.exe")
+            missing = subprocess.run(missing_command, cwd=workspace, env=environment, capture_output=True,
+                                     text=True, encoding="utf-8", errors="replace", timeout=30)
+            self.assertNotEqual(missing.returncode, 0)
+            self.assertIn("Installed msplatform package is unavailable", missing.stdout + missing.stderr)
+
     def test_entry_requires_explicit_python(self):
         environment = {key: value for key, value in os.environ.items() if key != "SIMULATION_PYTHON_EXE"}
         result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File",
@@ -682,8 +722,15 @@ try{Invoke-JointWorkflow}catch{$rejected=$true}
 if(-not$rejected-or$script:ownerCalls-ne$before){throw 'invalid field run_id was not rejected before any owner stage'}
 Write-Output 'REAL_FIELD_PROVIDER=PASS'
 ''', encoding="utf-8")
+        python_home = root / "selected-python"
+        subprocess.run([sys._base_executable, "-m", "venv", "--system-site-packages", str(python_home)],
+                       check=True, capture_output=True, text=True, timeout=60, cwd=root)
+        python = python_home / "Scripts/python.exe"
+        parent_site_packages = next(Path(path) for path in sys.path if (Path(path) / "referencing").is_dir())
+        (python_home / "Lib/site-packages/current-test-sources.pth").write_text(
+            str(REPO / "src") + "\n" + str(parent_site_packages) + "\n", encoding="utf-8")
         result = subprocess.run([powershell, "-NoProfile", "-File", str(script),
-            str(REPO / "src/msplatform/workflows/resources/accelerator_interface.ps1"), str(REPO), str(root), str(template), sys.executable],
+            str(REPO / "src/msplatform/workflows/resources/accelerator_interface.ps1"), str(REPO), str(root), str(template), str(python)],
             cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("REAL_FIELD_PROVIDER=PASS", result.stdout)
@@ -1190,7 +1237,7 @@ $ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$tokens,[re
 if($errors.Count){throw ($errors|Out-String)}
 $commands=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.CommandAst]-and$n.CommandElements[0].Extent.Text-eq'$python'},$true))
 if($commands.Count-eq0){throw 'expected Python calls in accelerator interface owner'}
-foreach($call in $commands){if($call.CommandElements[1].Extent.Text-ne'-B'){throw 'snapshot call permits bytecode'}}
+foreach($call in $commands){if($call.CommandElements.Extent.Text-notcontains'-B'){throw 'snapshot call permits bytecode'}}
 $python=$Python;$arguments=@('-c','import sys; assert sys.dont_write_bytecode; print("SNAPSHOT_BYTECODE_DISABLED=PASS")')
 $preparation=@($commands|Where-Object{$_.Extent.Text.Contains('@arguments')})
 if($preparation.Count-ne1){throw 'actual preparation command missing'}
@@ -1639,6 +1686,6 @@ if(-not$failed-or$script:admissions-ne1){throw 'missing parent did not reject be
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             references = json.loads((root / "references.json").read_text(encoding="utf-8-sig"))
             self.assertEqual([row["manifest_record"] for row in references], [file_record(parent / "run_manifest.json") for parent in parents[:3]] +
-                             [dict(file_record(parents[1] / "run_manifest.json"), path=str(parents[4] / "run_manifest.json"))])
+                             [dict(file_record(parents[1] / "run_manifest.json"), path=str(parents[3] / "run_manifest.json"))])
             self.assertEqual({str(parent): (parent / "run_manifest.json").read_bytes() for parent in parents[:3]},
                              {str(parent): original[str(parent)] for parent in parents[:3]})

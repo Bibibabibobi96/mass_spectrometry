@@ -22,6 +22,8 @@ param(
   [Parameter(Mandatory)][string]$StripeRunPath,
   [Parameter(Mandatory)][string]$AcceleratorProviderReceiptPath,
   [Parameter(Mandatory)][string]$CompositionPlanPath,
+  [Parameter(Mandatory)][string]$WorkspaceRoot,
+  [Parameter(Mandatory)][string]$ArtifactRoot,
   [string]$LocalScopePath='',
   [string]$NativeCorridorBankRunPath='',
   [string]$NativeSystemRuntimeBundlePath='',
@@ -36,7 +38,7 @@ param(
   [string]$ContractPath='',
   [string]$RunId='',
   [string]$SimionExe='',
-  [string]$PythonExe=''
+  [Parameter(Mandatory)][string]$PythonExe
 )
 
 # Thin fail-fast orchestration only.  Physics, solver execution, source
@@ -44,11 +46,12 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $project='parallel_mirror_dual_stripe_mr_tof'
-$repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
-$packageRoot=Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$workspaceRoot=Split-Path -Parent $repoRoot
-$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
-$artifactRoot=Join-Path $workspaceRoot "artifacts\projects\$project"
+$workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path;$repoRoot=$workspaceRoot
+$artifactRoot=Join-Path $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot) "projects\$project"
+$python=[IO.Path]::GetFullPath($PythonExe)
+$packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
+if($LASTEXITCODE-ne0){throw 'Installed msplatform package is unavailable.'};$packageRoot=(Resolve-Path -LiteralPath $packageRootText).Path
+$workflowResources=Join-Path $packageRoot 'workflows/resources'
 if(-not$RunId){$RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__sim__simion__mrtof-native-candidate-chain'}
 if(-not[double]::IsFinite($AcceleratorYAnchorMm)){throw 'AcceleratorYAnchorMm must be finite.'}
 if($null-ne$TrajectoryStepScaleOverride-and(-not[double]::IsFinite([double]$TrajectoryStepScaleOverride)-or$TrajectoryStepScaleOverride-le0)){
@@ -69,16 +72,16 @@ if($completedRootScreeningRuns.Count-gt$MaximumTe1RootFlights){
   throw 'Completed root screening runs exceed MaximumTe1RootFlights.'
 }
 
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
-$workpointRunner=Join-Path $PSScriptRoot 'run_downstream_workpoint_iteration.ps1'
-$sourceRunner=Join-Path $PSScriptRoot 'run_publish_bunch_source.ps1'
-$screeningRunner=Join-Path $PSScriptRoot 'run_native_corridor_bunch_screening.ps1'
-$diagnosticRunner=Join-Path $PSScriptRoot 'run_source_z_energy_timing_diagnostic.ps1'
+. (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
+$workpointRunner=Join-Path $workflowResources 'run_downstream_workpoint_iteration.ps1'
+$sourceRunner=Join-Path $workflowResources 'run_publish_bunch_source.ps1'
+$screeningRunner=Join-Path $workflowResources 'run_native_corridor_bunch_screening.ps1'
+$diagnosticRunner=Join-Path $workflowResources 'run_source_z_energy_timing_diagnostic.ps1'
 $analysisModule='msplatform.workflows.oa_mr.source_z_energy_timing_diagnostic'
 $focusFallbackSources=@{}
 $staticFieldMode=-not[string]::IsNullOrWhiteSpace($FieldProviderRequestPath)
 $staticCandidateFields=@{}
-$fieldProviderRunner=Join-Path $repoRoot 'src/msplatform/backends/comsol/launcher/run_corridor_field_provider.ps1'
+$fieldProviderRunner=Join-Path $packageRoot 'backends/comsol/launcher/run_corridor_field_provider.ps1'
 $staticFieldRepresentation='comsol_static_scalar_v'
 $mirrorReferenceTrialManifest=''
 if($staticFieldMode){
@@ -89,7 +92,7 @@ if($staticFieldMode){
     'mrtof_same_mesh_field_provider_request' {}
     'mrtof_native_static_field_provider_request' {
       $staticFieldRepresentation='native_static_pa'
-      $fieldProviderRunner=Join-Path $repoRoot 'src/msplatform/backends/simion/resources/run_native_static_field_provider.ps1'
+      $fieldProviderRunner=Join-Path $packageRoot 'backends/simion/resources/run_native_static_field_provider.ps1'
     }
     default {throw 'Unsupported static field provider request role.'}
   }
@@ -118,7 +121,7 @@ function Assert-Manifest {
     $arguments+=@('--consumed-output',(Get-ManifestOutputPath -ManifestPath $manifest -FileName 'two_prism_trial_observation.json'))
     $arguments+=@('--consumed-output',(Get-ManifestOutputPath -ManifestPath $manifest -FileName 'two_prism_trial_materialization.json'))
   }
-  & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' @arguments|Out-Host
+  & $python -I -B -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' @arguments|Out-Host
   if($LASTEXITCODE-ne0){throw "Run manifest verification failed: $manifest"}
   return $manifest
 }
@@ -142,13 +145,9 @@ function Get-ManifestOutputPath {
 
 function Invoke-ProjectPython {
   param([Parameter(Mandatory)][string[]]$Arguments,[Collections.IDictionary]$Request)
-  Push-Location -LiteralPath $repoRoot;$saved=$env:PYTHONPATH
-  try{
-    $env:PYTHONPATH=@(Get-RunPythonImportRoots -RepoRoot $repoRoot)-join[IO.Path]::PathSeparator
-    if($PSBoundParameters.ContainsKey('Request')){$Request|ConvertTo-Json -Depth 100 -Compress|& $python @Arguments}
-    else{& $python @Arguments}
-    if($LASTEXITCODE-ne0){throw "Python stage failed: $($Arguments -join ' ')"}
-  }finally{$env:PYTHONPATH=$saved;Pop-Location}
+  if($PSBoundParameters.ContainsKey('Request')){$Request|ConvertTo-Json -Depth 100 -Compress|& $python -I -B @Arguments}
+  else{& $python -I -B @Arguments}
+  if($LASTEXITCODE-ne0){throw "Python stage failed: $($Arguments -join ' ')"}
 }
 
 function Invoke-CandidatePolicyRequest {

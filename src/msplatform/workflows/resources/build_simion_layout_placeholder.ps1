@@ -10,18 +10,30 @@ This command creates no IOB, CON, Program, particle source, voltage, or run.
 [CmdletBinding()]
 param(
   [Parameter(Mandatory = $true)][string]$OutputDir,
+  [Parameter(Mandatory = $true)][string]$WorkspaceRoot,
+  [Parameter(Mandatory = $true)][string]$SourceGemPath,
+  [string]$PythonExe = '',
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe'
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot '..\..\..\..\src\msplatform\execution\resources\require_powershell7.ps1')
+$workspaceRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
+$python = if ($PythonExe) {
+  [IO.Path]::GetFullPath($PythonExe)
+} elseif ($env:SIMULATION_PYTHON_EXE) {
+  [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)
+} else {
+  throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'
+}
+$packageRootText = & $python -I -B -c 'from importlib.resources import files;print(files("msplatform"))'
+if ($LASTEXITCODE -ne 0) { throw 'Installed msplatform package is unavailable.' }
+$packageRoot = (Resolve-Path -LiteralPath $packageRootText).Path
+. (Join-Path $packageRoot 'execution/resources/require_powershell7.ps1')
 
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../../..')).Path
-$workspaceRoot = Split-Path -Parent $repoRoot
 $canonicalScratchRoot = [IO.Path]::GetFullPath(
   (Join-Path $workspaceRoot 'artifacts\projects\rf_multipole_ion_optics\scratch'))
-$source = Join-Path $repoRoot 'src/msplatform/backends/simion/resources/multipole_layout_placeholder.gem'
+$source = (Resolve-Path -LiteralPath $SourceGemPath).Path
 $output = [IO.Path]::GetFullPath($OutputDir)
 $scratchPrefix = $canonicalScratchRoot + [IO.Path]::DirectorySeparatorChar
 if (-not $output.StartsWith($scratchPrefix, [StringComparison]::OrdinalIgnoreCase)) {

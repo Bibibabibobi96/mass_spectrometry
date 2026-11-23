@@ -45,8 +45,9 @@ def load_paired_static_model_source(
         port = plan['composition_plan']['components'][instance]['ports']['side_entry']
         bindings = plan['native_geometry_compilation']['electrode_bindings'][instance]
         voltages = plan['static_on_electrode_voltages_v']
-        roles = ('grounded_shield_id', 'accelerator_repeller_id', 'accelerator_grid1_id',
-                 'accelerator_intermediate2_id', 'accelerator_grid2_id')
+        roles = ('common_ground', 'accelerator_repeller', 'accelerator_intermediate_grid_1',
+                 'accelerator_intermediate_grid_2', 'accelerator_exit_grid')
+        rings = sorted(key for key in bindings if key.startswith('accelerator_ring_'))
         return dict(
             **{name: plan[name] for name in ('schema_version', 'accelerator_variant', 'oatof_instance_id',
                                            'coordinate_frame', 'accelerator_electrical')},
@@ -56,7 +57,7 @@ def load_paired_static_model_source(
             side_opening=dict(center_mm=port['center_mm'], **{key: port['cross_section'][key] for key in (
                 'shape', 'width_mm', 'height_mm')}),
             role_voltages={**{role: voltages[str(bindings[role])] for role in roles},
-                           'accelerator_ring_ids': [voltages[str(value)] for value in bindings['accelerator_ring_ids']]})
+                           'accelerator_rings': [voltages[str(bindings[role])] for role in rings]})
     borrowed = None
     if not any(record_path(row, base_dir=base) == (base/'comsol/comsol_field_solution.json').resolve() for row in records):
         # An export consumer declares its source explicitly. Follow its flat

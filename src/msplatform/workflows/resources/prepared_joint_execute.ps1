@@ -12,18 +12,24 @@ param(
   [string]$RunId='',
   [Parameter(ParameterSetName='Flight')][string]$SimionExe='',
   [string]$PythonExe='',
-  [string]$RepoRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../..'))
+  [string]$RepoRoot=''
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-$repoRoot=(Resolve-Path -LiteralPath $RepoRoot).Path
+$researchRootExplicit=[bool]$RepoRoot
+$repoRoot=if($RepoRoot){(Resolve-Path -LiteralPath $RepoRoot).Path}else{(Get-Location).Path}
 $packageRoot=Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 . (Join-Path $PSScriptRoot '../../execution/resources/require_powershell7.ps1')
 $projectId='instrument_assembly'
-$workspaceRoot=Split-Path -Parent $repoRoot
-$script:pythonRoot=$repoRoot
+$workspaceRoot=if($researchRootExplicit){Split-Path -Parent $repoRoot}else{$repoRoot}
+$packageParent=Split-Path -Parent $packageRoot
+$script:pythonRoot=$packageParent
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
 if(-not(Test-Path -LiteralPath $python -PathType Leaf)){throw "Python executable is missing: $python"}
+$packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
+if($LASTEXITCODE-ne0-or[string]::IsNullOrWhiteSpace([string]$packageRootText)){throw 'Installed msplatform package is unavailable.'}
+$selectedPackageRoot=(Resolve-Path -LiteralPath ([string]$packageRootText).Trim()).Path
+if(-not$researchRootExplicit-and-not[string]::Equals($selectedPackageRoot,[IO.Path]::GetFullPath($packageRoot),[StringComparison]::OrdinalIgnoreCase)){throw 'Selected Python msplatform package differs from the entry package.'}
 $executionResources=Join-Path $packageRoot 'execution/resources'
 . (Join-Path $executionResources 'workspace_paths.ps1')
 $pathContext=Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python

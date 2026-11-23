@@ -55,7 +55,7 @@ param(
   [string]$RunId='',
   [string]$LuaExe='',
   [string]$PythonExe='',
-  [string]$RepoRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../..'))
+  [string]$RepoRoot=''
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
@@ -66,7 +66,9 @@ function New-AcceleratorInterfaceRunId {
 }
 $projectId='instrument_assembly'
 $software=@('Python 3.11')
-$repoRoot=(Resolve-Path -LiteralPath $RepoRoot).Path
+$researchRootExplicit=[bool]$RepoRoot
+$repoRoot=if($RepoRoot){(Resolve-Path -LiteralPath $RepoRoot).Path}else{(Get-Location).Path}
+$workspaceRoot=if($researchRootExplicit){Split-Path -Parent $repoRoot}else{$repoRoot}
 foreach($name in @('ContinuousReleaseRequest','ContinuousFieldsReference','ContinuousPropagation','ContinuousObservations',
   'ContinuousNumerics','ContinuousHs1Request','ContinuousEnvironment','ContinuousWorkspace',
   'ContinuousRecoveryReference','ContinuousDispatchProfiles')){
@@ -82,13 +84,17 @@ $script:pythonRoot=$sourceRoot
 . (Join-Path $executionResources 'dependencies.ps1')
 . (Join-Path $executionResources 'run_artifact_support.ps1')
 $python=if($PythonExe){$PythonExe}elseif($env:SIMULATION_PYTHON_EXE){$env:SIMULATION_PYTHON_EXE}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
+$packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
+if($LASTEXITCODE-ne0-or[string]::IsNullOrWhiteSpace([string]$packageRootText)){throw 'Installed msplatform package is unavailable.'}
+$selectedPackageRoot=(Resolve-Path -LiteralPath ([string]$packageRootText).Trim()).Path
+if(-not$researchRootExplicit-and-not[string]::Equals($selectedPackageRoot,[IO.Path]::GetFullPath($packageRoot),[StringComparison]::OrdinalIgnoreCase)){throw 'Selected Python msplatform package differs from the entry package.'}
 . (Join-Path $executionResources 'workspace_paths.ps1')
 $pathContext=Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
 $artifactRoot=[string]$pathContext.artifact_root
 $pathEnvironment=@{MASS_SPECTROMETRY_ARTIFACT_ROOT=$artifactRoot;
   MASS_SPECTROMETRY_EXECUTION_ROOT=[string]$pathContext.execution_root;
   MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=[string]$pathContext.host_resource_state_path}
-$hostContextJson=@{workspace=$repoRoot;python_executable=$python;
+$hostContextJson=@{workspace=$workspaceRoot;python_executable=$python;
   host_state_path=[string]$pathContext.host_resource_state_path;
   policy_path=(Join-Path $executionResources 'host_resource_policy.json')}|ConvertTo-Json -Compress
 function Invoke-JointOwnerStage {
