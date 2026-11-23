@@ -871,7 +871,9 @@ manifest/summary一致的`failed`或`interrupted` compact run。apply必须持�
 target为一致的success/failed终态、replacement为success、两端均非Formal、replacement更新、项目与mode一致、
 两端均具备调用者声明的角色、target没有活动下游run_config引用，且不受活动容量保护租约
 覆盖；两端完整manifest记录与config/summary/输入绑定必须通过字节数和SHA验证，apply前再次复核。
-Git Markdown中的历史run引用只进入plan/receipt审计，不等于对其重型载荷的活动依赖。旧run若具有精确的初始化
+历史run引用由调用者以排序、去重的规范相对Markdown路径显式传入`--historical-document-reference`（可重复），
+冻结到plan/receipt审计；plan/apply/verify不调用Git或读取checkout，正常离仓流程以空列表为默认。这些引用不等于对
+重型载荷的活动依赖，apply沿用冻结审计而不重新扫描。旧run若具有精确的初始化
 checkpoint summary模板而manifest已是success，允许仅对target使用该兼容形状；replacement仍必须是summary/
 manifest一致、证据完整的success。
 下游扫描只把manifest缺失或非终态run中结构化配置值精确指向target run、路径或manifest的依赖作为活动阻塞；

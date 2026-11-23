@@ -440,8 +440,7 @@ function Exit-HostExecutionLease { param($Lease) }
 
     def _failed_equivalence_plan(self, entries, selection):
         with mock.patch("msplatform.execution.capacity_ledger.load_capacity_ledger",
-                        return_value={"objects": entries}), mock.patch(
-            "msplatform.execution.solver_review_retirement._git_document_references", return_value=[]):
+                        return_value={"objects": entries}):
             return self._owner_plan(selected_heavy_paths=list(selection), failed_equivalence_members=selection)
 
     def test_failed_equivalence_plan_uses_published_keeper(self):
@@ -476,8 +475,7 @@ function Exit-HostExecutionLease { param($Lease) }
 
     def _apply_failed_equivalence(self, plan, entries):
         with mock.patch("msplatform.execution.capacity_ledger.load_capacity_ledger",
-                        return_value={"objects": entries}), mock.patch(
-            "msplatform.execution.solver_review_retirement._git_document_references", return_value=[]), mock.patch.dict(
+                        return_value={"objects": entries}), mock.patch.dict(
             os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
             return apply_retirement(plan, keeper_lease_id="keeper", keeper_lease_owner="fixture")
 
@@ -586,12 +584,10 @@ function Exit-HostExecutionLease { param($Lease) }
         return source, keeper, manifest_path, selection
 
     def _real_failed_plan(self, selection):
-        with mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[]):
-            return self._owner_plan(selected_heavy_paths=list(selection), failed_equivalence_members=selection)
+        return self._owner_plan(selected_heavy_paths=list(selection), failed_equivalence_members=selection)
 
     def _real_failed_apply(self, plan):
-        with mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[]), mock.patch.dict(
-                os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
             return apply_retirement(plan, keeper_lease_id="keeper", keeper_lease_owner="fixture")
 
     def test_real_ledger_failed_equivalence_apply_and_verify(self):
@@ -808,10 +804,9 @@ function Exit-HostExecutionLease { param($Lease) }
         return run, authority
 
     def _closed_diagnostic_plan(self, selection, consumers):
-        with mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[]):
-            return self._owner_plan(selected_heavy_paths=list(selection), failed_equivalence_members=selection,
-                approved_stopped_consumers=list(consumers),
-                approved_stopped_consumer_closures={str(run): authority for run, authority in consumers.items()},
+        return self._owner_plan(selected_heavy_paths=list(selection), failed_equivalence_members=selection,
+            approved_stopped_consumers=list(consumers),
+            approved_stopped_consumer_closures={str(run): authority for run, authority in consumers.items()},
                 writing_stopped=True)
 
     def test_closed_diagnostic_selected_equivalence_real_ledger(self):
@@ -1012,8 +1007,7 @@ function Exit-HostExecutionLease { param($Lease) }
         manifest["outputs"].append(dict(path=str(source), exists=True, bytes=source.stat().st_size,
                                         sha256=_sha(source), retention_role="solver_native_binary"))
         manifest_path.write_text(json.dumps(manifest))
-        with mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[]), mock.patch.dict(
-            os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
             apply_retirement(self._owner_plan(selected_heavy_paths=["simion/analyzer.pa0"]))
         audit = self.runs / "20260103_000000__analysis__python__payload-view-repair"
         audit.mkdir()
@@ -1290,8 +1284,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
             repair_preserved_native_file(self.artifacts,self.target,"simion/collision.pa",audit,**options)
         self.assertEqual(source.stat().st_ino,original_id)
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_selected_heavy_scope_preserves_other_native_assets_and_verifies(self, _scan):
+    def test_selected_heavy_scope_preserves_other_native_assets_and_verifies(self):
         plan=self._owner_plan(selected_heavy_paths=["simion/analyzer.pa0"])
         self.assertEqual([r["path"] for r in plan["removed_files"]],["simion/analyzer.pa0"])
         self.assertIn("simion/detector.pa#",[r["path"] for r in plan["preserved_files"]])
@@ -1317,8 +1310,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         with self.assertRaises(RetirementError):
             verify_retirement(self.target)
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_lifecycle_reseal_verifies_large_unclassified_preserved_input(self, _scan):
+    def test_lifecycle_reseal_verifies_large_unclassified_preserved_input(self):
         from msplatform.execution.solver_review_retirement import (
             RetirementError as LifecycleRetirementError, verify_retirement as verify_installed,
         )
@@ -1351,8 +1343,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         self.assertEqual(manifest_path.read_bytes(), manifest_bytes)
         self.assertEqual(receipt.read_bytes(), receipt_bytes)
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_explicit_retirement_consumption_verifies_only_selected_preserved_evidence(self, _scan):
+    def test_explicit_retirement_consumption_verifies_only_selected_preserved_evidence(self):
         plan = self._owner_plan(selected_heavy_paths=["simion/analyzer.pa0"])
         with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
             apply_retirement(plan)
@@ -1372,8 +1363,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         with self.assertRaises(RetirementError):
             verify_retirement(self.target, consumed_paths=["candidate.json"])
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_selected_heavy_scope_rejects_invalid_selection_and_manual_plan_changes(self, _scan):
+    def test_selected_heavy_scope_rejects_invalid_selection_and_manual_plan_changes(self):
         for selected in ([],["../outside.pa"],["simion/analyzer.pa0"]*2,["candidate.json"],["missing.pa"]):
             with self.subTest(selected=selected),self.assertRaises(RetirementError):
                 self._owner_plan(selected_heavy_paths=selected)
@@ -1387,8 +1377,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                 apply_retirement(plan)
         self.assertTrue((self.target/"simion/analyzer.pa0").is_file())
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_full_owner_consumption_still_verifies_run_config_identity(self, _scan):
+    def test_full_owner_consumption_still_verifies_run_config_identity(self):
         plan = self._owner_plan()
         with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
             apply_retirement(plan)
@@ -1399,8 +1388,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         with self.assertRaisesRegex(RetirementError, "run evidence identity differs"):
             verify_retirement(self.target, consumed_paths=["candidate.json"])
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_selected_heavy_pending_resume_keeps_exact_scope(self, _scan):
+    def test_selected_heavy_pending_resume_keeps_exact_scope(self):
         selected=["simion/analyzer.pa0"]
         plan=self._owner_plan(selected_heavy_paths=selected)
         (self.target/selected[0]).unlink()
@@ -1436,8 +1424,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         return seal_checkpoint(self.artifacts, self.target / "run_config.json", owner="p",
                                writing_stopped=True, retain_payload=True, retention_reason="partial fixture")
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_second_selected_batch_preserves_original_receipt_and_manifest(self, _scan):
+    def test_second_selected_batch_preserves_original_receipt_and_manifest(self):
         first, manifest = self._first_partial_batch()
         with mock.patch("msplatform.execution.solver_review_retirement.file_sha256", wraps=_sha) as reader:
             plan = self._owner_plan(selected_heavy_paths=["simion/accelerator.pa0"])
@@ -1462,8 +1449,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         self.assertEqual(self._owner_plan(selected_heavy_paths=["simion/detector.pa#"])[
             "retirement_batch"]["sequence"], 3)
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_second_batch_requires_reseal_and_rechecks_new_lease(self, _scan):
+    def test_second_batch_requires_reseal_and_rechecks_new_lease(self):
         self._first_partial_batch(reseal=False)
         with self.assertRaisesRegex(RetirementError, "reseal"):
             self._owner_plan(selected_heavy_paths=["simion/accelerator.pa0"])
@@ -1477,8 +1463,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         self.assertFalse((self.target / "solver_review_retirement_receipt_0002.json").exists())
         self.assertTrue((self.target / "simion/accelerator.pa0").is_file())
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_second_batch_pending_replays_exact_scope_without_overwriting_first(self, _scan):
+    def test_second_batch_pending_replays_exact_scope_without_overwriting_first(self):
         first, _ = self._first_partial_batch()
         selected = ["simion/accelerator.pa0", "simion/detector.pa#"]
         plan = self._owner_plan(selected_heavy_paths=selected)
@@ -1501,8 +1486,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         self.assertEqual((self.target / "solver_review_retirement_receipt.json").read_bytes(), first)
         self._seal_partial_batch()
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_second_batch_rejects_changed_chain_and_unselected_owner_scope(self, _scan):
+    def test_second_batch_rejects_changed_chain_and_unselected_owner_scope(self):
         first, _ = self._first_partial_batch()
         with self.assertRaisesRegex(RetirementError, "selected heavy scope"):
             self._owner_plan()
@@ -1553,8 +1537,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                                     "bytes": surface.stat().st_size, "sha256": _sha(surface)})
         manifest_path.write_text(json.dumps(manifest))
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_prepared_gui_selected_scope_preserves_surface_and_other_responses(self, _scan: mock.Mock) -> None:
+    def test_prepared_gui_selected_scope_preserves_surface_and_other_responses(self) -> None:
         self._gui_with_surface()
         selected = ["simion/processor.pa#", "simion/processor.pa0"]
         retained = ["simion/processor.pa1", "simion/processor.pa2", "simion/processor.pa-surf",
@@ -1570,8 +1553,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         with self.assertRaisesRegex(RetirementError, "target already has a completed retirement receipt"):
             self._owner_plan(prepared_gui_checkpoint=True, writing_stopped=True, selected_heavy_paths=["simion/processor.pa1"])
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_prepared_gui_selected_pending_resume_and_scope_refusals(self, _scan: mock.Mock) -> None:
+    def test_prepared_gui_selected_pending_resume_and_scope_refusals(self) -> None:
         self._gui_with_surface()
         selected = ["simion/processor.pa#", "simion/processor.pa0"]
         options = dict(prepared_gui_checkpoint=True, writing_stopped=True, selected_heavy_paths=selected)
@@ -1590,8 +1572,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         self.assertEqual(verify_retirement(self.target)["status"], "PASS")
         self.assertTrue((self.target / "simion/processor.pa-surf").is_file())
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_prepared_gui_selected_rechecks_plan_and_guards(self, _scan: mock.Mock) -> None:
+    def test_prepared_gui_selected_rechecks_plan_and_guards(self) -> None:
         self._gui_with_surface()
         options = dict(prepared_gui_checkpoint=True, writing_stopped=True, selected_heavy_paths=["simion/processor.pa0"])
         plan = self._owner_plan(**options)
@@ -1606,8 +1587,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                 apply_retirement(plan)
         self.assertTrue((self.target / "simion/processor.pa0").is_file())
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_prepared_gui_selected_active_consumer_and_unflown_guards(self, _scan: mock.Mock) -> None:
+    def test_prepared_gui_selected_active_consumer_and_unflown_guards(self) -> None:
         self._gui_with_surface()
         selected = ["simion/processor.pa0"]
         with self.assertRaises(RetirementError):
@@ -1629,8 +1609,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
             "newer prepared GUI replaces the obsolete source", ["candidate_contract"],
             prepared_gui_checkpoint=True, writing_stopped=True, **kwargs)
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_prepared_gui_supersession_preserves_light_and_replacement(self, _scan: mock.Mock) -> None:
+    def test_prepared_gui_supersession_preserves_light_and_replacement(self) -> None:
         self._prepared_gui(self.target)
         self._prepared_gui(self.replacement)
         originals = {name: (self.target / name).read_bytes()
@@ -1652,8 +1631,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                 plan_retirement(self.artifacts, self.repo, self.target, self.replacement,
                     "newer GUI", ["candidate_contract"], **options)
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_prepared_gui_rejects_flown_or_mismatched_summary(self, _scan: mock.Mock) -> None:
+    def test_prepared_gui_rejects_flown_or_mismatched_summary(self) -> None:
         self._prepared_gui(self.replacement)
         for changes in ({"gui_fly_completed": True}, {"status": "prepared"},
                         {"trajectory_equivalence_verified": True}):
@@ -1661,8 +1639,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
             with self.subTest(changes=changes), self.assertRaises(RetirementError):
                 self._gui_plan()
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_prepared_gui_rechecks_replacement_field_and_target_protection(self, _scan: mock.Mock) -> None:
+    def test_prepared_gui_rechecks_replacement_field_and_target_protection(self) -> None:
         self._prepared_gui(self.target)
         self._prepared_gui(self.replacement)
         plan = self._gui_plan()
@@ -1675,8 +1652,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         with self.assertRaises(RetirementError):
             self._gui_plan()
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_prepared_gui_partial_retirement_replays_same_scope(self, _scan: mock.Mock) -> None:
+    def test_prepared_gui_partial_retirement_replays_same_scope(self) -> None:
         self._prepared_gui(self.target)
         self._prepared_gui(self.replacement)
         plan = self._gui_plan()
@@ -1688,8 +1664,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
             apply_retirement(resumed)
         self.assertEqual(verify_retirement(self.target)["status"], "PASS")
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_prepared_gui_owner_abandonment_without_replacement_preserves_evidence(self, _scan: mock.Mock) -> None:
+    def test_prepared_gui_owner_abandonment_without_replacement_preserves_evidence(self) -> None:
         self._prepared_gui(self.target)
         originals = {path: path.read_bytes() for path in self.target.rglob("*")
                      if path.is_file() and not path.suffix.startswith(".pa")}
@@ -1704,8 +1679,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         self.assertEqual(verify_retirement(self.target)["target_terminal_status"], "checkpoint")
         self.assertEqual(originals, {path: path.read_bytes() for path in originals})
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_prepared_gui_owner_exit_requires_reason_scope_stopped_and_exact_owner(self, _scan: mock.Mock) -> None:
+    def test_prepared_gui_owner_exit_requires_reason_scope_stopped_and_exact_owner(self) -> None:
         self._prepared_gui(self.target)
         for options in ({"prepared_gui_checkpoint": True}, {"writing_stopped": True}, {}):
             with self.subTest(options=options), self.assertRaises(RetirementError):
@@ -1718,8 +1692,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
             plan_retirement(self.artifacts, self.repo, self.target, self.replacement,
                 owner="p", owner_abandonment_reason="abandoned", prepared_gui_checkpoint=True, writing_stopped=True)
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_prepared_gui_owner_exit_rechecks_active_native_consumer_before_apply(self, _scan: mock.Mock) -> None:
+    def test_prepared_gui_owner_exit_rechecks_active_native_consumer_before_apply(self) -> None:
         self._prepared_gui(self.target)
         plan = self._owner_plan(prepared_gui_checkpoint=True, writing_stopped=True)
         consumer = self.runs/"new_consumer"
@@ -1730,8 +1703,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                 apply_retirement(plan)
         self.assertTrue((self.target/"simion/processor.pa0").exists())
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_prepared_gui_active_native_consumer_blocks(self, _scan: mock.Mock) -> None:
+    def test_prepared_gui_active_native_consumer_blocks(self) -> None:
         self._prepared_gui(self.target)
         self._prepared_gui(self.replacement)
         consumer = self.runs / "waiting_consumer"
@@ -1774,8 +1746,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         (self.target / "run_manifest.json").write_text(json.dumps(manifest))
         return checkpoint
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_stopped_checkpoint_runtime_retirement_preserves_originals_without_pa_hash(self, _scan: mock.Mock) -> None:
+    def test_stopped_checkpoint_runtime_retirement_preserves_originals_without_pa_hash(self) -> None:
         checkpoint = self._checkpoint_runtime()
         originals = {name: (self.target / name).read_bytes() for name in (
             "run_config.json", "summary.json", "run_manifest.json", "results/runtime_checkpoint.json")}
@@ -1794,8 +1765,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         self.assertEqual(originals, {name: (self.target / name).read_bytes() for name in originals})
         self.assertTrue((self.target / "simion/seed.iob").exists())
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_stopped_checkpoint_runtime_requires_explicit_scope_and_stopped_owner(self, _scan: mock.Mock) -> None:
+    def test_stopped_checkpoint_runtime_requires_explicit_scope_and_stopped_owner(self) -> None:
         checkpoint = self._checkpoint_runtime()
         for kwargs in ({}, {"runtime_checkpoint_path": checkpoint}, {"writing_stopped": True}):
             with self.subTest(kwargs=kwargs), self.assertRaises(RetirementError):
@@ -1805,8 +1775,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                             "not an owner exit", self.compatibility_roles,
                             runtime_checkpoint_path=checkpoint, writing_stopped=True)
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_stopped_checkpoint_runtime_rejects_unbound_inventory_and_payload_drift(self, _scan: mock.Mock) -> None:
+    def test_stopped_checkpoint_runtime_rejects_unbound_inventory_and_payload_drift(self) -> None:
         checkpoint = self._checkpoint_runtime()
         copied = self.target / "results/unbound.json"
         copied.write_bytes(checkpoint.read_bytes())
@@ -1817,8 +1786,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         with self.assertRaisesRegex(RetirementError, "member differs"):
             self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True)
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_stopped_checkpoint_runtime_rechecks_gui_consumer_and_lease(self, _scan: mock.Mock) -> None:
+    def test_stopped_checkpoint_runtime_rechecks_gui_consumer_and_lease(self) -> None:
         checkpoint = self._checkpoint_runtime()
         plan = self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True)
         review = self.artifacts / "projects/p/reviews/current_view"
@@ -1844,15 +1812,13 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
             self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True)
         self.assertTrue((self.target / "runtime/native_family/analyzer.pa0").exists())
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_stopped_checkpoint_runtime_rejects_extra_unsealed_pa(self, _scan: mock.Mock) -> None:
+    def test_stopped_checkpoint_runtime_rejects_extra_unsealed_pa(self) -> None:
         checkpoint = self._checkpoint_runtime()
         (self.target / "runtime/native_family/unexpected.pa").write_bytes(b"unknown")
         with self.assertRaisesRegex(RetirementError, "lacks sealed identity"):
             self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True)
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_stopped_checkpoint_runtime_partial_retirement_replays(self, _scan: mock.Mock) -> None:
+    def test_stopped_checkpoint_runtime_partial_retirement_replays(self) -> None:
         checkpoint = self._checkpoint_runtime()
         plan = self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True)
         first = self.target / plan["removed_files"][0]["path"]
@@ -1866,8 +1832,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
             apply_retirement(resumed)
         self.assertEqual(verify_retirement(self.target)["status"], "PASS")
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_stopped_checkpoint_runtime_rejects_sealed_invalid_member_and_owner(self, _scan: mock.Mock) -> None:
+    def test_stopped_checkpoint_runtime_rejects_sealed_invalid_member_and_owner(self) -> None:
         checkpoint = self._checkpoint_runtime()
         original = json.loads(checkpoint.read_text())
         for case in ("owner", "path", "sha", "missing_member"):
@@ -1905,8 +1870,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         }))
         return run
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_approved_stopped_consumer_exit_is_scoped_and_preserves_scientific_checkpoint(self, _scan: mock.Mock) -> None:
+    def test_approved_stopped_consumer_exit_is_scoped_and_preserves_scientific_checkpoint(self) -> None:
         checkpoint = self._checkpoint_runtime()
         consumer = self._stopped_consumer(checkpoint)
         before = {path.name: path.read_bytes() for path in consumer.iterdir()}
@@ -1929,8 +1893,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                                        "--approved-stopped-consumer", str(consumer)]), 0)
             self.assertEqual(planner.call_args.kwargs["approved_stopped_consumers"], [consumer])
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_checkpoint_seal_verifies_nonempty_stopped_consumers_under_held_lock(self, _scan):
+    def test_checkpoint_seal_verifies_nonempty_stopped_consumers_under_held_lock(self):
         from msplatform.execution.solver_review_retirement import RetirementError as LifecycleRetirementError
         from contextlib import contextmanager
         from msplatform.execution import capacity_protection as common_protection
@@ -2013,8 +1976,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                      if item["path"] == self.target.relative_to(self.artifacts).as_posix())
         self.assertEqual((entry["status"], entry["class"], entry["pin"]), ("ready", "light_evidence", False))
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_retired_remainder_seal_uses_held_snapshot_and_rejects_active_lease(self, _scan):
+    def test_retired_remainder_seal_uses_held_snapshot_and_rejects_active_lease(self):
         from contextlib import contextmanager
         from msplatform.execution import capacity_protection as common_protection
         from msplatform.execution import capacity_protection as canonical_protection
@@ -2077,8 +2039,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                      if item["path"] == self.target.relative_to(self.artifacts).as_posix())
         self.assertEqual((entry["status"], entry["class"], entry["pin"]), ("ready", "rebuildable_payload", True))
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_approved_stopped_consumer_requires_owner_scope_and_new_consumers_still_block(self, _scan: mock.Mock) -> None:
+    def test_approved_stopped_consumer_requires_owner_scope_and_new_consumers_still_block(self) -> None:
         checkpoint = self._checkpoint_runtime()
         consumer = self._stopped_consumer(checkpoint)
         for values in ({}, {"runtime_checkpoint_path": checkpoint}, {"writing_stopped": True}):
@@ -2092,8 +2053,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                 apply_retirement(plan)
         self.assertFalse((self.target / "solver_review_retirement_receipt.json").exists())
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_approved_stopped_consumer_bad_evidence_and_owner_fail_closed(self, _scan: mock.Mock) -> None:
+    def test_approved_stopped_consumer_bad_evidence_and_owner_fail_closed(self) -> None:
         checkpoint = self._checkpoint_runtime()
         for case in ("missing_manifest", "config_drift", "summary_drift", "cross_owner", "duplicate"):
             consumer = self._stopped_consumer(checkpoint, case)
@@ -2113,8 +2073,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                 self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True,
                                  approved_stopped_consumers=approved)
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_approved_stopped_consumer_rechecks_lease_gui_and_identity_before_apply(self, _scan: mock.Mock) -> None:
+    def test_approved_stopped_consumer_rechecks_lease_gui_and_identity_before_apply(self) -> None:
         checkpoint = self._checkpoint_runtime()
         consumer = self._stopped_consumer(checkpoint)
         plan = self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True,
@@ -2143,8 +2102,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
             self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True,
                              approved_stopped_consumers=[consumer])
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_approved_stopped_consumer_pending_replay_requires_exact_list_and_identity(self, _scan: mock.Mock) -> None:
+    def test_approved_stopped_consumer_pending_replay_requires_exact_list_and_identity(self) -> None:
         checkpoint = self._checkpoint_runtime()
         consumer = self._stopped_consumer(checkpoint)
         kwargs = {"runtime_checkpoint_path": checkpoint, "writing_stopped": True,
@@ -2188,8 +2146,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
             (self.target / "run_manifest.json").write_text(json.dumps(parent))
         return child
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_owner_nested_sealed_window_apply_and_verify(self, _scan: mock.Mock) -> None:
+    def test_owner_nested_sealed_window_apply_and_verify(self) -> None:
         child = self._nested_window()
         original = (child / "run_manifest.json").read_bytes()
         from msplatform.execution.solver_review_retirement import file_sha256
@@ -2206,22 +2163,19 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         self.assertEqual((child / "run_manifest.json").read_bytes(), original)
         self.assertTrue((child / "run_config.json").is_file())
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_owner_nested_manifest_requires_parent_seal(self, _scan: mock.Mock) -> None:
+    def test_owner_nested_manifest_requires_parent_seal(self) -> None:
         self._nested_window(sealed=False)
         with self.assertRaisesRegex(RetirementError, "lacks sealed identity"):
             self._owner_plan()
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_owner_nested_manifest_damage_is_rejected(self, _scan: mock.Mock) -> None:
+    def test_owner_nested_manifest_damage_is_rejected(self) -> None:
         child = self._nested_window()
         with (child / "run_manifest.json").open("a") as stream:
             stream.write(" ")
         with self.assertRaises(RetirementError):
             self._owner_plan()
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_owner_nested_partial_retirement_replays(self, _scan: mock.Mock) -> None:
+    def test_owner_nested_partial_retirement_replays(self) -> None:
         child = self._nested_window()
         plan = self._owner_plan()
         (child / "inputs/field_v.pa").unlink()
@@ -2249,8 +2203,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         parent_path.write_text(json.dumps(parent))
         return outside
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_owner_external_input_manifest_preserved_without_payload_inheritance(self, _scan: mock.Mock) -> None:
+    def test_owner_external_input_manifest_preserved_without_payload_inheritance(self) -> None:
         outside = self._bind_external_input_manifest()
         before = {str(p.relative_to(self.replacement)): p.read_bytes()
                   for p in self.replacement.rglob("*") if p.is_file()}
@@ -2266,8 +2219,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         retained = json.loads((self.target / "run_manifest.json").read_text())
         self.assertEqual(retained["inputs"]["upstream_manifest"]["sha256"], _sha(outside))
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_owner_external_input_manifest_identity_drift_rejected(self, _scan: mock.Mock) -> None:
+    def test_owner_external_input_manifest_identity_drift_rejected(self) -> None:
         outside = self._bind_external_input_manifest()
         outside.write_text(outside.read_text() + " ")
         with self.assertRaises(RetirementError):
@@ -2289,8 +2241,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         parent_path.write_text(json.dumps(parent))
         return frozen
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_owner_frozen_input_manifest_preserved_without_payload_inheritance(self, _scan: mock.Mock) -> None:
+    def test_owner_frozen_input_manifest_preserved_without_payload_inheritance(self) -> None:
         frozen = self._bind_frozen_input_manifest()
         original = frozen.read_bytes()
         outside = {str(p.relative_to(self.replacement)): p.read_bytes()
@@ -2306,15 +2257,13 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         self.assertEqual(outside, {str(p.relative_to(self.replacement)): p.read_bytes()
                                   for p in self.replacement.rglob("*") if p.is_file()})
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_owner_frozen_input_manifest_identity_drift_rejected(self, _scan: mock.Mock) -> None:
+    def test_owner_frozen_input_manifest_identity_drift_rejected(self) -> None:
         frozen = self._bind_frozen_input_manifest()
         frozen.write_text(frozen.read_text() + " ")
         with self.assertRaises(RetirementError):
             self._owner_plan()
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_owner_frozen_manifest_input_cannot_bypass_child_output_contract(self, _scan: mock.Mock) -> None:
+    def test_owner_frozen_manifest_input_cannot_bypass_child_output_contract(self) -> None:
         frozen = self._bind_frozen_input_manifest()
         parent_path = self.target / "run_manifest.json"
         parent = json.loads(parent_path.read_text())
@@ -2324,8 +2273,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
             self._owner_plan()
         self.assertTrue(frozen.is_file())
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_owner_external_manifest_input_cannot_authorize_output(self, _scan: mock.Mock) -> None:
+    def test_owner_external_manifest_input_cannot_authorize_output(self) -> None:
         outside = self._bind_external_input_manifest()
         parent_path = self.target / "run_manifest.json"
         parent = json.loads(parent_path.read_text())
@@ -2335,8 +2283,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
             self._owner_plan()
         self.assertTrue(outside.is_file())
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_owner_external_child_manifest_rejected(self, _scan: mock.Mock) -> None:
+    def test_owner_external_child_manifest_rejected(self) -> None:
         parent_path = self.target / "run_manifest.json"
         parent = json.loads(parent_path.read_text())
         outside = self.replacement / "run_manifest.json"
@@ -2346,8 +2293,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         with self.assertRaisesRegex(RetirementError, "strict local descendant"):
             self._owner_plan()
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_owner_completed_apply_preserves_evidence_without_heavy_hash(self, _scan: mock.Mock) -> None:
+    def test_owner_completed_apply_preserves_evidence_without_heavy_hash(self) -> None:
         from msplatform.execution.solver_review_retirement import file_sha256
 
         def small_only(path: Path) -> str:
@@ -2368,8 +2314,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         self.assertTrue((self.target / "candidate.json").is_file())
         self.assertFalse((self.target / "simion/analyzer.pa0").exists())
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_owner_completed_requires_reason_owner_and_exclusive_mode(self, _scan: mock.Mock) -> None:
+    def test_owner_completed_requires_reason_owner_and_exclusive_mode(self) -> None:
         for values in (
             {"owner": "p"},
             {"owner_abandonment_reason": "finished"},
@@ -2384,8 +2329,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
             with self.subTest(status=status), self.assertRaisesRegex(RetirementError, "complete failed/interrupted/success"):
                 self._owner_plan()
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_owner_interrupted_preserves_terminal_and_small_evidence(self, _scan: mock.Mock) -> None:
+    def test_owner_interrupted_preserves_terminal_and_small_evidence(self) -> None:
         self._set_status(self.target, "interrupted")
         evidence = {name: (self.target / name).read_bytes() for name in (
             "run_manifest.json", "summary.json", "run_config.json", "candidate.json", "simion/seed.iob",
@@ -2402,8 +2346,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
             self.assertEqual((self.target / name).read_bytes(), original)
         self.assertFalse((self.target / "simion/analyzer.pa0").exists())
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_owner_interrupted_rechecks_consumer_and_lease(self, _scan: mock.Mock) -> None:
+    def test_owner_interrupted_rechecks_consumer_and_lease(self) -> None:
         self._set_status(self.target, "interrupted")
         plan = self._owner_plan()
         downstream = self.runs / "20260103_000000__analysis__python__consumer"
@@ -2427,8 +2370,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                 apply_retirement(plan)
         self.assertTrue((self.target / "simion/analyzer.pa0").is_file())
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_owner_failed_apply_and_verify_preserve_terminal_evidence(self, _scan: mock.Mock) -> None:
+    def test_owner_failed_apply_and_verify_preserve_terminal_evidence(self) -> None:
         self._set_status(self.target, "failed")
         original_manifest = (self.target / "run_manifest.json").read_bytes()
         original_summary = (self.target / "summary.json").read_bytes()
@@ -2446,8 +2388,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         self.assertTrue((self.target / "simion/seed.iob").is_file())
         self.assertFalse((self.target / "simion/analyzer.pa0").exists())
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_owner_failed_rejects_active_consumer_at_plan_and_apply(self, _scan: mock.Mock) -> None:
+    def test_owner_failed_rejects_active_consumer_at_plan_and_apply(self) -> None:
         self._set_status(self.target, "failed")
         plan = self._owner_plan()
         downstream = self.runs / "20260103_000000__analysis__python__consumer"
@@ -2462,8 +2403,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                 apply_retirement(plan)
         self.assertTrue((self.target / "simion/analyzer.pa0").is_file())
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_owner_completed_rejects_lease_and_active_consumer(self, _scan: mock.Mock) -> None:
+    def test_owner_completed_rejects_lease_and_active_consumer(self) -> None:
         downstream = self.runs / "20260103_000000__analysis__python__consumer"
         downstream.mkdir()
         config = downstream / "run_config.json"
@@ -2478,8 +2418,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         with self.assertRaisesRegex(RetirementError, "active capacity protection lease"):
             self._owner_plan()
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_owner_completed_apply_rechecks_new_consumer_and_removal_scope(self, _scan: mock.Mock) -> None:
+    def test_owner_completed_apply_rechecks_new_consumer_and_removal_scope(self) -> None:
         plan = self._owner_plan()
         with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
             altered = {**plan, "removed_files": plan["removed_files"] + [plan["preserved_files"][0]]}
@@ -2492,8 +2431,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                 apply_retirement(plan)
         self.assertTrue((self.target / "simion/analyzer.pa0").is_file())
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_owner_completed_pending_receipt_replays_without_replacement(self, _scan: mock.Mock) -> None:
+    def test_owner_completed_pending_receipt_replays_without_replacement(self) -> None:
         plan = self._owner_plan()
         (self.target / plan["removed_files"][0]["path"]).unlink()
         (self.target / "solver_review_retirement_receipt.json").write_text(
@@ -2508,8 +2446,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
             apply_retirement(resumed)
         self.assertEqual(verify_retirement(self.target)["status"], "PASS")
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_owner_completed_cli_plans_without_replacement(self, _scan: mock.Mock) -> None:
+    def test_owner_completed_cli_plans_without_replacement(self) -> None:
         output = io.StringIO()
         with redirect_stdout(output):
             code = main([
@@ -2593,8 +2530,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         manifest["run_config"]["sha256"] = _sha(config_path)
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_plan_apply_and_retired_verification(self, _scan: mock.Mock) -> None:
+    def test_plan_apply_and_retired_verification(self) -> None:
         plan = plan_retirement(
             self.artifacts, self.repo, self.target, self.replacement,
             "new successful GUI package supersedes old", self.compatibility_roles,
@@ -2616,9 +2552,8 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
             verify_retirement(self.target)["target_terminal_status"], "success"
         )
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
     def test_real_legacy_initialization_summary_can_use_superseded_entrypoint(
-        self, _scan: mock.Mock,
+        self,
     ) -> None:
         self._make_real_legacy_initialization_fixture(self.target)
 
@@ -2648,9 +2583,8 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
             LEGACY_INITIALIZATION_SUMMARY,
         )
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
     def test_legacy_initialization_summary_requires_exact_template(
-        self, _scan: mock.Mock,
+        self,
     ) -> None:
         mutations = {
             "extra_field": lambda value: value.update(unexpected=True),
@@ -2685,9 +2619,8 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                         self.compatibility_roles,
                     )
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
     def test_legacy_exception_does_not_admit_replacement_or_non_solver_review(
-        self, _scan: mock.Mock,
+        self,
     ) -> None:
         self._make_real_legacy_initialization_fixture(self.replacement)
         with self.assertRaisesRegex(
@@ -2729,9 +2662,8 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                 self.compatibility_roles,
             )
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
     def test_checkpoint_manifest_is_not_terminalized_from_success_summary(
-        self, _scan: mock.Mock,
+        self,
     ) -> None:
         manifest_path = self.target / "run_manifest.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -2748,9 +2680,8 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                 self.compatibility_roles,
             )
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
     def test_active_lease_blocks_legacy_initialization_target(
-        self, _scan: mock.Mock,
+        self,
     ) -> None:
         self._make_real_legacy_initialization_fixture(self.target)
         create_capacity_protection_lease(
@@ -2771,9 +2702,8 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                 self.compatibility_roles,
             )
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
     def test_failed_target_with_identity_equal_role_mapping_can_be_retired(
-        self, _scan: mock.Mock,
+        self,
     ) -> None:
         self._set_status(self.target, "failed")
         self._rename_input_role(
@@ -2815,8 +2745,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         verification = verify_retirement(self.target)
         self.assertEqual(verification["target_terminal_status"], "failed")
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_unbound_configured_input_collection_is_rejected(self, _scan: mock.Mock) -> None:
+    def test_unbound_configured_input_collection_is_rejected(self) -> None:
         self._add_config_inputs(
             self.replacement,
             {"grouped_inputs": [str(self.replacement / "unrecorded-input.json")]},
@@ -2828,15 +2757,13 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                 "all configured input members remain bound", self.compatibility_roles,
             )
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_configured_file_record_binds_verified_input_identity(self, _scan: mock.Mock) -> None:
+    def test_configured_file_record_binds_verified_input_identity(self) -> None:
         configured = file_record(self.target / "candidate.json")
         configured["sha256"] = configured["sha256"].lower()
         self._add_config_inputs(self.target, {"frozen_record": configured})
         self.assertEqual(self._owner_plan()["status"], "eligible")
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_configured_file_record_binds_generated_output_with_source_metadata(self, _scan: mock.Mock) -> None:
+    def test_configured_file_record_binds_generated_output_with_source_metadata(self) -> None:
         frozen = self.target / "inputs/finalization.py"
         frozen.parent.mkdir(exist_ok=True)
         frozen.write_bytes(b"# frozen loader used at finalization\n")
@@ -2851,8 +2778,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         self.assertEqual(plan["status"], "eligible")
         self.assertTrue(any(item["path"] == "inputs/finalization.py" for item in plan["preserved_files"]))
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_configured_file_record_identity_must_match_verified_record(self, _scan: mock.Mock) -> None:
+    def test_configured_file_record_identity_must_match_verified_record(self) -> None:
         configured = file_record(self.target / "candidate.json")
         for change in ({"sha256": "0" * 64}, {"bytes": configured["bytes"] + 1}):
             with self.subTest(change=change):
@@ -2860,16 +2786,14 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                 with self.assertRaisesRegex(RetirementError, "file record identity differs"):
                     self._owner_plan()
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_configured_file_record_requires_manifest_bound_file(self, _scan: mock.Mock) -> None:
+    def test_configured_file_record_requires_manifest_bound_file(self) -> None:
         unbound = self.target / "unrecorded-input.json"
         unbound.write_bytes(b"valid file bytes are insufficient without a seal")
         self._add_config_inputs(self.target, {"frozen_record": file_record(unbound)})
         with self.assertRaisesRegex(RetirementError, "does not bind configured input file record"):
             self._owner_plan()
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_configured_file_record_rejects_incomplete_or_extra_metadata_shapes(self, _scan: mock.Mock) -> None:
+    def test_configured_file_record_rejects_incomplete_or_extra_metadata_shapes(self) -> None:
         configured = file_record(self.target / "candidate.json")
         invalid = [
             {key: value for key, value in configured.items() if key != "bytes"},
@@ -2885,8 +2809,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                 with self.assertRaisesRegex(RetirementError, "file record has an invalid shape"):
                     self._owner_plan()
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_plain_configured_dictionary_retains_strict_collection_validation(self, _scan: mock.Mock) -> None:
+    def test_plain_configured_dictionary_retains_strict_collection_validation(self) -> None:
         self._add_config_inputs(self.target, {"grouped_inputs": {"bound": str(self.target / "candidate.json")}})
         self.assertEqual(self._owner_plan()["status"], "eligible")
         for member, message in ((str(self.target / "unbound.json"), "input collection"), (False, "invalid shape")):
@@ -2895,8 +2818,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                 with self.assertRaisesRegex(RetirementError, message):
                     self._owner_plan()
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_short_alias_suffix_mismatch_is_rejected(self, _scan: mock.Mock) -> None:
+    def test_short_alias_suffix_mismatch_is_rejected(self) -> None:
         self._replace_config_input(
             self.replacement, "analyzer_pa0",
             str(self.root / "removed-short-alias" / "simion" / "other.pa0"),
@@ -2908,8 +2830,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                 "short alias must map exactly", self.compatibility_roles,
             )
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_failed_replacement_is_not_accepted(self, _scan: mock.Mock) -> None:
+    def test_failed_replacement_is_not_accepted(self) -> None:
         self._set_status(self.target, "failed")
         self._set_status(self.replacement, "failed")
 
@@ -2919,8 +2840,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                 "failed replacement is not authoritative", self.compatibility_roles,
             )
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_role_mapping_requires_roles_at_both_ends(self, _scan: mock.Mock) -> None:
+    def test_role_mapping_requires_roles_at_both_ends(self) -> None:
         self._set_status(self.target, "failed")
 
         with self.assertRaisesRegex(RetirementError, "mapping roles missing"):
@@ -2930,8 +2850,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                 (("missing_legacy_role", "candidate_contract"),),
             )
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_role_mapping_requires_equal_manifest_identity(self, _scan: mock.Mock) -> None:
+    def test_role_mapping_requires_equal_manifest_identity(self) -> None:
         self._set_status(self.target, "failed")
         self._rename_input_role(
             self.target, "candidate_contract", "legacy_candidate_contract"
@@ -2953,8 +2872,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                     self.replacement, "candidate_contract", original
                 )
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_role_mappings_must_be_one_to_one(self, _scan: mock.Mock) -> None:
+    def test_role_mappings_must_be_one_to_one(self) -> None:
         for mappings in (
             (
                 ("candidate_contract", "candidate_contract"),
@@ -2973,8 +2891,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                     "ambiguous mappings must fail closed", (), mappings,
                 )
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_cli_accepts_repeated_input_role_mappings(self, _scan: mock.Mock) -> None:
+    def test_cli_accepts_repeated_input_role_mappings(self) -> None:
         self._set_status(self.target, "failed")
         self._rename_input_role(
             self.target, "candidate_contract", "legacy_candidate_contract"
@@ -3003,19 +2920,28 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
             len(result["compatibility_checks"]["verified_input_role_mappings"]), 2
         )
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=["docs/x.md"])
-    def test_historical_document_reference_is_audited_not_a_heavy_dependency(
-        self, _scan: mock.Mock,
-    ) -> None:
+    def test_historical_document_reference_is_audited_not_a_heavy_dependency(self) -> None:
         self._set_status(self.target, "failed")
         plan = plan_retirement(
             self.artifacts, self.repo, self.target, self.replacement,
             "compatible", self.compatibility_roles,
+            historical_document_references=["docs/x.md"],
         )
         self.assertEqual(plan["historical_document_references"], ["docs/x.md"])
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_capacity_protection_lease_blocks_failed_target(self, _scan: mock.Mock) -> None:
+    def test_historical_document_references_reject_noncanonical_input(self) -> None:
+        for references in (["docs/b.md", "docs/a.md"], ["docs/a.md", "docs/a.md"],
+                           ["../outside.md"], ["docs/absolute.md", "C:/outside.md"]):
+            with self.subTest(references=references), self.assertRaisesRegex(
+                RetirementError, "historical document references"
+            ):
+                plan_retirement(
+                    self.artifacts, self.repo, self.target, self.replacement,
+                    "explicit audit input", self.compatibility_roles,
+                    historical_document_references=references,
+                )
+
+    def test_capacity_protection_lease_blocks_failed_target(self) -> None:
         self._set_status(self.target, "failed")
         create_capacity_protection_lease(
             self.artifacts, lease_id="protected-failed-target", owner="test",
@@ -3028,8 +2954,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                 "protected targets remain immutable", self.compatibility_roles,
             )
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_apply_rechecks_new_capacity_protection_lease(self, _scan: mock.Mock) -> None:
+    def test_apply_rechecks_new_capacity_protection_lease(self) -> None:
         plan = plan_retirement(
             self.artifacts, self.repo, self.target, self.replacement,
             "lease changes must be rechecked", self.compatibility_roles,
@@ -3046,8 +2971,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         self.assertFalse((self.target / "solver_review_retirement_receipt.json").exists())
         self.assertTrue((self.target / "simion" / "analyzer.pa0").is_file())
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_apply_rechecks_new_downstream_reference(self, _scan: mock.Mock) -> None:
+    def test_apply_rechecks_new_downstream_reference(self) -> None:
         plan = plan_retirement(
             self.artifacts, self.repo, self.target, self.replacement,
             "references must be rechecked", self.compatibility_roles,
@@ -3065,9 +2989,8 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         self.assertFalse((self.target / "solver_review_retirement_receipt.json").exists())
         self.assertTrue((self.target / "simion" / "analyzer.pa0").is_file())
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
     def test_apply_audits_late_terminal_downstream_reference_without_blocking(
-        self, _scan: mock.Mock,
+        self,
     ) -> None:
         plan = plan_retirement(
             self.artifacts,
@@ -3102,28 +3025,25 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         )
         self.assertFalse((self.target / "simion" / "analyzer.pa0").exists())
 
-    def test_apply_records_new_historical_document_reference_without_blocking(self) -> None:
-        with mock.patch(
-            "msplatform.execution.solver_review_retirement._git_document_references",
-            return_value=[],
-        ) as scan:
+    def test_off_checkout_plan_apply_and_verify_freeze_explicit_document_audit(self) -> None:
+        with mock.patch("subprocess.run", side_effect=AssertionError("checkout scan forbidden")):
             plan = plan_retirement(
-                self.artifacts, self.repo, self.target, self.replacement,
-                "document references must be rechecked", self.compatibility_roles,
+                self.artifacts, self.repo / "missing-checkout", self.target, self.replacement,
+                "document audit is an explicit input", self.compatibility_roles,
+                historical_document_references=["docs/frozen-reference.md"],
             )
-            scan.return_value = ["docs/new-reference.md"]
             with mock.patch.dict(
                 os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}
             ):
                 receipt = apply_retirement(plan)
+            self.assertEqual(verify_retirement(self.target)["status"], "PASS")
         self.assertEqual(
             receipt["apply_historical_document_references"],
-            ["docs/new-reference.md"],
+            ["docs/frozen-reference.md"],
         )
         self.assertFalse((self.target / "simion" / "analyzer.pa0").exists())
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_downstream_manifest_reference_preserves_light_evidence_only(self, _scan: mock.Mock) -> None:
+    def test_downstream_manifest_reference_preserves_light_evidence_only(self) -> None:
         self._set_status(self.target, "failed")
         downstream = self.runs / "20260103_000000__analysis__python__consumer"
         downstream.mkdir(parents=True)
@@ -3151,9 +3071,8 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
             "run_manifest.json",
         )
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
     def test_active_reference_to_preserved_light_file_does_not_pin_heavy_payload(
-        self, _scan: mock.Mock,
+        self,
     ) -> None:
         downstream = self.runs / "20260103_000000__analysis__python__light-consumer"
         downstream.mkdir(parents=True)
@@ -3173,9 +3092,8 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
 
         self.assertEqual(plan["active_preserved_file_references"][0]["path"], "summary.json")
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
     def test_active_reference_to_nested_heavy_file_blocks_retirement(
-        self, _scan: mock.Mock,
+        self,
     ) -> None:
         downstream = self.runs / "20260103_000000__analysis__python__payload-consumer"
         downstream.mkdir(parents=True)
@@ -3194,9 +3112,8 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                 "active payload cannot retire", self.compatibility_roles,
             )
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
     def test_terminal_downstream_reference_is_historical_audit_not_blocker(
-        self, _scan: mock.Mock,
+        self,
     ) -> None:
         downstream = self.runs / "20260103_000000__analysis__python__historical"
         downstream.mkdir(parents=True)
@@ -3229,9 +3146,8 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
             ],
         )
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
     def test_unreadable_active_run_config_blocks_conservatively(
-        self, _scan: mock.Mock,
+        self,
     ) -> None:
         downstream = self.runs / "20260103_000000__analysis__python__uncertain"
         downstream.mkdir(parents=True)
@@ -3253,9 +3169,8 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                 self.compatibility_roles,
             )
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
     def test_corrupt_active_run_config_is_audit_only_when_manifest_identity_differs(
-        self, _scan: mock.Mock,
+        self,
     ) -> None:
         downstream = self.runs / "20260103_000000__analysis__python__corrupt-config"
         downstream.mkdir(parents=True)
@@ -3297,9 +3212,8 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
             "corrupt_run_config_reference_unavailable",
         )
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
     def test_unreadable_active_run_config_with_matching_manifest_identity_still_blocks(
-        self, _scan: mock.Mock,
+        self,
     ) -> None:
         downstream = self.runs / "20260103_000000__analysis__python__matching-invalid-config"
         downstream.mkdir(parents=True)
@@ -3332,16 +3246,14 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                 self.compatibility_roles,
             )
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_declared_compatibility_role_must_exist_at_both_ends(self, _scan: mock.Mock) -> None:
+    def test_declared_compatibility_role_must_exist_at_both_ends(self) -> None:
         with self.assertRaisesRegex(RetirementError, "identity roles missing"):
             plan_retirement(
                 self.artifacts, self.repo, self.target, self.replacement,
                 "compatible", (*self.compatibility_roles, "project_specific_missing_role"),
             )
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_apply_requires_host_lease(self, _scan: mock.Mock) -> None:
+    def test_apply_requires_host_lease(self) -> None:
         plan = plan_retirement(
             self.artifacts, self.repo, self.target, self.replacement,
             "compatible", self.compatibility_roles,
@@ -3349,8 +3261,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         with mock.patch.dict(os.environ, {}, clear=True), self.assertRaises(RetirementError):
             apply_retirement(plan)
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_plan_rejects_missing_or_changed_recorded_evidence(self, _scan: mock.Mock) -> None:
+    def test_plan_rejects_missing_or_changed_recorded_evidence(self) -> None:
         for run in (self.target, self.replacement):
             payload = run / "simion" / "analyzer.pa0"
             original = payload.read_bytes()
@@ -3367,8 +3278,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                         )
                     payload.write_bytes(original)
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_replacement_cannot_omit_compatibility_input_record(self, _scan: mock.Mock) -> None:
+    def test_replacement_cannot_omit_compatibility_input_record(self) -> None:
         path = self.replacement / "run_manifest.json"
         manifest = json.loads(path.read_text(encoding="utf-8"))
         del manifest["inputs"]["analyzer_pa0"]
@@ -3379,8 +3289,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                 "compatible", self.compatibility_roles,
             )
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_apply_rechecks_evidence_before_any_removal(self, _scan: mock.Mock) -> None:
+    def test_apply_rechecks_evidence_before_any_removal(self) -> None:
         plan = plan_retirement(
             self.artifacts, self.repo, self.target, self.replacement,
             "compatible", self.compatibility_roles,
@@ -3408,8 +3317,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
                     self.assertTrue((self.target / item["path"]).is_file())
                 path.write_bytes(original)
 
-    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
-    def test_pending_receipt_resumes_only_recorded_partial_removal(self, _scan: mock.Mock) -> None:
+    def test_pending_receipt_resumes_only_recorded_partial_removal(self) -> None:
         plan = plan_retirement(
             self.artifacts, self.repo, self.target, self.replacement,
             "compatible", self.compatibility_roles,

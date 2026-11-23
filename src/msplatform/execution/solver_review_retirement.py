@@ -12,7 +12,6 @@ import hashlib
 import json
 import os
 import posixpath
-import subprocess
 from contextlib import contextmanager, ExitStack
 from datetime import datetime, timezone
 from pathlib import Path
@@ -264,16 +263,16 @@ def _prepared_gui_scope(document: dict[str, Any]) -> bool:
     return True
 
 
-def _git_document_references(repository: Path, run_id: str) -> list[str]:
-    result = subprocess.run(
-        ["git", "-C", str(repository), "grep", "-l", "-F", "--", run_id, "--", "*.md"],
-        capture_output=True, text=True, encoding="utf-8", errors="replace", check=False,
-        cwd=repository,
-        timeout=30,
-    )
-    if result.returncode not in {0, 1}:
-        raise RetirementError(f"git document reference scan failed: {result.stderr.strip()}")
-    return sorted(line.strip() for line in result.stdout.splitlines() if line.strip())
+def _historical_document_references(references: Iterable[str]) -> list[str]:
+    values = list(references)
+    if any(not isinstance(value, str) or not value or value != value.strip()
+           or "\\" in value or ":" in value or value.startswith("/")
+           or ".." in value.split("/") or posixpath.normpath(value) != value
+           or not value.endswith(".md") for value in values):
+        raise RetirementError("historical document references require canonical relative Markdown paths")
+    if values != sorted(set(values)):
+        raise RetirementError("historical document references must be sorted and unique")
+    return values
 
 
 def structured_target_references(value: Any, target: Path, run_id: str) -> set[str]:
@@ -1220,6 +1219,7 @@ def plan_retirement(
     selected_heavy_paths: Iterable[str] | None = None,
     failed_equivalence_members: dict[str, dict[str, Any]] | None = None,
     approved_stopped_consumer_closures: dict[str, dict[str, Any]] | None = None,
+    historical_document_references: Iterable[str] = (),
 ) -> dict[str, Any]:
     """Plan supersession or owner-approved completion; retain all small evidence."""
     owner_mode = bool(owner or owner_abandonment_reason)
@@ -1327,7 +1327,7 @@ def plan_retirement(
         raise RetirementError("replacement is not newer than target")
     if replacement and target["config"].get("project") != replacement["config"].get("project"):
         raise RetirementError("replacement belongs to another project")
-    document_refs = _git_document_references(repository_root, target_run.name)
+    document_refs = _historical_document_references(historical_document_references)
     leases = protection.load_capacity_protection_leases(artifact_root)
     if protection.path_is_protected(target_run, leases["protected_paths"]):
         raise RetirementError("target is covered by an active capacity protection lease")
@@ -1560,7 +1560,6 @@ def _apply_retirement_locked(plan: dict[str, Any], *, _leases: dict[str, Any] | 
     owner_mode = plan.get("retirement_mode") == "completed_experiment"
     try:
         artifact_root = Path(plan["artifact_root"]).resolve()
-        repository_root = Path(plan["repository_root"]).resolve()
         target = _under(Path(plan["target_run_path"]), artifact_root)
         replacement = (
             _under(Path(plan["replacement_run_path"]), artifact_root) if not owner_mode else None
@@ -1627,7 +1626,7 @@ def _apply_retirement_locked(plan: dict[str, Any], *, _leases: dict[str, Any] | 
         )
         if refreshed_topology != checks:
             raise RetirementError("retirement compatibility changed before apply")
-    document_refs = _git_document_references(repository_root, target.name)
+    document_refs = _historical_document_references(plan["historical_document_references"])
     downstream_refs = _downstream_references(
         artifact_root,
         target,
@@ -2232,6 +2231,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--target-run", type=Path)
     parser.add_argument("--replacement-run", type=Path)
     parser.add_argument("--compatibility-assertion")
+    parser.add_argument("--historical-document-reference", action="append", default=[])
     parser.add_argument("--owner", default="")
     parser.add_argument("--owner-abandonment-reason", default="")
     parser.add_argument("--runtime-checkpoint", type=Path)
@@ -2259,7 +2259,8 @@ def main(argv: Iterable[str] | None = None) -> int:
                     or args.verify or args.replacement_run or args.compatibility_assertion
                     or args.owner_abandonment_reason or args.runtime_checkpoint or args.prepared_gui_checkpoint
                     or args.selected_heavy_path or args.approved_stopped_consumer
-                    or args.compatibility_input_role or args.compatibility_input_role_map):
+                    or args.compatibility_input_role or args.compatibility_input_role_map
+                    or args.historical_document_reference):
                 parser.error("preserved payload repair requires its explicit identities and no retirement/verify action")
             result = repair_preserved_native_file(args.artifact_root, args.target_run, args.repair_preserved_file,
                 args.repair_evidence_run, owner=args.owner, expected_manifest_sha256=args.expected_manifest_sha256,
@@ -2268,6 +2269,8 @@ def main(argv: Iterable[str] | None = None) -> int:
         elif args.repair_evidence_run or args.expected_manifest_sha256 or args.expected_retirement_sha256 or args.capacity_lease_id:
             parser.error("repair options require --repair-preserved-file")
         elif args.verify:
+            if args.historical_document_reference:
+                parser.error("historical document references are plan/apply inputs, not verification overrides")
             result = verify_retirement(args.verify.resolve())
         else:
             if not all((args.artifact_root, args.repository_root, args.target_run)):
@@ -2305,6 +2308,7 @@ def main(argv: Iterable[str] | None = None) -> int:
                 approved_stopped_consumers=args.approved_stopped_consumer,
                 prepared_gui_checkpoint=args.prepared_gui_checkpoint,
                 selected_heavy_paths=args.selected_heavy_path,
+                historical_document_references=args.historical_document_reference,
             )
             if args.apply:
                 result = apply_retirement(result)
