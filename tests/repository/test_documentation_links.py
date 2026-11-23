@@ -281,12 +281,26 @@ class MarkdownNavigationTests(unittest.TestCase):
             self.assertFalse(errors)
             self.assertEqual(verified, {moved.relative_to(root).as_posix()})
             self.assertFalse(inspect_repository(root, audit_history=True, show_review=True)['errors'])
+            (root / 'later.txt').write_text('later head\n', encoding='utf-8')
+            subprocess.run(['git', '-C', str(root), 'add', 'later.txt'], check=True, cwd=root, timeout=30)
+            subprocess.run(['git', '-C', str(root), '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+                            'commit', '--quiet', '-m', 'Advance beyond archived source'], check=True, cwd=root, timeout=30)
+            (root / 'latest.txt').write_text('latest head\n', encoding='utf-8')
+            subprocess.run(['git', '-C', str(root), 'add', 'latest.txt'], check=True, cwd=root, timeout=30)
+            subprocess.run(['git', '-C', str(root), '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+                            'commit', '--quiet', '-m', 'Keep archived source outside shallow boundary'], check=True, cwd=root, timeout=30)
             shallow = Path(directory) / 'shallow'
-            subprocess.run(['git', 'clone', '--quiet', '--depth', '1', '--no-tags',
+            subprocess.run(['git', 'clone', '--quiet', '--depth', '2', '--no-tags',
                             Path(root).as_uri(), str(shallow)], check=True, cwd=root, timeout=30)
+            missing = subprocess.run(['git', '-C', str(shallow), 'cat-file', '-e', f'{commit}^{{commit}}'],
+                                     cwd=shallow, capture_output=True, timeout=30)
+            self.assertNotEqual(missing.returncode, 0, 'archived source unexpectedly exists in shallow fixture')
             shutil.copytree(archive, shallow / archive.relative_to(root))
             shallow_moved = shallow / moved.relative_to(root)
             self.assertEqual(migrated_history(shallow), ({shallow_moved.relative_to(shallow).as_posix()}, []))
+            available = subprocess.run(['git', '-C', str(shallow), 'cat-file', '-e', f'{commit}^{{commit}}'],
+                                       cwd=shallow, capture_output=True, timeout=30)
+            self.assertEqual(available.returncode, 0)
             moved.write_bytes(content + b'changed')
             self.assertIn('frozen bytes/source mismatch', migrated_history(root)[1][0])
             moved.write_bytes(content)
