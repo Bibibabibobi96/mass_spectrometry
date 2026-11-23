@@ -189,6 +189,8 @@ without conferring MR arrival or final-candidate qualification.
 
 The 20261123 current-renderer diagnostic first stopped at minimum-free-capacity admission. After authorized, receipted retirement of unrelated rebuildable historical PA payloads, run `20261123_151313__sim__simion__track-b32d9e3a6b88` completed IOB construction but failed cold reopen: the saved IOB preserved cross-run PA references as relative paths that no longer resolved beneath the nested execution workspace. Its writer and capacity lifecycle closed with no completed flight. The subsequent source fix uses the existing verified `input_copies` boundary for the actual external PA and surface inputs, retaining original source identities and requiring a new run for validation. No terminal label, physical parameter or historical result was changed.
 
+The installed `cae4af65` candidate completed run `20261123_173842__sim__simion__track-53a00656736e` with three real native operations, successful build and cold reopen, one Fly and all writers stopped. Its original ID 1000003, birth 6D, clock and weight match the retained cohort. The actual native splat is in RF instance 2 at 5.20681410792426 us with complete terminal 6D, at the previously identified first-segment rod-1 location; `mr_observations.status` remains `not_recorded`. This closes the current transport/cold-reopen defect and reproduces a physical RF collision, not MR arrival, N100 or scientific qualification. The current-renderer replay remains a separate required check.
+
 The original-source native attempts retain their individual failures: missing
 empty-surface evidence (`track-27a67896934c`), PA memory exhaustion
 (`track-d71e9a4e7331`), and HS1 callback/sequential-state failures
