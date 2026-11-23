@@ -1810,13 +1810,14 @@ $env:PYTHONPATH='caller-python-path';$env:PYTHONNOUSERSITE='caller-site'
 $ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
 $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-StagedComposeRetirement'},$true)
 Invoke-Expression $node.Extent.Text
-$repoRoot=$Root;$artifactWorkspaceRoot=$Root;$RunId='parent';$project='parallel_mirror_dual_stripe_mr_tof';$python='Invoke-PublicMock'
+$repoRoot=$Root;$executionResources=Join-Path $Root 'src/msplatform/execution/resources';$artifactWorkspaceRoot=$Root;$RunId='parent';$project='parallel_mirror_dual_stripe_mr_tof';$python='Invoke-PublicMock'
 $target=Join-Path $Root 'provider';$null=New-Item -ItemType Directory -Path $target
 $owner=@{provider_run=$target;child_run_id='parent-stage-001';operation='compose'}
 if($Completed-eq'yes'){@{lifecycle_status='completed_experiment_payload_retired'}|ConvertTo-Json|Set-Content (Join-Path $target 'solver_review_retirement_receipt.json')}
 function Invoke-PublicMock {
  param([Parameter(ValueFromRemainingArguments=$true)][object[]]$Arguments)
- if((Get-Location).Path-ne$Root-or$env:PYTHONPATH-ne$Root-or$env:PYTHONNOUSERSITE-ne'1'){throw 'Public CLI repository context differs'}
+ $expectedPythonPath=@(Get-RunPythonImportRoots -RepoRoot $Root)-join[IO.Path]::PathSeparator
+ if((Get-Location).Path-ne$Root-or$env:PYTHONPATH-ne$expectedPythonPath-or$env:PYTHONNOUSERSITE-ne'1'){throw 'Public CLI repository context differs'}
  if($Arguments-contains'--verify'){'verify'|Add-Content (Join-Path $Root 'calls.txt')}
  elseif($Arguments-contains'finalize-ready'){'finalize'|Add-Content (Join-Path $Root 'calls.txt');@{status='ready';action='finalize_ready'}|ConvertTo-Json -Compress}
  else{throw 'Unknown public CLI'}
@@ -1830,7 +1831,8 @@ try{$result=Invoke-StagedComposeRetirement -Owner $owner -Disposition stencil}ca
         wrapper = r'''
 [CmdletBinding(SupportsShouldProcess)]
 param($ArtifactRoot,$RepositoryRoot,$TargetRun,$Owner,$OwnerAbandonmentReason,[switch]$Apply)
-if((Get-Location).Path-ne$RepositoryRoot-or$env:PYTHONPATH-ne$RepositoryRoot-or$env:PYTHONNOUSERSITE-ne'1'){throw 'Retirement wrapper repository context differs'}
+$expectedPythonPath=@(Get-RunPythonImportRoots -RepoRoot $RepositoryRoot)-join[IO.Path]::PathSeparator
+if((Get-Location).Path-ne$RepositoryRoot-or$env:PYTHONPATH-ne$expectedPythonPath-or$env:PYTHONNOUSERSITE-ne'1'){throw 'Retirement wrapper repository context differs'}
 if($Owner-ne'parallel_mirror_dual_stripe_mr_tof'-or-not$OwnerAbandonmentReason.Contains('parent/parent-stage-001')){throw 'Owner scope differs'}
 $(if($Apply){'apply'}else{'plan'})|Add-Content (Join-Path $RepositoryRoot 'calls.txt')
 if(Test-Path (Join-Path $RepositoryRoot 'refuse')){exit 2}
@@ -1840,11 +1842,12 @@ exit 0
         for refused, completed in (('', False), ('apply', False), ('', True), ('verify', False), ('finalize', False)):
             with self.subTest(refused=refused, completed=completed), TemporaryDirectory() as temporary:
                 root = Path(temporary)
-                public = root / 'tools/repository'
+                public = root / 'src/msplatform/execution/resources'
                 public.mkdir(parents=True)
                 (public / 'invoke_solver_review_retirement.ps1').write_text(wrapper, encoding='utf-8')
                 if refused == 'apply':
                     (root / 'refuse').write_text('active consumer', encoding='utf-8')
+                (root / 'calls.txt').write_text('', encoding='utf-8')
                 path = root / 'owner.ps1'
                 path.write_text(script, encoding='utf-8')
                 caller = root / 'outside-repository'

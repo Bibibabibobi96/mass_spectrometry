@@ -544,7 +544,7 @@ that reappear; restoration uses a separately prepared and rebound workbench.
 历史完成恢复收据仍可认证原raw。其他损坏或完整账本拒绝，不重新校准、不扫描载荷。
 
 已完成退役的solver-review run若保留的普通PA出现缓冲／无缓冲读取分叉，owner可显式使用
-`invoke_solver_review_retirement.ps1 -RepairPreservedFile <relative.pa> -RepairEvidenceRun <audit-run>`，
+`src/msplatform/execution/resources/invoke_solver_review_retirement.ps1 -RepairPreservedFile <relative.pa> -RepairEvidenceRun <audit-run>`，
 同时提供原manifest／退役收据SHA及`-ConfirmWritingStopped`；这不是自动读取重试或持续损坏恢复。
 audit须为同项目规范run、`mode=owned_payload_view_repair`、solver_review保留类且启用容量生命周期。
 公共入口申请3倍载荷预算，两个独立`/J`快照均须经两种读取匹配原SHA，才隔离旧文件对象并以同字节
@@ -865,7 +865,7 @@ manifest/summary一致的`failed`或`interrupted` compact run。apply必须持�
 
 [`msplatform.execution.solver_review_retirement`](../../src/msplatform/execution/solver_review_retirement.py)是既有完整terminal `success`或`failed`的 `solver_review` run 被明确更新成功运行取代后，退休其可重建
 求解器原生载荷的唯一公共入口。它不是普通容量清理：默认只生成plan；apply必须通过
-`invoke_solver_review_retirement.ps1`取得共享 `HostExecutionLease`，并逐个精确给出target、replacement
+[`invoke_solver_review_retirement.ps1`](../../src/msplatform/execution/resources/invoke_solver_review_retirement.ps1)取得共享 `HostExecutionLease`，并逐个精确给出target、replacement
 和人工审阅后的兼容性说明，并逐项声明本设计线判定兼容所需的同名输入角色；历史角色改名则用
 `TARGET_ROLE=REPLACEMENT_ROLE`逐项映射，两端manifest记录的字节数和SHA-256必须相同。入口失败关闭检查
 target为一致的success/failed终态、replacement为success、两端均非Formal、replacement更新、项目与mode一致、
@@ -906,7 +906,7 @@ owner须确认其writer及子进程均已停止，plan/receipt冻结各自小证
 此checkpoint退役后以完整`--verify`通过的receipt沿原`seal-checkpoint`收尾实际light-evidence占用，
 仅该明确范围可解除原stopped-payload保留pin；不将checkpoint改为科学终态，也不放宽普通finalize-ready。
 
-终态run经`invoke_solver_review_retirement.ps1 -Apply`退役且启用容量生命周期时，wrapper在同一租约内自动调用
+终态run经安装执行资源`invoke_solver_review_retirement.ps1 -Apply`退役且启用容量生命周期时，wrapper在同一租约内自动调用
 原`run_capacity_lifecycle --action finalize-ready`收尾；直接调用Python退役API时仍须显式收尾。
 收尾失败将非零退出并说明载荷已删、账本待恢复，此时只恢复容量收尾，不重复删除；checkpoint仍按上述专用`seal-checkpoint`路径处理。
 仅当普通`retention_actions.json`不存在时，

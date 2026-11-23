@@ -43,7 +43,7 @@ class RetirementWrapperTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary);contracts=root/"contracts";contracts.mkdir()
             wrapper=contracts/"invoke_solver_review_retirement.ps1"
-            wrapper.write_bytes((Path(__file__).resolve().parents[2] / "tools/repository" / wrapper.name).read_bytes())
+            wrapper.write_bytes((Path(__file__).resolve().parents[2] / "src/msplatform/execution/resources" / wrapper.name).read_bytes())
             support = root / "src/msplatform/execution/resources/run_artifact_support.ps1"
             support.parent.mkdir(parents=True)
             (support.parent/"host_execution_lease.ps1").write_text("""
@@ -125,7 +125,7 @@ $global:calls|ConvertTo-Json -Compress
             contracts = root / "contracts"
             contracts.mkdir()
             wrapper = contracts / "invoke_solver_review_retirement.ps1"
-            wrapper.write_bytes((Path(__file__).resolve().parents[2] / "tools/repository" / wrapper.name).read_bytes())
+            wrapper.write_bytes((Path(__file__).resolve().parents[2] / "src/msplatform/execution/resources" / wrapper.name).read_bytes())
             host = root / "src/msplatform/execution/resources/host_execution_lease.ps1"
             host.parent.mkdir(parents=True)
             host.write_text("""
@@ -252,7 +252,7 @@ class SolverReviewRetirementTest(unittest.TestCase):
         contracts = self.root / "contracts"
         contracts.mkdir()
         wrapper = contracts / "invoke_solver_review_retirement.ps1"
-        wrapper.write_bytes((Path(__file__).resolve().parents[2] / "tools/repository" / wrapper.name).read_bytes())
+        wrapper.write_bytes((Path(__file__).resolve().parents[2] / "src/msplatform/execution/resources" / wrapper.name).read_bytes())
         host = self.root / "src/msplatform/execution/resources/host_execution_lease.ps1"
         host.parent.mkdir(parents=True)
         host.write_text("""
@@ -347,7 +347,7 @@ function Exit-HostExecutionLease { param($Lease) }
         self.assertEqual([item["path"] for item in second["active"]], ["simion/analyzer.pa0"])
 
     def test_host_lease_wrapper_forwards_role_mappings(self) -> None:
-        wrapper = Path(__file__).resolve().parents[2] / "tools/repository/invoke_solver_review_retirement.ps1"
+        wrapper = Path(__file__).resolve().parents[2] / "src/msplatform/execution/resources/invoke_solver_review_retirement.ps1"
         source = wrapper.read_text(encoding="utf-8-sig")
         self.assertIn("[string[]]$CompatibilityInputRoleMaps=@()", source)
         self.assertIn("$CompatibilityInputRoles.Count -eq 0", source)
@@ -1050,7 +1050,7 @@ function Exit-HostExecutionLease { param($Lease) }
         policy.update(target_gib=0.1, minimum_free_gib=0.0001)
         capacity_policy.write_text(json.dumps(policy), encoding="utf-8")
         wrapper = contracts / "invoke_solver_review_retirement.ps1"
-        wrapper.write_bytes((Path(__file__).resolve().parents[2] / "tools/repository" / wrapper.name).read_bytes())
+        wrapper.write_bytes((Path(__file__).resolve().parents[2] / "src/msplatform/execution/resources" / wrapper.name).read_bytes())
         host_calls = self.root / "host-calls.txt"
         (repository / "src/msplatform/execution/resources/host_execution_lease.ps1").write_text(f"""
 param([Parameter(Mandatory)][hashtable]$HostContext)
