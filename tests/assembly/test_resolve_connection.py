@@ -131,12 +131,20 @@ class ResolveConnectionTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.workspace_root = Path(self.temporary.name)
         self.repo_root = self.workspace_root / "simulation_repo"
-        self.upstream_relative = "projects/upstream/config/interfaces/provided/exit.json"
-        self.downstream_relative = "projects/downstream/config/interfaces/required/entry.json"
+        self.upstream_relative = (
+            "src/msplatform/components/upstream/config/interfaces/provided/exit.json"
+        )
+        self.downstream_relative = (
+            "src/msplatform/components/downstream/config/interfaces/required/entry.json"
+        )
         self.upstream_path = self.repo_root / self.upstream_relative
         self.downstream_path = self.repo_root / self.downstream_relative
-        self.upstream_source_relative = "projects/upstream/config/baseline.json"
-        self.downstream_source_relative = "projects/downstream/config/baseline.json"
+        self.upstream_source_relative = (
+            "src/msplatform/components/upstream/config/baseline.json"
+        )
+        self.downstream_source_relative = (
+            "src/msplatform/components/downstream/config/baseline.json"
+        )
         self.upstream_source_path = self.repo_root / self.upstream_source_relative
         self.downstream_source_path = self.repo_root / self.downstream_source_relative
         self._write_json(
@@ -549,7 +557,7 @@ class ResolveConnectionTests(unittest.TestCase):
     def test_port_path_schemas_reject_absolute_and_parent_traversal(self) -> None:
         for invalid in (
             "C:/outside/exit.json",
-            "projects/upstream/../outside/exit.json",
+            "src/msplatform/components/upstream/../outside/exit.json",
             "artifacts/other/exit.json",
         ):
             port = json.loads(json.dumps(self.upstream))

@@ -61,5 +61,27 @@
     "local_scope": {
       "$ref": "https://mass-spectrometry.local/schemas/composition_plan.schema.json#/oneOf/1/properties/local_scope"
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "connection_checks": {
+            "minItems": 1
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "recipe": {
+            "properties": {
+              "connections": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
 }

@@ -173,34 +173,18 @@ class IpCompilerTests(unittest.TestCase):
                 else: components.pop("ion_processor")
                 with self.assertRaises(ValueError): assemble(recipe, components)
 
-    def test_legacy_schema_requires_nonempty_recipe_even_with_fabricated_check(self):
-        from msplatform.assembly.resolve_assembly import validate_composition_plan_contract
-        from tests.workflows.single_reflection import test_single_reflection_geometry as legacy
-        source = legacy.multipole_source("octupole")
-        geometry = legacy.candidate_300mm_fixture()
-        plan = legacy.inputs(source, geometry)["composition_plan"]
-        self.assertEqual(plan["schema_version"], 3)
+    def test_current_schema_requires_nonempty_recipe_even_with_fabricated_check(self):
+        from msplatform.assembly.resolve_assembly import compile_assembly_layout, validate_composition_plan_contract
+        from tests.assembly.test_scientific_provider_assembly import actual_fixture
+        recipe, interfaces, _ = actual_fixture()
+        plan = compile_assembly_layout(recipe, interfaces)
+        self.assertEqual(plan["schema_version"], 5)
         validate_composition_plan_contract(plan)
         forged = copy.deepcopy(plan)
         forged["recipe"]["connections"] = []
         self.assertTrue(forged["connection_checks"])
-        with self.assertRaises(ValueError): validate_composition_plan_contract(forged)
-        # Real provider source fixture, rebuilt with the existing supported v2
-        # interfaces so the full production validator selects plan version 4.
-        from tests.assembly.test_scientific_provider_assembly import actual_fixture, TWO_ZONE_PROFILE
-        from msplatform.backends.simion.rf_assembly_interface import build_legacy_assembly_interface
-        from msplatform.components.orthogonal_accelerator.assembly_interface import resolve_assembly_interface
-        from msplatform.assembly.resolve_assembly import compile_assembly_layout
-        recipe4, _, sources4 = actual_fixture()
-        rf4 = build_legacy_assembly_interface(sources4["rf"], geometry_profile_id="actual_bare_quadrupole", schema_version=2)
-        oa4 = resolve_assembly_interface(sources4["oa_request"], geometry_profile_id=TWO_ZONE_PROFILE, schema_version=2)
-        plan4 = compile_assembly_layout(recipe4, {"guide_a": rf4, "guide_b": rf4, "oa": oa4})
-        self.assertEqual(plan4["schema_version"], 4)
-        validate_composition_plan_contract(plan4)
-        forged4 = copy.deepcopy(plan4)
-        forged4["recipe"]["connections"] = []
-        self.assertTrue(forged4["connection_checks"])
-        with self.assertRaises(ValueError): validate_composition_plan_contract(forged4)
+        with self.assertRaises(ValueError):
+            validate_composition_plan_contract(forged)
 
 
 if __name__ == "__main__":

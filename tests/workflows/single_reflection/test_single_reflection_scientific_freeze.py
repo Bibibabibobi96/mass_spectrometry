@@ -9,7 +9,7 @@ import sys
 import tempfile
 import unittest
 
-from tests.workflows.single_reflection.test_single_reflection_preparation import fixture, scientific_preparation_fixture
+from tests.workflows.single_reflection.test_single_reflection_preparation import scientific_preparation_fixture
 
 ROOT = Path(__file__).resolve().parents[3]
 MODULE = "msplatform.workflows.single_reflection_flight.prepare"
@@ -32,7 +32,6 @@ try:
  runpy.run_module(arguments[1],run_name='__main__',alter_sys=True)
 except SystemExit as completed:
  if completed.code not in (None,0):raise
-version=json.loads(Path(arguments[arguments.index('--request')+1]).read_text())['schema_version']
 required=(
  'msplatform.backends.simion.tof_electrode_mapping',
  'msplatform.components.single_reflection_oa_tof.electrode_topology',
@@ -41,9 +40,6 @@ required=(
  'msplatform.backends.simion.rf_electrode_mapping',
  'msplatform.assembly.resolve_assembly',
 )
-if version==9:
- required=tuple(name for name in required if name != 'msplatform.backends.simion.tof_electrode_mapping')
- assert 'msplatform.backends.simion.tof_electrode_mapping' not in sys.modules
 assert all(name in sys.modules for name in required), required
 origins={}
 for name,module in list(sys.modules.items()):
@@ -67,9 +63,6 @@ class SingleReflectionScientificFreezeTests(unittest.TestCase):
             authoring = root / "physical inputs 非源码"
             authoring.mkdir()
             request, _, _ = scientific_preparation_fixture(authoring, recorded_birth=True)
-            legacy_root = root / "legacy physical inputs"
-            legacy_root.mkdir()
-            legacy_request, _, _ = fixture(legacy_root)
             original_inputs = {path: path.read_bytes() for path in authoring.rglob("*") if path.is_file()}
             self.assertFalse(root.is_relative_to(ROOT))
             frozen_inputs = root / "frozen inputs 空格"
@@ -85,7 +78,7 @@ $frozen.execution_root
             frozen = subprocess.run(
                 [shutil.which("pwsh"), "-NoProfile", "-File", str(script),
                  sys.executable, str(ROOT), str(frozen_inputs)],
-                cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=120, check=False,
+                cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120, check=False,
             )
             self.assertEqual(frozen.returncode, 0, frozen.stdout + frozen.stderr)
             snapshot = frozen_inputs / "runtime_snapshot"
@@ -155,10 +148,6 @@ $frozen.execution_root
                 self.assertNotEqual(rejected.returncode, 0)
                 self.assertIn("msplatform.backends.simion.tof_electrode_mapping", rejected.stderr)
                 self.assertFalse((badrun / "inputs/projected_source.csv").exists())
-                legacy, legacy_run = invoke("legacy9 without new backend", legacy_request)
-                self.assertEqual(legacy.returncode, 0, legacy.stdout + legacy.stderr)
-                self.assertEqual(json.loads((legacy_run / "inputs/request.json").read_text())["schema_version"], 9)
-                self.assertTrue((legacy_run / "inputs/projected_source.csv").is_file())
             finally:
                 backend.write_bytes(saved)
             resource = snapshot / "src/msplatform/contracts/schemas/component_geometry_interface_v3.schema.json"

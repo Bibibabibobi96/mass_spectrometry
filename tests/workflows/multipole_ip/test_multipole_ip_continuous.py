@@ -234,13 +234,26 @@ class ContinuousInputTests(unittest.TestCase):
         self.assertEqual(track.call_args.kwargs['expected_component_scope'], 'rf_ip')
         self.assertEqual(track.call_args.kwargs['hs1_request']['vendor_record']['path'], str(self.vendor.resolve()))
 
+    def isolated_current_python(self, repo):
+        import subprocess
+        import sys
+        from pathlib import Path
+        from shutil import copytree
+        runtime = self.root / 'runtime'
+        subprocess.run([sys._base_executable, '-m', 'venv', '--system-site-packages', str(runtime)],
+            check=True, cwd=self.root, timeout=120)
+        site_packages = runtime / 'Lib/site-packages'
+        copytree(repo / 'src/msplatform', site_packages / 'msplatform')
+        locked = next(Path(path) for path in sys.path if (Path(path) / 'referencing').is_dir())
+        (site_packages / '_p4_test_lock.pth').write_text(str(locked) + '\n', encoding='utf-8')
+        return runtime / 'Scripts/python.exe'
+
     def test_powershell_entry_reaches_continuous_owner_with_real_python(self):
         import shutil
         import subprocess
-        import sys
         from msplatform import examples
         from pathlib import Path
-        repo = Path(continuous.__file__).resolve().parents[5]
+        repo = Path(continuous.__file__).resolve().parents[4]
         release = self.write('release.json', examples.load_example('rf_oatof_functional_v1').release)
         fields = self.write('fields.json', {})
         propagation = self.write('propagation.json', {})
@@ -254,7 +267,7 @@ class ContinuousInputTests(unittest.TestCase):
             '-Propagation', str(propagation), '-Observations', str(observations),
             '-Numerics', str(numerics), '-Hs1Request', str(hs1),
             '-Environment', str(environment), '-Workspace', str(self.root), '-Profile', 'test',
-            '-Python', sys.executable]
+            '-Python', str(self.isolated_current_python(repo))]
         result = subprocess.run(command, cwd=self.root, capture_output=True, text=True, encoding='utf-8',
                                 errors='replace', timeout=60)
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -267,10 +280,9 @@ class ContinuousInputTests(unittest.TestCase):
         import os
         import shutil
         import subprocess
-        import sys
         from msplatform import examples
         from pathlib import Path
-        repo = Path(continuous.__file__).resolve().parents[5]
+        repo = Path(continuous.__file__).resolve().parents[4]
         self.write('release.json', examples.load_example('rf_oatof_functional_v1').release)
         self.write('fields.json', {'manifest': 'selected-fields'})
         self.write('propagation.json', {})
@@ -280,16 +292,10 @@ class ContinuousInputTests(unittest.TestCase):
         self.write('environment.json', {})
         outside = self.root / 'external-cwd'
         outside.mkdir()
-        runtime = self.root / 'runtime'
-        subprocess.run([sys._base_executable, '-m', 'venv', '--system-site-packages', str(runtime)],
-            check=True, cwd=self.root, timeout=120)
-        installed_python = runtime / 'Scripts/python.exe'
-        subprocess.run([str(installed_python), '-m', 'pip', 'install', '--no-deps', str(repo)], check=True,
-            cwd=self.root, capture_output=True, text=True, timeout=120)
-        locked = Path(sys.executable).resolve().parents[2] / 'Lib/site-packages'
-        (runtime / 'Lib/site-packages/_p4_test_lock.pth').write_text(str(locked) + '\n', encoding='utf-8')
+        installed_python = self.isolated_current_python(repo)
+        site_packages = installed_python.parent.parent / 'Lib/site-packages'
         capture = self.root / 'observed.json'
-        owner_source = runtime / 'Lib/site-packages/msplatform/workflows/multipole_ip/continuous.py'
+        owner_source = site_packages / 'msplatform/workflows/multipole_ip/continuous.py'
         source = owner_source.read_text(encoding='utf-8')
         start = source.index('def track_existing_fields(')
         end = source.index('\ndef run_continuous(', start)
@@ -304,7 +310,7 @@ class ContinuousInputTests(unittest.TestCase):
             'context=SimpleNamespace(workspace=args.workspace),')
         source = source.replace('from typing import Any', 'from typing import Any\nfrom types import SimpleNamespace')
         owner_source.write_text(source, encoding='utf-8')
-        script = runtime / 'Lib/site-packages/msplatform/workflows/resources/multipole_ip_continuous.ps1'
+        script = site_packages / 'msplatform/workflows/resources/multipole_ip_continuous.ps1'
         arguments = ['-ReleaseRequest', '../release.json', '-FieldsReference', '../fields.json',
             '-Propagation', '../propagation.json', '-Observations', '../observations.json',
             '-Numerics', '../numerics.json', '-Hs1Request', '../hs1.json',
@@ -325,7 +331,7 @@ class ContinuousInputTests(unittest.TestCase):
         import shutil
         import subprocess
         from pathlib import Path
-        repo = Path(continuous.__file__).resolve().parents[5]
+        repo = Path(continuous.__file__).resolve().parents[4]
         paths = {name: str(self.write(name + '.json', {})) for name in (
             'release', 'fields', 'propagation', 'observations', 'numerics', 'hs1', 'environment')}
         cases = [

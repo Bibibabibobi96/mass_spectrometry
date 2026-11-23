@@ -26,7 +26,11 @@ $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 function Get-RunNativeExecutionContext {param($Package,$Paths,$Tool) @{run_dir=$Root;projected_paths=@($Paths);environment=@{}}}
 function Project-RunPath {param($Paths,$ArtifactRunDir,$RunDir,$Python) return $Paths}
 function Invoke-RunToolRootContext {param($RepoRoot,$Operation,$Environment) &$Operation}
-. (Join-Path (Get-Location) 'common/resource_budget_support.ps1')
+$executionResources=Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $Support))) 'execution/resources'
+$hostContext=@{workspace=$Root;python_executable=(Join-Path $PSHOME 'pwsh.exe');host_state_path=(Join-Path $Root 'fixture.sqlite3');policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
+. (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
+. (Join-Path $executionResources 'resource_process_support.ps1')
+. (Join-Path $executionResources 'simion_dispatch_support.ps1')
 New-Item -ItemType Directory (Join-Path $Root results),(Join-Path $Root logs) -Force|Out-Null
 function New-Case($index){[pscustomobject]@{index=$index;case_id="batch_$index";count=1;expected_particle_ids=@($index);source_row_range=@($index,$index);simion_particle_id_offset=0;merge_offset=0;working_directory=$Root;environment=@{};stdout=(Join-Path $Root "$index.log");stderr=(Join-Path $Root "$index.err");fly_arguments=@('fly');iob_builder_arguments=@('build',[string]$index);iob_path=(Join-Path $Root "$index.iob")}}
 $script:builds=0;$script:drains=0;$script:verified=0
@@ -84,7 +88,11 @@ $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 function Get-RunNativeExecutionContext {param($Package,$Paths,$Tool) @{run_dir=$Root;projected_paths=@($Paths);environment=@{}}}
 function Project-RunPath {param($Paths,$ArtifactRunDir,$RunDir,$Python) return $Paths}
 function Invoke-RunToolRootContext {param($RepoRoot,$Operation,$Environment) &$Operation}
-. (Join-Path (Get-Location) 'common/resource_budget_support.ps1')
+$executionResources=Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $Support))) 'execution/resources'
+$hostContext=@{workspace=$Root;python_executable=(Join-Path $PSHOME 'pwsh.exe');host_state_path=(Join-Path $Root 'fixture.sqlite3');policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
+. (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
+. (Join-Path $executionResources 'resource_process_support.ps1')
+. (Join-Path $executionResources 'simion_dispatch_support.ps1')
 New-Item -ItemType Directory (Join-Path $Root results),(Join-Path $Root inputs) -Force|Out-Null
 $dispatch=Join-Path $Root 'inputs/dispatch.json'
 @{estimation=@{kind='formal_first_batch_observation';recovered_missing_observation=$true}}|ConvertTo-Json -Depth 20|Set-Content $dispatch
@@ -211,9 +219,13 @@ $ErrorActionPreference='Stop'
 function Get-RunNativeExecutionContext {param($Package,$Paths,$Tool) @{run_dir=$Root;projected_paths=@($Paths);environment=@{}}}
 function Project-RunPath {param($Paths,$ArtifactRunDir,$RunDir,$Python) return $Paths}
 function Invoke-RunToolRootContext {param($RepoRoot,$Operation,$Environment) &$Operation}
-. (Join-Path (Get-Location) 'common/resource_budget_support.ps1')
 $root=Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory (Join-Path $root inputs),(Join-Path $root results),(Join-Path $root logs) -Force|Out-Null
+$executionResources=Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $Support))) 'execution/resources'
+$hostContext=@{workspace=$Root;python_executable=(Join-Path $PSHOME 'pwsh.exe');host_state_path=(Join-Path $Root 'fixture.sqlite3');policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
+. (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
+. (Join-Path $executionResources 'resource_process_support.ps1')
+. (Join-Path $executionResources 'simion_dispatch_support.ps1')
 try{
  function New-Case([int]$Index){
   [pscustomobject]@{index=$Index;case_id=('batch_{0:D2}' -f $Index);count=2;expected_particle_ids=@(1,2);simion_particle_id_offset=0;merge_offset=0;working_directory=$root;iob_path=(Join-Path $root ('batch_{0:D2}.iob' -f $Index));iob_builder_arguments=@('build');fly_arguments=@('fly');environment=@{};stdout=('batch_{0:D2}.stdout.log' -f $Index);stderr=('batch_{0:D2}.stderr.log' -f $Index)}

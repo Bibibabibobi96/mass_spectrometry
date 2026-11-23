@@ -71,7 +71,7 @@ def owner_overlay(destination):
     from tests.contracts.test_support.run_artifact_workflow import copy_scientific_core
 
     copy_scientific_core(REPO, destination)
-    for relative in ("src/msplatform/execution/resources/run_artifact_support.ps1", "common/host_execution_lease.ps1",
+    for relative in ("src/msplatform/execution/resources/run_artifact_support.ps1", "src/msplatform/execution/resources/host_execution_lease.ps1",
                      "src/msplatform/execution/resources/require_powershell7.ps1", "src/msplatform/execution/resources/workspace_paths.ps1",
                      "src/msplatform/execution/resources/artifact_capacity_policy.json"):
         original = PROPOSAL / relative
@@ -179,11 +179,11 @@ $null=Exit-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $Repo -Sess
                 self.assertEqual(lifecycle.resolve_consumed_run_capacity_owner(record)["run_directory"], str(run))
             self.assertNotIn("superseded", lifecycle.TERMINAL_STATUSES)
             config_path = run / "run_config.json"
-            lifecycle.capacity_ledger.record_capacity_object(run.parents[4], path=run, object_class="rebuildable_payload",
+            lifecycle.capacity_ledger.record_capacity_object(run.parents[3], path=run, object_class="rebuildable_payload",
                 bytes_count=0, status="writing", owner="fixture", retention_reason="fixture", review_deadline="2027-01-01",
                 retirement_route="owner_decision_required", recovery_reason="fixture")
             write(run / "run_manifest.json", build_run_manifest(config_path, "checkpoint", retention_api=_manifest_retention_api))
-            stopped = lifecycle.seal_checkpoint(run.parents[4], config_path, owner="fixture", writing_stopped=True,
+            stopped = lifecycle.seal_checkpoint(run.parents[3], config_path, owner="fixture", writing_stopped=True,
                 retain_payload=True, retention_reason="fixture stopped source")
             stopped_path = base / "stopped.json"
             write(stopped_path, stopped)
@@ -194,9 +194,9 @@ $null=Exit-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $Repo -Sess
                     lifecycle.resolve_consumed_run_capacity_owner(manifest_record)
                 self.assertEqual(lifecycle.resolve_consumed_run_capacity_owner(manifest_record,
                     stopped_receipt_record=stopped_record)["run_directory"], str(run))
-                ledger = load_capacity_ledger(run.parents[4])
+                ledger = load_capacity_ledger(run.parents[3])
                 ledger["objects"][0]["pin"] = False
                 ledger["objects"][0].pop("pin_reason", None)
-                write(run.parents[4] / "common/capacity_ledger.json", ledger)
+                write(run.parents[3] / "common/capacity_ledger.json", ledger)
                 with self.assertRaisesRegex(ValueError, "actual ready pinned owner range"):
                     lifecycle.resolve_consumed_run_capacity_owner(manifest_record, stopped_receipt_record=stopped_record)
