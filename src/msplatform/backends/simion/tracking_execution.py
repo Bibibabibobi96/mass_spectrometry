@@ -712,7 +712,7 @@ def _execute_tracking_units(session, *, model, plan, design, stored_bank, fronte
         for number,copy_row in enumerate(native_plan.input_copies,1):
             verify_record('tracking structural container',copy_row['source_record'])
             seed_records.append(small('tracking_seed__'+key+'_'+str(number),Path(copy_row['destination']),
-                source_path=copy_row['source_record']['path'],retention_role=copy_row['source_record'].get('retention_role')))
+                source_path=copy_row['source_record']['path'],retention_role=copy_row['source_record'].get('retention_role','required_evidence')))
         iob = session.declare_file(native_plan.declared_outputs[0],'solver_native_binary')
         for generated in native_plan.declared_outputs[1:]:
             session.declare_file(generated,'solver_native_binary')
