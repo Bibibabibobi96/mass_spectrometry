@@ -988,7 +988,7 @@ function Invoke-StagedComposeRetirement {
   if(-not$complete){
     $arguments=@{ArtifactRoot=$artifactWorkspaceRoot;RepositoryRoot=$repoRoot;TargetRun=$Owner.provider_run;Owner=$project;OwnerAbandonmentReason=$reason}
     Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
-      & (Join-Path $repoRoot 'tools/repository/invoke_solver_review_retirement.ps1') @arguments -Apply -Confirm:$false | Out-Host
+      & (Join-Path $executionResources 'invoke_solver_review_retirement.ps1') @arguments -Apply -Confirm:$false | Out-Host
       if($LASTEXITCODE-ne0){throw 'Staged compose public retirement apply failed.'}
     }
   }
