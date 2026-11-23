@@ -16,7 +16,7 @@ class IntegrationRegistryTests(unittest.TestCase):
             "integrations": [{
                 "integration_id": "instrument_assembly",
                 "root": root,
-                "profile_registry": f"{root}/config/connections.json",
+                "profile_registry": "src/msplatform/workflows/config/connections.json",
             }],
         }
 

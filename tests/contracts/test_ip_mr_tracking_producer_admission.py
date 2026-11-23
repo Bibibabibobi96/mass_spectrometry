@@ -229,9 +229,13 @@ class SampledTrackingProducerTests(unittest.TestCase):
                     self.assertTrue(any(Path(row['destination']) == pa for row in native.input_copies))
                     self.assertIn('fractional_surface='+lua_value(str(companion)),spec)
             without_surfaces=copy.deepcopy(admission)
+            removed_surfaces = {}
             for key in list(without_surfaces['source'].data_records):
                 if key.endswith('_surface'):
-                    del without_surfaces['source'].data_records[key]
+                    path = without_surfaces['source'].data_path(key)
+                    removed_surfaces[path] = path.read_bytes()
+                    del without_surfaces['source']._records[key]
+                    path.unlink()
             absent=plan_ip_mr_tracking_workbench(model_geometry(without_surfaces['model']),admission=without_surfaces,
                 run_directory=root/'empty',program='-- inert Program',program_metadata={'collision_priority_applied':True},
                 native_source_rows=[dict(mass_amu='1',charge_state='1',position_x_mm='0',position_y_mm='0',position_z_mm='0',velocity_x_m_s='0',velocity_y_m_s='0',velocity_z_m_s='0')],
@@ -239,6 +243,8 @@ class SampledTrackingProducerTests(unittest.TestCase):
             empty_spec=absent.materializations[str(root/'empty/inputs/tracking_iob.lua')]
             self.assertIn('fractional_surface='+lua_value(str(root/'empty/inputs/native_fields/multipole_collision.pa-surf')),empty_spec)
             self.assertNotIn('multipole_surface.pa-surf',empty_spec)
+            for path, content in removed_surfaces.items():
+                path.write_bytes(content)
             self.assertEqual(len(native.operations),2)
             basis_path=fields.data_path('sampled_basis');saved=basis_path.read_bytes()
             try:

@@ -1,5 +1,7 @@
 param(
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
+  [string]$PythonExe = (Get-Command python -ErrorAction Stop).Path,
+  [string]$ArtifactRoot = '',
   [string]$RunId = '',
   [switch]$ReuseExisting,
   [switch]$ForceFlights
@@ -9,11 +11,12 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
-$workspaceRoot = Split-Path -Parent $repoRoot
 $projectRoot = Join-Path $repoRoot 'src\msplatform\components\single_reflection_oa_tof'
-$artifactRoot = Join-Path $workspaceRoot 'artifacts\src\msplatform\components\single_reflection_oa_tof'
+$simionRoot = Join-Path $repoRoot 'src\msplatform\backends\simion\resources'
+if (-not $ArtifactRoot) { $ArtifactRoot = $env:MASS_SPECTROMETRY_ARTIFACT_ROOT }
+if (-not $ArtifactRoot) { throw 'Explicit ArtifactRoot or MASS_SPECTROMETRY_ARTIFACT_ROOT is required.' }
+$ArtifactRoot = [IO.Path]::GetFullPath($ArtifactRoot)
 $formalDir = Join-Path $artifactRoot 'formal\simion'
-$pythonExe = Join-Path $repoRoot '.venv\Scripts\python.exe'
 if (-not $RunId) { $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__test__simion__accelerator-grid-phase' }
 & $pythonExe -m msplatform.execution.artifact_naming run $RunId
 if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
@@ -21,12 +24,12 @@ $runDir = Join-Path $artifactRoot "runs\$RunId"
 $modelScratch = Join-Path $runDir 'runtime'
 $resultDir = Join-Path $runDir 'results'
 $workbenchDir = Join-Path $modelScratch 'workbench'
-$builder = Join-Path $repoRoot 'projects\orthogonal_accelerator\simion\build_two_zone_pa.lua'
-$gem = Join-Path $repoRoot 'projects\orthogonal_accelerator\simion\two_zone_accelerator.gem'
-$program = Join-Path $projectRoot 'simion\workbench\formal\oatof_ideal_grounded.lua'
+$builder = Join-Path $simionRoot 'build_two_zone_pa.lua'
+$gem = Join-Path $simionRoot 'two_zone_accelerator.gem'
+$program = Join-Path $simionRoot 'oatof_ideal_grounded.lua'
 $fieldExporter = Join-Path $PSScriptRoot 'test_support\export_accelerator_grid_phase_field.lua'
-$logAnalyzer = Join-Path $projectRoot 'simion\workbench\analyze_ideal_field_log.ps1'
-$pythonAnalyzer = Join-Path $projectRoot 'analysis\analyze_accelerator_grid_phase.py'
+$logAnalyzer = Join-Path $simionRoot 'analyze_ideal_field_log.ps1'
+$pythonAnalyzer = Join-Path $repoRoot 'src\msplatform\workflows\oa_tof_design\analyze_accelerator_grid_phase.py'
 $fixedN100 = Join-Path $formalDir 'oatof_comsol_524amu_gaussian_N100.ion'
 $contract = Get-Content -LiteralPath (Join-Path $projectRoot 'config\resolved_geometry.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $geometry = $contract.geometry_mm

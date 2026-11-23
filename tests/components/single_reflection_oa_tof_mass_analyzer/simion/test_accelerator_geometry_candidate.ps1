@@ -1,5 +1,7 @@
 param(
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
+  [string]$PythonExe = (Get-Command python -ErrorAction Stop).Path,
+  [string]$ArtifactRoot = '',
   [string]$RunId = '',
   [switch]$ReuseExisting
 )
@@ -7,11 +9,12 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
-$workspaceRoot = Split-Path -Parent $repoRoot
-$artifactRoot = Join-Path $workspaceRoot 'artifacts\src\msplatform\components\single_reflection_oa_tof'
+$repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..\..')).Path
+$simionRoot = Join-Path $repoRoot 'src\msplatform\backends\simion\resources'
+if (-not $ArtifactRoot) { $ArtifactRoot = $env:MASS_SPECTROMETRY_ARTIFACT_ROOT }
+if (-not $ArtifactRoot) { throw 'Explicit ArtifactRoot or MASS_SPECTROMETRY_ARTIFACT_ROOT is required.' }
+$ArtifactRoot = [IO.Path]::GetFullPath($ArtifactRoot)
 $formalDir = Join-Path $artifactRoot 'formal\simion'
-$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 if ([string]::IsNullOrWhiteSpace($RunId)) {
   $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__test__simion__accelerator-geometry__strict-focus'
 }
@@ -24,18 +27,18 @@ $logDir = Join-Path $runDir 'logs'
 $contractPath = Join-Path $projectRoot 'config\candidates\accelerator_grid_aligned_strict_focus.json'
 $baselinePath = Join-Path $projectRoot 'config\resolved_geometry.json'
 $derivedPath = Join-Path $resultDir 'derived_geometry.json'
-$builder = Join-Path $repoRoot 'projects\orthogonal_accelerator\simion\build_two_zone_pa.lua'
-$gem = Join-Path $repoRoot 'projects\orthogonal_accelerator\simion\two_zone_accelerator.gem'
-$program = Join-Path $projectRoot 'simion\workbench\formal\oatof_ideal_grounded.lua'
-$fly2 = Join-Path $projectRoot 'simion\workbench\formal\oatof_ideal_grounded.fly2'
-$iobBuilder = Join-Path $projectRoot 'simion\workbench\build_formal_iob.lua'
-$ionGenerator = Join-Path $projectRoot 'simion\workbench\generate_comsol_consistent_ions.ps1'
-$logAnalyzer = Join-Path $projectRoot 'simion\workbench\analyze_ideal_field_log.ps1'
+$builder = Join-Path $simionRoot 'build_two_zone_pa.lua'
+$gem = Join-Path $simionRoot 'two_zone_accelerator.gem'
+$program = Join-Path $simionRoot 'oatof_ideal_grounded.lua'
+$fly2 = Join-Path $simionRoot 'oatof_ideal_grounded.fly2'
+$iobBuilder = Join-Path $simionRoot 'build_formal_iob.lua'
+$ionGenerator = Join-Path $simionRoot 'generate_comsol_consistent_ions.ps1'
+$logAnalyzer = Join-Path $simionRoot 'analyze_ideal_field_log.ps1'
 
 New-Item -ItemType Directory -Force -Path $scratchDir,$runDir,$resultDir,$logDir | Out-Null
 Push-Location $repoRoot
 try {
-  & $python -m projects.orthogonal_accelerator.analysis.accelerator_time_focus $contractPath --write-derived $derivedPath | Out-Null
+  & $PythonExe -m msplatform.components.orthogonal_accelerator.accelerator_time_focus $contractPath --write-derived $derivedPath | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'Accelerator focus derivation failed.' }
 }
 finally { Pop-Location }
@@ -174,7 +177,7 @@ $runSummary = Join-Path $runDir 'summary.json'
   ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $runSummary -Encoding UTF8
 $manifestArgs=@('-c','from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)','--run-config',$runConfig,'--status','success','--software','SIMION 2020','--output',$runSummary)
 foreach($file in Get-ChildItem -LiteralPath $resultDir,$logDir,$scratchDir -Recurse -File){$manifestArgs+=@('--output',$file.FullName)}
-& $python @manifestArgs
+& $PythonExe @manifestArgs
 if($LASTEXITCODE -ne 0){throw 'Accelerator-geometry manifest failed.'}
 
 Write-Host 'SIMION_ACCELERATOR_GEOMETRY_CANDIDATE_STATUS=PASS'

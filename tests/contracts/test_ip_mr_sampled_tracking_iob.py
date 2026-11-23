@@ -29,6 +29,7 @@ class SampledTrackingIobTests(unittest.TestCase):
     .replace(" local row=spec.instances[1]\n local path=mode:match('^verify')and row.path or spec.bootstrap_paths[1]", " for i,row in ipairs(spec.instances) do\n local path=mode:match('^verify')and row.path or spec.bootstrap_paths[i]")
     .replace(' slots[1]=item\nend'," if failure=='foreign_path' and i==3 then item.pa.path=item.pa.path..'.foreign' end\n slots[i]=item\n end\nend")
     .replace("arg={arg[1],mode,arg[5]}","arg={arg[1],mode,arg[5]}")
+    .replace('function result:surface_info()if failure==\'surface\' then return .5,nil,nil end;return .25,nil,nil end',"function result:surface_info()if failure=='surface' then return .5,nil,nil end;if spec.instances[2].surface_state and norm(self.path or self.filename)==norm(spec.instances[2].path) then return nil end;return .25,nil,nil end")
     .replace("arg[3]..'/iob_core.lua'", "arg[3]..'/iob_core.lua'"))
    code=code[:code.index('arg={arg[1],mode,arg[5]}')]+"assert(loadfile(arg[5]..'/iob_core.lua'))()(spec,mode,function(path)return path end)\n"
    script=root/'harness.lua';script.write_text(code,encoding='utf8',newline='\n');request=root/'spec.lua'
@@ -54,3 +55,10 @@ class SampledTrackingIobTests(unittest.TestCase):
    p=run('verify',bad);self.assertNotEqual(p.returncode,0);self.assertIn('input missing',p.stderr)
    companion=out.with_suffix('.lua');saved=companion.read_bytes();companion.unlink()
    p=run('verify',spec);self.assertNotEqual(p.returncode,0);self.assertIn('prepared companion is missing',p.stderr);companion.write_bytes(saved)
+   empty=copy.deepcopy(spec);row=empty['instances'][1];local_surface=pathlib.Path(row['fractional_surface']);local_surface.unlink()
+   row.pop('fractional_surface');row['fractional_surface']=str(pathlib.Path(row['path']).with_suffix('.pa-surf'))
+   row['surface_state']=str(root/'empty-surface.json');pathlib.Path(row['surface_state']).write_text('{"schema_version":1,"mode":"empty","grid":[3,3,3],"pitch":[1,1,1],"scanned_nodes":27,"offset_nodes":0}',encoding='utf8')
+   pathlib.Path(row['surface_witnesses']).write_text('0,0,0,nil,nil,nil\n',encoding='utf8')
+   p=run('verify',empty);self.assertEqual(p.returncode,0,p.stderr)
+   local_surface.write_bytes(b'unexpected')
+   p=run('verify',empty);self.assertNotEqual(p.returncode,0);self.assertIn('empty surface has unexpected companion',p.stderr)

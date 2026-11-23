@@ -186,7 +186,7 @@ class PairedPulseRuntimeTests(unittest.TestCase):
 
     @unittest.skipUnless(LUA.is_file(),"standalone Lua unavailable")
     def test_real_lua_adapter_callbacks_keep_edges_clock_identity_and_raw_terminals(self):
-        result=subprocess.run([str(LUA),str(ROOT/"projects/single_reflection_oa_tof_mass_analyzer/tests/simion/test_paired_accelerator_pulse.lua"),
+        result=subprocess.run([str(LUA),str(ROOT/"tests/components/single_reflection_oa_tof_mass_analyzer/simion/test_paired_accelerator_pulse.lua"),
             str(ADAPTER),str(ROOT/"src/msplatform/backends/simion/resources/voltage_waveforms.lua"),str(ROOT/"src/msplatform/backends/simion/resources/single_flight_pulse_hook.lua")],
             cwd=ROOT,capture_output=True,text=True,check=False,timeout=20)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)

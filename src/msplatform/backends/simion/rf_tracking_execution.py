@@ -446,6 +446,9 @@ def plan_ip_mr_tracking_workbench(compiled: Any, *, admission: Mapping[str, Any]
             return [localize(item) for item in value]
         return copy_paths.get(value,value) if isinstance(value,str) else value
     spec = localize(copy.deepcopy(projected['spec']))
+    for instance in spec['instances'][1:]:
+        local_companion = str(Path(instance['path']).with_suffix('.pa-surf'))
+        instance['fractional_surface'] = local_companion
     binding = root/'inputs/sampled_basis.json'
     spec.update(role='ip_mr_sampled_tracking_iob',
                 field_representation='assembly_sampled_basis_with_collision_geometry',
