@@ -17,7 +17,7 @@
 
 ## 执行与产物
 
-从仓库根运行 `pwsh -NoProfile -File src/msplatform/workflows/resources/wehnelt_build_only.ps1 -RunId <run_id>`，使用显式且符合仓库合同的新运行身份。
+从仓库根运行 `pwsh -NoProfile -File src/msplatform/workflows/resources/wehnelt_build_only.ps1 -RunId <run_id> -PythonExe <python.exe>`，使用显式且符合仓库合同的新运行身份。也可用 `SIMULATION_PYTHON_EXE` 提供解释器；缺少两种选择时入口拒绝运行。
 The three stage implementations and contract helpers have one canonical owner in [`msplatform.backends.comsol/matlab`](../../backends/comsol/matlab). The public `build_wehnelt_model(resolvedContractPath, runDirectory)` wrapper calls all three stages and retains their individual results. Each stage requires `(resolvedContractPath, runDirectory)` and retains the original intermediate MPH chain. The component runner freezes those package resources and supplies its explicit owner run directory; the obsolete `egun_paths.m` path discovery is retired. Parameters, failure handling and stage/output criteria remain in the COMSOL implementation guide.
 当前构建能力不代表粒子求解、收集效率或 Candidate/Formal 资格。
 

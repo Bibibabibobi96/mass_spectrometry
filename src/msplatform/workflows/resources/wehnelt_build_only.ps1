@@ -14,7 +14,13 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
 $projectRoot = Join-Path $repoRoot $componentRoot
 $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\transverse_helical_filament_wehnelt_electron_gun'
-$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
+$python = if ($PythonExe) {
+  [IO.Path]::GetFullPath($PythonExe)
+} elseif ($env:SIMULATION_PYTHON_EXE) {
+  [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)
+} else {
+  throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'
+}
 $software = @('COMSOL 6.4 via MATLAB R2025b')
 
 $bootstrapFiles = [ordered]@{
@@ -299,24 +305,27 @@ try {
       -Destination (Join-Path $snapshotRoot $entry.Value)
   }
   $selectCoreSources = @'
-import json, pathlib, sys, tomllib
+import json, pathlib
+import msplatform
+from msplatform.backends.comsol.resources import LAUNCHER_RESOURCES, NATIVE_RESOURCES
 from msplatform.execution.inputs import enumerate_python_sources
-root = pathlib.Path(sys.argv[1]).resolve()
-selected = set(enumerate_python_sources(
-    root, package_roots=("src/msplatform",), provider_root="src/msplatform",
-    resource_suffixes=(".schema.json",)))
-configuration = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
-for package, patterns in configuration["tool"]["setuptools"]["package-data"].items():
-    package_root = root / "src" / package.replace(".", "/")
-    for pattern in patterns:
-        resources = sorted(path for path in package_root.glob(pattern) if path.is_file())
-        if not resources:
-            raise ValueError(f"Declared package resource is unavailable: {package}/{pattern}")
-        selected.update(path.relative_to(root).as_posix() for path in resources)
-print(json.dumps(sorted(selected)))
+root = pathlib.Path(msplatform.__file__).resolve().parent.parent
+selected = enumerate_python_sources(
+    root, package_roots=("msplatform",), provider_root="msplatform",
+    resource_suffixes=(".json", ".csv", ".ion", ".ps1", ".m", ".gem", ".lua",
+                       ".iob", ".pa0", ".fly2", ".md"))
+required = {f"msplatform/backends/comsol/matlab/{name}" for name in NATIVE_RESOURCES}
+required.update(f"msplatform/backends/comsol/launcher/{name}" for name in LAUNCHER_RESOURCES)
+missing = sorted(required.difference(selected))
+if missing:
+    raise FileNotFoundError(f"Installed scientific core resources are missing: {missing}")
+print(json.dumps([{
+    "source": str((root / relative).resolve()),
+    "relative_path": (pathlib.Path("src") / relative).as_posix(),
+} for relative in selected]))
 '@
   $coreSelection = Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
-    & $package.python -B -c $selectCoreSources $repoRoot
+    & $package.python -B -c $selectCoreSources
     if ($LASTEXITCODE -ne 0) { throw 'Scientific core source selection failed.' }
   }
   $comsolCoreRoles = @{
@@ -328,10 +337,11 @@ print(json.dumps(sorted(selected)))
     'src/msplatform/backends/comsol/launcher/livelink_environment.ps1' = 'comsol_environment'
     'src/msplatform/backends/comsol/matlab/comsolstartup.m' = 'comsol_startup'
   }
-  foreach ($relative in @($coreSelection | ConvertFrom-Json)) {
-    $key = if ($comsolCoreRoles.ContainsKey([string]$relative)) { $comsolCoreRoles[[string]$relative] } else { 'scientific_core_' + ($relative -replace '[^A-Za-z0-9]+','_') }
+  foreach ($record in @($coreSelection | ConvertFrom-Json)) {
+    $relative = [string]$record.relative_path
+    $key = if ($comsolCoreRoles.ContainsKey($relative)) { $comsolCoreRoles[$relative] } else { 'scientific_core_' + ($relative -replace '[^A-Za-z0-9]+','_') }
     $frozenInputs[$key] = Copy-VerifiedRunInput `
-      -Source (Join-Path $repoRoot $relative) `
+      -Source ([string]$record.source) `
       -Destination (Join-Path $snapshotRoot $relative)
   }
 
