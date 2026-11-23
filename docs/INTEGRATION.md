@@ -2946,7 +2946,11 @@ The post-hoc source-admission CLI is
 It consumes explicit sealed source evidence and does not run an owner, Fly or the
 full analyzer. The existing prepared-joint PowerShell owner invokes this installed
 stage and the sole `msplatform.contracts.trajectory_recording --contract <path>`
-query. Source data is never relocated or rewritten. Full diagnostics/extraction now use the installed workflow and SIMION adapters;
+query. Source data is never relocated or rewritten. Both admission and diagnostics execute through the frozen-package
+executor, which verifies their module origins; analysis consumes the already-frozen `analysis_contract.json` rather than
+reading or overwriting it from the author path. The real public-entry fixture passes when that original is modified or
+removed after freezing, preserves the published contract SHA-256, and rejects missing frozen admission/diagnostics modules
+instead of accepting same-named installed modules. Full diagnostics/extraction now use the installed workflow and SIMION adapters;
 native-controller migration remains open. Admission does not confer scientific qualification.
 
 The integrated implementation passed two main-checkout admission tests in 0.432 s.

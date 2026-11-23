@@ -1,6 +1,7 @@
 """Root prepared IP/MR execution routing and lifecycle, without vendor software."""
 
 from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -200,7 +201,11 @@ run=Path(args[args.index('--run-config')+1]).parent
 assert json.loads((run/'run_manifest.json').read_text(encoding='utf-8-sig'))['status'] in ('success','failed')
 if os.environ['ANALYSIS_TEST_SEAL_FAIL']=='1': raise RuntimeError('Explicit inert seal failure')
 '''
-        for scenario in ("success", "analysis_failure", "wrong_owner", "incomplete_native", "capacity_failure", "seal_failure"):
+        successful_scenarios = {"success", "mutated_author_contract", "removed_author_contract"}
+        admitted_scenarios = successful_scenarios | {"analysis_failure", "capacity_failure", "seal_failure", "missing_frozen_diagnostics"}
+        for scenario in ("success", "mutated_author_contract", "removed_author_contract", "missing_frozen_admission",
+                         "missing_frozen_diagnostics", "analysis_failure", "wrong_owner", "incomplete_native",
+                         "capacity_failure", "seal_failure"):
             with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as directory:
                 workspace = Path(directory)
                 repo = workspace / "simulation_repo"
@@ -236,6 +241,8 @@ if os.environ['ANALYSIS_TEST_SEAL_FAIL']=='1': raise RuntimeError('Explicit iner
                 source, contract = analysis_source_fixture(workspace,
                     owner="parallel_mirror_dual_stripe_mr_tof" if scenario == "wrong_owner" else "instrument_assembly",
                     complete=scenario != "incomplete_native")
+                contract_bytes = contract.read_bytes()
+                contract_sha256 = hashlib.sha256(contract_bytes).hexdigest().upper()
                 before = {p: p.read_bytes() for p in source.rglob("*") if p.is_file()}
                 run_id = "20261022_120001__analysis__python__joint-test"
                 run = source.parent / run_id
@@ -290,6 +297,20 @@ try { & $entry @forwardParameters } finally { Write-AnalysisFixtureEvent 'actual
                 for token, label in probes.items():
                     self.assertEqual(analysis.count(token), 1, token)
                     analysis = analysis.replace(token, "Write-AnalysisFixtureEvent '" + label + "'\n  " + token, 1)
+                if scenario in {"mutated_author_contract", "removed_author_contract", "missing_frozen_admission"}:
+                    token = "$frozenAnalysisContract=Copy-VerifiedRunInput -Source $contract -Destination (Join-Path $inputDir 'analysis_contract.json')"
+                    self.assertEqual(analysis.count(token), 1)
+                    action = {
+                        "mutated_author_contract": "  [IO.File]::WriteAllText($contract,'{\"simion\":null}',[Text.UTF8Encoding]::new($false))",
+                        "removed_author_contract": "  Remove-Item -LiteralPath $contract",
+                        "missing_frozen_admission": "  Remove-Item -LiteralPath (Join-Path $inputDir 'runtime_snapshot/src/msplatform/workflows/prepared_joint/analysis_inputs.py')",
+                    }[scenario]
+                    analysis = analysis.replace(token, token + "\n" + action, 1)
+                if scenario == "missing_frozen_diagnostics":
+                    token = "$stage='joint_diagnostics'"
+                    self.assertEqual(analysis.count(token), 1)
+                    action = "  Remove-Item -LiteralPath (Join-Path $inputDir 'runtime_snapshot/src/msplatform/workflows/prepared_joint/diagnostics.py')"
+                    analysis = analysis.replace(token, token + "\n" + action, 1)
                 entry.write_text(prefix + analysis, encoding="utf-8")
                 environment = {**os.environ, "PYTHONPATH": str(repo / "src") + os.pathsep + str(repo), "PYTHONNOUSERSITE": "1",
                     "ProgramFiles": str(workspace / "NO_SIMION"),
@@ -322,18 +343,18 @@ try { & $entry @forwardParameters } finally { Write-AnalysisFixtureEvent 'actual
                             if primary is None:
                                 raise
                             primary.add_note("PREPARED_ANALYSIS_EXTRA_EVIDENCE_ERROR=" + repr(diagnostic_error))
-                self.assertEqual(completed.returncode == 0, scenario == "success", completed.stdout + completed.stderr)
+                self.assertEqual(completed.returncode == 0, scenario in successful_scenarios, completed.stdout + completed.stderr)
                 self.assertTrue((workspace / "host_events.txt").is_file(), completed.stdout + completed.stderr)
                 self.assertEqual((workspace / "host_events.txt").read_text().splitlines(),
-                                 ["enter:GATE/unclassified", "exit:success" if scenario == "success" else "exit:failed"])
+                                 ["enter:GATE/unclassified", "exit:success" if scenario in successful_scenarios else "exit:failed"])
                 self.assertFalse((workspace / "artifacts/common/host_resources.sqlite3").exists())
                 manifest = json.loads((run / "run_manifest.json").read_text(encoding="utf-8-sig"))
                 configuration = json.loads((run / "run_config.json").read_text(encoding="utf-8-sig"))
                 summary = json.loads((run / "summary.json").read_text(encoding="utf-8-sig"))
                 self.assertEqual((manifest["project"], manifest["mode"]), ("instrument_assembly", "prepared_joint_analysis"))
                 expected_manifest_status = (
-                    "checkpoint" if scenario == "capacity_failure"
-                    else "success" if scenario in {"success", "seal_failure"} else "failed"
+                    "checkpoint" if scenario in {"capacity_failure", "missing_frozen_admission", "missing_frozen_diagnostics"}
+                    else "success" if scenario in successful_scenarios | {"seal_failure"} else "failed"
                 )
                 self.assertEqual(manifest["status"], expected_manifest_status)
                 self.assertFalse(summary["native_flight_executed"])
@@ -341,11 +362,13 @@ try { & $entry @forwardParameters } finally { Write-AnalysisFixtureEvent 'actual
                 self.assertFalse(list(run.rglob("*.log")))
                 self.assertFalse((run / "inputs/analysis_inputs.json").exists())
                 self.assertNotIn("analysis_inputs", configuration["inputs"])
-                if scenario in {"success", "analysis_failure", "capacity_failure", "seal_failure"}:
+                if scenario in admitted_scenarios:
                     self.assertEqual(Path(configuration["inputs"]["source_preparation"]), source / "results/prepared_joint_trial.json")
                     self.assertEqual(Path(configuration["inputs"]["source_merge_receipt"]), source / "results/batch_log_merge_receipt.json")
                     self.assertEqual(Path(configuration["inputs"]["source_manifest"]).read_bytes(), before[source / "run_manifest.json"])
-                    self.assertEqual(Path(configuration["inputs"]["analysis_contract"]).read_bytes(), contract.read_bytes())
+                    self.assertEqual(Path(configuration["inputs"]["analysis_contract"]).read_bytes(), contract_bytes)
+                    if "analysis_contract" in manifest["inputs"]:
+                        self.assertEqual(manifest["inputs"]["analysis_contract"]["sha256"], contract_sha256)
                     self.assertEqual((configuration["parameters"]["mother_particle_count"],
                                       configuration["parameters"]["launched_particle_count"]), (100, 97))
                     snapshot_entry = run / "inputs/runtime_snapshot" / PREPARED_ENTRY
@@ -355,6 +378,14 @@ try { & $entry @forwardParameters } finally { Write-AnalysisFixtureEvent 'actual
                 else:
                     self.assertEqual(summary["failure_stage"], "admit_completed_native_source")
                     self.assertFalse((run / "results/diagnostics").exists())
+                if scenario in {"missing_frozen_admission", "missing_frozen_diagnostics"}:
+                    expected_module = "analysis_inputs" if scenario == "missing_frozen_admission" else "diagnostics"
+                    self.assertIn(expected_module, summary["reason"])
+                if scenario == "missing_frozen_diagnostics":
+                    self.assertEqual(summary["failure_stage"], "joint_diagnostics")
+                    self.assertFalse((run / "results/diagnostics").exists())
+                if scenario in {"mutated_author_contract", "removed_author_contract"}:
+                    self.assertNotEqual(contract.read_bytes() if contract.exists() else None, contract_bytes)
                 for path, payload in before.items():
                     self.assertEqual(path.read_bytes(), payload)
 
