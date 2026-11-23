@@ -1153,6 +1153,16 @@ failure, complete reuse and missing-unit recovery. Native, installed and final
 same-candidate Repository acceptance remain open. Earlier owner/request descriptions
 below retain their historical scope and do not define the current entry.
 
+The SFI field-plan and field-table test fixtures now consume scientific group keys,
+verified `provider_inputs`, and the actual sparse native electrode identities. The GEM
+identity negative mutates an electrode present in the generated native input, and the
+backend binding provenance is included when downstream source identities legitimately
+change. The former direct legacy-map equivalence assertions are retired with that
+unsupported input path; relabeling, voltage, geometry and failure-closed checks remain.
+The test rename is `test_local_plan_keeps_actual_11_to_35_namespace_and_only_off_pulse_fields`
+→ `test_local_plan_keeps_actual_sparse_native_namespace_and_only_off_pulse_fields`;
+all 41 tests in the two complete modules passed without a native solver run.
+
 The public recorded-birth consumer accepts an explicit `scalar_field_basis`
 selection containing a published `geometry_artifact` and three named `samples`:
 `carrier`, `rf_reference` and `pulse_delta`. Admission checks their canonical

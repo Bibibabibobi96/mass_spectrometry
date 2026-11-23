@@ -341,9 +341,11 @@ class DirectFieldPlanTests(unittest.TestCase):
                 if change == 'missing_instance': del bindings[first]
                 elif change == 'unknown_instance': bindings['unselected'] = bindings.pop(first)
                 elif change == 'swapped_instances': bindings[first], bindings[second] = bindings[second], bindings[first]
-                elif change == 'missing_role': del bindings[second]['accelerator_repeller_id']
-                elif change == 'collision': bindings[second]['grounded_shield_id'] = 1
-                else: bindings[first]['2'] = bindings[first]['1']
+                elif change == 'missing_role': del bindings[second]['accelerator_repeller']
+                elif change == 'collision': bindings[second]['common_ground'] = bindings[second]['accelerator_repeller']
+                else:
+                    first_group, second_group = list(bindings[first])[:2]
+                    bindings[first][second_group] = bindings[first][first_group]
                 path.write_text(json.dumps(geometry), encoding='utf-8')
                 with self.subTest(change=change), self.assertRaises(ValueError):
                     build_field_plan(run / 'inputs', Path(sys.executable))
@@ -351,8 +353,7 @@ class DirectFieldPlanTests(unittest.TestCase):
             # their binding records is valid when their solver IDs remain
             # unique; this must not retain the removed PA+ mode restriction.
             valid = copy.deepcopy(original)
-            valid_bindings = valid['electrode_bindings'][first]
-            valid_bindings['1'], valid_bindings['2'] = valid_bindings['2'], valid_bindings['1']
+            valid['backend_electrode_bindings']['bindings'].reverse()
             path.write_text(json.dumps(valid), encoding='utf-8')
             self.assertTrue(build_field_plan(run / 'inputs', Path(sys.executable))['domains'])
 
@@ -384,7 +385,8 @@ class DirectFieldPlanTests(unittest.TestCase):
                     continue
                 with self.subTest(case=case):
                     self.assertEqual([key for key in baseline['geometry']
-                        if baseline['geometry'][key] != actual['geometry'][key]], ['downstream_pa_instances'])
+                        if baseline['geometry'][key] != actual['geometry'][key]],
+                        ['downstream_pa_instances', 'backend_electrode_bindings'])
                     self.assertEqual(baseline['gem'], actual['gem'])
                     self.assertEqual(baseline['design'], actual['design'])
                     self.assertEqual(baseline['plan'], actual['plan'])
@@ -402,7 +404,8 @@ class DirectFieldPlanTests(unittest.TestCase):
                 design, geometry = copy.deepcopy(original_design), copy.deepcopy(original_geometry)
                 gem_path.write_bytes(original_gem)
                 if case == 'gem':
-                    gem_path.write_bytes(original_gem.replace(b'e(1)', b'e(2)', 1))
+                    native_id = baseline['physical_electrode_ids'][0]
+                    gem_path.write_bytes(original_gem.replace(f'e({native_id})'.encode(), b'e(999999)', 1))
                     self.assertNotEqual(gem_path.read_bytes(), original_gem)
                     design['domains'][0]['gem_sha256'] = file_sha256(gem_path)
                 elif case == 'mesh':
@@ -426,7 +429,7 @@ class DirectFieldPlanTests(unittest.TestCase):
 
     def test_two_rf_sources_preserve_scope_and_bind_explicit_member_boundary(self):
         import hashlib
-        from tests.workflows.single_reflection.test_single_reflection_geometry import multi_inputs, quadrupole_source, candidate_300mm_fixture
+        from tests.workflows.single_reflection.test_single_reflection_geometry import scientific_inputs, quadrupole_source, candidate_300mm_fixture
         from msplatform.backends.simion.geometry import compile_frontend_geometry
         from msplatform.backends.simion.fields import prepare_field_design, POLICY
         from msplatform.workflows.single_reflection_flight.field_plan import _check_source_physics
@@ -434,7 +437,8 @@ class DirectFieldPlanTests(unittest.TestCase):
         sources = [quadrupole_source(r0=4., dc=1., frequency_hz=1e6, phase_rad=.1),
                    quadrupole_source(r0=4.5, dc=2., frequency_hz=1.1e6, phase_rad=.2)]
         oatof = candidate_300mm_fixture()
-        arguments = multi_inputs(sources, oatof, names=['a', 'b'])
+        with tempfile.TemporaryDirectory() as directory:
+            arguments, _ = scientific_inputs(dict(zip(['a', 'b'], sources, strict=True)), oatof, Path(directory))
         arguments['numerical_domains']['entrance_refinement'] = copy.deepcopy(arguments['numerical_domains']['parent'])
         arguments['numerical_domains']['entrance_refinement']['guard_cells'] = 1
         gems, geometry = compile_frontend_geometry(dict(zip(['a','b'], sources, strict=True)), oatof, **arguments)
@@ -494,7 +498,9 @@ class DirectFieldPlanTests(unittest.TestCase):
             original = json.loads(path.read_text())
             for field in ('voltage', 'convergence', 'reference'):
                 design = copy.deepcopy(original)
-                if field == 'voltage': design['working_points'][0]['electrode_voltages_v']['1'] += 1
+                if field == 'voltage':
+                    native_id = next(iter(design['working_points'][0]['electrode_voltages_v']))
+                    design['working_points'][0]['electrode_voltages_v'][native_id] += 1
                 elif field == 'convergence': design['domains'][0]['refine_convergence_v']['carrier_off'] *= 2
                 else: design['rf_reference_voltage_v'] *= 2
                 path.write_text(json.dumps(design))
@@ -503,7 +509,8 @@ class DirectFieldPlanTests(unittest.TestCase):
                 design = copy.deepcopy(original)
                 if field == 'boundary': design['domains'][0]['boundary_policy'] = 'zero_dirichlet'
                 elif field == 'grid': design['domains'][0]['dimensions']['nx'] += 1
-                elif field == 'missing_voltage': del design['working_points'][1]['electrode_voltages_v']['35']
+                elif field == 'missing_voltage':
+                    design['working_points'][1]['electrode_voltages_v'].popitem()
                 elif field == 'missing_sample': design['domains'][0]['physical_samples'].pop(0)
                 elif field == 'duplicate_sample': design['domains'][0]['physical_samples'][-1] = design['domains'][0]['physical_samples'][0]
                 else: design['domains'][0]['refine_convergence_v']['rf_reference'] = float('nan')
@@ -524,18 +531,20 @@ class DirectFieldPlanTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'GEM identity'):
                 build_field_plan(run / 'inputs', Path(sys.executable))
 
-    def test_local_plan_keeps_actual_11_to_35_namespace_and_only_off_pulse_fields(self):
+    def test_local_plan_keeps_actual_sparse_native_namespace_and_only_off_pulse_fields(self):
         with tempfile.TemporaryDirectory() as directory:
             run, plan = prepared(Path(directory), local=True)
-            self.assertEqual(plan['physical_electrode_ids'], list(range(11, 36)))
+            native_ids = plan['physical_electrode_ids']
+            self.assertEqual(native_ids, sorted({row['electrode_id'] for row in plan['physical_samples']}))
             self.assertEqual(len(plan['physical_samples']), 25)
             self.assertEqual([row['kind'] for row in plan['working_points']], ['carrier_off','pulse_delta'])
             self.assertTrue(all('rf_reference_voltage_v' not in member['identity'] for member in plan['members']))
             for point in plan['working_points']:
                 indexed = list(map(float, point['voltage_argument'].split(',')))
-                self.assertEqual(len(indexed), 35)
-                self.assertEqual(indexed[:10], [0.]*10)
-                self.assertEqual(indexed[10:], [point['electrode_voltages_v'][str(i)] for i in range(11,36)])
+                self.assertEqual(len(indexed), max(native_ids))
+                self.assertEqual(set(point['electrode_voltages_v']), {str(i) for i in native_ids})
+                for index, value in enumerate(indexed, 1):
+                    self.assertEqual(value, point['electrode_voltages_v'].get(str(index), 0.))
             bank = field_bank(json.loads((run/'inputs/frontend_field_design.json').read_text()), ['parent'])['dynamic_roles'][0]
             self.assertNotIn('rf_reference_voltage_v', bank)
             self.assertNotIn('rf_differential_pa_basename', bank)
