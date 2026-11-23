@@ -2703,7 +2703,7 @@ class RuntimeInventoryRouteTests(unittest.TestCase):
                          command=dict(runner="powershell", script="tools/repository/verify_integration.ps1"))
             (repo / "tools/repository/gate_catalog.json").write_text(json.dumps(dict(
                 schema_version=2, role="repository_gate_catalog", routes=[route])), encoding="utf-8")
-            inventory = dict(schema_version=3, role="integration_runtime_dependencies", providers=[
+            inventory = dict(schema_version=3, role="workflow_runtime_dependencies", providers=[
                 dict(files=[dict(source_repo_path="src/msplatform/first_dependency.json")],
                      python_packages=[], python_modules=[])])
             target = repo / inventory_path

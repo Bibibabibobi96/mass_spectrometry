@@ -554,7 +554,7 @@ $sourceRefFunction=$ast.Find({param($n)$n-is[Management.Automation.Language.Func
 Invoke-Expression $sourceRefFunction.Extent.Text
 $repoRoot=$TestRoot;$workspaceRoot=$TestRoot;$projectId='instrument_assembly';$packageRoot=Join-Path $Repository 'src/msplatform'
 New-Item -ItemType Directory -Path (Join-Path $repoRoot 'src/msplatform/workflows/config')|Out-Null
-@{schema_version=2;role='integration_runtime_dependencies';owner_id='instrument_assembly';consumer_ids=@('prepared_joint');providers=@()}|ConvertTo-Json -Depth 5|Set-Content (Join-Path $repoRoot 'src/msplatform/workflows/config/runtime_dependencies.json')
+@{schema_version=2;role='workflow_runtime_dependencies';owner_id='instrument_assembly';consumer_ids=@('prepared_joint');providers=@()}|ConvertTo-Json -Depth 5|Set-Content (Join-Path $repoRoot 'src/msplatform/workflows/config/runtime_dependencies.json')
 function Freeze-ConsumerDependencies {
  param($RepoRoot,$CorePackageRoot,$ContractPath,$InputDir,$OwnerId,$ConsumerId,$Python)
  if($Python-ne'mock'-or$OwnerId-ne'instrument_assembly'-or$ConsumerId-ne'prepared_joint'){throw 'Wrong freeze owner/consumer'}

@@ -213,7 +213,7 @@ function Read-GateCatalog {
             $inventory = Get-Content -Raw -LiteralPath $inventoryPath |
                 ConvertFrom-Json -Depth 32
             if ($inventory.schema_version -ne 3 -or
-                $inventory.role -ne 'integration_runtime_dependencies' -or
+                $inventory.role -ne 'workflow_runtime_dependencies' -or
                 @($inventory.providers).Count -eq 0) {
                 throw "Unsupported gate runtime dependency inventory: $inventoryPath"
             }

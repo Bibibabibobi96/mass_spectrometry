@@ -18,22 +18,6 @@ function Get-DependencyCoreRoot {
   return $core
 }
 
-function Get-DependencyIntegrationRoot {
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory)][string]$RepoRoot,
-    [Parameter(Mandatory)][string]$OwnerId,
-    [string]$CorePackageRoot=''
-  )
-  $core = Get-DependencyCoreRoot -RepoRoot $RepoRoot -CorePackageRoot $CorePackageRoot
-  $registry = Get-Content -LiteralPath (Join-Path $core 'workflows/config/assembly_registry.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-  $entries = @($registry.integrations | Where-Object { $_.integration_id -ceq $OwnerId })
-  if ($entries.Count -ne 1) {
-    throw "Dependency integration owner must be registered exactly once: $OwnerId"
-  }
-  return [string]$entries[0].root
-}
-
 function Test-DependencyPathWithin {
   [CmdletBinding()]
   param(
@@ -83,22 +67,9 @@ function Assert-DependencyProviderIdentity {
     [string]$CorePackageRoot=''
   )
   $normalized = $ProviderRelative.Replace('\','/')
-  if ($Scope -eq 'project') {
-    if ($normalized -ne "projects/$Provider") {
-      throw "Dependency $DependencyId provider root differs from project $Provider."
-    }
-  } elseif ($Scope -eq 'repository_common') {
-    if ($Provider -ne 'common' -or $normalized -ne 'common') {
-      throw "Dependency $DependencyId has an invalid repository-common provider."
-    }
-  } elseif ($Scope -eq 'repository_core') {
+  if ($Scope -eq 'repository_core') {
     if ($Provider -ne 'msplatform' -or $normalized -ne 'src/msplatform') {
       throw "Dependency $DependencyId has an invalid scientific-core provider."
-    }
-  } elseif ($Scope -eq 'integration') {
-    $registeredRoot = Get-DependencyIntegrationRoot -RepoRoot $RepoRoot -OwnerId $Provider -CorePackageRoot $CorePackageRoot
-    if ($normalized -ne $registeredRoot) {
-      throw "Dependency $DependencyId provider root differs from integration $Provider."
     }
   } else {
     throw "Dependency $DependencyId has unsupported provider scope: $Scope"
@@ -223,9 +194,9 @@ function Publish-DependencyInventory {
   }
   $contractDependency = [pscustomobject]@{
     id = 'dependency_contract'
-    provider_scope = $(if($isCanonicalContract){'repository_core'}else{'integration'})
-    provider_project = $(if($isCanonicalContract){'msplatform'}else{$OwnerId})
-    provider_repo_path = $(if($isCanonicalContract){'src/msplatform'}else{Get-DependencyIntegrationRoot -RepoRoot $RepoRoot -OwnerId $OwnerId -CorePackageRoot $CorePackageRoot})
+    provider_scope = 'repository_core'
+    provider_project = 'msplatform'
+    provider_repo_path = 'src/msplatform'
     source_repo_path = $relative
     frozen_filename = 'runtime_snapshot/' + $relative
     run_input_name = 'dependency_contract'
@@ -234,7 +205,7 @@ function Publish-DependencyInventory {
   $contractIdentity = Copy-FrozenDependency -RepoRoot $RepoRoot -InputDir $InputDir -Dependency $contractDependency -CorePackageRoot $CorePackageRoot
   $inventory = [ordered]@{
     schema_version = 1
-    role = 'integration_resolved_code_inventory'
+    role = 'resolved_code_inventory'
     owner_id = $OwnerId
     consumer_ids = @($ResolvedDependencies.consumer_ids)
     dependencies = $dependencies
@@ -264,9 +235,9 @@ function Freeze-ConsumerDependencies {
   )
   $contract = Get-Content -LiteralPath $ContractPath -Raw -Encoding UTF8 | ConvertFrom-Json -Depth 100
   if (@(Compare-Object @('schema_version','role','owner_id','consumer_ids','providers') @($contract.PSObject.Properties.Name)).Count -ne 0 -or
-      $contract.schema_version -ne 3 -or $contract.role -cne 'integration_runtime_dependencies' -or
+      $contract.schema_version -ne 3 -or $contract.role -cne 'workflow_runtime_dependencies' -or
       $contract.owner_id -cne $OwnerId) {
-    throw 'Integration runtime dependency contract identity or fields differ from schema 3.'
+    throw 'Workflow runtime dependency contract identity or fields differ from schema 3.'
   }
   $consumers = @($contract.consumer_ids)
   if (-not $consumers.Count -or @($consumers | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -or
@@ -275,15 +246,10 @@ function Freeze-ConsumerDependencies {
   }
   $repo = [IO.Path]::GetFullPath($RepoRoot)
   $core = Get-DependencyCoreRoot -RepoRoot $repo -CorePackageRoot $CorePackageRoot
-  $ownerRoot = Get-DependencyIntegrationRoot -RepoRoot $repo -OwnerId $OwnerId -CorePackageRoot $CorePackageRoot
   $canonicalContract=[IO.Path]::GetFullPath((Join-Path $core 'workflows/config/runtime_dependencies.json'))
   $isCanonicalContract=[IO.Path]::GetFullPath($ContractPath)-eq$canonicalContract
   $contractRelative=if($isCanonicalContract){'src/msplatform/workflows/config/runtime_dependencies.json'}else{
     [IO.Path]::GetRelativePath($repo, [IO.Path]::GetFullPath($ContractPath)).Replace('\','/')}
-  if (-not $isCanonicalContract-and
-      -not (Test-DependencyPathWithin -Path $ContractPath -Root (Join-Path $repo $ownerRoot))) {
-    throw 'Dependency contract escapes its registered integration owner or canonical package resource.'
-  }
   $ids = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
   $sources = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
   $providers = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)

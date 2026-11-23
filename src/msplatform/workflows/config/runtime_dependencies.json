@@ -1,6 +1,6 @@
 {
   "schema_version": 3,
-  "role": "integration_runtime_dependencies",
+  "role": "workflow_runtime_dependencies",
   "owner_id": "instrument_assembly",
   "consumer_ids": [
     "prepared_joint",

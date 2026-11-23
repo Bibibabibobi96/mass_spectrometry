@@ -103,9 +103,8 @@ print(json.dumps(field_plan.build_field_plan(Path(sys.argv[2]),Path(sys.argv[3])
             registry = author / "src/msplatform/workflows/config/assembly_registry.json"
             registry.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(REPO_ROOT / "src/msplatform/workflows/config/assembly_registry.json", registry)
-            contract = author / "integrations/config/dependencies.json"
-            contract.parent.mkdir(parents=True)
-            provider = author / "projects/device"
+            contract = author / "src/msplatform/workflows/config/dependencies.json"
+            provider = author / "src/msplatform/device"
             provider.mkdir(parents=True)
             (provider / "__init__.py").write_bytes(b"PARENT = True\n")
             cases = [({}, False), ({"test_only.py": b"TEST = True\n"}, False),
@@ -120,9 +119,9 @@ print(json.dumps(field_plan.build_field_plan(Path(sys.argv[2]),Path(sys.argv[3])
                     for name, raw in sources.items():
                         (package / name).write_bytes(raw)
                     relative = package.relative_to(author).as_posix()
-                    declaration = dict(schema_version=3, role="integration_runtime_dependencies",
+                    declaration = dict(schema_version=3, role="workflow_runtime_dependencies",
                         owner_id="instrument_assembly", consumer_ids=["single_reflection_flight"], providers=[
-                            dict(provider_scope="project", provider_project="device", files=[],
+                            dict(provider_scope="repository_core", provider_project="msplatform", files=[],
                                  python_packages=[dict(source_repo_path=relative,
                                      consumers=["single_reflection_flight"], resource_suffixes=[".schema.json", ".py"])],
                                  python_modules=[])])
@@ -140,7 +139,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{author}
                         continue
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                     entries = load(destination / "code_inventory.json")["dependencies"]
-                    expected = {"projects/device/__init__.py", relative + "/model.schema.json",
+                    expected = {"src/msplatform/__init__.py", "src/msplatform/device/__init__.py", relative + "/model.schema.json",
                                 *(relative + "/" + name for name in sources)}
                     self.assertEqual({entry["source_repo_path"] for entry in entries}, expected)
                     self.assertEqual(len(entries), len(expected))
@@ -914,12 +913,12 @@ print(json.dumps(dict(status='FROZEN_DOWNSTREAM_PLAN_PASS',native_executed=False
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             repo = root / "repo"
-            source = repo / "common/fixture.txt"
+            source = repo / "src/msplatform/fixture.txt"
             source.parent.mkdir(parents=True)
             original = b"dependency fixture\n"
             source.write_bytes(original)
             inputs = root / "inputs"
-            destination = inputs / "runtime_snapshot/common/fixture.txt"
+            destination = inputs / "runtime_snapshot/src/msplatform/fixture.txt"
             quote = lambda value: str(value).replace("'", "''")
             script = f"""
 . '{quote(DEPENDENCIES)}'
@@ -930,8 +929,8 @@ function Copy-Item {{
  [IO.File]::AppendAllText($Destination,'changed')
 }}
 $dependency=[pscustomobject]@{{
- id='fixture';provider_scope='repository_common';provider_project='common';provider_repo_path='common'
- source_repo_path='common/fixture.txt';frozen_filename='runtime_snapshot/common/fixture.txt'
+ id='fixture';provider_scope='repository_core';provider_project='msplatform';provider_repo_path='src/msplatform'
+ source_repo_path='src/msplatform/fixture.txt';frozen_filename='runtime_snapshot/src/msplatform/fixture.txt'
  run_input_name='fixture';consumers=@('single_reflection_flight')
 }}
 try {{
@@ -956,51 +955,29 @@ try {{
     def test_registered_provider_roots_and_frozen_boundaries(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "repo"
-            (root / "integrations/config").mkdir(parents=True)
-            registry = {"integrations": [
-                {"integration_id": "instrument_assembly", "root": "integrations"},
-                {"integration_id": "legacy", "root": "integrations/legacy"},
-            ]}
-            registry_path = root / "src/msplatform/workflows/config/assembly_registry.json"
-            registry_path.parent.mkdir(parents=True)
-            registry_path.write_text(json.dumps(registry), encoding="utf-8")
-            for path in (REPO_ROOT / "common").rglob("*"):
-                if (path.is_file() and path.suffix in {".py", ".ps1", ".json"}
-                        and not any(part in {"assets", "__pycache__", "history", "vendor"}
-                                    for part in path.relative_to(REPO_ROOT).parts)):
-                    target = root / path.relative_to(REPO_ROOT)
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copyfile(path, target)
             shutil.copytree(REPO_ROOT / "src/msplatform", root / "src/msplatform", dirs_exist_ok=True,
                             ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-            registry_path.write_text(json.dumps(registry), encoding="utf-8")
-            groups = []
-            for number, (scope, owner, provider) in enumerate((
-                ("integration", "instrument_assembly", "integrations"),
-                ("integration", "legacy", "integrations/legacy"),
-                ("project", "device", "projects/device"),
-                ("repository_common", "common", "common"),
-            )):
-                source = f"{provider}/provider{number}.txt"
+            groups = [dict(provider_scope="repository_core", provider_project="msplatform",
+                files=[], python_packages=[], python_modules=[])]
+            for number in range(4):
+                source = f"src/msplatform/provider{number}.txt"
                 path = root / source
-                path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(f"VALUE = {number}\n", encoding="utf-8")
-                groups.append(dict(provider_scope=scope, provider_project=owner,
-                    files=[dict(id=f"provider{number}", source_repo_path=source, consumers=["single_reflection_flight"])],
-                    python_packages=[], python_modules=[]))
-            contract = root / "integrations/config/dependencies.json"
-            contract.write_text(json.dumps(dict(schema_version=3, role="integration_runtime_dependencies",
+                groups[0]["files"].append(dict(id=f"provider{number}", source_repo_path=source,
+                    consumers=["single_reflection_flight"]))
+            contract = root / "src/msplatform/workflows/config/dependencies.json"
+            contract.write_text(json.dumps(dict(schema_version=3, role="workflow_runtime_dependencies",
                 owner_id="instrument_assembly", consumer_ids=["single_reflection_flight"], providers=groups)), encoding="utf-8")
-            package = root / "projects/device/pkg"
+            package = root / "src/msplatform/pkg"
             package.mkdir(parents=True)
             (package / "entry.py").write_text(
                 "from .added_helper import VALUE\n"
                 "def prepare(destination):\n"
                 "    destination.write_text(str(VALUE), encoding='utf-8')\n", encoding="utf-8")
-            groups[2]["python_packages"].append(dict(
-                source_repo_path="projects/device/pkg", consumers=["single_reflection_flight"]))
-            groups[2]["python_packages"].append(dict(
-                source_repo_path="projects/device/unrequested", consumers=["not_requested"]))
+            groups[0]["python_packages"].append(dict(
+                source_repo_path="src/msplatform/pkg", consumers=["single_reflection_flight"]))
+            groups[0]["python_packages"].append(dict(
+                source_repo_path="src/msplatform/unrequested", consumers=["not_requested"]))
             author = load(contract)
             author["providers"] = groups
             author["consumer_ids"].append("not_requested")
@@ -1013,7 +990,8 @@ try {{
             script = f"""
 . '{DEPENDENCIES}'
 $f=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{root}' -ContractPath '{contract}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId single_reflection_flight
-if(@($f.identities).Count-ne6){{throw 'provider count differs'}}
+Write-Output ('FROZEN_INPUT_COUNT='+@($f.identities).Count)
+if(@($f.identities).Count-ne7){{throw 'provider count differs'}}
 $inventory=Get-Content $f.code_inventory_path -Raw|ConvertFrom-Json
 if($inventory.owner_id-ne'instrument_assembly' -or $inventory.PSObject.Properties.Name-contains'consumer_project'){{throw 'owner identity differs'}}
 foreach($entry in $inventory.dependencies){{
@@ -1024,12 +1002,12 @@ $valid=Get-Content '{contract}' -Raw
 $cases=@(
   @{{change={{param($d) $d.owner_id='legacy'}};message='*identity*'}},
   @{{change={{param($d) $d.schema_version=1}};message='*schema 3*'}},
-  @{{change={{param($d) $d.providers[0].provider_project='unknown'}};message='*registered exactly once*'}},
+  @{{change={{param($d) $d.providers[0].provider_project='unknown'}};message='*scientific-core provider*'}},
   @{{change={{param($d) $d.providers[0].files[0].source_repo_path='common/provider3.txt'}};message='*escapes provider*'}},
   @{{change={{param($d) $d.providers[0].files[0].source_repo_path='integrations/../common/provider3.txt'}};message='*escapes its provider*'}},
-  @{{change={{param($d) $d.providers[0].files[0].source_repo_path='integrations/missing.txt'}};message='*is missing*'}},
-  @{{change={{param($d) $d.providers[1].files[0].id=$d.providers[0].files[0].id}};message='*duplicate dependency id*'}},
-  @{{change={{param($d) $d.providers[0].files+=@($d.providers[0].files[0]|ConvertTo-Json|ConvertFrom-Json);$d.providers[0].files[1].id='other'}};message='*Duplicate dependency source*'}},
+  @{{change={{param($d) $d.providers[0].files[0].source_repo_path='integrations/missing.txt'}};message='*escapes provider*'}},
+  @{{change={{param($d) $d.providers[0].files+=$d.providers[0].files[0]}};message='*duplicate dependency id*'}},
+  @{{change={{param($d) $d.providers[0].files+=@($d.providers[0].files[0]|ConvertTo-Json|ConvertFrom-Json);$d.providers[0].files[1].id='other'}};message='*duplicate dependency id*'}},
   @{{change={{param($d) $d.providers[0].files[0].consumers=@('unknown')}};message='*invalid consumers*'}},
   @{{change={{param($d) $d.consumer_ids=@('other')}};message='*Unregistered*'}}
 )
@@ -1040,13 +1018,17 @@ foreach($case in $cases){{
  $bad|ConvertTo-Json -Depth 30|Set-Content '{contract}'
  $destination='{output}-invalid'+$index
  try{{Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{root}' -ContractPath '{contract}' -InputDir $destination -OwnerId instrument_assembly -ConsumerId single_reflection_flight;throw 'invalid author accepted'}}
- catch{{if($_.Exception.Message-notlike$case.message){{throw}}}}
+ catch{{Write-Output ('CASE='+$index+' ACTUAL='+$_.Exception.Message+' EXPECTED='+[string]$case.message);if($_.Exception.Message -inotlike ([string]$case.message)){{throw}}}}
  if(Test-Path $destination){{throw 'Invalid author copied files before rejection'}}
  $index++
 }}
 $valid|Set-Content '{contract}'
 try{{Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{root}' -ContractPath '{contract}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId single_reflection_flight;throw 'existing destination accepted'}}
 catch{{if($_.Exception.Message-notlike'*already exists*'){{throw}}}}
+foreach($scope in @('project','repository_common','integration')){{
+ try{{Assert-DependencyProviderIdentity -RepoRoot '{root}' -DependencyId 'retired' -Scope $scope -Provider 'legacy' -ProviderRelative 'legacy';throw 'retired scope accepted'}}
+ catch{{if($_.Exception.Message-notlike'*unsupported provider scope*'){{throw}}}}
+}}
 Write-Output 'BOUNDARIES=PASS'
 """
             result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
@@ -1059,12 +1041,12 @@ Write-Output 'BOUNDARIES=PASS'
             inventory = load(output / "code_inventory.json")
             python_rows = [row for row in inventory["dependencies"] if row["source_repo_path"].endswith(".py")]
             self.assertEqual({row["id"] for row in python_rows},
-                {"python:projects/device/pkg/entry.py", "python:projects/device/pkg/added_helper.py"})
+                {"python:src/msplatform/__init__.py", "python:src/msplatform/pkg/entry.py", "python:src/msplatform/pkg/added_helper.py"})
             root.rename(root.with_name("author-unavailable"))
             plan = Path(directory) / "detached-plan.txt"
-            code = "import sys;from pathlib import Path;sys.path.insert(0,sys.argv[1]);from projects.device.pkg.entry import prepare;prepare(Path(sys.argv[2]))"
+            code = "import json,sys;from pathlib import Path;sys.path[:0]=json.loads(sys.argv[1]);from msplatform.pkg.entry import prepare;prepare(Path(sys.argv[2]))"
             completed = subprocess.run([sys.executable, "-I", "-B", "-c", code,
-                str(output / "runtime_snapshot"), str(plan)], cwd=output,
+                json.dumps(python_import_roots(output / "runtime_snapshot")), str(plan)], cwd=output,
                 capture_output=True, text=True, encoding="utf-8", errors="backslashreplace", timeout=30)
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
             self.assertEqual(plan.read_text(), "42")
