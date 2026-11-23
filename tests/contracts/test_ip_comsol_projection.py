@@ -3,8 +3,8 @@ import copy
 import unittest
 
 from tests.contracts.test_ip_step_projection import snapshot
-from tests.integration import test_ip_compiler as fixtures
-from tests.projects.dual_pressure_rectilinear_ion_processor import test_electrode_contours as contours
+from tests.workflows.multipole_ip import test_ip_compiler as fixtures
+from tests.components.dual_pressure_rectilinear_ion_processor import test_electrode_contours as contours
 from msplatform.assembly.factory import assemble
 from msplatform.components.catalog import resolve_component
 from msplatform.components.geometry_members import assembly_geometry_members
@@ -65,8 +65,8 @@ class IpComsolProjectionTests(unittest.TestCase):
         """Exercise backend dispatch only, without claiming an IP–MR layout."""
         from pathlib import Path
         from unittest.mock import patch
-        from tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_mr_provider_trial_transport import _plans
-        from tests.projects.parallel_mirror_dual_stripe_mr_tof.test_support.mr_geometry_inputs import geometry_authority
+        from tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_mr_provider_trial_transport import _plans
+        from tests.components.parallel_mirror_dual_stripe_mr_tof.test_support.mr_geometry_inputs import geometry_authority
         _, plan, contract = _plans()
         authority = geometry_authority(contract)
         oa = resolve_component({'provider_id': 'orthogonal_accelerator',

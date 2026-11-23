@@ -22,7 +22,9 @@ LiveLink入口调用。
 ## 合同与阶段边界
 
 入口冻结`baseline + numerical mode → resolved`及实际MATLAB源码。三阶段都必须显式接收同一resolved
-路径；缺失、过期或身份不匹配时失败关闭。
+路径；缺失、过期或身份不匹配时失败关闭。runner 将已核验的`frozenInputs.resolved_contract`通过
+`MASS_SPECTROMETRY_WEHNELT_RESOLVED_CONTRACT`交给任务，任务不再从checkout位置重新定位合同。
+测试、仓库构建配置与门禁工具不属于生产运行冻结输入，软件验证证据单独保存。
 
 | 阶段 | 职责 | build-only允许 |
 |---|---|---|
@@ -35,8 +37,8 @@ LiveLink入口调用。
 ## 运行证据
 
 `wehnelt_build_only.ps1`是当前唯一注册的商业入口。run目录建立后先写可复核的`interrupted`三件套，
-明确异常才转为`failed`，全部报告判据通过才转为`success`。输入、输出、公共COMSOL入口、Static gate、
-execution profile和manifest机制均冻结并校验SHA。
+明确异常才转为`failed`，全部报告判据通过才转为`success`。科学输入、输出、公共COMSOL入口、
+execution profile和manifest机制均冻结并校验SHA；Static gate及其测试不混入商业运行输入。
 
 当前证据与未运行的求解层级见 [PROJECT 的资格状态](PROJECT.md#资格状态)。
 商业 wrapper 的控制台与退出上下文保存为 `logs/commercial_wrapper.log`；失败收尾枚举当时实际存在

@@ -33,7 +33,7 @@ class DualConePlacementTests(unittest.TestCase):
 
     @unittest.skipUnless(LUA.is_file(), 'plain Lua unavailable; no native fallback')
     def test_actual_program_repeat_run_resets_only_its_particle_bookkeeping(self):
-        from tests.projects.dual_cone_tandem_quadrupole_ion_interface.test_simion_layer import write_uniform_gas_fixture
+        from tests.components.dual_cone_tandem_quadrupole_ion_interface.test_simion_layer import write_uniform_gas_fixture
 
         values = request()
         harness = r"""local old=loadfile

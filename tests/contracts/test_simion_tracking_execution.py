@@ -591,7 +591,7 @@ class TrackingExecutionPlanTests(unittest.TestCase):
 
 class PublicObservationTests(unittest.TestCase):
     def setUp(self):
-        from tests.integration.test_single_reflection_program import field_observation_spec
+        from tests.workflows.single_reflection.test_single_reflection_program import field_observation_spec
         self.case = TrackingExecutionPlanTests()
         self.case.setUp()
         self.spec = field_observation_spec(anchor=self.case.packet['rows'][0]['particle_id'],

@@ -187,7 +187,7 @@ $s=[IO.File]::OpenWrite($env:PA_SOURCE);$s.Dispose()
             self.assertEqual(completed.returncode, 0, completed.stderr)
 
     def test_immutable_guard_uses_one_key_for_short_expanded_and_ps_relative_paths(self) -> None:
-        from tests.projects.rf_multipole_ion_optics.domain.test_simion_runner_contract import _short_windows_path
+        from tests.components.rf_multipole_ion_optics.domain.test_simion_runner_contract import _short_windows_path
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve() / "immutable source long directory"
@@ -234,7 +234,7 @@ try {
             self.assertEqual(source.read_bytes(), b"released")
 
     def test_imported_short_copy_and_new_copy_share_source_and_directory_cleanup(self) -> None:
-        from tests.projects.rf_multipole_ion_optics.domain.test_simion_runner_contract import _short_windows_path
+        from tests.components.rf_multipole_ion_optics.domain.test_simion_runner_contract import _short_windows_path
 
         with tempfile.TemporaryDirectory(prefix="simion_pa_links_test_") as directory:
             root = Path(directory).resolve()

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from tests.contracts import test_ip_mr_model as model_fixture
 from tests.contracts.test_simion_native_plans import LUA
-from tests.projects.dual_pressure_rectilinear_ion_processor.test_functional import HS1_SOURCE_FIXTURE
+from tests.components.dual_pressure_rectilinear_ion_processor.test_functional import HS1_SOURCE_FIXTURE
 from msplatform.backends.simion.model import RF_IP_PHYSICS, compile_prepared_model
 from msplatform.backends.simion.rf_tracking_execution import prepare_ip_mr_hs1, prepare_rf_ip_hs1
 from msplatform.backends.simion.resources import native_resource_path

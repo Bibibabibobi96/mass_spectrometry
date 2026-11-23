@@ -270,7 +270,7 @@ class IndependentStageTests(unittest.TestCase):
                     stages.require_fields_product(reference, expected_spatial_identity=identity)
 
     def test_saved_field_fly_requires_explicit_gas_source_sds_and_collision_inputs(self):
-        from tests.projects.dual_cone_tandem_quadrupole_ion_interface.test_gas_flow_contract import _write_fixture
+        from tests.components.dual_cone_tandem_quadrupole_ion_interface.test_gas_flow_contract import _write_fixture
         from tests.contracts.test_dual_cone_transport_execution import CONFIG
         from msplatform.backends.simion.dual_cone_transport import SDS_FILES
 

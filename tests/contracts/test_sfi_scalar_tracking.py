@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from tests.contracts import test_sfi_scalar_binding as fixture
-from tests.integration import test_single_reflection_program as programs
+from tests.workflows.single_reflection import test_single_reflection_program as programs
 from msplatform.backends.simion import tracking_execution, tracking_program, tracking_units
 
 

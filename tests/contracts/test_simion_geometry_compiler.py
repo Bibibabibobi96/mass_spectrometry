@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from tests.integration.test_single_reflection_zero_gap import direct_inputs, direct_source
+from tests.workflows.single_reflection.test_single_reflection_zero_gap import direct_inputs, direct_source
 from msplatform.backends.simion import CompiledSimionGeometry
 from msplatform.backends.simion.compiler import compile_geometry
 from msplatform.backends.simion.geometry import compile_frontend_geometry

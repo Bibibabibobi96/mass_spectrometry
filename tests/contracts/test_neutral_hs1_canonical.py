@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from tests.contracts import test_neutral_ip_primitives as fixture
-from tests.projects.dual_pressure_rectilinear_ion_processor.test_functional import HS1_SOURCE_FIXTURE
+from tests.components.dual_pressure_rectilinear_ion_processor.test_functional import HS1_SOURCE_FIXTURE
 from msplatform.backends.simion.model import RF_PHYSICS, compile_prepared_model
 from msplatform.backends.simion.rf_tracking_execution import prepare_neutral_ip_hs1
 from msplatform.contracts.gas import BoxDomain, GasFieldSpec, GasSource, GasSpecies, GasState

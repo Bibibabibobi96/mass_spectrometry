@@ -39,7 +39,7 @@ returned artifact includes the final model and both intermediate MPH files.
 科学配置、解析器和当前文档由本组件唯一维护；原生构建阶段与公开 Python operation 位于
 `src/msplatform/backends/comsol/`，现有 PowerShell runner 位于
 `src/msplatform/workflows/resources/`，长期测试位于
-`tests/projects/transverse_helical_filament_wehnelt_electron_gun/`。
+`tests/components/transverse_helical_filament_wehnelt_electron_gun/`。
 旧 `projects/transverse_helical_filament_wehnelt_electron_gun/` 已退出活动树，来源提交为
 `7c272feb442945b2a415e1673a760e66ae098243`。
 

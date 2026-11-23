@@ -19,12 +19,12 @@ from msplatform.assembly.resolve_assembly import compile_assembly_layout, derive
 from msplatform.contracts.machine_contracts import ContractError
 from msplatform.contracts.rigid_transform import FramedPosition, RigidTransform
 from msplatform.components.orthogonal_accelerator.assembly_interface import resolve_assembly_interface
-from tests.projects.orthogonal_accelerator.analysis.test_assembly_interface import TWO_ZONE_PROFILE, two_zone_requirements
+from tests.assembly.orthogonal_accelerator.analysis.test_assembly_interface import TWO_ZONE_PROFILE, two_zone_requirements
 from msplatform.components.rf_multipole.design_request_files import compile_design_request
 from msplatform.components.rf_multipole.assembly_interface import build_assembly_interface
 from msplatform.components.rf_multipole.electrode_topology import build_electrode_topology
 from msplatform.backends.simion.rf_electrode_mapping import build_simion_electrode_map
-from tests.projects.rf_multipole_ion_optics.domain.test_compile_design_request import design_request
+from tests.components.rf_multipole_ion_optics.domain.test_compile_design_request import design_request
 
 
 ROOT = Path(__file__).resolve().parents[2]

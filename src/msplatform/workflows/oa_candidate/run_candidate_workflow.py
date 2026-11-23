@@ -14,7 +14,7 @@ from typing import Any, Callable
 from msplatform.backends.simion.native_stage_completion import append_native_stage_completion
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-PROJECT_ROOT = REPO_ROOT / "src/msplatform/components/single_reflection_oa_tof"
+OWNER_RESOURCE_ID = "src/msplatform/workflows/resources/run_artifact_workflow.ps1"
 from msplatform.contracts.machine_contracts import load_json, sha256
 from msplatform.io.file_identity import FileIdentityGuard, guarded_file_identity
 from msplatform.contracts.particle_count_policy import validate_standard_particle_count
@@ -1150,7 +1150,7 @@ def _prepare_execution_request(
         "src/msplatform/workflows/oa_candidate/run_candidate_workflow.py"))
     return {
         "schema_version": 1, "role": "run_artifact_workflow_request",
-        "repository_root": str(REPO_ROOT), "python_executable": closure["runtime"]["python_executable"],
+        "repository_root": str(code_root), "python_executable": closure["runtime"]["python_executable"],
         "host_context": host_context,
         "execution_run_directory": str(run_root),
         "package": {
@@ -1270,6 +1270,7 @@ def execute_prepared_run(
     required = [Path(value) for stage in summary.get("stages", [])
                 for value in stage.get("evidence", {}).values()
                 if isinstance(value, str) and Path(value).is_file()]
+    required.extend(path for path in _require_success_evidence(summary) if path not in required)
     write_json_atomic(Path(completion_path), {
         "schema_version": 1, "role": "run_artifact_workflow_completion",
         "run_id": run_root.name, "project": "single_reflection_oa_tof_mass_analyzer",
@@ -1281,6 +1282,38 @@ def execute_prepared_run(
                                   "execution_source_closure": load_json(run_config_path).get("execution_source_closure", {})},
         "writer_completion": writer_completion, "exception": exception,
     })
+
+
+def _frozen_owner_entrypoint(request: dict[str, Any]) -> Path:
+    payload = request["payload"]
+    closure = payload.get("execution_source_closure")
+    if closure is None:
+        plan = load_json(Path(request["payload"]["plan"]["path"]))
+        closure = plan["execution_source_closure"]
+    verify_candidate_source_closure(closure)
+    return Path(frozen_source_path(closure, OWNER_RESOURCE_ID))
+
+
+def _require_success_evidence(summary: dict[str, Any]) -> list[Path]:
+    """Bind every declared scientific success output, including raw events."""
+    if summary.get("status") != "success":
+        return []
+    required: list[Path] = []
+    for stage in summary.get("stages", []):
+        if stage.get("stage_id") != "comsol_candidate":
+            continue
+        evidence = stage.get("evidence", {})
+        for name in ("analysis_request", "analysis_receipt"):
+            value = evidence.get(name)
+            if not isinstance(value, str) or not Path(value).is_file():
+                raise RuntimeError(f"successful Candidate is missing required {name}")
+            required.append(Path(value))
+        request = load_json(required[-2])
+        raw_events = Path(request.get("raw_events_csv", ""))
+        if not raw_events.is_file():
+            raise RuntimeError("successful Candidate is missing required raw detector events")
+        required.append(raw_events)
+    return required
 
 
 def resume_candidate_finalization(run_root: Path, owner_result: Path | None = None) -> tuple[Path, dict[str, Any]]:
@@ -1299,7 +1332,7 @@ def resume_candidate_finalization(run_root: Path, owner_result: Path | None = No
     with tempfile.TemporaryDirectory(prefix="oatof_candidate_finalize_") as directory:
         log_path = Path(directory) / "owner.log"
         try:
-            _run_command(_powershell(str(REPO_ROOT / "src/msplatform/workflows/resources/run_artifact_workflow.ps1"),
+            _run_command(_powershell(str(_frozen_owner_entrypoint(request)),
                                      ["-RequestPath", str(request_path), "-ResultPath", str(result_path),
                                       "-ResumeFinalization"]), log_path)
         except RuntimeError as exc:
@@ -1346,7 +1379,7 @@ def _invoke_candidate_owner_request(request: dict, pa_handoff_output: Path | Non
         write_json_atomic(request_path, request)
         failure = None
         try:
-            _run_command(_powershell(str(REPO_ROOT / "src/msplatform/workflows/resources/run_artifact_workflow.ps1"),
+            _run_command(_powershell(str(_frozen_owner_entrypoint(request)),
                                      ["-RequestPath", str(request_path), "-ResultPath", str(result_path)]),
                          Path(directory) / "owner.log", run_directory=run_root,
                          execution_directory=(Path(request["execution_run_directory"])
@@ -1366,11 +1399,33 @@ def _invoke_candidate_owner_request(request: dict, pa_handoff_output: Path | Non
         return run_root, summary
 
 
-def run_candidate_postprocess(parent: Path, run_id: str, *, host_context: dict[str, Any]) -> tuple[Path, dict]:
+def run_candidate_postprocess(
+    parent: Path, run_id: str, *, science_root: Path, host_context: dict[str, Any]
+) -> tuple[Path, dict]:
     """Original Candidate CLI's explicit new-child postprocessing action."""
     from msplatform.workflows.oa_candidate.prepare_candidate_run import prepare_postprocess_request
     return _invoke_candidate_owner_request(prepare_postprocess_request(
-        parent, run_id, science_root=REPO_ROOT, host_context=host_context))
+        parent, run_id, science_root=science_root, host_context=host_context))
+
+
+def _postprocess_required_outputs(status: str, evidence: dict[str, Any]) -> list[str]:
+    required: list[str] = []
+    request_value = evidence.get("analysis_request")
+    if isinstance(request_value, str) and Path(request_value).is_file():
+        required.append(request_value)
+        raw_events = Path(load_json(Path(request_value)).get("raw_events_csv", ""))
+        if raw_events.is_file():
+            required.append(str(raw_events))
+        elif status == "success":
+            raise RuntimeError("successful postprocessing is missing required raw detector events")
+    elif status == "success":
+        raise RuntimeError("successful postprocessing is missing its analysis request")
+    receipt = evidence.get("analysis_receipt")
+    if isinstance(receipt, str) and Path(receipt).is_file():
+        required.append(receipt)
+    elif status == "success":
+        raise RuntimeError("successful postprocessing is missing its analysis receipt")
+    return required
 
 
 def execute_prepared_postprocess(config_path: Path, session_path: Path, request_path: Path, completion_path: Path) -> None:
@@ -1427,7 +1482,7 @@ def execute_prepared_postprocess(config_path: Path, session_path: Path, request_
     recovery_parent = root if evidence.get("detector_exports_ready") is True else Path(selected["parent"])
     recovery_action = (f'"{sys.executable}" -m msplatform.workflows.oa_candidate.run_candidate '
                        f'--postprocess-from "{recovery_parent}" --run-id <NEW_RUN_ID> '
-                       f'--host-context <EXECUTION_CONTEXT.json>') if failure else "none"
+                       f'--science-root <SCIENCE_DATA_ROOT> --host-context <EXECUTION_CONTEXT.json>') if failure else "none"
     if evidence.get("writer_completion_unconfirmed"):
         recovery_action = "inspect_original_writer_completion; retain current protections"
     summary = {"schema_version": 1, "role": "oa_tof_candidate_postprocess_summary", "run_id": root.name,
@@ -1450,7 +1505,7 @@ def execute_prepared_postprocess(config_path: Path, session_path: Path, request_
         "run_id": root.name, "project": "single_reflection_oa_tof_mass_analyzer",
         "execution_request": file_record(request_path), "run_config": file_record(config_path),
         "status": status, "summary": summary, "output_paths": outputs,
-        "required_output_paths": [evidence["analysis_receipt"]] if evidence.get("analysis_receipt") else [],
+        "required_output_paths": _postprocess_required_outputs(status, evidence),
         "retention_preserve_paths": [], "manifest_extra_fields": {"lifecycle_state": "terminal", "promotion_authorized": False,
             "postprocess_source_reference": selected["source_reference"], "scope": "comsol_postprocessing_only"},
         "writer_completion": writer, "exception": failure})

@@ -239,19 +239,39 @@ if ($FullScope) {
             ($null -ne $_.PSObject.Properties['owner'] -and [string]$_.owner -eq $ownerName) })
         $declaredOwners=@($ownerRoutes|ForEach-Object{if($null-ne$_.PSObject.Properties['owner']){[string]$_.owner}}|Sort-Object -Unique)
         $sourceOwner=if($declaredOwners.Count-eq1){$declaredOwners[0]}else{$ownerName}
-        $root = if (Test-Path -LiteralPath (Join-Path $repoRoot $sourceOwner) -PathType Container) { $sourceOwner }
-            elseif (Test-Path -LiteralPath (Join-Path $repoRoot ('projects/' + $sourceOwner)) -PathType Container) { 'projects/' + $sourceOwner }
-            elseif (@($ownerRoutes | Where-Object { $_.command.runner -eq 'powershell' -and $_.command.script.StartsWith('integrations/') }).Count) { 'integrations' }
-            else { $null }
-        if ($root) {
+        $roots = @($sourceOwner, ('src/msplatform/components/' + $sourceOwner),
+            ('tests/components/' + $sourceOwner), ('tests/assembly/' + $sourceOwner), ('tests/' + $sourceOwner)) |
+            Sort-Object -Unique | Where-Object {
+                Test-Path -LiteralPath (Join-Path $repoRoot $_) -PathType Container
+            }
+        foreach ($root in ($roots | Sort-Object -Unique)) {
             Get-ChildItem -LiteralPath (Join-Path $repoRoot $root) -File -Recurse | Where-Object {
                 $_.Extension -in @('.py','.ps1','.m','.lua','.gem') -and $_.FullName -notmatch '[\\/]docs[\\/]history[\\/]'
             } | ForEach-Object { ConvertTo-RepositoryPath $_.FullName }
-        } else {
+        }
+        foreach ($route in $ownerRoutes) {
+            foreach ($match in $route.matches) {
+                if ($null -ne $match.PSObject.Properties['exact'] -and
+                    (Test-Path -LiteralPath (Join-Path $repoRoot $match.exact) -PathType Leaf)) {
+                    [string]$match.exact
+                }
+            }
+        }
+        $hasSpecificMatches = @($ownerRoutes | ForEach-Object {
+            @($_.matches | Where-Object {
+                $null -ne $_.PSObject.Properties['exact'] -or $null -ne $_.PSObject.Properties['regex']
+            })
+        }).Count -gt 0
+        if (-not $hasSpecificMatches) {
             foreach ($route in $ownerRoutes) {
                 foreach ($match in $route.matches) {
                     if ($null -ne $match.PSObject.Properties['exact'] -and (Test-Path -LiteralPath (Join-Path $repoRoot $match.exact) -PathType Leaf)) {
                         [string]$match.exact
+                    } elseif ($null -ne $match.PSObject.Properties['prefix'] -and
+                        (Test-Path -LiteralPath (Join-Path $repoRoot $match.prefix) -PathType Container)) {
+                        Get-ChildItem -LiteralPath (Join-Path $repoRoot $match.prefix) -File -Recurse | Where-Object {
+                            $_.Extension -in @('.py','.ps1','.m','.lua','.gem') -and $_.FullName -notmatch '[\\/]docs[\\/]history[\\/]'
+                        } | ForEach-Object { ConvertTo-RepositoryPath $_.FullName }
                     }
                 }
             }

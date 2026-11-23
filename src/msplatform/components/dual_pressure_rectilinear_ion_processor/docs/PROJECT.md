@@ -46,7 +46,7 @@ new failures report their differences without masking the primary assertion.
 The P4 replay wrappers now call the canonical installed run-capacity lifecycle, and batching no longer
 imports an unused recovery alias. The original functional module passed all 38 tests after migration;
 this does not rerun GUI replay, Refine, Fly or qualify a new source/field model.
-公共收尾故障矩阵归common owner；`tests/projects/dual_pressure_rectilinear_ion_processor/test_owner_finalization_recovery.py`仅保留原CLI恢复与未知writer接线，避免重复执行完整公共矩阵。
+公共收尾故障矩阵归common owner；`tests/components/dual_pressure_rectilinear_ion_processor/test_owner_finalization_recovery.py`仅保留原CLI恢复与未知writer接线，避免重复执行完整公共矩阵。
 工作台运行资源冻结显式传递现有保留分类器，覆盖原大 PA 占位种子；未分类大输入仍拒绝，
 种子不当作已求解场。IP交接所有record读取及producer记录也复用同一分类器；真实8 MiB无显式role记录及等长篡改
 负例通过。此为软件身份验证，不是新的Windows原生或SIMION资格。七项原独立冻结、准备及上游接入回归通过，源／时钟／母群及冻结记录含义保持。
@@ -723,7 +723,7 @@ do not establish native execution or final acceptance.
 The active scientific configuration and current documents now live beside the canonical component in
 `src/msplatform/components/dual_pressure_rectilinear_ion_processor/`. The sole functional launcher and
 static verifier are installed workflow resources; tests and their unchanged witnesses live under
-`tests/projects/dual_pressure_rectilinear_ion_processor/`. The former
+`tests/components/dual_pressure_rectilinear_ion_processor/`. The former
 `projects/dual_pressure_rectilinear_ion_processor/` tree is absent. Complete 15-group geometry,
 LP=80 mm defaults, the translation-only IP–MR LP=60 mm requirement, HS1/SDS behavior, native failure and
 recovery, GUI replay, full mother cohorts and original source identities are unchanged. Existing artifact

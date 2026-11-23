@@ -114,7 +114,7 @@ class CanonicalNeutralScheduleManagedTests(unittest.TestCase):
     self.assertEqual(len(tracking_guards),3)
     from msplatform.contracts.gas import BoxDomain, GasFieldSpec, GasSource, GasSpecies, GasState
     from msplatform.io.manifest_records import file_record
-    from tests.projects.dual_pressure_rectilinear_ion_processor.test_functional import HS1_SOURCE_FIXTURE
+    from tests.components.dual_pressure_rectilinear_ion_processor.test_functional import HS1_SOURCE_FIXTURE
     def box(lo,hi):return BoxDomain(lo,hi,(True,True,True),(True,True,True))
     baseline=assembly.components_source['ion_processor']['baseline']
     outer=GasFieldSpec(field_id='outer',frame_id=baseline['clock']['frame_id'],representation='uniform',composition_id='ion_processor_explicit_single_gas',composition=(GasSpecies('ion_processor_model_gas',baseline['gas']['mass_amu'],1),),domain=box((-10000,-10000,-10000),(10000,10000,10000)),source=GasSource('prescribed','test',()),uniform_state=GasState('vacuum',0,baseline['gas']['temperature_k'],(0,0,0)))

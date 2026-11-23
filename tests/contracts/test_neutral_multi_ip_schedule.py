@@ -36,7 +36,7 @@ class MultiIpScheduleTests(unittest.TestCase):
   from msplatform.backends.simion.rf_tracking_execution import prepare_neutral_ip_hs1
   from msplatform.contracts.gas import BoxDomain, GasFieldSpec, GasSource, GasSpecies, GasState
   from msplatform.io.manifest_records import file_record
-  from tests.projects.dual_pressure_rectilinear_ion_processor.test_functional import HS1_SOURCE_FIXTURE
+  from tests.components.dual_pressure_rectilinear_ion_processor.test_functional import HS1_SOURCE_FIXTURE
   from unittest.mock import patch
   import tempfile
   def box(lo,hi):return BoxDomain(lo,hi,(True,True,True),(True,True,True))

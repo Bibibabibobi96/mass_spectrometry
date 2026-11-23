@@ -18,7 +18,7 @@ try {
     $env:PYTHONPATH = $repoRoot + [IO.Path]::PathSeparator + (Join-Path $repoRoot 'src')
     & $PythonExe -c "import sys; assert sys.version_info[:2] == (3, 11), 'Python 3.11 required'"
     if ($LASTEXITCODE -ne 0) { throw 'Unsupported Python runtime.' }
-    & $PythonExe -m tools.repository.gate_unittest discover -s (Join-Path $repoRoot 'tests\projects\orthogonal_accelerator\analysis') -p 'test_*.py'
+    & $PythonExe -m tools.repository.gate_unittest discover -s (Join-Path $repoRoot 'tests\components\orthogonal_accelerator\analysis') -p 'test_*.py'
     if ($LASTEXITCODE -ne 0) { throw 'Orthogonal accelerator static tests failed.' }
     if ($LuaExe -and -not (Test-Path -LiteralPath $LuaExe -PathType Leaf)) {
         throw "Explicit Lua executable is missing: $LuaExe"
@@ -34,13 +34,13 @@ try {
         if (Test-Path -LiteralPath $installedLua -PathType Leaf) { $LuaExe = $installedLua }
     }
     if ($LuaExe) {
-        & $LuaExe (Join-Path $repoRoot 'tests\projects\orthogonal_accelerator\simion\test_required_parameters.lua') (Join-Path $repoRoot 'src\msplatform\backends\simion\resources')
+        & $LuaExe (Join-Path $repoRoot 'tests\components\orthogonal_accelerator\simion\test_required_parameters.lua') (Join-Path $repoRoot 'src\msplatform\backends\simion\resources')
         if ($LASTEXITCODE -ne 0) { throw 'Accelerator Lua parameter-contract regression failed.' }
-        & $LuaExe (Join-Path $repoRoot 'tests\projects\orthogonal_accelerator\simion\test_component_focus_iob_arguments.lua') (Join-Path $repoRoot 'src\msplatform\backends\simion\resources')
+        & $LuaExe (Join-Path $repoRoot 'tests\components\orthogonal_accelerator\simion\test_component_focus_iob_arguments.lua') (Join-Path $repoRoot 'src\msplatform\backends\simion\resources')
         if ($LASTEXITCODE -ne 0) { throw 'Accelerator IOB argument regression failed.' }
         $testPlaneLibrary = Join-Path (Split-Path -Parent $LuaExe) 'examples\test_plane\testplanelib.lua'
         if (Test-Path -LiteralPath $testPlaneLibrary -PathType Leaf) {
-            & $LuaExe (Join-Path $repoRoot 'tests\projects\orthogonal_accelerator\simion\test_component_focus_callbacks.lua') (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\component_focus.lua') $testPlaneLibrary
+            & $LuaExe (Join-Path $repoRoot 'tests\components\orthogonal_accelerator\simion\test_component_focus_callbacks.lua') (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\component_focus.lua') $testPlaneLibrary
             if ($LASTEXITCODE -ne 0) { throw 'Accelerator focus callback regression failed.' }
         } else {
             Write-Output 'ACCELERATOR_COMPONENT_FOCUS_CALLBACKS=SKIP REASON=official_test_plane_library_unavailable'

@@ -23,6 +23,10 @@ their duplicate provider registrations are retired; the installed core's explici
 resource declarations retain them in frozen snapshots. Detached snapshot,
 prepared-joint recovery and all seven registered consumer import checks passed
 in 104.113 seconds. No solver execution or new scientific qualification follows.
+Prepared-joint flight/analysis and accelerator-interface freezing now explicitly
+select the invoking package root for both the core and dependency contract. OA–MR
+and paired outer defaults derive their repository root from the package location,
+not the caller's cwd. Continuous versus segmented trajectory semantics are unchanged.
 
 OA–MR consumes its five retired project Lua implementations only from the
 installed SIMION backend. The default candidate scientific JSON is packaged with

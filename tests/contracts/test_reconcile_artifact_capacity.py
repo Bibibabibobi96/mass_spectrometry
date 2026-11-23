@@ -2791,7 +2791,7 @@ class FiniteCapacityProtectionLeaseTest(unittest.TestCase):
 
     @unittest.skipUnless(os.name == "nt", "Windows short path identity")
     def test_loaded_lease_protects_short_and_expanded_path_spellings(self) -> None:
-        from tests.projects.rf_multipole_ion_optics.domain.test_simion_runner_contract import _short_windows_path
+        from tests.components.rf_multipole_ion_optics.domain.test_simion_runner_contract import _short_windows_path
 
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve() / "capacity protection long directory"

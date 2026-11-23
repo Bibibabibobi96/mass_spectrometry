@@ -84,7 +84,7 @@ try {
     }
 
     & $PythonExe -m tools.repository.gate_unittest discover `
-      -s tests/projects/dual_cone_tandem_quadrupole_ion_interface -p 'test_*.py'
+      -s tests/components/dual_cone_tandem_quadrupole_ion_interface -p 'test_*.py'
     if ($LASTEXITCODE -ne 0) {
       throw 'Dual-cone interface static tests failed.'
     }
@@ -102,7 +102,7 @@ try {
         src/msplatform/backends/comsol/gas_flow.py `
         src/msplatform/workflows/dual_cone_transport.py `
         src/msplatform/workflows/dual_cone_stages.py `
-        tests/projects/dual_cone_tandem_quadrupole_ion_interface
+        tests/components/dual_cone_tandem_quadrupole_ion_interface
       if ($LASTEXITCODE -ne 0) {
         throw 'Dual-cone interface Ruff checks failed.'
       }

@@ -59,8 +59,7 @@ function result = import_step_to_solidworks(stepPaths, sldprtPaths, visible, ass
     fwrite(fid, jsonencode(payload), 'char');
     fclose(fid);
     pythonExecutable = resolve_python_executable();
-    codeRoot = resolve_code_root();
-    moduleRoot = fullfile(codeRoot, 'src');
+    moduleRoot = resolve_source_root();
     assert(isfolder(fullfile(moduleRoot, 'msplatform', 'exporters', 'solidworks')), ...
         'oatofCadExport:CodeRootUnavailable', ...
         'Installed SolidWorks Python source root is unavailable: %s', moduleRoot);
@@ -87,24 +86,17 @@ function result = import_step_to_solidworks(stepPaths, sldprtPaths, visible, ass
 end
 
 function pythonExecutable = resolve_python_executable()
-    % Candidate runs freeze their Python identity in the orchestration plan.
-    % Repository-mode calls must use the supported local virtual environment,
-    % never whichever interpreter happens to appear first on PATH.
     pythonExecutable = string(getenv('OATOF_CANDIDATE_PYTHON_EXECUTABLE'));
-    if strlength(pythonExecutable) == 0
-        repositoryRoot = resolve_code_root();
-        pythonExecutable = fullfile(repositoryRoot, '.venv', 'Scripts', 'python.exe');
-    end
-    assert(isfile(pythonExecutable), 'oatofCadExport:PythonRuntimeUnavailable', ...
-        ['SolidWorks COM bridge requires an explicit frozen Candidate Python or ', ...
-         'the repository .venv\\Scripts\\python.exe. Unavailable: %s'], pythonExecutable);
+    assert(strlength(pythonExecutable) > 0 && isfile(pythonExecutable), ...
+        'oatofCadExport:PythonRuntimeUnavailable', ...
+        'SolidWorks COM bridge requires an explicit frozen Candidate Python executable.');
 end
 
-function codeRoot = resolve_code_root()
-    codeRoot = fileparts(fileparts(fileparts(mfilename('fullpath'))));
-    assert(isfolder(fullfile(codeRoot, 'common', 'solidworks')), ...
+function sourceRoot = resolve_source_root()
+    sourceRoot = fileparts(fileparts(fileparts(fileparts(fileparts(mfilename('fullpath'))))));
+    assert(isfolder(fullfile(sourceRoot, 'msplatform', 'exporters', 'solidworks')), ...
         'oatofCadExport:CodeRootUnavailable', ...
-        'SolidWorks bridge module root is unavailable: %s', codeRoot);
+        'SolidWorks bridge module root is unavailable: %s', sourceRoot);
 end
 
 function delete_if_present(pathValue)

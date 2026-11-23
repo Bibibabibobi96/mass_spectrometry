@@ -32,8 +32,8 @@ class ComsolOaMrPolygonTests(unittest.TestCase):
     """Use the complete canonical OA–MR consumer without a native solver."""
 
     def test_public_request_retains_complete_oa_mr_members_and_groups(self):
-        from tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_mr_provider_trial_transport import _plans
-        from tests.projects.parallel_mirror_dual_stripe_mr_tof.test_support.mr_geometry_inputs import geometry_authority
+        from tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_mr_provider_trial_transport import _plans
+        from tests.components.parallel_mirror_dual_stripe_mr_tof.test_support.mr_geometry_inputs import geometry_authority
         from msplatform.assembly.factory import assemble
         from msplatform.backends.comsol.geometry_execution import resolve_geometry_request
         from msplatform.components.catalog import resolve_component

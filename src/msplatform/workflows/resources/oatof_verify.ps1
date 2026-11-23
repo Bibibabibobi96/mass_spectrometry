@@ -16,7 +16,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
 $projectRoot = Join-Path $repoRoot 'src/msplatform/components/single_reflection_oa_tof'
-$testRoot = Join-Path $repoRoot 'tests/projects/single_reflection_oa_tof_mass_analyzer'
+$testRoot = Join-Path $repoRoot 'tests/components/single_reflection_oa_tof_mass_analyzer'
 $partitionOptions = @('SelectedTestModules','PreflightOnly','PreflightValidated')
 if (($Level -ne 'Static' -and @($partitionOptions | Where-Object { $PSBoundParameters.ContainsKey($_) }).Count) -or
     ($PreflightOnly -and ($PreflightValidated -or $SelectedTestModules.Count)) -or
@@ -25,7 +25,7 @@ if (($Level -ne 'Static' -and @($partitionOptions | Where-Object { $PSBoundParam
 }
 $testModules = @($SelectedTestModules | Sort-Object -Unique)
 if ($testModules.Count -ne $SelectedTestModules.Count -or @($testModules | Where-Object {
-  $_ -notmatch '^tests\.projects\.single_reflection_oa_tof_mass_analyzer\.[A-Za-z0-9_.]+$' -or
+  $_ -notmatch '^tests\.(components\.single_reflection_oa_tof_mass_analyzer|workflows\.single_reflection)\.[A-Za-z0-9_.]+$' -or
   -not (Test-Path -LiteralPath (Join-Path $repoRoot ($_.Replace('.', '/')+'.py')) -PathType Leaf)
 }).Count) { throw 'SFI test partition contains duplicate, foreign or missing modules.' }
 $savedPythonPath = $env:PYTHONPATH

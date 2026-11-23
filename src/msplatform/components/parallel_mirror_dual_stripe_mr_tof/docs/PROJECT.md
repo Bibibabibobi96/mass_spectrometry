@@ -1,7 +1,7 @@
 # 开放路径平行镜双条带 MR-TOF 项目状态
 
 现行生产实现、科研配置、当前文档、Lua/PowerShell 资源及测试均已迁至规范组件、工作流、backend
-和 `tests/projects/parallel_mirror_dual_stripe_mr_tof/`；旧项目目录不再保留活动文件或回退入口。
+和 `tests/components/parallel_mirror_dual_stripe_mr_tof/`；旧项目目录不再保留活动文件或回退入口。
 完整 MR 几何、固定镜、IP LP60 平移接口、原 ID/clock/6D/weight、未知终态、接触/损失及五质量
 合同保持原实现。本次所有权迁移不重跑原生求解，不改变 N100 无 MR 到达时的标签、物理或资格边界。
 

@@ -15,8 +15,8 @@ import unittest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-MR = "tests/projects/parallel_mirror_dual_stripe_mr_tof"
-RF = "tests/projects/rf_multipole_ion_optics"
+MR = "tests/components/parallel_mirror_dual_stripe_mr_tof"
+RF = "tests/components/rf_multipole_ion_optics"
 
 
 def copy_common_script(common: Path, name: str) -> None:
@@ -29,6 +29,12 @@ def copy_common_script(common: Path, name: str) -> None:
         (common / name).write_text(content, encoding="utf-8")
     else:
         shutil.copyfile(source, common / name)
+    if name in {"require_powershell7.ps1", "parallel_gate_support.ps1"}:
+        resources = common.parent.parent / "src/msplatform/execution/resources"
+        resources.mkdir(parents=True, exist_ok=True)
+        if name == "parallel_gate_support.ps1":
+            shutil.copyfile(REPO_ROOT / "src/msplatform/execution/resources/resource_process_support.ps1",
+                            resources / "resource_process_support.ps1")
     if name == "require_powershell7.ps1":
         resources = common.parent.parent / "src/msplatform/execution/resources"
         resources.mkdir(parents=True, exist_ok=True)
@@ -84,7 +90,7 @@ class ChangedTestSelectionTests(unittest.TestCase):
             environment.pop("PYTHONPATH", None)
             for project, owner_script in (("dual_pressure_rectilinear_ion_processor", "ip_verify.ps1"),
                                           (single, "oatof_verify.ps1")):
-                tests = root / "tests/projects" / project
+                tests = root / "tests/components" / project
                 shutil.rmtree(tests)
                 tests.mkdir(parents=True)
                 for fails in (False, True):
@@ -97,7 +103,7 @@ class ChangedTestSelectionTests(unittest.TestCase):
                                      str(root / "src/msplatform/workflows/resources" / owner_script),
                                      "-PythonExe", sys.executable]
                         if project == single:
-                            arguments += ["-SelectedTestModules", f"tests.projects.{project}.test_probe",
+                            arguments += ["-SelectedTestModules", f"tests.components.{project}.test_probe",
                                           "-PreflightValidated"]
                         result = subprocess.run(arguments, cwd=root, env=environment, capture_output=True, text=True,
                                                 encoding="utf-8", errors="replace", timeout=60)
@@ -116,7 +122,7 @@ class ChangedTestSelectionTests(unittest.TestCase):
     def test_integration_owner_reports_failure_and_per_test_duration(self) -> None:
         with tempfile.TemporaryDirectory(prefix="integration_gate_fixture_") as directory:
             root = Path(directory)
-            for subdir in ("tools/repository", "tests/integration"):
+            for subdir in ("tools/repository", "tests/execution", "tests/assembly", "tests/workflows"):
                 (root / subdir).mkdir(parents=True)
             shutil.copyfile(REPO_ROOT / "tools/repository/verify_integration.ps1", root / "tools/repository/verify_integration.ps1")
             for name in ("require_powershell7.ps1", "gate_unittest.py"):
@@ -127,7 +133,7 @@ class ChangedTestSelectionTests(unittest.TestCase):
             (root / "ruff").mkdir()
             (root / "ruff/__init__.py").write_text("", encoding="utf-8")
             (root / "ruff/__main__.py").write_text("# Inert lint prerequisite.\n", encoding="utf-8")
-            (root / "tests/integration/test_probe.py").write_text(
+            (root / "tests/execution/test_probe.py").write_text(
                 "import unittest\nclass Probe(unittest.TestCase):\n"
                 "    def test_failure(self): self.fail('INTEGRATION_OWNER_PROBE')\n", encoding="utf-8")
             environment = os.environ.copy()
@@ -147,9 +153,9 @@ class ChangedTestSelectionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="integration_partition_fixture_") as directory:
             root = Path(directory)
             common = root / "tools/repository"
-            tests = root / "tests/integration"
-            for path in (common, tests, root / "temporary", root / "ruff",
-                         root / "src/msplatform/components"):
+            tests = root / "tests/execution"
+            for path in (common, tests, root / "tests/assembly", root / "tests/workflows",
+                         root / "temporary", root / "ruff", root / "src/msplatform/components"):
                 path.mkdir(parents=True)
             for name in ("verify.ps1", "parallel_gate_support.ps1",
                          "gate_catalog_support.ps1", "require_powershell7.ps1", "gate_unittest.py"):
@@ -209,7 +215,7 @@ class ChangedTestSelectionTests(unittest.TestCase):
                     arguments = ["pwsh", "-NoProfile", "-File", str(common / "verify.ps1"), "-Scope", gate_name,
                                  "-PythonExe", sys.executable, "-MaxConcurrency", "4", "-SummaryPath", str(summary)]
                     if gate_name == "Changed":
-                        arguments.extend(["-ChangedPath", "tests/integration/test_a.py" if failure == "thin"
+                        arguments.extend(["-ChangedPath", "tests/execution/test_a.py" if failure == "thin"
                                           else "src/msplatform/workflows/fixture.py"])
                     result = subprocess.run(
                         arguments,
@@ -226,12 +232,12 @@ class ChangedTestSelectionTests(unittest.TestCase):
                     if failure == "thin":
                         self.assertFalse(parts, output)
                         selected = stages["instrument_assembly_integration"]
-                        self.assertEqual(selected["command"]["arguments"], ["-m", "tools.repository.gate_unittest", "tests/integration/test_a.py"])
+                        self.assertEqual(selected["command"]["arguments"], ["-m", "tools.repository.gate_unittest", "tests/execution/test_a.py"])
                         self.assertEqual(len(selected["test_durations"]), 1, output)
                         self.assertFalse(list(events.glob("*.ruff")), output)
                         continue
                     self.assertEqual(len(parts), 4)
-                    self.assertCountEqual(modules, [f"tests.integration.test_{name}" for name in "abcdef"])
+                    self.assertCountEqual(modules, [f"tests.execution.test_{name}" for name in "abcdef"])
                     self.assertEqual(len(modules), len(set(modules)))
                     self.assertFalse(list(events.glob("*.ruff")), output)
                     entered = {path.stem for path in events.glob("*.enter")}
@@ -268,6 +274,8 @@ class ChangedTestSelectionTests(unittest.TestCase):
         (root / "tests/__init__.py").write_text("", encoding="utf-8")
         (tests / "__init__.py").write_text("", encoding="utf-8")
         (root / "src/msplatform/components").mkdir(parents=True)
+        for test_root in ("tests/assembly", "tests/workflows", "tests/execution"):
+            (root / test_root).mkdir(parents=True)
         for name in ("verify.ps1", "parallel_gate_support.ps1", "gate_catalog_support.ps1",
                      "require_powershell7.ps1", "gate_unittest.py"):
             copy_common_script(common, name)
@@ -435,7 +443,7 @@ function Set-GateStageResult {
                         self.assertEqual(part["selection_reason"], "selected_partial_python_test_partition")
                         self.assertEqual(part["dependency_profile"], "stdlib" if preflight is False else "locked")
                         self.assertEqual(part["requires_stages"], ["partition_prerequisite"])
-                        self.assertEqual(part["command"]["python_path_roots"], ["tests/contracts/"])
+                        self.assertEqual(part["command"]["python_path_roots"], [".", "tests/contracts/"])
                     self.assertEqual(stages["partition_prerequisite"]["status"], "PASS", output)
                     starts = {p.stem: json.loads(p.read_text()) for p in events.glob("*.start")}
                     done = {p.stem: json.loads(p.read_text()) for p in events.glob("*.done")}
@@ -566,12 +574,12 @@ try {
     def selected_powershell_fixture(self, root: Path) -> tuple[str, list[str]]:
         """Reuse the small Python fixture with the real integration replacement CLI."""
         _, originals = self.partial_python_partition_fixture(root)
-        tests = root / "tests/integration"
-        tests.mkdir()
+        tests = root / "tests/execution"
+        tests.mkdir(exist_ok=True)
         for relative in originals + ["tests/contracts/test_unselected.py"]:
             source = root / relative
             body = source.read_text(encoding="utf-8").replace(
-                "from fixture_import import VALUE", "from tests.integration.fixture_import import VALUE")
+                "from fixture_import import VALUE", "from tests.execution.fixture_import import VALUE")
             body = body.replace("if KEY in ('a','b'):", "if KEY in ('a','b') and os.environ.get('PARTIAL_PARALLEL'):")
             body = body.replace("class Probe(unittest.TestCase):", """def wait_for_event(name):
     deadline=float(os.environ['PARTIAL_DISPATCH_DEADLINE'])
@@ -619,14 +627,14 @@ function Set-GateStageResult {
         leaf = "src/msplatform/workflows/field_plan.py"
         (root / leaf).parent.mkdir()
         (root / leaf).write_text("# Known small source for the replacement consumer.\n", encoding="utf-8")
-        modules = ["tests/integration/test_" + name + ".py" for name in "abcde"]
+        modules = ["tests/execution/test_" + name + ".py" for name in "abcde"]
         path = root / "tools/repository/gate_catalog.json"
         catalog = json.loads(path.read_text(encoding="utf-8"))
         current = json.loads((REPO_ROOT / "tools/repository/gate_catalog.json").read_text(encoding="utf-8"))
         route = next(x for x in current["routes"] if x["stage"] == "instrument_assembly_integration")
         route.pop("runtime_dependencies_path")
         route["matches"] = [dict(exact=leaf, reason="fixture_field_plan"),
-                            dict(prefix="tests/integration/", reason="fixture_test_changed")]
+                            dict(prefix="tests/execution/", reason="fixture_test_changed")]
         route["requires_stages"] = ["partition_prerequisite"]
         route["test_selection"]["module_parameter"] = "SelectedTestModules"
         route["test_selection"]["dependencies"] = [dict(matches=[dict(exact=leaf, reason="fixture_field_plan")],
@@ -773,7 +781,7 @@ foreach($scope in @('Owner','Repository')){
                 self.assertEqual(len(parts), 4)
                 actual = [m for p in parts for m in p["command"]["parameters"]["SelectedTestModules"]]
                 self.assertCountEqual(actual, [m[:-3].replace("/", ".") for m in modules] +
-                                      ["tests.integration.test_unselected"])
+                                      ["tests.execution.test_unselected"])
                 self.assertEqual(len(actual), len(set(actual)))
                 for part in parts:
                     self.assertEqual(part["reason"], "complete_owner_test_partition")
@@ -844,7 +852,7 @@ foreach($scope in @('Owner','Repository')){
         for result in selected[:-1]:
             for name in ("test_dual_cone_transport_execution", "test_dual_cone_transport",
                          "test_dual_cone_stages", "test_dual_cone_managed_stages"):
-                self.assertIn(f"tests/projects/dual_cone_tandem_quadrupole_ion_interface/{name}.py", result["Modules"])
+                self.assertIn(f"tests/components/dual_cone_tandem_quadrupole_ion_interface/{name}.py", result["Modules"])
         self.assertEqual(selected[-1]["Modules"], ["tests/simion/test_analyze_terminal_plane.py"])
 
     def test_single_reflection_frontend_producer_selects_actual_owner_consumers(self) -> None:
@@ -852,7 +860,8 @@ foreach($scope in @('Owner','Repository')){
         result, = self.selections(REPO_ROOT, [dict(stage='instrument_assembly_integration', paths=[path])])
         for module in ('test_single_reflection_field_stage',
                        'test_dependencies', 'test_native_path_consumers'):
-            self.assertIn('tests/integration/' + module + '.py', result['Modules'])
+            expected_root = 'tests/workflows/single_reflection/' if module == 'test_single_reflection_field_stage' else 'tests/execution/'
+            self.assertIn(expected_root + module + '.py', result['Modules'])
         self.assertEqual(result['Reason'], 'declared_owner_module_dependencies')
 
     def test_sfi_normal_entry_selects_public_consumer_and_planner(self) -> None:
@@ -897,7 +906,7 @@ foreach($scope in @('Owner','Repository')){
              "parallel_mirror_dual_stripe_mr_tof_static", "test_simion_event_analysis.py"),
             (RF, "src/msplatform/components/rf_multipole",
              "rf_multipole_quadrupole_static", "test_mass_filter_l1.py"),
-            ("tests/projects/single_reflection_oa_tof_mass_analyzer", "src/msplatform/components/single_reflection_oa_tof",
+            ("tests/components/single_reflection_oa_tof_mass_analyzer", "src/msplatform/components/single_reflection_oa_tof",
              "single_reflection_oa_tof_mass_analyzer_static", "test_simion_delivery_source.py"),
         ):
             changed = f"{prefix}/analysis/{filename}"
@@ -1062,7 +1071,7 @@ ConvertTo-Json -InputObject $results -Depth 16 -Compress
             'test_operating_pa_cache.py', 'test_standalone_pa_composition_tools.py',
             'test_export_standalone_pa.py')]
         mr = [MR + '/analysis/test_static_field_binding.py']
-        local = ['tests/integration/test_dependencies.py']
+        local = ['tests/execution/test_dependencies.py']
         cases = [
             dict(stage='simion_common', paths=[cache], modules=[common + 'test_operating_pa_cache.py']),
             dict(stage='simion_common', paths=[composer], modules=common_composer),
@@ -1315,7 +1324,8 @@ $results|ConvertTo-Json -Depth 12 -Compress
                 route = next(row for row in routes if row['stage'] == name)
                 owned_roots = set(route['test_selection']['roots'])
                 expected = {path.relative_to(REPO_ROOT).as_posix()[:-3].replace('/', '.')
-                            for path in (REPO_ROOT / route['test_selection']['scope']).rglob('test_*.py')
+                            for owned_root in owned_roots
+                            for path in (REPO_ROOT / owned_root).rglob('test_*.py')
                             if not any(path.relative_to(REPO_ROOT).as_posix().startswith(root)
                                        for root in known_roots - owned_roots)}
                 actual = [module for part in selected['partitions'] for module in part['modules']]
@@ -1416,7 +1426,7 @@ $results|ConvertTo-Json -Depth 8 -Compress
                         rf = stages["rf_multipole_quadrupole_static"]["command"]["parameters"]
                         for name in ("test_rf_event_original_witness", "test_frozen_particle_policy_package",
                                      "test_cross_solver_gate_contract"):
-                            self.assertIn(f"tests.projects.rf_multipole_ion_optics.analysis.{name}",
+                            self.assertIn(f"tests.components.rf_multipole_ion_optics.analysis.{name}",
                                           rf["ChangedTestModules"])
                         if path == rf_paths[0]:
                             ip = stages["dual_pressure_rectilinear_ion_processor_static"]
@@ -1424,16 +1434,16 @@ $results|ConvertTo-Json -Depth 8 -Compress
                                 "src/msplatform/workflows/resources/ip_verify.ps1")
                             ip_gate = (REPO_ROOT / ip["command"]["script"]).read_text(encoding="utf-8")
                             self.assertIn("tools.repository.gate_unittest discover", ip_gate)
-                            self.assertTrue((REPO_ROOT / "tests/projects/dual_pressure_rectilinear_ion_processor/test_functional.py").is_file())
+                            self.assertTrue((REPO_ROOT / "tests/components/dual_pressure_rectilinear_ion_processor/test_functional.py").is_file())
                             modules = set()
                             for name, stage in stages.items():
                                 if name.startswith("instrument_assembly_integration"):
                                     modules.update(stage["command"]["parameters"].get("SelectedTestModules", []))
-                            self.assertIn("tests.integration.test_multipole_ip_prepare", modules)
+                            self.assertIn("tests.workflows.multipole_ip.test_multipole_ip_prepare", modules)
                     else:
                         tof = stages["single_reflection_oa_tof_mass_analyzer_static"]["command"]["parameters"]
                         for name in ("test_reflectron_voltage_compensation", "test_compensation_powershell_adapter"):
-                            self.assertIn(f"tests.projects.single_reflection_oa_tof_mass_analyzer.analysis.{name}",
+                            self.assertIn(f"tests.components.single_reflection_oa_tof_mass_analyzer.analysis.{name}",
                                           tof["SelectedTestModules"])
 
     def test_canonical_file_identity_selects_frozen_project_consumers(self) -> None:
@@ -1443,10 +1453,10 @@ $results|ConvertTo-Json -Depth 8 -Compress
             stages = {row["name"]: row for row in json.loads(
                 request.read_text(encoding="utf-8-sig"))["stages"] if row["selected"]}
             rf = stages["rf_multipole_quadrupole_static"]["command"]["parameters"]
-            self.assertIn("tests.projects.rf_multipole_ion_optics.analysis.test_frozen_particle_policy_package",
+            self.assertIn("tests.components.rf_multipole_ion_optics.analysis.test_frozen_particle_policy_package",
                           rf["ChangedTestModules"])
             tof = stages["single_reflection_oa_tof_mass_analyzer_static"]["command"]["parameters"]
-            self.assertIn("tests.projects.single_reflection_oa_tof_mass_analyzer.analysis.test_publish_ideal_acceptance_aperture_comparison",
+            self.assertIn("tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_publish_ideal_acceptance_aperture_comparison",
                           tof["SelectedTestModules"])
 
     def test_installed_rf_convergence_selects_source_and_comparison_consumers(self) -> None:
@@ -1479,9 +1489,9 @@ $results|ConvertTo-Json -Depth 8 -Compress
             stages = {row["name"]: row for row in json.loads(
                 request.read_text(encoding="utf-8-sig"))["stages"] if row["selected"]}
             parameters = stages["parallel_mirror_dual_stripe_mr_tof_static"]["command"]["parameters"]
-            self.assertIn("tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_prepared_joint_trial",
+            self.assertIn("tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_prepared_joint_trial",
                           parameters["ChangedTestModules"])
-            self.assertIn("tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_joint_flight_preparation",
+            self.assertIn("tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_joint_flight_preparation",
                           parameters["ChangedTestModules"])
             self.assertTrue(any(name.startswith("instrument_assembly_integration") for name in stages))
 
@@ -1502,7 +1512,7 @@ $results|ConvertTo-Json -Depth 8 -Compress
                         request.read_text(encoding="utf-8-sig"))["stages"] if row["selected"]}
                     mr = stages["parallel_mirror_dual_stripe_mr_tof_static"]["command"]["parameters"]
                     self.assertIn(
-                        "tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_prepared_joint_trial",
+                        "tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_prepared_joint_trial",
                         mr["ChangedTestModules"])
                     integration = set()
                     for name, stage in stages.items():
@@ -1513,9 +1523,9 @@ $results|ConvertTo-Json -Depth 8 -Compress
                         self.assertIn("rf_multipole_domain_tests", stages)
                     if not path.endswith("frozen_python_package.ps1"):
                         self.assertIn(
-                            "tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_measured_component_source",
+                            "tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_measured_component_source",
                             mr["ChangedTestModules"])
-                        self.assertIn("tests.integration.test_accelerator_interface", integration)
+                        self.assertIn("tests.assembly.accelerator_interface.test_accelerator_interface", integration)
 
     def test_installed_ip_reader_selects_its_actual_project_and_installation(self) -> None:
         paths = ("src/msplatform/results/ip_continuation.py",
@@ -1539,7 +1549,7 @@ $results|ConvertTo-Json -Depth 8 -Compress
             'tests/contracts/test_support/run_artifact_workflow.py',
             'src/msplatform/backends/comsol/matlab/add_comsol_size_feature.m',
         )
-        prefix = 'tests.projects.single_reflection_oa_tof_mass_analyzer.analysis.'
+        prefix = 'tests.components.single_reflection_oa_tof_mass_analyzer.analysis.'
         expected = {prefix + name for name in ('test_candidate_workflow',
                     'test_candidate_causal_workflow', 'test_candidate_postprocess_workflow')}
         with tempfile.TemporaryDirectory(prefix='candidate_split_plans_') as directory:
@@ -1580,7 +1590,7 @@ $results|ConvertTo-Json -Depth 8 -Compress
                     self.assertEqual(len(modules), len(set(modules)))
 
     def test_migrated_ip_tof_paths_select_real_consumers(self) -> None:
-        project = "tests.projects.single_reflection_oa_tof_mass_analyzer.analysis."
+        project = "tests.components.single_reflection_oa_tof_mass_analyzer.analysis."
         consumer_paths = (
             "src/msplatform/workflows/single_reflection_mass_spectrum.py",
             "src/msplatform/results/single_reflection_particle_table.py",
@@ -1607,10 +1617,10 @@ $results|ConvertTo-Json -Depth 8 -Compress
                     else:
                         self.assertIn("dual_pressure_rectilinear_ion_processor_static", stages)
                         args = stages["rf_multipole_domain_tests"]["command"]["arguments"]
-                        self.assertIn("tests/projects/rf_multipole_ion_optics/domain/test_exit_state_plot.py", args)
+                        self.assertIn("tests/components/rf_multipole_ion_optics/domain/test_exit_state_plot.py", args)
 
     def test_installed_reflectron_fit_selects_its_workflow_and_installation_consumers(self) -> None:
-        project = "tests/projects/single_reflection_oa_tof_mass_analyzer"
+        project = "tests/components/single_reflection_oa_tof_mass_analyzer"
         expected = [f"{project}.analysis.{name}".replace("/", ".") for name in (
             "test_reflectron_voltage_fit", "test_reflectron_voltage_compensation",
             "test_compensation_powershell_adapter")]
@@ -1716,7 +1726,7 @@ $routes=(Get-Content -LiteralPath __CATALOG__ -Raw|ConvertFrom-Json).routes
 $roots=@($routes|Where-Object{$null-ne$_.PSObject.Properties['test_selection']}|ForEach-Object{@($_.test_selection.roots)})
 $compiler='src/msplatform/workflows/resources/comsol_solver_numerics.ps1'
 $four=@('src/msplatform/components/rf_multipole/docs/COMSOL.md',$compiler,
- 'tests/projects/rf_multipole_ion_optics/analysis/test_comsol_workflow_architecture_contract.py',
+ 'tests/components/rf_multipole_ion_optics/analysis/test_comsol_workflow_architecture_contract.py',
  'src/msplatform/components/rf_multipole/variants/quadrupole/config/comsol_solver_numerics.json')
 $cases=@(@{name='four';paths=$four},@{name='deleted';paths=@($compiler)},
  @{name='renamed';paths=@($compiler,'src/msplatform/components/rf_multipole/runtime/unknown_new_name.ps1')},
@@ -1792,12 +1802,12 @@ ConvertTo-Json -InputObject $result -Depth 12 -Compress
                 self.assertEqual(owners['instrument_assembly_integration']['selected'], shared)
                 if shared:
                     self.assertCountEqual(owners['single_reflection_oa_tof_mass_analyzer_static']['modules'], [
-                        'tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_workflow.py',
-                        'tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_causal_workflow.py',
-                        'tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_postprocess_workflow.py',
-                        'tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_paired_accelerator_field_adapters.py'])
+                        'tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_workflow.py',
+                        'tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_causal_workflow.py',
+                        'tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_postprocess_workflow.py',
+                        'tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_paired_accelerator_field_adapters.py'])
                     self.assertEqual(owners['instrument_assembly_integration']['modules'],
-                                     ['tests/integration/test_paired_accelerator_static_field_execute.py'])
+                                     ['tests/workflows/paired_accelerator/test_paired_accelerator_static_field_execute.py'])
 
     def test_common_mesh_helpers_select_real_consumers_and_unknown_stays_conservative(self) -> None:
         script = r"""
@@ -1941,15 +1951,15 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
                 all_modules.update(modules)
 
     def test_integration_ip_provider_tests_keep_only_real_fixture_consumers(self) -> None:
-        integration = ["tests/integration/test_single_reflection_owner_recovery.py"]
-        ip = "tests/projects/dual_pressure_rectilinear_ion_processor/"
+        integration = ["tests/workflows/single_reflection/test_single_reflection_owner_recovery.py"]
+        ip = "tests/components/dual_pressure_rectilinear_ion_processor/"
         production = "src/msplatform/components/dual_pressure_rectilinear_ion_processor/"
         consumers = integration + [
             RF + "/analysis/test_comsol_owner_finalization.py",
             RF + "/analysis/test_owner_finalization_recovery.py",
             RF + "/analysis/test_simion_powershell_owner.py",
-            "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_workflow.py",
-            "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_compensation_powershell_adapter.py",
+            "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_workflow.py",
+            "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_compensation_powershell_adapter.py",
             ip + "test_owner_finalization_recovery.py",
         ]
         # Missing ordinary test paths are classified without deleting real files.
@@ -1972,7 +1982,13 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
                     self.assertFalse(selection["CompleteOwner"])
                     self.assertFalse(selection["Expanded"])
                 else:
-                    self.assertIsNone(selection, "Provider or shared fixture must retain the full owner")
+                    self.assertIsNotNone(selection, "Provider or shared fixture must retain the full owner")
+                    full_owner = [path.relative_to(REPO_ROOT).as_posix()
+                                  for root in ("tests/assembly", "tests/workflows", "tests/execution")
+                                  for path in (REPO_ROOT / root).rglob("test_*.py")]
+                    self.assertCountEqual(selection["Modules"], full_owner)
+                    self.assertTrue(selection["Expanded"])
+                    self.assertFalse(selection["OnlyTestModules"])
 
     def test_simion_owner_impact_selection_matrix(self) -> None:
         test = "tests/simion/test_voltage_waveforms.py"
@@ -2207,8 +2223,8 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
         dependency = next(x for x in route["test_selection"]["dependencies"]
                           if any(m.get("exact") == design + "/experiment_campaign.py" for m in x["matches"]))
         modules = dependency["modules"]
-        unrelated = "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_unrelated.py"
-        (root / "tests/projects/single_reflection_oa_tof_mass_analyzer/simion").mkdir(parents=True)
+        unrelated = "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_unrelated.py"
+        (root / "tests/components/single_reflection_oa_tof_mass_analyzer/simion").mkdir(parents=True)
         for relative in [*modules, unrelated, "tests/contracts/test_cross_owner.py"]:
             path = root / relative
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -2249,7 +2265,7 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
                         dict(name="pure_test", paths=[modules[0]]),
                         dict(name="cross_owner", paths=[leaf, "tests/contracts/test_cross_owner.py"]),
                         dict(name="mapped_union", paths=[leaf, second]),
-                        dict(name="complete_test_union", paths=[leaf, "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_unrelated.py"]),
+                        dict(name="complete_test_union", paths=[leaf, "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_unrelated.py"]),
                         dict(name="unknown", paths=["src/msplatform/workflows/oa_tof_design/unmapped.py"]),
                         dict(name="mixed_unknown", paths=[leaf, "src/msplatform/workflows/oa_tof_design/unmapped.py"]),
                         dict(name="deleted", paths=[leaf]), dict(name="owner", scope="Owner"),
@@ -2292,7 +2308,7 @@ $reports|ConvertTo-Json -Depth 100|Set-Content -LiteralPath (Join-Path $Root 'pl
                 self.assertEqual(len(shards), 4, name)
                 actual = [m for x in shards for m in x["command"]["parameters"]["SelectedTestModules"]]
                 self.assertEqual(len(actual), len(set(actual)), name)
-                self.assertEqual(set(actual), expected | {"tests.projects.single_reflection_oa_tof_mass_analyzer.analysis.test_unrelated"}, name)
+                self.assertEqual(set(actual), expected | {"tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_unrelated"}, name)
             self.assertTrue(any(x["name"] == "common_contracts" for x in plans["cross_owner"]["stages"]))
 
     def test_campaign_leaf_real_owner_runs_preflight_and_propagates_selected_failure(self) -> None:
@@ -2318,6 +2334,28 @@ $reports|ConvertTo-Json -Depth 100|Set-Content -LiteralPath (Join-Path $Root 'pl
                 if failed:
                     self.assertIn("LEAF_FAILURE_PROPAGATED", outcome.stdout + outcome.stderr)
                     self.assertIn("TEST_FAILURE_IMMEDIATE=", outcome.stdout + outcome.stderr)
+
+    def test_owner_plan_includes_canonical_source_test_roots_and_prefix_matches(self) -> None:
+        cases = {
+            "solidworks": {
+                "src/msplatform/exporters/solidworks/installation.py",
+                "tests/solidworks/test_installation.py",
+            },
+            "orthogonal_accelerator": {
+                "src/msplatform/components/orthogonal_accelerator/provider.py",
+                "tests/components/orthogonal_accelerator/analysis/test_component_focus_workflow.py",
+            },
+        }
+        for owner, expected in cases.items():
+            with self.subTest(owner=owner):
+                result = subprocess.run(
+                    ["pwsh", "-NoProfile", "-File", str(REPO_ROOT / "tools/repository/verify.ps1"),
+                     "-Scope", "Owner", "-Owner", owner, "-PlanOnly", "-PythonExe", sys.executable],
+                    cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                inputs = next(line for line in result.stdout.splitlines() if line.startswith("CHANGED_GATE_INPUTS="))
+                selected = set(inputs.split(" PATHS=", 1)[1].split(","))
+                self.assertTrue(expected <= selected, sorted(expected - selected))
 
     def copy_checkout(self, root: Path) -> None:
         clone = subprocess.run(["git", "-c", "core.longpaths=true", "clone", "--quiet", "--shared",
@@ -2625,7 +2663,7 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
     def test_rf_ip_consumer_and_birth_admission_select_actual_consumers(self) -> None:
         source = 'src/msplatform/workflows/multipole_ip/continuous.py'
         backend = 'src/msplatform/backends/simion/tracking_execution.py'
-        consumer = 'tests/integration/test_multipole_ip_continuous.py'
+        consumer = 'tests/workflows/multipole_ip/test_multipole_ip_continuous.py'
         selected = self.selections(REPO_ROOT, [
             dict(stage='common_contracts', paths=[source]),
             dict(stage='common_contracts', paths=[backend]),
@@ -2671,7 +2709,7 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         oa = self.selections(REPO_ROOT, [dict(stage='instrument_assembly_integration',
             paths=['src/msplatform/backends/simion/oa_compiler.py'])])[0]
-        self.assertIn('tests/integration/test_rf_oa_compiler.py', oa['Modules'])
+        self.assertIn('tests/assembly/rf_oa_compiler/test_rf_oa_compiler.py', oa['Modules'])
         mr = self.selections(REPO_ROOT, [dict(
             stage='parallel_mirror_dual_stripe_mr_tof_static', paths=[paths[0]])])[0]
         self.assertCountEqual(mr['Modules'], [
@@ -2732,8 +2770,8 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
         cases = [
             dict(stage=common, paths=["src/msplatform/backends/simion/operations.py"]),
             dict(stage=common, paths=["src/msplatform/backends/simion/resources/iob_core.lua"]),
-            dict(stage=common, paths=["tests/integration/test_ip_compiler.py"]),
-            dict(stage=common, paths=["tests/projects/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_iob.py"]),
+            dict(stage=common, paths=["tests/workflows/multipole_ip/test_ip_compiler.py"]),
+            dict(stage=common, paths=["tests/components/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_iob.py"]),
             dict(stage=integration, paths=["src/msplatform/backends/simion/ip_compiler.py"]),
             dict(stage=integration, paths=["src/msplatform/components/dual_pressure_rectilinear_ion_processor/provider.py"]),
             dict(stage=mr, paths=["src/msplatform/backends/simion/mr_compiler.py"]),
@@ -2745,12 +2783,12 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
             for module in ("test_joint_geometry_plan.py", "test_joint_geometry_iob.py"):
                 self.assertIn("tests/contracts/" + module, row["Modules"])
         self.assertIn("tests/contracts/test_joint_geometry_plan.py", selected[2]["Modules"])
-        self.assertIn("tests/projects/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_iob.py", selected[3]["Modules"])
+        self.assertIn("tests/components/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_iob.py", selected[3]["Modules"])
         self.assertIn("tests/contracts/test_joint_geometry_iob.py", selected[3]["Modules"])
         for row in selected[4:6]:
-            self.assertIn("tests/integration/test_ip_compiler.py", row["Modules"])
-            self.assertIn("tests/integration/test_selected_ip_provider.py", row["Modules"])
-            self.assertIn("tests/integration/test_multipole_ip_prepare.py", row["Modules"])
+            self.assertIn("tests/workflows/multipole_ip/test_ip_compiler.py", row["Modules"])
+            self.assertIn("tests/workflows/multipole_ip/test_selected_ip_provider.py", row["Modules"])
+            self.assertIn("tests/workflows/multipole_ip/test_multipole_ip_prepare.py", row["Modules"])
         for row in selected[6:8]:
             self.assertIn(mr_test, row["Modules"])
         self.assertIn("tests/contracts/test_gas.py", selected[8]["Modules"])
@@ -2759,7 +2797,7 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
             dict(stage=common, paths=["src/msplatform/backends/simion/model.py"]),
             dict(stage=common, paths=["src/msplatform/backends/simion/rf_field_execution.py"]),
             dict(stage=common, paths=["src/msplatform/backends/simion/resources/model_drive.lua"]),
-            dict(stage=common, paths=["tests/integration/test_ip_compiler.py"]),
+            dict(stage=common, paths=["tests/workflows/multipole_ip/test_ip_compiler.py"]),
             dict(stage=common, paths=["src/msplatform/components/orthogonal_accelerator/provider.py"]),
             dict(stage=common, paths=["src/msplatform/components/orthogonal_accelerator/two_zone_geometry.py"]),
             dict(stage=mr, paths=["src/msplatform/components/orthogonal_accelerator/provider.py"]),

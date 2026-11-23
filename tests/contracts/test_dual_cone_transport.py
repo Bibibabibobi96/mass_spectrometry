@@ -3,14 +3,14 @@
 import subprocess
 import hashlib, json, tempfile, unittest
 from pathlib import Path
-from tests.projects.dual_cone_tandem_quadrupole_ion_interface.test_simion_layer import GAS_INTERFACE
+from tests.components.dual_cone_tandem_quadrupole_ion_interface.test_simion_layer import GAS_INTERFACE
 
 
 class MismatchTests(unittest.TestCase):
     def test_original_prepare_rejects_other_producer_geometry(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            from tests.projects.dual_cone_tandem_quadrupole_ion_interface.test_gas_flow_contract import (
+            from tests.components.dual_cone_tandem_quadrupole_ion_interface.test_gas_flow_contract import (
                 _write_fixture, SCIENCE_PATH, NUMERICS_PATH, GEOMETRY_PATH,
             )
             from msplatform.contracts.gas_field import read_gas_field_data
@@ -42,7 +42,7 @@ class MismatchTests(unittest.TestCase):
                 (sds / name).write_text("INERT")
             with self.assertRaisesRegex(ValueError, "geometry"):
                 from msplatform.backends.simion.dual_cone_transport import prepare_transport
-                from tests.projects.dual_cone_tandem_quadrupole_ion_interface.test_simion_layer import PROJECT
+                from tests.components.dual_cone_tandem_quadrupole_ion_interface.test_simion_layer import PROJECT
                 config = PROJECT / "config"
                 prepare_transport(root / "prepared", mode="gas_assisted_transport", gas_field_manifest=path,
                     collision_sds_dir=sds, interface_path=selected_interface,
@@ -233,8 +233,8 @@ class PublishedGasPreparationTests(unittest.TestCase):
     def test_explicit_published_product_freezes_original_contracts_and_rejects_geometry_change(self):
         from msplatform.backends.simion.dual_cone_transport import prepare_transport, SDS_FILES
         from msplatform.io.manifest_records import file_record
-        from tests.projects.dual_cone_tandem_quadrupole_ion_interface.test_gas_flow_contract import _write_fixture
-        from tests.projects.dual_cone_tandem_quadrupole_ion_interface.test_simion_layer import PROJECT
+        from tests.components.dual_cone_tandem_quadrupole_ion_interface.test_gas_flow_contract import _write_fixture
+        from tests.components.dual_cone_tandem_quadrupole_ion_interface.test_simion_layer import PROJECT
 
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -312,7 +312,7 @@ class PublishedGasPreparationTests(unittest.TestCase):
         from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field import prepare_cfd_gas_field
         from msplatform.contracts.gas_field import read_gas_field_data
         from msplatform.io.manifest_records import file_record
-        from tests.projects.dual_cone_tandem_quadrupole_ion_interface.test_gas_flow_contract import (
+        from tests.components.dual_cone_tandem_quadrupole_ion_interface.test_gas_flow_contract import (
             _write_fixture, SCIENCE_PATH, NUMERICS_PATH, GEOMETRY_PATH,
         )
         with tempfile.TemporaryDirectory() as temporary:
@@ -364,8 +364,8 @@ class PublishedGasPreparationTests(unittest.TestCase):
 class LargeGasRuntimeFreezeTests(unittest.TestCase):
     def test_public_preparation_freezes_large_valid_runtime_with_original_receipt_shape(self):
         from msplatform.backends.simion.dual_cone_transport import prepare_transport, SDS_FILES
-        from tests.projects.dual_cone_tandem_quadrupole_ion_interface.test_simion_layer import PROJECT
-        from tests.projects.dual_cone_tandem_quadrupole_ion_interface.test_simion_layer import write_uniform_gas_fixture
+        from tests.components.dual_cone_tandem_quadrupole_ion_interface.test_simion_layer import PROJECT
+        from tests.components.dual_cone_tandem_quadrupole_ion_interface.test_simion_layer import write_uniform_gas_fixture
         from msplatform.io.file_identity import file_sha256
 
         with tempfile.TemporaryDirectory() as temporary:
@@ -424,7 +424,7 @@ class ExplicitUniformStudyTests(unittest.TestCase):
         from msplatform.contracts.gas import GasSpecies
         from msplatform.io.manifest_records import file_record
         from tests.contracts.test_simion_prepared_model import LUA
-        from tests.projects.dual_cone_tandem_quadrupole_ion_interface.test_simion_layer import PROJECT
+        from tests.components.dual_cone_tandem_quadrupole_ion_interface.test_simion_layer import PROJECT
         if not LUA.is_file():
             self.skipTest("standalone Lua 5.1 required for actual Program consumer; no native fallback")
         config = PROJECT / "config"

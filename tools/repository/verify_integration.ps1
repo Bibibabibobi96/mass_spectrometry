@@ -35,7 +35,7 @@ try {
     Push-Location $repoRoot
     try {
         if (-not $PreflightValidated) {
-            & $PythonExe -m ruff check src/msplatform tests/integration
+            & $PythonExe -m ruff check src/msplatform tests/assembly tests/workflows tests/execution
             if ($LASTEXITCODE -ne 0) { throw 'Instrument assembly Ruff gate failed.' }
         }
         if ($PreflightOnly) {
@@ -43,10 +43,12 @@ try {
             return
         }
         $discovered = @(
-            Get-ChildItem -LiteralPath (Join-Path $repoRoot 'tests/integration') -Filter 'test_*.py' -File -Recurse |
-                ForEach-Object {
-                    $_.FullName.Substring($repoRoot.Length + 1, $_.FullName.Length - $repoRoot.Length - 4).Replace('\', '.')
-                }
+            foreach ($root in @('tests/assembly', 'tests/workflows', 'tests/execution')) {
+                Get-ChildItem -LiteralPath (Join-Path $repoRoot $root) -Filter 'test_*.py' -File -Recurse |
+                    ForEach-Object {
+                        $_.FullName.Substring($repoRoot.Length + 1, $_.FullName.Length - $repoRoot.Length - 4).Replace('\', '.')
+                    }
+            }
         )
         if ($SelectedTestModules.Count) {
             $testModules = @($SelectedTestModules | Sort-Object -Unique)

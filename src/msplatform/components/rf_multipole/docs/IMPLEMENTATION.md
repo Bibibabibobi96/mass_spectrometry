@@ -204,12 +204,12 @@ particle source、solver numerics、资源预算和保留类；CLI不得覆盖�
 
 ## 求解器投影
 
-原生辅助检查包括[定常求解器 smoke](../../../../../tests/projects/rf_multipole_ion_optics/domain/test_comsol_stationary_solver_smoke.m)与
-[定常场采样测试](../../../../../tests/projects/rf_multipole_ion_optics/domain/test_export_comsol_stationary_field_samples.m)。前者是公共COMSOL启动器的任务脚本，
+原生辅助检查包括[定常求解器 smoke](../../../../../tests/components/rf_multipole_ion_optics/domain/test_comsol_stationary_solver_smoke.m)与
+[定常场采样测试](../../../../../tests/components/rf_multipole_ion_optics/domain/test_export_comsol_stationary_field_samples.m)。前者是公共COMSOL启动器的任务脚本，
 后者通过已配置LiveLink的MATLAB测试框架执行；测试与生产采样器均消费安装后的
 `msplatform.backends.comsol/matlab`依赖路径，导出CSV由`msplatform.workflows.rf_stationary`验证。L1/L2不运行这两项原生检查。
 
-[杆系与接地壳几何检查](../../../../../tests/projects/rf_multipole_ion_optics/domain/test_comsol_enclosure_geometry.m)通过公共COMSOL入口消费冻结case，
+[杆系与接地壳几何检查](../../../../../tests/components/rf_multipole_ion_optics/domain/test_comsol_enclosure_geometry.m)通过公共COMSOL入口消费冻结case，
 直接调用生产杆系和壳体构建器，检查实体干涉、接地连续性、通孔及可选STEP冷导入。
 该长期检查仅构建几何，不求场、不飞行，也不保存MPH；实际证据及资格范围见PROJECT。
 
@@ -267,7 +267,7 @@ SIMION杆电压只消费[公共RF驱动kernel](../../../../../docs/SIMION_BACKEN
 独立多极杆Program传`ion_time_of_flight`，连续single-flight Program传规范`birth + ion_time_of_flight`；
 每个Program只保留一个`fast_adjust`和`tstep_adjust`包装，在`initialize_run`编译一次驱动。
 纯数学回归使用SIMION官方`simion.exe --nogui --noprompt lua`入口执行
-[`test_simion_rf_drive.lua`](../../../../../tests/projects/rf_multipole_ion_optics/domain/test_simion_rf_drive.lua)，不加载Workbench/PA，不refine、不Fly。
+[`test_simion_rf_drive.lua`](../../../../../tests/components/rf_multipole_ion_optics/domain/test_simion_rf_drive.lua)，不加载Workbench/PA，不refine、不Fly。
 
 SIMION 完整 PA basis 的内容寻址、完整字节库存、损坏判定、原子发布及 run-local 物化统一委托
 [`msplatform.backends.simion.pa_family_cache`](../../../backends/simion/pa_family_cache.py)。本项目只声明多极杆的 PA 命名、已冻结

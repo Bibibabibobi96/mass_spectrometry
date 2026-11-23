@@ -9,11 +9,9 @@ assert(isfile(modelPath), 'Candidate MPH is missing: %s', modelPath);
 assert(~isempty(outputDir), 'OATOF_CANDIDATE_CAD_DIR is required.');
 
 matlabRoot = fileparts(mfilename('fullpath'));
-codeRoot = fileparts(fileparts(fileparts(fileparts(fileparts(matlabRoot)))));
-projectRoot = fullfile(codeRoot, 'projects', 'single_reflection_oa_tof_mass_analyzer');
-addpath(projectRoot, matlabRoot);
-solidworksRoot = fullfile(codeRoot, 'src', 'msplatform', 'exporters', 'solidworks', 'resources');
-addpath(solidworksRoot);
+msplatformRoot = fileparts(fileparts(fileparts(matlabRoot)));
+solidworksRoot = fullfile(msplatformRoot, 'exporters', 'solidworks', 'resources');
+addpath(matlabRoot, solidworksRoot);
 
 fid = fopen(reportPath, 'w');
 assert(fid >= 0, 'Could not open report: %s', reportPath);

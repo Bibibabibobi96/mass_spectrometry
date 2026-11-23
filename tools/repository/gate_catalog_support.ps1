@@ -492,14 +492,16 @@ function Get-GateChangedTests {
                 Reason = 'explicit_discovery_preserves_native_exclusions'
             }
         }
-        return $null
+        $related = @($roots | ForEach-Object { $_ + '__init__.py' })
     }
     if ($FullScope) { $related = @($roots | ForEach-Object { $_ + '__init__.py' }) }
     if ($related.Count -eq 0 -and $mappedModules.Count -eq 0) { return $null }
-    $modules = @($related | Where-Object {
-        $_ -match '/test_[^/]+\.py$' -and
-        (($roots | ForEach-Object { $_.TrimEnd('/') }) -contains (Split-Path -Parent $_).Replace('\', '/')) -and
-        (Test-Path -LiteralPath (Join-Path $RepoRoot $_) -PathType Leaf)
+    $modules = @(foreach ($candidate in $related) {
+        if ($candidate -match '/test_[^/]+\.py$' -and
+            @($roots | Where-Object { $candidate.StartsWith($_, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0 -and
+            (Test-Path -LiteralPath (Join-Path $RepoRoot $candidate) -PathType Leaf)) {
+            $candidate
+        }
     })
     $expanded = $FullScope -or $modules.Count -ne $related.Count
     if ($expanded) {
@@ -510,7 +512,8 @@ function Get-GateChangedTests {
                 $path.StartsWith($_, [StringComparison]::OrdinalIgnoreCase)
             }).Count -eq 0
         }).Count -gt 0)) {
-            $discoveryRoots += [string]$selection.scope
+            if ($roots.Count -eq 1) { $discoveryRoots += [string]$selection.scope }
+            else { $discoveryRoots += @($selection.roots) }
         }
         $modules = @(
             foreach ($root in ($discoveryRoots | Sort-Object -Unique)) {
@@ -551,15 +554,19 @@ function Get-GateRepositoryTestPartitions {
     param([Parameter(Mandatory)]$Route, [Parameter(Mandatory)][string]$RepoRoot,
         [AllowEmptyCollection()][string[]]$Modules)
     $config = $Route.repository_integration_partition
-    $root = Join-Path $RepoRoot ([string]$Route.test_selection.scope)
+    $discoveryRoots = if ($null -ne $Route.test_selection.PSObject.Properties['roots']) {
+        @($Route.test_selection.roots)
+    } else { @([string]$Route.test_selection.scope) }
     $weights = @{}
     foreach ($property in $config.measured_seconds.PSObject.Properties) {
         if ([double]$property.Value -le 0) { throw "Invalid measured test duration: $($property.Name)" }
         $weights[$property.Name] = [double]$property.Value
     }
     $selected = if ($PSBoundParameters.ContainsKey('Modules')) { @($Modules) } else {
-        @(Get-ChildItem -LiteralPath $root -Filter 'test_*.py' -File -Recurse | ForEach-Object {
-            $_.FullName.Substring($RepoRoot.Length + 1).Replace('\', '/')
+        @(foreach ($root in $discoveryRoots) {
+            Get-ChildItem -LiteralPath (Join-Path $RepoRoot $root) -Filter 'test_*.py' -File -Recurse | ForEach-Object {
+                $_.FullName.Substring($RepoRoot.Length + 1).Replace('\', '/')
+            }
         })
     }
     $weightedModules = @($selected | Sort-Object -Unique | ForEach-Object {

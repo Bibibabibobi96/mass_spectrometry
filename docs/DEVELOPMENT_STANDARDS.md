@@ -277,15 +277,15 @@ LiveLink、SIMION Lua/GEM、PowerShell及跨软件数据合同。仓库结构、
 - `get_*`只用于低成本获取已有值，禁止隐藏求解器运行、网络请求或大文件读取。
 
 文件和函数名描述单一职责。禁止新建无明确边界的`utils.py`、`helpers.py`、`misc.py`、`data2.py`、
-`final_analysis.py`。根`common/`是[仓库架构](REPOSITORY_ARCHITECTURE.md)定义的共享边界，不属于模糊命名。源码和运行文件不得用
+`final_analysis.py`。`src/msplatform/`与`tools/repository/`是[仓库架构](REPOSITORY_ARCHITECTURE.md)定义的共享边界，不属于模糊命名。源码和运行文件不得用
 `final/latest/new/v2/retry`管理版本；版本、状态和重试身份使用Git、Schema及[生命周期](LIFECYCLE.md)规定的容器命名。
 
 ### 术语权威与作用域
 
 术语必须跟随概念的真实作用域，不建立脱离实现边界的全仓词典：
 
-- 跨仓通用的event、state、identity、frame和run合同术语归`common/contracts/`的Schema与相邻README；
-- 一个共享技术域内部复用的器件、接口或数值术语归`common/<domain>/`的Schema和README；
+- 跨仓通用的event、state、identity、frame和run合同术语归`src/msplatform/contracts/`的Schema与相邻说明；仓库执行合同归`src/msplatform/execution/`；
+- 一个共享技术域内部复用的器件、接口或数值术语归`src/msplatform/`中对应职责域的Schema和最近说明；
 - 项目科学概念归最近的项目机器合同、PROJECT或对应专题文档；
 - 仅由某求解器产生的节点、数值标记、离散层或终态必须带solver或numerical限定，禁止写成机械实体、
   物理面或跨求解器概念。
@@ -539,7 +539,7 @@ flowchart TB
 
 ## 软件验证的职责与触发成本
 
-软件验证使用`common/verify.ps1`选择Changed、Owner或Repository范围，同轮每项职责只执行一次。普通研究运行在自己的
+软件验证使用`tools/repository/verify.ps1`选择Changed、Owner或Repository范围，同轮每项职责只执行一次。普通研究运行在自己的
 prepare/run边界校验实际输入、单位、时钟、资源、资产与writer，不先执行整套软件回归；科学资格独立按
 模型、数值方法和声明范围验收。不要求项目实现数字级别或同名资格开关；Candidate/Formal只用于实际资产
 与模型用途的资格和发布，不支持能力在选择阶段立即拒绝。新增项目只增加其owner、依赖和必要行为，不复制公共故障矩阵或根编排。
@@ -582,7 +582,7 @@ cross_solver`结构更直接表达工具和证据边界；测试性质由入口�
 - 禁止伪造求解器输出、日志、性能数据和测试结果，禁止通过改变输入或精度隐藏失败。
 - 完成代码变更时按适用范围运行格式/语法、静态检查、单元测试、集成测试和真实求解器验证；没有统一
   工具的语言不为勾选清单临时引入格式器。
-- 可机器判定的硬要求由`common/verify_development_standards.py`检查并接入轻量门禁；`--show-review`
+- 可机器判定的硬要求由`tools/repository/verify_development_standards.py`检查并接入轻量门禁；`--show-review`
   可列出函数和模块长度审查信号。长度信号只要求人工审查职责，不自动判为违规。
 - 交接必须区分代码检查、求解器无关分析、真实求解器、GUI/CAD和Formal层级，报告未执行且影响结论
   的验证及剩余风险。常规命令和日志仍按AGENTS的紧凑测试报告规范汇总，不逐条复述。

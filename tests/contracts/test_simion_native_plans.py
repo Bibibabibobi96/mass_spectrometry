@@ -399,7 +399,7 @@ class IndependentRFPlanTests(unittest.TestCase):
         from msplatform.backends.simion.physical_samples import standalone_rf_samples
         from msplatform.backends.simion.rf_electrode_mapping import build_simion_electrode_map
         from msplatform.components.rf_multipole.electrode_topology import build_electrode_topology
-        from tests.projects.rf_multipole_ion_optics.domain.test_simion_geometry import resolved_design, shell
+        from tests.components.rf_multipole_ion_optics.domain.test_simion_geometry import resolved_design, shell
         source = resolved_design(shell(dict(entrance=dict(aperture_radius_mm=2.,thickness_mm=.5),
                                            exit=dict(aperture_radius_mm=2.,thickness_mm=.5))),segmented=True)
         for rod in source['segmentation']['segmented_rod_array']['electrodes']:

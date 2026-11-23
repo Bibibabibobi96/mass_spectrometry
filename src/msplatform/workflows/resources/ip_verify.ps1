@@ -14,7 +14,7 @@ $hostContext=@{workspace=(Split-Path -Parent $repoRoot);python_executable=$Pytho
 $lease=Enter-HostExecutionLease -Role GATE
 Push-Location $repoRoot
 try {
- & $PythonExe -m tools.repository.gate_unittest discover -s 'tests/projects/dual_pressure_rectilinear_ion_processor' -p 'test_*.py'
+ & $PythonExe -m tools.repository.gate_unittest discover -s 'tests/components/dual_pressure_rectilinear_ion_processor' -p 'test_*.py'
  if($LASTEXITCODE-ne0){throw 'Ion Processor static gate failed'}
  Write-Output 'PROJECT_GATE=PASS PROJECT=dual_pressure_rectilinear_ion_processor LEVEL=Static'
 } finally {Pop-Location;Exit-HostExecutionLease -Lease $lease}

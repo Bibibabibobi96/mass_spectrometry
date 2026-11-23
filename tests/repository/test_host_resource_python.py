@@ -462,7 +462,7 @@ class HeavyConsumerEntryTests(unittest.TestCase):
                     self.assertEqual(enter.call_args.args[0], name)
 
         # TOF now admits through its actual managed owner, before worker/science.
-        from tests.projects.single_reflection_oa_tof_mass_analyzer.analysis.test_support.ideal_source_workflow import (
+        from tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_support.ideal_source_workflow import (
             copy_input_root, make_context, retained_workspace,
         )
         module = importlib.import_module("msplatform.workflows.oa_tof_design.source_comparison")
@@ -488,7 +488,7 @@ class HeavyConsumerEntryTests(unittest.TestCase):
                 compute.assert_not_called()
 
     def test_oa_plan_does_not_request_heavy_permission(self):
-        from tests.projects.single_reflection_oa_tof_mass_analyzer.analysis.test_support.ideal_source_workflow import copy_input_root
+        from tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_support.ideal_source_workflow import copy_input_root
         module = importlib.import_module("msplatform.workflows.oa_tof_design.source_comparison")
         project = Path(__file__).resolve().parents[2] / "src/msplatform/components/single_reflection_oa_tof"
         with tempfile.TemporaryDirectory() as directory:
@@ -506,7 +506,7 @@ class HeavyConsumerEntryTests(unittest.TestCase):
     def test_execution_policy_provenance_does_not_change_oa_numerical_identity(self):
         from dataclasses import replace
         from msplatform.io.file_identity import file_sha256
-        from tests.projects.single_reflection_oa_tof_mass_analyzer.analysis.test_support.ideal_source_workflow import (
+        from tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_support.ideal_source_workflow import (
             copy_input_root, make_context, owned_workflow_environment, retained_workspace,
         )
         module = importlib.import_module("msplatform.workflows.oa_tof_design.source_comparison")

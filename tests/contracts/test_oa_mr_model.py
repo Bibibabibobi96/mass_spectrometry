@@ -11,8 +11,8 @@ from msplatform.backends.simion.native_plans import plan_model_preparation
 from msplatform.backends.simion.resources import structural_seed_path
 from msplatform.components.catalog import resolve_component
 from msplatform.io.manifest_records import file_record
-from tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_mr_provider_trial_transport import _plans
-from tests.projects.parallel_mirror_dual_stripe_mr_tof.test_support.mr_geometry_inputs import geometry_authority
+from tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_mr_provider_trial_transport import _plans
+from tests.components.parallel_mirror_dual_stripe_mr_tof.test_support.mr_geometry_inputs import geometry_authority
 from tests.contracts.test_simion_rf_prepared_model import assets_at
 
 

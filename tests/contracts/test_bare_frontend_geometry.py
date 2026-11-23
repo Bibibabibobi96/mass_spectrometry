@@ -8,7 +8,7 @@ import sysconfig
 import tempfile
 import unittest
 
-from tests.integration.frontend_fixtures import canonical_frontend_fixture
+from tests.workflows.frontend.frontend_fixtures import canonical_frontend_fixture
 from msplatform.backends.simion.bare_frontend_geometry import compile_frontend
 
 

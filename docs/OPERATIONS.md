@@ -44,14 +44,14 @@ PowerShell时必须使用`pwsh`；PowerShell脚本内部继承当前宿主，不
 
 ### 软件验证与科学证据
 
-软件验证统一使用`common/verify.ps1`、Python 3.11、现有catalog和公共资源调度。
+软件验证统一使用`tools/repository/verify.ps1`、Python 3.11、现有catalog和公共资源调度。
 一次命令自动选择、执行并汇总；`-PlanOnly`是可选预览，不是正常运行的手工前置。
 
 | 范围或任务 | 正常入口 | 实际含义 |
 |---|---|---|
-| 改动软件 | `common/verify.ps1 -Scope Changed` | 从Git差异或显式ChangedPath选择真实owner及消费者 |
-| 指定软件owner | `common/verify.ps1 -Scope Owner -Owner <owner>` | 该owner的完整适用软件职责 |
-| 完整软件 | `common/verify.ps1 -Scope Repository` | 全部适用软件职责和项目回归 |
+| 改动软件 | `tools/repository/verify.ps1 -Scope Changed` | 从Git差异或显式ChangedPath选择真实owner及消费者 |
+| 指定软件owner | `tools/repository/verify.ps1 -Scope Owner -Owner <owner>` | 该owner的完整适用软件职责 |
+| 完整软件 | `tools/repository/verify.ps1 -Scope Repository` | 全部适用软件职责和项目回归 |
 | 科学运行 | 项目或integration公开workflow | 本次输入、工具、资源和资产准入，执行声明动作 |
 | 科学验证或发布 | 模型、问题和资产的具名入口 | 相应原生、数值、GUI/CAD及资格证据 |
 
@@ -88,14 +88,14 @@ rule can admit an already waiting request without changing its budget or inputs.
 超预算须定位主要重复与必要成本，不靠漏测、改名或隐藏开销达标；它不是原生求解的强杀超时。
 
 ```powershell
-.\common\verify.ps1
-.\common\verify.ps1 -Scope Owner -Owner orthogonal_accelerator
-.\common\verify.ps1 -Scope Repository
+.\tools\repository\verify.ps1
+.\tools\repository\verify.ps1 -Scope Owner -Owner orthogonal_accelerator
+.\tools\repository\verify.ps1 -Scope Repository
 # 可选预览
-.\common\verify.ps1 -ChangedPath src/msplatform/workflows/oa_focus_analysis.py -PlanOnly
+.\tools\repository\verify.ps1 -ChangedPath src/msplatform/workflows/oa_focus_analysis.py -PlanOnly
 ```
 
-职责与依赖只在[`common/gate_catalog.json`](../tools/repository/gate_catalog.json)维护。普通验证不认证全部Git历史，
+职责与依赖只在[`tools/repository/gate_catalog.json`](../tools/repository/gate_catalog.json)维护。普通验证不认证全部Git历史，
 实际历史改动定向检查，整档核验仅显式AuditHistory；只获取实际base/head或档案审计需要的源提交。
 
 SummaryPath保存范围、命令、环境、状态、原因、日志和慢测试计时。完整公开命令墙钟由外层单调时钟
@@ -149,7 +149,7 @@ the licensed callback diagnostic remains separate from software-test success.
 [`host_resource_policy.json`](../src/msplatform/execution/resources/host_resource_policy.json)管理。资源等待时先查询状态：
 
 ```powershell
-. .\common\host_execution_lease.ps1
+. .\tools\repository\host_execution_lease.ps1
 Get-HostResourceStatus
 ```
 
@@ -169,11 +169,11 @@ Get-HostResourceStatus
 
 ### 文档结构检查
 
-仅检查活动入口、本地链接和页内锚点时运行`common/verify_documentation.ps1 -StructureOnly`。
+仅检查活动入口、本地链接和页内锚点时运行`tools/repository/verify_documentation.ps1 -StructureOnly`。
 文案、标题语言、排版、篇幅和本地额外目录不作为提交硬门；文档检查不重复调用工作区卫生。
 普通软件验证不重新认证全部Git历史；实际历史改动用`-ChangedPath`定向核验，明确档案审计用`-AuditHistory`。
 
-`.\.venv\Scripts\python.exe -m common.documentation_links --inventory-json`输出逐文件行数、字符数与诊断。
+`.\.venv\Scripts\python.exe -m tools.repository.documentation_links --inventory-json`输出逐文件行数、字符数与诊断。
 字符数基于UTF-8解码、换行规范化后的文本，不是token数。既有只读历史的失效链接只诊断，新历史断链仍阻断。
 长文、重复段落、无入链及排版审查仅在显式维护任务中输出，不阻断普通提交。
 相对artifact路径允许外部载荷不在当前机器上，远程文献和科学结论需另行核验。
@@ -219,7 +219,7 @@ ledger-only日常startup/maintenance。首次校准或台账失准时，必须�
 本机 MATLAB R2025b 与 COMSOL 6.4 的长期入口是：
 
 ```powershell
-. .\common\host_execution_lease.ps1
+. .\tools\repository\host_execution_lease.ps1
 . .\src\msplatform\backends\comsol\launcher\resolve_comsol_64.ps1
 $launch = Get-ComsolLauncherParameters -HostContext $script:HostResourceExecutionContext -WorkingDirectory (Get-Location).Path
 & .\src\msplatform\backends\comsol\launcher\run_comsol_r2025b.ps1 @launch -TaskScript <任务脚本.m> -ReportPath <报告.txt>
@@ -244,7 +244,7 @@ Compute或求解器后的错误不自动重算。
 每次涉及MATLAB或SolidWorks的正式变更前，运行：
 
 ```powershell
-.\common\verify_toolchain.ps1
+.\tools\repository\verify_toolchain.ps1
 ```
 
 该门禁验证R2025b可执行文件和SolidWorks 2022 PIA/COM revision；项目默认继承本节，不在每个
@@ -256,7 +256,7 @@ README重复声明。它不重写或重存已有的MPH、SLDPRT或SLDASM。若Li
 Python 3.9至3.12；本机默认Python 3.14和旧Python 3.8均不得作为本仓库正式运行时。依赖由根目录
 `pyproject.toml`声明、`requirements-lock.txt`冻结，并安装在不入Git的`.venv/`。跨目录Python入口从
 仓库根使用`python -m <module>`运行，禁止由各脚本重复修改`sys.path`。单次反射oa-TOF入口见
-`projects/single_reflection_oa_tof_mass_analyzer/analysis/README.md`。
+`src/msplatform/components/single_reflection_oa_tof/README.md`。
 
 科学核心采用 `src/msplatform` 的标准可安装布局。开发环境在上述 `.venv` 中先执行
 `python -m pip install -r requirements-lock.txt`，再执行
@@ -286,7 +286,7 @@ PowerShell `Get-RunPythonImportRoots` 只依据本次源码树返回实际 `src`
 git status --short --branch
 git diff --check
 git diff --stat
-.\common\verify.ps1
+.\tools\repository\verify.ps1
 ```
 
 独立工作树复用其他checkout的Python 3.11时，提交前将该解释器目录置于当前进程PATH首位；
@@ -295,7 +295,7 @@ git diff --stat
 确认没有 MPH、PA/IOB、结果、日志或一次性脚本进入暂存区。不得强制推送、改写远程历史或
 覆盖/夹带任务开始前的无关改动；Agent何时自主提交和推送只由[`AGENTS.md`](../AGENTS.md)定义。
 提交钩子对Git索引中的检查器与受管源码执行开发标准硬检查；未暂存的修复不能证明待提交版本正确。
-消费者可达性审计由`common/verify_development_standards.py --audit-consumers`显式请求，默认不执行。
+消费者可达性审计由`tools/repository/verify_development_standards.py --audit-consumers`显式请求，默认不执行。
 
 每个提交都使用简洁、可检索的标题，并提供与改动复杂度和风险相称的正文；不再允许只有标题的提交。
 正文至少说明修改目的、关键结果或行为变化、实际验证，以及必要的限制或未完成事项，使未来维护者

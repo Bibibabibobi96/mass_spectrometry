@@ -30,7 +30,7 @@
 组件工作流的软件接线回归执行实际源投影与冻结分析参数，验证小manifest身份绑定，
 并在禁止读取受保护载荷的条件下检查摘要；软件通过不代表原生飞行或科学资格。
 
-原生PA专项回归使用`tests/projects/orthogonal_accelerator/simion/test_two_zone_native_geometry.lua`：
+原生PA专项回归使用`tests/components/orthogonal_accelerator/simion/test_two_zone_native_geometry.lua`：
 只读检查冻结参数生成的环通孔、屏蔽间隙与Fast Adjust电压，须在独立SIMION租约及受管run中执行，
 不属于轻量门禁。
 
@@ -42,7 +42,7 @@
 ## 所有权
 
 组件根拥有器件理论、几何派生和科研配置；`msplatform.workflows.oa_focus_*`拥有聚焦编排与分析，
-`msplatform.backends`拥有SIMION/COMSOL资源，`tests/projects/orthogonal_accelerator/`拥有独立回归。
+`msplatform.backends`拥有SIMION/COMSOL资源，`tests/components/orthogonal_accelerator/`拥有独立回归。
 共享运行、IOB基础机制、坐标与证据工具继续使用根`common/`。不保留另一份`common/accelerator/`领域实现。
 离子释放、粒子状态和 FLY2 序列化是共享层职责；本组件只声明源包络与组件验收，不得复制释放器。
 

@@ -560,15 +560,15 @@
           "reason": "rf_campaign_analysis_changed"
         },
         {
-          "prefix": "tests/projects/rf_multipole_ion_optics/analysis/",
+          "prefix": "tests/components/rf_multipole_ion_optics/analysis/",
           "reason": "quadrupole_tests_changed"
         },
         {
-          "prefix": "tests/projects/rf_multipole_ion_optics/hexapole/",
+          "prefix": "tests/components/rf_multipole_ion_optics/hexapole/",
           "reason": "hexapole_tests_changed"
         },
         {
-          "prefix": "tests/projects/rf_multipole_ion_optics/octupole/",
+          "prefix": "tests/components/rf_multipole_ion_optics/octupole/",
           "reason": "octupole_tests_changed"
         },
         {
@@ -698,7 +698,7 @@
           "reason": "assembly_scalar_sampler_changed"
         },
         {
-          "exact": "tests/integration/test_ip_compiler.py",
+          "exact": "tests/workflows/multipole_ip/test_ip_compiler.py",
           "reason": "joint_geometry_fixture_changed"
         },
         {
@@ -706,31 +706,31 @@
           "reason": "workbench_seed_consumer_changed"
         },
         {
-          "exact": "tests/projects/dual_pressure_rectilinear_ion_processor/fixtures/ip_exporters_old_witness.json",
+          "exact": "tests/components/dual_pressure_rectilinear_ion_processor/fixtures/ip_exporters_old_witness.json",
           "reason": "installed_probe_witness_changed"
         },
         {
-          "exact": "tests/projects/rf_multipole_ion_optics/fixtures/rf_convergence_old_witness.json",
+          "exact": "tests/components/rf_multipole_ion_optics/fixtures/rf_convergence_old_witness.json",
           "reason": "installed_probe_witness_changed"
         },
         {
-          "exact": "tests/projects/dual_pressure_rectilinear_ion_processor/fixtures/ip_reader_old_witness.json",
+          "exact": "tests/components/dual_pressure_rectilinear_ion_processor/fixtures/ip_reader_old_witness.json",
           "reason": "installed_probe_witness_changed"
         },
         {
-          "exact": "tests/projects/single_reflection_oa_tof_mass_analyzer/fixtures/tof_mass_spectrum_old_witness.json",
+          "exact": "tests/components/single_reflection_oa_tof_mass_analyzer/fixtures/tof_mass_spectrum_old_witness.json",
           "reason": "installed_probe_witness_changed"
         },
         {
-          "exact": "tests/projects/rf_multipole_ion_optics/fixtures/rf_event_old_capture.json",
+          "exact": "tests/components/rf_multipole_ion_optics/fixtures/rf_event_old_capture.json",
           "reason": "installed_probe_witness_changed"
         },
         {
-          "exact": "tests/projects/dual_pressure_rectilinear_ion_processor/fixtures/ip_analyzer_old_witness.json",
+          "exact": "tests/components/dual_pressure_rectilinear_ion_processor/fixtures/ip_analyzer_old_witness.json",
           "reason": "installed_probe_witness_changed"
         },
         {
-          "exact": "tests/projects/parallel_mirror_dual_stripe_mr_tof/fixtures/mr_measured_source_old_witness.json",
+          "exact": "tests/components/parallel_mirror_dual_stripe_mr_tof/fixtures/mr_measured_source_old_witness.json",
           "reason": "installed_probe_witness_changed"
         },
         {
@@ -738,27 +738,27 @@
           "reason": "installed_probe_witness_changed"
         },
         {
-          "exact": "tests/projects/parallel_mirror_dual_stripe_mr_tof/fixtures/mr_prepared_field_old_witness.json",
+          "exact": "tests/components/parallel_mirror_dual_stripe_mr_tof/fixtures/mr_prepared_field_old_witness.json",
           "reason": "installed_probe_witness_changed"
         },
         {
-          "exact": "tests/projects/single_reflection_oa_tof_mass_analyzer/fixtures/ion_reader_old_witness.json",
+          "exact": "tests/components/single_reflection_oa_tof_mass_analyzer/fixtures/ion_reader_old_witness.json",
           "reason": "installed_probe_witness_changed"
         },
         {
-          "exact": "tests/projects/parallel_mirror_dual_stripe_mr_tof/fixtures/mr_interface_coverage_vectors.json",
+          "exact": "tests/components/parallel_mirror_dual_stripe_mr_tof/fixtures/mr_interface_coverage_vectors.json",
           "reason": "installed_probe_witness_changed"
         },
         {
-          "exact": "tests/projects/single_reflection_oa_tof_mass_analyzer/test_support/detector_census_old_witness.json",
+          "exact": "tests/components/single_reflection_oa_tof_mass_analyzer/test_support/detector_census_old_witness.json",
           "reason": "installed_probe_witness_changed"
         },
         {
-          "exact": "tests/projects/rf_multipole_ion_optics/fixtures/rf_transport_comparison_old_witness.json",
+          "exact": "tests/components/rf_multipole_ion_optics/fixtures/rf_transport_comparison_old_witness.json",
           "reason": "installed_probe_witness_changed"
         },
         {
-          "exact": "tests/projects/single_reflection_oa_tof_mass_analyzer/fixtures/reflectron_fit_capture.json",
+          "exact": "tests/components/single_reflection_oa_tof_mass_analyzer/fixtures/reflectron_fit_capture.json",
           "reason": "installed_probe_witness_changed"
         },
         {
@@ -1022,7 +1022,7 @@
           {
             "matches": [
               {
-                "exact": "tests/integration/test_ip_compiler.py",
+                "exact": "tests/workflows/multipole_ip/test_ip_compiler.py",
                 "reason": "joint_geometry_fixture_changed"
               }
             ],
@@ -1035,12 +1035,12 @@
           {
             "matches": [
               {
-                "exact": "tests/projects/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_iob.py",
+                "exact": "tests/components/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_iob.py",
                 "reason": "joint_iob_harness_changed"
               }
             ],
             "modules": [
-              "tests/projects/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_iob.py",
+              "tests/components/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_iob.py",
               "tests/contracts/test_joint_geometry_iob.py"
             ],
             "dependency_profile": "locked"
@@ -1072,31 +1072,31 @@
           {
             "matches": [
               {
-                "exact": "tests/projects/dual_pressure_rectilinear_ion_processor/fixtures/ip_exporters_old_witness.json",
+                "exact": "tests/components/dual_pressure_rectilinear_ion_processor/fixtures/ip_exporters_old_witness.json",
                 "reason": "installed_probe_witness_changed"
               },
               {
-                "exact": "tests/projects/rf_multipole_ion_optics/fixtures/rf_convergence_old_witness.json",
+                "exact": "tests/components/rf_multipole_ion_optics/fixtures/rf_convergence_old_witness.json",
                 "reason": "installed_probe_witness_changed"
               },
               {
-                "exact": "tests/projects/dual_pressure_rectilinear_ion_processor/fixtures/ip_reader_old_witness.json",
+                "exact": "tests/components/dual_pressure_rectilinear_ion_processor/fixtures/ip_reader_old_witness.json",
                 "reason": "installed_probe_witness_changed"
               },
               {
-                "exact": "tests/projects/single_reflection_oa_tof_mass_analyzer/fixtures/tof_mass_spectrum_old_witness.json",
+                "exact": "tests/components/single_reflection_oa_tof_mass_analyzer/fixtures/tof_mass_spectrum_old_witness.json",
                 "reason": "installed_probe_witness_changed"
               },
               {
-                "exact": "tests/projects/rf_multipole_ion_optics/fixtures/rf_event_old_capture.json",
+                "exact": "tests/components/rf_multipole_ion_optics/fixtures/rf_event_old_capture.json",
                 "reason": "installed_probe_witness_changed"
               },
               {
-                "exact": "tests/projects/dual_pressure_rectilinear_ion_processor/fixtures/ip_analyzer_old_witness.json",
+                "exact": "tests/components/dual_pressure_rectilinear_ion_processor/fixtures/ip_analyzer_old_witness.json",
                 "reason": "installed_probe_witness_changed"
               },
               {
-                "exact": "tests/projects/parallel_mirror_dual_stripe_mr_tof/fixtures/mr_measured_source_old_witness.json",
+                "exact": "tests/components/parallel_mirror_dual_stripe_mr_tof/fixtures/mr_measured_source_old_witness.json",
                 "reason": "installed_probe_witness_changed"
               },
               {
@@ -1104,27 +1104,27 @@
                 "reason": "installed_probe_witness_changed"
               },
               {
-                "exact": "tests/projects/parallel_mirror_dual_stripe_mr_tof/fixtures/mr_prepared_field_old_witness.json",
+                "exact": "tests/components/parallel_mirror_dual_stripe_mr_tof/fixtures/mr_prepared_field_old_witness.json",
                 "reason": "installed_probe_witness_changed"
               },
               {
-                "exact": "tests/projects/single_reflection_oa_tof_mass_analyzer/fixtures/ion_reader_old_witness.json",
+                "exact": "tests/components/single_reflection_oa_tof_mass_analyzer/fixtures/ion_reader_old_witness.json",
                 "reason": "installed_probe_witness_changed"
               },
               {
-                "exact": "tests/projects/parallel_mirror_dual_stripe_mr_tof/fixtures/mr_interface_coverage_vectors.json",
+                "exact": "tests/components/parallel_mirror_dual_stripe_mr_tof/fixtures/mr_interface_coverage_vectors.json",
                 "reason": "installed_probe_witness_changed"
               },
               {
-                "exact": "tests/projects/single_reflection_oa_tof_mass_analyzer/test_support/detector_census_old_witness.json",
+                "exact": "tests/components/single_reflection_oa_tof_mass_analyzer/test_support/detector_census_old_witness.json",
                 "reason": "installed_probe_witness_changed"
               },
               {
-                "exact": "tests/projects/rf_multipole_ion_optics/fixtures/rf_transport_comparison_old_witness.json",
+                "exact": "tests/components/rf_multipole_ion_optics/fixtures/rf_transport_comparison_old_witness.json",
                 "reason": "installed_probe_witness_changed"
               },
               {
-                "exact": "tests/projects/single_reflection_oa_tof_mass_analyzer/fixtures/reflectron_fit_capture.json",
+                "exact": "tests/components/single_reflection_oa_tof_mass_analyzer/fixtures/reflectron_fit_capture.json",
                 "reason": "installed_probe_witness_changed"
               }
             ],
@@ -1202,11 +1202,11 @@
               }
             ],
             "modules": [
-              "tests/projects/dual_cone_tandem_quadrupole_ion_interface/test_comsol_gas_flow.py",
-              "tests/projects/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_stages.py",
-              "tests/projects/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_managed_stages.py",
-              "tests/projects/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_transport_execution.py",
-              "tests/projects/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_transport.py"
+              "tests/components/dual_cone_tandem_quadrupole_ion_interface/test_comsol_gas_flow.py",
+              "tests/components/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_stages.py",
+              "tests/components/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_managed_stages.py",
+              "tests/components/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_transport_execution.py",
+              "tests/components/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_transport.py"
             ],
             "dependency_profile": "locked"
           },
@@ -1657,7 +1657,7 @@
             ],
             "modules": [
               "tests/contracts/test_geometry_members.py",
-              "tests/projects/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_cad.py",
+              "tests/components/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_cad.py",
               "tests/contracts/test_step_export.py",
               "tests/contracts/test_ip_step_projection.py",
               "tests/contracts/test_mr_step_projection.py",
@@ -1884,13 +1884,13 @@
               }
             ],
             "modules": [
-              "tests/projects/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_transport_execution.py",
-              "tests/projects/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_transport.py",
-              "tests/projects/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_stages.py",
-              "tests/projects/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_iob.py",
-              "tests/projects/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_placement.py",
-              "tests/projects/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_native_guards.py",
-              "tests/projects/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_managed_stages.py"
+              "tests/components/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_transport_execution.py",
+              "tests/components/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_transport.py",
+              "tests/components/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_stages.py",
+              "tests/components/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_iob.py",
+              "tests/components/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_placement.py",
+              "tests/components/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_native_guards.py",
+              "tests/components/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_managed_stages.py"
             ],
             "dependency_profile": "locked"
           },
@@ -2238,7 +2238,7 @@
               "tests/contracts/test_neutral_sampled_iob.py",
               "tests/contracts/test_sfi_scalar_binding.py",
               "tests/contracts/test_static_world_model.py",
-              "tests/projects/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_iob.py"
+              "tests/components/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_iob.py"
             ],
             "dependency_profile": "locked"
           },
@@ -2705,15 +2705,15 @@
           "reason": "rf_multipole_domain_changed"
         },
         {
-          "prefix": "tests/projects/rf_multipole_ion_optics/domain/",
+          "prefix": "tests/components/rf_multipole_ion_optics/domain/",
           "reason": "rf_multipole_domain_tests_changed"
         },
         {
-          "prefix": "tests/projects/rf_multipole_ion_optics/test_support/",
+          "prefix": "tests/components/rf_multipole_ion_optics/test_support/",
           "reason": "rf_multipole_test_support_changed"
         },
         {
-          "exact": "tests/projects/rf_multipole_ion_optics/__init__.py",
+          "exact": "tests/components/rf_multipole_ion_optics/__init__.py",
           "reason": "rf_multipole_test_package_changed"
         },
         {
@@ -2796,18 +2796,18 @@
           "unittest",
           "discover",
           "-s",
-          "tests/projects/rf_multipole_ion_optics/domain",
+          "tests/components/rf_multipole_ion_optics/domain",
           "-p",
           "test_*.py"
         ]
       },
       "test_selection": {
         "roots": [
-          "tests/projects/rf_multipole_ion_optics/domain/"
+          "tests/components/rf_multipole_ion_optics/domain/"
         ],
         "support_paths": [
-          "tests/projects/rf_multipole_ion_optics/test_support/",
-          "tests/projects/rf_multipole_ion_optics/__init__.py"
+          "tests/components/rf_multipole_ion_optics/test_support/",
+          "tests/components/rf_multipole_ion_optics/__init__.py"
         ],
         "dependencies": [
           {
@@ -2818,7 +2818,7 @@
               }
             ],
             "modules": [
-              "tests/projects/rf_multipole_ion_optics/domain/test_exit_state_plot.py"
+              "tests/components/rf_multipole_ion_optics/domain/test_exit_state_plot.py"
             ],
             "dependency_profile": "locked"
           },
@@ -2830,9 +2830,9 @@
               }
             ],
             "modules": [
-              "tests/projects/rf_multipole_ion_optics/domain/test_simion_batch_continuation.py",
-              "tests/projects/rf_multipole_ion_optics/domain/test_simion_field_checkpoint.py",
-              "tests/projects/rf_multipole_ion_optics/domain/test_simion_runner_contract.py"
+              "tests/components/rf_multipole_ion_optics/domain/test_simion_batch_continuation.py",
+              "tests/components/rf_multipole_ion_optics/domain/test_simion_field_checkpoint.py",
+              "tests/components/rf_multipole_ion_optics/domain/test_simion_runner_contract.py"
             ],
             "dependency_profile": "locked"
           },
@@ -2852,8 +2852,8 @@
               }
             ],
             "modules": [
-              "tests/projects/rf_multipole_ion_optics/domain/test_published_design_freshness.py",
-              "tests/projects/rf_multipole_ion_optics/domain/test_simion_runner_contract.py"
+              "tests/components/rf_multipole_ion_optics/domain/test_published_design_freshness.py",
+              "tests/components/rf_multipole_ion_optics/domain/test_simion_runner_contract.py"
             ],
             "dependency_profile": "locked"
           },
@@ -2865,7 +2865,7 @@
               }
             ],
             "modules": [
-              "tests/projects/rf_multipole_ion_optics/domain/test_finite_extraction_context.py"
+              "tests/components/rf_multipole_ion_optics/domain/test_finite_extraction_context.py"
             ],
             "dependency_profile": "locked"
           }
@@ -2955,11 +2955,11 @@
       "repository_integration_group": "regression",
       "matches": [
         {
-          "exact": "tests/projects/orthogonal_accelerator/__init__.py",
+          "exact": "tests/components/orthogonal_accelerator/__init__.py",
           "reason": "accelerator_shared_test_fixture_changed"
         },
         {
-          "exact": "tests/projects/orthogonal_accelerator/analysis/__init__.py",
+          "exact": "tests/components/orthogonal_accelerator/analysis/__init__.py",
           "reason": "accelerator_shared_test_fixture_changed"
         },
         {
@@ -2967,7 +2967,7 @@
           "reason": "shared_lifecycle_test_fixture_changed"
         },
         {
-          "regex": "^tests/projects/dual_pressure_rectilinear_ion_processor/(?:__init__\\.py|test_support/|nested/support/)",
+          "regex": "^tests/components/dual_pressure_rectilinear_ion_processor/(?:__init__\\.py|test_support/|nested/support/)",
           "reason": "integration_ip_provider_fixture_changed"
         },
         {
@@ -3027,7 +3027,7 @@
           "reason": "accelerator_provider_changed"
         },
         {
-          "exact": "tests/projects/orthogonal_accelerator/analysis/test_bare_three_zone_component.py",
+          "exact": "tests/components/orthogonal_accelerator/analysis/test_bare_three_zone_component.py",
           "reason": "accelerator_shared_test_fixture_changed"
         },
         {
@@ -3055,19 +3055,19 @@
           "reason": "shared_resource_budget_dependency_changed"
         },
         {
-          "exact": "tests/projects/dual_pressure_rectilinear_ion_processor/run_future.ps1",
+          "exact": "tests/components/dual_pressure_rectilinear_ion_processor/run_future.ps1",
           "reason": "guide_production_test_runner_changed"
         },
         {
-          "exact": "tests/projects/dual_pressure_rectilinear_ion_processor/test_component_exit.py",
+          "exact": "tests/components/dual_pressure_rectilinear_ion_processor/test_component_exit.py",
           "reason": "guide_shared_test_fixture_changed"
         },
         {
-          "exact": "tests/projects/dual_pressure_rectilinear_ion_processor/test_functional.py",
+          "exact": "tests/components/dual_pressure_rectilinear_ion_processor/test_functional.py",
           "reason": "guide_shared_test_fixture_changed"
         },
         {
-          "regex": "^tests/projects/dual_pressure_rectilinear_ion_processor/(?:[^/]+/)*(?:test_support|testing_support|support)/",
+          "regex": "^tests/components/dual_pressure_rectilinear_ion_processor/(?:[^/]+/)*(?:test_support|testing_support|support)/",
           "reason": "guide_shared_test_support_changed"
         },
         {
@@ -3171,8 +3171,16 @@
           "reason": "ip_preparation_actual_consumers_changed"
         },
         {
-          "prefix": "tests/integration/",
-          "reason": "integration_tests_changed"
+          "prefix": "tests/assembly/",
+          "reason": "assembly_workflow_tests_changed"
+        },
+        {
+          "prefix": "tests/workflows/",
+          "reason": "assembly_workflow_tests_changed"
+        },
+        {
+          "prefix": "tests/execution/",
+          "reason": "assembly_workflow_tests_changed"
         },
         {
           "exact": "tools/repository/verify_integration.ps1",
@@ -3246,9 +3254,11 @@
       },
       "test_selection": {
         "roots": [
-          "tests/integration/"
+          "tests/assembly/",
+          "tests/workflows/",
+          "tests/execution/"
         ],
-        "scope": "tests/integration/",
+        "scope": "tests/",
         "module_parameter": "SelectedTestModules",
         "dependencies": [
           {
@@ -3283,7 +3293,7 @@
               }
             ],
             "modules": [
-              "tests/integration/test_rf_oa_compiler.py"
+              "tests/assembly/rf_oa_compiler/test_rf_oa_compiler.py"
             ],
             "dependency_profile": "locked"
           },
@@ -3307,9 +3317,9 @@
               }
             ],
             "modules": [
-              "tests/integration/test_ip_compiler.py",
-              "tests/integration/test_multipole_ip_prepare.py",
-              "tests/integration/test_selected_ip_provider.py"
+              "tests/workflows/multipole_ip/test_ip_compiler.py",
+              "tests/workflows/multipole_ip/test_multipole_ip_prepare.py",
+              "tests/workflows/multipole_ip/test_selected_ip_provider.py"
             ],
             "dependency_profile": "locked"
           },
@@ -3321,9 +3331,8 @@
               }
             ],
             "modules": [
-              "tests/integration/test_accelerator_interface.py",
-              "tests/integration/test_oa_mr_execute.py",
-              "tests/integration/test_oa_mr_source_context.py",
+              "tests/assembly/accelerator_interface/test_accelerator_interface.py",
+              "tests/assembly/oa_mr_execute/test_oa_mr_execute.py",
               "tests/test_prepared_joint_execute.py"
             ],
             "dependency_profile": "locked"
@@ -3336,7 +3345,7 @@
               }
             ],
             "modules": [
-              "tests/integration/test_multipole_ip_prepare.py"
+              "tests/workflows/multipole_ip/test_multipole_ip_prepare.py"
             ],
             "dependency_profile": "locked"
           },
@@ -3372,8 +3381,8 @@
               }
             ],
             "modules": [
-              "tests/integration/test_accelerator_interface.py",
-              "tests/integration/test_accelerator_interface_geometry.py",
+              "tests/assembly/accelerator_interface/test_accelerator_interface.py",
+              "tests/assembly/accelerator_interface_geometry/test_accelerator_interface_geometry.py",
               "tests/test_prepared_joint_execute.py"
             ],
             "dependency_profile": "locked"
@@ -3386,7 +3395,7 @@
               }
             ],
             "modules": [
-              "tests/integration/test_single_reflection_checkpoint_diagnostics.py"
+              "tests/workflows/single_reflection/test_single_reflection_checkpoint_diagnostics.py"
             ],
             "dependency_profile": "locked"
           },
@@ -3398,8 +3407,8 @@
               }
             ],
             "modules": [
-              "tests/integration/test_single_reflection_geometry.py",
-              "tests/integration/test_dependencies.py"
+              "tests/workflows/single_reflection/test_single_reflection_geometry.py",
+              "tests/execution/test_dependencies.py"
             ],
             "dependency_profile": "locked"
           },
@@ -3419,26 +3428,26 @@
               }
             ],
             "modules": [
-              "tests/integration/test_dependencies.py",
-              "tests/integration/test_native_path_consumers.py",
-              "tests/integration/test_saved_workbench_replay_policy.py",
-              "tests/integration/test_single_reflection_collection.py",
-              "tests/integration/test_single_reflection_continuation.py",
-              "tests/integration/test_single_reflection_downstream_fields.py",
-              "tests/integration/test_single_reflection_field_stage.py",
-              "tests/integration/test_single_reflection_fields.py",
-              "tests/integration/test_single_reflection_geometry.py",
-              "tests/integration/test_single_reflection_interface_fields.py",
-              "tests/integration/test_single_reflection_owner_recovery.py",
-              "tests/integration/test_single_reflection_preparation.py",
-              "tests/integration/test_sfi_preparation_numerics.py",
-              "tests/integration/test_single_reflection_program.py",
-              "tests/integration/test_single_reflection_pulse.py",
-              "tests/integration/test_single_reflection_request_versions.py",
-              "tests/integration/test_single_reflection_runtime.py",
-              "tests/integration/test_single_reflection_scientific_freeze.py",
-              "tests/integration/test_single_reflection_source_protection.py",
-              "tests/integration/test_single_reflection_zero_gap.py"
+              "tests/execution/test_dependencies.py",
+              "tests/execution/test_native_path_consumers.py",
+              "tests/workflows/frontend/test_saved_workbench_replay_policy.py",
+              "tests/workflows/single_reflection/test_single_reflection_collection.py",
+              "tests/workflows/single_reflection/test_single_reflection_continuation.py",
+              "tests/workflows/single_reflection/test_single_reflection_downstream_fields.py",
+              "tests/workflows/single_reflection/test_single_reflection_field_stage.py",
+              "tests/workflows/single_reflection/test_single_reflection_fields.py",
+              "tests/workflows/single_reflection/test_single_reflection_geometry.py",
+              "tests/workflows/single_reflection/test_single_reflection_interface_fields.py",
+              "tests/workflows/single_reflection/test_single_reflection_owner_recovery.py",
+              "tests/workflows/single_reflection/test_single_reflection_preparation.py",
+              "tests/workflows/single_reflection/test_sfi_preparation_numerics.py",
+              "tests/workflows/single_reflection/test_single_reflection_program.py",
+              "tests/workflows/single_reflection/test_single_reflection_pulse.py",
+              "tests/workflows/single_reflection/test_single_reflection_request_versions.py",
+              "tests/workflows/single_reflection/test_single_reflection_runtime.py",
+              "tests/workflows/single_reflection/test_single_reflection_scientific_freeze.py",
+              "tests/workflows/single_reflection/test_single_reflection_source_protection.py",
+              "tests/workflows/single_reflection/test_single_reflection_zero_gap.py"
             ],
             "dependency_profile": "locked"
           },
@@ -3462,7 +3471,7 @@
               }
             ],
             "modules": [
-              "tests/integration/test_single_reflection_owner_recovery.py"
+              "tests/workflows/single_reflection/test_single_reflection_owner_recovery.py"
             ],
             "dependency_profile": "locked"
           },
@@ -3474,7 +3483,7 @@
               }
             ],
             "modules": [
-              "tests/integration/test_dependencies.py"
+              "tests/execution/test_dependencies.py"
             ],
             "dependency_profile": "locked"
           },
@@ -3486,7 +3495,7 @@
               }
             ],
             "modules": [
-              "tests/integration/test_accelerator_interface_geometry.py"
+              "tests/assembly/accelerator_interface_geometry/test_accelerator_interface_geometry.py"
             ],
             "dependency_profile": "locked"
           },
@@ -3498,7 +3507,7 @@
               }
             ],
             "modules": [
-              "tests/integration/test_dependencies.py"
+              "tests/execution/test_dependencies.py"
             ],
             "dependency_profile": "locked"
           },
@@ -3518,7 +3527,7 @@
               }
             ],
             "modules": [
-              "tests/integration/test_paired_accelerator_static_field_execute.py"
+              "tests/workflows/paired_accelerator/test_paired_accelerator_static_field_execute.py"
             ],
             "dependency_profile": "locked"
           },
@@ -3562,7 +3571,7 @@
               }
             ],
             "modules": [
-              "tests/integration/test_single_reflection_recorded_birth_consumer.py"
+              "tests/workflows/single_reflection/test_single_reflection_recorded_birth_consumer.py"
             ],
             "dependency_profile": "locked"
           },
@@ -3574,9 +3583,9 @@
               }
             ],
             "modules": [
-              "tests/integration/test_multipole_ip_prepare.py",
-              "tests/integration/test_accelerator_interface.py",
-              "tests/integration/test_dependencies.py"
+              "tests/workflows/multipole_ip/test_multipole_ip_prepare.py",
+              "tests/assembly/accelerator_interface/test_accelerator_interface.py",
+              "tests/execution/test_dependencies.py"
             ],
             "dependency_profile": "locked"
           }
@@ -3620,7 +3629,7 @@
       "project_id": "orthogonal_accelerator",
       "matches": [
         {
-          "prefix": "tests/projects/orthogonal_accelerator/",
+          "prefix": "tests/components/orthogonal_accelerator/",
           "reason": "orthogonal_accelerator_tests_changed"
         },
         {
@@ -3664,15 +3673,15 @@
           "reason": "installed_oa_focus_dependency_changed"
         },
         {
-          "exact": "tests/projects/orthogonal_accelerator/__init__.py",
+          "exact": "tests/components/orthogonal_accelerator/__init__.py",
           "reason": "accelerator_shared_test_fixture_changed"
         },
         {
-          "exact": "tests/projects/orthogonal_accelerator/analysis/__init__.py",
+          "exact": "tests/components/orthogonal_accelerator/analysis/__init__.py",
           "reason": "accelerator_shared_test_fixture_changed"
         },
         {
-          "exact": "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_assembly_interface.py",
+          "exact": "tests/assembly/single_reflection_oa_tof_mass_analyzer/analysis/test_assembly_interface.py",
           "reason": "shared_oa_physical_consumer_changed"
         },
         {
@@ -3700,7 +3709,7 @@
       "project_id": "parallel_mirror_dual_stripe_mr_tof",
       "matches": [
         {
-          "prefix": "tests/projects/parallel_mirror_dual_stripe_mr_tof/",
+          "prefix": "tests/components/parallel_mirror_dual_stripe_mr_tof/",
           "reason": "parallel_mirror_dual_stripe_mr_tof_test_changed"
         },
         {
@@ -4029,12 +4038,12 @@
       },
       "test_selection": {
         "roots": [
-          "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/",
-          "tests/projects/parallel_mirror_dual_stripe_mr_tof/simion/"
+          "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/",
+          "tests/components/parallel_mirror_dual_stripe_mr_tof/simion/"
         ],
-        "scope": "tests/projects/parallel_mirror_dual_stripe_mr_tof/",
+        "scope": "tests/components/parallel_mirror_dual_stripe_mr_tof/",
         "support_paths": [
-          "tests/projects/parallel_mirror_dual_stripe_mr_tof/test_support/"
+          "tests/components/parallel_mirror_dual_stripe_mr_tof/test_support/"
         ],
         "module_parameter": "ChangedTestModules",
         "preserve_command": true,
@@ -4051,7 +4060,7 @@
               }
             ],
             "modules": [
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_mr_provider_trial_transport.py"
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_mr_provider_trial_transport.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4066,21 +4075,21 @@
                 "reason": "mr_joint_compiler_consumer_changed"
               },
               {
-                "exact": "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/fixtures/mr_legacy_analyzer.gem.txt",
+                "exact": "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/fixtures/mr_legacy_analyzer.gem.txt",
                 "reason": "mr_joint_compiler_consumer_changed"
               },
               {
-                "exact": "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_mr_provider_trial_transport.py",
+                "exact": "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_mr_provider_trial_transport.py",
                 "reason": "mr_joint_compiler_consumer_changed"
               },
               {
-                "exact": "tests/projects/parallel_mirror_dual_stripe_mr_tof/test_support/mr_geometry_inputs.py",
+                "exact": "tests/components/parallel_mirror_dual_stripe_mr_tof/test_support/mr_geometry_inputs.py",
                 "reason": "mr_joint_compiler_consumer_changed"
               }
             ],
             "modules": [
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_mr_provider_trial_transport.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_mr_compiler.py"
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_mr_provider_trial_transport.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_mr_compiler.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4092,9 +4101,9 @@
               }
             ],
             "modules": [
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_native_static_field_provider.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_native_static_field_provider_runner.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_static_field_binding.py"
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_native_static_field_provider.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_native_static_field_provider_runner.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_static_field_binding.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4106,7 +4115,7 @@
               }
             ],
             "modules": [
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_prepared_joint_trial.py"
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_prepared_joint_trial.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4130,14 +4139,14 @@
               }
             ],
             "modules": [
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_measured_component_source.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_measured_component_analysis.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_prepared_joint_diagnostics.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_prepared_joint_trial.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_ion_processor_handoff.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_ion_processor_assembly.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_measured_runtime_adapter.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_joint_flight_preparation.py"
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_measured_component_source.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_measured_component_analysis.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_prepared_joint_diagnostics.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_prepared_joint_trial.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_ion_processor_handoff.py",
+              "tests/assembly/parallel_mirror_dual_stripe_mr_tof/analysis/test_ion_processor_assembly.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_measured_runtime_adapter.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_joint_flight_preparation.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4149,8 +4158,8 @@
               }
             ],
             "modules": [
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_prepared_joint_trial.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_joint_flight_preparation.py"
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_prepared_joint_trial.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_joint_flight_preparation.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4162,8 +4171,8 @@
               }
             ],
             "modules": [
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_workpoint_controller_state.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_downstream_workpoint_iteration_runner.py"
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_workpoint_controller_state.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_downstream_workpoint_iteration_runner.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4175,9 +4184,9 @@
               }
             ],
             "modules": [
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_downstream_workpoint_iteration.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_downstream_workpoint_checkpoint.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_downstream_workpoint_iteration_runner.py"
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_downstream_workpoint_iteration.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_downstream_workpoint_checkpoint.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_downstream_workpoint_iteration_runner.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4189,9 +4198,9 @@
               }
             ],
             "modules": [
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_downstream_workpoint_iteration_runner.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_static_workpoint_iteration.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_runner_contract_matrix.py"
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_downstream_workpoint_iteration_runner.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_static_workpoint_iteration.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_runner_contract_matrix.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4203,8 +4212,8 @@
               }
             ],
             "modules": [
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_assembly_interface.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_simion_candidate_reference.py"
+              "tests/assembly/parallel_mirror_dual_stripe_mr_tof/analysis/test_assembly_interface.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_simion_candidate_reference.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4216,15 +4225,15 @@
               }
             ],
             "modules": [
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_dual_stripe_l0_math.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_fixed_grid_mirror_stripe_handoff.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_joint_mirror_stripe_l0.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_mirror_exact_k_operating_point.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_simion_candidate_reference.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_transport.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_voltage_seed.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_mirror_l0_l1_runner.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_runner_contract_matrix.py"
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_dual_stripe_l0_math.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_fixed_grid_mirror_stripe_handoff.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_joint_mirror_stripe_l0.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_mirror_exact_k_operating_point.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_simion_candidate_reference.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_transport.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_voltage_seed.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_mirror_l0_l1_runner.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_runner_contract_matrix.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4236,11 +4245,11 @@
               }
             ],
             "modules": [
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_simion_candidate_reference.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_mirror_l0_l1_runner.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_dual_stripe_l0_math.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_fixed_grid_mirror_stripe_handoff.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_runner_contract_matrix.py"
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_simion_candidate_reference.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_mirror_l0_l1_runner.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_dual_stripe_l0_math.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_fixed_grid_mirror_stripe_handoff.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_runner_contract_matrix.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4268,8 +4277,8 @@
               }
             ],
             "modules": [
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_mirror_l0_l1_runner.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_runner_contract_matrix.py"
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_mirror_l0_l1_runner.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_runner_contract_matrix.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4285,10 +4294,10 @@
               }
             ],
             "modules": [
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_static_field_binding.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_native_memory_consumer_crop.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_prepared_joint_trial.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_native_static_field_provider_runner.py"
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_static_field_binding.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_native_memory_consumer_crop.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_prepared_joint_trial.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_native_static_field_provider_runner.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4300,7 +4309,7 @@
               }
             ],
             "modules": [
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_prepared_joint_trial.py"
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_prepared_joint_trial.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4312,7 +4321,7 @@
               }
             ],
             "modules": [
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_native_static_field_provider_runner.py"
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_native_static_field_provider_runner.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4324,7 +4333,7 @@
               }
             ],
             "modules": [
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_resolved_cad_export.py"
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_resolved_cad_export.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4336,15 +4345,15 @@
               }
             ],
             "modules": [
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_mirror_l0_l1_runner.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_analytic.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_l0.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_mirror_transport.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_runner_contract_matrix.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_coverage.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_transport.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_voltage_continuation.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_voltage_seed.py"
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_mirror_l0_l1_runner.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_analytic.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_l0.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_mirror_transport.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_runner_contract_matrix.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_coverage.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_transport.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_voltage_continuation.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_voltage_seed.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4356,14 +4365,14 @@
               }
             ],
             "modules": [
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_mirror_l0_l1_runner.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_analytic.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_mirror_transport.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_runner_contract_matrix.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_coverage.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_transport.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_voltage_continuation.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_voltage_seed.py"
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_mirror_l0_l1_runner.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_analytic.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_mirror_transport.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_runner_contract_matrix.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_coverage.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_transport.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_voltage_continuation.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_voltage_seed.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4375,28 +4384,28 @@
               }
             ],
             "modules": [
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_downstream_fixed_grid_workpoint.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_drift_phase_contract.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_dual_stripe_l0_math.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_fixed_grid_mirror_stripe_handoff.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_ip_prism_distance_study.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_joint_flight_preparation.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_joint_mirror_stripe_l0.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_mirror_exact_k_operating_point.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_mirror_l0_l1_runner.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_prepared_joint_trial.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_analytic.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_mirror_transport.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_runner_contract_matrix.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_simion_candidate_reference.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_simion_event_analysis.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_static_field_binding.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_static_workpoint_iteration.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_coverage.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_transport.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_voltage_continuation.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_voltage_seed.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_simion_trial.py"
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_downstream_fixed_grid_workpoint.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_drift_phase_contract.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_dual_stripe_l0_math.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_fixed_grid_mirror_stripe_handoff.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_ip_prism_distance_study.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_joint_flight_preparation.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_joint_mirror_stripe_l0.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_mirror_exact_k_operating_point.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_mirror_l0_l1_runner.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_prepared_joint_trial.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_analytic.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_mirror_transport.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_runner_contract_matrix.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_simion_candidate_reference.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_simion_event_analysis.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_static_field_binding.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_static_workpoint_iteration.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_coverage.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_transport.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_voltage_continuation.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_voltage_seed.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_simion_trial.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4408,10 +4417,10 @@
               }
             ],
             "modules": [
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_dual_stripe_l0_math.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_fixed_grid_mirror_stripe_handoff.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_joint_mirror_stripe_l0.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_simion_candidate_reference.py"
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_dual_stripe_l0_math.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_fixed_grid_mirror_stripe_handoff.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_joint_mirror_stripe_l0.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_simion_candidate_reference.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4423,10 +4432,10 @@
               }
             ],
             "modules": [
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_dual_stripe_l0_math.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_fixed_grid_mirror_stripe_handoff.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_mirror_l0_l1_runner.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_runner_contract_matrix.py"
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_dual_stripe_l0_math.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_fixed_grid_mirror_stripe_handoff.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_mirror_l0_l1_runner.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_runner_contract_matrix.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4438,9 +4447,9 @@
               }
             ],
             "modules": [
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_mirror_exact_k_operating_point.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_mirror_l0_l1_runner.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_runner_contract_matrix.py"
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_mirror_exact_k_operating_point.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_mirror_l0_l1_runner.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_runner_contract_matrix.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4452,9 +4461,9 @@
               }
             ],
             "modules": [
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_ip_prism_distance_study.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_joint_flight_preparation.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_prepared_joint_trial.py"
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_ip_prism_distance_study.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_joint_flight_preparation.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_prepared_joint_trial.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4466,8 +4475,8 @@
               }
             ],
             "modules": [
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_simion_candidate_reference.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_simion_event_analysis.py"
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_simion_candidate_reference.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_simion_event_analysis.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4479,12 +4488,12 @@
               }
             ],
             "modules": [
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_downstream_fixed_grid_workpoint.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_prepared_joint_trial.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_static_field_binding.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_static_workpoint_iteration.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_simion_trial.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_mr_provider_trial_transport.py"
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_downstream_fixed_grid_workpoint.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_prepared_joint_trial.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_static_field_binding.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_static_workpoint_iteration.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_simion_trial.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_mr_provider_trial_transport.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4496,10 +4505,10 @@
               }
             ],
             "modules": [
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_coverage.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_transport.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_voltage_continuation.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_voltage_seed.py"
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_coverage.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_transport.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_voltage_continuation.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_voltage_seed.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4511,22 +4520,22 @@
               }
             ],
             "modules": [
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_downstream_fixed_grid_workpoint.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_downstream_workpoint_iteration.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_dual_stripe_l0_math.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_fixed_grid_mirror_stripe_handoff.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_joint_mirror_stripe_l0.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_managed_analysis_runner_contracts.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_measured_component_source.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_mirror_exact_k_operating_point.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_mirror_l0_l1_runner.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_native_candidate_condition_runner.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_prepared_joint_trial.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_runner_contract_matrix.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_simion_candidate_reference.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_static_field_binding.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_static_workpoint_iteration.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_simion_trial.py"
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_downstream_fixed_grid_workpoint.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_downstream_workpoint_iteration.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_dual_stripe_l0_math.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_fixed_grid_mirror_stripe_handoff.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_joint_mirror_stripe_l0.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_managed_analysis_runner_contracts.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_measured_component_source.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_mirror_exact_k_operating_point.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_mirror_l0_l1_runner.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_native_candidate_condition_runner.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_prepared_joint_trial.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_runner_contract_matrix.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_simion_candidate_reference.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_static_field_binding.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_static_workpoint_iteration.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_simion_trial.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4550,8 +4559,8 @@
               }
             ],
             "modules": [
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_managed_analysis_runner_contracts.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_native_candidate_condition_runner.py"
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_managed_analysis_runner_contracts.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_native_candidate_condition_runner.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4567,7 +4576,7 @@
               }
             ],
             "modules": [
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_static_field_binding.py"
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_static_field_binding.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4599,12 +4608,12 @@
               }
             ],
             "modules": [
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_mr_provider_freeze.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_mr_provider_trial_transport.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_assembly_interface.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_simion_candidate_reference.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_simion_trial.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_gap2_fixed_design.py"
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_mr_provider_freeze.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_mr_provider_trial_transport.py",
+              "tests/assembly/parallel_mirror_dual_stripe_mr_tof/analysis/test_assembly_interface.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_simion_candidate_reference.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_simion_trial.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_gap2_fixed_design.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4616,24 +4625,24 @@
               }
             ],
             "modules": [
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_mr_provider_freeze.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_mr_provider_trial_transport.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_assembly_interface.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_simion_candidate_reference.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_simion_trial.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_dual_stripe_l0_math.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_ion_processor_assembly.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_mirror_convergence_geometry.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_mirror_exact_k_operating_point.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_native_corridor_freeze.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_native_corridor_plan.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_native_gem_slots.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_native_static_field_provider.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_prepared_joint_diagnostics.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_shield_exit_extension.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_coverage.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_transport.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_voltage_seed.py"
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_mr_provider_freeze.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_mr_provider_trial_transport.py",
+              "tests/assembly/parallel_mirror_dual_stripe_mr_tof/analysis/test_assembly_interface.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_simion_candidate_reference.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_simion_trial.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_dual_stripe_l0_math.py",
+              "tests/assembly/parallel_mirror_dual_stripe_mr_tof/analysis/test_ion_processor_assembly.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_mirror_convergence_geometry.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_mirror_exact_k_operating_point.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_native_corridor_freeze.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_native_corridor_plan.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_native_gem_slots.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_native_static_field_provider.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_prepared_joint_diagnostics.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_prism_shield_exit_extension.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_coverage.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_transport.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_segmented_voltage_seed.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4645,10 +4654,10 @@
               }
             ],
             "modules": [
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_mr_compiler.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_simion_trial.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_loss_acceptance_diagnostics.py",
-              "tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_prepared_joint_diagnostics.py"
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_mr_compiler.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_two_prism_simion_trial.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_loss_acceptance_diagnostics.py",
+              "tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_prepared_joint_diagnostics.py"
             ],
             "dependency_profile": "locked"
           }
@@ -4708,7 +4717,7 @@
           "reason": "field_comparison_dependency_changed"
         },
         {
-          "prefix": "tests/projects/single_reflection_oa_tof_mass_analyzer/",
+          "prefix": "tests/components/single_reflection_oa_tof_mass_analyzer/",
           "reason": "single_reflection_oa_tof_mass_analyzer_path_changed"
         },
         {
@@ -4801,11 +4810,11 @@
       },
       "test_selection": {
         "roots": [
-          "tests/projects/single_reflection_oa_tof_mass_analyzer/",
-          "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/",
-          "tests/projects/single_reflection_oa_tof_mass_analyzer/simion/"
+          "tests/components/single_reflection_oa_tof_mass_analyzer/",
+          "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/",
+          "tests/components/single_reflection_oa_tof_mass_analyzer/simion/"
         ],
-        "scope": "tests/projects/single_reflection_oa_tof_mass_analyzer/",
+        "scope": "tests/components/single_reflection_oa_tof_mass_analyzer/",
         "module_parameter": "SelectedTestModules",
         "dependencies": [
           {
@@ -4816,13 +4825,13 @@
               }
             ],
             "modules": [
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_solver_diagnostics.py",
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_radial_compaction_campaign.py",
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_reflectron_voltage_compensation.py",
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_compensation_powershell_adapter.py",
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_workflow.py",
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_causal_workflow.py",
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_postprocess_workflow.py"
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_solver_diagnostics.py",
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_radial_compaction_campaign.py",
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_reflectron_voltage_compensation.py",
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_compensation_powershell_adapter.py",
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_workflow.py",
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_causal_workflow.py",
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_postprocess_workflow.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4834,8 +4843,8 @@
               }
             ],
             "modules": [
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_analyze_comsol_detector_events.py",
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_solver_diagnostics.py"
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_analyze_comsol_detector_events.py",
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_solver_diagnostics.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4847,10 +4856,10 @@
               }
             ],
             "modules": [
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_mass_spectrum_input_admission.py",
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_workflow.py",
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_causal_workflow.py",
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_postprocess_workflow.py"
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_mass_spectrum_input_admission.py",
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_workflow.py",
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_causal_workflow.py",
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_postprocess_workflow.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4866,11 +4875,11 @@
               }
             ],
             "modules": [
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_peak_metrics.py",
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_mass_spectrum_input_admission.py",
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_workflow.py",
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_causal_workflow.py",
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_postprocess_workflow.py"
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_peak_metrics.py",
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_mass_spectrum_input_admission.py",
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_workflow.py",
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_causal_workflow.py",
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_postprocess_workflow.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4882,8 +4891,8 @@
               }
             ],
             "modules": [
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_reflectron_voltage_compensation.py",
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_compensation_powershell_adapter.py"
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_reflectron_voltage_compensation.py",
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_compensation_powershell_adapter.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4895,7 +4904,7 @@
               }
             ],
             "modules": [
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_publish_ideal_acceptance_aperture_comparison.py"
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_publish_ideal_acceptance_aperture_comparison.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4907,10 +4916,10 @@
               }
             ],
             "modules": [
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_experiment_campaign.py",
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_three_zone_theory_experiment.py",
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_paper1_c3_j3_mapping.py",
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_three_zone_t5_simion_candidate.py"
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_experiment_campaign.py",
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_three_zone_theory_experiment.py",
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_paper1_c3_j3_mapping.py",
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_three_zone_t5_simion_candidate.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4934,10 +4943,10 @@
               }
             ],
             "modules": [
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_workflow.py",
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_causal_workflow.py",
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_postprocess_workflow.py",
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_compensation_powershell_adapter.py"
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_workflow.py",
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_causal_workflow.py",
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_postprocess_workflow.py",
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_compensation_powershell_adapter.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4949,9 +4958,9 @@
               }
             ],
             "modules": [
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_exported_axis_field_integrator.py",
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_square_cylindrical_axis_target.py",
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_paper1_c3_j3_real_field_analysis.py"
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_exported_axis_field_integrator.py",
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_square_cylindrical_axis_target.py",
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_paper1_c3_j3_real_field_analysis.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4967,9 +4976,9 @@
               }
             ],
             "modules": [
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_reflectron_voltage_fit.py",
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_reflectron_voltage_compensation.py",
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_compensation_powershell_adapter.py"
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_reflectron_voltage_fit.py",
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_reflectron_voltage_compensation.py",
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_compensation_powershell_adapter.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4985,10 +4994,10 @@
               }
             ],
             "modules": [
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_workflow.py",
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_causal_workflow.py",
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_postprocess_workflow.py",
-              "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_paired_accelerator_field_adapters.py"
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_workflow.py",
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_causal_workflow.py",
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_postprocess_workflow.py",
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_paired_accelerator_field_adapters.py"
             ],
             "dependency_profile": "locked"
           }
@@ -5098,7 +5107,7 @@
           "reason": "rf_campaign_analysis_changed"
         },
         {
-          "exact": "tests/projects/rf_multipole_ion_optics/domain/run_production_probe.ps1",
+          "exact": "tests/components/rf_multipole_ion_optics/domain/run_production_probe.ps1",
           "reason": "rf_production_probe_changed"
         },
         {
@@ -5174,15 +5183,15 @@
           "reason": "quadrupole_variant_changed"
         },
         {
-          "prefix": "tests/projects/rf_multipole_ion_optics/analysis/",
+          "prefix": "tests/components/rf_multipole_ion_optics/analysis/",
           "reason": "quadrupole_tests_changed"
         },
         {
-          "prefix": "tests/projects/rf_multipole_ion_optics/test_support/",
+          "prefix": "tests/components/rf_multipole_ion_optics/test_support/",
           "reason": "quadrupole_test_support_changed"
         },
         {
-          "exact": "tests/projects/rf_multipole_ion_optics/__init__.py",
+          "exact": "tests/components/rf_multipole_ion_optics/__init__.py",
           "reason": "quadrupole_test_package_changed"
         },
         {
@@ -5350,15 +5359,15 @@
       },
       "test_selection": {
         "roots": [
-          "tests/projects/rf_multipole_ion_optics/analysis/"
+          "tests/components/rf_multipole_ion_optics/analysis/"
         ],
         "support_paths": [
-          "tests/projects/rf_multipole_ion_optics/test_support/",
-          "tests/projects/rf_multipole_ion_optics/__init__.py",
+          "tests/components/rf_multipole_ion_optics/test_support/",
+          "tests/components/rf_multipole_ion_optics/__init__.py",
           "tests/contracts/test_support/"
         ],
         "module_parameter": "ChangedTestModules",
-        "scope": "tests/projects/rf_multipole_ion_optics/",
+        "scope": "tests/components/rf_multipole_ion_optics/",
         "preserve_command": true,
         "dependencies": [
           {
@@ -5377,13 +5386,13 @@
               }
             ],
             "modules": [
-              "tests/projects/rf_multipole_ion_optics/analysis/test_rf_event_original_witness.py",
-              "tests/projects/rf_multipole_ion_optics/analysis/test_frozen_particle_policy_package.py",
-              "tests/projects/rf_multipole_ion_optics/analysis/test_cross_solver_gate_contract.py",
-              "tests/projects/rf_multipole_ion_optics/analysis/test_generate_interface_particle_table.py",
-              "tests/projects/rf_multipole_ion_optics/analysis/test_interface_public_owner.py",
-              "tests/projects/rf_multipole_ion_optics/analysis/test_interface_postprocess_child.py",
-              "tests/projects/rf_multipole_ion_optics/analysis/test_same_solver_numerical_convergence.py"
+              "tests/components/rf_multipole_ion_optics/analysis/test_rf_event_original_witness.py",
+              "tests/components/rf_multipole_ion_optics/analysis/test_frozen_particle_policy_package.py",
+              "tests/components/rf_multipole_ion_optics/analysis/test_cross_solver_gate_contract.py",
+              "tests/components/rf_multipole_ion_optics/analysis/test_generate_interface_particle_table.py",
+              "tests/components/rf_multipole_ion_optics/analysis/test_interface_public_owner.py",
+              "tests/components/rf_multipole_ion_optics/analysis/test_interface_postprocess_child.py",
+              "tests/components/rf_multipole_ion_optics/analysis/test_same_solver_numerical_convergence.py"
             ],
             "dependency_profile": "locked"
           },
@@ -5395,7 +5404,7 @@
               }
             ],
             "modules": [
-              "tests/projects/rf_multipole_ion_optics/analysis/test_frozen_particle_policy_package.py"
+              "tests/components/rf_multipole_ion_optics/analysis/test_frozen_particle_policy_package.py"
             ],
             "dependency_profile": "locked"
           },
@@ -5407,7 +5416,7 @@
               }
             ],
             "modules": [
-              "tests/projects/rf_multipole_ion_optics/analysis/test_cross_solver_gate_contract.py"
+              "tests/components/rf_multipole_ion_optics/analysis/test_cross_solver_gate_contract.py"
             ],
             "dependency_profile": "locked"
           },
@@ -5419,9 +5428,9 @@
               }
             ],
             "modules": [
-              "tests/projects/rf_multipole_ion_optics/analysis/test_compare_particle_state_evidence.py",
-              "tests/projects/rf_multipole_ion_optics/analysis/test_same_solver_numerical_convergence.py",
-              "tests/projects/rf_multipole_ion_optics/analysis/test_cross_solver_gate_contract.py"
+              "tests/components/rf_multipole_ion_optics/analysis/test_compare_particle_state_evidence.py",
+              "tests/components/rf_multipole_ion_optics/analysis/test_same_solver_numerical_convergence.py",
+              "tests/components/rf_multipole_ion_optics/analysis/test_cross_solver_gate_contract.py"
             ],
             "dependency_profile": "locked"
           },
@@ -5433,8 +5442,8 @@
               }
             ],
             "modules": [
-              "tests/projects/rf_multipole_ion_optics/analysis/test_compare_particle_state_evidence.py",
-              "tests/projects/rf_multipole_ion_optics/analysis/test_phase4_design_consumer.py"
+              "tests/components/rf_multipole_ion_optics/analysis/test_compare_particle_state_evidence.py",
+              "tests/components/rf_multipole_ion_optics/analysis/test_phase4_design_consumer.py"
             ],
             "dependency_profile": "locked"
           },
@@ -5450,8 +5459,8 @@
               }
             ],
             "modules": [
-              "tests/projects/rf_multipole_ion_optics/analysis/test_comsol_workflow_architecture_contract.py",
-              "tests/projects/rf_multipole_ion_optics/analysis/test_comsol_mass_filter_contract.py"
+              "tests/components/rf_multipole_ion_optics/analysis/test_comsol_workflow_architecture_contract.py",
+              "tests/components/rf_multipole_ion_optics/analysis/test_comsol_mass_filter_contract.py"
             ],
             "dependency_profile": "locked"
           },
@@ -5479,8 +5488,8 @@
               }
             ],
             "modules": [
-              "tests/projects/rf_multipole_ion_optics/analysis/test_frozen_matlab_closure.py",
-              "tests/projects/rf_multipole_ion_optics/analysis/test_comsol_mesh_report.py"
+              "tests/components/rf_multipole_ion_optics/analysis/test_frozen_matlab_closure.py",
+              "tests/components/rf_multipole_ion_optics/analysis/test_comsol_mesh_report.py"
             ],
             "dependency_profile": "locked"
           },
@@ -5504,9 +5513,9 @@
               }
             ],
             "modules": [
-              "tests/projects/rf_multipole_ion_optics/analysis/test_comsol_owner_finalization.py",
-              "tests/projects/rf_multipole_ion_optics/analysis/test_owner_finalization_recovery.py",
-              "tests/projects/rf_multipole_ion_optics/analysis/test_simion_powershell_owner.py"
+              "tests/components/rf_multipole_ion_optics/analysis/test_comsol_owner_finalization.py",
+              "tests/components/rf_multipole_ion_optics/analysis/test_owner_finalization_recovery.py",
+              "tests/components/rf_multipole_ion_optics/analysis/test_simion_powershell_owner.py"
             ],
             "dependency_profile": "locked"
           },
@@ -5526,10 +5535,10 @@
               }
             ],
             "modules": [
-              "tests/projects/rf_multipole_ion_optics/analysis/test_quadrupole_l0.py",
-              "tests/projects/rf_multipole_ion_optics/analysis/test_mass_filter_l1.py",
-              "tests/projects/rf_multipole_ion_optics/analysis/test_mass_filter_response_comparison.py",
-              "tests/projects/rf_multipole_ion_optics/analysis/test_workflow_architecture_contract.py"
+              "tests/components/rf_multipole_ion_optics/analysis/test_quadrupole_l0.py",
+              "tests/components/rf_multipole_ion_optics/analysis/test_mass_filter_l1.py",
+              "tests/components/rf_multipole_ion_optics/analysis/test_mass_filter_response_comparison.py",
+              "tests/components/rf_multipole_ion_optics/analysis/test_workflow_architecture_contract.py"
             ],
             "dependency_profile": "locked"
           },
@@ -5549,12 +5558,12 @@
               }
             ],
             "modules": [
-              "tests/projects/rf_multipole_ion_optics/analysis/test_compare_particle_state_evidence.py",
-              "tests/projects/rf_multipole_ion_optics/analysis/test_frozen_matlab_closure.py",
-              "tests/projects/rf_multipole_ion_optics/analysis/test_frozen_particle_policy_package.py",
-              "tests/projects/rf_multipole_ion_optics/analysis/test_interface_postprocess_child.py",
-              "tests/projects/rf_multipole_ion_optics/analysis/test_interface_public_owner.py",
-              "tests/projects/rf_multipole_ion_optics/analysis/test_same_solver_numerical_convergence.py"
+              "tests/components/rf_multipole_ion_optics/analysis/test_compare_particle_state_evidence.py",
+              "tests/components/rf_multipole_ion_optics/analysis/test_frozen_matlab_closure.py",
+              "tests/components/rf_multipole_ion_optics/analysis/test_frozen_particle_policy_package.py",
+              "tests/components/rf_multipole_ion_optics/analysis/test_interface_postprocess_child.py",
+              "tests/components/rf_multipole_ion_optics/analysis/test_interface_public_owner.py",
+              "tests/components/rf_multipole_ion_optics/analysis/test_same_solver_numerical_convergence.py"
             ],
             "dependency_profile": "locked"
           },
@@ -5566,7 +5575,7 @@
               }
             ],
             "modules": [
-              "tests/projects/rf_multipole_ion_optics/analysis/test_comsol_analysis_recovery.py"
+              "tests/components/rf_multipole_ion_optics/analysis/test_comsol_analysis_recovery.py"
             ],
             "dependency_profile": "locked"
           },
@@ -5578,9 +5587,9 @@
               }
             ],
             "modules": [
-              "tests/projects/rf_multipole_ion_optics/analysis/test_phase4_design_consumer.py",
-              "tests/projects/rf_multipole_ion_optics/analysis/test_frozen_particle_policy_package.py",
-              "tests/projects/rf_multipole_ion_optics/analysis/test_comsol_mass_filter_contract.py"
+              "tests/components/rf_multipole_ion_optics/analysis/test_phase4_design_consumer.py",
+              "tests/components/rf_multipole_ion_optics/analysis/test_frozen_particle_policy_package.py",
+              "tests/components/rf_multipole_ion_optics/analysis/test_comsol_mass_filter_contract.py"
             ],
             "dependency_profile": "locked"
           },
@@ -5600,12 +5609,12 @@
               }
             ],
             "modules": [
-              "tests/projects/rf_multipole_ion_optics/analysis/test_cross_solver_gate_contract.py",
-              "tests/projects/rf_multipole_ion_optics/analysis/test_frozen_particle_policy_package.py",
-              "tests/projects/rf_multipole_ion_optics/analysis/test_generate_interface_particle_table.py",
-              "tests/projects/rf_multipole_ion_optics/analysis/test_same_solver_numerical_convergence.py",
-              "tests/projects/rf_multipole_ion_optics/analysis/test_simion_transport_runner_source.py",
-              "tests/projects/rf_multipole_ion_optics/analysis/test_workflow_architecture_contract.py"
+              "tests/components/rf_multipole_ion_optics/analysis/test_cross_solver_gate_contract.py",
+              "tests/components/rf_multipole_ion_optics/analysis/test_frozen_particle_policy_package.py",
+              "tests/components/rf_multipole_ion_optics/analysis/test_generate_interface_particle_table.py",
+              "tests/components/rf_multipole_ion_optics/analysis/test_same_solver_numerical_convergence.py",
+              "tests/components/rf_multipole_ion_optics/analysis/test_simion_transport_runner_source.py",
+              "tests/components/rf_multipole_ion_optics/analysis/test_workflow_architecture_contract.py"
             ],
             "dependency_profile": "locked"
           },
@@ -5625,8 +5634,8 @@
               }
             ],
             "modules": [
-              "tests/projects/rf_multipole_ion_optics/analysis/test_frozen_matlab_closure.py",
-              "tests/projects/rf_multipole_ion_optics/analysis/test_comsol_mesh_report.py"
+              "tests/components/rf_multipole_ion_optics/analysis/test_frozen_matlab_closure.py",
+              "tests/components/rf_multipole_ion_optics/analysis/test_comsol_mesh_report.py"
             ],
             "dependency_profile": "locked"
           }
@@ -5691,7 +5700,7 @@
           "reason": "rf_campaign_analysis_changed"
         },
         {
-          "exact": "tests/projects/rf_multipole_ion_optics/domain/run_production_probe.ps1",
+          "exact": "tests/components/rf_multipole_ion_optics/domain/run_production_probe.ps1",
           "reason": "rf_production_probe_changed"
         },
         {
@@ -5715,7 +5724,7 @@
           "reason": "installed_source_serialization_changed"
         },
         {
-          "exact": "tests/projects/rf_multipole_ion_optics/analysis/test_comsol_workflow_architecture_contract.py",
+          "exact": "tests/components/rf_multipole_ion_optics/analysis/test_comsol_workflow_architecture_contract.py",
           "reason": "rf_comsol_shared_test_consumer_changed"
         },
         {
@@ -5723,15 +5732,15 @@
           "reason": "hexapole_variant_changed"
         },
         {
-          "prefix": "tests/projects/rf_multipole_ion_optics/hexapole/",
+          "prefix": "tests/components/rf_multipole_ion_optics/hexapole/",
           "reason": "hexapole_tests_changed"
         },
         {
-          "prefix": "tests/projects/rf_multipole_ion_optics/test_support/",
+          "prefix": "tests/components/rf_multipole_ion_optics/test_support/",
           "reason": "hexapole_test_support_changed"
         },
         {
-          "exact": "tests/projects/rf_multipole_ion_optics/__init__.py",
+          "exact": "tests/components/rf_multipole_ion_optics/__init__.py",
           "reason": "hexapole_test_package_changed"
         },
         {
@@ -5827,11 +5836,11 @@
       ],
       "test_selection": {
         "roots": [
-          "tests/projects/rf_multipole_ion_optics/hexapole/"
+          "tests/components/rf_multipole_ion_optics/hexapole/"
         ],
         "support_paths": [
-          "tests/projects/rf_multipole_ion_optics/test_support/",
-          "tests/projects/rf_multipole_ion_optics/__init__.py"
+          "tests/components/rf_multipole_ion_optics/test_support/",
+          "tests/components/rf_multipole_ion_optics/__init__.py"
         ],
         "module_parameter": "ChangedTestModules",
         "preserve_command": true
@@ -5848,7 +5857,7 @@
           "reason": "rf_campaign_analysis_changed"
         },
         {
-          "exact": "tests/projects/rf_multipole_ion_optics/domain/run_production_probe.ps1",
+          "exact": "tests/components/rf_multipole_ion_optics/domain/run_production_probe.ps1",
           "reason": "rf_production_probe_changed"
         },
         {
@@ -5872,7 +5881,7 @@
           "reason": "installed_source_serialization_changed"
         },
         {
-          "exact": "tests/projects/rf_multipole_ion_optics/analysis/test_comsol_workflow_architecture_contract.py",
+          "exact": "tests/components/rf_multipole_ion_optics/analysis/test_comsol_workflow_architecture_contract.py",
           "reason": "rf_comsol_shared_test_consumer_changed"
         },
         {
@@ -5880,15 +5889,15 @@
           "reason": "octupole_variant_changed"
         },
         {
-          "prefix": "tests/projects/rf_multipole_ion_optics/octupole/",
+          "prefix": "tests/components/rf_multipole_ion_optics/octupole/",
           "reason": "octupole_tests_changed"
         },
         {
-          "prefix": "tests/projects/rf_multipole_ion_optics/test_support/",
+          "prefix": "tests/components/rf_multipole_ion_optics/test_support/",
           "reason": "octupole_test_support_changed"
         },
         {
-          "exact": "tests/projects/rf_multipole_ion_optics/__init__.py",
+          "exact": "tests/components/rf_multipole_ion_optics/__init__.py",
           "reason": "octupole_test_package_changed"
         },
         {
@@ -5984,11 +5993,11 @@
       ],
       "test_selection": {
         "roots": [
-          "tests/projects/rf_multipole_ion_optics/octupole/"
+          "tests/components/rf_multipole_ion_optics/octupole/"
         ],
         "support_paths": [
-          "tests/projects/rf_multipole_ion_optics/test_support/",
-          "tests/projects/rf_multipole_ion_optics/__init__.py"
+          "tests/components/rf_multipole_ion_optics/test_support/",
+          "tests/components/rf_multipole_ion_optics/__init__.py"
         ],
         "module_parameter": "ChangedTestModules",
         "preserve_command": true
@@ -6002,7 +6011,7 @@
       "project_id": "dual_pressure_rectilinear_ion_processor",
       "matches": [
         {
-          "prefix": "tests/projects/dual_pressure_rectilinear_ion_processor/",
+          "prefix": "tests/components/dual_pressure_rectilinear_ion_processor/",
           "reason": "ion_processor_tests_changed"
         },
         {
@@ -6296,7 +6305,7 @@
       },
       "parent_ruff_paths": [
         "src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface",
-        "tests/projects/dual_cone_tandem_quadrupole_ion_interface"
+        "tests/components/dual_cone_tandem_quadrupole_ion_interface"
       ],
       "owner": "dual_cone_tandem_quadrupole_ion_interface"
     },
@@ -6307,7 +6316,7 @@
       "project_id": "transverse_helical_filament_wehnelt_electron_gun",
       "matches": [
         {
-          "prefix": "tests/projects/transverse_helical_filament_wehnelt_electron_gun/",
+          "prefix": "tests/components/transverse_helical_filament_wehnelt_electron_gun/",
           "reason": "wehnelt_tests_changed"
         },
         {
@@ -6349,7 +6358,7 @@
       },
       "parent_ruff_paths": [
         "src/msplatform/components/transverse_helical_filament_wehnelt_electron_gun",
-        "tests/projects/transverse_helical_filament_wehnelt_electron_gun"
+        "tests/components/transverse_helical_filament_wehnelt_electron_gun"
       ],
       "owner": "transverse_helical_filament_wehnelt_electron_gun"
     },
@@ -6360,7 +6369,7 @@
       "project_id": "apertured_tube_electron_impact_ion_source",
       "matches": [
         {
-          "prefix": "tests/projects/apertured_tube_electron_impact_ion_source/",
+          "prefix": "tests/components/apertured_tube_electron_impact_ion_source/",
           "reason": "electron_impact_tests_changed"
         },
         {
@@ -6390,7 +6399,7 @@
       },
       "parent_ruff_paths": [
         "src/msplatform/components/apertured_tube_electron_impact_ion_source",
-        "tests/projects/apertured_tube_electron_impact_ion_source"
+        "tests/components/apertured_tube_electron_impact_ion_source"
       ],
       "owner": "apertured_tube_electron_impact_ion_source"
     }

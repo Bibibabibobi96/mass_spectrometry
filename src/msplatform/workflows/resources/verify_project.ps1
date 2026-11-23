@@ -112,7 +112,7 @@ if ($SelectedTestModules.Count) {
   $testModules = @($SelectedTestModules | Sort-Object -Unique)
   $testRoots = @($selectedVariants | ForEach-Object {
     $folder = if ($_ -eq 'quadrupole') {'analysis'} else {$_}
-    "tests.projects.rf_multipole_ion_optics.$folder."
+    "tests.components.rf_multipole_ion_optics.$folder."
   })
   if ($testModules.Count -ne $SelectedTestModules.Count -or @($testModules | Where-Object {
     $module = $_
@@ -150,7 +150,7 @@ try {
   $testModules = @($ChangedTestModules)
   foreach ($variant in $selectedVariants) {
     $testDirectory = if ($variant -eq 'quadrupole') { 'analysis' } else { $variant }
-    $testModules += @(Get-ChildItem -LiteralPath (Join-Path $repoRoot "tests/projects/rf_multipole_ion_optics/$testDirectory") -Filter 'test_*.py' -File -Recurse |
+    $testModules += @(Get-ChildItem -LiteralPath (Join-Path $repoRoot "tests/components/rf_multipole_ion_optics/$testDirectory") -Filter 'test_*.py' -File -Recurse |
       ForEach-Object {
         $_.FullName.Substring($repoRoot.Length + 1, $_.FullName.Length - $repoRoot.Length - 4).Replace('\', '.')
       })

@@ -188,7 +188,7 @@ function New-BuildSummary {
 }
 
 $environmentNames = @(
-  'MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY',
+  'MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY','MASS_SPECTROMETRY_WEHNELT_RESOLVED_CONTRACT',
   'PYTHONDONTWRITEBYTECODE','RUFF_NO_CACHE','SIMULATION_PYTHON_EXE'
 )
 $savedEnvironment = Save-RunEnvironment -Names $environmentNames
@@ -298,25 +298,6 @@ try {
       -Source (Join-Path $repoRoot $entry.Value) `
       -Destination (Join-Path $snapshotRoot $entry.Value)
   }
-  foreach ($file in Get-ChildItem -LiteralPath (Join-Path $repoRoot 'tests\projects\transverse_helical_filament_wehnelt_electron_gun') `
-      -Filter '*.py' -File | Sort-Object Name) {
-    $key = 'static_test_' + ($file.BaseName -replace '[^A-Za-z0-9]+','_')
-    $relative = 'tests\projects\transverse_helical_filament_wehnelt_electron_gun\' + $file.Name
-    $frozenInputs[$key] = Copy-VerifiedRunInput -Source $file.FullName `
-      -Destination (Join-Path $snapshotRoot $relative)
-  }
-
-  $commonFrozenFiles = [ordered]@{
-    python_project_config = 'pyproject.toml'
-    changed_scope_gate = 'tools\repository\verify.ps1'
-    gate_catalog = 'tools\repository\gate_catalog.json'
-    project_registry_builder = 'tools\repository\build_project_registry.py'
-  }
-  foreach ($entry in $commonFrozenFiles.GetEnumerator()) {
-    $frozenInputs[$entry.Key] = Copy-VerifiedRunInput `
-      -Source (Join-Path $repoRoot $entry.Value) `
-      -Destination (Join-Path $infrastructureRoot $entry.Value)
-  }
   $selectCoreSources = @'
 import json, pathlib, sys, tomllib
 from msplatform.execution.inputs import enumerate_python_sources
@@ -419,6 +400,7 @@ foreach ($entry in $bootstrapIdentity.GetEnumerator()) {
     'TERMINAL_STATE=pending'
   )
   $env:MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY = [string]$package.run_dir
+  $env:MASS_SPECTROMETRY_WEHNELT_RESOLVED_CONTRACT = [string]$frozenInputs.resolved_contract
   try {
     $commercialWrapperInvocationAttempted = $true
     . (Join-Path (Split-Path -Parent ($frozenInputs.comsol_runner)) 'resolve_comsol_64.ps1')

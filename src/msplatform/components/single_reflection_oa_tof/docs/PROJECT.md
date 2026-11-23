@@ -33,6 +33,19 @@ installed outside the checkout passes the public dry-run first-Prepare using
 copied science data and a registered template. This focused wheel test does not
 replace the final two-arm installation gate or native/scientific acceptance.
 
+The five current OA candidate modules now resolve installed science, native-text
+and workflow resources from their actual `msplatform` package root. Radial
+prepared calls use that package's import parent and selected interpreter, not a
+checkout `.venv`. Existing repository-shaped freezer/PA compiler APIs receive a
+temporary projection of explicitly declared package files; frozen source IDs,
+run identity, recovery and failure rules are unchanged. A real isolated
+site-packages copy imported all five modules, read their resources, exercised
+the radial owner command path and refused a missing installed baseline without
+checkout fallback. Focused sync/analysis/compensation tests (64), radial owner
+and frozen-import tests (3), the real geometry `--check`, Ruff and development
+checks passed. No dependency installation, commercial native process, complete
+OA suite or full repository gate was run.
+
 ## Installed component PA-plan owner
 
 `msplatform.backends.simion.simion_component_pa_plan` now owns the pure

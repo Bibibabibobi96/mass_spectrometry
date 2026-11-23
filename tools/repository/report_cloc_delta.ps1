@@ -409,9 +409,9 @@ function Invoke-ClocSnapshot {
   }
   if($seen.Count-ne$Records.Count){
     $missing=@($Records|Where-Object{
-      -not$seen.Contains([IO.Path]::GetFullPath($_.full))
+      -not$seen.Contains([IO.Path]::GetFullPath($_.full)) -and (Get-Item -LiteralPath $_.full).Length-ne0
     }|Select-Object -First 5 -ExpandProperty relative)
-    throw "cloc omitted selected files: $($missing -join ', ')"
+    if($missing.Count){throw "cloc omitted nonempty selected files: $($missing -join ', ')"}
   }
   return [pscustomobject]@{
     summaries=$summaries

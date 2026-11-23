@@ -1,6 +1,6 @@
 # RF多极杆离子光学项目状态
 
-RF 的活动科学配置、结构变体、当前文档和理论现由 `msplatform.components.rf_multipole` 持有；Python 分析与研究入口分别归 `msplatform.analysis`、`msplatform.workflows`，MATLAB 与 SIMION 资源归对应 backend，长期回归归 `tests/projects/rf_multipole_ion_optics`。旧 `projects/rf_multipole_ion_optics` 不再保存活动文件。迁移只改变实现与来源位置，不改变四／六／八极身份、裸杆边界、源 ID/时钟/6D、有限长模型或已有证据资格。共享 gate catalog 与生成 registry 的入口切换由集成所有者另行完成；本迁移不宣称 P4 或原生科学验收完成。
+RF 的活动科学配置、结构变体、当前文档和理论现由 `msplatform.components.rf_multipole` 持有；Python 分析与研究入口分别归 `msplatform.analysis`、`msplatform.workflows`，MATLAB 与 SIMION 资源归对应 backend，长期回归归 `tests/components/rf_multipole_ion_optics`。旧 `projects/rf_multipole_ion_optics` 不再保存活动文件。迁移只改变实现与来源位置，不改变四／六／八极身份、裸杆边界、源 ID/时钟/6D、有限长模型或已有证据资格。共享 gate catalog 与生成 registry 的入口切换由集成所有者另行完成；本迁移不宣称 P4 或原生科学验收完成。
 
 本轮退役收敛的三变体公开前置（发布、GEM 同步、L0/L1 合同及 65 个 PowerShell 文件语法）通过。完整 Static 在 2059.375 秒执行 353 个父测试／598 条记录，结果为 583 条成功、10 条失败、5 条错误，不能记为通过；其中迁移路径、runner 名称、隔离依赖及 Mathieu 环境问题对应的 12 个原失败父测试随后分别复验通过。`test_runner_host_permission_lifecycle_without_solver` 的两个 runner 子用例仍因 Host 准入停滞超时；不含 RF runner 的最小 Host 准入诊断也停滞，故保留为共享执行层待办而非 RF 功能失败。未执行原生 Refine/Fly，完整 Static 的最终全绿验收仍开放。
 
@@ -643,7 +643,7 @@ schema 3的同一提供者始终发布实际入口／出口：裸杆按杆端面
 相同ID不授予共同源、配对物理试验或科学资格。旧`plane_metrics`及`transverse_difference_onset`字段
 继续供[接口评估](../../../workflows/rf_interface_readiness/assess_integration.py)消费。
 
-长期验证入口为[`test_interface_integration_gate.py`](../../../../../tests/projects/rf_multipole_ion_optics/analysis/test_interface_integration_gate.py)，
+长期验证入口为[`test_interface_integration_gate.py`](../../../../../tests/components/rf_multipole_ion_optics/analysis/test_interface_integration_gate.py)，
 覆盖真实`--help`、CSV→JSON/PNG→接口评估CLI及无效窗口/轨迹拒绝；该层不运行求解器，不授予native或Formal资格。
 
 ## 部件与组装边界

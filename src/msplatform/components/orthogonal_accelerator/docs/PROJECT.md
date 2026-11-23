@@ -21,7 +21,7 @@ provider plan, not a checkout profile. This source migration is not native quali
 
 生产实现、科研配置、当前文档、理论和SIMION资源已分别收口到本组件、
 `msplatform.workflows.oa_focus_*`及`msplatform.backends`；测试位于
-`tests/projects/orthogonal_accelerator/`。旧`projects/orthogonal_accelerator/`无活动文件，
+`tests/components/orthogonal_accelerator/`。旧`projects/orthogonal_accelerator/`无活动文件，
 也没有兼容导入或路径桥。真实科学workflow及既有artifact身份未合并或改写。
 
 迁移后的公开软件门禁通过159项Python测试（322条含subtest成功记录）、26个Lua参数用例、

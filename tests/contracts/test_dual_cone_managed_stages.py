@@ -417,7 +417,7 @@ class ManagedIndependentStagesTests(unittest.TestCase):
 
     def _gas_source(self, context):
         import csv, hashlib
-        from tests.projects.dual_cone_tandem_quadrupole_ion_interface.test_gas_flow_contract import _write_fixture
+        from tests.components.dual_cone_tandem_quadrupole_ion_interface.test_gas_flow_contract import _write_fixture
         from msplatform.execution.capacity_ledger import record_capacity_object
 
         config = ROOT / "src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/config"

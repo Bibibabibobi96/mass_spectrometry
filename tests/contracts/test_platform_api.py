@@ -67,7 +67,7 @@ class PlatformApiTests(unittest.TestCase):
         from msplatform.ion_release.authoring import load_recorded_release
         from msplatform.backends.simion.model import project_resolved_drive, compile_prepared_model
         from msplatform.backends.simion.tracking_execution import plan_tracking_execution
-        from tests.integration.test_single_reflection_preparation import scientific_preparation_fixture
+        from tests.workflows.single_reflection.test_single_reflection_preparation import scientific_preparation_fixture
         from msplatform.workflows.single_reflection_flight.prepare import prepare
 
         case, _, _, compiled = compile_example()

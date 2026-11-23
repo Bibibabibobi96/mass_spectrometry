@@ -5,8 +5,8 @@ import unittest
 from msplatform.assembly.factory import assemble
 from msplatform.components.catalog import resolve_component
 from msplatform.exporters import step
-from tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis import test_mr_provider_trial_transport as fixtures
-from tests.projects.parallel_mirror_dual_stripe_mr_tof.test_support.mr_geometry_inputs import geometry_authority
+from tests.components.parallel_mirror_dual_stripe_mr_tof.analysis import test_mr_provider_trial_transport as fixtures
+from tests.components.parallel_mirror_dual_stripe_mr_tof.test_support.mr_geometry_inputs import geometry_authority
 
 
 def snapshot(a):

@@ -14,7 +14,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
 $projectRoot = Join-Path $repoRoot 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof'
-$testRoot = Join-Path $repoRoot 'tests/projects/parallel_mirror_dual_stripe_mr_tof'
+$testRoot = Join-Path $repoRoot 'tests/components/parallel_mirror_dual_stripe_mr_tof'
 . (Join-Path $repoRoot 'src\msplatform\execution\resources\require_powershell7.ps1')
 $lease = $null
 $savedPythonPath = $env:PYTHONPATH
@@ -70,10 +70,10 @@ try {
       return
     } elseif ($Level -eq 'Core') {
       $coreTests = @(
-        'tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_drift_phase_contract',
-        'tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_prism_analytic',
-        'tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_native_corridor_plan',
-        'tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_native_corridor_freeze'
+        'tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_drift_phase_contract',
+        'tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_prism_analytic',
+        'tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_native_corridor_plan',
+        'tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_native_corridor_freeze'
       )
       $coreTests = @($coreTests + $ChangedTestModules | Sort-Object -Unique)
       Write-Output "PROJECT_TEST_MODULES=$($coreTests -join ',')"

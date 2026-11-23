@@ -39,7 +39,7 @@ try {
     }
 
     & $PythonExe -m tools.repository.gate_unittest discover `
-      -s tests/projects/transverse_helical_filament_wehnelt_electron_gun -p 'test_*.py'
+      -s tests/components/transverse_helical_filament_wehnelt_electron_gun -p 'test_*.py'
     if ($LASTEXITCODE -ne 0) {
       throw 'Wehnelt static tests failed.'
     }
@@ -50,7 +50,7 @@ try {
       & $PythonExe -m ruff check `
         $componentRoot `
         src/msplatform/backends/comsol/wehnelt_model.py `
-        tests/projects/transverse_helical_filament_wehnelt_electron_gun
+        tests/components/transverse_helical_filament_wehnelt_electron_gun
       if ($LASTEXITCODE -ne 0) {
         throw 'Wehnelt Ruff checks failed.'
       }

@@ -37,7 +37,7 @@ FROZEN_INPUT_CONTRACT_TESTS = {
         "test_sfi_scalar_binding.py", "test_simion_tracking_units.py", "test_static_world_model.py",
     )
 } - {"tests/contracts/test_dual_cone_iob.py"} | {
-    "tests/projects/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_iob.py",
+    "tests/components/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_iob.py",
 }
 
 
@@ -91,9 +91,9 @@ class ChangedGateContractTests(unittest.TestCase):
         modules = [value.removesuffix('.py').replace('/', '.')
                    for value in domain['command']['arguments'][2:]]
         self.assertCountEqual(modules, [
-            'tests.projects.rf_multipole_ion_optics.domain.test_simion_batch_continuation',
-            'tests.projects.rf_multipole_ion_optics.domain.test_simion_field_checkpoint',
-            'tests.projects.rf_multipole_ion_optics.domain.test_simion_runner_contract',
+            'tests.components.rf_multipole_ion_optics.domain.test_simion_batch_continuation',
+            'tests.components.rf_multipole_ion_optics.domain.test_simion_field_checkpoint',
+            'tests.components.rf_multipole_ion_optics.domain.test_simion_runner_contract',
         ])
         self.assertEqual(len(modules), len(set(modules)))
         common = {value.removesuffix('.py').replace('/', '.') for row in selected
@@ -126,9 +126,9 @@ class ChangedGateContractTests(unittest.TestCase):
                    if row['name'].startswith('instrument_assembly_integration')
                    for module in row['command']['parameters'].get('SelectedTestModules', [])]
         self.assertCountEqual(modules, [
-            'tests.integration.test_multipole_ip_prepare',
-            'tests.integration.test_accelerator_interface',
-            'tests.integration.test_dependencies',
+            'tests.workflows.multipole_ip.test_multipole_ip_prepare',
+            'tests.assembly.accelerator_interface.test_accelerator_interface',
+            'tests.execution.test_dependencies',
         ])
         self.assertEqual(len(modules), len(set(modules)))
         self.assertTrue(any(row['name'] == 'dual_pressure_rectilinear_ion_processor_static' for row in selected))
@@ -138,7 +138,7 @@ class ChangedGateContractTests(unittest.TestCase):
 
     def test_shared_oa_physical_consumers_select_the_actual_oa_stage(self):
         for path in (
-            'tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_assembly_interface.py',
+            'tests/assembly/single_reflection_oa_tof_mass_analyzer/analysis/test_assembly_interface.py',
             'src/msplatform/components/single_reflection_oa_tof/accelerator_geometry.py',
             'src/msplatform/backends/simion/bare_frontend_geometry.py',
         ):
@@ -185,7 +185,7 @@ class ChangedGateContractTests(unittest.TestCase):
                     'tests/contracts/test_support/installed_' + name + '_probe.py'))
 
     def test_recorded_sfi_consumer_selects_its_source_and_installed_boundaries(self):
-        consumer = 'tests.integration.test_single_reflection_recorded_birth_consumer'
+        consumer = 'tests.workflows.single_reflection.test_single_reflection_recorded_birth_consumer'
         for path in ('src/msplatform/workflows/single_reflection_flight/recorded_birth.py',
                      'src/msplatform/backends/simion/operations.py',
                      'src/msplatform/backends/simion/compiler.py'):
@@ -226,7 +226,7 @@ class ChangedGateContractTests(unittest.TestCase):
         actual = [module for row in request["stages"]
                   if row["name"].startswith(owner)
                   for module in row["command"].get("parameters", {}).get("SelectedTestModules", [])]
-        tests = REPO_ROOT / "tests/projects/single_reflection_oa_tof_mass_analyzer"
+        tests = REPO_ROOT / "tests/components/single_reflection_oa_tof_mass_analyzer"
         expected = {".".join(path.relative_to(REPO_ROOT).with_suffix("").parts)
                     for path in tests.rglob("test_*.py")}
         self.assertTrue(expected)
@@ -238,20 +238,20 @@ class ChangedGateContractTests(unittest.TestCase):
 
     def test_installed_probe_witnesses_select_installed_core(self):
         paths = (
-            'tests/projects/dual_pressure_rectilinear_ion_processor/fixtures/ip_exporters_old_witness.json',
-            'tests/projects/rf_multipole_ion_optics/fixtures/rf_convergence_old_witness.json',
-            'tests/projects/dual_pressure_rectilinear_ion_processor/fixtures/ip_reader_old_witness.json',
-            'tests/projects/single_reflection_oa_tof_mass_analyzer/fixtures/tof_mass_spectrum_old_witness.json',
-            'tests/projects/rf_multipole_ion_optics/fixtures/rf_event_old_capture.json',
-            'tests/projects/dual_pressure_rectilinear_ion_processor/fixtures/ip_analyzer_old_witness.json',
-            'tests/projects/parallel_mirror_dual_stripe_mr_tof/fixtures/mr_measured_source_old_witness.json',
+            'tests/components/dual_pressure_rectilinear_ion_processor/fixtures/ip_exporters_old_witness.json',
+            'tests/components/rf_multipole_ion_optics/fixtures/rf_convergence_old_witness.json',
+            'tests/components/dual_pressure_rectilinear_ion_processor/fixtures/ip_reader_old_witness.json',
+            'tests/components/single_reflection_oa_tof_mass_analyzer/fixtures/tof_mass_spectrum_old_witness.json',
+            'tests/components/rf_multipole_ion_optics/fixtures/rf_event_old_capture.json',
+            'tests/components/dual_pressure_rectilinear_ion_processor/fixtures/ip_analyzer_old_witness.json',
+            'tests/components/parallel_mirror_dual_stripe_mr_tof/fixtures/mr_measured_source_old_witness.json',
             'tests/contracts/fixtures/strict_json_old_witness.json',
-            'tests/projects/parallel_mirror_dual_stripe_mr_tof/fixtures/mr_prepared_field_old_witness.json',
-            'tests/projects/single_reflection_oa_tof_mass_analyzer/fixtures/ion_reader_old_witness.json',
-            'tests/projects/parallel_mirror_dual_stripe_mr_tof/fixtures/mr_interface_coverage_vectors.json',
-            'tests/projects/single_reflection_oa_tof_mass_analyzer/test_support/detector_census_old_witness.json',
-            'tests/projects/rf_multipole_ion_optics/fixtures/rf_transport_comparison_old_witness.json',
-            'tests/projects/single_reflection_oa_tof_mass_analyzer/fixtures/reflectron_fit_capture.json',
+            'tests/components/parallel_mirror_dual_stripe_mr_tof/fixtures/mr_prepared_field_old_witness.json',
+            'tests/components/single_reflection_oa_tof_mass_analyzer/fixtures/ion_reader_old_witness.json',
+            'tests/components/parallel_mirror_dual_stripe_mr_tof/fixtures/mr_interface_coverage_vectors.json',
+            'tests/components/single_reflection_oa_tof_mass_analyzer/test_support/detector_census_old_witness.json',
+            'tests/components/rf_multipole_ion_optics/fixtures/rf_transport_comparison_old_witness.json',
+            'tests/components/single_reflection_oa_tof_mass_analyzer/fixtures/reflectron_fit_capture.json',
         )
         for path in paths:
             with self.subTest(path=path):
@@ -269,7 +269,7 @@ class ChangedGateContractTests(unittest.TestCase):
                 request, _ = self.plan("-ChangedPath", path)
                 for stage, parameter, required in (
                     ("parallel_mirror_dual_stripe_mr_tof_static", "ChangedTestModules", {"test_native_static_field_provider", "test_native_static_field_provider_runner", "test_static_field_binding"}),
-                    ("instrument_assembly_integration", "SelectedTestModules", {"test_oa_mr_source_context", "test_accelerator_interface", "test_oa_mr_execute", "test_prepared_joint_execute"}),
+                    ("instrument_assembly_integration", "SelectedTestModules", {"test_accelerator_interface", "test_oa_mr_execute", "test_prepared_joint_execute"}),
                 ):
                     modules = {value.rsplit(".", 1)[-1] for row in request["stages"]
                                if row["selected"] and row["name"].startswith(stage)
@@ -302,7 +302,7 @@ class ChangedGateContractTests(unittest.TestCase):
         modules = {value for row in request["stages"]
                    if row["name"].startswith("single_reflection_oa_tof_mass_analyzer_static")
                    for value in row["command"].get("parameters", {}).get("SelectedTestModules", [])}
-        self.assertEqual(modules, {'tests.projects.single_reflection_oa_tof_mass_analyzer.analysis.test_solver_diagnostics', 'tests.projects.single_reflection_oa_tof_mass_analyzer.analysis.test_radial_compaction_campaign', 'tests.projects.single_reflection_oa_tof_mass_analyzer.analysis.test_reflectron_voltage_compensation', 'tests.projects.single_reflection_oa_tof_mass_analyzer.analysis.test_compensation_powershell_adapter', 'tests.projects.single_reflection_oa_tof_mass_analyzer.analysis.test_candidate_workflow', 'tests.projects.single_reflection_oa_tof_mass_analyzer.analysis.test_candidate_causal_workflow', 'tests.projects.single_reflection_oa_tof_mass_analyzer.analysis.test_candidate_postprocess_workflow'})
+        self.assertEqual(modules, {'tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_solver_diagnostics', 'tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_radial_compaction_campaign', 'tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_reflectron_voltage_compensation', 'tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_compensation_powershell_adapter', 'tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_candidate_workflow', 'tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_candidate_causal_workflow', 'tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_candidate_postprocess_workflow'})
 
     def test_installed_particle_comparison_selects_both_real_analyzers(self):
         request, _ = self.plan(
@@ -315,9 +315,9 @@ class ChangedGateContractTests(unittest.TestCase):
             for value in row["command"].get("parameters", {}).get("ChangedTestModules", [])
         }
         self.assertEqual(modules, {
-            "tests.projects.rf_multipole_ion_optics.analysis.test_compare_particle_state_evidence",
-            "tests.projects.rf_multipole_ion_optics.analysis.test_same_solver_numerical_convergence",
-            "tests.projects.rf_multipole_ion_optics.analysis.test_cross_solver_gate_contract",
+            "tests.components.rf_multipole_ion_optics.analysis.test_compare_particle_state_evidence",
+            "tests.components.rf_multipole_ion_optics.analysis.test_same_solver_numerical_convergence",
+            "tests.components.rf_multipole_ion_optics.analysis.test_cross_solver_gate_contract",
         })
         self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"}
                              for row in request["stages"]))
@@ -511,7 +511,7 @@ foreach($case in $cases){{
         prefix = 'src/msplatform/components/single_reflection_oa_tof'
         stage = 'single_reflection_oa_tof_mass_analyzer_static'
         expected = {'.'.join(path.relative_to(REPO_ROOT).with_suffix('').parts)
-                    for path in (REPO_ROOT / 'tests/projects/single_reflection_oa_tof_mass_analyzer').rglob('test_*.py')}
+                    for path in (REPO_ROOT / 'tests/components/single_reflection_oa_tof_mass_analyzer').rglob('test_*.py')}
         for arguments in (
             ('-Scope', 'Owner', '-Owner', 'single_reflection_oa_tof_mass_analyzer'),
             ('-ChangedPath', prefix + '/reflectron_dual_stage_solver.py'),
@@ -532,7 +532,7 @@ foreach($case in $cases){{
                     self.assertIn(stage, row['requires_stages'])
                     self.assertTrue(row['command']['parameters']['PreflightValidated'])
                     self.assertNotIn('PreflightOnly', row['command']['parameters'])
-        changed = 'tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_simion_delivery_source.py'
+        changed = 'tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_simion_delivery_source.py'
         request, _ = self.plan('-ChangedPath', changed)
         rows = {row['name']: row for row in request['stages'] if row['selected']}
         self.assertEqual(rows[stage]['command']['runner'], 'python')
@@ -556,7 +556,8 @@ foreach($case in $cases){{
         self.assertTrue(lint)
         owner_roots = tuple(REPO_ROOT / root for root in (
             "src/msplatform/components/orthogonal_accelerator",
-            "tests/projects/orthogonal_accelerator",
+            "tests/components/orthogonal_accelerator",
+            "tests/assembly/orthogonal_accelerator",
         ))
         related_dependencies = {REPO_ROOT / value for value in (
             "src/msplatform/backends/simion/bare_frontend_geometry.py",
@@ -564,7 +565,7 @@ foreach($case in $cases){{
             "src/msplatform/backends/simion/source.py",
             "src/msplatform/components/single_reflection_oa_tof/accelerator_geometry.py",
             "src/msplatform/contracts/expected_values.py",
-            "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_assembly_interface.py",
+            "tests/assembly/single_reflection_oa_tof_mass_analyzer/analysis/test_assembly_interface.py",
         )}
         self.assertTrue(all(
             any(Path(value).is_relative_to(root) for root in owner_roots)
@@ -582,12 +583,13 @@ foreach($case in $cases){{
             "src/msplatform/components/single_reflection_oa_tof/accelerator_geometry.py",
             "src/msplatform/components/single_reflection_oa_tof/config/accelerator_dependency.json",
             "src/msplatform/contracts/expected_values.py",
-            "tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_assembly_interface.py",
+            "tests/assembly/single_reflection_oa_tof_mass_analyzer/analysis/test_assembly_interface.py",
         }
         self.assertTrue(all(
             value.startswith((
                 "src/msplatform/components/orthogonal_accelerator/",
-                "tests/projects/orthogonal_accelerator/",
+                "tests/components/orthogonal_accelerator/",
+                "tests/assembly/orthogonal_accelerator/",
             )) or value in standards_dependencies for value in selected
         ), selected)
 
@@ -641,7 +643,7 @@ foreach($case in $cases){{
         self.assertTrue(all(
             path.startswith((
                 "src/msplatform/components/rf_multipole/",
-                "tests/projects/rf_multipole_ion_optics/",
+                "tests/components/rf_multipole_ion_optics/",
             )) or path in related_dependencies for path in selected
         ), selected)
 
@@ -745,7 +747,7 @@ ConvertTo-Json -Compress -InputObject $paths
                     self.assertEqual(modules, [path])
 
     def test_joint_gas_runtime_selects_actual_dual_cone_consumers(self):
-        expected = {"tests/projects/dual_cone_tandem_quadrupole_ion_interface/test_" + name + ".py" for name in (
+        expected = {"tests/components/dual_cone_tandem_quadrupole_ion_interface/test_" + name + ".py" for name in (
             "dual_cone_transport_execution", "dual_cone_transport", "dual_cone_stages",
             "dual_cone_iob", "dual_cone_placement", "dual_cone_native_guards", "dual_cone_managed_stages")}
         paths = ("src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/gas_field.py",
@@ -764,11 +766,11 @@ ConvertTo-Json -Compress -InputObject $paths
                 self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"} for row in request["stages"]))
 
     def test_recorded_gas_structure_policy_and_reader_select_actual_consumers(self):
-        expected = {"tests/projects/dual_cone_tandem_quadrupole_ion_interface/test_comsol_gas_flow.py",
-                    "tests/projects/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_stages.py",
-                    "tests/projects/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_managed_stages.py",
-                    "tests/projects/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_transport_execution.py",
-                    "tests/projects/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_transport.py"}
+        expected = {"tests/components/dual_cone_tandem_quadrupole_ion_interface/test_comsol_gas_flow.py",
+                    "tests/components/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_stages.py",
+                    "tests/components/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_managed_stages.py",
+                    "tests/components/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_transport_execution.py",
+                    "tests/components/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_transport.py"}
         for path in ("src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/gas_field_validation.py",
                      "src/msplatform/contracts/gas_field.py", "src/msplatform/results/gas_field.py"):
             with self.subTest(path=path):
@@ -808,7 +810,7 @@ ConvertTo-Json -Compress -InputObject $paths
                     integration = {value for row in request["stages"]
                                    if row["name"].startswith("instrument_assembly_integration")
                                    for value in row["command"].get("parameters", {}).get("SelectedTestModules", [])}
-                    self.assertEqual(integration, {"tests.integration.test_dependencies"})
+                    self.assertEqual(integration, {"tests.execution.test_dependencies"})
                 self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"} for row in request["stages"]))
 
     def test_mr_backend_geometry_keeps_one_original_software_owner(self):
@@ -833,12 +835,12 @@ ConvertTo-Json -Compress -InputObject $paths
         self.assertEqual(params["Level"], "Core")
         self.assertNotIn("SelectedTestModules", params)
         self.assertEqual(set(params["ChangedTestModules"]), {
-            "tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_assembly_interface",
-            "tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_simion_candidate_reference",
-            "tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_mr_provider_freeze",
-            "tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_mr_provider_trial_transport",
-            "tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_two_prism_simion_trial",
-            "tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_gap2_fixed_design"})
+            "tests.assembly.parallel_mirror_dual_stripe_mr_tof.analysis.test_assembly_interface",
+            "tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_simion_candidate_reference",
+            "tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_mr_provider_freeze",
+            "tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_mr_provider_trial_transport",
+            "tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_two_prism_simion_trial",
+            "tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_gap2_fixed_design"})
         self.assertEqual(len(params["ChangedTestModules"]), len(set(params["ChangedTestModules"])))
         verify = (REPO_ROOT / "src/msplatform/workflows/resources/mr_verify.ps1").read_text(encoding="utf-8")
         self.assertIn("$coreTests = @($coreTests + $ChangedTestModules | Sort-Object -Unique)", verify)
@@ -855,19 +857,19 @@ ConvertTo-Json -Compress -InputObject $paths
         self.assertEqual(len(mr_rows), 1)
         mr = mr_rows[0]["command"]["parameters"]["ChangedTestModules"]
         self.assertEqual(set(mr), {
-            "tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_assembly_interface",
-            "tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_simion_candidate_reference",
-            "tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_mr_provider_freeze",
-            "tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_mr_provider_trial_transport",
-            "tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_two_prism_simion_trial",
-            "tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_gap2_fixed_design"})
+            "tests.assembly.parallel_mirror_dual_stripe_mr_tof.analysis.test_assembly_interface",
+            "tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_simion_candidate_reference",
+            "tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_mr_provider_freeze",
+            "tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_mr_provider_trial_transport",
+            "tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_two_prism_simion_trial",
+            "tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_gap2_fixed_design"})
         self.assertEqual(mr_rows[0]["command"]["parameters"]["Level"], "Core")
         self.assertNotIn("SelectedTestModules", mr_rows[0]["command"]["parameters"])
         self.assertEqual(len(mr), len(set(mr)))
         integration = {value for row in request["stages"]
                        if row["name"].startswith("instrument_assembly_integration")
                        for value in row["command"].get("parameters", {}).get("SelectedTestModules", [])}
-        self.assertEqual(integration, {"tests.integration.test_accelerator_interface_geometry"})
+        self.assertEqual(integration, {"tests.assembly.accelerator_interface_geometry.test_accelerator_interface_geometry"})
         self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"} for row in request["stages"]))
 
 
@@ -934,7 +936,7 @@ ConvertTo-Json -Compress -InputObject $paths
                      for value in row["command"]["arguments"]]
         self.assertEqual(arguments[:2], ["-m", "tools.repository.gate_unittest"])
         self.assertCountEqual([contract_test_path(value) for value in arguments[2:]
-                              if value.startswith(("tests.contracts.", "tests/contracts/", "tests.projects.", "tests/projects/"))],
+                              if value.startswith(("tests.contracts.", "tests/contracts/", "tests.components.", "tests/components/"))],
                              FROZEN_INPUT_CONTRACT_TESTS)
         self.assertEqual(rows["simion_common"]["command"]["arguments"],
                          ["-m", "tools.repository.gate_unittest", "tests/simion/test_workbench_seed.py"])
@@ -1089,9 +1091,9 @@ exit 0
         common = fixture_root / "tools/repository"
         common.mkdir(parents=True)
         (fixture_root / "src/msplatform/components").mkdir(parents=True)
-        for name in ("verify.ps1", "parallel_gate_support.ps1", "gate_catalog_support.ps1", "require_powershell7.ps1"):
-            source = REPO_ROOT / ("src/msplatform/execution/resources" if name == "require_powershell7.ps1" else "tools/repository") / name
-            destination = fixture_root / ("src/msplatform/execution/resources" if name == "require_powershell7.ps1" else "tools/repository") / name
+        for name in ("verify.ps1", "parallel_gate_support.ps1", "gate_catalog_support.ps1", "require_powershell7.ps1", "resource_process_support.ps1"):
+            source = REPO_ROOT / ("src/msplatform/execution/resources" if name in ("require_powershell7.ps1", "resource_process_support.ps1") else "tools/repository") / name
+            destination = fixture_root / ("src/msplatform/execution/resources" if name in ("require_powershell7.ps1", "resource_process_support.ps1") else "tools/repository") / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, destination)
         (common / "host_execution_lease.ps1").write_text("function Get-HostResourceBudget {param($Role,$Stage) @{}}\nfunction Enter-HostResourceStage {param($Role,$Stage,$Budget) @{}}\nfunction Exit-HostResourceStage {param($Lease)}\n",encoding="utf-8")
@@ -1147,7 +1149,7 @@ exit 0
     def test_accelerator_test_only_routes_preserve_actual_shared_fixture_consumers(self) -> None:
         downstream = {"instrument_assembly_integration", "parallel_mirror_dual_stripe_mr_tof_static",
                       "single_reflection_oa_tof_mass_analyzer_static"}
-        prefix = "tests/projects/orthogonal_accelerator/"
+        prefix = "tests/components/orthogonal_accelerator/"
         for relative in ("analysis/test_component_focus_analysis.py",
                          "analysis/test_two_zone_geometry.py"):
             with self.subTest(relative=relative):
@@ -1175,7 +1177,7 @@ exit 0
                 self.assertIn("orthogonal_accelerator_static", stages)
 
     def test_ip_tests_preserve_actual_integration_fixture_consumers(self) -> None:
-        prefix = "tests/projects/dual_pressure_rectilinear_ion_processor/"
+        prefix = "tests/components/dual_pressure_rectilinear_ion_processor/"
         for relative in ("test_owner_finalization_recovery.py", "test_removed.py",
                          "analysis/test_unrelated.py", "nested/test_removed.py"):
             with self.subTest(relative=relative):
@@ -1270,7 +1272,7 @@ exit 0
         self.assertEqual(json.loads(result.stdout).count(stage), 1)
 
     def test_integration_test_module_change_runs_only_that_module(self) -> None:
-        request, _ = self.plan("-ChangedPath", "tests/integration/test_repository_bindings.py")
+        request, _ = self.plan("-ChangedPath", "tests/execution/test_repository_bindings.py")
         integration = [row for row in request["stages"] if row["name"].startswith("instrument_assembly_integration")]
         self.assertEqual(len(integration), 1)
         command = integration[0]["command"]
@@ -1278,7 +1280,7 @@ exit 0
         self.assertNotIn("ChangedTestModules", parameters)
         modules = parameters.get("SelectedTestModules", command.get("arguments", [])[2:])
         modules = [value.removesuffix(".py").replace("/", ".") for value in modules]
-        self.assertEqual(modules, ["tests.integration.test_repository_bindings"])
+        self.assertEqual(modules, ["tests.execution.test_repository_bindings"])
         self.assertFalse(command.get("parameters", {}).get("PreflightOnly", False))
 
 
@@ -1360,7 +1362,7 @@ exit 0
             test_directory = "analysis" if variant == "quadrupole" else variant
             paths = (
                 f"src/msplatform/components/rf_multipole/variants/{variant}/config/requests/official.json",
-                f"tests/projects/rf_multipole_ion_optics/{test_directory}/test_contract.py",
+                f"tests/components/rf_multipole_ion_optics/{test_directory}/test_contract.py",
             )
             for path in paths:
                 with self.subTest(path=path):
@@ -1374,8 +1376,8 @@ exit 0
         for path in (
             "src/msplatform/components/rf_multipole/config/project.json",
             "src/msplatform/components/rf_multipole/compile_design_request.py",
-            "tests/projects/rf_multipole_ion_optics/test_support/historical_contracts.py",
-            "tests/projects/rf_multipole_ion_optics/domain/run_production_probe.ps1",
+            "tests/components/rf_multipole_ion_optics/test_support/historical_contracts.py",
+            "tests/components/rf_multipole_ion_optics/domain/run_production_probe.ps1",
         ):
             with self.subTest(path=path):
                 self.assertTrue(stages.issubset(self.routed_stages(path)))
@@ -1403,22 +1405,24 @@ exit 0
     def test_field_plan_dependency_uses_actual_selected_consumers_without_duplicates(self):
         source = 'src/msplatform/workflows/single_reflection_flight/field_plan.py'
         route = next(row for row in self.routes if row['stage'] == 'instrument_assembly_integration')
-        expected = {'.'.join(path.relative_to(REPO_ROOT).with_suffix('').parts)
-                    for path in (REPO_ROOT / 'tests/integration').glob('test_*.py')
-                    if (path.stem.startswith('test_single_reflection_') and
-                        path.stem not in ('test_single_reflection_checkpoint_diagnostics',
-                                          'test_single_reflection_recorded_birth_consumer')) or
-                    path.stem in ('test_dependencies', 'test_native_path_consumers', 'test_saved_workbench_replay_policy',
-                                  'test_sfi_preparation_numerics')}
+        roots = ('tests/assembly', 'tests/workflows', 'tests/execution')
         full = {'.'.join(path.relative_to(REPO_ROOT).with_suffix('').parts)
-                for path in (REPO_ROOT / 'tests/integration').rglob('test_*.py')}
+                for root in roots for path in (REPO_ROOT / root).rglob('test_*.py')}
+        expected = {module for module in full
+                    if (module.rsplit('.', 1)[-1].startswith('test_single_reflection_') and
+                        not module.endswith(('test_single_reflection_checkpoint_diagnostics',
+                                             'test_single_reflection_recorded_birth_consumer'))) or
+                    module.rsplit('.', 1)[-1] in ('test_dependencies', 'test_native_path_consumers',
+                                                  'test_saved_workbench_replay_policy', 'test_sfi_preparation_numerics')}
         cases = [(('-ChangedPath', source), expected)]
         for name in ('prepare.py', 'downstream_fields.py', 'request_v11.schema.json'):
-            selected = expected | ({'tests.integration.test_single_reflection_recorded_birth_consumer'} if name == 'prepare.py' else set())
+            selected = expected | ({'tests.workflows.single_reflection.test_single_reflection_recorded_birth_consumer'} if name == 'prepare.py' else set())
             cases.append((('-ChangedPath', 'src/msplatform/workflows/single_reflection_flight/' + name), selected))
-        for name in ('test_multipole_ip_prepare', 'test_oa_mr_execute', 'test_paired_accelerator_static_field_execute'):
-            cases.append((('-ChangedPath', source, 'tests/integration/' + name + '.py'),
-                          expected | {'tests.integration.' + name}))
+        for path in ('tests/workflows/multipole_ip/test_multipole_ip_prepare.py',
+                     'tests/assembly/oa_mr_execute/test_oa_mr_execute.py',
+                     'tests/workflows/paired_accelerator/test_paired_accelerator_static_field_execute.py'):
+            cases.append((('-ChangedPath', source, path),
+                          expected | {path[:-3].replace('/', '.')}))
         cases += [(('-Scope', 'Owner', '-Owner', 'instrument_assembly'), full),
                   (('-Scope', 'Repository'), full)]
         for arguments, wanted in cases:
@@ -1459,7 +1463,8 @@ exit 0
         with tempfile.TemporaryDirectory(prefix='field_plan_selection_') as directory:
             root = Path(directory)
             paths = {path.relative_to(REPO_ROOT).as_posix()
-                     for path in (REPO_ROOT / 'tests/integration').rglob('test_*.py')}
+                     for test_root in ('tests/assembly', 'tests/workflows', 'tests/execution')
+                     for path in (REPO_ROOT / test_root).rglob('test_*.py')}
             for relative in paths | {source}:
                 target = root / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -1470,7 +1475,7 @@ $ErrorActionPreference='Stop'
 . {quote(REPO_ROOT / 'tools/repository/gate_catalog_support.ps1')}
 $route=(Get-Content {quote(ROUTE_TABLE)} -Raw|ConvertFrom-Json -Depth 64).routes|Where-Object stage -eq instrument_assembly_integration
 $root={quote(root)};$source={quote(source)}
-$parameters=@{{Route=$route;KnownTestRoots=@('tests/integration/');RepoRoot=$root}}
+$parameters=@{{Route=$route;KnownTestRoots=@('tests/assembly/','tests/workflows/','tests/execution/');RepoRoot=$root}}
 $result=@{{known=@((Get-GateChangedTests @parameters -ChangedPaths @($source)).Modules)}}
 $result.unknown=$null-eq(Get-GateChangedTests @parameters -ChangedPaths @('src/msplatform/workflows/single_reflection_flight/future.py'))
 Remove-Item -LiteralPath (Join-Path $root $source)
@@ -1491,7 +1496,7 @@ $result|ConvertTo-Json -Compress
             self.assertEqual(set(result['full']), paths)
 
     def test_direct_integration_gate_owns_only_its_tests(self) -> None:
-        for path in ("tests/integration/test_dependencies.py",
+        for path in ("tests/execution/test_dependencies.py",
                      "src/msplatform/workflows/config/runtime_dependencies.json",
                      "tools/repository/verify_integration.ps1",
                      "src/msplatform/execution/resources/dependencies.ps1",
@@ -1552,8 +1557,8 @@ $result|ConvertTo-Json -Compress
                 self.assertTrue(quad)
                 rf_modules = [contract_test_path(value) for row in quad for value in row['command'].get('parameters', {}).get('ChangedTestModules', [])]
                 self.assertCountEqual(rf_modules, [
-                    'tests/projects/rf_multipole_ion_optics/analysis/test_frozen_matlab_closure.py',
-                    'tests/projects/rf_multipole_ion_optics/analysis/test_comsol_mesh_report.py'])
+                    'tests/components/rf_multipole_ion_optics/analysis/test_frozen_matlab_closure.py',
+                    'tests/components/rf_multipole_ion_optics/analysis/test_comsol_mesh_report.py'])
                 shared = name != 'configure_comsol_mesh.m'
                 oa = rows_for('single_reflection_oa_tof_mass_analyzer_static')
                 integration = rows_for('instrument_assembly_integration')
@@ -1561,12 +1566,12 @@ $result|ConvertTo-Json -Compress
                 if shared:
                     oa_modules = [contract_test_path(value) for row in oa for value in row['command'].get('parameters', {}).get('SelectedTestModules', [])]
                     self.assertCountEqual(oa_modules, [
-                        'tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_workflow.py',
-                        'tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_causal_workflow.py',
-                        'tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_postprocess_workflow.py',
-                        'tests/projects/single_reflection_oa_tof_mass_analyzer/analysis/test_paired_accelerator_field_adapters.py'])
+                        'tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_workflow.py',
+                        'tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_causal_workflow.py',
+                        'tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_postprocess_workflow.py',
+                        'tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_paired_accelerator_field_adapters.py'])
                     integration_modules = [contract_test_path(value) for row in integration for value in row['command'].get('parameters', {}).get('SelectedTestModules', [])]
-                    self.assertEqual(integration_modules, ['tests/integration/test_paired_accelerator_static_field_execute.py'])
+                    self.assertEqual(integration_modules, ['tests/workflows/paired_accelerator/test_paired_accelerator_static_field_execute.py'])
                 for stage in ('rf_multipole_domain_tests','rf_multipole_hexapole_static','rf_multipole_octupole_static',
                               'transverse_helical_filament_wehnelt_electron_gun_static','apertured_tube_electron_impact_ion_source_static'):
                     self.assertFalse(rows_for(stage), stage)
@@ -1610,7 +1615,7 @@ $result|ConvertTo-Json -Compress
             self.skipTest("PowerShell Core is unavailable")
         completed = subprocess.run(
             [pwsh, "-NoProfile", "-File", str(CHANGED_GATE), "-PlanOnly",
-             "-PythonExe", sys.executable, "-ChangedPath", "tests/integration/test_dependencies.py"],
+             "-PythonExe", sys.executable, "-ChangedPath", "tests/execution/test_dependencies.py"],
             cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
@@ -1648,7 +1653,7 @@ $result|ConvertTo-Json -Compress
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         groups = json.loads(result.stdout)
         names = [name for group in groups for name in group["modules"]]
-        test_root = REPO_ROOT / "tests/projects/parallel_mirror_dual_stripe_mr_tof"
+        test_root = REPO_ROOT / "tests/components/parallel_mirror_dual_stripe_mr_tof"
         expected = [".".join(path.relative_to(REPO_ROOT).with_suffix("").parts)
                     for path in test_root.rglob("test_*.py")]
         self.assertCountEqual(names, expected)
@@ -1684,7 +1689,7 @@ $full.parameters.PSObject.Properties.Remove('PreflightOnly')
 
     def test_mr_partition_preflight_cannot_claim_a_full_gate(self) -> None:
         gate = REPO_ROOT / "src/msplatform/workflows/resources/mr_verify.ps1"
-        module = "tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_drift_phase_contract"
+        module = "tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_drift_phase_contract"
         script = ("& '" + str(gate).replace("'", "''") + "' -Level Static -PythonExe '" +
                   sys.executable.replace("'", "''") + "' -SelectedTestModules @('" + module +
                   "') -PreflightValidated")
@@ -1777,9 +1782,9 @@ $full.parameters.PSObject.Properties.Remove('PreflightOnly')
             common.mkdir(parents=True)
             (root / "src/msplatform/components").mkdir(parents=True)
             for name in ("verify.ps1", "parallel_gate_support.ps1", "gate_catalog_support.ps1",
-                         "require_powershell7.ps1"):
-                source = REPO_ROOT / ("src/msplatform/execution/resources" if name == "require_powershell7.ps1" else "tools/repository") / name
-                destination = root / ("src/msplatform/execution/resources" if name == "require_powershell7.ps1" else "tools/repository") / name
+                         "require_powershell7.ps1", "resource_process_support.ps1"):
+                source = REPO_ROOT / ("src/msplatform/execution/resources" if name in ("require_powershell7.ps1", "resource_process_support.ps1") else "tools/repository") / name
+                destination = root / ("src/msplatform/execution/resources" if name in ("require_powershell7.ps1", "resource_process_support.ps1") else "tools/repository") / name
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(source, destination)
             (common / "host_execution_lease.ps1").write_text(
@@ -2081,10 +2086,10 @@ exit ([int]$env:CI_FIXTURE_EXIT)
         )
 
     def test_shared_workflow_fixture_selects_actual_consumers_and_unknown_stays_conservative(self) -> None:
-        rf = "tests.projects.rf_multipole_ion_optics.analysis."
-        single = "tests.projects.single_reflection_oa_tof_mass_analyzer.analysis."
+        rf = "tests.components.rf_multipole_ion_optics.analysis."
+        single = "tests.components.single_reflection_oa_tof_mass_analyzer.analysis."
         expected = {
-            "instrument_assembly_integration": ["tests.integration.test_single_reflection_owner_recovery"],
+            "instrument_assembly_integration": ["tests.workflows.single_reflection.test_single_reflection_owner_recovery"],
             "rf_multipole_quadrupole_static": [rf + name for name in (
                 "test_comsol_owner_finalization", "test_owner_finalization_recovery", "test_simion_powershell_owner")],
             "single_reflection_oa_tof_mass_analyzer_static": [single + name for name in (
@@ -2117,14 +2122,14 @@ exit ([int]$env:CI_FIXTURE_EXIT)
             self.assertCountEqual(modules, selected_modules(full, owner), owner)
 
     def test_multipole_tests_do_not_route_to_runtime_consumers(self) -> None:
-        initializer_routes = self.routed_stages("tests/projects/rf_multipole_ion_optics/__init__.py")
+        initializer_routes = self.routed_stages("tests/components/rf_multipole_ion_optics/__init__.py")
         self.assertTrue({"rf_multipole_domain_tests", "rf_multipole_quadrupole_static",
                          "rf_multipole_hexapole_static", "rf_multipole_octupole_static"}.issubset(initializer_routes))
         for filename in ("test_simion_geometry.py", "test_simion_rf_drive.lua",
                          "test_comsol_stationary_solver_smoke.m"):
             with self.subTest(filename=filename):
                 self.assertEqual(
-                    self.routed_stages(f"tests/projects/rf_multipole_ion_optics/domain/{filename}"),
+                    self.routed_stages(f"tests/components/rf_multipole_ion_optics/domain/{filename}"),
                     {"rf_multipole_domain_tests": "rf_multipole_domain_tests_changed"},
                 )
 
@@ -2168,7 +2173,7 @@ exit ([int]$env:CI_FIXTURE_EXIT)
         completed = subprocess.run(
             ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(CHANGED_GATE),
              "-PythonExe", sys.executable, "-PlanOnly", "-ChangedPath",
-             "tests/projects/rf_multipole_ion_optics/domain/test_simion_geometry.py"],
+             "tests/components/rf_multipole_ion_optics/domain/test_simion_geometry.py"],
             cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30,
         )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
@@ -2416,7 +2421,7 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
         sources = ('src/msplatform/components/catalog.py', base+'provider.py', base+'candidate_contract.py',
                    base+'assembly_interface.py', base+'resolved_geometry.py', 'src/msplatform/backends/simion/mr_geometry.py',
                    'src/msplatform/backends/simion/native_system_geometry.py')
-        prefix = 'tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.'
+        prefix = 'tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.'
         required = {prefix+name for name in ('test_mr_provider_freeze','test_mr_provider_trial_transport',
                     'test_assembly_interface','test_simion_candidate_reference','test_two_prism_simion_trial')}
         for path in sources:
@@ -2438,7 +2443,7 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
                     self.assertIn('tests.contracts.test_installed_scientific_core',
                                   [value.removesuffix('.py').replace('/','.') for value in common])
         for module in ('test_mr_provider_freeze','test_mr_provider_trial_transport'):
-            path='tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/'+module+'.py'
+            path='tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/'+module+'.py'
             self.assertTrue((REPO_ROOT/path).is_file())
             request, _ = self.plan('-ChangedPath',path)
             owner=next(row for row in request['stages'] if row['selected'] and row['name']=='parallel_mirror_dual_stripe_mr_tof_static')
@@ -2497,7 +2502,7 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
                 if integration:
                     modules = integration_modules(request)
                     self.assertIn('test_rf_oa_compiler', modules, (path, modules))
-        request, _ = self.plan('-ChangedPath', 'tests/integration/test_rf_oa_compiler.py')
+        request, _ = self.plan('-ChangedPath', 'tests/assembly/rf_oa_compiler/test_rf_oa_compiler.py')
         modules = integration_modules(request)
         self.assertIn('test_rf_oa_compiler', modules)
 
@@ -2533,7 +2538,7 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
                          'src/msplatform/workflows/resources/mr_verify.ps1')
         self.assertEqual(command['parameters']['Level'], 'Core')
         self.assertNotIn('SelectedTestModules', command['parameters'])
-        prefix = 'tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.'
+        prefix = 'tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.'
         expected = [prefix + name for name in (
             'test_downstream_fixed_grid_workpoint',
             'test_drift_phase_contract',
@@ -2580,7 +2585,7 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
         self.assertEqual(command['parameters']['Level'], 'Core')
         self.assertNotIn('SelectedTestModules', command['parameters'])
         self.assertEqual(command['parameters']['ChangedTestModules'], [
-            'tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_static_field_binding'])
+            'tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_static_field_binding'])
         common = [value for row in request['stages']
                   if row['name'].startswith('simion_common')
                   for value in row['command'].get('arguments', [])]
@@ -2593,7 +2598,7 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
                        if row['name'].startswith('instrument_assembly_integration')
                        for value in row['command'].get('parameters', {}).get('SelectedTestModules', [])]
         self.assertCountEqual(integration, [
-            'tests.integration.test_dependencies'])
+            'tests.execution.test_dependencies'])
         self.assertEqual(len(integration), len(set(integration)))
         self.assertTrue(any(row['name'].startswith('common_contracts') for row in request['stages']))
         self.assertFalse(any(row['resource_role'] in {'SIMION', 'COMSOL'} for row in request['stages']))
@@ -2610,7 +2615,7 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
                          'src/msplatform/workflows/resources/mr_verify.ps1')
         self.assertEqual(command['parameters']['Level'], 'Core')
         self.assertNotIn('SelectedTestModules', command['parameters'])
-        prefix = 'tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.'
+        prefix = 'tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.'
         expected = [prefix + name for name in [
             'test_downstream_fixed_grid_workpoint',
             'test_downstream_workpoint_iteration',
@@ -2652,7 +2657,7 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
         self.assertNotIn("SelectedTestModules", command["parameters"])
         modules = command["parameters"]["ChangedTestModules"]
         self.assertCountEqual(modules, [
-            "tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis." + name
+            "tests.components.parallel_mirror_dual_stripe_mr_tof.analysis." + name
             for name in ("test_static_field_binding", "test_native_memory_consumer_crop",
                          "test_prepared_joint_trial", "test_native_static_field_provider_runner")])
         self.assertEqual(len(modules), len(set(modules)))
@@ -2677,9 +2682,9 @@ class RuntimeInventoryRouteTests(unittest.TestCase):
             (repo / "tools/repository").mkdir(parents=True)
             (repo / "src/msplatform/components").mkdir(parents=True)
             for name in ("verify.ps1", "gate_catalog_support.ps1", "parallel_gate_support.ps1",
-                         "host_execution_lease.ps1", "require_powershell7.ps1"):
-                source = REPO_ROOT / ("src/msplatform/execution/resources" if name == "require_powershell7.ps1" else "tools/repository") / name
-                destination = repo / ("src/msplatform/execution/resources" if name == "require_powershell7.ps1" else "tools/repository") / name
+                         "host_execution_lease.ps1", "require_powershell7.ps1", "resource_process_support.ps1"):
+                source = REPO_ROOT / ("src/msplatform/execution/resources" if name in ("require_powershell7.ps1", "resource_process_support.ps1") else "tools/repository") / name
+                destination = repo / ("src/msplatform/execution/resources" if name in ("require_powershell7.ps1", "resource_process_support.ps1") else "tools/repository") / name
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(source, destination)
             for name in ("host_execution_lease.ps1", "host_resource_policy.json"):

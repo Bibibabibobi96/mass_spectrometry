@@ -5919,7 +5919,7 @@ class InstalledScientificCoreTests(unittest.TestCase):
         """Serialize explicit original Stripe cases; clients never read author inputs."""
         import copy
         from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
-        from tests.projects.parallel_mirror_dual_stripe_mr_tof.test_support.mr_geometry_inputs import pure_geometry_inputs
+        from tests.components.parallel_mirror_dual_stripe_mr_tof.test_support.mr_geometry_inputs import pure_geometry_inputs
         stripe_contract=load_contract(REPO_ROOT/'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json')
         stripe_converging=copy.deepcopy(stripe_contract)
         stripe_converging['mirror']['convergence_transform']={'angle_deg':.025688744787259285,'pivot_y_mm':0.}
@@ -5971,7 +5971,7 @@ class InstalledScientificCoreTests(unittest.TestCase):
     def prism_phase_probe_fixture():
         """Transport explicit original MR reference inputs, never author paths to clients."""
         from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract as prism_load_contract
-        from tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_prism_analytic import PrismAnalyticTest as prism_reference
+        from tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_prism_analytic import PrismAnalyticTest as prism_reference
         prism_contract = prism_load_contract(REPO_ROOT/'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json')
         prism_contract['accelerator']['focus_y_anchor']['project_y_mm'] = -45.0
         prism_trace, prism_direction, prism_beta = prism_reference._right_angle_trace()
@@ -6243,7 +6243,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
         namespace = {'math': math}
         exec(compile(ast.Module(body=helpers, type_ignores=[]), '<actual-installed-field-check>', 'exec'), namespace)
         check = namespace['ipd_assert_field_equivalence']
-        fixture = json.loads((REPO_ROOT / 'tests/projects/dual_pressure_rectilinear_ion_processor/fixtures/ip_exporters_old_witness.json').read_text(encoding='utf-8'))
+        fixture = json.loads((REPO_ROOT / 'tests/components/dual_pressure_rectilinear_ion_processor/fixtures/ip_exporters_old_witness.json').read_text(encoding='utf-8'))
         expected = fixture['field_diagnostics']['scientific_metadata']
         images = fixture['field_diagnostics']['image_sha256']
         check(expected, copy.deepcopy(expected), images, dict(images))
@@ -6295,7 +6295,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                 decode(records)
 
     def single_reflection_continuation_probe_fixture(self) -> list[dict]:
-        from tests.integration.test_single_reflection_continuation import SingleReflectionContinuationTests
+        from tests.workflows.single_reflection.test_single_reflection_continuation import SingleReflectionContinuationTests
         from msplatform.workflows.single_reflection_flight.continuation import prepare_phase_continuation
         cases=[]
         for _ in range(2):
@@ -6334,7 +6334,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
         return cases
 
     def prepared_joint_diagnostics_probe_fixture(self) -> list[dict]:
-        from tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_prepared_joint_diagnostics import PreparedJointDiagnosticsTests
+        from tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_prepared_joint_diagnostics import PreparedJointDiagnosticsTests
         from msplatform.backends.simion.mrtof_batch_flight import merge_measured_event_logs
         result = []
         for structured in (False, True):
@@ -6356,7 +6356,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
         return result
 
     def single_reflection_collection_probe_fixture(self) -> dict:
-        from tests.integration.test_single_reflection_collection import SingleReflectionCollectionTests
+        from tests.workflows.single_reflection.test_single_reflection_collection import SingleReflectionCollectionTests
         case = SingleReflectionCollectionTests()
         case.setUp()
         self.addCleanup(case.doCleanups)
@@ -6383,7 +6383,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
         return result
 
     def gas_field_probe_fixture(self, root: Path) -> dict:
-        from tests.projects.dual_cone_tandem_quadrupole_ion_interface.test_gas_flow_contract import (
+        from tests.components.dual_cone_tandem_quadrupole_ion_interface.test_gas_flow_contract import (
             PROJECT_ROOT, _write_fixture,
         )
         from msplatform.io.manifest_records import file_record
@@ -6403,7 +6403,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
         return dict(manifest=file_record(manifest), product_id="gas_field")
 
     def multipole_ip_probe_fixture(self) -> str:
-        from tests.integration.test_multipole_ip_prepare import MultipoleIPPreparationTests, write_json
+        from tests.workflows.multipole_ip.test_multipole_ip_prepare import MultipoleIPPreparationTests, write_json
         fixture = MultipoleIPPreparationTests()
         fixture.setUp()
         self.addCleanup(fixture.doCleanups)
@@ -6412,7 +6412,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
 
     def single_reflection_workflow_probe_fixture(self, root: Path) -> list[dict]:
         from msplatform.io.manifest_records import file_record
-        from tests.integration.test_single_reflection_preparation import (
+        from tests.workflows.single_reflection.test_single_reflection_preparation import (
             fixture, release_fixture, scientific_preparation_fixture, RecordedPrePulsePreparationTests, write_json,
         )
         from msplatform.workflows.single_reflection_flight.prepare import prepare
@@ -6454,7 +6454,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
     def mr_cad_parts_probe_fixture(self) -> dict:
         """Original tiny CAD input fixture; expected coordinates remain independent."""
         from msplatform.exporters import mr_cad_parts
-        from tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_resolved_cad_export import fixture as mr_cad_original_fixture
+        from tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_resolved_cad_export import fixture as mr_cad_original_fixture
 
         mr_cad_geometry, mr_cad_authority = mr_cad_original_fixture()
         mr_cad_raw = Path(mr_cad_parts.__file__).read_bytes()
@@ -6477,9 +6477,9 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
     def tof_kernel_probe_fixture(self) -> dict:
         """Original high-contrast kernel fixture; no experiment/default selection."""
         from dataclasses import asdict
-        from tests.projects.single_reflection_oa_tof_mass_analyzer.analysis.test_three_zone_ideal_theory import ThreeZoneIdealTheoryTests
+        from tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_three_zone_ideal_theory import ThreeZoneIdealTheoryTests
         case = ThreeZoneIdealTheoryTests()
-        from tests.projects.single_reflection_oa_tof_mass_analyzer.analysis.test_ideal_acceptance_theory import IdealAcceptanceTheoryTests
+        from tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_ideal_acceptance_theory import IdealAcceptanceTheoryTests
         acceptance_case = IdealAcceptanceTheoryTests()
         acceptance_case.setUp()
         acceptance_golden = json.loads(r'''{
@@ -6743,7 +6743,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
 
     def rf_finite_extraction_probe_fixture(self) -> dict:
         """Reuse the original artificial projection fixture, without native claims."""
-        from tests.projects.rf_multipole_ion_optics.domain.test_finite_extraction_context import fixture
+        from tests.components.rf_multipole_ion_optics.domain.test_finite_extraction_context import fixture
         from msplatform.backends.comsol import rf_finite_extraction
 
         arguments = fixture()
@@ -6756,7 +6756,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
     def rf_response_comparison_probe_fixture(self, root: Path) -> dict:
         """Serialize the original eight-test fixture and unchanged comparison body result."""
         from msplatform.workflows.rf_mass_filter import response_comparison
-        from tests.projects.rf_multipole_ion_optics.analysis.test_mass_filter_response_comparison import (
+        from tests.components.rf_multipole_ion_optics.analysis.test_mass_filter_response_comparison import (
             MassFilterResponseComparisonTests,
         )
 
@@ -6863,7 +6863,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
 
     def mr_public_provider_probe_fixture(self) -> dict:
         from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
-        from tests.projects.parallel_mirror_dual_stripe_mr_tof.test_support.mr_geometry_inputs import geometry_authority
+        from tests.components.parallel_mirror_dual_stripe_mr_tof.test_support.mr_geometry_inputs import geometry_authority
         mrp_contract_path = REPO_ROOT / 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json'
         mrp_oa_path = REPO_ROOT / 'src/msplatform/components/orthogonal_accelerator/component_contract.json'
         mrp_contract_bytes, mrp_oa_bytes = mrp_contract_path.read_bytes(), mrp_oa_path.read_bytes()
@@ -6882,7 +6882,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
         # recorded from the retired original publisher at 574ae974 (8849a767...).
         # This is an explicit test oracle, not a second design/default authority.
         import copy
-        from tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis import test_assembly_interface as fixtures
+        from tests.assembly.parallel_mirror_dual_stripe_mr_tof.analysis import test_assembly_interface as fixtures
         baseline = json.loads(r'''{
   "schema_version": 1,
   "role": "component_geometry_interface",
@@ -7066,7 +7066,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
 
     def oa_mr_runtime_receipt_probe_fixture(self, work):
         from unittest import mock
-        from tests.projects.orthogonal_accelerator.analysis import test_component_focus_workflow as fixtures
+        from tests.components.orthogonal_accelerator.analysis import test_component_focus_workflow as fixtures
         from msplatform.backends.simion import pa_family_cache as cache
         work.mkdir(parents=True, exist_ok=False)
         base = work / 'fixture'
@@ -7136,7 +7136,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
         import copy
         from unittest import mock
         from msplatform.backends.comsol import static_field_binding
-        from tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis import test_native_static_field_provider as fixture
+        from tests.components.parallel_mirror_dual_stripe_mr_tof.analysis import test_native_static_field_provider as fixture
 
         work.mkdir(parents=True, exist_ok=False)
         class Keep:
@@ -7169,7 +7169,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
         return observed
 
     def oa_focus_analysis_probe_fixture(self) -> dict:
-        from tests.projects.orthogonal_accelerator.analysis import test_component_focus_analysis as fixtures
+        from tests.components.orthogonal_accelerator.analysis import test_component_focus_analysis as fixtures
         from msplatform.workflows.oa_focus_analysis import analyze
         case = fixtures.ComponentFocusAnalysisTests()
         case.setUp()
@@ -7277,8 +7277,8 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
 
     @staticmethod
     def paired_pulse_analysis_probe_fixture(root: Path) -> dict:
-        from tests.integration.test_comsol_prepulse_replay import ComsolPrePulseReplayTests
-        from tests.integration.test_paired_accelerator_pulse_comparison import PairedPulseComparisonTests
+        from tests.workflows.frontend.test_comsol_prepulse_replay import ComsolPrePulseReplayTests
+        from tests.workflows.paired_accelerator.test_paired_accelerator_pulse_comparison import PairedPulseComparisonTests
         source = root / 'paired-pulse-fixture'
         source.mkdir()
         collection, geometry, release, metadata, decision = ComsolPrePulseReplayTests()._write_source(source)
@@ -7363,7 +7363,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             from msplatform.ion_release.release import generate_release_states
             from msplatform.components.rf_multipole.design_request_files import compile_design_request
             from msplatform.components.rf_multipole.assembly_interface import build_assembly_interface
-            from tests.projects.rf_multipole_ion_optics.domain.test_compile_design_request import design_request
+            from tests.components.rf_multipole_ion_optics.domain.test_compile_design_request import design_request
             from msplatform.assembly.resolve_assembly import compile_assembly_layout
             request = design_request('octupole')
             resolved = compile_design_request(request, expected_identity=request['identity'])
@@ -7383,7 +7383,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             provider_layout = dict(recipe=provider_recipe, components=provider_components,
                 expected_layout=compile_assembly_layout(provider_recipe, provider_components))
             from msplatform.components.orthogonal_accelerator.assembly_interface import resolve_assembly_interface
-            from tests.projects.orthogonal_accelerator.analysis.test_assembly_interface import two_zone_requirements, TWO_ZONE_PROFILE
+            from tests.assembly.orthogonal_accelerator.analysis.test_assembly_interface import two_zone_requirements, TWO_ZONE_PROFILE
             from tests.contracts.test_component_particle_state import valid_row
 
             oa_requirements = two_zone_requirements()
@@ -7450,11 +7450,11 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             ip_config = REPO_ROOT / 'src/msplatform/components/dual_pressure_rectilinear_ion_processor/config'
             ip = {name: json.loads((ip_config/(name+'.json')).read_text(encoding='utf-8'))
                   for name in ('baseline', 'numerics', 'source', 'native_operating_point', 'acceptance')}
-            from tests.projects.dual_pressure_rectilinear_ion_processor.test_electrode_contours import ElectrodeContourTests
+            from tests.components.dual_pressure_rectilinear_ion_processor.test_electrode_contours import ElectrodeContourTests
             ip_contour_fixture = ElectrodeContourTests()
             ip_contour_fixture.setUp()
             ip['formed_contours'] = copy.deepcopy(ip_contour_fixture.c)
-            from tests.projects.dual_pressure_rectilinear_ion_processor.test_functional import HS1_SOURCE_FIXTURE
+            from tests.components.dual_pressure_rectilinear_ion_processor.test_functional import HS1_SOURCE_FIXTURE
             ip['preparation_config'] = {name: ip[name] for name in ('baseline', 'numerics', 'source', 'native_operating_point', 'acceptance')}
             ip['preparation_config'].update(source_profile='functional', source_authority_file='source.json')
             selected_hs1 = environment.get('MASS_SPECTROMETRY_INSTALLED_IP_HS1_SOURCE')
@@ -7462,7 +7462,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             ip['hs1_input_bytes_hex'] = hs1_bytes.hex()
             ip['hs1_input_kind'] = 'explicit_vendor_source' if selected_hs1 else 'inert_unit_fixture'
             ip['hs1_input_sha256'] = hashlib.sha256(hs1_bytes).hexdigest()
-            from tests.projects.dual_pressure_rectilinear_ion_processor.test_functional import NativeFieldReferenceTests
+            from tests.components.dual_pressure_rectilinear_ion_processor.test_functional import NativeFieldReferenceTests
             field_parent, _, field_model, field_family = NativeFieldReferenceTests().make_family_fixture(root / 'inert-ip-field-reference')
             ip['field_reference_parent'] = str(field_parent)
             ip['field_reference_model'] = field_model
@@ -7472,22 +7472,22 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                native_operating_point=ip['native_operating_point'])
             ip['identities'] = {name: dict(path='inputs/'+name, bytes=1, sha256='A'*64)
                                 for name in ('resolved_model', 'source_spec', 'release_csv')}
-            from tests.projects.single_reflection_oa_tof_mass_analyzer.analysis.test_paired_accelerator_static_field_prepare import PairedAcceleratorStaticFieldPrepareTests
+            from tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_paired_accelerator_static_field_prepare import PairedAcceleratorStaticFieldPrepareTests
             from msplatform.backends.comsol.paired_static_field import prepare as prepare_paired_field
             paired_request = PairedAcceleratorStaticFieldPrepareTests()._request(root)
             (root/'paired-request.json').write_text(json.dumps(paired_request), encoding='utf-8')
             paired = dict(expected_plan=prepare_paired_field(root/'paired-request.json', root/'paired-installed'))
             # Construct real synthetic cases before author trees are taken offline.
-            from tests.projects.rf_multipole_ion_optics.analysis.test_same_solver_numerical_convergence import (
+            from tests.components.rf_multipole_ion_optics.analysis.test_same_solver_numerical_convergence import (
                 SameSolverNumericalConvergenceTests, PORTABLE_INPUT_ROLES, PORTABLE_SIMION_OUTPUT_ROLES,
             )
-            rfconv_oracle = json.loads((REPO_ROOT / 'tests/projects/rf_multipole_ion_optics/fixtures/rf_convergence_old_witness.json').read_text(encoding='utf-8'))
-            ipread_oracle = json.loads((REPO_ROOT / 'tests/projects/dual_pressure_rectilinear_ion_processor/fixtures/ip_reader_old_witness.json').read_text(encoding='utf-8'))
+            rfconv_oracle = json.loads((REPO_ROOT / 'tests/components/rf_multipole_ion_optics/fixtures/rf_convergence_old_witness.json').read_text(encoding='utf-8'))
+            ipread_oracle = json.loads((REPO_ROOT / 'tests/components/dual_pressure_rectilinear_ion_processor/fixtures/ip_reader_old_witness.json').read_text(encoding='utf-8'))
             rfconv_project = REPO_ROOT / 'src/msplatform/components/rf_multipole'
             for rfconv_name, rfconv_hash in rfconv_oracle['authorities'].items():
                 authority = rfconv_project / rfconv_name
                 if rfconv_name == 'variants/quadrupole/config/resolved_design_official.json':
-                    authority = REPO_ROOT / 'tests/projects/rf_multipole_ion_optics/fixtures/rf_convergence_old_resolved_design_official.json'
+                    authority = REPO_ROOT / 'tests/components/rf_multipole_ion_optics/fixtures/rf_convergence_old_resolved_design_official.json'
                 self.assertEqual(hashlib.sha256(authority.read_bytes()).hexdigest().lower(), rfconv_hash.lower())
             rfconv_policy = REPO_ROOT / 'src/msplatform/contracts/particle_count_policy.json'
             self.assertEqual(hashlib.sha256(rfconv_policy.read_bytes()).hexdigest().lower(), rfconv_oracle['policy_sha256'].lower())
@@ -7533,30 +7533,30 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                 shutil.copyfile(rfconv_path,rfconv_copy_path)
                 rfconv_data[rfconv_key] = str(rfconv_copy_path)
             rfconv_fixture = dict(manifests=rfconv_manifests,data=rfconv_data,oracle=rfconv_oracle)
-            from tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_static_field_binding import IonProcessorNativeBindingTest
+            from tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_static_field_binding import IonProcessorNativeBindingTest
             mr_operator_root = root / 'mr-prepared-field-operator'
             mr_operator_root.mkdir()
             _, mr_operator_binding_path, _ = IonProcessorNativeBindingTest().fixture(mr_operator_root)
             import ast
-            from tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_measured_component_source import MeasuredComponentSourceTests
+            from tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_measured_component_source import MeasuredComponentSourceTests
             mr_measured_fixture = MeasuredComponentSourceTests('test_irregular_ids_birth_offsets_and_exact_six_dimensions')
             mr_measured_fixture.setUp()
             self.addCleanup(mr_measured_fixture.doCleanups)
             mr_measured_inputs = {path: path.read_bytes() for path in mr_measured_fixture.root.rglob('*') if path.is_file()}
-            mr_test_path = REPO_ROOT / 'tests/projects/parallel_mirror_dual_stripe_mr_tof/analysis/test_measured_component_source.py'
+            mr_test_path = REPO_ROOT / 'tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_measured_component_source.py'
             mr_test_ast = ast.parse(mr_test_path.read_text(encoding='utf-8'))
             mr_callbacks = [node.value for node in ast.walk(mr_test_ast) if isinstance(node, ast.Constant)
                             and isinstance(node.value, str) and 'READ_ONLY_TOF=PASS' in node.value and 'setfenv(chunk' in node.value]
             self.assertEqual(len(mr_callbacks), 1)
             # Existing five-species software fixture; preserve its explicit selected input bytes.
-            from tests.projects.single_reflection_oa_tof_mass_analyzer.analysis.test_peak_metrics import SourceMappingAndBootstrapTest
+            from tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_peak_metrics import SourceMappingAndBootstrapTest
             tof_spectrum_root = root / 'tof-mass-spectrum-inputs'
             tof_spectrum_root.mkdir()
             tof_spectrum_mode, tof_spectrum_comsol, tof_spectrum_simion = SourceMappingAndBootstrapTest._mass_spectrum_inputs(tof_spectrum_root)
             # The retained oracle was captured with these exact geometry bytes.
             # Current detector numerics evolve independently of this old witness.
             import base64
-            tof_spectrum_old_witness = json.loads((REPO_ROOT / 'tests/projects/single_reflection_oa_tof_mass_analyzer/fixtures/tof_mass_spectrum_old_witness.json').read_text(encoding='utf-8'))
+            tof_spectrum_old_witness = json.loads((REPO_ROOT / 'tests/components/single_reflection_oa_tof_mass_analyzer/fixtures/tof_mass_spectrum_old_witness.json').read_text(encoding='utf-8'))
             tof_spectrum_geometry_record = tof_spectrum_old_witness['inputs']['resolved_geometry.json']
             tof_spectrum_geometry_bytes = base64.b64decode(tof_spectrum_geometry_record['base64'], validate=True)
             self.assertEqual(len(tof_spectrum_geometry_bytes), tof_spectrum_geometry_record['bytes'])
@@ -7573,8 +7573,8 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                 'tests.contracts.test_simion_rf_prepared_model', 'tests.contracts.test_simion_rf_tracking',
                                 'tests.contracts.test_simion_geometry_compiler', 'tests.contracts.test_simion_model_execution',
                                 'tests.contracts.test_simion_prepared_model', 'tests.contracts.test_component_particle_state',
-                                'tests.integration.test_ip_compiler',
-                                'tests.projects.dual_pressure_rectilinear_ion_processor.test_functional'):
+                                'tests.workflows.multipole_ip.test_ip_compiler',
+                                'tests.components.dual_pressure_rectilinear_ion_processor.test_functional'):
                 module = importlib.import_module(module_name)
                 actual = Path(module.__file__).resolve()
                 relative = Path(*module_name.split('.')).with_suffix('.py')
@@ -7605,7 +7605,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             from msplatform.execution.owner import run_managed_stage
             from msplatform.execution.completion import no_particle_batch_completion_api
             from msplatform.io.manifest_records import file_record
-            from tests.projects.dual_pressure_rectilinear_ion_processor.test_functional import HS1_SOURCE_FIXTURE
+            from tests.components.dual_pressure_rectilinear_ion_processor.test_functional import HS1_SOURCE_FIXTURE
             ip_mr_source=source/'tests/contracts/test_support/ip_mr_sampled_field_fixture.py'
             self.assertEqual(Path(ip_mr_fixture.__file__).read_bytes(),ip_mr_source.read_bytes())
             ip_mr_root=root/'ip-mr-shared-inert-producer';ip_mr_started=time.perf_counter_ns()
@@ -7646,16 +7646,16 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               gas_field_reference=self.gas_field_probe_fixture(root),
                                               tof_mass_spectrum_inputs=dict(mode=str(tof_spectrum_mode), comsol_dir=str(tof_spectrum_comsol), simion=str(tof_spectrum_simion), geometry=str(tof_spectrum_geometry)),
                                               tof_mass_spectrum_old_witness=tof_spectrum_old_witness,
-                                              rf_event_old_capture=json.loads((REPO_ROOT / 'tests/projects/rf_multipole_ion_optics/fixtures/rf_event_old_capture.json').read_text(encoding='utf-8')),
-                                              ip_analyzer_old_witness=json.loads((REPO_ROOT / 'tests/projects/dual_pressure_rectilinear_ion_processor/fixtures/ip_analyzer_old_witness.json').read_text(encoding='utf-8')),
-                                              ip_exporters_old_witness=json.loads((REPO_ROOT / 'tests/projects/dual_pressure_rectilinear_ion_processor/fixtures/ip_exporters_old_witness.json').read_text(encoding='utf-8')),
+                                              rf_event_old_capture=json.loads((REPO_ROOT / 'tests/components/rf_multipole_ion_optics/fixtures/rf_event_old_capture.json').read_text(encoding='utf-8')),
+                                              ip_analyzer_old_witness=json.loads((REPO_ROOT / 'tests/components/dual_pressure_rectilinear_ion_processor/fixtures/ip_analyzer_old_witness.json').read_text(encoding='utf-8')),
+                                              ip_exporters_old_witness=json.loads((REPO_ROOT / 'tests/components/dual_pressure_rectilinear_ion_processor/fixtures/ip_exporters_old_witness.json').read_text(encoding='utf-8')),
                                               mr_measured_handoff=str(mr_measured_fixture.handoff),
                                               mr_measured_callback=mr_callbacks[0],
-                                              mr_measured_source_old_witness=json.loads((REPO_ROOT / 'tests/projects/parallel_mirror_dual_stripe_mr_tof/fixtures/mr_measured_source_old_witness.json').read_text(encoding='utf-8')),
+                                              mr_measured_source_old_witness=json.loads((REPO_ROOT / 'tests/components/parallel_mirror_dual_stripe_mr_tof/fixtures/mr_measured_source_old_witness.json').read_text(encoding='utf-8')),
                                               strict_json_old_witness=json.loads((REPO_ROOT / 'tests/contracts/fixtures/strict_json_old_witness.json').read_text(encoding='utf-8')),
-                                              mr_prepared_field_old_witness=json.loads((REPO_ROOT / 'tests/projects/parallel_mirror_dual_stripe_mr_tof/fixtures/mr_prepared_field_old_witness.json').read_text(encoding='utf-8')),
-                                              ion_reader_old_witness=json.loads((REPO_ROOT / 'tests/projects/single_reflection_oa_tof_mass_analyzer/fixtures/ion_reader_old_witness.json').read_text(encoding='utf-8')),
-                                              mr_interface_coverage_vectors=json.loads((REPO_ROOT / 'tests/projects/parallel_mirror_dual_stripe_mr_tof/fixtures/mr_interface_coverage_vectors.json').read_text(encoding='utf-8')),
+                                              mr_prepared_field_old_witness=json.loads((REPO_ROOT / 'tests/components/parallel_mirror_dual_stripe_mr_tof/fixtures/mr_prepared_field_old_witness.json').read_text(encoding='utf-8')),
+                                              ion_reader_old_witness=json.loads((REPO_ROOT / 'tests/components/single_reflection_oa_tof_mass_analyzer/fixtures/ion_reader_old_witness.json').read_text(encoding='utf-8')),
+                                              mr_interface_coverage_vectors=json.loads((REPO_ROOT / 'tests/components/parallel_mirror_dual_stripe_mr_tof/fixtures/mr_interface_coverage_vectors.json').read_text(encoding='utf-8')),
                                               mr_prepared_field_operator_binding=str(mr_operator_binding_path),
                                               prepared_joint_admission=self.prepared_joint_admission_probe_fixture(root),
                                               single_reflection_collection=self.single_reflection_collection_probe_fixture(),
@@ -7664,7 +7664,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               comparison=self.comparison_probe_fixture(),
                                               oa_focus_analysis=self.oa_focus_analysis_probe_fixture(),
                                               collision_overlay_probe=self.collision_overlay_probe_fixture(root / 'collision-overlay'),
-                                              detector_census_old_witness=json.loads((REPO_ROOT / 'tests/projects/single_reflection_oa_tof_mass_analyzer/test_support/detector_census_old_witness.json').read_text(encoding='utf-8')),
+                                              detector_census_old_witness=json.loads((REPO_ROOT / 'tests/components/single_reflection_oa_tof_mass_analyzer/test_support/detector_census_old_witness.json').read_text(encoding='utf-8')),
                                               oa_mr_runtime_receipt=self.oa_mr_runtime_receipt_probe_fixture(root / 'oa-mr-receipt'),
                                               mr_public_provider=self.mr_public_provider_probe_fixture(),
                                               mr_interface=self.mr_interface_probe_fixture(),
@@ -7674,9 +7674,9 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               rf_l1_managed=self.rf_l1_managed_probe_fixture(root),
                                               rf_response_comparison=self.rf_response_comparison_probe_fixture(root),
                                               rf_convergence=rfconv_fixture, ip_reader=ipread_oracle,
-                                              reflectron_fit={**json.loads((REPO_ROOT / 'tests/projects/single_reflection_oa_tof_mass_analyzer/fixtures/reflectron_fit_capture.json').read_text(encoding='utf-8')),
+                                              reflectron_fit={**json.loads((REPO_ROOT / 'tests/components/single_reflection_oa_tof_mass_analyzer/fixtures/reflectron_fit_capture.json').read_text(encoding='utf-8')),
                                                   'module_sha256': hashlib.sha256((REPO_ROOT / 'src/msplatform/backends/simion/optimize_reflectron_ring_voltages.py').read_bytes()).hexdigest()},
-                                              rf_transport_comparison=json.loads((REPO_ROOT / 'tests/projects/rf_multipole_ion_optics/fixtures/rf_transport_comparison_old_witness.json').read_text(encoding='utf-8')),
+                                              rf_transport_comparison=json.loads((REPO_ROOT / 'tests/components/rf_multipole_ion_optics/fixtures/rf_transport_comparison_old_witness.json').read_text(encoding='utf-8')),
                                               exported_axis_transport=self.exported_axis_transport_probe_fixture(),
                                               mr_cad_parts=self.mr_cad_parts_probe_fixture(),
                                               tof_kernel=self.tof_kernel_probe_fixture(),
@@ -7754,7 +7754,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             # Generate the existing public-track fixture from its actual author tests
             # before either source tree is moved offline; installed children only read JSON.
             for relative in ('tests/contracts/test_simion_tracking_execution.py',
-                             'tests/integration/test_single_reflection_program.py'):
+                             'tests/workflows/single_reflection/test_single_reflection_program.py'):
                 self.assertEqual((source / relative).read_bytes(), (REPO_ROOT / relative).read_bytes())
             from tests.contracts.test_simion_tracking_execution import PublicObservationTests
             observation_case = PublicObservationTests()
@@ -7825,8 +7825,8 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                     'tests/contracts/test_support/terminal_evidence_fixture.py',
                     'tests/contracts/test_sfi_scalar_binding.py',
                     'tests/contracts/test_simion_tracking_execution.py',
-                    'tests/integration/test_single_reflection_preparation.py',
-                    'tests/integration/test_single_reflection_geometry.py',
+                    'tests/workflows/single_reflection/test_single_reflection_preparation.py',
+                    'tests/workflows/single_reflection/test_single_reflection_geometry.py',
                     'tests/contracts/test_support/installed_observation_probe.py',
                     'tests/contracts/test_support/rf_ip_inert_field.py',
                     'tests/contracts/test_support/rf_ip_inert_leaf.py',
@@ -7844,10 +7844,10 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                     'tests/contracts/test_simion_model_execution.py',
                     'tests/contracts/test_simion_prepared_model.py',
                     'tests/contracts/test_component_particle_state.py',
-                    'tests/integration/test_ip_compiler.py',
-                    'tests/projects/dual_pressure_rectilinear_ion_processor/test_functional.py',
+                    'tests/workflows/multipole_ip/test_ip_compiler.py',
+                    'tests/components/dual_pressure_rectilinear_ion_processor/test_functional.py',
                     'tests/contracts/test_simion_tracking_execution.py',
-                    'tests/integration/test_single_reflection_program.py',
+                    'tests/workflows/single_reflection/test_single_reflection_program.py',
                     'tests/contracts/test_installed_scientific_core.py'))
                 source_files.extend(path for path in (actual_source / 'src').rglob('*') if path.is_file())
                 source_records = [dict(path=path.relative_to(actual_source).as_posix(), bytes=path.stat().st_size,

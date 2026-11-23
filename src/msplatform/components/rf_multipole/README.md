@@ -106,7 +106,7 @@ fixture／未知目录的owner发现沿公共目录；Core／Static内部集合�
 组件根的`config/`与`variants/<id>/config/`保存科学输入，`docs/`保存当前状态、实现说明和理论。
 求解器无关实现归`msplatform.components.rf_multipole`及`msplatform.analysis`；研究编排和PowerShell资源归
 `msplatform.workflows`，MATLAB/Lua/GEM归对应backend。长期测试与fixtures统一位于
-`tests/projects/rf_multipole_ion_optics`，不为变体复制通用实现。
+`tests/components/rf_multipole_ion_optics`，不为变体复制通用实现。
 
 新运行的owner为`rf_multipole_ion_optics`，产物进入工作区
 `artifacts/projects/rf_multipole_ion_optics/`。旧run、manifest、源和资格保留原owner与字节身份，

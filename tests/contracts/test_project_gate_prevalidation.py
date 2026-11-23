@@ -87,7 +87,7 @@ class ProjectGatePrevalidationTests(unittest.TestCase):
         corridor_provider.parent.mkdir(parents=True, exist_ok=True)
         corridor_provider.write_text("# inert parser fixture\n", encoding="utf-8")
         (self.root/"lua_probe.ps1").write_text("exit 0\n", encoding="utf-8")
-        lua = self.root / "tests/projects" / MR / "simion"
+        lua = self.root / "tests/components" / MR / "simion"
         lua.mkdir(parents=True)
         for name in ("test_candidate_plane_events.lua", "test_candidate_voltage_map.lua",
                      "test_mirror_cycle_counter.lua"):
@@ -131,7 +131,7 @@ class ProjectGatePrevalidationTests(unittest.TestCase):
                         "src/msplatform/workflows/dual_cone_transport.py",
                         "src/msplatform/workflows/dual_cone_stages.py",
                     ]
-                expected_ruff.append(f"tests/projects/{project}")
+                expected_ruff.append(f"tests/components/{project}")
                 self.assertEqual(ruff, [["ruff", "check", *expected_ruff]])
                 self.log.unlink()
                 delegated = self.run_gate(project, "-RuffHandledByParent", fail="ruff")
@@ -153,7 +153,7 @@ class ProjectGatePrevalidationTests(unittest.TestCase):
                 self.assertEqual(len(calls), 1)
                 self.assertEqual(calls[0][1], "discover")
                 start = calls[0].index("-s")+1
-                expected = self.root/"tests/projects"/project
+                expected = self.root/"tests/components"/project
                 if project == OA:
                     expected = expected/"analysis"
                 selected = Path(calls[0][start])
@@ -190,7 +190,7 @@ class ProjectGatePrevalidationTests(unittest.TestCase):
         self.assertTrue(lua.is_file(), "standalone Lua software-test dependency required")
         print("PROJECT_GATE_SOFTWARE_LUA=" + str(lua.resolve()))
         resources = [
-            *(f"tests/projects/{MR}/simion/{name}" for name in (
+            *(f"tests/components/{MR}/simion/{name}" for name in (
                 "test_candidate_plane_events.lua", "test_candidate_voltage_map.lua", "test_mirror_cycle_counter.lua")),
             "src/msplatform/backends/simion/resources/mrtof_candidate.lua",
             "src/msplatform/backends/simion/resources/candidate_voltage_map.lua",
@@ -198,9 +198,9 @@ class ProjectGatePrevalidationTests(unittest.TestCase):
             "src/msplatform/backends/simion/resources/scientific_event_csv.lua",
             "src/msplatform/backends/simion/resources/scientific_event_reconciliation.lua",
             "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
-            f"tests/projects/{OA}/simion/test_required_parameters.lua",
-            f"tests/projects/{OA}/simion/test_component_focus_iob_arguments.lua",
-            f"tests/projects/{OA}/simion/test_component_focus_callbacks.lua",
+            f"tests/components/{OA}/simion/test_required_parameters.lua",
+            f"tests/components/{OA}/simion/test_component_focus_iob_arguments.lua",
+            f"tests/components/{OA}/simion/test_component_focus_callbacks.lua",
             "src/msplatform/backends/simion/resources/build_two_zone_pa.lua",
             "src/msplatform/backends/simion/resources/two_zone_accelerator.gem",
             "src/msplatform/backends/simion/resources/component_focus.lua",

@@ -14,10 +14,10 @@ function result = ms_export_oatof_to_solidworks(modelPath, outputDir, visibleSol
     end
 
     thisDir = fileparts(mfilename('fullpath'));
-    codeRoot = fileparts(fileparts(fileparts(fileparts(fileparts(thisDir)))));
-    projectRoot = fullfile(codeRoot, 'projects', 'single_reflection_oa_tof_mass_analyzer');
+    msplatformRoot = fileparts(fileparts(fileparts(thisDir)));
+    projectRoot = fullfile(msplatformRoot, 'components', 'single_reflection_oa_tof');
     paths = oatof_paths(options.ArtifactRoot, projectRoot);
-    solidworksRoot = fullfile(codeRoot, 'src', 'msplatform', 'exporters', 'solidworks', 'resources');
+    solidworksRoot = fullfile(msplatformRoot, 'exporters', 'solidworks', 'resources');
     addpath(thisDir, solidworksRoot);
     if strlength(modelPath) == 0
         modelPath = fullfile(paths.comsolFormalDir, ...

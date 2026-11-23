@@ -9,7 +9,7 @@ from unittest.mock import patch
 from msplatform.backends.comsol import gas_flow
 from msplatform.io.manifest_records import file_record
 from tests.contracts.test_support.comsol_model import InertComsolSession
-from tests.projects.dual_cone_tandem_quadrupole_ion_interface.test_gas_flow_contract import (
+from tests.components.dual_cone_tandem_quadrupole_ion_interface.test_gas_flow_contract import (
     PROJECT_ROOT,
     _write_fixture,
 )

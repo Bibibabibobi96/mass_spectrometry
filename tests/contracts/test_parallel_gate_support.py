@@ -205,7 +205,7 @@ catch{{$failure=$_;throw}}finally{{Complete-GateRunSummary -Summary $summary -Fa
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             rows = [dict(schema_version=1, invocation_id="one", seq=index,
-                         test_key=f"tests/projects/{owner}/test_same.py::Probe.test_x",
+                         test_key=f"tests/components/{owner}/test_same.py::Probe.test_x",
                          entity_kind="test", outcome="skip", reason="no fixture")
                     for index, owner in enumerate(("a", "b"), 1)]
             receipts = [dict(schema_version=1, invocation_id="one", event="started"),
@@ -1931,7 +1931,7 @@ $null=Read-GateCatalog -RepoRoot $root
 $original=Get-Content $path -Raw
 foreach($case in @('scope','runner','parent')){{
  $document=$original|ConvertFrom-Json -Depth 32
- if($case-eq'scope'){{$document.routes[0].command.arguments[4]='tests/projects/other/tests'}}
+ if($case-eq'scope'){{$document.routes[0].command.arguments[4]='tests/components/other/tests'}}
  if($case-eq'runner'){{$document.routes[0].command.arguments=@('tools/repository/arbitrary.py')}}
  if($case-eq'parent'){{$document.routes[0].partition_preflight=$true}}
  $document|ConvertTo-Json -Depth 32|Set-Content $path
@@ -1946,18 +1946,18 @@ foreach($case in @('scope','runner','parent')){{
     def test_expanded_subroots_do_not_claim_complete_owner_scope(self) -> None:
         with tempfile.TemporaryDirectory(prefix="partial_owner_roots_") as directory:
             root=Path(directory)
-            for relative in ("tests/projects/fixture/tests/selected/test_a.py","tests/projects/fixture/tests/other/test_b.py"):
+            for relative in ("tests/components/fixture/tests/selected/test_a.py","tests/components/fixture/tests/other/test_b.py"):
                 path=root/relative
                 path.parent.mkdir(parents=True,exist_ok=True)
                 path.write_text("",encoding="utf-8")
             result=self.run_script(f"""
 . {quote(ROOT/'tools/repository/gate_catalog_support.ps1')}
 $route=[pscustomobject]@{{dependency_profile='locked';test_selection=[pscustomobject]@{{
- roots=@('tests/projects/fixture/tests/selected/');scope='tests/projects/fixture/tests/'}}}}
-$selection=Get-GateChangedTests -Route $route -ChangedPaths @('tests/projects/fixture/tests/selected/__init__.py') `
- -KnownTestRoots @('tests/projects/fixture/tests/selected/','tests/projects/fixture/tests/other/') -RepoRoot {quote(root)}
+ roots=@('tests/components/fixture/tests/selected/');scope='tests/components/fixture/tests/'}}}}
+$selection=Get-GateChangedTests -Route $route -ChangedPaths @('tests/components/fixture/tests/selected/__init__.py') `
+ -KnownTestRoots @('tests/components/fixture/tests/selected/','tests/components/fixture/tests/other/') -RepoRoot {quote(root)}
 if(-not$selection.Expanded-or$selection.CompleteOwner){{throw 'Expanded subroot was mistaken for a complete scope'}}
-if(($selection.Modules-join',')-ne'tests/projects/fixture/tests/selected/test_a.py'){{throw 'fixture did not exercise a real partial discovery'}}
+if(($selection.Modules-join',')-ne'tests/components/fixture/tests/selected/test_a.py'){{throw 'fixture did not exercise a real partial discovery'}}
 $selection|ConvertTo-Json -Depth 16 -Compress
 """)
             self.assertFalse(json.loads(result.stdout.strip().splitlines()[-1])["CompleteOwner"])
@@ -2075,7 +2075,7 @@ function Read-GateCatalog {param($RepoRoot)
         with tempfile.TemporaryDirectory(prefix="parallel_gate_partition_") as directory:
             root = Path(directory)
             common = root / "tools/repository"
-            for path in (common, root / "temporary", root / "tests/projects/fixture/tests"):
+            for path in (common, root / "temporary", root / "tests/components/fixture/tests"):
                 path.mkdir(parents=True)
             for name in ("verify.ps1", "parallel_gate_support.ps1",
                          "require_powershell7.ps1", "resource_process_support.ps1"):
@@ -2091,7 +2091,7 @@ function Read-GateCatalog {param($RepoRoot)
     @([pscustomobject]@{stage='fixture';dependency_profile='locked';repository_integration_group='regression';
       command=[pscustomobject]@{runner='powershell';script='tools/repository/owner.ps1';parameters=[pscustomobject]@{PythonExe='{python}'}};
       repository_integration_command=[pscustomobject]@{runner='powershell';script='tools/repository/owner.ps1';parameters=[pscustomobject]@{PythonExe='{python}';PreflightOnly=$true}};
-      test_selection=[pscustomobject]@{scope='tests/projects/fixture/tests/';roots=@('tests/projects/fixture/tests/');module_parameter='ChangedTestModules'};
+      test_selection=[pscustomobject]@{scope='tests/components/fixture/tests/';roots=@('tests/components/fixture/tests/');module_parameter='ChangedTestModules'};
       repository_integration_partition=[pscustomobject]@{count=3;parameter='SelectedTestModules';default_seconds=1;measured_seconds=[pscustomobject]@{test_a=10}}})
 }
 ''', encoding="utf-8", newline="\n")
@@ -2106,10 +2106,10 @@ function Read-GateCatalog {param($RepoRoot)
 if($PreflightOnly){if($env:FIXTURE_PREFLIGHT_FAIL){throw 'PREFLIGHT_FAILURE'};Write-Output 'OWNER_PREFLIGHT';return}
 if(-not$PreflightValidated){throw 'PARTITION_PREFLIGHT_NOT_BOUND'}
 foreach($module in $SelectedTestModules){Write-Output "MODULE=$module"}
-if($SelectedTestModules -contains 'tests.projects.fixture.tests.test_b'){throw 'SHARD_FAILURE'}
+if($SelectedTestModules -contains 'tests.components.fixture.tests.test_b'){throw 'SHARD_FAILURE'}
 ''', encoding="utf-8")
             for name in ("a", "b", "c", "d"):
-                (root / f"tests/projects/fixture/tests/test_{name}.py").write_text("", encoding="utf-8")
+                (root / f"tests/components/fixture/tests/test_{name}.py").write_text("", encoding="utf-8")
             summary = root / "summary.json"
             env = dict(os.environ, TEMP=str(root / "temporary"), TMP=str(root / "temporary"))
             env.pop("MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN", None)
@@ -2136,7 +2136,7 @@ if($SelectedTestModules -contains 'tests.projects.fixture.tests.test_b'){throw '
             self.assertEqual(sum(row["status"] == "FAIL" for row in parts), 1)
             self.assertTrue(all(row["requires_stages"] == ["fixture"] for row in parts))
             modules = [m for row in parts for m in row["command"]["parameters"]["SelectedTestModules"]]
-            self.assertCountEqual(modules, [f"tests.projects.fixture.tests.test_{name}" for name in "abcd"])
+            self.assertCountEqual(modules, [f"tests.components.fixture.tests.test_{name}" for name in "abcd"])
             self.assertEqual(len(modules), len(set(modules)))
             self.assertIn("SHARD_FAILURE", result.stdout + result.stderr)
             env["FIXTURE_PREFLIGHT_FAIL"] = "1"

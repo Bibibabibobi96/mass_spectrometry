@@ -227,7 +227,7 @@ the neutral finite-voltage lookup in `contracts.electrode_sources`. Native
 numbering does not define scientific polarity, amplitude or phase.
 
 根 `pyproject.toml` 是发行边界的唯一声明：发行实际 `msplatform` 实现及显式schema／例子／GEM／PS资源，
-不把整个`common`或项目树、测试和商业载荷打进wheel。旧入口仅单向转发到新实现；冻结快照使用
+不把仓库门禁、测试和商业载荷打进wheel。已退役旧根不再作为生产入口；冻结快照使用
 自身的源码和资源，不以当前安装补齐旧快照。迁移阶段与退役期限见[路线图](../docs/ROADMAP.md#科学核心与平台边界迁移)。
 
 Shared field-comparison mathematics and conditional TOF planning budgets are owned by
@@ -623,7 +623,7 @@ Lua保留已冻结根的加载职责，均不是installed侧反向依赖作者�
 integration所有者负责组合入口、source/clock、程序与冻结资源声明同步。历史协议reader只读边界继续保留。
 性能与正式模型／科学资格、COMSOL后续迁移及P5新使用者验证不由桥清单关闭；阶段责任仍查[路线图](../docs/ROADMAP.md#科学核心与平台边界迁移)。
 
-Ion-release and assembly compatibility aliases have retired. Active imports, CLI calls and new frozen source declarations use `msplatform.ion_release` and `msplatform.assembly.resolve_assembly` directly. Repository test modules remain under `common/ion_release`; the following P1/P2 inventory is historical, not an active import contract.
+Ion-release and assembly compatibility aliases have retired. Active imports, CLI calls and new frozen source declarations use `msplatform.ion_release` and `msplatform.assembly.resolve_assembly` directly. Repository test modules remain under `tests/ion_release`; the following P1/P2 inventory is historical, not an active import contract.
 
 ### P1／P2 迁移时的旧入口索引
 
@@ -662,7 +662,7 @@ Ion-release and assembly compatibility aliases have retired. Active imports, CLI
 
 `common.contracts.machine_contracts`旧桥已退役；ContractError、JSON/schema校验和普通摘要直接由
 `msplatform.contracts.machine_contracts`提供。确实需要仓库上下文的消费者从
-`common.paths.repository_root`导入`REPO_ROOT`，可安装科学核心不持有仓库根。
+`tools.repository.repository_root`导入`REPO_ROOT`，可安装科学核心不持有仓库根。
 
 跨语言模块字符串还在以下具名入口出现，分别用于实际导入或冻结后的来源探针；不能仅凭AST清单删除桥：
 
@@ -706,7 +706,7 @@ reported for their actual version; source relocation grants no native qualificat
 V4 P1 的科学核心迁移已在声明的有限边界内验收；范围、失败与跳过限制及最终身份见
 [P1 迁移验收记录](../docs/history/20261103__phase01-scientific-core-migration.md)。该结论不授予原生求解器或科学资格，
 不关闭后续平台迁移；具名兼容桥仍按[路线图](../docs/ROADMAP.md#科学核心与平台边界迁移)退出。
-安装隔离验收由 `common/contracts/test_installed_scientific_core.py` 执行真实 wheel、sdist 重建和仓库外消费。
+安装隔离验收由 `tests/contracts/test_installed_scientific_core.py` 执行真实 wheel、sdist 重建和仓库外消费。
 P2的0.3.0工作树候选已完成该真实方法（106.321秒，无skip）：独立builder使用声明的
 setuptools65.5.0/wheel0.38.4与已核对离线依赖；原wheel和sdist重建wheel分别普通安装到树外consumer。
 两轮实际模块来源均为consumer的site-packages，44个schema及378处引用本地闭合；
@@ -757,7 +757,7 @@ integration 继续由既有冻结库存选择。typed reader 的当前 SFI legac
 
 四极 COMSOL 数值编译器的 Changed 依赖按实际消费者选择 interface 与 mass-filter 合同测试；其他 runtime 和未知重命名仍保守扩大。普通文档不单独触发声明了测试选择的 owner。2026-10-31 对应提交修复前 CI 实际运行 1109 项、公开门禁墙钟 803.073 秒并失败；精确四路径规划收窄为两个消费者模块，尚不代表新 CI 已通过或性能预算已达标。
 
-`common/gate_catalog.json`是改动路径路由、依赖等级、阶段前置关系和Repository成员身份的唯一机器目录；项目或
+`tools/repository/gate_catalog.json`是改动路径路由、依赖等级、阶段前置关系和Repository成员身份的唯一机器目录；项目或
 integration新增公开门禁时必须注册，目录与文件系统不一致即失败。集成route通过
 `runtime_dependencies_path`引用已有运行依赖库存；公共catalog读取器将其`source_repo_path`展开为精确匹配，
 新增依赖不再手抄第二份路由表。缺失库存、未知版本／身份或缺失来源文件在规划时失败。
@@ -831,7 +831,7 @@ PowerShell subset的串行fallback夹具保留五个决策场景，使用同一w
 软件验证父入口只解析一次catalog、实际模块与分片；子阶段通过同轮`InternalRequestPath`消费已解析命令，
 不重新规划所有route或枚举全部测试。前置仍由父级依赖准入保护，子阶段仍调用原计时、GATE资源和失败传播入口。
 该请求只运输执行计划，不保存PASS，也不提供跨提交缓存；Ruff和改动范围标准检查的长参数列表由同一调用器临时文件传递并清理。
-`common/verify.ps1 -Scope Changed|Owner|Repository`是唯一软件验证入口；Owner范围必须提供`-Owner`。
+`tools/repository/verify.ps1 -Scope Changed|Owner|Repository`是唯一软件验证入口；Owner范围必须提供`-Owner`。
 普通命令自动规划、执行并汇总，`-PlanOnly`用于可选预览。Changed的`-FullScope`保留原Core／Static
 选择，不等于Repository。原两个驱动已移除，活动消费者统一使用此入口。
 `.github/workflows/lightweight-gate.yml`在push运行Changed，手动`workflow_dispatch`默认运行Repository。

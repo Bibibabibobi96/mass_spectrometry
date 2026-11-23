@@ -13,7 +13,7 @@ from msplatform.backends.simion.resources import native_resource_path
 from msplatform.backends.simion.collision_hs1 import adapt_hs1_for_repeat_fly
 from msplatform.backends.simion.ip_geometry import render_gem
 from msplatform.ion_release.release import generate_release_states
-from tests.projects.dual_pressure_rectilinear_ion_processor.test_functional import load_config, HS1_SOURCE_FIXTURE
+from tests.components.dual_pressure_rectilinear_ion_processor.test_functional import load_config, HS1_SOURCE_FIXTURE
 
 
 class IpPreparationTests(unittest.TestCase):

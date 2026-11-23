@@ -316,7 +316,7 @@ def make_fixture(root: Path, *, refinement_windows: bool = False):
     """Construct same-example preparation, fields and registered scalar producers."""
     from importlib.resources import files
     from tests.contracts import test_simion_tracking_execution as tracking_test
-    from tests.integration.test_single_reflection_preparation import fixture, write_json
+    from tests.workflows.single_reflection.test_single_reflection_preparation import fixture, write_json
     from msplatform import assembly as assembly_api, components as component_api, examples as example_api
     from msplatform.backends.simion import operations
     from msplatform.execution.owner import run_managed_stage

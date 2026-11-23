@@ -56,7 +56,7 @@ artifact 生命周期和文件角色见[生命周期](LIFECYCLE.md)，仓库边�
   不能成为长期正式分析入口。
 - notebook可以调用正式绘图函数，但不能成为证据图唯一且不可复现的实现。
 - 不为本规范预建统一`src/plotting`、figure registry或空测试树。共享样式或绘图代码按
-  [实际复用与所有权](REPOSITORY_ARCHITECTURE.md#跨项目知识提升条件)判断是否进入`common/`，不以项目目录数作为资格。
+  [实际复用与所有权](REPOSITORY_ARCHITECTURE.md#跨项目知识提升条件)判断是否进入`src/msplatform/`的对应职责域，不以项目目录数作为资格。
 
 ## 命名与API
 

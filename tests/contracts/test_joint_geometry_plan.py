@@ -7,7 +7,7 @@ import tempfile
 from types import SimpleNamespace
 from pathlib import Path
 
-from tests.integration import test_ip_compiler as ip_fixture
+from tests.workflows.multipole_ip import test_ip_compiler as ip_fixture
 from msplatform.backends.simion import operations
 from msplatform.backends.simion.native_plans import plan_geometry_build
 from msplatform.backends.simion.resources import STRUCTURAL_SEEDS
@@ -108,8 +108,8 @@ class OaMrJointPlanTests(unittest.TestCase):
     def test_actual_three_asset_public_geometry_and_owner_plan(self):
         from msplatform.assembly.factory import assemble
         from msplatform.components.catalog import resolve_component
-        from tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_mr_provider_trial_transport import _plans
-        from tests.projects.parallel_mirror_dual_stripe_mr_tof.test_support.mr_geometry_inputs import geometry_authority
+        from tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_mr_provider_trial_transport import _plans
+        from tests.components.parallel_mirror_dual_stripe_mr_tof.test_support.mr_geometry_inputs import geometry_authority
 
         _, plan, contract = _plans()
         authority = geometry_authority(contract)

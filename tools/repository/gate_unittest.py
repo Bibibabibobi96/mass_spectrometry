@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import argparse
-import ast
 from collections import Counter
 import hashlib
-import importlib.util
 import inspect
 import json
 from pathlib import Path
@@ -187,35 +185,49 @@ def _publish(path, document):
         temporary.unlink(missing_ok=True)
 
 
-def _retain_migrated_direct_imports(arguments):
-    """Expose unique in-checkout sources retained by direct test imports."""
-    names = set()
-    for argument in arguments:
-        path = Path(argument)
-        if path.suffix != ".py":
-            continue
-        path = path.resolve()
-        if not path.is_relative_to(REPO_ROOT) or not path.is_file():
-            continue
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8-sig"))):
-            if isinstance(node, ast.Import):
-                names.update(alias.name for alias in node.names if "." not in alias.name)
-            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module and "." not in node.module:
-                names.add(node.module)
-    source_root = REPO_ROOT / "src/msplatform"
-    for name in sorted(names):
-        if importlib.util.find_spec(name) is not None:
-            continue
-        sources = list(source_root.glob(f"**/{name}.py"))
-        if len(sources) > 1:
-            raise RuntimeError(f"Ambiguous migrated direct import: {name}")
-        if sources:
-            spec = importlib.util.spec_from_file_location(name, sources[0])
-            if spec is None or spec.loader is None:
-                raise RuntimeError(f"Cannot load migrated direct import: {name}")
-            module = importlib.util.module_from_spec(spec)
-            sys.modules[name] = module
-            spec.loader.exec_module(module)
+def _flatten_suite(suite):
+    for item in suite:
+        if isinstance(item, unittest.TestSuite):
+            yield from _flatten_suite(item)
+        else:
+            yield item
+
+
+def _discovery_key(test):
+    identity = _source_identity(test)
+    return identity["test_key"] or f'{identity["entity_kind"]}:{identity["legacy_test_id"]}'
+
+
+def _reconcile_discovery(discovered, records):
+    """Fail closed when selected discovery and actual outcome entities differ."""
+    expected = Counter(_discovery_key(test) for test in discovered)
+    actual = Counter(
+        row["test_key"] or f'{row["entity_kind"]}:{row["legacy_test_id"]}'
+        for row in records if row["entity_kind"] != "subtest"
+    )
+    errors = []
+    if not expected:
+        errors.append("selected test discovery returned zero cases")
+    missing = expected - actual
+    unexpected = actual - expected
+    if missing:
+        errors.append("missing test outcome receipts: " + ", ".join(sorted(missing)))
+    if unexpected:
+        errors.append("unexpected test outcome receipts: " + ", ".join(sorted(unexpected)))
+    return dict(
+        status="success" if not errors else "evidence_error",
+        discovered_count=sum(expected.values()),
+        receipt_count=sum(actual.values()),
+        missing=dict(missing),
+        unexpected=dict(unexpected),
+        errors=errors,
+    )
+
+
+class ReconciledTestProgram(unittest.TestProgram):
+    def runTests(self):
+        self.discovered_tests = list(_flatten_suite(self.test))
+        super().runTests()
 
 
 def main(argv=None):
@@ -225,18 +237,20 @@ def main(argv=None):
     parser.add_argument("--source-sha")
     parser.add_argument("--stage")
     metadata, arguments = parser.parse_known_args(sys.argv[1:] if argv is None else argv)
-    _retain_migrated_direct_imports(arguments)
 
     def result_class(*args, **kwargs):
         result = TimedResult(*args, source_sha=metadata.source_sha, stage=metadata.stage, **kwargs)
         return result
 
-    program = unittest.main(module=None, argv=[sys.argv[0], *arguments], exit=False,
-                            testRunner=unittest.TextTestRunner(resultclass=result_class))
+    program = ReconciledTestProgram(module=None, argv=[sys.argv[0], *arguments], exit=False,
+                                    testRunner=unittest.TextTestRunner(resultclass=result_class))
     result = program.result
     terminal = result.receipt("completed")
+    reconciliation = _reconcile_discovery(program.discovered_tests, result.records)
+    terminal["discovery_reconciliation"] = reconciliation
     unknown = any(row["outcome"] == "not_completed" for row in result.records)
-    terminal["status"] = "evidence_error" if unknown else "success" if result.wasSuccessful() else "failure"
+    evidence_error = unknown or reconciliation["status"] == "evidence_error"
+    terminal["status"] = "evidence_error" if evidence_error else "success" if result.wasSuccessful() else "failure"
     try:
         if metadata.outcomes_path:
             _publish(metadata.outcomes_path, dict(schema_version=1, invocation=terminal, records=result.records))
@@ -245,7 +259,7 @@ def main(argv=None):
         result._emit("TEST_OUTCOME_INVOCATION_JSON", terminal)
         raise
     result._emit("TEST_OUTCOME_INVOCATION_JSON", terminal)
-    return 0 if result.wasSuccessful() and not unknown else 1
+    return 0 if result.wasSuccessful() and not evidence_error else 1
 
 
 if __name__ == "__main__":

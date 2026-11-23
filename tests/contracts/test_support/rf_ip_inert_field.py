@@ -201,7 +201,7 @@ def make_installed_fixture(root):
     from tests.contracts.test_joint_ip_model import JointIpModelTests
     from tests.contracts.test_simion_rf_tracking import rf_tracking_case
     from msplatform.backends.simion.model import RF_IP_PHYSICS, compile_prepared_model
-    from tests.projects.dual_pressure_rectilinear_ion_processor.test_functional import (
+    from tests.components.dual_pressure_rectilinear_ion_processor.test_functional import (
         HS1_SOURCE_FIXTURE,
     )
 

@@ -32,7 +32,7 @@ class ClocDeltaReportTests(unittest.TestCase):
     def test_fixture_filename_in_test_boundary_preserves_production_priority(self) -> None:
         # Execute the real classifier functions without running CLOC/snapshots.
         profile = REPO_ROOT / 'src/msplatform/components/rf_multipole/config/execution_profiles.json'
-        fixture = 'tests/integration/frontend_fixtures.py'
+        fixture = 'tests/workflows/frontend/frontend_fixtures.py'
         self.assertTrue((REPO_ROOT / fixture).is_file())
         command = f"""
 $tokens=$null; $errors=$null

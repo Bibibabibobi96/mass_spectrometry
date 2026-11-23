@@ -28,9 +28,9 @@ from msplatform.execution.recovery import WholeUnitReplayUnit, build_whole_unit_
 from msplatform.backends.simion.native_completion import require_one_fly_completion
 from msplatform.backends.simion.particle_batching import batch_plan_from_dispatch, plan_single_wave_batches
 from msplatform.execution.simion_dispatch import plan_simion_dispatch, prepare_fixed_partition_dispatch
-from msplatform.workflows.oa_candidate.candidate_source_closure import derive_candidate_source_closure, freeze_candidate_source_closure, frozen_source_path, verify_candidate_source_closure
+from msplatform.workflows.oa_candidate.candidate_source_closure import SCIENCE_RELATIVE_PATHS, derive_candidate_source_closure, freeze_candidate_source_closure, frozen_source_path, verify_candidate_source_closure
 from msplatform.workflows.oa_candidate.geometry_contract import resolve_contract, resolve_contract_documents
-from msplatform.backends.simion.simion_component_pa_plan import compile_component_pa_plan
+from msplatform.backends.simion.simion_component_pa_plan import COMPONENTS, compile_component_pa_plan
 from msplatform.backends.simion.native_stage_completion import append_native_stage_completion
 from msplatform.workflows.oa_candidate.prepare_candidate_consumers import prepare as prepare_consumers
 from msplatform.backends.simion.field_closure import downstream_identity, load_field_model, load_reflectron_response_records
@@ -44,15 +44,29 @@ from msplatform.backends.simion.optimize_reflectron_ring_voltages import (
 from msplatform.backends.simion import detector_census
 from msplatform.backends.simion import ion_table as simion_ion_table
 from msplatform.backends.simion.oatof_inputs import render_program
-from msplatform.workflows.oa_candidate.sync_geometry_contract import PROGRAM_PATH
+from msplatform.workflows.oa_candidate.sync_geometry_contract import PROGRAM_PATH, package_repository_view
 
 PROJECT = "single_reflection_oa_tof_mass_analyzer"
 MODULE = "msplatform.workflows.oa_candidate.run_compensation"
-REPO_ROOT = Path(__file__).resolve().parents[4]
-PROJECT_ROOT = REPO_ROOT / "src/msplatform/components/single_reflection_oa_tof"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = REPO_ROOT / "components/single_reflection_oa_tof"
 RUN_SOURCE_ID = "src/msplatform/workflows/oa_candidate/run_compensation.py"
 ADAPTER_SOURCE_ID = "src/msplatform/workflows/resources/execute_oatof_compensation.ps1"
 LABELS = ("baseline", "compensated", "ideal_reflectron")
+PA_PLAN_SOURCE_IDS = tuple(sorted({
+    source_id
+    for component in COMPONENTS.values()
+    for source_id in component[3:]
+} | {
+    "src/msplatform/backends/simion/resources/refine_single_pa.lua",
+    "src/msplatform/backends/simion/resources/export_standalone_pa.lua",
+    "src/msplatform/backends/simion/standalone_pa_response_set.py",
+}))
+
+
+def _compile_pa_plan(contract: dict[str, Any], simion_exe: Path) -> dict[str, Any]:
+    with package_repository_view(PA_PLAN_SOURCE_IDS) as source_root:
+        return compile_component_pa_plan(contract, repository_root=source_root, simion_exe=simion_exe)
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -135,7 +149,7 @@ def _inspect_response_basis(manifest_path: Path, contract: dict[str, Any], execu
         reference=reference, source_run=str(manifest_path.resolve().parent),
         model_identity_sha256=document["model_identity_sha256"], downstream_identity=spatial,
         grid=grid, symmetry="2dcylindrical", responses=responses,
-        axis_exporter=file_record(REPO_ROOT / AXIS_EXPORTER_SOURCE))
+        axis_exporter=file_record(REPO_ROOT / AXIS_EXPORTER_SOURCE.removeprefix("src/msplatform/")))
 
 
 def inspect_source(case: Path, executable: Path, trajectory_quality: int, regularization: float,
@@ -222,7 +236,7 @@ def inspect_source(case: Path, executable: Path, trajectory_quality: int, regula
         resolved = resolve_contract_documents(_load(Path(baseline["path"])), _load(mode_path), _load(numerics_path),
             input_identity={**contract["inputs"], "solver_numerics_sha256": numerics["sha256"]})
         _require_same_physics(contract, resolved)
-        component_plan = compile_component_pa_plan(resolved, repository_root=REPO_ROOT, simion_exe=executable)
+        component_plan = _compile_pa_plan(resolved, executable)
         fly2 = case / "simion/oatof_ideal_grounded.fly2"
         seeds = re.findall(r"(?m)^seed\((\d+)\)", fly2.read_text(encoding="utf-8-sig"))
         if len(seeds) != 1:
@@ -304,7 +318,7 @@ def producer_specification(run: Path, capacity_session: Path, context_sha256: st
     prepared = run / "inputs/producer_text"
     if not prepared.exists():
         prepare_consumers(run / "inputs/candidate_resolved_geometry.json", prepared,
-                          particle_source_seed=plan["producer"]["source_gui_seed"], science_root=REPO_ROOT)
+                          particle_source_seed=plan["producer"]["source_gui_seed"], science_root=PROJECT_ROOT)
     parameters = {"SimionExe": plan["simion_executable"]["path"], "OutputDir": str(run / "simion"),
         "ArtifactProjectRoot": str(run.parents[1]), "TemplateIob": str(run / "inputs/source_template.iob"),
         "RunId": run.name, "ContractPath": str(run / "inputs/candidate_resolved_geometry.json"),
@@ -460,11 +474,13 @@ def freeze_inputs(run: Path) -> dict[str, Any]:
         freeze_file(Path(plan[name]["path"]), run / "inputs" / ("source_case_resolved_geometry.json" if name == "contract" and plan.get("producer") else destination))
     freeze_file(Path(plan["source_manifest"]["path"]), run / "inputs/source_manifest.json")
     authoring_sources = ("src/msplatform/backends/simion/resources/reflectron_voltage_fit_authoring.json",) if plan.get("regularization_authoring_source") else ()
-    closure = freeze_candidate_source_closure(run / "inputs/code", run.parents[1], Path(sys.executable), science_root=REPO_ROOT,
-        extra_source_ids=(RUN_SOURCE_ID, ADAPTER_SOURCE_ID,
-            "src/msplatform/execution/recovery.py", "src/msplatform/backends/simion/particle_batching.py", "src/msplatform/execution/simion_dispatch.py",
-            "src/msplatform/execution/resource_profile.py", "src/msplatform/contracts/schemas/simion_batch_continuation.schema.json",
-            AXIS_EXPORTER_SOURCE) + authoring_sources)
+    with package_repository_view(SCIENCE_RELATIVE_PATHS) as science_root:
+        closure = freeze_candidate_source_closure(run / "inputs/code", run.parents[1], Path(sys.executable),
+            science_root=science_root, extra_source_ids=(RUN_SOURCE_ID, ADAPTER_SOURCE_ID,
+                "src/msplatform/execution/recovery.py", "src/msplatform/backends/simion/particle_batching.py",
+                "src/msplatform/execution/simion_dispatch.py", "src/msplatform/execution/resource_profile.py",
+                "src/msplatform/contracts/schemas/simion_batch_continuation.schema.json",
+                AXIS_EXPORTER_SOURCE) + authoring_sources)
     if plan.get("regularization_authoring_source"):
         frozen_default = run / "inputs/code/src/msplatform/backends/simion/resources/reflectron_voltage_fit_authoring.json"
         frozen_record = file_record(frozen_default)

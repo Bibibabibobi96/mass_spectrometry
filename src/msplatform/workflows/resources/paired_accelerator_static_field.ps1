@@ -12,11 +12,12 @@ param(
   [string]$SimionExe='',
   [string]$Python='',
   [string]$ArtifactRoot='',
-  [string]$RepoRoot=(Get-Location).Path
+  [string]$RepoRoot=''
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $packageRoot=Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+if(-not$RepoRoot){$RepoRoot=Split-Path -Parent (Split-Path -Parent $packageRoot)}
 $RepoRoot=(Resolve-Path -LiteralPath $RepoRoot).Path
 . (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
 if(-not$ResumeFinalization){

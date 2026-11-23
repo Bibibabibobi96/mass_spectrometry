@@ -113,7 +113,7 @@ class PreparedJointAnalysisTests(unittest.TestCase):
         from tests.contracts.test_support.fixture_process import run_fixture_process
 
         inventory = prepared_joint_dependency_inventory()
-        from tests.integration.test_support.single_reflection_execute_fixture import declared_dependency_paths
+        from tests.workflows.single_reflection.test_support.single_reflection_execute_fixture import declared_dependency_paths
         records = [{'source_repo_path': path} for path in declared_dependency_paths(REPO, inventory, 'prepared_joint')]
         support = {"src/msplatform/execution/resources/run_artifact_support.ps1", "src/msplatform/execution/resources/require_powershell7.ps1", "src/msplatform/execution/resources/host_execution_lease.ps1", "src/msplatform/execution/artifact_identity_archive.py"}
         capacity_fixture = r'''
@@ -230,7 +230,9 @@ if os.environ['ANALYSIS_TEST_SEAL_FAIL']=='1': raise RuntimeError('Explicit iner
                 workflow_owner.write_text(workflow_owner.read_text() + owner_fixture)
                 shutil.copyfile(workflow_owner, installed / "workflows/resources/run_artifact_workflow.ps1")
                 (repo / "src/msplatform/workflows/prepared_joint/diagnostics.py").write_text(analyzer_fixture)
+                (installed / "workflows/prepared_joint/diagnostics.py").write_text(analyzer_fixture)
                 (repo / "src/msplatform/execution/run_capacity_lifecycle.py").write_text(seal_fixture)
+                (installed / "execution/run_capacity_lifecycle.py").write_text(seal_fixture)
                 source, contract = analysis_source_fixture(workspace,
                     owner="parallel_mirror_dual_stripe_mr_tof" if scenario == "wrong_owner" else "instrument_assembly",
                     complete=scenario != "incomplete_native")
@@ -347,7 +349,7 @@ try { & $entry @forwardParameters } finally { Write-AnalysisFixtureEvent 'actual
                     self.assertEqual((configuration["parameters"]["mother_particle_count"],
                                       configuration["parameters"]["launched_particle_count"]), (100, 97))
                     snapshot_entry = run / "inputs/runtime_snapshot" / PREPARED_ENTRY
-                    self.assertEqual(snapshot_entry.read_text(), (repo / PREPARED_ENTRY).read_text())
+                    self.assertEqual(snapshot_entry.read_text(), (installed / PREPARED_ENTRY.relative_to("src/msplatform")).read_text())
                     self.assertEqual(Path(configuration["inputs"][PREPARED_ENTRY_ID]), snapshot_entry)
                     self.assertTrue((run / "inputs/runtime_snapshot/src/msplatform/workflows/prepared_joint/analysis_inputs.py").is_file())
                 else:
@@ -523,8 +525,9 @@ $repoRoot=$TestRoot;$workspaceRoot=$TestRoot;$projectId='instrument_assembly';$p
 New-Item -ItemType Directory -Path (Join-Path $repoRoot 'src/msplatform/workflows/config')|Out-Null
 @{schema_version=2;role='integration_runtime_dependencies';owner_id='instrument_assembly';consumer_ids=@('prepared_joint');providers=@()}|ConvertTo-Json -Depth 5|Set-Content (Join-Path $repoRoot 'src/msplatform/workflows/config/runtime_dependencies.json')
 function Freeze-ConsumerDependencies {
- param($RepoRoot,$ContractPath,$InputDir,$OwnerId,$ConsumerId,$Python)
+ param($RepoRoot,$CorePackageRoot,$ContractPath,$InputDir,$OwnerId,$ConsumerId,$Python)
  if($Python-ne'mock'-or$OwnerId-ne'instrument_assembly'-or$ConsumerId-ne'prepared_joint'){throw 'Wrong freeze owner/consumer'}
+ if($CorePackageRoot-ne$packageRoot-or$ContractPath-ne(Join-Path $packageRoot 'workflows/config/runtime_dependencies.json')){throw 'Frozen package authority was replaced by the workspace'}
  $inventory=Join-Path $InputDir 'code_inventory.json';'{}'|Set-Content $inventory
  return @{execution_root=$Repository;code_inventory_path=$inventory;dependency_contract_path=$ContractPath;identities=@()}
 }
@@ -709,7 +712,7 @@ if($script:assetChecks-ne$(if($Scenario-eq'zero'){0}else{1})){throw 'Native payl
                 with self.subTest(scenario=scenario):
                     case_root = Path(directory) / scenario
                     case_root.mkdir()
-                    from tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_static_field_binding import NativeStaticBindingTest
+                    from tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_static_field_binding import NativeStaticBindingTest
                     field_root = case_root / "live_fields"
                     field_root.mkdir()
                     binding = NativeStaticBindingTest().fixture(field_root)
@@ -774,7 +777,7 @@ foreach($kind in @('Prepared','Legacy')){
                     load_prepared_centroid_trial(manifest, manifest, manifest)
 
     def test_frozen_prepared_consumer_materializes_without_repository(self):
-        from tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_measured_component_source import MeasuredComponentSourceTests
+        from tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_measured_component_source import MeasuredComponentSourceTests
         pwsh = shutil.which("pwsh")
         if pwsh is None:
             self.skipTest("PowerShell 7 is unavailable")
@@ -785,7 +788,7 @@ foreach($kind in @('Prepared','Legacy')){
         inputs = fixture.root / "inputs"
         frozen_repo = fixture.root / "frozen_repo"
         inventory = prepared_joint_dependency_inventory()
-        from tests.integration.test_support.single_reflection_execute_fixture import declared_dependency_paths
+        from tests.workflows.single_reflection.test_support.single_reflection_execute_fixture import declared_dependency_paths
         for relative in declared_dependency_paths(REPO, inventory, "prepared_joint") | {
                 "src/msplatform/workflows/config/assembly_registry.json"}:
             target = frozen_repo / relative

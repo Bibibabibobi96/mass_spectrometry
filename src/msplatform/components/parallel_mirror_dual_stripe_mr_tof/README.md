@@ -7,7 +7,7 @@
 旧 `projects/parallel_mirror_dual_stripe_mr_tof/` 已退出活动源码树。本组件拥有几何、物理与科研配置；
 `msplatform.workflows.mr_design` 拥有研究执行算法，`msplatform.workflows.oa_mr` 和 `prepared_joint`
 继续拥有已迁移的跨器件工作流；原生资源分别归 SIMION/COMSOL backend。回归统一位于
-`tests/projects/parallel_mirror_dual_stripe_mr_tof/`，公开软件入口为
+`tests/components/parallel_mirror_dual_stripe_mr_tof/`，公开软件入口为
 `src/msplatform/workflows/resources/mr_verify.ps1`。不存在旧目录回退或第二 runner。
 
 返回[仓库导航](../../../../README.md)。

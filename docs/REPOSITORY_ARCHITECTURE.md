@@ -46,7 +46,7 @@
 
 |新信息|权威写入位置|不得写入|
 |---|---|---|
-|项目统一几何、粒子源、指标定义、正式状态、跨软件结论、下一步|`projects/<project>/docs/PROJECT.md`|单个软件文档或历史日志|
+|组件统一几何、粒子源、指标定义、正式状态、跨软件结论、下一步|`src/msplatform/components/<component>/docs/PROJECT.md`|单个软件文档或历史日志|
 |跨组件链路当前状态、整体资格和开放任务|`docs/INTEGRATION.md`；既有integration的冻结记录只供追溯|单一组件PROJECT或根ROADMAP|
 |集成连接语义、接口权威与运行操作|[连接架构](COMPONENT_CONNECTION_ARCHITECTURE.md)定义语义，`docs/ASSEMBLY.md`及工作流邻近说明给操作，机器合同定义输入|组件软件文档中的第二套链路规则或已退役的ARCHITECTURE/RUNNING入口|
 |跨项目统一组装的目标目录、配方、组件接口与切换合同|[连接架构](COMPONENT_CONNECTION_ARCHITECTURE.md#统一组装目标)；跨项目阶段归Roadmap，局部任务归参与方PROJECT／INTEGRATION|新建同义组装标准、把迁移目标写成当前执行能力|
@@ -57,7 +57,7 @@
 |全仓日期化审计、处置清单和一次性盘点|根`docs/history/`；稳定索引为[`docs/AUDITS.md`](AUDITS.md)|根`docs/`稳定参考层或项目PROJECT|
 |机器必须共同读取的项目参数|项目 `config/`，优先 JSON|散落在文档中的多份数值|
 |项目身份、设计族、机器能力和成熟度|项目 `config/project.json`；根注册表自动生成|Roadmap或人工维护的第二份项目表|
-|工程需求字段、选择与规划规则|`src/msplatform/contracts/schemas/`中的共享Schema与规范校验器；仓库规划/运行校验仍归`common/contracts/`，获批实例归目标项目`config/requests/`|自然语言对话、Roadmap或求解器脚本|
+|工程需求字段、选择与规划规则|`src/msplatform/contracts/schemas/`中的共享Schema与规范校验器；仓库规划与运行校验归`tools/repository/`及`src/msplatform/execution/`，获批实例归目标组件`config/requests/`|自然语言对话、Roadmap或求解器脚本|
 |项目设计变量、优化包络和候选参数派生|项目`config/design_variables.json`、`config/optimization_envelope.json`及邻近编译器|正式baseline、对话或优化器内部隐藏状态|
 |跨项目稳定的 COMSOL API|`docs/tools/COMSOL_API.md`|单一项目参数|
 |跨项目稳定的 COMSOL 排错策略|`docs/tools/COMSOL_DEBUGGING.md`|只验证过一次的项目个例|
@@ -96,7 +96,7 @@
 可安装科学实现由`src/msplatform/`维护；迁移阶段、已取得证据及开放出口统一查
 [路线图](ROADMAP.md#科学核心与平台边界迁移)，本页只定义稳定职责与依赖边界。
 科学合同/变换、源与状态、装配、分析和中立身份I/O分别拥有窄职责；纯核心不导入
-`common`、`projects`、`integrations`或运行owner。提供者仍拥有器件知识，源码是否随发行包
+仓库门禁、宿主探测或其他运行owner。提供者仍拥有器件知识，源码是否随发行包
 交付不改变理论、参数和资格的项目所有权。后端、工作流与运行控制只按真实消费者需要迁移，
 不得预建空框架。阶段与全部需求的出口见[迁移计划](ROADMAP.md#科学核心与平台边界迁移)。
 
@@ -136,10 +136,10 @@ run roots, publication/replay and writer lifecycle remain execution responsibili
 使用标准 src 安装隔离当前目录与发行边界，完整 schema 单元随规范校验器交付；
 算法、平台机制、资源和兼容调用分别验收，使现有输入/输出保证可逐项追溯。
 
-已迁职责的活动算法只能保留一份，消费者直接使用规范API。`common`中的暂存桥只允许旧入口
-单向转接至规范实现，不做算法副本、双写或失败后回退；须列出实际消费者、责任和不晚于P4的
-退出条件。历史run继续使用自己的冻结实现，当前安装包不能填补缺失快照。新源码冻结同时
-声明实际源码位置、资源与导入根，安装边界和run身份分别验证。
+已迁职责的活动算法只能保留一份，消费者直接使用规范API。旧顶层`common/`、`projects/`和
+`integrations/`生产根均已退役，不再保留暂存桥、算法副本、双写或失败后回退。历史run继续使用自己的
+冻结实现，当前安装包不能填补缺失快照。新源码冻结同时声明实际源码位置、资源与导入根，
+安装边界和run身份分别验证。
 
 本节定义目标与迁移约束，不宣称迁移、两种原生飞行或GUI/CAD资格已经完成。
 
@@ -179,35 +179,34 @@ simulation_repo/
 ├─ README.md          # 人和 Agent 共用入口
 ├─ AGENTS.md          # Agent 执行行为
 ├─ config/            # 自动生成的项目发现注册表
-├─ src/msplatform/    # P1规范科学核心，按职责实迁
-├─ projects/          # 独立器件或仪器项目
-├─ integrations/      # 跨项目连接、编排和集成证据
-├─ common/            # 已实际复用的机制与邻近说明
+├─ src/msplatform/    # 规范实现：components、assembly、workflows、backends、execution、contracts、exporters等
+├─ tools/repository/  # 仓库门禁、规划、运行维护与资源调度入口
+├─ tests/             # components、assembly、workflows、execution及simion、comsol等职责测试
 └─ docs/              # 全仓规则、science、tools、references及历史索引
 ```
 
-项目测试留在各项目内；只有出现真正跨项目的仓库级门禁时才创建根 `tests/`，不预建空目录。
+顶层旧根`common/`、`projects/`、`integrations/`已退役；当前生产代码与文档不得要求从这些根执行。
+测试按实现职责归入根`tests/`，历史run和manifest中的原路径保持原字节，只用于追溯。
 
 ### 部件、实例与组装
 
-“质谱仪设计与仿真平台”的使命见[愿景](VISION.md)，在目录中沿用项目、integration和公共机制的现有分工：
+“质谱仪设计与仿真平台”的使命见[愿景](VISION.md)，目录按组件、装配、工作流和公共机制划分职责：
 
 | 对象 | 所有者与边界 |
 |---|---|
-| 部件设计及其独立能力 | `projects/<project>/`；维护参数、几何、物理模型、提供接口及自身验证 |
-| 部件实例 | 在组装配方中引用提供者并绑定实例配置与身份；不为每个实例复制项目 |
-| 跨项目组装与联合研究 | `integrations/`；引用组件权威，维护连接、编排、联合证据与系统限制 |
-| 可复用机制 | 科学算法归`src/msplatform/`，仓库运行机制归`common/`；按实际复用条件提升，不接管项目物理设计或科学结论 |
+| 部件设计及其独立能力 | `src/msplatform/components/<component>/`；维护参数、几何、物理模型、提供接口及自身验证 |
+| 部件实例 | 在组装配方中引用提供者并绑定实例配置与身份；不为每个实例复制组件 |
+| 跨组件组装与联合研究 | `src/msplatform/assembly/`负责中立解析与装配，`src/msplatform/workflows/`负责具名科学编排；当前联合证据归`docs/INTEGRATION.md` |
+| 可复用机制 | 科学合同、执行、后端与导出分别归`src/msplatform/contracts/`、`execution/`、`backends/`、`exporters/`等职责域；仓库门禁归`tools/repository/` |
 
 项目可以拥有完整分析器的物理设计，也可以拥有一个独立部件；“组装厂”不要求将现有项目按电极或
 教材章节重新拆分。新增部件先检查已有设计、变体和工况能否表达需求；新增物理能力先明确模型与验证责任。
 实例、端口、驱动、坐标、源和时钟的机器语义只由[连接架构](COMPONENT_CONNECTION_ARCHITECTURE.md)及其合同定义。
 可发现、可布局、可运行与已验证是不同状态，项目和集成状态页各自记录，不由目录存在或愿景文字推定。
 
-跨项目组装已批准收敛到仓库根`integrations/`的直属布局，组合以配方而非新项目表达；
-目录与职责的唯一合同见[统一组装目标](COMPONENT_CONNECTION_ARCHITECTURE.md#统一组装目标)。实施状态见
-[集成状态](INTEGRATION.md)，各活动路径按workflow完成验收后切换。
-器件／仪器的物理设计与自身资格仍归项目，跨组件编排和联合证据归integration。
+跨组件组装以声明式配方表达，中立解析归`src/msplatform/assembly/`，公开科学编排归
+`src/msplatform/workflows/`。目录与职责的唯一合同见[统一组装目标](COMPONENT_CONNECTION_ARCHITECTURE.md#统一组装目标)，
+实施状态见[集成状态](INTEGRATION.md)。器件／仪器的物理设计与自身资格仍归组件提供者，跨组件联合证据归集成状态页。
 
 目录保持浅层，新增层级必须承载明确职责。项目、变体、workflow与文档专题可按实际边界分层，
 不为每个器件、软件或阶段建立同构空模板；不再以目录数量或统一深度代替职责判断。
@@ -215,8 +214,8 @@ simulation_repo/
 
 ### 项目与软件平权
 
-每个 `projects/<project>/` 是一个可独立理解、验证和交付的研究项目。项目可以同时包含
-`comsol/`、`simion/`、`cad/`、`analysis/`、`config/` 和 `tests/`，但不要求空目录占位。
+每个 `src/msplatform/components/<component>/` 是一个可独立理解、验证和交付的组件设计。组件可以按实际需要包含
+`analysis/`、`config/`、`docs/`和邻近资源，但不要求空目录占位；求解器适配归`src/msplatform/backends/`，测试归根`tests/components/`等职责目录。
 目录按知识对象和生命周期划分，不按“主软件/辅助软件”划分。选择结果以物理问题和统一契约
 为准，不以某个求解器先完成为准。
 
@@ -230,13 +229,13 @@ simulation_repo/
 当主要功能、接口或验收与发布生命周期需要独立演进时，建立新的平级项目；不只按电极数量拆分项目，
 也不只因共享公式或family名称合并项目。双锥气流接口、离子处理器、电子枪和EI电离源各自维护独立设计。
 项目统一不要求把实现拼成大文件：几何、驱动、分析、求解器适配和专用workflow仍按职责分开。
-独立器件项目可通过显式版本化接口向多个仪器项目提供领域实现，不要求再复制到`common/`。
-`common/`保留经不同项目实际复用验证的仓库机制；没有独立器件项目归属、需要独立交付的科学核心归`src/msplatform/`，不建立双份权威。
+独立组件可通过显式版本化接口向多个仪器设计提供领域实现，不复制到另一职责域。
+`src/msplatform/`按组件、合同、装配、后端、执行与导出职责保留唯一实现；仓库级门禁与维护工具归`tools/repository/`，不建立双份权威。
 
 项目发现见根[README](../README.md#项目导航)和[生成注册表](../config/project_registry.json)。
 
-每个项目用`config/project.json`声明稳定项目身份、设计族、可选择能力及其真实成熟度；
-`common/contracts/build_project_registry.py`据此生成根`config/project_registry.json`。根注册表只用于
+每个组件用`config/project.json`声明稳定项目身份、设计族、可选择能力及其真实成熟度；
+`tools/repository/build_project_registry.py`据此生成根`config/project_registry.json`。根注册表只用于
 项目发现和自动选择，不取代项目`PROJECT.md`、baseline/resolved参数合同或Roadmap，也不得手改。
 发生行政改名时，活动源码、新run和新artifact只使用当前`project_id`。描述符`legacy_identities`保留
 旧项目身份及唯一artifact位置合同：未迁移时`source_pending_relocation`只读旧根，完成逐文件身份复核
@@ -327,8 +326,8 @@ CAD和后端模型从同一Assembly并列投影，不互为隐含前置。导出
 | 项目当前事实与独立资格 | 项目`docs/PROJECT.md` | 项目README给用途、任务导航和特有前提 |
 | 项目软件实现与命令 | 项目`docs/COMSOL.md`、`docs/SIMION.md`、`docs/CAD.md`，只建立实际使用的软件页 | 项目README统一导航，PROJECT只写跨软件结论及链接 |
 | 项目专属推导、研究合同与发表材料 | 项目`docs/`既有专题目录 | 状态页链接，保留定义、假设和证据边界 |
-| 跨组件当前状态与操作 | `integrations/docs/`及其工作流邻近说明 | integration README统一导航 |
-| 公共代码API与使用方式 | 科学核心与仓库机制的实际API由`common/README.md`导航至最近domain说明；根级门禁和调度归该入口 | 根文档不复制调用细节 |
+| 跨组件当前状态与操作 | 根`docs/INTEGRATION.md`、`docs/ASSEMBLY.md`及`src/msplatform/workflows/`邻近说明 | 根组装入口统一导航 |
+| 公共代码API与使用方式 | 科学核心与仓库机制的实际API由[公共机制入口](REPOSITORY_OPERATIONS.md)导航至`src/msplatform/`或`tools/repository/`的最近说明 | 根文档不复制调用细节 |
 | 学术参考书与论文 | `docs/references/literature/` | 书目、来源身份、适用主题及页码；PDF本地保留 |
 | 供应商原始手册 | `docs/references/software/` | 软件版本、官方来源及定向章节；PDF本地保留 |
 | 科学里程碑、旧方案与必要审计 | 所属`docs/history/` | 每个所有者维护唯一索引；根用AUDITS，项目或集成README链接其索引 |

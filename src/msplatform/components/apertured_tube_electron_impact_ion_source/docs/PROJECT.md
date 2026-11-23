@@ -2,7 +2,7 @@
 
 The project verifier now loads the installed execution lease resource with an explicit HostContext. Callers must select Python through `-PythonExe` or `SIMULATION_PYTHON_EXE`; the verifier no longer assumes a checkout `.venv`. Contract checks, tests and scientific behavior are unchanged.
 
-本文件是组件当前状态的唯一权威。科学配置、当前文档和长期测试已归一到安装包组件及 `tests/projects/apertured_tube_electron_impact_ion_source`；旧 `projects/apertured_tube_electron_impact_ion_source/` 不再保存活动文件。跨项目规则适用仓库根README；物理输入以
+本文件是组件当前状态的唯一权威。科学配置、当前文档和长期测试已归一到安装包组件及 `tests/components/apertured_tube_electron_impact_ion_source`；旧 `projects/apertured_tube_electron_impact_ion_source/` 不再保存活动文件。跨项目规则适用仓库根README；物理输入以
 [`../config/baseline.json`](../config/baseline.json)为准，数值与证据语义以
 [`../config/numerical_modes.json`](../config/numerical_modes.json)为准，MATLAB只能消费
 解析后的[`../config/resolved_model.json`](../config/resolved_model.json)。仓库执行注册使用

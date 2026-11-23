@@ -5,7 +5,7 @@
 现行几何、气体/HS1/SDS 科学输入、数值合同、轨迹投影和当前文档均由本组件目录持有；
 SIMION/Lua 后端、COMSOL/MATLAB 资源和具名 workflow 继续使用已有安装包实现。三个 PowerShell
 薄适配器及软件验收入口位于 `msplatform.workflows/resources/dual_cone_*.ps1`，测试统一位于
-`tests/projects/dual_cone_tandem_quadrupole_ion_interface/`。旧
+`tests/components/dual_cone_tandem_quadrupole_ion_interface/`。旧
 `projects/dual_cone_tandem_quadrupole_ion_interface/` 已无活动文件，不保留转发实现或第二套 runner。
 原科学配置逐字节不变；双锥入口共轴锥切声明、出口平端、七电极、原生边界和历史证据均未改变。
 
@@ -500,7 +500,7 @@ continuation 解或裸 CSV 都不是可执行证据入口。
 公共profile删除未消费的虚假binding，固定`geometry_baseline`、`resolved_geometry`、`gas_flow_science`和`comsol_solver_numerics`四项。编译结果保存同一小JSON定义，经`ResolvedInputsPath`显式交安装操作校验和冻结；缺baseline的旧bundle要求重新编译，不用当前默认补造旧resolved来源。
 安装操作调用同一规范geometry解析器，对显式baseline/resolved进行原逐字节新鲜度检查；输入／派生物失配在商业调用前失败。隔离回归核对本次规范包来源，不借作者checkout补缺。气流成功不代表离子传输或新资格。
 
-早期纯准备的[树外冻结回归](../../../../../tests/projects/dual_cone_tandem_quadrupole_ion_interface/test_simion_layer.py)通过公共源码枚举交付当时规范核心，并保留项目prepare、配置和Program快照；隔离解释器`-I`下核对真实模块来源，缺少原生映射模块时明确拒绝，不借作者路径补洞。该证据只覆盖当时的两种无PA准备模式。后继完整准备实现已迁至安装包，fresh 与独立阶段另有软件实现；这些证据均不代替当前原生 Fly 或科学资格。
+早期纯准备的[树外冻结回归](../../../../../tests/components/dual_cone_tandem_quadrupole_ion_interface/test_simion_layer.py)通过公共源码枚举交付当时规范核心，并保留项目prepare、配置和Program快照；隔离解释器`-I`下核对真实模块来源，缺少原生映射模块时明确拒绝，不借作者路径补洞。该证据只覆盖当时的两种无PA准备模式。后继完整准备实现已迁至安装包，fresh 与独立阶段另有软件实现；这些证据均不代替当前原生 Fly 或科学资格。
 
 ## 机器能力与解析输入
 

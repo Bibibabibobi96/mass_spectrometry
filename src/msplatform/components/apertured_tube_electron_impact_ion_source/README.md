@@ -30,7 +30,7 @@ src/msplatform/backends/comsol/
                             # 唯一公开操作与 MATLAB/COMSOL 实现
 src/msplatform/workflows/resources/ei_verify.ps1
                             # 组件静态验收入口
-tests/projects/apertured_tube_electron_impact_ion_source/
+tests/components/apertured_tube_electron_impact_ion_source/
                             # Python 与 MATLAB 长期验证及 fixtures
 ```
 

@@ -97,7 +97,7 @@ src/msplatform/
 ├─ workflows/resources/                 # 可安装PowerShell入口与项目验证器
 ├─ backends/{comsol,simion}/            # 原生模型及SIMION资源
 └─ exporters/solidworks/resources/      # CAD导出资源
-tests/projects/single_reflection_oa_tof_mass_analyzer/  # 全部项目测试与冻结witness
+tests/components/single_reflection_oa_tof_mass_analyzer/  # 全部项目测试与冻结witness
 ```
 
 产物定位与历史身份见 [PROJECT](docs/PROJECT.md#产物与历史)；生命周期见

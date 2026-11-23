@@ -40,8 +40,8 @@ from msplatform.io.file_identity import file_sha256
 from msplatform.results import single_reflection_particle_table as particle_table
 
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
-PROJECT_DIR = REPO_ROOT / "src/msplatform/components/single_reflection_oa_tof"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_DIR = REPO_ROOT / "components/single_reflection_oa_tof"
 ANALYSIS_DIR = PROJECT_DIR / "analysis"
 DEFAULT_CONTRACT = PROJECT_DIR / "config" / "analysis_contract.json"
 PHYSICAL_CONTRACT = PROJECT_DIR / "config" / "resolved_geometry.json"

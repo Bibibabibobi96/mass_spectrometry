@@ -392,7 +392,7 @@ class ManagedTransportTests(unittest.TestCase):
         from msplatform.execution.capacity_protection import load_capacity_protection_leases
         from msplatform.workflows.dual_cone_transport import run_gas_assisted_transport
         from tests.contracts.test_execution_runtime import NormalOwnerTests
-        from tests.projects.dual_cone_tandem_quadrupole_ion_interface.test_gas_flow_contract import _write_fixture
+        from tests.components.dual_cone_tandem_quadrupole_ion_interface.test_gas_flow_contract import _write_fixture
 
         for scenario in (
             "valid",

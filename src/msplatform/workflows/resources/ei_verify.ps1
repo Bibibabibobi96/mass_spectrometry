@@ -39,7 +39,7 @@ try {
     }
 
     & $PythonExe -m tools.repository.gate_unittest discover `
-      -s tests/projects/apertured_tube_electron_impact_ion_source -p 'test_*.py'
+      -s tests/components/apertured_tube_electron_impact_ion_source -p 'test_*.py'
     if ($LASTEXITCODE -ne 0) {
       throw 'EI-source static tests failed.'
     }
@@ -50,7 +50,7 @@ try {
       & $PythonExe -m ruff check `
         $componentRoot `
         src/msplatform/backends/comsol/ei_model.py `
-        tests/projects/apertured_tube_electron_impact_ion_source
+        tests/components/apertured_tube_electron_impact_ion_source
       if ($LASTEXITCODE -ne 0) {
         throw 'EI-source Ruff checks failed.'
       }

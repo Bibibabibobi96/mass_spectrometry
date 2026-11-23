@@ -47,7 +47,7 @@ param(
   [string]$RunId='',
   [string]$SimionExe='',
   [string]$PythonExe='',
-  [string]$RepoRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
+  [string]$RepoRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../..'))
 )
 
 Set-StrictMode -Version Latest

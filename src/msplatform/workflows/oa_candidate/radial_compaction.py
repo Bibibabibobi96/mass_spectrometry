@@ -18,8 +18,8 @@ from typing import Any
 
 
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
-PROJECT_ROOT = REPO_ROOT / "src/msplatform/components/single_reflection_oa_tof"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = REPO_ROOT / "components/single_reflection_oa_tof"
 WORKSPACE_ROOT = REPO_ROOT.parent
 CONFIG_PATH = PROJECT_ROOT / "config" / "radial_compaction_campaign.json"
 BASELINE_PATH = PROJECT_ROOT / "config" / "baseline.json"
@@ -32,7 +32,7 @@ ARTIFACT_ROOT = (
     / "projects"
     / "single_reflection_oa_tof_mass_analyzer"
 )
-PYTHON = REPO_ROOT / ".venv" / "Scripts" / "python.exe"
+PYTHON = Path(sys.executable).resolve()
 
 from msplatform.execution.artifact_naming import validate_run_id
 from msplatform.io.file_identity import canonical_json_sha256
@@ -51,10 +51,12 @@ from msplatform.execution.resource_profile import discover_case_resource_profile
 from msplatform.execution.simion_dispatch import plan_simion_case_dispatch
 from msplatform.workflows.oa_candidate.compile_candidate_design import compile_design_overrides
 from msplatform.workflows.oa_candidate.candidate_source_closure import (
-    RELATIVE_PATHS, freeze_candidate_source_closure, frozen_source_path, verify_candidate_source_closure,
+    RELATIVE_PATHS, SCIENCE_RELATIVE_PATHS, freeze_candidate_source_closure, frozen_source_path,
+    verify_candidate_source_closure,
 )
 from msplatform.workflows.oa_candidate.geometry_contract import resolve_contract_documents, serialized
-from msplatform.backends.simion.simion_component_pa_plan import compile_component_pa_plan, sum_component_commitments
+from msplatform.backends.simion.simion_component_pa_plan import COMPONENTS, compile_component_pa_plan, sum_component_commitments
+from msplatform.workflows.oa_candidate.sync_geometry_contract import package_repository_view
 from msplatform.workflows.oa_candidate import radial_analysis as analysis
 from msplatform.workflows.oa_candidate.prepare_candidate_consumers import prepare
 from msplatform.workflows.oa_candidate.prepare_candidate_run import (
@@ -95,6 +97,15 @@ ANALYSIS_ONLY_SOURCES = frozenset({
     "src/msplatform/workflows/oa_candidate/solver_diagnostics.py",
     "src/msplatform/workflows/oa_candidate/radial_analysis.py",
 })
+PA_PLAN_SOURCE_IDS = tuple(sorted({
+    source_id
+    for component in COMPONENTS.values()
+    for source_id in component[3:]
+} | {
+    "src/msplatform/backends/simion/resources/refine_single_pa.lua",
+    "src/msplatform/backends/simion/resources/export_standalone_pa.lua",
+    "src/msplatform/backends/simion/standalone_pa_response_set.py",
+}))
 
 
 def _write_json(path: Path, document: Any) -> None:
@@ -230,16 +241,20 @@ def _prepare_execution_request(
     input_identity = {name: (hashlib.sha256(science_bytes[name]).hexdigest().upper()
                             if name in science_bytes else sha256(path))
                       for name, path in sources.items()}
-    source_identity = {name: sha256(REPO_ROOT / name) for name in dict.fromkeys((*RELATIVE_PATHS, *EXTRA_SOURCE_IDS))}
+    source_identity = {
+        name: sha256(REPO_ROOT / Path(name).relative_to("src/msplatform"))
+        for name in dict.fromkeys((*RELATIVE_PATHS, *EXTRA_SOURCE_IDS))
+    }
     plans = {}
-    for case in cases:
-        _, _, resolved = _compile_case_contract(
-            case, baseline, numerics, mode, input_identity["mode"],
-            campaign["fixed_contract"]["default_reflectron_mesh_mm"],
-        )
-        plans[case["case_id"]] = compile_component_pa_plan(
-            resolved, repository_root=REPO_ROOT, simion_exe=simion_exe,
-        )
+    with package_repository_view(PA_PLAN_SOURCE_IDS) as source_root:
+        for case in cases:
+            _, _, resolved = _compile_case_contract(
+                case, baseline, numerics, mode, input_identity["mode"],
+                campaign["fixed_contract"]["default_reflectron_mesh_mm"],
+            )
+            plans[case["case_id"]] = compile_component_pa_plan(
+                resolved, repository_root=source_root, simion_exe=simion_exe,
+            )
     if any(sha256(sources[name]) != digest for name, digest in input_identity.items()):
         raise ValueError("scientific inputs changed during capacity planning")
     cache_keys = {component["cache_key"] for plan in plans.values()
@@ -306,9 +321,11 @@ def _freeze_run(
         if frozen["sha256"] != context["inputs"][name]:
             raise ValueError(f"scientific input changed while freezing: {name}")
         declared[name] = str(target)
-    closure = freeze_candidate_source_closure(
-        inputs / "code", ARTIFACT_ROOT, Path(sys.executable), science_root=REPO_ROOT, extra_source_ids=EXTRA_SOURCE_IDS,
-    )
+    with package_repository_view(SCIENCE_RELATIVE_PATHS) as science_root:
+        closure = freeze_candidate_source_closure(
+            inputs / "code", ARTIFACT_ROOT, Path(sys.executable), science_root=science_root,
+            extra_source_ids=EXTRA_SOURCE_IDS,
+        )
     context["sources"] = {row["source_id"]: row["source_sha256"] for row in closure["sources"]}
     if execution_request is not None and context["sources"] != execution_request["source_sha256"]:
         expected = execution_request["source_sha256"]
@@ -575,7 +592,7 @@ def _compile_case_contract(
     mode: dict[str, Any], mode_sha256: str, default_mesh: dict[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     """Share the same governed case compilation before admission and execution."""
-    candidate, _ = compile_design_overrides(baseline, _overrides(case), science_root=REPO_ROOT)
+    candidate, _ = compile_design_overrides(baseline, _overrides(case), science_root=PROJECT_ROOT)
     _assert_only_allowed_changes(
         baseline, candidate, allow_ring_counts="stage1_count" in case,
         allowed_geometry_keys={
@@ -628,7 +645,7 @@ def _prepare_case(
     _write_json(numerics_path, numerics)
     resolved_path.write_text(serialized(resolved), encoding="utf-8")
     prepared = case_root / "prepared"
-    prepare(resolved_path, prepared, particle_source_seed=seed, science_root=REPO_ROOT)
+    prepare(resolved_path, prepared, particle_source_seed=seed, science_root=PROJECT_ROOT)
     return {
         **case,
         "case_root": case_root,
@@ -1452,7 +1469,7 @@ def _invoke_workflow_owner(request: dict[str, Any]) -> None:
             raise ValueError(f"Workflow Result already exists: {result_path}")
         _write_json(request_path, request)
         result, _ = run_observed_process(
-            ["pwsh.exe", "-NoProfile", "-File", str(REPO_ROOT / "src/msplatform/workflows/resources/run_artifact_workflow.ps1"),
+            ["pwsh.exe", "-NoProfile", "-File", str(REPO_ROOT / "workflows/resources/run_artifact_workflow.ps1"),
              "-RequestPath", str(request_path), "-ResultPath", str(result_path)],
             cwd=REPO_ROOT, stdout=temporary / "owner.log", stderr=temporary / "owner.stderr.log",
             warning_seconds=1800,
@@ -1496,7 +1513,7 @@ def main() -> None:
         with tempfile.TemporaryDirectory(prefix="oatof-radial-finalize-") as directory:
             temporary = Path(directory)
             result, _ = run_observed_process(
-                ["pwsh.exe", "-NoProfile", "-File", str(REPO_ROOT / "src/msplatform/workflows/resources/run_artifact_workflow.ps1"),
+                ["pwsh.exe", "-NoProfile", "-File", str(REPO_ROOT / "workflows/resources/run_artifact_workflow.ps1"),
                  "-RequestPath", str(request_path), "-ResultPath", str(result_path), "-ResumeFinalization"],
                 cwd=REPO_ROOT, stdout=temporary / "owner.log", stderr=temporary / "owner.stderr.log",
                 warning_seconds=1800,
@@ -1536,7 +1553,7 @@ def main() -> None:
                      "protected_paths": payload["dependency_run_dirs"],
                      "protected_cache_keys": [] if args.dry_run else payload["protected_cache_keys"]},
         "prepared": {"module": "msplatform.workflows.oa_candidate.radial_compaction",
-                     "function": "execute_prepared_run", "import_root": str(REPO_ROOT / "src"),
+                     "function": "execute_prepared_run", "import_root": str(REPO_ROOT.parent),
                      "entrypoint": file_record(Path(__file__).resolve())},
         "payload": payload,
     }

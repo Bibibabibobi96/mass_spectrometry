@@ -16,7 +16,7 @@
 Git 只管理可复现、可审阅的轻量源码与文档。MPH、PA/PA#、IOB、SolidWorks 文件、运行日志、
 粒子表和运行结果图放在仓库同级 `artifacts/projects/<project>/`，不进入 Git。用于解释正文的示意图与
 轻量再生成脚本可放在所属文档的`figures/`并进入Git，标明假设、来源和复现方法；不能把运行结果
-改名为示意图以绕过产物合同。正式运行使用所属owner的scratch；`common/verify_repository_hygiene.ps1`只负责生成大资产误入Git的边界，
+改名为示意图以绕过产物合同。正式运行使用所属owner的scratch；`tools/repository/verify_repository_hygiene.ps1`只负责生成大资产误入Git的边界，
 不检查未消费的本地目录与日志。
 
 ### 外部参考资料
@@ -351,7 +351,7 @@ run生成阶段的自动保留行为只按上文预注册的run产物保留合�
 |命名|生命周期|规则|
 |---|---|---|
 |`scan_*` / `tmp_*`|一次性探索|结论归档后删除源码；未引用的临时产物可清理，失败/根因证据必须迁入artifacts并写manifest|
-|`test_*`|长期验证|保留可重复判据；项目测试放项目 `tests/`，通用测试放 `common/`|
+|`test_*`|长期验证|保留可重复判据；测试按职责放根`tests/components/`、`tests/assembly/`、`tests/workflows/`、`tests/execution/`及`tests/simion/`、`tests/comsol/`等目录|
 |`ms_*` / `phase*`|正式生产|长期维护；被新正式入口取代后才能删除|
 |`verify_*`|门禁|必须给出明确 PASS/FAIL，不能只输出人工猜测所需数据|
 
@@ -366,8 +366,8 @@ run生成阶段的自动保留行为只按上文预注册的run产物保留合�
 
 |类别|允许位置与命名|完成要求|
 |---|---|---|
-|正式功能|最邻近的`projects/`、`integrations/`、已满足复用条件的`common/`或规范科学包`src/msplatform/`职责目录；名称表达稳定能力，不使用`tmp/new/final/v2/retry`表示状态|接入唯一正式入口或机器注册能力，具备配置/Schema、失败关闭、相称测试、最近文档和artifact合同；活动入口采用当前标准，历史证据只读|
-|长期验证|项目`tests/`、公共实现的邻近测试边界或具名验证入口；使用`test_*`或`verify_*`语义|保留可重复输入和明确PASS/FAIL判据；不得被生产入口反向依赖，也不得把一次性打印探针伪装成回归测试|
+|正式功能|`src/msplatform/`中最邻近的`components/`、`assembly/`、`workflows/`、`backends/`、`execution/`、`contracts/`或`exporters/`等职责目录；仓库门禁与维护工具归`tools/repository/`。名称表达稳定能力，不使用`tmp/new/final/v2/retry`表示状态|接入唯一正式入口或机器注册能力，具备配置/Schema、失败关闭、相称测试、最近文档和artifact合同；活动入口采用当前标准，历史证据只读|
+|长期验证|根`tests/`下的`components/`、`assembly/`、`workflows/`、`execution/`及`simion/`、`comsol/`等职责目录，或具名验证入口；使用`test_*`或`verify_*`语义|保留可重复输入和明确PASS/FAIL判据；不得被生产入口反向依赖，也不得把一次性打印探针伪装成回归测试|
 |一次性实现|默认位于`artifacts/projects/<project>/scratch/<task_id>/`或操作系统临时目录；文件名显式含`tmp_`、`diagnostic_`或`migration_`，不得进入正式源码目录|创建前向用户说明准确路径、名称、用途和删除时点；不得被正式入口、活动配置、文档结论或长期测试引用；使用完、方案放弃、任务中断后恢复或任务结束前必须删除|
 
 一次性实现若显现稳定复用价值，必须先停止沿用，按正式功能或长期验证重新设计、迁入规范位置并补齐

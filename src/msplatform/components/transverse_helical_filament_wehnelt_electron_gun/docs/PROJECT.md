@@ -148,6 +148,8 @@ qualification.
 绑定模块28项与IP上游admission联合45项通过（27.111秒）；加强后的实际冻结片段单项通过（6.216秒）。
 迁移期间缺公共上下文加载及锁旧`Push-Location`字符串的两项失败已修复，原失败事实保留。
 本轮未调用MATLAB、COMSOL或CAD，不改变既有构建资格或新增科学资格。
+当前任务由runner显式接收已核验的frozen resolved合同，生产冻结输入不再包含checkout测试、仓库工具或`pyproject.toml`；
+这些验证材料与生产运行证据分离。
 
 2026-11-04，build-only 冻结片段进一步按 `pyproject.toml` 的真实 package-data 声明选择
 包资源（含 execution 的 PowerShell、Lua、JSON）；声明模式缺件立即拒绝，仍沿原公共复制入口

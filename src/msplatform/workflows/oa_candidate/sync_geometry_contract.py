@@ -9,10 +9,14 @@ the same contract and committed. ``--check`` is the stale-file gate and
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import hashlib
 import json
-import re
 from pathlib import Path
+import re
+import shutil
+import tempfile
+from typing import Iterator
 
 from msplatform.backends.simion.oatof_inputs import (
     generated_adjustables as generated_adjustables,
@@ -27,19 +31,37 @@ from msplatform.io.file_identity import file_sha256
 from msplatform.workflows.oa_candidate.geometry_contract import resolve_contract, serialized
 
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
-PROJECT_ROOT = REPO_ROOT / "src/msplatform/components/single_reflection_oa_tof"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = REPO_ROOT / "components/single_reflection_oa_tof"
 RESOLVED_PATH = PROJECT_ROOT / "config/resolved_geometry.json"
 CONTRACT_PATH = PROJECT_ROOT / "config" / "baseline.json"
-RESOLVED_LUA_PATH = REPO_ROOT / "src/msplatform/backends/simion/resources/oatof_resolved.lua"
-PROGRAM_PATH = REPO_ROOT / "src/msplatform/backends/simion/resources/oatof_ideal_grounded.lua"
-FLY2_PATH = REPO_ROOT / "src/msplatform/backends/simion/resources/oatof_ideal_grounded.fly2"
+RESOLVED_LUA_PATH = REPO_ROOT / "backends/simion/resources/oatof_resolved.lua"
+PROGRAM_PATH = REPO_ROOT / "backends/simion/resources/oatof_ideal_grounded.lua"
+FLY2_PATH = REPO_ROOT / "backends/simion/resources/oatof_ideal_grounded.fly2"
 NUMERICS_PATH = PROJECT_ROOT / "config" / "formal_solver_numerics.json"
 OPTIMIZATION_ENVELOPE_PATH = PROJECT_ROOT / "config" / "optimization_envelope.json"
 AUTHORITY_DOCUMENTS = (
     PROJECT_ROOT / "config" / "experiment_campaign.json",
     PROJECT_ROOT / "config" / "radial_compaction_campaign.json",
 )
+
+
+@contextmanager
+def package_repository_view(source_ids: tuple[str, ...]) -> Iterator[Path]:
+    """Expose explicit package files through the existing repository-root APIs."""
+    with tempfile.TemporaryDirectory(prefix="oatof-package-sources-") as directory:
+        root = Path(directory)
+        for source_id in source_ids:
+            relative = Path(source_id)
+            if relative.is_absolute() or relative.parts[:2] != ("src", "msplatform"):
+                raise ValueError(f"invalid package source id: {source_id}")
+            source = REPO_ROOT.joinpath(*relative.parts[2:])
+            destination = root / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, destination)
+        yield root
+
+
 def load_contract(contract_path: Path | None = None) -> dict:
     if contract_path is None:
         return validate_resolved_contract(resolve_contract())

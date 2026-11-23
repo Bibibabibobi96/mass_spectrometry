@@ -13,7 +13,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from tests.integration import test_ip_compiler as ip_fixture
+from tests.workflows.multipole_ip import test_ip_compiler as ip_fixture
 from msplatform.backends.simion import operations
 from msplatform.backends.simion.electrode_contract import scientific_multipole_drive
 from msplatform.backends.simion.model import RF_IP_PHYSICS, compile_prepared_model, require_prepared_model

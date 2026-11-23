@@ -30,7 +30,7 @@
 `config/`拥有科学与数值权威；`msplatform.workflows.ion_processor`拥有运行准备、分析和诊断。
 `msplatform.backends.simion`拥有SIMION分批、GUI重放、原生资源及求解器投影。
 续跑记录读取由`msplatform.results.ip_continuation`负责，共享粒子图形样式由`msplatform.analysis.particle_styles`负责。
-`tests/projects/dual_pressure_rectilinear_ion_processor/`拥有静态、失败与恢复回归。
+`tests/components/dual_pressure_rectilinear_ion_processor/`拥有静态、失败与恢复回归。
 旧解析规定场已退出活动源码，历史只读记录保留其解释。COMSOL后续消费同一科学配置；
 上游器件提供真实几何／出口，跨组件装配和状态交接由[统一集成](../../../../docs/ASSEMBLY.md)维护。
 本器件的抽象引导段不表示已消费真实上游端口。旧`projects/dual_pressure_rectilinear_ion_processor/`已退出活动树。

@@ -129,7 +129,7 @@ class DevelopmentStandardsCoverageTests(unittest.TestCase):
                 self.assertIn("PRIVATE_NO_CALLS=1", output.getvalue())
 
     def test_current_python_and_powershell_sources_are_scanned(self):
-        integration_root = standards.REPO_ROOT / "tests/integration"
+        integration_root = standards.REPO_ROOT / "tests/workflows"
         repository_root = standards.REPO_ROOT / "tools/repository"
         python_paths = standards.active_files(".py")
         powershell_paths = standards.active_files(".ps1")

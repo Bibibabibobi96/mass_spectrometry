@@ -182,6 +182,44 @@ class Matrix(unittest.TestCase):
             self.assertNotEqual(identities[0]["test_key"], identities[1]["test_key"])
             self.assertEqual({x["source_path"] for x in identities}, {str(root / "source1.py"), str(root / "source2.py")})
 
+    def test_zero_discovered_tests_fail_with_reconciliation_receipt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "empty").mkdir()
+            result, rows, receipts = self.invoke(root, ["discover", "-s", "empty"])
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(rows, [])
+            terminal = receipts[-1]
+            self.assertEqual(terminal["status"], "evidence_error")
+            self.assertEqual(terminal["tests_run"], 0)
+            self.assertEqual(terminal["discovery_reconciliation"]["discovered_count"], 0)
+            self.assertIn("zero cases", terminal["discovery_reconciliation"]["errors"][0])
+
+    def test_discovery_reconciliation_rejects_missing_method_receipt(self):
+        from tools.repository.gate_unittest import _reconcile_discovery
+
+        reconciliation = _reconcile_discovery([self], [])
+        self.assertEqual(reconciliation["status"], "evidence_error")
+        self.assertEqual(reconciliation["discovered_count"], 1)
+        self.assertEqual(reconciliation["receipt_count"], 0)
+        self.assertEqual(list(reconciliation["missing"]), [
+            "tests/contracts/test_gate_unittest.py::GateOutcomeTests."
+            "test_discovery_reconciliation_rejects_missing_method_receipt"
+        ])
+
+    def test_discovery_receipt_maps_each_method_to_its_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "test_discovery.py").write_text(
+                "import unittest\nclass First(unittest.TestCase):\n def test_one(self): pass\n"
+                "class Second(unittest.TestCase):\n def test_two(self): pass\n", encoding="utf-8")
+            result, rows, receipts = self.invoke(root, ["discover", "-s", "."])
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(receipts[-1]["discovery_reconciliation"]["status"], "success")
+            self.assertEqual(receipts[-1]["discovery_reconciliation"]["discovered_count"], 2)
+            self.assertEqual({row["class_method"] for row in rows}, {"First.test_one", "Second.test_two"})
+            self.assertTrue(all(row["source_path"] == str(root / "test_discovery.py") for row in rows))
+
     def test_output_failure_is_nonzero_and_default_signals_have_unique_invocations(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

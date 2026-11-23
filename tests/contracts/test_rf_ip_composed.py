@@ -9,7 +9,7 @@ from pathlib import Path
 from tests.contracts import test_joint_ip_model as joint_ip_fixture
 from tests.contracts.test_simion_rf_tracking import rf_tracking_case
 from tests.contracts.test_simion_native_plans import LUA
-from tests.projects.dual_pressure_rectilinear_ion_processor.test_functional import HS1_SOURCE_FIXTURE
+from tests.components.dual_pressure_rectilinear_ion_processor.test_functional import HS1_SOURCE_FIXTURE
 from msplatform.assembly.factory import assemble
 from msplatform.backends.simion import operations
 from msplatform.workflows.multipole_ip import continuous
@@ -32,7 +32,7 @@ class ComposedRfIpHs1Tests(unittest.TestCase):
         recipe = copy.deepcopy(recipe)
         for item in recipe['instances']:
             item['transform']['translation_mm'][0] += 5
-        from tests.integration.test_ip_compiler import IpCompilerTests
+        from tests.workflows.multipole_ip.test_ip_compiler import IpCompilerTests
         original = IpCompilerTests(methodName='runTest'); original.setUp()
         assembly = assemble(recipe, original.assembly.components)
         bounds = copy.deepcopy(original.numerics)

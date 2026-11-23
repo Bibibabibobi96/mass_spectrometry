@@ -58,7 +58,7 @@ class ObservationTest(unittest.TestCase):
  def test_actual_lua_generated_header_and_rows(self):
   import subprocess
   from unittest.mock import patch
-  from tests.integration import test_single_reflection_program as original
+  from tests.workflows.single_reflection import test_single_reflection_program as original
   if not original.LUA.is_file():self.skipTest('inert Lua interpreter unavailable')
   case=original.SingleReflectionProgramTests('test_bounded_field_observer_preserves_actual_callback_math_and_records_final_overrides')
   case.setUp();self.addCleanup(case.doCleanups)

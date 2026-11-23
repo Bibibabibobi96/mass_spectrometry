@@ -65,7 +65,7 @@ src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/
 └─ docs/                   # 当前PROJECT与软件说明
 src/msplatform/workflows/resources/dual_cone_*.ps1
                             # 薄输入适配器与软件验收入口
-tests/projects/dual_cone_tandem_quadrupole_ion_interface/
+tests/components/dual_cone_tandem_quadrupole_ion_interface/
                             # 静态、合同、装配和失败/恢复回归
 ```
 

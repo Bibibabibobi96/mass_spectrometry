@@ -360,14 +360,15 @@ def main() -> None:
         if args.run_id is None or any((args.request, args.particle_source_seed is not None, args.resume_finalization,
                 args.owner_result, args.simion_exe, args.reuse_parent, args.reuse_through, args.dry_run,
                 args.pa_handoff_output, args.pa_producer_handoff, args.campaign_table, args.campaign_selection,
-                args.solver_numerics_contract, args.science_root is not None)):
+                args.solver_numerics_contract)):
             parser.error("--postprocess-from requires new --run-id and rejects new execution/reuse/finalization options")
         from msplatform.workflows.oa_candidate.run_candidate_workflow import run_candidate_postprocess
         try:
-            if args.host_context is None:
-                parser.error("postprocessing requires --host-context")
+            if args.host_context is None or args.science_root is None:
+                parser.error("postprocessing requires --host-context and --science-root")
             root, summary = run_candidate_postprocess(
-                args.postprocess_from, args.run_id, host_context=load_json(args.host_context))
+                args.postprocess_from, args.run_id, science_root=args.science_root,
+                host_context=load_json(args.host_context))
         except (OSError, KeyError, ValueError, CandidateWorkflowError) as error:
             raise SystemExit(f"OATOF_CANDIDATE=POSTPROCESS_FAILED ERROR={error}") from error
         print(f"OATOF_CANDIDATE=POSTPROCESSED RUN_ROOT={root} SCOPE={summary['scope']}")
