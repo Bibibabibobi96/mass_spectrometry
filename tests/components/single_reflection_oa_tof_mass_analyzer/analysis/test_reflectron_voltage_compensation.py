@@ -878,9 +878,13 @@ class CompensationAuthoringBoundaryTests(unittest.TestCase):
                 inspect.assert_not_called()
 
     def test_finalization_does_not_load_authoring_resource(self) -> None:
+        def complete(command, **kwargs):
+            kwargs["stdout"].write_text("", encoding="utf-8")
+            return subprocess.CompletedProcess(command, 0), None
+
         with (patch.object(sys, "argv", ["compensation", "--resume-finalization", "--run-id", "existing"]),
               patch.object(study, "load_authoring_default") as load,
-              patch.object(study.subprocess, "run") as launch):
+              patch("msplatform.execution.process_observation.run_observed_process", side_effect=complete) as launch):
             study.main()
             load.assert_not_called()
             self.assertIn("-ResumeFinalization", launch.call_args.args[0])

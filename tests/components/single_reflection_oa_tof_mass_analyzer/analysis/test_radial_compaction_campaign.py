@@ -184,6 +184,9 @@ class RadialCompactionCampaignTests(unittest.TestCase):
         def owner(request):
             """Software lifecycle fixture; the real common owner is tested separately."""
             control["owner_requests"].append(request)
+            scheduler_path = radial.os.environ.get("MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH")
+            if scheduler_path:
+                request["host_context"] = {"host_state_path": str(Path(scheduler_path).resolve())}
             run = root / "runs" / request["package"]["run_id"]
             run.mkdir(parents=True)
             config = {"schema_version": 2, "run_id": run.name, "project": radial.PROJECT_ID,
@@ -340,7 +343,8 @@ class RadialCompactionCampaignTests(unittest.TestCase):
                             ["--dry-run", "--pa-producer-handoff", "missing-transaction", "missing-result"]):
                 result = subprocess.run([sys.executable, "-B", "-m", radial.__name__, "--run-id", run_id,
                     "--simion-exe", sys.executable, *options], cwd=radial.REPO_ROOT,
-                    capture_output=True, text=True, encoding="utf-8", timeout=30)
+                    capture_output=True, text=True, encoding="utf-8", timeout=30,
+                    env={**radial.os.environ, "PYTHONPATH": str(REPO_ROOT / "src")})
                 self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
                 self.assertIn("cannot be combined with --dry-run", result.stderr)
             with patch.object(radial, "ARTIFACT_ROOT", root), patch.object(radial, "_source_inputs") as science:
@@ -539,7 +543,11 @@ class RadialCompactionCampaignTests(unittest.TestCase):
                 ["-B", "-c", worker], cwd=code_root, stdout=stdout, stderr=stderr,
                 environment={**radial.os.environ, "PYTHONPATH": radial.os.pathsep.join(radial.python_import_roots(code_root)),
                              "PYTHONDONTWRITEBYTECODE": "1",
-                             "MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH": str(shared_state)},
+                             "MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH": str(shared_state),
+                             "MASS_SPECTROMETRY_HOST_CONTEXT_JSON": json.dumps({
+                                 "workspace": str(root), "python_executable": sys.executable,
+                                 "host_state_path": str(shared_state),
+                                 "policy_path": str(code_root / "src/msplatform/execution/resources/host_resource_policy.json")})},
             )
             self.assertEqual(receipt["exit_code"], 0, stdout.read_text() + stderr.read_text())
             self.assertEqual(receipt["role"], "repository_managed_python_completion")
@@ -721,7 +729,7 @@ def run(case_root, run_id, context, managed):
                     encoding="utf-8",
                 )
                 checked = subprocess.run([
-                    "pwsh", "-NoProfile", "-File", str(validator), str(radial.REPO_ROOT),
+                    "pwsh", "-NoProfile", "-File", str(validator), str(REPO_ROOT),
                     str(child / "results/execution_completion.json"),
                 ], cwd=radial.REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
                 self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
@@ -1307,7 +1315,8 @@ def run(case_root, run_id, context, managed):
                 "analyze-simion-log", "--log", str(log), "--ion-file", str(ion), "--mode", "actual",
                 "--distribution", "fixedN3", "--detector-radius-mm", "40", "--particle-csv", str(cli_csv),
                 "--allow-incomplete-census",
-            ], cwd=radial.REPO_ROOT, capture_output=True, text=True, encoding="utf-8", check=True, timeout=120)
+            ], cwd=radial.REPO_ROOT, capture_output=True, text=True, encoding="utf-8", check=True, timeout=120,
+                env={**radial.os.environ, "PYTHONPATH": str(REPO_ROOT / "src")})
             self.assertEqual(result["diagnostics"], json.loads(cli.stdout))
             self.assertEqual((case_root / "results/actual_particles.csv").read_bytes(), cli_csv.read_bytes())
             self.assertFalse(list(case_root.rglob("*analysis*")))
