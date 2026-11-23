@@ -62,6 +62,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
+$packageRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $executionResources = Join-Path $repoRoot 'src/msplatform/execution/resources'
 . (Join-Path $executionResources 'run_artifact_support.ps1')
 . (Join-Path $repoRoot 'src/msplatform/backends/simion/resources/native_corridor_runtime_support.ps1')
@@ -70,7 +71,7 @@ $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } elseif ($env:SI
 $hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path (Split-Path -Parent $repoRoot) 'artifacts/common/host_resources.sqlite3' }
 $hostContext = @{workspace=(Split-Path -Parent $repoRoot);python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
-$contract = if ($ContractPath) { (Resolve-Path -LiteralPath $ContractPath).Path } else { Join-Path $PSScriptRoot '..\..\src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json' }
+$contract = if ($ContractPath) { (Resolve-Path -LiteralPath $ContractPath).Path } else { Join-Path $packageRoot 'components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json' }
 $frozenPrismControllerPolicyPath=''
 $frozenPreparedTargetAuthorityPath=''
 $frozenPreparedInitialProposalPath=''

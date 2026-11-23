@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -118,12 +119,12 @@ function Invoke-ResourceBudgetedProcess {
                     self.assertEqual(value['exits'], len(expected))
                     self.assertEqual(len(value['calls']), len(expected))
 
-    def execute_composition(self, failure=''):
+    def execute_composition(self, failure='', pythonpath=None):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             script = root / 'composition.ps1'
             script.write_text(r'''
-param($Runner,$Root,$Failure)
+param($Runner,$Root,$Failure,$RealPython)
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $tokens=$null;$errors=$null
@@ -135,7 +136,7 @@ foreach($fn in @($ast.EndBlock.Statements|Where-Object {$_-is[Management.Automat
 $mode=@($ast.FindAll({param($node) $node-is[Management.Automation.Language.AssignmentStatementAst]-and $node.Left.Extent.Text-eq'$isComposition'},$true))
 $choice=@($ast.FindAll({param($node) $node-is[Management.Automation.Language.IfStatementAst]-and $node.Extent.Text.Contains("$"+'stage='+"'compose_static_fields'")},$true))
 if($mode.Count-ne1-or$choice.Count-ne1){throw 'Composition assignment/branch not unique'}
-$RunDirectory=$Root;$repo=$Root;$runId='fixture';$python=Join-Path $Root 'python.exe';$module='native_provider'
+$RunDirectory=$Root;$repo=$Root;$runId='fixture';$python=if($Failure-eq'source_isolation'){$RealPython}else{Join-Path $Root 'python.exe'};$module='msplatform.backends.simion.native_static_field_provider'
 $planPath=Join-Path $Root 'plan.json'
 $labels=@('parent','window_2','window_0','window_1')
 $receipts=@{};foreach($label in $labels){$receipts[$label]=Join-Path $Root ('results/'+$label+'_receipt.json')}
@@ -152,6 +153,10 @@ function Invoke-ResourceBudgetedProcess {
  param($Limits,$RunDir,$UsagePath,$FilePath,$WorkingDirectory,$ArgumentList,$RedirectStandardOutput,$RedirectStandardError)
  if($FilePath-ne$python-or$WorkingDirectory-ne$repo-or$ArgumentList[-1]-ne'--compose'){throw 'Unexpected commercial/GEM/Refine/crop process'}
  $script:calls+=@{file=$FilePath;arguments=@($ArgumentList);working_directory=$WorkingDirectory}
+ if($Failure-eq'source_isolation'){
+  & $python @ArgumentList > $RedirectStandardOutput 2> $RedirectStandardError
+  return @{exit_code=$LASTEXITCODE}
+ }
  if($Failure-eq'exit_nonzero'){return @{exit_code=1}}
  foreach($label in $plan.execution_order){
   if($Failure-eq'missing_receipt'-and$label-eq'window_1'){continue}
@@ -167,9 +172,12 @@ try{
 finally{if($lease){Exit-HostResourceStage -Lease $lease}}
 @{calls=$script:calls;stages=$script:stages;levels=$levelStatus;error=$errorText;exits=$script:exits;composition=$isComposition;parent_refine=$parentDone;local_refine=$windowDone}|ConvertTo-Json -Depth 15 -Compress
 ''', encoding='utf-8')
+            environment = os.environ.copy()
+            if pythonpath is not None:
+                environment['PYTHONPATH'] = str(pythonpath)
             result = subprocess.run([PWSH, '-NoProfile', '-File', str(script), str(RUNNER),
-                                     str(root), failure], cwd=REPO_ROOT, timeout=30,
-                                    capture_output=True, text=True, encoding='utf-8')
+                                     str(root), failure, sys.executable], cwd=root, timeout=30,
+                                    capture_output=True, text=True, encoding='utf-8', env=environment)
             self.assertEqual(result.returncode, 0, result.stderr)
             return json.loads(result.stdout)
 
@@ -181,10 +189,10 @@ finally{if($lease){Exit-HostResourceStage -Lease $lease}}
                                             dict(action='enter', role='GATE', stage='prepare')])
         self.assertEqual(len(result['calls']), 1)
         arguments = result['calls'][0]['arguments']
-        self.assertEqual(arguments[:3], ['-B', '-m', 'native_provider'])
-        self.assertEqual(arguments[3], '--plan')
-        self.assertEqual(arguments[5], '--run-directory')
-        self.assertEqual(arguments[7:], ['--compose'])
+        self.assertEqual(arguments[:4], ['-I', '-B', '-m', 'msplatform.backends.simion.native_static_field_provider'])
+        self.assertEqual(arguments[4], '--plan')
+        self.assertEqual(arguments[6], '--run-directory')
+        self.assertEqual(arguments[8:], ['--compose'])
         self.assertEqual(result['exits'], 1)
         self.assertEqual(set(result['levels']), {'parent', 'window_0', 'window_1', 'window_2'})
         for level in result['levels'].values():
@@ -192,6 +200,28 @@ finally{if($lease){Exit-HostResourceStage -Lease $lease}}
                                          completed=True, materialized=True))
         self.assertFalse(result['parent_refine'])
         self.assertFalse(result['local_refine'])
+
+    def test_composition_rejects_same_named_cwd_and_pythonpath_modules(self):
+        for source_kind in ('cwd', 'pythonpath'):
+            with self.subTest(source=source_kind), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                poison_root = root if source_kind == 'cwd' else root / 'environment'
+                package = poison_root / 'msplatform/backends/simion'
+                package.mkdir(parents=True)
+                for parent in (poison_root / 'msplatform', package):
+                    (parent / '__init__.py').write_text('', encoding='utf-8')
+                marker = root / 'poisoned.txt'
+                (package / 'native_static_field_provider.py').write_text(
+                    f'from pathlib import Path\nPath({str(marker)!r}).write_text("imported")\n'
+                    'raise RuntimeError("poisoned provider imported")\n',
+                    encoding='utf-8',
+                )
+                result = self.execute_composition(
+                    'source_isolation', pythonpath=poison_root if source_kind == 'pythonpath' else None
+                )
+                self.assertEqual(result['calls'][0]['arguments'][:2], ['-I', '-B'])
+                self.assertIsNotNone(result['error'])
+                self.assertFalse(marker.exists())
 
     def test_composition_nonzero_exit_or_missing_receipt_fail_closed(self):
         nonzero = self.execute_composition('exit_nonzero')

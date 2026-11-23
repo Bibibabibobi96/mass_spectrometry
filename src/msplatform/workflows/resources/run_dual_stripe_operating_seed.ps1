@@ -23,10 +23,11 @@ $inputModeCount = [int]$authorityOnly +
   [int]$exactKMode + [int]$fixedGridMode
 if ($inputModeCount -ne 1) { throw 'Specify exactly one input: -MirrorRunManifest, -ExactKRunManifest, -FixedGridRunManifest, or -ExistingOperatingSeedManifest.' }
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
+$packageRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $workspaceRoot = Split-Path -Parent $repoRoot
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } elseif ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) } else { throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required' }
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 environment is missing: $python" }
-$contract = if ($ContractPath) { (Resolve-Path -LiteralPath $ContractPath).Path } else { Join-Path $PSScriptRoot '..\..\src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json' }
+$contract = if ($ContractPath) { (Resolve-Path -LiteralPath $ContractPath).Path } else { Join-Path $packageRoot 'components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json' }
 $parentManifest = if ($authorityOnly) {
   (Resolve-Path -LiteralPath $ExistingOperatingSeedManifest).Path
 } elseif ($exactKMode) {

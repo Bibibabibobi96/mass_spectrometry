@@ -16,11 +16,12 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
+$packageRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $workspaceRoot = Split-Path -Parent $repoRoot
 . (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $project = 'parallel_mirror_dual_stripe_mr_tof'
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
-$contract = if ($ContractPath) { $ContractPath } else { Join-Path $PSScriptRoot '..\..\src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json' }
+$contract = if ($ContractPath) { $ContractPath } else { Join-Path $packageRoot 'components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json' }
 $perturbationPaths = @($Stripe1PerturbationManifest, $Stripe2PerturbationManifest, $Prism1PerturbationManifest, $Prism2PerturbationManifest)
 $hasAllPerturbations = @($perturbationPaths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count -eq 4
 $hasAnyPerturbation = @($perturbationPaths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count -gt 0

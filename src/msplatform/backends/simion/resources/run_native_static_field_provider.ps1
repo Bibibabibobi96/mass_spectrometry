@@ -152,7 +152,7 @@ try{
         $limits.compact_final_retained_bytes=[int64]$plan.final_retained_estimate_bytes
         $stage='compose_static_fields';$timer=[Diagnostics.Stopwatch]::StartNew()
         # Bounded Python blocks do not invoke SIMION or require its heavy lease.
-        $step=Invoke-ResourceBudgetedProcess -Limits ([pscustomobject]$limits) -RunDir $RunDirectory -UsagePath (Join-Path $RunDirectory 'results/composition_resource_usage.json') -FilePath $python -WorkingDirectory $repo -ArgumentList @('-B','-m',$module,'--plan',$planPath,'--run-directory',$RunDirectory,'--compose') -RedirectStandardOutput (Join-Path $RunDirectory 'logs/composition.log') -RedirectStandardError (Join-Path $RunDirectory 'logs/composition.stderr.log')
+        $step=Invoke-ResourceBudgetedProcess -Limits ([pscustomobject]$limits) -RunDir $RunDirectory -UsagePath (Join-Path $RunDirectory 'results/composition_resource_usage.json') -FilePath $python -WorkingDirectory $repo -ArgumentList @('-I','-B','-m',$module,'--plan',$planPath,'--run-directory',$RunDirectory,'--compose') -RedirectStandardOutput (Join-Path $RunDirectory 'logs/composition.log') -RedirectStandardError (Join-Path $RunDirectory 'logs/composition.stderr.log')
         $timings[$stage]=$timer.Elapsed.TotalSeconds
         if($step.exit_code-ne0){throw 'Native response materialization failed.'}
         foreach($label in $plan.execution_order){

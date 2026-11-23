@@ -15,6 +15,13 @@ then verifies two idempotent seals and unchanged manifest identity; it no longer
 leaves an initial `checkpoint` source. This is software recovery evidence only;
 no native execution follows.
 
+The seven affected workflow resources now resolve the default MR candidate contract beside the
+installed package resources instead of reconstructing a checkout `src/msplatform` path. Explicit
+contract overrides, verified input copies, source hashes and continuation comparisons remain
+unchanged. Native composition also uses the same isolated `python -I -B -m` boundary as prepare
+and binding; direct child-process negatives prove that same-named modules in both the working
+directory and `PYTHONPATH` cannot replace the installed provider. No native solver was started.
+
 ## Installed native static-field provider
 
 `msplatform.backends.simion.native_static_field_provider` and `native_corridor_plan`

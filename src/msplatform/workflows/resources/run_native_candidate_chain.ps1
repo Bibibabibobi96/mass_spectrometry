@@ -45,6 +45,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $project='parallel_mirror_dual_stripe_mr_tof'
 $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
+$packageRoot=Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $workspaceRoot=Split-Path -Parent $repoRoot
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
 $artifactRoot=Join-Path $workspaceRoot "artifacts\projects\$project"
@@ -1314,7 +1315,7 @@ try{
   $workpointProfile=$focusContract.downstream_fixed_grid_workpoint_profile
   if(-not($workpointProfile-is[Collections.IDictionary])-or
      -not$workpointProfile.ContainsKey('jacobian_relative_step_tiers')){
-    $currentContractPath=Join-Path $PSScriptRoot '..\..\src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json'
+    $currentContractPath=Join-Path $packageRoot 'components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json'
     $currentContract=Get-Content -LiteralPath $currentContractPath -Raw|ConvertFrom-Json -AsHashtable
     $currentTiers=$currentContract.downstream_fixed_grid_workpoint_profile.jacobian_relative_step_tiers
     if(-not($workpointProfile-is[Collections.IDictionary])-or-not($currentTiers-is[Collections.IDictionary])){

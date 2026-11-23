@@ -176,6 +176,37 @@ class ManagedAnalysisRunnerContractTests(unittest.TestCase):
                             result.stdout,
                         )
 
+    def test_default_contracts_resolve_beside_the_installed_workflow_resources(self) -> None:
+        runners = (
+            "run_downstream_fixed_grid_workpoint.ps1",
+            "run_downstream_workpoint_iteration.ps1",
+            "run_dual_stripe_operating_seed.ps1",
+            "run_mirror_exact_k_operating_point.ps1",
+            "run_native_candidate_chain.ps1",
+            "run_target_operating_point_chain.ps1",
+            "run_two_prism_segmented_coverage.ps1",
+        )
+        package_root = "Split-Path -Parent (Split-Path -Parent $PSScriptRoot)"
+        default = (
+            "Join-Path $packageRoot "
+            "'components\\parallel_mirror_dual_stripe_mr_tof\\simion_candidate_two_zone.json'"
+        )
+        for runner in runners:
+            with self.subTest(runner=runner):
+                source = (PROJECT.parents[3] / "src/msplatform/workflows/resources" / runner).read_text(
+                    encoding="utf-8-sig"
+                )
+                self.assertIn(package_root, source)
+                self.assertEqual(source.count(default), 1)
+                self.assertNotIn("Join-Path $PSScriptRoot '..\\..\\src", source)
+                if runner != "run_native_candidate_chain.ps1":
+                    self.assertIn("if ($ContractPath)", source)
+                if runner not in {
+                    "run_downstream_fixed_grid_workpoint.ps1",
+                    "run_native_candidate_chain.ps1",
+                }:
+                    self.assertIn("Resolve-Path -LiteralPath $ContractPath", source)
+
     def test_runner_contract_matrix(self) -> None:
         for name, case in CASES.items():
             with self.subTest(case=name):
