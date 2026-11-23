@@ -956,10 +956,9 @@ try {{
     def test_registered_provider_roots_and_frozen_boundaries(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "repo"
-            (root / "integrations/config").mkdir(parents=True)
-            registry = {"integrations": [
-                {"integration_id": "instrument_assembly", "root": "integrations"},
-                {"integration_id": "legacy", "root": "integrations/legacy"},
+            registry = {"assemblies": [
+                {"assembly_id": "instrument_assembly"},
+                {"assembly_id": "legacy"},
             ]}
             registry_path = root / "src/msplatform/workflows/config/assembly_registry.json"
             registry_path.parent.mkdir(parents=True)
@@ -976,8 +975,8 @@ try {{
             registry_path.write_text(json.dumps(registry), encoding="utf-8")
             groups = []
             for number, (scope, owner, provider) in enumerate((
-                ("integration", "instrument_assembly", "integrations"),
-                ("integration", "legacy", "integrations/legacy"),
+                ("integration", "instrument_assembly", "src/msplatform/workflows"),
+                ("integration", "legacy", "src/msplatform/workflows/legacy"),
                 ("project", "device", "projects/device"),
                 ("repository_common", "common", "common"),
             )):
@@ -989,6 +988,7 @@ try {{
                     files=[dict(id=f"provider{number}", source_repo_path=source, consumers=["single_reflection_flight"])],
                     python_packages=[], python_modules=[]))
             contract = root / "integrations/config/dependencies.json"
+            contract.parent.mkdir(parents=True)
             contract.write_text(json.dumps(dict(schema_version=3, role="integration_runtime_dependencies",
                 owner_id="instrument_assembly", consumer_ids=["single_reflection_flight"], providers=groups)), encoding="utf-8")
             package = root / "projects/device/pkg"
@@ -1026,8 +1026,8 @@ $cases=@(
   @{{change={{param($d) $d.schema_version=1}};message='*schema 3*'}},
   @{{change={{param($d) $d.providers[0].provider_project='unknown'}};message='*registered exactly once*'}},
   @{{change={{param($d) $d.providers[0].files[0].source_repo_path='common/provider3.txt'}};message='*escapes provider*'}},
-  @{{change={{param($d) $d.providers[0].files[0].source_repo_path='integrations/../common/provider3.txt'}};message='*escapes its provider*'}},
-  @{{change={{param($d) $d.providers[0].files[0].source_repo_path='integrations/missing.txt'}};message='*is missing*'}},
+  @{{change={{param($d) $d.providers[0].files[0].source_repo_path='src/msplatform/workflows/../common/provider3.txt'}};message='*escapes its provider*'}},
+  @{{change={{param($d) $d.providers[0].files[0].source_repo_path='src/msplatform/workflows/missing.txt'}};message='*is missing*'}},
   @{{change={{param($d) $d.providers[1].files[0].id=$d.providers[0].files[0].id}};message='*duplicate dependency id*'}},
   @{{change={{param($d) $d.providers[0].files+=@($d.providers[0].files[0]|ConvertTo-Json|ConvertFrom-Json);$d.providers[0].files[1].id='other'}};message='*Duplicate dependency source*'}},
   @{{change={{param($d) $d.providers[0].files[0].consumers=@('unknown')}};message='*invalid consumers*'}},

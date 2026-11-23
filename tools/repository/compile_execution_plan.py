@@ -387,20 +387,20 @@ def compile_execution(
     }
 
 
-def compile_integration_execution(owner: str, workflow_id: str, run_id: str,
+def compile_assembly_execution(owner: str, workflow_id: str, run_id: str,
                                   bindings: dict[str, str], *, purpose: str | None = None,
                                   qualification: str = "none") -> dict[str, Any]:
     """Select one declared assembly owner entry; no component physics is synthesized."""
     validate_run_id(run_id)
     path = REPO_ROOT/"src/msplatform/workflows/config/assembly_registry.json"
     document = load_json(path)
-    validate_schema(document, "integration_registry.schema.json")
-    owners = [item for item in document["integrations"] if item["integration_id"] == owner]
+    validate_schema(document, "assembly_registry.schema.json")
+    owners = [item for item in document["assemblies"] if item["assembly_id"] == owner]
     if len(owners) != 1:
-        raise ValueError(f"Unknown integration owner: {owner}")
+        raise ValueError(f"Unknown Assembly owner: {owner}")
     workflows = [item for item in owners[0].get("workflows", []) if item["workflow_id"] == workflow_id]
     if len(workflows) != 1:
-        raise ValueError(f"Unknown integration workflow: {workflow_id}")
+        raise ValueError(f"Unknown Assembly workflow: {workflow_id}")
     workflow = workflows[0]
     qualification = qualification or "none"
     if qualification != "none":
@@ -430,9 +430,8 @@ def compile_integration_execution(owner: str, workflow_id: str, run_id: str,
                 authorities.append(dict(name=key, path=str(manifest.resolve()), bytes=manifest.stat().st_size, sha256=sha256(manifest)))
     status = "NEEDS_RUNTIME_INPUTS" if missing or unavailable else "NEEDS_SOURCE_FREEZE" if needs_freeze else "EXECUTION_READY"
     entry = (REPO_ROOT/workflow["entrypoint"]).resolve()
-    package_owned = entry.is_relative_to((REPO_ROOT / "src/msplatform").resolve())
-    if not (package_owned or entry.is_relative_to((REPO_ROOT/owners[0]["root"]).resolve())) or not entry.is_file():
-        raise ValueError("Integration entrypoint is outside its owner or missing")
+    if not entry.is_relative_to((REPO_ROOT / "src/msplatform").resolve()) or not entry.is_file():
+        raise ValueError("Assembly entrypoint is outside its owner or missing")
     run_identity = workflow.get('run_identity', 'caller_selected')
     declared_arguments = [*workflow['arguments'], *(item for values in optional.values() for item in values)]
     if run_identity == 'backend_generated' and any('{run_id' in item for item in declared_arguments):
@@ -447,7 +446,7 @@ def compile_integration_execution(owner: str, workflow_id: str, run_id: str,
         action="preview", execution_status="not_started", science_status="not_evaluated",
         purpose=workflow["purpose"], requested_action=workflow["action"], tools=workflow["tools"], model=workflow["model"],
         requested_qualification=qualification,
-        owner_kind="integration", owner_id=owner, profile_id=workflow_id,
+        owner_kind="assembly", owner_id=owner, profile_id=workflow_id,
         **({'optional_bindings': {key: bindings[key] for key in optional if key in bindings}} if optional else {}),
         execution_contract=dict(path=str(path), sha256=sha256(path)),
         binding_authorities=authorities, binding_sources=[str(Path(value).resolve()) for key, value in bindings.items()
@@ -501,7 +500,7 @@ def main() -> None:
         if args.workflow:
             if not args.owner or not args.run_id or args.design_plan or args.execute_plan:
                 parser.error("--workflow requires --owner and --run-id, without a project design plan")
-            result = compile_integration_execution(args.owner, args.workflow, args.run_id, parse_bindings(args.bind),
+            result = compile_assembly_execution(args.owner, args.workflow, args.run_id, parse_bindings(args.bind),
                                                    purpose=args.purpose, qualification=args.qualification)
         elif args.execute_plan:
             if args.design_plan or args.bind or args.execute or args.owner or args.run_id or args.purpose or args.qualification:

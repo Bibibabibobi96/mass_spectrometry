@@ -149,7 +149,7 @@
           ]
         },
         {
-          "id": "integration_registry",
+          "id": "assembly_registry",
           "source_repo_path": "src/msplatform/workflows/config/assembly_registry.json",
           "consumers": [
             "prepared_joint",

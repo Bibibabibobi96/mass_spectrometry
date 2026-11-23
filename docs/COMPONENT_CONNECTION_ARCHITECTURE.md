@@ -19,7 +19,7 @@
 
 跨组件组装的固定实现位于`src/msplatform/assembly/`与`src/msplatform/workflows/`：前者负责连接、
 几何装配和状态交接的中立解析，后者承载具名联合物理工作流，不增加无独立职责的容器。
-`integration_id=instrument_assembly`作为稳定的机器／产物owner，不要求源码目录与ID同名。
+`assembly_id=instrument_assembly`是Assembly workflow注册表的稳定owner；科学配方、plan与既有产物继续使用各自的`integration_id=instrument_assembly`身份。
 它不是硬件项目，不加入器件项目注册表；组件身份继续归原组件。
 新组合通过配方表达，不再按组件组合、杆数、间隙或每次运行新增源码目录。
 只有实际功能实施时才创建需要的目录，不预建空层，也不新增平行的顶层`assemblies/`。

@@ -67,8 +67,8 @@ function Invoke-CompiledExecutionPlan {
   try{
     $contractPath=[IO.Path]::GetFullPath([string]$plan.execution_contract.path)
     if(-not$contractPath.StartsWith($repository+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'Execution contract is outside the repository.'}
-    if($plan.ContainsKey('owner_kind')-and$plan.owner_kind-eq'integration'){
-      if($contractPath-ne[IO.Path]::GetFullPath((Join-Path $repository 'src/msplatform/workflows/config/assembly_registry.json'))){throw 'Integration execution must use the registered owner contract.'}
+    if($plan.ContainsKey('owner_kind')-and$plan.owner_kind-eq'assembly'){
+      if($contractPath-ne[IO.Path]::GetFullPath((Join-Path $repository 'src/msplatform/workflows/config/assembly_registry.json'))){throw 'Assembly execution must use the registered owner contract.'}
     }else{
       $registryPath=Join-Path $repository 'config/project_registry.json'
       $registryStream=[IO.File]::Open($registryPath,'Open','Read','Read');$streams.Add($registryStream)
@@ -84,11 +84,11 @@ function Invoke-CompiledExecutionPlan {
     if($actual-ne$plan.execution_contract.sha256){throw 'Execution profile changed after compilation.'}
     $contract=Get-Content -LiteralPath $contractPath -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable -Depth 100
     $entryRoot=Split-Path -Parent (Split-Path -Parent $contractPath)
-    if($plan.ContainsKey('owner_kind')-and$plan.owner_kind-eq'integration'){
-      $owners=@($contract.integrations|Where-Object{$_.integration_id-eq$plan.owner_id})
-      if($owners.Count-ne1){throw 'Compiled integration owner is not registered.'}
+    if($plan.ContainsKey('owner_kind')-and$plan.owner_kind-eq'assembly'){
+      $owners=@($contract.assemblies|Where-Object{$_.assembly_id-eq$plan.owner_id})
+      if($owners.Count-ne1){throw 'Compiled Assembly owner is not registered.'}
       $workflows=@($owners[0].workflows|Where-Object{$_.workflow_id-eq$plan.profile_id})
-      if($workflows.Count-ne1){throw 'Compiled integration workflow is not registered.'}
+      if($workflows.Count-ne1){throw 'Compiled Assembly workflow is not registered.'}
       $workflow=$workflows[0]
       $optional=@{}
       if($workflow.ContainsKey('optional_arguments')){$optional=$workflow.optional_arguments}
@@ -157,7 +157,7 @@ function Invoke-CompiledExecutionPlan {
       $entry=[IO.Path]::GetFullPath((Join-Path $entryRoot ([string]$step.entrypoint)))
       if($entry-ne[IO.Path]::GetFullPath([string]$command.entrypoint)-or$step.shell-ne$command.shell){throw 'Compiled command differs from declared entrypoint.'}
       if(@($step.arguments).Count-ne@($command.arguments).Count){throw 'Compiled arguments differ from the declared owner inputs.'}
-      if($plan.ContainsKey('owner_kind')-and$plan.owner_kind-eq'integration'-and$optional.Count){
+      if($plan.ContainsKey('owner_kind')-and$plan.owner_kind-eq'assembly'-and$optional.Count){
         $values=@{};foreach($key in $selected.Keys){$values[$key]=[string]$selected[$key]}
         for($i=0;$i-lt@($workflow.arguments).Count;$i++){
           if([string]$workflow.arguments[$i]-match'^\{([A-Za-z_]\w*)\}$'){$values[$Matches[1]]=[string]$command.arguments[$i]}
