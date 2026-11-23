@@ -711,7 +711,8 @@ def _execute_tracking_units(session, *, model, plan, design, stored_bank, fronte
         seed_records=[]
         for number,copy_row in enumerate(native_plan.input_copies,1):
             verify_record('tracking structural container',copy_row['source_record'])
-            seed_records.append(small('tracking_seed__'+key+'_'+str(number),Path(copy_row['destination']),source_path=copy_row['source_record']['path']))
+            seed_records.append(small('tracking_seed__'+key+'_'+str(number),Path(copy_row['destination']),
+                source_path=copy_row['source_record']['path'],retention_role=copy_row['source_record'].get('retention_role')))
         iob = session.declare_file(native_plan.declared_outputs[0],'solver_native_binary')
         for generated in native_plan.declared_outputs[1:]:
             session.declare_file(generated,'solver_native_binary')
@@ -936,15 +937,15 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
     from .resources import native_resource_path
     records = {}
 
-    def small(name, target, *, value=None, source_path=None, text=None):
-        target = session.declare_file(target,'required_evidence')
+    def small(name, target, *, value=None, source_path=None, text=None, retention_role='required_evidence'):
+        target = session.declare_file(target,retention_role)
         target.parent.mkdir(parents=True,exist_ok=True)
         if source_path is not None:
-            freeze_file(Path(source_path),target)
+            freeze_file(Path(source_path),target,retention_role=retention_role)
         else:
             payload = text if text is not None else json.dumps(value,ensure_ascii=False,allow_nan=False,indent=2)+'\n'
             with target.open('x',encoding='utf-8',newline='\n') as stream: stream.write(payload)
-        record = file_record(session.canonical_path(target),'required_evidence')
+        record = file_record(session.canonical_path(target),retention_role)
         session.add_input(name,record)
         records[name] = record
         return record
