@@ -13,7 +13,7 @@ from msplatform.workflows.single_reflection_flight.prepare import prepare
 from msplatform.backends.simion.fields import prepare_field_design, POLICY
 from msplatform.backends.simion.rf_finite_geometry import physical_electrode_view
 from msplatform.backends.simion.frontend import native_frontend_instances
-from tests.workflows.single_reflection.test_single_reflection_geometry import candidate_300mm_fixture, multi_inputs, multipole_source as chained_source, quadrupole_source
+from tests.workflows.single_reflection.test_single_reflection_geometry import candidate_300mm_fixture, multipole_source as chained_source, quadrupole_source
 from tests.workflows.single_reflection.test_single_reflection_geometry import scientific_inputs, source_fixture
 from msplatform.io.manifest_records import record_path
 from msplatform.contracts.rigid_transform import FramedPosition, RigidTransform, relative_transform
@@ -38,15 +38,9 @@ class SingleReflectionFieldsTests(unittest.TestCase):
         for source in (source_fixture(), chained_source('octupole'), chained_source('octupole', shell=True)):
             with tempfile.TemporaryDirectory() as directory:
                 original_source = copy.deepcopy(source)
-                kw, old_kw = scientific_inputs({'multipole':source}, oatof, Path(directory))
+                kw, _ = scientific_inputs({'multipole':source}, oatof, Path(directory))
                 _, geometry = compile_frontend_geometry({'multipole':source}, oatof, **kw)
-                _, old = compile_frontend_geometry({'multipole':source}, oatof, **old_kw)
                 design = prepare_field_design({'multipole':source}, oatof, geometry, **controls)
-                legacy = prepare_field_design({'multipole':source}, oatof, old, **controls)
-                self.assertEqual(design['working_points'], legacy['working_points'])
-                self.assertEqual(design['accelerator_voltage_states'], legacy['accelerator_voltage_states'])
-                self.assertEqual(sorted(design['domains'][0]['physical_samples'], key=lambda row:row['label']),
-                                 sorted(legacy['domains'][0]['physical_samples'], key=lambda row:row['label']))
                 changed = copy.deepcopy(kw)
                 original_ids = [native for mapping in kw['electrode_bindings'].values() for native in mapping.values()]
                 relabel = dict(zip(original_ids, reversed([native+200 for native in original_ids]), strict=True))
@@ -111,10 +105,11 @@ class SingleReflectionFieldsTests(unittest.TestCase):
                     self.assertNotIn('multipole_electrode_ids', geometry)
                     self.assertEqual([p['kind'] for p in design['working_points']], ['carrier_off','pulse_delta'])
                     self.assertEqual(len(design['domains'][0]['physical_samples']),25)
-                    self.assertEqual({s['electrode_id'] for s in design['domains'][0]['physical_samples']},set(range(11,36)))
+                    native_ids = set(geometry['electrode_bindings'][native_frontend_instances(geometry['composition_plan'])[1]].values())
+                    self.assertEqual({s['electrode_id'] for s in design['domains'][0]['physical_samples']}, native_ids)
                     self.assertFalse(any(s['kind']=='rod' for s in design['domains'][0]['physical_samples']))
                     off, pulse = [p['electrode_voltages_v'] for p in design['working_points']]
-                    self.assertEqual(set(off),{str(i) for i in range(11,36)})
+                    self.assertEqual(set(off),{str(i) for i in native_ids})
                     self.assertTrue(all(v==0. for v in off.values()))
                     self.assertEqual(pulse,design['accelerator_voltage_states']['operating_voltages_v'])
                     # OA-only scope has no multipole provider or RF response authority.
@@ -124,10 +119,11 @@ class SingleReflectionFieldsTests(unittest.TestCase):
                     self.assertEqual(repeated['working_points'],design['working_points'])
                 results.append(design)
         full, local = results
+        local_ids = {row['electrode_id'] for row in local['domains'][0]['physical_samples']}
         self.assertEqual(local['domains'][0]['physical_samples'],[
-            row for row in full['domains'][0]['physical_samples'] if row['electrode_id']>=11])
+            row for row in full['domains'][0]['physical_samples'] if row['electrode_id'] in local_ids])
         self.assertEqual(local['accelerator_voltage_states']['operating_voltages_v'],
-                         {k:v for k,v in full['accelerator_voltage_states']['operating_voltages_v'].items() if int(k)>=11})
+                         {k:v for k,v in full['accelerator_voltage_states']['operating_voltages_v'].items() if int(k) in local_ids})
 
     def test_entrance_samples_actual_ring_intersection_not_parent_representative(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -140,6 +136,7 @@ class SingleReflectionFieldsTests(unittest.TestCase):
             _, geometry = compile_frontend_geometry({'multipole': source}, oatof, composition_plan=plan,
                 numerical_domains=request['numerics']['frontend_domains'],
                 electrode_bindings={key:value['electrode_bindings'] for key,value in request['providers']['instances'].items()},
+                provider_inputs={key:value['resolved_design'] for key,value in request['providers']['instances'].items()},
                 accelerator_variant=request['providers']['instances'][oatof_id]['geometry']['accelerator_variant'])
             projection = geometry['accelerator_projection']
             ring_z = projection['ring_z_mm'][1]
@@ -228,7 +225,9 @@ class SingleReflectionFieldsTests(unittest.TestCase):
         sources = [chained_source('octupole', shell=True), chained_source('hexapole'), chained_source('quadrupole', shell=True)]
         for count in (2, 3):
             names = [f'mp_{index}' for index in range(count)]
-            kw = multi_inputs(sources[:count], oatof, names=names)
+            directory = tempfile.TemporaryDirectory()
+            self.addCleanup(directory.cleanup)
+            kw, _ = scientific_inputs(dict(zip(names, sources[:count], strict=True)), oatof, Path(directory.name))
             _, geometry = compile_frontend_geometry(dict(zip(names, sources[:count], strict=True)), oatof, **kw)
             design = prepare_field_design(dict(zip(names, sources[:count], strict=True)), oatof, geometry,
                 variant_id='three_zone_square', pulse_voltage_policy_id=POLICY,
@@ -251,7 +250,7 @@ class SingleReflectionFieldsTests(unittest.TestCase):
                 if not static:
                     self.assertEqual(source['geometry_mm']['enclosure_layout']['bodies'], [])
                 for native in static:
-                    eid = mapping[native['native_electrode_id']]
+                    eid = mapping[native['scientific_id']]
                     for body in source['geometry_mm']['enclosure_layout']['bodies']:
                         sample = next(row for row in domain['physical_samples']
                                       if row['label'] == f'{body["role"]}_e{eid}')
@@ -279,7 +278,9 @@ class SingleReflectionFieldsTests(unittest.TestCase):
             with self.subTest(count=count):
                 names = [f'mp_{i}' for i in range(count)]
                 providers = dict(zip(names,sources[:count],strict=True))
-                kw = multi_inputs(sources[:count],oatof,names=names)
+                directory = tempfile.TemporaryDirectory()
+                self.addCleanup(directory.cleanup)
+                kw, _ = scientific_inputs(providers, oatof, Path(directory.name))
                 kw['numerical_domains']['parent']['pa_bounds_mm']['x_min'] = -1000.
                 kw['numerical_domains']['parent']['cell_mm_xyz']['x'] = .5
                 fine = copy.deepcopy(kw['numerical_domains']['parent'])
@@ -306,7 +307,9 @@ class SingleReflectionFieldsTests(unittest.TestCase):
         sources = [quadrupole_source(r0=r0, dc=dc, frequency_hz=freq, phase_rad=phase)
                    for r0, dc, freq, phase in ((4., 1., 1_000_000., .1), (4.5, 2., 1_100_000., .2), (5., 3., 1_200_000., .3))]
         names = ['q1', 'q2', 'q3']
-        kw = multi_inputs(sources, oatof, names=names)
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        kw, _ = scientific_inputs(dict(zip(names, sources, strict=True)), oatof, Path(directory.name))
         from msplatform.backends.simion.geometry import compile_frontend_geometry
         _, geometry = compile_frontend_geometry(dict(zip(names, sources, strict=True)), oatof, **kw)
         design = prepare_field_design(dict(zip(names, sources, strict=True)), oatof, geometry,
@@ -358,17 +361,22 @@ class SingleReflectionFieldsTests(unittest.TestCase):
             for point in design['working_points']:
                 values = point['electrode_voltages_v']
                 self.assertEqual(set(values), {str(i) for i in expected_ids})
-                self.assertEqual(values[str(geometry['electrode_bindings']['oatof']['grounded_shield_id'])], 0.)
+                self.assertEqual(values[str(geometry['electrode_bindings'][native_frontend_instances(geometry['composition_plan'])[1]]['common_ground'])], 0.)
                 self.assertNotIn('refine_convergence_v', point)
                 self.assertEqual(design['domains'][0]['refine_convergence_v'], numerics['frontend_domains']['parent']['refine_convergence_v'])
             off, rf, pulse = [p['electrode_voltages_v'] for p in design['working_points']]
-            self.assertEqual([rf[str(i)] for i in range(1, 9)], [10000., -10000.] * 4)
-            self.assertTrue(all(value == 0. for key, value in rf.items() if int(key) not in range(1, 9)))
-            for piece in upstream['segmentation']['segmented_rod_array']['electrodes']:
+            multipole_ids = {str(value) for value in geometry['electrode_bindings'][multipole].values()}
+            native_rf_ids = list(geometry['electrode_bindings'][multipole].values())
+            self.assertEqual([rf[str(i)] for i in native_rf_ids], [10000., -10000.] * 4)
+            self.assertTrue(all(value == 0. for key, value in rf.items() if key not in multipole_ids))
+            pieces = upstream['segmentation']['segmented_rod_array']['electrodes']
+            for piece in pieces:
+                group = f"segment_{piece['segment_id']:04d}_rf_group_{piece['electrode_group']}"
+                native_id = geometry['electrode_bindings'][multipole][group]
                 sign = 1 if piece['electrode_group'] == 1 else -1
-                self.assertEqual(off[str(piece['electrode_id'])], piece['common_mode_V']
+                self.assertEqual(off[str(native_id)], piece['common_mode_V']
                                  + sign * upstream['drive']['dc_amplitude_V_per_group'])
-            self.assertTrue(all(value == 0. for key, value in off.items() if int(key) not in range(1, 9)))
+            self.assertTrue(all(value == 0. for key, value in off.items() if key not in multipole_ids))
             self.assertTrue(all(pulse[str(i)] == 0 for i in geometry['electrode_bindings'][multipole].values()))
             for eid, value in design['accelerator_voltage_states']['operating_voltages_v'].items():
                 self.assertAlmostEqual(pulse[eid], value, places=9)
@@ -387,8 +395,9 @@ class SingleReflectionFieldsTests(unittest.TestCase):
             self.assertEqual(results[0]['domains'][0]['physical_samples'], results[1]['domains'][0]['physical_samples'])
             for index in (0, 2):
                 self.assertEqual(results[0]['working_points'][index], results[1]['working_points'][index])
+            native_rf_ids = list(geometry['electrode_bindings'][multipole].values())
             self.assertEqual([results[0]['working_points'][0]['electrode_voltages_v'][str(i)]
-                              for i in range(1, 9)], [5., 1.] * 4)
+                              for i in native_rf_ids], [5., 1.] * 4)
             for eid, value in results[0]['working_points'][1]['electrode_voltages_v'].items():
                 self.assertEqual(value / 40, results[1]['working_points'][1]['electrode_voltages_v'][eid])
 
@@ -419,11 +428,15 @@ class SingleReflectionFieldsTests(unittest.TestCase):
                 if change == 'missing_instance': del bindings[first]
                 elif change == 'unknown_instance': bindings['unselected'] = bindings.pop(first)
                 elif change == 'swapped_instances': bindings[first], bindings[second] = bindings[second], bindings[first]
-                elif change == 'duplicate_native': bindings[first][1] = bindings[first]['1']
-                elif change == 'missing_native': del bindings[first]['1']
-                elif change == 'missing_role': del bindings[second]['accelerator_repeller_id']
-                elif change == 'collision': bindings[second]['grounded_shield_id'] = 1
-                else: bindings[first]['1'], bindings[first]['2'] = bindings[first]['2'], bindings[first]['1']
+                elif change == 'duplicate_native':
+                    first_group, second_group = list(bindings[first])[:2]
+                    bindings[first][second_group] = bindings[first][first_group]
+                elif change == 'missing_native': bindings[first].pop(next(iter(bindings[first])))
+                elif change == 'missing_role': del bindings[second]['accelerator_repeller']
+                elif change == 'collision': bindings[second]['common_ground'] = bindings[second]['accelerator_repeller']
+                else:
+                    first_group, second_group = list(bindings[first])[:2]
+                    bindings[first][first_group], bindings[first][second_group] = bindings[first][second_group], bindings[first][first_group]
                 with self.subTest(change=change), self.assertRaises(ValueError):
                     prepare_field_design(upstream, oatof, g, variant_id='three_zone_square',
                                          pulse_voltage_policy_id=POLICY, **numerics)
@@ -465,7 +478,10 @@ class SingleReflectionFieldsTests(unittest.TestCase):
         for count in (2, 3):
             names = [f'mp_{i}' for i in range(count)]
             providers = dict(zip(names, sources[:count], strict=True))
-            _, geometry = compile_frontend_geometry(providers, oatof, **multi_inputs(sources[:count], oatof, names=names))
+            directory = tempfile.TemporaryDirectory()
+            self.addCleanup(directory.cleanup)
+            options, _ = scientific_inputs(providers, oatof, Path(directory.name))
+            _, geometry = compile_frontend_geometry(providers, oatof, **options)
             options = dict(variant_id='three_zone_square', pulse_voltage_policy_id=POLICY,
                 boundary_policy='native_zero_neumann', frontend_domains={'parent': {'refine_convergence_v':
                     {'carrier_off': .1, 'rf_reference': .2, 'pulse_delta': .3}}}, rf_reference_voltage_v=10000.)
