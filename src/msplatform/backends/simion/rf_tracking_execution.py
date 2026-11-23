@@ -412,8 +412,15 @@ def plan_ip_mr_tracking_workbench(compiled: Any, *, admission: Mapping[str, Any]
         raise ValueError('tracking requires the existing absolute ASCII native projection')
     source, policy = admission['source'], admission['priority']
     roles = policy['roles']
+    external_copies = []
+    copy_paths = {}
     def record(key):
-        return dict(source.data_records[key], path=str(source.data_path(key)))
+        source_record = source.data_records[key]
+        source_path = source.data_path(key)
+        destination = root/'inputs/native_fields'/(key+source_path.suffix)
+        external_copies.append(dict(source_record=source_record,destination=str(destination)))
+        copy_paths[str(source_path)] = str(destination)
+        return dict(source_record)
     assets = {roles['background']: {'pa': record('background')}}
     for name in (roles['rf'], roles['ip'], roles['analyzer'], roles['detector']):
         assets[name] = {'pa': record(name + '_collision'), 'surface_witnesses': record(name + '_witness')}
@@ -431,7 +438,13 @@ def plan_ip_mr_tracking_workbench(compiled: Any, *, admission: Mapping[str, Any]
         seed_record=seed_record, empty_control_record=record('zero_particle_format_control'), output_iob=output)
     if projected['policy'] != policy:
         raise ValueError('tracking collision projection differs from admitted priority')
-    spec = copy.deepcopy(projected['spec'])
+    def localize(value):
+        if isinstance(value, dict):
+            return {key:localize(item) for key,item in value.items()}
+        if isinstance(value, list):
+            return [localize(item) for item in value]
+        return copy_paths.get(value,value) if isinstance(value,str) else value
+    spec = localize(copy.deepcopy(projected['spec']))
     binding = root/'inputs/sampled_basis.json'
     spec.update(role='ip_mr_sampled_tracking_iob',
                 field_representation='assembly_sampled_basis_with_collision_geometry',
@@ -449,7 +462,8 @@ def plan_ip_mr_tracking_workbench(compiled: Any, *, admission: Mapping[str, Any]
         outputs=[str(output), *bootstraps] if mode == 'build' else [], success_marker=marker)
         for name, mode, marker in [('build_tracking_iob', 'build', 'IP_MR_SAMPLED_TRACKING_IOB=PASS'),
                                     ('verify_tracking_iob', 'verify', 'IP_MR_SAMPLED_TRACKING_IOB_REOPEN=PASS')])
-    return NativeStagePlan(materializations, (dict(source_record=seed_record, destination=str(seed)),),
+    return NativeStagePlan(materializations,
+                           (dict(source_record=seed_record, destination=str(seed)), *external_copies),
                            operations, (str(output), *bootstraps))
 
 

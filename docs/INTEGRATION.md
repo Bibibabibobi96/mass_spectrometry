@@ -187,6 +187,8 @@ independently rechecked original evidence in this audit; no new native run was u
 to replace them. The readable 20261116 N1 retains the same RF rod-contact mechanism,
 without conferring MR arrival or final-candidate qualification.
 
+The 20261123 current-renderer diagnostic first stopped at minimum-free-capacity admission. After authorized, receipted retirement of unrelated rebuildable historical PA payloads, run `20261123_151313__sim__simion__track-b32d9e3a6b88` completed IOB construction but failed cold reopen: the saved IOB preserved cross-run PA references as relative paths that no longer resolved beneath the nested execution workspace. Its writer and capacity lifecycle closed with no completed flight. The subsequent source fix uses the existing verified `input_copies` boundary for the actual external PA and surface inputs, retaining original source identities and requiring a new run for validation. No terminal label, physical parameter or historical result was changed.
+
 The original-source native attempts retain their individual failures: missing
 empty-surface evidence (`track-27a67896934c`), PA memory exhaustion
 (`track-d71e9a4e7331`), and HS1 callback/sequential-state failures

@@ -214,7 +214,12 @@ class SampledTrackingProducerTests(unittest.TestCase):
             spec=native.materializations[str(root/'inputs/tracking_iob.lua')]
             self.assertIn('ip_mr_sampled_tracking_iob',spec)
             self.assertIn('assembly_sampled_basis_with_collision_geometry',spec)
-            self.assertEqual(len(native.input_copies),1)
+            self.assertGreater(len(native.input_copies),1)
+            for copied in native.input_copies:
+                self.assertTrue(Path(copied['source_record']['path']).is_file())
+                self.assertTrue(Path(copied['destination']).is_relative_to(root/'inputs'))
+            self.assertIn('native_fields',spec)
+            self.assertNotIn('/runs/',spec.split('native_fields',1)[1])
             self.assertEqual(len(native.operations),2)
             basis_path=fields.data_path('sampled_basis');saved=basis_path.read_bytes()
             try:
