@@ -497,7 +497,7 @@ function Invoke-PreparedJointAnalysis {
       -CommitmentInputPaths @($frozenAnalysisContract) -Software @('Python 3.11')
     $configuration=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable
     $stage='admit_completed_native_source'
-    $selection=(@(Invoke-ProjectPython -Arguments @('-m','msplatform.workflows.prepared_joint.analysis_inputs','--source-run',$source,'--contract',$contract,'--output-inputs',$inputDir))-join"`n")|ConvertFrom-Json -Depth 50
+    $selection=(@(Invoke-ProjectPython -FrozenPackage $frozen -Arguments @('-m','msplatform.workflows.prepared_joint.analysis_inputs','--source-run',$source,'--contract',[string]$frozenAnalysisContract,'--output-inputs',$inputDir))-join"`n")|ConvertFrom-Json -Depth 50
     if(($selection.recording|ConvertTo-Json -Compress)-cne($recording|ConvertTo-Json -Compress)){throw 'Analysis observation budget changed during input freezing.'}
     $configuration.inputs.source_manifest=$selection.source_manifest
     $configuration.inputs.analysis_contract=$selection.analysis_contract
@@ -509,7 +509,7 @@ function Invoke-PreparedJointAnalysis {
       -ProtectedPaths @($runDir) -SourceReferences @(Get-PreparedJointSourceReferences -RunDirectories @($selection.protected_paths)) -RemainingCommittedNewBytes ([int64]$recording.output_budget_bytes)
     $capacity=$renewal.session
     $stage='joint_diagnostics'
-    Invoke-ProjectPython -Arguments @('-m','msplatform.workflows.prepared_joint.diagnostics','analyze-joint',
+    Invoke-ProjectPython -FrozenPackage $frozen -Arguments @('-m','msplatform.workflows.prepared_joint.diagnostics','analyze-joint',
       '--preparation',[string]$selection.preparation,'--log',[string]$selection.merged_log,'--output',(Join-Path $package.result_dir 'diagnostics'),'--analysis-contract',[string]$selection.analysis_contract)
   }catch{$failure=$_}
   $status=if($null-eq$failure){'success'}else{'failed'}

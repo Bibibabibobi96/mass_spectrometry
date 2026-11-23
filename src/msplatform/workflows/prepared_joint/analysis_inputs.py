@@ -105,7 +105,8 @@ def prepare_analysis_inputs(source_run: Path, contract: Path, output_inputs: Pat
     frozen_manifest = output_inputs / "source_run_manifest.json"
     frozen_contract = output_inputs / "analysis_contract.json"
     frozen_manifest.write_bytes(manifest_bytes)
-    frozen_contract.write_bytes(contract_bytes)
+    if contract.resolve() != frozen_contract.resolve():
+        frozen_contract.write_bytes(contract_bytes)
     result = dict(
         schema_version=1, role="prepared_joint_analysis_inputs", source_run=str(source_run),
         preparation=str(preparation_path), merged_log=str(log), merge_receipt=str(merge_path),
