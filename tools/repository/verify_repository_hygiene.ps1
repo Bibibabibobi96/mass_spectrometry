@@ -15,13 +15,13 @@ $errors = [Collections.Generic.List[string]]::new()
 
 $tracked = @(& git -C $repoRoot ls-files)
 if ($LASTEXITCODE -ne 0) { throw 'git ls-files failed.' }
-$sharedIobSeedPrefix = 'common/simion/assets/iob_instance_seeds/'
+$sharedIobSeedPrefix = 'src/msplatform/backends/simion/resources/iob_instance_seeds/'
 $sharedIobSeedFiles = @(
 
 
 
 
-  'iob_seed_placeholder_01.pa0','iob_seed_placeholder_02.pa0',
+  'iob_seed_placeholder_02.pa0',
   'iob_seed_placeholder_03.pa0','iob_seed_placeholder_04.pa0',
   'iob_seed_placeholder_05.pa0','iob_seed_placeholder_06.pa0',
   'iob_seed_placeholder_07.pa0','iob_seed_placeholder_08.pa0',
@@ -29,6 +29,15 @@ $sharedIobSeedFiles = @(
 ) | ForEach-Object { "$sharedIobSeedPrefix$_" }
 $sharedIobSeedFiles += 'src/msplatform/backends/simion/resources/iob_seed_placeholder_01.pa0'
 $installedStructuralSeeds = @{
+  'src/msplatform/backends/simion/resources/iob_instance_seeds/iob_seed_placeholder_02.pa0' = @{ Bytes = 16403404; Sha256 = '0632f72ad60e5f43cab2a51b518ac1f565be6d5aa617a8d8e84c4ff499ed4ea9' }
+  'src/msplatform/backends/simion/resources/iob_instance_seeds/iob_seed_placeholder_03.pa0' = @{ Bytes = 16403404; Sha256 = '0632f72ad60e5f43cab2a51b518ac1f565be6d5aa617a8d8e84c4ff499ed4ea9' }
+  'src/msplatform/backends/simion/resources/iob_instance_seeds/iob_seed_placeholder_04.pa0' = @{ Bytes = 16403404; Sha256 = '0632f72ad60e5f43cab2a51b518ac1f565be6d5aa617a8d8e84c4ff499ed4ea9' }
+  'src/msplatform/backends/simion/resources/iob_instance_seeds/iob_seed_placeholder_05.pa0' = @{ Bytes = 16403404; Sha256 = '0632f72ad60e5f43cab2a51b518ac1f565be6d5aa617a8d8e84c4ff499ed4ea9' }
+  'src/msplatform/backends/simion/resources/iob_instance_seeds/iob_seed_placeholder_06.pa0' = @{ Bytes = 16403404; Sha256 = '0632f72ad60e5f43cab2a51b518ac1f565be6d5aa617a8d8e84c4ff499ed4ea9' }
+  'src/msplatform/backends/simion/resources/iob_instance_seeds/iob_seed_placeholder_07.pa0' = @{ Bytes = 16403404; Sha256 = '0632f72ad60e5f43cab2a51b518ac1f565be6d5aa617a8d8e84c4ff499ed4ea9' }
+  'src/msplatform/backends/simion/resources/iob_instance_seeds/iob_seed_placeholder_08.pa0' = @{ Bytes = 16403404; Sha256 = '0632f72ad60e5f43cab2a51b518ac1f565be6d5aa617a8d8e84c4ff499ed4ea9' }
+  'src/msplatform/backends/simion/resources/iob_instance_seeds/iob_seed_placeholder_09.pa0' = @{ Bytes = 16403404; Sha256 = '0632f72ad60e5f43cab2a51b518ac1f565be6d5aa617a8d8e84c4ff499ed4ea9' }
+  'src/msplatform/backends/simion/resources/iob_instance_seeds/iob_seed_placeholder_10.pa0' = @{ Bytes = 16403404; Sha256 = '0632f72ad60e5f43cab2a51b518ac1f565be6d5aa617a8d8e84c4ff499ed4ea9' }
   'src/msplatform/backends/simion/resources/1_instance_seed.iob' = @{ Bytes = 20856; Sha256 = '0b34d1277d4c65f62972e01a82d03705d1691113cbe87c52082d17abdf577917' }
   'src/msplatform/backends/simion/resources/2_instance_seed.iob' = @{ Bytes = 20884; Sha256 = '5a2ef00fd0b490f072af42ca7a23a944115e0f9e700f4a4355489d2a7c9dedb1' }
   'src/msplatform/backends/simion/resources/3_instance_seed.iob' = @{ Bytes = 20912; Sha256 = '358e4f0c9d2a5bac62bd366c4d9bed84e0f015021b51792c8eba0e2a75ae3321' }

@@ -179,6 +179,19 @@ class LightweightGateIntegrationTests(unittest.TestCase):
                                       capture_output=True, text=True, timeout=30)
             accepted = verify()
             self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
+            seed = checkout / "src/msplatform/backends/simion/resources/iob_instance_seeds/iob_seed_placeholder_02.pa0"
+            seed.parent.mkdir(parents=True)
+            shutil.copyfile(self.repo_root / seed.relative_to(checkout), seed)
+            subprocess.run(["git", "add", seed.relative_to(checkout).as_posix()], cwd=checkout,
+                           check=True, capture_output=True, timeout=10)
+            accepted_seed = verify()
+            self.assertEqual(accepted_seed.returncode, 0, accepted_seed.stdout + accepted_seed.stderr)
+            original_seed = seed.read_bytes()
+            seed.write_bytes(original_seed + b"tampered")
+            rejected_seed = verify()
+            self.assertNotEqual(rejected_seed.returncode, 0)
+            self.assertIn("registered structural template identity differs", rejected_seed.stderr)
+            seed.write_bytes(original_seed)
             payload = checkout / "field.pa0"
             payload.write_bytes(b"small generated fixture")
             subprocess.run(["git", "add", "field.pa0"], cwd=checkout, check=True,
