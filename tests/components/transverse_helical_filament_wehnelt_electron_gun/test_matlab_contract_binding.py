@@ -10,8 +10,10 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import venv
 from pathlib import Path
 
+from msplatform.execution.capacity_ledger import initialize_capacity_ledger
 from msplatform.execution.inputs import enumerate_python_sources
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -83,6 +85,19 @@ class MatlabContractBindingTests(unittest.TestCase):
     @staticmethod
     def build_runner_path() -> str:
         return str(REPO_ROOT / "src/msplatform/workflows/resources/wehnelt_build_only.ps1").replace("'", "''")
+
+    @staticmethod
+    def make_installed_python(root: Path) -> tuple[Path, Path]:
+        environment = root / "environment"
+        venv.EnvBuilder(system_site_packages=True, with_pip=False).create(environment)
+        python = environment / "Scripts/python.exe"
+        site_packages = Path(subprocess.check_output(
+            [python, "-I", "-c", "import sysconfig;print(sysconfig.get_paths()['purelib'])"],
+            text=True, encoding="utf-8", cwd=root, timeout=120,
+        ).strip())
+        package = site_packages / "msplatform"
+        shutil.copytree(REPO_ROOT / "src/msplatform", package)
+        return python, package
 
     def test_every_stage_requires_and_loads_resolved_contract(self) -> None:
         for name, source in self.sources.items():
@@ -344,7 +359,7 @@ class MatlabContractBindingTests(unittest.TestCase):
     def test_bootstrap_identity_includes_immediate_support_dependencies(self) -> None:
         bootstrap_start = self.build_runner.index("$bootstrapFiles = [ordered]@{")
         bootstrap_end = self.build_runner.index(
-            "}\n. (Join-Path $repoRoot $bootstrapFiles.artifact_support)",
+            "}\n. (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')",
             bootstrap_start,
         )
         bootstrap_block = self.build_runner[bootstrap_start:bootstrap_end]
@@ -393,12 +408,12 @@ function Get-RunFileSha256($Path){(Get-FileHash -LiteralPath $Path -Algorithm SH
                 else:
                     self.assertEqual(result.returncode, 0, details)
 
-    def test_external_termination_has_a_verified_interrupted_prestate(self) -> None:
+    def test_external_termination_has_a_verified_checkpoint_prestate(self) -> None:
         initial_summary = self.build_runner.index(
             "New-BuildSummary -Status interrupted"
         )
         initial_manifest = self.build_runner.index(
-            "-Manifest $manifestPath -Status interrupted", initial_summary
+            "-Manifest $manifestPath -Status checkpoint", initial_summary
         )
         guarded_work = self.build_runner.index("try {", initial_manifest)
         commercial_call = self.build_runner.index(
@@ -603,6 +618,7 @@ function Get-RunFileSha256($Path){(Get-FileHash -LiteralPath $Path -Algorithm SH
         script = "$ErrorActionPreference='Stop'\n" + r'''
 & {
   $repoRoot=$env:DEPENDENCY_TEST_REPO
+  $workspaceRoot=$env:FROZEN_DEPENDENCY_TEST_ROOT
   $snapshotRoot=$env:FROZEN_DEPENDENCY_TEST_ROOT
   $package=@{python=$env:DEPENDENCY_TEST_PYTHON}
   $frozenInputs=@{}
@@ -663,6 +679,7 @@ Write-Output 'FROZEN_BUDGET_OBSERVATION=PASS'
             "src/msplatform/execution/inputs.py",
         )
         with tempfile.TemporaryDirectory() as directory:
+            installed_python, _ = self.make_installed_python(Path(directory) / "installed")
             snapshot = Path(directory) / "repository"
             frozen_project = snapshot / PROJECT_ROOT.relative_to(REPO_ROOT)
             declared: set[Path] = set()
@@ -706,15 +723,15 @@ function Get-HostResourceSnapshot {
             freeze_script = (
                 "$ErrorActionPreference='Stop';Set-StrictMode -Version Latest;"
                 f". '{REPO_ROOT / 'src/msplatform/execution/resources/run_artifact_support.ps1'}';"
-                f"$repoRoot='{REPO_ROOT}';$snapshotRoot='{snapshot}';"
-                f"$package=@{{python='{sys.executable}'}};$frozenInputs=@{{}};"
+                f"$repoRoot='{REPO_ROOT}';$workspaceRoot='{snapshot}';$snapshotRoot='{snapshot}';"
+                f"$package=@{{python='{installed_python}'}};$frozenInputs=@{{}};"
                 + self.build_runner[selection_start:selection_end]
             )
             freeze_environment = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
             selected = subprocess.run(
                 ["pwsh", "-NoProfile", "-NonInteractive", "-Command", freeze_script],
                 cwd=snapshot, env=freeze_environment, check=False, capture_output=True,
-                text=True, encoding="utf-8", timeout=30,
+                text=True, encoding="utf-8", errors="replace", timeout=30,
             )
             self.assertEqual(selected.returncode, 0, selected.stdout + selected.stderr)
             for relative in expected_core:
@@ -834,14 +851,12 @@ function Get-HostResourceSnapshot {
         selector = self.build_runner[script_start:selection_end]
         with tempfile.TemporaryDirectory(prefix="wehnelt_offsite_install_") as directory:
             root = Path(directory)
-            installed = root / "installed"
-            shutil.copytree(REPO_ROOT / "src/msplatform", installed / "msplatform")
+            python, package = self.make_installed_python(root)
             marker_name = "write_wehnelt_build_only_report.m"
-            marker = installed / "msplatform/backends/comsol/matlab" / marker_name
+            marker = package / "backends/comsol/matlab" / marker_name
             marker.write_text("offsite installed resource\n", encoding="utf-8")
-            environment = dict(os.environ, PYTHONPATH=str(installed))
             selected = subprocess.run(
-                [sys.executable, "-B", "-c", selector], cwd=root, env=environment,
+                [python, "-I", "-B", "-c", selector], cwd=root,
                 check=False, capture_output=True, text=True, encoding="utf-8", timeout=30,
             )
             self.assertEqual(selected.returncode, 0, selected.stdout + selected.stderr)
@@ -853,7 +868,7 @@ function Get-HostResourceSnapshot {
 
             marker.unlink()
             missing = subprocess.run(
-                [sys.executable, "-B", "-c", selector], cwd=root, env=environment,
+                [python, "-I", "-B", "-c", selector], cwd=root,
                 check=False, capture_output=True, text=True, encoding="utf-8", timeout=30,
             )
             self.assertNotEqual(missing.returncode, 0, missing.stdout + missing.stderr)
@@ -866,7 +881,12 @@ function Get-HostResourceSnapshot {
             environment.pop("SIMULATION_PYTHON_EXE", None)
             result = subprocess.run(
                 ["pwsh", "-NoProfile", "-NonInteractive", "-File", self.build_runner_path(),
-                 "-RunId", "20261123_000000__build__comsol__python-admission"],
+                 "-RunId", "20261123_000000__build__comsol__python-admission",
+                 "-WorkspaceRoot", directory, "-ArtifactRoot", str(Path(directory) / "artifacts"),
+                 "-BaselinePath", str(PROJECT_ROOT / "config/baseline.json"),
+                 "-NumericalModesPath", str(PROJECT_ROOT / "config/numerical_modes.json"),
+                 "-ResolvedContractPath", str(PROJECT_ROOT / "config/resolved_model.json"),
+                 "-ModePath", str(PROJECT_ROOT / "config/modes/build_only_smoke.json")],
                 cwd=directory, env=environment, check=False, capture_output=True,
                 text=True, encoding="utf-8", errors="replace", timeout=20,
             )
@@ -879,6 +899,74 @@ function Get-HostResourceSnapshot {
         self.assertLess(explicit, selected_environment)
         self.assertLess(selected_environment, missing)
 
+    def assert_real_file_preflight(self, shadow_installed_package: bool) -> None:
+        with tempfile.TemporaryDirectory(prefix="wehnelt_installed_file_") as directory:
+            root = Path(directory)
+            python, package = self.make_installed_python(root)
+            science = root / "science"
+            shutil.copytree(PROJECT_ROOT / "config", science)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            artifacts = root / "artifacts"
+            artifacts.mkdir()
+            initialize_capacity_ledger(artifacts, objects=[])
+            runner = root / "runner.ps1"
+            installed_runner = package / "workflows/resources/wehnelt_build_only.ps1"
+            shutil.copy2(installed_runner, runner)
+            resolver = package / "backends/comsol/launcher/resolve_comsol_64.ps1"
+            resolver.write_text(
+                "function Get-ComsolLauncherParameters { "
+                "param($HostContext,$WorkingDirectory) "
+                "throw 'WEHNELT_TEST_PREFLIGHT_BOUNDARY' }\n",
+                encoding="utf-8",
+            )
+            environment = os.environ.copy()
+            environment.pop("MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN", None)
+            environment["MASS_SPECTROMETRY_HOST_CONTEXT_JSON"] = json.dumps({
+                "workspace": str(workspace), "python_executable": str(python),
+                "host_state_path": str(artifacts / "common/host_resources.sqlite3"),
+                "policy_path": str(package / "execution/resources/host_resource_policy.json"),
+            })
+            if shadow_installed_package:
+                shadow = root / "shadow/msplatform"
+                shadow.mkdir(parents=True)
+                (shadow / "__init__.py").write_text(
+                    "raise RuntimeError('SHADOW_MSPPLATFORM_WAS_IMPORTED')\n", encoding="utf-8"
+                )
+                environment["PYTHONPATH"] = str(shadow.parent)
+            else:
+                environment.pop("PYTHONPATH", None)
+            run_id = "20261124_000000__build__comsol__installed-preflight"
+            result = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(runner),
+                 "-RunId", run_id, "-PythonExe", str(python),
+                 "-WorkspaceRoot", str(workspace), "-ArtifactRoot", str(artifacts),
+                 "-BaselinePath", str(science / "baseline.json"),
+                 "-NumericalModesPath", str(science / "numerical_modes.json"),
+                 "-ResolvedContractPath", str(science / "resolved_model.json"),
+                 "-ModePath", str(science / "modes/build_only_smoke.json")],
+                cwd=root, env=environment, check=False, capture_output=True,
+                text=True, encoding="utf-8", errors="replace", timeout=120,
+            )
+            details = (result.stdout or "") + (result.stderr or "")
+            self.assertNotEqual(result.returncode, 0, details)
+            self.assertIn("WEHNELT_TEST_PREFLIGHT_BOUNDARY", details)
+            self.assertNotIn("SHADOW_MSPPLATFORM_WAS_IMPORTED", details)
+            run = artifacts / "projects" / PROJECT_ROOT.name / "runs" / run_id
+            summary = json.loads((run / "summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary["failure_stage"], "commercial_wrapper_pending")
+            self.assertFalse(summary["commercial_wrapper_invocation_attempted"])
+            frozen_runner = run / "inputs/repository/src/msplatform/workflows/resources/wehnelt_build_only.ps1"
+            self.assertEqual(frozen_runner.read_bytes(), installed_runner.read_bytes())
+            frozen_resolver = run / "inputs/repository/src/msplatform/backends/comsol/launcher/resolve_comsol_64.ps1"
+            self.assertEqual(frozen_resolver.read_bytes(), resolver.read_bytes())
+
+    def test_real_file_preflight_uses_installed_resources_without_source_tree(self) -> None:
+        self.assert_real_file_preflight(shadow_installed_package=False)
+
+    def test_real_file_preflight_ignores_same_named_pythonpath_package(self) -> None:
+        self.assert_real_file_preflight(shadow_installed_package=True)
+
     def test_cache_controls_precede_package_and_frozen_python_execution(self) -> None:
         snapshot_index = self.build_runner.index(
             "$savedEnvironment = Save-RunEnvironment"
@@ -887,7 +975,7 @@ function Get-HostResourceSnapshot {
             "$env:PYTHONDONTWRITEBYTECODE = '1'"
         )
         ruff_index = self.build_runner.index("$env:RUFF_NO_CACHE = 'true'")
-        package_index = self.build_runner.index("$package = New-RunPackage")
+        package_index = self.build_runner.index("New-RunPackage -Python $python")
         frozen_support_index = self.build_runner.index(
             ". $frozenInputs.artifact_support"
         )

@@ -290,7 +290,7 @@ catch{{if($_.Exception.Message-eq'accepted missing invocation'){{throw}};$reject
 
     def workflow_step_script(self, *, scope=False):
         text=(ROOT/".github/workflows/lightweight-gate.yml").read_text(encoding="utf-8-sig")
-        job=text.split("  changed_scope:\n",1)[1].split("  repository_integration:\n",1)[0]
+        job=text.split("  changed_scope:\n",1)[1].split("  repository_scope:\n",1)[0]
         steps=re.split(r"(?m)^      - ",job)[1:]
         selected=[step for step in steps if ("        id: scope\n" in step if scope
                   else "        run: &gate_command |\n" in step)]
@@ -326,7 +326,7 @@ catch{{if($_.Exception.Message-eq'accepted missing invocation'){{throw}};$reject
         self.assertEqual(workflow.count("run: &gate_command |"),1)
         self.assertEqual(workflow.count("run: *gate_command"),1)
         self.assertIn("PUBLIC_GATE_SCOPE_FILE: changed_scope.json",workflow)
-        self.assertIn("PUBLIC_GATE_SCOPE_FILE: integration_scope.json",workflow)
+        self.assertIn("PUBLIC_GATE_SCOPE_FILE: repository_scope.json",workflow)
         self.assertEqual(workflow.count("${{ runner.temp }}/oatof_fixture_diagnostics/**"), 2)
 
     def test_workflow_manual_comparison_matches_push_plan_and_propagates_real_failure(self):

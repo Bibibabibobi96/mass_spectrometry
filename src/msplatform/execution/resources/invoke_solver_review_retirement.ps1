@@ -23,12 +23,15 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $python = if ($env:SIMULATION_PYTHON_EXE) { $env:SIMULATION_PYTHON_EXE } else { (Get-Command python -ErrorAction Stop).Path }
-$resolvedRepository = (Resolve-Path -LiteralPath $RepositoryRoot).Path
-$executionResources = Join-Path $resolvedRepository 'src/msplatform/execution/resources'
-$hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path (Split-Path -Parent $resolvedRepository) 'artifacts/common/host_resources.sqlite3' }
-$hostContext = @{workspace=(Split-Path -Parent $resolvedRepository);python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
+$resourceOutput = @(& $python -I -B -c 'from importlib.resources import files;print(files("msplatform")/"execution/resources")')
+if ($LASTEXITCODE -ne 0 -or $resourceOutput.Count -ne 1) { throw 'Could not resolve the selected Python installation resource directory.' }
+$executionResources = (Resolve-Path -LiteralPath ([string]$resourceOutput[0])).Path
+$artifactRootPath = [IO.Path]::GetFullPath($ArtifactRoot)
+$workspace = Split-Path -Parent $artifactRootPath
+$hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path $artifactRootPath 'common/host_resources.sqlite3' }
+$hostContext = @{workspace=$workspace;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
-$arguments = @('-m','msplatform.execution.solver_review_retirement','--artifact-root',$ArtifactRoot,
+$arguments = @('-I','-B','-m','msplatform.execution.solver_review_retirement','--artifact-root',$ArtifactRoot,
   '--repository-root',$RepositoryRoot,'--target-run',$TargetRun)
 if($RepairPreservedFile){
   if(-not$Owner.Trim()-or-not$ConfirmWritingStopped-or-not$RepairEvidenceRun-or
@@ -42,22 +45,22 @@ if($RepairPreservedFile){
     '--owner',$Owner,'--confirm-writing-stopped')
   if(-not$Apply){& $python @arguments;exit $LASTEXITCODE}
   if(-not$PSCmdlet.ShouldProcess($TargetRun,'replace one preserved PA object with verified identical bytes; retain old object')){return}
-  . (Join-Path $RepositoryRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
-  $lease=Enter-HostExecutionLease -Role GATE -Stage artifact_retirement -RunId ([IO.Path]::GetFileName($RepairEvidenceRun))
+  . (Join-Path $executionResources 'run_artifact_support.ps1')
+  $lease=Enter-HostExecutionLease -Role GATE -Stage artifact_retirement -RunId ([IO.Path]::GetFileName($RepairEvidenceRun)) 6>$null
   $session=$null
   try{
     $raw=@(& $python @arguments)
     if($LASTEXITCODE-ne0){throw 'Preserved payload repair preflight failed.'}
     $plan=($raw-join"`n")|ConvertFrom-Json
-    $session=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $RepositoryRoot -ArtifactRoot $ArtifactRoot `
+    $session=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $workspace -ArtifactRoot $ArtifactRoot `
       -RunDirectory $RepairEvidenceRun -CommittedNewBytes ([long]$plan.committed_new_bytes) `
       -ProtectedPaths @($TargetRun,$RepairEvidenceRun) -Owner "owned-payload-view-repair:$($Owner):$([IO.Path]::GetFileName($RepairEvidenceRun))"
     & $python @arguments --capacity-lease-id $session.lease_id --apply
     if($LASTEXITCODE-ne0){throw 'Preserved payload repair failed; retain its pending audit and replay the same identities.'}
   }finally{
     try{
-      if($session){$null=Exit-ArtifactWorkflowCapacitySession -Session $session -Python $python -RepoRoot $RepositoryRoot}
-    }finally{Exit-HostExecutionLease -Lease $lease}
+      if($session){$null=Exit-ArtifactWorkflowCapacitySession -Session $session -Python $python -RepoRoot $workspace}
+    }finally{$null=Exit-HostExecutionLease -Lease $lease 6>$null}
   }
   return
 }
@@ -101,7 +104,7 @@ if ($ApprovedStoppedConsumers.Count -gt 0) {
 }
 if (-not $Apply) { & $python @arguments; exit $LASTEXITCODE }
 if (-not $PSCmdlet.ShouldProcess($TargetRun, "retire governed solver_review heavy payload")) { return }
-$lease = Enter-HostExecutionLease -Role GATE -Stage artifact_retirement -RunId ([IO.Path]::GetFileName($TargetRun))
+$lease = Enter-HostExecutionLease -Role GATE -Stage artifact_retirement -RunId ([IO.Path]::GetFileName($TargetRun)) 6>$null
 try {
   & $python @arguments --apply
   if ($LASTEXITCODE -ne 0) { throw "solver_review retirement failed with exit code $LASTEXITCODE" }
@@ -112,10 +115,10 @@ try {
         $config['capacity_ledger_lifecycle']['enabled'] -eq $true -and -not $RuntimeCheckpoint) {
       # Keep the retirement receipt as the wrapper's sole JSON stdout document.
       if ($SelectedHeavyPaths.Count -gt 0) {
-        $null = & $python -m msplatform.execution.run_capacity_lifecycle --action reseal-retired-payload `
+        $null = & $python -I -B -m msplatform.execution.run_capacity_lifecycle --action reseal-retired-payload `
           --artifact-root $ArtifactRoot --run-config $runConfig --owner ([string]$config.project) --confirm-writing-stopped
       } else {
-        $null = & $python -m msplatform.execution.run_capacity_lifecycle --action finalize-ready --artifact-root $ArtifactRoot --run-config $runConfig
+        $null = & $python -I -B -m msplatform.execution.run_capacity_lifecycle --action finalize-ready --artifact-root $ArtifactRoot --run-config $runConfig
       }
       if ($LASTEXITCODE -ne 0) { throw "capacity lifecycle closure failed with exit code $LASTEXITCODE" }
     }
@@ -123,5 +126,5 @@ try {
     throw "Payload retirement completed, but capacity ledger finalization is pending; recover with run_capacity_lifecycle, do not repeat deletion. $($_.Exception.Message)"
   }
 } finally {
-  Exit-HostExecutionLease -Lease $lease
+  $null = Exit-HostExecutionLease -Lease $lease 6>$null
 }

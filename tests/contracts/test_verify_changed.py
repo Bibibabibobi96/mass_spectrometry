@@ -1851,7 +1851,7 @@ $full.parameters.PSObject.Properties.Remove('PreflightOnly')
         self.assertEqual(len(programs), 1)
         self.assertEqual(workflow.count("run: *gate_command"), 1)
         projections = re.findall(r"PUBLIC_GATE_SCOPE_FILE: (\S+)\n          PUBLIC_GATE_OUTPUT_PREFIX: (\S+)", workflow)
-        self.assertEqual(projections, [("changed_scope.json", "changed"), ("integration_scope.json", "integration")])
+        self.assertEqual(projections, [("changed_scope.json", "changed"), ("repository_scope.json", "repository")])
         fixture = r'''param($PlanPath,$MaxConcurrency,$ResourceWaitTimeoutSeconds,$SummaryPath)
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 @{role='ci_gate_fixture';elapsed_seconds=0.005;stages=@()}|ConvertTo-Json|Set-Content -LiteralPath $SummaryPath -Encoding utf8
@@ -1914,7 +1914,7 @@ exit ([int]$env:CI_FIXTURE_EXIT)
                     process.stdout.close()
                     process.stderr.close()
                     self.assertEqual(process.returncode, code, "".join(lines) + stderr)
-                    prefix = "changed" if job == 0 else "integration"
+                    prefix = "changed" if job == 0 else "repository"
                     timing = json.loads((root / f"{prefix}_gate_command_timing.json").read_text())
                     self.assertEqual(timing["exit_code"], code)
                     self.assertGreater(timing["elapsed_wall_seconds"], 0.005)
@@ -1948,11 +1948,11 @@ exit ([int]$env:CI_FIXTURE_EXIT)
                         self.assertNotIn("CI_FIRST_OUTPUT_BEFORE_EXIT", rejected.stdout)
                         self.assertIn("FileNotFoundError" if invalid == "missing" else "JSONDecodeError", rejected.stderr)
         self.assertIn("${{ runner.temp }}/changed_gate_command_timing.json", workflow)
-        self.assertIn("${{ runner.temp }}/integration_gate_command_timing.json", workflow)
+        self.assertIn("${{ runner.temp }}/repository_gate_command_timing.json", workflow)
 
     def test_ci_installs_checkout_core_before_planning_without_scientific_dependencies(self) -> None:
         workflow = LIGHTWEIGHT_WORKFLOW.read_text(encoding="utf-8")
-        jobs = workflow.split("  changed_scope:\n", 1)[1].split("  repository_integration:\n", 1)
+        jobs = workflow.split("  changed_scope:\n", 1)[1].split("  repository_scope:\n", 1)
         self.assertEqual(len(jobs), 2)
         for job in jobs:
             with self.subTest(job=job.splitlines()[0]):

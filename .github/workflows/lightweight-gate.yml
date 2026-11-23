@@ -384,7 +384,7 @@ jobs:
             ${{ runner.temp }}/changed_gate_*/**
             ${{ runner.temp }}/oatof_fixture_diagnostics/**
           if-no-files-found: warn
-  repository_integration:
+  repository_scope:
     if: github.event_name == 'workflow_dispatch' && (inputs.comparison_base == '' || inputs.owner != '')
     runs-on: windows-latest
     # Collect actual failures and drain active suites; the feedback target is
@@ -493,7 +493,7 @@ jobs:
             $scope.scope = 'Owner'; $scope.owner = @($env:PUBLIC_GATE_OWNER)
             $selection = @{ Scope = 'Owner'; Owner = @($env:PUBLIC_GATE_OWNER) }
           }
-          $scope | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'integration_scope.json') -Encoding UTF8
+          $scope | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'repository_scope.json') -Encoding UTF8
           $settings = @{
             MaxConcurrency = $(if ($env:PUBLIC_GATE_WORKERS -eq 'auto') { 0 } else { [int]$env:PUBLIC_GATE_WORKERS })
           }
@@ -505,24 +505,24 @@ jobs:
         run: python -m pip install --disable-pip-version-check -r requirements-lock.txt
       - name: Verify repository software scope
         env:
-          PUBLIC_GATE_SCOPE_FILE: integration_scope.json
-          PUBLIC_GATE_OUTPUT_PREFIX: integration
+          PUBLIC_GATE_SCOPE_FILE: repository_scope.json
+          PUBLIC_GATE_OUTPUT_PREFIX: repository
         shell: pwsh
         run: *gate_command
       - name: Upload repository gate evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: repository-integration-gate-evidence
+          name: repository-gate-evidence
           path: |
             ${{ runner.temp }}/software_gate_plan.json
-            ${{ runner.temp }}/integration_scope.json
+            ${{ runner.temp }}/repository_scope.json
             ${{ runner.temp }}/runner_execution_settings.json
             ${{ runner.temp }}/gate_selection_inventory.json
-            ${{ runner.temp }}/integration_gate_summary.json
-            ${{ runner.temp }}/integration_gate_command_timing.json
-            ${{ runner.temp }}/integration_gate_test_outcomes.json
-            ${{ runner.temp }}/integration_gate_resource_samples.jsonl
+            ${{ runner.temp }}/repository_gate_summary.json
+            ${{ runner.temp }}/repository_gate_command_timing.json
+            ${{ runner.temp }}/repository_gate_test_outcomes.json
+            ${{ runner.temp }}/repository_gate_resource_samples.jsonl
             ${{ runner.temp }}/repository_gate_gate_*/**
             ${{ runner.temp }}/oatof_fixture_diagnostics/**
           if-no-files-found: warn

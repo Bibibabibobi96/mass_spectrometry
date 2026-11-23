@@ -64,6 +64,9 @@ param($Root)
 $env:SIMULATION_PYTHON_EXE='python'
 $global:calls=[Collections.Generic.List[string]]::new()
 function python {
+ if($args-contains'from importlib.resources import files;print(files("msplatform")/"execution/resources")'){
+  Join-Path $Root 'src/msplatform/execution/resources';$global:LASTEXITCODE=0;return
+ }
  if($args-contains'--apply'){
   if($args-notcontains'--capacity-lease-id'-or$args-notcontains'fixture'-or$args-notcontains'MANIFEST'-or$args-notcontains'RETIREMENT'){throw 'identity or lease missing'}
   $global:calls.Add('repair');'{"status":"complete"}'
@@ -144,6 +147,9 @@ $OutputEncoding = [Console]::OutputEncoding
 Write-Host 'UTF8:缂栫爜杈圭晫'
 $global:calls = [Collections.Generic.List[string]]::new()
 function python {
+  if($args-contains'from importlib.resources import files;print(files("msplatform")/"execution/resources")'){
+    Join-Path $Root 'src/msplatform/execution/resources';$global:LASTEXITCODE=0;return
+  }
   if ($args -contains 'msplatform.execution.run_capacity_lifecycle') {
     if($args-contains'reseal-retired-payload'){
       if($args-notcontains'--confirm-writing-stopped'-or$args-notcontains'p'-or$args-contains'--retention-reason'){throw 'reseal authority differs'}
@@ -224,6 +230,29 @@ class SolverReviewRetirementTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp.cleanup()
 
+    def _installed_python(self, name: str) -> tuple[Path, Path]:
+        source = self.root / f"{name}-package"
+        source.mkdir()
+        repository = Path(__file__).resolve().parents[2]
+        shutil.copy2(repository / "pyproject.toml", source / "pyproject.toml")
+        shutil.copytree(repository / "src/msplatform", source / "src/msplatform")
+        environment = self.root / f"{name}-venv"
+        subprocess.run(
+            [sys.executable, "-m", "venv", "--system-site-packages", str(environment)],
+            cwd=self.root, capture_output=True, text=True, timeout=60, check=True,
+        )
+        python = environment / "Scripts/python.exe"
+        subprocess.run(
+            [str(python), "-m", "pip", "install", "--no-deps", "--no-build-isolation", str(source)],
+            cwd=self.root, capture_output=True, text=True, timeout=90, check=True,
+        )
+        resolved = subprocess.run(
+            [str(python), "-I", "-B", "-c",
+             'from importlib.resources import files;print(files("msplatform")/"execution/resources")'],
+            cwd=self.root, capture_output=True, text=True, timeout=30, check=True,
+        )
+        return python, Path(resolved.stdout.strip())
+
     def test_wrapper_real_retirement_updates_opted_in_ledger(self) -> None:
         self._real_wrapper_retirement(partial=False)
 
@@ -231,7 +260,7 @@ class SolverReviewRetirementTest(unittest.TestCase):
         self._real_wrapper_retirement(partial=True)
 
     def _real_wrapper_retirement(self, *, partial: bool) -> None:
-        """Real Python deletion and finalization; only the lease boundary is isolated."""
+        """Exercise real installed-package deletion, leases and finalization off checkout."""
         pwsh = shutil.which("pwsh")
         if not pwsh:
             self.skipTest("PowerShell 7 is required for the wrapper integration regression")
@@ -253,33 +282,43 @@ class SolverReviewRetirementTest(unittest.TestCase):
         contracts.mkdir()
         wrapper = contracts / "invoke_solver_review_retirement.ps1"
         wrapper.write_bytes((Path(__file__).resolve().parents[2] / "src/msplatform/execution/resources" / wrapper.name).read_bytes())
-        host = self.root / "src/msplatform/execution/resources/host_execution_lease.ps1"
-        host.parent.mkdir(parents=True)
-        host.write_text("""
-param([Parameter(Mandatory)][hashtable]$HostContext)
-function Enter-HostExecutionLease {
-  $env:MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID = [string]$PID
-  return @{id='isolated fixture lease'}
-}
-function Exit-HostExecutionLease { param($Lease) }
+        python, _ = self._installed_python("retirement")
+        repository = self.root / ("shadow-checkout" if partial else "missing-checkout")
+        if partial:
+            shadow = repository / "src/msplatform"
+            shadow.mkdir(parents=True)
+            (shadow / "__init__.py").write_text("raise RuntimeError('checkout package was selected')")
+            resources = shadow / "execution/resources"
+            resources.mkdir(parents=True)
+            (resources / "host_execution_lease.ps1").write_text("throw 'checkout helper was selected'")
+        harness = self.root / "invoke-retirement.ps1"
+        harness.write_text("""
+param($Wrapper,$ArtifactRoot,$RepositoryRoot,$TargetRun,$SelectedJson)
+[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
+$OutputEncoding=[Console]::OutputEncoding
+$params=@{ArtifactRoot=$ArtifactRoot;RepositoryRoot=$RepositoryRoot;TargetRun=$TargetRun;
+  Owner='p';OwnerAbandonmentReason='completed tiny experiment without consumers';Apply=$true}
+$selected=@(ConvertFrom-Json $SelectedJson)
+if($selected.Count){$params.SelectedHeavyPaths=[string[]]$selected}
+& $Wrapper @params
 """, encoding="utf-8")
-        repository = Path(__file__).resolve().parents[2]
         command = [
-            pwsh, "-NoLogo", "-NoProfile", "-File", str(wrapper),
-            "-ArtifactRoot", str(self.artifacts), "-RepositoryRoot", str(self.root),
-            "-TargetRun", str(self.target), "-Owner", "p",
-            "-OwnerAbandonmentReason", "completed tiny experiment without consumers", "-Apply",
+            pwsh, "-NoLogo", "-NoProfile", "-File", str(harness), str(wrapper),
+            str(self.artifacts), str(repository), str(self.target),
         ]
         original_entry = dict(load_capacity_ledger(self.artifacts)["objects"][0])
         original_manifest = manifest_path.read_bytes()
-        environment = dict(os.environ, SIMULATION_PYTHON_EXE=sys.executable,
-                           PYTHONPATH=os.pathsep.join((str(repository / "src"), str(repository))),
-                           GIT_DIR=str(repository / ".git"), GIT_WORK_TREE=str(repository))
+        environment = {key: value for key, value in os.environ.items()
+                       if key not in {"PYTHONPATH", "GIT_DIR", "GIT_WORK_TREE"}}
+        environment.update(SIMULATION_PYTHON_EXE=str(python),
+                           MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(self.root / "host_resources.sqlite3"))
         first_receipt = None
         for selection in (["simion/analyzer.pa0", "simion/accelerator.pa0"] if partial else [None]):
-            result = subprocess.run(command + (["-SelectedHeavyPaths", selection] if selection else []),
-                cwd=repository, env=environment, capture_output=True, text=True, encoding="utf-8", timeout=60, check=False)
+            result = subprocess.run([*command, json.dumps(selection or [])],
+                cwd=self.root, env=environment, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                timeout=60, check=False)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertTrue(result.stdout.strip(), f"Missing retirement receipt: {result.stdout}{result.stderr}")
             receipt = json.loads(result.stdout)  # Reject a second lifecycle JSON document.
             self.assertEqual(receipt["lifecycle_status"], "completed_experiment_payload_retired")
             self.assertGreater(receipt["removed_bytes"], 0)
@@ -1034,19 +1073,18 @@ function Exit-HostExecutionLease { param($Lease) }
         source, audit, options = self._view_repair_fixture(
             with_lease=False, payload=b"original-native-bytes" * 400000,
         )
-        source_repository = Path(__file__).resolve().parents[2]
-        repository = self.root / "isolated"
-        contracts = repository / "tools/repository"
-        shutil.copytree(source_repository / "tools/repository", contracts)
-        shutil.copytree(source_repository / "src/msplatform", repository / "src/msplatform")
-        capacity_policy = repository / "src/msplatform/execution/resources/artifact_capacity_policy.json"
+        python, execution_resources = self._installed_python("repair")
+        repository = self.root / "missing-checkout"
+        contracts = self.root / "contracts"
+        contracts.mkdir()
+        capacity_policy = execution_resources / "artifact_capacity_policy.json"
         policy = json.loads(capacity_policy.read_text(encoding="utf-8"))
         policy.update(target_gib=0.1, minimum_free_gib=0.0001)
         capacity_policy.write_text(json.dumps(policy), encoding="utf-8")
         wrapper = contracts / "invoke_solver_review_retirement.ps1"
         wrapper.write_bytes((Path(__file__).resolve().parents[2] / "src/msplatform/execution/resources" / wrapper.name).read_bytes())
         host_calls = self.root / "host-calls.txt"
-        (repository / "src/msplatform/execution/resources/host_execution_lease.ps1").write_text(f"""
+        (execution_resources / "host_execution_lease.ps1").write_text(f"""
 param([Parameter(Mandatory)][hashtable]$HostContext)
 $script:HostResourceExecutionContext = $HostContext
 function Invoke-HostResourceTransaction {{}}
@@ -1066,11 +1104,11 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
             "-ExpectedRetirementSha256", options["expected_retirement_sha256"],
             "-Apply", "-Confirm:$false",
         ]
-        environment = dict(os.environ, SIMULATION_PYTHON_EXE=sys.executable,
-                           PYTHONPATH=os.pathsep.join((str(repository / "src"), str(repository))))
+        environment = {key: value for key, value in os.environ.items() if key != "PYTHONPATH"}
+        environment["SIMULATION_PYTHON_EXE"] = str(python)
         original = source.read_bytes()
         original_id = source.stat().st_ino
-        result = subprocess.run(command, cwd=repository, env=environment, capture_output=True, text=True,
+        result = subprocess.run(command, cwd=self.root, env=environment, capture_output=True, text=True,
                                 encoding="utf-8", errors="replace", timeout=90, check=False)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         receipt = json.loads(result.stdout)
@@ -1087,12 +1125,12 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         leases = load_capacity_protection_leases(self.artifacts)
         self.assertEqual((leases["protected_paths"], leases["protected_cache_keys"],
                           leases["committed_new_bytes"]), (set(), set(), 0))
-        self.assertFalse((self.root / "isolated/common/src").exists())
+        self.assertFalse(repository.exists())
 
         replaced_id = source.stat().st_ino
         failed_command = command.copy()
         failed_command[failed_command.index("-ExpectedManifestSha256") + 1] = "0" * 64
-        failed = subprocess.run(failed_command, cwd=repository, env=environment, capture_output=True, text=True,
+        failed = subprocess.run(failed_command, cwd=self.root, env=environment, capture_output=True, text=True,
                                 encoding="utf-8", errors="replace", timeout=90, check=False)
         self.assertNotEqual(failed.returncode, 0, failed.stdout + failed.stderr)
         self.assertIn("Preserved payload repair preflight failed", failed.stdout + failed.stderr)
@@ -3025,22 +3063,52 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         )
         self.assertFalse((self.target / "simion" / "analyzer.pa0").exists())
 
-    def test_off_checkout_plan_apply_and_verify_freeze_explicit_document_audit(self) -> None:
-        with mock.patch("subprocess.run", side_effect=AssertionError("checkout scan forbidden")):
-            plan = plan_retirement(
-                self.artifacts, self.repo / "missing-checkout", self.target, self.replacement,
-                "document audit is an explicit input", self.compatibility_roles,
-                historical_document_references=["docs/frozen-reference.md"],
-            )
-            with mock.patch.dict(
-                os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}
-            ):
-                receipt = apply_retirement(plan)
-            self.assertEqual(verify_retirement(self.target)["status"], "PASS")
-        self.assertEqual(
-            receipt["apply_historical_document_references"],
-            ["docs/frozen-reference.md"],
+    def test_off_checkout_plan_apply_and_verify_use_installed_entry(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if not pwsh:
+            self.skipTest("PowerShell 7 is required for the off-checkout lifecycle regression")
+        python, _ = self._installed_python("off-checkout")
+        contracts = self.root / "contracts"
+        contracts.mkdir()
+        wrapper = contracts / "invoke_solver_review_retirement.ps1"
+        repository = Path(__file__).resolve().parents[2]
+        shutil.copy2(repository / "src/msplatform/execution/resources" / wrapper.name, wrapper)
+        missing_checkout = self.repo / "missing-checkout"
+        harness = self.root / "off-checkout.ps1"
+        harness.write_text("""
+param($Wrapper,$ArtifactRoot,$RepositoryRoot,$TargetRun,$ReplacementRun,$RolesJson,[switch]$Apply)
+$params=@{ArtifactRoot=$ArtifactRoot;RepositoryRoot=$RepositoryRoot;TargetRun=$TargetRun;
+  ReplacementRun=$ReplacementRun;CompatibilityAssertion='off-checkout installed lifecycle';
+  CompatibilityInputRoles=[string[]](ConvertFrom-Json $RolesJson)}
+if($Apply){$params.Apply=$true}
+& $Wrapper @params
+""", encoding="utf-8")
+        command = [
+            pwsh, "-NoLogo", "-NoProfile", "-File", str(harness), str(wrapper),
+            str(self.artifacts), str(missing_checkout), str(self.target), str(self.replacement),
+            json.dumps(self.compatibility_roles),
+        ]
+        environment = {key: value for key, value in os.environ.items() if key != "PYTHONPATH"}
+        environment.update(SIMULATION_PYTHON_EXE=str(python),
+                           MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(self.root / "host_resources.sqlite3"))
+        planned = subprocess.run(command, cwd=self.root, env=environment, capture_output=True,
+                                 text=True, encoding="utf-8", errors="replace", timeout=60, check=False)
+        self.assertEqual(planned.returncode, 0, planned.stdout + planned.stderr)
+        self.assertTrue(planned.stdout.lstrip().startswith("{"), repr(planned.stdout) + planned.stderr)
+        self.assertEqual(json.loads(planned.stdout)["repository_root"], str(missing_checkout))
+        applied = subprocess.run([*command, "-Apply"], cwd=self.root, env=environment, capture_output=True,
+                                 text=True, encoding="utf-8", errors="replace", timeout=60, check=False)
+        self.assertEqual(applied.returncode, 0, applied.stdout + applied.stderr)
+        receipt = json.loads(applied.stdout)
+        self.assertEqual(receipt["lifecycle_status"], "superseded_payload_retired")
+        verified = subprocess.run(
+            [str(python), "-I", "-m", "msplatform.execution.solver_review_retirement",
+             "--verify", str(self.target)],
+            cwd=self.root, env=environment, capture_output=True, text=True, encoding="utf-8", timeout=60,
+            check=False,
         )
+        self.assertEqual(verified.returncode, 0, verified.stdout + verified.stderr)
+        self.assertEqual(json.loads(verified.stdout)["status"], "PASS")
         self.assertFalse((self.target / "simion" / "analyzer.pa0").exists())
 
     def test_downstream_manifest_reference_preserves_light_evidence_only(self) -> None:

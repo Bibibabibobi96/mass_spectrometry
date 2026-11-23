@@ -2,6 +2,18 @@
 param(
   [Parameter(Mandatory = $true)]
   [string]$RunId,
+  [Parameter(Mandatory = $true)]
+  [string]$WorkspaceRoot,
+  [Parameter(Mandatory = $true)]
+  [string]$ArtifactRoot,
+  [Parameter(Mandatory = $true)]
+  [string]$BaselinePath,
+  [Parameter(Mandatory = $true)]
+  [string]$NumericalModesPath,
+  [Parameter(Mandatory = $true)]
+  [string]$ResolvedContractPath,
+  [Parameter(Mandatory = $true)]
+  [string]$ModePath,
   [string]$PythonExe = '',
   [string]$ResolvedInputsPath = ''
 )
@@ -9,17 +21,26 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$componentRoot = 'src/msplatform/components/transverse_helical_filament_wehnelt_electron_gun'
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
-$projectRoot = Join-Path $repoRoot $componentRoot
-$workspaceRoot = Split-Path -Parent $repoRoot
-$artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\transverse_helical_filament_wehnelt_electron_gun'
+$project = 'transverse_helical_filament_wehnelt_electron_gun'
+$componentRoot = "src/msplatform/components/$project"
+$workspaceRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
+$artifactRoot = Join-Path $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot) "projects\$project"
 $python = if ($PythonExe) {
   [IO.Path]::GetFullPath($PythonExe)
 } elseif ($env:SIMULATION_PYTHON_EXE) {
   [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)
 } else {
   throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'
+}
+$packageRootText = & $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
+if ($LASTEXITCODE -ne 0) { throw 'Installed msplatform package is unavailable.' }
+$packageRoot = (Resolve-Path -LiteralPath $packageRootText).Path
+$projectRoot = Join-Path $packageRoot "components/$project"
+$scientificInputs = [ordered]@{
+  baseline = $BaselinePath
+  numerical_modes = $NumericalModesPath
+  resolved_contract = $ResolvedContractPath
+  mode = $ModePath
 }
 $software = @('COMSOL 6.4 via MATLAB R2025b')
 
@@ -32,10 +53,10 @@ $bootstrapFiles = [ordered]@{
   artifact_naming = 'src\msplatform\execution\artifact_naming.py'
   file_identity = 'src\msplatform\io\file_identity.py'
 }
-. (Join-Path $repoRoot $bootstrapFiles.artifact_support)
+. (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
 $bootstrapIdentity = [ordered]@{}
 foreach ($entry in $bootstrapFiles.GetEnumerator()) {
-  $source = Join-Path $repoRoot $entry.Value
+  $source = Join-Path $packageRoot ($entry.Value.Substring('src/msplatform/'.Length))
   $bootstrapIdentity[$entry.Key] = [ordered]@{
     source_repo_path = $entry.Value.Replace('\','/')
     sha256 = Get-RunFileSha256 -Path $source
@@ -210,17 +231,19 @@ $electrostaticModel = ''
 $cptModel = ''
 $failureStage = 'package_initialization'
 $frozenInputs = [ordered]@{}
-$manifestRepoRoot = $repoRoot
+$manifestRepoRoot = $workspaceRoot
 $runConfig = $null
 $recordPaths = @()
 $commercialWrapperInvocationAttempted = $false
 $commercialWrapperCompleted = $false
 
 try {
-  $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
-    -RunId $RunId -Project 'transverse_helical_filament_wehnelt_electron_gun' -Mode 'build_only_smoke' `
-    -Software $software -RetentionContractEnabled -RetentionClass compact -CapacityLedgerLifecycleEnabled `
-    -AdditionalDirectories @('comsol') -UseShortExecutionPath
+  $package = Invoke-RunToolRootContext -RepoRoot $workspaceRoot -Operation {
+    New-RunPackage -Python $python -RepoRoot $workspaceRoot -ArtifactRoot $artifactRoot `
+      -RunId $RunId -Project 'transverse_helical_filament_wehnelt_electron_gun' -Mode 'build_only_smoke' `
+      -Software $software -RetentionContractEnabled -RetentionClass compact -CapacityLedgerLifecycleEnabled `
+      -AdditionalDirectories @('comsol') -UseShortExecutionPath
+  }
   $manifestPath = Join-Path $package.run_dir 'run_manifest.json'
   $recordPaths = @($package.run_config,$package.summary,$manifestPath)
   $report = Join-Path $package.log_dir 'build_only_report.txt'
@@ -229,29 +252,24 @@ try {
   $electrostaticModel = Join-Path $package.run_dir 'comsol\ElectronGun_CoilT_ES.mph'
   $cptModel = Join-Path $package.run_dir 'comsol\transverse_helical_filament_wehnelt_electron_gun__model.mph'
   $failureStage = 'run_initialized'
-  $runConfig = [ordered]@{
-    schema_version = 1
-    run_id = $RunId
-    project = 'transverse_helical_filament_wehnelt_electron_gun'
-    mode = 'build_only_smoke'
-    project_root = $projectRoot
-    inputs = $frozenInputs
-    parameters = [ordered]@{
-      execution_mode = 'build_only'
-      evidence_particle_count = 1
-      mesh_build_required = $true
-      electrostatics_solver_run = $false
-      particle_solver_run = $false
-      candidate_evidence_allowed = $false
-      formal_asset_modified = $false
-      lifecycle_stage = $failureStage
-      bootstrap_boundary = [ordered]@{
-        role = 'live_repository_initialization_only'
-        frozen_replacement_required_before_input_freshness = $true
-        files = $bootstrapIdentity
-      }
+  $runConfig = Get-Content -LiteralPath $package.run_config -Raw -Encoding UTF8 |
+    ConvertFrom-Json -AsHashtable -Depth 100
+  $runConfig.project_root = $projectRoot
+  $runConfig.inputs = $frozenInputs
+  $runConfig.parameters = [ordered]@{
+    execution_mode = 'build_only'
+    evidence_particle_count = 1
+    mesh_build_required = $true
+    electrostatics_solver_run = $false
+    particle_solver_run = $false
+    candidate_evidence_allowed = $false
+    formal_asset_modified = $false
+    lifecycle_stage = $failureStage
+    bootstrap_boundary = [ordered]@{
+      role = 'installed_package_initialization_only'
+      frozen_replacement_required_before_input_freshness = $true
+      files = $bootstrapIdentity
     }
-    formal_gate_passed = $false
   }
   Invoke-VerifiedRecordTransition -Paths $recordPaths -Action {
     Write-RunJson -Value $runConfig -Path $package.run_config
@@ -261,7 +279,7 @@ try {
         -FailureStage $failureStage
     )
     Write-RunManifest -Python $package.python -RepoRoot $manifestRepoRoot `
-      -RunConfig $package.run_config -Manifest $manifestPath -Status interrupted `
+      -RunConfig $package.run_config -Manifest $manifestPath -Status checkpoint `
       -Software $software -Outputs @($package.summary)
   }
 
@@ -285,7 +303,11 @@ try {
     if($compiledInputs.role-ne'compiled_execution_inputs'-or$compiledInputs.project_id-ne'transverse_helical_filament_wehnelt_electron_gun'){throw 'Compiled Wehnelt input identity differs.'}
   }
   foreach ($entry in $projectFrozenFiles.GetEnumerator()) {
-    $inputSource=Join-Path $projectRoot $entry.Value
+    $inputSource = if ($scientificInputs.Contains($entry.Key)) {
+      [string]$scientificInputs[$entry.Key]
+    } else {
+      Join-Path $projectRoot $entry.Value
+    }
     if($null-ne$compiledInputs-and$entry.Key-in@('baseline','numerical_modes','resolved_contract','mode')){
       $records=@($compiledInputs.files|Where-Object{$_.name-eq$entry.Key})
       if($records.Count-ne1){throw "Compiled Wehnelt input is missing: $($entry.Key)"}
@@ -301,7 +323,7 @@ try {
   }
   foreach ($entry in $workflowFrozenFiles.GetEnumerator()) {
     $frozenInputs[$entry.Key] = Copy-VerifiedRunInput `
-      -Source (Join-Path $repoRoot $entry.Value) `
+      -Source (Join-Path $packageRoot ($entry.Value.Substring('src/msplatform/'.Length))) `
       -Destination (Join-Path $snapshotRoot $entry.Value)
   }
   $selectCoreSources = @'
@@ -324,25 +346,36 @@ print(json.dumps([{
     "relative_path": (pathlib.Path("src") / relative).as_posix(),
 } for relative in selected]))
 '@
-  $coreSelection = Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
-    & $package.python -B -c $selectCoreSources
+  $coreSelection = Invoke-RunToolRootContext -RepoRoot $workspaceRoot -Operation {
+    & $package.python -I -B -c $selectCoreSources
     if ($LASTEXITCODE -ne 0) { throw 'Scientific core source selection failed.' }
   }
   $comsolCoreRoles = @{
     'src/msplatform/execution/resources/require_powershell7.ps1' = 'powershell_runtime_gate'
     'src/msplatform/execution/resources/run_artifact_support.ps1' = 'artifact_support'
+    'src/msplatform/execution/manifest_publication.py' = 'manifest_writer'
+    'src/msplatform/execution/recorded_file_removal.py' = 'recorded_file_removal'
+    'src/msplatform/execution/manifest_verification.py' = 'manifest_verifier'
+    'src/msplatform/execution/artifact_naming.py' = 'artifact_naming'
+    'src/msplatform/io/file_identity.py' = 'file_identity'
     'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1' = 'comsol_runner'
     'src/msplatform/backends/comsol/launcher/resolve_comsol_64.ps1' = 'comsol_launcher_resolver'
     'src/msplatform/backends/comsol/launcher/livelink_failure_classification.ps1' = 'comsol_failure_classifier'
     'src/msplatform/backends/comsol/launcher/livelink_environment.ps1' = 'comsol_environment'
     'src/msplatform/backends/comsol/matlab/comsolstartup.m' = 'comsol_startup'
   }
+  $frozenDestinations = @{}
+  foreach ($entry in $frozenInputs.GetEnumerator()) {
+    $frozenDestinations[[IO.Path]::GetFullPath([string]$entry.Value)] = $entry.Key
+  }
   foreach ($record in @($coreSelection | ConvertFrom-Json)) {
     $relative = [string]$record.relative_path
+    $destination = Join-Path $snapshotRoot $relative
+    if ($frozenDestinations.ContainsKey([IO.Path]::GetFullPath($destination))) { continue }
     $key = if ($comsolCoreRoles.ContainsKey($relative)) { $comsolCoreRoles[$relative] } else { 'scientific_core_' + ($relative -replace '[^A-Za-z0-9]+','_') }
     $frozenInputs[$key] = Copy-VerifiedRunInput `
       -Source ([string]$record.source) `
-      -Destination (Join-Path $snapshotRoot $relative)
+      -Destination $destination
   }
 
 foreach ($entry in $bootstrapIdentity.GetEnumerator()) {
@@ -364,7 +397,7 @@ foreach ($entry in $bootstrapIdentity.GetEnumerator()) {
         -FailureStage 'input_freshness_pending'
     )
     Write-RunManifest -Python $package.python -RepoRoot $manifestRepoRoot `
-      -RunConfig $package.run_config -Manifest $manifestPath -Status interrupted `
+      -RunConfig $package.run_config -Manifest $manifestPath -Status checkpoint `
       -Software $software -Outputs (Get-ExistingRunOutputs `
         -RunDirectory $package.run_dir -InputDirectory $package.input_dir)
   }
@@ -394,7 +427,7 @@ foreach ($entry in $bootstrapIdentity.GetEnumerator()) {
         -FailureStage $failureStage
     )
     Write-RunManifest -Python $package.python -RepoRoot $manifestRepoRoot `
-      -RunConfig $package.run_config -Manifest $manifestPath -Status interrupted `
+      -RunConfig $package.run_config -Manifest $manifestPath -Status checkpoint `
       -Software $software -Outputs @($package.summary)
   }
   $failureStage = 'precommercial_input_validation'
@@ -480,7 +513,8 @@ foreach ($entry in $bootstrapIdentity.GetEnumerator()) {
     Write-RunJson -Value $runConfig -Path $package.run_config
     Write-RunJson -Path $package.summary -Value $successSummary
     $retentionActions = Apply-RunArtifactRetention -Python $package.python `
-      -RepoRoot $manifestRepoRoot -RunConfig $package.run_config
+      -RepoRoot $manifestRepoRoot -RunConfig $package.run_config `
+      -RecoveryInputs @($frozenInputs.Values | ForEach-Object { [string]$_ })
     Write-VerifiedRunManifest -Python $package.python -RepoRoot $manifestRepoRoot `
       -RunConfig $package.run_config -Manifest $manifestPath -Status success `
       -Software $software -Outputs (@(Get-ExistingRunOutputs `
@@ -513,7 +547,8 @@ foreach ($entry in $bootstrapIdentity.GetEnumerator()) {
             -CommercialWrapperCompleted $commercialWrapperCompleted
         )
         $retentionActions = Apply-RunArtifactRetention -Python $package.python `
-          -RepoRoot $manifestRepoRoot -RunConfig $package.run_config
+          -RepoRoot $manifestRepoRoot -RunConfig $package.run_config `
+          -RecoveryInputs @($frozenInputs.Values | ForEach-Object { [string]$_ })
         $outputs = @(Get-ExistingRunOutputs `
           -RunDirectory $package.run_dir -InputDirectory $package.input_dir
         ) + @($retentionActions)
