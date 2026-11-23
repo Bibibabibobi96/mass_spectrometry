@@ -1,10 +1,9 @@
 {
   "schema_version": 1,
-  "role": "integration_registry",
-  "integrations": [
+  "role": "assembly_registry",
+  "assemblies": [
     {
-      "integration_id": "instrument_assembly",
-      "root": "integrations",
+      "assembly_id": "instrument_assembly",
       "workflows": [
         {
           "workflow_id": "single_reflection_flight",

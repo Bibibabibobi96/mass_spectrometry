@@ -784,23 +784,21 @@ class ResolveConnectionTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertIn("COMPOSITION_PLAN=PASS", completed.stdout)
 
-    def test_integration_registry_and_artifact_identity_schemas(self) -> None:
+    def test_assembly_registry_and_artifact_identity_schemas(self) -> None:
         validate_schema(
             {
                 "schema_version": 1,
-                "role": "integration_registry",
-                "integrations": [
+                "role": "assembly_registry",
+                "assemblies": [
                     {
-                        "integration_id": "upstream_to_downstream",
-                        "root": "integrations/upstream_to_downstream",
+                        "assembly_id": "upstream_to_downstream",
                         "profile_registry": (
-                            "integrations/upstream_to_downstream/config/"
-                            "connection_profiles.json"
+                            "src/msplatform/workflows/config/connection_profiles.json"
                         ),
                     }
                 ],
             },
-            "integration_registry.schema.json",
+            "assembly_registry.schema.json",
         )
         validate_schema(
             {

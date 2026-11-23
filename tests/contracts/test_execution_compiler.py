@@ -192,7 +192,7 @@ class ExecutionCompilerTests(unittest.TestCase):
         self.assertEqual(projects["apertured_tube_electron_impact_ion_source"]["execution_support"], "no_registered_physical_entry")
         self.assertEqual(projects["orthogonal_accelerator"]["profiles"][0]["required_bindings"], ["component_request_path", "release_spec_path"])
         self.assertEqual(projects["parallel_mirror_dual_stripe_mr_tof"]["profiles"][0]["profile_id"], "native_condition")
-        assemblies = [row for row in view if row["owner_kind"] == "integration"]
+        assemblies = [row for row in view if row["owner_kind"] == "assembly"]
         self.assertEqual([row["owner_id"] for row in assemblies], ["instrument_assembly"])
         self.assertNotIn("instrument_assembly", projects)
         self.assertEqual({row["workflow_id"] for row in assemblies[0]["profiles"]},
@@ -201,13 +201,13 @@ class ExecutionCompilerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unknown capability owner"):
             query_capabilities(load_json(self.registry), owner="missing")
 
-    def test_integration_plans_freeze_real_entry_arguments_and_report_each_missing_input(self):
-        from tools.repository.compile_execution_plan import compile_integration_execution
+    def test_assembly_plans_freeze_real_entry_arguments_and_report_each_missing_input(self):
+        from tools.repository.compile_execution_plan import compile_assembly_execution
         from tools.repository.build_project_registry import query_capabilities
         rows = query_capabilities(load_json(self.registry), owner="instrument_assembly")[0]["profiles"]
         for row in rows:
             with self.subTest(workflow=row["workflow_id"]):
-                missing = compile_integration_execution("instrument_assembly", row["workflow_id"], self.run_id, {})
+                missing = compile_assembly_execution("instrument_assembly", row["workflow_id"], self.run_id, {})
                 self.assertEqual(missing["status"], "NEEDS_RUNTIME_INPUTS")
                 self.assertEqual(len(missing["blockers"]), len(row["required_bindings"]))
                 bindings = {}
@@ -219,14 +219,14 @@ class ExecutionCompilerTests(unittest.TestCase):
                         bindings[key] = str(directory)
                     else:
                         bindings[key] = "123.5" if kind == "number" else self.binding_file(key+".json")
-                result = compile_integration_execution("instrument_assembly", row["workflow_id"], self.run_id, bindings)
+                result = compile_assembly_execution("instrument_assembly", row["workflow_id"], self.run_id, bindings)
                 self.assertEqual(result["status"], "EXECUTION_READY")
-                self.assertEqual(result["owner_kind"], "integration")
+                self.assertEqual(result["owner_kind"], "assembly")
                 self.assertNotIn("project_id", result)
                 self.assertEqual(Path(result["commands"][0]["entrypoint"]), REPO_ROOT/row["entrypoint"])
                 self.assertFalse(any("{" in value for value in result["commands"][0]["arguments"]))
-        with self.assertRaisesRegex(ValueError, "Unknown integration workflow"):
-            compile_integration_execution("instrument_assembly", "arbitrary_script", self.run_id, {})
+        with self.assertRaisesRegex(ValueError, "Unknown Assembly workflow"):
+            compile_assembly_execution("instrument_assembly", "arbitrary_script", self.run_id, {})
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_fixed_input_consumers_freeze_compiled_values_instead_of_current_defaults(self):
@@ -285,8 +285,8 @@ foreach($record in $compiledInputs.files){
                 self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
                 self.assertIn("COMPILED_CONSUMER_FREEZE=PASS", result.stdout)
 
-    def test_integration_optional_bindings_use_existing_authority_and_owner(self):
-        from tools.repository.compile_execution_plan import compile_integration_execution, parse_bindings
+    def test_assembly_optional_bindings_use_existing_authority_and_owner(self):
+        from tools.repository.compile_execution_plan import compile_assembly_execution, parse_bindings
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             entry = root / "src/msplatform/workflows/resources/fixture.ps1"
@@ -306,11 +306,10 @@ foreach($record in $compiledInputs.files){
             registry = root / "src/msplatform/workflows/config/assembly_registry.json"
             def write_registry():
                 registry.parent.mkdir(parents=True, exist_ok=True)
-                registry.write_text(json.dumps(dict(schema_version=1, role="integration_registry",
-                    integrations=[dict(integration_id="instrument_assembly", root="integrations",
-                                       workflows=[workflow])])), encoding="utf8")
+                registry.write_text(json.dumps(dict(schema_version=1, role="assembly_registry",
+                    assemblies=[dict(assembly_id="instrument_assembly", workflows=[workflow])])), encoding="utf8")
             def compile_with(bindings):
-                return compile_integration_execution("instrument_assembly", "fixture", self.run_id, bindings)
+                return compile_assembly_execution("instrument_assembly", "fixture", self.run_id, bindings)
             with patch("tools.repository.compile_execution_plan.REPO_ROOT", root):
                 write_registry()
                 absent = compile_with({"request": str(required)})
@@ -352,7 +351,7 @@ foreach($record in $compiledInputs.files){
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_optional_saved_plan_and_directory_authority(self):
-        from tools.repository.compile_execution_plan import compile_integration_execution
+        from tools.repository.compile_execution_plan import compile_assembly_execution
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             entry = root / "src/msplatform/workflows/resources/fixture.ps1"
@@ -369,22 +368,22 @@ foreach($record in $compiledInputs.files){
                 limitations=[], purpose="assembly_propagation", action="run", tools=["python"], model="public stage")
             registry = root / "src/msplatform/workflows/config/assembly_registry.json"
             registry.parent.mkdir(parents=True)
-            registry.write_text(json.dumps(dict(schema_version=1, role="integration_registry",
-                integrations=[dict(integration_id="instrument_assembly", root="integrations", workflows=[workflow])])), encoding="utf8")
+            registry.write_text(json.dumps(dict(schema_version=1, role="assembly_registry",
+                assemblies=[dict(assembly_id="instrument_assembly", workflows=[workflow])])), encoding="utf8")
             with patch("tools.repository.compile_execution_plan.REPO_ROOT", root):
-                def plan(bindings):return compile_integration_execution("instrument_assembly", "fixture", self.run_id, bindings)
+                def plan(bindings):return compile_assembly_execution("instrument_assembly", "fixture", self.run_id, bindings)
                 plain=plan(dict(request=str(request), workspace=str(workspace)))
                 selected=plan(dict(request=str(request), workspace=str(workspace), scalar_field_basis=str(basis)))
                 self.assertTrue(plain["safe_to_execute"]);self.assertTrue(selected["safe_to_execute"])
                 workflow["binding_types"]["workspace"]="run_directory"
-                registry.write_text(json.dumps(dict(schema_version=1, role="integration_registry",
-                    integrations=[dict(integration_id="instrument_assembly", root="integrations", workflows=[workflow])])), encoding="utf8")
+                registry.write_text(json.dumps(dict(schema_version=1, role="assembly_registry",
+                    assemblies=[dict(assembly_id="instrument_assembly", workflows=[workflow])])), encoding="utf8")
                 self.assertEqual(plan(dict(request=str(request), workspace=str(workspace)))["status"],"NEEDS_RUNTIME_INPUTS")
                 (workspace/"run_manifest.json").write_text('{}', encoding="utf8")
                 self.assertIn("workspace",[x['name'] for x in plan(dict(request=str(request), workspace=str(workspace)))['binding_authorities']])
                 workflow["binding_types"]["workspace"]="directory"
-                registry.write_text(json.dumps(dict(schema_version=1, role="integration_registry",
-                    integrations=[dict(integration_id="instrument_assembly", root="integrations", workflows=[workflow])])), encoding="utf8")
+                registry.write_text(json.dumps(dict(schema_version=1, role="assembly_registry",
+                    assemblies=[dict(assembly_id="instrument_assembly", workflows=[workflow])])), encoding="utf8")
                 (workspace/"run_manifest.json").unlink()
                 plain=plan(dict(request=str(request), workspace=str(workspace)))
                 selected=plan(dict(request=str(request), workspace=str(workspace), scalar_field_basis=str(basis)))
@@ -405,8 +404,8 @@ foreach($record in $compiledInputs.files){
             self.assertNotEqual(execute(changed).returncode,0)
             basis.unlink();self.assertNotEqual(execute(selected).returncode,0)
 
-    def test_integration_backend_generated_identity_is_not_a_planned_run(self):
-        from tools.repository.compile_execution_plan import compile_integration_execution
+    def test_assembly_backend_generated_identity_is_not_a_planned_run(self):
+        from tools.repository.compile_execution_plan import compile_assembly_execution
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             entry = root / 'src/msplatform/workflows/resources/fixture.ps1'
@@ -421,13 +420,12 @@ foreach($record in $compiledInputs.files){
 
             def write_registry():
                 registry.parent.mkdir(parents=True, exist_ok=True)
-                registry.write_text(json.dumps(dict(schema_version=1, role='integration_registry',
-                    integrations=[dict(integration_id='instrument_assembly', root='integrations',
-                                       workflows=[workflow])])), encoding='utf8')
+                registry.write_text(json.dumps(dict(schema_version=1, role='assembly_registry',
+                    assemblies=[dict(assembly_id='instrument_assembly', workflows=[workflow])])), encoding='utf8')
 
             with patch('tools.repository.compile_execution_plan.REPO_ROOT', root):
                 write_registry()
-                result = compile_integration_execution('instrument_assembly', 'fixture', self.run_id, {})
+                result = compile_assembly_execution('instrument_assembly', 'fixture', self.run_id, {})
                 command = result['commands'][0]
                 self.assertTrue(result['safe_to_execute'])
                 self.assertIsNone(command['run_id'])
@@ -437,21 +435,21 @@ foreach($record in $compiledInputs.files){
                 workflow['arguments'] = ['-RunId', '{run_id}']
                 write_registry()
                 with self.assertRaisesRegex(ValueError, 'cannot bind the planning run ID'):
-                    compile_integration_execution('instrument_assembly', 'fixture', self.run_id, {})
+                    compile_assembly_execution('instrument_assembly', 'fixture', self.run_id, {})
                 workflow['run_identity'] = 'caller_selected'
                 write_registry()
-                command = compile_integration_execution('instrument_assembly', 'fixture', self.run_id, {})['commands'][0]
+                command = compile_assembly_execution('instrument_assembly', 'fixture', self.run_id, {})['commands'][0]
                 self.assertEqual(command['run_id'], self.run_id)
                 self.assertIn(self.run_id, command['argv'])
                 self.assertNotIn('planning_run_id', command)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
-    def test_integration_execution_reaches_its_real_declared_parameters(self):
-        from tools.repository.compile_execution_plan import compile_integration_execution
+    def test_assembly_execution_reaches_its_real_declared_parameters(self):
+        from tools.repository.compile_execution_plan import compile_assembly_execution
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            integration = root/"src/msplatform/workflows"
-            entry = integration/"resources/fixture.ps1"
+            workflows = root/"src/msplatform/workflows"
+            entry = workflows/"resources/fixture.ps1"
             entry.parent.mkdir(parents=True)
             request = root/"request.json"
             request.write_text('{"source":"frozen"}')
@@ -467,10 +465,10 @@ $input=Get-Content $Request -Raw|ConvertFrom-Json
                 purpose="assembly_propagation", action="run", tools=["python"], model="inert fixture")
             registry = root / "src/msplatform/workflows/config/assembly_registry.json"
             registry.parent.mkdir(parents=True)
-            registry.write_text(json.dumps(dict(schema_version=1, role="integration_registry",
-                integrations=[dict(integration_id="instrument_assembly", root="integrations", workflows=[workflow])])))
+            registry.write_text(json.dumps(dict(schema_version=1, role="assembly_registry",
+                assemblies=[dict(assembly_id="instrument_assembly", workflows=[workflow])])))
             with patch("tools.repository.compile_execution_plan.REPO_ROOT", root):
-                result = compile_integration_execution("instrument_assembly", "fixture", self.run_id,
+                result = compile_assembly_execution("instrument_assembly", "fixture", self.run_id,
                                                        dict(request=str(request), voltage="-123.5"))
             plan = root/"compiled.json"
             plan.write_text(json.dumps(result))
@@ -1113,7 +1111,7 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_python_owner_uses_compiler_interpreter_without_repo_venv_and_propagates_exit(self):
         import os
-        from tools.repository.compile_execution_plan import compile_integration_execution
+        from tools.repository.compile_execution_plan import compile_assembly_execution
         from msplatform.execution.retention import file_record
         interpreter = str(Path(sys.executable).resolve())
         with tempfile.TemporaryDirectory() as directory:
@@ -1134,8 +1132,8 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
             self.assertEqual(preview.returncode, 0, preview.stdout + preview.stderr)
             compiled = json.loads(saved_path.read_text(encoding="utf-8"))
         self.assertEqual(compiled["python_executable"], interpreter)
-        integration = compile_integration_execution("instrument_assembly", "single_reflection_flight", self.run_id, {})
-        self.assertEqual(integration["python_executable"], interpreter)
+        assembly = compile_assembly_execution("instrument_assembly", "single_reflection_flight", self.run_id, {})
+        self.assertEqual(assembly["python_executable"], interpreter)
         for mode in ("success", "failure", "missing", "unavailable"):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)

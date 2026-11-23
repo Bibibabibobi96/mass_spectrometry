@@ -497,7 +497,7 @@ def serialized(registry: dict[str, Any]) -> str:
 
 def query_capabilities(registry: dict[str, Any], *, repo_root: Path = REPO_ROOT,
                        owner: str | None = None) -> list[dict[str, Any]]:
-    """Derive one view from existing project and integration owners, without another registry."""
+    """Derive one view from existing project and Assembly owners, without another registry."""
     result = []
     for project in registry["projects"]:
         identity = project["project_id"]
@@ -516,22 +516,21 @@ def query_capabilities(registry: dict[str, Any], *, repo_root: Path = REPO_ROOT,
                            capabilities=capabilities, profiles=profiles,
                            execution_support="declared_owner_entries" if profiles else "no_registered_physical_entry",
                            limitations=project["known_gaps"]))
-    integration_path = repo_root/"src/msplatform/workflows/config/assembly_registry.json"
-    if integration_path.is_file():
-        integrations = load_json(integration_path)
-        validate_schema(integrations, "integration_registry.schema.json")
-        for integration in integrations["integrations"]:
-            identity = integration["integration_id"]
+    assembly_path = repo_root/"src/msplatform/workflows/config/assembly_registry.json"
+    if assembly_path.is_file():
+        assemblies = load_json(assembly_path)
+        validate_schema(assemblies, "assembly_registry.schema.json")
+        for assembly in assemblies["assemblies"]:
+            identity = assembly["assembly_id"]
             if owner is not None and owner != identity:
                 continue
-            for workflow in integration.get("workflows", []):
+            for workflow in assembly.get("workflows", []):
                 for relative in [workflow["entrypoint"], *workflow["recipes"]]:
                     path = (repo_root/relative).resolve()
-                    package_owned = path.is_relative_to((repo_root / "src/msplatform").resolve())
-                    if not (package_owned or path.is_relative_to((repo_root/integration["root"]).resolve())) or not path.is_file():
-                        raise ContractError(f"Integration capability input is outside its owner or missing: {relative}")
-            result.append(dict(owner_kind="integration", owner_id=identity,
-                               profiles=integration.get("workflows", [])))
+                    if not path.is_relative_to((repo_root / "src/msplatform").resolve()) or not path.is_file():
+                        raise ContractError(f"Assembly capability input is outside its owner or missing: {relative}")
+            result.append(dict(owner_kind="assembly", owner_id=identity,
+                               profiles=assembly.get("workflows", [])))
     if owner is not None and not result:
         raise ContractError(f"Unknown capability owner: {owner}")
     return result

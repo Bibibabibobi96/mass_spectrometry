@@ -107,6 +107,8 @@ component 3输入生成composition plan 5；显式旧component 1／2输入分别
 
 以下为公开入口。商业执行须有明确科学输入、授权及相称预算；准备成功不代表求场、Fly或物理验收。
 跨项目新run归`instrument_assembly`，独立组件几何／场／CAD仍归其提供者项目。
+公开workflow由`src/msplatform/workflows/config/assembly_registry.json`的`assemblies`集合登记，
+以`assembly_id`选择owner；入口和recipe必须位于`src/msplatform`，不再声明独立的integration源码根。
 
 The SFI entry consumes an explicit published FieldBundle and original births.
 Fresh sources use `canonical_birth_source_request`; the historical recorded-birth

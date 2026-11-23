@@ -1100,7 +1100,7 @@ OA的二区／三区和RF的四／六／八极使用同一选择语义；极数�
 ## 执行dry-run
 
 唯一发现与执行编译入口为`tools.repository.compile_execution_plan`。能力视图从现有项目描述符、
-生成注册表与`src/msplatform/workflows/config/assembly_registry.json`派生，不另存能力注册表；项目拥有器件，integration拥有装配workflow。
+生成注册表与`src/msplatform/workflows/config/assembly_registry.json`派生，不另存能力注册表；项目拥有器件，Assembly注册表以`assembly_id`拥有装配workflow，入口与recipe均归`src/msplatform`。
 
 ```powershell
 .\.venv\Scripts\python.exe -m tools.repository.compile_execution_plan --list-capabilities

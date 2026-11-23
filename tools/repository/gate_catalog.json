@@ -2911,7 +2911,7 @@
           "reason": "integration_schema_changed"
         },
         {
-          "exact": "src/msplatform/contracts/schemas/integration_registry.schema.json",
+          "exact": "src/msplatform/contracts/schemas/assembly_registry.schema.json",
           "reason": "integration_schema_changed"
         },
         {
