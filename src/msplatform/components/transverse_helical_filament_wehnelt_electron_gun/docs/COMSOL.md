@@ -5,7 +5,7 @@
 
 ## 活动入口
 
-- 受治理商业入口：`src/msplatform/workflows/resources/wehnelt_build_only.ps1 -RunId <run_id>`，从仓库根通过 `pwsh -NoProfile -File` 调用。
+- 受治理商业入口：`src/msplatform/workflows/resources/wehnelt_build_only.ps1 -RunId <run_id> -PythonExe <python.exe>`，从仓库根通过 `pwsh -NoProfile -File` 调用；也可由 `SIMULATION_PYTHON_EXE` 选择解释器，两者均缺失时拒绝运行，不回退到 checkout 的 `.venv`。
 - Installed Python operation: `msplatform.backends.comsol.build_wehnelt_model` uses the same managed owner and LiveLink launcher as the EI operation; neither entry adds a second scheduler or publisher.
 - 几何：[`phase1_geometry_coil_transverse.m`](../../../../../src/msplatform/backends/comsol/matlab/phase1_geometry_coil_transverse.m)
 - 静电：[`phase2_electrostatics_coil_transverse.m`](../../../../../src/msplatform/backends/comsol/matlab/phase2_electrostatics_coil_transverse.m)

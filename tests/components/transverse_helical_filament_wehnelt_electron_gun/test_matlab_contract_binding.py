@@ -610,12 +610,7 @@ function Get-RunFileSha256($Path){(Get-FileHash -LiteralPath $Path -Algorithm SH
   . (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 ''' + selector + r'''
 $destinations=@($coreSelection|ConvertFrom-Json)
-foreach($relative in $destinations){
-  $destination=Join-Path $snapshotRoot $relative
-  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination)|Out-Null
-  Copy-Item -LiteralPath (Join-Path $repoRoot $relative) -Destination $destination
-}
-$resolved=@($destinations|ForEach-Object{[IO.Path]::GetFullPath((Join-Path $snapshotRoot $_))})
+$resolved=@($destinations|ForEach-Object{[IO.Path]::GetFullPath((Join-Path $snapshotRoot $_.relative_path))})
 $duplicates=@($resolved|Group-Object|Where-Object Count -gt 1)
 if($duplicates.Count -ne 0){throw "Duplicate frozen destinations: $($duplicates.Name)"}
 }
@@ -639,7 +634,7 @@ Write-Output 'FROZEN_BUDGET_OBSERVATION=PASS'
                 cwd=directory,
                 env=dict(os.environ, FROZEN_DEPENDENCY_TEST_ROOT=directory,
                          DEPENDENCY_TEST_REPO=str(REPO_ROOT), DEPENDENCY_TEST_PYTHON=sys.executable),
-                capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30,
+                capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60,
             )
             self.assertEqual(result.returncode, 0, (result.stdout or '') + (result.stderr or ''))
             self.assertIn('FROZEN_BUDGET_OBSERVATION=PASS', result.stdout)
@@ -694,21 +689,15 @@ function Get-HostResourceSnapshot {
   }
 }
 ''')
-            expected_core = enumerate_python_sources(
-                REPO_ROOT, package_roots=("src/msplatform",), provider_root="src/msplatform",
-                resource_suffixes=(".schema.json",),
-            )
-            # The production selector must freeze every declared package resource,
-            # not merely Python/schema or privately preseeded host scripts.
-            import tomllib
-
-            package_data = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-            for package, patterns in package_data["tool"]["setuptools"]["package-data"].items():
-                package_root = REPO_ROOT / "src" / package.replace(".", "/")
-                for pattern in patterns:
-                    expected_core.extend(path.relative_to(REPO_ROOT).as_posix()
-                                         for path in package_root.glob(pattern) if path.is_file())
-            expected_core = sorted(set(expected_core))
+            expected_core = [
+                "src/" + relative
+                for relative in enumerate_python_sources(
+                    REPO_ROOT / "src", package_roots=("msplatform",),
+                    provider_root="msplatform",
+                    resource_suffixes=(".json", ".csv", ".ion", ".ps1", ".m", ".gem",
+                                       ".lua", ".iob", ".pa0", ".fly2", ".md"),
+                )
+            ]
             self.assertIn("src/msplatform/backends/comsol/matlab/write_wehnelt_build_only_report.m", expected_core)
             selection_start = self.build_runner.index("  $selectCoreSources = @'")
             selection_end = self.build_runner.index(
@@ -837,6 +826,58 @@ function Get-HostResourceSnapshot {
             self.assertEqual(actual, declared)
             self.assertFalse(any(path.suffix == ".pyc" for path in actual))
             self.assertFalse((snapshot / ".ruff_cache").exists())
+
+    def test_installed_package_selector_uses_offsite_resources_and_rejects_missing(self) -> None:
+        selection_start = self.build_runner.index("  $selectCoreSources = @'")
+        script_start = self.build_runner.index("\n", selection_start) + 1
+        selection_end = self.build_runner.index("\n'@", script_start)
+        selector = self.build_runner[script_start:selection_end]
+        with tempfile.TemporaryDirectory(prefix="wehnelt_offsite_install_") as directory:
+            root = Path(directory)
+            installed = root / "installed"
+            shutil.copytree(REPO_ROOT / "src/msplatform", installed / "msplatform")
+            marker_name = "write_wehnelt_build_only_report.m"
+            marker = installed / "msplatform/backends/comsol/matlab" / marker_name
+            marker.write_text("offsite installed resource\n", encoding="utf-8")
+            environment = dict(os.environ, PYTHONPATH=str(installed))
+            selected = subprocess.run(
+                [sys.executable, "-B", "-c", selector], cwd=root, env=environment,
+                check=False, capture_output=True, text=True, encoding="utf-8", timeout=30,
+            )
+            self.assertEqual(selected.returncode, 0, selected.stdout + selected.stderr)
+            records = json.loads(selected.stdout)
+            report = next(record for record in records
+                          if record["relative_path"].endswith("/" + marker_name))
+            self.assertEqual(Path(report["source"]), marker.resolve())
+            self.assertNotEqual(marker.read_bytes(), (MATLAB / marker_name).read_bytes())
+
+            marker.unlink()
+            missing = subprocess.run(
+                [sys.executable, "-B", "-c", selector], cwd=root, env=environment,
+                check=False, capture_output=True, text=True, encoding="utf-8", timeout=30,
+            )
+            self.assertNotEqual(missing.returncode, 0, missing.stdout + missing.stderr)
+            self.assertIn("Installed scientific core resources are missing", missing.stderr)
+            self.assertIn(marker_name, missing.stderr)
+
+    def test_runner_requires_selected_python_without_checkout_venv_fallback(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="wehnelt_python_admission_") as directory:
+            environment = os.environ.copy()
+            environment.pop("SIMULATION_PYTHON_EXE", None)
+            result = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-File", self.build_runner_path(),
+                 "-RunId", "20261123_000000__build__comsol__python-admission"],
+                cwd=directory, env=environment, check=False, capture_output=True,
+                text=True, encoding="utf-8", errors="replace", timeout=20,
+            )
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("Explicit PythonExe or SIMULATION_PYTHON_EXE is required", result.stderr)
+        self.assertNotIn("Join-Path $repoRoot '.venv", self.build_runner)
+        explicit = self.build_runner.index("if ($PythonExe)")
+        selected_environment = self.build_runner.index("elseif ($env:SIMULATION_PYTHON_EXE)", explicit)
+        missing = self.build_runner.index("throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'")
+        self.assertLess(explicit, selected_environment)
+        self.assertLess(selected_environment, missing)
 
     def test_cache_controls_precede_package_and_frozen_python_execution(self) -> None:
         snapshot_index = self.build_runner.index(

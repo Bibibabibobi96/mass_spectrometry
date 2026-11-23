@@ -151,12 +151,13 @@ qualification.
 当前任务由runner显式接收已核验的frozen resolved合同，生产冻结输入不再包含checkout测试、仓库工具或`pyproject.toml`；
 这些验证材料与生产运行证据分离。
 
-2026-11-04，build-only 冻结片段进一步按 `pyproject.toml` 的真实 package-data 声明选择
-包资源（含 execution 的 PowerShell、Lua、JSON）；声明模式缺件立即拒绝，仍沿原公共复制入口
-记录来源及副本身份。实际冻结片段、来源字节／输入集合稳定性和缺额外文件拒绝三项软件回归
-通过（7.195 秒，无跳过）。测试不预种所需 PowerShell 资源来替代生产选择，也未执行 MATLAB、
-COMSOL 或原生几何验收；不新增商业构建、求解或几何资格。依赖边界见
-[公共主机资源](../../../../../docs/REPOSITORY_OPERATIONS.md#主机资源实现)。
+build-only 的科学核心冻结由所选 Python 解释器实际导入的 `msplatform` 安装包决定：选择器枚举安装包内
+Python 和生产资源，并要求已注册的 COMSOL MATLAB／launcher 闭包完整；复制时使用返回的安装包绝对来源，
+不再读取 checkout 的 `pyproject.toml` 或以 checkout `src` 补齐。入口按显式 `PythonExe`、
+`SIMULATION_PYTHON_EXE` 的顺序选择解释器，两者均缺失立即拒绝，无 `.venv` 回退。离仓正例核对复制来源
+确实位于独立安装树且可采用与 checkout 不同的资源字节，负例删除所需 MATLAB 资源后选择失败；
+仍沿原公共复制入口记录来源及副本身份，冻结合同、build-only 和失败保护不变。本轮未执行 MATLAB、
+COMSOL 或原生几何验收，不新增商业构建、求解或几何资格。
 
 普通build-only profile及真实runner移除重复整套Static回归。run-local冻结baseline／numerical modes／resolved仍由安装包resolver核对，resolver及其`msplatform`依赖由现有科学核心选择器冻结，summary报告`input_freshness_passed`；输入集合防写、商业构建及证据不合格边界保持。`wehnelt_verify.ps1`继续独立验证软件；构建成功不代表求解或Candidate／Formal资格。
 
