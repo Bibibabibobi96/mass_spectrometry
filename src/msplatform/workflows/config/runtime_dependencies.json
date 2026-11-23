@@ -530,7 +530,7 @@
           ]
         },
         {
-          "id": "local_frontend_common_contracts_artifact_capacity_policy_json",
+          "id": "local_frontend_machine_contracts_artifact_capacity_policy_json",
           "source_repo_path": "src/msplatform/execution/resources/artifact_capacity_policy.json",
           "consumers": [
             "prepared_joint",

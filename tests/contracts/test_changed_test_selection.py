@@ -64,7 +64,7 @@ def write_planned_request(root: Path, request: Path, paths: list[str] | None) ->
 
 def common_stage(stages):
     rows = [row for name, row in stages.items()
-            if name == "common_contracts" or name.startswith("common_contracts__tests_")]
+            if name == "machine_contracts" or name.startswith("machine_contracts__tests_")]
     if not rows:
         raise AssertionError("common-contract stage is missing")
     merged = dict(rows[0])
@@ -163,7 +163,7 @@ class ChangedTestSelectionTests(unittest.TestCase):
             shutil.copyfile(REPO_ROOT / "tools/repository/verify_integration.ps1",
                             root / "tools/repository/verify_integration.ps1")
             catalog = json.loads((REPO_ROOT / "tools/repository/gate_catalog.json").read_text(encoding="utf-8"))
-            route = next(route for route in catalog["routes"] if route["stage"] == "instrument_assembly_integration")
+            route = next(route for route in catalog["routes"] if route["stage"] == "instrument_assembly")
             # The source inventory is tested separately; this fixture isolates
             # the real catalog's partition and the real owner's execution.
             route.pop("runtime_dependencies_path")
@@ -227,11 +227,11 @@ class ChangedTestSelectionTests(unittest.TestCase):
                     report = json.loads(summary.read_text(encoding="utf-8"))
                     stages = {stage["name"]: stage for stage in report["stages"]}
                     parts = [stage for name, stage in stages.items()
-                             if name.startswith("instrument_assembly_integration__tests_")]
+                             if name.startswith("instrument_assembly__tests_")]
                     modules = [module for part in parts for module in part["command"]["parameters"]["SelectedTestModules"]]
                     if failure == "thin":
                         self.assertFalse(parts, output)
-                        selected = stages["instrument_assembly_integration"]
+                        selected = stages["instrument_assembly"]
                         self.assertEqual(selected["command"]["arguments"], ["-m", "tools.repository.gate_unittest", "tests/execution/test_a.py"])
                         self.assertEqual(len(selected["test_durations"]), 1, output)
                         self.assertFalse(list(events.glob("*.ruff")), output)
@@ -249,7 +249,7 @@ class ChangedTestSelectionTests(unittest.TestCase):
                     self.assertEqual(exited, entered, output)
                     self.assertTrue(all(path.read_text(encoding="utf-8-sig").strip() == "GATE"
                                         for path in events.glob("*.enter")), output)
-                    self.assertEqual(stages["instrument_assembly_integration"]["status"], "NOT_APPLICABLE", output)
+                    self.assertEqual(stages["instrument_assembly"]["status"], "NOT_APPLICABLE", output)
                     if not (gate_name == "Changed" and failure == "ruff"):
                         self.assertEqual(sum(part["status"] == "FAIL" for part in parts), int(failure == "shard"), output)
                     if not (gate_name == "Changed" and failure):
@@ -329,7 +329,7 @@ class Probe(unittest.TestCase):
         (tests / "test_unselected.py").write_text(
             "raise AssertionError('UNSELECTED_OWNER_TEST_MUST_NOT_RUN')\n", encoding="utf-8")
         catalog = json.loads((REPO_ROOT / "tools/repository/gate_catalog.json").read_text(encoding="utf-8"))
-        route = next(x for x in catalog["routes"] if x["stage"] == "common_contracts")
+        route = next(x for x in catalog["routes"] if x["stage"] == "machine_contracts")
         route["owner"] = "tests/contracts"
         route["matches"] = [dict(exact=leaf, reason="fixture_leaf"),
                             dict(prefix="tests/contracts/", reason="fixture_test_changed")]
@@ -373,7 +373,7 @@ function Set-GateStageResult {
     param($Summary, [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)][Collections.IDictionary]$Result)
     & $script:FixtureOriginalStageRecorder @PSBoundParameters
-    if($env:PARTIAL_FAIL-and$null-ne$Summary-and$Name.StartsWith('common_contracts__tests_')-and
+    if($env:PARTIAL_FAIL-and$null-ne$Summary-and$Name.StartsWith('machine_contracts__tests_')-and
         $Result.Contains('status')-and$Result.status-eq'FAIL'){
         $observed=@{time=[long]([Diagnostics.Stopwatch]::GetTimestamp()*(1.0e9/[Diagnostics.Stopwatch]::Frequency));pid=$PID;stage=$Name}
         [IO.File]::WriteAllText((Join-Path $env:PARTIAL_EVENTS 'parent.observed_failure'),
@@ -390,7 +390,7 @@ function Set-GateStageResult {
             for preflight, failed in cases:
                 with self.subTest(partition_preflight=preflight, failed=failed):
                     current = json.loads(json.dumps(catalog))
-                    route = next(row for row in current["routes"] if row["stage"] == "common_contracts")
+                    route = next(row for row in current["routes"] if row["stage"] == "machine_contracts")
                     if preflight is not False:
                         # Match a real PS owner whose pure test selection is
                         # converted to Python; a Python discovery owner itself
@@ -434,7 +434,7 @@ function Set-GateStageResult {
                     parent = common_stage(stages)
                     self.assertEqual(parent["status"], "NOT_APPLICABLE", output)
                     self.assertEqual(parent["selection_reason"], "selected_partial_python_tests_partitioned")
-                    parts = [x for name, x in stages.items() if name.startswith("common_contracts__tests_")]
+                    parts = [x for name, x in stages.items() if name.startswith("machine_contracts__tests_")]
                     self.assertEqual(len(parts), 3)
                     actual = [m for part in parts for m in part["command"]["arguments"][2:]]
                     self.assertCountEqual(actual, [m[:-3].replace("/", ".") for m in modules])
@@ -497,7 +497,7 @@ $originalToken=$env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN
 try {
  foreach($case in @(Get-Content __CASES__ -Raw|ConvertFrom-Json -AsHashtable)) {
   $current=$catalog|ConvertTo-Json -Depth 32|ConvertFrom-Json -AsHashtable
-  $route=$current.routes|Where-Object stage -eq common_contracts
+  $route=$current.routes|Where-Object stage -eq machine_contracts
   $route.repository_gate_partition.measured_seconds=$case.weights
   if($case.ContainsKey('default_seconds')){$route.repository_gate_partition.default_seconds=$case.default_seconds}
   if($case.ContainsKey('modules')){$route.test_selection.dependencies[0].modules=$case.modules}
@@ -523,7 +523,7 @@ try {
             for case in cases:
                 with self.subTest(case=case["name"]):
                     plan = json.loads((root / (case["name"] + ".json")).read_text(encoding="utf-8-sig"))
-                    parts = [s for s in plan["stages"] if s["name"].startswith("common_contracts__tests_")]
+                    parts = [s for s in plan["stages"] if s["name"].startswith("machine_contracts__tests_")]
                     is_complete = case["name"] in {"owner", "repository"}
                     partitioned = case["name"] in {"heavy", "unknown", "estimated", "only_tests"} or is_complete
                     self.assertEqual(len(parts), 3 if partitioned else 0)
@@ -560,7 +560,7 @@ try {
             for invalid in (0, -1):
                 with self.subTest(default_seconds=invalid):
                     catalog = json.loads(json.dumps(original))
-                    route = next(row for row in catalog["routes"] if row["stage"] == "common_contracts")
+                    route = next(row for row in catalog["routes"] if row["stage"] == "machine_contracts")
                     route["repository_gate_partition"]["default_seconds"] = invalid
                     route["repository_gate_partition"]["measured_seconds"] = {}
                     catalog_path.write_text(json.dumps(catalog), encoding="utf-8")
@@ -606,7 +606,7 @@ function Set-GateStageResult {
     param($Summary, [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)][Collections.IDictionary]$Result)
     & $script:FixtureOriginalStageRecorder @PSBoundParameters
-    if($env:PARTIAL_FAIL-and$null-ne$Summary-and$Name.StartsWith('instrument_assembly_integration__tests_')-and
+    if($env:PARTIAL_FAIL-and$null-ne$Summary-and$Name.StartsWith('instrument_assembly__tests_')-and
         $Result.Contains('status')-and$Result.status-eq'FAIL'){
         $observed=@{time=[long]([Diagnostics.Stopwatch]::GetTimestamp()*(1.0e9/[Diagnostics.Stopwatch]::Frequency));pid=$PID;stage=$Name}
         [IO.File]::WriteAllText((Join-Path $env:PARTIAL_EVENTS 'parent.observed_failure'),
@@ -631,7 +631,7 @@ function Set-GateStageResult {
         path = root / "tools/repository/gate_catalog.json"
         catalog = json.loads(path.read_text(encoding="utf-8"))
         current = json.loads((REPO_ROOT / "tools/repository/gate_catalog.json").read_text(encoding="utf-8"))
-        route = next(x for x in current["routes"] if x["stage"] == "instrument_assembly_integration")
+        route = next(x for x in current["routes"] if x["stage"] == "instrument_assembly")
         route.pop("runtime_dependencies_path")
         route["matches"] = [dict(exact=leaf, reason="fixture_field_plan"),
                             dict(prefix="tests/execution/", reason="fixture_test_changed")]
@@ -690,8 +690,8 @@ function Set-GateStageResult {
             output = result.stdout + result.stderr
             self.assertEqual(result.returncode != 0, mode in {"failed", "late_failure"}, output)
             stages = {x["name"]: x for x in json.loads(summary.read_text(encoding="utf-8"))["stages"]}
-            parent = stages["instrument_assembly_integration"]
-            parts = [x for name, x in stages.items() if name.startswith("instrument_assembly_integration__tests_")]
+            parent = stages["instrument_assembly"]
+            parts = [x for name, x in stages.items() if name.startswith("instrument_assembly__tests_")]
             self.assertEqual(len(parts), 4 if parallel else 0, output)
             executed = parts if parallel else [parent]
             actual = [m for part in executed for m in part["command"]["parameters"]["SelectedTestModules"]]
@@ -777,7 +777,7 @@ foreach($scope in @('Owner','Repository')){
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             for scope in ("Owner", "Repository"):
                 plan = json.loads((root / (scope + ".json")).read_text(encoding="utf-8"))
-                parts = [p for p in plan["stages"] if p["name"].startswith("instrument_assembly_integration__tests_")]
+                parts = [p for p in plan["stages"] if p["name"].startswith("instrument_assembly__tests_")]
                 self.assertEqual(len(parts), 4)
                 actual = [m for p in parts for m in p["command"]["parameters"]["SelectedTestModules"]]
                 self.assertCountEqual(actual, [m[:-3].replace("/", ".") for m in modules] +
@@ -832,7 +832,7 @@ foreach($scope in @('Owner','Repository')){
             "test_ip_mr_sampled_dispatch", "test_ip_mr_sampled_field_execution",
             "test_ip_mr_collision_priority", "test_ip_mr_collision_iob",
             "test_raw_collision_pa", "test_numerical_background")}
-        cases = [dict(stage="common_contracts", paths=[path]) for path in paths]
+        cases = [dict(stage="machine_contracts", paths=[path]) for path in paths]
         for path, result in zip(paths, self.selections(REPO_ROOT, cases), strict=True):
             with self.subTest(path=path):
                 self.assertTrue(expected <= set(result["Modules"]))
@@ -846,8 +846,8 @@ foreach($scope in @('Owner','Repository')){
                  "src/msplatform/backends/simion/dual_cone_transport_execution.py",
                  "src/msplatform/backends/simion/dual_cone_geometry.py",
                  "src/msplatform/analysis/terminal_plane.py"]
-        cases = [dict(stage="common_contracts", paths=[path]) for path in paths]
-        cases.append(dict(stage="simion_common", paths=[paths[-1]]))
+        cases = [dict(stage="machine_contracts", paths=[path]) for path in paths]
+        cases.append(dict(stage="simion_backend", paths=[paths[-1]]))
         selected = self.selections(REPO_ROOT, cases)
         for result in selected[:-1]:
             for name in ("test_dual_cone_transport_execution", "test_dual_cone_transport",
@@ -857,7 +857,7 @@ foreach($scope in @('Owner','Repository')){
 
     def test_single_reflection_frontend_producer_selects_actual_owner_consumers(self) -> None:
         path = 'src/msplatform/workflows/single_reflection_flight/frontend_fields.py'
-        result, = self.selections(REPO_ROOT, [dict(stage='instrument_assembly_integration', paths=[path])])
+        result, = self.selections(REPO_ROOT, [dict(stage='instrument_assembly', paths=[path])])
         for module in ('test_single_reflection_field_stage',
                        'test_dependencies', 'test_native_path_consumers'):
             expected_root = 'tests/workflows/single_reflection/' if module == 'test_single_reflection_field_stage' else 'tests/execution/'
@@ -868,7 +868,7 @@ foreach($scope in @('Owner','Repository')){
         paths = ['src/msplatform/workflows/single_reflection_flight/recorded_birth.py',
                  'src/msplatform/workflows/resources/single_reflection_flight.ps1',
                  'src/msplatform/workflows/config/assembly_registry.json', 'src/msplatform/workflows/config/runtime_dependencies.json']
-        results = self.selections(REPO_ROOT, [dict(stage='common_contracts', paths=[path]) for path in paths])
+        results = self.selections(REPO_ROOT, [dict(stage='machine_contracts', paths=[path]) for path in paths])
         for path, result in zip(paths, results, strict=True):
             with self.subTest(path=path):
                 self.assertIn('tests/contracts/test_sfi_recorded_birth_entry.py', result['Modules'])
@@ -879,7 +879,7 @@ foreach($scope in @('Owner','Repository')){
         paths = ["src/msplatform/execution/recovery.py",
                  "src/msplatform/backends/simion/gem_primitives.py",
                  "src/msplatform/backends/simion/aperture.py"]
-        cases = [dict(stage="simion_common", paths=[path]) for path in paths]
+        cases = [dict(stage="simion_backend", paths=[path]) for path in paths]
         excluded = "tests/simion/test_dirichlet_patch_basis.py"
         expected = {path.relative_to(REPO_ROOT).as_posix()
                     for path in (REPO_ROOT / "tests/simion").rglob("test_*.py")} - {excluded}
@@ -894,7 +894,7 @@ foreach($scope in @('Owner','Repository')){
             request = Path(directory) / "plan.json"
             write_planned_request(REPO_ROOT, request, [paths[0]])
             plan = json.loads(request.read_text(encoding="utf-8"))
-        stage = next(stage for stage in plan["stages"] if stage["name"] == "simion_common")
+        stage = next(stage for stage in plan["stages"] if stage["name"] == "simion_backend")
         self.assertEqual(stage["command"]["arguments"][:2], ["-m", "tools.repository.gate_unittest"])
         self.assertCountEqual(stage["command"]["arguments"][2:], expected)
         self.assertEqual(stage["resource_role"], "GATE")
@@ -1073,12 +1073,12 @@ ConvertTo-Json -InputObject $results -Depth 16 -Compress
         mr = [MR + '/analysis/test_static_field_binding.py']
         local = ['tests/execution/test_dependencies.py']
         cases = [
-            dict(stage='simion_common', paths=[cache], modules=[common + 'test_operating_pa_cache.py']),
-            dict(stage='simion_common', paths=[composer], modules=common_composer),
-            dict(stage='simion_common', paths=[cache, composer], modules=common_composer),
+            dict(stage='simion_backend', paths=[cache], modules=[common + 'test_operating_pa_cache.py']),
+            dict(stage='simion_backend', paths=[composer], modules=common_composer),
+            dict(stage='simion_backend', paths=[cache, composer], modules=common_composer),
             dict(stage='parallel_mirror_dual_stripe_mr_tof_static', paths=[cache], modules=mr),
             dict(stage='parallel_mirror_dual_stripe_mr_tof_static', paths=[composer], modules=mr),
-            dict(stage='instrument_assembly_integration', paths=[composer], modules=local),
+            dict(stage='instrument_assembly', paths=[composer], modules=local),
             dict(stage='parallel_mirror_dual_stripe_mr_tof_static',
                  paths=['src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/operating_pa_identity.py'],
                  modules=None),
@@ -1311,7 +1311,7 @@ $routes=(Get-Content -LiteralPath __CATALOG__ -Raw|ConvertFrom-Json).routes
 $roots=@($routes|ForEach-Object {if($null-ne$_.PSObject.Properties['test_selection']){$_.test_selection.roots}})
 $results=@{}
 foreach($route in @($routes|Where-Object stage -in @('parallel_mirror_dual_stripe_mr_tof_static',
- 'instrument_assembly_integration','single_reflection_oa_tof_mass_analyzer_static','rf_multipole_quadrupole_static'))){
+ 'instrument_assembly','single_reflection_oa_tof_mass_analyzer_static','rf_multipole_quadrupole_static'))){
 $selection=Get-GateChangedTests -Route $route -RepoRoot $PWD.Path -KnownTestRoots $roots -FullScope -ChangedPaths @()
 $partitions=@(Get-GateRepositoryTestPartitions -Route $route -RepoRoot $PWD.Path -Modules $selection.Modules)
 $results[$route.stage]=@{partitions=$partitions;selected=@($selection.Modules);expanded=$selection.Expanded;
@@ -1356,7 +1356,7 @@ $results|ConvertTo-Json -Depth 12 -Compress
                 self.assertTrue(selected['expanded'])
                 self.assertFalse(selected['only_tests'])
                 self.assertTrue(selected['preflight'])
-                self.assertEqual(selected['parent_preserved'], name != 'instrument_assembly_integration')
+                self.assertEqual(selected['parent_preserved'], name != 'instrument_assembly')
 
     def test_partition_weights_are_owner_local_and_unknown_modules_keep_default(self) -> None:
         script = r"""
@@ -1456,7 +1456,7 @@ $results|ConvertTo-Json -Depth 8 -Compress
                             self.assertTrue((REPO_ROOT / "tests/components/dual_pressure_rectilinear_ion_processor/test_functional.py").is_file())
                             modules = set()
                             for name, stage in stages.items():
-                                if name.startswith("instrument_assembly_integration"):
+                                if name.startswith("instrument_assembly"):
                                     modules.update(stage["command"]["parameters"].get("SelectedTestModules", []))
                             self.assertIn("tests.workflows.multipole_ip.test_multipole_ip_prepare", modules)
                     else:
@@ -1512,7 +1512,7 @@ $results|ConvertTo-Json -Depth 8 -Compress
                           parameters["ChangedTestModules"])
             self.assertIn("tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_joint_flight_preparation",
                           parameters["ChangedTestModules"])
-            self.assertTrue(any(name.startswith("instrument_assembly_integration") for name in stages))
+            self.assertTrue(any(name.startswith("instrument_assembly") for name in stages))
 
     def test_measured_source_dependencies_select_their_real_consumers(self) -> None:
         paths = (
@@ -1535,7 +1535,7 @@ $results|ConvertTo-Json -Depth 8 -Compress
                         mr["ChangedTestModules"])
                     integration = set()
                     for name, stage in stages.items():
-                        if name.startswith("instrument_assembly_integration"):
+                        if name.startswith("instrument_assembly"):
                             integration.update(stage["command"]["parameters"].get("SelectedTestModules", []))
                     self.assertIn("tests.test_prepared_joint_execute", integration)
                     if path.endswith("strict_json.py"):
@@ -1752,7 +1752,7 @@ $cases=@(@{name='four';paths=$four},@{name='deleted';paths=@($compiler)},
  @{name='other';paths=@('src/msplatform/workflows/rf_runtime_profiles.py')},
  @{name='docs';paths=@('src/msplatform/components/rf_multipole/docs/COMSOL.md')})
 $result=@(foreach($case in $cases){
- $selected=@{};foreach($stage in @('rf_multipole_domain_tests','instrument_assembly_integration',
+ $selected=@{};foreach($stage in @('rf_multipole_domain_tests','instrument_assembly',
   'rf_multipole_quadrupole_static','rf_multipole_hexapole_static','rf_multipole_octupole_static')){
   $route=$routes|Where-Object stage -eq $stage
   $selected[$stage]=[bool](Get-ChangedRouteReason -Route $route -Paths $case.paths)
@@ -1777,7 +1777,7 @@ ConvertTo-Json -InputObject $result -Depth 12 -Compress
                 selected = cases[name]["selected"]
                 self.assertTrue(selected["rf_multipole_quadrupole_static"])
                 self.assertEqual(selected["rf_multipole_domain_tests"], name == "four")
-                self.assertEqual(selected["instrument_assembly_integration"], name == "four")
+                self.assertEqual(selected["instrument_assembly"], name == "four")
                 self.assertEqual(selected["rf_multipole_hexapole_static"], name == "four")
                 self.assertEqual(selected["rf_multipole_octupole_static"], name == "four")
                 self.assertEqual(sorted(cases[name]["modules"]), expected)
@@ -1795,7 +1795,7 @@ $base='src/msplatform/backends/comsol/matlab/'
 $names=@('configure_comsol_mesh.m','add_comsol_size_feature.m','read_comsol_mesh_size_controls.m')
 $result=@(foreach($name in $names){
  $path=$base+$name;$owners=@{}
- foreach($stage in @('common_contracts','rf_multipole_quadrupole_static','single_reflection_oa_tof_mass_analyzer_static','instrument_assembly_integration','rf_multipole_domain_tests','rf_multipole_hexapole_static','rf_multipole_octupole_static','transverse_helical_filament_wehnelt_electron_gun_static','apertured_tube_electron_impact_ion_source_static')){
+ foreach($stage in @('machine_contracts','rf_multipole_quadrupole_static','single_reflection_oa_tof_mass_analyzer_static','instrument_assembly','rf_multipole_domain_tests','rf_multipole_hexapole_static','rf_multipole_octupole_static','transverse_helical_filament_wehnelt_electron_gun_static','apertured_tube_electron_impact_ion_source_static')){
   $route=$routes|Where-Object stage -eq $stage
   $selected=[bool](Get-ChangedRouteReason -Route $route -Paths @($path));$modules=@()
   if($selected){$paths=@(Get-GateOwnerChangedPaths -Route $route -ChangedPaths @($path));$tests=Get-GateChangedTests -Route $route -ChangedPaths $paths -KnownTestRoots $roots -RepoRoot $PWD.Path;if($null-ne$tests){$modules=@($tests.Modules)}}
@@ -1811,21 +1811,21 @@ ConvertTo-Json -InputObject $result -Depth 12 -Compress
         for case in json.loads(outcome.stdout):
             with self.subTest(name=case['name']):
                 owners = case['owners']; shared = case['name'] != 'configure_comsol_mesh.m'
-                self.assertEqual(owners['common_contracts']['modules'], ['tests/contracts/test_installed_scientific_core.py'])
+                self.assertEqual(owners['machine_contracts']['modules'], ['tests/contracts/test_installed_scientific_core.py'])
                 self.assertCountEqual(owners['rf_multipole_quadrupole_static']['modules'], [
                     f"{RF}/analysis/test_frozen_matlab_closure.py", f"{RF}/analysis/test_comsol_mesh_report.py"])
                 for stage in ('rf_multipole_domain_tests','rf_multipole_hexapole_static','rf_multipole_octupole_static',
                               'transverse_helical_filament_wehnelt_electron_gun_static','apertured_tube_electron_impact_ion_source_static'):
                     self.assertFalse(owners[stage]['selected'], stage)
                 self.assertEqual(owners['single_reflection_oa_tof_mass_analyzer_static']['selected'], shared)
-                self.assertEqual(owners['instrument_assembly_integration']['selected'], shared)
+                self.assertEqual(owners['instrument_assembly']['selected'], shared)
                 if shared:
                     self.assertCountEqual(owners['single_reflection_oa_tof_mass_analyzer_static']['modules'], [
                         'tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_workflow.py',
                         'tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_causal_workflow.py',
                         'tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_postprocess_workflow.py',
                         'tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_paired_accelerator_field_adapters.py'])
-                    self.assertEqual(owners['instrument_assembly_integration']['modules'],
+                    self.assertEqual(owners['instrument_assembly']['modules'],
                                      ['tests/workflows/paired_accelerator/test_paired_accelerator_static_field_execute.py'])
 
     def test_common_mesh_helpers_select_real_consumers_and_unknown_stays_conservative(self) -> None:
@@ -1843,7 +1843,7 @@ $cases=@(@{name='configure';paths=@($configure)},@{name='size';paths=@($size)},
 $results=@(foreach($case in $cases){
  $selected=@{};foreach($name in @('rf_multipole_generated_publications','rf_multipole_domain_tests',
  'rf_multipole_quadrupole_static','rf_multipole_hexapole_static','rf_multipole_octupole_static',
- 'single_reflection_oa_tof_mass_analyzer_static','transverse_helical_filament_wehnelt_electron_gun_static','instrument_assembly_integration')){
+ 'single_reflection_oa_tof_mass_analyzer_static','transverse_helical_filament_wehnelt_electron_gun_static','instrument_assembly')){
   $route=$routes|Where-Object stage -eq $name;$selected[$name]=[bool](Get-ChangedRouteReason -Route $route -Paths $case.paths)
  }
  $quad=$routes|Where-Object stage -eq 'rf_multipole_quadrupole_static'
@@ -1867,12 +1867,12 @@ ConvertTo-Json -InputObject $results -Depth 12 -Compress
                                     "rf_multipole_octupole_static", "transverse_helical_filament_wehnelt_electron_gun_static"):
                     self.assertFalse(selected[nonconsumer], (name, nonconsumer))
                 self.assertEqual(selected["single_reflection_oa_tof_mass_analyzer_static"], name in ("size", "typed"))
-                self.assertEqual(selected["instrument_assembly_integration"], name in ("size", "typed"))
+                self.assertEqual(selected["instrument_assembly"], name in ("size", "typed"))
                 self.assertEqual(sorted(cases[name]["modules"]), expected)
         for name in ("unknown", "renamed"):
             with self.subTest(case=name):
                 selected = cases[name]["selected"]
-                self.assertTrue(all(value for key, value in selected.items() if key != "instrument_assembly_integration"))
+                self.assertTrue(all(value for key, value in selected.items() if key != "instrument_assembly"))
 
     def test_mapped_numerics_modules_keep_real_dispatch_failure_propagation(self) -> None:
         self._assert_mapped_modules_keep_real_dispatch_failure_propagation(
@@ -1990,7 +1990,7 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
                   ip + "test_component_exit.py", ip + "test_functional.py")
         cases.extend(consumers + [path] for path in shared)
         selected = self.selections(REPO_ROOT, [
-            dict(stage="instrument_assembly_integration", paths=paths) for paths in cases
+            dict(stage="instrument_assembly", paths=paths) for paths in cases
         ], owner_filter=True)
         for index, selection in enumerate(selected):
             with self.subTest(paths=cases[index]):
@@ -2022,7 +2022,7 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
             ([test, "tests/simion/test_removed.py"], False, True),
             ([test, "tests/simion/unknown/new.py"], False, True),
         )
-        selected = self.selections(REPO_ROOT, [dict(stage="simion_common", paths=paths)
+        selected = self.selections(REPO_ROOT, [dict(stage="simion_backend", paths=paths)
                                              for paths, _, _ in cases], owner_filter=True)
         for (paths, only, expanded), selection in zip(cases, selected, strict=True):
             with self.subTest(paths=paths):
@@ -2190,7 +2190,7 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
             )
             result = subprocess.run([
                 "pwsh", "-NoProfile", "-File", str(REPO_ROOT / "tools/repository/verify.ps1"),
-                "-InternalStage", "common_contracts", "-InternalRequestPath", str(request),
+                "-InternalStage", "machine_contracts", "-InternalRequestPath", str(request),
                 "-InternalLogPath", str(log),
             ], cwd=REPO_ROOT, env=environment, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180)
             output = result.stdout + result.stderr + log.read_text(encoding="utf-8")
@@ -2202,7 +2202,7 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
             self.assertEqual(executed_modules, {
                 "tests.contracts." + Path(name).stem for name in modules
             })
-            self.assertIn("GATE_STAGE=PASS NAME=common_contracts", output)
+            self.assertIn("GATE_STAGE=PASS NAME=machine_contracts", output)
 
     def campaign_leaf_fixture(self, root: Path) -> tuple[str, list[str], str]:
         """Tiny catalog fixture, real planner and SFI owner, inert prerequisites."""
@@ -2236,7 +2236,7 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
             (root / package / "__init__.py").write_text("", encoding="utf-8")
         catalog = json.loads((REPO_ROOT / "tools/repository/gate_catalog.json").read_text(encoding="utf-8"))
         route = next(x for x in catalog["routes"] if x["stage"] == "single_reflection_oa_tof_mass_analyzer_static")
-        peer = next(x for x in catalog["routes"] if x["stage"] == "common_contracts")
+        peer = next(x for x in catalog["routes"] if x["stage"] == "machine_contracts")
         for item in (route, peer):
             item.pop("runtime_dependencies_path", None)
         peer["matches"] = [dict(exact="tests/contracts/test_cross_owner.py", reason="fixture_cross_owner_test")]
@@ -2331,7 +2331,7 @@ $reports|ConvertTo-Json -Depth 100|Set-Content -LiteralPath (Join-Path $Root 'pl
                 actual = [m for x in shards for m in x["command"]["parameters"]["SelectedTestModules"]]
                 self.assertEqual(len(actual), len(set(actual)), name)
                 self.assertEqual(set(actual), expected | {"tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_unrelated"}, name)
-            self.assertTrue(any(x["name"] == "common_contracts" for x in plans["cross_owner"]["stages"]))
+            self.assertTrue(any(x["name"] == "machine_contracts" for x in plans["cross_owner"]["stages"]))
 
     def test_campaign_leaf_real_owner_runs_preflight_and_propagates_selected_failure(self) -> None:
         with tempfile.TemporaryDirectory(prefix="campaign_leaf_dispatch_") as directory:
@@ -2419,7 +2419,7 @@ $reports|ConvertTo-Json -Depth 100|Set-Content -LiteralPath (Join-Path $Root 'pl
                                encoding="utf-8")
             catalog_path = root / "tools/repository/gate_catalog.json"
             catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
-            owner = next(row for row in catalog["routes"] if row["stage"] == "common_contracts")
+            owner = next(row for row in catalog["routes"] if row["stage"] == "machine_contracts")
             owner["matches"] = [dict(prefix=fixture_root, reason="fixture_selection_changed")]
             owner["test_selection"] = {"roots": [fixture_root]}
             # This tiny fixture dispatches one owner stage, not repository shards.
@@ -2438,7 +2438,7 @@ $reports|ConvertTo-Json -Depth 100|Set-Content -LiteralPath (Join-Path $Root 'pl
                     log = Path(logs) / f"stage_{index}.log"
                     result = subprocess.run([
                         "pwsh", "-NoProfile", "-File", str(root / "tools/repository/verify.ps1"),
-                        "-InternalStage", "common_contracts", "-InternalRequestPath", str(request),
+                        "-InternalStage", "machine_contracts", "-InternalRequestPath", str(request),
                         "-InternalLogPath", str(log),
                     ], cwd=root, env=environment, capture_output=True, text=True,
                         encoding="utf-8", errors="replace", timeout=180)
@@ -2639,12 +2639,12 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
             'tests/contracts/test_support/generic_scalar_owner_harness.py',
             'tests/contracts/test_neutral_ip_schedule_managed.py',
         ]
-        selections = self.selections(REPO_ROOT, [dict(stage='common_contracts', paths=[path]) for path in paths])
+        selections = self.selections(REPO_ROOT, [dict(stage='machine_contracts', paths=[path]) for path in paths])
         for path, selected in zip(paths, selections, strict=True):
             with self.subTest(path=path):
                 self.assertTrue(expected <= set(selected['Modules']))
                 self.assertEqual(len(selected['Modules']), len(set(selected['Modules'])))
-        unrelated = self.selections(REPO_ROOT, [dict(stage='common_contracts', paths=['src/msplatform/analysis/peak_metrics.py'])])[0]
+        unrelated = self.selections(REPO_ROOT, [dict(stage='machine_contracts', paths=['src/msplatform/analysis/peak_metrics.py'])])[0]
         self.assertFalse(expected & set(unrelated['Modules']))
 
     def test_contact_geometry_and_drives_select_actual_consumer(self) -> None:
@@ -2656,7 +2656,7 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
                  'src/msplatform/backends/simion/model.py',
                  'src/msplatform/backends/simion/neutral_sampled_field.py',
                  'src/msplatform/analysis/peak_metrics.py']
-        selected = self.selections(REPO_ROOT, [dict(stage='common_contracts', paths=[path]) for path in paths])
+        selected = self.selections(REPO_ROOT, [dict(stage='machine_contracts', paths=[path]) for path in paths])
         for row in selected[:-1]:
             self.assertIn(consumer, row['Modules'])
         self.assertNotIn(consumer, selected[-1]['Modules'])
@@ -2673,7 +2673,7 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
             'src/msplatform/components/shape_query.py',
             'tests/contracts/test_support/generic_scalar_owner_harness.py',
         ]
-        selected = self.selections(REPO_ROOT, [dict(stage='common_contracts', paths=[path]) for path in paths])
+        selected = self.selections(REPO_ROOT, [dict(stage='machine_contracts', paths=[path]) for path in paths])
         for row in selected[:2]:
             self.assertIn('tests/contracts/test_neutral_mr_primitives.py', row['Modules'])
         self.assertTrue({
@@ -2687,9 +2687,9 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
         backend = 'src/msplatform/backends/simion/tracking_execution.py'
         consumer = 'tests/workflows/multipole_ip/test_multipole_ip_continuous.py'
         selected = self.selections(REPO_ROOT, [
-            dict(stage='common_contracts', paths=[source]),
-            dict(stage='common_contracts', paths=[backend]),
-            dict(stage='instrument_assembly_integration', paths=[consumer])])
+            dict(stage='machine_contracts', paths=[source]),
+            dict(stage='machine_contracts', paths=[backend]),
+            dict(stage='instrument_assembly', paths=[consumer])])
         for row in selected[:2]:
             self.assertTrue({'tests/contracts/test_simion_birth_admission.py',
                              'tests/contracts/test_rf_ip_composed.py',
@@ -2704,7 +2704,7 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
                  'src/msplatform/backends/comsol/assembly_field_export.py',
                  'src/msplatform/backends/comsol/matlab/sample_scalar_grid_blocks.m',
                  'src/msplatform/backends/comsol/matlab/export_assembly_world_scalar_field.m']
-        selected = self.selections(REPO_ROOT, [dict(stage='common_contracts', paths=[path]) for path in paths])
+        selected = self.selections(REPO_ROOT, [dict(stage='machine_contracts', paths=[path]) for path in paths])
         fill = {'tests/contracts/test_assembly_scalar_fill.py', 'tests/contracts/test_scalar_pa_fill.py',
                 'tests/contracts/test_assembly_scalar_owner_fill.py',
                 'tests/contracts/test_prepared_scalar_support.py',
@@ -2723,13 +2723,13 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
                          'tests/contracts/test_scientific_core_boundaries.py'} <= set(selected[2]['Modules']))
         script = (
             '. ' + powershell_literal(REPO_ROOT / 'tools/repository/gate_catalog_support.ps1') + '; '
-            "$r=@(Read-GateCatalog -RepoRoot $PWD.Path|Where-Object stage -eq 'common_contracts')[0]; "
+            "$r=@(Read-GateCatalog -RepoRoot $PWD.Path|Where-Object stage -eq 'machine_contracts')[0]; "
             "if(-not(Get-ChangedRouteReason -Route $r -Paths @('" + paths[3] + "'))){throw 'missing helper route'}"
         )
         result = subprocess.run(['pwsh','-NoProfile','-Command',script], cwd=REPO_ROOT,
                                 capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=60)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        oa = self.selections(REPO_ROOT, [dict(stage='instrument_assembly_integration',
+        oa = self.selections(REPO_ROOT, [dict(stage='instrument_assembly',
             paths=['src/msplatform/backends/simion/oa_compiler.py'])])[0]
         self.assertIn('tests/assembly/rf_oa_compiler/test_rf_oa_compiler.py', oa['Modules'])
         mr = self.selections(REPO_ROOT, [dict(
@@ -2752,7 +2752,7 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
 
     def test_sampled_field_fixture_selects_its_installed_and_inert_consumers(self) -> None:
         transport = 'tests/contracts/test_ip_mr_inert_transport.py'
-        cases = [dict(stage='common_contracts', paths=[path]) for path in (
+        cases = [dict(stage='machine_contracts', paths=[path]) for path in (
             'tests/contracts/test_support/ip_mr_sampled_field_fixture.py',
             'src/msplatform/backends/simion/ip_mr_field_execution.py',
             'src/msplatform/backends/simion/native_io.py', transport)]
@@ -2772,7 +2772,7 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
                  "src/msplatform/backends/comsol/ip_prism.py",
                  "src/msplatform/components/dual_pressure_rectilinear_ion_processor/convex_geometry.py",
                  "src/msplatform/backends/comsol/matlab/assembly_geometry_stage.m"]
-        selected = self.selections(REPO_ROOT, [dict(stage="common_contracts", paths=[path]) for path in paths])
+        selected = self.selections(REPO_ROOT, [dict(stage="machine_contracts", paths=[path]) for path in paths])
         for path, row in zip(paths, selected, strict=True):
             with self.subTest(path=path):
                 self.assertTrue({"tests/contracts/test_comsol_assembly_geometry.py",
@@ -2785,8 +2785,8 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
                          "tests/contracts/test_step_probe_culling_kernel.py"} <= set(selected[0]["Modules"]))
 
     def test_joint_geometry_changes_select_actual_consumers(self) -> None:
-        common = "common_contracts"
-        integration = "instrument_assembly_integration"
+        common = "machine_contracts"
+        integration = "instrument_assembly"
         mr = "parallel_mirror_dual_stripe_mr_tof_static"
         mr_test = MR + "/analysis/test_mr_compiler.py"
         cases = [

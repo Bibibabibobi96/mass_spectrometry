@@ -870,7 +870,7 @@ function Exit-HostResourceStage {param($Lease)}
                     " if time.monotonic() >= deadline: raise RuntimeError('registry start missing')\n"
                     " time.sleep(.01)\n"
                     "started = json.loads(ready.read_text(encoding='utf-8'))\n"
-                    "assert started['stage'] == 'project_registry'\n"
+                    "assert started['stage'] == 'contracts_registry'\n"
                     "assert type(started['pid']) is int and started['pid'] > 0\n"
                     "print('REGISTRY_START_OBSERVED=' + json.dumps(started), flush=True)\n"
                 ) if concurrency == 2 else ''
@@ -881,14 +881,14 @@ function Exit-HostResourceStage {param($Lease)}
                     rendezvous +
                     "print('SCOPED_STANDARD_PATHS_OK')\nraise SystemExit(7)\n", encoding='utf-8')
                 routes = []
-                for name in ('project_registry', 'rf_multipole_generated_publications', 'fixture_regression'):
+                for name in ('contracts_registry', 'rf_multipole_generated_publications', 'fixture_regression'):
                     program = "print('STAGE_DONE')\n"
-                    if name == 'project_registry':
+                    if name == 'contracts_registry':
                         program = (
                             "import json, os, pathlib, time\n"
                             "ready = pathlib.Path(__file__).with_name('registry-started.json')\n"
                             "candidate = ready.with_suffix('.candidate')\n"
-                            "candidate.write_text(json.dumps(dict(stage='project_registry', pid=os.getpid())), encoding='utf-8')\n"
+                            "candidate.write_text(json.dumps(dict(stage='contracts_registry', pid=os.getpid())), encoding='utf-8')\n"
                             "candidate.replace(ready)\n"
                             "print('REGISTRY_STARTED=' + ready.read_text(encoding='utf-8'), flush=True)\n"
                             "signal = pathlib.Path(__file__).with_name('failure-collected.json')\n"
@@ -933,14 +933,14 @@ function Exit-HostResourceStage {param($Lease)}
                 if concurrency == 2:
                     self.assertIn('REGISTRY_START_OBSERVED=', completed.stdout)
                     started = json.loads((common / 'registry-started.json').read_text(encoding='utf-8'))
-                    self.assertEqual(started['stage'], 'project_registry')
+                    self.assertEqual(started['stage'], 'contracts_registry')
                     self.assertGreater(started['pid'], 0)
                     self.assertIn('REGISTRY_STARTED=' + json.dumps(started), completed.stdout)
                     self.assertIn('REGISTRY_START_OBSERVED=' + json.dumps(started), completed.stdout)
                     self.assertIn('FAILURE_COLLECTION_OBSERVED', completed.stdout)
-                    self.assertEqual(records['project_registry']['status'], 'PASS')
+                    self.assertEqual(records['contracts_registry']['status'], 'PASS')
                 else:
-                    self.assertNotIn('START NAME=project_registry', completed.stdout)
+                    self.assertNotIn('START NAME=contracts_registry', completed.stdout)
                     self.assertFalse((common / 'registry-started.json').exists())
                     self.assertNotIn('REGISTRY_START_OBSERVED=', completed.stdout)
 
@@ -1967,11 +1967,11 @@ $selection|ConvertTo-Json -Depth 16 -Compress
         selected = [path.relative_to(ROOT).as_posix() for path in paths]
         expected = {name.removesuffix(".py").replace("/", ".") for name in selected}
         route = next(row for row in json.loads((ROOT/"tools/repository/gate_catalog.json").read_text(encoding="utf-8"))["routes"]
-                     if row["stage"] == "common_contracts")
+                     if row["stage"] == "machine_contracts")
         configured_count = route["repository_gate_partition"]["count"]
         result = self.run_script(self.prelude()+f"""
 . {quote(ROOT/'tools/repository/gate_catalog_support.ps1')}
-$route=(Get-Content {quote(ROOT/'tools/repository/gate_catalog.json')} -Raw|ConvertFrom-Json -Depth 32).routes|Where-Object stage -eq 'common_contracts'
+$route=(Get-Content {quote(ROOT/'tools/repository/gate_catalog.json')} -Raw|ConvertFrom-Json -Depth 32).routes|Where-Object stage -eq 'machine_contracts'
 $selected=@({','.join(quote(name) for name in selected)})
 function Get-ChildItem {{throw 'already-selected owner modules were rediscovered'}}
 $parts=@(Get-GateRepositoryTestPartitions -Route $route -RepoRoot {quote(ROOT)} -Modules $selected)
@@ -2005,7 +2005,7 @@ function Get-GateRepositoryTestPartitions {param($Route,$RepoRoot,$Modules)
 }
 function Read-GateCatalog {param($RepoRoot)
  Add-Content -LiteralPath $env:CATALOG_COUNT -Value 'catalog'
- @([pscustomobject]@{stage='common_contracts';owner='common_contracts';dependency_profile='locked';repository_gate_group='regression';
+ @([pscustomobject]@{stage='machine_contracts';owner='machine_contracts';dependency_profile='locked';repository_gate_group='regression';
  matches=@([pscustomobject]@{prefix='tests/contracts/';reason='fixture'});
  command=[pscustomobject]@{runner='python';arguments=@('-m','unittest','discover','-s','tests/contracts','-p','test_*.py')};
  test_selection=[pscustomobject]@{scope='tests/contracts/';roots=@('tests/contracts/')};partition_preflight=$false;
@@ -2037,11 +2037,11 @@ function Read-GateCatalog {param($RepoRoot)
             document=json.loads(plan.read_text(encoding="utf-8"))
             self.assertEqual(document["resource_context"]["requested_workers"], 3)
             self.assertEqual(document["resource_context"]["resolved_workers"], 3)
-            children=[row for row in document["stages"] if row["name"].startswith("common_contracts__tests_")]
+            children=[row for row in document["stages"] if row["name"].startswith("machine_contracts__tests_")]
             selected=[name for row in children for name in row["command"]["arguments"][2:]]
             self.assertCountEqual(selected,["tests.contracts.test_"+name for name in "abc"])
             self.assertEqual(len(selected),len(set(selected)))
-            self.assertFalse(any(row["name"]=="common_contracts" for row in document["stages"]))
+            self.assertFalse(any(row["name"]=="machine_contracts" for row in document["stages"]))
             self.assertTrue(all(row["command"]["python_path_roots"]==[".", "tests/contracts/"] for row in children))
             for failed in (False,True):
                 with self.subTest(failed=failed):
@@ -2053,7 +2053,7 @@ function Read-GateCatalog {param($RepoRoot)
                         cwd=root,env=child_env,capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=60)
                     self.assertTrue(summary.exists(), result.stdout+result.stderr)
                     records=json.loads(summary.read_text(encoding="utf-8"))
-                    parts=[row for row in records["stages"] if row["name"].startswith("common_contracts__tests_")]
+                    parts=[row for row in records["stages"] if row["name"].startswith("machine_contracts__tests_")]
                     self.assertEqual(result.returncode==0,not failed,result.stdout+result.stderr)
                     self.assertEqual(sum(row["status"]=="FAIL" for row in parts),int(failed))
                     if failed:self.assertIn("Gate catalog command failed with exit code 7",result.stdout+result.stderr)
@@ -2066,8 +2066,8 @@ function Read-GateCatalog {param($RepoRoot)
                 cwd=root,env=env,capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=30)
             self.assertEqual(planned.returncode,0,planned.stdout+planned.stderr)
             stages=json.loads(narrow.read_text(encoding="utf-8"))["stages"]
-            self.assertFalse(any(row["name"].startswith("common_contracts__tests_") for row in stages))
-            owner=next(row for row in stages if row["name"]=="common_contracts")
+            self.assertFalse(any(row["name"].startswith("machine_contracts__tests_") for row in stages))
+            owner=next(row for row in stages if row["name"]=="machine_contracts")
             self.assertEqual(owner["command"]["arguments"][2:],["tests/contracts/test_a.py"])
             self.assertEqual((root/"partition.txt").read_text().splitlines(),["partition"])
 

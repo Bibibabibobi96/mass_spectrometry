@@ -60,7 +60,7 @@ class ChangedGateContractTests(unittest.TestCase):
                 request, _ = self.plan('-ChangedPath', 'src/msplatform/backends/simion/' + name + '.py')
                 modules = [value.removesuffix('.py').replace('/', '.')
                            for row in request['stages']
-                           if row['selected'] and row['name'].startswith('common_contracts')
+                           if row['selected'] and row['name'].startswith('machine_contracts')
                            for value in row['command']['arguments'][2:]]
                 for module in required:
                     self.assertEqual(modules.count(module), 1)
@@ -77,7 +77,7 @@ class ChangedGateContractTests(unittest.TestCase):
                 request, _ = self.plan("-ChangedPath", prefix + path)
                 modules = [value.removesuffix(".py").replace("/", ".")
                            for row in request["stages"]
-                           if row["selected"] and row["name"].startswith("common_contracts")
+                           if row["selected"] and row["name"].startswith("machine_contracts")
                            for value in row["command"]["arguments"][2:]]
                 self.assertTrue(required <= set(modules))
                 for module in required:
@@ -97,7 +97,7 @@ class ChangedGateContractTests(unittest.TestCase):
         ])
         self.assertEqual(len(modules), len(set(modules)))
         common = {value.removesuffix('.py').replace('/', '.') for row in selected
-                  if row['name'].startswith('common_contracts')
+                  if row['name'].startswith('machine_contracts')
                   for value in row['command']['arguments'][2:]}
         self.assertIn('tests.contracts.test_installed_scientific_core', common)
 
@@ -110,12 +110,12 @@ class ChangedGateContractTests(unittest.TestCase):
                 request, _ = self.plan("-ChangedPath", path)
                 selected = [row for row in request["stages"] if row["selected"]]
                 common = {value.removesuffix(".py").replace("/", ".")
-                          for row in selected if row["name"].startswith("common_contracts")
+                          for row in selected if row["name"].startswith("machine_contracts")
                           for value in row["command"]["arguments"][2:]}
                 self.assertIn("tests.contracts.test_installed_scientific_core", common)
                 if path != workflow:
                     self.assertIn("tests.contracts.test_detector_physical_projection", common)
-                self.assertTrue(any(row["name"].startswith("instrument_assembly_integration") for row in selected))
+                self.assertTrue(any(row["name"].startswith("instrument_assembly") for row in selected))
                 if path != workflow:
                     self.assertTrue(any(row["name"].startswith("single_reflection_oa_tof_mass_analyzer_static") for row in selected))
 
@@ -123,7 +123,7 @@ class ChangedGateContractTests(unittest.TestCase):
         request, _ = self.plan('-ChangedPath', 'src/msplatform/workflows/ion_processor/preparation.py')
         selected = [row for row in request['stages'] if row['selected']]
         modules = [module for row in selected
-                   if row['name'].startswith('instrument_assembly_integration')
+                   if row['name'].startswith('instrument_assembly')
                    for module in row['command']['parameters'].get('SelectedTestModules', [])]
         self.assertCountEqual(modules, [
             'tests.workflows.multipole_ip.test_multipole_ip_prepare',
@@ -133,7 +133,7 @@ class ChangedGateContractTests(unittest.TestCase):
         self.assertEqual(len(modules), len(set(modules)))
         self.assertTrue(any(row['name'] == 'dual_pressure_rectilinear_ion_processor_static' for row in selected))
         common = {value.removesuffix('.py').replace('/', '.') for row in selected
-                  if row['name'].startswith('common_contracts') for value in row['command']['arguments'][2:]}
+                  if row['name'].startswith('machine_contracts') for value in row['command']['arguments'][2:]}
         self.assertIn('tests.contracts.test_installed_scientific_core', common)
 
     def test_shared_oa_physical_consumers_select_the_actual_oa_stage(self):
@@ -161,7 +161,7 @@ class ChangedGateContractTests(unittest.TestCase):
             'tests.analysis.test_static_field_consumers',
         ])
         modules = {value.removesuffix('.py').replace('/', '.')
-                   for row in selected if row['name'].startswith('common_contracts')
+                   for row in selected if row['name'].startswith('machine_contracts')
                    for value in row['command']['arguments'][2:]}
         self.assertIn('tests.contracts.test_installed_scientific_core', modules)
         for caller in (
@@ -176,12 +176,12 @@ class ChangedGateContractTests(unittest.TestCase):
         request, _ = self.plan('-ChangedPath', path)
         modules = {value.removesuffix('.py').replace('/', '.')
                    for row in request['stages'] if row['selected']
-                   and row['name'].startswith('common_contracts')
+                   and row['name'].startswith('machine_contracts')
                    for value in row['command']['arguments'][2:]}
         self.assertIn('tests.contracts.test_installed_scientific_core', modules)
         for name in ('strict_json', 'workbench_seed', 'static_field', 'recorded_birth', 'sfi_consumer'):
             with self.subTest(helper=name):
-                self.assertIn('common_contracts', self.routed_stages(
+                self.assertIn('machine_contracts', self.routed_stages(
                     'tests/contracts/test_support/installed_' + name + '_probe.py'))
 
     def test_recorded_sfi_consumer_selects_its_source_and_installed_boundaries(self):
@@ -193,11 +193,11 @@ class ChangedGateContractTests(unittest.TestCase):
                 request, _ = self.plan('-ChangedPath', path)
                 selected = [row for row in request['stages'] if row['selected']]
                 modules = {value for row in selected
-                           if row['name'].startswith('instrument_assembly_integration')
+                           if row['name'].startswith('instrument_assembly')
                            for value in row['command'].get('parameters', {}).get('SelectedTestModules', [])}
                 self.assertIn(consumer, modules)
                 common = {value.removesuffix('.py').replace('/', '.') for row in selected
-                          if row['name'].startswith('common_contracts')
+                          if row['name'].startswith('machine_contracts')
                           for value in row['command'].get('arguments', [])[2:]}
                 self.assertIn('tests.contracts.test_installed_scientific_core', common)
 
@@ -205,7 +205,7 @@ class ChangedGateContractTests(unittest.TestCase):
         request, _ = self.plan('-ChangedPath', 'src/msplatform/ion_release/authoring.py')
         modules = {value.removesuffix('.py').replace('/', '.')
                    for row in request['stages'] if row['selected']
-                   and row['name'].startswith('common_contracts')
+                   and row['name'].startswith('machine_contracts')
                    for value in row['command']['arguments'][2:]}
         self.assertTrue({
             'tests.contracts.test_release_authoring', 'tests.contracts.test_platform_api',
@@ -257,7 +257,7 @@ class ChangedGateContractTests(unittest.TestCase):
             with self.subTest(path=path):
                 request, _ = self.plan("-ChangedPath", path)
                 rows = [row for row in request["stages"] if row["selected"] and
-                        (row["name"] == "common_contracts" or row["name"].startswith("common_contracts__tests_"))]
+                        (row["name"] == "machine_contracts" or row["name"].startswith("machine_contracts__tests_"))]
                 self.assertTrue(rows)
                 modules = {value.removesuffix(".py").replace("/", ".")
                            for row in rows for value in row["command"]["arguments"][2:]}
@@ -269,7 +269,7 @@ class ChangedGateContractTests(unittest.TestCase):
                 request, _ = self.plan("-ChangedPath", path)
                 for stage, parameter, required in (
                     ("parallel_mirror_dual_stripe_mr_tof_static", "ChangedTestModules", {"test_native_static_field_provider", "test_native_static_field_provider_runner", "test_static_field_binding"}),
-                    ("instrument_assembly_integration", "SelectedTestModules", {"test_accelerator_interface", "test_oa_mr_execute", "test_prepared_joint_execute"}),
+                    ("instrument_assembly", "SelectedTestModules", {"test_accelerator_interface", "test_oa_mr_execute", "test_prepared_joint_execute"}),
                 ):
                     modules = {value.rsplit(".", 1)[-1] for row in request["stages"]
                                if row["selected"] and row["name"].startswith(stage)
@@ -279,8 +279,8 @@ class ChangedGateContractTests(unittest.TestCase):
     def test_static_field_binding_routes_to_all_consumer_owners(self):
         stages = self.routed_stages("src/msplatform/backends/comsol/static_field_binding.py")
         self.assertIn("parallel_mirror_dual_stripe_mr_tof_static", stages)
-        self.assertTrue(any(name == "instrument_assembly_integration" or
-                            name.startswith("instrument_assembly_integration__tests_") for name in stages))
+        self.assertTrue(any(name == "instrument_assembly" or
+                            name.startswith("instrument_assembly__tests_") for name in stages))
 
     def test_workbench_seed_paths_select_real_consumers(self):
         for path in ('src/msplatform/backends/simion/workbench_seed.py', 'src/msplatform/backends/simion/resources/1_instance_seed.iob', 'src/msplatform/backends/simion/workbench_seed.py'):
@@ -288,12 +288,12 @@ class ChangedGateContractTests(unittest.TestCase):
                 request, _ = self.plan("-ChangedPath", path)
                 rows = [row for row in request["stages"] if row["selected"]]
                 self.assertTrue(any(row["name"] == "dual_pressure_rectilinear_ion_processor_static" or row["name"].startswith("dual_pressure_rectilinear_ion_processor_static__tests_") for row in rows))
-                simion = [row for row in rows if row["name"] == "simion_common" or row["name"].startswith("simion_common__tests_")]
+                simion = [row for row in rows if row["name"] == "simion_backend" or row["name"].startswith("simion_backend__tests_")]
                 self.assertTrue(simion)
                 modules = {v.removesuffix(".py").replace("/", ".") for row in simion for v in row["command"]["arguments"][2:]}
                 self.assertIn("tests.simion.test_workbench_seed", modules)
                 if path != 'src/msplatform/backends/simion/workbench_seed.py':
-                    common = [row for row in rows if row["name"] == "common_contracts" or row["name"].startswith("common_contracts__tests_")]
+                    common = [row for row in rows if row["name"] == "machine_contracts" or row["name"].startswith("machine_contracts__tests_")]
                     self.assertTrue(common)
                     self.assertIn("tests.contracts.test_installed_scientific_core", {v.removesuffix(".py").replace("/", ".") for row in common for v in row["command"]["arguments"][2:]})
 
@@ -329,7 +329,7 @@ class ChangedGateContractTests(unittest.TestCase):
     def test_installed_connection_inputs_selects_existing_contract_owner(self):
         for path in ("src/msplatform/workflows/connection_inputs.py", "src/msplatform/io/file_identity.py"):
             with self.subTest(path=path):
-                self.assertIn("integration_common", self.routed_stages(path))
+                self.assertIn("assembly_contracts", self.routed_stages(path))
 
     def test_installed_source_models_reach_their_original_project_owner(self):
         behavior = {
@@ -380,8 +380,8 @@ class ChangedGateContractTests(unittest.TestCase):
         self.assertTrue((REPO_ROOT / path).is_file())
         request, _ = self.plan('-ChangedPath', path)
         selected = [row for row in request['stages'] if row['selected']]
-        contract_rows = [row for row in selected if row['name'] == 'common_contracts'
-                         or row['name'].startswith('common_contracts__tests_')]
+        contract_rows = [row for row in selected if row['name'] == 'machine_contracts'
+                         or row['name'].startswith('machine_contracts__tests_')]
         self.assertTrue(contract_rows)
         self.assert_complete_contract_modules(contract_rows, {
             'tests.contracts.test_installed_scientific_core', 'tests.contracts.test_comsol_wehnelt_model'})
@@ -430,7 +430,7 @@ class ChangedGateContractTests(unittest.TestCase):
                 for row in plan['stages']:
                     if row['resource_role'] == 'GATE':
                         self.assertEqual(row['resource_stage'], row['name'])
-                    if row['name'].startswith('simion_common'):
+                    if row['name'].startswith('simion_backend'):
                         self.assertNotIn(module, row['command'].get('arguments', []))
                         self.assertNotIn('tests.simion.test_dirichlet_patch_basis',
                                          row['command'].get('arguments', []))
@@ -594,12 +594,12 @@ foreach($case in $cases){{
         ), selected)
 
     def test_owner_group_and_stage_alias_bind_the_actual_source_owner(self):
-        contracts,_=self.plan("-Scope","Owner","-Owner","common_contracts")
-        self.assertIn("project_registry", {row["name"] for row in contracts["stages"]})
+        contracts,_=self.plan("-Scope","Owner","-Owner","machine_contracts")
+        self.assertIn("contracts_registry", {row["name"] for row in contracts["stages"]})
         actual = [module for row in contracts["stages"]
                   for module in row["command"].get("arguments", [])[2:]
                   if module.startswith("tests.contracts.")]
-        route = next(row for row in self.routes if row["stage"] == "common_contracts")
+        route = next(row for row in self.routes if row["stage"] == "machine_contracts")
         expected = [".".join(path.relative_to(REPO_ROOT).with_suffix("").parts)
                     for root in route["test_selection"]["roots"]
                     for path in (REPO_ROOT / root).rglob("test_*.py")]
@@ -705,7 +705,7 @@ ConvertTo-Json -Compress -InputObject $paths
                 selected = [row for row in request["stages"] if row["selected"]]
                 self.assertIn("workspace_paths_tests", {row["name"] for row in selected})
                 modules = [value.removesuffix(".py").replace("/", ".")
-                           for row in selected if row["name"].startswith("common_contracts")
+                           for row in selected if row["name"].startswith("machine_contracts")
                            for value in row["command"]["arguments"][2:]]
                 self.assertIn(module, modules)
                 self.assertEqual(modules.count(module), 1)
@@ -729,7 +729,7 @@ ConvertTo-Json -Compress -InputObject $paths
             with self.subTest(path=path):
                 request, _ = self.plan("-ChangedPath", path)
                 modules = [contract_test_path(value) for row in request["stages"]
-                           if row["name"].startswith("common_contracts")
+                           if row["name"].startswith("machine_contracts")
                            for value in row["command"]["arguments"][2:]]
                 self.assertTrue(expected <= set(modules))
                 self.assertEqual(len(modules), len(set(modules)))
@@ -739,7 +739,7 @@ ConvertTo-Json -Compress -InputObject $paths
             with self.subTest(test=path):
                 request, _ = self.plan("-ChangedPath", path)
                 modules = [contract_test_path(value) for row in request["stages"]
-                           if row["name"].startswith("common_contracts")
+                           if row["name"].startswith("machine_contracts")
                            for value in row["command"]["arguments"][2:]]
                 if path == "tests/contracts/test_gas_field_sampling.py":
                     self.assertEqual(set(modules), expected)
@@ -757,7 +757,7 @@ ConvertTo-Json -Compress -InputObject $paths
         for path in paths:
             with self.subTest(path=path):
                 request, _ = self.plan("-ChangedPath", path)
-                modules = [contract_test_path(value) for row in request["stages"] if row["name"].startswith("common_contracts")
+                modules = [contract_test_path(value) for row in request["stages"] if row["name"].startswith("machine_contracts")
                            for value in row["command"]["arguments"][2:]]
                 self.assertTrue(expected <= set(modules))
                 self.assertTrue(all(modules.count(name) == 1 for name in expected))
@@ -776,7 +776,7 @@ ConvertTo-Json -Compress -InputObject $paths
             with self.subTest(path=path):
                 request, _ = self.plan("-ChangedPath", path)
                 modules = [contract_test_path(value) for row in request["stages"]
-                           if row["name"].startswith("common_contracts")
+                           if row["name"].startswith("machine_contracts")
                            for value in row["command"]["arguments"][2:]]
                 self.assertTrue(expected <= set(modules))
                 self.assertTrue(all(modules.count(name) == 1 for name in expected))
@@ -803,12 +803,12 @@ ConvertTo-Json -Compress -InputObject $paths
                 self.assertEqual(len(units), 1)
                 self.assertEqual(units[0]["command"]["arguments"],
                                  ["-m", "tools.repository.gate_unittest", "tests.analysis.test_population_moments"])
-                common = [value for row in request["stages"] if row["name"].startswith("common_contracts")
+                common = [value for row in request["stages"] if row["name"].startswith("machine_contracts")
                           for value in row["command"].get("arguments", [])]
                 self.assertNotIn("tests/analysis/test_population_moments.py", common)
                 if len(paths) == 1:
                     integration = {value for row in request["stages"]
-                                   if row["name"].startswith("instrument_assembly_integration")
+                                   if row["name"].startswith("instrument_assembly")
                                    for value in row["command"].get("parameters", {}).get("SelectedTestModules", [])}
                     self.assertEqual(integration, {"tests.execution.test_dependencies"})
                 self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"} for row in request["stages"]))
@@ -844,7 +844,7 @@ ConvertTo-Json -Compress -InputObject $paths
         self.assertEqual(len(params["ChangedTestModules"]), len(set(params["ChangedTestModules"])))
         verify = (REPO_ROOT / "src/msplatform/workflows/resources/mr_verify.ps1").read_text(encoding="utf-8")
         self.assertIn("$coreTests = @($coreTests + $ChangedTestModules | Sort-Object -Unique)", verify)
-        self.assertTrue(any(row["name"].startswith("instrument_assembly_integration")
+        self.assertTrue(any(row["name"].startswith("instrument_assembly")
                             for row in request["stages"]))
         self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"}
                              for row in request["stages"]))
@@ -867,7 +867,7 @@ ConvertTo-Json -Compress -InputObject $paths
         self.assertNotIn("SelectedTestModules", mr_rows[0]["command"]["parameters"])
         self.assertEqual(len(mr), len(set(mr)))
         integration = {value for row in request["stages"]
-                       if row["name"].startswith("instrument_assembly_integration")
+                       if row["name"].startswith("instrument_assembly")
                        for value in row["command"].get("parameters", {}).get("SelectedTestModules", [])}
         self.assertEqual(integration, {"tests.assembly.accelerator_interface_geometry.test_accelerator_interface_geometry"})
         self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"} for row in request["stages"]))
@@ -880,7 +880,7 @@ ConvertTo-Json -Compress -InputObject $paths
             "src/msplatform/components/dual_pressure_rectilinear_ion_processor/section_geometry.py")
         self.assertIn("dual_pressure_rectilinear_ion_processor_static", {row["name"] for row in request["stages"]})
         modules = [contract_test_path(value) for row in request["stages"]
-                   if row["name"].startswith("instrument_assembly_integration")
+                   if row["name"].startswith("instrument_assembly")
                    for value in row["command"].get("parameters", {}).get("SelectedTestModules", [])]
         self.assertNotIn("tests.integration.test_local_frontend_analysis", modules)
         self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"} for row in request["stages"]))
@@ -893,7 +893,7 @@ ConvertTo-Json -Compress -InputObject $paths
             with self.subTest(path=path):
                 request, _ = self.plan("-ChangedPath", path)
                 modules = [contract_test_path(value) for row in request["stages"]
-                           if row["name"].startswith("common_contracts")
+                           if row["name"].startswith("machine_contracts")
                            for value in row["command"]["arguments"][2:]]
                 self.assertTrue({"tests/contracts/test_ip_gas_regions.py",
                                  "tests/contracts/test_ip_preparation.py"} <= set(modules))
@@ -921,7 +921,7 @@ ConvertTo-Json -Compress -InputObject $paths
             with self.subTest(path=path):
                 request, _ = self.plan("-ChangedPath", path)
                 owners = [row for row in request["stages"]
-                          if row["name"] == "common_contracts" or row["name"].startswith("common_contracts__tests_")]
+                          if row["name"] == "machine_contracts" or row["name"].startswith("machine_contracts__tests_")]
                 self.assertTrue(owners, "public contract selection is missing")
                 modules = [value.removesuffix(".py").replace("/", ".")
                            for owner in owners for value in owner["command"]["arguments"][2:]]
@@ -932,13 +932,13 @@ ConvertTo-Json -Compress -InputObject $paths
         request, _ = self.plan("-ChangedPath", "src/msplatform/execution/inputs.py")
         rows = {row["name"]: row for row in request["stages"]}
         arguments = [value for name, row in rows.items()
-                     if name == "common_contracts" or name.startswith("common_contracts__tests_")
+                     if name == "machine_contracts" or name.startswith("machine_contracts__tests_")
                      for value in row["command"]["arguments"]]
         self.assertEqual(arguments[:2], ["-m", "tools.repository.gate_unittest"])
         self.assertCountEqual([contract_test_path(value) for value in arguments[2:]
                               if value.startswith(("tests.contracts.", "tests/contracts/", "tests.components.", "tests/components/"))],
                              FROZEN_INPUT_CONTRACT_TESTS)
-        self.assertEqual(rows["simion_common"]["command"]["arguments"],
+        self.assertEqual(rows["simion_backend"]["command"]["arguments"],
                          ["-m", "tools.repository.gate_unittest", "tests/simion/test_workbench_seed.py"])
         all_modules = [contract_test_path(module) for row in request["stages"]
                        for module in row["command"].get("arguments", [])[2:]]
@@ -949,7 +949,7 @@ ConvertTo-Json -Compress -InputObject $paths
         request, _ = self.plan("-ChangedPath", "tools/repository/resource_budget_support.ps1")
         rows = {row["name"]: row for row in request["stages"]}
         self.assertIn("host_resource_scheduler_tests", rows)
-        self.assertEqual(rows["simion_common"]["command"]["arguments"],
+        self.assertEqual(rows["simion_backend"]["command"]["arguments"],
                          ["-m", "tools.repository.gate_unittest", "tests/simion/test_managed_process_completion.py"])
         drain = "tests.repository.test_observed_preparation_drain"
         self.assertEqual(rows["host_resource_scheduler_tests"]["command"]["arguments"].count(drain), 1)
@@ -975,7 +975,7 @@ ConvertTo-Json -Compress -InputObject $paths
             script = f"""
 $ErrorActionPreference='Stop'
 . {literal(REPO_ROOT / 'tools/repository/gate_catalog_support.ps1')}
-$route=(Get-Content -LiteralPath {literal(ROUTE_TABLE)} -Raw|ConvertFrom-Json -Depth 32).routes|Where-Object stage -eq common_contracts
+$route=(Get-Content -LiteralPath {literal(ROUTE_TABLE)} -Raw|ConvertFrom-Json -Depth 32).routes|Where-Object stage -eq machine_contracts
 $root={literal(root)};$source='src/msplatform/execution/inputs.py'
 $parameters=@{{Route=$route;KnownTestRoots=@('tests/contracts/');RepoRoot=$root}}
 $results=[ordered]@{{known=@((Get-GateChangedTests @parameters -ChangedPaths @($source)).Modules)}}
@@ -1143,11 +1143,11 @@ exit 0
                     } <= provider.keys())
         primitives = self.routed_stages("src/msplatform/backends/simion/gem_primitives.py")
         self.assertTrue({
-            "simion_common", "orthogonal_accelerator_static",
+            "simion_backend", "orthogonal_accelerator_static",
                     } <= primitives.keys())
 
     def test_accelerator_test_only_routes_preserve_actual_shared_fixture_consumers(self) -> None:
-        downstream = {"instrument_assembly_integration", "parallel_mirror_dual_stripe_mr_tof_static",
+        downstream = {"instrument_assembly", "parallel_mirror_dual_stripe_mr_tof_static",
                       "single_reflection_oa_tof_mass_analyzer_static"}
         prefix = "tests/components/orthogonal_accelerator/"
         for relative in ("analysis/test_component_focus_analysis.py",
@@ -1162,7 +1162,7 @@ exit 0
                          "__init__.py", "analysis/__init__.py"):
             with self.subTest(relative=relative):
                 stages = self.routed_stages(prefix + relative)
-                self.assertTrue(any(name == "instrument_assembly_integration" or name.startswith("instrument_assembly_integration__tests_") for name in stages), stages)
+                self.assertTrue(any(name == "instrument_assembly" or name.startswith("instrument_assembly__tests_") for name in stages), stages)
                 self.assertIn("orthogonal_accelerator_static", stages)
                 self.assertNotIn("parallel_mirror_dual_stripe_mr_tof_static", stages)
                 self.assertNotIn("single_reflection_oa_tof_mass_analyzer_static", stages)
@@ -1185,7 +1185,7 @@ exit 0
                 ("src/msplatform/components/dual_pressure_rectilinear_ion_processor/"
                  if relative.startswith("analysis/") and not relative.startswith("analysis/test_") else prefix) + relative)
                 self.assertIn("dual_pressure_rectilinear_ion_processor_static", stages)
-                self.assertNotIn("instrument_assembly_integration", stages)
+                self.assertNotIn("instrument_assembly", stages)
         for relative in ("test_component_exit.py",
                          "test_functional.py", "__init__.py",
                          "test_support/unknown_helper.py", "test_support/test_helper.py",
@@ -1196,11 +1196,11 @@ exit 0
                 ("src/msplatform/components/dual_pressure_rectilinear_ion_processor/"
                  if relative.startswith("analysis/") and not relative.startswith("analysis/test_") else prefix) + relative)
                 self.assertIn("dual_pressure_rectilinear_ion_processor_static", stages)
-                self.assertIn("instrument_assembly_integration", stages)
+                self.assertIn("instrument_assembly", stages)
 
     def test_extracted_mechanisms_keep_automatic_regression_routes(self) -> None:
         for implementation, stage, module in (
-            ("src/msplatform/contracts/expected_values.py", "common_contracts",
+            ("src/msplatform/contracts/expected_values.py", "machine_contracts",
              "tests.contracts.test_expected_values"),
             ("src/msplatform/analysis/longitudinal_fit.py", "longitudinal_fit_tests",
              "tests.analysis.test_longitudinal_fit"),
@@ -1209,7 +1209,7 @@ exit 0
                 self.assertIn(stage, self.routed_stages(implementation))
                 route = next(row for row in self.routes if row["stage"] == stage)
                 self.assertIn(route["repository_gate_group"], {"fast", "regression", "covered"})
-                if stage == "common_contracts":
+                if stage == "machine_contracts":
                     request, _ = self.plan("-ChangedPath", implementation)
                     arguments = [arg for row in request["stages"] if row["name"] == stage or row["name"].startswith(stage + "__tests_") for arg in row["command"]["arguments"]]
                     self.assertIn(module, [arg.removesuffix(".py").replace("/", ".") for arg in arguments])
@@ -1220,7 +1220,7 @@ exit 0
                     } <= self.routed_stages("src/msplatform/analysis/longitudinal_fit.py").keys())
         self.assertIn("orthogonal_accelerator_static",
                       self.routed_stages("src/msplatform/contracts/expected_values.py"))
-        self.assertTrue({"single_reflection_oa_tof_mass_analyzer_static", "instrument_assembly_integration"}
+        self.assertTrue({"single_reflection_oa_tof_mass_analyzer_static", "instrument_assembly"}
                         <= self.routed_stages("src/msplatform/analysis/field_comparison.py").keys())
 
     def test_host_scheduler_and_adapters_keep_regression_routes(self) -> None:
@@ -1231,7 +1231,7 @@ exit 0
         ):
             with self.subTest(path=path):
                 self.assertTrue(expected <= self.routed_stages(path).keys())
-        gate_route = next(row for row in self.routes if row["stage"] == "common_contracts")
+        gate_route = next(row for row in self.routes if row["stage"] == "machine_contracts")
         self.assertEqual(gate_route["command"]["runner"], "python")
 
     def test_python_host_bridge_uses_one_shared_scheduler_stage_in_l1_and_l2(self) -> None:
@@ -1240,9 +1240,9 @@ exit 0
                      "tests/repository/test_host_resource_python.py"):
             expected = {stage}
             if path in ("src/msplatform/execution/host_resource_python.py", "src/msplatform/execution/resources/host_resource_python.ps1"):
-                expected.update({"simion_dirichlet_native", "host_resource_adapter_tests", "common_contracts"})
+                expected.update({"simion_dirichlet_native", "host_resource_adapter_tests", "machine_contracts"})
             if path == "src/msplatform/execution/host_resource_python.py":
-                expected.add("instrument_assembly_integration")
+                expected.add("instrument_assembly")
             self.assertEqual(set(self.routed_stages(path)), expected, path)
         routes = [route for route in self.routes if route["stage"] == stage]
         self.assertEqual(len(routes), 1)
@@ -1273,7 +1273,7 @@ exit 0
 
     def test_integration_test_module_change_runs_only_that_module(self) -> None:
         request, _ = self.plan("-ChangedPath", "tests/execution/test_repository_bindings.py")
-        integration = [row for row in request["stages"] if row["name"].startswith("instrument_assembly_integration")]
+        integration = [row for row in request["stages"] if row["name"].startswith("instrument_assembly")]
         self.assertEqual(len(integration), 1)
         command = integration[0]["command"]
         parameters = command.get("parameters", {})
@@ -1309,9 +1309,9 @@ exit 0
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("EXECUTION_MODE=FULL_CHANGED_SCOPE", completed.stdout)
-        self.assertIn("instrument_assembly_integration", completed.stdout)
+        self.assertIn("instrument_assembly", completed.stdout)
         for index in range(1, 5):
-            self.assertIn(f"instrument_assembly_integration__tests_{index:02d}", completed.stdout)
+            self.assertIn(f"instrument_assembly__tests_{index:02d}", completed.stdout)
 
     def test_routes_project_config_to_its_own_static_gate(self) -> None:
         registry = json.loads((REPO_ROOT / "config/project_registry.json").read_text(encoding="utf-8"))
@@ -1349,6 +1349,10 @@ exit 0
     def test_catalog_declares_dependency_and_l2_ownership_for_every_stage(self) -> None:
         self.assertEqual(self.route_contract["schema_version"], 2)
         self.assertEqual(self.route_contract["role"], "repository_gate_catalog")
+        self.assertTrue({
+            "contracts_registry", "machine_contracts", "simion_backend",
+            "assembly_contracts", "instrument_assembly", "solidworks_exporter",
+        } <= {route["stage"] for route in self.routes})
         for route in self.routes:
             self.assertIn(route["dependency_profile"], {"stdlib", "locked"})
             self.assertIn(
@@ -1417,7 +1421,7 @@ exit 0
 
     def test_field_plan_dependency_uses_actual_selected_consumers_without_duplicates(self):
         source = 'src/msplatform/workflows/single_reflection_flight/field_plan.py'
-        route = next(row for row in self.routes if row['stage'] == 'instrument_assembly_integration')
+        route = next(row for row in self.routes if row['stage'] == 'instrument_assembly')
         roots = ('tests/assembly', 'tests/workflows', 'tests/execution')
         full = {'.'.join(path.relative_to(REPO_ROOT).with_suffix('').parts)
                 for root in roots for path in (REPO_ROOT / root).rglob('test_*.py')}
@@ -1454,7 +1458,7 @@ exit 0
                 else:
                     plan, _ = self.plan(*arguments)
                 rows = [row for row in plan['stages']
-                        if row['name'].startswith('instrument_assembly_integration')]
+                        if row['name'].startswith('instrument_assembly')]
                 modules = []
                 for row in rows:
                     command = row['command']
@@ -1469,7 +1473,7 @@ exit 0
 
     def test_field_plan_mapping_keeps_missing_unknown_and_renamed_source_conservative(self):
         source = 'src/msplatform/workflows/single_reflection_flight/field_plan.py'
-        route = next(row for row in self.routes if row['stage'] == 'instrument_assembly_integration')
+        route = next(row for row in self.routes if row['stage'] == 'instrument_assembly')
         dependency = next(row for row in route['test_selection']['dependencies']
                           if any(match.get('exact') == source for match in row['matches']))
         expected = set(dependency['modules'])
@@ -1486,7 +1490,7 @@ exit 0
             script = f"""
 $ErrorActionPreference='Stop'
 . {quote(REPO_ROOT / 'tools/repository/gate_catalog_support.ps1')}
-$route=(Get-Content {quote(ROUTE_TABLE)} -Raw|ConvertFrom-Json -Depth 64).routes|Where-Object stage -eq instrument_assembly_integration
+$route=(Get-Content {quote(ROUTE_TABLE)} -Raw|ConvertFrom-Json -Depth 64).routes|Where-Object stage -eq instrument_assembly
 $root={quote(root)};$source={quote(source)}
 $parameters=@{{Route=$route;KnownTestRoots=@('tests/assembly/','tests/workflows/','tests/execution/');RepoRoot=$root}}
 $result=@{{known=@((Get-GateChangedTests @parameters -ChangedPaths @($source)).Modules)}}
@@ -1516,15 +1520,15 @@ $result|ConvertTo-Json -Compress
                      "src/msplatform/workflows/single_reflection_flight/prepare.py",
                      "src/msplatform/workflows/single_reflection_flight/plot_single_flight_spatial_six_panel.py"):
             with self.subTest(path=path):
-                expected = {"instrument_assembly_integration"}
+                expected = {"instrument_assembly"}
                 if path in {
                     "src/msplatform/workflows/config/runtime_dependencies.json",
                     "src/msplatform/workflows/single_reflection_flight/prepare.py",
                     "src/msplatform/workflows/single_reflection_flight/plot_single_flight_spatial_six_panel.py",
                 }:
-                    expected.add("common_contracts")
+                    expected.add("machine_contracts")
                 elif path == "src/msplatform/execution/resources/dependencies.ps1":
-                    expected.update(("common_contracts", "host_resource_adapter_tests",
+                    expected.update(("machine_contracts", "host_resource_adapter_tests",
                                      "host_resource_scheduler_tests"))
                 self.assertEqual(set(self.routed_stages(path)), expected)
 
@@ -1534,13 +1538,13 @@ $result|ConvertTo-Json -Compress
                      "src/msplatform/backends/comsol/prepulse_replay.py"):
             with self.subTest(path=path):
                 self.assertEqual(set(self.routed_stages(path)),
-                                 {"common_contracts", "instrument_assembly_integration"})
+                                 {"machine_contracts", "instrument_assembly"})
 
 
     def test_installed_bare_frontend_routes_all_actual_owners(self) -> None:
         self.assertEqual(set(self.routed_stages("src/msplatform/backends/simion/bare_frontend_geometry.py")),
-                         {"instrument_assembly_integration", "common_contracts", "single_reflection_oa_tof_mass_analyzer_static",
-                          "orthogonal_accelerator_static", "simion_common", "rf_multipole_domain_tests",
+                         {"instrument_assembly", "machine_contracts", "single_reflection_oa_tof_mass_analyzer_static",
+                          "orthogonal_accelerator_static", "simion_backend", "rf_multipole_domain_tests",
                           "rf_multipole_generated_publications", "rf_multipole_quadrupole_static",
                           "rf_multipole_hexapole_static", "rf_multipole_octupole_static"})
 
@@ -1549,11 +1553,11 @@ $result|ConvertTo-Json -Compress
         for group in inventory["providers"]:
             for dependency in group["files"] + group["python_modules"]:
                 with self.subTest(dependency=dependency["source_repo_path"]):
-                    self.assertIn("instrument_assembly_integration", self.routed_stages(dependency["source_repo_path"]))
+                    self.assertIn("instrument_assembly", self.routed_stages(dependency["source_repo_path"]))
             for package in group["python_packages"]:
                 for suffix in ("new_module.py", "nested/deleted_module.py"):
                     with self.subTest(package=package["source_repo_path"], suffix=suffix):
-                        self.assertIn("instrument_assembly_integration", self.routed_stages(package["source_repo_path"] + "/" + suffix))
+                        self.assertIn("instrument_assembly", self.routed_stages(package["source_repo_path"] + "/" + suffix))
 
     def test_installed_mesh_resources_real_plan_selects_exact_owner_modules(self) -> None:
         base = 'src/msplatform/backends/comsol/matlab/'
@@ -1563,7 +1567,7 @@ $result|ConvertTo-Json -Compress
                 selected = [row for row in request['stages'] if row['selected']]
                 def rows_for(stage):
                     return [row for row in selected if row['name'] == stage or row['name'].startswith(stage + '__tests_')]
-                contracts = rows_for('common_contracts')
+                contracts = rows_for('machine_contracts')
                 self.assertTrue(contracts)
                 self.assert_complete_contract_modules(contracts, {'tests.contracts.test_installed_scientific_core'})
                 quad = rows_for('rf_multipole_quadrupole_static')
@@ -1574,7 +1578,7 @@ $result|ConvertTo-Json -Compress
                     'tests/components/rf_multipole_ion_optics/analysis/test_comsol_mesh_report.py'])
                 shared = name != 'configure_comsol_mesh.m'
                 oa = rows_for('single_reflection_oa_tof_mass_analyzer_static')
-                integration = rows_for('instrument_assembly_integration')
+                integration = rows_for('instrument_assembly')
                 self.assertEqual(bool(oa), shared); self.assertEqual(bool(integration), shared)
                 if shared:
                     oa_modules = [contract_test_path(value) for row in oa for value in row['command'].get('parameters', {}).get('SelectedTestModules', [])]
@@ -1608,10 +1612,10 @@ $result|ConvertTo-Json -Compress
             with self.subTest(path=path):
                 result = self._runtime_dependency_plan(REPO_ROOT, path)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                self.assertIn("instrument_assembly_integration", result.stdout)
+                self.assertIn("instrument_assembly", result.stdout)
                 selected = re.search(r"SELECTED_STAGES=([^\s]+)", result.stdout)
                 self.assertIsNotNone(selected, result.stdout)
-                self.assertTrue(any(name == "instrument_assembly_integration" or name.startswith("instrument_assembly_integration__tests_") for name in selected[1].split(",")), selected[1])
+                self.assertTrue(any(name == "instrument_assembly" or name.startswith("instrument_assembly__tests_") for name in selected[1].split(",")), selected[1])
 
     @staticmethod
     def _runtime_dependency_plan(repo: Path, changed_path: str) -> subprocess.CompletedProcess[str]:
@@ -1635,7 +1639,7 @@ $result|ConvertTo-Json -Compress
         selected = re.search(r"SELECTED_STAGES=([^\s]+)", completed.stdout)
         self.assertIsNotNone(selected, completed.stdout)
         stages = selected.group(1).split(",")
-        self.assertTrue(any(name == "instrument_assembly_integration" or name.startswith("instrument_assembly_integration__tests_") for name in stages), stages)
+        self.assertTrue(any(name == "instrument_assembly" or name.startswith("instrument_assembly__tests_") for name in stages), stages)
         self.assertNotIn("rf_multipole_to_single_reflection_oatof_integration", stages)
 
     def test_mrtof_uses_fast_changed_gate_and_complete_solver_free_l2_gate(self) -> None:
@@ -1684,7 +1688,7 @@ $node=$ast.Find({param($a)$a-is[Management.Automation.Language.FunctionDefinitio
 Invoke-Expression $node.Extent.Text
 $routes=@(Read-GateCatalog -RepoRoot $PWD.Path)
 $mr=$routes|Where-Object stage -eq 'parallel_mirror_dual_stripe_mr_tof_static'
-$integration=$routes|Where-Object stage -eq 'instrument_assembly_integration'
+$integration=$routes|Where-Object stage -eq 'instrument_assembly'
 $full=$mr.repository_gate_command|ConvertTo-Json -Depth 16|ConvertFrom-Json -Depth 16
 $full.parameters.PSObject.Properties.Remove('PreflightOnly')
 @{mr_core=(Test-CompletePartitionOwnerCommand $mr $mr.command);mr_full=(Test-CompletePartitionOwnerCommand $mr $full);integration_full=(Test-CompletePartitionOwnerCommand $integration $integration.command)}|ConvertTo-Json -Compress
@@ -1833,15 +1837,15 @@ $full.parameters.PSObject.Properties.Remove('PreflightOnly')
 
     def test_specialized_schemas_use_owner_and_metadata_without_directory_fanout(self) -> None:
         stages = self.routed_stages("src/msplatform/contracts/schemas/oatof_three_zone_stage_report.schema.json")
-        self.assertEqual(set(stages), {"common_contracts", "single_reflection_oa_tof_mass_analyzer_static",
-                                      "instrument_assembly_integration"})
+        self.assertEqual(set(stages), {"machine_contracts", "single_reflection_oa_tof_mass_analyzer_static",
+                                      "instrument_assembly"})
         for path in ("src/msplatform/contracts/schemas/future_unknown.schema.json",
                      "src/msplatform/contracts/machine_contracts.py", "src/msplatform/execution/resources/run_artifact_support.ps1"):
             with self.subTest(path=path):
-                self.assertIn("common_contracts", self.routed_stages(path))
+                self.assertIn("machine_contracts", self.routed_stages(path))
                 self.assertIn("rf_multipole_quadrupole_static", self.routed_stages(path))
         actual_consumer = self.routed_stages("src/msplatform/contracts/schemas/multipole_resolved_design.schema.json")
-        self.assertIn("instrument_assembly_integration", actual_consumer)
+        self.assertIn("instrument_assembly", actual_consumer)
 
 
 
@@ -2060,9 +2064,9 @@ exit ([int]$env:CI_FIXTURE_EXIT)
             routed = self.routed_stages(shared_path)
             self.assertIn("rf_multipole_domain_tests", routed)
             if shared_path == "src/msplatform/backends/simion/source.py":
-                self.assertIn("instrument_assembly_integration", routed)
+                self.assertIn("instrument_assembly", routed)
                 for consumer in (
-                    "simion_common", "rf_multipole_generated_publications",
+                    "simion_backend", "rf_multipole_generated_publications",
                     "orthogonal_accelerator_static", "parallel_mirror_dual_stripe_mr_tof_static",
                     "dual_pressure_rectilinear_ion_processor_static",
                     "dual_cone_tandem_quadrupole_ion_interface_static",
@@ -2075,11 +2079,11 @@ exit ([int]$env:CI_FIXTURE_EXIT)
             ):
                 self.assertIn(f"{project_id}_static", routed)
 
-    def test_common_contracts_routes_to_declared_direct_consumers(self) -> None:
+    def test_machine_contracts_routes_to_declared_direct_consumers(self) -> None:
         routed = self.routed_stages("src/msplatform/contracts/machine_contracts.py")
-        self.assertIn("common_contracts", routed)
+        self.assertIn("machine_contracts", routed)
         self.assertIn("rf_multipole_generated_publications", routed)
-        self.assertIn("instrument_assembly_integration", routed)
+        self.assertIn("instrument_assembly", routed)
         for project_id in (
             "single_reflection_oa_tof_mass_analyzer",
             "rf_multipole_quadrupole",
@@ -2095,14 +2099,14 @@ exit ([int]$env:CI_FIXTURE_EXIT)
         routed = self.routed_stages("tests/contracts/test_verify_changed.py")
         self.assertEqual(
             routed,
-            {"common_contracts": routed["common_contracts"]},
+            {"machine_contracts": routed["machine_contracts"]},
         )
 
     def test_shared_workflow_fixture_selects_actual_consumers_and_unknown_stays_conservative(self) -> None:
         rf = "tests.components.rf_multipole_ion_optics.analysis."
         single = "tests.components.single_reflection_oa_tof_mass_analyzer.analysis."
         expected = {
-            "instrument_assembly_integration": ["tests.workflows.single_reflection.test_single_reflection_owner_recovery"],
+            "instrument_assembly": ["tests.workflows.single_reflection.test_single_reflection_owner_recovery"],
             "rf_multipole_quadrupole_static": [rf + name for name in (
                 "test_comsol_owner_finalization", "test_owner_finalization_recovery", "test_simion_powershell_owner")],
             "single_reflection_oa_tof_mass_analyzer_static": [single + name for name in (
@@ -2164,7 +2168,7 @@ exit ([int]$env:CI_FIXTURE_EXIT)
                 self.assertTrue((REPO_ROOT / path).is_file(), path)
                 self.assertTrue(domain_stages <= self.routed_stages(path).keys(), path)
         resource_consumers = domain_stages | {
-            "livelink_resource_stages_tests", "instrument_assembly_integration",
+            "livelink_resource_stages_tests", "instrument_assembly",
             "parallel_mirror_dual_stripe_mr_tof_static",
             "single_reflection_oa_tof_mass_analyzer_static",
             "dual_pressure_rectilinear_ion_processor_static",
@@ -2173,7 +2177,7 @@ exit ([int]$env:CI_FIXTURE_EXIT)
         }
         self.assertTrue(resource_consumers <= self.routed_stages("tools/repository/resource_budget_support.ps1").keys())
         rf_consumers = domain_stages | {
-            "simion_common", "instrument_assembly_integration",
+            "simion_backend", "instrument_assembly",
             "dual_pressure_rectilinear_ion_processor_static",
             "dual_cone_tandem_quadrupole_ion_interface_static",
         }
@@ -2198,7 +2202,7 @@ exit ([int]$env:CI_FIXTURE_EXIT)
     def test_simion_tests_use_their_direct_test_stage(self) -> None:
         self.assertEqual(
             self.routed_stages("tests/simion/test_resource_scheduler.py"),
-            {"simion_common": "simion_tests_changed"},
+            {"simion_backend": "simion_tests_changed"},
         )
 
     def test_livelink_tests_use_their_direct_fast_stages(self) -> None:
@@ -2230,7 +2234,7 @@ exit ([int]$env:CI_FIXTURE_EXIT)
 
     def test_cloc_entrypoint_routes_to_its_focused_contract_tests(self) -> None:
         routed = self.routed_stages("tools/repository/report_cloc_delta.ps1")
-        self.assertEqual(set(routed), {"common_contracts"})
+        self.assertEqual(set(routed), {"machine_contracts"})
 
     def test_comsol_readme_does_not_expand_mixed_changed_scope(self) -> None:
         self.assertEqual(self.routed_stages("docs/COMSOL_BACKEND.md"), {})
@@ -2258,8 +2262,8 @@ exit ([int]$env:CI_FIXTURE_EXIT)
         self.assertIsNotNone(selected, result.stdout)
         request = json.loads(Path(self.summary_path).read_text(encoding="utf-8-sig"))
         contract_rows = [row for row in request["stages"]
-                         if row["selected"] and (row["name"] == "common_contracts"
-                         or row["name"].startswith("common_contracts__tests_"))]
+                         if row["selected"] and (row["name"] == "machine_contracts"
+                         or row["name"].startswith("machine_contracts__tests_"))]
         self.assertTrue(contract_rows)
         self.assertEqual(set(selected[1].split(",")), {
             "repository_hygiene", "repository_text_bytes", "documentation",
@@ -2290,8 +2294,8 @@ exit ([int]$env:CI_FIXTURE_EXIT)
         selected = re.search(r"SELECTED_STAGES=([^\s]+)", output)
         self.assertIsNotNone(selected, output)
         contract_rows = [row for row in request["stages"]
-                         if row["selected"] and (row["name"] == "common_contracts"
-                         or row["name"].startswith("common_contracts__tests_"))]
+                         if row["selected"] and (row["name"] == "machine_contracts"
+                         or row["name"].startswith("machine_contracts__tests_"))]
         self.assertTrue(contract_rows)
         self.assertTrue({row["name"] for row in contract_rows} <= set(selected.group(1).split(",")))
         self.assert_complete_contract_modules(contract_rows, {
@@ -2307,7 +2311,7 @@ exit ([int]$env:CI_FIXTURE_EXIT)
         self.assertEqual(len(actual), len(set(actual)))
 
     def test_declared_core_resources_route_with_delivery_exclusions(self):
-        route = next(row for row in self.routes if row["stage"] == "instrument_assembly_integration")
+        route = next(row for row in self.routes if row["stage"] == "instrument_assembly")
         matches = [match for match in route["matches"]
                    if match["reason"] == "declared_runtime_dependency_changed"
                    and "regex" in match and "src/msplatform" in match["regex"]]
@@ -2328,9 +2332,9 @@ exit ([int]$env:CI_FIXTURE_EXIT)
         self.assertEqual(
             set(routed),
             {
-                "integration_common",
-                "instrument_assembly_integration",
-                "common_contracts",
+                "assembly_contracts",
+                "instrument_assembly",
+                "machine_contracts",
             },
         )
         interface_route = self.routed_stages(
@@ -2338,7 +2342,7 @@ exit ([int]$env:CI_FIXTURE_EXIT)
         )
         self.assertNotIn("rf_multipole_to_single_reflection_oatof_integration", interface_route)
 
-        self.assertIn("common_contracts", {route["stage"] for route in self.routes})
+        self.assertIn("machine_contracts", {route["stage"] for route in self.routes})
 
 
     def test_gate_entrypoints_run_their_contract_tests(self) -> None:
@@ -2352,14 +2356,14 @@ exit ([int]$env:CI_FIXTURE_EXIT)
             "src/msplatform/execution/resources/require_powershell7.ps1",
             ".github/workflows/lightweight-gate.yml",
         ):
-            self.assertIn("common_contracts", self.routed_stages(path))
+            self.assertIn("machine_contracts", self.routed_stages(path))
 
     def test_generated_publications_have_priority_and_explicit_successors(self) -> None:
         stage_order = [route["stage"] for route in self.routes]
         freshness = stage_order.index("rf_multipole_generated_publications")
-        common_contracts = stage_order.index("common_contracts")
+        machine_contracts = stage_order.index("machine_contracts")
         rf_multipole_domain_tests = stage_order.index("rf_multipole_domain_tests")
-        self.assertLess(freshness, common_contracts)
+        self.assertLess(freshness, machine_contracts)
         self.assertLess(freshness, rf_multipole_domain_tests)
         freshness_route = self.routes[freshness]
         self.assertEqual(
@@ -2452,7 +2456,7 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
                 self.assertEqual(len(modules),len(set(modules)))
                 if path.startswith('src/'):
                     common=[value for row in request['stages'] if row['selected'] and
-                            (row['name']=='common_contracts' or row['name'].startswith('common_contracts__tests_'))
+                            (row['name']=='machine_contracts' or row['name'].startswith('machine_contracts__tests_'))
                             for value in row['command'].get('arguments',[])]
                     self.assertIn('tests.contracts.test_installed_scientific_core',
                                   [value.removesuffix('.py').replace('/','.') for value in common])
@@ -2491,7 +2495,7 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
         def integration_modules(request):
             result = set()
             for row in request['stages']:
-                if row['selected'] and row['name'].startswith('instrument_assembly_integration'):
+                if row['selected'] and row['name'].startswith('instrument_assembly'):
                     command = row['command']
                     values = [*command.get('parameters', {}).get('SelectedTestModules', []),
                               *command.get('arguments', [])]
@@ -2510,7 +2514,7 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
                 request, _ = self.plan('-ChangedPath', path)
                 common = {value.removesuffix('.py').replace('/', '.').rsplit('.', 1)[-1]
                           for row in request['stages'] if row['selected'] and
-                          (row['name'] == 'common_contracts' or row['name'].startswith('common_contracts__tests_'))
+                          (row['name'] == 'machine_contracts' or row['name'].startswith('machine_contracts__tests_'))
                           for value in row['command'].get('arguments', [])}
                 self.assertTrue(required <= common, (path, required, common))
                 if integration:
@@ -2530,12 +2534,12 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
                 request, _ = self.plan('-ChangedPath', path)
                 common = {value.removesuffix('.py').replace('/', '.').rsplit('.', 1)[-1]
                           for row in request['stages'] if row['selected'] and
-                          (row['name'] == 'common_contracts' or row['name'].startswith('common_contracts__tests_'))
+                          (row['name'] == 'machine_contracts' or row['name'].startswith('machine_contracts__tests_'))
                           for value in row['command'].get('arguments', [])}
                 self.assertTrue(required <= common, (path, required, common))
         request, _ = self.plan('-ChangedPath', 'tests/contracts/test_rf_ip_composed.py')
         values = [value for row in request['stages'] if row['selected'] and
-                  row['name'].startswith('common_contracts')
+                  row['name'].startswith('machine_contracts')
                   for value in row['command'].get('arguments', [])]
         normalized = [value.removesuffix('.py').replace('/', '.') for value in values]
         self.assertIn('tests.contracts.test_rf_ip_composed', normalized)
@@ -2579,9 +2583,9 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
         )]
         self.assertCountEqual(command['parameters']['ChangedTestModules'], expected)
         self.assertEqual(len(expected), len(set(expected)))
-        self.assertTrue(any(row['name'].startswith('common_contracts')
+        self.assertTrue(any(row['name'].startswith('machine_contracts')
                             for row in request['stages']))
-        self.assertTrue(any(row['name'].startswith('instrument_assembly_integration')
+        self.assertTrue(any(row['name'].startswith('instrument_assembly')
                             for row in request['stages']))
         self.assertFalse(any(row['resource_role'] in {'SIMION', 'COMSOL'}
                              for row in request['stages']))
@@ -2601,7 +2605,7 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
         self.assertEqual(command['parameters']['ChangedTestModules'], [
             'tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_static_field_binding'])
         common = [value for row in request['stages']
-                  if row['name'].startswith('simion_common')
+                  if row['name'].startswith('simion_backend')
                   for value in row['command'].get('arguments', [])]
         expected_common = ['tests/simion/' + name for name in (
             'test_operating_pa_cache.py', 'test_standalone_pa_composition_tools.py',
@@ -2609,12 +2613,12 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
         for module in expected_common:
             self.assertEqual(common.count(module), 1)
         integration = [value for row in request['stages']
-                       if row['name'].startswith('instrument_assembly_integration')
+                       if row['name'].startswith('instrument_assembly')
                        for value in row['command'].get('parameters', {}).get('SelectedTestModules', [])]
         self.assertCountEqual(integration, [
             'tests.execution.test_dependencies'])
         self.assertEqual(len(integration), len(set(integration)))
-        self.assertTrue(any(row['name'].startswith('common_contracts') for row in request['stages']))
+        self.assertTrue(any(row['name'].startswith('machine_contracts') for row in request['stages']))
         self.assertFalse(any(row['resource_role'] in {'SIMION', 'COMSOL'} for row in request['stages']))
 
     def test_installed_mr_stripe_public_plan_preserves_core_and_integration(self):
@@ -2650,8 +2654,8 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
         ]]
         self.assertCountEqual(command['parameters']['ChangedTestModules'], expected)
         self.assertEqual(len(expected), len(set(expected)))
-        self.assertTrue(any(row['name'].startswith('common_contracts') for row in request['stages']))
-        self.assertTrue(any(row['name'].startswith('instrument_assembly_integration')
+        self.assertTrue(any(row['name'].startswith('machine_contracts') for row in request['stages']))
+        self.assertTrue(any(row['name'].startswith('instrument_assembly')
                             for row in request['stages']))
         self.assertFalse(any(row['resource_role'] in {'SIMION', 'COMSOL'}
                              for row in request['stages']))
@@ -2675,9 +2679,9 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
             for name in ("test_static_field_binding", "test_native_memory_consumer_crop",
                          "test_prepared_joint_trial", "test_native_static_field_provider_runner")])
         self.assertEqual(len(modules), len(set(modules)))
-        self.assertTrue(any(row["name"].startswith("common_contracts")
+        self.assertTrue(any(row["name"].startswith("machine_contracts")
                             for row in request["stages"]))
-        self.assertTrue(any(row["name"].startswith("instrument_assembly_integration")
+        self.assertTrue(any(row["name"].startswith("instrument_assembly")
                             for row in request["stages"]))
         self.assertFalse(any(row["resource_role"] in {"SIMION", "COMSOL"}
                              for row in request["stages"]))
@@ -2709,7 +2713,7 @@ class RuntimeInventoryRouteTests(unittest.TestCase):
             gate = repo / "tools/repository/verify_integration.ps1"
             gate.write_text("throw 'PlanOnly must not execute stages'\n", encoding="utf-8")
             inventory_path = "src/msplatform/workflows/config/runtime_dependencies.json"
-            route = dict(stage="instrument_assembly_integration", dependency_profile="locked",
+            route = dict(stage="instrument_assembly", dependency_profile="locked",
                          repository_gate_group="regression",
                          matches=[dict(prefix="src/msplatform/workflows/", reason="assembly_changed")],
                          runtime_dependencies_path=inventory_path,
@@ -2730,12 +2734,12 @@ class RuntimeInventoryRouteTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             selected = re.search(r"SELECTED_STAGES=([^\s]+)", result.stdout)
             self.assertIsNotNone(selected, result.stdout)
-            self.assertNotIn("instrument_assembly_integration", selected[1].split(","))
+            self.assertNotIn("instrument_assembly", selected[1].split(","))
             inventory["providers"][0]["files"].append(dict(source_repo_path="src/msplatform/added_dependency.json"))
             target.write_text(json.dumps(inventory), encoding="utf-8")
             result = ChangedGateContractTests._runtime_dependency_plan(repo, "src/msplatform/added_dependency.json")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn("instrument_assembly_integration", re.search(
+            self.assertIn("instrument_assembly", re.search(
                 r"SELECTED_STAGES=([^\s]+)", result.stdout)[1].split(","))
             (repo / "src/msplatform/pkg").mkdir()
             entry = repo / "src/msplatform/pkg/deleted_module.py"
@@ -2763,7 +2767,7 @@ class RuntimeInventoryRouteTests(unittest.TestCase):
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                     stages = re.search(r"SELECTED_STAGES=([^\s]+)", result.stdout)
                     self.assertIsNotNone(stages, result.stdout)
-                    self.assertEqual("instrument_assembly_integration" in stages[1].split(","), expected)
+                    self.assertEqual("instrument_assembly" in stages[1].split(","), expected)
             for case in ("missing_inventory", "unknown_schema", "unknown_role", "missing_source"):
                 with self.subTest(case=case):
                     changed = json.loads(json.dumps(inventory))

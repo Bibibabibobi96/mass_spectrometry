@@ -479,7 +479,7 @@
       "owner": "tools/repository/documentation"
     },
     {
-      "stage": "project_registry",
+      "stage": "contracts_registry",
       "dependency_profile": "locked",
       "repository_gate_group": "fast",
       "matches": [
@@ -496,7 +496,7 @@
           "--check"
         ]
       },
-      "owner": "common_contracts"
+      "owner": "machine_contracts"
     },
     {
       "stage": "livelink_failure_classification",
@@ -589,7 +589,7 @@
         },
         {
           "regex": "^src/msplatform/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
-          "reason": "common_contracts_direct_dependency_changed"
+          "reason": "machine_contracts_direct_dependency_changed"
         },
         {
           "regex": "(?:^src/msplatform/backends/comsol/matlab/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls|write_wehnelt_build_only_report)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|build_multipole_enclosure|classify_finite_particle_terminal|compare_rf_gui_observations|configure_comsol_segment_hybrid_mesh|configure_comsol_stationary_solver|create_comsol_grounded_connector|create_multipole_round_rods|create_multipole_segmented_round_rods|export_finite_3d_particle_outputs|extract_rf_particle_records|plan_rf_exact_birth_releases|reextract_finite_3d_transport|solve_finite_3d_transport|validate_finite_extraction_context|validate_finite_source_start|visit_rf_particle_windows|prepare_interface_readiness_run|solve_deterministic_rf_quadrupole_particles|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$|matlab/(?:interface_readiness/run_release_construction_gate|mass_filter_reference/run_scan)\\.m$))",
@@ -633,7 +633,7 @@
         },
         {
           "regex": "^src/msplatform/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
-          "reason": "common_contracts_direct_dependency_changed"
+          "reason": "machine_contracts_direct_dependency_changed"
         },
         {
           "prefix": "src/msplatform/components/rf_multipole/",
@@ -669,7 +669,7 @@
       "owner": "rf_multipole_ion_optics"
     },
     {
-      "stage": "common_contracts",
+      "stage": "machine_contracts",
       "dependency_profile": "locked",
       "repository_gate_group": "regression",
       "matches": [
@@ -779,7 +779,7 @@
         },
         {
           "prefix": "tests/contracts/",
-          "reason": "common_contracts_changed"
+          "reason": "machine_contracts_changed"
         },
         {
           "exact": "src/msplatform/contracts/schemas/multipole_design_request.schema.json",
@@ -903,7 +903,7 @@
         },
         {
           "prefix": "src/msplatform/contracts/",
-          "reason": "common_contracts_changed"
+          "reason": "machine_contracts_changed"
         },
         {
           "exact": "src/msplatform/contracts/expected_values.py",
@@ -2316,7 +2316,7 @@
         ],
         "scope": "tests/contracts/"
       },
-      "owner": "common_contracts",
+      "owner": "machine_contracts",
       "partition_preflight": false,
       "repository_gate_partition": {
         "count": 4,
@@ -2386,7 +2386,7 @@
       }
     },
     {
-      "stage": "simion_common",
+      "stage": "simion_backend",
       "dependency_profile": "locked",
       "repository_gate_group": "regression",
       "matches": [
@@ -2866,7 +2866,7 @@
       "owner": "rf_multipole_ion_optics"
     },
     {
-      "stage": "integration_common",
+      "stage": "assembly_contracts",
       "dependency_profile": "locked",
       "repository_gate_group": "regression",
       "matches": [
@@ -2942,7 +2942,7 @@
       "owner": "assembly"
     },
     {
-      "stage": "instrument_assembly_integration",
+      "stage": "instrument_assembly",
       "dependency_profile": "locked",
       "repository_gate_group": "regression",
       "matches": [
@@ -3028,7 +3028,7 @@
         },
         {
           "regex": "^src/msplatform/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
-          "reason": "common_contracts_direct_dependency_changed"
+          "reason": "machine_contracts_direct_dependency_changed"
         },
         {
           "regex": "^src/msplatform/backends/simion/(?!README\\.md$|test_[^/]+\\.(?:py|ps1|m|lua)$)",
@@ -3064,7 +3064,7 @@
         },
         {
           "regex": "^src/msplatform/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
-          "reason": "common_contracts_direct_dependency_changed"
+          "reason": "machine_contracts_direct_dependency_changed"
         },
         {
           "prefix": "src/msplatform/assembly/",
@@ -3583,7 +3583,7 @@
       "owner": "instrument_assembly"
     },
     {
-      "stage": "solidworks_common",
+      "stage": "solidworks_exporter",
       "dependency_profile": "locked",
       "repository_gate_group": "regression",
       "matches": [
@@ -4714,7 +4714,7 @@
         },
         {
           "regex": "^src/msplatform/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
-          "reason": "common_contracts_direct_dependency_changed"
+          "reason": "machine_contracts_direct_dependency_changed"
         },
         {
           "regex": "(?:^src/msplatform/backends/comsol/matlab/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls|write_wehnelt_build_only_report)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|build_multipole_enclosure|classify_finite_particle_terminal|compare_rf_gui_observations|configure_comsol_segment_hybrid_mesh|configure_comsol_stationary_solver|create_comsol_grounded_connector|create_multipole_round_rods|create_multipole_segmented_round_rods|export_finite_3d_particle_outputs|extract_rf_particle_records|plan_rf_exact_birth_releases|reextract_finite_3d_transport|solve_finite_3d_transport|validate_finite_extraction_context|validate_finite_source_start|visit_rf_particle_windows|prepare_interface_readiness_run|solve_deterministic_rf_quadrupole_particles|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$|matlab/(?:interface_readiness/run_release_construction_gate|mass_filter_reference/run_scan)\\.m$))",
@@ -4758,7 +4758,7 @@
         },
         {
           "regex": "^src/msplatform/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
-          "reason": "common_contracts_direct_dependency_changed"
+          "reason": "machine_contracts_direct_dependency_changed"
         },
         {
           "prefix": "src/msplatform/components/single_reflection_oa_tof/",
@@ -5188,7 +5188,7 @@
         },
         {
           "regex": "^src/msplatform/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
-          "reason": "common_contracts_direct_dependency_changed"
+          "reason": "machine_contracts_direct_dependency_changed"
         },
         {
           "regex": "(?:^src/msplatform/backends/comsol/matlab/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls|write_wehnelt_build_only_report)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|build_multipole_enclosure|classify_finite_particle_terminal|compare_rf_gui_observations|configure_comsol_segment_hybrid_mesh|configure_comsol_stationary_solver|create_comsol_grounded_connector|create_multipole_round_rods|create_multipole_segmented_round_rods|export_finite_3d_particle_outputs|extract_rf_particle_records|plan_rf_exact_birth_releases|reextract_finite_3d_transport|solve_finite_3d_transport|validate_finite_extraction_context|validate_finite_source_start|visit_rf_particle_windows|prepare_interface_readiness_run|solve_deterministic_rf_quadrupole_particles|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$|matlab/(?:interface_readiness/run_release_construction_gate|mass_filter_reference/run_scan)\\.m$))",
@@ -5260,7 +5260,7 @@
         },
         {
           "regex": "^src/msplatform/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
-          "reason": "common_contracts_direct_dependency_changed"
+          "reason": "machine_contracts_direct_dependency_changed"
         },
         {
           "exact": "src/msplatform/analysis/peak_metrics.py",
@@ -5737,7 +5737,7 @@
         },
         {
           "regex": "^src/msplatform/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
-          "reason": "common_contracts_direct_dependency_changed"
+          "reason": "machine_contracts_direct_dependency_changed"
         },
         {
           "regex": "(?:^src/msplatform/backends/comsol/matlab/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls|write_wehnelt_build_only_report)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|build_multipole_enclosure|classify_finite_particle_terminal|compare_rf_gui_observations|configure_comsol_segment_hybrid_mesh|configure_comsol_stationary_solver|create_comsol_grounded_connector|create_multipole_round_rods|create_multipole_segmented_round_rods|export_finite_3d_particle_outputs|extract_rf_particle_records|plan_rf_exact_birth_releases|reextract_finite_3d_transport|solve_finite_3d_transport|validate_finite_extraction_context|validate_finite_source_start|visit_rf_particle_windows|prepare_interface_readiness_run|solve_deterministic_rf_quadrupole_particles|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$|matlab/(?:interface_readiness/run_release_construction_gate|mass_filter_reference/run_scan)\\.m$))",
@@ -5785,7 +5785,7 @@
         },
         {
           "regex": "^src/msplatform/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
-          "reason": "common_contracts_direct_dependency_changed"
+          "reason": "machine_contracts_direct_dependency_changed"
         },
         {
           "regex": "^src/msplatform/components/rf_multipole/(?!variants/|tests/(?:analysis|hexapole|octupole)/|tests/domain/(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)",
@@ -5894,7 +5894,7 @@
         },
         {
           "regex": "^src/msplatform/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
-          "reason": "common_contracts_direct_dependency_changed"
+          "reason": "machine_contracts_direct_dependency_changed"
         },
         {
           "regex": "(?:^src/msplatform/backends/comsol/matlab/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls|write_wehnelt_build_only_report)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|build_multipole_enclosure|classify_finite_particle_terminal|compare_rf_gui_observations|configure_comsol_segment_hybrid_mesh|configure_comsol_stationary_solver|create_comsol_grounded_connector|create_multipole_round_rods|create_multipole_segmented_round_rods|export_finite_3d_particle_outputs|extract_rf_particle_records|plan_rf_exact_birth_releases|reextract_finite_3d_transport|solve_finite_3d_transport|validate_finite_extraction_context|validate_finite_source_start|visit_rf_particle_windows|prepare_interface_readiness_run|solve_deterministic_rf_quadrupole_particles|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$|matlab/(?:interface_readiness/run_release_construction_gate|mass_filter_reference/run_scan)\\.m$))",
@@ -5942,7 +5942,7 @@
         },
         {
           "regex": "^src/msplatform/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
-          "reason": "common_contracts_direct_dependency_changed"
+          "reason": "machine_contracts_direct_dependency_changed"
         },
         {
           "regex": "^src/msplatform/components/rf_multipole/(?!variants/|tests/(?:analysis|hexapole|octupole)/|tests/domain/(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)",
@@ -6200,7 +6200,7 @@
         },
         {
           "regex": "^src/msplatform/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
-          "reason": "common_contracts_direct_dependency_changed"
+          "reason": "machine_contracts_direct_dependency_changed"
         },
         {
           "exact": "src/msplatform/components/rf_multipole/family_contract.py",
@@ -6232,7 +6232,7 @@
         },
         {
           "regex": "^src/msplatform/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
-          "reason": "common_contracts_direct_dependency_changed"
+          "reason": "machine_contracts_direct_dependency_changed"
         },
         {
           "exact": "src/msplatform/backends/simion/resources/rf_drive.lua",
@@ -6317,7 +6317,7 @@
         },
         {
           "regex": "^src/msplatform/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
-          "reason": "common_contracts_direct_dependency_changed"
+          "reason": "machine_contracts_direct_dependency_changed"
         },
         {
           "regex": "(?:^src/msplatform/backends/comsol/matlab/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls|write_wehnelt_build_only_report)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|build_multipole_enclosure|classify_finite_particle_terminal|compare_rf_gui_observations|configure_comsol_segment_hybrid_mesh|configure_comsol_stationary_solver|create_comsol_grounded_connector|create_multipole_round_rods|create_multipole_segmented_round_rods|export_finite_3d_particle_outputs|extract_rf_particle_records|plan_rf_exact_birth_releases|reextract_finite_3d_transport|solve_finite_3d_transport|validate_finite_extraction_context|validate_finite_source_start|visit_rf_particle_windows|prepare_interface_readiness_run|solve_deterministic_rf_quadrupole_particles|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$|matlab/(?:interface_readiness/run_release_construction_gate|mass_filter_reference/run_scan)\\.m$))",
@@ -6329,7 +6329,7 @@
         },
         {
           "regex": "^src/msplatform/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
-          "reason": "common_contracts_direct_dependency_changed"
+          "reason": "machine_contracts_direct_dependency_changed"
         },
         {
           "exact": "src/msplatform/backends/comsol/matlab/write_wehnelt_build_only_report.m",
@@ -6370,11 +6370,11 @@
         },
         {
           "regex": "^src/msplatform/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
-          "reason": "common_contracts_direct_dependency_changed"
+          "reason": "machine_contracts_direct_dependency_changed"
         },
         {
           "regex": "^src/msplatform/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
-          "reason": "common_contracts_direct_dependency_changed"
+          "reason": "machine_contracts_direct_dependency_changed"
         }
       ],
       "command": {

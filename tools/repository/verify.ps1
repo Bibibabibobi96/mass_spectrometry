@@ -591,11 +591,11 @@ $registryConsumers = @($routes | Where-Object {
     $stageItems[[string]$_.stage].Run -and $stageItems[[string]$_.stage].Command.runner -eq 'powershell'
 } | ForEach-Object { [string]$_.stage })
 if ($registryConsumers.Count) {
-    $registryRoute = $routes | Where-Object stage -eq 'project_registry' | Select-Object -First 1
-    if (-not $stageItems['project_registry'].Run) {
+    $registryRoute = $routes | Where-Object stage -eq 'contracts_registry' | Select-Object -First 1
+    if (-not $stageItems['contracts_registry'].Run) {
         $command = ConvertTo-GateExecutionCommand -Command $registryRoute.command
-        Add-ChangedStageItem 'project_registry' $true 'selected_owner_registry_prerequisite' 'locked'
-        $stageItems['project_registry'].Command = $command
+        Add-ChangedStageItem 'contracts_registry' $true 'selected_owner_registry_prerequisite' 'locked'
+        $stageItems['contracts_registry'].Command = $command
     }
     foreach ($name in $registryConsumers) {
         $stageItems[$name].Command.parameters | Add-Member -NotePropertyName RegistryPrevalidated -NotePropertyValue $true -Force
@@ -614,7 +614,7 @@ foreach ($route in $routes) {
     }
     $item.RequiresStages = $requiredStages
     if ([string]$route.stage -in $registryConsumers) {
-        $item.RequiresStages = @($requiredStages + 'project_registry' | Sort-Object -Unique)
+        $item.RequiresStages = @($requiredStages + 'contracts_registry' | Sort-Object -Unique)
     }
     foreach ($requiredStage in $requiredStages) {
         if (-not $stageItems[[string]$requiredStage].Run) {
@@ -707,7 +707,7 @@ foreach ($item in $stageItems.Values) {
 $priorityStages = @(
     'development_standards',
     'ruff_changed_python',
-    'project_registry',
+    'contracts_registry',
     'rf_multipole_generated_publications'
 )
 $partitionPriority = @($routes | ForEach-Object {
