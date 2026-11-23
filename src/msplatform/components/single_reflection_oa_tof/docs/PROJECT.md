@@ -1,6 +1,6 @@
 # 单次反射正交加速飞行时间质量分析器当前状态
 
-The retired top-level project tree has no active implementations. Scientific contracts and current documentation belong to the installed component; `oa_candidate`, `oa_tof_design`, and the distinct `oa_formal` package own their respective workflows; COMSOL, SIMION, and SolidWorks resources belong to their installed backends/exporters. Tests and frozen witnesses live under `tests/projects/single_reflection_oa_tof_mass_analyzer`. Scientific project IDs, artifact roots, historical manifest fallback identities, v1 authority bytes, and Formal controls remain unchanged. The active v2 authority record is refreshed only through `render_campaign_authorities`.
+The retired top-level project tree has no active implementations. Scientific contracts and current documentation belong to the installed component; `oa_candidate`, `oa_tof_design`, and the distinct `oa_formal` package own their respective workflows; COMSOL, SIMION, and SolidWorks resources belong to their installed backends/exporters. Tests and frozen witnesses live under `tests/components/single_reflection_oa_tof_mass_analyzer` and the workflow/assembly owners that actually exercise them. Scientific project IDs, artifact roots, historical manifest fallback identities, v1 authority bytes, and Formal controls remain unchanged. The active v2 authority record is refreshed only through `render_campaign_authorities`.
 
 Final scoped migration checks passed the registry, Ruff, PowerShell parsing, documentation structure, real verifier preflight/selected modules, 128 integration tests (one skip), 52 paired static/pulse tests, 46 focused gate/compiler tests, and the Candidate design, workflow, causal, postprocess, and legacy-reuse scopes. Candidate workflow was verified in two 41-test slices with focused reruns of four repaired slice-2 cases before acceptance; earlier failed and timed-out attempts are not treated as passes. No commercial solver, full Repository, or final integration verification was run. Wheel inspection was not available in the reused environment because `bdist_wheel` was absent; no dependency was installed.
 
@@ -1289,7 +1289,7 @@ producer返回原生完成receipt和实际Program/ION/IOB绑定；补偿与candi
 
 ### 完整软件验证分片
 
-项目软件验证从公共`common/verify.ps1 -Scope Owner -Owner single_reflection_oa_tof_mass_analyzer`进入。源码／fixture／Owner／Repository范围沿公共GetGateRepositoryTestPartitions使用4个计权分片；原发布新鲜度、几何检查与理论前置执行一次，分片依赖此前置通过，保留实际测试的PS／Lua及公共owner接线责任。原Candidate／Formal物理与发布动作保持，拒绝混入软件分片参数。direct SelectedTestModules默认先跑原前置；内部PreflightValidated只供已完成同轮前置的调度。
+项目软件验证从公共`tools/repository/verify.ps1 -Scope Owner -Owner single_reflection_oa_tof_mass_analyzer`进入。源码／fixture／Owner／Repository范围沿公共GetGateRepositoryTestPartitions使用4个计权分片；原发布新鲜度、几何检查与理论前置执行一次，分片依赖此前置通过，保留实际测试的PS／Lua及公共owner接线责任。原Candidate／Formal物理与发布动作保持，拒绝混入软件分片参数。direct SelectedTestModules默认先跑原前置；内部PreflightValidated只供已完成同轮前置的调度。
 
 Candidate后处理CLI夹具按现有科学资源、提供者实现声明、公共源码枚举及小型项目身份记录构建隔离author，
 不再复制全仓文本；每场景7463文件／117,512,304字节降至361文件／约4.88MB。
@@ -1324,9 +1324,10 @@ The installed spectrum records the actual Python version through the existing ex
 原入口示例（从仓库根执行；8MiB是本次显式小代码／metadata／图表／收尾承诺示例，按实际输入与余量选择，不是隐藏默认或父求解预算）：
 
 ```powershell
-.\projects\single_reflection_oa_tof_mass_analyzer\workflows\mass_spectrum_candidate\run_mass_spectrum_candidate.ps1 `
+$PythonExe = (Get-Command python).Path
+.\src\msplatform\workflows\resources\run_mass_spectrum_candidate.ps1 `
   -ReanalyzeOnly -SourceRunPath 'D:\artifacts\projects\single_reflection_oa_tof_mass_analyzer\runs\<sealed-parent>' `
-  -RunId '<new-analysis-run-id>' -AnalysisNewBytes 8388608 -PythonExe .\.venv\Scripts\python.exe
+  -RunId '<new-analysis-run-id>' -AnalysisNewBytes 8388608 -PythonExe $PythonExe
 ```
 
 分析进程的argv文件、cwd、环境和日志沿运行包的`Get-RunNativeExecutionContext`投影；Python支持的持久深源码import root保持原冻结身份，临时alias由公共owner收尾，不复制源码根。公共GATE普通轻量策略负责CPU／内存准入；分析Python进程沿现有observer记录真实PID、启动、退出及host释放。该调度承诺不是新增硬进程内存帽；现有物理危险监测仍适用。小Result默认在项目`scratch/workflow_results/<RunId>/result.json`。收尾中断使用同CLI的`-ResumeFinalization -RunId <analysis-id> [-ResultPath <原Result>]`，只恢复公共owner收尾，不重分析、不启动求解器；显式Result绑定原冻结根，不随今日根改变。分析本身失败则用原充分父记录创建另一个新分析run。主异常、收尾异常和未确认释放分别保留，不把host释放未知当作粒子或科学结论。

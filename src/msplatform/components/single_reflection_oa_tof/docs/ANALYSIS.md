@@ -340,7 +340,7 @@ configuration与reference；显式`--configuration`可以是同字节副本，�
 从仓库根只读复核当前 Formal；同一入口的其他阶段含义见下文：
 
 ```powershell
-.\projects\single_reflection_oa_tof_mass_analyzer\workflows\formal_reference\run_formal_validation.ps1 -Phase Verify
+.\src\msplatform\workflows\resources\run_formal_validation.ps1 -Phase Verify
 ```
 
 `Validate`从成功的零物理变化候选冻结输入，以同一N=1000粒子表串行重算；`Publish`只接受晋升
@@ -363,11 +363,11 @@ request和独立GUI/CAD evidence；`Verify`只读复核当前Formal。禁止手�
 - Arm 8解析闭合通过`python -m msplatform.workflows.oa_tof_design.verify_axial_ideal_closure
   src/msplatform/components/single_reflection_oa_tof/config/diagnostics/axial_ideal_arm8_analytic_closure.json --output <receipt.json>`运行。receipt明确标记为
   solver-independent analytic closure，不得表述为SIMION、COMSOL或Formal结果。
-- 通用代码只有第二个项目实际复用后才能上移`common/`。
+- 通用代码只有第二个项目实际复用同一语义后才能归入`msplatform`的明确公共所有者。
 
 ## 反射器电压补偿运行与恢复
 
-`workflows/reflectron_voltage_compensation/run_compensation.py` 保留原场、补偿、理想反射器三臂；
+`msplatform/workflows/oa_candidate/run_compensation.py` 保留原场、补偿、理想反射器三臂；
 Python负责实际源/场输入、单调固定端点拟合、整批恢复投影和分析，私有PowerShell适配调用公共
 SIMION批次、资源及run发布owner。父case只读，所有可写PA/IOB/Program均属于新run。
 The canonical SIMION response-basis fit and Lua profile are provided by

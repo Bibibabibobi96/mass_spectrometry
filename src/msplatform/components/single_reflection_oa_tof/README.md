@@ -56,7 +56,7 @@
 | oaTOF径向紧凑化 | [`radial_compaction.py`](../../workflows/oa_candidate/radial_compaction.py) | 默认[`campaign合同`](config/radial_compaction_campaign.json)，新建可显式`--campaign`；续跑用新run ID与`--resume-from`，范围见[项目状态](docs/PROJECT.md)；SIMION-only Candidate，不自动推广Formal |
 | 反射器电压场补偿 | [`run_compensation.py`](../../workflows/oa_candidate/run_compensation.py) | 固定源、固定端点与单调环电压；新run私有runtime，公共批次比较原场/补偿场/理想场，显式父manifest仅复用完整单元 |
 | CAD导出 | [`cad/ms_export_oatof_to_solidworks.m`](../../exporters/solidworks/resources/ms_export_oatof_to_solidworks.m) | 读取指定模型与合同 |
-| 项目软件验证 | [`common/verify.ps1`](../../../../tools/repository/verify.ps1) `-Scope Owner -Owner single_reflection_oa_tof_mass_analyzer` | 一次前置检查及完整测试的计权分片；不代表物理资格 |
+| 项目软件验证 | [`tools/repository/verify.ps1`](../../../../tools/repository/verify.ps1) `-Scope Owner -Owner single_reflection_oa_tof_mass_analyzer` | 一次前置检查及完整测试的计权分片；不代表物理资格 |
 | 既有资格适配 | [`verify_project.ps1`](../../workflows/resources/oatof_verify.ps1) `-Level Candidate`／`Formal` | 保留原明确请求的原生／发布动作，不是软件验证新等级 |
 
 软件验证通过公共计时runner即时报告失败和逐测试耗时。完整Owner／Repository及源码影响范围保持原freshness与理论前置，并沿公共计权机制执行完整tests范围；candidate设计／工作流／旧证据复用按职责拆为独立模块，公共目录计权为4片，预算由现host准入决定实际并发。单独选定现存测试模块的Changed请求按真实影响执行。详见[项目状态](docs/PROJECT.md#完整软件验证分片)。
@@ -75,7 +75,7 @@ SIMION运行边界见[`docs/SIMION.md`](docs/SIMION.md)，Formal与开放任务�
 Candidate campaign从仓库根通过以下模块查看参数，再提供表中要求的显式输入：
 
 ```powershell
-.\.venv\Scripts\python.exe -m msplatform.workflows.oa_tof_design.run_campaign --help
+python -m msplatform.workflows.oa_tof_design.run_campaign --help
 ```
 
 RF多极杆离子光学→单次反射oa-TOF的新装配与整机运行从
