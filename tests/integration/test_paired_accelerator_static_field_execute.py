@@ -1,0 +1,1222 @@
+"""Actual frozen preparation and inert vendor transport; no field solver."""
+from __future__ import annotations
+
+from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
+
+import copy
+import os
+import math
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+
+from msplatform.execution.resources import resource_path
+from msplatform.execution.manifest_publication import build_run_manifest
+from msplatform.execution.retention import file_record
+from msplatform.execution.capacity_ledger import initialize_capacity_ledger, record_capacity_object
+from msplatform.execution.capacity_protection import create_capacity_protection_lease
+from msplatform.execution.run_capacity_lifecycle import seal_checkpoint
+from tests.simion import test_pa_family_cache as public_cache_tests
+from msplatform.workflows.paired_accelerator_static_field import runtime
+from msplatform.backends.comsol import paired_static_model as paired_accelerator_model
+from tests.projects.single_reflection_oa_tof_mass_analyzer.analysis import test_paired_accelerator_static_field_prepare as preparation_tests
+
+ROOT = Path(__file__).resolve().parents[2]
+WORKFLOW = ROOT/'src/msplatform/workflows/resources'
+
+
+class PairedStaticExecutionTests(unittest.TestCase):
+    def test_completed_simion_samples_reuse_bound_identity_without_pa_or_model_read(self):
+        for exporter_relative in (
+                Path('projects/single_reflection_oa_tof_mass_analyzer/simion/export_paired_accelerator_field.lua'),
+                Path('src/msplatform/backends/simion/resources/export_paired_accelerator_field.lua')):
+            with self.subTest(exporter=exporter_relative.as_posix()), tempfile.TemporaryDirectory() as directory:
+                root=Path(directory);run,producer,model,samples,_,_=self.completed_comsol_source(root)
+                runtime.comsol_reuse(run,producer/'run_manifest.json')
+                cache_identity=dict(geometry='TEST_ONLY frozen BVP',mesh=[1,1,1])
+                identity=producer/'inputs/pa_cache_identity.json';runtime.write(identity,cache_identity)
+                exporter=producer/'inputs/runtime_snapshot'/exporter_relative
+                exporter.parent.mkdir(parents=True)
+                shutil.copyfile(ROOT/'src/msplatform/backends/simion/resources/export_paired_accelerator_field.lua',exporter)
+                simion=producer/'results/simion_field_samples.csv';simion.parent.mkdir(exist_ok=True);shutil.copyfile(samples,simion)
+                facts=producer/'logs/simion_field_native_facts.txt';facts.parent.mkdir(exist_ok=True)
+                facts.write_text('backend=SIMION\napi=pa:field_vc\nnative_field_unit=V/gu\nexport_field_unit=V/m\nfield_sign=negative_potential_gradient\npoint_count=115\n')
+                config=runtime.read(producer/'run_config.json');config['inputs'].update(simion_identity=str(identity),simion_exporter=str(exporter));runtime.write(producer/'run_config.json',config)
+                outputs=[Path(row['path']) for row in runtime.read(producer/'run_manifest.json')['outputs']]+[simion,facts]
+                manifest=build_run_manifest(producer/'run_config.json','success',output_paths=outputs, retention_api=_manifest_retention_api);runtime.write(producer/'run_manifest.json',manifest);runtime.write(run/'inputs/comsol_source_manifest.json',manifest)
+                model.unlink()
+                with patch.object(runtime,'verify_record',wraps=runtime.verify_record) as verified:
+                    selected=runtime.completed_simion_exports(run,producer/'run_manifest.json',dict(identity=cache_identity),ROOT)
+                self.assertEqual(Path(selected['samples']['path']),simion)
+                self.assertFalse(any(Path(call.args[1]['path'])==model or Path(call.args[1]['path']).suffix in {'.pa','.pa0','.mph'} for call in verified.call_args_list))
+                self.assertIsNone(runtime.completed_simion_exports(run,producer/'run_manifest.json',dict(identity=dict(cache_identity,mesh=[2,1,1])),ROOT))
+                other=next(path for path in (
+                    Path('projects/single_reflection_oa_tof_mass_analyzer/simion/export_paired_accelerator_field.lua'),
+                    Path('src/msplatform/backends/simion/resources/export_paired_accelerator_field.lua')) if path!=exporter_relative)
+                duplicate=producer/'inputs/runtime_snapshot'/other;duplicate.parent.mkdir(parents=True);shutil.copyfile(exporter,duplicate)
+                config=runtime.read(producer/'run_config.json');config['inputs']['duplicate_simion_exporter']=str(duplicate);runtime.write(producer/'run_config.json',config)
+                manifest=build_run_manifest(producer/'run_config.json','success',output_paths=outputs, retention_api=_manifest_retention_api);runtime.write(producer/'run_manifest.json',manifest);runtime.write(run/'inputs/comsol_source_manifest.json',manifest)
+                with self.assertRaisesRegex(ValueError,'multiple native exporter'):
+                    runtime.completed_simion_exports(run,producer/'run_manifest.json',dict(identity=cache_identity),ROOT)
+                del config['inputs']['duplicate_simion_exporter'];runtime.write(producer/'run_config.json',config)
+                manifest=build_run_manifest(producer/'run_config.json','success',output_paths=outputs, retention_api=_manifest_retention_api);runtime.write(producer/'run_manifest.json',manifest);runtime.write(run/'inputs/comsol_source_manifest.json',manifest)
+                facts.write_text(facts.read_text()+'corruption\n')
+                with self.assertRaises(AssertionError): runtime.completed_simion_exports(run,producer/'run_manifest.json',dict(identity=cache_identity),ROOT)
+
+
+    def capacity_isolated_owner(self, root):
+        """Startup capacity admission is inert; lease and lifecycle operations remain real."""
+        source=(WORKFLOW/'paired_accelerator_static_field.ps1').read_text(encoding='utf-8')
+        package_assignment='$packageRoot=Split-Path -Parent (Split-Path -Parent $PSScriptRoot)'
+        self.assertEqual(source.count(package_assignment),1)
+        source=source.replace(package_assignment,f"$packageRoot='{(ROOT/'src/msplatform').as_posix()}'")
+        # Install the isolated capacity boundary after all public lifecycle imports.
+        boundary="$ArtifactRoot=[string]$pathContext.artifact_root"
+        self.assertEqual(source.count(boundary),1)
+        owner=root/'inert_capacity_owner.ps1'
+        owner.write_text(source.replace(boundary,boundary+"\nfunction Invoke-ArtifactCapacityGate { Write-Host 'TEST_CAPACITY_ADMISSION=ISOLATED'; [pscustomobject]@{satisfied_after_apply=$true} }"),
+            encoding='utf-8',newline='\n')
+        return owner
+
+    def test_sample_coordinates_round_trip_exactly_and_reject_a_true_ulp_change(self):
+        pairs=[('89.94434260835371','89.944342608353708'),
+               ('201.4266955495302','201.42669554953019')]
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);expected=root/'prepared.csv';actual=root/'native.csv'
+            expected.write_text('point_id,x_mm,y_mm,z_mm\n'+
+                ''.join(f'{i},0,0,{prepared}\n' for i,(prepared,_) in enumerate(pairs,1)),encoding='utf-8')
+            header='point_id,x_mm,y_mm,z_mm,Ex_V_per_m,Ey_V_per_m,Ez_V_per_m\n'
+            rows=[f'{i},0,0,{native},0,0,0\n' for i,(_,native) in enumerate(pairs,1)]
+            actual.write_text(header+''.join(rows),encoding='utf-8')
+            plan={'sample_points':{'path':str(expected)}}
+            for prepared,native in pairs:self.assertEqual(float(prepared).hex(),float(native).hex())
+            runtime.validate_samples(plan,actual)
+            for index,(_,native) in enumerate(pairs):
+                with self.subTest(coordinate=native):
+                    changed=rows.copy()
+                    changed[index]=f'{index+1},0,0,{math.nextafter(float(native),math.inf):.17g},0,0,0\n'
+                    actual.write_text(header+''.join(changed),encoding='utf-8')
+                    with self.assertRaisesRegex(ValueError,'coverage differs'):
+                        runtime.validate_samples(plan,actual)
+
+    def test_python_owner_transport_retains_json_and_nonzero_stderr_under_redirection(self):
+        """Run the extracted owner function and real public context with Python."""
+        script=r"""param($Source,$RepoRoot,$Python,$Directory)
+$ErrorActionPreference='Stop'
+. (Join-Path $RepoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
+[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
+$errors=$null;$tokens=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$tokens,[ref]$errors)
+if($errors.Count){throw ($errors|Out-String)}
+$function=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-PairedPython'},$true)
+. ([scriptblock]::Create($function.Extent.Text))
+$assignment=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$header'},$true)
+. ([scriptblock]::Create($assignment.Extent.Text))
+$package=@{log_dir=$Directory;run_dir=$Directory};$frozen=@{execution_root=$RepoRoot}
+$outer=Join-Path $Directory outer.log
+& {
+ $paths=@(1..240|ForEach-Object{"C:\实验 space\受保护路径\member_$_.pa"})
+ $payload=@{lease_id='真实容量租约';owner='paired-static:冻结 run';protected_paths=$paths}|ConvertTo-Json -Compress
+ if($payload.Length-lt5000){throw 'large argument fixture unexpectedly short'}
+ $stage='round_trip'
+ $result=Invoke-PairedPython -Code 'print(json.dumps(dict(capacity=json.loads(sys.argv[1]),cwd=str(Path.cwd()))))' -Arguments @($payload)
+ if($result.capacity.owner-ne'paired-static:冻结 run'-or$result.capacity.protected_paths.Count-ne240){throw 'capacity JSON argument changed'}
+ if($result.cwd-ne$RepoRoot){throw 'public tool root context was bypassed'}
+ $saved=Get-Content (Join-Path $Directory round_trip.python.stdout.json) -Raw|ConvertFrom-Json -AsHashtable
+ if($saved.capacity.protected_paths[239]-ne$paths[239]){throw 'stdout JSON was truncated or Unicode changed'}
+ $capacity=@{lease_id='真实容量租约';owner='paired-static:冻结 run';protected_paths=$paths;startup_gate=@{ledger_report=('x'*120000)}}
+ if(($capacity|ConvertTo-Json -Compress -Depth 10).Length-le100000){throw 'full capacity fixture must exceed Windows argv budget'}
+ $cachePath=Join-Path $Directory pa_cache_plan.json
+ foreach($name in @('$cacheLease','$cacheArguments')){
+  $assignment=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq$name},$true)
+  if($null-eq$assignment){throw "owner assignment missing: $name"}
+  . ([scriptblock]::Create($assignment.Extent.Text))
+ }
+ if($cacheArguments.Count-ne3-or$cacheArguments[2].Length-ge512){throw 'owner passed the capacity report instead of the small lease'}
+ $leaseArgument=$cacheArguments[2]|ConvertFrom-Json -AsHashtable
+ if(($leaseArgument.Keys|Sort-Object)-join','-ne'lease_id,owner'){throw 'lease argv must contain exactly the two required fields'}
+ $stage='lease_projection'
+ $result=Invoke-PairedPython -Code 'print(json.dumps(dict(capacity=json.loads(sys.argv[3]),run=sys.argv[1],plan=sys.argv[2])))' -Arguments $cacheArguments
+ if($result.capacity.lease_id-ne$capacity.lease_id-or$result.capacity.owner-ne$capacity.owner){throw 'projected lease changed in Python'}
+ if($result.run-ne$Directory-or$result.plan-ne$cachePath){throw 'actual owner argument order changed'}
+ $stage='nonzero';$failed=$false
+ try{
+  $null=Invoke-PairedPython -Code 'print("partial stdout retained");sys.stderr.buffer.write("真实 Python 失败\n".encode("utf-8"));sys.exit(7)'
+ }catch{
+  if($_.Exception.Message-notlike'*真实 Python 失败*'){throw}
+  $failed=$true
+ }
+ if(-not$failed){throw 'nonzero Python exit was swallowed'}
+ if((Get-Content (Join-Path $Directory nonzero.python.stdout.json) -Raw)-notlike'*partial stdout retained*'){throw 'failed stdout lost'}
+ if((Get-Content (Join-Path $Directory nonzero.python.stderr.log) -Raw)-notlike'*真实 Python 失败*'){throw 'failed stderr lost'}
+ 'PYTHON_TRANSPORT=PASS'
+} *> $outer
+Get-Content -LiteralPath $outer
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);wrapper=root/'python_transport.ps1'
+            wrapper.write_text(script,encoding='utf-8',newline='\n')
+            result=subprocess.run(['pwsh','-NoProfile','-NonInteractive','-File',str(wrapper),
+                str(WORKFLOW/'paired_accelerator_static_field.ps1'),str(ROOT),sys.executable,str(root)],
+                cwd=ROOT,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=60)
+            outer=root/'outer.log'
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr+
+                (outer.read_text(encoding='utf-8') if outer.exists() else ''))
+            self.assertIn('PYTHON_TRANSPORT=PASS',result.stdout)
+
+    def test_native_stage_transitions_bind_actual_public_parameters(self):
+        """Exercise both owner calls with the public signature, without admission."""
+        script=r"""param($Source,$Public)
+$ErrorActionPreference='Stop'
+$errors=$null;$tokens=$null
+$api=[Management.Automation.Language.Parser]::ParseFile($Public,[ref]$tokens,[ref]$errors)
+if($errors.Count){throw ($errors|Out-String)}
+$function=$api.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Update-HostResourceStage'},$true)
+# Keep actual mandatory/type metadata; replace only resource transactions.
+$body=$function.Body.ParamBlock.Extent.Text+"`n"+@'
+if($RetainedMemoryBytes-ne0){throw 'completed native child must retain zero memory'}
+$script:stages.Add($Stage)
+return $Lease
+'@
+Set-Item Function:Update-HostResourceStage ([scriptblock]::Create($body))
+$owner=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$tokens,[ref]$errors)
+if($errors.Count){throw ($errors|Out-String)}
+$calls=@($owner.FindAll({param($n)$n-is[Management.Automation.Language.CommandAst]-and$n.GetCommandName()-eq'Update-HostResourceStage'},$true))
+if($calls.Count-ne2){throw 'expected both native stage transitions'}
+$script:stages=[Collections.Generic.List[string]]::new()
+$lease=@{role='SIMION'};$budget=@{host_budgets=@{simion_refine=@{};simion_prepare=@{}}}
+foreach($call in $calls){$null=& ([scriptblock]::Create($call.Extent.Text))}
+if(($script:stages-join',')-ne'pa_refine,prepare'){throw 'wrong stage sequence'}
+'STAGE_PARAMETERS=PASS'
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'stage_parameters.ps1'
+            path.write_text(script,encoding='utf-8',newline='\n')
+            result=subprocess.run(['pwsh','-NoProfile','-NonInteractive','-File',str(path),
+                str(WORKFLOW/'paired_accelerator_static_field.ps1'),str(resource_path('host_execution_lease.ps1'))],
+                cwd=ROOT,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            self.assertIn('STAGE_PARAMETERS=PASS',result.stdout)
+
+    def prepared(self, root):
+        author=root/'author';author.mkdir()
+        fixture=preparation_tests.PairedAcceleratorStaticFieldPrepareTests()
+        request=fixture._request(author)
+        source=fixture._write_request(author,request)
+        run=root/'run';(run/'inputs/sources').mkdir(parents=True)
+        for name,record in request['source_records'].items():
+            shutil.copyfile(record['path'],run/f'inputs/sources/{name}.json')
+        shutil.copyfile(source,run/'inputs/request.json')
+        runtime.write(run/'run_config.json',{'parameters':{'request_source_path':str(source)}})
+        for name in ('results','logs','comsol'):(run/name).mkdir()
+        return run,author
+
+    def completed_comsol_source(self, root):
+        """Publish 115 inert sample rows; model bytes never represent a solve."""
+        root=root.resolve()
+        run,_=self.prepared(root);plan=runtime.prepare_run(run)
+        producer=root/'producer';(producer/'comsol').mkdir(parents=True)
+        points=producer/'inputs/bvp/paired_accelerator_field_points.csv'
+        points.parent.mkdir(parents=True)
+        frame=__import__('pandas').read_csv(plan['sample_points']['path']).iloc[[0]*115].copy()
+        frame['point_id']=range(1,116);frame.to_csv(points,index=False)
+        previous=copy.deepcopy(plan);previous['sample_points']=dict(file_record(points),count=115)
+        plan_path=producer/'inputs/bvp/paired_accelerator_static_field_plan.json'
+        runtime.write(plan_path,previous)
+        runtime.write(run/'inputs/bvp/paired_accelerator_static_field_plan.json',previous)
+        backend=Path('src/msplatform/backends/comsol/matlab/build_and_export_paired_accelerator_field.m')
+        frozen=producer/'inputs/runtime_snapshot'/backend;frozen.parent.mkdir(parents=True)
+        shutil.copyfile(ROOT/backend,frozen)
+        model=producer/'comsol/paired_accelerator_static.mph';model.write_bytes(b'inert model identity only')
+        solution=producer/'comsol/comsol_field_solution.json'
+        runtime.write(solution,dict(schema_version=1,role='oatof_paired_accelerator_static_field_solution',
+            status='solved_saved',solution_present=True,solution_tag='sol1',
+            plan_path=str(plan_path),model_path=str(model)))
+        samples=producer/'comsol/comsol_field_samples.csv'
+        for axis in 'xyz':frame[f'E{axis}_V_per_m']=0.
+        frame.to_csv(samples,index=False)
+        facts=producer/'comsol/comsol_field_native_facts.json'
+        runtime.write(facts,dict(backend='COMSOL',coordinate_unit='mm',field_unit=['V/m']*3,
+            point_count=115,plan_path=str(plan_path),model_path=str(model),sample_path=str(samples)))
+        config=producer/'run_config.json'
+        runtime.write(config,dict(schema_version=1,run_id='20261026_010000__test__python__inert-static-exports',
+            project='instrument_assembly',mode='paired_accelerator_static_field',
+            inputs={'plan':str(plan_path),'points':str(points),'backend':str(frozen)}))
+
+        def publish(outputs=None):
+            manifest=build_run_manifest(config,'success',output_paths=outputs or [solution,model,samples,facts], retention_api=_manifest_retention_api)
+            runtime.write(producer/'run_manifest.json',manifest)
+            runtime.write(run/'inputs/comsol_source_manifest.json',manifest)
+        publish()
+        return run,producer,model,samples,facts,publish
+
+    def test_completed_static_exports_reuse_115_points_without_model_read_or_matlab(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);run,producer,model,samples,facts,_=self.completed_comsol_source(root)
+            before=(samples.read_bytes(),facts.read_bytes())
+            with patch.object(runtime,'verify_record',wraps=runtime.verify_record) as verified:
+                source=runtime.comsol_reuse(run,producer/'run_manifest.json')
+            self.assertFalse(any(Path(call.args[1]['path'])==model for call in verified.call_args_list))
+            self.assertEqual(Path(source['exports']['samples']['path']),samples)
+            self.assertEqual(Path(source['exports']['native_facts']['path']),facts)
+            model.unlink()  # Completed exports do not consume this inert payload.
+            self.assertEqual(runtime.comsol_reuse(run,producer/'run_manifest.json')['exports'],source['exports'])
+            tasks=runtime.materialize_tasks(run,ROOT,root/'not-opened.pa',
+                saved_model=model,comsol_required=False)
+            self.assertIsNone(tasks['matlab'])
+            self.assertTrue(Path(tasks['lua']).is_file())
+            self.assertFalse((run/'inputs/run_comsol_field.m').exists())
+            self.assertEqual((samples.read_bytes(),facts.read_bytes()),before)
+
+            # A published export consumer carries the same original facts and
+            # explicit bindings; it must not invent a new model or walk history.
+            inputs={'plan':str(run/'inputs/bvp/paired_accelerator_static_field_plan.json'),
+                'source':str(run/'inputs/comsol_source.json'),
+                'source_manifest':str(run/'inputs/comsol_source_manifest.json')}
+            inputs.update({'completed_'+name:record['path'] for name,record in source['exports'].items()})
+            runtime.write(run/'run_config.json',dict(schema_version=1,project='instrument_assembly',
+                run_id='20261026_010001__test__python__inert-export-consumer',
+                mode='paired_accelerator_static_field',inputs=inputs))
+            manifest=build_run_manifest(run/'run_config.json','success', retention_api=_manifest_retention_api)
+            runtime.write(run/'run_manifest.json',manifest)
+            next_run=root/'next';(next_run/'inputs/bvp').mkdir(parents=True)
+            shutil.copyfile(run/'inputs/bvp/paired_accelerator_static_field_plan.json',
+                next_run/'inputs/bvp/paired_accelerator_static_field_plan.json')
+            runtime.write(next_run/'inputs/comsol_source_manifest.json',manifest)
+            with patch.object(runtime,'verify_record',wraps=runtime.verify_record) as verified:
+                reused=runtime.comsol_reuse(next_run,run/'run_manifest.json')
+            self.assertEqual(reused['exports'],source['exports'])
+            self.assertFalse(any(Path(call.args[1]['path'])==model for call in verified.call_args_list))
+
+    def test_new_points_or_incomplete_exports_keep_saved_model_execution(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);run,producer,model,samples,facts,publish=self.completed_comsol_source(root)
+            path=run/'inputs/bvp/paired_accelerator_static_field_plan.json';original=runtime.read(path)
+            changed=copy.deepcopy(original);points=run/'inputs/new_points.csv'
+            frame=__import__('pandas').read_csv(original['sample_points']['path'])
+            frame.loc[0,'x_mm']+=.01;frame.to_csv(points,index=False)
+            changed['sample_points']=dict(file_record(points),count=115);runtime.write(path,changed)
+            solution=producer/'comsol/comsol_field_solution.json'
+            variants=[('new_points',None),('no_facts',[solution,model,samples]),
+                      ('no_samples',[solution,model,facts]),('no_exports',[solution,model])]
+            for name,outputs in variants:
+                with self.subTest(reason=name):
+                    runtime.write(path,changed if name=='new_points' else original);publish(outputs)
+                    with patch.object(runtime,'verify_record',wraps=runtime.verify_record) as verified:
+                        source=runtime.comsol_reuse(run,producer/'run_manifest.json')
+                    self.assertIsNone(source['exports'])
+                    self.assertEqual(sum(Path(c.args[1]['path'])==model for c in verified.call_args_list),1)
+                    task=runtime.materialize_tasks(run,ROOT,root/'not-opened.pa',saved_model=model)
+                    self.assertIn(model.as_posix(),Path(task['matlab']).read_text())
+
+    def test_declared_export_corruption_and_wrong_native_identity_fail_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);run,producer,_,samples,facts,publish=self.completed_comsol_source(root)
+            for path in (samples,facts):
+                original=path.read_bytes();path.write_bytes(original+b'changed')
+                try:
+                    with self.subTest(corrupt=path.name),self.assertRaises((ValueError,AssertionError)):
+                        runtime.comsol_reuse(run,producer/'run_manifest.json')
+                finally:path.write_bytes(original)
+            original=runtime.read(facts)
+            for key,value in (('model_path',str(root/'wrong.mph')),('sample_path',str(root/'other.csv')),
+                              ('point_count',114),('backend','SIMION'),('field_unit',['V/mm']*3),
+                              ('coordinate_unit','m'),('plan_path',str(root/'unbound.json'))):
+                with self.subTest(identity=key):
+                    runtime.write(facts,dict(original,**{key:value}));publish()
+                    with self.assertRaises(ValueError):runtime.comsol_reuse(run,producer/'run_manifest.json')
+            runtime.write(facts,original);publish()
+
+    def test_actual_owner_completed_exports_skip_comsol_and_report_native_scope(self):
+        """Execute the actual branch/task/summary AST with an inert launcher."""
+        script=r"""param($Source,$Directory,$Public,$Python)
+$ErrorActionPreference='Stop'
+$errors=$null;$tokens=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$tokens,[ref]$errors)
+if($errors.Count){throw ($errors|Out-String)}
+$branch=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and
+ $n.Clauses[0].Item1.Extent.Text-eq'$completedComsolExports'-and$n.Extent.Text-like'*comsol_bootstrap.txt*'},$true)
+$summaryNode=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and
+ $n.Left.Extent.Text-eq'$summary'-and$n.Extent.Text-like"*role='paired_accelerator_static_field_summary'*"},$true)
+if($null-eq$branch-or$null-eq$summaryNode){throw 'Actual owner boundaries missing'}
+$RepoRoot=$Directory;$packageRoot=Join-Path $RepoRoot 'src/msplatform';$RunId='inert';$stage='inert';$DryRun=$false
+$package=@{run_dir=$Directory;artifact_run_dir=$Directory;input_dir=$Directory;log_dir=$Directory;summary='unused'}
+$null=New-Item -ItemType Directory -Path (Join-Path $Directory logs) -Force
+$nativeOperations=[Collections.Generic.List[object]]::new();$nativeOperations.Add(@{TEST_ONLY='inert SIMION boundary'})
+$failure=$null;$hostReleaseUnknown=$false;$writerUnknown=$false;$ResultPath='TEST_ONLY';$phaseTimings=@{};$runClock=[Diagnostics.Stopwatch]::StartNew();$completedSimionExports=$null
+$frozen=@{execution_root=$Directory};$pa='unused';$budget=@{host_budgets=@{comsol=@{}};limits=@{}}
+$plan=@{sample_points=@{count=115}};$reusedComsol=$true;$comsolSourceStage='solved_saved'
+$launcher=Join-Path $Directory 'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1'
+$null=New-Item -ItemType Directory -Path (Split-Path $launcher) -Force
+Copy-Item (Join-Path $Public 'src/msplatform/backends/comsol/launcher/resolve_comsol_64.ps1') (Join-Path (Split-Path $launcher) 'resolve_comsol_64.ps1')
+$env:COMSOL_64_ROOT=Join-Path $Directory 'TEST_ONLY_COMSOL';$env:MATLAB_R2025B_ROOT=Join-Path $Directory 'TEST_ONLY_MATLAB'
+$null=New-Item -ItemType Directory -Path (Join-Path $env:COMSOL_64_ROOT 'bin/win64') -Force
+[IO.File]::WriteAllText((Join-Path $env:COMSOL_64_ROOT 'bin/win64/comsolmphserver.exe'),'TEST_ONLY_NEVER_EXECUTED')
+$script:HostResourceExecutionContext=@{workspace=$Directory;python_executable=$Python;host_state_path=(Join-Path $Directory host.sqlite3);policy_path=(Join-Path $Public 'src/msplatform/execution/resources/host_resource_policy.json')}
+@'
+param($TaskScript,$ReportPath,$ResourceBudgets,$RunId,$CompletionPath,$Limits,$RunDir,$UsagePath,$HostContextJson,$WorkingDirectory,$ComsolLauncherPath,$MatlabRootPath)
+$context=ConvertFrom-Json -InputObject $HostContextJson -AsHashtable
+if(@(Compare-Object @('workspace','python_executable','host_state_path','policy_path') @($context.Keys)).Count-or@($context.Values|Where-Object{[string]::IsNullOrWhiteSpace([string]$_)}).Count){throw 'Host carrier requires four explicit nonempty fields'}
+if(-not(Test-Path -LiteralPath $context.python_executable -PathType Leaf)-or$context.workspace-ne$WorkingDirectory){throw 'Host carrier lacks its explicit Python or workspace'}
+[IO.File]::WriteAllText($CompletionPath,'{"operations":[],"host_release":{"inherited":false,"token":"TEST_ONLY_NO_NATIVE","result":{"status":"released","token":"TEST_ONLY_NO_NATIVE"},"error":null}}')
+$global:nativeCalls++;$global:LASTEXITCODE=0
+'@ | Set-Content -LiteralPath $launcher
+$global:nativeCalls=0;$script:meshGuardCalls=0
+function Assert-PairedFrozenMatlabSources {$script:meshGuardCalls++}
+function Invoke-PairedPython {param($Code,$Arguments) $script:taskInvocation=@($Code,$Arguments);@{lua='inert.lua';matlab='inert.m'}}
+function Set-PairedStage {param($Name);$script:stage=$Name}
+foreach($completed in @($true,$false)){
+ $completedComsolExports=if($completed){@{samples=@{path='borrowed-original.csv'}}}else{$null}
+ $savedModel=if($completed){'absent-original.mph'}else{''}
+ foreach($name in @('$comsolNativeExecuted','$taskArguments','$taskCode','$tasks')){
+  $assignment=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq$name},$true)
+  . ([scriptblock]::Create($assignment.Extent.Text))
+ }
+ if($taskArguments[4]-ne$(if($completed){'false'}else{'true'})){throw 'MATLAB materialization decision differs'}
+ if(-not$taskCode.Contains('comsol_required=sys.argv[5]')){throw 'Factory does not receive the actual decision'}
+ $assignment=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$comsolSamples'},$true)
+ . ([scriptblock]::Create($assignment.Extent.Text))
+ . ([scriptblock]::Create($branch.Extent.Text))
+ . ([scriptblock]::Create($summaryNode.Extent.Text))
+ $publishedSummary=$summary
+ if($completed){
+  if($global:nativeCalls-ne0-or$script:meshGuardCalls-ne0-or$comsolSamples-ne'borrowed-original.csv'){throw 'Completed exports invoked native or changed sample ownership'}
+  if(-not$publishedSummary.comsol_reused_exports-or$publishedSummary.comsol_native_executed){throw 'Reused COMSOL summary scope differs'}
+ }else{
+  if($global:nativeCalls-ne1-or$script:meshGuardCalls-ne2-or-not$publishedSummary.comsol_native_executed){throw 'Cold/native branch silently skipped'}
+ }
+ if(-not$publishedSummary.native_executed){throw 'SIMION diagnostic execution must not be relabelled as wholly nonnative'}
+}
+'OWNER_EXPORT_REUSE=PASS'
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);wrapper=root/'owner_export_reuse.ps1'
+            wrapper.write_text(script,encoding='utf-8',newline='\n')
+            result=subprocess.run(['pwsh','-NoProfile','-File',str(wrapper),
+                str(WORKFLOW/'paired_accelerator_static_field.ps1'),str(root),str(ROOT),sys.executable],cwd=ROOT,capture_output=True,
+                text=True,encoding='utf-8',errors='replace',timeout=30)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            self.assertIn('OWNER_EXPORT_REUSE=PASS',result.stdout)
+
+    def test_snapshots_preserve_canonical_membership_without_live_sources(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run,author=self.prepared(Path(directory))
+            shutil.rmtree(author)
+            plan=runtime.prepare_run(run)
+            self.assertEqual(plan['composition_plan']['scope']['instance_ids'],['oatof'])
+            self.assertTrue(Path(plan['native_geometry_compilation']['gem_record']['path']).is_file())
+            source=run/'inputs/sources/oatof_resolved.json'
+            source.write_text('{}')
+            with self.assertRaises((ValueError,AssertionError)):
+                runtime.prepare_run(run)
+
+    def test_actual_owner_post_exit_guard_preserves_release_and_launcher_failure(self):
+        script = r'''param($Source,$Directory,$Public,$Python)
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. (Join-Path $Public 'src/msplatform/execution/resources/run_artifact_support.ps1')
+$tokens=$null;$errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$tokens,[ref]$errors)
+if($errors.Count){throw 'Actual owner parse failed'}
+$branch=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Clauses[0].Item1.Extent.Text-eq'$completedComsolExports'-and$n.Extent.Text-like'*comsol_bootstrap.txt*'},$true)
+$guard=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Assert-PairedFrozenMatlabSources'},$true)
+if($null-eq$branch-or$null-eq$guard){throw 'Actual COMSOL branch or guard is missing'}
+. ([scriptblock]::Create($guard.Extent.Text))
+$workflowTokens=$null;$workflowErrors=$null
+$workflowAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Public 'src/msplatform/workflows/resources/run_artifact_workflow.ps1'),[ref]$workflowTokens,[ref]$workflowErrors)
+$release=$workflowAst.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Add-RunArtifactResourceRelease'},$true)
+if($workflowErrors.Count-or$null-eq$release){throw 'Actual release recorder unavailable'}
+. ([scriptblock]::Create($release.Extent.Text))
+$relative='src/msplatform/backends/comsol/matlab/add_comsol_size_feature.m'
+$sourcePath=Join-Path $Public $relative
+$sourceBytes=[IO.File]::ReadAllBytes($sourcePath)
+$selected=Join-Path $Directory $relative
+$null=New-Item -ItemType Directory -Force -Path (Split-Path -Parent $selected)
+[IO.File]::WriteAllBytes($selected,$sourceBytes)
+$identity=@{source_repo_path=$relative;frozen_path=$selected;bytes=$sourceBytes.Length;sha256=(Get-RunFileSha256 -Path $selected)}
+$frozen=@{execution_root=$Directory;identities=@($identity)}
+$RepoRoot=$Directory;$packageRoot=Join-Path $RepoRoot 'src/msplatform';$RunId='inert';$completedComsolExports=$null
+$package=@{run_dir=$Directory;artifact_run_dir=$Directory;log_dir=(Join-Path $Directory 'logs');result_dir=(Join-Path $Directory 'results')}
+$null=New-Item -ItemType Directory -Force -Path $package.log_dir,$package.result_dir
+$budget=@{host_budgets=@{comsol=@{}};limits=@{}};$tasks=@{matlab='inert task'}
+$launcher=Join-Path $Directory 'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1'
+$null=New-Item -ItemType Directory -Force -Path (Split-Path -Parent $launcher)
+Copy-Item (Join-Path $Public 'src/msplatform/backends/comsol/launcher/resolve_comsol_64.ps1') (Join-Path (Split-Path -Parent $launcher) 'resolve_comsol_64.ps1')
+$env:COMSOL_64_ROOT=Join-Path $Directory 'TEST_ONLY_COMSOL';$env:MATLAB_R2025B_ROOT=Join-Path $Directory 'TEST_ONLY_MATLAB'
+$null=New-Item -ItemType Directory -Force -Path (Join-Path $env:COMSOL_64_ROOT 'bin/win64')
+[IO.File]::WriteAllText((Join-Path $env:COMSOL_64_ROOT 'bin/win64/comsolmphserver.exe'),'TEST_ONLY_NEVER_EXECUTED')
+$script:HostResourceExecutionContext=@{workspace=$Directory;python_executable=$Python;host_state_path=(Join-Path $Directory 'host.sqlite3');policy_path=(Join-Path $Public 'src/msplatform/execution/resources/host_resource_policy.json')}
+$launcherLines=@(
+ 'param($TaskScript,$ReportPath,$ResourceBudgets,$RunId,$CompletionPath,$Limits,$RunDir,$UsagePath,$HostContextJson,$WorkingDirectory,$ComsolLauncherPath,$MatlabRootPath)',
+ '$bytes=[IO.File]::ReadAllBytes($env:PAIRED_TEST_SELECTED);$bytes[0]=$bytes[0] -bxor 1;[IO.File]::WriteAllBytes($env:PAIRED_TEST_SELECTED,$bytes)',
+ '$exitCode=if($env:PAIRED_TEST_MODE-eq''failure''){7}else{0}',
+ '$receipt=@{operations=@(@{operation_id=''comsol_field'';observation=@{exit_confirmed=$true;returncode=$exitCode;process_id=12345;process_started_at_utc_ticks=123456}});host_release=@{inherited=$false;token=''TEST_ONLY'';result=@{status=''released'';token=''TEST_ONLY''};error=$null}}',
+ '[IO.File]::WriteAllText($CompletionPath,($receipt|ConvertTo-Json -Depth 10 -Compress))',
+ '$global:LASTEXITCODE=$exitCode',
+ 'if($exitCode-ne0){throw ''INERT_LAUNCHER_FAILURE''}'
+)
+[IO.File]::WriteAllText($launcher,($launcherLines-join"`n"))
+function Set-PairedStage {param($Name);$script:stage=$Name}
+function Invoke-PairedPython {throw 'Scientific validation must not run after a failed post-exit guard'}
+$env:PAIRED_TEST_SELECTED=$selected
+foreach($mode in @('success','failure')){
+ [IO.File]::WriteAllBytes($selected,$sourceBytes)
+ $env:PAIRED_TEST_MODE=$mode;$writersStopped=$true;$script:writerUnknown=$false;$script:hostReleaseUnknown=$false
+ $nativeOperations=[Collections.Generic.List[object]]::new();$resourceReleases=[Collections.Generic.List[object]]::new()
+ $global:LASTEXITCODE=0;$failure=$null
+ try{. ([scriptblock]::Create($branch.Extent.Text));throw 'Expected post-exit failure was not raised'}catch{$failure=$_}
+ if($mode-eq'success'){
+  if(-not$failure.Exception.Message.Contains('Paired frozen MATLAB dependency changed:')){throw $failure}
+ }elseif(-not$failure.Exception.Message.Contains('INERT_LAUNCHER_FAILURE')){throw $failure}
+ if(-not$writersStopped-or$script:writerUnknown-or$script:hostReleaseUnknown){throw 'Known process/release state was lost'}
+ if($nativeOperations.Count-ne1-or$resourceReleases.Count-ne1){throw 'Actual process/release observations were not retained'}
+ if($nativeOperations[0].observation.exit_confirmed-ne$true-or$nativeOperations[0].observation.returncode-ne$(if($mode-eq'failure'){7}else{0})){throw 'Actual exit observation differs'}
+ if($resourceReleases[0].completion_receipt.host_release.result.status-ne'released'){throw 'Actual release observation differs'}
+ if((Get-Item -LiteralPath $selected).Length-ne$sourceBytes.Length){throw 'Injected corruption changed size'}
+ if((Get-RunFileSha256 -Path $sourcePath)-cne$identity.sha256){throw 'Author source changed'}
+}
+'PAIRED_POST_EXIT_GUARD=PASS'
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);wrapper=root/'post-exit-guard.ps1'
+            wrapper.write_text(script,encoding='utf-8',newline='\n')
+            result=subprocess.run(['pwsh','-NoProfile','-File',str(wrapper),str(WORKFLOW/'paired_accelerator_static_field.ps1'),
+                str(root),str(ROOT),sys.executable],cwd=ROOT,capture_output=True,text=True,
+                encoding='utf-8',errors='replace',timeout=30)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            self.assertIn('PAIRED_POST_EXIT_GUARD=PASS',result.stdout)
+
+    def test_real_owner_guard_and_frozen_materializer_reject_changed_matlab_sources(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run, _ = self.prepared(root)
+            script = root / 'owner-matlab-guard.ps1'
+            script.write_text(r'''param([string]$RepoRoot,[string]$Run,[string]$Python)
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. (Join-Path $RepoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
+. (Join-Path $RepoRoot 'src/msplatform/execution/resources/dependencies.ps1')
+$tokens=$null;$errors=$null
+$owner=Join-Path $RepoRoot 'src/msplatform/workflows/resources/paired_accelerator_static_field.ps1'
+$ast=[System.Management.Automation.Language.Parser]::ParseFile($owner,[ref]$tokens,[ref]$errors)
+if($errors.Count){throw 'Actual owner did not parse'}
+$text=[IO.File]::ReadAllText($owner)
+$prepare=$text.IndexOf("Set-PairedStage 'prepare_comsol_task'")
+$first=$text.IndexOf('Assert-PairedFrozenMatlabSources',$prepare)
+$materialize=$text.IndexOf('$tasks=Invoke-PairedPython $taskCode $taskArguments',$prepare)
+$second=$text.IndexOf('Assert-PairedFrozenMatlabSources',$materialize)
+$launch=$text.IndexOf('-TaskScript $tasks.matlab',$second)
+$third=$text.IndexOf('Assert-PairedFrozenMatlabSources',$launch)
+if($prepare-lt0-or$first-lt$prepare-or$materialize-lt$first-or$second-lt$materialize-or$launch-lt$second-or$third-lt$launch){throw 'Actual owner guard ordering differs'}
+foreach($name in @('Invoke-PairedPython','Assert-PairedFrozenMatlabSources')){
+  $definition=@($ast.FindAll({param($node)$node-is[System.Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-eq$name},$true))
+  if($definition.Count-ne1){throw "Actual owner function missing or ambiguous: $name"}
+  . ([scriptblock]::Create($definition[0].Extent.Text))
+}
+foreach($name in @('header','taskArguments','taskCode')){
+  $assignment=@($ast.FindAll({param($node)$node-is[System.Management.Automation.Language.AssignmentStatementAst]-and$node.Left-is[System.Management.Automation.Language.VariableExpressionAst]-and$node.Left.VariablePath.UserPath-eq$name},$true))
+  if($assignment.Count-ne1){throw "Actual owner assignment missing or ambiguous: $name"}
+  Set-Variable -Name ('actual_'+$name) -Value $assignment[0].Extent.Text
+}
+$package=@{run_dir=$Run;log_dir=(Join-Path $Run 'logs')}
+$null=New-Item -ItemType Directory -Force -Path $package.log_dir
+$stage='prepare_comsol_task';$savedModel='';$comsolSourceStage='';$completedComsolExports=$null
+$frozen=Freeze-ConsumerDependencies -Python $Python -RepoRoot $RepoRoot -ContractPath (Join-Path $RepoRoot 'src/msplatform/workflows/config/runtime_dependencies.json') -InputDir (Join-Path $Run 'inputs') -OwnerId instrument_assembly -ConsumerId paired_accelerator_static_field
+Invoke-Expression $actual_header
+$plan=Invoke-PairedPython 'print(json.dumps(prepare_run(Path(sys.argv[1]))))' @($package.run_dir)
+Invoke-Expression $actual_taskArguments
+Invoke-Expression $actual_taskCode
+$selected=@($frozen.identities|Where-Object{[IO.Path]::GetExtension([string]$_.source_repo_path)-ieq'.m'})
+if($selected.Count-eq0){throw 'No real frozen MATLAB identities'}
+$original=@{};foreach($record in $selected){$original[[string]$record.source_repo_path]=(Get-RunFileSha256 -Path (Join-Path $RepoRoot $record.source_repo_path))}
+Assert-PairedFrozenMatlabSources
+$tasks=Invoke-PairedPython $taskCode $taskArguments
+if(-not(Test-Path -LiteralPath $tasks.matlab -PathType Leaf)){throw 'Real frozen materializer did not create the task'}
+$marker=Join-Path $Run 'fake-launch-marker'
+foreach($record in $selected){
+  $path=[string]$record.frozen_path;$body=[IO.File]::ReadAllBytes($path)
+  foreach($kind in @('missing','tamper')){
+    if($kind-eq'missing'){Remove-Item -LiteralPath $path}else{$copy=[byte[]]$body.Clone();if($copy.Length-eq0){throw 'Empty MATLAB fixture'};$copy[0]=$copy[0] -bxor 1;[IO.File]::WriteAllBytes($path,$copy);if((Get-Item -LiteralPath $path).Length-ne$body.Length){throw 'Tamper changed length'}}
+    try{
+      try{Assert-PairedFrozenMatlabSources; $null=Invoke-PairedPython $taskCode $taskArguments; [IO.File]::WriteAllText($marker,'must not launch'); throw 'changed file accepted'}
+      catch{if(-not$_.Exception.Message.Contains('Paired frozen MATLAB dependency changed:')){throw}}
+      if(Test-Path -LiteralPath $marker){throw 'Fake launch marker created on rejected input'}
+    }finally{[IO.File]::WriteAllBytes($path,$body)}
+  }
+}
+Assert-PairedFrozenMatlabSources
+foreach($record in $selected){if((Get-RunFileSha256 -Path (Join-Path $RepoRoot $record.source_repo_path))-cne$original[[string]$record.source_repo_path]){throw 'Original source changed'}}
+'PAIRED_FROZEN_MATLAB_GUARD=PASS'
+''',encoding='utf-8',newline='\n')
+            result = subprocess.run(['pwsh','-NoProfile','-File',str(script),str(ROOT),str(run),sys.executable],
+                cwd=ROOT,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=120)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            self.assertIn('PAIRED_FROZEN_MATLAB_GUARD=PASS',result.stdout)
+
+    def test_real_frozen_closure_prepares_and_materializes_tasks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);run,author=self.prepared(root)
+            command=f". '{ROOT}/src/msplatform/execution/resources/dependencies.ps1'; $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{ROOT}' -ContractPath '{ROOT}/src/msplatform/workflows/config/runtime_dependencies.json' -InputDir '{run}/inputs' -OwnerId instrument_assembly -ConsumerId paired_accelerator_static_field"
+            result=subprocess.run(['pwsh','-NoProfile','-Command',command],cwd=ROOT,capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=60)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            snapshot=run/'inputs/runtime_snapshot'
+            shutil.rmtree(author)
+            from msplatform.execution.inputs import python_import_roots
+
+            environment=dict(os.environ)
+            environment['PYTHONPATH']=os.pathsep.join(python_import_roots(snapshot))
+            result=subprocess.run([sys.executable,'-B','-s','-c',
+                "from pathlib import Path; from msplatform.workflows.paired_accelerator_static_field import runtime; "
+                "assert Path(runtime.__file__).is_relative_to(Path.cwd()); "
+                "import msplatform.contracts.particle_physics as physics; "
+                "assert Path(physics.__file__).resolve().is_relative_to(Path.cwd().resolve() / 'src'), physics.__file__; "
+                "assert all(Path(module.__file__).resolve().is_relative_to(Path.cwd().resolve()) "
+                "for name,module in list(__import__('sys').modules.items()) "
+                "if name.startswith(('common.','integrations.','projects.','msplatform')) and getattr(module,'__file__',None)); "
+                "runtime.prepare_run(Path(__import__('sys').argv[1]));"
+                "tasks=runtime.materialize_tasks(Path(__import__('sys').argv[1]),Path.cwd(),Path(__import__('sys').argv[2]));"
+                "resources=Path(runtime.native_resource_directory());"
+                "assert resources==Path.cwd()/'src/msplatform/backends/comsol/matlab';"
+                "assert not (resources/'candidate_field.m').exists();"
+                "assert Path(tasks['matlab']).is_file() and Path(tasks['lua']).is_file();"
+                "print('FROZEN_PREPARE_AND_TASKS=PASS')",str(run),str(root/'ordinary.pa')],
+                cwd=snapshot,env=environment,capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=60)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            self.assertIn('FROZEN_PREPARE_AND_TASKS=PASS',result.stdout)
+            resources=snapshot/'src/msplatform/backends/comsol/matlab'
+            for name in ('build_and_export_paired_accelerator_field.m','oatof_build_accelerator_geometry.m',
+                         'build_sectioned_geometry.m','build_accelerator_grids.m',
+                         'add_comsol_size_feature.m','read_comsol_mesh_size_controls.m'):
+                self.assertEqual((resources/name).read_bytes(),
+                    (ROOT/'src/msplatform/backends/comsol/matlab'/name).read_bytes())
+            task=(run/'inputs/run_comsol_field.m').read_text(encoding='utf-8')
+            self.assertIn(resources.as_posix(),task)
+            self.assertNotIn((snapshot/'common/comsol').as_posix(),task)
+            self.assertIn("build_and_export_paired_accelerator_field(",task)
+            for name in ('add_comsol_size_feature.m', 'read_comsol_mesh_size_controls.m'):
+                selected = resources / name
+                held = selected.with_suffix('.held')
+                selected.rename(held)
+                try:
+                    missing=subprocess.run([sys.executable,'-B','-s','-c',
+                        "from msplatform.backends.comsol.resources import native_resource_path; "
+                        "native_resource_path(__import__('sys').argv[1])",
+                        name],cwd=snapshot,env=environment,capture_output=True,text=True,
+                        encoding="utf-8",errors="replace",timeout=60)
+                    self.assertNotEqual(missing.returncode,0)
+                    self.assertIn('installed COMSOL native resource is missing: '+name,missing.stderr)
+                finally:
+                    held.rename(selected)
+            shutil.rmtree(resources)
+            result=subprocess.run([sys.executable,'-B','-s','-c',
+                "from pathlib import Path; from msplatform.workflows.paired_accelerator_static_field import runtime; "
+                "runtime.materialize_tasks(Path(__import__('sys').argv[1]),Path.cwd(),Path(__import__('sys').argv[2]))",
+                str(run),str(root/'ordinary.pa')],cwd=snapshot,env=environment,capture_output=True,text=True,
+                encoding="utf-8",errors="replace",timeout=60)
+            self.assertNotEqual(result.returncode,0)
+            self.assertIn('installed COMSOL native resource directory is missing',result.stderr)
+
+    def test_task_transport_and_complete_point_collection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);run,_=self.prepared(root);plan=runtime.prepare_run(run)
+            tasks=runtime.materialize_tasks(run,ROOT,root/'ordinary.pa')
+            task=Path(tasks['matlab']).read_text()
+            self.assertIn(",'');",task)
+            self.assertIn(runtime.native_resource_directory().as_posix(),task)
+            self.assertNotIn((ROOT/'common/comsol').as_posix(),task)
+            for name in ('build_and_export_paired_accelerator_field.m','oatof_build_accelerator_geometry.m',
+                         'build_sectioned_geometry.m','build_accelerator_grids.m',
+                         'add_comsol_size_feature.m','read_comsol_mesh_size_controls.m'):
+                self.assertEqual((runtime.native_resource_directory()/name).read_bytes(),
+                    (ROOT/'src/msplatform/backends/comsol/matlab'/name).read_bytes())
+            build=runtime.field_build_arguments(plan)
+            voltages=list(map(float,build['voltages'].split(',')))
+            for electrode,value in plan['static_on_electrode_voltages_v'].items():
+                self.assertEqual(voltages[int(electrode)-1],value)
+            lua=Path(shutil.which('lua') or shutil.which('lua5.1') or 'C:/Program Files/SIMION-2020/lua.exe')
+            if lua.is_file():
+                grid=plan['native_geometry_compilation']['grid'];pitch=grid['cell_mm_xyz'];n=grid['dimensions']
+                wrapper=root/'inert_export.lua'
+                wrapper.write_text(f"""local pa={{potential_type='electric',nx={n['nx']},ny={n['ny']},nz={n['nz']},
+dx_mm={pitch['x']},dy_mm={pitch['y']},dz_mm={pitch['z']}}}
+function pa:close() end
+function pa:inside_vc() return true end
+function pa:field_vc() return -2,6,-4 end
+simion={{pas={{open=function(self,path) assert(path=='{(root/'ordinary.pa').as_posix()}');return pa end}}}}
+dofile('{Path(tasks['lua']).as_posix()}')
+""",encoding='utf-8',newline='\n')
+                result=subprocess.run([str(lua),str(wrapper)],cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=20)
+                self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+                self.assertIn('PAIRED_FIELD_EXPORT=PASS samples=2',result.stdout)
+                exported=__import__('pandas').read_csv(run/'results/simion_field_samples.csv')
+                self.assertEqual(exported['point_id'].tolist(),[11,12])
+                self.assertEqual(exported['Ex_V_per_m'].tolist(),[-2/pitch['x']*1000]*2)
+            (root/'saved model.mph').write_bytes(b'inert source identity only')
+            restored=runtime.materialize_tasks(run,ROOT,root/'ordinary.pa',saved_model=root/'saved model.mph')
+            self.assertIn("saved model.mph');",Path(restored['matlab']).read_text())
+            points=__import__('pandas').read_csv(plan['sample_points']['path'])
+            for axis in 'xyz':points[f'E{axis}_V_per_m']=0.
+            output=run/'results/simion_field_samples.csv';points.iloc[::-1].to_csv(output,index=False)
+            runtime.validate_samples(plan,output)
+            points.iloc[:1].to_csv(output,index=False)
+            with self.assertRaises(ValueError):runtime.validate_samples(plan,output)
+
+    def test_saved_solution_requires_bound_completion_bvp_and_backend(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);run,_=self.prepared(root);plan=runtime.prepare_run(run)
+            producer=root/'producer';(producer/'comsol').mkdir(parents=True)
+            source_plan=producer/'inputs/bvp/paired_accelerator_static_field_plan.json'
+            runtime.write(source_plan,plan)
+            backend=Path('src/msplatform/backends/comsol/matlab/build_and_export_paired_accelerator_field.m')
+            for owner in (run,producer):
+                target=owner/'inputs/runtime_snapshot'/backend;target.parent.mkdir(parents=True,exist_ok=True)
+                shutil.copyfile(ROOT/backend,target)
+            model=producer/'comsol/paired_accelerator_static.mph';model.write_bytes(b'inert solved-model identity only')
+            completion=producer/'comsol/comsol_field_solution.json'
+            config=producer/'run_config.json'
+            runtime.write(config,dict(schema_version=1,run_id='20261025_233000__test__python__paired-model-source',
+                project='instrument_assembly',mode='paired_accelerator_static_field',
+                inputs={'plan':str(source_plan),'backend':str(producer/'inputs/runtime_snapshot'/backend)}))
+            manifest_path=producer/'run_manifest.json';snapshot=run/'inputs/comsol_source_manifest.json'
+
+            def publish(fact, *, tetrahedra_literal=None):
+                runtime.write(completion,fact)
+                if tetrahedra_literal is not None:
+                    text=completion.read_text(encoding='utf-8')
+                    self.assertIn('"tetrahedra": 31',text)
+                    completion.write_text(text.replace('"tetrahedra": 31',f'"tetrahedra": {tetrahedra_literal}'),encoding='utf-8')
+                manifest=build_run_manifest(config,'failed',output_paths=[completion,model], retention_api=_manifest_retention_api)
+                runtime.write(manifest_path,manifest);runtime.write(snapshot,manifest)
+                return manifest
+
+            for stage in ('prepared_saved','solved_saved'):
+                with self.subTest(stage=stage):
+                    fact=dict(schema_version=1,role='oatof_paired_accelerator_static_field_solution',
+                        status=stage,solution_present=stage=='solved_saved',solution_tag='sol1',
+                        plan_path=str(source_plan),model_path=str(model),study_tag='std1',
+                        mesh_complete=True,tetrahedra=31)
+                    manifest=publish(fact)
+                    with patch.object(paired_accelerator_model, 'verify_record',
+                                      wraps=paired_accelerator_model.verify_record) as verification:
+                        metadata=paired_accelerator_model.load_paired_static_model_source(manifest_path,snapshot)
+                    self.assertEqual(metadata['source_stage'],stage)
+                    self.assertEqual(metadata['model']['sha256'],file_record(model)['sha256'])
+                    self.assertTrue(verification.call_args_list)
+                    self.assertNotIn(str(model),[str(call.args[1]['path']) for call in verification.call_args_list])
+                    result=runtime.comsol_reuse(run,manifest_path)
+                    self.assertEqual(result['source_stage'],stage)
+                    self.assertEqual(result['model']['sha256'],file_record(model)['sha256'])
+                    for literal in ('3.1037688E+7','31.0','31'):
+                        with self.subTest(stage=stage,tetrahedra_literal=literal):
+                            publish(fact,tetrahedra_literal=literal)
+                            self.assertEqual(runtime.comsol_reuse(run,manifest_path)['source_stage'],stage)
+                    plan_path=run/'inputs/bvp/paired_accelerator_static_field_plan.json'
+                    request_path=run/'inputs/request.json';request=runtime.read(request_path)
+                    refined=copy.deepcopy(request)
+                    refined['numerical_domain']['cell_mm_xyz']={axis:value/2 for axis,value in request['numerical_domain']['cell_mm_xyz'].items()}
+                    runtime.write(request_path,refined)
+                    recompiled=runtime.prepare_run(run)
+                    self.assertNotEqual(recompiled['native_geometry_compilation']['grid'],plan['native_geometry_compilation']['grid'])
+                    self.assertEqual(runtime.comsol_reuse(run,manifest_path)['source_stage'],stage)
+                    runtime.write(request_path,request);runtime.prepare_run(run)
+                    raster=copy.deepcopy(plan)
+                    raster['accelerator_geometry']['numerical_port_width_mm']*=2
+                    raster['accelerator_geometry']['numerical_port_height_mm']*=2
+                    raster['accelerator_geometry']['accelerator_port_aperture_discretization']['numerical_carve_width_mm']*=2
+                    renumbered=copy.deepcopy(plan)
+                    bindings=renumbered['native_geometry_compilation']['electrode_bindings'][plan['oatof_instance_id']]
+                    for role,value in bindings.items():
+                        bindings[role]=[item+100 for item in value] if isinstance(value,list) else value+100
+                    renumbered['static_on_electrode_voltages_v']={str(int(key)+100):value for key,value in plan['static_on_electrode_voltages_v'].items()}
+                    for name,changed in (('raster_only',raster),('numeric_electrode_ids',renumbered)):
+                        with self.subTest(stage=stage,reusable=name):
+                            runtime.write(plan_path,changed)
+                            self.assertEqual(runtime.comsol_reuse(run,manifest_path)['source_stage'],stage)
+                    for name in ('port_center','port_shape','port_width','port_height','metal_geometry','comsol_mesh','outer_box','electrical'):
+                        with self.subTest(stage=stage,physical_change=name):
+                            changed=copy.deepcopy(plan)
+                            port=changed['composition_plan']['components'][plan['oatof_instance_id']]['ports']['side_entry']
+                            if name=='port_center':port['center_mm'][1]+=.1
+                            elif name=='port_shape':port['cross_section']['shape']='ellipse'
+                            elif name=='port_width':port['cross_section']['width_mm']+=.1
+                            elif name=='port_height':port['cross_section']['height_mm']+=.1
+                            elif name=='metal_geometry':changed['accelerator_geometry']['shield_outer_width_mm']+=1
+                            elif name=='comsol_mesh':changed['numerical_domain']['comsol_mesh']['global_automatic_level']+=1
+                            elif name=='outer_box':changed['numerical_domain']['pa_bounds_mm']['x_min']-=1
+                            else:changed['accelerator_electrical']['operating_voltages_v']['repeller']+=1
+                            runtime.write(plan_path,changed)
+                            with self.assertRaisesRegex(ValueError,'common BVP differs'):
+                                runtime.comsol_reuse(run,manifest_path)
+                    runtime.write(plan_path,plan)
+                    task=runtime.materialize_tasks(run,ROOT,root/'existing.pa',saved_model=model,saved_model_stage=result['source_stage'])
+                    call=Path(task['matlab']).read_text()
+                    self.assertIn(", 'prepared_saved');" if stage=='prepared_saved' else ".mph');",call)
+                    self.assertEqual("'prepared_saved'" in call,stage=='prepared_saved')
+                    for name,mutation in {
+                        'wrong_model':lambda item:item.update(model_path=str(root/'other.mph')),
+                        'wrong_plan':lambda item:item.update(plan_path=str(root/'other.json')),
+                        'wrong_state':lambda item:item.update(solution_present=stage!='solved_saved'),
+                        'missing_stage':lambda item:item.pop('status'),
+                    }.items():
+                        with self.subTest(stage=stage,invalid=name):
+                            changed=dict(fact);mutation(changed);publish(changed)
+                            with self.assertRaises(ValueError):runtime.comsol_reuse(run,manifest_path)
+                    if stage=='prepared_saved':
+                        for change in ({'mesh_complete':False},{'tetrahedra':0},{'study_tag':'std_other'}):
+                            publish(dict(fact,**change))
+                            with self.assertRaisesRegex(ValueError,'native COMSOL fact required'):
+                                runtime.comsol_reuse(run,manifest_path)
+                        for literal in ('true','false','0','-1','0.0','31.25','NaN','Infinity','-Infinity','"31"','null'):
+                            with self.subTest(invalid_tetrahedra_literal=literal):
+                                publish(fact,tetrahedra_literal=literal)
+                                with self.assertRaisesRegex(ValueError,'native COMSOL fact required'):
+                                    runtime.comsol_reuse(run,manifest_path)
+                    publish(fact)
+                    changed=runtime.read(source_plan);changed['static_on_electrode_voltages_v']['1']+=1
+                    runtime.write(source_plan,changed);publish(fact)
+                    with self.assertRaisesRegex(ValueError,'BVP differs'):runtime.comsol_reuse(run,manifest_path)
+                    runtime.write(source_plan,plan);publish(fact)
+                    target=run/'inputs/runtime_snapshot'/backend;original=target.read_bytes()
+                    target.write_bytes(original+b'\n% Current export consumer comment only\n')
+                    self.assertEqual(runtime.comsol_reuse(run,manifest_path)['source_stage'],stage)
+                    target.write_bytes(original)
+                    for source in (source_plan,completion,model,producer/'inputs/runtime_snapshot'/backend):
+                        with self.subTest(stage=stage,tampered_source=source.name):
+                            original=source.read_bytes();source.write_bytes(original+b'\nchanged source bytes\n')
+                            try:
+                                with self.assertRaises((ValueError,AssertionError)):runtime.comsol_reuse(run,manifest_path)
+                            finally:source.write_bytes(original)
+                    manifest['outputs']=[file_record(model)];runtime.write(snapshot,manifest)
+                    with self.assertRaisesRegex(ValueError,'manifest-bound'):runtime.comsol_reuse(run,manifest_path)
+            with self.assertRaisesRegex(ValueError,'model stage required'):
+                runtime.materialize_tasks(run,ROOT,root/'existing.pa',saved_model_stage='prepared_saved')
+
+    @unittest.skipUnless(os.name=='nt','Windows run junction lifecycle')
+    def test_native_model_facts_survive_removal_of_run_execution_junction(self):
+        """Project actual task paths; inert native facts never assert a real solve."""
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);producer,_=self.prepared(root);plan=runtime.prepare_run(producer)
+            alias=root/'short-run'
+            junction=root/'junction.ps1'
+            junction.write_text("param($AliasPath,$TargetPath,$Action)\n$ErrorActionPreference='Stop'\n"
+                "if($Action-eq'create'){$null=New-Item -ItemType Junction -Path $AliasPath -Target $TargetPath}\n"
+                "else{if((Get-Item -LiteralPath $AliasPath).LinkType-ne'Junction'){throw 'Expected junction'};"
+                "[IO.Directory]::Delete($AliasPath)}\n",encoding='utf-8')
+            result=subprocess.run(['pwsh','-NoProfile','-File',str(junction),str(alias),str(producer),'create'],
+                cwd=ROOT,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            try:
+                self.assertEqual(alias.resolve(strict=True),producer.resolve(strict=True))
+                task=runtime.materialize_tasks(alias,ROOT,root/'existing.pa')
+                call=Path(task['matlab']).read_text()
+                arguments=re.search(r"build_and_export_paired_accelerator_field\('([^']*)','([^']*)',''\);",call)
+                self.assertIsNotNone(arguments,call)
+                fact_plan=Path(arguments[1]);fact_model=Path(arguments[2])/'paired_accelerator_static.mph'
+            finally:
+                # Remove only the verified junction, never its scientific target.
+                result=subprocess.run(['pwsh','-NoProfile','-File',str(junction),str(alias),str(producer),'remove'],
+                    cwd=ROOT,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30)
+                self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            self.assertFalse(alias.exists())
+            self.assertEqual(fact_plan,producer/'inputs/bvp/paired_accelerator_static_field_plan.json')
+            self.assertEqual(fact_model,producer/'comsol/paired_accelerator_static.mph')
+            model=producer/'comsol/paired_accelerator_static.mph';model.write_bytes(b'inert model identity only')
+            backend=Path('src/msplatform/backends/comsol/matlab/build_and_export_paired_accelerator_field.m')
+            consumer=root/'consumer';(consumer/'inputs/bvp').mkdir(parents=True)
+            runtime.write(consumer/'inputs/bvp/paired_accelerator_static_field_plan.json',plan)
+            for owner in (producer,consumer):
+                target=owner/'inputs/runtime_snapshot'/backend;target.parent.mkdir(parents=True)
+                shutil.copyfile(ROOT/backend,target)
+            config=producer/'run_config.json';runtime.write(config,dict(schema_version=1,
+                run_id='20261025_234000__test__python__paired-junction-source',project='instrument_assembly',
+                mode='paired_accelerator_static_field',inputs={'plan':str(fact_plan),
+                    'backend':str(producer/'inputs/runtime_snapshot'/backend)}))
+            completion=producer/'comsol/comsol_field_solution.json'
+            for stage in ('prepared_saved','solved_saved'):
+                with self.subTest(stage=stage):
+                    runtime.write(completion,dict(schema_version=1,role='oatof_paired_accelerator_static_field_solution',
+                        status=stage,solution_present=stage=='solved_saved',solution_tag='sol1',study_tag='std1',
+                        mesh_complete=True,tetrahedra=31,plan_path=str(fact_plan),model_path=str(fact_model)))
+                    manifest=build_run_manifest(config,'failed',output_paths=[completion,model], retention_api=_manifest_retention_api)
+                    manifest_path=producer/'run_manifest.json';runtime.write(manifest_path,manifest)
+                    runtime.write(consumer/'inputs/comsol_source_manifest.json',manifest)
+                    self.assertEqual(runtime.comsol_reuse(consumer,manifest_path)['source_stage'],stage)
+
+    def test_native_authorization_rejected_before_run_or_vendor(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);run,author=self.prepared(root)
+            result=subprocess.run(['pwsh','-NoProfile','-File',str(WORKFLOW/'paired_accelerator_static_field.ps1'),
+                '-Request',str(author/'request.json'),'-ArtifactRoot',str(root/'artifacts')],
+                cwd=ROOT,capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=30)
+            self.assertNotEqual(result.returncode,0)
+            self.assertIn('requires SolverAuthorized',result.stderr)
+            self.assertFalse((root/'artifacts').exists())
+
+    def test_public_dry_run_publishes_managed_preparation_without_native(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory).resolve();_,author=self.prepared(root)
+            artifacts=root/'artifacts'
+            artifacts.mkdir()
+            initialize_capacity_ledger(artifacts,objects=[])
+            run_id='20261025_010001__test__python__paired-static-entry'
+            result=subprocess.run(['pwsh','-NoProfile','-File',str(self.capacity_isolated_owner(root)),
+                '-Request',str(author/'request.json'),'-ArtifactRoot',str(artifacts),
+                '-Python',sys.executable,'-RunId',run_id,'-DryRun','-RepoRoot',str(ROOT)],
+                cwd=ROOT,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=180)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            run=artifacts/'projects/instrument_assembly/runs'/run_id
+            self.assertIn('TEST_CAPACITY_ADMISSION=ISOLATED', result.stdout)
+            summary=runtime.read(run/'summary.json')
+            self.assertFalse(summary['native_executed'])
+            self.assertEqual(runtime.read(run/'run_manifest.json')['status'],'success')
+            self.assertTrue((run/'inputs/bvp/paired_accelerator.gem').is_file())
+            self.assertFalse(any(run.rglob('*.pa')))
+            self.assertFalse(any(run.rglob('*.mph')))
+
+    def test_external_site_packages_freezes_and_prepares_without_workspace_core_sources(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory).resolve();fixture=root/'fixture';fixture.mkdir()
+            _,author=self.prepared(fixture)
+            package_root=root/'installation/Lib/site-packages/msplatform'
+            shutil.copytree(ROOT/'src/msplatform',package_root)
+            owner=package_root/'workflows/resources/paired_accelerator_static_field.ps1'
+            source=(WORKFLOW/'paired_accelerator_static_field.ps1').read_text(encoding='utf-8')
+            boundary=". (Join-Path $packageRoot 'execution/resources/dependencies.ps1')"
+            owner.write_text(source.replace(boundary,boundary+"\nfunction Invoke-ArtifactCapacityGate { [pscustomobject]@{satisfied_after_apply=$true} }"),
+                encoding='utf-8',newline='\n')
+            workspace=root/'workspace';workspace.mkdir()
+            artifacts=root/'artifacts';artifacts.mkdir();initialize_capacity_ledger(artifacts,objects=[])
+            run_id='20261025_010004__test__python__paired-static-external-package'
+            result=subprocess.run(['pwsh','-NoProfile','-File',str(owner),
+                '-Request',str(author/'request.json'),'-ArtifactRoot',str(artifacts),
+                '-Python',sys.executable,'-RunId',run_id,'-DryRun','-RepoRoot',str(workspace)],
+                cwd=ROOT,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=240)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            self.assertFalse((workspace/'src').exists())
+            run=artifacts/'projects/instrument_assembly/runs'/run_id
+            self.assertEqual(runtime.read(run/'run_manifest.json')['status'],'success')
+            snapshot=run/'inputs/runtime_snapshot/src/msplatform'
+            self.assertEqual((snapshot/'workflows/resources/paired_accelerator_static_field.ps1').read_bytes(),owner.read_bytes())
+            self.assertTrue((run/'inputs/bvp/paired_accelerator.gem').is_file())
+            self.assertFalse(any(run.rglob('dependency_source_view')))
+
+    def test_invalid_saved_model_source_fails_before_any_vendor_and_seals_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory).resolve();_,author=self.prepared(root)
+            artifacts=root/'artifacts';artifacts.mkdir()
+            initialize_capacity_ledger(artifacts,objects=[])
+            wrong=artifacts/'projects/instrument_assembly/runs/20261025_010000__test__python__inert-producer/run_manifest.json'
+            runtime.write(wrong,{'role':'not_a_terminal_run'})
+            run_id='20261025_010002__test__python__paired-static-invalid-source'
+            budget=root/'budget_not_parsed.json'
+            runtime.write(budget,{'TEST_ONLY':'source rejected before budget interpretation'})
+            result=subprocess.run(['pwsh','-NoProfile','-File',str(self.capacity_isolated_owner(root)),
+                '-Request',str(author/'request.json'),'-ArtifactRoot',str(artifacts),
+                '-Python',sys.executable,'-RunId',run_id,'-SolverAuthorized',
+                '-ExecutionBudgetPath',str(budget),'-ComsolSourceManifest',str(wrong),'-RepoRoot',str(ROOT)],
+                cwd=ROOT,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=180)
+            self.assertNotEqual(result.returncode,0)
+            self.assertIn('terminal instrument_assembly COMSOL producer required',result.stderr)
+            run=artifacts/'projects/instrument_assembly/runs'/run_id
+            self.assertEqual(runtime.read(run/'run_manifest.json')['status'],'failed')
+            self.assertEqual(runtime.read(run/'summary.json')['failure_stage'],'verify_saved_comsol_source')
+            self.assertEqual((run/'inputs/execution_budget.json').read_bytes(),budget.read_bytes())
+            self.assertFalse(any(run.rglob('*.pa')))
+
+    def test_export_failure_publishes_saved_model_and_allows_explicit_reuse(self):
+        """Failed-owner saved-source reuse; inert bytes are not a native solved MPH."""
+        # The shared finalizer owns publication faults. This test exercises the
+        # saved-source reader against an explicitly failed, manifest-bound owner.
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);producer,_=self.prepared(root);plan=runtime.prepare_run(producer)
+            runtime.write(producer/'run_config.json',dict(schema_version=1,project='instrument_assembly',
+                run_id='20261025_010003__test__python__paired-export-failure',mode='paired_accelerator_static_field',inputs={}))
+            backend=Path('src/msplatform/backends/comsol/matlab/build_and_export_paired_accelerator_field.m')
+            target=producer/'inputs/runtime_snapshot'/backend;target.parent.mkdir(parents=True)
+            shutil.copyfile(ROOT/backend,target)
+            model=producer/'comsol/paired_accelerator_static.mph';model.write_bytes(b'inert solved-model publication boundary')
+            runtime.write(producer/'comsol/comsol_field_solution.json',dict(
+                schema_version=1,role='oatof_paired_accelerator_static_field_solution',
+                status='solved_saved',solution_present=True,solution_tag='sol1',
+                plan_path=str(producer/'inputs/bvp/paired_accelerator_static_field_plan.json'),model_path=str(model)))
+            config=runtime.read(producer/'run_config.json')
+            config['inputs'].update({str(path.relative_to(producer/'inputs')):str(path) for path in (producer/'inputs').rglob('*') if path.is_file()})
+            runtime.write(producer/'run_config.json',config)
+            manifest=build_run_manifest(producer/'run_config.json','failed',
+                output_paths=[model,producer/'comsol/comsol_field_solution.json'], retention_api=_manifest_retention_api)
+            runtime.write(producer/'run_manifest.json',manifest)
+            self.assertEqual(manifest['status'],'failed')
+            bound={Path(row['path']).name for row in manifest['outputs']}
+            self.assertTrue({'paired_accelerator_static.mph','comsol_field_solution.json'}<=bound)
+            consumer=root/'next';(consumer/'inputs/bvp').mkdir(parents=True)
+            runtime.write(consumer/'inputs/bvp/paired_accelerator_static_field_plan.json',plan)
+            runtime.write(consumer/'inputs/comsol_source_manifest.json',manifest)
+            frozen=consumer/'inputs/runtime_snapshot'/backend;frozen.parent.mkdir(parents=True)
+            shutil.copyfile(ROOT/backend,frozen)
+            restored=runtime.comsol_reuse(consumer,producer/'run_manifest.json')
+            self.assertEqual(Path(restored['model']['path']),model)
+            tasks=runtime.materialize_tasks(consumer,ROOT,root/'unused.pa',saved_model=model)
+            self.assertIn(model.as_posix(),Path(tasks['matlab']).read_text())
+            plan_path=consumer/'inputs/bvp/paired_accelerator_static_field_plan.json'
+            for field,value in (('global_automatic_level',7),
+                                ('electrode_boundary_maximum_element_size_mm',.25),
+                                ('electrode_boundary_growth_rate',1.2)):
+                with self.subTest(field=field):
+                    changed=runtime.read(plan_path)
+                    changed['numerical_domain']['comsol_mesh'][field]=value
+                    runtime.write(plan_path,changed)
+                    with self.assertRaisesRegex(ValueError,'common BVP differs'):
+                        runtime.comsol_reuse(consumer,producer/'run_manifest.json')
+                    runtime.write(plan_path,plan)
+            frozen.write_bytes(frozen.read_bytes()+b'\n% changed backend\n')
+            self.assertEqual(runtime.comsol_reuse(consumer,producer/'run_manifest.json')['source_stage'],'solved_saved')
+
+    def test_working_field_identity_excludes_sampling_and_comsol_only_mesh(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);run,_=self.prepared(root);runtime.prepare_run(run)
+            executable=root/'inert_simion.exe';executable.write_bytes(b'identity-only; never executed')
+            original=runtime.cache_plan(run,ROOT,executable,root/'cache')
+            self.assertEqual(Path(original['verifier_path']),ROOT/'src/msplatform/backends/simion/resources/export_paired_accelerator_field.lua')
+            plan_path=run/'inputs/bvp/paired_accelerator_static_field_plan.json'
+            plan=runtime.read(plan_path)
+            plan['sample_points']['count']=1000
+            plan['numerical_domain']['comsol_mesh'] = dict(global_automatic_level=7,
+                electrode_boundary_maximum_element_size_mm=.25, electrode_boundary_growth_rate=1.2)
+            runtime.write(plan_path,plan)
+            same=runtime.cache_plan(run,ROOT,executable,root/'cache')
+            self.assertEqual(original['cache_key'],same['cache_key'])
+            key=next(iter(plan['static_on_electrode_voltages_v']))
+            plan['static_on_electrode_voltages_v'][key]+=1.
+            runtime.write(plan_path,plan)
+            self.assertNotEqual(original['cache_key'],runtime.cache_plan(run,ROOT,executable,root/'cache')['cache_key'])
+
+    def test_public_cache_build_verify_publish_hit_never_copies_hit_payload(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);run,_=self.prepared(root);runtime.prepare_run(run)
+            executable=root/'inert_simion.exe';executable.write_bytes(b'not executed')
+            public=public_cache_tests.PAFamilyCacheTest()
+            public.setUp();self.addCleanup(public.tearDown)
+            _,cache=public._artifact_cache()
+            governed=public.producer_run_config.parent
+            shutil.copytree(run/'inputs',governed/'inputs')
+            shutil.copytree(run/'logs',governed/'logs')
+            run=governed
+            plan=runtime.cache_plan(run,ROOT,executable,cache)
+            first=runtime.advance_cache(run,plan)
+            self.assertEqual(first['action_required'],'build')
+            payload=Path(first['build_directory'])/runtime.PA_NAME
+            payload.write_bytes(b'inert publication test member; not a qualified PA')
+            prepared=runtime.advance_cache(run,plan)
+            self.assertEqual(prepared['action_required'],'verify')
+            evidence=run/'logs/native_inert_boundary.txt';evidence.write_text('inert transaction wiring only')
+            published=runtime.advance_cache(run,plan,evidence)
+            self.assertEqual(published['action_required'],'complete')
+            with patch('shutil.copyfile',side_effect=AssertionError('HIT must not materialize PA')):
+                hit=runtime.advance_cache(run,plan)
+            self.assertEqual(hit['generation_directory'],published['generation_directory'])
+            self.assertTrue((Path(hit['generation_directory'])/runtime.PA_NAME).is_file())
+
+    def test_terminal_producer_handoff_uses_public_transaction_and_canonical_run_id(self):
+        public=public_cache_tests.PAFamilyCacheTest()
+        public.setUp();self.addCleanup(public.tearDown)
+        artifacts,cache=public._artifact_cache()
+        predecessor=public.producer_run_config.parent
+        (predecessor/'inputs').mkdir()
+        identity=public_cache_tests.identity()
+        runtime.write(predecessor/'inputs/pa_cache_identity.json',identity)
+        config=runtime.read(public.producer_run_config)
+        config['artifact_retention']=dict(policy_version=1,**{'class':'solver_review'},reason='inert handoff regression')
+        config['inputs']={'identity':str(predecessor/'inputs/pa_cache_identity.json')}
+        runtime.write(public.producer_run_config,config)
+        plan=dict(cache_root=str(cache),cache_key=runtime.canonical_pa_family_cache_key(identity),
+                  identity=identity,filenames=list(public.names))
+        first=runtime.advance_cache(predecessor,plan)
+        scratch=Path(first['scratch_directory'])/'working.pa#'
+        scratch.write_bytes(b'inert scratch is preserved, never certified as a completed field')
+        runtime.write(predecessor/'run_manifest.json',build_run_manifest(public.producer_run_config,'failed', retention_api=_manifest_retention_api))
+        record_capacity_object(artifacts,path=predecessor,object_class='rebuildable_payload',bytes_count=0,
+            status='writing',owner=predecessor.parent.parent.name,recovery_reason='inert producer stopped',
+            review_deadline='2026-11-01')
+        stopped=seal_checkpoint(artifacts,public.producer_run_config,owner=predecessor.parent.parent.name,
+            writing_stopped=True,retain_payload=True,retention_reason='inert handoff regression')
+        receipt=public.root/'stopped_receipt.json';runtime.write(receipt,stopped)
+        successor=predecessor.with_name('20261025_220000__test__python__paired-successor')
+        (successor/'inputs').mkdir(parents=True)
+        config['run_id']=successor.name;config['inputs']={}
+        runtime.write(successor/'run_config.json',config)
+        record_capacity_object(artifacts,path=successor,object_class='rebuildable_payload',bytes_count=0,
+            status='writing',owner=predecessor.parent.parent.name,recovery_reason='inert successor active',
+            review_deadline='2026-11-01')
+        session=dict(lease_id='paired-handoff-fixture',owner='paired-successor-fixture')
+        create_capacity_protection_lease(artifacts,lease_id=session['lease_id'],owner=session['owner'],
+            ttl_seconds=300,protected_cache_keys=[plan['cache_key']],protected_paths=[successor])
+        transaction=Path(first['transaction_directory'])/'transaction.json'
+        before=transaction.read_bytes()
+        with self.assertRaisesRegex(ValueError,'explicit public stopped receipt'):
+            runtime.advance_cache(successor,plan,capacity_session=session)
+        self.assertEqual(transaction.read_bytes(),before)
+        changed=dict(plan,identity={**identity,'handoff_invalid_geometry':'changed'})
+        with self.assertRaisesRegex(ValueError,'scientific identity differs'):
+            runtime.advance_cache(successor,changed,capacity_session=session,producer_stopped_receipt=receipt)
+        self.assertEqual(transaction.read_bytes(),before)
+        alias=public.root/'run_short_alias'
+        if os.name == 'nt':
+            linked=subprocess.run(['cmd','/c','mklink','/J',str(alias),str(successor)],
+                cwd=ROOT,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30)
+            self.assertEqual(linked.returncode,0,linked.stdout+linked.stderr)
+        else:
+            alias.symlink_to(successor,target_is_directory=True)
+        resumed=runtime.advance_cache(alias,plan,capacity_session=session,producer_stopped_receipt=receipt)
+        self.assertEqual(resumed['action_required'],'build')
+        actual=runtime.read(transaction)
+        self.assertEqual(actual['owner'],'paired-static:'+successor.name)
+        self.assertEqual(Path(actual['producer']['run_config_path']),successor/'run_config.json')
+        self.assertEqual(actual['producer_handoff']['prior_owner'],'paired-static:'+predecessor.name)
+        self.assertEqual(actual['files'],[])
+        self.assertIsNone(actual['inventory_sha256'])
+        self.assertEqual(scratch.read_bytes(),b'inert scratch is preserved, never certified as a completed field')
+        self.assertEqual(runtime.advance_cache(alias,plan)['action_required'],'build')
+
+    def test_terminal_sealed_inventory_is_verified_and_published_without_handoff_or_rebuild(self):
+        public=public_cache_tests.PAFamilyCacheTest()
+        public.setUp();self.addCleanup(public.tearDown)
+        artifacts,cache=public._artifact_cache()
+        predecessor=public.producer_run_config.parent
+        (predecessor/'inputs').mkdir();(predecessor/'logs').mkdir()
+        identity=public_cache_tests.identity()
+        runtime.write(predecessor/'inputs/pa_cache_identity.json',identity)
+        config=runtime.read(public.producer_run_config)
+        config['artifact_retention']=dict(policy_version=1,**{'class':'solver_review'},reason='inert sealed inventory regression')
+        config['inputs']={'identity':str(predecessor/'inputs/pa_cache_identity.json')}
+        runtime.write(public.producer_run_config,config)
+        plan=dict(cache_root=str(cache),cache_key=runtime.canonical_pa_family_cache_key(identity),
+                  identity=identity,filenames=list(public.names),verifier_path=str(ROOT/'src/msplatform/backends/simion/native_completion.py'))
+        first=runtime.advance_cache(predecessor,plan)
+        payload=Path(first['build_directory'])
+        for name in public.names:(payload/name).write_bytes(b'inert transaction member; not a qualified PA')
+        sealed=runtime.advance_cache(predecessor,plan)
+        self.assertEqual(sealed['action_required'],'verify')
+        transaction=Path(sealed['transaction_directory'])/'transaction.json'
+        before=runtime.read(transaction)
+        self.assertTrue(before['inventory_sha256'])
+        runtime.write(predecessor/'run_manifest.json',build_run_manifest(public.producer_run_config,'failed', retention_api=_manifest_retention_api))
+        record_capacity_object(artifacts,path=predecessor,object_class='rebuildable_payload',bytes_count=0,
+            status='writing',owner=predecessor.parent.parent.name,recovery_reason='inert producer stopped',
+            review_deadline='2026-11-01')
+        seal_checkpoint(artifacts,public.producer_run_config,owner=predecessor.parent.parent.name,
+            writing_stopped=True,retain_payload=True,retention_reason='inert sealed inventory regression')
+        successor=predecessor.with_name('20261025_230000__test__python__paired-sealed-successor')
+        (successor/'inputs').mkdir(parents=True);(successor/'logs').mkdir()
+        config['run_id']=successor.name;config['inputs']={}
+        runtime.write(successor/'run_config.json',config)
+        record_capacity_object(artifacts,path=successor,object_class='rebuildable_payload',bytes_count=0,
+            status='writing',owner=predecessor.parent.parent.name,recovery_reason='inert successor active',
+            review_deadline='2026-11-01')
+        resumed=runtime.advance_cache(successor,plan)
+        self.assertEqual(resumed['action_required'],'verify')
+        self.assertEqual(resumed['build_directory'],sealed['build_directory'])
+        after=runtime.read(transaction)
+        for field in ('owner','producer','files','inventory_sha256'):self.assertEqual(after[field],before[field])
+        self.assertNotIn('producer_handoff',after)
+        original=runtime.read(successor/'inputs/pa_original_producer.json')
+        self.assertEqual(original['owner'],before['owner'])
+        self.assertEqual(original['inventory_sha256'],before['inventory_sha256'])
+        evidence=successor/'logs/inert_native_facts.txt';evidence.write_text('inert publication wiring only',encoding='utf-8')
+        published=runtime.advance_cache(successor,plan,evidence)
+        self.assertEqual(published['action_required'],'complete')
+        self.assertEqual(runtime.read(transaction)['owner'],before['owner'])
+        for name in public.names:
+            self.assertEqual((Path(published['generation_directory'])/name).read_bytes(),
+                             b'inert transaction member; not a qualified PA')
+
+
+    def test_matlab_task_is_prepared_once_before_field_and_reused_by_native_consumer(self):
+        """Execute actual owner statements/factory; native boundaries only inspect files."""
+        script = r'''param($Owner,$Public,$Python,$Run)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+. (Join-Path $Public 'src/msplatform/execution/resources/run_artifact_support.ps1')
+$ast=[Management.Automation.Language.Parser]::ParseFile($Owner,[ref]$null,[ref]$null)
+$function=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-PairedPython'},$true)
+Invoke-Expression $function.Extent.Text
+$headerNode=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$header'},$true)
+. ([scriptblock]::Create($headerNode.Extent.Text))
+$actualPython=${function:Invoke-PairedPython}
+function Invoke-PairedPython {param($Code,$Arguments)
+ $value=&$actualPython -Code $Code -Arguments $Arguments
+ if($value.matlab){$script:matlabCalls++;$script:taskPath=[string]$value.matlab;$script:taskText=Get-Content $value.matlab -Raw}
+ if($value.lua){$script:luaCalls++}
+ return $value
+}
+$statements=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-in@('$taskArguments','$taskCode','$tasks','$simionTasks')},$true))
+$native=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.CommandAst]-and$n.GetCommandName()-eq'Invoke-PairedNative'},$true))
+$comsol=$ast.Find({param($n)$n-is[Management.Automation.Language.CommandAst]-and@($n.CommandElements|Where-Object{$_-is[Management.Automation.Language.CommandParameterAst]-and$_.ParameterName-eq'TaskScript'}).Count-eq1},$true)
+$resolver=$ast.Find({param($n)$n-is[Management.Automation.Language.CommandAst]-and$n.InvocationOperator-eq'Dot'-and$n.Extent.Text.Contains("'resolve_comsol_64.ps1'")},$true)
+$parameters=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$comsolLauncherParameters'},$true)
+if($null-eq$resolver-or$null-eq$parameters){throw 'Actual COMSOL deployment boundary missing'}
+$steps=@($statements)+@($native[0],$native[-1],$resolver,$parameters,$comsol)
+$RepoRoot=Join-Path $Run consumer
+$packageRoot=Join-Path $RepoRoot 'src/msplatform'
+$launcher=Join-Path $RepoRoot 'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1'
+New-Item -ItemType Directory (Split-Path $launcher) -Force|Out-Null
+Copy-Item (Join-Path $Public 'src/msplatform/backends/comsol/launcher/resolve_comsol_64.ps1') (Join-Path (Split-Path $launcher) 'resolve_comsol_64.ps1')
+$env:COMSOL_64_ROOT=Join-Path $Run 'TEST_ONLY_COMSOL';$env:MATLAB_R2025B_ROOT=Join-Path $Run 'TEST_ONLY_MATLAB'
+New-Item -ItemType Directory -Path (Join-Path $env:COMSOL_64_ROOT 'bin/win64') -Force|Out-Null
+[IO.File]::WriteAllText((Join-Path $env:COMSOL_64_ROOT 'bin/win64/comsolmphserver.exe'),'TEST_ONLY_NEVER_EXECUTED')
+$script:HostResourceExecutionContext=@{workspace=$Run;python_executable=$Python;host_state_path=(Join-Path $Run host.sqlite3);policy_path=(Join-Path $Public 'src/msplatform/execution/resources/host_resource_policy.json')}
+@'
+param($TaskScript,$ReportPath,$ResourceBudgets,$RunId,$CompletionPath,$Limits,$RunDir,$UsagePath,$HostContextJson,$WorkingDirectory,$ComsolLauncherPath,$MatlabRootPath)
+$context=ConvertFrom-Json -InputObject $HostContextJson -AsHashtable
+if($context.workspace-ne$WorkingDirectory-or$ComsolLauncherPath-ne(Join-Path $env:COMSOL_64_ROOT 'bin/win64/comsolmphserver.exe')-or$MatlabRootPath-ne$env:MATLAB_R2025B_ROOT){throw 'Actual COMSOL deployment argv was not transported'}
+[IO.File]::WriteAllText((Join-Path $RunDir 'results/task_consumed.txt'),$TaskScript)
+'@|Set-Content $launcher -Encoding utf8
+$frozen=@{execution_root=$Public};$budget=@{host_budgets=@{comsol=@{}};limits=@{}};$RunId='TEST_ONLY_TASK_TRANSPORT';$completedComsolExports=$null
+function Invoke-PairedNative {param($Name,$Directory,$Arguments)
+ if(-not$script:taskPath-or-not(Test-Path $script:taskPath)){throw 'Field entered before MATLAB task preparation'}
+ if((Get-Content $script:taskPath -Raw)-cne$script:taskText){throw 'MATLAB task changed before its consumer'}
+ if($Name-eq'sample_static_on'-and-not(Test-Path $Arguments[-1])){throw 'Lua sampler was not generated for the actual PA'}
+ $script:vendorCalls++
+}
+$cases=@()
+foreach($scenario in @('new','saved','bad_stage')){
+ $directory=Join-Path $Run $scenario
+ foreach($name in @('inputs/bvp','results','logs','comsol')){New-Item -ItemType Directory (Join-Path $directory $name) -Force|Out-Null}
+ Copy-Item (Join-Path $Run 'inputs/bvp/paired_accelerator_static_field_plan.json') (Join-Path $directory 'inputs/bvp/paired_accelerator_static_field_plan.json')
+ $package=@{run_dir=$directory;artifact_run_dir=$directory;input_dir=(Join-Path $directory inputs);result_dir=(Join-Path $directory results);log_dir=(Join-Path $directory logs)}
+ $savedModel=if($scenario-ne'new'){Join-Path $directory 'saved model.mph'}else{''}
+ if($savedModel){[IO.File]::WriteAllText($savedModel,'TEST_ONLY_IDENTITY_NOT_NATIVE')}
+ $comsolSourceStage=if($scenario-eq'bad_stage'){'invalid_stage'}else{'prepared_saved'}
+ $stage='pure_task';$short=$directory;$pa=Join-Path $directory 'future.pa';$build=@{origin='0,0,0';voltages='0'}
+ $comsolCompletion=Join-Path $directory 'completion.json'
+ $script:matlabCalls=0;$script:luaCalls=0;$script:vendorCalls=0;$script:taskPath='';$script:taskText='';$failed=$false
+ try{foreach($node in $steps|Sort-Object {$_.Extent.StartOffset}){. ([scriptblock]::Create($node.Extent.Text))}}
+ catch{if($scenario-ne'bad_stage'-or$_.Exception.Message-notlike'*explicit prepared/saved or solved/saved*'){throw};$failed=$true}
+ if($scenario-eq'bad_stage'){
+  if(-not$failed-or$script:vendorCalls-ne0-or$script:matlabCalls-ne0){throw 'Invalid task input reached a vendor boundary'}
+ }else{
+  if($script:matlabCalls-ne1-or$script:luaCalls-ne1-or$script:vendorCalls-ne2){throw 'Task generation was skipped or repeated'}
+  if((Get-Content (Join-Path $directory 'results/task_consumed.txt') -Raw)-cne$script:taskPath){throw 'COMSOL did not consume the early task'}
+  if((Get-Content $script:taskPath -Raw)-cne$script:taskText){throw 'Later Lua materialization rewrote MATLAB'}
+  if($savedModel-and-not$script:taskText.Contains("'prepared_saved'")){throw 'Saved model stage was not transported'}
+ }
+ $cases+=@{scenario=$scenario;matlab_calls=$script:matlabCalls;lua_calls=$script:luaCalls;vendor_calls=$script:vendorCalls;rejected=$failed}
+}
+$cases|ConvertTo-Json -Compress
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run, _ = self.prepared(root)
+            runtime.prepare_run(run)
+            wrapper = root / 'early_task.ps1'
+            wrapper.write_text(script, encoding='utf-8')
+            result = subprocess.run(['pwsh', '-NoProfile', '-File', str(wrapper),
+                str(WORKFLOW / 'paired_accelerator_static_field.ps1'), str(ROOT), sys.executable, str(run)], cwd=ROOT,
+                capture_output=True, text=True, encoding='utf-8', timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+
+if __name__=='__main__':unittest.main()

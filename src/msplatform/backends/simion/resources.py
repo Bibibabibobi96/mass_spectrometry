@@ -33,6 +33,12 @@ NATIVE_RESOURCES = frozenset({
     "export_paired_accelerator_field.lua", "paired_accelerator_pulse.lua", "scientific_event_csv.lua",
     "assemble_native_fast_adjust_family.lua", "iob_seed_placeholder_01.pa0",
     "scientific_event_reconciliation.lua", "simion_transport.lua", "build_simion_runtime_iob.lua", "inspect_builtin_quad_reference.lua",
+    "inspect_simion_layout_template.lua", "multipole_layout_placeholder.gem", "quad_include.gem", "quad_monolithic.gem",
+    "verify_native_corridor_family.lua", "verify_native_corridor_response_bank.lua", "verify_coarse_basis_bank.lua",
+    "verify_native_analyzer_coarse_raw.lua", "run_ip_prism_local_case.lua", "ip_prism_local.lua",
+    "compare_static_fields_at_samples.lua", "ip_prism_lens_contact.lua", "build_component_basis.lua",
+    "build_component_pa.lua", "remap_pa_electrode_ids.lua", "run_native_corridor_qualification.ps1",
+    "run_native_corridor_response_bank.ps1", "run_native_analyzer_coarse_raw.ps1",
 })
 
 

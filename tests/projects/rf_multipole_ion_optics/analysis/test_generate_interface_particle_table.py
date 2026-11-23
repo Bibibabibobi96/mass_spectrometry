@@ -1,0 +1,416 @@
+from __future__ import annotations
+
+import json
+import math
+import hashlib
+import os
+import shutil
+import subprocess
+import sys
+import sysconfig
+import tempfile
+import unittest
+from pathlib import Path
+from msplatform.contracts.particle_count_policy import POLICY_PATH
+
+import numpy as np
+
+from msplatform.execution.inputs import enumerate_python_sources
+from msplatform.components.rf_multipole.event_table import read_canonical_rf_source_expectations as canonical_sources
+from msplatform.backends.simion.rf_ion11_source import (
+    read_ion11_source_states as ion11_sources,
+)
+from msplatform.analysis.generate_official_particle_table import (
+    generate as generate_official_table,
+)
+from msplatform.components.rf_multipole.paired_particle_source_bundle import (
+    generate_bundle as generate_neutral_bundle,
+    generate_single_table,
+)
+from msplatform.workflows.rf_interface_readiness.particle_source_policy import (
+    BUNDLE_ROLE,
+    BUNDLE_VERSION,
+    POINT_IDS,
+    generate_interface_bundle as generate_bundle,
+    load_interface_point_specs,
+    validate_interface_bundle as validate_bundle,
+)
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[4] / "src" / "msplatform" / "components" / "rf_multipole"
+REPOSITORY_ROOT = PROJECT_ROOT.parents[3]
+GENERATOR = (
+    REPOSITORY_ROOT / "src/msplatform/workflows/rf_interface_readiness/generate_particle_table.py"
+)
+SOURCE_FAMILY = PROJECT_ROOT / "variants" / "quadrupole" / "config" / "interface_readiness_particle_source.json"
+DISTRIBUTION = PROJECT_ROOT / "variants" / "quadrupole" / "config" / "official_particle_source.json"
+RESOLVED = PROJECT_ROOT / "variants" / "quadrupole" / "config" / "resolved_design_official.json"
+
+
+class InterfaceParticleTableTests(unittest.TestCase):
+    def test_known_historical_policy_label_reads_without_rewriting_or_weakening_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            generate_bundle(SOURCE_FAMILY,DISTRIBUTION,RESOLVED,root, policy_path=POLICY_PATH)
+            path = root / "paired_particle_bundle.json"
+            data = json.loads(path.read_text())
+            self.assertEqual(data["policy"]["source"],"src/msplatform/contracts/particle_count_policy.json")
+            data["policy"]["source"] = "common/contracts/particle_count_policy.json"
+            path.write_text(json.dumps(data))
+            before = path.read_bytes()
+            validate_bundle(path,SOURCE_FAMILY,DISTRIBUTION,RESOLVED, policy_path=POLICY_PATH)
+            self.assertEqual(path.read_bytes(),before)
+            for key,value in (("source","arbitrary/policy.json"),("sha256","0"*64),("functional_count",99)):
+                changed = json.loads(before)
+                changed["policy"][key] = value
+                path.write_text(json.dumps(changed))
+                with self.subTest(key=key), self.assertRaisesRegex(ValueError,"policy identity differs"):
+                    validate_bundle(path,SOURCE_FAMILY,DISTRIBUTION,RESOLVED, policy_path=POLICY_PATH)
+            missing = json.loads(before);del missing["policy"]["sha256"]
+            path.write_text(json.dumps(missing))
+            with self.assertRaisesRegex(ValueError,"policy identity differs"):
+                validate_bundle(path,SOURCE_FAMILY,DISTRIBUTION,RESOLVED, policy_path=POLICY_PATH)
+
+    def test_fixed_and_uniform_energy_points_preserve_paired_phase_space(self) -> None:
+        with tempfile.TemporaryDirectory() as root_text:
+            root = Path(root_text)
+            distribution = {
+                "time_of_birth_us": {"min": 0.0, "max": 1.0},
+                "position_mm": {"axial": 0.0, "transverse_1": {"min": -0.1, "max": 0.1},
+                                "transverse_2": {"min": -0.1, "max": 0.1}},
+                "direction": {"half_angle_deg": 5.0}, "cwf": 1, "color": 3,
+            }
+            family = {
+                "paired_sampling": {"base_seed": 10},
+                "operating_points": {
+                    "uniform": {"mass_amu": 100, "charge_state": 1,
+                                "kinetic_energy_eV": {"distribution": "uniform", "min": 1.8, "max": 2.2}},
+                    "fixed": {"mass_amu": 100, "charge_state": 1,
+                              "kinetic_energy_eV": {"distribution": "fixed", "value": 5.0}},
+                },
+            }
+            distribution_path = root / "distribution.json"
+            family_path = root / "family.json"
+            distribution_path.write_text(json.dumps(distribution), encoding="utf-8")
+            family_path.write_text(json.dumps(family), encoding="utf-8")
+            tables = []
+            for point in ("uniform", "fixed"):
+                output = root / f"{point}.ion"
+                generate_single_table(
+                    family_path,
+                    distribution_path,
+                    point,
+                    100,
+                    output,
+                    root / f"{point}.json",
+                    seed=77,
+                 policy_path=POLICY_PATH)
+                tables.append(np.loadtxt(output, delimiter=","))
+            uniform, fixed = tables
+            self.assertTrue(np.array_equal(uniform[:, :8], fixed[:, :8]))
+            self.assertTrue(np.array_equal(uniform[:, 9:], fixed[:, 9:]))
+            self.assertFalse(np.array_equal(uniform[:, 8], fixed[:, 8]))
+
+    def test_n100_is_prefix_of_n1000(self) -> None:
+        with tempfile.TemporaryDirectory() as root_text:
+            root = Path(root_text)
+            distribution = {
+                "time_of_birth_us": {"min": 0.0, "max": 1.0},
+                "position_mm": {"axial": 0.0, "transverse_1": {"min": -0.1, "max": 0.1},
+                                "transverse_2": {"min": -0.1, "max": 0.1}},
+                "direction": {"half_angle_deg": 5.0}, "cwf": 1, "color": 3,
+            }
+            family = {
+                "paired_sampling": {"base_seed": 10},
+                "operating_points": {
+                    "reference": {"mass_amu": 100, "charge_state": 1,
+                                  "kinetic_energy_eV": {"distribution": "fixed", "value": 2.0}},
+                },
+            }
+            distribution_path = root / "distribution.json"
+            family_path = root / "family.json"
+            distribution_path.write_text(json.dumps(distribution), encoding="utf-8")
+            family_path.write_text(json.dumps(family), encoding="utf-8")
+            tables = {}
+            for count in (100, 1000, 1001, 1002):
+                output = root / f"n{count}.ion"
+                generate_single_table(
+                    family_path,
+                    distribution_path,
+                    "reference",
+                    count,
+                    output,
+                    root / f"n{count}.json",
+                 policy_path=POLICY_PATH)
+                tables[count] = np.loadtxt(output, delimiter=",")
+            self.assertTrue(np.array_equal(tables[100], tables[1000][:100]))
+            self.assertTrue(np.array_equal(tables[1000], tables[1001][:1000]))
+            self.assertTrue(np.array_equal(tables[1001], tables[1002][:1001]))
+
+    def test_official_source_allows_counts_above_registered_samples(self) -> None:
+        n1000 = generate_official_table(1000)
+        n1001 = generate_official_table(1001)
+        n1002 = generate_official_table(1002)
+        self.assertEqual(n1001.shape, (1001, 11))
+        self.assertTrue(np.array_equal(n1000, n1001[:1000]))
+        self.assertTrue(np.array_equal(n1001, n1002[:1001]))
+
+    def test_paired_bundle_freezes_prefixes_mapping_and_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as root_text:
+            root = Path(root_text)
+            metadata = generate_bundle(SOURCE_FAMILY, DISTRIBUTION, RESOLVED, root, policy_path=POLICY_PATH)
+            metadata_path = root / "paired_particle_bundle.json"
+            self.assertEqual(validate_bundle(metadata_path, SOURCE_FAMILY, DISTRIBUTION, RESOLVED, policy_path=POLICY_PATH), metadata)
+            self.assertEqual(len(metadata["artifacts"]), 8)
+            self.assertEqual(
+                metadata["operating_point_ids"],
+                ["official_100amu_2eV", "rf_to_oatof_100amu_5eV"],
+            )
+            official = PROJECT_ROOT / "variants" / "quadrupole" / "config" / "particles" / "official_fixed_100.ion"
+            self.assertTrue(
+                np.array_equal(
+                    np.loadtxt(
+                        root / "official_100amu_2eV_n100.ion",
+                        delimiter=",",
+                    ),
+                    np.loadtxt(official, delimiter=","),
+                )
+            )
+            for point_id in metadata["operating_point_ids"]:
+                ion_path = root / f"{point_id}_n100.ion"
+                canonical_path = root / f"{point_id}_n100_canonical.csv"
+                self.assertNotIn(b"\r", ion_path.read_bytes())
+                self.assertNotIn(b"\r", canonical_path.read_bytes())
+                ion = ion11_sources(ion_path)
+                canonical = canonical_sources(canonical_path)
+                self.assertEqual(set(ion), set(canonical))
+                for particle_id in ion:
+                    for field in (
+                        "axial_z_mm",
+                        "transverse_x_mm",
+                        "transverse_y_mm",
+                        "velocity_axial_m_s",
+                        "velocity_x_m_s",
+                        "velocity_y_m_s",
+                    ):
+                        self.assertTrue(
+                            math.isclose(
+                                ion[particle_id][field],
+                                canonical[particle_id][field],
+                                rel_tol=0.0,
+                                abs_tol=1e-5,
+                            ),
+                            f"{point_id} particle {particle_id} {field}",
+                        )
+            control = np.loadtxt(
+                root / "official_100amu_2eV_n100.ion", delimiter=","
+            )
+            candidate = np.loadtxt(
+                root / "rf_to_oatof_100amu_5eV_n100.ion", delimiter=","
+            )
+            self.assertTrue(np.array_equal(control[:, :8], candidate[:, :8]))
+            self.assertTrue(np.array_equal(control[:, 9:], candidate[:, 9:]))
+            self.assertFalse(np.array_equal(control[:, 8], candidate[:, 8]))
+
+    def test_bundle_uses_explicit_selected_policy_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            policy = root / "policy.json"
+            policy.write_bytes(POLICY_PATH.read_bytes())
+            bundle = root / "bundle"
+            generate_bundle(SOURCE_FAMILY, DISTRIBUTION, RESOLVED, bundle, policy_path=policy)
+            metadata = bundle / "paired_particle_bundle.json"
+            validated = validate_bundle(metadata, SOURCE_FAMILY, DISTRIBUTION, RESOLVED, policy_path=policy)
+            self.assertEqual(validated["policy"]["sha256"], hashlib.sha256(policy.read_bytes()).hexdigest().upper())
+            policy.write_bytes(policy.read_bytes() + b"\n")
+            with self.assertRaisesRegex(ValueError, "policy identity differs"):
+                validate_bundle(metadata, SOURCE_FAMILY, DISTRIBUTION, RESOLVED, policy_path=policy)
+            with self.assertRaises(FileNotFoundError):
+                validate_bundle(metadata, SOURCE_FAMILY, DISTRIBUTION, RESOLVED, policy_path=root / "missing.json")
+
+    def test_bundle_validator_rejects_artifact_corruption(self) -> None:
+        with tempfile.TemporaryDirectory() as root_text:
+            root = Path(root_text)
+            generate_bundle(SOURCE_FAMILY, DISTRIBUTION, RESOLVED, root, policy_path=POLICY_PATH)
+            source = root / "official_100amu_2eV_n100.ion"
+            source.write_bytes(source.read_bytes() + b"1,2,3\n")
+            metadata_path = root / "paired_particle_bundle.json"
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            for artifact in metadata["artifacts"]:
+                if artifact["relative_path"] == source.name:
+                    artifact["sha256"] = hashlib.sha256(source.read_bytes()).hexdigest().upper()
+            metadata_path.write_text(
+                json.dumps(metadata, indent=2) + "\n", encoding="utf-8"
+            )
+            with self.assertRaisesRegex(
+                ValueError, "prefix source validation|frozen latent family"
+            ):
+                validate_bundle(
+                    metadata_path,
+                    SOURCE_FAMILY,
+                    DISTRIBUTION,
+                    RESOLVED,
+                 policy_path=POLICY_PATH)
+
+    def test_bundle_cli_rejects_mixed_branch_arguments(self) -> None:
+        with tempfile.TemporaryDirectory() as root_text:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "msplatform.workflows.rf_interface_readiness.generate_particle_table",
+                    "--particle-count-policy", str(POLICY_PATH),
+                    "--source-family",
+                    str(SOURCE_FAMILY),
+                    "--distribution",
+                    str(DISTRIBUTION),
+                    "--resolved-design",
+                    str(RESOLVED),
+                    "--bundle-output-dir",
+                    root_text,
+                    "--particles",
+                    "100",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                cwd=REPOSITORY_ROOT,
+                timeout=60,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("unrecognized arguments: --particles 100", result.stderr)
+
+    def test_bundle_cli_generates_and_validates_current_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as root_text:
+            root = Path(root_text)
+            common = [
+                sys.executable,
+                "-m",
+                "msplatform.workflows.rf_interface_readiness.generate_particle_table",
+                "--particle-count-policy", str(POLICY_PATH),
+                    "--source-family",
+                str(SOURCE_FAMILY),
+                "--distribution",
+                str(DISTRIBUTION),
+                "--resolved-design",
+                str(RESOLVED),
+            ]
+            generated = subprocess.run(
+                common + ["--bundle-output-dir", str(root)],
+                check=True,
+                capture_output=True,
+                text=True,
+                cwd=REPOSITORY_ROOT,
+                timeout=60,
+            )
+            validated = subprocess.run(
+                common + ["--validate-bundle", str(root / "paired_particle_bundle.json")],
+                check=True,
+                capture_output=True,
+                text=True,
+                cwd=REPOSITORY_ROOT,
+                timeout=60,
+            )
+            self.assertIn("PARTICLES=1000", generated.stdout)
+            self.assertIn("BUNDLE_VALIDATION=true", validated.stdout)
+
+    def test_frozen_package_tree_validates_current_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as root_text:
+            root = Path(root_text)
+            bundle = root / "bundle"
+            generate_bundle(SOURCE_FAMILY, DISTRIBUTION, RESOLVED, bundle, policy_path=POLICY_PATH)
+            code_root = root / "code"
+            copies = ((
+                REPOSITORY_ROOT / "src/msplatform/contracts/particle_count_policy.json",
+                code_root / "src/msplatform/contracts/particle_count_policy.json",
+            ),)
+            copies += tuple((REPOSITORY_ROOT / relative, code_root / relative)
+                for relative in enumerate_python_sources(REPOSITORY_ROOT,
+                    package_roots=['src/msplatform'], provider_root='src/msplatform',
+                    resource_suffixes=('.schema.json',)))
+            for source, destination in copies:
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, destination)
+            environment = os.environ.copy()
+            environment.pop("PYTHONPATH", None)
+            environment["PYTHONNOUSERSITE"] = "1"
+            dependency_roots = [sysconfig.get_path("purelib"), sysconfig.get_path("platlib"),
+                *[sysconfig.get_path(name, vars=dict(base=sys.base_prefix, platbase=sys.base_prefix))
+                  for name in ("purelib", "platlib")]]
+            bootstrap = """
+import json, pathlib, runpy, sys
+root = pathlib.Path(sys.argv.pop(1)).resolve()
+dependencies = json.loads(sys.argv.pop(1))
+sys.path.extend(dict.fromkeys(dependencies))
+sys.path[:0] = [str(root / 'src'), str(root)]
+import msplatform
+assert pathlib.Path(msplatform.__file__).resolve().is_relative_to(root / 'src')
+assert 'sitecustomize' not in sys.modules
+module = 'msplatform.workflows.rf_interface_readiness.generate_particle_table'
+sys.argv = [module, *sys.argv[1:]]
+runpy.run_module(module, run_name='__main__')
+for name, loaded in tuple(sys.modules.items()):
+    if name.startswith('msplatform') and getattr(loaded, '__file__', None):
+        assert pathlib.Path(loaded.__file__).resolve().is_relative_to(root / 'src'), name
+"""
+            result = subprocess.run(
+                [sys.executable, "-I", "-S", "-B", "-c", bootstrap, str(code_root), json.dumps(dependency_roots),
+                    "--particle-count-policy", str(code_root / "src/msplatform/contracts/particle_count_policy.json"),
+                    "--source-family",
+                    str(SOURCE_FAMILY),
+                    "--distribution",
+                    str(DISTRIBUTION),
+                    "--resolved-design",
+                    str(RESOLVED),
+                    "--validate-bundle",
+                    str(bundle / "paired_particle_bundle.json"),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                cwd=code_root,
+                env=environment,
+                timeout=60,
+            )
+            self.assertIn("BUNDLE_VALIDATION=true", result.stdout)
+
+    def test_interface_policy_rejects_missing_extra_and_changed_energy_points(
+        self,
+    ) -> None:
+        family = json.loads(SOURCE_FAMILY.read_text(encoding="utf-8"))
+        mutations = []
+        missing = json.loads(json.dumps(family))
+        missing["operating_points"].pop(POINT_IDS[1])
+        mutations.append(missing)
+        wrong_mass = json.loads(json.dumps(family))
+        wrong_mass["operating_points"][POINT_IDS[0]]["mass_amu"] = 99
+        mutations.append(wrong_mass)
+        changed = json.loads(json.dumps(family))
+        changed["operating_points"][POINT_IDS[1]]["kinetic_energy_eV"]["value"] = 4.9
+        mutations.append(changed)
+        with tempfile.TemporaryDirectory() as root_text:
+            root = Path(root_text)
+            for index, document in enumerate(mutations):
+                path = root / f"family_{index}.json"
+                path.write_text(json.dumps(document), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "interface"):
+                    load_interface_point_specs(path)
+
+    def test_neutral_bundle_requires_explicit_unique_specification(self) -> None:
+        specs = load_interface_point_specs(SOURCE_FAMILY)
+        with tempfile.TemporaryDirectory() as root_text:
+            with self.assertRaisesRegex(ValueError, "duplicated"):
+                generate_neutral_bundle(
+                    SOURCE_FAMILY,
+                    DISTRIBUTION,
+                    RESOLVED,
+                    Path(root_text),
+                    point_ids=(POINT_IDS[0], POINT_IDS[0]),
+                    point_specs={POINT_IDS[0]: specs[POINT_IDS[0]]},
+                    bundle_role=BUNDLE_ROLE,
+                    bundle_version=BUNDLE_VERSION,
+                 policy_path=POLICY_PATH)
+
+
+if __name__ == "__main__":
+    unittest.main()

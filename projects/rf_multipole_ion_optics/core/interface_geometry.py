@@ -1,8 +1,0 @@
-"""Single-direction RF compatibility exports; active callers migrate by P4."""
-from msplatform.components.rf_multipole.interface_geometry import InterfaceGeometryError as InterfaceGeometryError
-from msplatform.components.rf_multipole.interface_geometry import _nonnegative as _nonnegative
-from msplatform.components.rf_multipole.interface_geometry import _positive as _positive
-from msplatform.components.rf_multipole.interface_geometry import build_axial_interface_layout as build_axial_interface_layout
-from msplatform.components.rf_multipole.interface_geometry import build_enclosure_layout as build_enclosure_layout
-from msplatform.components.rf_multipole.interface_geometry import transport_observations as transport_observations
-from msplatform.components.rf_multipole.interface_geometry import transport_numerical_domain as transport_numerical_domain

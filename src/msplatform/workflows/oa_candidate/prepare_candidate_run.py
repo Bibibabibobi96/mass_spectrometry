@@ -527,11 +527,11 @@ def prepare_candidate_run(
     planning_root.mkdir(parents=True)
     inputs_dir = planning_root / "inputs"
     inputs_dir.mkdir()
-    source_closure = freeze_candidate_source_closure(inputs_dir / "code", artifact_project_root, science_root=REPO_ROOT,
+    source_closure = freeze_candidate_source_closure(inputs_dir / "code", artifact_project_root, science_root=science_root,
         resolved_contract=candidate_resolved.resolve(), analysis_contract=PROJECT_ROOT / "config/analysis_contract.json")
     frozen_code_root = Path(source_closure["code_root"])
     frozen = {"candidate_analysis_contract.json": Path(frozen_source_path(source_closure,
-        "projects/single_reflection_oa_tof_mass_analyzer/config/analysis_contract.json"))}
+        "src/msplatform/components/single_reflection_oa_tof/config/analysis_contract.json"))}
     for name, source in sources.items():
         target = inputs_dir / name
         shutil.copy2(source, target)
@@ -594,9 +594,9 @@ def prepare_candidate_run(
         "msplatform.workflows.oa_candidate.prepare_candidate_consumers",
         "--contract", str(frozen["candidate_resolved_geometry.json"]), "--output-dir", str(prepared_dir),
         "--particle-source-seed", str(particle_source_seed),
-        "--science-root", str(REPO_ROOT),
+        "--science-root", str(science_root),
     ], cwd=frozen_code_root, stdout=stdout, stderr=stderr,
-        environment={**os.environ, "PYTHONPATH": os.pathsep.join(python_import_roots(frozen_code_root))},
+        environment_overrides={"PYTHONPATH": os.pathsep.join(python_import_roots(frozen_code_root))},
         warning_seconds=30)
     if process.returncode != 0:
         # Keep the actual final diagnostic after a temporary planning tree exits,
@@ -863,14 +863,19 @@ def select_postprocess_parent(parent: Path, consumer_artifact_root: Path) -> dic
             or completion_request_identity != request_identity
             or completion.get("run_config", {}).get("sha256") != manifest["run_config"]["sha256"]):
         raise ValueError("Public completion and original request/config identity differ")
-    import subprocess
-    from importlib.resources import files
-    validator = Path(str(files("msplatform.workflows") / "resources/run_artifact_workflow.ps1"))
-    command = ". '"+str(validator).replace("'", "''")+"'; $value=Get-Content -Raw -Encoding UTF8 '"+str(record_path(completions[0], base_dir=parent)).replace("'", "''")+"'|ConvertFrom-Json -AsHashtable; Assert-WorkflowWriterCompletion $value.writer_completion"
-    validation = subprocess.run(["pwsh.exe", "-NoProfile", "-NonInteractive", "-Command", command],
-        cwd=parent, capture_output=True, text=True, encoding="utf-8", timeout=60)
-    if validation.returncode:
-        raise ValueError("SOURCE_WRITER_UNCONFIRMED: "+validation.stderr.strip())
+    from msplatform.execution.owner import validate_writer_completion
+    writer_completion = completion.get("writer_completion")
+    try:
+        validate_writer_completion(
+            writers_stopped=True,
+            expected_operation_ids=tuple(row["operation_id"] for row in writer_completion["operations"]),
+            operations=writer_completion["operations"],
+            resource_releases=writer_completion["resource_releases"],
+            powershell_owner=True,
+            require_process_identity=False,
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError(f"SOURCE_WRITER_UNCONFIRMED: {error}") from error
     if (manifest["mode"] == "candidate_comsol_postprocess" or
             (manifest["mode"] == "design_candidate" and
              isinstance(config.get("provenance", {}).get("comsol_phases"), dict) and
@@ -1008,8 +1013,10 @@ def candidate_native_execution_relative_paths(closure: dict, *, code_relative_ro
 
 
 
-def prepare_postprocess_request(parent: Path, run_id: str, *, science_root: Path) -> dict:
+def prepare_postprocess_request(parent: Path, run_id: str, *, science_root: Path, host_context: dict) -> dict:
     """Freeze only an explicit COMSOL postprocessing child, using the public owner."""
+    if not isinstance(host_context, dict) or not host_context:
+        raise ValueError("postprocessing requires an explicit host_context")
     from msplatform.execution.resources.workspace_paths import resolve_workspace_paths
     from msplatform.execution.retention import file_record
     science = CandidateSciencePaths(science_root)
@@ -1027,7 +1034,7 @@ def prepare_postprocess_request(parent: Path, run_id: str, *, science_root: Path
     if planning.exists():
         raise FileExistsError(f"Postprocessing frozen preparation already exists: {planning}")
     planning.mkdir(parents=True)
-    closure = freeze_candidate_source_closure(planning / "code", project_root, science_root=REPO_ROOT,
+    closure = freeze_candidate_source_closure(planning / "code", project_root, science_root=science_root,
         resolved_contract=Path(selection["inputs"]["contract_path"]["path"]),
         analysis_contract=PROJECT_ROOT / "config/analysis_contract.json")
     selection_path = planning / "source_selection.json"
@@ -1040,7 +1047,7 @@ def prepare_postprocess_request(parent: Path, run_id: str, *, science_root: Path
         prepared["native_input_paths"] = [selection["model_record"]["path"], selection["context_record"]["path"]]
     return {"schema_version": 1, "role": "run_artifact_workflow_request",
             "repository_root": str(REPO_ROOT), "python_executable": closure["runtime"]["python_executable"],
-            "host_context": json.loads(os.environ["MASS_SPECTROMETRY_HOST_CONTEXT_JSON"]),
+            "host_context": host_context, "execution_run_directory": str(run_root),
             "package": {"project": PROJECT_ID, "run_id": run_id, "mode": "candidate_comsol_postprocess",
                         "artifact_project_root": str(project_root), "software": ["COMSOL 6.4", "MATLAB R2025b", "Python 3.11"],
                         "retention_class": "compact", "retention_reason": "",

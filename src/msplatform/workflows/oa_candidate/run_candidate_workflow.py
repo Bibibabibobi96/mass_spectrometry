@@ -3,12 +3,9 @@
 from __future__ import annotations
 
 import json
-import os
-import subprocess
 import sys
 import tempfile
 import time
-import warnings
 from pathlib import Path
 from contextlib import ExitStack
 from typing import Any, Callable
@@ -17,7 +14,7 @@ from typing import Any, Callable
 from msplatform.backends.simion.native_stage_completion import append_native_stage_completion
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-PROJECT_ROOT = REPO_ROOT / "projects/single_reflection_oa_tof_mass_analyzer"
+PROJECT_ROOT = REPO_ROOT / "src/msplatform/components/single_reflection_oa_tof"
 from msplatform.contracts.machine_contracts import load_json, sha256
 from msplatform.io.file_identity import FileIdentityGuard, guarded_file_identity
 from msplatform.contracts.particle_count_policy import validate_standard_particle_count
@@ -106,43 +103,29 @@ class StageTimedOut(TimeoutError):
 
 
 
-def _run_command(command: list[str], log_path: Path, environment: dict[str, str] | None = None) -> None:
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    env = os.environ.copy()
-    env.update(environment or {})
-    with log_path.open("w", encoding="utf-8", newline="\n") as log:
-        process = subprocess.Popen(
-            command,
-            cwd=Path(env.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY", str(REPO_ROOT))),
-            env=env,
-            stdout=log,
-            stderr=subprocess.STDOUT,
-        )
-        started = time.monotonic()
-        warned = False
-        try:
-            while process.poll() is None:
-                elapsed = time.monotonic() - started
-                if not warned and elapsed > STAGE_PROCESS_WARNING_S:
-                    message = (
-                        f"CANDIDATE_STAGE_WARNING elapsed_seconds={elapsed:.3f} "
-                        f"warning_seconds={STAGE_PROCESS_WARNING_S}; continuing pid={process.pid}"
-                    )
-                    print(message, file=log, flush=True)
-                    warnings.warn(message, RuntimeWarning, stacklevel=2)
-                    warned = True
-                time.sleep(1)
-        except KeyboardInterrupt:
-            # The user may cancel the Python coordinator, but its already
-            # admitted solver remains a healthy process until it ends itself.
-            print("CANDIDATE_STAGE_WAITING_FOR_NATURAL_COMPLETION", file=log, flush=True)
-            process.wait()
-            raise
+def _run_command(command: list[str], log_path: Path, environment: dict[str, str] | None = None,
+                 *, run_directory: Path | None = None, execution_directory: Path | None = None) -> None:
+    from msplatform.execution.process_observation import run_observed_process
+
+    env = environment or {}
+    execution = execution_directory or (Path(env["MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY"])
+                                       if "MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY" in env else None)
+    persistent = run_directory or (Path(env["MASS_SPECTROMETRY_RUN_DIRECTORY"])
+                                   if "MASS_SPECTROMETRY_RUN_DIRECTORY" in env else None)
+    if environment is None and (execution is None or persistent is None):
+        from msplatform.execution.run_paths import current_run_directories
+        current = current_run_directories()
+        if current is not None:
+            persistent = persistent or current[0]
+            execution = execution or current[1]
+    process, _ = run_observed_process(
+        command, cwd=execution or REPO_ROOT,
+        stdout=log_path, stderr=log_path, environment_overrides=env, merge_stderr=True,
+        warning_seconds=STAGE_PROCESS_WARNING_S,
+    )
     if process.returncode != 0:
         diagnostic_log = str(log_path)
-        persistent = env.get("MASS_SPECTROMETRY_RUN_DIRECTORY")
-        execution = env.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY")
-        if persistent and execution:
+        if persistent is not None and execution is not None:
             from msplatform.execution.run_paths import project_run_path
             diagnostic_log = project_run_path(log_path, execution, persistent)
         raise RuntimeError(f"command failed with exit code {process.returncode}; log={diagnostic_log}")
@@ -158,11 +141,14 @@ def _run_managed_stage_command(
     """Carry actual native receipts and canonical persistent paths to the owner."""
     writer = plan.get("writer_completion")
     native_command, native_environment = _native_stage_execution_view(command, environment, plan)
-    from msplatform.execution.run_paths import project_native_run_path
+    from msplatform.execution.run_paths import current_run_directories, project_native_run_path
     native_log = Path(project_native_run_path(log_path))
     failure = None
     try:
-        _run_command(native_command, native_log, native_environment)
+        _run_command(native_command, native_log, native_environment,
+                     run_directory=Path(plan["run_root"]),
+                     execution_directory=Path(plan.get("execution_run_directory") or
+                         current_run_directories()[1] if current_run_directories() is not None else plan["run_root"]))
     except BaseException as error:
         failure = error
     try:
@@ -201,24 +187,19 @@ def _verify_frozen_cad_python(closure: dict[str, Any], log_path: Path) -> str:
     python_executable = Path(str(runtime.get("python_executable", ""))).resolve()
     if not python_executable.is_file():
         raise RuntimeError(f"candidate CAD Python runtime is unavailable: {python_executable}")
+    from msplatform.execution.process_observation import ObservedProcessDeadlineExceeded, run_observed_process
     try:
-        result = subprocess.run(
+        result, _ = run_observed_process(
             [str(python_executable), "-c", "import pythoncom; import win32com.client; print('PYWIN32=PASS')"],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=CAD_PYTHON_PREFLIGHT_TIMEOUT_S,
-            check=False,
+            cwd=REPO_ROOT, stdout=log_path, stderr=log_path, merge_stderr=True,
+            hard_deadline_seconds=CAD_PYTHON_PREFLIGHT_TIMEOUT_S,
+            hard_deadline_action="terminate_process_tree",
         )
-    except subprocess.TimeoutExpired as error:
+    except ObservedProcessDeadlineExceeded as error:
         raise RuntimeError(
             f"candidate CAD Python runtime preflight timed out after {CAD_PYTHON_PREFLIGHT_TIMEOUT_S}s"
         ) from error
-    output = (result.stdout or "") + (result.stderr or "")
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    log_path.write_text(output, encoding="utf-8", newline="\n")
+    output = log_path.read_text(encoding="utf-8", errors="replace")
     if result.returncode != 0:
         detail = output.strip() or "no diagnostic output"
         raise RuntimeError(
@@ -750,10 +731,7 @@ def _execute_candidate_stages(
     run_root = start_candidate_run(plan_path, initialized_config_path=initialized_config_path)
     runtime_plan_path = run_root / "candidate_workflow_plan.json"
     runtime_plan = load_json(runtime_plan_path)
-    if "host_context" not in runtime_plan and os.environ.get("MASS_SPECTROMETRY_HOST_CONTEXT_JSON"):
-        runtime_plan["host_context"] = json.loads(os.environ["MASS_SPECTROMETRY_HOST_CONTEXT_JSON"])
-    runtime_plan.setdefault("execution_run_directory",
-                            os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY") or str(run_root))
+    runtime_plan.setdefault("execution_run_directory", str(run_root))
     if execution_context is not None:
         runtime_plan.update(execution_context)
         component_path = run_root / "inputs" / "component_pa_plan.json"
@@ -1104,6 +1082,8 @@ def _prepare_execution_request(
     from msplatform.workflows.oa_candidate.prepare_candidate_run import candidate_native_execution_relative_paths
     plan_path = plan_path.resolve(strict=True)
     plan = load_json(plan_path)
+    if not isinstance(host_context, dict) or not host_context:
+        raise ValueError("public Candidate execution requires an explicit host_context")
     if plan.get("status") != "EXECUTION_READY":
         raise ValueError(f"candidate plan is not execution-ready: {plan.get('status')}")
     if (reuse_parent is None) != (reuse_through is None) or (
@@ -1171,8 +1151,8 @@ def _prepare_execution_request(
     return {
         "schema_version": 1, "role": "run_artifact_workflow_request",
         "repository_root": str(REPO_ROOT), "python_executable": closure["runtime"]["python_executable"],
-        "host_context": host_context if host_context is not None else json.loads(os.environ["MASS_SPECTROMETRY_HOST_CONTEXT_JSON"]),
-        "execution_run_directory": os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY") or str(run_root),
+        "host_context": host_context,
+        "execution_run_directory": str(run_root),
         "package": {
             "project": "single_reflection_oa_tof_mass_analyzer", "run_id": plan["run_id"],
             "mode": "design_candidate", "artifact_project_root": str(run_root.parent.parent),
@@ -1335,6 +1315,7 @@ def run_candidate_workflow(
     plan_path: Path, simion_exe: str, stage_executor: StageExecutor = execute_stage, *,
     reuse_parent: Path | None = None, reuse_through: str | None = None,
     pa_handoff_output: Path | None = None, pa_producer_handoffs: list[tuple[Path, Path]] | None = None,
+    host_context: dict[str, Any] | None = None,
 ) -> tuple[Path, dict[str, Any]]:
     if stage_executor is not execute_stage:
         if pa_handoff_output is not None or pa_producer_handoffs:
@@ -1343,7 +1324,7 @@ def run_candidate_workflow(
         # without launching commercial tools; production always uses the owner.
         return _execute_candidate_stages(plan_path, simion_exe, stage_executor,
                                          reuse_parent=reuse_parent, reuse_through=reuse_through)
-    request = _prepare_execution_request(plan_path, simion_exe, reuse_parent, reuse_through, pa_producer_handoffs)
+    request = _prepare_execution_request(plan_path, simion_exe, reuse_parent, reuse_through, pa_producer_handoffs, host_context)
     run_root = Path(request["package"]["artifact_project_root"]) / "runs" / request["package"]["run_id"]
     if pa_handoff_output is not None:
         pa_handoff_output = pa_handoff_output.resolve()
@@ -1367,7 +1348,9 @@ def _invoke_candidate_owner_request(request: dict, pa_handoff_output: Path | Non
         try:
             _run_command(_powershell(str(REPO_ROOT / "src/msplatform/workflows/resources/run_artifact_workflow.ps1"),
                                      ["-RequestPath", str(request_path), "-ResultPath", str(result_path)]),
-                         Path(directory) / "owner.log")
+                         Path(directory) / "owner.log", run_directory=run_root,
+                         execution_directory=(Path(request["execution_run_directory"])
+                             if Path(request["execution_run_directory"]).is_dir() else REPO_ROOT))
         except BaseException as error:
             failure = error
         if not result_path.is_file():
@@ -1383,10 +1366,11 @@ def _invoke_candidate_owner_request(request: dict, pa_handoff_output: Path | Non
         return run_root, summary
 
 
-def run_candidate_postprocess(parent: Path, run_id: str) -> tuple[Path, dict]:
+def run_candidate_postprocess(parent: Path, run_id: str, *, host_context: dict[str, Any]) -> tuple[Path, dict]:
     """Original Candidate CLI's explicit new-child postprocessing action."""
     from msplatform.workflows.oa_candidate.prepare_candidate_run import prepare_postprocess_request
-    return _invoke_candidate_owner_request(prepare_postprocess_request(parent, run_id, science_root=REPO_ROOT))
+    return _invoke_candidate_owner_request(prepare_postprocess_request(
+        parent, run_id, science_root=REPO_ROOT, host_context=host_context))
 
 
 def execute_prepared_postprocess(config_path: Path, session_path: Path, request_path: Path, completion_path: Path) -> None:
@@ -1434,7 +1418,7 @@ def execute_prepared_postprocess(config_path: Path, session_path: Path, request_
         evidence = execute_saved_postprocess(selected, root, closure,
             {"run_id": root.name, "run_root": str(root), "context_sha256": sha256(request_path).lower(), "writer_completion": writer,
              "host_context": request["host_context"],
-             "execution_run_directory": os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY") or str(root),
+             "execution_run_directory": request["execution_run_directory"],
              "source_execution_context": session.get("source_execution_context"), "postprocess_evidence": evidence},
             runtime=sys.modules[__name__])
     except BaseException as error:
@@ -1442,7 +1426,8 @@ def execute_prepared_postprocess(config_path: Path, session_path: Path, request_
     status = "failed" if failure else "success"
     recovery_parent = root if evidence.get("detector_exports_ready") is True else Path(selected["parent"])
     recovery_action = (f'"{sys.executable}" -m msplatform.workflows.oa_candidate.run_candidate '
-                       f'--postprocess-from "{recovery_parent}" --run-id <NEW_RUN_ID>') if failure else "none"
+                       f'--postprocess-from "{recovery_parent}" --run-id <NEW_RUN_ID> '
+                       f'--host-context <EXECUTION_CONTEXT.json>') if failure else "none"
     if evidence.get("writer_completion_unconfirmed"):
         recovery_action = "inspect_original_writer_completion; retain current protections"
     summary = {"schema_version": 1, "role": "oa_tof_candidate_postprocess_summary", "run_id": root.name,
@@ -1462,7 +1447,7 @@ def execute_prepared_postprocess(config_path: Path, session_path: Path, request_
     outputs = sorted(str(path) for path in root.rglob("*") if path.is_file()
                      and not path.is_relative_to(root / "inputs") and path.name not in {"run_config.json", "run_manifest.json"})
     write_json_atomic(completion_path, {"schema_version": 1, "role": "run_artifact_workflow_completion",
-        "run_id": root.name, "project": PROJECT_ROOT.name,
+        "run_id": root.name, "project": "single_reflection_oa_tof_mass_analyzer",
         "execution_request": file_record(request_path), "run_config": file_record(config_path),
         "status": status, "summary": summary, "output_paths": outputs,
         "required_output_paths": [evidence["analysis_receipt"]] if evidence.get("analysis_receipt") else [],
@@ -1474,9 +1459,9 @@ def execute_prepared_postprocess(config_path: Path, session_path: Path, request_
 def _native_stage_execution_view(command: list[str], environment: dict[str, str] | None,
                                  plan: dict[str, Any]) -> tuple[list[str], dict[str, str]]:
     """Transport only this owner's actual native paths through its public view."""
-    from msplatform.execution.run_paths import project_native_run_path
-    persistent = os.environ.get("MASS_SPECTROMETRY_RUN_DIRECTORY")
-    if persistent and Path(persistent).resolve() != Path(plan["run_root"]).resolve():
+    from msplatform.execution.run_paths import current_run_directories, project_native_run_path
+    current = current_run_directories()
+    if current is not None and Path(current[0]).resolve() != Path(plan["run_root"]).resolve():
         raise ValueError("Native stage does not belong to the active public run context")
     native_environment = {key: project_native_run_path(value) for key, value in (environment or {}).items()}
     # Only explicitly declared, admitted source inputs may acquire a source
@@ -1516,8 +1501,10 @@ def _persist_native_json_paths(plan: dict[str, Any]) -> None:
     """Normalize stopped-writer JSON references, never a model or parent input."""
     from msplatform.execution.run_paths import project_run_path
     root = Path(plan["run_root"])
-    execution = os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY")
-    if not execution or execution == str(root):
+    from msplatform.execution.run_paths import current_run_directories
+    current = current_run_directories()
+    execution = plan.get("execution_run_directory", str(current[1]) if current is not None else str(root))
+    if execution == str(root):
         return
     def canonical(value: Any) -> Any:
         if isinstance(value, dict):

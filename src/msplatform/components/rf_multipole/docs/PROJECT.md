@@ -1,0 +1,1696 @@
+# RF多极杆离子光学项目状态
+
+RF 的活动科学配置、结构变体、当前文档和理论现由 `msplatform.components.rf_multipole` 持有；Python 分析与研究入口分别归 `msplatform.analysis`、`msplatform.workflows`，MATLAB 与 SIMION 资源归对应 backend，长期回归归 `tests/projects/rf_multipole_ion_optics`。旧 `projects/rf_multipole_ion_optics` 不再保存活动文件。迁移只改变实现与来源位置，不改变四／六／八极身份、裸杆边界、源 ID/时钟/6D、有限长模型或已有证据资格。共享 gate catalog 与生成 registry 的入口切换由集成所有者另行完成；本迁移不宣称 P4 或原生科学验收完成。
+
+本轮退役收敛的三变体公开前置（发布、GEM 同步、L0/L1 合同及 65 个 PowerShell 文件语法）通过。完整 Static 在 2059.375 秒执行 353 个父测试／598 条记录，结果为 583 条成功、10 条失败、5 条错误，不能记为通过；其中迁移路径、runner 名称、隔离依赖及 Mathieu 环境问题对应的 12 个原失败父测试随后分别复验通过。`test_runner_host_permission_lifecycle_without_solver` 的两个 runner 子用例仍因 Host 准入停滞超时；不含 RF runner 的最小 Host 准入诊断也停滞，故保留为共享执行层待办而非 RF 功能失败。未执行原生 Refine/Fly，完整 Static 的最终全绿验收仍开放。
+
+The project verifier now loads the installed execution lease resource with an explicit HostContext. Callers must select Python through `-PythonExe` or `SIMULATION_PYTHON_EXE`; the verifier no longer assumes a checkout `.venv`. Its preflight, test selection and scientific behavior are unchanged.
+
+The finite COMSOL and SIMION frozen-source closures no longer copy the retired
+`common/contracts`, `common/paths` or `common/comsol` directories. They retain
+the canonical `msplatform` implementation and explicit RF research inputs.
+The real two-runner frozen closure passed in 29.437 seconds, with the canonical
+science input still required. All 15 analysis/recovery methods passed, including
+saved extraction and source-mismatch refusal; 14 completed before the outer
+300-second command ended and the final method passed separately in 49.999 seconds.
+No native COMSOL/SIMION execution or new scientific qualification follows.
+
+## Installed publication owner
+
+`msplatform.workflows.rf_publication` owns the complete request compiler, freshness
+checks and governance-authoring implementation. The common PowerShell freezer no
+longer imports or executes the project analysis resolver; it supplies the selected
+frozen project root and repository root explicitly. This project keeps its named
+research profiles and a thin author CLI. The original publication/gate regressions
+and frozen positive, stale-publication and immutable-source checks pass. Focused
+ordinary wheel and sdist-rebuilt consumers also pass outside the checkout with
+project imports denied; final same-candidate acceptance remains open. No geometry, solver
+or scientific qualification changes follow from this ownership migration.
+
+The finite COMSOL and SIMION PowerShell runners now require an explicit Python
+selection and initialize host admission through the installed execution
+HostContext. Their frozen host scheduler, budgeted-process and SIMION dispatch
+resources come from the same public execution owner rather than the retired
+`common` adapters; no second scheduler or scientific default was introduced.
+The affected runner, frozen-closure, recovery, dual-backend and numerics fixtures
+passed 132 parents with 197 successful records in 235.990 seconds. This verifies
+software wiring and original assertions only; no COMSOL/SIMION native execution
+or ordinary-install full-chain acceptance was run. The public-prepare fixture now
+controls CPU through the installed host resource and intercepts the native
+boundary through the installed process owner rather than retired common files.
+Both ordinary and source-family preparation passed in 84.164 seconds with the
+expected inert refusal and no native process; production behavior is unchanged.
+The cross-solver gate fixture now copies the installed scheduler closure, uses
+an isolated host ledger, and forwards the actual scheduler and unittest runner
+while retaining inert scientific commands. Both Core and Static methods passed
+all six subcases in 67.045 seconds, including their original failure assertions.
+Public CI then exposed an inherited host-grant defect: the fixture's private
+ledger alone did not prevent an outer token from being reused, and the scheduler
+rejected its exited owner. The fixture now clears the inherited token, context
+and owner identity. All six subcases passed again in 57.936 seconds with a
+deliberately injected outer grant; production scheduler behavior is unchanged.
+The exact `d11886f1` Changed run `44731783549` then passed all selected stages;
+its complete job took 3 minutes 7 seconds, with Repository skipped by scope.
+
+The no-collision SIMION recovery and project finite launcher now use the same
+explicit Python selection. The public recovery regression completes once, repeats
+from an outside cwd without another callback, and leaves every byte of the first
+terminal run unchanged. Verifier cleanup now preserves the original missing-Python
+or admission error and releases only an acquired lease.
+
+The interface-readiness COMSOL entry now uses the same explicit HostContext and
+its resolved host-state path instead of the retired common adapter. This is an
+execution-source change only, covered by the shared 103-parent/150-record consumer
+selection; no new native result is claimed.
+
+
+## Original finite-length L1 analysis-only successor
+
+The original CLI now accepts `--analyze-only --parent-manifest <sealed parent>`
+with a distinct new run identity and its normal deployment/profile context. The
+installed workflow verifies a completed functional PASS/FAIL parent, its bound
+run configuration, four scientific authorities, and exact identity between the
+parent analysis-response input and original response output. Existing managed
+`source_references` protect those parent paths. The child freezes the same
+scientific inputs and response, builds the same frozen package/request, and
+invokes only the existing `analysis` worker. It has no simulation operation,
+native call, new runner or analysis DSL. Response, metrics, figure and existing
+finalization-recovery roles are retained with explicit parent lineage and
+`simulation_calls=0`.
+
+Real original-CLI coverage proves one analysis operation, byte-identical parent
+and child response/metrics, unchanged parent evidence, terminal child recovery,
+and changed/missing parent-response refusal before a child run. An injected
+analysis failure plus finalization hold recovers to its own failed terminal with
+zero simulation. The corrected method passed with an explicitly inherited outer
+fixture token in 69.636 seconds after the test applied the existing owner-token
+isolation pattern. Earlier focused rounds retain a Path-serialization failure
+and an inherited-grant refusal; all 15 original methods passed in the latter
+round, while only the new fixture failed. These rounds are not relabeled as a
+complete green module rerun. The integrator's subsequent stable public Changed
+gate then passed all 16 original/new methods in 442.089 seconds and completed
+successfully, including freshness, Ruff and changed-source standards.
+`--check-contract` and scoped diff checks also passed. No commercial solver or
+new scientific/native qualification is involved.
+
+## Original finite-length L1 CLI finalization recovery
+
+The original `mass_filter_reference/run_finite_length.py` CLI now accepts
+`--resume-finalization` with its original run identity, deployment context and
+optional small `--result-path`. It calls the existing
+`owner.resume_finalization(..., completion_api=no_particle_batch_completion_api)`
+without importing the scientific action, parsing research inputs or starting
+prepare/simulation/analysis. Scientific flags and `--check-contract` are
+rejected in recovery mode; ordinary contract checking and execution are
+unchanged. The default Result remains the existing project
+`scratch/workflow_results/<run_id>/result.json`.
+
+A real subprocess regression created a managed finalization hold, recovered its
+original failed terminal state, released capacity and repeated recovery with
+the Result, run configuration, summary, manifest, completion and failure-context
+bytes unchanged. Scientific-input, unconfirmed-writer and wrong-host-context
+attempts were rejected before terminal mutation. The focused public Changed
+gate passed all 15 original/new L1 tests in 375.398 seconds and completed in
+442.791 seconds; changed-source standards, Ruff, freshness and scoped diff
+checks passed. No commercial solver, analysis-only successor or native/scientific
+qualification is involved.
+
+## COMSOL mesh resource ownership
+
+The three shared mesh Size helpers are installed COMSOL MATLAB resources and are
+frozen at their canonical backend paths by the active RF consumers. Their function
+names, mesh settings and typed readbacks remain unchanged; historical frozen runs
+retain their recorded paths. This ownership move grants no new native qualification.
+The unchanged helpers passed all 16 MATLAB R2025b recorder cases with canonical
+function origins and restored path/cwd. The focused RF/TOF/paired/freezer/Changed
+consumer check passed 20 parents; ordinary wheel and sdist-rebuilt-wheel acceptance
+passed at the same frozen source epoch. No COMSOL solve or native trajectory was run.
+
+## Installed RF source validation
+
+The dual-backend campaign and COMSOL owner fixtures explicitly copy the canonical
+RF family JSON into their isolated source trees. Their original 17-parent and
+5-parent modules passed (46 and 9 records, respectively); assertions and inert
+native boundaries are unchanged. These fixture repairs do not change package
+resources or grant native solver qualification.
+
+The complete source validator, release helpers and CLI now have one implementation in
+`msplatform.components.rf_multipole.source_validation`. Active callers and frozen source selections
+use that installed owner; the project runtime implementation has been removed. CSV byte identity,
+complete original particle IDs, species, energy, release and explicit volume receipt checks retain
+their existing meaning. This ownership migration does not grant solver or scientific qualification.
+
+
+P4 frozen-source verification now copies the canonical scientific package instead of the retired
+particle-physics bridge. Its real CLI runs with `-I -S`, explicit dependency directories and checks
+that every loaded platform module comes from the frozen tree. The full-package mutation test keeps
+all 269 members and 538 deletion/tamper checks, but checks each damaged member first in the same
+complete inventory, then restores the original order. This avoids repeated prefix hashing without
+changing production validation, original assertions or the 120-second subprocess limit. The two
+complete test modules passed 18 cases in the isolated review; the original Repository timeout is
+retained as a failed result, not reclassified as a pass. No solver or scientific qualification follows.
+
+本文件是本项目当前事实、结构变体资格、有效结论和开放任务的唯一正文。运行方法见
+[实现说明](IMPLEMENTATION.md)，理论与物理约定见[理论索引](theory/index.md)，
+跨器件结果由[集成状态](../../../../../docs/INTEGRATION.md)维护。
+本文汇合原四、六、八极杆项目仍有效的结论；身份迁移和代码合并本身不产生新的物理资格。
+
+有限长度质量过滤器的分析支持目录按 `pyproject.toml` 的执行包资源声明冻结规范资源，
+并在专属子进程显式使用本次 Python；旧公共桥不依赖另一代码根或作者安装补件。
+四项原分析冷加载与一项原 CLI 收尾恢复定向验证通过，未运行商业求解器，也不改变原物理资格。
+
+## 科学核心 P1 接线
+
+`msplatform.components.rf_multipole.ideal_transport` 直接从 `msplatform.ion_release` 与
+`msplatform.contracts.particle_physics` 消费源策略、释放及粒子物理实现。
+相邻回归核对实际函数来源，并保持原两粒子完整固定输出；不再经旧科学兼容桥取得这些调用。
+粒子物理活动消费者、运行器冻结清单和来源探针现均直接绑定`msplatform.contracts.particle_physics`，旧公共桥已退役。
+机器合同校验直接使用安装实现；仓库根由公共路径owner提供，不进入canonical科学包。
+接地屏蔽孔径离散化直接消费`msplatform.backends.simion.aperture`，旧公共模块桥已删除；定向行为回归通过。
+本轮跨 RF、OA、布局适配和 MR 的 78 项行为测试通过（7.326 秒），
+其中布局及 MR 测试在拒绝旧桥导入时仍执行真实计算。这是软件迁移证据，未新增原生求解或科学资格。
+
+interface 的真实 postprocess worker 从本次冻结源码导入规范核心，记录实际已导入模块的文件来源，
+不以兼容桥的 spec 路径代替科学实现来源。配对源、interface worker/CLI、完整 RF 分析包、
+资源库存和两项 owner 恢复的 11 项精确补验通过（177.357 秒），包含缺核心拒绝及父 offset/CSV 断言。
+经用户明确批准恢复原有 10 处子进程 cwd/timeout 后，RF 恢复模块 13 项通过（378.341 秒），
+全量开发标准硬门禁通过。原失败轮次保留；这些软件结果不授予新的求解或接口资格。
+后继冻结子进程回归核对实际`msplatform.contracts.particle_physics`来源及其规范源码字节，
+保持原offset、粒子CSV和报告数值断言。postprocess使用`-S`阻止editable finder接管，只追加依赖目录并把
+冻结`src`置前；4项定向测试通过，不以旧桥模块名或活动安装代替真实来源。
+The isolated dependency bootstrap also supports an explicitly selected base interpreter: treating every
+executable as a venv selected the wrong site-packages directory for normal Python. The bootstrap uses
+the documented `pyvenv.cfg` location when present and the interpreter prefix otherwise, keeping site
+hooks disabled. The actual launch expression is checked at its first scientific import under both
+interpreter layouts, while the original frozen-analysis numerical and origin assertions remain.
+Reference: Python 3.11 [site initialization](https://docs.python.org/3.11/library/site.html), reviewed
+2026-11-09; this changes dependency loading only, not scientific output or solver qualification.
+
+两个有限输运运行器的独立复制清单与容量估算同步包含规范核心和完整 schema；
+analysis-only/reextract 也沿同一库存校验，Python 观测使用公共导入根。
+复制完成后复用既有 RF 隔离导入及文件身份检查，实际导入 canonical 模块并拒绝缺失资源。
+两项真实边界回归通过（23.283 秒），包括两运行器的源码/38 个资源字节、摘要、容量覆盖和删资源拒绝；
+没有更改原科学参数、状态机或原生数值文本。
+
+## 当前结论
+
+P3 RF提供者的圆杆、连接截面、壳/端盖、轴向分段、科学topology、机械面截面及component3发布实现
+实迁至`msplatform.components.rf_multipole`。文档编译入口`compile_design_request`接受已读request、
+expected identity及由外层验证的`source_records`；只读随发行包提供的规范schema，不读取作者树、
+注册表或启动后端。原request3/4、axial2/3、array1/2及序列化compiler身份保持；44个实现符号的AST
+在明确的provenance参数/绑定调整外相同，不改变尺寸、驱动公式或算序。
+原`core`纯模块仅单向转发，最迟P4退出活动消费；原compiler文件保留文件/注册表/治理输入适配，
+`component_port`保留producer/观测接纳，`grounded_shield`保留后端孔口渲染，不把这些宿主职责搬入发行包。
+10个实际领域模块84项纯软件回归通过（4.899秒，无skip），169条父/子outcome全部成功；
+包含工作树外`-I`子进程在拒绝common/projects导入时执行真实document compiler、component3与face provider。
+一次误列不存在测试模块的loader错误和一次旧backend mock定位的3family失败均保留；后者仅将patch对象
+迁到实际canonical函数globals，原科学/GEM断言保持。该软件切片不是普通wheel安装、完整P3链或原生资格；
+安装资源、冻结消费者及全范围验收由统一入口另行验证。
+
+资源目录采样的纯软件回归在 `0466341a` 远端完整轮中，外层 PowerShell 在原15秒截止未返回；
+同源码在947本机／远端分别3.540／2.548秒通过。本次失败没有留下其临时usage、partial输出或具体调用阶段，
+尚不能归因CPU、CIM或进程启动。相邻测试现仅接入已有ACK／Job合成夹具归属和受限诊断：
+私有公共observer副本只插入可逐字节移除的flush checkpoint，原生产observer、Start-Sleep1、15秒、
+预算及两次目录测量／原usage断言保持。单次低争用原方法3.042秒通过，两个纯mock／源码投影反例0.049秒通过，
+真实合成PS父子hang和logger次错反例15.067秒通过（均无skip），确认仅清理归属Job且无关自有进程仍活。
+原完整轮FAIL不抵消；目标实跑后仅增加该hang负例，未把局部结果冒充完整模块或整库。这不是商业工具证据或历史根因裁决。
+最终测试源码四项合并定向复验18.714秒通过、无skip，包含原目录采样方法及三个取证／归属反例；
+公共GATE许可正常释放，仍不代表最终Repository范围通过。
+
+P2科学电极组由`core.electrode_topology.build_electrode_topology`唯一产生，规范字段为`electrode_group_id`，
+引用真实rod、segment及壳/端盖成员和resolved驱动；分段科学ID取segment/group而不从native整数派生。
+`simion.electrode_mapping`负责SIMION本地编号与容量；旧physical_electrode_view只单向组合，
+保留旧表实际标签、原合法集合和具名消费者行为，不能把该兼容视图作为新科学身份权威。
+`core.face_sections.local_face_conductor_sections(resolved, side=...)`提供入口/出口机械面的实际圆杆及环形导体截面，
+返回不可变的本地mm坐标、半径、科学组、成员pointer、角色及已验证静态接地事实。
+成员归组只反查上述topology；RF驱动的瞬时零不代表接地，凹入杆不被补成机械端面导体。
+入口复用已有resolved3/4与axial/segment版本合同校验，只读规范schema，不采样、不写入或调用后端；
+旧格式中的native标签不参与截面身份。当前仅支持实际圆杆/圆柱壳及环形端盖，不扩展为任意截面能力。
+直接request4、旧格式置换、几何/ground反例及相邻topology/版本合同20项纯软件测试通过（2.387秒，无skip）；
+这只验证RF提供者边界，不表示组装接线、真实求场、接触工况或GUI验收已经完成。
+连续/分段/共地完整性、原标签内部置换及实际GEM/电压投影回归通过。
+公开request4/resolved4将分段物理定义与原生容量分离；request3/resolved3保留原499段协议。
+新请求的uniform/explicit 500和501段均有公开编译回归，后端按声明容量独立拒绝超限，不将它解释为物理错误。
+上述回归本身是软件合同证据；新RF→OA链另已完成两种编号的真实N100及显式保存回放，
+实际范围、记录值等价、pulse结束覆盖缺口和GUI限制见[集成状态](../../../../../docs/INTEGRATION.md#当前边界)。
+不由该功能证据推定全场、收敛或Formal资格。
+
+The complete RF 17-column event protocol and canonical source CSV reader belong to
+`msplatform.components.rf_multipole.event_table`. SIMION observations consume that
+qualified owner; neutral handoff states remain in `msplatform.contracts.particle_state`.
+`msplatform.backends.simion.rf_ion11_source` owns ION11 decoding and its original 6D
+transform: WB positions map to RF `(z,-y,x+offset)`, velocities to `(vz,-vy,vx)`,
+with time and energy unchanged. The original angle arithmetic and energy helper
+are retained. The CLI is `python -m msplatform.workflows.rf_event_table_validation`.
+Active PowerShell callers and frozen selectors use these installed owners; the
+three former RF protocol/adapter/CLI bridge files are removed. The original 32-case
+capture remains separate from candidate validation. Its portable witness compares
+API results/errors and CLI stdout/status/final error lines; complete traceback
+bytes are not claimed identical. The original witness, selected frozen consumers,
+IP analysis and integration regressions passed guarded software checks. Both ordinary
+package arms passed for the ownership migration at `d70bb091`; this grants no native
+or scientific qualification.
+
+A later deterministic API/CLI reproduction found that a NaN source expectation
+could bypass identity comparison against a finite event. The comparator now requires
+both operands to be finite, retaining the original finite tolerances and diagnostics.
+This corrects invalid-input admission; it does not establish that historical results
+were affected. The separate paired-source admission already rejects these inputs.
+
+资源限制类型运输夹具沿用既有90秒总调用边界，避免非目标10秒阈值影响JSON／字典比较；生产观测与告警政策不变。
+三项既有回归通过（公开墙钟34.810秒），保留严格receipt／告警断言及健康进程越限不杀行为；原联合轮FAIL仍保留。
+
+冷提取软件夹具在`94769c5d`远端负例中，launcher已记录资源释放与完成，外层wrapper仍在300秒截止时未返回；
+该记录不等于OS退出证明，根因仍未确定，本机定向未复现。方法复用公共ACK／Job归属helper，
+保留原科学输入、全部科学断言、300秒截止及60秒软告警。除原23个阶段外，仅在测试私有副本中对
+当前公共observer的唯一函数正文增加采样、活跃判定、usage更新、等待前后及原句柄零等待退出观测；
+副本、差异与来源SHA随小诊断保存，watchdog记录最多4096行／1 MiB。StrictMode下实际自检日志、
+容量边界和诊断失败保全，不修改公共watchdog或启动真实COMSOL；本机PASS不作为旧超时根治或性能证明。
+`99f5a6b4`远端四路RF Owner完成13 PASS／30 NOT_APPLICABLE：843个父方法中840成功、3跳过，
+另577个subtest，公开墙钟612.462秒。冷提取方法18.922秒成功并保留110条watchdog记录，
+两次实际等待与最终usage更新均有前后记录，无实际诊断次错；该轮未复现原卡住，不据此确定根因。
+
+正常接口 V4 before `20261031_085000__test__comsol__rf-interface-hmin-before` 在网格配置阶段因冻结包缺少 typed Size reader 中止，外层72.637秒，未求场或粒子。interface 与 mass-filter 的正式冻结清单已加入原公共 reader；实际冻结包、移除活动源码和缺依赖拒绝回归2项7场景通过（当前工作树6.065秒）。原失败记录保留，后续新身份 V5 正常求解仍待验收；该软件闭包修复不是求解或科学通过。
+
+RF 软件回归的恢复夹具在使用私有主机资源库时隔离调用者许可身份，真实父 GATE 下复现并修复 token／数据库不匹配；生产容量与许可底线不变。旧私有收尾和源码形状断言已迁至实际公共 owner、冻结导入、环境恢复、预算提前拒绝及原 CLI 恢复接线；公共故障矩阵仍归原 owner。日常验证不再要求浅 checkout 包含旧历史 Git 对象，封存科学负结果和活动模型排除检查保留。定向补验不代表最终整轮 CI 已通过。
+
+四极接口开发 coarse 数值 profile 现显式设置 `minimum_element_size_mm=0.2`，经现有数值编译器与公共 mesh helper 传递；baseline 默认值保持。2026-10-31 mesh-only `20261031_084000__test__comsol__rf-interface-hmin-mesh` 外层68.162秒：实际全局 hmin 从6.69改为0.2 mm、custom开启，其余 auto9/hmax47.8/hcurve1/hgrad2/hnarrow0.1读回不变；网格非空、完整且无problems，原门禁通过。study/solution均为空，没有场或粒子求解。公共终态、容量、租约及alias清理完成，secondary_errors为空；该证据仅关闭粗网格准备断点，不证明完整传输、性能收益或科学资格。原080000/083000失败记录保持。
+
+RF SIMION 继承 host grant 时仍核验原 token，但 completion 记录实际子任务退出结果（继承许可没有独立 release transaction）；许可事实未知时拒绝发布，重复收尾不再次释放。该接线修复不授予物理资格。
+
+finite COMSOL 正常无碰撞 CLI 已接公共 PowerShell owner：原生前持久化 run 外小 Result、request 和实际容量会话，
+收尾使用 COMSOL wrapper 真实 PID／起时／退出和 host release receipt。原命令 `-ResumeFinalization -RunId`
+仅恢复原收尾，不重新解析科学输入或启动原生；明确路径及限制见[COMSOL说明](COMSOL.md#finite-原-cli-的收尾恢复)。
+源／求场／分析主错误与收尾错误分别保留；未知 writer／release 不释放保护。旧 run 若缺原始冻结 owner 事实，
+不会用当前默认值补造恢复资格。薄软件回归不等于真实求解、GUI 或科学资格；其他 COMSOL workflow 不由此自动获得恢复能力。
+无碰撞[正常COMSOL入口](../../../workflows/resources/run_finite_3d_transport.ps1)可用
+`-AnalyzeOnly -ParentManifestPath <原run_manifest.json> -EngineeringBudgetPath <分析自有预算> -PythonExe <正式解释器>`创建新analysis owner。
+父run须有完整manifest绑定events、两组canonical state及冻结design/source/numerics/evidence；
+通过原owner共享reader和SourceReferences保护原CSV，新run执行同一metrics／出口图／证据评价及公共收尾函数。
+准入还绑定原native report、原public prepared entrypoint、comsol_task及其code_inventory。当前完整export记录
+结合冻结producer控制顺序与两case／保存事实；旧同族producer无新增计时时，可由原task整体PASS／MODEL_SAVED
+和原冻结导出顺序推导，不因缺计时自动拒绝。仅writer停止或CSV自洽不代表transport阶段已完成。
+科学输入只取父冻结authority；分析源码按本次冻结，不因后处理修改而重求原场或粒子。
+分析必须显式提供现`multipole_engineering_budget_contract`格式的自有预算，不借用父求解的2GiB承诺。
+科学scope与父冻结授权／实际母群闭合；本次承诺取新预算transient，准入stat核对实际复制源码、小输入、清单
+及新预算提供的结果／收尾余量，原MPH和CSV引用按零新增载荷计。host仅用现COMSOL/postprocess轻资源，不准入求场heavy。
+正式分析显式绑定原particle_source，`source_binding=verified_ids`仅表示两case的原母群ID一致，
+不表示native初态6D、权重或科学资格被独立验证；纯derive旧调用未给源时明确not_verified。
+缺CSV／MPH-only返回`CSV_EXPORTS_INCOMPLETE_REEXTRACTION_REQUIRED`，不静默solve或读取MPH；
+evaluator写出明确FAIL/checks时，保持CLI非零和status=failed，但执行完成、数据有效、科学FAIL分开报告；
+失败阶段scientific_evaluation及具体未达checks保留，恢复动作是查看负结果／显式新研究，不盲修分析或重算。
+显式`-AnalyzeOnly -ReextractFromModel`已接通同一分窗导出、原模型只读保护与公共原生路径／进程owner；
+正常求解也消费同一科学template与导出实现，删除旧内联CSV转换。缺原映射的070000不推断身份；冷提取需要真实模型加载，不能称零商业调用。
+`20261031_062508__analysis__comsol__rf-cold-v9`只读原071000的43,350,302 B已解MPH，公开命令75.878秒，
+加载／提取阶段52.461秒，实际窗口提取4.176秒；观测进程树峰值3,148,632,064 B，无预算告警。
+新增求解0、父模型保存false，7份事件／轨迹／canonical CSV与原输出逐字节相同；父manifest不变，
+原MPH身份复用原记录及保护，仅stat而不重新哈希。科学结果仍UNQUALIFIED，不将8µs入口段改称完整传输或精度资格。
+原CLI收尾恢复3.094秒返回REUSED；其CSV再由`20261031_062819__analysis__python__rf-cold-csv`重分析，
+公开命令22.729秒，完成记录只有两Python进程，零模型加载／求解，冷提取父manifest保持不变。
+这关闭了该已保存解格式的实际冷提取和后继CSV分析边界，不自动覆盖缺映射旧资产、所有故障现场或其他COMSOL workflow。
+真实071000的N=100封存CSV由正常入口新建
+`20261031_054000__analysis__python__rf-finite-v9`，公开命令21.016秒完成，实际分析0.806秒；
+原母群ID核对通过，零出口图明确not_applicable，结果保持UNQUALIFIED，不授予完整传输或科学资格。
+新增载荷预估30325367 B、自有承诺256 MiB，原MPH／CSV新增载荷0，实际completion的operations／resource_releases均为空。
+原父manifest与准入记录一致；原CLI收尾恢复2.843秒返回REUSED，子manifest字节不变。
+此前两次请求分别因retention不匹配和缺保留理由在创建run前拒绝，未新增原生调用。
+随后`20261031_055828__analysis__python__rf-v9-observed`接通现有公共进程observer，公开命令29.598秒完成。
+metrics／出口图两Python阶段分别记录实际PID、起时、退出、显式300秒／2GiB及可用内存预算和usage，
+观测区间1.877／0.975秒，无告警；两个进程的完成事实与实际host release进入公共completion。
+父manifest保持，商业工具调用0，科学结果仍UNQUALIFIED；正常求解后的分析保留原执行资源合同。
+wall／RSS超预算沿既有软告警与物理危险政策处理，不以此强杀健康任务；短进程采样用量不冒充精确峰值测量。
+原入口在分析前明确输出稳定Result路径；新增unknown-exit薄回归通过，未知进程不伪造完成或释放保护。
+
+有限三维 COMSOL producer 读取所选数值合同的显式 `minimum_element_size_mm`：未声明时保持原网格控制，声明时须正有限且不大于 hmax，并限现选区 free-tetrahedral 路径。全局与工作区 Size 使用同一最小尺寸，typed raw 读回保持其他控制；mesh-only 根据冻结 strategy 验证真实完成、质量和分区事实，不把完整网格冒充场或粒子求解。
+
+`plan_rf_exact_birth_releases` 同时由 finite 与 deterministic 两个原生 solver 消费。只合并完全相同出生时刻的粒子，以17位秒文本保存时钟，保留完整6D、ID映射、物种及已有权重；原生顺序读回按原 source 行映回。deterministic 两个正式 wrapper 冻结同一 helper，release gate 的 v2 breadcrumb/result 按实际分组核对每行源与原生属性，仍在粒子 Study 前停止。分组不允许新相位模型或丢失粒子。有限体积源起点仅接受原 preflight metadata 充分绑定的体积状态，平面源原条件保持。
+
+有限轨迹记录增加原解末库存位置及最后有限状态事实。当前未读取真实原生损失原因，因此末态不可把缺失轨迹默认当作电极损失；时间窗结束与更早结束均保留 unknown，接受条件另轴报告。公共母群核算明确未知不等于损失，完整权重不足时不可计算。正常 finite 的零出口诊断返回 `not_applicable` 与原因，不制造空图；缺字段、非有限值或不闭合母群仍失败。软件完成不授予科学或 Formal 资格。
+
+已记录正常 N=100 两臂（070000／071000）各求场一次、粒子求解两次，精确出生分组使 release 特征100→1，构造耗时30.9666232→0.4850743秒，公开墙钟157.4430824→102.8825954秒；这是所记录同范围源构造对照，不是通用速度承诺，也不包含尚未生产对照的 deferredUpdates。源初态6D由规范源派生，不能把ID对应或软件通过写成原生初态6D独立验证。当前纯 MATLAB/软件回归与这些原生来源证据分别报告，不提升全尺寸精度或传输资格。
+
+有限三维 SIMION 运行器在每个批次的进程实际退出后核验原生 Fly 完成、摘要粒子数和局部终态 ID，
+并原子保存批次完成 receipt；owner 排空后由终态 manifest 绑定实际保留的 receipt、状态、摘要与 stdout。
+重规划首批使用对应批次的稳定文件名。receipt 发布错误延后到已启动同批自然收尾之后传播。
+开启机械出口时绑定其状态；qualification 和 solver_review 还要求批次轨迹并在终态 manifest 绑定；
+compact 指标与出口诊断只消费状态和摘要。
+PA basis identity、Fly 物理投影和源状态也冻结进运行输入；逐批源生成器及其共享依赖由 code inventory 绑定。
+finite 3D、interface readiness 与 mass-filter 的正式批次通过公共 `Invoke-SimionBatchPhase` 统一首批观察、重规划与派发；
+项目 owner 继续负责 IOB 准备、批输入和结果合并。
+`workflows/no_collision_transport/run_simion.ps1` 的 `-ContinuationPredecessorManifestPath` 显式指定同项目终态前驱；
+新 run 验证冻结 Fly 输入和原批分区，并通过公共 whole-unit plan 引用被容量保护及只读锁保护的完整批次。
+全复用跳过 PA、IOB 和原生飞行；缺失的完整批次重飞。旧 run 若缺少完整批次 receipt 或冻结身份则不能复用。
+这是软件完成证据，不代表科学通过。
+公共收尾故障矩阵由common owner集中验证，项目原CLI恢复仅由`tests/analysis/test_owner_finalization_recovery.py`验证薄接线，避免公共／项目重复整流程。
+三条 SIMION 消费者共用 `runtime/simion_field_checkpoint_support.ps1` 的原 producer 场检查点：
+正常入口默认 `solver_review`，显式 campaign 的 retention 声明仍优先。
+`-NativeFieldRunPath` 可独立于粒子源/Fly 前驱指定原终态场 owner；静态 GEM（含 include）、网格、
+fractional surface、实际 Refine 参数和 SIMION 身份一致时不重求场。
+原 manifest 绑定 Refine 完成事实及完整 PA family；读取先投影小元数据，再沿既有容量和公共 PA 保护取得原载荷。
+Refine 已完成而布局失败仍保留场；Program 或注册模板改变时仅重建必要 IOB。
+布局准备须经现有原生 inspector 从永久 IOB 路径真实加载通过；只有 build 成功或旧 receipt 缺少 inspect 事实时，
+场仍可复用，但必须重建并检查 IOB。旧 partial 前驱没有 manifest 绑定的已完成场检查点时明确失败关闭：
+提供相同场身份的 `-NativeFieldRunPath`，或从保留场的新 producer 继续；已处置或未知旧场不能直接复用。
+合法完整 Fly 的原 receipt 复用保持有效，全部 Fly 已复用不受该新增场检查点边界影响。
+全部 Fly 已复用时不读取场、不构建 IOB。旧 `simion_pa_basis_policy` 的 ensure/publish 协议已删除；
+当前 fractional 几何不支持 surface=none 的 standalone cache 导出，显式旧策略报错并指向原 producer 检查点，
+不改变 surface 或静默忽略 `require_existing`。新增场身份仅核对实际原生输入的小文件，PA 验证复用公共受保护读取，
+不创建第二账本或复制不可变 cache 原生 family。原字段/布局准备事实不授予数值或科学资格。
+有限三维原 CLI 的 `-ResumeFinalization -RunId` 读取 run 外小 Result，沿公共 owner 只恢复收尾；
+阶段与总耗时随结果输出。显式前驱新 run 可复用完整 Fly 后重做分析，父终态保持原身份。
+finite、`interface_readiness/run_simion.ps1` 与 `mass_filter_reference/run_simion.ps1` 使用公共
+`Initialize-RunArtifactPowerShellOwner`／`Complete-RunArtifactPowerShellOwner` 绑定已有
+package、容量 session、冻结 PS 入口、原生退出和实际 host release；项目保留器件执行与 host 归属判断，
+不再自行拼装同义 request、wait、completion 或收尾恢复器。公共路径映射保留原 producer 来源，
+收尾失败继续使用同一小 Result，未知 writer／host release 不释放原保护。
+后两条原 CLI 的 `-ResumeFinalization -RunId [-ArtifactRootPath ...] [-ResultPath ...]` 不要求源表或其他科学必填参数，
+不进入场或 Fly 准备；默认小 Result 位于项目 `scratch/workflow_results/<run_id>/result.json`。
+已完成原生批次的原 PID／启动时刻与实际 host release 统一经 `simion_execution.ps1` 传入公共 owner；
+三入口只共享该实际事实桥，不复制发布或恢复控制。两正式 CLI 的 publication／seal 失败和 unknown writer
+已用无求解器 fixture 验证原 CLI 恢复、负科学结果保留和重复恢复终态字节不变，未据此补授真实器件资格。
+2026-10-30 的小型原生机制验收用 66.228 秒完成新建 9³ fractional 场、Refine=1、封存和 alias 清理，
+再由 child 完成必要 IOB 重绑定、原生 inspect 与 N=1 探索粒子 Fly；恢复 Refine=0，PA 写入被 guard 拒绝，
+父 manifest 字节不变且 child 封存。producer／consumer 为 `20261030_012708__test__simion__rf-field-` 前缀下
+的 `producer-d34d8b1b`／`consumer-d34d8b1b`；[原生结果](../../../../../../artifacts/projects/rf_multipole_ion_optics/runs/20261030_012708__test__simion__rf-field-consumer-d34d8b1b/summary.json)
+与原日志保留。此前 TOF=0 splat 在 toy Program 显式 `maxdt=0.01 us`
+（约 0.0044 mm/step）的限步对照中消失，终态 TOF=0.1 us、正确实例起始 splat=0。
+该 fixture 未改变生产默认数值，只证明本次场／IOB／受保护 Fly 机制；不授予全尺度数值、器件性能或 Formal 资格。
+
+两个生产COMSOL solver已共用项目`visit_rf_particle_windows`／`extract_rf_particle_records`：原解先按原路径保存，
+再沿原解时间库存分窗读取，保留必要穿面邻接、区域极值、首末态及既有轨迹采样，不由绘图触发新推进。
+窗口大小是I/O批量而非时间降采样；实际physics identifier与原source ID由消费者显式传入。
+完整6D、晚出生、跨窗重叠和未知内部缺口有14项纯MATLAB回归；实际冻结wrapper及分析闭包8项Python回归通过。
+接口就绪仍保留完整母群MPH与显式GUI重算合同。源构造／提取收益只按后述已预声明N100实测范围解释，不外推一般规模；顺序分块探针不是生产默认路径。finite与interface的AnalyzeOnly／ResumeFinalization已接通各自原CLI，具体充分完成证据、0Compute或0native边界见本页相应段落。
+
+实际公共提取器另经`20261030_212512__test__comsol__rf-window-read-n3`验证：冻结本次两个helper后，
+只读重开保存模型，以cpt／cpt2／cpt3分别消费201个原时刻、7个窗口；保留70／46／24个科学样本，
+每个样本对照原生位置／速度，最大位置差1.7764e-18 m、速度差0，原ID与时刻保持。
+最大窗口MATLAB结构7357 B仅指该窗口，不包含加载模型或进程内存；进程树峰值2,685,837,312 B，
+原生区间39.348秒，无新增求解，已完成正常封存与释放。这证明真实分窗API接线，不是N100规模性能结论。
+
+### 开发诊断证据边界
+
+源分组、分窗读取和N100局部性能的当前结论以上述及后文具名证据为准；小模型机制验证不授予完整传输、数值、GUI/CAD或Formal资格。
+早期mesh失败、6D冷读修正、节点退役及多行释放探针保留于[开发诊断历史记录](../../../../../docs/history/projects/rf_multipole_ion_optics/20261103__rf-development-diagnostics-review.md)，
+其中旧时点的待办不作为当前执行指令，原失败终态不改写。
+
+下表原生功能结果来自冻结旧几何；当前schema 3裸杆与新壳体不继承这些资格。
+当前具名runtime与活动campaign均未获新裸杆几何的商业执行授权；历史run ID须重新定义并明确授权，旧冻结证据不自动继承。
+
+| 结构变体 | 已有功能证据 | 保持的限制 |
+|---|---|---|
+| [四极杆](#quad) | 三种typed电气模式COMSOL/SIMION N=100功能传输；质量过滤理论与有限几何响应 | 连续数值等价未闭合；历史严格接口相空间比较FAIL；质量分辨能力未资格 |
+| [六极杆](#hex) | 三种typed电气模式COMSOL/SIMION N=100功能传输 | 连续数值资格延期且未豁免；RF微小排序不稳定，保留原P0基线 |
+| [八极杆](#oct) | 三模式N=100功能传输；单端贯通模型100 Da和524 Da的SIMION真实机械出口功能 | 出口贯通不授予边缘场、数值或下游捕获资格；双端贯通仍须按独立证据范围判断 |
+
+## 资格边界
+
+机械出口母群统计现复用`msplatform.analysis.particle_census`的完整ID分类；构字典前拒绝重复source ID，
+两传输运行器直接冻结该安装实现并计入容量，旧公共桥已退役。原机械平面、孔径、正向夹持与terminal覆盖校验保持，
+有／无出口两组旧census结果精确相同；non_exit_terminal是非出口终态集合，不等同已证实实物损失。
+此处仍是unit粒子计数，不授予相对权重或真实电流资格。
+
+冻结旧几何的共同三模式baseline只闭合功能分类。四极与八极原N=100运行两求解器均100/100且handoff身份一致；
+六极原记录也已闭合功能传输。连续相空间的空间／时间敏感性与跨求解器比较保持
+`INCONCLUSIVE_NUMERICAL_CONVERGENCE_NOT_ESTABLISHED`；工程六指标PASS只允许声明范围内的下游推进。
+四极与八极两种加速模式的SIMION相邻空间档已执行，COMSOL空间档触发原预登记资源帽，保持
+`INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`，不事后抬帽或改写历史终态。
+
+- 正式统计binding须在运行前冻结bootstrap、接受尺度、effect resolution与预算；缺失这些设置的旧run
+  保持`POSTHOC_DESCRIPTIVE`，不能通过补写配置升级资格。
+- 项目descriptor的`candidate`生命周期及execution profile中的可申请证据级别，不等于某变体或功能已验收。
+  机械、GUI/CAD与本项目Formal尚未闭合；质量过滤、接口、三模式和组装结果不能互相代替。
+- 当前传输base未启用碰撞、空间电荷或磁场，也未建立制造支撑、公差与机械装配资格。
+  碰撞理论已收录，但不代表碰撞运行能力已建立。
+- 配置编译和纯回归只证明输入、投影及机制行为；没有真实求解、数值矩阵或GUI/CAD证据时不得宣称对应层级通过。
+
+## 当前组件边界与几何
+
+当前作者与resolved合同为schema 3。可装配多极杆默认只发布真实杆系（`bare`）；只有显式声明
+`cylindrical_grounded_shell`才构造接地圆柱壳。默认不随独立运行或装配场景变化，也不从数值域猜测壳。
+多极杆不承载入口／出口光学板、连接套筒或下游透镜；这些部件由其实际提供者通过装配配方接入。
+
+壳只声明内半径、壁厚和两个物理轴向端面，外半径及长度派生。`endcaps`中入口和出口各自可选，
+出现时仅声明孔径半径与厚度；没有端盖就不生成实体。端盖从壳端面向内延伸，仅填充孔外、壳内的环形
+区域，与筒壁连续相接且共用唯一0 V电极，不产生重叠体积或独立偏压端盖。孔径等于壳内径不是无盖的另一种写法。
+此前1 mm绝缘间隙草稿已退役，不作为壳体参数或全仓默认。
+这些是schema 3作者JSON输入，可直接声明后经`compile_governed`编译；装配配方引用冻结resolved，
+不再覆盖器件尺寸。当前优化catalog不开放壳、端盖或数值域半径的自动搜索；显式壳体具名设计仍为候选，未绑定授权runtime。
+
+数值域和`observations`独立于物理壳。源、handoff和census不再由已移除的光学板派生；裸杆也需要明确的
+外部场边界，默认PA边缘不是实物。壳尺寸必须对应实际设计，不把既有20 mm内半径推广为最优值或固定r0倍数。
+可调孔板即使电压为0 V也仍是独立光学组件，不因瞬时同电位并入壳体。
+
+四／六／八极分别为径向阶数n=2/3/4，共用同一几何机制。当前杆系电气模式保留
+`no_acceleration_full_length`和`segmented_rod_axial_acceleration`；内置出口孔板加速模式及私有terminal
+组合入口已退役，不能静默替换为另一科学实验。矩形专用参考仍服务原接口／质量过滤workflow，
+不作为新可装配多极杆的隐含外壳或默认光学部件。
+
+旧三模式、闭壳、单／双端贯通和出口孔板运行保持原输入、原owner与资格；它们是冻结旧几何证据，
+不自动成为schema 3裸杆或新壳体的求场、飞行、数值、制造或Formal验证。本次先闭合几何，未开展跨求解器差异研究。
+
+公共`msplatform.backends.simion.compile_geometry`现支持显式纯RF scope的独立GEM编译，覆盖四／六／八极、
+多实例和保留完整父设计的局部scope。`component_domains`逐实例冻结三轴网格，科学组原生映射复用唯一topology；
+输出标记`simion_independent_rf_geometry`，无downstream specs。误交给公共原生构建时明确拒绝并导向既有项目工作流。
+这只证明普通安装后的纯编译与身份接线，不创建PA、不Refine／Fly，也不改变上述旧几何资格边界。
+
+[壳体CAD检查](../../../../../../artifacts/projects/rf_multipole_ion_optics/runs/20261027_143100__test__cad__multipole-enclosure-r02/summary.json)
+已完成bare、开放壳、前盖、后盖、双盖及缩放双盖六种构型：bare无壳实体，其余为唯一连续接地域；
+各实体对正体积交叠和中心孔交集均为0。五份STEP冷导入均为1域，最大体积回导差约5.10e-11 mm³，
+不作制造容差声明；独立manifest核验13项输出。该证据仅覆盖壳体，不授予求场、Fly、数值或Formal资格。
+首轮在构建几何前因MATLAB目录helper遮蔽失败，保留执行失败证据，
+不记为物理失败。当前壳体请求只把数值域上界延至82.9 mm以容纳既有最粗0.4 mm轴向格的出面观测余量，
+实物端面仍为82.1 mm，源、handoff与census不动；其壳体尺寸与该CAD检查相同，输入全文身份不同，不混用hash。
+
+[完整器件几何检查](../../../../../../artifacts/projects/rf_multipole_ion_optics/runs/20261027_144000__test__cad__multipole-full-geometry/summary.json)
+进一步使用真实生产分段helper构造bare和双盖两种完整器件，各含32杆段；双盖的3个接地实体属于同一电极。
+分别覆盖496／592对实体，原生实测bbox证明496／560对分离，其余32对经真实Boolean求交，正体积交叠均为0；
+独立manifest核验8项输出。本run不重复STEP、求场或飞行。它与上述壳体连续性、通孔及STEP证据共同闭合
+本轮几何干涉检查，不代表制造、数值、Fly或Formal资格，也不回写旧冻结几何的四处交叠结论。
+
+当前census只接受实际回调状态夹住观测面的前向穿越（含terminate最后状态），不按近面阈值或从handoff
+直线外推补造命中。[供应商CLI回调检查](../../../../../../artifacts/projects/rf_multipole_ion_optics/runs/20261027_133140__test__cad__multipole-enclosure/results/agent4_callback_acceptance.json)
+覆盖4场景及重复run；无PA夹具只验证回调状态机，不建立真实PA边界backoff或Fly资格，未实际越面仍为未观测。
+
+接口就绪 COMSOL 入口及有限三维 COMSOL／SIMION 运行器的失败发布若再次异常，仍传播原始错误及类型，
+并在异常的`failure_closure_error`中保留发布失败原因；有限三维入口的host释放异常另记`host_release_error`。
+没有原始失败时，host释放异常仍向外传播，不能变成成功。环境恢复／别名清理及原资源释放继续沿各自入口执行。
+实际PowerShell catch／finally回归覆盖正常路径、主错与发布／释放再次失败，不调用商业求解器，
+不改变这些workflow的科学输入、成功判据或现有资格。
+
+## 机器权威
+
+| 职责 | 入口 |
+|---|---|
+| 身份、结构变体与发现能力 | [project.json](../config/project.json) |
+| 变体极数、电极数与物理设计校验 | [家族合同](../family_contract.json)、[项目设计Schema](../config/contracts/design_profiles.schema.json)、[设计解析器](../../../workflows/rf_design_profiles.py) |
+| 具名设计与typed电气模式 | [design_profiles.json](../config/design_profiles.json)、[operating_modes.json](../config/operating_modes.json) |
+| 完整runtime与粒子源绑定 | [runtime_profiles.json](../config/runtime_profiles.json)、[particle_source_profiles.json](../config/particle_source_profiles.json) |
+| 三变体传输数值注册表 | [COMSOL](../config/comsol_solver_numerics.json)、[SIMION](../config/simion_solver_numerics.json) |
+| 四极机械、变量、源及专用workflow合同 | [quadrupole/config](../variants/quadrupole/config) |
+| 六极机械、变量及工程合同 | [hexapole/config](../variants/hexapole/config) |
+| 八极机械、显式壳体、来源模型及工程合同 | [octupole/config](../variants/octupole/config) |
+| 可执行入口与绑定要求 | [execution_profiles.json](../config/execution_profiles.json) |
+| 旧资格、原身份与冻结记录 | [历史索引](../../../../../docs/history/projects/rf_multipole_ion_optics/README.md) |
+
+活动runtime编译完整输入后执行；不能用命令行自由覆盖几何、RF/DC、源或已绑定数值语义。
+公共命令预览通过execution profile的`runtime_binding`调用本项目
+[`resolve_execution_binding`](../../../workflows/rf_runtime_profiles.py)，具名runtime与campaign均复用既有解析器；
+本项目提取实际结构及campaign的`authorized_run_id`，公共编译器负责身份、能力归属和受保护上下文校验。
+纯回归覆盖三种结构、campaign身份、未知与跨结构拒绝及真实CLI预览；`authorized=False`仍可预览，
+实际商业执行继续由`validate_pilot_budget`失败关闭，不改变上面的未授权结论。
+专用workflow的允许输入与探索数值范围见软件说明及其机器合同。模型参数、阈值和正式证据都不从本文推导。
+旧资格JSON保留原owner、profile名、SHA和run；它们不是可复制改名后执行的新资格合同。
+新的运行合同若引用旧源数据，必须显式验证该来源身份，不能给历史数据补一个新owner。
+活动设计由当前家族合同与设计解析器校验；历史owner与资格只从封存记录追溯，不允许新run回写到旧owner。
+
+<a id="quad"></a>
+
+## 四极杆
+
+四极杆保留无碰撞传输、接口就绪、质量过滤和同求解器数值研究等科学workflow。
+`quadrupole_official_transport`矩形参考服务旧接口／质量过滤的相应作用域，不是圆柱三模式实验端口；
+`Mode`或粒子数不能切换科学声明。接口历史严格相空间比较FAIL，当前机械base仍待新资格。
+RF+DC已有理论和有限几何功能响应，网格、跨求解器一致性及质量分辨能力未闭合。
+
+冻结旧非typed出口孔板设计曾因`axial-drive potential profile does not accelerate selected charge sign`
+被编译器拒绝。此负结果保留；内置孔板模式及其活动profile已退役，不能改物理符号或换成裸杆来制造通过。
+
+质量过滤L0数学实现归`msplatform.components.rf_multipole.mass_filter_theory`，具名参考政策归
+`msplatform.workflows.rf_mass_filter.reference`；[研究CLI](../../../workflows/rf_mass_filter/theory.py)只选择显式研究输入。其源由
+[official_particle_source.json](../variants/quadrupole/config/official_particle_source.json)声明，确定性采样由
+[公共ion_release](../../../../../docs/ION_RELEASE.md)提供。旧150 mm碰撞脚本不是活动合同。
+旧矩形PA导出／比较三脚本已退役，不恢复硬编码0.2 mm基线的GEM文本替换链。
+
+完整质量响应比较正文归`msplatform.workflows.rf_mass_filter.response_comparison`，原根Python实现退出；
+现有`compare_responses.ps1`仍负责显式三来源选择、既有冻结与发布，不据此宣称整个finite3D／接口／campaign外层已安装。
+比较API／CLI只消费显式CSV、metrics、baseline、mode与实际源N，无项目默认回退；原七点／29点、资格与PNG输出保持。
+Its selected-source inventory now contains the canonical provider, required schemas
+and explicit RF family JSON, without the former common/project Python copies.
+The actual frozen CLI retains its original N=1000 outputs and rejects missing or
+altered canonical code. This inventory reduction is not a measured speedup.
+
+质量响应的L1、SIMION、COMSOL及响应比较共用`msplatform.analysis.mass_response`准备结果，再直接复用
+`msplatform.analysis.peak_metrics.half_height_width`计算`sampled_mass_response_linear_half_height_v1`；旧峰形桥已退役。旧
+`observed_half_maximum_band_Th`仍是全部半高样本的采样包络；新
+`interpolated_main_peak_fwhm_Th`只取首个全局最大值两侧最近半高交点的线性插值，单位Th。
+多个峰之间的空隙不会并入该主峰宽，等高plateau仍按同一定义处理。未夹住左／右／两侧交点时明确
+记录缺侧；全零响应为`unavailable_no_positive_response`，峰位、采样带与插值宽都不可用。
+输入质量点必须有限、严格递增且唯一，传输分数必须有限并在`[0,1]`内；原功能判据保持，
+新诊断的`resolution_claim_allowed=false`，不能据稀疏采样插值建立质量分辨能力。
+
+ION11第二列实际为`mass_amu`，不是任意电荷态的m/z。当前质量扫描只接受正单电荷：读取源、
+生成两求解器扫描表及独立SIMION结果分析都校验有限正质量与精确`charge_state=+1`，不经整数截断，
+不自动除电荷。L1源合同同样拒绝布尔或分数电荷。合法+1粒子的表字节和既有科学计算保持不变，
+生成元数据注明该质量与Th数值相容范围；这不建立多电荷运行资格。
+
+三个原生／比较PowerShell入口在运行前使用已有冻结包机制登记实际分析源码，分析从run-local包执行，
+包含公共峰函数及项目传递依赖，禁止回到活动仓库导入。L1仍使用原积分器与科学配置；其CSV冻结后由
+同一模块的纯分析分支在隔离包内生成JSON和图，两者消费同一份prepared结果，run config和manifest
+登记CSV、源码、模块来源与Python依赖环境。比较表保持共同七质量点，图使用各来源的实际完整采样网格。
+COMSOL／SIMION质量过滤运行器只声明冻结文件闭包，模块探针由此派生并保留包级检查。
+隔离helper保留原错误文案，以`Exception.Data['exit_code']`传递分析进程非零退出；SIMION不再解析文案，
+依赖探针、源码篡改和缺失仍直接失败。冻结包回归含真实隔离执行、物理PASS／FAIL和仅匹配文案的拒绝。
+COMSOL的canonical state逐质量统计现也纳入同一`analysis_runtime`包，不再仅保存分析器`.txt`后调用
+活动源码；长期回归使用七质量点、每点四个原ID的合成state，实际执行state metrics→响应→峰宽／功能
+结果。冻结后改动临时活动源码不改变结果，删除冻结模块即失败；该fixture的插值宽为1.75 Th，
+只验证分析接线，不代表真实COMSOL飞行或质量分辨能力。旧冻结run、receipt与已有资格不回写。
+
+L1在冻结输入前通过公共`New-RunPackage`建立checkpoint三件套，并保留公共retention／capacity合同。
+输入冻结、分析准备、计算或分析执行失败时由`Complete-FailedRun`记录阶段、原异常和部分冻结输入；请求源路径
+与实际冻结输入分别登记，不复用原run ID。成功发布和物理FAIL保留原功能口径；收尾自身失败不吞原异常，
+已发布终态不被异常收尾覆盖。完整`run()`回归保留配置的N=100／29质量点，以合成响应验证实际冻结分析、
+PNG与三件套发布，未改变积分器、源采样或科学输入。
+
+此前47项求解器无关回归覆盖手算曲线、平台／多峰、截断／全零、输入域、+1源边界与三个真实分析入口，
+并验证冻结模块来源及篡改／缺失拒绝。原合同每质量N=100、29点的完整L1临时运行功能PASS：采样带
+为99.5–103.0 Th，另报插值主峰宽4.1227490996398615 Th；11份分析源码快照与7个实际模块来源登记，
+5项输出的manifest完整核验PASS，临时run已清理。该验证只关闭分析重放，不把原进程中的源生成／积分
+称为隔离执行，也不代替原生SIMION／COMSOL重跑、网格收敛或质量分辨能力资格。
+
+N=1000 COMSOL bridge曾在release构造阶段资源中断，向量化release候选未证明等价；两者都不是生产路径。
+`analysis/sampling_analysis.py`暂保留具名N100／N1000历史同源统计CLI职责；当前仅发现私有统计测试
+直接导入，不能据此认定存在活动生产调用。bridge预登记绑定旧`common/multipole/sampling_analysis.py`
+路径及SHA，但该运行未到粒子求解、没有N1000结果，不证明当前源码与旧冻结副本相同或成功重放。
+正确工作区保有两个SIMION N100／N1000及两个COMSOL N100的具名run，小输入／结果身份已核验；
+各code_inventory不含sampling分析器，预登记的A3B210…旧源码仍无已验证副本。
+待原冻结分析及输入可独立重放，或完成同输入等价替代后，连同私有测试
+退役此CLI。保留不构成永久兼容承诺，也不授权恢复N1000研究。
+相关数值、释放诊断及旧接口证据见
+[四极历史](../../../../../docs/history/projects/rf_multipole_ion_optics/retired_projects/rf_quadrupole_ion_optics/docs/history/20260911__solver-sensitivity-and-retired-interface.md)。
+当前适用操作保留在[COMSOL](COMSOL.md)与[SIMION](SIMION.md)说明中。
+既有四极→oaTOF功能链不授予连续相空间、分辨率、机械或整机Formal资格。
+
+<a id="hex"></a>
+
+## 六极杆
+
+六极杆保留理想场、圆杆场筛选与有限三维传输的模型层级。三模式功能证据不改变
+`DEFERRED_NOT_WAIVED`／`INCONCLUSIVE`的连续量资格。相位匹配的RF幅值—频率筛选及N=1000复核
+显示微小排序不稳定，继续保留P0 RF基线，不据此优选参数或扩展扫描；证据见
+[RF复核](../../../../../docs/history/projects/rf_multipole_ion_optics/retired_projects/rf_hexapole_ion_optics/docs/history/20260803__hex-rf-drive-phase-matched-h15-n1000.md)。
+源能量与加速方式的比较保持描述性，数值只见
+[源能量记录](../../../../../docs/history/projects/rf_multipole_ion_optics/retired_projects/rf_hexapole_ion_optics/docs/history/20260803__multipole-four-mode-source-energy-h15-n100.md)。
+
+旧oaTOF零长度直连、接地圆套筒与带孔法兰结论属于冻结旧几何。当前外部部件及直接位姿由装配配方声明，
+零间隙仅在真实端面上的独立导体互不接触时允许；发生接触须显式修改几何或间隙，具体距离没有默认值。
+旧逐臂profile、预登记和专用诊断测试的结论从
+[退役campaign](../../../../../docs/history/projects/rf_multipole_ion_optics/retired_projects/rf_hexapole_ion_optics/docs/history/20260802__retired-comsol-qualification-campaigns.md)
+追溯，新的研究只使用当前注册的runtime与窄变量campaign，不恢复一次性诊断树。
+
+<a id="oct"></a>
+
+## 八极杆
+
+### 冻结机械出口证据
+
+旧闭壳的内部handoff与最外端面不同。历史单端贯通运行
+`20261022_210633__sim__simion__octupole-through-exit-n100`曾完成原100 Da母群越过82.1 mm外端面，
+64项manifest输出通过；这些原ID、6D状态和时钟仍可作为明确来源的只读输入。
+旧贯通作者与分支不再是当前运行接口，也不被改写为默认裸杆验证。
+
+schema 3的同一提供者始终发布实际入口／出口：裸杆按杆端面及开放杆包络解释，有壳按壳端面与
+实际端盖孔或开放内孔解释；释放、观测和机械端面分别命名。两端端盖只是同一壳体的可选构造。
+原单／双端配置、粒子母群及资格从冻结记录追溯，不在当前代码保留兼容模型。
+
+### 524 Da工况与来源模型比较
+
+历史`octupole_through_exit_no_acceleration_524da_n100`绑定独立
+[524 Da源](../variants/octupole/config/sources/planar_524da_2ev_n100.json)和具名数值profile，复用单端贯通设计。
+旧100 Da源保留；相同位置、方向、ID和出生抽样下，质量改为524 Da、仍为+1及2 eV，速度按`sqrt(100/524)`
+缩放。RF与机械不随质量调优；观察窗按相同轴向速度尺度扩展，不保证传输或收敛。
+理想八极伪势深度在固定RF与几何下按`1/m`变化，因此同一明确物种不等于下游捕获保证。
+
+旧owner的运行`20261023_084802__sim__simion__rf-octupole-ion-optics-through-exit-no-acceleration__resolved-l3`
+完成新求场与N=100飞行，100个原始ID全部真实越过`82.1 mm`外端面、非出口数0，52项manifest输出校验通过。
+该结果只关闭上游真实出口功能。旧100 Da→IP的74入HP／0捕获负结果保留；524 Da注入和MR交接由
+[集成状态](../../../../../docs/INTEGRATION.md)维护，不以新上游配置关闭旧负结果。
+
+平面冻结源与轴向体积快照的N=1000 SIMION两臂均全传输，出口位置与角分布不同；这是描述性来源模型比较，
+详见[源模型记录](../../../../../docs/history/projects/rf_multipole_ion_optics/retired_projects/rf_octupole_ion_optics/docs/history/20260911__source-model-comparison.md)。
+后续更改该比较仍须固定设计、下游端口、数值及完整粒子母队列，仅改变receipt绑定的source model。
+
+## 已记录轨迹相位诊断
+
+[`plot_transport_phase_diagnostics.py`](../../../workflows/rf_transport_phase_diagnostics.py)保留为既有描述性分析入口，
+唯一模块命令见[README](../README.md#工作流入口)。它读取两份已记录轨迹，以相同原始ID比较；有限状态、
+原记录顺序中的严格前向位置与递增时间、完整显示网格支持区间均须满足，重复或反向轨迹不排序去重，
+缺支持区间直接失败，不补造终止后位置。原采样步长、平面选择、相位公式和差异阈值保持；零方差相关
+发布null及状态，JSON禁止非有限数。
+
+输出记录两份输入的实际字节/SHA、观测ID、单位、显示网格及各粒子支持区间。当前默认设计只决定诊断
+平面与RF周期，不证明原CSV使用同一设计；母群、frame与clock证据未提供时均明确为unspecified，
+相同ID不授予共同源、配对物理试验或科学资格。旧`plane_metrics`及`transverse_difference_onset`字段
+继续供[接口评估](../../../workflows/rf_interface_readiness/assess_integration.py)消费。
+
+长期验证入口为[`test_interface_integration_gate.py`](../../../../../tests/projects/rf_multipole_ion_optics/analysis/test_interface_integration_gate.py)，
+覆盖真实`--help`、CSV→JSON/PNG→接口评估CLI及无效窗口/轨迹拒绝；该层不运行求解器，不授予native或Formal资格。
+
+## 部件与组装边界
+
+本项目发布原生机械、端口、驱动及canonical handoff；连接器、位姿、公共电位、时钟和下游场域由
+[组装规范](../../../../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md)与集成配方表达，不反写提供者base。
+IP自身提供的裸八杆导引与本项目八极杆保持不同来源，不能只因杆数相同而互换模型、驱动或粒子母群。
+
+提供者迁移的关闭条件是冻结输入下几何、驱动、端口、完整源／handoff与绝对时钟对照成立，
+原消费者结论保持，新增接收端口和真实物理链另行验收。组装纯回归与重启恢复不授予器件数值或Formal资格。
+跨器件执行与当前任务进度只查[集成状态](../../../../../docs/INTEGRATION.md)。
+
+## 开放任务
+
+1. 新出口相空间研究按[通用方法](theory/exit_phase_space_control.md)先固定真实下游接受尺度、唯一变量、
+   损失约束、共同幸存者与相邻数值档，再选择具名campaign；本页不预选加速模式或最优参数。
+2. 连续量、逐粒子等价与统计资格须先冻结误差预算和bootstrap设置；资源受限模式使用有依据的新预算
+   或替代离散策略，不改旧run的预算或资格。
+3. RF-only、RF+DC、轴向加速与各结构变体分别建立相称Candidate证据；机械、GUI/CAD与装配闭环后才讨论Formal。
+4. 碰撞冷却须由当前机械base建立独立物理合同与workflow；气压、分子流等新增物理按需求增加，本文不预建能力。
+5. 下游或整机性能研究由集成任务明确目标、指标和授权，功能贯通不自动扩展为优化或N=1000统计工作。
+
+## 产物与历史
+
+新运行的owner是`rf_multipole_ion_optics`，只写`artifacts/projects/rf_multipole_ion_optics/`。
+旧三个项目的run、manifest和冻结资格继续使用原身份与原artifact解析位置，不提供猜测旧路径的fallback。
+[历史索引](../../../../../docs/history/projects/rf_multipole_ion_optics/README.md)登记原owner、原路径、固定Git版本及迁移映射；冻结内容不改字节。
+普通README／PROJECT编辑由Git保留版本，不因本次合并再复制一套全文快照或逐会话状态历史。
+
+圆杆 L2 传输使用已认证 field-screen run 的冻结设计、合同与采样结果，要求与当前解析设计的真实杆阵列、坐标、r0 和极数一致，并仅采用杆半径比例严格匹配且通过场筛选检查的唯一候选；缺失或不匹配时拒绝，不以最优候选替代既定几何。场筛选为带接地外边界的二维场，传输使用其有限余弦谐波沿 z 均匀延拓，不代表三维真实求解或科学资格。当前 octupole 的既有扫参不含基准设计比例 0.5，需要匹配该设计的已认证场数据。
+该近似使用 20 mm 接地边界，不等同于裸 enclosure 的完整场；传输截断为有限余弦谐波，不使用正弦谐波。
+L1/L2 传输将身份输入冻结到本次 run；圆杆 L2 在冻结后核对场源 manifest 的记录并直接分析冻结样本，验证所有选定比例样本与真实杆阵列及完整合同采样网格一致。
+
+
+### 接口正常链的冻结执行与收尾
+
+`workflows/interface_readiness/run_comsol.ps1` 经公共运行 owner 执行；正常入口显式接收 `-LimitsPath`（公共 native Limits 的 JSON），并冻结该输入及由现主机 policy 派生的实际预算。机器 profile 的 `comsol_execution_limits_path` 为必填，缺失时不能编译为可执行计划。源码根、产物根、执行根由现公共路径上下文一次解析；持久配置保留清理执行 alias 后仍可消费的输入和包路径。
+
+发布设计的新鲜度检查由 `New-RfPublishedDesignFreshnessPackage` 从所选项目纯解析器冻结并执行。接口 COMSOL/SIMION 和质量过滤 SIMION 消费实际检查后的 resolved 文件，不在检查后回退当前默认值。COMSOL 后的 metrics 与粒子状态合同同样从冻结 Python 包执行；GUI 读取本次冻结 config 指定的设计和接口，loader 只接受现 resolved schema 3。
+
+原 CLI 的 `-ResumeFinalization -ResultPath <稳定小Result>` 仅继续公共 owner 收尾，不重新求场或飞行。该模式只允许恢复参数及 Python/RunId；科学参数不能被静默忽略。native/GUI 的实际 completion receipt 进入公共聚合，继承的同 token 去重，writer 未知仍保留保护。
+
+确定性四极杆和有限三维 solver 使用同一项目终态分类器。全局时间窗结束且晚出生粒子尚未获得完整运输时长时记 `unknown`，无终止原因不等于 electrode loss；原接受面和几何拒绝事实不变。canonical 状态及 metrics 分开报告 accepted/lost/timeout/unknown，原母群分母、ID、出生/终态时钟及命中率保持不变。软件接线、原生求解、GUI验收与科学资格分别报告。
+
+## 普通执行计划的软件边界
+
+四极普通传输、接口、质量过滤及六／八极campaign的普通profile不再前置整套`static_gate`；实际源／资产／预算准入及科学判据保留，源码修改仍走独立软件验证。机器显示使用理想多极场、圆杆有限场、有限三维多极场与轨迹等实际模型名，旧L1／L2身份不解释为软件级别。
+
+## 机器能力与解析输入
+
+正常 wrapper、预算和 COMSOL prepare 共同消费本次 resolved runtime 与 input_definitions；授权及源身份仍在原边界校验。
+能力查询与执行编译见[公共合同](../../../../../tools/repository/README.md#执行dry-run)；READY 仅描述声明条件。
+
+## 显式研究请求的位置
+
+普通只读 campaign 可由原 `runtime/run_simion_transport_campaign.ps1 -CampaignPath <绝对JSON路径>` 接收。
+单文件名仍选 config/campaigns 具名案例；其他相对路径以仓库根为基准。JSON 内资源继续用原项目／仓库基准，
+不按请求文件目录解释，也不允许引入外部代码。status、analysis preflight 与执行共用同一定位 API。
+正常入口保留读保护，冻结本次解析；输出仍由原 managed run owner 决定，不能覆盖正在读取的请求。
+标准案例、预注册、物理支持域与商业授权保持原合同；位置可读不等于获准运行。
+
+
+### 接口保存原生解与收尾边界
+
+接口就绪 COMSOL 入口使用现有 solver_review 保留级别及明确复核／恢复理由；Limits 的新增载荷承诺不变。MPH 和 release 文件沿原生命周期保留，不再误用仅供可恢复 SIMION TRACE 的 PreservePaths。确认 writer 停止后，实际失败阶段及已保存 native transport 事实先持久化到 summary。真实 GUI wrapper 成功返回才记录 gui_verified，未运行或失败不冒充通过。公共 owner 薄测试覆盖成功／失败两终态及惰性 MPH 保留（15.028秒）；另0.657秒纯聚合测试覆盖GUI成功、GUI失败和缺保存证据。这不等于真实求解、GUI或科学资格。
+
+`20261031_091203__test__comsol__saved-rf-birth-probe` 只读保存模型探针通过完整公共 owner：外层69.928秒、Result总69.338秒，商业 wrapper41.526秒，峰值RSS2,760,167,424字节，新载荷5,380,629字节；零新增求解、零父模型保存。15×100查询返回时刻完全匹配，dataonly与默认提取一致；ID1／50／100的精确birth及后一ULP六维均NaN，最早原存储有限点分别晚4.917／6.895／9.859ns。不得将晚时刻改称birth、放宽原1e-12容差，或将producer插入source行当native echo；源绑定、native birth echo可用性、共同真实观测时刻GUI重算一致性分别报告。
+
+同一探针公共 ResumeFinalization 返回 REUSED（2.278秒），manifest字节不变、零新增native；此证据仅验证探针收尾；接口原CLI后继分析的独立范围见下节。090000父run四份小元数据保持原字节；原2GiB预约已按公共机制释放，141,074,317字节／238文件ready并pinned，交接未重新读hash或复制MPH。后继消费必须显式使用实际停止收据，不能改写父记录。
+
+
+### 接口原CLI的后继分析
+
+已经完成并保存的interface native transport可由原CLI创建后继分析run：
+
+```powershell
+pwsh -NoProfile -File src/msplatform/workflows/resources/run_comsol.ps1 `
+  -AnalyzeOnly -ParentManifestPath <原run_manifest.json绝对路径> `
+  -StoppedReceiptPath <原owner实际seal_stopped_payload收据绝对路径> `
+  -LimitsPath <本次分析Limits.json绝对路径> `
+  -RunId <新run身份> -ResultPath <新run外小Result.json> -PythonExe <解释器绝对路径>
+```
+
+此入口只消费显式父冻结科学输入，不接受新的科学参数、Gate或StartupAttempts。示例针对checkpoint父；已终态success／failed父沿原公共保护读取，不要求另造停止收据。StoppedReceiptPath可省略，只有checkpoint父必须显式提供实际收据，缺失仍由公共SourceReferences在建包前拒绝。原生任务PASS、实际launcher停止／release、保存模型事实与完整source/native映射须同时成立；进程退出或存在MPH均不能单独证明阶段完成。checkpoint来源由公共SourceReferences核对实际停止收据及ready/pinned owner后准入，非法收据不创建新run或遗留新lease。父manifest、receipt和载荷保持原字节，不改父终态。
+
+新run冻结当前分析闭包并记录原始阶段来源，保护中引用原CSV／MPH，不复制或散列大模型和原始轨迹。公共managed Python在COMSOL/postprocess轻资源许可下实际执行原metrics和common particle_state模块，记录真实PID、起时、退出、资源观测与host release；未知writer保留保护。Limits仅授权本次真正新增源码、结果与收尾载荷，不继承父2GiB求解承诺；四个Limits整数键沿正常入口，不新增预算格式。
+
+结果明确scientific_result=NOT_EVALUATED、gui_verified=false、parent_request_completed=false，零COMSOL启动和新求解。source authority及canonical状态合同检查不冒充native精确birth echo。GUI Compute是另一个明确请求，执行它会新增实际求解，不能计入零求解后处理恢复。
+
+仅收尾失败沿同一原CLI `-ResumeFinalization -ResultPath <本次小Result> -PythonExe <解释器>`继续，已终态再次恢复REUSED。分析失败创建新的AnalyzeOnly后继，不重飞、不改父记录；原异常与收尾异常分别保留。ca9dfe21隔离源码的软件回归实际执行了完整原CLI：成功分析／幂等恢复、注入分析RuntimeError并保留stderr／失败终态恢复、非法收据回滚、父八个小文件及子manifest不变。最终定向方法38.232秒，unknown薄接线另已通过。此为软件夹具及真实Python进程验证，不是新COMSOL求解或科学资格；原090000保存结果的实际后继验收见下节。
+
+
+#### 090000保存结果的原CLI后继验收
+
+`20261031_100510__analysis__python__rf-interface`通过原CLI的AnalyzeOnly，引用原`20261031_090000__test__comsol__rf-interface-hmin-before`及实际停止收据，完成原metrics与particle_state分析并封存为success／complete、data_validity=valid。分析命令外层墙钟29.0469427秒；唯一受预算Python进程观测1.917秒，PID33508／起时639290091313294688／exit0，实际postprocess host token `a597e3c7f7d448998dd08d2388c6cd23` 已released。该过程峰值RSS9,830,400字节，run目录观测416,944字节（终态manifest写入前的观测范围），不能当作完整命令墙钟或完整封存后字节量。
+
+同一子run以原CLI ResumeFinalization再次返回WORKFLOW_TERMINAL=REUSED、success／complete；最终100913跟进的恢复命令墙钟2.7428653秒。子manifest、config、summary、completion、analysis usage及module origins保持原字节；父八个小记录、原090000 Result、停止收据与原execution／GUI completion保持原字节，原MPH大小和LastWriteTime保持不变，仅stat、未读hash或复制载荷。分析与恢复均零商业wrapper／launcher receipt、零新场／粒子求解。公共完成证据仅有真实Python后处理操作；纯分析没有owner声明的execution_alias，native_path_preparation.calls=0，临时别名清理在本次不适用。
+
+一次性审计的三次FAIL保留：100510错误要求不存在的Result别名字段；100817与100842漏捕获内嵌Python的REUSED stdout，尽管原CLI均已成功恢复。100913改由独立pwsh进程捕获OS stdout后，审计terminal0／PASS；没有新建run、重复分析或重求场／粒子。原失败审计没有被改写，也不计为生产分析失败。小证据位于本项目scratch的`rf-feedback-hotspot/agent4/interface_analysis_child/root_090000_successor/`，包含首次分析目录及三个followup目录。
+
+本次完成的是已保存native阶段的后处理与原CLI收尾恢复。scientific_result仍为NOT_EVALUATED、gui_verified=false、parent_request_completed=false；未重新执行GUI Compute，原090000整体请求与GUI资格未完成，未提供native精确birth echo或新的科学资格。
+
+### 接口GUI的源绑定与实际存储时刻对照
+
+接口GUI任务将源配置绑定、原生birth观测可用性与GUI重算对照分别记录。先实际读取ReleaseFromDataFile节点的Filename、icolp、VelocitySpecification、InitialVelocity、icolv和rt，核对完整冻结分组的六列、原ID、行序及精确birth；配置／文件一致性记为source_binding_verified，不等同独立native初态echo。Filename只接受本次显式执行／持久角色路径；已清理旧alias仅在原owner completion明确记录其目标属于同一冻结run时认可，不搜索同名文件。
+
+091203冷读已证明当前保存解的精确birth查询可全NaN。GUI因此只从原有分窗提取器读取真实stored-time inventory，出生时刻没有原生有限样本时记录native_birth_echo_unavailable_saved_observation；不把首个晚时刻当birth、不用canonical源行自证native echo。若恰有原生精确stored birth样本，仍按原1e-12的mm／m/s预算核对，矛盾直接失败。
+
+1e-12仅用于六列源文件／可取得的精确出生初态运输，不是积分误差或重复求解的全轨迹容差。GUI保持原完整N与期望hits门、几何／驱动／源绑定及各run合法ID／时钟／完整有限6D检查。跨run共有存储时刻的6D残差、active／missing差异、terminal事实及项目接受结果差异仅报告诊断，不要求无数值依据的逐样本／末时刻完全一致；不放大源预算。observed_state_parity_verified=false、numerical_equivalence_status及scientific_result均为NOT_EVALUATED，即使残差为零也不自动授予数值资格。GUI原接受条件PASS／FAIL和操作完成单列，unknown不计实际损失。
+
+比较前各持久写一次既有saved／computed提取record至本owner的gui_observations_saved.mat／gui_observations_computed.mat（MAT v7），携带完整原ID／birth／source metadata、单位／frame和绝对时钟；随后小gui_verification.json独立记录结论，正常CLI不再依赖stdout解析。原solver_review保留原始记录和必要原生解，输出进入原manifest。N100×7119时间点按9个double字段估计每侧约51.3MB、双侧约103MB加小metadata，实际压缩／字节以usage为准，沿原2GiB预算计量；不复制父MPH或80MBrawCSV。MAT可在无COMSOL的MATLAB中load并调用同一公开compare_rf_gui_observations函数作纯分析，不新增runner。
+
+原AnalyzeOnly在父native完成及来源保护充分时可复读已有GUI收据／JSON／snapshot角色，保留原PASS或FAIL并单列父GUI退出码，零Compute且不改父请求／科学终态。缺少after记录时明确需另行授权新的GUI动作取得它；原ResumeFinalization仍只补收尾。gui_verified仅表示原GUI操作／接受条件，不能解读为全轨迹数值等价。
+
+该修复不改变源、物理、场、接受面、GUI Study Compute或资源owner；AnalyzeOnly只消费完成证据，新的GUI Compute仍会新增真实求解。原owner用R2025b MCP验证本主题21项纯行为测试，修正MATLAB保留字persistent为persistentRun后21／21通过（0.78996秒）；首轮11 Passed／10 Failed／2 Incomplete的3.6307秒记录保留，其中Incomplete与Failed可重叠。Python薄报告消费测试通过1.064秒。实际COMSOL冷重开／GUI Compute与完整母群对照尚待原owner执行，纯测试不代表GUI或科学资格。
+
+### 保存模型目录冷读与GUI负结果
+
+111112仅冷读090000原48,590,424 B模型：原生任务PASS，load8.742805秒，实际recovery位于新owner执行目录；
+useRecovery=false，不授予autosave／checkpoint资格。原外命令105.426873秒因一次性usage参数形状错误FAIL，
+保留原记录后，同run仅收尾6.779947秒完成success／complete，无新增native；父small记录及MPH stat不变，alias移除。
+
+112402新GUI运行完成std1／std2各一次（6.432828／17.439459秒），100粒子源绑定检查通过，
+随后新增的whole6D对照在1e-12门限失败；外命令139.514924秒FAIL。核对原冻结实现确认1e-12明确只为
+六列源／出生初态运输预算，不能用于积分后全轨迹；这是本轮新增判据的错误扩展，不是已证明的物理失败。
+该run随后仅补公共收尾，failed／complete保持，finalizer6.985504秒；父记录不变，零新增native，
+terminal／capacity／lease与alias清理完成。原生完成、GUI对照未建立、科学NOT_EVALUATED分别记录。
+当轮未在比较前持久化current矩阵，不能从现有文件补出原差值；保全观测后独立分析与准确判据正在整改，
+不得放宽源运输预算或把该失败改写为PASS。两轮原错误、实际收据、usage与仅收尾动作位于
+本项目scratch的comsol_runtime_storage_coldread／gui_saved_observation_run主题目录。
+
+最终公开helper的25项纯MATLAB行为回归通过（1.3093秒，0 Failed／0 Incomplete），覆盖实际冻结helper解析、MAT保存／load、分析失败后原始记录保留及无数值资格的差异诊断。live追加3项Python／PowerShell薄回归通过（2.582秒／外墙3.089151秒），覆盖正常调用真实接线、JSON独立读取、拒绝虚假数值资格／矛盾接受条件、第四owned输出根投影及AnalyzeOnly保留原FAIL且零native。新持久化边界仍尚未取得原生实证；本次软件通过不等同旧21项实现测试的判据成立，也不将112402失败改称本主题原生通过。
+
+独立MAT分析示例：在本项目comsol目录的真实PathFixture／路径下，以`a=load(savedPath); b=load(computedPath); assert(isequal(a.units,b.units)); diagnostic=compare_rf_gui_observations(a.observation,b.observation);`直接调用唯一纯helper，无COMSOL。两参数模式不重建项目物理接受条件，project_outcomes_compared=false／对应差异不可计算；真实GUI提供现owner已分类的两组outcomes。旧JSON复读仅重读旧方法输出，不称用新方法重算；改变方法后的MAT分析必须新owner记录，父不变。
+
+### 121732 GUI观测与公共收尾实测
+
+`20261031_121732__test__comsol__rf-gui-observations`补齐上段尚待原生验证的观测持久化边界。沿原public owner只读引用090000已保存单器件模型及原100粒子／不同birth源，保持原粗网格和139.81792V／1.1MHz驱动；17文件闭包来自fa0cdaf1，仅一次性副本加入明确计时和两Study范围guard。真实1次COMSOL launcher执行std1／std2各1次，原完整N=100／H=67接受条件通过。scope为saved_parent_gui_only，parent_request_completed=false，不改090000或112402的原FAIL。
+
+7119个共有实际stored时刻比较707591个有限6D状态：最大位置／速度**分量差**分别为9.385230370639874e-10mm／4.3199906940571964e-7m/s，RMS分量差为4.178305899101451e-11mm／1.818373628953439e-8m/s；active mask、terminal事实、项目outcome及逐ID接受差异均0。这些是诊断，observed_state_parity_verified=false、numerical_equivalence_status／scientific_result仍为NOT_EVALUATED。100组实际Release绑定通过，saved／computed两侧原生精确birth echo均有100个ID不可用、独立验证ID为空；源文件／canonical回读不冒充native初态echo。
+
+| 已测阶段 | 秒 |
+|---|---:|
+| 加载／源绑定 | 9.3507749／6.1864063 |
+| 原解提取／MAT保存 | 25.3728916／0.8134210 |
+| std1／std2 Compute | 7.150058／21.737052 |
+| 重算解提取／MAT保存 | 24.1157905／0.7945261 |
+| native wrapper／usage观测区间 | 148.3537029／142.162 |
+| Result累计／其中公共收尾 | 167.9655095／6.9236631 |
+
+各计时有不同边界，不相加冒充外命令墙钟或提速。usage覆盖本次单GUI进程树与run目录：峰值RSS3753705472B、最低可用内存22144454656B、采样目录峰值／终态manifest前保留量54618511B，无warning；预算为16GiB RSS、最低8GiB可用、2GiB新增、300秒仅告警。最终停止载荷收据54683572B／45文件，和usage的manifest前口径分别保留。
+
+saved／computed MAT分别26885573／26885713B，已在比较前写入并按solver_review保留。真实launcher PID20880／start ticks639290170706302411／exit0，非继承host token `2dd4e6cfbf8348e6bbf733524bc4a6b1`实际released。Result为success／complete，terminal、capacity、lease、writer确认和alias移除均成立；12份父小记录（原8角色及原Result、receipt、两completion）前后字节记录一致，原MPH仅stat核对且不变，没有新hash／复制父MPH或读取80MBraw。
+
+[诊断JSON](../../../../../../artifacts/projects/rf_multipole_ion_optics/runs/20261031_121732__test__comsol__rf-gui-observations/results/gui_verification.json)、[实际launcher收据](../../../../../../artifacts/projects/rf_multipole_ion_optics/runs/20261031_121732__test__comsol__rf-gui-observations/logs/launcher_completion.json)、[usage](../../../../../../artifacts/projects/rf_multipole_ion_optics/runs/20261031_121732__test__comsol__rf-gui-observations/logs/resource_usage.json)及本主题run外Result／parent_audit保留。后续可只load两MAT，调用本run冻结的compare_rf_gui_observations作纯诊断而零Compute；本轮未额外执行资产MAT冷读或新方法重分析，不将旧JSON复读称新分析。GUI操作／原接受条件完成不授予精度、完整整机或其他源规模资格，RF源构造性能仍独立待办。
+
+### 确定性四极N100源构造的现代双臂实测
+
+以提交01f0b6ce相同公共owner／GUI／原构造body建立串行control `20261031_124715__test__comsol__rf-release-control`与after `20261031_125649__test__comsol__rf-release-after`，唯一solver差异为release节点构造时disableUpdates作用域；两臂均有相同release_construction_seconds计时，包含after重新启用的完整刷新与getter确认。原scope五项纯MATLAB行为通过（0.56977秒），不替代本次生产对照。原090000旧FAIL的212.96575秒不作现代整命令速度基线。
+
+| 同口径阶段（秒） | control | after | after−control |
+|---|---:|---:|---:|
+| release构造（含after刷新） | 27.7300098 | 22.0462621 | −5.6837477 |
+| prepare | 18.6940057 | 15.6937534 | −3.0002523 |
+| native wrapper／其进程usage区间 | 148.5465987／142.561 | 154.5186324／142.997 | +5.9720337／+0.436 |
+| GUI wrapper／其进程usage区间 | 137.1882623／131.319 | 151.6175104／145.678 | +14.4292481／+14.359 |
+| 公共收尾 | 8.2472370 | 9.3875670 | +1.1403300 |
+| Result累计 | 314.0028799 | 332.6474731 | +18.6445932 |
+| 独立公开pwsh启动至退出外墙 | 315.7878095 | 334.2198387 | +18.4320292 |
+
+**仅本次N100构造段缩短20.4967%，完整正常命令反而增加5.8368%，未取得整流程收益。** 此为一次串行配对，不是统计稳定倍速；表中区间存在包含关系，不能相加。after的solver准入有io_pressure／WAIT_SECONDS=0观测，但没有累计等待秒字段，不能把wrapper与进程usage残差全归为资源等待。实测较大的增加位于GUI wrapper／进程区间。原小报告已有每Study计时：std1为6.895367→7.749342秒，std2为22.327502→21.763708秒，两项合计仅增加0.290181秒；因此不能把GUI增加14.429248秒归因于Compute。load／binding／双侧extract／persist仍未分项，不能进一步猜测其内部热点。两臂原有GUI动作正常执行，未为性能跳过。
+
+四份完整冻结科学JSON（设计、mode、interface、numerics）、compiled科学投影、100个ID／native_order／birth／完整源6D／权重／color、质量／驱动、release_files／complete_cohort映射及每ID terminaloutcomes均相等。保持原100个不同birth、9037元素／auto9／hmin0.2mm／每周期80步及80µs，均N100／H67；原count-hit接受与source binding通过。公共particle_state_comparison_core读取两份小state各396事件，key相同、完整母群无缺／额外ID、categorical差异0；296行存在浮点变化（最大时刻差1.2519763004092965e-10µs、横向y差9.711800252887315e-10mm、vx差3.934019332518801e-7m/s），只作差异诊断。未建立积分误差资格，scientific_result／numerical_equivalence仍NOT_EVALUATED，native精确birth echo仍不可用。
+
+native／GUI峰值RSS分别control3401359360／3705380864B、after3641393152／3443052544B；相应目录峰值control194671413／201388584B、after195333707／202053925B。均success／complete、数据valid，terminal／capacity／lease／writers／alias收尾事实成立。两臂使用同原2GiB新增／16GiB RSS／minAvailable8GiB／1200秒告警与StartupAttempts1；不读hash／复制父MPH、MAT或80MB raw载荷作本次比对。
+
+首次冻结control `20261031_124443__test__comsol__rf-release-control`在包创建／native前2.4579062秒失败，原因是scratch闭包遗漏3个已绑定retired descriptor小JSON；原失败保留，r2只从同提交补足12062B原authority，原身份guard两臂实际PASS后使用新runID。未放宽校验或恢复整个历史。小读数、完整逐字段相等性／state诊断及源码差分位于本项目scratch的`rf-feedback-hotspot/agent4/deterministic_release_updates/delivery_v2/modern_two_arm_01f0_r2/comparison_readout/comparison.json`及相邻source_identity／control_after.diff。
+
+本轮未擅自增加规模或重跑。后续高收益动作可先在现正常阶段增加窄load／solve／persist／extract计时定位GUI主成本；已有充分保存观测允许沿现纯helper分析，不能借性能省去明确请求的GUI动作。源构造规模收益仍待更大既定工作量及整命令收益证据，不以N100局部减少关闭Goal。
+
+
+### 确定性接口提取的consumer成本归因
+
+原两臂native metadata中的分窗提取为23.7186873／24.1707277秒，包含实际mphparticle与MATLAB consumer，不能据总时长直接选择向量化。现共有visitor保留原extract_seconds，并分列mphparticle_seconds、consume_seconds、实际调用数和去重消费时刻行数；采样、精度、原时刻／ID和输出记录不变。
+
+2026-10-31由原owner经MCP执行既有RfParticleRecordReductionTest的2个新增方法通过（整测试外层7.4082秒，公共GATE已自然释放）。纯夹具沿真实consumer处理100个稀疏ID×7119时刻／28窗、逆序原生列、晚出生和末NaN：native式4面／stride5调用墙钟0.8883秒，stub读取0.0355秒、consumer0.8070秒；GUI式0面／stride1墙钟0.7773秒，stub读取0.0279秒、consumer0.6931秒。小用例同时核对实际调用和unique rows。该单次合成基线只归因MATLAB侧工作，不模拟COMSOL耗时、不与真实24秒相除称提速，也不把未知末态当损失。
+
+consumer不足1秒，当前没有证据支持优先改其循环；未做向量化。测试循环随后仅原样移至本文件local helper，调用顺序、实参和断言保持，未为机械移动重复长套件。实际GUI内部增加仍需既有report内的load／binding／两次extract／MAT保存分项观测；尚未执行这项新原生测量。原N100局部release减少而完整命令变慢的结论、原112402FAIL及科学NOT_EVALUATED保持，第二consumer端到端性能目标未关闭。
+
+
+### 有界API批量与原逻辑窗口分离
+
+RF公共visitor保持原256逻辑窗口。已知N100且原库存不超过7119时刻时，按本轮有界计划一次读取两个逻辑窗口（最多513行含重叠）；真实extractor传入已知母群数，两生产solver及GUI沿同一机制消费。未知母群、其他N／逻辑大小或更长库存仍走原API批量。七个double数组需2,872,800B，逻辑切片另约1,439,200B；不是进程RSS保证，仍受原owner预算与实际usage约束，不扩至N1000／5000。不改源、物理、积分精度或原库存时刻。
+
+逻辑窗口仍28次，端点、每窗口极值、firstAbove、穿面邻接及稀疏采样集合不变；API调用目标28→14，重复请求边界行27→13。另外14个逻辑重叠来自同次API返回切片，不能称独立vendor重读；跨真实API边界仍核对重叠及ID／6D／生命周期。receipt区分逻辑windows、实际mphparticle_calls、消费行数、API请求行数及API最大返回量；原maximum_window_bytes保持逻辑含义。
+
+2026-10-31 原owner经MCP执行完整 RfParticleRecordReductionTest：24项通过，公开MCP调用墙钟11.7402秒，公共GATE已释放；覆盖全部逻辑窗口等价、真实extractor手算端点／极值／firstAbove／完整6D及跨实际API边界错误传播。N100夹具实际API为14次、逻辑窗口28次、unique rows 7119、请求行7132；vendor接口为确定性stub，不是COMSOL性能证据。未运行新COMSOL冷读或完整正常命令，不宣称调用数减少已成为耗时收益，端到端性能目标仍未达。后续先只读同一受保护模型比较API批量，再决定当前HEAD冻结源码的完整公开命令对照，旧503文件树不作最终源码证据。
+
+
+2026-10-31 以已提交 fd5ab025 的12文件小源码闭包，经公共owner执行只读冷开比较 `20261031_172033__test__comsol__rf-api-batch-cold`。来源为成功的 `20261031_124715__test__comsol__rf-release-control` 的48,589,906B模型；一次 mphload，零新Compute、零父模型保存，公共SourceReferences与持续FileShare.Read保护原结果。全部28个实际逻辑窗口（原时钟、原生ID、完整6D及NaN）和观测统计逐项相等；不是重新评价项目67hits或科学资格，scientific_result仍NOT_EVALUATED。
+
+同一固定顺序对照中，API28→14，visitor调用墙钟24.0988→14.6059秒，内部extract计时23.9121→14.5497秒；独立API重读边界27→13，逻辑窗口仍28，原7119时刻不减采样。模型load15.6607秒，整次公开命令149.7001秒，native wrapper123.9683秒；两臂共享一次load，未排除先后顺序缓存偏差，不能把局部差值写成完整正常命令提速或RF性能目标完成。
+
+真实usage峰值RSS2,963,816,448B、run临时占盘49,034,876B；占盘超出冻结32MiB预算，保留原RESOURCE_BUDGET_WARNING，不修改在途输入或强杀健康任务。无显式父copy/save不等于COMSOL运行时零临时写；后续预算必须计入本次实测原生临时/recovery余量。公共Result最终success/complete，terminal_published、capacity_finalized、lease_released、writers_confirmed、execution_alias_removed均true；实际launcher-attempt-1 PID30308/exit0。父小证据及模型stat前后不变，stat只是补充审计，防写由持续handle提供。路径准备0.1291秒/1调用/transport_bytes0。稳定证据为该run的results/api_batch_comparison.json、logs/resource_usage.json与launcher_completion.json，以及scratch/rf-feedback-hotspot/agent4/api_batch_coldread同run目录的小Result、parent_audit与公开墙钟。此只读原生边界通过，不代替最终正常CLI两臂、另一生产consumer或完整软件回归。
+
+SIMION接口普通入口在确认粒子表存在后，先核对显式bundle metadata、source family与distribution三条输入路径，再准备或复制layout模板。缺源仍由原owner发布failed证据；不消费的PA模板不因确定性缺输入而复制。后续冻结、母群／物理校验、数值和接受门槛不变。纯软件CI夹具沿真实Python与公共容量准入验证failed manifest及零原生调用，隔离测试policy不修改生产磁盘底线。
+
+
+RF软件CI的4baad4d1运行41184422189真实失败，公开墙钟1603.5464秒；后续b35不同改动范围的green不能替代该RF范围。此次定向修复旧私有campaign补丁、resolved输入/argv接线、固定缺失批次画像、冻结闭包上下文及测试容量策略泄漏。原bad_plot真实分析失败发布负例保留，并恢复待提交误删；生产容量底线不改。原25个distinct失败方法最终由首轮23项PASS加normal两臂方法34.8818秒、原missing-bundle方法5.5160秒补验覆盖，首轮及中间FAIL保留，不称同轮完整RF通过。Root当前整合补验missing-bundle与固定分区恢复2项PASS5.752秒／公开9.8033秒，公共GATE已释放，无SIMION／COMSOL调用。最终完整RF及Repository验证与预算仍待验收。
+
+### N100正常公开CLI的K1/K2端到端实测
+
+2026-10-31以snapshot18bb244（Root确认与a71生产代码相同、差异仅文档）同源串行control `20261031_183129__test__comsol__rf-api-k1-control`／after `20261031_183613__test__comsol__rf-api-k2-after`完成原interface_readiness正常CLI。唯一源码差异为visitor API分组K1／K2；release分组、disableUpdates、原求解／GUI／分析及收尾均保留。完整100个不同birth、ID／原生映射／6D／物种权重／母群、驱动和9037元素网格相同，两臂N100／H67；67是原接受条件参考，未放宽新阈值。
+
+|同口径秒|K1|K2|
+|---|---:|---:|
+|独立公开pwsh启动至退出|266.6230172|239.7341619|
+|Result累计|265.0392198|238.2968612|
+|prepare|14.3748232|12.1069303|
+|native wrapper|130.3234821|114.5367483|
+|GUI wrapper|112.4902559|103.9933564|
+|native extract／其中API|18.8890825／18.1167948|15.5416816／14.7423067|
+|收尾|6.7982013|6.6368351|
+
+本次公开整命令减少26.8888553秒（10.085%）；单次顺序配对存在缓存／顺序及并行软件背景局限，不宣称稳定通用倍速，不能把全部差值归因API。native实际API28→14，逻辑窗口仍28、7119原时刻、145353保留采样、完整100粒子；API请求行7146→7132，逻辑最大窗口1442805B不变，API最大返回1444552→2880200B。GUI两臂原source binding及100个per-ID原接受条件通过，707591共同有限观测／7119时刻，active／terminal／project outcome差异均0；GUI小JSON未持久逐次APIreceipt，本次不读MAT或大raw／trajectory来扩大逐记录等价声明。
+
+两份小particle_state均396事件，ID/event key相同、categorical差异0；浮点差异仅诊断（最大时刻9.4801e-11µs、横向x3.7810e-10mm、vx3.5151e-7m/s）。native精确birth echo仍不可用，numerical_equivalence及scientific_result均NOT_EVALUATED，不把canonical源绑定当原生echo或积分精度资格。
+
+native／GUI峰值RSS：K1 3681587200／3725475840B，K2 3639189504／3782770688B；目录峰值K1 195159584／195159674B、K2 194969186／194969276B，无预算warning。两臂路径准备2次、transport_bytes0，耗时.2418773／.2214781秒；四实际launcher PID25080／12308／29048／31520均exit0并hostreleased。Result success／complete，terminal／capacity／lease／writers／alias五事实全true、secondary_errors为空。父8份小输入与冻结前像仍字节相同；来源读／冻结由公共共享消费guard与FileShare.Read保护，不读取／hash／复制父MPH或大载荷。
+
+保留此前release局部收益但完整315.788→334.220秒负结果；本次K2正常链结果与此前coldAPI局部实测分别报告，不能据一个成功配对关闭任意规模或另一solver消费者的性能资格。小读数见scratch/rf-feedback-hotspot/agent4/api_batch_full_cli_589d/measurement.json及原两run小证据；无新商业执行由本次比较触发。
+
+### COMSOL源收据与质量扫描来源映射的正式消费
+
+finite正常入口沿resolved runtime的volume_snapshot_receipt冻结小收据，按已有Copy-VerifiedRunInput身份与原particle_source_preflight --volume-snapshot-receipt运输；config输入及provenance保留原来源和实际冻结身份。缺失／改变／未声明／与family能量override冲突的收据仍拒绝，无volume的原预检路径不变。此为已支持源语义接线，不扩物理域：原注册volume源超出COMSOL默认numerical_domain仍拒绝；有效接线夹具仅复用已有纯provider显式上游域延长设计，不改生产默认或源。
+
+mass_filter_reference正式case数组与manifest Outputs包含每case实际deterministic solver输出release_source_mapping.json，保完整ID／native order／birth／权重／6D母群来源，不新增采样或改变质量扫描物理。薄PowerShell行为回归执行实际case及输出数组，核每case映射唯一且原三种输出保留；原source-preflight实际边界覆盖有效及四种拒绝。只验证软件运输／发布接线，没有新COMSOL求解、GUI或科学资格；完整项目Owner验收另行报告。
+
+## Campaign 与软件验证入口的当前回归
+
+现有 campaign resolver、预算与原 launcher 的软件回归覆盖 COMSOL 请求、双后端逐行选择、授权数值和几何输入、冻结 runtime 运输及漂移拒绝；Status／Diff／DryRun 不启动求解器，未支持的 COMSOL analysis／SIMION 专属策略仍拒绝。测试只在最终求解边界使用惰性入口，不把软件 dispatch 当作场或粒子求解。原 schema／物理接受条件保持。
+
+同轮 Freshness 的 PowerShell 解析可由实际变体软件入口显式复用；独立入口仍做适用前置。回归保留缺前置、坏语法、变体测试失败的非零传播，并在不支持的 Formal 资格请求进入软件检查前拒绝。软件主入口为 `tools/repository/verify.ps1 -Scope Owner -Owner rf_multipole_ion_optics`，内部 Core／Static／Freshness 不表示新的科学资格。
+
+2026-10-31，以上三个测试模块在隔离的 `7816f614` 生产源码上经公共 GATE 运行：28 项通过，测试区间 52.753 秒、外层 53.2210032 秒（2 CPU／2 GiB 准入）。范围仅 campaign request、dual-backend campaign 和项目 verify 接线；商业调用为 0，不代表完整 RF Owner／Repository、原生性能或科学资格验收。
+
+
+### 2026-10-31 有限三维最终公共读取消费者
+
+原CLI的-AnalyzeOnly -ReextractFromModel将本owner实际execution_run_directory传入既有COMSOL launcher的RunDir，并把原export返回receipt保留在原报告单行JSON；不新增路径机制、API调用或状态账本。深路径／真实wrapper／原模型只读和失败传播薄测试通过12.506秒；首次夹具将嵌套退出7误当wrapper退出码的失败保留，修后核对真实wrapper1及原stderr。
+
+实际后继20261031_231624__analysis__comsol__rf-finite-k2-cold只读原071000已解模型，零Compute／零父保存。primary／control各100ID、705原时刻、3逻辑窗、2实际API调用，保留4233／4108科学样本。七CSV共1,818,851B，与原结果逐字节相同；全部16个共同metrics递归相同，新增source_binding仅核对100原母群ID，不冒充native初态echo。实际科学状态仍UNQUALIFIED，未知和零出口保持原义。公开墙钟81.871秒，Result总78.570秒（收尾6.344秒），双case提取4.403秒；不是新的正常全链提速对照。
+
+实际tmp／recovery均owned于新run，峰RSS3,097,391,104B、run峰6,909,739B，在4GiB／128MiB及minAvailable8GiB预算内，无warning。launcher实际退出0、host released，终态／容量／租约／writer确认完成，无附加错误；父记录不变。执行根已是持久根，未虚构不存在的alias_removed字段；路径准备0.110秒、搬运0字节，临时native request在writer停止后删除。对照在既有终态共享guard下各读一次小CSV，无新MPH／MAT／大raw读取、hash或复制。
+
+本轮finite与deterministic的N100目标均在运行前明定，并非事后降低：原finite源分组正常命令157.443→102.883秒，deterministic正常K1／K2命令266.623→239.734秒；早期deferred-update正常整命令315.788→334.220秒的负结果仍保留。本次补齐最终finite读取接线，不外推较大N、全尺度精度或Formal资格，也不新增N1000研究门槛。
+
+### 2026-11-01 Python 包交付闭包
+
+软件门禁的正常 COMSOL owner 夹具也通过公共源码枚举器选择 production Python 与显式动态资源，
+保留独立 author、registry、三个明确绑定的历史 descriptor、两种 family 分支及真实 CLI 冻结；
+不再把测试和整个项目历史复制进 author。同环境单次仪器化对照为 38.548→33.389 秒，
+复制 887→419 文件、178,179,007→6,653,707 字节；完整原五项测试通过，未启动商业求解器。
+这是夹具准备优化，不是科学求解提速；单次顺序配对未隔离缓存影响，未作为完整 Owner／Repository 验收。
+
+软件完整范围可由既有验证器先执行一次四极前置，再以 `SelectedTestModules` 执行互不重叠的模块分片；
+原 `ChangedTestModules` 仍是追加选择，不用于冒充分片替换。门禁只检查一次路径与编译结果相同的
+official／interface 发布合同，interface profile 及其真实科学入口保留，mass-filter 与结构变体检查不变。
+分片权重来自已完成回归的逐模块实测，预测均衡不等于新的完整命令提速，最终耗时另行验收。
+
+`verify_project.ps1` 的 Changed 依赖包含跨求解器门禁的实际消费者测试，Core 保持并追加该模块。
+该回归按完整输入参数验证发布、源与科学检查及失败传播；去除重复 interface 检查后不再要求旧调用次数。
+
+interface、mass-filter、same-solver 的7个 workflow 入口及发布新鲜度消费者改用公共
+`enumerate_python_sources` 从声明的小包／模块派生 Python 交付闭包，删除原逐文件 Python 清单。
+既有路径预检与复制消费同一选择，MATLAB／JSON 等动态资源仍显式声明；必需导入检查保持实际入口及科学依赖，
+交付包不扩大 Fly 科学身份或物理域。最大闭包约2.30MB，未提高资源预算。
+隔离软件回归分轮验证实际源生成、状态／响应／比较分析及缺失、篡改、污染路径与非零传播；
+same-solver 的真实执行发现并补齐原清单遗漏的 `ion_release` 包。中文来源路径的 stdin JSON 编码失败已复现，
+最小修正为显式 UTF-8 运输与 Python UTF-8 模式，实际中文 junction 回归通过1.020秒，调用者编码设置恢复。
+这些结果不代表完整 Owner／Repository 验收，也不包含新的商业求解或科学资格。
+
+## Independent RF geometry build
+
+The public SIMION geometry build accepts 1–10 selected RF instances, using byte-identified structural
+containers and per-instance physical GEMs/native electrode maps. A single real component needs no
+connection or placeholder; multi-component assembly still checks its declared mating. Fractional
+companions, metal/vacuum nodes and native matrix/point pose checks are retained for cold reopening.
+The Euler projection uses a stable near-gimbal decomposition rather than discarding legal roll.
+
+Two governed native cases passed on 2026-11-09: a single segmented quadrupole with grounded shell
+and both endcaps (`20261109_135314__build__simion__geometry-81feca5aaf66`), and a mated segmented
+hexapole/octupole pair (`20261109_135353__build__simion__geometry-5f5ff0aff4db`). Separate SIMION
+processes reopened the actual raw PA/IOB files and verified anisotropic grids, near-90-degree poses,
+physical nodes and exact selected fractional offsets. Nonnil surface witnesses were 48/66 for the
+quadrupole, 48/72 for the hexapole and 82/96 for the octupole. All seven native processes exited zero;
+owner, host and capacity cleanup completed. These are raw-geometry results: zero source sampling,
+Refine, Fly or GUI, and no field, trajectory, relocation or scientific qualification. The bound
+sandbox source and acceptance driver remain required evidence.
+
+The integrated ordinary wheel and sdist-rebuilt wheel passed the five installation tests after
+correcting the precise Git-ignore exceptions for the moved templates. A fresh venv then used
+`execution.load_environment` and the installed wheel for another real single-quadrupole build,
+`20261109_140845__build__simion__geometry-286c35a33d5a`. All 104 loaded platform modules came from
+that venv; all 321 installed files matched the verified wheel. Its three native processes exited
+zero, cold reopening retained 48/66 nonnil surface witnesses, and all 47 manifest/request records
+verified. No checkout fallback, source sampling, Refine, Fly or GUI was used. This does not qualify
+new RF field/tracking modes or close the full P4 acceptance and performance targets.
+
+
+## Independent RF PreparedModel
+
+The existing public `msplatform.backends.simion.prepare_model` now has an independent RF branch.
+Its drive requires `clock_authority` and `clock.phase_reference_instrument_time_us`, and may supply
+explicit `groups`; it has no pulse input. The current RF kernel retains the established zero phase
+reference time, with the physical phase in each provider's `phase_rad`. Physics is explicitly
+`field_model=external_electrostatic_linear` and `boundary_policy=native_zero_neumann`.
+Canonical provider drive projection and validation retain scientific group IDs, RF waveform,
+frequency/phase/amplitude, DC/common mode and grounded enclosure behavior. Targets are per-instance
+(domain, native label) pairs, so equal native labels in different PAs do not alias scientific groups.
+The declared assembly frame and the original poses remain bound; no TOF frame or fake component is
+introduced. The model cold-readback alias `accelerator` → `parent` applies only to the
+actual single-reflection IOB specification. An independent RF instance named `accelerator`
+retains that exact native domain, like any other caller-selected RF instance ID.
+
+The one existing managed model action materializes guarded, independent raw `.pa#` inputs, their
+fractional companions and required surface-witness CSVs. The same structural seeds, zero-beam format
+control, matrix/point/physical-node checks and exact cold surface observations are used for saving and
+reopening the model. Its stored Lua drive consumer evaluates actual voltages at explicit instrument
+times without creating a Program hook, particle source, solved field, Refine or Fly. The unchanged
+TOF branch keeps its actual pulse and downstream behavior.
+
+Software validation covered 48 distinct parent tests across focused rounds: the nine new RF methods,
+13 original model/owner-transport methods and 26 existing RF/OA geometry/native-plan methods. This
+includes a real single-component design, per-instance native permutations, exact compiled-provider
+rejection, the actual capability validator, nonzero cosine phase/DC readback in plain Lua without
+initializing a pulse, explicit public dispatch and inert published-geometry/materializer protocols.
+Changed Python files passed focused Ruff. Ordinary wheel/sdist acceptance passed five tests in
+129.018 seconds, with 347 source/package members verified and both author trees blocked in the
+installed probe. The source-bound ordinary-wheel run
+`20261109_181829__build__simion__model-c4e370fd8742` then saved and cold reopened the independent
+RF model: all 15 group/time voltage readbacks and 48 unique manifest file records verified.
+The materializer and two SIMION processes exited zero and released their host leases; the
+capacity lease was absent after completion. Original raw geometry, fractional surface and witness
+records remained byte-identical. No Refine, Fly, source sampling or GUI was requested. This proves
+the declared unsolved-model operation, not RF field/tracking or scientific qualification.
+
+Independent RF field publication/reuse and the declared quadrupole collision-free tracking chain
+have the functional evidence recorded below. Other RF variants and scientific qualification are
+not covered by that tracking acceptance. Existing RF runs use producer-owned fractional families;
+those are not the immutable published-cache protocol. Copying a published family or exposing private
+`.pa#` paths cannot replace the [closed isolation boundary](../../../../../docs/tools/SIMION_REFERENCE.md#长pa输入路径).
+This model-only slice neither changes that protocol nor retires the existing RF Program, field
+checkpoint, finite transport, interface or mass-filter workflows. No field/trajectory, GUI or
+scientific qualification is granted.
+
+### P4 installed mechanical-exit preparation
+
+`msplatform.backends.simion.rf_observations` owns the native RF event columns and
+mechanical-exit input/complete-mother validation. Active RF runners, IP admission,
+and the MP/IP workflow use this installed implementation; the root component_port
+bridge has retired. The native event-table CLI remains a separate migration item.
+This is a code/installation migration; no new RF Fly or scientific qualification.
+
+
+## Independent RF fractional fields
+
+The public `solve_fields` planner/action has an RF-only branch using the same RunSession,
+capacity owner, process owner and FieldBundle publication as the existing TOF branch. New solves
+materialize only the published unsolved raw PA# and fractional companion, then Refine each actual
+RF numerical domain. The original group/native-ID mapping, geometry, anisotropic grid, physical
+metal/vacuum witnesses and exact bounded surface observations are retained. The native readback
+opens the actual PA0/response family without Refine, FastAdjust, save, source or Fly; it does not
+claim field convergence or trajectory qualification from a finite readback.
+
+Refinement is an explicit numerical selection: `refine_policy="vendor_default"` omits a
+convergence override and records the actual executable identity, preserving the existing project
+CLI's default Refine semantics. `refine_policy="explicit_convergence"` requires `convergence_v`
+for exactly the selected domains, with positive finite values. No new tolerance is chosen by the
+library. Both policies bind the actual vendor and refiner/auditor source bytes in spatial identity.
+Current model drive and clock stay in each product, while RF phase/frequency/source/analysis do not
+become spatial cache keys for the linear electrostatic basis.
+
+The representation is explicitly `producer_owned_rf_fractional_family`, not detached standalone
+cache responses. An explicit reused bundle must match the spatial identity and the complete exact
+same-stem PA#/PA0/PA-electrode/surface inventory. A reused bundle retains one reference to the
+original producer, not a search or producer chain. Both the selected bundle and original producer
+are passed to existing source protection; all original family files are passed as
+`immutable_input_records` to each native consumer. The existing process owner verifies frozen
+identity using write/delete-denying handles until confirmed process drain. No published family is
+copied or renamed. This does not reopen the closed standalone-cache/long-PA isolation boundary.
+
+Official references reviewed 2026-11-09: SIMION2020 installed `docs/simion.chm`,
+`command_line_interface.html` (Refine `--convergence`, `--resume`), `lua_simion.html::simion.command`
+(existing batch-command interface), and `lua_simion.pas.html` (`pas:open`, electric/grid metadata,
+`electrode_numbers`, `point`, `potentials_minmax`, `surface_info`, `close`). The headless Lua refiner
+uses that official batch interface, so the existing explicit synchronous-I/O prelude applies before
+Refine without changing the shared native-I/O contract. The cold audit compares the original
+fractional witness values exactly, including nil values; it neither scans a whole volume nor
+requires artificial fractional offsets from an aligned legal grid.
+
+Software validation passed 43 distinct parent tests / 118 parent-and-subtest outcomes in 130.592 s
+across the new RF suite and four unchanged original field/model modules. After adding actual cold
+report rows, the final RF suite passed 13 parents / 33 outcomes in 7.204 s; focused Ruff passed.
+AST comparison preserves the original TOF action/planner bodies after removal of only the new RF
+dispatch nodes, and all 143 original installed-probe assertions remain. Ordinary wheel and
+sdist-rebuilt-wheel acceptance passed five parents / 16 outcomes in 128.754 s, with both source
+trees blocked from the installed consumer. The first installation attempt failed because a new
+probe assertion lacked its explicit package import; that failed result remains preserved, and the
+fix changes no production semantics.
+
+Native R1 on the accepted ordinary wheel produced the five-response fractional family in
+`20261109_191148__sim__simion__fields-8fe3401852da`. The materializer and two SIMION processes exited
+zero; cold readback checked 66 fractional witness cells, 60 nonnil axis offsets, twelve physical
+nodes and all five actual response ranges. The eight family files total 9,665,920 bytes. A second
+owner, `20261109_191238__sim__simion__fields-8334fbc09b7c`, also completed its write-protected native
+readback with identical original bytes, and both owners released their leases. Its public API then
+failed strictly: product data contained original-family records that were not individually bound
+as manifest inputs. This is an end-to-end reuse publication FAIL, not a native or scientific PASS;
+that terminal record and its positive process facts remain unchanged.
+
+The repair binds original family, witness and Refine-receipt records using the existing
+`session.add_input` protocol, without copying them or relaxing the artifact reader. The regression
+runs the actual source owner, materializer, process owner, guards, finalization and normal reader
+through first and second reuse. Only supplier behavior is replaced by explicitly inert Python;
+the guarded files reject writer opens, external data is input-bound, original bytes remain and
+capacity leases release. The targeted method passed in 67.333 s; the full fourteen-method RF
+module passed 34 outcomes in 68.808 s. The earlier in-memory publisher fixture now includes only
+owned outputs and actual session inputs, matching the normal owner so it cannot hide this defect.
+Two fixture-setup failures (missing dependency argument, then inherited outer GATE grant) remain
+recorded; the fixture now uses the existing token-isolation pattern with the same shared host
+ledger. Production admission, source protection and release validation are unchanged.
+
+The repaired ordinary wheel and sdist-rebuilt wheel passed five installation parents / sixteen
+outcomes in 150.126 s; both author epochs and main were blocked from the consumer. Focused Ruff
+passed. The distinct ordinary-wheel reuse-only run
+`20261109_193222__sim__simion__fields-dfb9ab40b3e3` passed the public API and a later separate
+read-only process. Its sole SIMION audit operation exited zero with an empty process drain;
+the host and capacity leases released. All 38 manifest records and ten external input bindings
+verified, with the eight original family files unchanged. The 66 surface cells, 60 nonnil offsets,
+12 physical witnesses and five response records matched the original R1 audit exactly.
+All 54 frozen acceptance inputs and 365 installed package files remained unchanged. No new
+Refine, family copy, Fly, source sampling or GUI occurred. This is native reuse/publication
+evidence for the declared quadrupole scope, not a solver-accuracy or broader-variant qualification.
+The field-stage evidence above does not itself validate tracking; the separate tracking results
+follow below. Scientific qualification remains open, and finite/interface/mass-filter project
+workflows and checkpoint consumers remain active for their complete migration.
+
+
+### Installed batching dependency
+
+Active batching callers now consume the sole installed
+`msplatform.backends.simion.particle_batching` implementation. Existing batch
+plans, ID rebasing, emission ordering and project-owned scientific checks are
+unchanged. This migration provides no new native or scientific qualification.
+
+## Independent RF tracking
+
+The installed public `track` planner/action now dispatches a producer-owned RF fractional
+FieldBundle without a TOF, pulse, response-slot placeholder, Refine or published-family copy.
+Selected and original producer references use the existing source protection, immutable input
+handles, RunSession, fixed ordinal units, shared dispatcher, whole-unit recovery and trajectory
+publisher. Only the small structural IOB container is copied; the original PA0/response/surface
+family is reopened under its existing protected identity. The original TOF branch retains its
+controls and behavior through the shared bound-source action.
+
+`propagation.dynamics` explicitly selects `kinematics="nonrelativistic"`, `collisions="none"`
+and `space_charge="none"`. The Program writes and reports the official `sim_relativity=0` and
+`sim_repulsion="none"` controls. Optional `numerics.grouped` is integer 0 or 1 and controls
+scheduling only; omission preserves the structural container's setting. Grouped execution with
+repulsion disabled is still independent-particle propagation. This operation does not add a
+collision, relativistic or space-charge model. Numerical controls are explicit maximum step,
+trajectory quality, and RF steps per period when RF is active; the existing RF kernel owns
+the waveform formulas and period-derived timestep cap.
+
+Birth positions and velocities are transformed once into the actual assembly frame. Original
+sparse IDs, species, signed charge, weights, full mother records, original births and absolute
+instrument time remain bound. Source velocity is restored through the canonical source helper.
+The existing plane observer retains direction, occurrence, accepted-step brackets, consumed
+boundary evidence and explicit record-cap incompleteness. Accepted deadline/cut END evidence is
+kept separately from raw native terminate START state. Unexplained native terminals remain
+`unknown_native_terminal`, never inferred loss. Empty handoff cohorts preserve the full mother
+and request no native operations. Read-only census uses the existing trajectory analysis.
+
+Official SIMION2020 references reviewed 2026-11-09: installed `docs/simion.chm`,
+`workbench_program_extensions.html` (`sim_grouped`, `sim_repulsion`, `sim_relativity`, allowed
+initialize_run writes), `user_programming.html` (initialize/fast_adjust/tstep_adjust/other_actions/
+terminate), and [the official trajectory programming reference](https://simion.com/info/trajectory_programming.html).
+The official [user-programming reference](https://simion.com/docs/advanced_class/11-user_programming_tricks.pdf)
+defines native mass in amu and signed charge in elementary-charge units. Current-instance
+fast_adjust assigns only that domain's native electrode targets through the already installed
+model/RF drive consumer. No duplicate field or RF formula is introduced.
+
+Software evidence: the four original tracking/unit/native-plan/RF-model modules passed 33 parents
+and 87 outcomes before the final dynamics addition. The new eleven-parent RF suite then passed
+21 outcomes in 42.861 seconds, including plain Lua callback/kernel/clock tests, actual proper-plane
+recrossing/cap/cut wire, and a real managed owner with an explicitly inert supplier. That owner
+test verifies original-family write denial, actual process exit/release, strict artifact reading,
+full mother and signed species, read-only census and a zero-survivor successor with no extra
+process. It is not SIMION evidence. Earlier new-fixture failures remain recorded: an invalid
+track-stage reserve key, an invented aggregate writer flag, provider port/velocity wiring and an
+incorrect analysis status expectation. Production guards and existing assertions were preserved.
+
+The final new RF, original observer/collection and published-analysis batch passed 79 parents /
+318 outcomes in 86.428 seconds without skips. Ordinary wheel and sdist-rebuilt-wheel acceptance
+passed five parents / sixteen outcomes in 146.222 seconds, including actual installed RF source
+planning, capability dispatch and Program/resource loading with author trees blocked. The first
+installation round correctly rejected a new typed-source fixture's empty CSV parent-ID value;
+the fixture now explicitly uses null, preserving the canonical validator. That failure remains.
+Actual RF Fly functional evidence is recorded below; scientific accuracy qualification remains open.
+Existing finite/interface/mass-filter project workflows and checkpoint consumers remain
+active until their complete scientific outputs and callers are migrated. Existing state_relaunch
+rules still require explicit native-frame mapping and verified producer/model identity; the
+current cut policy remains the existing segmented_upstream scope. No new native-checkpoint or
+cross-model continuation claim is made.
+
+The first ordinary-wheel native tracking attempt,
+`20261109_214329__sim__simion__track-89ef1f49e4e5`, failed before Fly. IOB construction exited
+zero; the separate cold reader loaded the original RF PA0 and passed its path/grid/pose, response
+mapping, physical-node and fractional-witness checks, then incorrectly required TOF-specific
+priority probes. Failed-owner finalization also found the writer's undeclared 388-byte neutral
+bootstrap. Both native processes exited (0/1) and released their host grants; all 58 frozen inputs
+and 378 installed package files remained unchanged. The original failed run, package and driver
+remain immutable evidence. After explicit user authorization, the exact unused 388-byte bootstrap was removed after
+fresh SHA-256, writer-birth absence and saved-IOB binding checks. Its byte-identical evidence
+copy and original completion bytes remain unchanged. The original frozen public owner resumed
+normal finalization as FAILED/complete, retaining ProcessExecutionError and releasing all its
+own and source-protection leases. No other payload was removed.
+
+The repair returns from the RF cold branch only after those actual RF checks; the TOF probe
+requirements remain unchanged. The RF plan declares its exact per-instance bootstrap paths and
+the existing tracking owner registers all planned outputs before a supplier can create them.
+The established post-save slot checks and bootstrap close/removal also apply to RF; zero-source
+checks remain specific to source-free builds. Two regressions first reproduced the exact native
+priority failure and real-owner undeclared-file finalization failure. After repair they passed
+seven outcomes in 44.268 seconds, including retained mapping/pose/metal/surface rejection and an
+actually generated inert intermediate. This is software evidence, not a native retry or Fly PASS.
+The final RF/original tracking-unit/native-plan/observer/collection batch passed 97 parents and
+385 outcomes in 454.046 seconds, without skips. The repaired ordinary wheel and sdist-rebuilt wheel
+passed five parents / sixteen outcomes in 195.407 seconds; all 378 package members match source
+and both wheels. A final two-parent check passed in 90.392 seconds after adding the requested
+real-owner success case where the inert writer creates and removes its declared bootstrap before
+exit: normal publication and strict reading succeed, the missing temporary remains declared in
+the completion, and all actual host/capacity leases release. The retained-intermediate and
+zero-native/full-mother cases remain. These software results do not establish native Fly success;
+the subsequent native attempt is recorded below.
+
+The repaired-wheel native attempt `20261109_221147__sim__simion__track-c392bfd524d3` passed IOB
+construction and separate cold reopening, with its neutral bootstrap removed by the writer.
+Its first Fly failed: SIMION denied reading `ion_splat` from `segment.terminate`. The retained raw
+log contains 100 births, 200 shared states and 50 accepted deadline endpoints, but no completed
+Fly or trajectory product. The three supplier processes exited 0/0/1 and released their host
+grants. This owner finalized as FAILED/complete with its own and source-protection leases absent;
+all 58 frozen inputs, 378 installed package members and original fractional family stayed unchanged.
+R2 failure evidence remains unchanged; the separately authorized R1 finalization is recorded above.
+
+The callback audit uses the installed SIMION2020 supplemental help and the primary
+[ASMS reserved-variable table](https://simion.com/info/asms_short_course.html#session-10-user-programs),
+reviewed 2026-11-09. Core position, velocity, time-of-flight, mass, charge, particle number and
+instance reads are available in every program segment; `ion_splat` reads are restricted to
+initialize/other_actions. It has no required RF result consumer, so the RF wire and outcome omit
+that unavailable scalar rather than fabricate a terminal value or substitute a cached cause.
+Unknown terminal categories retain their existing meaning. The generic accepted-cut END wire
+still records the valid other_actions `raw_ion_splat=0` evidence and remains unchanged.
+
+The [official workbench extension](https://simion.com/info/workbench_program_extensions.html#sim_segment_global)
+also documents callback coverage outside PA instances. The installed executable is 8.2.0.11;
+`sim_segment_global=1` is set in its permitted initialize_run phase and included in the actual
+dynamics readback. The collector requires integer one, including for instance-zero terminal
+observations. This defines no field/force override or workbench-domain extension. It addresses a
+documented default-zero observation gap; R2 did not independently reproduce that gap because
+its first forbidden terminal read aborted Fly.
+
+A plain-Lua fixture enforces the official reserved-variable read/write permissions for every
+RF callback. It reproduced the exact terminate-access error before repair, then passed after
+repair. It also checks full-cohort instance-zero callbacks, unknown rather than loss despite an
+arbitrary prior splat flag, and separate deadline endpoint evidence. Missing/zero/boolean coverage
+readbacks are rejected. The full affected RF, original observer/collection and trajectory-analysis
+batch passed 81 parents / 328 outcomes in 111.099 seconds without skips. Subsequent R3 native functional evidence follows; scientific qualification remains open.
+The five ordinary-installation parents passed sixteen outcomes in 145.968 seconds, including an
+actual installed RF parser call with an explicit inert instance-zero terminal and rejection of
+the retired scalar. Wheel/sdist byte identity and blocked author roots remain required; this
+software fixture is not native trajectory evidence.
+
+
+The callback-corrected ordinary-wheel campaign completed with N=100 on the declared independent
+segmented quadrupole, grounded enclosure/endcaps, anisotropic grid and proper near-gimbal pose.
+It retained sparse particle identities, full mother records, two signed-charge species, weights,
+original births and absolute instrument clock. Continuous tracking produced 100 plane events,
+200 shared states and 100 explicit deadline censors; the segmented cut produced 100 actual
+accepted plane states/cut stops. Relaunch consumed those states at a different explicit maximum
+timestep (.007 versus .01 microseconds) and produced 100 explicit deadline censors. The explicit
+empty-handoff successor preserved the mother cohort and launched no supplier process; it is
+not evidence of physical total loss. The respective run identities are
+`20261109_223927__sim__simion__track-a0cd8391985d`,
+`20261109_224035__sim__simion__track-ae8f924eef49`,
+`20261109_224138__sim__simion__track-781408df490f` and
+`20261109_224244__sim__simion__track-4330c55f9943`.
+
+The three nonempty runs each performed build/cold-IOB-reopen/Fly; all nine exact PID/birth
+identities exited zero and released their host grants. All four owners published SUCCESS/complete
+with confirmed writers and absent own/source capacity leases. Strict reads verified respectively
+49/49/50/25 distinct manifest records. A separate fresh ordinary-installed reader reopened all
+four products with zero supplier processes. All 58 frozen acceptance inputs, all 378 installed
+package files and the original fractional family remained unchanged. The RF dynamics readback
+confirmed global callback coverage one. Evidence is retained under the workspace evidence root
+`rf-tracking-native-r3/native-summary.json`, `fresh-reader.json` and `closure-audit.json`; original
+R1/R2 failure records are retained separately.
+
+This accepts only this quadrupole collision-free functional chain, not accuracy/convergence,
+all RF variants, a field-domain extension or Candidate/Formal qualification. There was no Refine,
+published-family copy, GUI or source change during the native campaign. Existing finite/interface/
+mass-filter project workflows remain active and open for their complete migration.
+
+
+The combined integration retains the later installed admission, recorded-diagnostics and beam
+kernels, the CI author-root guard regression and the gas resource selector. Its source/wheel/
+sdist-rebuilt-wheel join verified 396 package members with zero mismatches; five installation
+parents / sixteen outcomes passed in 201.615 seconds. Independent integration review verified
+ten RF production files byte-identical to the native R3 epoch; the resource selector differs
+only by retaining the newer gas entry. Main-tree RF regression passed thirteen parents in
+70.955 seconds and released its GATE lease; focused Ruff passed. These combined-tree software
+checks do not relabel the earlier native epoch or close the final Repository/performance scope.
+CLOC 2.10, 756ea890 to this integration, reports code total +797, production +381, tests +416,
+with zero unclassified files; full per-language counts and filters are retained outside Git in
+`cloc-rf-main.txt` under the workspace takeover evidence directory.
+
+Independent installed RF tracking accepts the documented integer Program trajectory-quality range through the [shared Program validator](../../../../../docs/SIMION_BACKEND.md#program-owned-trajectory-quality), including zero and negative values. Existing positive defaults, source/mother identities, absolute clock and positive RF/time controls are unchanged. This is parameter-contract/software coverage; native Fly/accuracy is not newly qualified, and legacy CLI-only RF runners retain their existing separate policy.
+
+
+## Installed paired mass scans and sampled responses
+
+The positive singly charged ION11 paired-mass construction and sampled mass-response
+aggregation now have sole implementations in `msplatform.ion_release.paired_mass_scan`
+and `msplatform.analysis.mass_response`. Mass-filter preparation, evaluation and frozen
+analysis consumers use those installed modules. Original row order, physical mass/+1
+scope, complete particle denominator, terminal statuses, SHA/provenance, sampled and
+interpolated half-height metrics, and caller-supplied functional criteria are unchanged.
+The retired root modules are not compatibility imports. Existing study mode JSON, L0
+Mathieu reference, L1 ideal integration and native orchestration remain separate active
+responsibilities. This ownership slice adds no native or scientific qualification.
+The six affected original modules exercised 50 distinct parent tests; the initial run
+passed 48 and failed two. A preexisting duplicate policy-file fixture declaration and a
+missed comparison-worker required-module identity were corrected; only those two original
+parents reran, passing five parent/subtest records in 65.479 seconds. The separate fixture
+repair preserves the complete selected file set and strict duplicate guard. The original
+failed run is retained. The actual PowerShell frozen analysis consumers use the new modules.
+
+Ordinary wheel and sdist-rebuilt-wheel computation passed the existing installation parent
+in 188.266 seconds, following five successful original software-check parents. Both rounds
+performed actual paired-source/response readback and missing-module rejection with author
+roots blocked. All 412 package payloads match source and both wheels byte for byte. The first
+attempt failed before build because its outer read-only Git metadata path was wrong; the next
+attempt exposed a new test output-directory collision between installation rounds. Both failures
+are retained; only runner metadata and test fixture isolation changed. A clean-source final-LF
+successor wheel and separate fresh ordinary consumer passed the actual source/response and
+missing-module probe; all 412 final source/build/wheel/installed payloads join exactly. The two
+migrated Python files differ from the R3 sdist epoch only by CRLF-to-LF normalization. An initial
+bounded successor build reused a copied old build directory; strict inventory rejected its 13
+retired files. That failed wheel is retained, and the corrected clean build/fresh consumer confirms
+those files are absent. No native solver, complete Repository acceptance, convergence or broader
+RF-variant qualification follows.
+
+## Installed finite-SIMION transport metrics
+
+`msplatform.analysis.rf_transport_metrics` owns the existing four metric modes
+and their CLI. The finite-3D runner calls the installed owner directly; the old
+project implementation is retired. Original summary-particle denominators and
+canonical handoff-only counts, controls and UNQUALIFIED limits are unchanged.
+This is offline analysis, not new native transport or field qualification.
+
+## Installed RF family normalization
+
+`msplatform.components.rf_multipole.family_contract` owns the original typed
+normalization and sole version6 structural/voltage convention JSON. Research
+baselines and modes remain explicit project inputs. Current frozen publications
+select the canonical JSON explicitly; explicit historical resource paths remain
+readable without current-package supplementation. No solver or qualification
+claim follows this ownership migration. The existing internal L1/L2 projection's
+fixed validation source/numerical/acceptance policy is unchanged; general analytic
+research-request freedom and remaining ideal/round-rod workflow migration stay OPEN.
+
+## Installed ideal and round-rod transport kernel
+
+`msplatform.components.rf_multipole.ideal_transport` owns the existing explicit
+L1/L2 field, RK4, cohort metrics and result-writing algorithms. Research adapters
+freeze the actual installed implementation source. The registered no-acceleration
+hexapole/octupole study selection and fixed internal projection choices remain
+unchanged; this migration does not claim a general research CLI, native fields,
+collisions, arbitrary waveform transport or scientific qualification.
+The complete 17-function kernel is byte-identical to its retired project implementation.
+On the composed successor, 42 original numerical, runtime/freeze and Changed-routing parents
+passed with 30 successful subtests in 66.030 seconds. Private direct/sdist installation and four
+N100 hexapole/octupole L1/L2 output comparisons remain evidence of their stated prior epoch;
+they are not retagged as a complete current Repository or native run. The separately reproduced
+scalar sine-wave selection defect is addressed in the distinct numerical repair below.
+
+### Ideal trajectory waveform correction
+
+A pure analytic regression reproduced a pre-existing defect: the accepted `sine`
+RF declaration was ignored by the scalar RK4 derivative, which always used cosine.
+The derivative now consumes the existing canonical waveform evaluator with a
+unit-amplitude drive prepared once per particle, outside the integration loop;
+physical harmonic voltages retain their original multiplication order. Sine
+forces intentionally follow the selected waveform and phase, including signed
+charge. Existing cosine study inputs, complete source cohorts, timesteps and
+acceptance criteria are unchanged. Original runs and frozen results are not
+rewritten; this software correction grants no native or scientific qualification.
+On the composed successor, 22 original/new methods and 21 subtests passed in 47.463 seconds.
+All four original N100 cosine hexapole/octupole L1/L2 cases preserve complete metrics,
+200 rows per case and JSON/CSV/PNG bytes. The original sine analytic RED remains recorded.
+Combined ordinary installation and native acceptance of the corrected version remain open.
+
+
+## Standalone Lua software fixtures
+
+The existing callback regression discovers standalone `lua`, then `lua5.1`, on PATH before its unchanged local SIMION Lua fallback. Its actual Program normalization, terminal/interpolation and repeated-run assertions are unchanged. This is an inert callback test; no PA, Refine or Fly is executed.
+
+The three affected RF/TOF modules passed in one private public-GATE invocation: 15 parent tests in 3.135 seconds, with one unchanged optional historical-snapshot skip. The typed-argv observer recorded 18 calls to the pinned standalone Lua executable and no commercial SIMION invocation. Original tests, numerical assertions and loaded production resources remain unchanged. This is not native or full-Repository acceptance.
+
+## Installed ideal quadrupole mass-filter scientific owners
+
+The ideal quadrupole Mathieu functions belong to `components.rf_multipole.mass_filter_theory`,
+and the original finite-length velocity-Verlet kernel to `components.rf_multipole.finite_length_transport`.
+The explicit named L1 source projection, scan and response policy belong to `workflows.rf_mass_filter`.
+They retain original SciPy constants, positive singly charged scope, source RNG/phase order,
+hard-radius aperture and no-fringe ideal model. They differ from the high-order RK4 transport.
+Research JSON remains explicit; canonical APIs do not select project defaults.
+
+The root `run_finite_length.py` now selects the named research inputs and an explicit
+saved execution environment/profile/workspace, then delegates to the installed
+`finite_length.run`. The canonical workflow uses one existing managed owner and
+one immutable schema2 request/package for prepare, simulation and analysis. The
+parent never executes the live scan or CSV writer. Package aggregation has one
+neutral implementation in `execution.inputs`; existing RF PowerShell consumers
+delegate using their selected Python and selected implementation origin.
+
+Execution requires `--run-id`, `--workspace`, `--execution-environment` and
+`--engineering-profile`; `--check-contract` remains owner-free. A supplied
+`--artifact-project-root` must agree with that workspace's normal managed layout.
+An explicit alternate managed research workspace is supported; an arbitrary
+ungoverned output layout is rejected rather than silently redirected. The retired
+research CLI analysis flags have no active caller; the canonical worker's explicit
+simulation/analysis actions remain the sole module CLI.
+
+For new schema2 executions, engineering wall-clock values (including a selected
+120-second prepare/analysis setting) are warnings followed by natural managed
+family drain, replacing the former raw subprocess hard cutoffs. Simulation has no
+added cutoff or retry. Deployment limits must come from the selected saved policy;
+software acceptance's provisional TEST-owned limits are not production defaults.
+Infrastructure failure context is declared in `results/failure_context.json`,
+alongside the standard owner's summary/Result and original exception. A failed
+context write cannot replace that exception. Unknown writers retain the original
+owner's holds and cannot be resumed as completed finalization. Physical functional
+FAIL remains distinct from infrastructure failure. Old requests/runs are unchanged.
+The workflow selects the existing no-native-particle-batch completion policy;
+its sampled ions do not create the native batch-recovery products governed by
+that separate protocol. The existing owner still requires genuine operation
+lease acquisition/release, and rejects an inherited unconfirmed release binding.
+The software fixture scopes that ownership explicitly; this adds no production
+owner exception or arbitrary poisoned-host-environment support.
+
+The ideal science, +1 named-control scope, source/phase/RNG order and existing
+resolved-versus-baseline authority gap are unchanged. Scientific/helper body
+identity, original assertions, actual managed operations and failed-input recovery
+are checked separately. The old scientific scan-call poison control demonstrates
+that call boundary only; it is not a rerun of the entire legacy owner.
+
+Current RF and integration package selectors use the canonical analysis tree.
+They no longer request `common/analysis`, whose production implementations have
+retired. The strict empty-package and missing-code checks remain enabled; the
+existing all-eight-consumer freezer regression exercises this closure. The
+finite3D raw copier also omits that directory's unneeded test files from future
+inputs, so its copied inventory intentionally changes without dropping production
+code. Historical frozen inventories remain unchanged.
+
+Both the ordinary wheel and the sdist-rebuilt wheel have exercised the selected
+executor and real managed RF owner outside the checkout: the positive scan and
+analysis succeed, and changed/missing frozen inputs retain failed status through
+normal cleanup/finalization with released capacity. Original N=100 science,
+CSV/metrics, module origins and immutable request/package identities are checked.
+This installation acceptance remains distinct from finite3D/native solver
+qualification, complete research-campaign retirement, and the full
+Repository/performance targets.
+
+New finite-length runs use the existing managed short execution alias and freeze
+the selected RF worker closure rather than unrelated backend packages. The
+scientific inputs, scan, source/RNG order, immutable-input checks and failure
+finalization remain unchanged. A controlled Windows launch contrast reproduced
+`Start-Process` refusal with an existing 271-character working directory while
+the identical trivial command succeeded from an 88-character directory. This
+supports cwd-length sensitivity; it does not establish the original failed
+launch's missing process-completion identity, which remains unresolved.
+
+A single sequential private comparison used the short alias in both arms and
+varied only the frozen selector: 99.328 seconds for the full-package baseline,
+66.906 seconds for the selected closure. Both arms passed the positive scan and
+changed/missing-input refusals with source/fixture guards and released resources.
+Canonical and alias receipt paths are checked against the same owned frozen
+directory after finalization; a removed alias is not treated as missing science.
+Ordinary wheel and sdist-rebuilt acceptance subsequently passed at `269e3665`:
+one parent in 949.662 seconds, with both installed consumers and their immutable
+source closure verified. The retained runner label names the earlier working
+candidate; a separate identity receipt joins all 560 authored build records to
+the clean tested commit and five generated metadata records to the retained
+sdist. The original outcome label is preserved. This does not cover later
+consumer changes or close the 900-second software target. These timings are
+neither a replicated performance estimate nor full Repository/native acceptance.
+The combined scalar/RF/Changed-selection source batch also passed all 53 parent
+tests and 68 subtests in 350.403 seconds, including this project's complete
+14-method L1 module. Source identities stayed fixed and the shared GATE released.
+The cost exceeds the narrow owner budget and remains visible; no assertions or
+failure/recovery cases were removed to reduce it.
+
+A separate single-method timing diagnostic on unchanged `269e3665` exercised
+the existing managed analysis/tamper test in 58.519 seconds with no failure,
+error or skip. Its three provider copies took 1.328 seconds in total; the five
+public process calls occupied 40.229 seconds. Frozen-package construction took
+6.244 seconds, owner preparation including that freezing 7.671 seconds, and
+finalization 3.891 seconds. These are nested inclusive intervals and must not
+be added together. The process interval includes admission, observation, input
+guards and release; it is not worker CPU time or proof of lock contention.
+Source and checkout identities remained fixed, and the shared GATE released.
+A background SIMION diagnostic was active, so this is cost attribution for one
+execution, not a controlled speed comparison. The measured copy cost does not
+justify a new provider-copy optimization; deeper process attribution is needed.
+
+## Installed neutral particle-state comparison
+
+The same-solver and cross-solver analyzers share the sole installed
+`msplatform.analysis.particle_state_comparison` implementation. Event IDs, complete
+mother population, paired residuals and CSV fields retain their existing definitions;
+Cross-solver gate evaluation uses `msplatform.workflows.rf_transport_comparison`
+with thresholds from the explicit mode contract. Same-solver evaluation uses
+`msplatform.workflows.rf_convergence_comparison`; paired source generation,
+validation and binding use the RF component's canonical implementations with an
+explicitly selected particle-count policy.
+Both frozen entrypoints select the canonical source package and use the existing
+isolated verifier; missing selected code fails without author-tree fallback.
+This ownership slice does not install the full finite-3D runner or grant native qualification.
+The two existing cross-solver transport modes matched their original complete JSON
+and census witnesses. Same-solver SIMION and COMSOL reports and their censuses also
+match captures from the retired implementation; two paired bundles, including an
+alternate seed/count selection, retain all nine original files byte for byte.
+The actual frozen consumers and both ordinary wheel/sdist-rebuilt-wheel routes
+passed, including installed bundle generation, missing-code and altered-input
+refusal. The earlier stale direct-CLI test failure remains recorded separately;
+its original argument checks now exercise the frozen executor call.
+These software results do not establish new native trajectory accuracy.
+
+## Selected frozen Python execution resource
+
+The two neutral PowerShell operations, `Assert-FrozenPythonPackage` and
+`Invoke-IsolatedFrozenPythonModule`, have one implementation in the installed
+`msplatform.execution` resource `frozen_python_package.ps1`. The RF helper retains
+research source selection and package preparation; callers explicitly select the
+execution resource from the same original or frozen source topology. A missing
+selected resource fails without substituting a current host installation.
+Prepared execution uses the resource recorded in its own frozen inventory.
+The existing no-sink, probe, stdout-sink and failure identities are retained.
+The managed finite-length workflow above uses these operations through the same
+selected frozen resource. Source, ordinary-installation and native acceptance
+remain distinct; factoring the executor alone grants no scientific qualification.
+
+
+## Installed finite COMSOL extraction projection
+
+The three frozen-science projection functions have one implementation in
+`msplatform.backends.comsol.rf_finite_extraction`. Both initial finite transport
+and saved-solution extraction call that selected canonical package. They retain
+explicit resolved design, numerics and source metadata, the original geometry and
+RF case/phase semantics, and all original validation/error ordering. The projector
+does not select research defaults or bind native solution IDs, release order or
+output paths; the existing owner supplies those facts.
+
+The old runtime Python body is retired without a forwarding alias. Existing
+normal/saved source inventories already include the canonical tree; the cold
+fixture selects the same tree through the existing package enumerator and checks
+selected origin and physical missing-module refusal. MATLAB exporter/validator
+resources, CSV mathematics, native orchestration and historical frozen packages
+remain unchanged. This ownership migration alone grants no finite3D/native qualification.
+
+
+The offline stationary sample comparison accepts an explicit comparison authority
+for the shared descriptive sample comparison. Existing RF diagnostic metrics remain.
+The completed COMSOL v37 and SIMION v38 exports below establish the matching real
+non-OA pair; their numerical differences are reported without an equivalence threshold.
+
+The existing stationary-field `compare` CLI selects the explicit generic path
+with `--comparison-authority <json>`; its two field cases each require per-side
+metadata, transforms and point statuses plus an explicit coordinate tolerance.
+The legacy no-authority diagnostic remains and its retirement is still open.
+
+The frozen COMSOL analysis fixture materializes the project, common and package
+resources selected by the production freezer, including its canonical MATLAB mesh
+helpers. Its detached-execution and missing-frozen-input assertions remain in force;
+the fixture does not run COMSOL or establish a new native result.
+
+RF design-file compilation, typed electrical modes, runtime/design profile and resource-budget resolution now live only in `msplatform.components.rf_multipole.design_request_files` and the installed `rf_design_profiles`, `rf_runtime_profiles` and `rf_resource_budget` workflows. Their former project implementations are retired, and callers use those owners directly. The COMSOL finite metric derivation is solely `msplatform.analysis.rf_comsol_transport_metrics`; scientific fields, source identities, acceptance semantics and native behavior are unchanged. Focused validation passed 16 compiler, 28 runtime, 5 typed-mode, 68 budget and 7 metric tests plus Ruff. These are source-level software results, not ordinary-install, native or scientific qualification; the two finite runners remain the next migration responsibility.
+
+RF stationary BVP, deterministic common-point generation and CSV/authority validation now live only in
+`msplatform.components.rf_multipole.stationary_field_sampling`. The generic descriptive comparator remains
+`msplatform.analysis.field_comparison`; the RF-specific legacy diagnostic reader remains separate and applies
+no threshold. Explicit research sampling plans stay under `msplatform.components.rf_multipole/config/contracts/`.
+COMSOL's exporter and saved stationary reader live in `msplatform.backends.comsol/matlab`, and SIMION's no-save
+PA sampler lives in `msplatform.backends.simion/resources`. `msplatform.workflows.rf_stationary` owns saved
+export, PA sampling, preregistration validation and finalization recovery through the installed managed owner.
+The project Python implementation and old stationary PowerShell branches are retired without a compatibility
+bridge. Normal finite3D transport and its field checkpoints remain in the existing runners, whose frozen
+closure now also binds `common/paths`, the root project registry and variant authorities. The old saved-COMSOL
+`$codeRoot` defect and SIMION `common.paths` omission are absent from the installed owner path.
+
+The 2026-11-16 native failures remain unchanged evidence, with zero native sample rows: saved-COMSOL
+`20261116_212300__analysis__comsol__rf-stationary-saved-b02-r2` stopped before native work on an unset
+`$codeRoot`; SIMION `20261116_213000__sim__simion__rf-stationary-field-b02-r2` stopped before Refine on the
+missing `common.paths` closure and its owner closeout failed on the missing PowerShell path. Earlier budget and
+artifact-root admission failures are also preserved. The active capacity lease
+`workflow-2abfbc367031476d8692ecb84e8f3d09` was not cleared or reused, and no old run was finalized. No
+native retry, production field solve, IOB or Fly has occurred in this software migration.
+
+Software-only checks exercise the installed component, backend resources and original workflow action
+boundaries. The stationary module plus shared generic-comparison consumers passed 22 tests with one unchanged
+optional portable-Lua skip, including inert saved-COMSOL adapter invocation, inert SIMION CSV combination,
+preregistration positives/negatives and missing-resource refusal. Two frozen children ran
+`design_profile.py` under `-I` and rejected removed `repository_root.py` and `workspace_paths.ps1`; the
+corresponding snapshot test passed. The affected SIMION runner/source/checkpoint suites passed all 98 tests.
+The affected COMSOL recovery/architecture selection passed 44 of 45 tests. Its one failure is the existing
+saved-extraction fixture's host-context fallback to the nonexistent integration `.venv`; the identical error
+was reproduced with the pre-migration production file restored temporarily, so it is not claimed as a
+migration regression and scheduler behavior was not changed. MATLAB, PowerShell and Ruff checks are separate
+static evidence, not native qualification.
+
+Outside-checkout imports and installed resource resolution passed for the new component, workflow and all three
+native resources. A normal wheel build could not start because this locked interpreter has neither `build`
+nor `bdist_wheel`; no dependency was installed to bypass that limitation. Native acceptance therefore remains:
+after commit, execute the selected LiveLink fixture through a registered owner, then zero-Compute saved COMSOL
+export and one governed SIMION field/sample owner, compile comparison authority and compare descriptive
+metrics. The original parent MPH and active failed-run hold must remain protected, and no scientific PASS is
+inferred from these software results.
+
+The public RF stationary COMSOL field stage now lives in
+`msplatform.backends.comsol.rf_stationary_field`, with generic preregistration, owner and recovery
+wiring in `msplatform.workflows.rf_stationary`. It does not edit or add a branch to the old
+PowerShell transport runner. The installed backend MATLAB retains the existing field-only physics;
+that branch now saves its MPH before returning. A second managed operation cold-loads the saved
+parent, requires nonempty differential/static solution identities and exports both cases with zero
+Compute and zero parent save. The Assembly single-workpoint owner was not reused because its
+prepared-model and `std1/sol1` contracts do not represent RF multipole science. Official COMSOL 6.4
+`SolverSequence` APIs support the existing `createAutoSequence`/`attach`/`runAll` and solution-size
+calls (reviewed 2026-11-17); orchestration and qualification boundaries remain repository-owned.
+Six focused inert/negative tests passed, including actual generated task invocation, missing science
+and wrong graph refusal. The existing stationary sampling module passed 16 tests with its one
+unchanged optional portable-Lua skip; Ruff, JSON and diff checks passed. These are software and
+resource-wiring results, not native field, GUI, convergence or scientific qualification.
+
+The complete Changed gate subsequently passed with isolated test artifacts and the shared host ledger:
+ordinary wheel/sdist installation (11 tests), 522 RF domain tests (two existing skips), all four
+integration partitions, all three RF variant static gates, Ruff, documentation and development checks.
+MATLAB R2025b also passed the toolchain probe; SolidWorks used its existing file-version fallback and
+was not a CAD acceptance. Native run `20261117_012100__sim__comsol__rf-stationary-fields-v24` then
+failed before the COMSOL launcher: its caller mistakenly selected `artifact_capacity_policy.json` as
+the host `policy_path`, causing `PropertyNotFoundException: default_profiles`. Earlier attempts were
+refused by `MINIMUM_FREE_CAPACITY_UNAVAILABLE` before any run directory existed. The failed run's
+new lease `workflow-1985f6e6fccd41d7bd2a0c0e2df48f89` remains protected; it was not cleared or reused.
+No Compute, saved MPH, saved export, SIMION sample or comparison resulted. The correct host resource
+policy and a fresh run identity plus capacity are still required for native acceptance.
+
+Remote Changed run `43935441738` then failed in the stationary portable-Lua fixture before any native work.
+Lua 5.1 evaluates the non-final `string.match` expression in `assert(match(...), message)` as one value,
+so the sampler assigned the error-message string instead of the second capture. Matching and assertion are
+now separate; the test reads its single-case resource output with `csv.DictReader` rather than the production
+paired-case loader. The exact failed method and all 16 stationary-field tests pass with the same pinned Lua
+5.1.5 archive used by CI. This closes that software regression only; it does not change native capacity,
+field evidence or scientific qualification.
+
+Native run `20261117_035232__sim__comsol__rf-stationary-fields-v32` failed before COMSOL launched because
+its caller supplied `run_comsol_r2025b.ps1` instead of the actual `comsolmphserver.exe` selected by
+`Get-Comsol64Launcher`. Finalization also exposed a missing native retention completion policy. All three
+RF stationary managed entries now explicitly use `no_particle_batch_completion_api`; the new regression and
+all 22 stationary tests pass with one unchanged optional portable-Lua skip. A fresh run identity is required;
+the failed evidence remains unchanged and no native field or sample was produced.
+
+Subsequent v33 preregistration identity and v34 MATLAB-root failures left no field. In v35, the real
+COMSOL field solve completed with 614,409 mesh elements and 1,489,674 DOF, then saved the MPH. Cold
+export found `Vstatic` readable but `es_static.Ex` unavailable; `-d(Vstatic,x/y/z)` is valid. The saved
+reader now uses those potential gradients, and solver-progress logs are declared for owner audit. All 24
+stationary tests pass with one unchanged optional skip. Native run
+`20261117_083900__sim__comsol__rf-stationary-fields-v36` completed that real solve and saved the MPH;
+`20261117_084300__analysis__comsol__rf-stationary-saved-v37` then cold-loaded it with zero new solves
+and zero parent saves, exporting 3,182 common points / 6,364 rows with authority validation PASS.
+
+The public component → Assembly → SIMION chain then produced the matching segmented bare-octupole
+field in `20261117_091434__sim__simion__fields-a2c46d895765`, using the explicit 0.4 mm
+106×106×214 domain and eight native groups. Its audit retained 192 fractional witnesses, 224
+non-nil surface offsets and all eight response ranges. Governed run
+`20261117_091500__sim__simion__rf-stationary-samples-v38` read that solved family and exported
+the same 3,182 points / 6,364 rows with validation PASS, `refine_calls=0`, `iob_calls=0` and
+`fly_calls=0`; writers stopped and the source producer remained protected. The descriptive generic
+comparison reports differential field-vector RMS difference 558.96895829722 V/m, maximum vector
+difference 2997.535737591321 V/m, and potential RMS/max-absolute differences
+0.7130822886576684 V / 1.2824716532677387 V. The all-zero case is exactly zero on both backends.
+This closes the real non-OA stationary sample and descriptive-comparison chain only; it grants no
+numerical convergence, cross-solver equivalence, GUI or Formal qualification. Remote Changed run
+`43990928916` independently passed the two latest stationary production changes at `8fd714bd`;
+repository integration was not selected.
+
+The finite COMSOL and SIMION PowerShell runners now execute from `msplatform.workflows.resources` without
+changing their script names, parameter contracts, run identity, recovery or finalization behavior. SIMION layout,
+field checkpoints, particle projection and native Lua are installed backend resources; device/source rules remain
+in the RF component, while metrics, evidence and figures use their analysis/workflow owners. Frozen closures now
+contain these installed owners plus research config/variants rather than the old implementation directories.
+The architecture boundary and 125 focused tests pass. Full RF consumers, ordinary installation, native runs and
+complete Changed remain required; this ownership migration alone does not qualify any scientific run.
+
+The RF whole-batch continuation planner is available through the installed
+`msplatform.workflows.rf_batch_continuation` owner. Its implementation is byte-identical
+to the retired project runtime body. All six production calls use the installed API
+or module CLI; explicit predecessor identity, complete-unit replay and field-checkpoint
+ancestry remain unchanged. The old project implementation is removed, with no forwarding
+alias. The remaining RF runtime package still has active consumers and is not retired.
+
+Focused ordinary wheel and sdist-rebuilt-wheel probes passed from external working
+directories with author-tree imports denied. Both direct and CLI paths reused one
+complete unit and replayed one incomplete unit; corrupt/missing predecessors and a
+physically missing installed module were rejected. Each arm's 551 installed payloads
+matched its wheel before and after the probe. The exact missing-module assertion
+reran in 3.859/3.891 seconds (12.515 guarded wall), reusing the same immutable builds.
+The first task harness failed to locate the already-built sdist; that failure remains
+recorded, and the successor consumed that exact archive rather than rebuilding it.
+Evidence is retained in workspace
+`.tools/phase04-codex-takeover-20261109/v87-rf-continuation-installed-agent8-r1`
+through `v87-rf-continuation-installed-agent8-r3`.
+These are focused migration and installation results, not a full installed-parent,
+Repository, commercial-solver or native-flight qualification.
+
+The finite3D MATLAB solver, rods/enclosure, mesh controls, release construction,
+extraction and cold-reopen resources now have their sole executable sources in
+`msplatform.backends.comsol.matlab`. The stationary `_science_sources` selector
+accepts only that installed implementation and freezes its backend closure; it no
+longer reads the RF project or `common/comsol`. Interface and mass-filter
+freezers reference the same backend paths. Scientific designs, source cohorts,
+numerics and research criteria remain project inputs. This is a resource-ownership
+migration, not a new solver, native result or retirement of the finite-3D runners.
+Ordinary-install, blocked-project native solve/cold-read and failure-propagation
+acceptance remain separate obligations.
+The integration merge then passed all three RF continuation/checkpoint/runner
+modules and both RF/COMSOL Changed selectors in one frozen epoch: 71 parents,
+zero skips/failures, 107.136 seconds (112.839 guarded wall). Actual candidate
+module origins, child import paths, Ruff, PowerShell parsing and source/index
+guards were verified. This did not rebuild the installation or run a solver.

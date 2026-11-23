@@ -38,7 +38,7 @@ def _require_keys(value: dict[str, Any], expected: set[str], label: str) -> None
 
 
 def resolve_runtime_profile(repo_root: Path, project_id: str, runtime_profile_id: str) -> dict[str, Any]:
-    project_root = repo_root / "projects" / project_id
+    project_root = repo_root / "src/msplatform/components/rf_multipole"
     registry_path = project_root / "config" / "runtime_profiles.json"
     registry = _load(registry_path)
     registry_keys = {"schema_version", "role", "project_id", "profiles"}
@@ -141,7 +141,7 @@ def resolve_campaign_path(repo_root: Path, path: Path) -> Path:
     Resource paths inside the JSON retain their declared repository/project base.
     """
     path = Path(path)
-    campaign_root = repo_root / "projects/rf_multipole_ion_optics/config/campaigns"
+    campaign_root = repo_root / "src/msplatform/components/rf_multipole/config/campaigns"
     candidate = path if path.is_absolute() else (campaign_root/path if len(path.parts) == 1 else repo_root/path)
     candidate = candidate.resolve()
     if not candidate.is_file():
@@ -370,8 +370,7 @@ def _resolve_execution_profile(
         or solver not in profile["tools"]
         or not {"simulation_results", f"{solver}_model", "interface_state"}.issubset(profile["deliverable_outputs"])
         or len(run_steps) != 1
-        or (project_root / run_steps[0]["entrypoint"]).resolve()
-        != (project_root / "runtime" / "run_simion_transport_campaign.ps1").resolve()
+        or run_steps[0]["entrypoint"] != "src/msplatform/workflows/resources/run_simion_transport_campaign.ps1"
     ):
         raise ValueError(f"execution profile is not the governed {solver.upper()} campaign engineering workflow")
     return {
@@ -526,7 +525,7 @@ def _compile_campaign_design_candidate(
             raise ValueError("campaign design-variable minimum exceeds maximum")
 
     execution = _resolve_execution_profile(
-        repo_root / "projects" / project_id,
+        repo_root / "src/msplatform/components/rf_multipole",
         project_id,
         experiment["execution_profile_id"],
         structural_variant_id=design["profile"]["structural_variant_id"],
@@ -656,7 +655,7 @@ def resolve_campaign_experiment(
     """Resolve one preregistered no-collision solver experiment through existing authorities."""
 
     repo_root = repo_root.resolve()
-    project_root = repo_root / "projects" / project_id
+    project_root = repo_root / "src/msplatform/components/rf_multipole"
     path = resolve_campaign_path(repo_root, campaign_path)
     campaign = _load(path)
     try:

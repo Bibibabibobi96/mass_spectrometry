@@ -10,7 +10,7 @@ from typing import Any, Mapping
 
 from msplatform.io.file_identity import file_sha256
 from msplatform.io.manifest_records import record_path
-from msplatform.execution.retention import verify_record
+from msplatform.io.manifest_records import verify_record
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.fixed_grid_mirror_stripe_handoff import (
     load_fixed_grid_mirror_point,
 )
@@ -18,7 +18,7 @@ from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import M
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
     CandidateContractError,
 )
-from msplatform.backends.comsol.candidate_authority import named_record as _named_record
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import named_record as _named_record
 
 
 @dataclass(frozen=True)

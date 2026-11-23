@@ -15,6 +15,14 @@ from msplatform.backends.simion.tof_geometry import (
     resolve_physical_geometry as resolve_physical_geometry,
     resolve_oatof_contract_documents,
 )
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2] / "components/single_reflection_oa_tof"
+BASELINE_PATH = PROJECT_ROOT / "config/baseline.json"
+MODE_PATH = PROJECT_ROOT / "config/modes/formal.json"
+NUMERICS_PATH = PROJECT_ROOT / "config/formal_solver_numerics.json"
+RESOLVED_PATH = PROJECT_ROOT / "config/resolved_geometry.json"
+
+
 def resolve_contract_documents(baseline, mode, numerics, *, input_identity):
     return resolve_oatof_contract_documents(
         baseline, mode, numerics, input_identity=input_identity)
@@ -28,11 +36,11 @@ def _input_label(path: Path, run_role: str, project_root: Path) -> str:
 
 
 def resolve_contract(
-    baseline_path: Path,
-    mode_path: Path,
-    numerics_path: Path,
+    baseline_path: Path = BASELINE_PATH,
+    mode_path: Path = MODE_PATH,
+    numerics_path: Path = NUMERICS_PATH,
     *,
-    project_root: Path,
+    project_root: Path = PROJECT_ROOT,
 ) -> dict[str, Any]:
     baseline_path = Path(baseline_path)
     mode_path = Path(mode_path)

@@ -22,7 +22,7 @@ from msplatform.workflows.prepared_joint.preparation import (
 )
 
 REPO = Path(__file__).resolve().parents[4]
-CONFIG = REPO / "projects" / PROJECT / "config"
+CONFIG = REPO / "src/msplatform/components" / PROJECT / "config"
 from msplatform.backends.simion.mr_prepared_field import collision_workbench_layout
 from msplatform.backends.simion.resources import native_resource_path
 from msplatform.workflows.prepared_joint.native_preparation import (

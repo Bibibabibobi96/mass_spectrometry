@@ -1,0 +1,1430 @@
+from __future__ import annotations
+
+import contextlib
+import hashlib
+import io
+import json
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from datetime import datetime, timezone
+from unittest import mock
+
+from msplatform.execution import capacity_maintenance as capacity_ledger
+from msplatform.execution import legacy_owner_disposition
+from tools.repository import legacy_capacity_calibration as calibration
+from tools.repository.legacy_capacity_calibration import (
+    CalibrationError,
+    build_calibration_inventory,
+    initialize_from_inventory,
+    load_existing_calibration_report,
+    main,
+    migrate_canonical_v2_ledger_to_v3,
+)
+
+
+KEY = "A" * 64
+GENERATION = "B" * 64
+
+
+def _write_json(path: Path, value: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value), encoding="utf-8")
+
+
+def _write_owner_disposition(
+    root: Path, target: Path, *, owner: str = "instrument", generation: str = "D" * 64,
+) -> Path:
+    manifest = target / "owner_manifest.json"
+    _write_json(manifest, {"role": "legacy_owner_terminal", "status": "obsolete"})
+    payload = target / "payload.bin"
+    payload.write_bytes(b"retire me")
+    files = [
+        {"path": item.relative_to(target).as_posix(), "bytes": item.stat().st_size}
+        for item in sorted(target.rglob("*")) if item.is_file()
+    ]
+    evidence = next(item for item in files if item["path"] == "owner_manifest.json")
+    target_path = target.relative_to(root).as_posix()
+    seed = {
+        "owner": owner, "target_path": target_path,
+        "authority_evidence": {"path": evidence["path"]},
+        "generation": generation, "manifest_path": evidence["path"], "files": files,
+    }
+    disposition_id = hashlib.sha256(json.dumps(seed, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest().upper()
+    document = {
+        "schema_version": 2, "role": "artifact_capacity_owner_retirement_disposition",
+        "status": "retire_approved", "owner": owner, "target_path": target_path,
+        "authority_evidence": seed["authority_evidence"],
+        "disposition": {"id": disposition_id, "generation": seed["generation"],
+                        "manifest_path": evidence["path"], "files": files},
+    }
+    path = root / "common" / "capacity_calibration" / "owner_dispositions" / f"{disposition_id}.json"
+    _write_json(path, document)
+    return path
+
+
+def _write_legacy_v1_ledger(root: Path, *, resident_bytes: int = 0) -> Path:
+    path = root / "common" / "capacity_ledger.json"
+    _write_json(path, {
+        "schema_version": 1,
+        "role": "artifact_capacity_ledger",
+        "status": "calibrated",
+        "complete": True,
+        "artifact_root": str(root.resolve()),
+        "resident_bytes": resident_bytes,
+        "objects": [],
+    })
+    return path
+
+
+def _write_v2_ledger(root: Path, objects: list[dict]) -> Path:
+    path = root / "common" / "capacity_ledger.json"
+    document = {
+        "schema_version": 2, "role": "artifact_capacity_ledger",
+        "status": "calibrated", "complete": True,
+        "artifact_root": str(root.resolve()),
+        "resident_bytes": sum(item["bytes"] for item in objects if item["status"] != "retired"),
+        "objects": objects, "external_scopes": [],
+    }
+    assert capacity_ledger._is_valid_capacity_ledger(root, document)
+    _write_json(path, document)
+    return path
+
+
+def _write_common_cache(root: Path) -> None:
+    key = root / "common" / "simion" / "pa_family_cache" / KEY
+    generation = key / "generations" / GENERATION
+    generation.mkdir(parents=True)
+    payload = generation / "field.pa0"
+    payload.write_bytes(b"field")
+    _write_json(key / "current_generation.json", {
+        "schema_version": 1,
+        "cache_key": KEY,
+        "generation_sha256": GENERATION,
+        "generation_relative_path": f"generations/{GENERATION}",
+    })
+    _write_json(generation / "cache_manifest.json", {
+        "schema_version": 2,
+        "role": "simion_pa_family_cache",
+        "cache_key": KEY,
+        "generation_sha256": GENERATION,
+        "files": [{"name": payload.name, "bytes": 5, "sha256": "C" * 64}],
+    })
+
+
+def _write_compact_run(root: Path, *, heavy: bool = False) -> Path:
+    run = root / "projects" / "instrument" / "runs" / "20260920_120000__test__python__fixture"
+    retention = {"policy_version": 1, "class": "compact", "reason": None}
+    _write_json(run / "run_config.json", {
+        "schema_version": 2, "artifact_retention": retention,
+    })
+    _write_json(run / "summary.json", {"schema_version": 1, "status": "success"})
+    _write_json(run / "run_manifest.json", {
+        "schema_version": 2, "status": "success", "artifact_retention": retention,
+    })
+    if heavy:
+        (run / "simion").mkdir()
+        (run / "simion" / "field.pa0").write_bytes(b"large-by-contract")
+    return run
+
+
+def _write_basis_cache(root: Path) -> Path:
+    key = root / "projects" / "instrument" / "cache" / "simion_pa_basis" / KEY
+    key.mkdir(parents=True)
+    payload = key / "basis.pa0"
+    payload.write_bytes(b"basis")
+    _write_json(key / "manifest.json", {
+        "schema_version": 1,
+        "role": "multipole_simion_pa_basis_cache",
+        "fingerprint_sha256": KEY,
+        "files": [{"name": payload.name, "bytes": 5, "sha256": "C" * 64}],
+    })
+    return key
+
+
+def _write_direct_integration_cache(root: Path) -> Path:
+    key = root / "projects" / "instrument" / "cache" / "verified_pulse" / KEY
+    key.mkdir(parents=True)
+    _write_json(key / "verified_pulse_timing_receipt.json", {
+        "schema_version": 1,
+        "role": "rf_oatof_verified_pulse_timing_receipt",
+        "status": "success",
+        "reusable_verified_pulse": True,
+        "content_key": KEY,
+    })
+    return key
+
+
+def _write_frozen_input_cache(root: Path) -> Path:
+    key = (
+        root / "projects" / "instrument" / "cache"
+        / "native_corridor_frozen_inputs" / KEY
+    )
+    key.mkdir(parents=True)
+    payload = key / "plan.json"
+    payload.write_bytes(b"plan")
+    _write_json(key / "native_corridor_freeze_manifest.json", {
+        "schema_version": 1,
+        "role": "mrtof_native_corridor_frozen_inputs",
+        "status": "frozen",
+        "pa_family_cache_key": KEY,
+        "files": [{"name": payload.name, "bytes": 4, "sha256": "C" * 64}],
+    })
+    return key
+
+
+class LegacyCapacityCalibrationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # Fixture review dates are relative to this test epoch, not the wall clock.
+        clock = mock.patch.object(calibration, "datetime", wraps=datetime)
+        self.addCleanup(clock.stop)
+        clock.start().now.return_value = datetime(2026, 9, 20, tzinfo=timezone.utc)
+
+    def test_calibration_binds_sealed_generic_owner_disposition(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            target = root / "projects" / "instrument" / "reviews"
+            target.mkdir(parents=True)
+            _write_owner_disposition(root, target)
+            report = build_calibration_inventory(root, review_deadline="2026-10-22")
+            entry = next(item for item in report["objects"] if item["path"] == "projects/instrument/reviews")
+            self.assertEqual(entry["class"], "rebuildable_payload")
+            self.assertEqual(entry["status"], "ready")
+            self.assertIn("disposition", entry)
+            self.assertEqual(report["unresolved"], [])
+
+    def test_calibration_rejects_extra_or_changed_owner_disposition_inventory(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            target = root / "projects" / "instrument" / "reviews"
+            target.mkdir(parents=True)
+            _write_owner_disposition(root, target)
+            (target / "unlisted.bin").write_bytes(b"must block")
+            with self.assertRaisesRegex(CalibrationError, "owner disposition is invalid"):
+                build_calibration_inventory(root, review_deadline="2026-10-22")
+
+    def test_calibration_rejects_owner_that_differs_from_project_namespace(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            target = root / "projects" / "instrument" / "reviews"
+            target.mkdir(parents=True)
+            _write_owner_disposition(root, target, owner="another-project")
+            with self.assertRaisesRegex(CalibrationError, "owner disposition is invalid"):
+                build_calibration_inventory(root, review_deadline="2026-10-22")
+
+    def test_calibration_rejects_target_path_with_link_or_reparse_ancestor(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            target = root / "projects" / "instrument" / "reviews"
+            target.mkdir(parents=True)
+            _write_owner_disposition(root, target)
+            original = legacy_owner_disposition._link_or_reparse
+            with mock.patch.object(
+                legacy_owner_disposition, "_link_or_reparse",
+                side_effect=lambda path: path.name == "instrument" or original(path),
+            ), self.assertRaisesRegex(CalibrationError, "owner disposition is invalid"):
+                build_calibration_inventory(root, review_deadline="2026-10-22")
+
+    def test_owner_disposition_replaces_unbound_legacy_pa_cache_writing_range(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            _write_common_cache(root)
+            target = root / "common" / "simion" / "pa_family_cache" / KEY
+            _write_owner_disposition(
+                root, target, owner="common.simion.pa_family_cache", generation=GENERATION,
+            )
+            report = build_calibration_inventory(root, review_deadline="2026-10-22")
+            entry = next(item for item in report["objects"] if item["path"] == target.relative_to(root).as_posix())
+            self.assertEqual(entry["class"], "rebuildable_payload")
+            self.assertEqual(entry["status"], "ready")
+            self.assertIn("disposition", entry)
+
+    def test_owner_disposition_rejects_transaction_bound_pa_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            _write_common_cache(root)
+            target = root / "common" / "simion" / "pa_family_cache" / KEY
+            _write_owner_disposition(root, target, owner="common.simion.pa_family_cache")
+            _write_json(target.parent / ".transactions" / KEY / "transaction.json", {
+                "schema_version": 1, "role": "simion_pa_family_cache_transaction",
+                "status": "published", "cache_key": KEY, "generation_sha256": GENERATION,
+                "owner": "fixture-owner", "verification": {},
+            })
+            with self.assertRaisesRegex(CalibrationError, "cannot bypass"):
+                build_calibration_inventory(root, review_deadline="2026-10-22")
+
+    def test_owner_disposition_activation_binds_only_matching_legacy_pa_entry(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            _write_common_cache(root)
+            target = root / "common" / "simion" / "pa_family_cache" / KEY
+            _write_owner_disposition(
+                root, target, owner="common.simion.pa_family_cache", generation=GENERATION,
+            )
+            capacity_ledger.initialize_capacity_ledger(root, objects=[{
+                "path": target.relative_to(root).as_posix(), "class": "published_cache",
+                "bytes": sum(item.stat().st_size for item in target.rglob("*") if item.is_file()),
+                "status": "writing", "pin": False, "identity": GENERATION,
+                "owner": "common.simion.pa_family_cache",
+                "recovery_reason": "legacy_pa_cache_missing_owner_transaction",
+                "review_deadline": "2026-10-22",
+            }], external_scopes=[])
+            outcome = legacy_owner_disposition.activate_owner_dispositions(root)
+            self.assertEqual(outcome["activated_count"], 1)
+            entry = capacity_ledger.load_capacity_ledger(root)["objects"][0]
+            self.assertEqual(entry["status"], "ready")
+            self.assertEqual(entry["class"], "rebuildable_payload")
+            self.assertIn("disposition", entry)
+            self.assertEqual(
+                legacy_owner_disposition.activate_owner_dispositions(root)["activated_count"], 0,
+            )
+
+    def test_owner_disposition_consolidates_complete_historical_writing_run(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            target = root / "projects" / "instrument" / "runs" / "abandoned"
+            target.mkdir(parents=True)
+            _write_owner_disposition(root, target)
+            files = [
+                item for item in target.rglob("*") if item.is_file()
+            ]
+            capacity_ledger.initialize_capacity_ledger(root, objects=[{
+                "path": item.relative_to(root).as_posix(),
+                "class": "rebuildable_payload", "bytes": item.stat().st_size,
+                "status": "writing", "pin": False, "owner": "instrument",
+                "recovery_reason": "run_manifest_not_terminal",
+                "review_deadline": "2026-10-22",
+            } for item in files], external_scopes=[])
+            outcome = legacy_owner_disposition.activate_owner_dispositions(root)
+            self.assertEqual(outcome["activated_count"], 1)
+            objects = capacity_ledger.load_capacity_ledger(root)["objects"]
+            self.assertEqual(len(objects), 1)
+            self.assertEqual(objects[0]["path"], target.relative_to(root).as_posix())
+            self.assertEqual(objects[0]["status"], "ready")
+            self.assertIn("disposition", objects[0])
+
+    def _activation_ranges(self, root: Path, names: tuple[str, ...], *, linked: bool = False) -> dict[str, Path]:
+        documents, entries = {}, []
+        for name in names:
+            target = root / "projects/instrument/runs" / name
+            target.mkdir(parents=True)
+            documents[name] = _write_owner_disposition(root, target)
+            entries.append({
+                "path": target.relative_to(root).as_posix(), "class": "rebuildable_payload",
+                "bytes": sum(path.stat().st_size for path in target.rglob("*") if path.is_file()),
+                "status": "writing", "pin": False, "owner": "instrument",
+                "recovery_reason": "run_manifest_not_terminal", "review_deadline": "2026-10-22",
+                **({"consumers": ["projects/instrument/runs/b/payload.bin"]} if linked and name == "a" else {}),
+            })
+        capacity_ledger.initialize_capacity_ledger(root, objects=entries, external_scopes=[])
+        return documents
+
+    def test_bad_owner_documents_do_not_block_independent_same_owner(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            documents = self._activation_ranges(root, ("good",))
+            for name, content in (("list", "[]"), ("null", "null"), ("broken", "{")):
+                documents["good"].with_name(name + ".json").write_text(content, encoding="utf-8")
+            outcome = legacy_owner_disposition.activate_owner_dispositions(root)
+            self.assertEqual(outcome["activated_count"], 1)
+            self.assertEqual(outcome["failed_count"], 3)
+            self.assertEqual({Path(item["document_path"]).stem for item in outcome["failures"]}, {"list", "null", "broken"})
+            self.assertTrue(all(item["stage"] == "read" for item in outcome["failures"]))
+            replay = legacy_owner_disposition.activate_owner_dispositions(root)
+            self.assertEqual((replay["activated_count"], replay["failed_count"]), (0, 3))
+
+    def test_duplicate_target_quarantines_all_authorizations_but_not_independent_range(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            documents = self._activation_ranges(root, ("a", "c"))
+            documents["a"].with_name("duplicate.json").write_bytes(documents["a"].read_bytes())
+            outcome = legacy_owner_disposition.activate_owner_dispositions(root)
+            self.assertEqual((outcome["activated_count"], outcome["failed_count"]), (1, 2))
+            by_path = {entry["path"]: entry for entry in capacity_ledger.load_capacity_ledger(root)["objects"]}
+            self.assertEqual(by_path["projects/instrument/runs/a"]["status"], "writing")
+            self.assertEqual(by_path["projects/instrument/runs/c"]["status"], "ready")
+
+    def test_failed_linked_group_is_atomic_and_independent_range_can_activate(self) -> None:
+        for order in (("a", "b", "c"), ("c", "b", "a")):
+            with self.subTest(order=order), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                documents = self._activation_ranges(root, order, linked=True)
+                capacity_ledger.record_capacity_object(
+                    root, path="projects/instrument/runs/b", object_class="rebuildable_payload",
+                    bytes_count=sum(path.stat().st_size for path in (root / "projects/instrument/runs/b").rglob("*") if path.is_file()),
+                    status="writing", pin=True, pin_reason="must keep", owner="instrument",
+                    recovery_reason="run_manifest_not_terminal", review_deadline="2026-10-22")
+                before = capacity_ledger.load_capacity_ledger(root)
+                grouping = legacy_owner_disposition._activation_groups
+                with mock.patch.object(legacy_owner_disposition, "_activation_groups", side_effect=(
+                    lambda records, ledger: [list(reversed(group)) for group in reversed(grouping(records, ledger))]
+                ) if order[0] == "c" else grouping):
+                    outcome = legacy_owner_disposition.activate_owner_dispositions(root)
+                self.assertEqual((outcome["activated_count"], outcome["failed_count"]), (1, 2))
+                after = capacity_ledger.load_capacity_ledger(root)
+                for name in ("a", "b"):
+                    path = "projects/instrument/runs/" + name
+                    self.assertEqual(next(row for row in before["objects"] if row["path"] == path),
+                                     next(row for row in after["objects"] if row["path"] == path))
+                self.assertEqual({item["document_path"] for item in outcome["failures"]}, {str(documents["a"]), str(documents["b"])})
+
+    def test_valid_linked_group_activates_together(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self._activation_ranges(root, ("a", "b"), linked=True)
+            outcome = legacy_owner_disposition.activate_owner_dispositions(root)
+            self.assertEqual((outcome["activated_count"], outcome["failed_count"]), (2, 0))
+            self.assertTrue(all(entry["status"] == "ready" for entry in capacity_ledger.load_capacity_ledger(root)["objects"]))
+
+    def test_bad_completed_receipt_does_not_archive_or_block_independent_range(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            documents = self._activation_ranges(root, ("a", "c"))
+            candidate = legacy_owner_disposition.load_legacy_owner_disposition(root, documents["a"])
+            ledger = capacity_ledger.load_capacity_ledger(root)
+            for index, item in enumerate(ledger["objects"]):
+                if item["path"] == candidate["path"]:
+                    ledger["objects"][index] = {"path": candidate["path"], "class": "rebuildable_payload",
+                        "bytes": candidate["bytes"], "status": "retired", "pin": False, "owner": "instrument",
+                        "disposition": candidate["disposition"], "retired_at_utc": "2026-10-22T00:00:00Z"}
+            capacity_ledger.initialize_capacity_ledger(root, objects=ledger["objects"], overwrite=True)
+            receipt = root / "common/capacity_disposal_receipts" / f"ledger_disposition_{candidate['disposition']['id']}.json"
+            receipt.parent.mkdir(parents=True)
+            receipt.write_text("null", encoding="utf-8")
+            outcome = legacy_owner_disposition.activate_owner_dispositions(root)
+            self.assertEqual((outcome["activated_count"], outcome["archived_document_count"], outcome["failed_count"]), (1, 0, 1))
+            self.assertEqual(outcome["failures"][0]["stage"], "archive")
+            self.assertTrue(documents["a"].is_file())
+            self.assertEqual(receipt.read_text(), "null")
+
+    def test_activation_ledger_publication_failure_remains_global(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self._activation_ranges(root, ("a", "c"))
+            path = capacity_ledger.resolve_ledger_path(root)
+            before = path.read_bytes()
+            with mock.patch.object(legacy_owner_disposition, "write_json_atomic", side_effect=OSError("fixture ledger publication")):
+                with self.assertRaisesRegex(OSError, "ledger publication"):
+                    legacy_owner_disposition.activate_owner_dispositions(root)
+            self.assertEqual(path.read_bytes(), before)
+
+    def test_completed_archive_revalidates_authority_and_preserves_bad_document(self) -> None:
+        for corruption in ("owner", "evidence", "schema", "inventory", "receipt_inventory", "ledger_inventory"):
+            with self.subTest(corruption=corruption), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                documents = self._activation_ranges(root, ("a", "c"))
+                candidate = legacy_owner_disposition.load_legacy_owner_disposition(root, documents["a"])
+                ledger = capacity_ledger.load_capacity_ledger(root)
+                for index, item in enumerate(ledger["objects"]):
+                    if item["path"] == candidate["path"]:
+                        ledger["objects"][index] = {"path": candidate["path"], "class": "rebuildable_payload",
+                            "bytes": candidate["bytes"], "status": "retired", "pin": False, "owner": "instrument",
+                            "disposition": json.loads(json.dumps(candidate["disposition"])), "retired_at_utc": "2026-10-22T00:00:00Z"}
+                        if corruption == "ledger_inventory":
+                            ledger["objects"][index]["disposition"]["generation"] = "F" * 64
+                capacity_ledger.initialize_capacity_ledger(root, objects=ledger["objects"], overwrite=True)
+                receipt = root / "common/capacity_disposal_receipts" / f"ledger_disposition_{candidate['disposition']['id']}.json"
+                receipt_data = {"role": "artifact_capacity_disposal_receipt", "status": "complete",
+                                "disposition": candidate["disposition"], "target_path": str((root / candidate["path"]).resolve())}
+                if corruption == "receipt_inventory": receipt_data["disposition"]["generation"] = "F" * 64
+                _write_json(receipt, receipt_data)
+                document = json.loads(documents["a"].read_text())
+                if corruption == "owner": document["owner"] = "wrong-owner"
+                elif corruption == "evidence": document["authority_evidence"]["path"] = "payload.bin"
+                elif corruption == "schema": document["schema_version"] = 99
+                elif corruption == "inventory": document["disposition"]["files"][0]["bytes"] += 1
+                _write_json(documents["a"], document)
+                before_document, before_receipt = documents["a"].read_bytes(), receipt.read_bytes()
+                outcome = legacy_owner_disposition.activate_owner_dispositions(root)
+                self.assertEqual((outcome["activated_count"], outcome["archived_document_count"], outcome["failed_count"]), (1, 0, 1))
+                self.assertEqual(documents["a"].read_bytes(), before_document)
+                self.assertEqual(receipt.read_bytes(), before_receipt)
+                self.assertEqual(outcome["failures"][0]["target_path"], candidate["path"])
+
+    def test_explicit_abandonment_allows_only_retired_external_consumer(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            target = root / "projects" / "instrument" / "runs" / "abandoned"
+            target.mkdir(parents=True)
+            document = _write_owner_disposition(root, target)
+            raw = json.loads(document.read_text(encoding="utf-8"))
+            raw["schema_version"] = 3
+            raw["decision"] = "explicit_user_authorized_abandonment"
+            seed = {
+                "owner": raw["owner"], "target_path": raw["target_path"],
+                "authority_evidence": raw["authority_evidence"],
+                "generation": raw["disposition"]["generation"],
+                "manifest_path": raw["disposition"]["manifest_path"],
+                "files": raw["disposition"]["files"], "decision": raw["decision"],
+            }
+            disposition_id = hashlib.sha256(json.dumps(
+                seed, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+            ).encode("utf-8")).hexdigest().upper()
+            raw["disposition"]["id"] = disposition_id
+            document.unlink()
+            document = document.with_name(f"{disposition_id}.json")
+            _write_json(document, raw)
+            files = [item for item in target.rglob("*") if item.is_file()]
+            consumer = "projects/instrument/runs/retired-consumer"
+            capacity_ledger.initialize_capacity_ledger(root, objects=[
+                {
+                    "path": item.relative_to(root).as_posix(),
+                    "class": "rebuildable_payload", "bytes": item.stat().st_size,
+                    "status": "writing", "pin": False, "owner": "instrument",
+                    "recovery_reason": "run_manifest_not_terminal",
+                    "review_deadline": "2026-10-22", "consumers": [consumer],
+                }
+                for item in files
+            ] + [{
+                "path": consumer, "class": "rebuildable_payload", "bytes": 0,
+                "status": "retired", "pin": False,
+            }], external_scopes=[])
+            self.assertEqual(
+                legacy_owner_disposition.activate_owner_dispositions(root)["activated_count"], 1,
+            )
+
+    def test_completed_owner_disposition_document_is_archived_into_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            _write_common_cache(root)
+            target = root / "common" / "simion" / "pa_family_cache" / KEY
+            document = _write_owner_disposition(
+                root, target, owner="common.simion.pa_family_cache", generation=GENERATION,
+            )
+            candidate = legacy_owner_disposition.load_legacy_owner_disposition(root, document)
+            target_bytes = candidate["bytes"]
+            capacity_ledger.initialize_capacity_ledger(root, objects=[{
+                "path": candidate["path"], "class": "rebuildable_payload", "bytes": target_bytes,
+                "status": "retired", "pin": False, "owner": candidate["owner_hint"],
+                "disposition": candidate["disposition"], "retired_at_utc": "2026-09-22T00:00:00Z",
+            }], external_scopes=[])
+            receipt = root / "common" / "capacity_disposal_receipts" / (
+                f"ledger_disposition_{candidate['disposition']['id']}.json"
+            )
+            _write_json(receipt, {
+                "role": "artifact_capacity_disposal_receipt", "status": "complete",
+                "disposition": candidate["disposition"], "target_path": str(target.resolve()),
+            })
+            import shutil
+            shutil.rmtree(target)
+            outcome = legacy_owner_disposition.activate_owner_dispositions(root)
+            self.assertEqual(outcome["archived_document_count"], 1)
+            self.assertFalse(document.exists())
+            self.assertEqual(
+                json.loads(receipt.read_text(encoding="utf-8"))["owner_disposition_authorization"]["owner"],
+                "common.simion.pa_family_cache",
+            )
+
+    def test_canonical_v2_to_v3_migration_binds_range_owners_and_writing_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            root.mkdir()
+            _write_v2_ledger(root, [
+                {
+                    "path": "projects/orthogonal_accelerator/runs/r1",
+                    "class": "rebuildable_payload", "bytes": 3,
+                    "status": "ready", "pin": False,
+                },
+                {
+                    "path": "common/simion/pa_family_cache/" + KEY,
+                    "class": "published_cache", "bytes": 5,
+                    "status": "ready", "pin": False, "identity": GENERATION,
+                },
+                {
+                    "path": "projects/orthogonal_accelerator/runs/r2",
+                    "class": "rebuildable_payload", "bytes": 7,
+                    "status": "writing", "pin": False,
+                    "owner": "orthogonal_accelerator",
+                    "recovery_reason": "interrupted run",
+                    "review_deadline": "2026-09-29",
+                },
+            ])
+            migrated = migrate_canonical_v2_ledger_to_v3(
+                root, review_deadline="2026-10-22",
+            )
+            self.assertEqual(migrated["schema_version"], 3)
+            by_path = {item["path"]: item for item in migrated["objects"]}
+            ready = by_path["projects/orthogonal_accelerator/runs/r1"]
+            self.assertEqual(ready["owner"], "orthogonal_accelerator")
+            self.assertNotIn("retirement_route", ready)
+            cache = by_path["common/simion/pa_family_cache/" + KEY]
+            self.assertEqual(cache["manager"], capacity_ledger.PA_CACHE_MANAGER)
+            self.assertNotIn("retirement_route", cache)
+            writing = by_path["projects/orthogonal_accelerator/runs/r2"]
+            self.assertTrue(writing["recovery_evidence_paths"])
+            self.assertTrue(writing["recovery_evidence_paths"][0].endswith(".pending.json"))
+            receipts = list((root / calibration.LEDGER_MIGRATION_DIRECTORY).glob("*.v2-to-v3.*.json"))
+            self.assertEqual(len(receipts), 2)
+
+    def test_canonical_v2_to_v3_migration_rejects_unowned_path_without_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            root.mkdir()
+            destination = _write_v2_ledger(root, [{
+                "path": "common/unattributed", "class": "light_evidence", "bytes": 1,
+                "status": "ready", "pin": False,
+            }])
+            before = destination.read_bytes()
+            with self.assertRaisesRegex(CalibrationError, "cannot establish owner"):
+                migrate_canonical_v2_ledger_to_v3(root, review_deadline="2026-10-22")
+            self.assertEqual(destination.read_bytes(), before)
+            self.assertFalse((root / calibration.LEDGER_MIGRATION_DIRECTORY).exists())
+
+    def test_canonical_v2_to_v3_migration_maps_only_known_common_governance_roots(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            root.mkdir()
+            known = [
+                "common/capacity_disposal_receipts",
+                "common/capacity_calibration/ledger_migrations",
+                "common/capacity_protection_leases",
+                "common/.capacity_ledger.json.fixture",
+                "common/execution_aliases",
+                "common/host_resources.sqlite3",
+            ]
+            _write_v2_ledger(root, [
+                {
+                    "path": path, "class": "light_evidence", "bytes": index + 1,
+                    "status": "ready", "pin": False,
+                }
+                for index, path in enumerate(known)
+            ])
+            migrated = migrate_canonical_v2_ledger_to_v3(
+                root, review_deadline="2026-10-22",
+            )
+            owners = {item["path"]: item["owner"] for item in migrated["objects"]}
+            self.assertEqual(owners["common/capacity_disposal_receipts"], "common.capacity_lifecycle")
+            self.assertEqual(owners["common/capacity_calibration/ledger_migrations"], "common.capacity_lifecycle")
+            self.assertEqual(owners["common/capacity_protection_leases"], "common.capacity_lifecycle")
+            self.assertEqual(owners["common/.capacity_ledger.json.fixture"], "common.capacity_lifecycle")
+            self.assertEqual(owners["common/execution_aliases"], "common.run_artifact_support")
+            self.assertEqual(owners["common/host_resources.sqlite3"], "common.host_resources")
+
+            other = Path(temporary) / "other-artifacts"
+            other.mkdir()
+            _write_v2_ledger(other, [{
+                "path": "common/arbitrary_unmanaged_path", "class": "light_evidence",
+                "bytes": 1, "status": "ready", "pin": False,
+            }])
+            with self.assertRaisesRegex(CalibrationError, "cannot establish owner"):
+                migrate_canonical_v2_ledger_to_v3(other, review_deadline="2026-10-22")
+
+    def test_execution_alias_root_is_zero_byte_administrative_range(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            aliases = root / "common" / "execution_aliases"
+            aliases.mkdir(parents=True)
+            with mock.patch.object(
+                calibration, "_candidate", side_effect=AssertionError("junction targets counted"),
+            ):
+                candidate, unresolved = calibration._execution_alias_root(
+                    root, aliases, "2026-10-22",
+                )
+            self.assertIsNone(unresolved)
+            self.assertEqual(candidate["path"], "common/execution_aliases")
+            self.assertEqual(candidate["bytes"], 0)
+
+    def test_canonical_v2_to_v3_migration_refuses_unrelated_valid_v3(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            root.mkdir()
+            capacity_ledger.initialize_capacity_ledger(root, objects=[{
+                "path": "projects/orthogonal_accelerator/runs/r1",
+                "class": "light_evidence", "bytes": 1, "status": "ready", "pin": False,
+                "owner": "orthogonal_accelerator",
+                "retention_reason": "fixture", "review_deadline": "2026-10-22",
+                "retirement_route": "owner_managed_disposition",
+            }])
+            with self.assertRaisesRegex(CalibrationError, "will not be overwritten"):
+                migrate_canonical_v2_ledger_to_v3(root, review_deadline="2026-10-22")
+
+    def test_canonical_v2_to_v3_migration_retry_finishes_only_exact_pending_target(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            root.mkdir()
+            destination = _write_v2_ledger(root, [{
+                "path": "projects/orthogonal_accelerator/runs/r1",
+                "class": "light_evidence", "bytes": 1, "status": "ready", "pin": False,
+            }])
+            original_write = calibration.write_json_atomic
+
+            def interrupt_after_replace(path: Path, value: dict) -> None:
+                original_write(path, value)
+                if Path(path).absolute() == destination.absolute():
+                    raise OSError("fixture interruption after atomic ledger replace")
+
+            with mock.patch.object(calibration, "write_json_atomic", side_effect=interrupt_after_replace):
+                with self.assertRaisesRegex(OSError, "fixture interruption"):
+                    migrate_canonical_v2_ledger_to_v3(root, review_deadline="2026-10-22")
+            self.assertEqual(capacity_ledger.load_capacity_ledger(root)["schema_version"], 3)
+            resumed = migrate_canonical_v2_ledger_to_v3(root, review_deadline="2026-10-22")
+            self.assertEqual(resumed["schema_version"], 3)
+            receipts = root / calibration.LEDGER_MIGRATION_DIRECTORY
+            self.assertEqual(len(list(receipts.glob("*.v2-to-v3.pending.json"))), 1)
+            self.assertEqual(len(list(receipts.glob("*.v2-to-v3.complete.json"))), 1)
+
+    def test_v2_to_v3_cli_requires_only_canonical_ledger_and_deadline(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            root.mkdir()
+            _write_v2_ledger(root, [{
+                "path": "projects/orthogonal_accelerator/runs/r1",
+                "class": "light_evidence", "bytes": 1, "status": "ready", "pin": False,
+            }])
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output), mock.patch.object(sys, "argv", [
+                "legacy_capacity_calibration", "--artifact-root", str(root),
+                "--review-deadline", "2026-10-22", "--migrate-v2-to-v3",
+            ]):
+                main()
+            event = json.loads(output.getvalue())
+            self.assertEqual(event["event"], "v2_to_v3_ledger_migrated")
+            self.assertEqual(event["schema_version"], 3)
+
+    def test_exact_v1_ledger_is_replaced_once_with_bound_migration_receipts(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            root.mkdir()
+            inventory = build_calibration_inventory(root, review_deadline="2026-09-29")
+            destination = _write_legacy_v1_ledger(root)
+
+            ledger = initialize_from_inventory(inventory)
+
+            self.assertEqual(ledger["schema_version"], 3)
+            self.assertEqual(capacity_ledger.load_capacity_ledger(root), ledger)
+            receipts = list((root / "common" / "capacity_calibration" / "ledger_migrations").glob("*.json"))
+            self.assertEqual(sorted(path.suffixes[-2:] for path in receipts), [[".complete", ".json"], [".pending", ".json"]])
+            pending = json.loads(next(path for path in receipts if path.name.endswith(".pending.json")).read_text(encoding="utf-8"))
+            complete = json.loads(next(path for path in receipts if path.name.endswith(".complete.json")).read_text(encoding="utf-8"))
+            self.assertEqual(pending["status"], "pending")
+            self.assertEqual(complete, {**pending, "status": "complete"})
+            self.assertEqual(Path(pending["ledger_path"]), destination.absolute())
+            self.assertNotIn("objects", pending)
+
+    def test_valid_v2_ledger_is_never_an_overwrite_target(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            root.mkdir()
+            inventory = build_calibration_inventory(root, review_deadline="2026-09-29")
+            initialize_from_inventory(inventory)
+            before = (root / "common" / "capacity_ledger.json").read_bytes()
+
+            with self.assertRaisesRegex(CalibrationError, "will not be overwritten"):
+                initialize_from_inventory(inventory)
+
+            self.assertEqual((root / "common" / "capacity_ledger.json").read_bytes(), before)
+            self.assertFalse((root / "common" / "capacity_calibration" / "ledger_migrations").exists())
+
+    def test_invalid_v1_ledger_is_refused_without_receipt_or_replacement(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            root.mkdir()
+            inventory = build_calibration_inventory(root, review_deadline="2026-09-29")
+            destination = _write_legacy_v1_ledger(root, resident_bytes=1)
+            before = destination.read_bytes()
+
+            with self.assertRaisesRegex(CalibrationError, "neither an exact calibrated v1"):
+                initialize_from_inventory(inventory)
+
+            self.assertEqual(destination.read_bytes(), before)
+            self.assertFalse((root / "common" / "capacity_calibration" / "ledger_migrations").exists())
+
+    def test_pending_v1_migration_resumes_after_ledger_replace_interruption(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            root.mkdir()
+            inventory = build_calibration_inventory(root, review_deadline="2026-09-29")
+            destination = _write_legacy_v1_ledger(root)
+            original_write = calibration.write_json_atomic
+
+            def interrupt_after_replace(path: Path, value: dict) -> None:
+                original_write(path, value)
+                if Path(path).absolute() == destination.absolute():
+                    raise OSError("fixture interruption after atomic ledger replace")
+
+            with mock.patch.object(calibration, "write_json_atomic", side_effect=interrupt_after_replace):
+                with self.assertRaisesRegex(OSError, "fixture interruption"):
+                    initialize_from_inventory(inventory)
+            self.assertIsNotNone(capacity_ledger.load_capacity_ledger(root))
+            receipts = root / "common" / "capacity_calibration" / "ledger_migrations"
+            self.assertEqual(len(list(receipts.glob("*.pending.json"))), 1)
+            self.assertEqual(len(list(receipts.glob("*.complete.json"))), 0)
+
+            resumed = initialize_from_inventory(inventory)
+            repeated = initialize_from_inventory(inventory)
+
+            self.assertEqual(resumed["schema_version"], 3)
+            self.assertEqual(repeated, resumed)
+            self.assertEqual(len(list(receipts.glob("*.pending.json"))), 1)
+            self.assertEqual(len(list(receipts.glob("*.complete.json"))), 1)
+
+    def test_recovery_only_unresolved_inventory_initializes_writing_ledger_entries(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            common = root / "common"
+            common.mkdir(parents=True)
+            (common / "capacity_ledger.json").write_text("{}", encoding="utf-8")
+            (common / ".capacity_ledger.json.fixture").write_bytes(b"stale")
+            for project in ("orthogonal_accelerator", "parallel_mirror_dual_stripe_mr_tof"):
+                review = root / "projects" / project / "reviews" / "current"
+                review.mkdir(parents=True)
+                _write_json(review / "inspection_receipt.json", {
+                    "role": "readonly_inspection", "status": "ready",
+                })
+                (review / "copied.pa0").write_bytes(b"payload")
+            inventory = build_calibration_inventory(root, review_deadline="2026-09-29")
+            self.assertEqual(inventory["status"], "calibration_pending")
+            self.assertFalse(inventory["complete"])
+            self.assertEqual(inventory["unresolved_count"], 3)
+
+            ledger_path = root / "common" / "migration-ledger.json"
+            ledger = initialize_from_inventory(inventory, ledger_path=ledger_path)
+            self.assertEqual(ledger["resident_bytes"], inventory["resident_bytes"])
+            self.assertEqual(len(ledger["objects"]), inventory["unresolved_count"])
+            pending = {item["path"]: item for item in inventory["unresolved"]}
+            for item in ledger["objects"]:
+                original = pending[item["path"]]
+                self.assertEqual(item["class"], "rebuildable_payload")
+                self.assertEqual(item["status"], "writing")
+                self.assertEqual(item["bytes"], original["bytes"])
+                self.assertEqual(item["owner"], original["owner_hint"])
+                self.assertEqual(item["recovery_reason"], original["reason"])
+                self.assertEqual(item["review_deadline"], original["review_deadline"])
+                self.assertEqual(item["recovery_evidence_paths"], original["evidence_paths"])
+                with self.assertRaisesRegex(ValueError, "not eligible for retirement"):
+                    capacity_ledger.retire_capacity_object(
+                        root, path=item["path"], ledger_path=ledger_path,
+                    )
+                with self.assertRaisesRegex(ValueError, "ready published_cache"):
+                    capacity_ledger.touch_capacity_object(
+                        root, path=item["path"], when_epoch=1, ledger_path=ledger_path,
+                    )
+
+    def test_unknown_or_unattributed_unresolved_inventory_cannot_initialize(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            unknown = root / "projects" / "instrument" / "cache" / "unknown" / KEY
+            unknown.mkdir(parents=True)
+            (unknown / "payload.bin").write_bytes(b"cache")
+            inventory = build_calibration_inventory(root, review_deadline="2026-09-29")
+            self.assertEqual(inventory["status"], "calibration_pending")
+            self.assertNotIn("recovery_task", inventory["unresolved"][0])
+            with self.assertRaisesRegex(CalibrationError, "explicit unexpired recovery responsibility"):
+                initialize_from_inventory(inventory)
+
+    def test_recovery_inventory_accounting_must_reconcile_before_initialization(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            common = root / "common"
+            common.mkdir(parents=True)
+            (common / "capacity_ledger.json").write_text("{}", encoding="utf-8")
+            (common / ".capacity_ledger.json.fixture").write_bytes(b"stale")
+            inventory = build_calibration_inventory(root, review_deadline="2026-09-29")
+            inventory["resident_bytes"] += 1
+            with self.assertRaisesRegex(CalibrationError, "resident_bytes"):
+                initialize_from_inventory(inventory)
+
+    def test_existing_external_report_initialization_uses_no_scan_or_payload_hashes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            root = parent / "artifacts"
+            root.mkdir()
+            workspace = parent / "workspace"
+            (workspace / "scratch").mkdir(parents=True)
+            (workspace / "generated").mkdir()
+            (workspace / "scratch" / "checkpoint.bin").write_bytes(b"scratch")
+            report = parent / "completed-capacity-report.json"
+            inventory = build_calibration_inventory(
+                root, workspace_root=workspace, review_deadline="2026-09-29",
+            )
+            _write_json(report, inventory)
+            stdout, stderr = io.StringIO(), io.StringIO()
+            arguments = [
+                "legacy_capacity_calibration",
+                "--artifact-root", str(root),
+                "--workspace-root", str(workspace),
+                "--review-deadline", "2026-09-29",
+                "--initialize-from-report", str(report),
+            ]
+            with (
+                mock.patch(
+                    "tools.repository.legacy_capacity_calibration.build_calibration_inventory",
+                    side_effect=AssertionError("existing report initialization must not scan"),
+                ),
+                mock.patch(
+                    "tools.repository.legacy_capacity_calibration.initialize_from_inventory",
+                    return_value={},
+                ) as initialize,
+                contextlib.redirect_stdout(stdout),
+                contextlib.redirect_stderr(stderr),
+                mock.patch.object(sys, "argv", arguments),
+            ):
+                main()
+            initialize.assert_called_once()
+            self.assertFalse((root / "common" / "capacity_ledger.json").exists())
+            events = [json.loads(line)["event"] for line in stderr.getvalue().splitlines()]
+            self.assertEqual(events, [
+                "existing_calibration_report_initialization_started",
+                "ledger_initialized_from_existing_report",
+            ])
+            self.assertEqual(json.loads(stdout.getvalue())["status"], "ready_to_initialize")
+
+    def test_existing_report_rejects_identity_scope_and_metadata_mismatches(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            root = parent / "artifacts"
+            root.mkdir()
+            workspace = parent / "workspace"
+            workspace.mkdir()
+            inventory = build_calibration_inventory(
+                root, workspace_root=workspace, review_deadline="2026-09-29",
+            )
+            report = parent / "completed-capacity-report.json"
+            _write_json(report, inventory)
+            with self.subTest("accepted"):
+                loaded = load_existing_calibration_report(
+                    report, artifact_root=root, workspace_root=workspace,
+                    review_deadline="2026-09-29",
+                )
+                self.assertEqual(loaded, inventory)
+            cases = {
+                "schema": {"schema_version": 2},
+                "role": {"role": "wrong"},
+                "status": {"status": "calibration_pending"},
+                "root": {"artifact_root": str(parent / "other-artifacts")},
+                "deadline": {"review_deadline": "2026-09-30"},
+                "not_metadata_only": {"metadata_only": False},
+                "hashed": {"payload_hashes_computed": True},
+                "truncated_accounting": {"resident_bytes": 1},
+            }
+            for name, change in cases.items():
+                with self.subTest(name):
+                    candidate = {**inventory, **change}
+                    _write_json(report, candidate)
+                    with self.assertRaises(CalibrationError):
+                        load_existing_calibration_report(
+                            report, artifact_root=root, workspace_root=workspace,
+                            review_deadline="2026-09-29",
+                        )
+            with self.subTest("workspace_scope"):
+                candidate = {**inventory, "external_scopes": [
+                    {**inventory["external_scopes"][0], "path": str(parent / "wrong")},
+                    inventory["external_scopes"][1],
+                ]}
+                _write_json(report, candidate)
+                with self.assertRaisesRegex(CalibrationError, "external scopes"):
+                    load_existing_calibration_report(
+                        report, artifact_root=root, workspace_root=workspace,
+                        review_deadline="2026-09-29",
+                    )
+            with self.subTest("in_root"):
+                in_root = root / "common" / "capacity_calibration" / "report.json"
+                _write_json(in_root, inventory)
+                with self.assertRaisesRegex(CalibrationError, "external calibration report"):
+                    load_existing_calibration_report(
+                        in_root, artifact_root=root, workspace_root=workspace,
+                        review_deadline="2026-09-29",
+                    )
+
+    def test_existing_report_preserves_initialization_blockers(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            root = parent / "artifacts"
+            root.mkdir()
+            workspace = parent / "workspace"
+            workspace.mkdir()
+            inventory = build_calibration_inventory(
+                root, workspace_root=workspace, review_deadline="2026-09-29",
+            )
+            inventory["initialization_blocker_count"] = 1
+            inventory["initialization_blockers"] = [{"reason": "fixture"}]
+            report = parent / "blocked-capacity-report.json"
+            _write_json(report, inventory)
+            loaded = load_existing_calibration_report(
+                report, artifact_root=root, workspace_root=workspace,
+                review_deadline="2026-09-29",
+            )
+            with self.assertRaisesRegex(CalibrationError, "initialization_blocker_count=1"):
+                initialize_from_inventory(loaded)
+
+    def test_metadata_inventory_can_initialize_only_when_complete(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            _write_common_cache(root)
+            run = _write_compact_run(root)
+            basis = _write_basis_cache(root)
+            direct_cache = _write_direct_integration_cache(root)
+            frozen_cache = _write_frozen_input_cache(root)
+            (root / "projects" / "instrument" / "00_README.txt").write_text("navigation")
+            inventory = build_calibration_inventory(
+                root, review_deadline="2026-09-27",
+            )
+            self.assertEqual(inventory["status"], "ready_to_initialize")
+            self.assertEqual(inventory["unresolved_count"], 0)
+            by_path = {item["path"]: item for item in inventory["objects"]}
+            cache_path = f"common/simion/pa_family_cache/{KEY}"
+            self.assertEqual(by_path[cache_path]["class"], "published_cache")
+            self.assertEqual(by_path[cache_path]["identity"], GENERATION)
+            self.assertEqual(by_path[cache_path]["status"], "writing")
+            self.assertEqual(by_path[cache_path]["owner"], "common.simion.pa_family_cache")
+            self.assertEqual(
+                by_path[cache_path]["recovery_reason"],
+                "legacy_pa_cache_missing_owner_transaction",
+            )
+            self.assertEqual(
+                by_path[run.relative_to(root).as_posix()]["class"], "light_evidence",
+            )
+            self.assertFalse(by_path[run.relative_to(root).as_posix()]["pin"])
+            self.assertEqual(
+                by_path[basis.relative_to(root).as_posix()]["class"], "published_cache",
+            )
+            self.assertEqual(
+                by_path[direct_cache.relative_to(root).as_posix()]["class"],
+                "published_cache",
+            )
+            self.assertEqual(
+                by_path[frozen_cache.relative_to(root).as_posix()]["class"],
+                "published_cache",
+            )
+            ledger = initialize_from_inventory(inventory)
+            self.assertTrue(ledger["complete"])
+            self.assertEqual(ledger["resident_bytes"], inventory["resident_bytes"])
+
+    def test_mixed_compact_run_is_split_into_disjoint_objects(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            run = _write_compact_run(root, heavy=True)
+            inventory = build_calibration_inventory(
+                root, review_deadline="2026-09-27",
+            )
+            self.assertEqual(inventory["status"], "ready_to_initialize")
+            self.assertEqual(inventory["unresolved_count"], 0)
+            by_path = {item["path"]: item for item in inventory["objects"]}
+            heavy = (run / "simion" / "field.pa0").relative_to(root).as_posix()
+            self.assertEqual(by_path[heavy]["class"], "rebuildable_payload")
+            config = (run / "run_config.json").relative_to(root).as_posix()
+            self.assertEqual(by_path[config]["class"], "light_evidence")
+
+    def test_heavy_solver_review_is_split_without_pin(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            run = _write_compact_run(root, heavy=True)
+            retention = {
+                "policy_version": 1,
+                "class": "solver_review",
+                "reason": "GUI review fixture",
+            }
+            config_path = run / "run_config.json"
+            manifest_path = run / "run_manifest.json"
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            config["artifact_retention"] = retention
+            manifest["artifact_retention"] = retention
+            _write_json(config_path, config)
+            _write_json(manifest_path, manifest)
+            inventory = build_calibration_inventory(
+                root, review_deadline="2026-09-27",
+            )
+            self.assertEqual(inventory["unresolved_count"], 0)
+            heavy = next(
+                item for item in inventory["objects"]
+                if item["path"].endswith("field.pa0")
+            )
+            self.assertEqual(heavy["class"], "rebuildable_payload")
+            self.assertFalse(heavy["pin"])
+
+    def test_heavy_qualification_run_is_explicitly_pinned(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            run = _write_compact_run(root, heavy=True)
+            retention = {
+                "policy_version": 1,
+                "class": "qualification",
+                "reason": "frozen convergence reference",
+            }
+            for name in ("run_config.json", "run_manifest.json"):
+                path = run / name
+                document = json.loads(path.read_text(encoding="utf-8"))
+                document["artifact_retention"] = retention
+                _write_json(path, document)
+            inventory = build_calibration_inventory(
+                root, review_deadline="2026-09-27",
+            )
+            self.assertEqual(inventory["object_count"], 1)
+            self.assertTrue(inventory["objects"][0]["pin"])
+            self.assertEqual(inventory["objects"][0]["class"], "light_evidence")
+
+    def test_unproven_review_and_stale_ledger_temp_remain_actionable_unresolved(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            common = root / "common"
+            common.mkdir(parents=True)
+            (common / "capacity_ledger.json").write_text("{}", encoding="utf-8")
+            (common / ".capacity_ledger.json.fixture").write_bytes(b"stale")
+            for project in ("orthogonal_accelerator", "parallel_mirror_dual_stripe_mr_tof"):
+                review = root / "projects" / project / "reviews" / "current"
+                review.mkdir(parents=True)
+                _write_json(review / "inspection_receipt.json", {
+                    "role": "readonly_inspection", "status": "ready",
+                })
+                (review / "copied.pa0").write_bytes(b"payload")
+            inventory = build_calibration_inventory(root, review_deadline="2026-09-27")
+            pending = {item["path"]: item for item in inventory["unresolved"]}
+            temp = pending["common/.capacity_ledger.json.fixture"]
+            self.assertEqual(temp["owner_hint"], "common.capacity_ledger")
+            self.assertEqual(temp["reason"], "stale_capacity_ledger_atomic_temp_requires_recovery")
+            self.assertIn("atomic publication lineage", temp["recovery_task"])
+            for project in ("orthogonal_accelerator", "parallel_mirror_dual_stripe_mr_tof"):
+                item = pending[f"projects/{project}/reviews"]
+                self.assertEqual(item["owner_hint"], project)
+                self.assertEqual(item["reason"], "review_package_lacks_sealed_owner_disposition_manifest")
+                self.assertIn("sealed review-package manifest", item["recovery_task"])
+
+    def test_invalid_frozen_input_cache_remains_actionable_not_published(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            key = "A" * 64
+            cache = root / "projects" / "instrument" / "cache" / "native_corridor_frozen_inputs" / key
+            cache.mkdir(parents=True)
+            inventory = build_calibration_inventory(root, review_deadline="2026-09-27")
+            self.assertEqual(inventory["object_count"], 0)
+            self.assertEqual(inventory["unresolved_count"], 1)
+            item = inventory["unresolved"][0]
+            self.assertEqual(item["reason"], "frozen_input_cache_manifest_or_member_metadata_differs")
+            self.assertEqual(item["owner_hint"], "instrument")
+            self.assertIn("restore the frozen-input manifest", item["recovery_task"])
+
+    def test_pa_runtime_roots_are_accounted_with_explicit_recovery_owner(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            transactions = root / "common" / "simion" / "pa_family_cache" / ".transactions"
+            locks = root / "common" / "simion" / "pa_family_cache" / ".locks"
+            transactions.mkdir(parents=True)
+            locks.mkdir()
+            (transactions / "partial.pa0").write_bytes(b"transaction")
+            (locks / "builder.lock").write_bytes(b"lock")
+            inventory = build_calibration_inventory(root, review_deadline="2026-09-27")
+            by_path = {item["path"]: item for item in inventory["objects"]}
+            for name in (
+                "common/simion/pa_family_cache/.transactions",
+                "common/simion/pa_family_cache/.locks",
+            ):
+                self.assertEqual(by_path[name]["status"], "writing")
+                self.assertEqual(by_path[name]["owner_hint"], "common.simion.pa_family_cache")
+                self.assertEqual(by_path[name]["class"], "rebuildable_payload")
+            self.assertEqual(inventory["unresolved_count"], 0)
+
+    def test_workspace_scratch_and_generated_are_external_ledger_scopes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            root = parent / "artifacts"
+            root.mkdir()
+            workspace = parent / "simulation_repo"
+            (workspace / "scratch").mkdir(parents=True)
+            (workspace / "generated").mkdir()
+            (workspace / "scratch" / "checkpoint.bin").write_bytes(b"scratch")
+            (workspace / "generated" / "derived.pa0").write_bytes(b"generated")
+            inventory = build_calibration_inventory(
+                root, review_deadline="2026-09-27", workspace_root=workspace,
+            )
+            self.assertEqual(inventory["external_scope_bytes"], len(b"scratchgenerated"))
+            self.assertEqual(
+                {item["role"] for item in inventory["external_scopes"]},
+                {"repository_scratch", "repository_generated", "repository_workspace_scratch"},
+            )
+            ledger = initialize_from_inventory(inventory)
+            self.assertEqual(ledger["resident_bytes"], len(b"scratchgenerated"))
+            self.assertEqual(ledger["external_scopes"], inventory["external_scopes"])
+
+    def test_top_level_scratch_and_generated_are_counted_as_recoverable_writing(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            scratch = root / "scratch"
+            generated = root / "generated"
+            scratch.mkdir(parents=True)
+            generated.mkdir()
+            (scratch / "interrupted.pa0").write_bytes(b"scratch")
+            (generated / "response.pa0").write_bytes(b"generated")
+            inventory = build_calibration_inventory(root, review_deadline="2026-09-27")
+            by_path = {item["path"]: item for item in inventory["objects"]}
+            for name in ("scratch", "generated"):
+                self.assertEqual(by_path[name]["class"], "rebuildable_payload")
+                self.assertEqual(by_path[name]["status"], "writing")
+                self.assertEqual(by_path[name]["owner_hint"], "artifact_root_maintainer")
+            self.assertEqual(inventory["unresolved_count"], 0)
+            self.assertEqual(inventory["resident_bytes"], len(b"scratchgenerated"))
+
+    def test_scratch_and_unknown_cache_provider_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            scratch = root / "projects" / "instrument" / "scratch" / "task"
+            scratch.mkdir(parents=True)
+            (scratch / "state.bin").write_bytes(b"data")
+            (scratch / "field.pa0").write_bytes(b"field")
+            (scratch / "runtime.lua").write_text("return {}")
+            _write_json(scratch / "root_cause.json", {
+                "schema_version": 1,
+                "role": "fixture_root_cause",
+            })
+            unknown = root / "projects" / "instrument" / "cache" / "unknown" / KEY
+            unknown.mkdir(parents=True)
+            (unknown / "payload.bin").write_bytes(b"cache")
+            inventory = build_calibration_inventory(
+                root, review_deadline="2026-09-27",
+            )
+            reasons = {item["reason"] for item in inventory["unresolved"]}
+            self.assertEqual(inventory["unresolved_count"], 1)
+            self.assertIn("project_cache_provider_or_layout_unrecognized", reasons)
+            for item in inventory["unresolved"]:
+                self.assertTrue(item["path"])
+                self.assertGreater(item["bytes"], 0)
+                self.assertTrue(item["owner_hint"])
+                self.assertEqual(item["review_deadline"], "2026-09-27")
+            scratch_heavy = next(
+                item for item in inventory["objects"]
+                if item["path"].endswith("field.pa0")
+            )
+            self.assertEqual(scratch_heavy["class"], "rebuildable_payload")
+            self.assertEqual(scratch_heavy["status"], "ready")
+            runtime = next(
+                item for item in inventory["objects"]
+                if item["path"].endswith("runtime.lua")
+            )
+            evidence = next(
+                item for item in inventory["objects"]
+                if item["path"].endswith("root_cause.json")
+            )
+            self.assertEqual(runtime["class"], "rebuildable_payload")
+            self.assertEqual(evidence["class"], "light_evidence")
+            self.assertEqual(inventory["initialization_blocker_count"], 0)
+
+    def test_manifest_member_size_mismatch_is_unresolved_without_hashing(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            _write_common_cache(root)
+            manifest_path = (
+                root / "common" / "simion" / "pa_family_cache" / KEY
+                / "generations" / GENERATION / "cache_manifest.json"
+            )
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["files"][0]["bytes"] = 999
+            _write_json(manifest_path, manifest)
+            payload = manifest_path.parent / "field.pa0"
+            original_open = Path.open
+            def deny_payload_open(path, *args, **kwargs):
+                if path == payload:
+                    raise AssertionError("payload read forbidden")
+                return original_open(path, *args, **kwargs)
+            with mock.patch.object(Path, "open", deny_payload_open):
+                with self.assertRaisesRegex(AssertionError, "payload read forbidden"):
+                    payload.read_bytes()
+                inventory = build_calibration_inventory(
+                    root, review_deadline="2026-09-27",
+                )
+            self.assertEqual(inventory["unresolved_count"], 1)
+            self.assertEqual(
+                inventory["unresolved"][0]["reason"],
+                "common_pa_cache_identity_chain_incomplete",
+            )
+
+    def test_known_scratch_engineering_source_is_pinned_for_promotion(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            source = (
+                root / "projects" / "parallel_mirror_dual_stripe_mr_tof"
+                / "scratch" / "20260902__ion-foil-recovery" / "foil.SLDPRT"
+            )
+            source.parent.mkdir(parents=True)
+            source.write_bytes(b"engineering source")
+            inventory = build_calibration_inventory(
+                root, review_deadline="2026-09-27",
+            )
+            record = inventory["objects"][0]
+            self.assertEqual(record["class"], "light_evidence")
+            self.assertTrue(record["pin"])
+            self.assertIn("pending promotion", record["pin_reason"])
+
+    def test_overdue_pending_inventory_reports_count_and_blocks_initialize(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            unknown = root / "projects" / "instrument" / "cache" / "unknown" / KEY
+            unknown.mkdir(parents=True)
+            (unknown / "payload.bin").write_bytes(b"cache")
+            inventory = build_calibration_inventory(
+                root, review_deadline="2000-01-01",
+            )
+            self.assertEqual(inventory["status"], "calibration_review_overdue")
+            self.assertEqual(inventory["expired_unresolved_count"], 1)
+            with self.assertRaisesRegex(
+                CalibrationError, "expired_unresolved_count=1",
+            ):
+                initialize_from_inventory(inventory)
+
+    def test_legacy_and_incomplete_runs_are_split_with_safe_statuses(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            legacy = _write_compact_run(root, heavy=True)
+            config_path = legacy / "run_config.json"
+            manifest_path = legacy / "run_manifest.json"
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            config["schema_version"] = 1
+            config.pop("artifact_retention")
+            manifest["schema_version"] = 1
+            manifest.pop("artifact_retention")
+            _write_json(config_path, config)
+            _write_json(manifest_path, manifest)
+            inventory = build_calibration_inventory(root, review_deadline="2026-09-27")
+            self.assertEqual(inventory["unresolved_count"], 0)
+            heavy = next(
+                item for item in inventory["objects"]
+                if item["path"].endswith("field.pa0")
+            )
+            self.assertEqual(heavy["class"], "rebuildable_payload")
+            self.assertEqual(heavy["status"], "ready")
+
+            (legacy / "summary.json").unlink()
+            incomplete = build_calibration_inventory(root, review_deadline="2026-09-27")
+            self.assertEqual(incomplete["unresolved_count"], 0)
+            self.assertTrue(incomplete["complete"])
+            self.assertEqual(incomplete["status"], "ready_to_initialize")
+            self.assertEqual(incomplete["initialization_blocker_count"], 0)
+            self.assertTrue(incomplete["objects"])
+            self.assertTrue(all(item["status"] == "writing" for item in incomplete["objects"]))
+            ledger = initialize_from_inventory(incomplete)
+            self.assertTrue(all(item["owner"] for item in ledger["objects"]))
+            self.assertTrue(all(item["recovery_reason"] for item in ledger["objects"]))
+            self.assertTrue(all(
+                item["review_deadline"] == "2026-09-27"
+                for item in ledger["objects"]
+            ))
+
+    def test_invalid_archive_and_known_legacy_evidence_are_pinned_for_repair(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            project = root / "projects" / "instrument"
+            archive = project / "archive" / "legacy"
+            archive.mkdir(parents=True)
+            (archive / "evidence.txt").write_text("evidence")
+            evidence = project / "paper1_stage_evidence"
+            evidence.mkdir()
+            (evidence / "report.json").write_text("{}")
+            inventory = build_calibration_inventory(root, review_deadline="2026-09-27")
+            self.assertEqual(inventory["unresolved_count"], 0)
+            self.assertEqual(inventory["object_count"], 2)
+            self.assertTrue(all(item["pin"] for item in inventory["objects"]))
+            self.assertTrue(all("2026-09-27" in item["pin_reason"] for item in inventory["objects"]))
+
+    def test_active_structured_reference_keeps_terminal_payload_writing(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            source = _write_compact_run(root, heavy=True)
+            retention = {
+                "policy_version": 1,
+                "class": "solver_review",
+                "reason": "GUI review fixture",
+            }
+            for name in ("run_config.json", "run_manifest.json"):
+                path = source / name
+                document = json.loads(path.read_text(encoding="utf-8"))
+                document["artifact_retention"] = retention
+                _write_json(path, document)
+            active = source.parent / "20260920_130000__test__python__consumer"
+            heavy = source / "simion" / "field.pa0"
+            _write_json(active / "run_config.json", {
+                "schema_version": 1,
+                "source_pa": str(heavy),
+            })
+            _write_json(active / "summary.json", {"status": "checkpoint"})
+            _write_json(active / "run_manifest.json", {
+                "schema_version": 1,
+                "status": "checkpoint",
+            })
+            inventory = build_calibration_inventory(root, review_deadline="2026-09-27")
+            record = next(
+                item for item in inventory["objects"]
+                if item["path"] == heavy.relative_to(root).as_posix()
+            )
+            self.assertEqual(record["status"], "writing")
+            self.assertEqual(
+                record["active_protection"],
+                "structured_nonterminal_run_reference",
+            )
+            self.assertEqual(
+                record["active_consumers"],
+                [active.relative_to(root).as_posix()],
+            )
+            self.assertEqual(record["owner"], record["owner_hint"])
+            self.assertEqual(record["review_deadline"], "2026-09-27")
+            self.assertTrue(record["recovery_reason"])
+            self.assertEqual(inventory["active_reference_protected_object_count"], 1)
+            self.assertEqual(inventory["recovery_required_count"], 2)
+            self.assertTrue(inventory["complete"])
+            self.assertEqual(inventory["status"], "ready_to_initialize")
+            self.assertEqual(inventory["initialization_blocker_count"], 0)
+            ledger = initialize_from_inventory(inventory)
+            ledger_record = next(
+                item for item in ledger["objects"] if item["path"] == record["path"]
+            )
+            self.assertEqual(
+                ledger_record["consumers"], [active.relative_to(root).as_posix()],
+            )
+
+    def test_overdue_writing_recovery_blocks_initialization(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            run = _write_compact_run(root, heavy=True)
+            (run / "summary.json").unlink()
+            inventory = build_calibration_inventory(
+                root, review_deadline="2000-01-01",
+            )
+            self.assertFalse(inventory["complete"])
+            self.assertEqual(inventory["status"], "calibration_review_overdue")
+            self.assertGreater(inventory["expired_initialization_blocker_count"], 0)
+            with self.assertRaisesRegex(
+                CalibrationError, "invalid_or_overdue_writing_count",
+            ):
+                initialize_from_inventory(inventory)
+
+    def test_cli_writes_pending_report_before_rejecting_ledger_initialization(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            root = parent / "artifacts"
+            workspace = parent / "workspace"
+            report = parent / "capacity-report.json"
+            unknown = root / "projects" / "instrument" / "cache" / "unknown" / KEY
+            unknown.mkdir(parents=True)
+            (unknown / "payload.bin").write_bytes(b"cache")
+            workspace.mkdir()
+            stdout, stderr = io.StringIO(), io.StringIO()
+            arguments = [
+                "legacy_capacity_calibration",
+                "--artifact-root", str(root),
+                "--workspace-root", str(workspace),
+                "--review-deadline", "2026-09-29",
+                "--report", str(report),
+                "--initialize-ledger",
+            ]
+            with (
+                mock.patch.object(sys, "argv", arguments),
+                contextlib.redirect_stdout(stdout),
+                contextlib.redirect_stderr(stderr),
+                self.assertRaises(SystemExit) as exited,
+            ):
+                main()
+            self.assertEqual(exited.exception.code, 2)
+            self.assertTrue(report.is_file())
+            inventory = json.loads(report.read_text(encoding="utf-8"))
+            self.assertEqual(inventory["unresolved_count"], 1)
+            events = [json.loads(line)["event"] for line in stderr.getvalue().splitlines()]
+            self.assertEqual(events[0], "calibration_started")
+            self.assertIn("scan_artifact_root_entry", events)
+            self.assertIn("calibration_report_written", events)
+            self.assertEqual(events[-1], "ledger_initialization_rejected")
+            self.assertEqual(stdout.getvalue(), "")
+            self.assertFalse((root / "common" / "capacity_ledger.json").exists())
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,0 +1,141 @@
+# 单次反射正交加速飞行时间质量分析器：SIMION实施与验证
+
+本文只记录SIMION文本、PA/IOB、GUI和独立验收。当前项目资格、跨求解器结论与开放任务只见
+[`PROJECT.md`](PROJECT.md)；2026-07-28以前的完整实施时间线冻结在
+[`../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20260728__pre-document-consolidation-simion.md`](../../../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20260728__pre-document-consolidation-simion.md)。
+独立交付包的 GUI 复核步骤与完成条件见[交付检查单](SIMION_DELIVERY_CHECKLIST.md)。
+
+## 活动入口与资产
+
+- 文本入口：`../simion/workbench/formal/oatof_ideal_grounded.lua/.fly2`
+- 交付构建：`../simion/workbench/build_formal_delivery.ps1`
+- 参数化几何Candidate门禁：`../simion/workbench/run_parameterized_geometry_smoke.ps1`
+- 径向压缩与环数补偿：`../workflows/radial_compaction/run_campaign.py`，合同为
+  `../config/radial_compaction_campaign.json`
+- 反射器电压场补偿：`../workflows/reflectron_voltage_compensation/run_compensation.py`
+
+这两个历史Candidate入口对单个SIMION飞行只做耗时观测：600 s（电压补偿）或1800 s（径向紧凑化）越限
+发出一次警告，健康求解继续自然完成。它们不以墙钟时间终止SIMION；进程失败仍按非零退出失败闭合。
+- N=100源码构建与跟踪：沿[项目入口](../README.md#活动入口)的单个结构Candidate工作流，
+  使用冻结编译器、非Formal模板及共享N=100 transport；旧独立包装已退役。
+- IOB运行时合同：`../simion/workbench/verify_iob_runtime_contract.ps1`
+- 稳定资产身份：`../config/simion_stable_entry.json`
+- 重命名前的只读Formal资产：工作区`artifacts/projects/single_reflection_oa_tof_mass_analyzer/archive/`
+  `20260801_130003__migration-snapshot__repo__oa-tof/legacy-project-root/formal/simion/`；不改写、
+  不追加新run
+- vNext活动产物：工作区`artifacts/projects/single_reflection_oa_tof_mass_analyzer/`
+
+当前项目处于`formal`。稳定清单绑定当前Formal SIMION交付包；重命名前和拆层前的Formal包只保留
+可追溯身份。Candidate仍必须使用独立、已登记的非Formal IOB/CON模板，不能读取旧Formal或archive资产。
+当前Formal是只读发布源：任何SIMION进程均不得以`formal/simion`为工作目录或直接打开其中IOB。
+活动入口先逐项验证Formal manifest，再通过`analysis/stage_formal_simion_runtime.py`复制到项目scratch，
+只运行该临时副本并在终止时清理；run以runtime receipt冻结实际消费的release与资产SHA。
+
+## 几何与数值合同
+
+正式/候选文本由resolved生成；物理参数只来自`../config/baseline.json`与resolved，数值只来自
+`../config/formal_solver_numerics.json`。四个GUI可见实例和优先级必须为：
+
+1. flight tube；
+2. reflectron；
+3. accelerator；
+4. detector。
+
+Program不通过动态实例调整补救错误排序。正式trajectory quality为8；Program与Data Recording必须
+同时开启。New detector PAs represent the canonical physical detector: the baseline has a 40 mm
+radius, 1 mm thickness and active face at global z=0. The 0.1 mm marker parameter and 0.02 mm
+capture depth remain separate numerical controls; the body, active face and terminal event have
+distinct meanings. Frozen historical runs retain their original marker interpretation. Native
+occupancy, field and trajectory evidence for the new body remain outstanding.
+
+Current detector PAs remain present before initialization, on outbound flight and on return.
+The integration Program never disables the physical body to arm observation. Its fine overlay
+yields to the detector domain whenever that domain contains the particle. Return observation
+separately requires accepted trajectory history reaching the reflectron entrance and negative
+axial velocity; an outbound, stationary or unarmed body splat remains a loss.
+Frozen historical Programs and assets retain their original bytes. Callback tests establish
+selection and event classification only: native occupancy and fields within the detector PA's
+vacuum margins and across its overlap boundary still require applicable field validation.
+
+日常加速器网格为`xy=0.25 mm,z=0.05 mm`，`z=0.025 mm`只作轴向收敛参考。当前生成链把
+grid1、grid2、entgrid与midgrid统一声明为SIMION官方理想透明栅：**零grid-unit厚度的一行电极点**；
+目标语义是参与Refine的Dirichlet边界且由SIMION原生穿过，Program不得用固定距离搬运粒子或补偿TOF。
+Candidate SIMION门禁通过`run_parameterized_geometry_smoke.ps1`隔离构建正式加速器与反射器PA，使用官方
+`simion.pas`/`pa:point()` API写出四栅raw-PA单行receipt，并要求冻结单粒子原生穿越计数为
+`grid1/grid2/entgrid/midgrid=1/1/2/2`后命中探测器；TRACE方向判定只服务该冻结正向发射单粒子smoke，
+不是通用轨迹事件定位器。该门禁直接读取正式numerics合同，固定加速器`0.25/0.25/0.05 mm`与反射器
+`0.25/1.0 mm`网格，不提供粗网格fallback，并保存gem2pa、raw审计、refine、fast-adjust、反射器构建和
+单粒子Fly的墙钟耗时receipt。真实丝网属于独立物理候选，须建立单独几何/profile并重新验证传输、场和收敛，
+不能复用一行理想栅路径。
+
+原生理想栅功能验收的有效结论与来源 run 见 [PROJECT 的兼容边界](PROJECT.md#已知兼容边界)。
+该专项单粒子检查不提供统计、真实丝网或 Formal 晋升资格。
+
+反射器为二维轴对称PA；网格只查`../config/formal_solver_numerics.json`，制造约束只查
+`../config/design_variables.json`。包含理想栅的加速器和反射器PA均使用SIMION官方ideal-grid示例采用的
+默认非fractional surface语义，本项目在PA级显式声明`surface=none`；四个零宽栅必须严格落在raw节点，
+普通厚环、背板和屏蔽罩边缘不对齐时，加速器记录`accelerator_geometry_edge_not_on_grid_node`、反射器
+记录`reflectron_geometry_edge_not_on_grid_node`警告，并按raw网格离散。`surface`是PA级选项，本项目
+不伪造按电极混合surface元数据。
+
+官方依据（查阅`2026-08-13`，目标版本SIMION 2020）为SIMION Grid/PA说明
+<https://simion.com/info/grid.html>及本机随安装提供的
+`examples/geometry/parallel_plate_capacitor_2d.gem`：官方示例以节点对齐的一行零宽电极表达100%透明理想栅，
+并省略`surface`参数而采用默认非fractional语义。本项目采用相同路径并显式声明PA级`surface=none`；
+一行栅必须落在raw PA节点，真实丝网不在其适用域。
+
+## Candidate与交付纪律
+
+Candidate文本由`workflows/design_candidate/prepare_candidate_consumers.py`生成；PA、IOB、Fly和run
+生命周期必须由上层Candidate workflow冻结。非Formal模板只允许通过
+`../simion/workbench/register_candidate_layout_template.ps1`登记的四槽IOB/CON；placeholder PA仅用于
+GUI布局，必须在Fly前被真实Candidate PA替换。
+
+`build_formal_delivery.ps1`只输出到run；晋升为独立事务。交付必须包含同basename Program/Fly2、四套
+完整PA家族、固定ION、manifest和SHA清单。移动或重建后必须重新加载IOB并验证四实例、优先级、
+trajectory quality和资产哈希。
+
+电压补偿入口从固定PA导出fast-adjust基函数，在入口/中间栅/背板电压固定且环电压单调的条件下，
+最小化实际轴向电势与理论分段线性电势的偏差。无派生profile或功能关闭时使用原线性分压；开启时
+SIMION校验环数、范围和单调性后应用profile。同一PA以5×200并行分别计算原场、补偿场和理想反射场，
+合并N=1000后用direct-KDE验收。固定PA的静电响应线性，一次受约束求解即可；几何变化才重新导出基函数。
+
+## GUI验收
+
+GUI必须可见并可编辑四实例、Fast Adjust电压、实例坐标、Fly2粒子和同名Program。Data Recording至少
+记录Ion Number、TOF、X/Y/Z和Event；单一TOF列不能证明来自正确终止面。命令行只可改变线程、无GUI和
+输出路径，不能覆盖GUI不可见物理参数。
+
+## C3 总轴场诊断
+
+Paper 1 C3 的五实例 Candidate IOB 不能使用单一 PA 的局部场作为独立轴向参考；局部 overlay 必须与
+其余实例按 Workbench 总场共同采样。`workflows/cross_solver_diagnostics/simion/export_total_axis_field.lua`
+只通过 SIMION 2020 官方 `simion.wb:epotential` 和 `simion.wb:efield` 导出该总场。C3 的实际导出由唯一
+single-flight 入口生成**顶层** Lua 脚本：它先载入该次 run-local 的 field-only 五实例 IOB（与可飞行
+IOB 使用相同 PA 和变换，但不同 basename 且不带 Program/Fly2，防止 SIMION 自动执行粒子 Program），再以同一冻结 RF、脉冲、
+前端和加速器电极计划复现 post-pulse fast-adjust，最后采样`repeller → grid2`轴场；该范围覆盖记录的预脉冲
+状态至局部加速器出口。Workbench Program callback 中调用总场 API 会使真实 Fly 失败，已由2026-08-26
+烟雾运行确认，故该路径不得用哨兵粒子、`initialize_run()`或任何粒子飞行触发。普通 Lua 脚本不能`dofile`
+Workbench Program，因而导出器必须由冻结的 Program 输入生成，不能单独对历史 IOB 施加未知电压。官方支持路径为安装目录
+`C:\Program Files\SIMION-2020\examples\field_dump\fielddumplib.lua`（`get_point`）和
+`examples\field_dump\field_dump.lua`（顶层 Workbench field dump），查阅日期为2026-08-26。
+该导出只能由 integration 的唯一单飞入口以`-BuildOnly -ProgramAxisFieldExport`执行；它消费该次冻结的
+Candidate、PA/IOB、脉冲计划和数值身份，并把CSV及资源记录发布到同一个immutable run，不能绕开run manifest
+直接对历史IOB调用；它不启动粒子，也不构成粒子物理或数值结果。
+导出器是基于官方 API 的项目实现，不是供应商对本项目积分或论文结论的推荐。历史 single-flight run
+可能按保留策略裁剪 PA0；此时必须由冻结 cache generation 重建短暂 runtime IOB 并在派生 manifest
+记录来源，不能用残缺 IOB 或单 PA 代替总场。
+
+## 当前限制
+
+- `.wgem`受许可证限制时使用已验收的SIMION 2020 legacy-GEM模板；许可证升级并完成隔离GUI/结构复验
+  前不迁移生产路线。
+- 真实丝网局部单元尚未实现；理想栅网和真实丝网结果不得混为同一baseline。
+- SIMION 2020在真实分数表面反射器连续Refine至约`pa18`时可非确定性以`0xC0000005`退出；这不是
+  二维PA尺寸或固定电极数硬上限。生产构建先初始化全部解数组，再让每个`paN`在独立SIMION进程中
+  Refine，最后fast-adjust；恢复已有半成品时也必须逐个重新Refine，不能只凭文件存在判断收敛。
+- 已关闭的PA网格相位、跳转距离、Ez替换、宽质量timeout及性能缩放实验只从同日history快照与来源
+  manifest追溯，不保留在current实施说明。
+
+The backend-owned axis-basis exporter and its frozen predecessor identity rules
+are described in [PROJECT](PROJECT.md#canonical-exported-axis-local-transport).

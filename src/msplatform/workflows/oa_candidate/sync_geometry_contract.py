@@ -28,12 +28,12 @@ from msplatform.workflows.oa_candidate.geometry_contract import resolve_contract
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-PROJECT_ROOT = REPO_ROOT / "projects/single_reflection_oa_tof_mass_analyzer"
+PROJECT_ROOT = REPO_ROOT / "src/msplatform/components/single_reflection_oa_tof"
 RESOLVED_PATH = PROJECT_ROOT / "config/resolved_geometry.json"
 CONTRACT_PATH = PROJECT_ROOT / "config" / "baseline.json"
-RESOLVED_LUA_PATH = PROJECT_ROOT / "simion" / "workbench" / "formal" / "oatof_resolved.lua"
+RESOLVED_LUA_PATH = REPO_ROOT / "src/msplatform/backends/simion/resources/oatof_resolved.lua"
 PROGRAM_PATH = REPO_ROOT / "src/msplatform/backends/simion/resources/oatof_ideal_grounded.lua"
-FLY2_PATH = PROJECT_ROOT / "simion" / "workbench" / "formal" / "oatof_ideal_grounded.fly2"
+FLY2_PATH = REPO_ROOT / "src/msplatform/backends/simion/resources/oatof_ideal_grounded.fly2"
 NUMERICS_PATH = PROJECT_ROOT / "config" / "formal_solver_numerics.json"
 OPTIMIZATION_ENVELOPE_PATH = PROJECT_ROOT / "config" / "optimization_envelope.json"
 AUTHORITY_DOCUMENTS = (
@@ -143,7 +143,8 @@ def update(path: Path, expected: str, write: bool) -> bool:
     if write:
         path.write_text(expected, encoding="utf-8", newline="\n")
         return True
-    raise SystemExit(f"STALE={path.relative_to(PROJECT_ROOT)}")
+    display = path.relative_to(REPO_ROOT) if path.is_relative_to(REPO_ROOT) else path.relative_to(path.parent.parent)
+    raise SystemExit(f"STALE={display}")
 
 
 def main() -> None:
@@ -172,7 +173,7 @@ def main() -> None:
     ]
     print("GEOMETRY_TEXT_SYNC=PASS")
     for path in changed:
-        print(f"UPDATED={path.relative_to(PROJECT_ROOT)}")
+        print(f"UPDATED={path.relative_to(REPO_ROOT) if path.is_relative_to(REPO_ROOT) else path}")
 
 
 if __name__ == "__main__":

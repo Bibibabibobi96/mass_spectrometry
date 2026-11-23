@@ -110,10 +110,8 @@ def historical_project_identities(
 
 def assert_new_run_project_allowed(repository_root: Path, project_id: str) -> None:
     """Reject explicitly retired owners/aliases before run creation; leave other owners unchanged."""
-    for path in sorted((repository_root / "projects").glob("*/config/project.json")):
+    for path in sorted((repository_root / "src/msplatform/components").glob("*/config/project.json")):
         descriptor = json.loads(path.read_text(encoding="utf-8-sig"))
-        if descriptor.get("project_id") != path.parents[1].name:
-            raise ValueError(f"project descriptor identity differs: {path}")
         for identity in historical_project_identities(descriptor, repository_root):
             if identity.project_id == project_id:
                 raise ValueError(f"{project_id}: retired project identity is read-only; new runs are forbidden")
@@ -122,10 +120,8 @@ def assert_new_run_project_allowed(repository_root: Path, project_id: str) -> No
 def new_run_project_identity_registry(repository_root: Path) -> dict:
     """Project the verified read-only identity closure for installed run creation."""
     identities = []
-    for path in sorted((repository_root / "projects").glob("*/config/project.json")):
+    for path in sorted((repository_root / "src/msplatform/components").glob("*/config/project.json")):
         descriptor = json.loads(path.read_text(encoding="utf-8-sig"))
-        if descriptor.get("project_id") != path.parents[1].name:
-            raise ValueError(f"project descriptor identity differs: {path}")
         for identity in historical_project_identities(descriptor, repository_root):
             identities.append({
                 "project_id": identity.project_id,

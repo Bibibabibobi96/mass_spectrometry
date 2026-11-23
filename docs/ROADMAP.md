@@ -68,12 +68,12 @@ P1/P2任务分支尚未合入master。2026-11-03按V5进入P2，实施起点为�
 2026-11-04按V7承接有界纠正D01：中立request4的分段表不含native编号，零间隙旧检查仍有两处
 `electrode_id`依赖。RF提供者现拥有实际端面截面，集成只变换位姿和判断接触；新请求的公共准备
 正反例及补充组合已通过，公共受影响范围与环境失败的具名复验见
-[当前集成状态](../integrations/docs/INTEGRATION.md#当前边界)。该纠正不改写P2冻结验收，也不重开P1/P2。
+[当前集成状态](INTEGRATION.md#当前边界)。该纠正不改写P2冻结验收，也不重开P1/P2。
 后续P3除共同钟、接续和恢复外，还必须交付真实RF→OA／单反射链的普通安装公共API切片：
 geometry-only、求场、源、飞行、分析分别调用；不能依赖作者checkout或以假源满足几何输入。
 D01已固定并推送`bf19145c`；当前按V7.2 Goal继续P3。首个几何编译安装切片已实迁RF、OA／完整TOF、
 SIMION纯编译及必要执行基础，公共API与普通wheel／sdist树外实际调用已有证据，当前范围见
-[集成状态](../integrations/docs/INTEGRATION.md#当前边界)。后继已取得普通安装的无GUI STEP、未求解模型独立求场、
+[集成状态](INTEGRATION.md#当前边界)。后继已取得普通安装的无GUI STEP、未求解模型独立求场、
 同场同源三档连续／接续共九个轨迹产品、无商业工具重分析及独立审查者教程的有界证据。
 The selected P3 delivery is accepted at code `f283b752`, with its evidence and
 29 Goal / 54 C / 20 R / 8 U mapping in the
@@ -87,7 +87,7 @@ repair separately passed the complete affected module at the final code bytes:
 SDK23's 235-payload/54-lock/245-source joins remain exact; no scientific package
 or 3D rebuild was needed for the gate-only successor. Original failures and
 unproved historical causes remain. Current capability, qualification and later
-responsibilities have one authority in the [integration status](../integrations/docs/INTEGRATION.md#当前边界).
+responsibilities have one authority in the [integration status](INTEGRATION.md#当前边界).
 User clarification on 2026-11-05: correct 3D file generation and independent geometry checks are the
 current CAD acceptance scope. SolidWorks repair and refinement are deferred, without blocking this goal;
 historical native failures and Formal publication requirements remain unchanged.
@@ -126,7 +126,7 @@ layer across CAD and the public COMSOL geometry-only stage. Separate public stag
 also prepare unsolved models, solve one stationary workpoint, cold-recover an exact
 saved failed output, and export explicitly masked world scalar samples. Actual
 geometry/model/solution evidence and its limits are recorded in the
-[integration state](../integrations/docs/INTEGRATION.md); ordinary installed geometry
+[integration state](INTEGRATION.md); ordinary installed geometry
 does not qualify the later model, field or scalar stages. The later ordinary
 installation resource/validator probes are separately scoped in that state page;
 they do not execute the installed native owners. Native scalar exports and a
@@ -149,7 +149,7 @@ The later frozen `e3618a8a` run passed ordinary wheel/sdist installation but end
 Repository FAIL (49 PASS, 2 FAIL, 12 NA; 4967.499601 s outer wall). The gate-only
 successor reran and corrected both original defects through actual consumers;
 its shared-ledger Changed result and complete MR resource module are recorded in
-[the current integration state](../integrations/docs/INTEGRATION.md#当前边界).
+[the current integration state](INTEGRATION.md#当前边界).
 RF–IP–MR native flight currently stops on explicit invalid scalar support; a
 same-solution native probe preserves the original invalid node and shows valid
 local support at the actual particle query. All seventeen RF-body workpoints are
@@ -385,7 +385,7 @@ grid and trajectory studies remain open. The COMSOL common-domain geometry-only 
 and cold reopen succeeded for all 77 canonical members and 50 groups, with 81 geometry
 domains including three vacuum domains and six outer faces. The saved model has no mesh,
 physics, study or solver; this is not field, sampling, phase, convergence or trajectory
-qualification. See the [integration evidence](../integrations/docs/INTEGRATION.md) for the
+qualification. See the [integration evidence](INTEGRATION.md) for the
 exact run and point records. A coarse common-domain carrier solution and its cold-only
 17-point V/E export now exist, retaining all 45 point identities; the original solve's
 coordinate-rounding wrapper failure remains FAILED. This is a private reference diagnostic,
@@ -463,7 +463,7 @@ evidence does not qualify the callback-repair successor. Precision,
 convergence, complete Repository, native flight and the 15-minute target remain open.
 The approved gas choice and original cohort stay bound to their explicit requests;
 no additional component geometry is implied. Details and evidence are in the
-[integration state](../integrations/docs/INTEGRATION.md#当前边界).
+[integration state](INTEGRATION.md#当前边界).
 
 The user retained the 700 GiB capacity target and 295 GiB free-space floor. Public-owner retirement of one
 obsolete n3 raw PA, with its other 180 files preserved, allowed the detector
@@ -508,7 +508,7 @@ Repository/native acceptance and the 15-minute budget remain OPEN.
 GitHub Changed at `097cf39f` (run `43395020909`) and `5bcd9b58` (run `43405061295`)
 succeeded with Repository skipped; neither establishes local crash root cause or
 final Repository/native qualification.
-The [integration status](../integrations/docs/INTEGRATION.md#installed-single-reflection-preparation)
+The [integration status](INTEGRATION.md#installed-single-reflection-preparation)
 and project status pages own the detailed evidence. The latest complete software
 result is `b90ac498`; final combined P4 acceptance, the original 15-minute target
 and owner budgets remain OPEN. Pending/cancelled CI is not acceptance.
@@ -743,7 +743,7 @@ status table or a promise to preserve each historical workflow as a permanent pa
 10 mm环厚负例及真实STEP离轴探针通过；方形字节投影保持，五项圆柱哈希按实际几何纠正更新。
 纯RF多实例／局部scope现可由公共SIMION入口生成独立PA GEM，覆盖四／六／八极及显式科学组映射；
 `component_domains`逐实例冻结网格，完整父设计保留。公共原生构建后继现已接通真实独立RF几何，
-单器件无需虚构父装配，四／六／八极原生及普通安装冷重开范围见[RF项目状态](../projects/rf_multipole_ion_optics/docs/PROJECT.md#independent-rf-geometry-build)。
+单器件无需虚构父装配，四／六／八极原生及普通安装冷重开范围见[RF项目状态](../src/msplatform/components/rf_multipole/docs/PROJECT.md#independent-rf-geometry-build)。
 现有项目Refine／Fly仍在原工作流，其余SDK推广保持开放。此前编译切片的完整Changed门禁22 PASS／26 NA，2458个父测试成功、
 2项明确skip（既定T5 receipt未配置及opt-in SIMION N1），3155个子测试成功，公共墙钟2065.079秒。
 机器配置现由`execution.load_environment`唯一加载，直接返回显式ExecutionContext；旧`api.execution_context`
@@ -940,7 +940,7 @@ analysis-recovery software tests succeeded in the current Repository run. No new
 RF/OA真实消费者、必要状态／母群、三区理论量纲／坐标和新峰结果metadata已迁移。
 真实三区N100的映射A/B与显式回放、有限GUI及18次独立非粒子场查询已有相称证据；
 其具体范围、原N100八桶仍INCONCLUSIVE及NOT_QUALIFIED等限制只归
-[集成状态](../integrations/docs/INTEGRATION.md#当前边界)，不授予全空间精度、收敛或Formal资格。
+[集成状态](INTEGRATION.md#当前边界)，不授予全空间精度、收敛或Formal资格。
 
 固定源码`b7e30447`完整Repository验收两端均50 PASS／12 NOT_APPLICABLE：本机8路公开2029.189秒，
 远端4路公开3422.007秒。两端6473个父方法定位键和源文件SHA一致，本机6452成功／21跳过，
@@ -994,7 +994,7 @@ P1–P5为平台改造批次，与下述组装M0–M4及项目科学资格分别
 P1已将科学实现迁至`src/msplatform/`规范核心根，保持单主发行单元；该名称没有本机已安装冲突，
 不表示已对外注册或发布。选择理由是安装与源码搜索路径可分离、科学API所有权明确，优于继续
 把有限发行文件混在通用`common`运行树。规范实现不反向包装旧树；旧入口仅单向转接至新实现，
-具名消费者与不晚于P4的退出条件见[公共迁移说明](../common/README.md)。当前API、资源与冻结映射
+具名消费者与不晚于P4的退出条件见[公共迁移说明](REPOSITORY_OPERATIONS.md)。当前API、资源与冻结映射
 已落地；P1实际关闭切片与完整软件验收见[P1迁移验收记录](history/20261103__phase01-scientific-core-migration.md)，
 不代替上表各需求的整体关闭证据。
 
@@ -1003,7 +1003,7 @@ P1已将科学实现迁至`src/msplatform/`规范核心根，保持单主发行�
 2026-10-22批准固定`integrations/`直属入口与声明式配方路线，取消无独立职责的`instrument_assembly/`源码层。规范正文见
 [统一组装目标](COMPONENT_CONNECTION_ARCHITECTURE.md#统一组装目标)，产物规则见
 [生命周期](LIFECYCLE.md#统一组装产物归属)。用户随后批准代码迁移；M1实施状态及其当前限制归
-[统一集成状态](../integrations/docs/INTEGRATION.md)。各阶段须按以下证据关闭，不能把布局编译当作物理贯通。
+[统一集成状态](INTEGRATION.md)。各阶段须按以下证据关闭，不能把布局编译当作物理贯通。
 
 总goal是从当前工作树及真实运行证据出发，完成跨项目装配和既有物理工作流向根`integrations/`的完整迁移，
 交付单一权威、低复杂度、稳定、可复现且容易排错的体系；以未来演进时不静默改变实验语义为稳定性判据。
@@ -1052,15 +1052,15 @@ P1已将科学实现迁至`src/msplatform/`规范核心根，保持单主发行�
 | M4 入口与身份切换 | 对已完成验证且依赖允许切换的workflow分别实施 | 调用、注册、门禁、产物解析和文档同步切换；无在途依赖后退出旧生产副本，历史身份保持 |
 
 M2/M3按workflow闭合后可分别进入M4，不等待无关物理优化。当前入口、完成范围和剩余物理边界统一见
-[集成状态](../integrations/docs/INTEGRATION.md)；多极杆→IP已具有声明范围内的分段状态交接，连续边缘场及
+[集成状态](INTEGRATION.md)；多极杆→IP已具有声明范围内的分段状态交接，连续边缘场及
 其他工况不自动获得资格。公共机制的提升仍须满足实际复用条件，不将MR专属几何调整、匹配或工作点闭合整体搬入common。
 
-参与方任务入口：[OA](../projects/orthogonal_accelerator/docs/PROJECT.md#统一组装迁移任务)、
-[IP](../projects/dual_pressure_rectilinear_ion_processor/docs/PROJECT.md#统一组装迁移任务)、
-[MR](../projects/parallel_mirror_dual_stripe_mr_tof/docs/PROJECT.md#统一组装迁移任务)、
-[单反射TOF](../projects/single_reflection_oa_tof_mass_analyzer/docs/PROJECT.md#统一组装迁移任务)、
-[直属集成](../integrations/docs/INTEGRATION.md)。
-真实多极杆提供方由[多极杆项目](../projects/rf_multipole_ion_optics/README.md)按四／六／八极结构变体
+参与方任务入口：[OA](../src/msplatform/components/orthogonal_accelerator/docs/PROJECT.md#统一组装迁移任务)、
+[IP](../src/msplatform/components/dual_pressure_rectilinear_ion_processor/docs/PROJECT.md#统一组装迁移任务)、
+[MR](../src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/docs/PROJECT.md#统一组装迁移任务)、
+[单反射TOF](../src/msplatform/components/single_reflection_oa_tof/docs/PROJECT.md#统一组装迁移任务)、
+[直属集成](INTEGRATION.md)。
+真实多极杆提供方由[多极杆项目](../src/msplatform/components/rf_multipole/README.md)按四／六／八极结构变体
 分别发布接口和验证范围。本页维护阶段依赖，局部事实与
 关闭证据只回写上述状态页，不在路线图复制运行结果。
 
@@ -1069,7 +1069,7 @@ M2/M3按workflow闭合后可分别进入M4，不等待无关物理优化。当�
 | 设计族 | 边界与后续方向 |
 |---|---|
 | TOF 质量分析器 | 分析器与加速器项目拥有各自物理设计、接口和独立证据；跨组件装配与联合执行归integration。不同反射拓扑按独立设计线评估；同一拓扑的尺寸和电压变化进入候选。 |
-| RF 多极杆 | [统一设计项目](../projects/rf_multipole_ion_optics/README.md)维护四／六／八极结构变体、领域理论与实现；各变体的配置、能力和证据独立。后续功能按实际设计与接口选择mode、workflow或新项目，不按杆数自动增加项目。 |
+| RF 多极杆 | [统一设计项目](../src/msplatform/components/rf_multipole/README.md)维护四／六／八极结构变体、领域理论与实现；各变体的配置、能力和证据独立。后续功能按实际设计与接口选择mode、workflow或新项目，不按杆数自动增加项目。 |
 | 离子源与电子枪 | 先完成参数链与独立部件验收，再发布可追溯接口分布；工作点变化不自动新建项目。 |
 | 接口与集成 | 组合坐标、电位、孔径、压力、相空间、时钟和机械接口；独立功能器件与连接编排分别归属项目和 integration。 |
 | 气体与真空 | 从实际部件的气体条件与边界出发，按需求补充压力、流动、分子流及耦合能力；区分给定背景、求解气体输运与联立耦合，分别验证。 |

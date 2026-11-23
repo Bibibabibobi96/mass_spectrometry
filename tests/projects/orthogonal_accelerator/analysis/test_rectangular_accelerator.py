@@ -1,0 +1,151 @@
+"""Solver-free regression for the migrated rectangular SIMION emitter."""
+from __future__ import annotations
+
+from dataclasses import replace
+from math import nextafter
+import unittest
+
+from msplatform.components.orthogonal_accelerator.two_zone_geometry import (
+    TwoZoneGeometryError,
+    derive_shielded_rectangular_enclosure,
+)
+from msplatform.backends.simion.rectangular_accelerator import (
+    emit_closed_two_zone_endplates,
+    emit_grounded_enclosure,
+    emit_grounded_enclosure_with_rear_aperture,
+    emit_ideal_grid,
+    emit_open_rectangular_frame,
+)
+
+
+class RectangularAcceleratorTest(unittest.TestCase):
+    def test_negative_y_entry_only_subtracts_the_declared_wall(self) -> None:
+        enclosure = derive_shielded_rectangular_enclosure(
+            electrode_outer_width_x_mm=40, electrode_outer_height_y_mm=30,
+            guard_outer_width_x_mm=44, guard_outer_height_y_mm=34,
+            guard_wall_thickness_mm=1, lateral_clearance_mm=1,
+            repeller_z_mm=40, repeller_thickness_z_mm=2, rear_gap_mm=1,
+        )
+        closed = emit_grounded_enclosure(enclosure, exit_z_mm=6)
+        opened = emit_grounded_enclosure(enclosure, exit_z_mm=6,
+                                         negative_y_entry_box_mm=[-1.5, -17, 36.6, 1.5, -16, 39.4],
+                                         entry_cut_padding_mm=.1)
+        self.assertEqual(opened, closed + " notin_inside { box3D(-1.5,-17.1,36.6,1.5,-15.9,39.4) }")
+        for box in ([-1.5, -17, 36.6, 1.5, 16, 39.4], [-1.5, -17, 36.6, 2, -16, 39.4]):
+            with self.subTest(box=box), self.assertRaises(TwoZoneGeometryError):
+                emit_grounded_enclosure(enclosure, exit_z_mm=6, negative_y_entry_box_mm=box, entry_cut_padding_mm=.1)
+        with self.assertRaises(TwoZoneGeometryError):
+            emit_grounded_enclosure(enclosure, exit_z_mm=6, entry_cut_padding_mm=.1)
+
+    def test_side_opening_padding_never_cuts_the_opposite_wall(self) -> None:
+        for outer_y, inner_y in ((17.0, 16.0), (14.5, 13.5)):
+            with self.subTest(inner_y=inner_y):
+                enclosure = derive_shielded_rectangular_enclosure(
+                    electrode_outer_width_x_mm=40, electrode_outer_height_y_mm=2*(inner_y-1),
+                    guard_outer_width_x_mm=44, guard_outer_height_y_mm=2*outer_y,
+                    guard_wall_thickness_mm=1, lateral_clearance_mm=1,
+                    repeller_z_mm=40, repeller_thickness_z_mm=2, rear_gap_mm=1,
+                )
+                self.assertEqual(enclosure.guard_inner_half_y_mm, inner_y)
+                opening=[-1.5,-outer_y,36.6,1.5,-inner_y,39.4]
+                def opposite_wall_overlap(padding: float) -> float:
+                    tool_top=-inner_y+padding
+                    return max(0.0, min(outer_y,tool_top)-inner_y)
+                threshold=2*inner_y
+                for padding in (0.1, nextafter(threshold,0.0), threshold):
+                    with self.subTest(padding=padding):
+                        self.assertEqual(opposite_wall_overlap(padding),0.0)
+                        emitted=emit_grounded_enclosure(enclosure,exit_z_mm=6,
+                            negative_y_entry_box_mm=opening,entry_cut_padding_mm=padding)
+                        upper=float(emitted.rsplit('box3D(',1)[1].split(')',1)[0].split(',')[4])
+                        self.assertLessEqual(upper,inner_y)
+                crossing=threshold+0.5
+                self.assertGreater(opposite_wall_overlap(crossing),0.0)
+                for padding in (nextafter(threshold,float('inf')),crossing):
+                    with self.subTest(padding=padding), self.assertRaisesRegex(
+                            TwoZoneGeometryError,'padding would cut the positive-y wall'):
+                        emit_grounded_enclosure(enclosure,exit_z_mm=6,
+                            negative_y_entry_box_mm=opening,entry_cut_padding_mm=padding)
+
+    def test_closed_two_zone_endplates_cannot_be_rendered_as_grids(self) -> None:
+        enclosure = derive_shielded_rectangular_enclosure(
+            electrode_outer_width_x_mm=40.0, electrode_outer_height_y_mm=36.0,
+            guard_outer_width_x_mm=48.0, guard_outer_height_y_mm=44.0,
+            guard_wall_thickness_mm=2.0, lateral_clearance_mm=2.0,
+            repeller_z_mm=40.0, repeller_thickness_z_mm=2.0, rear_gap_mm=5.0,
+        )
+        endplates = emit_closed_two_zone_endplates(
+            grounded_id=1, repeller_id=2, enclosure=enclosure, exit_z_mm=0.0,
+            repeller_front_z_mm=40.0, repeller_back_z_mm=42.0,
+            repeller_half_x_mm=20.0, repeller_half_y_mm=18.0,
+        )
+        self.assertIn("box3D(-20,-18,40,20,18,42)", endplates["repeller"])
+        self.assertNotIn("notin_inside", endplates["repeller"])
+        self.assertIn("box3D(-24,-22,0,24,22,49)", endplates["grounded_rear_cap"])
+
+    def test_open_frame_preserves_frozen_csg(self) -> None:
+        self.assertEqual(emit_open_rectangular_frame(
+            2, outer_half_x_mm=20.0, outer_half_y_mm=20.0,
+            aperture_half_x_mm=12.5, aperture_half_y_mm=12.5,
+            front_z_mm=45.6, back_z_mm=47.6, cut_padding_mm=1.0,
+        ), "  e(2) { box3D(-20,-20,45.6,20,20,47.6) notin_inside { box3D(-12.5,-12.5,44.6,12.5,12.5,48.6) } }")
+
+    def test_zero_thickness_grid_preserves_frozen_csg(self) -> None:
+        self.assertEqual(emit_ideal_grid(4, half_x_mm=22.0, half_y_mm=22.0, z_mm=6.0),
+                         "  e(4) { box3D(-22,-22,6,22,22,6) }")
+
+    def test_hollow_enclosure_preserves_frozen_csg(self) -> None:
+        enclosure = derive_shielded_rectangular_enclosure(
+            electrode_outer_width_x_mm=40.0, electrode_outer_height_y_mm=40.0,
+            guard_outer_width_x_mm=48.0, guard_outer_height_y_mm=48.0,
+            guard_wall_thickness_mm=2.0, lateral_clearance_mm=2.0,
+            repeller_z_mm=45.6, repeller_thickness_z_mm=2.0, rear_gap_mm=5.0,
+        )
+        self.assertEqual(emit_grounded_enclosure(enclosure, exit_z_mm=6.0),
+                         "box3D(-24,-24,6,24,24,54.6) notin { box3D(-22,-22,6,22,22,52.6) }")
+        with self.assertRaises(TwoZoneGeometryError):
+            emit_grounded_enclosure(replace(enclosure, rear_cap_inner_z_mm=5.0), exit_z_mm=6.0)
+
+    def test_rear_aperture_is_explicit_and_does_not_change_closed_default(self) -> None:
+        enclosure = derive_shielded_rectangular_enclosure(
+            electrode_outer_width_x_mm=40.0, electrode_outer_height_y_mm=40.0,
+            guard_outer_width_x_mm=48.0, guard_outer_height_y_mm=48.0,
+            guard_wall_thickness_mm=2.0, lateral_clearance_mm=2.0,
+            repeller_z_mm=45.6, repeller_thickness_z_mm=2.0, rear_gap_mm=5.0,
+        )
+        self.assertEqual(
+            emit_grounded_enclosure_with_rear_aperture(
+                enclosure, exit_z_mm=6.0,
+                aperture_half_x_mm=12.5, aperture_half_y_mm=12.5,
+                cut_padding_mm=2.0,
+            ),
+            "box3D(-24,-24,6,24,24,54.6) notin_inside { box3D(-22,-22,6,22,22,52.6) } "
+            "notin_inside { box3D(-12.5,-12.5,50.6,12.5,12.5,56.6) }",
+        )
+        self.assertNotIn(
+            "notin_inside",
+            emit_grounded_enclosure(enclosure, exit_z_mm=6.0),
+        )
+        with self.assertRaises(TwoZoneGeometryError):
+            emit_grounded_enclosure_with_rear_aperture(
+                enclosure, exit_z_mm=6.0,
+                aperture_half_x_mm=22.0, aperture_half_y_mm=12.5,
+                cut_padding_mm=2.0,
+            )
+
+    def test_invalid_solid_and_grid_fail_closed(self) -> None:
+        for invalid in (0, -1, True, 1.5):
+            with self.subTest(electrode_id=invalid), self.assertRaises(TwoZoneGeometryError):
+                emit_ideal_grid(invalid, half_x_mm=2.0, half_y_mm=2.0, z_mm=0.0)
+        with self.assertRaises(TwoZoneGeometryError):
+            emit_open_rectangular_frame(
+                1, outer_half_x_mm=2.0, outer_half_y_mm=2.0,
+                aperture_half_x_mm=3.0, aperture_half_y_mm=1.0,
+                front_z_mm=0.0, back_z_mm=1.0, cut_padding_mm=0.1,
+            )
+        with self.assertRaises(TwoZoneGeometryError):
+            emit_ideal_grid(1, half_x_mm=2.0, half_y_mm=2.0, z_mm=float('nan'))
+
+
+if __name__ == "__main__":
+    unittest.main()

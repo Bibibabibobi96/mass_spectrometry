@@ -1,9 +1,12 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'require_powershell7.ps1')
-if(-not(Get-Command Invoke-HostResourceTransaction -ErrorAction SilentlyContinue) -and ((Get-Variable -Name HostResourceExecutionContext -Scope Script -ErrorAction SilentlyContinue)-or$env:MASS_SPECTROMETRY_HOST_CONTEXT_JSON)){
-  $hostContext=if(Get-Variable -Name HostResourceExecutionContext -Scope Script -ErrorAction SilentlyContinue){$script:HostResourceExecutionContext}else{$env:MASS_SPECTROMETRY_HOST_CONTEXT_JSON|ConvertFrom-Json -AsHashtable}
-  . (Join-Path $PSScriptRoot 'host_execution_lease.ps1') -HostContext $hostContext
+$availableHostContext=if(Get-Variable -Name HostResourceExecutionContext -Scope Script -ErrorAction SilentlyContinue){$script:HostResourceExecutionContext}elseif($env:MASS_SPECTROMETRY_HOST_CONTEXT_JSON){$env:MASS_SPECTROMETRY_HOST_CONTEXT_JSON|ConvertFrom-Json -AsHashtable}else{$null}
+if($null-ne$availableHostContext){
+  $script:HostResourceExecutionContext=$availableHostContext
+  if(-not(Get-Command Invoke-HostResourceTransaction -ErrorAction SilentlyContinue)){
+    . (Join-Path $PSScriptRoot 'host_execution_lease.ps1') -HostContext $availableHostContext
+  }
 }
 . (Join-Path $PSScriptRoot 'run_paths.ps1')
 
@@ -72,7 +75,7 @@ function Invoke-CompiledExecutionPlan {
       $registry=Get-Content -LiteralPath $registryPath -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable -Depth 100
       $owners=@($registry.projects|Where-Object{$_.project_id-eq$plan.project_id})
       if($owners.Count-ne1-or-not$owners[0].contracts.execution){throw 'Project execution owner is not registered.'}
-      $registered=Join-Path (Join-Path $repository ('projects/'+$plan.project_id)) ([string]$owners[0].contracts.execution)
+      $registered=Join-Path (Join-Path $repository ('src/msplatform/components/'+$plan.project_id)) ([string]$owners[0].contracts.execution)
       if($contractPath-ne[IO.Path]::GetFullPath($registered)){throw 'Execution contract differs from the registered owner.'}
     }
     $contractStream=[IO.File]::Open($contractPath,'Open','Read','Read');$streams.Add($contractStream)

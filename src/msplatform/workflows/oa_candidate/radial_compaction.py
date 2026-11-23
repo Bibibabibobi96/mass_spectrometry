@@ -19,7 +19,7 @@ from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-PROJECT_ROOT = REPO_ROOT / "projects/single_reflection_oa_tof_mass_analyzer"
+PROJECT_ROOT = REPO_ROOT / "src/msplatform/components/single_reflection_oa_tof"
 WORKSPACE_ROOT = REPO_ROOT.parent
 CONFIG_PATH = PROJECT_ROOT / "config" / "radial_compaction_campaign.json"
 BASELINE_PATH = PROJECT_ROOT / "config" / "baseline.json"
@@ -978,7 +978,8 @@ def _bind_frozen_execution_context(
             or Path(closure["runtime"]["candidate_artifact_root"]).resolve() != artifact_root
             or Path(__file__).resolve() != Path(frozen_source_path(closure, EXTRA_SOURCE_IDS[0])).resolve()):
         raise ValueError("radial worker does not match the frozen execution authority")
-    resource_state = os.environ.get("MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH", "")
+    host_context = request.get("host_context", {})
+    resource_state = host_context.get("host_state_path", "") if isinstance(host_context, dict) else ""
     if not resource_state or not Path(resource_state).is_absolute():
         raise ValueError("frozen worker requires the public owner's absolute shared scheduler path")
     ARTIFACT_ROOT, PYTHON = artifact_root, selected_python
@@ -1412,7 +1413,7 @@ def execute_prepared_run(
              str(execution_request_path), str(provisional)],
             cwd=code_root, stdout=run_root / "logs/frozen_execution.log",
             stderr=run_root / "logs/frozen_execution.stderr.log",
-            environment={**os.environ, "PYTHONPATH": os.pathsep.join(python_import_roots(code_root)), "PYTHONDONTWRITEBYTECODE": "1"},
+            environment={"PYTHONPATH": os.pathsep.join(python_import_roots(code_root)), "PYTHONDONTWRITEBYTECODE": "1"},
         )
     except BaseException as error:
         try:

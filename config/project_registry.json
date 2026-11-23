@@ -3,35 +3,35 @@
   "role": "generated_project_capability_registry_do_not_edit",
   "generated_from": [
     {
-      "descriptor": "projects/apertured_tube_electron_impact_ion_source/config/project.json",
+      "descriptor": "src/msplatform/components/apertured_tube_electron_impact_ion_source/config/project.json",
       "sha256": "D528FF6FB6481620D85D914E1504BE072F94EBC60F52B4DE4C7B388E419A3423"
     },
     {
-      "descriptor": "projects/dual_cone_tandem_quadrupole_ion_interface/config/project.json",
+      "descriptor": "src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/config/project.json",
       "sha256": "B9F52F6C658B01DF6226F608278FBCA67042D541BC67EB99011BF33DA6FF3256"
     },
     {
-      "descriptor": "projects/dual_pressure_rectilinear_ion_processor/config/project.json",
+      "descriptor": "src/msplatform/components/dual_pressure_rectilinear_ion_processor/config/project.json",
       "sha256": "58781C4579C73024AB81F4E6DF2097F3E812026B4D2B5AC0FC502156C397DEF0"
     },
     {
-      "descriptor": "projects/orthogonal_accelerator/config/project.json",
+      "descriptor": "src/msplatform/components/orthogonal_accelerator/config/project.json",
       "sha256": "6319CB332787DBDDE0BCF1A0711FA858E43990A7F2B2A3AA0302273958B306B8"
     },
     {
-      "descriptor": "projects/parallel_mirror_dual_stripe_mr_tof/config/project.json",
+      "descriptor": "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/config/project.json",
       "sha256": "166A9C2DA20C85CFF23A2088258CF8A875E558FB16933C7821C76415E78CA5F7"
     },
     {
-      "descriptor": "projects/rf_multipole_ion_optics/config/project.json",
+      "descriptor": "src/msplatform/components/rf_multipole/config/project.json",
       "sha256": "AA6D1C0491FDEBD72B03D2C4102A638903FBFD647F426BE1BF6E36FEEA50195A"
     },
     {
-      "descriptor": "projects/single_reflection_oa_tof_mass_analyzer/config/project.json",
+      "descriptor": "src/msplatform/components/single_reflection_oa_tof/config/project.json",
       "sha256": "424F9EAABD2F8D99A6AF57D1EC8CA103355FF3137C70E21960494FD3CB1294D9"
     },
     {
-      "descriptor": "projects/transverse_helical_filament_wehnelt_electron_gun/config/project.json",
+      "descriptor": "src/msplatform/components/transverse_helical_filament_wehnelt_electron_gun/config/project.json",
       "sha256": "572DC04628DFB2C49E1D5F0BBC9B372C09A79333EFB3D8EBC5AC7F12F403B1CF"
     }
   ],

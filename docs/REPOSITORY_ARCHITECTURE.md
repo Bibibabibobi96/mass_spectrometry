@@ -29,7 +29,7 @@
 |integration 架构与运行文档|实施说明|连接语义、失效域和逐阶段运行；由 integration README 导航|
 |项目实现文档|实施说明|按需说明跨软件共用的模型、运行合同与代码职责，例如`docs/IMPLEMENTATION.md`；不复制当前状态|
 |项目软件文档|实施说明|单一软件的节点、接口、运行与独立验证；不定义跨软件结论|
-|[公共机制入口](../common/README.md)及各domain README|实现说明|公共API、实际调用边界与维护导航；不复制全仓规范或项目科学参数|
+|[公共机制入口](REPOSITORY_OPERATIONS.md)及各domain README|实现说明|公共API、实际调用边界与维护导航；不复制全仓规范或项目科学参数|
 |[`docs/VISION.md`](VISION.md)|长期愿景|平台使命、目标闭环、能力边界和正式交付目标；不记录阶段顺序或当前状态|
 |[`docs/ROADMAP.md`](ROADMAP.md)|跨项目规划|设计族、能力阶段、依赖顺序和阶段完成条件；不保存项目短期任务|
 |获批跨项目架构决策|迁移目标|带明确状态、适用边界和替换门禁的跨项目目标架构；不是当前已实现能力或已验证通用参考|
@@ -47,8 +47,8 @@
 |新信息|权威写入位置|不得写入|
 |---|---|---|
 |项目统一几何、粒子源、指标定义、正式状态、跨软件结论、下一步|`projects/<project>/docs/PROJECT.md`|单个软件文档或历史日志|
-|跨组件链路当前状态、整体资格和开放任务|`integrations/docs/INTEGRATION.md`；既有integration的冻结记录只供追溯|单一组件PROJECT或根ROADMAP|
-|集成连接语义、接口权威与运行操作|[连接架构](COMPONENT_CONNECTION_ARCHITECTURE.md)定义语义，`integrations/README.md`及工作流邻近说明给操作，机器合同定义输入|组件软件文档中的第二套链路规则或已退役的ARCHITECTURE/RUNNING入口|
+|跨组件链路当前状态、整体资格和开放任务|`docs/INTEGRATION.md`；既有integration的冻结记录只供追溯|单一组件PROJECT或根ROADMAP|
+|集成连接语义、接口权威与运行操作|[连接架构](COMPONENT_CONNECTION_ARCHITECTURE.md)定义语义，`docs/ASSEMBLY.md`及工作流邻近说明给操作，机器合同定义输入|组件软件文档中的第二套链路规则或已退役的ARCHITECTURE/RUNNING入口|
 |跨项目统一组装的目标目录、配方、组件接口与切换合同|[连接架构](COMPONENT_CONNECTION_ARCHITECTURE.md#统一组装目标)；跨项目阶段归Roadmap，局部任务归参与方PROJECT／INTEGRATION|新建同义组装标准、把迁移目标写成当前执行能力|
 |某项目的 COMSOL 节点、网格、求解、GUI 操作和独立错误|项目 `docs/COMSOL.md`|根通用文档，除非已跨项目验证|
 |某项目的 SIMION PA/GEM、Program、Fly2、网格、GUI 和独立错误|项目 `docs/SIMION.md`|COMSOL/CAD 文档|
@@ -64,14 +64,14 @@
 |跨求解器通用的网格、统计、FWHM 与几何闭合方法|`docs/science/VALIDATION_METHODS.md`|某次运行的具体结果|
 |跨项目编码、命名、复杂度、合同实现、进程、缓存、性能和测试规范|`docs/DEVELOPMENT_STANDARDS.md`|项目状态、物理参数或Agent权限|
 |跨项目科学绘图、图形证据、色图、坐标轴、导出、caption和图审规范|`docs/PLOTTING_STANDARDS.md`|单次运行结果或项目状态|
-|部件模型的理论、符号、电压约定和适用域|所属项目`docs/theory/`；多极杆见[统一理论](../projects/rf_multipole_ion_optics/docs/theory/index.md)|按使用者复制正文，或仅因被引用而迁入根docs|
+|部件模型的理论、符号、电压约定和适用域|所属项目`docs/theory/`；多极杆见[统一理论](../src/msplatform/components/rf_multipole/docs/theory/index.md)|按使用者复制正文，或仅因被引用而迁入根docs|
 |不属于单一设计的通用科学与数值方法|`docs/science/`中的对应专题|某次运行结果或项目独有假设|
 |跨项目稳定的 SIMION GUI/PA/GEM/Program 经验|`docs/tools/SIMION_REFERENCE.md`|oa-TOF 专属尺寸|
 |仓库长期使命、能力边界和目标交付形态|`docs/VISION.md`|项目PROJECT、Roadmap或history|
 |学术书目、版次、原始资料身份与定向阅读定位|[参考资料](references/README.md)下的`literature/`或`software/`索引|项目状态页中的全文摘录或按教材建立的项目清单|
 |跨项目设计族、未来项目和能力阶段|`docs/ROADMAP.md`|项目短期下一步或机器参数合同|
 |获批但尚未实施的跨项目架构决策|根`docs/`中的具名决策文档，并在Roadmap和所有参与项目PROJECT登记迁移任务|把目标架构写成当前能力、只登记单侧项目或预建空实现目录|
-|COMSOL可复用测试与其已验证范围|`common/comsol/README.md`及测试源码|根API或项目正式结论|
+|COMSOL可复用测试与其已验证范围|`docs/COMSOL_BACKEND.md`及`tests/comsol/`测试源码|根API或项目正式结论|
 |其他可复用代码事实|源码和最邻近的短 README/注释|长项目历史|
 
 ### 跨项目知识提升条件
@@ -144,7 +144,7 @@ run roots, publication/replay and writer lifecycle remain execution responsibili
 本节定义目标与迁移约束，不宣称迁移、两种原生飞行或GUI/CAD资格已经完成。
 
 下图说明当前已支持范围的职责，箭头表示输入、产物或只读引用的流向，不表示所有组合均已支持。
-当前能力和未完成边界仍查项目PROJECT及[集成状态](../integrations/docs/INTEGRATION.md)。
+当前能力和未完成边界仍查项目PROJECT及[集成状态](INTEGRATION.md)。
 
 ```mermaid
 flowchart TB
@@ -171,8 +171,8 @@ flowchart TB
 ```
 
 器件提供者从[项目导航](../README.md#项目导航)进入；装配和正常运行从
-[集成入口](../integrations/README.md#模拟路径选择)进入；执行、状态及诊断API从
-[公共机制](../common/README.md)进入。具体连接语义归[连接架构](COMPONENT_CONNECTION_ARCHITECTURE.md)。
+[集成入口](ASSEMBLY.md#模拟路径选择)进入；执行、状态及诊断API从
+[公共机制](REPOSITORY_OPERATIONS.md)进入。具体连接语义归[连接架构](COMPONENT_CONNECTION_ARCHITECTURE.md)。
 
 ```text
 simulation_repo/
@@ -206,7 +206,7 @@ simulation_repo/
 
 跨项目组装已批准收敛到仓库根`integrations/`的直属布局，组合以配方而非新项目表达；
 目录与职责的唯一合同见[统一组装目标](COMPONENT_CONNECTION_ARCHITECTURE.md#统一组装目标)。实施状态见
-[集成状态](../integrations/docs/INTEGRATION.md)，各活动路径按workflow完成验收后切换。
+[集成状态](INTEGRATION.md)，各活动路径按workflow完成验收后切换。
 器件／仪器的物理设计与自身资格仍归项目，跨组件编排和联合证据归integration。
 
 目录保持浅层，新增层级必须承载明确职责。项目、变体、workflow与文档专题可按实际边界分层，

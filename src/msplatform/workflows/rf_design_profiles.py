@@ -71,8 +71,13 @@ def resolve_design_profile(
     if len(matches) != 1:
         raise ContractError(f"project registry does not contain one project_id={project_id!r}")
     registered = matches[0]
-    project_root = (repo_root / "projects" / project_id).resolve()
-    descriptor_path = project_root / "config" / "project.json"
+    descriptor_path = (repo_root / registered.get(
+        "descriptor", "src/msplatform/components/rf_multipole/config/project.json"
+    )).resolve()
+    project_root = descriptor_path.parent.parent
+    if not descriptor_path.is_file():
+        project_root = repo_root / "src/msplatform/components/rf_multipole"
+        descriptor_path = project_root / "config" / "project.json"
     descriptor = json.loads(descriptor_path.read_text(encoding="utf-8-sig"))
     validate_schema(descriptor, "project.schema.json")
     if descriptor["project_id"] != project_id or registered["family_id"] != descriptor["family_id"]:

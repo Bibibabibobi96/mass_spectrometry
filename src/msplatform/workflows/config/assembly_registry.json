@@ -176,7 +176,7 @@
         },
         {
           "workflow_id": "oa_mr_flight",
-          "entrypoint": "integrations/workflows/oa_mr/execute.ps1",
+          "entrypoint": "src/msplatform/workflows/resources/oa_mr.ps1",
           "required_bindings": [
             "geometry_review_run_path",
             "mirror_run_path",

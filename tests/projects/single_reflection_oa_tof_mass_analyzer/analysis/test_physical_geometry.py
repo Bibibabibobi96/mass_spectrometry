@@ -1,0 +1,314 @@
+"""Real resolved inputs exercise the provider and actual native GEM templates.
+
+Plain Lua expands the GEM preprocessor expressions; no PA or solver is created.
+Explicit native-region vectors preserve the former renderer's boundary problem.
+"""
+from __future__ import annotations
+
+import copy
+import hashlib
+import json
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import tempfile
+import unittest
+
+from msplatform.workflows.oa_candidate.geometry_contract import (
+    PROJECT_ROOT, resolve_contract, resolve_electrode_geometry,
+)
+from msplatform.backends.simion.tof_geometry import resolve_physical_geometry
+from msplatform.workflows.oa_candidate.sync_geometry_contract import lua_value, render_resolved_lua
+
+from msplatform.backends.simion.resources import gem_template_path, gem_template_text, native_resource_path
+
+LUA = Path(shutil.which('lua') or shutil.which('lua5.1') or 'C:/Program Files/SIMION-2020/lua.exe')
+
+
+def nondefault_resolved():
+    resolved = resolve_contract()
+    resolved["geometry_mm"].update(flight_tube_r=400., flight_tube_wall=12.,
+        shield_outer_z_min=-60., L_flight=700., L_reflectron=70., L_stage1=30., L_stage2=40.,
+        bore_r=260., ring_outer_r=310., ring_thickness=2., shield_axial_gap=50., shield_endcap_thickness=10.)
+    resolved["rings"].update(stage1_count=2, stage2_count=3)
+    resolved["electrodes_V"].update(midgrid=1500., backplate=2500.)
+    return resolved
+
+
+def expand_gem(source: str) -> str:
+    """Translate actual GEM preprocessing lines to a plain-Lua print program."""
+    program = []
+    for line in source.splitlines():
+        if line.startswith("#"):
+            program.append(line[1:].lstrip())
+        else:
+            parts, previous = [], 0
+            for match in re.finditer(r"\$\(([^)]+)\)", line):
+                parts += [json.dumps(line[previous:match.start()]), "tostring(" + match[1] + ")"]
+                previous = match.end()
+            parts.append(json.dumps(line[previous:] + "\n"))
+            program.append("io.write(" + " .. ".join(parts) + ")")
+    return "\n".join(program)
+
+
+class PhysicalGeometryTests(unittest.TestCase):
+    @unittest.skipUnless(LUA.is_file(), "plain Lua interpreter unavailable")
+    def test_three_builders_reject_incomplete_inputs_before_native_operations(self):
+        builders = (
+            "build_reflectron_variant.lua",
+            "build_flight_tube_variant.lua",
+            "build_detector_variant.lua",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "invalid.pa#"
+            for relative in builders:
+                with self.subTest(builder=relative):
+                    result = subprocess.run(
+                        [str(LUA), str(native_resource_path(relative)),
+                         str(Path(directory) / "source.gem"), str(output)],
+                        cwd=directory, capture_output=True, text=True, encoding="utf-8",
+                        timeout=20, check=False,
+                    )
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("missing frozen resolved Lua", result.stderr)
+                    self.assertEqual(list(Path(directory).iterdir()), [])
+
+    def test_real_complete_objects_keep_enclosure_fragments_and_detector_models_distinct(self):
+        resolved = resolve_contract()
+        before = copy.deepcopy(resolved)
+        physical = resolve_physical_geometry(resolved)
+        objects = {item["role"]: item for item in physical["electrodes"]}
+        self.assertEqual(objects["accelerator_side_shield"]["component_electrode_id"], 1)
+        shield = objects["flight_tube_shield"]["component_electrode_id"]
+        tube, mirror = physical["simion"]["flight_tube"], physical["simion"]["reflectron"]
+        self.assertEqual(tube["electrodes"][0]["component_electrode_id"], shield)
+        self.assertEqual(mirror["electrodes"][-1]["component_electrode_id"], shield)
+        self.assertNotEqual(mirror["electrodes"][0]["component_electrode_id"], shield)
+        self.assertEqual(mirror["electrodes"][0]["local_electrode_id"], 1)
+        self.assertEqual(tube["electrodes"][0]["local_electrode_id"], 1)
+        detector = objects["detector"]["geometry"]
+        self.assertEqual(detector, dict(primitive="cylinder", radius_mm=40.,
+            base_center_mm=[48.8, 0, -1.], height_mm=1., axis=[0, 0, 1]))
+        self.assertEqual(physical["simion"]["detector_marker"]["absorber_thickness_mm"], .1)
+        self.assertFalse(any("marker" in item["role"] for item in objects.values()))
+        resolved["particle_source"]["center_z_mm"] += 1
+        self.assertEqual(resolve_physical_geometry(resolved), physical)
+        self.assertNotIn("physical_geometry", before)
+        resolved["particle_source"]["center_z_mm"] -= 1
+        self.assertEqual(resolved, before)
+
+    @unittest.skipUnless(LUA.is_file(), "plain Lua interpreter unavailable")
+    def test_real_nondefault_templates_render_explicit_native_boundary_vectors(self):
+        resolved = nondefault_resolved()
+        with tempfile.TemporaryDirectory() as directory:
+            snapshot = Path(directory) / "resolved.lua"
+            snapshot.write_text(render_resolved_lua(resolved), encoding="utf-8")
+            actual = {}
+            for role in ("flight_tube", "reflectron"):
+                source = gem_template_text(role)
+                mesh = resolved["simion_geometry_build"][role]
+                prefix = ("local contract=dofile(" + json.dumps(str(snapshot)) + ")\n"
+                    "_G.var={component=contract.physical_geometry.simion." + role + ",mmgu_axial="
+                    + str(mesh["cell_axial_mm"]) + ",mmgu_radial=" + str(mesh["cell_radial_mm"]) + "}\n")
+                script = Path(directory) / (role + ".lua")
+                script.write_text(prefix + expand_gem(source), encoding="utf-8")
+                result = subprocess.run([str(LUA), str(script)], capture_output=True, text=True,
+                    encoding="utf-8", cwd=directory, timeout=30, check=False)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                native, electrode = [], None
+                for line in result.stdout.splitlines():
+                    match = re.search(r"e\((\d+)\)", line)
+                    if match:
+                        electrode = int(match[1])
+                    match = re.search(r"box\(([^)]+)\)", line)
+                    if match:
+                        native.append((electrode, *map(float, match[1].split(","))))
+                actual[role] = native
+            self.assertEqual(actual["flight_tube"], [(1, 0., 0., 10., 412.), (1, 10., 400., 760., 412.)])
+            self.assertEqual(actual["reflectron"], [
+                (1, 0., 0., 0., 400.), (2, 9., 260., 11., 310.), (3, 19., 260., 21., 310.),
+                (4, 30., 0., 30., 310.), (5, 39., 260., 41., 310.), (6, 49., 260., 51., 310.),
+                (7, 59., 260., 61., 310.), (8, 70., 0., 72., 310.),
+                (9, 0., 400., 122., 412.), (9, 122., 0., 132., 412.)])
+
+    @unittest.skipUnless(LUA.is_file(), "plain Lua interpreter unavailable")
+    def test_actual_reflectron_fast_adjust_consumes_frozen_projection(self):
+        for resolved in (resolve_contract(), nondefault_resolved()):
+            for long_output in (False, True):
+                with self.subTest(rings=resolved["rings"], long_output=long_output), tempfile.TemporaryDirectory() as directory:
+                    self.check_fast_adjust(resolved, Path(directory), long_output=long_output)
+
+    def check_fast_adjust(self, resolved, directory, *, long_output=False):
+        with self.subTest(directory=directory):
+            snapshot = Path(directory) / "resolved.lua"
+            snapshot.write_text(render_resolved_lua(resolved), encoding="utf-8")
+            builder = native_resource_path("build_reflectron_variant.lua")
+            script = Path(directory) / "drive.lua"
+            output = directory.joinpath(*(["long directory with spaces"] * 12), "reflectron.pa#") if long_output else directory / "reflectron.pa#"
+            argv = [str(gem_template_path("reflectron")),
+                    str(output), str(snapshot), "adjust-only"]
+            controller = str(output).removesuffix("#") + "0"
+            script.write_text("arg={" + ",".join(map(json.dumps, argv)) + "}\n"
+                "expected=" + json.dumps(controller) + "\n" + r'''
+local calls={}
+local pa={}
+function pa:fast_adjust(values)
+ calls[#calls+1]='fast_adjust'
+ for id,value in pairs(values) do print(string.format('VOLTAGE=%d,%.17g',id,value)) end
+end
+function pa:save(path) assert(path==expected);calls[#calls+1]='save';print('API_SAVE='..path) end
+function pa:close() calls[#calls+1]='close' end
+simion={command=function() error('Fast Adjust must not use a command string') end,
+ pas={close=function() calls[#calls+1]='pas_close' end,
+      open=function(_,path) assert(path==expected);calls[#calls+1]='open';return pa end}}
+''' + "dofile(" + json.dumps(str(builder)) + ")\n"
+                "assert(table.concat(calls,',')=='pas_close,open,fast_adjust,save,close')\n",
+                encoding="utf-8")
+            result = subprocess.run([str(LUA), str(script)], capture_output=True, text=True,
+                encoding="utf-8", cwd=directory, timeout=30, check=False)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            actual = {int(key): float(value) for line in result.stdout.splitlines() if line.startswith("VOLTAGE=")
+                      for key, value in [line.removeprefix("VOLTAGE=").split(",")]}
+            self.assertIn("API_SAVE=" + controller, result.stdout)
+            if long_output:
+                self.assertGreater(len(controller), 260)
+                self.assertIn(" ", controller)
+            expected = {item["local_electrode_id"]: item["voltage_v"]
+                        for item in resolve_physical_geometry(resolved)["simion"]["reflectron"]["electrodes"]}
+            self.assertEqual(actual, expected)
+            if resolved["rings"]["stage1_count"] == 10:
+                # Actual pre-extraction Formal PS double, not an integer divider fixture.
+                self.assertEqual(actual[8], 1036.5091545454545)
+            self.assertNotIn("refine ", result.stdout)
+            self.assertNotIn("gem2pa ", result.stdout)
+            self.assertIn("BUILD: PASS", result.stdout)
+
+    @unittest.skipUnless(LUA.is_file(), "plain Lua interpreter unavailable")
+    def test_current_frozen_native_gem_regions_and_grids_remain_identical(self):
+        frozen = (PROJECT_ROOT.parents[2] / "artifacts/projects/instrument_assembly/runs/"
+            "20261025_110745__sim__simion__single-reflection-flight/inputs")
+        if not frozen.is_dir():
+            self.skipTest("explicit historical source snapshot is unavailable")
+        plan = json.loads((frozen / "downstream_field_source_command_plan.json").read_text())
+        source = frozen / "components/oatof/resolved_design.json"
+        payload = source.read_bytes()
+        record = plan["oatof_resolved_record"]
+        self.assertEqual((len(payload), hashlib.sha256(payload).hexdigest().upper()), (record["bytes"], record["sha256"]))
+        resolved = json.loads(payload)
+        physical = resolve_physical_geometry(resolved)
+        parameters = {
+            "flight_tube": "mmgu_axial mmgu_radial max_gib inner_radius wall near_cap_thickness near_outer_z reflectron_interface_z",
+            "detector": "mmgu_xy mmgu_z radius absorber_thickness front_margin_z back_margin_z margin_xy max_mib",
+            "reflectron": "mmgu_axial mmgu_radial max_gib inner_radius wall backplate_front backplate_thickness far_clearance far_cap_thickness stage1_length stage2_length bore_radius ring_outer_radius stage1_ring_count stage2_ring_count midgrid_voltage backplate_voltage",
+        }
+        resources = {"flight_tube": "tube_gem", "detector": "detector_gem", "reflectron": "reflectron_gem"}
+        with tempfile.TemporaryDirectory() as directory:
+            for step in plan["steps"][:3]:
+                role = step["name"]
+                key = resources[role]
+                record = plan["resource_records"][key]
+                relative = record["path"].replace("\\", "/").split("/simion/", 1)[1]
+                old_path = frozen / "runtime_snapshot/src/msplatform/components/single_reflection_oa_tof/simion" / relative
+                old_payload = old_path.read_bytes()
+                self.assertEqual((len(old_payload), hashlib.sha256(old_payload).hexdigest().upper()),
+                                 (record["bytes"], record["sha256"]))
+                old_vars = dict(zip(parameters[role].split(), map(float, step["argv"][6:6+len(parameters[role].split())]), strict=True))
+                if role == "detector":
+                    body = physical["simion"]["detector_body"]
+                    self.assertEqual(old_vars["absorber_thickness"], .1)
+                    self.assertEqual((body["height_mm"], body["radius_mm"]), (1., 40.))
+                    self.assertEqual(resolved["simion_detector_marker"]["active_plane_z_mm"], 0.)
+                    self.assertEqual(resolved["simion_detector_marker"]["capture_depth_mm"], .02)
+                    new_vars = dict(old_vars, radius=body["radius_mm"], absorber_thickness=body["height_mm"],
+                                    back_cells=body["back_cells"], front_cells=body["front_cells"])
+                else:
+                    new_vars = dict(component=physical["simion"][role],
+                        mmgu_axial=old_vars["mmgu_axial"], mmgu_radial=old_vars["mmgu_radial"])
+                outputs = []
+                for label, template, variables in (("old", old_payload.decode(), old_vars),
+                    ("new", gem_template_text(role), new_vars)):
+                    script = Path(directory) / (label + ".lua")
+                    script.write_text("_G.var=" + lua_value(variables) + "\n" + expand_gem(template), encoding="utf-8")
+                    result = subprocess.run([str(LUA), str(script)], capture_output=True, text=True,
+                        encoding="utf-8", cwd=directory, timeout=30, check=False)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    grid = re.search(r"pa_define\((.*?)\)", result.stdout, re.S)[1]
+                    signatures, eid = [], None
+                    for line in result.stdout.splitlines():
+                        match = re.search(r"e\((\d+)\)", line)
+                        if match:
+                            eid = int(match[1])
+                        for primitive, arguments in re.findall(r"(box|cylinder|locate)\(([^)]+)\)", line):
+                            signatures.append((eid, primitive, tuple(float(x) if x.strip() else None for x in arguments.split(","))))
+                    outputs.append((re.sub(r"\s+", "", grid), signatures))
+                if role == "detector":
+                    self.assertNotEqual(outputs[0], outputs[1])
+                    cylinders = [row for row in outputs[1][1] if row[1] == "cylinder"]
+                    self.assertEqual(cylinders, [(1, "cylinder", (0., 0., 0., 40., None, 1.))])
+                else:
+                    self.assertEqual(outputs[0], outputs[1], role)
+
+    def test_invalid_physical_dimensions_fail_before_transport(self):
+        for field, value in (("ring_thickness", 0), ("detector_thickness", -1), ("L_stage1", float("nan"))):
+            with self.subTest(field=field):
+                resolved = resolve_contract()
+                resolved["geometry_mm"][field] = value
+                with self.assertRaises(ValueError):
+                    render_resolved_lua(resolved)
+
+
+class NeutralElectrodeGeometryTests(unittest.TestCase):
+    def test_full_legacy_native_return_matches_pre_extraction_goldens(self):
+        from tests.projects.single_reflection_oa_tof_mass_analyzer.analysis.test_assembly_interface import (
+            candidate_300mm_fixture, projected_candidate,
+        )
+        # SHA over the complete sorted JSON dictionaries captured before extraction;
+        # this includes every original object, ID, voltage, region and marker.
+        expected = {'two_zone': '8523d87cd9647db538d7255ef48a8064d9af1a30e842927806a6475f59968f64', 'two_zone_asymmetric': '0a51a0f9c9d62cbee3778d4637f01716674b79c727b549f7762916e6ef239e50', 'three_zone': '9b0266a0881a9b06883fa913ca3a250e5af6b7bb04532dc020fd34889158022f'}
+        cases = {"two_zone": (resolve_contract(), None),
+                 "two_zone_asymmetric": (nondefault_resolved(), None),
+                 "three_zone": (candidate_300mm_fixture(), projected_candidate())}
+        for name, (resolved, projection) in cases.items():
+            with self.subTest(case=name):
+                actual = resolve_physical_geometry(resolved, accelerator_projection=projection)
+                body = actual["simion"].pop("detector_body")
+                expected_body = next(row["geometry"] for row in actual["electrodes"] if row["role"] == "detector")
+                marker = resolved["simion_detector_marker"]
+                import math
+                self.assertEqual(body.pop("back_cells"), math.ceil((expected_body["height_mm"] + marker["back_margin_z_mm"]) / marker["cell_z_mm"]))
+                self.assertEqual(body.pop("front_cells"), math.ceil(marker["front_margin_z_mm"] / marker["cell_z_mm"]))
+                self.assertEqual(body, expected_body)
+                # Preserve the full pre-extraction identity of every original field.
+                payload = json.dumps(actual, sort_keys=True, separators=(",", ":")).encode()
+                self.assertEqual(hashlib.sha256(payload).hexdigest(), expected[name])
+
+    def test_neutral_bodies_without_backend_payload_preserve_actual_physics(self):
+        from unittest.mock import patch
+
+        resolved = nondefault_resolved()
+        original = copy.deepcopy(resolved)
+        expected = resolve_electrode_geometry(resolved)
+        for key in list(resolved):
+            if key.startswith("simion") or key in {"solver_numerics", "comsol_runtime"}:
+                del resolved[key]
+        with patch("msplatform.backends.simion.tof_geometry.resolve_physical_geometry",
+                   side_effect=AssertionError("neutral must not enter native adapter")):
+            self.assertEqual(resolve_electrode_geometry(resolved), expected)
+        bodies = {body["role"]: body for body in expected["electrodes"]}
+        self.assertEqual([bodies[f"reflectron_stage1_ring_{i}"]["operating_voltage_v"] for i in (1, 2)], [500., 1000.])
+        self.assertEqual([bodies[f"reflectron_stage2_ring_{i}"]["operating_voltage_v"] for i in (1, 2, 3)], [1750., 2000., 2250.])
+        self.assertEqual({body["role"] for body in expected["electrodes"] if body["grounded"]},
+                         {"accelerator_side_shield", "flight_tube_shield", "reflectron_entry_grid", "detector"})
+        self.assertNotIn("component_electrode_id", repr(expected))
+        self.assertNotIn("local_electrode_id", repr(expected))
+        self.assertEqual(expected["electrodes"][-1]["geometry"]["primitive"], "cylinder")
+        with self.assertRaises(KeyError):
+            resolve_physical_geometry(resolved)
+        for key, value in original.items():
+            if key in resolved:
+                self.assertEqual(resolved[key], value)
+        invalid = copy.deepcopy(resolved)
+        invalid["geometry_mm"]["ring_thickness"] = 0
+        with self.assertRaises(ValueError):
+            resolve_electrode_geometry(invalid)

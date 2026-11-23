@@ -1,0 +1,727 @@
+from __future__ import annotations
+
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from msplatform.contracts.particle_count_policy import POLICY_PATH
+
+from msplatform.workflows.rf_interface_readiness.particle_source_policy import (
+    generate_interface_bundle as generate_bundle,
+)
+from msplatform.components.rf_multipole.particle_source_binding import (
+    resolve_binding,
+)
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[4] / "src" / "msplatform" / "components" / "rf_multipole"
+REPO_ROOT = PROJECT_ROOT.parents[3]
+CROSS_ROOT = REPO_ROOT / "src/msplatform/workflows/resources"
+IDENTITY_HELPER = REPO_ROOT / "src/msplatform/workflows/resources/particle_table_identity.ps1"
+CROSS_RUNNER = CROSS_ROOT / "compare_cross_solver.ps1"
+COMSOL_RUNNER = REPO_ROOT / "src/msplatform/workflows/resources/run_comsol.ps1"
+PROJECT_GATE = REPO_ROOT / "src/msplatform/workflows/resources/verify_project.ps1"
+LIFECYCLE_SUPPORT = REPO_ROOT / "src/msplatform/workflows/resources/cross_solver_analysis_lifecycle.ps1"
+
+
+@unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+class ParticleTableIdentityTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.temporary = tempfile.TemporaryDirectory()
+        root = Path(cls.temporary.name)
+        cls.source_family = (
+            PROJECT_ROOT / "variants" / "quadrupole" / "config" / "interface_readiness_particle_source.json"
+        )
+        cls.distribution = (
+            PROJECT_ROOT / "variants" / "quadrupole" / "config" / "official_particle_source.json"
+        )
+        cls.resolved = (
+            PROJECT_ROOT / "variants" / "quadrupole" / "config" / "resolved_design_official.json"
+        )
+        cls.primary = root / "primary"
+        cls.alternate = root / "alternate"
+        generate_bundle(
+            cls.source_family,
+            cls.distribution,
+            cls.resolved,
+            cls.primary,
+         policy_path=POLICY_PATH)
+        generate_bundle(
+            cls.source_family,
+            cls.distribution,
+            cls.resolved,
+            cls.alternate,
+            seed=8675309,
+         policy_path=POLICY_PATH)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.temporary.cleanup()
+
+    def write_config(
+        self,
+        root: Path,
+        solver: str,
+        bundle: Path,
+        *,
+        tamper_provenance: bool = False,
+    ) -> Path:
+        representation = "ion11" if solver == "COMSOL" else "canonical10"
+        consumed = (
+            bundle / "official_100amu_2eV_n100.ion"
+            if representation == "ion11"
+            else bundle / "official_100amu_2eV_n100_canonical.csv"
+        )
+        ion11 = bundle / "official_100amu_2eV_n100.ion"
+        canonical = bundle / "official_100amu_2eV_n100_canonical.csv"
+        metadata = bundle / "paired_particle_bundle.json"
+        binding = resolve_binding(
+            metadata,
+            self.source_family,
+            self.distribution,
+            self.resolved,
+            "official_100amu_2eV",
+            100,
+            representation,
+            consumed,
+         policy_path=POLICY_PATH)
+        provenance = {
+            field: binding[field]
+            for field in (
+                "source_sample_family_sha256",
+                "source_family_sha256",
+                "distribution_sha256",
+                "latent_sha256",
+                "coordinate_mapping_version",
+                "representation_equivalence",
+                "operating_point_id",
+                "particle_count",
+                "representation",
+                "consumed_sha256",
+                "ion11_sha256",
+                "canonical10_sha256",
+                "n1000_parent",
+                "ion11_n1000_parent",
+                "canonical10_n1000_parent",
+            )
+        }
+        if tamper_provenance:
+            provenance["latent_sha256"] = "0" * 64
+        config = {
+            "role": (
+                "rf_quadrupole_comsol_run_config"
+                if solver == "COMSOL"
+                else "rf_quadrupole_simion_run_config"
+            ),
+            "mode": "transport_interface_readiness",
+            "project_root": str(PROJECT_ROOT),
+            "operating_point": "official_100amu_2eV",
+            "particles": 100,
+            "inputs": {
+                "particle_table": str(consumed),
+                "consumed_particle_table": str(consumed),
+                "source_ion11": str(ion11),
+                "source_canonical10": str(canonical),
+                "particle_bundle_metadata": str(metadata),
+                "particle_source_family": str(self.source_family),
+                "particle_source_distribution": str(self.distribution),
+                "resolved_design": str(self.resolved),
+            },
+            "provenance": provenance,
+        }
+        path = root / f"{solver.lower()}_config.json"
+        path.write_text(json.dumps(config), encoding="utf-8")
+        return path
+
+    def run_identity(
+        self,
+        comsol_config: Path,
+        simion_config: Path,
+        output_root: Path,
+        explicit: Path | None = None,
+        check_binding_closure: bool = False,
+    ) -> subprocess.CompletedProcess[str]:
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "RF_IDENTITY_HELPER": str(IDENTITY_HELPER),
+                "RF_COMSOL_CONFIG": str(comsol_config),
+                "RF_SIMION_CONFIG": str(simion_config),
+                "RF_COMSOL_BINDING": str(output_root / "comsol_binding.json"),
+                "RF_SIMION_BINDING": str(output_root / "simion_binding.json"),
+                "RF_REPO_ROOT": str(REPO_ROOT),
+                "RF_PYTHON": sys.executable,
+                "RF_CODE_ROOT": str(output_root / "frozen-code"),
+                "RF_EXPLICIT_PARTICLES": "" if explicit is None else str(explicit),
+                "RF_CHECK_BINDING_CLOSURE": "1" if check_binding_closure else "0",
+            }
+        )
+        command = (
+            ". (Join-Path $env:RF_REPO_ROOT 'src/msplatform/execution/resources/frozen_python_package.ps1'); "
+            "$t=$null;$e=$null;$entry=Join-Path $env:RF_REPO_ROOT 'src/msplatform/workflows/resources/compare_cross_solver.ps1'; "
+            "$ast=[Management.Automation.Language.Parser]::ParseFile($entry,[ref]$t,[ref]$e);if($e.Count){throw 'Cross-solver entry did not parse'}; "
+            "$selection=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$frozenPackage'},$true); "
+            "$repoRoot=$env:RF_REPO_ROOT;$python=$env:RF_PYTHON;$frozen=[pscustomobject]@{module_root=$env:RF_CODE_ROOT};Invoke-Expression $selection.Extent.Text;$package=$frozenPackage; "
+            "if(Test-Path -LiteralPath (Join-Path $env:RF_CODE_ROOT 'common/contracts')){throw 'Unselected common/contracts appeared in child snapshot'}; "
+            ". (Get-FrozenPythonPackageFile -Package $package -RelativePath 'src/msplatform/execution/resources/frozen_python_package.ps1'); "
+            "$policy=Get-FrozenPythonPackageFile -Package $package -RelativePath 'src/msplatform/contracts/particle_count_policy.json'; "
+            ". $env:RF_IDENTITY_HELPER; "
+            "$comsol = Get-Content $env:RF_COMSOL_CONFIG -Raw | ConvertFrom-Json; "
+            "$simion = Get-Content $env:RF_SIMION_CONFIG -Raw | ConvertFrom-Json; "
+            "$identity = Assert-RfTransportParticleTableIdentity "
+            "-Python $env:RF_PYTHON -RepoRoot $env:RF_REPO_ROOT -Package $package -ParticleCountPolicyPath $policy "
+            "-ComsolRunConfig $comsol -SimionRunConfig $simion "
+            "-ComsolBindingOutput $env:RF_COMSOL_BINDING "
+            "-SimionBindingOutput $env:RF_SIMION_BINDING "
+            "-ExplicitIon11Path $env:RF_EXPLICIT_PARTICLES; "
+            "if($env:RF_CHECK_BINDING_CLOSURE-eq'1'){ "
+            "$module='msplatform.components.rf_multipole.particle_source_binding'; "
+            "$probe=Invoke-IsolatedFrozenPythonModule -Python $env:RF_PYTHON -Package $package -Module $module -Arguments @('--help') -DistributionNames @('numpy') -RequiredModuleNames @($module,'msplatform.components.rf_multipole.paired_particle_source_bundle','msplatform.io.file_identity') -ForbiddenRoots @($env:RF_REPO_ROOT) -ProbeOnly; "
+            "foreach($row in $probe.frozen_modules){if(-not ([IO.Path]::GetFullPath([string]$row.origin)).StartsWith([IO.Path]::GetFullPath($env:RF_CODE_ROOT)+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'Binding origin escaped child snapshot'}}; "
+            "$path=Join-Path $env:RF_CODE_ROOT 'src/msplatform/components/rf_multipole/particle_source_binding.py';$bytes=[IO.File]::ReadAllBytes($path); "
+            "try { Remove-Item -LiteralPath $path;try{Invoke-IsolatedFrozenPythonModule -Python $env:RF_PYTHON -Package $package -Module $module -Arguments @('--help') -DistributionNames @('numpy') -ForbiddenRoots @($env:RF_REPO_ROOT) -ProbeOnly;throw 'Missing binding accepted'}catch{if($_.Exception.Message-notlike'Frozen Python dependency is missing*'){throw}}; "
+            "[IO.File]::WriteAllBytes($path,($bytes+[byte[]](10)));try{Invoke-IsolatedFrozenPythonModule -Python $env:RF_PYTHON -Package $package -Module $module -Arguments @('--help') -DistributionNames @('numpy') -ForbiddenRoots @($env:RF_REPO_ROOT) -ProbeOnly;throw 'Tampered binding accepted'}catch{if($_.Exception.Message-notlike'Frozen Python dependency hash differs:*'){throw}} }finally{[IO.File]::WriteAllBytes($path,$bytes)};Assert-FrozenPythonPackage -Package $package }; "
+            "$identity | ConvertTo-Json -Compress"
+        )
+        return subprocess.run(
+            ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+            cwd=REPO_ROOT,
+            timeout=60,
+            capture_output=True,
+            check=False,
+            encoding="utf-8",
+            errors="replace",
+            env=environment,
+        )
+
+    def test_cross_representation_same_bundle_is_accepted(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            comsol = self.write_config(root, "COMSOL", self.primary)
+            simion = self.write_config(root, "SIMION", self.primary)
+
+            result = self.run_identity(comsol, simion, root, check_binding_closure=True)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            identity = json.loads(result.stdout.splitlines()[-1])
+            self.assertEqual(
+                identity["source_sample_family_sha256"],
+                json.loads(
+                    (self.primary / "paired_particle_bundle.json").read_text()
+                )["sample_family_sha256"],
+            )
+            self.assertNotEqual(
+                identity["ion11_sha256"],
+                identity["canonical10_sha256"],
+            )
+
+    def test_mass_filter_run_role_is_rejected_before_binding(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            comsol = self.write_config(root, "COMSOL", self.primary)
+            simion = self.write_config(root, "SIMION", self.primary)
+            config = json.loads(simion.read_text(encoding="utf-8"))
+            config["role"] = "rf_quadrupole_simion_mass_filter_run_config"
+            config["mode"] = "mass_filter_reference"
+            simion.write_text(json.dumps(config), encoding="utf-8")
+
+            result = self.run_identity(comsol, simion, root)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("interface transport run-config roles", result.stderr)
+
+    def test_different_bundle_sample_family_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            comsol = self.write_config(root, "COMSOL", self.primary)
+            simion = self.write_config(root, "SIMION", self.alternate)
+
+            result = self.run_identity(comsol, simion, root)
+
+            self.assertNotEqual(result.returncode, 0)
+
+    def test_tampered_run_provenance_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            comsol = self.write_config(
+                root,
+                "COMSOL",
+                self.primary,
+                tamper_provenance=True,
+            )
+            simion = self.write_config(root, "SIMION", self.primary)
+
+            result = self.run_identity(comsol, simion, root)
+
+            self.assertNotEqual(result.returncode, 0)
+
+    def test_wrong_explicit_ion11_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            comsol = self.write_config(root, "COMSOL", self.primary)
+            simion = self.write_config(root, "SIMION", self.primary)
+            wrong = root / "wrong.ion"
+            wrong.write_text("not-the-bundle-source\n", encoding="ascii")
+
+            result = self.run_identity(comsol, simion, root, wrong)
+
+            self.assertNotEqual(result.returncode, 0)
+
+
+@unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+class CrossSolverLifecycleTests(unittest.TestCase):
+    def invoke_lifecycle(
+        self,
+        command: str,
+        environment: dict[str, str],
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+            cwd=REPO_ROOT,
+            timeout=60,
+            capture_output=True,
+            check=False,
+            encoding="utf-8",
+            errors="replace",
+            env=environment,
+        )
+
+    def test_source_pair_discards_manifest_verifier_stdout(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fake_repo = root / "repo"
+            for package in ('msplatform','msplatform/execution','msplatform/backends','msplatform/backends/simion'):
+                directory = fake_repo/'src'/package
+                directory.mkdir(parents=True, exist_ok=True)
+                (directory/'__init__.py').write_text('',encoding='utf-8')
+            verifier = fake_repo/'src/msplatform/execution/manifest_verification.py'
+            verifier.write_text(
+                "def main(*, retention_api):\n    print('RUN_MANIFEST_VERIFY=PASS fake-verifier')\n",
+                encoding="utf-8",
+            )
+            (fake_repo/'src/msplatform/backends/simion/native_completion.py').write_text(
+                "def retention_api():\n    raise AssertionError('stdout-only fixture does not evaluate policy')\n",
+                encoding='utf-8')
+            artifact_root = root / "artifacts"
+            for solver, role in (
+                ("comsol", "rf_quadrupole_comsol_run_config"),
+                ("simion", "rf_quadrupole_simion_run_config"),
+            ):
+                run = artifact_root / "runs" / solver
+                run.mkdir(parents=True)
+                config = run / "run_config.json"
+                config.write_text(json.dumps({"role": role}), encoding="utf-8")
+                (run / "run_manifest.json").write_text(
+                    json.dumps({"run_config": {"path": str(config)}}),
+                    encoding="utf-8",
+                )
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "RF_LIFECYCLE_SUPPORT": str(LIFECYCLE_SUPPORT),
+                    "RF_FAKE_REPO": str(fake_repo),
+                    "PYTHONPATH": str(fake_repo/"src"),
+                    "RF_ARTIFACT_ROOT": str(artifact_root),
+                    "RF_PYTHON": sys.executable,
+                }
+            )
+            command = (
+                ". $env:RF_LIFECYCLE_SUPPORT; "
+                "$pair=Get-CrossSolverSourcePair "
+                "-Python $env:RF_PYTHON -RepoRoot $env:RF_FAKE_REPO "
+                "-ArtifactRoot $env:RF_ARTIFACT_ROOT "
+                "-ComsolRunId comsol -SimionRunId simion; "
+                "[pscustomobject]@{"
+                "type=$pair.GetType().FullName;"
+                "comsol_role=$pair.comsol.config.role;"
+                "simion_role=$pair.simion.config.role"
+                "}|ConvertTo-Json -Compress"
+            )
+            result = self.invoke_lifecycle(command, environment)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["type"], "System.Management.Automation.PSCustomObject")
+            self.assertEqual(
+                payload["comsol_role"],
+                "rf_quadrupole_comsol_run_config",
+            )
+            self.assertEqual(
+                payload["simion_role"],
+                "rf_quadrupole_simion_run_config",
+            )
+            self.assertNotIn("RUN_MANIFEST_VERIFY", result.stdout)
+
+            verifier.write_text(
+                "print('RUN_MANIFEST_VERIFY=FAIL fake-verifier')\n"
+                "raise SystemExit(7)\n",
+                encoding="utf-8",
+            )
+            rejected = self.invoke_lifecycle(command, environment)
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn("Source run-manifest verification failed", rejected.stderr)
+
+    def invoke_resolved_drive(
+        self,
+        comsol: Path,
+        simion: Path,
+    ) -> subprocess.CompletedProcess[str]:
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "RF_LIFECYCLE_SUPPORT": str(LIFECYCLE_SUPPORT),
+                "RF_COMSOL_RESOLVED": str(comsol),
+                "RF_SIMION_RESOLVED": str(simion),
+            }
+        )
+        command = (
+            ". $env:RF_LIFECYCLE_SUPPORT; "
+            "Get-CrossSolverResolvedDrive "
+            "-ComsolResolvedDesign $env:RF_COMSOL_RESOLVED "
+            "-SimionResolvedDesign $env:RF_SIMION_RESOLVED "
+            "|ConvertTo-Json -Compress"
+        )
+        return self.invoke_lifecycle(command, environment)
+
+    def test_resolved_drive_is_authoritative_and_fails_closed(self) -> None:
+        document = {
+            "role": "multipole_resolved_design_do_not_edit",
+            "drive": {
+                "rf_amplitude_V_zero_to_peak_per_group": 139.81792,
+                "frequency_Hz": 1_100_000.0,
+            },
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            comsol = root / "comsol.json"
+            simion = root / "simion.json"
+            encoded = json.dumps(document, sort_keys=True)
+            comsol.write_text(encoded, encoding="utf-8")
+            simion.write_text(encoded, encoding="utf-8")
+
+            accepted = self.invoke_resolved_drive(comsol, simion)
+            self.assertEqual(accepted.returncode, 0, accepted.stderr)
+            drive = json.loads(accepted.stdout)
+            self.assertEqual(drive["rf_peak_v"], 139.81792)
+            self.assertEqual(drive["frequency_hz"], 1_100_000.0)
+            self.assertRegex(drive["resolved_design_sha256"], r"^[0-9A-F]{64}$")
+
+            same_drive_different_file = dict(document)
+            same_drive_different_file["additional_identity"] = "different"
+            simion.write_text(
+                json.dumps(same_drive_different_file, sort_keys=True),
+                encoding="utf-8",
+            )
+            rejected_hash = self.invoke_resolved_drive(comsol, simion)
+            self.assertNotEqual(rejected_hash.returncode, 0)
+            self.assertIn(
+                "resolved designs or drive values differ",
+                rejected_hash.stderr,
+            )
+            simion.write_text(encoded, encoding="utf-8")
+
+            missing_path = self.invoke_resolved_drive(
+                root / "missing.json",
+                simion,
+            )
+            self.assertNotEqual(missing_path.returncode, 0)
+            self.assertIn("frozen resolved design is missing", missing_path.stderr)
+
+            missing_value = dict(document)
+            missing_value["drive"] = dict(document["drive"])
+            del missing_value["drive"]["frequency_Hz"]
+            comsol.write_text(json.dumps(missing_value), encoding="utf-8")
+            missing = self.invoke_resolved_drive(comsol, simion)
+            self.assertNotEqual(missing.returncode, 0)
+            self.assertIn("lacks numeric frequency_Hz", missing.stderr)
+
+            for invalid_value in (True, None):
+                with self.subTest(invalid_value=invalid_value):
+                    invalid_type = dict(document)
+                    invalid_type["drive"] = dict(document["drive"])
+                    invalid_type["drive"]["frequency_Hz"] = invalid_value
+                    comsol.write_text(json.dumps(invalid_type), encoding="utf-8")
+                    rejected_type = self.invoke_resolved_drive(comsol, simion)
+                    self.assertNotEqual(rejected_type.returncode, 0)
+                    self.assertIn(
+                        "lacks numeric frequency_Hz",
+                        rejected_type.stderr,
+                    )
+
+            numeric_string = dict(document)
+            numeric_string["drive"] = dict(document["drive"])
+            numeric_string["drive"]["frequency_Hz"] = "1100000"
+            comsol.write_text(json.dumps(numeric_string), encoding="utf-8")
+            rejected_string = self.invoke_resolved_drive(comsol, simion)
+            self.assertNotEqual(rejected_string.returncode, 0)
+            self.assertIn("lacks numeric frequency_Hz", rejected_string.stderr)
+
+            comsol.write_text(
+                '{"role":"multipole_resolved_design_do_not_edit",'
+                '"drive":{"rf_amplitude_V_zero_to_peak_per_group":139.81792,'
+                '"frequency_Hz":1e9999}}',
+                encoding="utf-8",
+            )
+            rejected_nonfinite = self.invoke_resolved_drive(comsol, simion)
+            self.assertNotEqual(rejected_nonfinite.returncode, 0)
+            self.assertIn("frequency_Hz is not finite", rejected_nonfinite.stderr)
+
+            mismatch = dict(document)
+            mismatch["drive"] = dict(document["drive"])
+            mismatch["drive"]["frequency_Hz"] = 1_200_000.0
+            comsol.write_text(encoded, encoding="utf-8")
+            simion.write_text(json.dumps(mismatch), encoding="utf-8")
+            rejected_mismatch = self.invoke_resolved_drive(comsol, simion)
+            self.assertNotEqual(rejected_mismatch.returncode, 0)
+            self.assertIn("resolved designs or drive values differ", rejected_mismatch.stderr)
+
+
+class CandidateGateParameterContractTests(unittest.TestCase):
+    def test_comsol_runner_consumes_frozen_bundle_ion11_with_binding(self) -> None:
+        runner = COMSOL_RUNNER.read_text(encoding="utf-8")
+        self.assertIn("[string]$ParticleBundleMetadataPath", runner)
+        self.assertIn(
+            "msplatform.components.rf_multipole.particle_source_binding",
+            runner,
+        )
+        self.assertIn("'--consumed-representation','ion11'", runner)
+        self.assertIn("particle_table=$particleTable", runner)
+        self.assertIn("consumed_particle_table=$particleTable", runner)
+        self.assertIn("source_ion11=$particleTable", runner)
+        self.assertIn("source_canonical10=$frozenCanonicalPath", runner)
+        self.assertIn('("bundle_artifact_{0:D3}"', runner)
+        self.assertIn(
+            "representation_equivalence=[string]$bindingDocument.representation_equivalence",
+            runner,
+        )
+
+    def test_runner_separates_execution_manifest_from_scientific_decision(self) -> None:
+        cross_runner = CROSS_RUNNER.read_text(encoding="utf-8")
+        support = LIFECYCLE_SUPPORT.read_text(encoding="utf-8")
+        self.assertIn("'--particles',$fion", cross_runner)
+        self.assertIn("execution_status='success'", cross_runner)
+        self.assertIn("decision_status=$decisionStatus", cross_runner)
+        self.assertIn("-Status success", support)
+        self.assertIn("if($decisionStatus-ne'PASS')", cross_runner)
+        self.assertIn("Complete-FailedRun", cross_runner)
+        self.assertIn("$decisionStatus='NOT_EVALUATED'", cross_runner)
+
+    def test_cross_run_config_freezes_cross_representation_bindings(self) -> None:
+        cross_runner = CROSS_RUNNER.read_text(encoding="utf-8")
+        self.assertIn("particle_table_ion11=$fion", cross_runner)
+        self.assertIn("particle_table_canonical10=$fcan", cross_runner)
+        self.assertIn("Assert-RfTransportParticleTableIdentity", cross_runner)
+        self.assertIn("Format='ion11'", cross_runner)
+        self.assertIn("Format='canonical'", cross_runner)
+        self.assertIn("Copy-CrossSolverAnalysisInputs", cross_runner)
+        self.assertIn("Complete-CrossSolverAnalysis", cross_runner)
+
+    def test_cross_source_contract_uses_single_manifest_and_resolved_drive(self) -> None:
+        cross_runner = CROSS_RUNNER.read_text(encoding="utf-8")
+        support = LIFECYCLE_SUPPORT.read_text(encoding="utf-8")
+        self.assertIn("$null = & $Python", support)
+        self.assertIn("Get-CrossSolverResolvedDrive", support)
+        self.assertNotIn("$comsolConfig.rf_peak_v", cross_runner)
+        self.assertNotIn("$comsolConfig.frequency_hz", cross_runner)
+        self.assertNotIn("$simionConfig.rf_peak_v", cross_runner)
+        self.assertNotIn("$simionConfig.frequency_hz", cross_runner)
+        self.assertIn("comsol_resolved_design=$fcr", cross_runner)
+        self.assertIn("simion_resolved_design=$fsr", cross_runner)
+        self.assertIn("$FrequencyHz=[double]$drive.frequency_hz", cross_runner)
+        self.assertLess(
+            cross_runner.index("Assert-RfTransportParticleTableIdentity"),
+            cross_runner.index("$cres=Resolve-Input"),
+        )
+        self.assertIn("Copy-ModeInput $base", cross_runner)
+
+    def test_project_gate_does_not_select_or_forward_candidate_workflows(self) -> None:
+        project_gate = PROJECT_GATE.read_text(encoding="utf-8")
+        cross_runner = CROSS_RUNNER.read_text(encoding="utf-8")
+        runner_parameters = set(
+            re.findall(
+                r"\[string\]\$(\w+)",
+                cross_runner.split("Set-StrictMode", 1)[0],
+            )
+        )
+
+        self.assertIn(
+            "[ValidateSet('Freshness','Core','Static','Formal')]",
+            project_gate,
+        )
+        self.assertNotIn("'Candidate'", project_gate)
+        self.assertNotIn("CandidateMode", project_gate)
+        self.assertNotIn("ComsolRunLabel", project_gate)
+        self.assertNotIn("SimionRunLabel", project_gate)
+        self.assertNotIn("ComparisonLabel", project_gate)
+        self.assertNotIn("compare_cross_solver.ps1", project_gate)
+        self.assertTrue(
+            {"ComsolRunId", "SimionRunId", "RunId"}.issubset(runner_parameters)
+        )
+        self.assertNotIn("ComsolRunLabel", runner_parameters)
+        self.assertNotIn("SimionRunLabel", runner_parameters)
+        self.assertNotIn("ComparisonLabel", runner_parameters)
+
+    def invoke_project_gate_fixture(self, level: str, *, changed: bool = False,
+                                    failure: str = "") -> dict:
+        if not shutil.which("pwsh"):
+            self.skipTest("PowerShell 7 is required")
+        with tempfile.TemporaryDirectory(prefix="rf_gate_contract_") as directory:
+            root = Path(directory)
+            project = root / "src/msplatform/components/rf_multipole"
+            project.mkdir(parents=True)
+            gate = root / "src/msplatform/workflows/resources/verify_project.ps1"
+            gate.parent.mkdir(parents=True)
+            gate.write_bytes(PROJECT_GATE.read_bytes())
+            quote = lambda value: "'" + str(value).replace("'", "''") + "'"
+            support = root / "common/host_execution_lease.ps1"
+            support.parent.mkdir()
+            test_runner = root / "tools/repository/gate_unittest.py"
+            test_runner.parent.mkdir(parents=True)
+            shutil.copyfile(REPO_ROOT / "tools/repository/gate_unittest.py", test_runner)
+            support.write_text(". " + quote(REPO_ROOT / "tools/repository/host_execution_lease.ps1") + "\n",
+                               encoding="utf-8")
+            resources = root / "src/msplatform/execution/resources"
+            resources.mkdir(parents=True)
+            for name in ("require_powershell7.ps1", "host_execution_lease.ps1", "host_resource_policy.json"):
+                shutil.copyfile(REPO_ROOT / "src/msplatform/execution/resources" / name, resources / name)
+            for relative in ("__init__.py", "execution/__init__.py", "execution/host_resource_scheduler.py"):
+                destination = root / "src/msplatform" / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(REPO_ROOT / "src/msplatform" / relative, destination)
+            modules = {}
+            for relative in ("analysis/test_root.py", "analysis/new_area/test_nested.py",
+                             "hexapole/test_hex.py", "octupole/test_oct.py", "new_area/test_forwarded.py"):
+                path = root / "tests/projects/rf_multipole_ion_optics" / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                module = path.relative_to(root).with_suffix("").as_posix().replace("/", ".")
+                modules[relative] = module
+                path.write_text(
+                    "import os, unittest\nfrom pathlib import Path\n"
+                    "class Probe(unittest.TestCase):\n"
+                    "    def test_selected(self):\n"
+                    "        with Path(os.environ['RF_GATE_TEST_EVENTS']).open('a', encoding='utf-8') as stream:\n"
+                    f"            stream.write({module!r} + '\\n')\n"
+                    f"        self.assertNotEqual(os.environ.get('RF_GATE_FAIL_TEST'), {module!r}, 'RF_GATE_TEST_FAILURE')\n",
+                    encoding="utf-8",
+                )
+            if failure == "syntax" or level == "Core":
+                (gate.parent / "invalid_fixture.ps1").write_text("function Broken {\n", encoding="utf-8")
+            shim_script = root / "python_probe.ps1"
+            shim = root / "python_probe.cmd"
+            shim.write_text(f"@echo off\r\n\"{shutil.which('pwsh')}\" -NoProfile -File \"{shim_script}\" %*\r\n", encoding="utf-8", newline="")
+            shim_script.write_text(
+                "$arguments = @($args)\n"
+                "[IO.File]::AppendAllText($env:RF_GATE_COMMAND_EVENTS, "
+                "((ConvertTo-Json -Compress -InputObject $arguments) + [Environment]::NewLine))\n"
+                "if ($arguments.Count -ge 2 -and $arguments[0] -eq '-m' -and $arguments[1] -in @('tools.repository.gate_unittest', 'msplatform.execution.host_resource_scheduler')) {\n"
+                "  & $env:RF_GATE_REAL_PYTHON @arguments\n  exit $LASTEXITCODE\n}\nexit 0\n",
+                encoding="utf-8",
+            )
+            commands_path, events_path = root / "commands.jsonl", root / "tests.txt"
+            environment = {key: value for key, value in os.environ.items() if key not in {
+                "MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN", "MASS_SPECTROMETRY_HOST_CONTEXT_JSON",
+                "MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID", "MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE"}}
+            environment.update(SIMULATION_PYTHON_EXE=sys.executable,
+                               RF_GATE_REAL_PYTHON=sys.executable,
+                               RF_GATE_COMMAND_EVENTS=str(commands_path), RF_GATE_TEST_EVENTS=str(events_path),
+                               PYTHONDONTWRITEBYTECODE="1", TEMP=directory, TMP=directory)
+            environment["MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH"] = str(root / "host.sqlite3")
+            environment["RF_GATE_FAIL_TEST"] = (
+                modules["new_area/test_forwarded.py"] if failure == "test" else modules["analysis/test_root.py"]
+            ) if level == "Core" else (
+                modules["analysis/new_area/test_nested.py"] if failure == "test" else ""
+            )
+            selected = ([modules["new_area/test_forwarded.py"]] * 2 if changed else [])
+            if level == "Static":
+                selected += [modules["analysis/test_root.py"]] * 2
+            variant = "quadrupole" if level == "Core" else "All"
+            script = "& " + quote(gate) + " -PythonExe " + quote(shim) + " -Level " + level
+            script += " -StructuralVariant " + variant
+            if selected:
+                script += " -ChangedTestModules @(" + ",".join(map(quote, selected)) + ")"
+            result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=root, env=environment,
+                                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180)
+            if not commands_path.exists():
+                raise AssertionError(result.stdout + result.stderr)
+            return {"result": result, "modules": modules, "project": project,
+                    "commands": [json.loads(line) for line in commands_path.read_text(encoding="utf-8").splitlines()],
+                    "executed": events_path.read_text(encoding="utf-8").splitlines() if events_path.exists() else []}
+
+    def test_project_gate_core_keeps_physical_contracts_but_not_full_regressions(self) -> None:
+        analysis = "msplatform.analysis."
+        workflow = "msplatform.workflows.rf_mass_filter."
+        for changed, failure in ((False, ""), (True, ""), (True, "test")):
+            with self.subTest(changed=changed, failure=failure):
+                observed = self.invoke_project_gate_fixture("Core", changed=changed, failure=failure)
+                result = observed["result"]
+                commands = observed["commands"]
+                project = observed["project"]
+                config = project / "variants/quadrupole/config"
+                # Check each scientific responsibility and its actual inputs,
+                # rather than locking an aggregate command count or ordering.
+                physical = [command for command in commands if command[:2] not in (
+                    ["-m", "tools.repository.gate_unittest"],
+                    ["-m", "msplatform.execution.host_resource_scheduler"],
+                )]
+                self.maxDiff = None
+                self.assertCountEqual(physical, [
+                    ["-m", "msplatform.workflows.rf_publication", "--structural-variant", "quadrupole", "--check"],
+                    ["-m", "msplatform.workflows.rf_publication", "--check"],
+                    ["-m", "msplatform.workflows.rf_publication", "--profile", "mass_filter", "--check"],
+                    ["-m", analysis + "sync_simion_geometry", "--check"],
+                    ["-m", analysis + "generate_official_particle_table", "--check",
+                     str(config / "particles/official_fixed_100.ion"), "--check-canonical",
+                     str(config / "particles/official_fixed_100_canonical.csv"), "--resolved-design",
+                     str(config / "resolved_design_official.json")],
+                    ["-m", workflow + "theory", "--check-mode"],
+                    ["-m", workflow + "research", "--check-contract"],
+                    [str(project.parents[3] / "src/msplatform/analysis/entry_aperture_l0.py"), "--check"],
+                ], msg=result.stdout + result.stderr + "\nRECORDED_COMMANDS=" + repr(commands))
+                unittest_commands = [command for command in commands if command[:2] == ["-m", "tools.repository.gate_unittest"]]
+                selected = [observed["modules"]["new_area/test_forwarded.py"]] if changed else []
+                self.assertEqual(unittest_commands, [["-m", "tools.repository.gate_unittest", *selected]] if changed else [])
+                self.assertEqual(observed["executed"], selected)
+                if failure:
+                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn("RF_GATE_TEST_FAILURE", result.stdout + result.stderr)
+                    self.assertNotIn("PROJECT_GATE=PASS", result.stdout)
+                else:
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn("PROJECT_GATE=PASS", result.stdout)
+
+    def test_project_gate_static_retains_full_analysis_and_powershell_regressions(self) -> None:
+        for failure in ("", "test", "syntax"):
+            with self.subTest(failure=failure):
+                observed = self.invoke_project_gate_fixture("Static", changed=True, failure=failure)
+                result = observed["result"]
+                variant_publications = [command for command in observed["commands"]
+                                        if command[:2] == ["-m", "msplatform.workflows.rf_publication"]
+                                        and "--structural-variant" in command]
+                self.assertCountEqual(variant_publications, [
+                    ["-m", "msplatform.workflows.rf_publication",
+                     "--structural-variant", variant, "--check"]
+                    for variant in ("quadrupole", "hexapole", "octupole")
+                ], msg=result.stdout + result.stderr + "\nRECORDED_COMMANDS=" + repr(observed["commands"]))
+                expected = sorted(observed["modules"].values())
+                calls = [command for command in observed["commands"] if command[:2] == ["-m", "tools.repository.gate_unittest"]]
+                # Freshness now owns the tree parse before dispatch. A syntax
+                # failure must prevent any regression test from starting.
+                self.assertEqual(calls, [] if failure == "syntax" else [["-m", "tools.repository.gate_unittest", *expected]])
+                self.assertEqual(sorted(observed["executed"]), [] if failure == "syntax" else expected)
+                if not failure:
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn("PROJECT_GATE=PASS", result.stdout)
+                else:
+                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertNotIn("PROJECT_GATE=PASS", result.stdout)
+                    diagnostic = "RF_GATE_TEST_FAILURE" if failure == "test" else "PowerShell syntax gate failed"
+                    self.assertIn(diagnostic, result.stdout + result.stderr)
+
+
+if __name__ == "__main__":
+    unittest.main()

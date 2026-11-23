@@ -16,13 +16,13 @@
 
 | 职责 | 机器合同 |
 |---|---|
-| 物理设计 | [`baseline.json`](../../../../../projects/single_reflection_oa_tof_mass_analyzer/config/baseline.json) |
-| Formal科学模式 | [`modes/formal.json`](../../../../../projects/single_reflection_oa_tof_mass_analyzer/config/modes/formal.json) |
-| 求解器数值 | [`formal_solver_numerics.json`](../../../../../projects/single_reflection_oa_tof_mass_analyzer/config/formal_solver_numerics.json) |
-| resolved几何 | [`resolved_geometry.json`](../../../../../projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json) |
-| Formal资产清单 | [`formal_assets.json`](../../../../../projects/single_reflection_oa_tof_mass_analyzer/config/formal_assets.json) |
-| SIMION稳定入口 | [`simion_stable_entry.json`](../../../../../projects/single_reflection_oa_tof_mass_analyzer/config/simion_stable_entry.json) |
-| 冻结验证结果 | [`formal_validation.json`](../../../../../projects/single_reflection_oa_tof_mass_analyzer/config/formal_validation.json) |
+| 物理设计 | [`baseline.json`](../../../components/single_reflection_oa_tof/config/baseline.json) |
+| Formal科学模式 | [`modes/formal.json`](../../../components/single_reflection_oa_tof/config/modes/formal.json) |
+| 求解器数值 | [`formal_solver_numerics.json`](../../../components/single_reflection_oa_tof/config/formal_solver_numerics.json) |
+| resolved几何 | [`resolved_geometry.json`](../../../components/single_reflection_oa_tof/config/resolved_geometry.json) |
+| Formal资产清单 | [`formal_assets.json`](../../../components/single_reflection_oa_tof/config/formal_assets.json) |
+| SIMION稳定入口 | [`simion_stable_entry.json`](../../../components/single_reflection_oa_tof/config/simion_stable_entry.json) |
+| 冻结验证结果 | [`formal_validation.json`](../../../components/single_reflection_oa_tof/config/formal_validation.json) |
 
 完整参数由`baseline + formal science + solver numerics → resolved`单向派生。不要从本文件抄录旧电极表
 后分别手改GEM、Lua或IOB。
@@ -38,7 +38,7 @@
 
 RF多极杆集成的第3槽可以替换为combined frontend，但那是run-local integration候选，不是本项目独立
 Formal包。其电极映射和PA重构只查
-[统一集成当前状态](../../../../../integrations/docs/INTEGRATION.md)。
+[统一集成当前状态](../../../../../docs/INTEGRATION.md)。
 
 ## GUI复核步骤
 
@@ -71,4 +71,4 @@ Lua Fast Adjust 仍依赖完整电极基函数数组；旧 Formal 验证按其�
 - 固定粒子表真实Fly完成；
 - 输出由项目正式分析与门禁复核。
 
-当前Formal性能、资格和兼容边界只查[`PROJECT.md`](../../../../../projects/single_reflection_oa_tof_mass_analyzer/docs/PROJECT.md)。
+当前Formal性能、资格和兼容边界只查[`PROJECT.md`](../../../components/single_reflection_oa_tof/docs/PROJECT.md)。

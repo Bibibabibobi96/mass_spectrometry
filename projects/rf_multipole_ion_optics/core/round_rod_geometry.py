@@ -1,8 +1,0 @@
-"""Single-direction RF compatibility exports; active callers migrate by P4."""
-from msplatform.components.rf_multipole.round_rod_geometry import RoundRodGeometryError as RoundRodGeometryError
-from msplatform.components.rf_multipole.round_rod_geometry import _validate_array_inputs as _validate_array_inputs
-from msplatform.components.rf_multipole.round_rod_geometry import _ellipse_cross_section as _ellipse_cross_section
-from msplatform.components.rf_multipole.round_rod_geometry import build_rod_array as build_rod_array
-from msplatform.components.rf_multipole.round_rod_geometry import _build_round_rod_array as _build_round_rod_array
-from msplatform.components.rf_multipole.round_rod_geometry import build_round_rod_array as build_round_rod_array
-from msplatform.components.rf_multipole.round_rod_geometry import points_inside_rods as points_inside_rods

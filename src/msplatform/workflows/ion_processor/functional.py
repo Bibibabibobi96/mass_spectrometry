@@ -62,7 +62,7 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
             source_profile: str = "functional", configuration_directory: Path | None = None,
             injected_source: Path | None = None, protected_injected_paths: list[Path] | None = None) -> None:
     """Freeze contracts, official HS1, RF kernel and shared release for one run."""
-    repo = project.parent.parent
+    repo = project.parents[3]
     package_root = Path(__file__).resolve().parents[3]
     resource_root = package_root.parent if package_root.name == "src" else package_root
 
@@ -245,7 +245,7 @@ def main() -> None:
         print(json.dumps({key:result[key] for key in ("status","source_counts","extracted_counts")}))
     elif args.action=="prepare":
         if args.simion_dir is None: parser.error("prepare requires --simion-dir")
-        project_root = args.project_root or Path("projects/dual_pressure_rectilinear_ion_processor")
+        project_root = args.project_root or Path("src/msplatform/components/dual_pressure_rectilinear_ion_processor")
         prepare(args.run,project_root,args.simion_dir,args.native_field_run,args.source_profile,
                 args.configuration_directory,args.injected_source,args.protected_injected_path)
     elif args.action=="adopt-native-field":

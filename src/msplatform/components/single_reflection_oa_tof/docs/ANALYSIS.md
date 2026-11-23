@@ -1,0 +1,408 @@
+# oa-TOF统一分析入口
+
+本目录只负责求解器无关的理论闭合、指标、统计和图形。COMSOL模型树由MATLAB维护，SIMION几何与
+运行时由GEM/Lua/Fly2维护；Python不直接解析MPH或PA。
+
+## 按任务查找
+
+| 任务 | 说明 |
+|---|---|
+| 运行理想场残差、束宽或长度对照 | [自动理想场比较](#自动理想场比较) |
+| 理论及候选编译 | [理论与候选编译](#理论与候选编译) |
+| 查看可复用分析模块 | [核心分析](#核心分析) |
+| 复核冻结 Formal 或跨求解器结果 | [Formal 与跨求解器](#formal与跨求解器) |
+
+## 环境与权威
+
+Python版本、虚拟环境和依赖重建只认仓库根
+[仓库操作指南](../../../../../docs/OPERATIONS.md#正式工具链基线)。
+`pyproject.toml`声明依赖，`requirements-lock.txt`冻结版本。
+
+输入权威分层为：
+
+- 科学：`../config/baseline.json`、`../config/modes/formal.json`；
+- 求解器数值：`../config/formal_solver_numerics.json`；
+- 变量与包络：`../config/design_variables.json`、`../config/optimization_envelope.json`；
+- 派生几何：`../config/resolved_geometry.json`，只读且不可反写；
+- 分析定义与Formal结果：`../config/analysis_contract.json`、`../config/formal_validation.json`。
+
+run ID、seed、冻结路径和候选override只属于run instance，不能写回Formal。
+
+## 理论与候选编译
+
+| 职责 | 实现 | 理论来源 |
+|---|---|---|
+| 两区加速器时间聚焦与相空间匹配 | [`独立加速器实现`](../../orthogonal_accelerator/accelerator_time_focus.py) | [`独立加速器理论`](../../orthogonal_accelerator/docs/theory/oaaccelerator_time_focus.md) |
+| 三区加速器局部状态、精确时间与导数 | [`独立三区实现`](../../../../../src/msplatform/components/orthogonal_accelerator/three_zone_ideal_theory.py) | [`独立三区理论`](../../orthogonal_accelerator/docs/theory/three_zone_accelerator_ideal_theory.md) |
+| 双级反射器闭式解 | `reflectron_dual_stage_solver.py` | `../docs/theory/dual_stage_reflectron.md` |
+| 加速器—反射器纵向耦合 | `oatof_oaaccelerator_coupling.py` | `../docs/theory/oatof_oaaccelerator_coupling.md` |
+| finite-interval整机设计原子编译 | `finite_interval_design_compiler.py` | 复用上述三层理论，原子发布几何/电压/反射器耦合/rebuild plan |
+| Arm 8轴上全理论解析闭合 | `verify_axial_ideal_closure.py` | 复用上述耦合理论与统一`msplatform.analysis.peak_metrics` |
+| 参数候选编译 | `compile_candidate_design.py` | design-variable catalog与优化包络 |
+
+候选只允许修改变量目录登记的连续量或整数离散量。理论派生量由编译器重算，拓扑变量使用专用编译
+路径；范围只代表编译安全边界，不代表可行或最优。编译器输出candidate baseline、resolved、diff和
+PA/COMSOL/SIMION/CAD重建影响，不能直接晋升Formal。
+
+The exact source-to-detector theory and deterministic two/three-variable root collector
+now have sole implementations in `msplatform.components.single_reflection_oa_tof`
+(`three_zone_ideal_theory` and `three_zone_ideal_root_solver`). Accelerator-only source,
+state and timing APIs come directly from the existing orthogonal-accelerator component.
+All seeds, bounds, differences, tolerances and engineering limits remain explicit caller
+inputs; the kernel retains every converged root and does not select a scientific branch.
+The current funnel and ideal-source workflows bind the actual loaded canonical source
+files. Their root controllers and the remaining acceptance/source-comparison bodies
+are still separate P4 migration work. Formal parameters and historical run/source bytes
+are unchanged; installation, native execution and scientific qualification remain
+separate evidence boundaries.
+
+The current executable three-zone funnel is `three_zone_solver_free_funnel_v2.json`.
+Its `authorities` bind the independent accelerator sources and the canonical TOF total-time/root implementations.
+Use the existing `workflows.three_zone_ideal_theory.run_theory` module with
+`<v2-campaign> --refresh-authorities`, then `--validate`, to refresh repository-source paths,
+canonical LF byte counts and SHA values. This authoring action accepts no scientific-stage options.
+Scientific fields and historical run/receipt bytes remain unchanged; old stage evidence cannot
+continue under a newly authored campaign identity. Missing dependencies or source drift still fail closed.
+
+The retained v1 file is historical input, as specified by the
+[C3/J3 contract](../docs/publication/paper_1_jasms/stage_c3_j3_real_field_contract.md#冻结输入与设计).
+Do not refresh it to make current execution pass or reinterpret its old T5 evidence as v2 results.
+Its present source bindings fail strict current loading; existing historical snapshots keep their own bytes.
+
+T5三区理论结果沿用`three_zone_t5_simion_candidate.py`唯一CLI进入后续Candidate。canonical发布使用
+`--run-dir artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/<candidate-run>`，并同时传入
+`--campaign`和`--t5-receipt`；发布器排他、原子地产生
+`results/three_zone_t5_simion_candidate_resolved.json`、`run_config.json`、`summary.json`和
+`run_manifest.json`，固定`formal_gate_passed=false`。持久化身份路径为workspace或run-relative，
+resolved Candidate只属于`artifacts/`且不得提交Git。原有`--output`仅保留单文件编译兼容性。
+
+跨项目finite-interval布局只能把四个物理相空间量、源宽和一级长度作为request传给项目公共
+`compile_finite_interval_oatof_design` API。加速器电压与轴向平移、源几何、线性导数、耦合反射器、
+shield边界和rebuild plan均由该函数一次性闭合。API严格拒绝profile路径、run、checkpoint、cohort、
+粒子数等integration provenance；这些事实只能由integration写入自己的layout derivation。数值政策
+唯一登记在同模块`FINITE_INTERVAL_COMPILER_POLICY`，消费者不得另传默认值。
+
+## Candidate生命周期
+
+`prepare_candidate_run.py`冻结候选合同、N=100粒子计划和COMSOL/SIMION/CAD执行计划；
+`candidate_run_lifecycle.py`在scratch组装三件套后原子发布run。完整Candidate workflow随后真实构建
+并冻结PA/IOB、COMSOL、SIMION、CAD和跨软件验收证据；不是“只生成Lua/Fly2”。
+
+唯一公开入口为：
+
+```text
+../workflows/design_candidate/run_candidate.py
+```
+
+生产seed必须来自`run_config.run_instance.particle_source_seed`。success固定表示
+`candidate_accepted_not_promoted`和`formal_eligible=false`；晋升由独立Formal事务完成。
+
+阶段复用由既有stage context绑定实际合同、生成器、求解参数及`candidate_stage_execution.py`；完整入口仍冻结作来源。日志／收尾修改不使无关科学阶段失效，真实执行实现变化仍拒绝。旧阶段只在现有具名迁移器取得充分冻结证据时于新run派生，不改父receipt或用当前默认追认，范围见[已知旧Candidate阶段](../docs/PROJECT.md#已知旧-candidate-阶段的派生复用)。
+
+Candidate source snapshots resolve executable Python and native resources only
+from installed `msplatform` owners through `candidate_source_closure.py`. The
+caller-supplied `science_root` provides only explicitly declared JSON/GEM science
+inputs; it is not an executable source root. Existing source containment, byte
+identity, runtime binding and verification remain strict. Missing resources fail
+before copying, without a checkout or installed-package fallback. The installed
+public first-Prepare API and CLI require `science_root`/`--science-root`; the
+project entry forwards its known root explicitly, preserving existing CLI calls.
+
+Postprocessing verifies the completion's execution-request file and its original
+bound identity. Publication may add `retention_role`; this annotation is excluded
+from the identity comparison. Path, existence, bytes, SHA and all other record
+fields remain checked, alongside the original run/config, completion marker and
+writer-release requirements. This does not authorize rewriting a historical parent.
+
+## 核心分析
+
+- `msplatform.analysis.axis_field_transport`: canonical exported-axis CSV loading and local collisionless RK4 propagation using explicit unsigned m/z in Th plus integer charge sign. It is a local accelerator reference, not whole-instrument TOF or native qualification; the square/cylindrical and C3/J3 analyzers retain their original receipt/cohort and research convergence gates.
+- `msplatform.components.single_reflection_oa_tof.ideal_source_comparison`：可控均匀空间源、线性/二次速度关系和独立Gaussian残差；复用精确轴向TOF与canonical峰宽，保留完整母cohort及模型域/碰撞分类。工作点仅重算反射器电压，不移动加速器或漂移参考面。
+- `msplatform.workflows.oa_tof_design.source_experiment`: versioned experiment validation, deterministic residual-first case planning and scientific conclusions. Execution success does not establish the hypothesis; the installed entry and resume behavior are described below.
+- `msplatform.components.single_reflection_oa_tof.ideal_acceptance_theory` and `ideal_acceptance_linear_design`: exact time-series diagnostics and the caller-controlled third-order linear focus and fixed-length root equations. These retain every detected valid branch without particle-peak ranking or a continuous-domain completeness claim.
+- `msplatform.components.single_reflection_oa_tof.ideal_acceptance_design`: finite uniform/Gaussian quadrature and exact finite-envelope event checks. `msplatform.components.single_reflection_oa_tof.ideal_acceptance_experiment` owns population decomposition, equal-probability source construction and explicit cohort/resolution acceptance; particle confirmation belongs to the installed `msplatform.workflows.oa_tof_design.acceptance_theory` workflow. Unequal quadrature weights do not define particle FWHM.
+- `msplatform.components.single_reflection_oa_tof.ideal_acceptance_density`: deterministic population pushforward density, residual Jacobian, finite Gaussian-tail probability and certified monotonicity. It reuses the canonical half-height crossing implementation and is distinct from finite-particle KDE.
+
+The theory workflow records the actual selected canonical source for each migrated kernel,
+including the population experiment implementation; the slope workflow also records its
+selected linear-design implementation. These remain
+source-audited live workflows, not frozen-code execution. Existing run roles and historical
+input bytes are unchanged; root workflow/controller closure remains separate P4 work.
+- `msplatform.analysis.peak_metrics`：KDE、直接FWHM和分辨率的唯一参考实现。
+- `reference_analysis.py`：CSV/XLSX/TRACE导入、Recording审计、source mapping、bootstrap和CLI。
+- `msplatform.workflows.single_reflection_mass_spectrum`：五质量标定、峰形与探测落点比较。
+- `compare_field_profiles.py`：同坐标轴场比较。
+- `msplatform.analysis.vector_field_samples`：同坐标三维场分量比较及静场样本校验。
+- `compare_particle_trajectories.py`：代表粒子轨迹和关键面到达时间。
+- `analyze_longitudinal_closure.py`：纵向场与逐粒子TOF差解释。
+- `analyze_accelerator_transverse_field_uniformity.py`：轴心/偏轴场均匀性诊断。
+- `truncation_diagnostics.py`：能量窗、检测半径和源宽截断。
+
+<details>
+<summary>Paper 1 专用源模型、候选与阶段分析接口</summary>
+
+J2候选池与真实场灵敏度归本项目Paper 1分析边界，当前是有纯分析测试的研究准备API，尚无活动生产
+workflow调用；保留依据是[预注册pilot合同](../docs/publication/paper_1_jasms/j2_real_3d_pilot_contract.md)
+要求同池、六维配对导数及detector-blind选择。执行资格仍查[证据矩阵](../docs/publication/paper_1_jasms/evidence_matrix.md)，
+不能以这些API存在声称真实J2完成。后续获准workflow须显式消费并冻结这两个API；若pilot合同取消或
+替代，应连同专属测试退役。灵敏度模块只保留纯函数，不提供无消费者的文件读写CLI。
+
+- `paper1_focusability.py`：C1 detector-blind条件源模型以及C2局部受限白化投影；时序预脉冲记录必须显式选择一个锚点样本，且只允许作为状态输入，不可混入检测器结果。
+- `paper1_j2_real_field_selection.py`：J2真实场公平选择的纯分析入口。它只以冻结C1条件源协方差和具有内容哈希的真实场局部灵敏度收据，对同一候选池分别计算未加权与源白化分数；拒绝来源、状态尺度或候选池身份不一致，且绝不读取探测器、峰宽或传输结果。
+- `paper1_j2_candidate_pool.py`：J2真实场的公共候选池编译器。它在预注册边界内扰动三区grid2/末端几何、电极及反射器控制，并从每个候选的平面和电势重新导出区长、场强和焦点漂移；候选池本身不评分、不运行SIMION，也不接触检测器结果。
+- `paper1_j2_real_field_sensitivity.py`：把同一数值身份下、同一局部初态的`+/-`真实场到达时间中心差分压缩为六维灵敏度收据。它只接受预注册步长和候选池身份，拒绝FWHM、传输、尾部及锁定结果字段。
+- `analyze_paper1_c1_source.py`：冻结单一预脉冲源的C1诊断入口；验证母cohort收据与状态SHA，按粒子ID哈希登记四个cohort，并且仅以development/validation选择条件模型。它必须标记`DEVELOPMENT_ONLY`或`PROSPECTIVE`，不生成C1 PASS结论。
+- `analyze_paper1_c1_stage.py`：仅汇总两份已冻结、detector-blind的C1源诊断，核验各自母cohort、四个ID cohort和残差模态稳定性；只在两份输入均为`PROSPECTIVE`时关闭C1输入门禁，历史`DEVELOPMENT_ONLY`输入必为`INCONCLUSIVE_REVISE`。
+- `analyze_paper1_connector_gap_residual.py`：两臂残差比较以及 C1 S1 `0/51.2/102.4 mm`三臂发布入口。三臂 request 必须声明唯一 checkpoint mode；可用 fixed-pulse，或经 resolved-pulse-epoch、RF、场、数值和source身份逐项核验的`PRE_PULSE_EQUIVALENT_TIME_SERIES`。未验证或混合模式必须失败关闭为`INCONCLUSIVE_REVISE`，不能生成性能结论。
+- `paper1_c2_axial_oracle.py`：C2的低成本纵向淘汰实现。它把C1冻结的`z-v_z`源按粒子ID cohort映射到现有精确三区理想场 oracle，堆叠条件bin、保持`D1/D2`约束并比较两区零自由度与三区新增方向；其输出只能是后续C2导数与locked预测检验的输入，不能表述为6D、3D或分辨率证据。
+- `analyze_paper1_c2_stage.py`：运行两份C1 assessment上的C2 axial screen，固定T5 ideal-field anchor与已有phase-match release coordinate，审计解析/中心差分`g`、`G`步长平台、两区零自由度、三区改善/零效/恶化排序及其locked bootstrap。它在源分布加权的受约束到达时间聚焦预测不优于未加权基线时失败关闭，不授权C3。
+- `paper1_candidate_control.py`：C3_J3的求解器无关候选控制编译器。它把事先声明的grid2/exit几何和电极电压方向编译为完整`-2h,-h,0,+h,+2h`家族，冻结数值身份并拒绝场反转、平面交叉、无界扰动和固定电极移动；它不启动SIMION、拟合方向或读取探测器结果。
+- `paper1_c3_j3_mapping.py`：从通过的C2_J3结果提取已锁定的improve/zero/worsen方向，并在每个`k*h`上重新推导三区几何、电位和反射器控制。它拒绝非对称方向，避免把非线性的`eta`误写成线性电压插值；输出仍只是C3真实PA编译输入。
+- `paper1_c3_j3_publish.py`：将上述五点物理控制家族和每一个schema-valid Candidate原子发布为一个非Formal artifact run。它只冻结C2→物理控制的映射与文件身份；不构建PA、不启动SIMION、不读取探测器结果，也不产生C3结论。
+- `paper1_c4_locked_prediction.py`：C4_J3锁定三维预测分析。它必须先读取C3_J3的`PASS_CONTINUE`五件套，随后才读取已完成的三方向run receipt；核验锁定ID、共同脉冲、母cohort分母、直接FWHM顺序和传输防御，不启动求解器。
+
+</details>
+
+正式数据优先CSV/JSON。XLSX只接收人工导出，导入后立即规范化。严格配对必须使用相同粒子ID，并区分
+整体时移与去均值逐粒子残差。
+
+`reference_analysis compare`默认只比较分布；`--bootstrap-resamples`为正时必须同时指定
+`--require-paired-particle-ids`，导入器自动编号不能用于配对。真实ID按输入顺序传给
+[公共峰函数](../../../../../tests/analysis/README.md)，不排序或取共同命中交集。Formal验证与跨求解器诊断
+已由各自入口声明配对并验证来源；五质量分析继续只消费分布指标，不把每物种局部ID与混合束全局ID自动配对。
+
+`reference_analysis single/compare`的新结果在`metrics.analysis_metadata`登记
+`common_gaussian_kde_nominal_mass_v1`：既有`mass_grid_Da`及质量指标仍按
+`nominal_mean_relative_square_v1`的`m_nominal*(tof/mean(tof))^2`生成，单位仍是Da，
+不是已标定的m/z轴。通用输入只证明调用者提供了TOF，时钟资格标为`unspecified`；不从列名、
+名义质量或配对ID补造电荷、脉冲epoch或绝对标定资格。冻结`analysis_contract.json`与历史结果不改写。
+
+`msplatform.workflows.single_reflection_mass_spectrum`的`analysis_metadata`登记`sqrt_mz_affine_centroid_fit_v1`：
+每个求解器以同批物种平均TOF为自变量、`sqrt(m/z)`为响应做等物种权重的一次最小二乘拟合，
+即`sqrt(m/z)=a*tof_us+b`，随后映射同批粒子并报告同批质心残差。它不是独立标定集验证；
+`time_offset_us=-b/a`只是拟合零点，不能当作脉冲epoch。m/z图轴及偏差使用Th、密度使用1/Th，
+现有CSV列名和数值保留。名义质量/电荷来自mode，COMSOL按物种文件归属，SIMION按记录的质量/电荷选择；
+两处电荷读取都在整数转换前拒绝分数、布尔、零和非有限值。`resolution_claim_allowed=false`保持不变。
+元数据按求解器将拟合观测数和等权有效数登记为物种质心数，并逐物种记录实际命中粒子数，不能混作粒子KDE样本数；
+计算状态为`computed`，科学资格为`not_assessed`。
+相关回归位于`tests/analysis/test_peak_metrics.py`，覆盖方法方向、同批范围、未限定时钟和无效电荷。
+
+两端原始CSV粒子ID在整数转换前校验，拒绝分数、布尔、非有限、非正和重复编号；COMSOL不能用自动编号
+补齐缺失ID。COMSOL各物种局部ID与SIMION混合源全局ID分别受对应完整母群计数上界约束，不按单物种
+上界误判后续SIMION物种。所有提供的行（含非命中）须落在声明物种及母群上界内；超额、未知物种或
+无效ID在写结果前拒绝，不截断编号、删除行或生成超过100%的传输率。合法非连续ID和整数CSV编码保留。
+ID解析统一在`msplatform.results.single_reflection_particle_table`：CSV仅将选定ID列保留为原始文本，按十进制精确校验到
+正int64整数，支持整数小数／指数编码；其他科学数值列沿用既有读取。COMSOL母群校验与命中筛选消费
+同一张源表，避免重复读取把大于2^53的ID先转浮点再贴回。别名、显式列映射、事件列和Hit筛选均保留
+原ID与观测行的对应关系；XLSX文本ID同样精确读取，不能恢复外部表格软件已舍入的数值单元格。
+只有泛用导入确实缺ID列时仍允许生成行ID，并保留`particle_id_generated=true`，不能用于配对或五质量输入。
+
+`msplatform.backends.simion.detector_census.analyze_simion_log`的`analysis_metadata`完整登记
+`birth_relative_sample_sigma_gaussian_proxy_v1`、`ddof=1`、等ID单位权重、单位与出生相对时钟。
+命中、实录穿面、完整源和非命中（含未观测源）分别记录样本数、权重和及有效数；主峰摘要的N仅对应命中。
+空群／单样本宽度为null，零方差宽度为0且比值为null；这些状态均保留方法与观测声明。Gaussian proxy
+标量算法不变，不是直接半高宽或脉冲相对质量分辨率。`tests/analysis/test_solver_diagnostics.py`验证四状态、
+出生时钟整体平移及实际CLI JSON。
+
+## 自动理想场比较
+
+The three solver-free scientific roles use the sole installed
+`msplatform.workflows.oa_tof_design.source_comparison` entry. Select the scientific
+configuration and the base for its declared analysis/reference paths explicitly:
+
+```powershell
+python -m msplatform.workflows.oa_tof_design.source_comparison `
+  --config '<study.json>' --input-root '<author-input-directory>' --seed 20260827 --plan
+```
+
+For execution, omit `--plan` and supply `--workspace`, `--environment` and `--profile`
+for the existing engineering deployment, plus a new `--run-id`. Slope studies also
+require `--receipt-root` for the existing scalar-receipt declaration. Absolute
+scientific references remain absolute; relative references use the selected base.
+Planning does not load engineering deployment or create an owner. The project
+execution profile is an explicit fixed author preset, not a package default.
+For long Windows artifact paths, select a short absolute `policy.execution_root`
+in that deployment. The existing owner manages the temporary execution alias;
+persisted package and scientific run paths remain canonical.
+
+Basic comparison automatically completes the declared residual and two/three-zone
+width scans, reporting per-case progress, complete particle CSV, peak/tail/mode
+metrics, voltages, stage conclusions and the final report/manifest. Scientific
+configuration owns the source, fixed geometry, scan axes and thresholds; its
+selected analysis contract owns peak settings. Seed/run identity remain explicit.
+`--resume-from <previous-run>` creates a new run and verifies matching scientific
+code/config/environment and complete checkpoints before reuse. The previous run and
+failure evidence stay unchanged; incomplete checkpoints are recomputed. Numerical
+identity binds numerical_case and its actual scientific dependencies, while the
+entrypoint and figure source remain provenance outside that identity.
+
+Current modern resume is restricted to the same installed scientific source epoch.
+Pre-migration modern identities are not silently upgraded: their records and CSV
+remain readable, but changed scientific-source identities require a new calculation.
+The separate finite thirteen-function original-basic reader remains reference-only:
+its exact original roles/source witnesses, environment, sealed owner and complete
+CSV checks remain required. It does not supply missing historical source from the
+current package or prove complete historical transitive frozen execution.
+
+The canonical comparison worker supplies checkpoint reuse with its already-bound
+frozen input records and parsed analysis settings explicitly. Reuse does not
+reopen a child run configuration as an alternative authority. Original legacy
+CSV/manifest hashes, numerical projection and provenance checks remain unchanged.
+
+The existing managed owner alone creates the run, capacity/source protection,
+execution request, summary, manifest and recovery result. One observed Python
+scientific worker consumes frozen role records and retains its existing ProcessPool
+work; actual child origins and immutable package guards belong to that same process
+family. Case boundaries renew the same owner-bound leases. Scientific failures keep
+their original failed run/checkpoints; transport or publication failures remain errors.
+`--resume-finalization <Result>` with the explicit engineering deployment only resumes
+the original stopped-owner finalization, without new scientific inputs or execution.
+Copied source records are execution provenance; this installed workflow actually
+executes the selected frozen package. The historical audited-live snapshots keep
+their original meaning and bytes. No commercial solver or new qualification is implied.
+
+运行状态为`success/failed/interrupted`，科学状态独立报告`SUPPORTED/NOT_SUPPORTED/INCONCLUSIVE`
+或已表征的接受范围；负结果不阻止另一项低成本比较。技术异常停止并保存`failure_stage`、`failure_reason`
+和`logs/failure.log`。同种子不重新抽样、归一化残差或挑选共同命中交集；不同seed给出重复范围而非CI。
+束宽接受为从最小已测束宽起、所有seed均通过R与完整母cohort模型可达率的连续已测范围；未知峰或模型
+不支持的反射器一级折返不作为已确认物理上限。最后一个采样点仍通过时只给下界，不外推极限。
+
+此入口属于长期正式分析功能，但结果仅为合成源、理想轴向场的探索证据。它不复用历史T0—T5漏斗的
+人工逐阶段操作，也不改变其只读历史语义；共同模型/指标直接复用。它不启动SIMION/COMSOL、不改Formal，
+不声称实际RF源、真实孔径收集率、完整电压/几何最优化或论文新颖性已证明。
+
+`ideal_source_affine_slope_scan.json`是该入口的最小机制模式：在同一均匀位置、Gaussian随机残差与
+随机种子下，比较`k=0`、一个历史标量参考和现有人造源的线性`z-v_z`斜率。历史输入只是一份带哈希的
+标量receipt，不读取或拟合其粒子表。每个非零`k`把第一场、源到grid1距离、grid2电位比例和反射器一级
+电压冻结，再由`a1=a2=a3=0`反求后两区场/长度与反射器二级场；所以结果检验“已知线性关系是否可被理论
+工作点利用”，不是对峰宽或全部工程变量的寻优。
+
+### 从聚焦方程重设计宽束接受
+
+同一入口加上`--config src/msplatform/components/single_reflection_oa_tof/config/experiments/ideal_acceptance_theory.json`
+即可自动运行理论重设计。流程先诊断原工作点高阶系数，再枚举声明的理论控制域、解
+`a1=a2=a3=0`线性方程，由正逆场派生长度；以精确总体相对时间方差选择各束宽候选，最后冻结候选进行
+等概率总体近似与独立粒子检验。不是先对粒子分辨率寻优再解释理论，也不启动三维求解器。
+
+源斜率、中心速度和10 m/s残差保持不变；第一场区采用显式的居中设计族，长度和场强比可变。
+当前比较固定中心静电能、反射器长度和无场路径。这些是比较范围，不是三区结构的普适限制。
+首轮总体近似使用等概率节点及canonical KDE；Gauss求积节点只用于加权矩和方差，不冒充等权粒子。
+配置包含`numerics.density`时，改用不依赖KDE带宽的精确总体推前密度；`population_orders`两列此时
+分别是位置积分阶数与时间网格点数。数值收敛与三组粒子重复分别报告，所有母粒子保留分类。
+
+[`ideal_acceptance_fixed_length.json`](../config/experiments/ideal_acceptance_fixed_length.json)另增加总长
+20.25 mm的长度方程，从每个正场分支求镜一级电势；场区分配可变，但不能通过延长整个加速器换取
+分辨率。它仍使用同一入口。有限电压网格只定义检测到的根，不构成连续域根完备性或全局上界证明。
+总体密度在有限Gaussian包络内计算并报告遗漏尾概率；有限粒子分辨率继续沿用原canonical KDE。
+
+[`ideal_acceptance_200mm.json`](../config/experiments/ideal_acceptance_200mm.json)把三区总长固定为200 mm；
+[`ideal_acceptance_200mm_boundary.json`](../config/experiments/ideal_acceptance_200mm_boundary.json)只加密该扫描
+的3.2--5.0 mm过渡区。两者保持相同源、能量、反射器、门槛和粒子政策，结果见
+[`200 mm扫描快照`](../../../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20260827__200mm-ideal-acceptance-scan.md)。
+
+[`ideal_acceptance_300mm.json`](../config/experiments/ideal_acceptance_300mm.json)与200 mm主扫描使用完全
+相同的离散宽度点、控制域、源、能量、反射器和数值/粒子合同，唯一科学变量是总加速器长度300 mm；
+它不自动补密边界。理论模式默认最多使用8个纯Python进程，先并行解独立控制根、再按预估工作量并行
+完成不同束宽；每个束宽内部仍保持“总体筛选后再粒子确认”的因果顺序。`--max-workers`只降低本次运行的
+执行并发，不改变冻结的科学输入或数值身份，也不调用SIMION资源调度器。
+
+`ideal_acceptance_300mm_simion_candidate.py`是这一个已选`300 mm / 4 mm`理想轴向点进入真实场的唯一
+候选编译器。它不重搜参数，必须绑定已发布的理想场configuration、manifest和已通过独立粒子检验的
+selected result；`--run-dir`原子发布一个`CANDIDATE_ONLY`候选，`--output`只用于临时单文件检查。
+
+编译时核对父manifest中的`experiment`、`reference_config`及唯一selected-result记录，消费父冻结
+configuration与reference；显式`--configuration`可以是同字节副本，但身份不符立即拒绝。普通编译、
+网格闭合及发布记录使用同一父输入权威，不回读活动reference；父输入缺失或漂移不能用当前配置补齐。
+直接回归见`tests/analysis/test_ideal_acceptance_300mm_simion_candidate.py`，不把软件输入绑定通过当作真实场验证。
+集成侧的`three_zone_ideal_acceptance_300mm_square_v1`与`..._cylindrical_v1`必须消费同一候选的四个轴向平面、
+电位和反射器工作点；二者只允许改变横截面。候选的坐标会整体平移到现有多极杆直连端口，内部长度、
+场强和相对焦点不变；这不是额外加上一段300 mm连接器。真实方/圆场、孔径收集、轴场等价和数值收敛
+仍需由对应SIMION运行单独验证。
+
+`analyze_square_cylindrical_axis_target.py`是这对方形/圆形真实PA运行后的只读比较入口。它失败关闭地核验同一Candidate SHA、四个轴向平面与电位、加速器环位置、数值profile、脉冲和上游源身份；随后从两份`total_axis_field.csv`分别积分三区及总电势降，并报告方减圆的轴向`E_z` RMS/max诊断。若另行提供身份相同的完整飞行run，它只从已保存的`pre_pulse_state`和`local_accelerator_exit`调用独立轴场积分器；没有保存状态时明确`NOT_RUN`，绝不启动求解器或伪造参考轨迹。它不将同轴目标或小轴场差异表述为三维场、收集率或分辨率等价。
+
+`analyze_ideal_acceptance_aperture_campaign.py`只读八臂预脉冲屏幕，量化完整`N=5000`母cohort上的源侧收集、加速方向`z`展宽及`z-v_z`线性残差；它明确不报告分辨率。`analyze_ideal_acceptance_aperture_full_flight.py`消费同一八臂的已发布全脉冲飞行run，逐臂核验Candidate和输出身份，并在不取共同命中交集的前提下报告完整母cohort传输/损失、预脉冲展宽和线性残差，以及每一臂自身全部探测命中的直接FWHM、分辨率、峰形和bootstrap。二者都只是方形/圆形、孔高对照的真实场探索分析，不证明横向场等价、优化或Formal性能。
+
+`publish_ideal_acceptance_aperture_comparison.py`是上述两类八臂比较的唯一正式发布入口。它先运行对应的失败关闭读取器，再在项目canonical artifact根原子发布比较JSON、`run_config.json`、`summary.json`和`run_manifest.json`；预脉冲模式绑定campaign与八个父run manifest，全飞行模式还逐一绑定八个已核验的SIMION子run manifest。读取器拒绝任一臂时不会留下部分或成功样式的分析产物。发布结果仍分别仅为`DETECTOR_BLIND_SOURCE_ONLY`或真实场探索证据，不能据此作Formal或三维横向场等价声明。
+
+真实PA的轴向细网格若不能表示连续理论平面，可显式传入`--axial-grid-z-mm`。编译器只将三区长度投影到
+该已声明网格、保持300 mm总长与第一场区/源契约固定，并重新求解同一`a1=a2=a3=0`方程；结果模式为
+`IDEAL_ACCEPTANCE_300MM_GRID_REALIZED_V1`，会记录网格、三段长度和方程残差。它不是电压或几何搜索，
+也不把网格闭合误称为真实场等价。当前真实运行使用已注册的`0.05 mm`轴向overlay网格，故其网格可实现
+候选为`7.000 / 56.150 / 236.850 mm`。
+
+每个束宽可以有不同理论候选；“最大已验证宽度”不是一个冻结设计覆盖全部较小束宽的证明，也不是
+全局极限。该模式暂不支持`--resume-from`，失败会输出具体阶段及完整日志，修正后用新run自动重算；
+原残差/束宽比较模式的断点复用行为不变。所有新增实现是维护中的正式分析功能，结果仍为理想场探索证据。
+
+## Formal与跨求解器
+
+从仓库根只读复核当前 Formal；同一入口的其他阶段含义见下文：
+
+```powershell
+.\projects\single_reflection_oa_tof_mass_analyzer\workflows\formal_reference\run_formal_validation.ps1 -Phase Verify
+```
+
+`Validate`从成功的零物理变化候选冻结输入，以同一N=1000粒子表串行重算；`Publish`只接受晋升
+request和独立GUI/CAD evidence；`Verify`只读复核当前Formal。禁止手改
+`formal_validation.json`。
+
+跨求解器诊断入口为
+[`run_cross_solver_diagnostics.ps1`](../../../workflows/resources/run_cross_solver_diagnostics.ps1)。
+它只读当前Formal资产，在独立run中冻结身份后调用求解器适配器；本目录算法不直接启动商业软件。
+诊断PASS只说明导出、配对、分析和manifest成功，不代表场或轨迹等价。
+
+## 门禁与维护
+
+- 回归入口：`verify_reference_analysis.ps1`。
+- `R=m/FWHM_m`和直接FWHM只在`msplatform.analysis.peak_metrics`维护。
+- 修改KDE带宽、网格点数或半高交点算法时，先提升分析合同版本再更新基准。
+- MATLAB图只作GUI展示，正式统计必须与冻结Python实现核对。
+- 修改加速器电压、间距、源宽、无场长度或反射器参数时，必须重新运行理论闭合并按rebuild plan更新
+  所有受影响实现。
+- Arm 8解析闭合通过`python -m msplatform.workflows.oa_tof_design.verify_axial_ideal_closure
+  src/msplatform/components/single_reflection_oa_tof/config/diagnostics/axial_ideal_arm8_analytic_closure.json --output <receipt.json>`运行。receipt明确标记为
+  solver-independent analytic closure，不得表述为SIMION、COMSOL或Formal结果。
+- 通用代码只有第二个项目实际复用后才能上移`common/`。
+
+## 反射器电压补偿运行与恢复
+
+`workflows/reflectron_voltage_compensation/run_compensation.py` 保留原场、补偿、理想反射器三臂；
+Python负责实际源/场输入、单调固定端点拟合、整批恢复投影和分析，私有PowerShell适配调用公共
+SIMION批次、资源及run发布owner。父case只读，所有可写PA/IOB/Program均属于新run。
+The canonical SIMION response-basis fit and Lua profile are provided by
+`msplatform.backends.simion.optimize_reflectron_ring_voltages`. Its versioned authoring
+resource preserves the original regularization default, without claiming optimality.
+Explicit input overrides it and the selected value enters the frozen plan. A new
+`--resume-from` run resolves and freezes that resource only when input is omitted;
+explicit values bypass it and existing reuse checks still reject incompatible flights.
+Fit and `--resume-finalization` consume the original plan without reading current defaults.
+`--particle-count`默认1000；显式100/5000仅消费父case已冻结的同N ION，不重新采样或编号。
+
+```powershell
+.\.venv\Scripts\python.exe -B -m msplatform.workflows.oa_candidate.run_compensation --case-dir <已发布case目录> --particle-count 100 --run-id <新的合法run_id>
+```
+
+源必须有终态manifest绑定的合同、同N源和verified canonical四实例runtime证据。
+实际缺批需要原生执行时，显式传`--numerics-path <作者solver_numerics.json>`；原producer仅支持
+N100/N1000。科学模式只读取父manifest绑定的`inputs.mode`，核对其与父resolved的身份；
+不从数值请求所在目录或当前Formal默认推定。几何、电压、源、坐标保持父定义，数值设置明确冻结，正式默认不改。
+原`build_formal_delivery.ps1`在同一新run、capacity/session和owner中，从公共standalone缓存建立
+新的可写私有runtime；缺少适用缓存才实际求场。模板IOB只作小结构输入，producer先建立本run场，
+随后重绑模板并原生验证；不先vendor打开模板中的父PA引用。
+新`SourceIonPath`只消费本run inputs内已冻结的原ION，经现有verified-copy边界验证复制，
+不调用源生成器、不重新采样或编号。默认producer调用未传此参数时仍保留原源生成。
+显式前驱的冻结闭包若含已由其manifest绑定的标准CPython3.11缓存，按同一绑定runtime、header及
+逐代码字段静态比对，在新run的`inputs/predecessor_source_closure/`派生独立证据；不执行父字节码，
+不修改父源码、缓存或manifest，不覆盖本次`inputs/code`。未知extra或证据不完整仍拒绝。
+已发布native `.paN` family即使完整复制也不构成安全运行来源；旧copy/materialize及额外IOB构建
+分支已删除。未提供显式重建输入时保持失败关闭，不自动重Refine、不用当前Formal替代。
+当前shield260原standalone cache已缺失；粗网格方案仅是功能候选，真实producer/三臂原生闭环尚待执行，
+不能把软件接线通过当作科学验收完成。恢复同一科学输入时加
+`--resume-from <显式父run_manifest.json>`和新的`--run-id`，保持已完成整批和原分区，
+只执行缺失单元；分析失败仍可复用完整Fly。完整合法父批次全部复用不物化PA、不重建IOB、不启动SIMION。
+原run仅收尾失败时，沿原CLI `--resume-finalization --run-id <原run_id>`读取run外小Result，
+不能把此动作当作新Fly或改变父终态。三臂执行完成与有无分辨率增益分别输出；该对照不是几何、
+网格、步长或分辨率资格认证。
+
+`native_stage_completion.append_native_stage_completion`将原项目receipt投影为现有公共owner的进程与释放事实，Candidate与补偿消费者共同使用；它不启动进程或创建资源账本。`candidate_source_closure.derive_candidate_source_closure`只在受保护的显式终态父证据充分时派生干净源码闭包，不执行或复制父缓存。

@@ -84,19 +84,27 @@ def project_run_path(
     return str(execution / relative)
 
 
+def current_run_directories() -> tuple[Path, Path] | None:
+    """Return the public owner's active canonical and execution directories."""
+    persistent = os.environ.get("MASS_SPECTROMETRY_RUN_DIRECTORY")
+    execution = os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY")
+    if persistent is None and execution is None:
+        return None
+    if not persistent or not execution:
+        raise ValueError("run context requires both canonical and execution directories")
+    return _absolute(persistent, "artifact_run_dir"), _absolute(execution, "run_dir")
+
+
 def project_native_run_path(path: str | os.PathLike[str]) -> str:
     """Project explicit native-consumer paths using the current process context.
 
     Read on every call: modules can be imported before the owner establishes a
     native execution view. These ephemeral spellings never enter file identity.
     """
-    persistent = os.environ.get("MASS_SPECTROMETRY_RUN_DIRECTORY")
-    execution = os.environ.get("MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY")
-    if persistent is None and execution is None:
+    current = current_run_directories()
+    if current is None:
         return os.fspath(path)
-    if not persistent or not execution:
-        raise ValueError("native run projection requires both canonical and execution directories")
-    return project_run_path(path, persistent, execution)
+    return project_run_path(path, *current)
 
 
 

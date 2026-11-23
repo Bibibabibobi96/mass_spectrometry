@@ -1,0 +1,544 @@
+[CmdletBinding()]
+param(
+  [Parameter(Mandatory = $true)]
+  [string]$RunId,
+  [string]$PythonExe = '',
+  [string]$ResolvedInputsPath = ''
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+$componentRoot = 'src/msplatform/components/transverse_helical_filament_wehnelt_electron_gun'
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
+$projectRoot = Join-Path $repoRoot $componentRoot
+$workspaceRoot = Split-Path -Parent $repoRoot
+$artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\transverse_helical_filament_wehnelt_electron_gun'
+$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
+$software = @('COMSOL 6.4 via MATLAB R2025b')
+
+$bootstrapFiles = [ordered]@{
+  powershell_runtime_gate = 'src\msplatform\execution\resources\require_powershell7.ps1'
+  artifact_support = 'src/msplatform/execution/resources/run_artifact_support.ps1'
+  manifest_writer = 'src\msplatform\execution\manifest_publication.py'
+  recorded_file_removal = 'src\msplatform\execution\recorded_file_removal.py'
+  manifest_verifier = 'src\msplatform\execution\manifest_verification.py'
+  artifact_naming = 'src\msplatform\execution\artifact_naming.py'
+  file_identity = 'src\msplatform\io\file_identity.py'
+}
+. (Join-Path $repoRoot $bootstrapFiles.artifact_support)
+$bootstrapIdentity = [ordered]@{}
+foreach ($entry in $bootstrapFiles.GetEnumerator()) {
+  $source = Join-Path $repoRoot $entry.Value
+  $bootstrapIdentity[$entry.Key] = [ordered]@{
+    source_repo_path = $entry.Value.Replace('\','/')
+    sha256 = Get-RunFileSha256 -Path $source
+  }
+}
+
+function Read-BuildOnlyReport {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][string]$Path,
+    [Parameter(Mandatory = $true)][System.Collections.IDictionary]$Expected
+  )
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+    throw "Wehnelt build-only report is missing: $Path"
+  }
+  $values = [ordered]@{}
+  $lineNumber = 0
+  foreach ($line in Get-Content -LiteralPath $Path -Encoding UTF8) {
+    $lineNumber += 1
+    if ([string]::IsNullOrWhiteSpace($line)) {
+      continue
+    }
+    if ($line -cnotmatch '^([A-Z][A-Z0-9_]*)=(.*)$') {
+      throw "Malformed build-only report line $lineNumber."
+    }
+    $key = $Matches[1]
+    $value = $Matches[2]
+    if (-not $Expected.Contains($key)) {
+      throw "Unknown build-only report key at line ${lineNumber}: $key"
+    }
+    if ($values.Contains($key)) {
+      throw "Duplicate build-only report key at line ${lineNumber}: $key"
+    }
+    $values[$key] = $value
+  }
+  foreach ($entry in $Expected.GetEnumerator()) {
+    if (-not $values.Contains($entry.Key)) {
+      throw "Build-only report is missing required key: $($entry.Key)"
+    }
+    if ([string]$values[$entry.Key] -cne [string]$entry.Value) {
+      throw "Build-only report value mismatch for $($entry.Key)."
+    }
+  }
+  return $values
+}
+
+function Invoke-VerifiedRecordTransition {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][string[]]$Paths,
+    [Parameter(Mandatory = $true)][scriptblock]$Action
+  )
+  $snapshots = [ordered]@{}
+  foreach ($path in $Paths) {
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+      throw "Cannot transition a run record without its verified prestate file: $path"
+    }
+    $snapshots[$path] = [IO.File]::ReadAllBytes($path)
+  }
+  try {
+    & $Action
+  } catch {
+    $transitionError = $_
+    foreach ($entry in $snapshots.GetEnumerator()) {
+      [IO.File]::WriteAllBytes([string]$entry.Key, [byte[]]$entry.Value)
+    }
+    throw $transitionError
+  }
+}
+
+function Assert-FrozenInputSet {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][string]$InputDirectory,
+    [Parameter(Mandatory = $true)][System.Collections.IDictionary]$Inputs
+  )
+  $declared = @($Inputs.Values | ForEach-Object {
+    [IO.Path]::GetFullPath([string]$_)
+  } | Sort-Object)
+  $declaredUnique = @($declared | Select-Object -Unique)
+  if ($declared.Count -ne $declaredUnique.Count) {
+    throw 'Frozen input declarations contain duplicate paths.'
+  }
+  $actual = @(Get-ChildItem -LiteralPath $InputDirectory -Recurse -File |
+    ForEach-Object { $_.FullName } | Sort-Object)
+  $differences = @(Compare-Object -ReferenceObject $declaredUnique `
+    -DifferenceObject $actual)
+  if ($differences.Count -ne 0) {
+    $details = @($differences | ForEach-Object {
+      '{0}:{1}' -f $_.SideIndicator,$_.InputObject
+    }) -join '; '
+    throw "Frozen input directory differs from its declarations: $details"
+  }
+}
+
+function Get-ExistingRunOutputs {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][string]$RunDirectory,
+    [Parameter(Mandatory = $true)][string]$InputDirectory
+  )
+  $excluded = @(
+    [IO.Path]::GetFullPath((Join-Path $RunDirectory 'run_config.json')),
+    [IO.Path]::GetFullPath((Join-Path $RunDirectory 'run_manifest.json'))
+  )
+  return @(
+    Get-ChildItem -LiteralPath $RunDirectory -Recurse -File |
+      Where-Object {
+        -not $_.FullName.StartsWith(
+          [IO.Path]::GetFullPath($InputDirectory) + [IO.Path]::DirectorySeparatorChar,
+          [StringComparison]::OrdinalIgnoreCase
+        ) -and $excluded -notcontains $_.FullName
+      } |
+      Sort-Object FullName |
+      ForEach-Object { $_.FullName }
+  )
+}
+
+function New-BuildSummary {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][ValidateSet('success','failed','interrupted')]
+    [string]$Status,
+    [Parameter(Mandatory = $true)][string]$Reason,
+    [Parameter(Mandatory = $true)][string]$FailureStage,
+    [bool]$CommercialWrapperInvocationAttempted = $false,
+    [bool]$CommercialWrapperCompleted = $false,
+    [System.Collections.IDictionary]$ReportValues = $null
+  )
+  $inputFreshnessPassed = @(
+    'frozen_input_validation','commercial_wrapper_pending','commercial_wrapper',
+    'precommercial_input_validation','report_validation','input_set_validation',
+    'manifest_finalization','none'
+  ) -contains $FailureStage
+  return [ordered]@{
+    schema_version = 1
+    role = 'wehnelt_build_only_smoke_summary'
+    status = $Status
+    reason = $Reason
+    failure_stage = $FailureStage
+    threshold_result_eligible = $false
+    candidate_evidence_allowed = $false
+    formal_asset_modified = $false
+    formal_gate_passed = $false
+    input_freshness_passed = $inputFreshnessPassed
+    commercial_wrapper_invocation_attempted = $CommercialWrapperInvocationAttempted
+    commercial_wrapper_completed = $CommercialWrapperCompleted
+    geometry_built = $null -ne $ReportValues -and $ReportValues.GEOMETRY_BUILT -ceq 'true'
+    mesh_built = $null -ne $ReportValues -and $ReportValues.MESH_BUILT -ceq 'true'
+    electrostatics_solved = $null -ne $ReportValues -and $ReportValues.ELECTROSTATICS_SOLVED -ceq 'true'
+    cpt_tree_built = $null -ne $ReportValues -and $ReportValues.CPT_TREE_BUILT -ceq 'true'
+    particle_tracing_solved = $null -ne $ReportValues -and $ReportValues.PARTICLE_TRACING_SOLVED -ceq 'true'
+    contract_loaded = $null -ne $ReportValues -and $ReportValues.CONTRACT_LOADED -ceq 'true'
+    parameter_bindings_verified = $null -ne $ReportValues -and $ReportValues.PARAMETER_BINDINGS_VERIFIED -ceq 'true'
+  }
+}
+
+$environmentNames = @(
+  'MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY',
+  'PYTHONDONTWRITEBYTECODE','RUFF_NO_CACHE','SIMULATION_PYTHON_EXE'
+)
+$savedEnvironment = Save-RunEnvironment -Names $environmentNames
+$env:PYTHONDONTWRITEBYTECODE = '1'
+$env:RUFF_NO_CACHE = 'true'
+$env:SIMULATION_PYTHON_EXE = $python
+$package = $null
+$manifestPath = ''
+$report = ''
+$wrapperLog = ''
+$geometryModel = ''
+$electrostaticModel = ''
+$cptModel = ''
+$failureStage = 'package_initialization'
+$frozenInputs = [ordered]@{}
+$manifestRepoRoot = $repoRoot
+$runConfig = $null
+$recordPaths = @()
+$commercialWrapperInvocationAttempted = $false
+$commercialWrapperCompleted = $false
+
+try {
+  $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
+    -RunId $RunId -Project 'transverse_helical_filament_wehnelt_electron_gun' -Mode 'build_only_smoke' `
+    -Software $software -RetentionContractEnabled -RetentionClass compact -CapacityLedgerLifecycleEnabled `
+    -AdditionalDirectories @('comsol') -UseShortExecutionPath
+  $manifestPath = Join-Path $package.run_dir 'run_manifest.json'
+  $recordPaths = @($package.run_config,$package.summary,$manifestPath)
+  $report = Join-Path $package.log_dir 'build_only_report.txt'
+  $wrapperLog = Join-Path $package.log_dir 'commercial_wrapper.log'
+  $geometryModel = Join-Path $package.run_dir 'comsol\ElectronGun_CoilT.mph'
+  $electrostaticModel = Join-Path $package.run_dir 'comsol\ElectronGun_CoilT_ES.mph'
+  $cptModel = Join-Path $package.run_dir 'comsol\transverse_helical_filament_wehnelt_electron_gun__model.mph'
+  $failureStage = 'run_initialized'
+  $runConfig = [ordered]@{
+    schema_version = 1
+    run_id = $RunId
+    project = 'transverse_helical_filament_wehnelt_electron_gun'
+    mode = 'build_only_smoke'
+    project_root = $projectRoot
+    inputs = $frozenInputs
+    parameters = [ordered]@{
+      execution_mode = 'build_only'
+      evidence_particle_count = 1
+      mesh_build_required = $true
+      electrostatics_solver_run = $false
+      particle_solver_run = $false
+      candidate_evidence_allowed = $false
+      formal_asset_modified = $false
+      lifecycle_stage = $failureStage
+      bootstrap_boundary = [ordered]@{
+        role = 'live_repository_initialization_only'
+        frozen_replacement_required_before_input_freshness = $true
+        files = $bootstrapIdentity
+      }
+    }
+    formal_gate_passed = $false
+  }
+  Invoke-VerifiedRecordTransition -Paths $recordPaths -Action {
+    Write-RunJson -Value $runConfig -Path $package.run_config
+    Write-RunJson -Path $package.summary -Value (
+      New-BuildSummary -Status interrupted `
+        -Reason 'Run initialized; task-specific inputs are not frozen yet.' `
+        -FailureStage $failureStage
+    )
+    Write-RunManifest -Python $package.python -RepoRoot $manifestRepoRoot `
+      -RunConfig $package.run_config -Manifest $manifestPath -Status interrupted `
+      -Software $software -Outputs @($package.summary)
+  }
+
+  $failureStage = 'input_freeze'
+  $snapshotRoot = Join-Path $package.input_dir 'repository'
+  $codeRoot = Join-Path $snapshotRoot $componentRoot
+  $infrastructureRoot = $snapshotRoot
+  New-Item -ItemType Directory -Force -Path $codeRoot | Out-Null
+
+  $projectFrozenFiles = [ordered]@{
+    baseline = 'config\baseline.json'
+    numerical_modes = 'config\numerical_modes.json'
+    resolved_contract = 'config\resolved_model.json'
+    mode = 'config\modes\build_only_smoke.json'
+    execution_profiles = 'config\execution_profiles.json'
+    project_descriptor = 'config\project.json'
+  }
+  $compiledInputs=$null
+  if($ResolvedInputsPath){
+    $compiledInputs=Get-Content -LiteralPath $ResolvedInputsPath -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable -Depth 100
+    if($compiledInputs.role-ne'compiled_execution_inputs'-or$compiledInputs.project_id-ne'transverse_helical_filament_wehnelt_electron_gun'){throw 'Compiled Wehnelt input identity differs.'}
+  }
+  foreach ($entry in $projectFrozenFiles.GetEnumerator()) {
+    $inputSource=Join-Path $projectRoot $entry.Value
+    if($null-ne$compiledInputs-and$entry.Key-in@('baseline','numerical_modes','resolved_contract','mode')){
+      $records=@($compiledInputs.files|Where-Object{$_.name-eq$entry.Key})
+      if($records.Count-ne1){throw "Compiled Wehnelt input is missing: $($entry.Key)"}
+      $inputSource=Join-Path $compiledInputs.root ([string]$records[0].relative_path)
+    }
+    $frozenInputs[$entry.Key] = Copy-VerifiedRunInput `
+      -Source $inputSource `
+      -Destination (Join-Path $codeRoot $entry.Value)
+  }
+  $workflowFrozenFiles = [ordered]@{
+    runner = 'src\msplatform\workflows\resources\wehnelt_build_only.ps1'
+    task_script = 'src\msplatform\backends\comsol\matlab\build_wehnelt_build_only_task.m'
+  }
+  foreach ($entry in $workflowFrozenFiles.GetEnumerator()) {
+    $frozenInputs[$entry.Key] = Copy-VerifiedRunInput `
+      -Source (Join-Path $repoRoot $entry.Value) `
+      -Destination (Join-Path $snapshotRoot $entry.Value)
+  }
+  foreach ($file in Get-ChildItem -LiteralPath (Join-Path $repoRoot 'tests\projects\transverse_helical_filament_wehnelt_electron_gun') `
+      -Filter '*.py' -File | Sort-Object Name) {
+    $key = 'static_test_' + ($file.BaseName -replace '[^A-Za-z0-9]+','_')
+    $relative = 'tests\projects\transverse_helical_filament_wehnelt_electron_gun\' + $file.Name
+    $frozenInputs[$key] = Copy-VerifiedRunInput -Source $file.FullName `
+      -Destination (Join-Path $snapshotRoot $relative)
+  }
+
+  $commonFrozenFiles = [ordered]@{
+    python_project_config = 'pyproject.toml'
+    changed_scope_gate = 'tools\repository\verify.ps1'
+    gate_catalog = 'tools\repository\gate_catalog.json'
+    project_registry_builder = 'tools\repository\build_project_registry.py'
+  }
+  foreach ($entry in $commonFrozenFiles.GetEnumerator()) {
+    $frozenInputs[$entry.Key] = Copy-VerifiedRunInput `
+      -Source (Join-Path $repoRoot $entry.Value) `
+      -Destination (Join-Path $infrastructureRoot $entry.Value)
+  }
+  $selectCoreSources = @'
+import json, pathlib, sys, tomllib
+from msplatform.execution.inputs import enumerate_python_sources
+root = pathlib.Path(sys.argv[1]).resolve()
+selected = set(enumerate_python_sources(
+    root, package_roots=("src/msplatform",), provider_root="src/msplatform",
+    resource_suffixes=(".schema.json",)))
+configuration = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+for package, patterns in configuration["tool"]["setuptools"]["package-data"].items():
+    package_root = root / "src" / package.replace(".", "/")
+    for pattern in patterns:
+        resources = sorted(path for path in package_root.glob(pattern) if path.is_file())
+        if not resources:
+            raise ValueError(f"Declared package resource is unavailable: {package}/{pattern}")
+        selected.update(path.relative_to(root).as_posix() for path in resources)
+print(json.dumps(sorted(selected)))
+'@
+  $coreSelection = Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
+    & $package.python -B -c $selectCoreSources $repoRoot
+    if ($LASTEXITCODE -ne 0) { throw 'Scientific core source selection failed.' }
+  }
+  $comsolCoreRoles = @{
+    'src/msplatform/execution/resources/require_powershell7.ps1' = 'powershell_runtime_gate'
+    'src/msplatform/execution/resources/run_artifact_support.ps1' = 'artifact_support'
+    'src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1' = 'comsol_runner'
+    'src/msplatform/backends/comsol/launcher/resolve_comsol_64.ps1' = 'comsol_launcher_resolver'
+    'src/msplatform/backends/comsol/launcher/livelink_failure_classification.ps1' = 'comsol_failure_classifier'
+    'src/msplatform/backends/comsol/launcher/livelink_environment.ps1' = 'comsol_environment'
+    'src/msplatform/backends/comsol/matlab/comsolstartup.m' = 'comsol_startup'
+  }
+  foreach ($relative in @($coreSelection | ConvertFrom-Json)) {
+    $key = if ($comsolCoreRoles.ContainsKey([string]$relative)) { $comsolCoreRoles[[string]$relative] } else { 'scientific_core_' + ($relative -replace '[^A-Za-z0-9]+','_') }
+    $frozenInputs[$key] = Copy-VerifiedRunInput `
+      -Source (Join-Path $repoRoot $relative) `
+      -Destination (Join-Path $snapshotRoot $relative)
+  }
+
+foreach ($entry in $bootstrapIdentity.GetEnumerator()) {
+    if ((Get-RunFileSha256 -Path (Join-Path $snapshotRoot $entry.Value.source_repo_path)) -cne $entry.Value.sha256) {
+      throw "Bootstrap dependency changed before it was frozen: $($entry.Key)"
+    }
+  }
+
+
+  $runConfig.inputs = $frozenInputs
+  $runConfig.parameters.lifecycle_stage = 'inputs_frozen'
+  . $frozenInputs.artifact_support
+  $manifestRepoRoot = $infrastructureRoot
+  Invoke-VerifiedRecordTransition -Paths $recordPaths -Action {
+    Write-RunJson -Value $runConfig -Path $package.run_config
+    Write-RunJson -Path $package.summary -Value (
+      New-BuildSummary -Status interrupted `
+        -Reason 'Inputs are frozen; input freshness has not been checked.' `
+        -FailureStage 'input_freshness_pending'
+    )
+    Write-RunManifest -Python $package.python -RepoRoot $manifestRepoRoot `
+      -RunConfig $package.run_config -Manifest $manifestPath -Status interrupted `
+      -Software $software -Outputs (Get-ExistingRunOutputs `
+        -RunDirectory $package.run_dir -InputDirectory $package.input_dir)
+  }
+
+  $failureStage = 'input_freshness'
+  Invoke-RunToolRootContext -RepoRoot $snapshotRoot -Operation {
+    & $package.python -m msplatform.components.transverse_helical_filament_wehnelt_electron_gun.resolve_contract `
+      --baseline $frozenInputs.baseline `
+      --modes $frozenInputs.numerical_modes `
+      --mode build_only_smoke `
+      --evidence-particle-count 1 `
+      --check $frozenInputs.resolved_contract
+    if ($LASTEXITCODE -ne 0) {
+      throw 'Frozen Wehnelt baseline, numerical mode, and resolved contract differ.'
+    }
+  }
+  $failureStage = 'frozen_input_validation'
+  Assert-FrozenInputSet -InputDirectory $package.input_dir -Inputs $frozenInputs
+
+  $failureStage = 'commercial_wrapper_pending'
+  $runConfig.parameters.lifecycle_stage = $failureStage
+  Invoke-VerifiedRecordTransition -Paths $recordPaths -Action {
+    Write-RunJson -Value $runConfig -Path $package.run_config
+    Write-RunJson -Path $package.summary -Value (
+      New-BuildSummary -Status interrupted `
+        -Reason 'Frozen input freshness passed; the commercial wrapper has not reached a terminal state.' `
+        -FailureStage $failureStage
+    )
+    Write-RunManifest -Python $package.python -RepoRoot $manifestRepoRoot `
+      -RunConfig $package.run_config -Manifest $manifestPath -Status interrupted `
+      -Software $software -Outputs @($package.summary)
+  }
+  $failureStage = 'precommercial_input_validation'
+  Assert-FrozenInputSet -InputDirectory $package.input_dir -Inputs $frozenInputs
+
+  $failureStage = 'commercial_wrapper'
+  Set-Content -LiteralPath $wrapperLog -Encoding UTF8 -Value @(
+    "WRAPPER_ENTRY=$($frozenInputs.comsol_runner)"
+    "TASK_SCRIPT=$($frozenInputs.task_script)"
+    "REPORT_PATH=$report"
+    'STREAM_CAPTURE=all_powershell_streams_merged'
+    "STARTED_AT_UTC=$([DateTime]::UtcNow.ToString('o'))"
+    'TERMINAL_STATE=pending'
+  )
+  $env:MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY = [string]$package.run_dir
+  try {
+    $commercialWrapperInvocationAttempted = $true
+    . (Join-Path (Split-Path -Parent ($frozenInputs.comsol_runner)) 'resolve_comsol_64.ps1')
+    $comsolLauncherParameters=Get-ComsolLauncherParameters -HostContext $script:HostResourceExecutionContext -WorkingDirectory $script:HostResourceExecutionContext.workspace
+    & $frozenInputs.comsol_runner @comsolLauncherParameters -TaskScript $frozenInputs.task_script `
+      -ReportPath $report -RunId $RunId *>&1 |
+      Tee-Object -FilePath $wrapperLog -Append
+    $wrapperExitCode = $LASTEXITCODE
+    $commercialWrapperCompleted = $true
+    Add-Content -LiteralPath $wrapperLog -Encoding UTF8 -Value @(
+      "WRAPPER_EXIT_CODE=$wrapperExitCode"
+      "FINISHED_AT_UTC=$([DateTime]::UtcNow.ToString('o'))"
+      'TERMINAL_STATE=returned'
+    )
+    if ($wrapperExitCode -ne 0) {
+      throw "Wehnelt R2025b/COMSOL build-only task exited with code $wrapperExitCode."
+    }
+  } catch {
+    Add-Content -LiteralPath $wrapperLog -Encoding UTF8 -Value @(
+      "WRAPPER_EXCEPTION=$($_.Exception.Message)"
+      "FINISHED_AT_UTC=$([DateTime]::UtcNow.ToString('o'))"
+      'TERMINAL_STATE=failed'
+    )
+    throw
+  }
+
+  $failureStage = 'report_validation'
+  foreach ($modelPath in @($geometryModel,$electrostaticModel,$cptModel)) {
+    if (-not (Test-Path -LiteralPath $modelPath -PathType Leaf) -or
+        (Get-Item -LiteralPath $modelPath).Length -le 0) {
+      throw "Wehnelt build-only MPH is missing or empty: $modelPath"
+    }
+  }
+  $expectedReport = [ordered]@{
+    TASK = 'WEHNELT_THREE_STAGE_BUILD_ONLY'
+    ELECTROSTATIC_MODEL_PATH = $electrostaticModel
+    CPT_MODEL_PATH = $cptModel
+    GEOMETRY_BUILT = 'true'
+    MESH_BUILT = 'true'
+    ELECTROSTATICS_SOLVED = 'false'
+    CPT_TREE_BUILT = 'true'
+    PARTICLE_TRACING_SOLVED = 'false'
+    CONTRACT_LOADED = 'true'
+    CONTRACT_PROJECT_ID = 'transverse_helical_filament_wehnelt_electron_gun'
+    SELECTED_MODE_ID = 'build_only_smoke'
+    PARAMETER_BINDINGS_VERIFIED = 'true'
+    CANDIDATE_EVIDENCE_ALLOWED = 'false'
+    STATUS = 'PASS'
+  }
+  $reportValues = Read-BuildOnlyReport -Path $report -Expected $expectedReport
+  $failureStage = 'input_set_validation'
+  Assert-FrozenInputSet -InputDirectory $package.input_dir -Inputs $frozenInputs
+
+  $failureStage = 'manifest_finalization'
+  $runConfig.parameters.lifecycle_stage = 'completed'
+  $successSummary = New-BuildSummary -Status success `
+    -Reason 'The governed build-only workflow completed.' -FailureStage 'none' `
+    -CommercialWrapperInvocationAttempted $commercialWrapperInvocationAttempted `
+    -CommercialWrapperCompleted $commercialWrapperCompleted `
+    -ReportValues $reportValues
+  $successSummary['geometry_model'] = 'comsol/ElectronGun_CoilT.mph'
+  $successSummary['electrostatic_model'] = 'comsol/ElectronGun_CoilT_ES.mph'
+  $successSummary['cpt_model'] = 'comsol/transverse_helical_filament_wehnelt_electron_gun__model.mph'
+  $successSummary['report'] = 'logs/build_only_report.txt'
+  $successSummary['wrapper_log'] = 'logs/commercial_wrapper.log'
+  Invoke-VerifiedRecordTransition -Paths $recordPaths -Action {
+    Write-RunJson -Value $runConfig -Path $package.run_config
+    Write-RunJson -Path $package.summary -Value $successSummary
+    $retentionActions = Apply-RunArtifactRetention -Python $package.python `
+      -RepoRoot $manifestRepoRoot -RunConfig $package.run_config
+    Write-VerifiedRunManifest -Python $package.python -RepoRoot $manifestRepoRoot `
+      -RunConfig $package.run_config -Manifest $manifestPath -Status success `
+      -Software $software -Outputs (@(Get-ExistingRunOutputs `
+        -RunDirectory $package.run_dir -InputDirectory $package.input_dir)+@($retentionActions))
+  }
+  Write-Output "WEHNELT_BUILD_ONLY=PASS RUN_ID=$RunId RUN_DIR=$($package.run_dir)"
+} catch {
+  $runError = $_
+  if ($null -ne $package -and $null -ne $runConfig) {
+    try {
+      Invoke-VerifiedRecordTransition -Paths $recordPaths -Action {
+        $knownInputs = @($frozenInputs.Values | ForEach-Object {
+          [IO.Path]::GetFullPath([string]$_)
+        })
+        $recoveredIndex = 0
+        foreach ($file in Get-ChildItem -LiteralPath $package.input_dir -Recurse -File |
+            Sort-Object FullName) {
+          if ($knownInputs -notcontains $file.FullName) {
+            $recoveredIndex += 1
+            $frozenInputs[("recovered_input_{0:D3}" -f $recoveredIndex)] = $file.FullName
+          }
+        }
+        $runConfig.inputs = $frozenInputs
+        $runConfig.parameters.lifecycle_stage = 'failed'
+        Write-RunJson -Value $runConfig -Path $package.run_config
+        Write-RunJson -Path $package.summary -Value (
+          New-BuildSummary -Status failed -Reason $runError.Exception.Message `
+            -FailureStage $failureStage `
+            -CommercialWrapperInvocationAttempted $commercialWrapperInvocationAttempted `
+            -CommercialWrapperCompleted $commercialWrapperCompleted
+        )
+        $retentionActions = Apply-RunArtifactRetention -Python $package.python `
+          -RepoRoot $manifestRepoRoot -RunConfig $package.run_config
+        $outputs = @(Get-ExistingRunOutputs `
+          -RunDirectory $package.run_dir -InputDirectory $package.input_dir
+        ) + @($retentionActions)
+        Write-VerifiedRunManifest -Python $package.python -RepoRoot $manifestRepoRoot `
+          -RunConfig $package.run_config -Manifest $manifestPath -Status failed `
+          -Software $software -Outputs $outputs
+      }
+    } catch {
+      throw "Run failed at $failureStage and terminal finalization also failed; the last verified prestate was restored. Run error: $($runError.Exception.Message) Finalization error: $($_.Exception.Message)"
+    }
+  }
+  throw $runError
+} finally {
+  Restore-RunEnvironment -Names $environmentNames -Snapshot $savedEnvironment
+  if ($null -ne $package) {
+    try { Remove-RunPackageExecutionAlias -Package $package } catch {
+      Write-Warning "Could not remove short execution alias after Wehnelt build-only run: $($_.Exception.Message)"
+    }
+  }
+}

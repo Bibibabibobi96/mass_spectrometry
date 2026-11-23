@@ -23,14 +23,14 @@
 
 | 问题 | 正文入口与范围 |
 |---|---|
-| 多极杆场、阶数、电压约定、质量筛选、碰撞和出口相空间 | [多极杆理论](../projects/rf_multipole_ion_optics/docs/theory/index.md)，四／六／八极适用范围分别解释 |
-| 二区／三区加速器的局部时间聚焦与源状态 | [正交加速器理论](../projects/orthogonal_accelerator/docs/theory/README.md) |
-| 单反射器及加速器—反射器联合聚焦、条件相空间 | [单反射oa-TOF理论](../projects/single_reflection_oa_tof_mass_analyzer/docs/theory/README.md) |
-| 多反射镜、漂移、Stripe及注入光学 | [MR-TOF理论](../projects/parallel_mirror_dual_stripe_mr_tof/docs/theory/index.md) |
-| 双压力区捕获、碰撞冷却与脉冲提取的当前物理范围 | [Ion Processor状态](../projects/dual_pressure_rectilinear_ion_processor/docs/PROJECT.md) |
-| 双锥气流与离子输运的模型假设及耦合范围 | [双锥接口状态](../projects/dual_cone_tandem_quadrupole_ion_interface/docs/PROJECT.md) |
-| 电子轰击电离与离子出生状态的已有范围 | [EI离子源状态](../projects/apertured_tube_electron_impact_ion_source/docs/PROJECT.md) |
-| 热电子发射、收集与电子枪的模型限制 | [Wehnelt电子枪状态](../projects/transverse_helical_filament_wehnelt_electron_gun/docs/PROJECT.md) |
+| 多极杆场、阶数、电压约定、质量筛选、碰撞和出口相空间 | [多极杆理论](../src/msplatform/components/rf_multipole/docs/theory/index.md)，四／六／八极适用范围分别解释 |
+| 二区／三区加速器的局部时间聚焦与源状态 | [正交加速器理论](../src/msplatform/components/orthogonal_accelerator/docs/theory/README.md) |
+| 单反射器及加速器—反射器联合聚焦、条件相空间 | [单反射oa-TOF理论](../src/msplatform/components/single_reflection_oa_tof/docs/theory/README.md) |
+| 多反射镜、漂移、Stripe及注入光学 | [MR-TOF理论](../src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/docs/theory/index.md) |
+| 双压力区捕获、碰撞冷却与脉冲提取的当前物理范围 | [Ion Processor状态](../src/msplatform/components/dual_pressure_rectilinear_ion_processor/docs/PROJECT.md) |
+| 双锥气流与离子输运的模型假设及耦合范围 | [双锥接口状态](../src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/docs/PROJECT.md) |
+| 电子轰击电离与离子出生状态的已有范围 | [EI离子源状态](../src/msplatform/components/apertured_tube_electron_impact_ion_source/docs/PROJECT.md) |
+| 热电子发射、收集与电子枪的模型限制 | [Wehnelt电子枪状态](../src/msplatform/components/transverse_helical_filament_wehnelt_electron_gun/docs/PROJECT.md) |
 | 网格、时间步、粒子统计、峰宽和跨求解器比较 | [验证方法](science/VALIDATION_METHODS.md) |
 | 分辨率与允许时间误差的查表和计算 | [TOF误差预算](science/TOF_ERROR_BUDGET.md) |
 
@@ -45,22 +45,22 @@
 | SIMION长PA、场与程序经验 | [SIMION参考](tools/SIMION_REFERENCE.md) |
 | GitHub软件验证、可配置worker与完整Owner对照 | [软件验证与科学证据](OPERATIONS.md#软件验证与科学证据)；实际选择与失败证据由同一公共门禁保存 |
 | 某项目的模型树、操作步骤和软件验证 | 对应项目README中的COMSOL／SIMION／CAD入口，不在公共指南复制项目参数 |
-| 跨组件执行及联合证据 | [组装入口](../integrations/README.md) → 对应工作流和[集成状态](../integrations/docs/INTEGRATION.md) |
+| 跨组件执行及联合证据 | [组装入口](ASSEMBLY.md) → 对应工作流和[集成状态](INTEGRATION.md) |
 | 官方API或物理接口原始语义 | [供应商资料](references/software/README.md)，限定软件版本和相关章节 |
 
 ## 公共实现与机器合同
 
 | 对象 | 邻近说明 |
 |---|---|
-| 门禁编排、资源调度与公共机制任务路由 | [公共机制入口](../common/README.md) |
-| 峰形、场比较、粒子配对与数值统计 | [公共分析](../common/analysis/README.md) |
-| run身份、冻结、manifest、保留、容量与项目发现 | [机器合同](../common/contracts/README.md) |
-| 组件连接、完整与局部配方解析 | [公共连接合同](../common/integration/README.md) |
-| 离子释放、种子、粒子身份与母群 | [公共离子释放](../common/ion_release/README.md) |
-| SIMION执行、PA与缓存机制 | [公共SIMION实现](../common/simion/README.md) |
-| COMSOL启动和公共验证模型 | [公共COMSOL实现](../common/comsol/README.md) |
-| SolidWorks桥接和保存 | [公共SolidWorks实现](../common/solidworks/README.md) |
-| 工作区与产物路径 | [公共路径机制](../common/paths/README.md) |
+| 门禁编排、资源调度与公共机制任务路由 | [公共机制入口](REPOSITORY_OPERATIONS.md) |
+| 峰形、场比较、粒子配对与数值统计 | [公共分析](../tests/analysis/README.md) |
+| run身份、冻结、manifest、保留、容量与项目发现 | [机器合同](../tools/repository/README.md) |
+| 组件连接、完整与局部配方解析 | [公共连接合同](CONNECTIONS.md) |
+| 离子释放、种子、粒子身份与母群 | [公共离子释放](ION_RELEASE.md) |
+| SIMION执行、PA与缓存机制 | [公共SIMION实现](SIMION_BACKEND.md) |
+| COMSOL启动和公共验证模型 | [公共COMSOL实现](COMSOL_BACKEND.md) |
+| SolidWorks桥接和保存 | [公共SolidWorks实现](SOLIDWORKS.md) |
+| 工作区与产物路径 | [公共路径机制](PATHS.md) |
 
 这些说明只定义实际API及已验证使用边界。项目物理设计和资格仍由提供者维护，机器输入以相邻合同为准。
 
@@ -68,7 +68,7 @@
 
 | 要找的内容 | 入口及用途 |
 |---|---|
-| 发表主张、实验计划、阶段合同与证据矩阵 | [oa-TOF发表研究](../projects/single_reflection_oa_tof_mass_analyzer/docs/publication/README.md)；仅该项目实际维护此类研究，不要求其他项目复制模板 |
+| 发表主张、实验计划、阶段合同与证据矩阵 | [oa-TOF发表研究](../src/msplatform/components/single_reflection_oa_tof/docs/publication/README.md)；仅该项目实际维护此类研究，不要求其他项目复制模板 |
 | 书、论文与供应商手册 | [外部参考资料](references/README.md)；只保存来源定位，应用假设写回知识所有者 |
 | 已完成全仓审计与迁移 | [审计索引](AUDITS.md) |
 | 项目研究、旧方案和负结果 | 所属项目README的历史入口；[组装历史索引](history/integrations/README.md) |

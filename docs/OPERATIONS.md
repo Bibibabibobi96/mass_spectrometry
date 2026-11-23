@@ -76,7 +76,7 @@ CI 同分支运行沿现有 concurrency group 串行，新推送不取消已启�
 auto为`min(8, logical_processors)`）。普通非重型GATE记录CPU但不因高CPU或固定声明核数阻挡；
 内存、I/O、独占资源、依赖和嵌套串行仍生效，商业求解及重型GATE的原CPU准入规则不变。
 `-ResourceWaitTimeoutSeconds`默认1800，限定准入等待而非测试运行时间；超时取消自身等待并报告原因，
-不释放父token或杀健康owner。参数和观测范围详见[门禁编排](../common/README.md#门禁编排)。
+不释放父token或杀健康owner。参数和观测范围详见[门禁编排](REPOSITORY_OPERATIONS.md#门禁编排)。
 
 Ordinary nonheavy GATE declarations remain in ledger telemetry but contribute no
 reserved CPU cores when admitting native work. Native and heavy GATE reservations,
@@ -95,13 +95,13 @@ rule can admit an already waiting request without changing its budget or inputs.
 .\common\verify.ps1 -ChangedPath src/msplatform/workflows/oa_focus_analysis.py -PlanOnly
 ```
 
-职责与依赖只在[`common/gate_catalog.json`](../common/gate_catalog.json)维护。普通验证不认证全部Git历史，
+职责与依赖只在[`common/gate_catalog.json`](../tools/repository/gate_catalog.json)维护。普通验证不认证全部Git历史，
 实际历史改动定向检查，整档核验仅显式AuditHistory；只获取实际base/head或档案审计需要的源提交。
 
 SummaryPath保存范围、命令、环境、状态、原因、日志和慢测试计时。完整公开命令墙钟由外层单调时钟
 在启动前到实际退出测量，另列summary／stage区间。软件通过不代表科学PASS，未执行和阻断分别报告。
 失败诊断保留请求及group_failure.log；复核后使用该次输出的精确GATE_DIAGNOSTICS_CLEANUP，
-不广泛删除TEMP、不按年龄删失败证据。编排细节按需查[公共实现](../common/README.md#门禁编排)。
+不广泛删除TEMP、不按年龄删失败证据。编排细节按需查[公共实现](REPOSITORY_OPERATIONS.md#门禁编排)。
 
 ### Standalone Lua for software tests
 
@@ -158,7 +158,7 @@ Get-HostResourceStatus
 [进程与失败规则](DEVELOPMENT_STANDARDS.md#6-外部进程失败与日志)。
 
 默认账本为同级`artifacts/common/host_resources.sqlite3`。不同父目录的工作树必须显式共用同一绝对
-账本；部署、阶段切换、子进程登记与释放的完整合同见[主机资源实现](../common/README.md#主机资源实现)。
+账本；部署、阶段切换、子进程登记与释放的完整合同见[主机资源实现](REPOSITORY_OPERATIONS.md#主机资源实现)。
 本机资源许可与artifact容量保护分别生效；资源可用不代表输出容量已获准。
 
 新运行通过项目公开入口执行，不手动管理求解器连接或私建并发器。独立粒子与耦合求解的区别见
@@ -190,7 +190,7 @@ ledger-only日常startup/maintenance。首次校准或台账失准时，必须�
 只保留历史发现／恢复，不能作为日常准入或覆盖容量水位。
 未核对候选不得追加`--apply`。清理收据统一放在
 `artifacts/common/capacity_disposal_receipts/`，不留在工作区顶层。主机资源许可不替代容量保护租约，
-调用与保护参数见[公共容量合同](../common/contracts/README.md#运行身份与生命周期)。
+调用与保护参数见[公共容量合同](../tools/repository/README.md#运行身份与生命周期)。
 
 本机存在artifacts时运行：
 
@@ -237,7 +237,7 @@ Compute或求解器后的错误不自动重算。
 
 自2026-07-15起，所有项目的新建、修改、验证和交付均只使用**MATLAB R2025b**与
 **SolidWorks 2022**。MATLAB/COMSOL任务必须通过上述R2025b入口运行；凡涉及STEP导入、
-零件、装配或CAD保存的任务必须使用`common/solidworks/`中的SolidWorks 2022桥接。不得启动、
+零件、装配或CAD保存的任务必须使用`msplatform.exporters.solidworks`中的SolidWorks 2022桥接。不得启动、
 调用或为兼容而降级到MATLAB R2022或SolidWorks 2013。历史文档中出现的旧版本仅用于解释当时
 结果，不构成可用入口或复现环境。
 

@@ -258,20 +258,34 @@ def compile_frontend_geometry(
         raise ValueError(f'{downstream_id}: resolved provider mechanical interface differs from the parent composition plan')
     binding_record = None
     if scientific:
-        from msplatform.backends.simion.tof_electrode_mapping import native_frontend_electrodes
+        from msplatform.backends.simion.tof_electrode_mapping import (
+            native_frontend_electrodes, validate_frontend_electrode_map,
+        )
 
         if not isinstance(provider_inputs, dict) or set(provider_inputs) != set(plan['scope']['instance_ids']):
             raise ValueError('plan5 requires verified provider input records for every selected instance')
         domain = resolve_frontend_field_domain(oatof_resolved, projection=projection,
             geometry_profile_id=parent_interface['geometry_profile_id'])
-        accelerator_electrodes = native_frontend_electrodes(accelerator_electrodes, frontend_domain=domain)
+        validate_frontend_electrode_map(accelerator_electrodes, frontend_domain=domain)
+        from msplatform.backends.simion.tof_electrode_mapping import _FRONTEND_V1_RENDERER_KEYS
+        scientific_electrodes = {
+            group: accelerator_electrodes[group]
+            for group in _FRONTEND_V1_RENDERER_KEYS
+        }
+        scientific_electrodes.update({
+            group: accelerator_electrodes[group]
+            for group in domain["electrode_group_ids"][len(_FRONTEND_V1_RENDERER_KEYS):]
+        })
+        accelerator_electrodes = native_frontend_electrodes(scientific_electrodes, frontend_domain=domain)
         scope = {instance: [row['electrode_group_id'] for row in plan['components'][instance]['component_electrodes']]
                  for instance in multipole_ids}
         scope[downstream_id] = domain['electrode_group_ids']
+        binding_inputs = dict(electrode_bindings)
+        binding_inputs[downstream_id] = scientific_electrodes
         binding_record = dict(schema_version=2, role='backend_electrode_bindings', backend='simion',
             field_domain_id=domain['domain_id'], provider_inputs=copy.deepcopy(provider_inputs),
             electrode_group_scope=scope, bindings=[dict(instance_id=instance, electrode_group_id=group,
-                native_electrode_id=native) for instance, mapping in electrode_bindings.items() for group, native in mapping.items()])
+                native_electrode_id=native) for instance, mapping in binding_inputs.items() for group, native in mapping.items()])
         validate_electrode_bindings({instance: plan['components'][instance] for instance in plan['scope']['instance_ids']},
             binding_record, field_domain_id=domain['domain_id'], provider_inputs=provider_inputs, electrode_group_scope=scope)
     elif provider_inputs is not None:

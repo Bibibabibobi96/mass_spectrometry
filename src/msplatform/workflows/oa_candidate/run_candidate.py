@@ -300,6 +300,7 @@ def execute_request(
     pa_handoff_output: Path | None = None,
     pa_producer_handoffs: list[tuple[Path, Path]] | None = None,
     solver_numerics_contract: Path | None = None,
+    host_context: dict[str, Any] | None = None,
 ) -> tuple[Path, dict[str, Any]]:
     executable = simion_executable.resolve(strict=True)
     plan = prepare_execution(
@@ -323,6 +324,7 @@ def execute_request(
     return run_candidate_workflow(
         plan,
         str(executable),
+        host_context=host_context,
         **kwargs,
     )
 
@@ -336,6 +338,8 @@ def main() -> None:
     parser.add_argument("--particle-source-seed", type=int)
     parser.add_argument("--science-root", type=Path,
                         help="Explicit OA-TOF science-data root; required for first preparation")
+    parser.add_argument("--host-context", type=Path,
+                        help="JSON execution context for the public owner; required for execution and postprocessing")
     parser.add_argument("--solver-numerics-contract", type=Path,
                         help="Explicit supported solver numerics data; default unchanged, no Formal qualification")
     parser.add_argument("--resume-finalization", type=Path, metavar="RUN_DIR",
@@ -360,7 +364,10 @@ def main() -> None:
             parser.error("--postprocess-from requires new --run-id and rejects new execution/reuse/finalization options")
         from msplatform.workflows.oa_candidate.run_candidate_workflow import run_candidate_postprocess
         try:
-            root, summary = run_candidate_postprocess(args.postprocess_from, args.run_id)
+            if args.host_context is None:
+                parser.error("postprocessing requires --host-context")
+            root, summary = run_candidate_postprocess(
+                args.postprocess_from, args.run_id, host_context=load_json(args.host_context))
         except (OSError, KeyError, ValueError, CandidateWorkflowError) as error:
             raise SystemExit(f"OATOF_CANDIDATE=POSTPROCESS_FAILED ERROR={error}") from error
         print(f"OATOF_CANDIDATE=POSTPROCESSED RUN_ROOT={root} SCOPE={summary['scope']}")
@@ -369,7 +376,7 @@ def main() -> None:
         if any((args.request, args.run_id is not None, args.particle_source_seed is not None, args.simion_exe,
                 args.reuse_parent, args.reuse_through, args.dry_run, args.pa_handoff_output,
                 args.pa_producer_handoff, args.campaign_table, args.campaign_selection,
-                args.solver_numerics_contract, args.science_root is not None)):
+                args.solver_numerics_contract, args.science_root is not None, args.host_context is not None)):
             parser.error("--resume-finalization rejects new scientific/execution inputs")
         from msplatform.workflows.oa_candidate.run_candidate_workflow import (
             resume_candidate_finalization,
@@ -405,6 +412,8 @@ def main() -> None:
             return
         if args.simion_exe is None:
             parser.error("execution requires --simion-exe")
+        if args.host_context is None:
+            parser.error("execution requires --host-context")
         simion_executable = args.simion_exe.resolve(strict=True)
         run_root, summary = run_candidate_workflow(
             plan,
@@ -413,6 +422,7 @@ def main() -> None:
             reuse_through=args.reuse_through,
             pa_handoff_output=args.pa_handoff_output,
             pa_producer_handoffs=args.pa_producer_handoff,
+            host_context=load_json(args.host_context),
         )
     except CandidateWorkflowInterrupted as exc:
         raise SystemExit(130) from exc

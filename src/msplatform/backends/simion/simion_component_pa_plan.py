@@ -29,7 +29,7 @@ COMPONENTS = {
     "accelerator": (
         "accelerator", "accelerator", True,
         "src/msplatform/backends/simion/resources/build_two_zone_pa.lua",
-        "projects/orthogonal_accelerator/simion/two_zone_accelerator.gem",
+        "src/msplatform/backends/simion/resources/two_zone_accelerator.gem",
     ),
     "reflectron": (
         "reflectron", "reflectron", True,

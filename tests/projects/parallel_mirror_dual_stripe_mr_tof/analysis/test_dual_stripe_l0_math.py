@@ -1,0 +1,1102 @@
+from __future__ import annotations
+from tests.projects.parallel_mirror_dual_stripe_mr_tof.test_support.mr_geometry_inputs import geometry_authority, pure_geometry_inputs
+
+from decimal import Decimal, localcontext
+import json
+import math
+import tempfile
+import unittest
+from unittest.mock import patch
+from pathlib import Path
+
+import numpy as np
+
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import CandidateContractError
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0 import (
+    NativeStripeSpatialReturnNumerics,
+    analyze_dual_stripe_l0,
+    audit_theory_function_origin_registration,
+    derive_native_stripe_branch_validation_sample_count,
+    derive_manufactured_basis_voltage_seed,
+    derive_converging_mirror_single_stripe_seed,
+    converging_design_potential_delta_v,
+    resolve_converging_prism_target,
+    endpoint_regularized_kappa,
+    endpoint_regularized_kappa_at_turn,
+    endpoint_regularized_tau_g,
+    exact_k_slow_energy_per_charge_v,
+    gauss_legendre_rule,
+    identify_fixed_cad_component_shapes,
+    identify_manufactured_basis_path_scales,
+    invert_nominal_psi_g_response,
+    kappa_derivative_at_turn,
+    materialize_native_stripe_spatial_return_root,
+    paper_dimensionless_condition_residuals,
+    project_y_from_theory_drift_mm,
+    tau_g_derivative_at_turn,
+    theory_drift_y_mm,
+    solve_native_stripe_spatial_shape_branch,
+)
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.drift_phase_contract import (
+    resolve_drift_phase_contract,
+)
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import (
+    compile_dual_stripe_width_evaluator,
+    dual_stripe_width_at_y_mm,
+)
+from msplatform.workflows.prepared_joint.joint_mirror_stripe_l0 import (
+    stripes_from_contract,
+)
+from msplatform.workflows.mr_design.dual_stripe_operating_seed import (
+    _bias_pair_is_nondegenerate,
+    _compare_fixed_profile_to_dimensionless_target,
+    _complete_consistency_start_grid,
+    _complete_residual_acceptance_receipt,
+    _evaluate_exact_k_seed_consistency,
+    _orthogonal_energy_partition,
+    _select_diverse_refinement_starts,
+    _seed_profile,
+    _solve_dimensionless_paper_target,
+    solve_dimensionless_paper_target,
+    _stripe_search_domain,
+    attach_fixed_geometry_parameter_authority,
+    audit_exact_paper_component_emulation_by_static_stripes,
+    build_parameter_authority_from_managed_seed,
+)
+from msplatform.workflows.mr_design.mirror_exact_k_operating_point import (
+    ManagedExactKOperatingPoint,
+)
+from msplatform.backends.simion.native_stripe_shape_adapter import (
+    build_native_stripe_shape_selection,
+)
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import (
+    MirrorL0Design,
+    reduced_period,
+)
+from msplatform.io.file_identity import file_sha256
+
+
+PROJECT = Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof"
+CONTRACT = PROJECT.parents[3] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json"
+
+
+def converging_prism_fixture():
+    contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+    contract["mirror"]["convergence_transform"] = {"angle_deg": .025688744787259285, "pivot_y_mm": 0.}
+    contract["downstream_fixed_grid_workpoint_profile"]["active_stripe_axes"] = ["stripe_1_voltage_v"]
+    contract["prism_transport"]["handoff_target"] = {
+        "mode": "converging_clean_phase_energy", "axial_energy_per_charge_v": 4371.97610111757,
+        "mirror_axial_width_w_mm": 590.519039985, "slow_energy_reference_per_charge_v": 5.374387143093758,
+        "total_energy_reference_per_charge_v": 4377.32967207278,
+        "clean_reference_slow_energy_per_charge_v": 5.169057530804604,
+    }
+    contract["downstream_fixed_grid_workpoint_profile"]["automatic_iteration"]["acceptance_tolerances"]["P1_P2_P2_shield_low_field_angle_degrees"] = .01
+    resolved = {"mirror_convergence_transform": {"angle_deg": .025688744787259285},
+                "metadata": {"ion_foil_slot_bridge_from_min_y_mm": 2., "ion_foil_slot_bridge_from_max_y_mm": 5.}}
+    return contract, resolved, resolve_converging_prism_target(contract, resolved)
+
+
+class DualStripeL0MathTest(unittest.TestCase):
+    def test_converging_prism_energy_reference_and_current_stripe_response(self):
+        contract, resolved, target = converging_prism_fixture()
+        self.assertAlmostEqual(target["energy_tolerance_per_charge_v"], .05234301827329357)
+        self.assertAlmostEqual(converging_design_potential_delta_v(target, -27.36410265968425, 9.29765627041), .2053296122891533)
+        self.assertEqual(converging_design_potential_delta_v(target, -27.36410265968425, 0.), 0.)
+        self.assertNotEqual(converging_design_potential_delta_v(target, -27., 47.),
+                            converging_design_potential_delta_v(target, -28., 47.))
+        self.assertEqual(target["slow_energy_reference_per_charge_v"], 5.374387143093758)
+        del contract["prism_transport"]["handoff_target"]
+        self.assertIsNone(resolve_converging_prism_target(contract, resolved))
+
+    def test_converging_prism_target_rejects_incomplete_and_incompatible_authority(self):
+        for kind in ("missing", "duplicate_angle", "zero_tilt", "dual", "invalid_energy"):
+            contract, resolved, _ = converging_prism_fixture()
+            if kind == "missing":
+                del contract["prism_transport"]["handoff_target"]["slow_energy_reference_per_charge_v"]
+            elif kind == "duplicate_angle":
+                contract["prism_transport"]["handoff_target"]["angle_tolerance_degrees"] = .01
+            elif kind == "zero_tilt":
+                resolved["mirror_convergence_transform"]["angle_deg"] = 0.
+            elif kind == "dual":
+                contract["downstream_fixed_grid_workpoint_profile"]["active_stripe_axes"].append("stripe_2_voltage_v")
+            else:
+                contract["prism_transport"]["handoff_target"]["total_energy_reference_per_charge_v"] = 1.
+            with self.subTest(kind=kind), self.assertRaises(CandidateContractError):
+                resolve_converging_prism_target(contract, resolved)
+
+    def test_prism_scientific_target_does_not_change_resolved_geometry(self):
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import resolve_geometry, geometry_fingerprint
+        contract, _, _ = converging_prism_fixture()
+        first = resolve_geometry(contract, **pure_geometry_inputs(contract))
+        del contract["prism_transport"]["handoff_target"]
+        second = resolve_geometry(contract, **pure_geometry_inputs(contract))
+        self.assertEqual(first, second)
+        self.assertEqual(geometry_fingerprint(first), geometry_fingerprint(second))
+    def test_converging_single_stripe_seed_preserves_fixed_source_and_reference(self) -> None:
+        result = derive_converging_mirror_single_stripe_seed(
+            axial_energy_per_charge_v=4000.0, mirror_axial_width_w_mm=600.0,
+            drift_length_l_mm=300.0, source_slow_energy_per_charge_v=4.0,
+            mirror_linear_coefficient=0.8, high_order_response_scale_mm=-120.0,
+            function_y_zero_project_y_mm=12.0,
+        )
+        # Independent algebra: U=Ez-(sqrt(Ez)-wy*W/(2*b*sqrt(Ez)))**2.
+        expected_voltage = -20.0 - 20.0**2 / (4.0 * 4000.0)
+        self.assertAlmostEqual(result["stripe_biases_v"][0], expected_voltage, places=10)
+        self.assertEqual(result["stripe_biases_v"][1], 0.0)
+        self.assertEqual(result["source_slow_energy_per_charge_v"], 4.0)
+        self.assertEqual(result["function_y_zero_project_y_mm"], 12.0)
+        self.assertAlmostEqual(result["axial_width_gradient_mm_per_mm"], -0.0008, places=14)
+        self.assertAlmostEqual(result["axial_width_change_at_drift_length_mm"], -0.24, places=12)
+        positive = result["positive_mirror_rotation_about_x_degrees"]
+        negative = result["negative_mirror_rotation_about_x_degrees"]
+        self.assertEqual(positive, -negative)
+        self.assertAlmostEqual(2 * math.tan(math.radians(negative)), 0.0008, places=14)
+        self.assertEqual(result["qualification"], "hard_boundary_initial_values_only__finite_3d_pending")
+
+    def test_converging_single_stripe_seed_rejects_invalid_domain(self) -> None:
+        values = dict(axial_energy_per_charge_v=4000.0, mirror_axial_width_w_mm=600.0,
+                      drift_length_l_mm=300.0, source_slow_energy_per_charge_v=4.0,
+                      mirror_linear_coefficient=0.8, high_order_response_scale_mm=-120.0,
+                      function_y_zero_project_y_mm=0.0)
+        for name in values:
+            for invalid in (float("nan"), float("inf")):
+                with self.subTest(name=name, invalid=invalid), self.assertRaises(CandidateContractError):
+                    derive_converging_mirror_single_stripe_seed(**(values | {name: invalid}))
+        for name in values.keys() - {"function_y_zero_project_y_mm"}:
+            with self.subTest(name=name), self.assertRaises(CandidateContractError):
+                derive_converging_mirror_single_stripe_seed(**(values | {name: 0.0}))
+        for name in values.keys() - {"function_y_zero_project_y_mm", "high_order_response_scale_mm"}:
+            with self.subTest(name=name), self.assertRaises(CandidateContractError):
+                derive_converging_mirror_single_stripe_seed(**(values | {name: -1.0}))
+        with self.assertRaises(CandidateContractError):
+            derive_converging_mirror_single_stripe_seed(**(values | {"high_order_response_scale_mm": 120.0}))
+        with self.assertRaises(CandidateContractError):
+            derive_converging_mirror_single_stripe_seed(**(values | {"source_slow_energy_per_charge_v": 10000.0}))
+        with self.assertRaises(TypeError):
+            derive_converging_mirror_single_stripe_seed(axial_energy_per_charge_v=4000.0)
+
+    def test_exact_k_selects_slow_energy_without_changing_fixed_mirror(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        shape = build_native_stripe_shape_selection(contract).shape_root
+        reduced_period_mm_per_sqrt_v = 8.913211876315327
+        target_k = 25.5
+
+        slow_energy = exact_k_slow_energy_per_charge_v(
+            shape,
+            mirror_reduced_period_mm_per_sqrt_v=reduced_period_mm_per_sqrt_v,
+            target_period_ratio=target_k,
+        )
+        result = materialize_native_stripe_spatial_return_root(
+            shape,
+            source_slow_energy_per_charge_v=slow_energy,
+            mirror_reduced_period_mm_per_sqrt_v=reduced_period_mm_per_sqrt_v,
+            axial_energy_per_charge_v=4372.010347796059,
+        )
+
+        # K*Tbar*sqrt(Ey)=L*kappa: check the selector independently at high
+        # precision, without freezing the platform-dependent numerical shape.
+        with localcontext() as context:
+            context.prec = 80
+            expected_energy = (
+                Decimal(str(shape.drift_length_l_mm)) * Decimal(str(shape.kappa_1))
+                / (Decimal(str(reduced_period_mm_per_sqrt_v)) * Decimal(str(target_k)))
+            ) ** 2
+        self.assertAlmostEqual(slow_energy, float(expected_energy), places=12)
+        self.assertAlmostEqual(result.continuous_oscillation_count, target_k, places=12)
+        self.assertAlmostEqual(result.turning_pseudopotential_v, slow_energy, places=12)
+
+    def test_gauss_legendre_rule_is_cached_read_only_and_exact_for_cubic(self) -> None:
+        nodes, weights = gauss_legendre_rule(8)
+        cached_nodes, cached_weights = gauss_legendre_rule(8)
+        self.assertIs(nodes, cached_nodes)
+        self.assertIs(weights, cached_weights)
+        self.assertFalse(nodes.flags.writeable)
+        self.assertFalse(weights.flags.writeable)
+        self.assertAlmostEqual(float(np.dot(weights, nodes**3)), 0.0, places=15)
+        self.assertAlmostEqual(float(np.dot(weights, nodes**2)), 2.0 / 3.0, places=14)
+        with self.assertRaisesRegex(CandidateContractError, "positive integer"):
+            gauss_legendre_rule(0)
+
+    def test_l0_response_uses_explicit_selected_axial_energy(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        result = analyze_dual_stripe_l0(
+            contract,
+            (-40.0, 60.0),
+            axial_energy_per_charge_v=4050.0,
+        **pure_geometry_inputs(contract))
+        self.assertEqual(result["energy_per_charge_v"], 4050.0)
+        self.assertAlmostEqual(result["h_factors"][0], math.sqrt(4050.0 / 4090.0))
+
+    def test_orthogonal_energy_partition_keeps_ez_and_ey_additive(self) -> None:
+        partition = _orthogonal_energy_partition(4000.0, 5.0)
+        self.assertEqual(partition["mirror_axis_energy_per_charge_v"], 4000.0)
+        self.assertEqual(partition["slow_axis_energy_per_charge_v"], 5.0)
+        self.assertEqual(partition["total_energy_per_charge_v"], 4005.0)
+        with self.assertRaisesRegex(CandidateContractError, "must be positive"):
+            _orthogonal_energy_partition(4000.0, 0.0)
+
+    def test_theory_project_and_simion_y_share_direction_and_zero(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        self.assertEqual(theory_drift_y_mm(contract, 0.0), 0.0)
+        self.assertEqual(theory_drift_y_mm(contract, 340.0), 340.0)
+        self.assertEqual(theory_drift_y_mm(contract, 390.0), 390.0)
+        self.assertEqual(project_y_from_theory_drift_mm(contract, 340.0), 340.0)
+        self.assertEqual(
+            contract["dual_stripe_l0"]["theory_function_coordinate_registration"][
+                "function_y_zero_project_y_mm"
+            ],
+            contract["dual_stripe_l0"]["coordinate_mapping"]["origin_project_y_mm"],
+        )
+        registration = contract["dual_stripe_l0"]["theory_function_coordinate_registration"]
+        self.assertEqual(registration["active_theory_curve_domain_project_y_mm"], [0.0, 390.0])
+        self.assertEqual(registration["whole_physical_body_domain_project_y_mm"], [-2.0, 390.0])
+
+    def test_theory_coordinate_mapping_fails_closed_on_wrong_origin_or_sign(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        contract["dual_stripe_l0"]["coordinate_mapping"]["origin_project_y_mm"] = 2.0
+        with self.assertRaises(CandidateContractError):
+            theory_drift_y_mm(contract, 0.0)
+        contract["dual_stripe_l0"]["coordinate_mapping"]["origin_project_y_mm"] = 0.0
+        contract["dual_stripe_l0"]["coordinate_mapping"]["theory_positive_project_y_sign"] = 0
+        with self.assertRaises(CandidateContractError):
+            theory_drift_y_mm(contract, 0.0)
+
+    def test_mechanical_body_endpoint_does_not_redefine_theory_function_zero(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        self.assertEqual(theory_drift_y_mm(contract, 0.0), 0.0)
+        contract["dual_stripe_l0"]["theory_function_coordinate_registration"][
+            "whole_physical_body_domain_project_y_mm"
+        ][0] = -3.0
+        self.assertEqual(theory_drift_y_mm(contract, 0.0), 0.0)
+        contract["dual_stripe_l0"]["theory_function_coordinate_registration"][
+            "function_y_zero_project_y_mm"
+        ] = 2.0
+        with self.assertRaises(CandidateContractError):
+            theory_drift_y_mm(contract, 0.0)
+
+    def test_native_path_spatial_root_is_mirror_independent_then_exactly_materialized(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        energy = 4171.767483909065
+        mirror_width = 586.9264153996922
+        mirror_period = mirror_width / math.sqrt(energy)
+        reference_biases = (-24.78463928603049, 50.03329040769912)
+        native_stripes = stripes_from_contract(contract, reference_biases)
+        path_functions = tuple(stripe.width_at_y_mm for stripe in native_stripes)
+        basis_scales = identify_manufactured_basis_path_scales(
+            contract,
+            basis_coefficients_c0_to_c5=(
+                0.83999,
+                0.75160,
+                -7.52535,
+                14.0242,
+                -9.17661,
+                2.08613,
+            ),
+        )
+        self.assertAlmostEqual(
+            basis_scales.reference_relative_action_weight_ratio,
+            basis_scales.high_order_response_scale_mm
+            / basis_scales.linear_response_scale_mm,
+        )
+        self.assertAlmostEqual(
+            basis_scales.high_order_response_scale_mm,
+            -116.16080471052766,
+        )
+        self.assertAlmostEqual(
+            basis_scales.linear_response_scale_mm,
+            58.095886014248784,
+        )
+        branch_sample_count = derive_native_stripe_branch_validation_sample_count(contract)
+        self.assertEqual(branch_sample_count, 176)
+        numerics = NativeStripeSpatialReturnNumerics(
+            kappa_derivative_step=contract["dual_stripe_l0"]["operating_seed_search"][
+                "kappa_derivative_step"
+            ],
+            initial_ratio_half_width=0.004,
+            search_expansion_factor=1.5,
+            maximum_search_expansions=12,
+            branch_validation_sample_count=branch_sample_count,
+            root_absolute_tolerance=1e-11,
+            root_relative_tolerance=1e-11,
+            maximum_root_iterations=80,
+        )
+        shape = solve_native_stripe_spatial_shape_branch(
+            path_functions,
+            entry_y_mm=project_y_from_theory_drift_mm(contract, 0.0),
+            drift_length_l_mm=340.0,
+            drift_direction_sign=1.0,
+            reference_relative_action_weight_ratio=(
+                basis_scales.reference_relative_action_weight_ratio
+            ),
+            geometry_input_identity_source=(
+                "config/simion_candidate_two_zone.json#dual_stripe.theory_profile"
+            ),
+            numerics=numerics,
+        )
+        self.assertAlmostEqual(shape.relative_action_weight_ratio, -1.9981408612, places=8)
+        self.assertAlmostEqual(shape.kappa_1, 1.4889697387, places=8)
+        self.assertLess(abs(shape.kappa_prime), 2e-8)
+        self.assertLessEqual(shape.root_bracket[0], shape.relative_action_weight_ratio)
+        self.assertGreaterEqual(shape.root_bracket[1], shape.relative_action_weight_ratio)
+        self.assertLessEqual(
+            shape.validated_branch_sample_range[0],
+            shape.root_bracket[0],
+        )
+        self.assertGreaterEqual(
+            shape.validated_branch_sample_range[1],
+            shape.root_bracket[1],
+        )
+        self.assertEqual(
+            shape.geometry_input_identity_source,
+            "config/simion_candidate_two_zone.json#dual_stripe.theory_profile",
+        )
+
+        operating = materialize_native_stripe_spatial_return_root(
+            shape,
+            source_slow_energy_per_charge_v=5.0,
+            mirror_reduced_period_mm_per_sqrt_v=mirror_period,
+            axial_energy_per_charge_v=energy,
+        )
+        self.assertAlmostEqual(operating.stripe_biases_v[0], -25.31809249, places=7)
+        self.assertAlmostEqual(operating.stripe_biases_v[1], 50.35968780, places=7)
+        self.assertAlmostEqual(operating.turning_pseudopotential_v, 5.0, places=11)
+        self.assertLess(abs(operating.source_slow_energy_mismatch_v), 1e-11)
+        self.assertAlmostEqual(operating.mirror_axial_width_w_mm, mirror_width, places=9)
+        self.assertAlmostEqual(operating.continuous_oscillation_count, 24.91472957, places=7)
+
+        changed_source = materialize_native_stripe_spatial_return_root(
+            shape,
+            source_slow_energy_per_charge_v=5.2,
+            mirror_reduced_period_mm_per_sqrt_v=mirror_period,
+            axial_energy_per_charge_v=energy,
+        )
+        self.assertEqual(changed_source.source_slow_energy_per_charge_v, 5.2)
+        self.assertAlmostEqual(changed_source.turning_pseudopotential_v, 5.2, places=11)
+        self.assertNotEqual(changed_source.stripe_biases_v, operating.stripe_biases_v)
+
+    def test_native_path_spatial_root_requires_identity_and_explicit_physical_direction(self) -> None:
+        numerics = NativeStripeSpatialReturnNumerics(
+            kappa_derivative_step=0.002,
+            initial_ratio_half_width=0.01,
+            search_expansion_factor=1.5,
+            maximum_search_expansions=2,
+            branch_validation_sample_count=8,
+            root_absolute_tolerance=1e-8,
+            root_relative_tolerance=1e-8,
+            maximum_root_iterations=20,
+        )
+        paths = (lambda y: 10.0 + y, lambda y: 20.0 + y * y)
+        with self.assertRaisesRegex(CandidateContractError, "identity"):
+            solve_native_stripe_spatial_shape_branch(
+                paths,
+                entry_y_mm=0.0,
+                drift_length_l_mm=1.0,
+                drift_direction_sign=1.0,
+                reference_relative_action_weight_ratio=1.0,
+                geometry_input_identity_source="",
+                numerics=numerics,
+            )
+        with self.assertRaisesRegex(CandidateContractError, "physical domains"):
+            solve_native_stripe_spatial_shape_branch(
+                paths,
+                entry_y_mm=0.0,
+                drift_length_l_mm=1.0,
+                drift_direction_sign=True,
+                reference_relative_action_weight_ratio=1.0,
+                geometry_input_identity_source="synthetic:test",
+                numerics=numerics,
+            )
+
+    def test_function_origin_is_discriminated_from_the_terminal_trim_by_coefficients(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        audit = audit_theory_function_origin_registration(contract)
+        self.assertEqual(audit["selected_function_zero_project_y_mm"], 0.0)
+        comparisons = {
+            item["hypothesized_function_zero_project_y_mm"]: item["relative_coefficient_direction_residual"]
+            for item in audit["comparisons"]
+        }
+        self.assertEqual(set(comparisons), {0.0, -2.0})
+        self.assertLess(comparisons[0.0], comparisons[-2.0])
+        self.assertGreater(audit["runner_up_to_selected_residual_ratio"], 100.0)
+
+    def test_complete_residual_acceptance_waits_for_user_authority(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        receipt = _complete_residual_acceptance_receipt(contract, {"r1": 0.0, "r2": 1.0})
+        self.assertEqual(receipt["status"], "pending_user_authority")
+        self.assertFalse(receipt["passed"])
+        self.assertIsNone(receipt["residuals"]["r1"]["absolute_tolerance"])
+
+    def test_active_complete_residual_acceptance_requires_exact_named_mapping(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        authority = contract["dual_stripe_l0"]["complete_consistency_residual_acceptance"]
+        authority["status"] = "active"
+        authority["absolute_tolerances_by_residual"] = {"r1": 0.1, "r2": 0.2}
+        receipt = _complete_residual_acceptance_receipt(contract, {"r1": 0.05, "r2": 0.3})
+        self.assertEqual(receipt["status"], "failed")
+        self.assertFalse(receipt["passed"])
+        self.assertTrue(receipt["residuals"]["r1"]["passed"])
+        self.assertFalse(receipt["residuals"]["r2"]["passed"])
+        authority["absolute_tolerances_by_residual"] = {"r1": 0.1}
+        with self.assertRaises(CandidateContractError):
+            _complete_residual_acceptance_receipt(contract, {"r1": 0.05, "r2": 0.0})
+
+    def test_complete_consistency_starts_vary_only_the_two_biases(self) -> None:
+        profile = {
+            "normalized_start_fractions": [-0.5, 0.25, 0.5],
+        }
+        starts = _complete_consistency_start_grid(profile, 4000.0)
+        self.assertEqual(len(starts), 6)
+        self.assertTrue(all(start.shape == (2,) for start in starts))
+        self.assertIn((-2000.0, 1000.0), [tuple(start) for start in starts])
+
+    def test_complete_search_domain_does_not_consume_historical_prism_energy(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        del contract["prism_transport"]["energy_partition"]
+        search_end, sample_count = _stripe_search_domain(contract, _seed_profile(contract))
+        self.assertAlmostEqual(search_end, 390.0 / 1.1)
+        self.assertGreater(sample_count, 0)
+
+    def test_complete_refinement_selection_keeps_anchor_and_spreads_coordinates(self) -> None:
+        screened = [
+            (1.0, np.asarray([0.0, 0.0, 0.0])),
+            (1.1, np.asarray([0.1, 0.0, 0.0])),
+            (1.2, np.asarray([0.0, 0.1, 0.0])),
+            (1.3, np.asarray([1.0, 1.0, 1.0])),
+            (1.4, np.asarray([-1.0, -1.0, -1.0])),
+            (1.5, np.asarray([0.5, -0.5, 0.5])),
+            (9.0, np.asarray([100.0, 100.0, 100.0])),
+        ]
+        selected = _select_diverse_refinement_starts(screened, 3, (1.0, 1.0, 1.0), 2)
+        self.assertEqual(selected[0][0], 1.0)
+        self.assertEqual({item[0] for item in selected}, {1.0, 1.3, 1.4})
+        self.assertTrue(all(item[0] < 9.0 for item in selected))
+
+    def test_contract_separates_paper_relations_from_instance_values(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        authority = contract["theory_parameter_authority"]
+        self.assertEqual(authority["governing_relations"], "identical_to_the_paper_model")
+        self.assertIn("drift_length_L", authority["instance_specific_values"])
+        self.assertIn("mirror_owned_axial_width_W", authority["instance_specific_values"])
+        self.assertIn("polynomial_and_linear_coefficients", authority["instance_specific_values"])
+        profile = _seed_profile(contract)
+        self.assertEqual(
+            profile["status"],
+            "paper_theory__instance_specific_K_and_spatial_return_seed",
+        )
+
+    def test_seed_rejects_effectively_single_stripe_root_without_setting_voltage_scale(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        profile = _seed_profile(contract)
+        self.assertFalse(_bias_pair_is_nondegenerate(np.asarray([-0.253, 156.09]), profile, 4000.0))
+        self.assertTrue(_bias_pair_is_nondegenerate(np.asarray([-44.25, 120.11]), profile, 4000.0))
+
+    def test_response_inverse_reconstructs_psi_and_g(self) -> None:
+        first, second = invert_nominal_psi_g_response(0.8, -0.1, 1.2, 0.9)
+        self.assertAlmostEqual(first + second, 0.8)
+        self.assertAlmostEqual(1.2 * first + 0.9 * second, -0.1)
+
+    def test_response_inverse_rejects_singular_basis(self) -> None:
+        with self.assertRaises(CandidateContractError):
+            invert_nominal_psi_g_response(1.0, 1.0, 1.0, 1.0)
+
+    def test_component_basis_assignment_is_structured_and_fails_closed(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        assignment = contract["dual_stripe"]["theory_profile"]["component_basis_assignment"]
+        self.assertEqual(assignment["set_1"], "user_confirmed_scaled_original_psi_s_high_order_basis")
+        self.assertEqual(assignment["set_2"], "user_confirmed_scaled_original_psi_m_linear_basis")
+        self.assertTrue(assignment["termwise_original_paper_geometry_basis_identification"])
+        self.assertEqual(
+            analyze_dual_stripe_l0(contract, (-40.0, 60.0), **pure_geometry_inputs(contract))["model"],
+            "dual_stripe_nominal_response_l0",
+        )
+        assignment["set_2"] = "unqualified"
+        with self.assertRaisesRegex(CandidateContractError, "qualified theory-CAD mapping"):
+            analyze_dual_stripe_l0(contract, (-40.0, 60.0), **pure_geometry_inputs(contract))
+
+    def test_endpoint_regularization_recovers_linear_reference_integral(self) -> None:
+        self.assertAlmostEqual(endpoint_regularized_kappa(lambda eta: eta), 2.0, places=8)
+
+    def test_kappa_derivative_keeps_one_fixed_profile_normalization(self) -> None:
+        self.assertAlmostEqual(endpoint_regularized_kappa_at_turn(lambda eta: eta, 1.21), 2.2, places=8)
+        self.assertAlmostEqual(
+            kappa_derivative_at_turn(lambda eta: eta, 1.0, step=1e-3),
+            1.0,
+            places=5,
+        )
+
+    def test_endpoint_regularization_rejects_non_turning_profile(self) -> None:
+        with self.assertRaises(CandidateContractError):
+            endpoint_regularized_kappa(lambda eta: 1.0)
+
+    def test_tau_g_regularization_and_derivative_preserve_the_turning_endpoint(self) -> None:
+        self.assertAlmostEqual(endpoint_regularized_tau_g(lambda eta: eta, lambda _eta: 1.0, 1.0), 2.0, places=8)
+        self.assertAlmostEqual(
+            tau_g_derivative_at_turn(lambda eta: eta, lambda _eta: 1.0, 1.0, step=1e-3),
+            1.0,
+            places=5,
+        )
+
+    def test_paper_printed_coefficients_regress_kappa_and_the_time_platform_operator(self) -> None:
+        # These rounded published values are an operator regression only.  They
+        # are not active-instance coefficients or acceptance tolerances.
+        coefficients = (0.83999, 0.75160, -7.52535, 14.0242, -9.17661, 2.08613)
+
+        def psi(eta: float) -> float:
+            return coefficients[0] * eta + sum(
+                coefficients[power] * eta**power for power in range(1, 6)
+            )
+
+        def g(eta: float) -> float:
+            return sum(coefficients[power] * eta**power for power in range(1, 6)) - coefficients[0] * eta
+
+        self.assertAlmostEqual(endpoint_regularized_kappa_at_turn(psi, 1.0), 1.48923, places=5)
+        self.assertLess(abs(kappa_derivative_at_turn(psi, 1.0, step=1e-3)), 1e-4)
+        self.assertTrue(all(
+            abs(tau_g_derivative_at_turn(psi, g, node, step=1e-3)) < 3e-4
+            for node in (0.9, 0.95, 1.05, 1.1)
+        ))
+
+    def test_six_condition_evaluator_uses_named_project_nodes(self) -> None:
+        residuals = paper_dimensionless_condition_residuals(
+            (0.83999, 0.75160, -7.52535, 14.0242, -9.17661, 2.08613),
+            eta_turn_nodes=(0.9, 0.95, 1.05, 1.1),
+            kappa_derivative_step=0.002,
+            tau_derivative_step=0.001,
+        )
+        self.assertEqual(
+            [name for name, _value in residuals],
+            [
+                "nominal_turn_normalization",
+                "spatial_return_kappa_prime",
+                "time_platform_tau_g_prime_eta_0.9",
+                "time_platform_tau_g_prime_eta_0.95",
+                "time_platform_tau_g_prime_eta_1.05",
+                "time_platform_tau_g_prime_eta_1.1",
+            ],
+        )
+        self.assertLess(np.linalg.norm([value for _name, value in residuals]), 4e-4)
+
+    def test_dimensionless_target_is_solved_not_copied_from_printed_coefficients(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        result = _solve_dimensionless_paper_target(contract)
+        selected = result["selected_root"]
+        reference = contract["dual_stripe_l0"]["dimensionless_paper_target"][
+            "published_printed_reference_c0_to_c5"
+        ]
+        self.assertEqual(result["status"], "six_paper_conditions_solved_for_project_nodes")
+        self.assertLess(selected["residual_norm_2"], 1e-7)
+        self.assertNotEqual(selected["coefficients_c0_to_c5"], reference)
+        self.assertEqual(len(result["reproducible_seed_sha256"]), 64)
+        coefficients = selected["coefficients_c0_to_c5"]
+        self.assertAlmostEqual(
+            selected["psi_coefficients_by_power"][0], coefficients[0] + coefficients[1]
+        )
+        self.assertAlmostEqual(
+            selected["g_coefficients_by_power"][0], coefficients[1] - coefficients[0]
+        )
+
+    def test_fixed_profile_comparison_exposes_the_linear_response_shortfall(self) -> None:
+        consistency = {"best_iterate": {"dimensionless_psi_g_polynomial_fit": {
+            "psi_coefficients_by_power": [3.0, -5.0, 4.0, -1.0, 0.1],
+            "g_coefficients_by_power": [3.1, -4.9, 3.9, -0.9, 0.09],
+        }}}
+        target = {"selected_root": {
+            "coefficients_c0_to_c5": [0.8, 0.7, -7.0, 14.0, -9.0, 2.0],
+            "psi_coefficients_by_power": [1.5, -7.0, 14.0, -9.0, 2.0],
+            "g_coefficients_by_power": [-0.1, -7.0, 14.0, -9.0, 2.0],
+        }}
+        _compare_fixed_profile_to_dimensionless_target(consistency, target)
+        comparison = consistency["best_iterate"]["dimensionless_target_comparison"]
+        self.assertAlmostEqual(comparison["actual_equivalent_c0_from_linear_psi_g"], -0.05)
+        self.assertAlmostEqual(comparison["target_c0"], 0.8)
+        self.assertGreater(comparison["scaled_psi_g_coefficient_difference_norm_2"], 1.0)
+
+    def test_static_two_stripes_cannot_exactly_emulate_paper_component_signs(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        target = _solve_dimensionless_paper_target(contract)
+        audit = audit_exact_paper_component_emulation_by_static_stripes(target)
+        self.assertTrue(audit["optimizer_independent"])
+        self.assertEqual(audit["required_response_factors"]["set_1_high_order_h"], 1.0)
+        self.assertEqual(audit["required_response_factors"]["set_2_linear_h"], -1.0)
+        self.assertEqual(
+            audit["status"],
+            "not_equivalent_to_exact_original_paper_component_decomposition",
+        )
+        self.assertFalse(audit["gates_active_fixed_hardware_operating_state"])
+
+    def test_fixed_geometry_authority_withholds_incompatible_angle_and_energies(self) -> None:
+        report = {"complete_fixed_hardware_root_family": [{
+            "mirror_root_index": 0,
+            "complete_fixed_hardware_search": {"best_iterate": {
+                "determination": {"status": "locally_incompatible"},
+                "nominal_injection_angle_degrees": 1.2,
+                "derived_drift_kinetic_energy_per_charge_v": 2.0,
+                "derived_fast_reflection_energy_per_charge_v": 3998.0,
+            }},
+        }]}
+        authority = attach_fixed_geometry_parameter_authority(report)[
+            "fixed_geometry_parameter_authority"
+        ]
+        self.assertEqual(authority["geometry_alone"]["status"], "underdetermined")
+        self.assertFalse(authority["operating_state_publication_gate"]["passed"])
+        self.assertIsNone(authority["operating_state_publication_gate"]["published_operating_state"])
+        self.assertIn(
+            "nominal_injection_angle_degrees",
+            authority["branch_states"][0]["diagnostic_only_outputs"],
+        )
+        coupled = authority["coupled_problem"]
+        self.assertIn("mirror_receipt_axial_width_W_z", coupled["external_or_upstream_authorities"])
+        self.assertEqual(coupled["conditionally_derived_outputs"], [
+            "theta0_from_tan_theta0_equals_kappa_1_L_over_K_W_z",
+            "E_y_equals_E_z_tan_squared_theta0",
+            "E_total_equals_E_z_plus_E_y",
+        ])
+
+    def test_fixed_geometry_authority_opens_only_for_compatible_full_rank_branch(self) -> None:
+        report = {"complete_fixed_hardware_root_family": [{
+            "mirror_root_index": 1,
+            "complete_fixed_hardware_search": {"best_iterate": {
+                "determination": {"status": "overdetermined_consistent"},
+                "residual_acceptance": {"passed": True},
+            }},
+        }]}
+        authority = attach_fixed_geometry_parameter_authority(report)[
+            "fixed_geometry_parameter_authority"
+        ]
+        self.assertTrue(authority["operating_state_publication_gate"]["passed"])
+        self.assertEqual(authority["operating_state_publication_gate"]["publishable_mirror_root_indices"], [1])
+        self.assertEqual(authority["branch_states"][0]["diagnostic_only_outputs"], [])
+
+    def test_reference_component_non_equivalence_does_not_override_active_hardware(self) -> None:
+        report = {
+            "exact_paper_component_emulation_audit": {
+                "status": "not_equivalent_to_exact_original_paper_component_decomposition",
+                "gates_active_fixed_hardware_operating_state": False,
+            },
+            "complete_fixed_hardware_root_family": [{
+                "mirror_root_index": 1,
+                "complete_fixed_hardware_search": {"best_iterate": {
+                    "determination": {"status": "overdetermined_consistent"},
+                    "residual_acceptance": {"passed": True},
+                }},
+            }],
+        }
+        gate = attach_fixed_geometry_parameter_authority(report)[
+            "fixed_geometry_parameter_authority"
+        ]["operating_state_publication_gate"]
+        self.assertTrue(gate["passed"])
+        self.assertEqual(gate["status"], "passed")
+
+    def test_full_rank_without_residual_acceptance_cannot_publish(self) -> None:
+        report = {"complete_fixed_hardware_root_family": [{
+            "mirror_root_index": 1,
+            "complete_fixed_hardware_search": {"best_iterate": {
+                "determination": {"status": "overdetermined_consistent"},
+            }},
+        }]}
+        authority = attach_fixed_geometry_parameter_authority(report)[
+            "fixed_geometry_parameter_authority"
+        ]
+        self.assertFalse(authority["operating_state_publication_gate"]["passed"])
+        self.assertEqual(
+            authority["operating_state_publication_gate"]["status"],
+            "failed_no_residual_accepted_full_rank_branch",
+        )
+        self.assertFalse(authority["branch_states"][0]["residual_acceptance_passed"])
+        self.assertEqual(
+            authority["branch_states"][0]["residual_acceptance_status"], "unavailable",
+        )
+
+    def test_parameter_authority_reports_pending_user_residual_tolerances(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        report = {"complete_fixed_hardware_root_family": [{
+            "mirror_root_index": 1,
+            "complete_fixed_hardware_search": {"best_iterate": {
+                "determination": {"status": "overdetermined_consistent"},
+                "raw_residuals": {"target_drift_period_ratio": 0.0},
+            }},
+        }]}
+        authority = attach_fixed_geometry_parameter_authority(report, contract)[
+            "fixed_geometry_parameter_authority"
+        ]
+        self.assertEqual(
+            authority["branch_states"][0]["residual_acceptance_status"],
+            "pending_user_authority",
+        )
+        self.assertFalse(authority["operating_state_publication_gate"]["passed"])
+
+    def test_managed_seed_authority_verifies_and_derives_without_rerunning_search(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run_config = root / "run_config.json"
+            summary = root / "summary.json"
+            contract = root / "simion_candidate_two_zone.json"
+            run_config.write_text("{}\n", encoding="utf-8")
+            contract.write_text(CONTRACT.read_text(encoding="utf-8"), encoding="utf-8")
+            summary.write_text(json.dumps({
+                "role": "mrtof_dual_stripe_paper_theory_instance_specific_operating_seed_family",
+                "dimensionless_paper_target": {"selected_root": {
+                    "coefficients_c0_to_c5": [0.8, 0.7, -7.0, 14.0, -9.0, 2.0],
+                    "psi_coefficients_by_power": [1.5, -7.0, 14.0, -9.0, 2.0],
+                    "g_coefficients_by_power": [-0.1, -7.0, 14.0, -9.0, 2.0],
+                }},
+                "complete_fixed_hardware_root_family": [{
+                    "mirror_root_index": 0,
+                    "complete_fixed_hardware_search": {"best_iterate": {
+                        "determination": {"status": "locally_incompatible"},
+                    }},
+                }],
+            }) + "\n", encoding="utf-8")
+
+            def record(path: Path) -> dict[str, object]:
+                return {
+                    "path": str(path),
+                    "exists": True,
+                    "bytes": path.stat().st_size,
+                    "sha256": file_sha256(path),
+                }
+
+            manifest = root / "run_manifest.json"
+            manifest.write_text(json.dumps({
+                "schema_version": 2,
+                "run_id": "managed-seed",
+                "project": "parallel_mirror_dual_stripe_mr_tof",
+                "mode": "dual_stripe_paper_theory_instance_seed",
+                "status": "success",
+                "run_config": record(run_config),
+                "inputs": {"downstream_contract": record(contract)},
+                "outputs": [record(summary)],
+            }) + "\n", encoding="utf-8")
+            result = build_parameter_authority_from_managed_seed(manifest)
+            self.assertEqual(result["source_operating_seed_run_id"], "managed-seed")
+            self.assertFalse(
+                result["fixed_geometry_parameter_authority"]
+                ["operating_state_publication_gate"]["passed"]
+            )
+            self.assertEqual(
+                result["fixed_geometry_parameter_authority"]
+                ["operating_state_publication_gate"]["status"],
+                "failed_no_residual_accepted_full_rank_branch",
+            )
+            self.assertEqual(
+                result["two_prism_voltage_definition"]["status"],
+                "two_physical_targets_declared__finite_3d_jacobian_pending",
+            )
+            bound = result["fixed_geometry_parameter_authority"]["geometry_alone"][
+                "derived_feasibility_bound"
+            ]
+            self.assertAlmostEqual(bound["maximum_abs_drift_length_L_mm"], 390.0 / 1.1)
+            self.assertEqual(
+                bound["derivation"],
+                "manufactured-design |L| <= active_length/max(eta_turn_nodes)",
+            )
+            self.assertEqual(bound["manufactured_design_abs_drift_length_L_mm"], 340.0)
+            summary.write_text("{}\n", encoding="utf-8")
+            with self.assertRaisesRegex(CandidateContractError, "integrity failed"):
+                build_parameter_authority_from_managed_seed(manifest)
+
+    def test_compiled_native_width_matches_the_reference_accessor(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        for set_name in ("set_1", "set_2"):
+            compiled = compile_dual_stripe_width_evaluator(contract, set_name)
+            for y_mm in (0.0, 1.0, 200.0, 350.0, 390.0):
+                self.assertAlmostEqual(
+                    compiled(y_mm),
+                    dual_stripe_width_at_y_mm(contract, set_name, y_mm),
+                    places=11,
+                )
+
+    def test_fixed_cad_shapes_fit_structure_and_consume_manufactured_L(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        result = identify_fixed_cad_component_shapes(contract)
+        fits = result["sampling_convergence"]
+        self.assertEqual([item["sampling_multiplier"] for item in fits], [1, 2, 4])
+        self.assertNotIn("drift_length_L_mm", fits[-1])
+        self.assertEqual(
+            result["drift_length_identifiability"]["status"],
+            "fixed_by_manufactured_design_contract",
+        )
+        self.assertLess(fits[-1]["set_1_rms_residual_mm"], 0.002)
+        self.assertLess(fits[-1]["set_2_rms_residual_mm"], 0.0004)
+        self.assertEqual(result["time_platform_node_span"]["status"], "covered_by_manufactured_L_span_check")
+        self.assertIn("voltage_inverse_ready", result["status"])
+        identity = result["theory_identity"]
+        self.assertEqual(identity["status"], "user_confirmed_original_geometry_bases__voltage_inverse_ready")
+        self.assertIn("drift length L", identity["instance_specific_outputs"])
+        self.assertNotIn("original_target_exact_response_compatibility", result)
+
+    def test_manufactured_basis_inverse_derives_nominal_biases_and_reports_K_residual(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        contract["nominal"]["target_drift_period_ratio"] = 25.5
+        coefficients = contract["dual_stripe_l0"]["dimensionless_paper_target"][
+            "published_printed_reference_c0_to_c5"
+        ]
+        result = derive_manufactured_basis_voltage_seed(
+            contract,
+            mirror_axial_width_w_mm=586.9393396818346,
+            basis_coefficients_c0_to_c5=coefficients,
+        )
+        self.assertAlmostEqual(result["nominal_kappa_1"], 1.4892272348, places=9)
+        self.assertAlmostEqual(result["derived_drift_kinetic_energy_per_charge_v"], 5.0)
+        self.assertAlmostEqual(result["derived_fast_reflection_energy_per_charge_v"], 4000.0)
+        self.assertAlmostEqual(result["stripe_biases_v"][0], -25.30397932, places=6)
+        self.assertAlmostEqual(result["stripe_biases_v"][1], 50.35522418, places=6)
+        self.assertEqual(
+            result["geometry_profile_to_total_path_scales"],
+            {"set_1": 2.0, "set_2": 2.0},
+        )
+        self.assertLess(
+            max(abs(value) for value in result["shape_scale_reconstruction_residual_mm"]),
+            1e-10,
+        )
+        forward = stripes_from_contract(contract, result["stripe_biases_v"])
+        for index, set_name in enumerate(("set_1", "set_2")):
+            raw_width = compile_dual_stripe_width_evaluator(contract, set_name)
+            self.assertAlmostEqual(forward[index].width_mm(340.0), 2.0 * raw_width(340.0))
+            expected_h = math.sqrt(4000.0 / (4000.0 - result["stripe_biases_v"][index]))
+            self.assertAlmostEqual(result["h_factors"][index], expected_h)
+        tangent_theta = math.sqrt(5.0 / 4000.0)
+        expected_k = result["nominal_kappa_1"] * 340.0 / (586.9393396818346 * tangent_theta)
+        self.assertAlmostEqual(result["predicted_continuous_oscillation_count"], expected_k)
+        self.assertAlmostEqual(
+            result["nominal_injection_angle_degrees"],
+            math.degrees(math.atan(tangent_theta)),
+        )
+        exact_k = result["nominal_center_exact_K_design_equation"]
+        self.assertEqual(exact_k["equation"], "T_D(theta_0)/T_0=K")
+        self.assertEqual(exact_k["target_period_ratio"], 25.5)
+        self.assertAlmostEqual(exact_k["residual"], expected_k - 25.5)
+        self.assertEqual(exact_k["status"], "unsatisfied_by_current_analytic_inputs")
+        topology = result["nominal_center_oscillation_topology"]
+        self.assertEqual(topology["nearest_opposite_turn_phase_order"], 24.5)
+        self.assertEqual(topology["target_period_ratio_interval_lower_exclusive"], 25.0)
+        self.assertEqual(topology["target_period_ratio_interval_upper_exclusive"], 26.0)
+        self.assertAlmostEqual(topology["signed_minimum_boundary_margin"], expected_k - 25.0)
+        self.assertFalse(topology["target_period_ratio_interval_passed"])
+        self.assertAlmostEqual(
+            result["mirror_axial_width_required_for_exact_K_mm"],
+            result["nominal_kappa_1"] * 340.0 / (25.5 * tangent_theta),
+        )
+        self.assertEqual(
+            result["definition_classification"]["status"],
+            "current_mirror_root_fails_center_exact_K_and_target_topology",
+        )
+        self.assertLess(max(abs(value) for value in result["shape_scale_reconstruction_residual_mm"]), 1e-10)
+
+    def test_manufactured_basis_inverse_fails_closed_on_energy_partition_mismatch(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        contract["prism_transport"]["energy_partition"]["total_kinetic_energy_ev"] = 4000
+        with self.assertRaisesRegex(CandidateContractError, "equal drift energy plus"):
+            derive_manufactured_basis_voltage_seed(
+                contract,
+                mirror_axial_width_w_mm=586.9393396818346,
+                basis_coefficients_c0_to_c5=(0.83999, 0.75160, -7.52535, 14.0242, -9.17661, 2.08613),
+            )
+
+    def test_manufactured_basis_inverse_consumes_an_alternate_baseline_k(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        contract["nominal"]["target_drift_period_ratio"] = 31.5
+        coefficients = contract["dual_stripe_l0"]["dimensionless_paper_target"][
+            "published_printed_reference_c0_to_c5"
+        ]
+        result = derive_manufactured_basis_voltage_seed(
+            contract,
+            mirror_axial_width_w_mm=586.9393396818346,
+            basis_coefficients_c0_to_c5=coefficients,
+        )
+        equation = result["nominal_center_exact_K_design_equation"]
+        self.assertEqual(equation["target_period_ratio"], 31.5)
+        self.assertAlmostEqual(
+            result["mirror_axial_width_required_for_exact_K_mm"],
+            result["nominal_kappa_1"]
+            * 340.0
+            / (31.5 * math.sqrt(5.0 / 4000.0)),
+        )
+
+    def test_manufactured_basis_inverse_accepts_a_verified_selected_axial_energy(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        target = solve_dimensionless_paper_target(contract)
+        coefficients = target["selected_root"]["coefficients_c0_to_c5"]
+        psi = lambda eta: coefficients[0] * eta + sum(
+            coefficients[power] * eta**power for power in range(1, 6)
+        )
+        kappa = endpoint_regularized_kappa(psi)
+        mirror_width = 586.8617288702586
+        drift_energy = contract["prism_transport"]["energy_partition"]["drift_kinetic_energy_ev"]
+        target_k = resolve_drift_phase_contract(contract).target_period_ratio
+        length = contract["dual_stripe_l0"]["manufactured_design_abs_drift_length_L_mm"]
+        tangent_theta = kappa * length / (mirror_width * target_k)
+        selected_axial_energy = drift_energy / tangent_theta**2
+        result = derive_manufactured_basis_voltage_seed(
+            contract,
+            mirror_axial_width_w_mm=mirror_width,
+            basis_coefficients_c0_to_c5=coefficients,
+            axial_energy_per_charge_v=selected_axial_energy,
+        )
+        self.assertAlmostEqual(result["selected_axial_energy_per_charge_v"], selected_axial_energy)
+        self.assertAlmostEqual(result["selected_total_kinetic_energy_ev"], selected_axial_energy + drift_energy)
+        self.assertAlmostEqual(
+            result["post_acceleration_total_energy_per_charge_v"],
+            selected_axial_energy + drift_energy,
+        )
+        self.assertAlmostEqual(
+            result["derived_fast_reflection_energy_per_charge_v"], selected_axial_energy
+        )
+        self.assertAlmostEqual(
+            result["nominal_injection_angle_degrees"],
+            math.degrees(math.atan(tangent_theta)),
+        )
+        self.assertAlmostEqual(result["predicted_continuous_oscillation_count"], target_k, places=8)
+        self.assertAlmostEqual(result["oscillation_count_residual"], 0.0, places=8)
+        self.assertEqual(
+            result["nominal_center_exact_K_design_equation"]["status"],
+            "satisfied_by_current_analytic_inputs",
+        )
+        self.assertEqual(
+            result["definition_classification"]["status"],
+            "center_exact_K_satisfied__nominal_topology_passes",
+        )
+
+    def test_exact_k_inverse_seed_gets_same_point_native_six_residual_audit(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        selected_energy = 4050.0
+        design = MirrorL0Design(
+            transverse_half_gap_mm=15.0,
+            transition_z_mm=(0.0, 167.0, 229.0, 261.0, 291.0),
+            electrode_voltages_v=(0.0, -2000.0, 3500.0, 5500.0, 8000.0),
+            terminal_electrode_plane_z_mm=320.0,
+            terminal_electrode_voltage_v=8000.0,
+        )
+        width = reduced_period(selected_energy, design) * math.sqrt(selected_energy)
+        shape_selection = build_native_stripe_shape_selection(contract)
+        materialized = materialize_native_stripe_spatial_return_root(
+            shape_selection.shape_root,
+            source_slow_energy_per_charge_v=contract["prism_transport"][
+                "energy_partition"
+            ]["drift_kinetic_energy_ev"],
+            mirror_reduced_period_mm_per_sqrt_v=reduced_period(selected_energy, design),
+            axial_energy_per_charge_v=selected_energy,
+        )
+        exact_k = ManagedExactKOperatingPoint(
+            design=design,
+            axial_energy_per_charge_v=selected_energy,
+            axial_width_w_mm=width,
+            native_stripe_spatial_shape_root=shape_selection.shape_root,
+            stripe_biases_v=materialized.stripe_biases_v,
+            contract=contract,
+            run_id="test-exact-k",
+            manifest_sha256="A" * 64,
+            parent_mirror_manifest_sha256="B" * 64,
+        )
+        # Keep the real B-spline factory active while checking that every
+        # consistency/Jacobian voltage trial inherits its endpoint derivatives.
+        with patch(
+            "msplatform.workflows.mr_design.dual_stripe_operating_seed.stripes_from_contract",
+            wraps=stripes_from_contract,
+        ) as native_stripes:
+            result = _evaluate_exact_k_seed_consistency(
+                exact_k, materialized.stripe_biases_v,
+            )
+        self.assertGreater(native_stripes.call_count, 1)
+        for call in native_stripes.call_args_list:
+            self.assertIs(call.args[0], contract)
+            self.assertEqual(len(call.args[1]), 2)
+        self.assertEqual(result["status"], "single_inverse_seed_point_evaluated__no_search")
+        self.assertEqual(result["selected_energy_nodes_per_charge_v"][1], selected_energy)
+        self.assertEqual(len(result["raw_residuals"]), 9)
+        self.assertEqual(len(result["drift_core_raw_residuals"]), 6)
+        self.assertEqual(
+            len(result["global_energy_calibration_diagnostics"]["residuals"]),
+            3,
+        )
+        jacobian = result["local_jacobian"]
+        self.assertEqual(len(jacobian["rows"]), 6)
+        self.assertTrue(all(len(row) == 2 for row in jacobian["rows"]))
+        self.assertEqual(result["determination"]["unknown_count"], 2)
+        self.assertEqual(result["residual_acceptance"]["status"], "pending_user_authority")
+        self.assertFalse(result["residual_acceptance"]["passed"])
+        self.assertEqual(result["source_target_slow_kinetic_energy_per_charge_v"], 5.0)
+        self.assertAlmostEqual(
+            result["native_turning_minus_source_slow_energy_per_charge_v"],
+            result["derived_drift_kinetic_energy_per_charge_v"] - 5.0,
+        )
+        self.assertAlmostEqual(
+            result["native_minus_upstream_shape_kappa_1"],
+            result["native_kappa_1"] - result["upstream_native_shape_kappa_1"],
+        )
+
+
+
+
+class DualStripeOwnershipBoundaryTests(unittest.TestCase):
+    def test_native_response_preserves_prefix_error_priority_before_geometry(self) -> None:
+        from msplatform.workflows.mr_design import analyze_native_dual_stripe_l0
+        cases = (
+            ({"nominal": {"energy_per_charge_v": float("nan")}}, (), CandidateContractError, "finite"),
+            ({"nominal": {"energy_per_charge_v": 4000}}, (), KeyError, "dual_stripe"),
+            ({"nominal": {"energy_per_charge_v": 4000}, "dual_stripe": {}}, (), CandidateContractError, "exactly two"),
+            ({"nominal": {"energy_per_charge_v": 4000}, "dual_stripe": {}}, (-40, -40), CandidateContractError, "distinct"),
+            ({"nominal": {"energy_per_charge_v": 4000}, "dual_stripe": {}}, (-40, float("nan")), CandidateContractError, "finite"),
+        )
+        with patch("msplatform.backends.simion.mr_geometry.resolve_mr_geometry", side_effect=AssertionError("geometry must follow prefix")) as resolver:
+            for contract, biases, error, message in cases:
+                with self.subTest(message=message), self.assertRaisesRegex(error, message):
+                    analyze_native_dual_stripe_l0(contract, biases, accelerator_geometry_authority={})
+            resolver.assert_not_called()
+        with self.assertRaisesRegex(CandidateContractError, "complete frozen OA geometry authority"):
+            analyze_native_dual_stripe_l0(
+                {"nominal": {"energy_per_charge_v": 4000}, "dual_stripe": {}},
+                (-40, 60), accelerator_geometry_authority={})
+
+    def test_pure_and_native_use_same_contract_once_and_return_same_report(self) -> None:
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof import dual_stripe_l0 as domain
+        from msplatform.backends.simion.mr_geometry import resolve_mr_geometry
+        from msplatform.workflows.mr_design import analyze_native_dual_stripe_l0
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        physical = pure_geometry_inputs(contract)
+        authority = geometry_authority(contract)
+        with patch.object(domain, "resolve_geometry", wraps=domain.resolve_geometry) as resolver:
+            pure = domain.analyze_dual_stripe_l0(contract, (-40, 60), **physical)
+            self.assertEqual(resolver.call_count, 1)
+            self.assertIs(resolver.call_args.args[0], contract)
+            self.assertIs(resolver.call_args.kwargs["geometry_profile"], physical["geometry_profile"])
+        with patch("msplatform.backends.simion.mr_geometry.resolve_mr_geometry", wraps=resolve_mr_geometry) as resolver:
+            native = analyze_native_dual_stripe_l0(contract, (-40, 60), accelerator_geometry_authority=authority)
+            self.assertEqual(resolver.call_count, 1)
+            self.assertIs(resolver.call_args.args[0], contract)
+            self.assertIs(resolver.call_args.kwargs["accelerator_geometry_authority"], authority)
+        self.assertEqual(native, pure)
+
+    def test_completion_checks_actual_width_before_component_mapping(self) -> None:
+        import copy
+        from msplatform.components.parallel_mirror_dual_stripe_mr_tof import dual_stripe_l0 as domain
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        stripe, values = domain._nominal_dual_stripe_response(contract, (-40, 60))
+        resolved = domain.resolve_geometry(contract, **pure_geometry_inputs(contract))
+        bad_stripe = copy.deepcopy(stripe)
+        bad_stripe["theory_profile"]["component_basis_assignment"] = {}
+        bad_width = copy.deepcopy(resolved)
+        bad_width["stripe_electrodes"][0]["polygon_yz_mm"] = [[0,0],[1,0],[1,-1],[0,-1]]
+        with self.assertRaisesRegex(CandidateContractError, "non-positive physical width"):
+            domain._complete_dual_stripe_response(bad_stripe, values, bad_width)
+        with self.assertRaisesRegex(CandidateContractError, "qualified theory-CAD mapping"):
+            domain._complete_dual_stripe_response(bad_stripe, values, resolved)
+
+    def test_importing_pure_component_and_search_workflow_has_no_eager_backend(self) -> None:
+        import subprocess
+        import sys
+        repository = PROJECT.parents[3]
+        code = (
+            "import sys;sys.path.insert(0,sys.argv[1]);"
+            "import msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0;"
+            "import msplatform.workflows.mr_design;"
+            "assert not any(n.startswith('msplatform.backends') for n in sys.modules)"
+        )
+        completed = subprocess.run([sys.executable, "-I", "-B", "-c", code, str(repository/"src")],
+                                   cwd=repository, capture_output=True, text=True,
+                                   encoding="utf-8", timeout=30, check=False)
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+
+if __name__ == "__main__":
+    unittest.main()

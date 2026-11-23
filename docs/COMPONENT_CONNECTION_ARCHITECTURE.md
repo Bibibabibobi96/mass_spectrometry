@@ -7,7 +7,7 @@
 跨项目装配使用仓库根`integrations/`、声明式配方和公共解析，目录与职责见下文[统一组装目标](#统一组装目标)。
 组件提供者继续拥有物理设计、provided／required接口及自身资格，集成层不复制器件baseline或Formal资产。
 新组合不再创建connection-family项目，也不以两个项目ID或connection profile替代显式实例与配方。
-当前支持范围、真实运行及未闭合项由[集成状态](../integrations/docs/INTEGRATION.md)唯一记录；
+当前支持范围、真实运行及未闭合项由[集成状态](INTEGRATION.md)唯一记录；
 历史链路保留冻结身份和证据，不因此保留已被替代的活动入口或兼容路径。
 
 ## 统一组装目标
@@ -28,7 +28,7 @@
 simulation_repo/
 ├─ projects/<project>/                 # 器件／仪器物理设计、提供者与自身资格
 ├─ common/contracts/                   # 公共组件、端口、装配与身份合同
-├─ common/integration/                 # 求解器中立的解析、组装及校验机制
+├─ src/msplatform/assembly/                 # 求解器中立的解析、组装及校验机制
 └─ integrations/                       # 固定入口；按实际功能创建下列职责目录
    ├─ README.md                        # 发现、能力边界与公开工作流导航
    ├─ config/
@@ -298,7 +298,7 @@ full只表示选定配方全部实例均在范围内，不表示已有足够物�
 | 类型 | 归属 |
 |---|---|
 | 零长度canonical状态交接 | 公共端口与composition合同 |
-| 通用无源圆筒、矩形管、接地孔primitive | `common/integration/`或已验证公共几何层；实例值在connection profile |
+| 通用无源圆筒、矩形管、接地孔primitive | `src/msplatform/assembly/`或已验证公共几何层；实例值在connection profile |
 | 某一连接族专用实体或场重叠区 | 对应integration |
 | 具有独立电极、脉冲、透镜或可独立验收功能 | 建立独立项目并发布端口 |
 
@@ -341,14 +341,14 @@ profile显式选择一种物理模式：
    开启。缓存是可删除性能层，run仍冻结输入、验证报告和所用PA身份。
 
 本节描述耦合设计和验收边界，不维护公共代码消费者数量或当前物理资格。
-已存在的无器件假设 PA 构建与场比较机制直接复用[公共 SIMION 实现](../common/simion/README.md)。
+已存在的无器件假设 PA 构建与场比较机制直接复用[公共 SIMION 实现](SIMION_BACKEND.md)。
 器件局部域、portal、实例启停和接受阈值仍由消费者拥有；不能重新建立公共构建器的项目私有副本。
 
 ## 实现入口
 
-公共 API 和验证边界见[公共连接层](../common/integration/README.md)。
+公共 API 和验证边界见[公共连接层](CONNECTIONS.md)。
 RF 多极杆→oaTOF 的活动模式、实例布局、电极映射、当前诊断和开放任务见
-[统一集成入口](../integrations/README.md)。
+[统一集成入口](ASSEMBLY.md)。
 
 ## 扩展门禁
 

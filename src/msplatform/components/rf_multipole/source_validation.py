@@ -13,20 +13,10 @@ from typing import Any
 
 from msplatform.contracts.particle_physics import kinetic_energy_ev
 from msplatform.contracts.particle_count import validate_positive_particle_count
-from msplatform.components.rf_multipole.interface_geometry import transport_observations, transport_numerical_domain
+from msplatform.contracts.transport_interface import transport_observations, transport_numerical_domain
+from msplatform.contracts.particle_state import CANONICAL_SOURCE_COLUMNS
 
-COLUMNS = [
-    "particle_id",
-    "birth_time_s",
-    "x_mm",
-    "y_mm",
-    "z_mm",
-    "vx_m_s",
-    "vy_m_s",
-    "vz_m_s",
-    "mass_amu",
-    "charge_state",
-]
+COLUMNS = list(CANONICAL_SOURCE_COLUMNS)
 ENERGY_BOUND_TOLERANCE_EV = 2e-9
 
 

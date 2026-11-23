@@ -112,9 +112,9 @@ LiveLink、SIMION Lua/GEM、PowerShell及跨软件数据合同。仓库结构、
 供应商脚本只消费已冻结的输入。若出现循环导入、多个位置散布`if solver == ...`或为运行而反复修改
 模块搜索路径，应重新设计边界，而不是增加补丁分支。
 
-共享实现的职责与具体能力由最近的[公共合同](../common/contracts/README.md)、
-[COMSOL](../common/comsol/README.md)、[SIMION](../common/simion/README.md)、
-[连接](../common/integration/README.md)说明；多极杆领域模型由[所属设计项目](../projects/rf_multipole_ion_optics/README.md)维护。
+共享实现的职责与具体能力由最近的[公共合同](../tools/repository/README.md)、
+[COMSOL](COMSOL_BACKEND.md)、[SIMION](SIMION_BACKEND.md)、
+[连接](CONNECTIONS.md)说明；多极杆领域模型由[所属组件](../src/msplatform/components/rf_multipole/README.md)维护。
 公共层只接收显式输入，不拥有消费项目的几何、运行模式、物理阈值或资格；器件模型归独立项目。
 
 领域实现首先遵循[模型所有权](REPOSITORY_ARCHITECTURE.md#跨项目知识提升条件)，不因同一项目出现多个变体
@@ -506,8 +506,8 @@ flowchart TB
 ```
 
 例如仅改呈现设置重做报告；原始事件足够时，改分析方法只重做分析；观测定义改变后，已有事件
-不足才补相应完整飞行单元。执行API见[公共SIMION机制](../common/simion/README.md)，阶段与资产身份
-仍由实际项目提供者和工作流定义，当前迁移限制查各PROJECT及[INTEGRATION](../integrations/docs/INTEGRATION.md)。
+不足才补相应完整飞行单元。执行API见[公共SIMION机制](SIMION_BACKEND.md)，阶段与资产身份
+仍由实际项目提供者和工作流定义，当前迁移限制查各PROJECT及[INTEGRATION](INTEGRATION.md)。
 
 - 所有项目及integration的昂贵工作流必须按实际依赖复用仍有效的已完成阶段，只执行缺失、失败或输入已改变的部分。
   飞行、后处理或发布失败不能成为重新构建几何、网格或Refine全部PA的理由；明确研究重新求解差异时另行声明该实验变量。
@@ -521,8 +521,8 @@ flowchart TB
   这些内容改变时重新执行受影响的审计，不重新求场。实际决定实体、网格、边界或数值求解的输入与实现
   仍须绑定身份。来源、构建和审计证据均保留，不能以移除诊断字段为由省略验证或接受不同电压。
 - 恢复规划、完成单元选择、资产绑定、调度及生命周期各自沿用已有公共实现，不得在项目中复制恢复状态机、缓存协议、
-  调度器或第二套资产权威。SIMION整批恢复使用[公共续算模块](../common/simion/README.md#中断续算)，
-  PA使用[公共场资产机制](../common/simion/README.md)；其他求解器沿其公共执行入口接入适用的原生checkpoint或阶段产物。
+  调度器或第二套资产权威。SIMION整批恢复使用[公共续算模块](SIMION_BACKEND.md#中断续算)，
+  PA使用[公共场资产机制](SIMION_BACKEND.md)；其他求解器沿其公共执行入口接入适用的原生checkpoint或阶段产物。
   项目只提供科学输入投影、独立单元定义、原生完成判据及结果转换；公共调度器负责准入和执行，不自行判定物理结果可复用。
 - 跨run恢复创建新运行身份，显式绑定父run冻结输入、实际资产owner及必要原始结果；不得改写终态run、搜索最新可用结果，
   或混入活动配置。资产仍由原owner持有，恢复run只登记使用与保护；可安全只读消费时直接引用，不为每次恢复复制大型PA、

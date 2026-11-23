@@ -1,0 +1,163 @@
+"""Plot full and downstream radial projections from governed SIMION CSV outputs."""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import math
+from collections import Counter, defaultdict
+from importlib.resources import files
+from pathlib import Path
+from typing import Mapping, Sequence
+
+
+def axial_reach_profile(
+    tracks: Mapping[int, tuple[Sequence[float], Sequence[float]]],
+    lower_z_mm: float,
+    upper_z_mm: float,
+) -> tuple[list[float], list[int]]:
+    """Return a step profile of unique ions that reached each axial position."""
+    if not math.isfinite(lower_z_mm) or not math.isfinite(upper_z_mm):
+        raise ValueError("axial reach limits must be finite")
+    if upper_z_mm <= lower_z_mm:
+        raise ValueError("upper axial reach limit must exceed lower limit")
+
+    maxima = [max(z_values) for z_values, _ in tracks.values() if z_values]
+    current = sum(maximum >= lower_z_mm for maximum in maxima)
+    losses = Counter(
+        maximum for maximum in maxima if lower_z_mm < maximum < upper_z_mm
+    )
+    edges = [lower_z_mm]
+    values: list[int] = []
+    for position, count in sorted(losses.items()):
+        values.append(current)
+        edges.append(position)
+        current -= count
+    values.append(current)
+    edges.append(upper_z_mm)
+    return edges, values
+
+
+def trajectory_tracks(path: Path, placement) -> dict[int, tuple[list[float], list[float]]]:
+    """Read raw workbench positions using the explicitly frozen device pose."""
+    from msplatform.contracts.rigid_transform import FramedPosition
+
+    inverse = placement.inverse()
+    tracks: dict[int, tuple[list[float], list[float]]] = defaultdict(lambda: ([], []))
+    with path.open(encoding="utf-8", newline="") as stream:
+        for row in csv.DictReader(stream):
+            point = FramedPosition(inverse.from_frame_id, tuple(float(row[axis+"_mm"]) for axis in "xyz"))
+            x, y, z = inverse.transform_position(point).coordinates_mm
+            tracks[int(row["ion_number"])][0].append(z)
+            tracks[int(row["ion_number"])][1].append(math.hypot(x, y))
+    return tracks
+
+
+def classify_terminal_states(path: Path, track_ids: set[int]) -> tuple[dict[str, set[int]], int]:
+    """Classify sampled tracks by Program code; count terminal rows without tracks.
+
+    Code 0 is unknown, 1 reached the terminal plane, 2 hit the time limit and
+    3 lost gas support. No code separately identifies physical wall loss.
+    Missing final rows remain unknown; duplicate IDs and unknown codes fail.
+    """
+    codes: dict[int, int] = {}
+    with path.open(encoding="utf-8", newline="") as stream:
+        for row in csv.DictReader(stream):
+            particle_id, code = int(row["ion_number"]), int(row["splat"])
+            if particle_id in codes:
+                raise ValueError(f"duplicate terminal ion number: {particle_id}")
+            if code not in (0, 1, 2, 3):
+                raise ValueError(f"unknown terminal code: {code}")
+            codes[particle_id] = code
+    groups: dict[str, set[int]] = {name: set() for name in ("arrived", "unknown", "timeout", "coverage_loss")}
+    names = {0: "unknown", 1: "arrived", 2: "timeout", 3: "coverage_loss"}
+    for particle_id in track_ids:
+        groups[names[codes.get(particle_id, 0)]].add(particle_id)
+    return groups, len(codes.keys() - track_ids)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--trajectory", required=True, type=Path)
+    parser.add_argument("--final-state", required=True, type=Path)
+    parser.add_argument("--output", required=True, type=Path)
+    scope = parser.add_mutually_exclusive_group(required=True)
+    scope.add_argument("--placement", type=Path, help="Frozen device-to-workbench rigid-transform JSON")
+    scope.add_argument("--historical-translation-only", action="store_true",
+                       help="Explicitly read historical offset-only workbench data")
+    parser.add_argument("--geometry", type=Path)
+    parser.add_argument("--numerics", type=Path)
+    args = parser.parse_args()
+    package = "msplatform.components.dual_cone_tandem_quadrupole_ion_interface"
+    if args.geometry is None:
+        args.geometry = Path(str(files(package).joinpath("config", "resolved_geometry.json")))
+    if args.numerics is None:
+        args.numerics = Path(str(files(package).joinpath("config", "simion_solver_numerics.json")))
+
+    import matplotlib.pyplot as plt
+    from matplotlib.collections import LineCollection
+    from matplotlib.ticker import MaxNLocator
+
+    resolved = json.loads(args.geometry.read_text(encoding="utf-8"))
+    numerics = json.loads(args.numerics.read_text(encoding="utf-8"))
+    from msplatform.backends.simion.dual_cone_stages import device_placement
+    placement = device_placement(resolved, numerics,
+        None if args.placement is None else json.loads(args.placement.read_text(encoding="utf-8-sig")))
+    geometry = resolved["geometry_mm"]
+    stage_2_end = float(geometry["stage_2_round_quadrupole"]["downstream_flat_end_z_mm"])
+    plate = geometry["downstream_aperture_plate"]
+    plate_up = float(plate["upstream_face_z_mm"])
+    plate_down = float(plate["downstream_face_z_mm"])
+    endpoint = float(plate["downstream_observation_end_z_mm"])
+
+    tracks = trajectory_tracks(args.trajectory, placement)
+    groups, unsampled_terminal_count = classify_terminal_states(args.final_state, set(tracks))
+
+    full_limits = (-2.0, endpoint)
+    figure, axes = plt.subplots(3, 1, figsize=(11, 9.5), constrained_layout=True)
+    for axis, limits in zip(axes[:2], [full_limits, (100.0, endpoint)]):
+        for name, label, color, style in (
+            ("arrived", "terminal plane", "#0072B2", "solid"),
+            ("unknown", "unknown or missing final state", "#777777", "dotted"),
+            ("timeout", "time limit", "#E69F00", "dashed"),
+            ("coverage_loss", "gas-support loss", "#D55E00", "dashdot"),
+        ):
+            segments = [list(zip(*tracks[ion])) for ion in sorted(groups[name])]
+            axis.add_collection(LineCollection(segments, colors=color, linestyles=style,
+                alpha=0.32, linewidths=0.65, label=label))
+        axis.axvline(stage_2_end, color="#555555", linestyle="--", linewidth=1.0)
+        axis.axvspan(plate_up, plate_down, color="#756bb1", alpha=0.25)
+        axis.axhline(float(plate["aperture_radius_mm"]), color="#756bb1",
+                     linestyle=":", linewidth=1.0)
+        axis.set_xlim(*limits)
+        axis.set_ylim(bottom=0)
+        axis.grid(alpha=0.2)
+        axis.set_ylabel("radial distance r (mm)")
+    axes[0].set_title(
+        f"SIMION N2/SDS sampled trajectories (N={len(tracks)}; "
+        f"terminal rows without tracks={unsampled_terminal_count}); "
+        "physical wall loss is not separately identified"
+    )
+    axes[0].legend()
+    axes[1].set_title("Downstream detail: rod end 108 mm, aperture plate 110.22–110.72 mm")
+    reach_edges, reach_counts = axial_reach_profile(tracks, *full_limits)
+    axes[2].stairs(reach_counts, reach_edges, color="#0072B2", linewidth=1.5)
+    axes[2].axvline(stage_2_end, color="#555555", linestyle="--", linewidth=1.0)
+    axes[2].axvspan(plate_up, plate_down, color="#756bb1", alpha=0.25)
+    axes[2].set_xlim(*full_limits)
+    axes[2].set_ylim(0, max(1, max(reach_counts, default=0)) * 1.05)
+    axes[2].yaxis.set_major_locator(MaxNLocator(integer=True))
+    axes[2].grid(alpha=0.2)
+    axes[2].set_ylabel("ions reaching z, N")
+    axes[2].set_title("Axial reach: unique ions with maximum sampled z at or beyond position")
+    axes[2].set_xlabel("device z (mm)")
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(args.output, dpi=180)
+    plt.close(figure)
+    print(f"SIMION_TRAJECTORY_PROJECTION=PASS PATH={args.output.resolve()}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

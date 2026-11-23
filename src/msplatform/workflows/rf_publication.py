@@ -20,22 +20,22 @@ from msplatform.workflows.rf_runtime_profiles import resolve_runtime_profile
 
 PROFILE_RESOURCES = {
     "official": {
-        "request": "projects/rf_multipole_ion_optics/variants/quadrupole/config/requests/official.json",
-        "design_variables": "projects/rf_multipole_ion_optics/variants/quadrupole/config/design_variables_nonsegmented.json",
-        "optimization_envelope": "projects/rf_multipole_ion_optics/variants/quadrupole/config/optimization_envelope_official.json",
-        "output": "projects/rf_multipole_ion_optics/variants/quadrupole/config/resolved_design_official.json",
+        "request": "src/msplatform/components/rf_multipole/variants/quadrupole/config/requests/official.json",
+        "design_variables": "src/msplatform/components/rf_multipole/variants/quadrupole/config/design_variables_nonsegmented.json",
+        "optimization_envelope": "src/msplatform/components/rf_multipole/variants/quadrupole/config/optimization_envelope_official.json",
+        "output": "src/msplatform/components/rf_multipole/variants/quadrupole/config/resolved_design_official.json",
     },
     "interface": {
-        "request": "projects/rf_multipole_ion_optics/variants/quadrupole/config/requests/official.json",
-        "design_variables": "projects/rf_multipole_ion_optics/variants/quadrupole/config/design_variables_nonsegmented.json",
-        "optimization_envelope": "projects/rf_multipole_ion_optics/variants/quadrupole/config/optimization_envelope_official.json",
-        "output": "projects/rf_multipole_ion_optics/variants/quadrupole/config/resolved_design_official.json",
+        "request": "src/msplatform/components/rf_multipole/variants/quadrupole/config/requests/official.json",
+        "design_variables": "src/msplatform/components/rf_multipole/variants/quadrupole/config/design_variables_nonsegmented.json",
+        "optimization_envelope": "src/msplatform/components/rf_multipole/variants/quadrupole/config/optimization_envelope_official.json",
+        "output": "src/msplatform/components/rf_multipole/variants/quadrupole/config/resolved_design_official.json",
     },
     "mass_filter": {
-        "request": "projects/rf_multipole_ion_optics/variants/quadrupole/config/requests/mass_filter.json",
-        "design_variables": "projects/rf_multipole_ion_optics/variants/quadrupole/config/design_variables_nonsegmented.json",
-        "optimization_envelope": "projects/rf_multipole_ion_optics/variants/quadrupole/config/optimization_envelope_mass_filter.json",
-        "output": "projects/rf_multipole_ion_optics/variants/quadrupole/config/resolved_design_mass_filter.json",
+        "request": "src/msplatform/components/rf_multipole/variants/quadrupole/config/requests/mass_filter.json",
+        "design_variables": "src/msplatform/components/rf_multipole/variants/quadrupole/config/design_variables_nonsegmented.json",
+        "optimization_envelope": "src/msplatform/components/rf_multipole/variants/quadrupole/config/optimization_envelope_mass_filter.json",
+        "output": "src/msplatform/components/rf_multipole/variants/quadrupole/config/resolved_design_mass_filter.json",
     },
 }
 EXPECTED_IDENTITY = {
@@ -48,7 +48,7 @@ EXPECTED_IDENTITY = {
 
 def profile_paths(project_root: Path) -> dict[str, dict[str, Path]]:
     """Resolve the named research inputs beneath an explicit project root."""
-    prefix = Path("projects/rf_multipole_ion_optics")
+    prefix = Path("src/msplatform/components/rf_multipole")
     return {
         name: {key: project_root / Path(value).relative_to(prefix) for key, value in resources.items()}
         for name, resources in PROFILE_RESOURCES.items()
@@ -239,13 +239,15 @@ def main(
 
 
 if __name__ == "__main__":
+    installed_project_root = Path(__file__).resolve().parents[1] / "components" / "rf_multipole"
+    installed_repository_root = Path(__file__).resolve().parents[3]
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--project-root", type=Path, required=True)
-    parser.add_argument("--repository-root", type=Path)
+    parser.add_argument("--project-root", type=Path, default=installed_project_root)
+    parser.add_argument("--repository-root", type=Path, default=installed_repository_root)
     roots, remaining = parser.parse_known_args()
     import sys
     sys.argv = [sys.argv[0], *remaining]
     main(
         project_root=roots.project_root.resolve(),
-        repository_root=(roots.repository_root or roots.project_root.parents[1]).resolve(),
+        repository_root=roots.repository_root.resolve(),
     )

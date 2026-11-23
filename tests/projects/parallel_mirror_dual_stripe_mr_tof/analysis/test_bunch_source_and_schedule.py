@@ -1,0 +1,930 @@
+from __future__ import annotations
+
+import csv
+import json
+import subprocess
+import unittest
+import tempfile
+from pathlib import Path
+
+from msplatform.contracts.particle_count_policy import validate_prefix_particle_sources
+from msplatform.ion_release.cylinder import generate_center_axis_pair_halton_cylinder_phase_space
+from msplatform.backends.simion.mr_bunch_source import (
+    bunch_identity,
+    derive_bunch_pulse_schedule,
+    deterministic_ideal_bunch_states,
+    freeze_bunch_pulse_schedule_from_files,
+    load_verified_bunch_source_receipt,
+    materialize_bunch_source,
+    materialize_bunch_source_from_definition,
+    render_bunch_fly2,
+    resolve_bunch_source_interval,
+    solver_problem_identity_from_trial_receipt,
+    source_cohort_identity,
+    validate_fixed_global_pulse_events,
+)
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
+    CandidateContractError,
+    derive_two_zone_placement,
+    load_contract,
+)
+from msplatform.backends.simion.mrtof_observations import parse_events
+
+
+def _states(count: int, mother: int = 1000):
+    return deterministic_ideal_bunch_states(
+        particle_count=count,
+        mother_particle_count=mother,
+        center_workbench_mm=(0.0, -55.0, -60.0),
+        aperture_plane_axes=(0, 1),
+        acceleration_axis=2,
+        position_radius_mm=0.1,
+        acceleration_axis_full_width_mm=0.2,
+        kinetic_energy_center_ev=5.0,
+        kinetic_energy_full_width_ev=0.1,
+        nominal_direction_workbench=(0.0, 1.0, 0.0),
+        angular_full_width_deg=0.2,
+        mass_th=524.0,
+        charge_e=1,
+    )
+
+
+PROJECT = Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof"
+GEOMETRY_CONTRACT = PROJECT.parents[3] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json"
+CANDIDATE_DEFINITION = PROJECT / "config" / "candidate_bunch_source_n100.json"
+
+
+class BunchSourceAndScheduleTest(unittest.TestCase):
+    def test_controlled_slow_energy_list_publishes_seven_pure_probe_states(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            definition = self._definition()
+            definition.update(particle_count=7, angular_full_width_deg=0.0,
+                              controlled_slow_energy_half_spans_ev_per_charge=[0.1, 0.2, 0.3])
+            path = root / "definition.json"
+            path.write_text(json.dumps(definition), encoding="utf-8")
+            receipt = materialize_bunch_source_from_definition(
+                definition_path=path, state_table_path=root / "states.csv",
+                fly2_path=root / "source.fly2", receipt_path=root / "receipt.json",
+            )
+            verified = load_verified_bunch_source_receipt(root / "receipt.json")
+            self.assertEqual(verified, receipt)
+            self.assertEqual(receipt["particle_count"], 7)
+            self.assertEqual(receipt["mother_particle_count"], 1000)
+            self.assertEqual(receipt["controlled_head_particle_count"], 7)
+            self.assertNotIn("volume_particle_id_min", receipt)
+            self.assertNotIn("controlled_slow_energy_pair", receipt)
+            self.assertNotIn("controlled_focus_pair", receipt)
+            self.assertEqual([(p["negative_particle_id"], p["positive_particle_id"])
+                              for p in receipt["controlled_slow_energy_pairs"]], [(2, 3), (4, 5), (6, 7)])
+            with (root / "states.csv").open(encoding="utf-8", newline="") as stream:
+                rows = list(csv.DictReader(stream))
+            self.assertEqual([float(r["kinetic_energy_ev"]) for r in rows],
+                             [5.0, 4.9, 5.1, 4.8, 5.2, 4.7, 5.3])
+            fixed = set(rows[0]) - {"particle_id", "kinetic_energy_ev"}
+            self.assertTrue(all(all(row[k] == rows[0][k] for k in fixed) for row in rows))
+            damaged = dict(receipt)
+            damaged["controlled_slow_energy_pairs"] = [dict(p) for p in receipt["controlled_slow_energy_pairs"]]
+            damaged["controlled_slow_energy_pairs"][2]["positive_particle_id"] = 5
+            (root / "receipt.json").write_text(json.dumps(damaged), encoding="utf-8")
+            with self.assertRaisesRegex(CandidateContractError, "slow-energy pairs"):
+                load_verified_bunch_source_receipt(root / "receipt.json")
+
+    def test_controlled_slow_energy_list_rejects_mixed_or_invalid_heads(self) -> None:
+        mutations = [
+            {"controlled_slow_energy_half_spans_ev_per_charge": []},
+            {"controlled_slow_energy_half_spans_ev_per_charge": [0.1, 0.1, 0.3]},
+            {"controlled_slow_energy_half_spans_ev_per_charge": [0.2, 0.1, 0.3]},
+            {"controlled_slow_energy_half_spans_ev_per_charge": [0.1, float("nan"), 0.3]},
+            {"controlled_slow_energy_half_span_ev_per_charge": 0.05},
+            {"controlled_focus_half_span_mm": 0.1},
+            {"controlled_envelope_half_span_fraction": 1.0},
+            {"particle_count": 100},
+        ]
+        for mutation in mutations:
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                definition = self._definition()
+                definition.update(particle_count=7,
+                                  controlled_slow_energy_half_spans_ev_per_charge=[0.1, 0.2, 0.3])
+                definition.update(mutation)
+                path = root / "definition.json"
+                path.write_text(json.dumps(definition), encoding="utf-8")
+                with self.assertRaises(CandidateContractError):
+                    materialize_bunch_source_from_definition(
+                        definition_path=path, state_table_path=root / "states.csv",
+                        fly2_path=root / "source.fly2", receipt_path=root / "receipt.json",
+                    )
+
+    def test_publisher_capacity_startup_uses_hard_gate(self) -> None:
+        script = r"""
+param($Source)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$errors)
+if($errors.Count){throw ($errors|Out-String)}
+$node=$ast.Find({param($n)$n-is[Management.Automation.Language.CommandAst]-and
+ $n.GetCommandName()-eq'Enter-ArtifactWorkflowCapacitySession'},$true)
+function Enter-ArtifactWorkflowCapacitySession {
+ [CmdletBinding()]
+ param($Python,$RepoRoot,$ArtifactRoot,$RunDirectory,$CommittedNewBytes,$ProtectedPaths,$Owner)
+ @{status='active';protected_count=$ProtectedPaths.Count;
+   committed_bytes=$CommittedNewBytes;owner=$Owner}|ConvertTo-Json -Compress
+}
+$python='python';$repoRoot='repo';$workspaceRoot='workspace';$RunId='fixture'
+$package=@{artifact_run_dir='artifact-run'};$sourceDefinition='source'
+$geometryContract='geometry';$acceleratorProviderReceipt='provider'
+Invoke-Expression $node.Extent.Text
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            command = Path(directory) / "capacity_call.ps1"
+            command.write_text(script, encoding="utf-8")
+            result = subprocess.run([
+                "pwsh", "-NoProfile", "-File", str(command),
+                str(PROJECT.parents[3] / "src/msplatform/workflows/resources/run_publish_bunch_source.ps1")],
+                cwd=PROJECT.parents[3], capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=40)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        actual = json.loads(result.stdout)
+        self.assertEqual(actual["protected_count"], 4)
+        self.assertEqual(actual["committed_bytes"], 1048576)
+        self.assertEqual(actual["owner"], "mrtof-publish-bunch-source:fixture")
+
+    def test_gaussian_formal_energy_receipt_and_pairing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            provider = self._write_provider_receipt(root / "provider.json")
+            definition = json.loads(CANDIDATE_DEFINITION.read_text(encoding="utf-8"))
+            definition.update(cohort_role="formal_volume", kinetic_energy_distribution="gaussian",
+                              kinetic_energy_full_width_ev=0., angular_full_width_deg=0.)
+            for name in list(definition):
+                if name.startswith("controlled_"):
+                    definition.pop(name)
+            receipts, tables = [], []
+            for sigma in (0.1, 0.2, 0.3):
+                definition["kinetic_energy_sigma_ev"] = sigma
+                path = root / f"definition_{sigma}.json"
+                path.write_text(json.dumps(definition), encoding="utf-8")
+                receipt = materialize_bunch_source_from_definition(
+                    definition_path=path, geometry_contract_path=GEOMETRY_CONTRACT,
+                    accelerator_provider_receipt_path=provider,
+                    state_table_path=root / f"states_{sigma}.csv",
+                    fly2_path=root / f"source_{sigma}.fly2", receipt_path=root / f"receipt_{sigma}.json",
+                )
+                load_verified_bunch_source_receipt(root / f"receipt_{sigma}.json")
+                self.assertEqual(receipt["release_energy_distribution"]["sigma_ev"], sigma)
+                self.assertEqual(receipt["sampling_method"], "halton_volume_position_gaussian_release_ey_v1")
+                self.assertNotIn("center_particle_state", receipt)
+                receipts.append(receipt)
+                with Path(receipt["state_table"]["path"]).open(newline="") as stream:
+                    tables.append(list(csv.DictReader(stream)))
+            self.assertEqual(len({r["particle_states_sha256"] for r in receipts}), 3)
+            self.assertEqual(receipts[0]["latent_mother_sequence"], receipts[1]["latent_mother_sequence"])
+            self.assertEqual(receipts[0]["latent_mother_sequence"], receipts[2]["latent_mother_sequence"])
+            selected = resolve_bunch_source_interval(receipt_path=root / "receipt_0.2.json",
+                                                    particle_id_min=1, particle_id_max=10)
+            self.assertEqual(selected["source_cohort"]["release_energy_distribution"]["sigma_ev"], 0.2)
+            for rows in zip(*tables):
+                for row in rows[1:]:
+                    self.assertEqual({k: v for k, v in row.items() if k != "kinetic_energy_ev"},
+                                     {k: v for k, v in rows[0].items() if k != "kinetic_energy_ev"})
+            definition["angular_full_width_deg"] = 0.1
+            path.write_text(json.dumps(definition), encoding="utf-8")
+            with self.assertRaisesRegex(CandidateContractError, "zero-angle"):
+                materialize_bunch_source_from_definition(
+                    definition_path=path, geometry_contract_path=GEOMETRY_CONTRACT,
+                    accelerator_provider_receipt_path=provider,
+                    state_table_path=root / "invalid.csv", fly2_path=root / "invalid.fly2",
+                    receipt_path=root / "invalid.json",
+                )
+
+    @staticmethod
+    def _write_provider_receipt(path: Path) -> Path:
+        path.write_text(json.dumps({
+            "schema_version": 1,
+            "role": "orthogonal_accelerator_mrtof_runtime_receipt",
+            "status": "published_standalone_response_bank",
+            "mrtof_projection": {"geometry": {
+                "acceleration_direction": "-z",
+                "repeller_to_exit_mm": 34.0,
+                "release_position_in_gap_1_mm": 2.0,
+            }},
+        }), encoding="utf-8")
+        return path
+
+    def _definition(self) -> dict:
+        return {
+            "schema_version": 1,
+            "role": "mrtof_ideal_bunch_source_definition",
+            "status": "frozen",
+            "source_profile_id": "full_mrtof_ideal_bunch_v1",
+            "frame_id": "mrtof_workbench_v2",
+            "particle_count": 100,
+            "mother_particle_count": 1000,
+            "center_workbench_mm": [0.0, -55.0, -60.0],
+            "aperture_plane_axes": [0, 1],
+            "acceleration_axis": 2,
+            "position_radius_mm": 0.1,
+            "acceleration_axis_full_width_mm": 0.2,
+            "kinetic_energy_center_ev": 5.0,
+            "kinetic_energy_full_width_ev": 0.1,
+            "nominal_direction_workbench": [0.0, 1.0, 0.0],
+            "angular_full_width_deg": 0.2,
+            "mass_th": 524.0,
+            "charge_e": 1,
+            "common_time_of_birth_us": 0.0,
+        }
+
+    def test_solver_identity_rejects_removed_legacy_flight_switches(self) -> None:
+        trial = {
+            "selected_axial_energy_per_charge_v": 4000.0,
+            "mirror_voltages_v": [0.0, 1000.0, 2000.0, 3000.0, 4100.0],
+            "stripe_biases_v": [-25.0, 50.0],
+            "prism_voltages_v": [190.0, -190.0],
+            "accelerator_endpoint_voltages_v": [4000.0, 1000.0, 0.0],
+            "accelerator_ring_voltages_v": [3500.0, 3000.0, 2500.0],
+            "trajectory_profile": {"profile_id": "pilot", "maximum_step_us": 0.002},
+            "inputs": {"reviewed_contract_sha256": "a" * 64},
+            "target_drift_period_ratio": 25.5,
+            "target_half_oscillation_count": 51,
+            "continue_main_drift": True,
+            "x_symmetry_plane_constraint": False,
+        }
+        with self.assertRaisesRegex(CandidateContractError, "complete 3-D flight scope"):
+            solver_problem_identity_from_trial_receipt(trial)
+
+    def test_solver_identity_requires_target_k_and_derived_half_count(self) -> None:
+        trial = {
+            "selected_axial_energy_per_charge_v": 4000.0,
+            "mirror_voltages_v": [0.0, 1000.0, 2000.0, 3000.0, 4100.0],
+            "stripe_biases_v": [-25.0, 50.0],
+            "prism_voltages_v": [190.0, -190.0],
+            "accelerator_endpoint_voltages_v": [4000.0, 1000.0, 0.0],
+            "accelerator_ring_voltages_v": [3500.0, 3000.0, 2500.0],
+            "trajectory_profile": {"profile_id": "pilot", "maximum_step_us": 0.002},
+            "inputs": {"reviewed_contract_sha256": "a" * 64},
+            "flight_scope": "complete_three_dimensional_static_return",
+        }
+        with self.assertRaisesRegex(CandidateContractError, "target_drift_period_ratio"):
+            solver_problem_identity_from_trial_receipt(trial)
+
+    def test_bunch_sampler_projects_the_common_cylinder_phase_space(self) -> None:
+        states = _states(100)
+        common_samples = generate_center_axis_pair_halton_cylinder_phase_space(
+            particle_count=100, center_mm=[0.0, -55.0, -60.0],
+            transverse_axes=(0, 1), axis=2, radius_mm=0.1, height_mm=0.2,
+            controlled_axis=2,
+            kinetic_energy_center_ev=5.0, kinetic_energy_full_width_ev=0.1,
+            nominal_direction=[0.0, 1.0, 0.0], angular_full_width_deg=0.2,
+        )
+        self.assertEqual(
+            [
+                (state["particle_id"], state["position_workbench_mm"],
+                 state["kinetic_energy_ev"], state["direction_workbench"])
+                for state in states
+            ],
+            [
+                (sample["particle_id"], sample["position_mm"],
+                 sample["kinetic_energy_ev"], sample["direction"])
+                for sample in common_samples
+            ],
+        )
+
+    def test_n100_is_exact_mother_prefix_and_center_particle_is_nominal(self) -> None:
+        n100 = _states(100)
+        n1000 = _states(1000)
+        self.assertEqual(n100, n1000[:100])
+        self.assertEqual(n100[0]["position_workbench_mm"], [0.0, -55.0, -60.0])
+        self.assertEqual(n100[0]["kinetic_energy_ev"], 5.0)
+        self.assertEqual(n100[0]["direction_workbench"], [0.0, 1.0, 0.0])
+        self.assertEqual(n100[1]["position_workbench_mm"], [0.0, -55.0, -60.1])
+        self.assertEqual(n100[2]["position_workbench_mm"], [0.0, -55.0, -59.9])
+        for row in n100[:3]:
+            self.assertEqual(row["kinetic_energy_ev"], 5.0)
+            self.assertEqual(row["direction_workbench"], [0.0, 1.0, 0.0])
+        self.assertEqual([row["particle_id"] for row in n100], list(range(1, 101)))
+
+    def test_source_identity_and_fly2_are_byte_stable(self) -> None:
+        first = _states(100)
+        second = _states(100)
+        self.assertEqual(bunch_identity(first, 1000), bunch_identity(second, 1000))
+        self.assertEqual(render_bunch_fly2(first), render_bunch_fly2(second))
+        self.assertEqual(render_bunch_fly2(first).count("standard_beam {"), 100)
+        self.assertNotIn("circle_distribution", render_bunch_fly2(first))
+
+    def test_materialized_n100_csv_is_exact_prefix_of_n1000(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = {}
+            for count in (100, 1000):
+                states = _states(count)
+                table = root / f"n{count}.csv"
+                receipt = materialize_bunch_source(
+                    states=states, mother_particle_count=1000,
+                    source_profile_id="full_mrtof_ideal_bunch_v1",
+                    frame_id="mrtof_workbench_v2",
+                    state_table_path=table, fly2_path=root / f"n{count}.fly2",
+                    receipt_path=root / f"n{count}.json",
+                )
+                self.assertEqual(receipt["particle_count"], count)
+                self.assertEqual(receipt["center_particle_state"], states[0])
+                self.assertEqual(receipt["state_table"]["bytes"], table.stat().st_size)
+                paths[count] = table
+                self.assertEqual(
+                    load_verified_bunch_source_receipt(root / f"n{count}.json")["particle_count"],
+                    count,
+                )
+            validate_prefix_particle_sources(paths[100], paths[1000])
+
+    def test_source_receipt_fails_closed_after_payload_change(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            table, fly2, receipt_path = root / "source.csv", root / "source.fly2", root / "source.json"
+            materialize_bunch_source(
+                states=_states(100), mother_particle_count=1000,
+                source_profile_id="full_mrtof_ideal_bunch_v1", frame_id="mrtof_workbench_v2",
+                state_table_path=table, fly2_path=fly2, receipt_path=receipt_path,
+            )
+            fly2.write_text(fly2.read_text(encoding="utf-8") + "-- changed\n", encoding="utf-8")
+            with self.assertRaisesRegex(CandidateContractError, "fly2 identity changed"):
+                load_verified_bunch_source_receipt(receipt_path)
+
+    def test_complete_frozen_definition_is_the_only_source_materialization_authority(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            definition_path = root / "definition.json"
+            definition_path.write_text(
+                json.dumps(self._definition()), encoding="utf-8"
+            )
+            receipt = materialize_bunch_source_from_definition(
+                definition_path=definition_path,
+                state_table_path=root / "source.csv",
+                fly2_path=root / "source.fly2",
+                receipt_path=root / "source.json",
+            )
+            self.assertEqual(receipt["particle_count"], 100)
+            self.assertEqual(receipt["controlled_focus_pair"]["negative_particle_id"], 2)
+            self.assertEqual(receipt["controlled_focus_pair"]["positive_particle_id"], 3)
+            self.assertIn("definition", receipt)
+            incomplete = self._definition()
+            del incomplete["angular_full_width_deg"]
+            definition_path.write_text(json.dumps(incomplete), encoding="utf-8")
+            with self.assertRaisesRegex(CandidateContractError, "angular_full_width_deg"):
+                materialize_bunch_source_from_definition(
+                    definition_path=definition_path,
+                    state_table_path=root / "bad.csv",
+                    fly2_path=root / "bad.fly2",
+                    receipt_path=root / "bad.json",
+                )
+
+    def test_slow_energy_triplet_has_independent_receipt_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            definition = self._definition()
+            definition["charge_e"] = 2
+            definition["controlled_slow_energy_half_span_ev_per_charge"] = 0.05
+            definition_path = root / "definition.json"
+            definition_path.write_text(json.dumps(definition), encoding="utf-8")
+            receipt_path = root / "source.json"
+            receipt = materialize_bunch_source_from_definition(
+                definition_path=definition_path,
+                state_table_path=root / "source.csv",
+                fly2_path=root / "source.fly2",
+                receipt_path=receipt_path,
+            )
+            self.assertNotIn("controlled_focus_pair", receipt)
+            self.assertEqual(
+                receipt["controlled_slow_energy_pair"]["coordinate_span_ev"], 0.2,
+            )
+            rows = (root / "source.csv").read_text(encoding="utf-8").splitlines()
+            self.assertIn(",5,", rows[1])
+            self.assertIn(",4.9000000000000004,", rows[2])
+            self.assertIn(",5.0999999999999996,", rows[3])
+            load_verified_bunch_source_receipt(receipt_path)
+
+    def test_current_candidate_definition_matches_resolved_accelerator_release(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            provider = self._write_provider_receipt(root / "provider.json")
+            receipt = materialize_bunch_source_from_definition(
+                definition_path=CANDIDATE_DEFINITION,
+                geometry_contract_path=GEOMETRY_CONTRACT,
+                accelerator_provider_receipt_path=provider,
+                state_table_path=root / "source.csv",
+                fly2_path=root / "source.fly2",
+                receipt_path=root / "source.json",
+            )
+            contract = load_contract(GEOMETRY_CONTRACT)
+            placement = derive_two_zone_placement(contract)
+            definition = json.loads(CANDIDATE_DEFINITION.read_text(encoding="utf-8"))
+            expected = [
+                0.0,
+                placement.focus_y_mm + definition["source_y_offset_mm"],
+                34.0 - 2.0,
+            ]
+            self.assertEqual(
+                definition["center_rule"], "resolved_provider_accelerator_release_position"
+            )
+            self.assertEqual(definition["source_y_offset_mm"], -1.71093484735312)
+            self.assertEqual(
+                definition["kinetic_energy_center_ev"], 4.961131691875479
+            )
+            self.assertEqual(definition["field_cache_dependency"], "none")
+            self.assertEqual(definition["cohort_role"], "controlled_diagnostic")
+            self.assertEqual(receipt["cohort_role"], "controlled_diagnostic")
+            self.assertEqual(definition["aperture_plane_axes"], [0, 2])
+            self.assertEqual(definition["acceleration_axis"], 1)
+            self.assertEqual(
+                definition["controlled_focus_half_span_fraction_of_radius"], 0.2
+            )
+            self.assertEqual(definition["controlled_envelope_half_span_fraction"], 1.0)
+            self.assertEqual(receipt["controlled_focus_pair"]["coordinate_span_mm"], 0.2)
+            self.assertEqual(
+                receipt["sampling_method"],
+                "center_local_and_envelope_position_slow_energy_pairs_then_halton_v1",
+            )
+            self.assertEqual(
+                receipt["controlled_slow_energy_pair"]["negative_particle_id"], 4,
+            )
+            self.assertEqual(
+                receipt["controlled_transverse_x_pair"],
+                {
+                    "coordinate": "x_mm",
+                    "negative_particle_id": 6,
+                    "positive_particle_id": 7,
+                    "coordinate_span_mm": 0.2,
+                    "fixed_variables": (
+                        "position_y_z__kinetic_energy__direction__mass__charge__birth_time"
+                    ),
+                },
+            )
+            with Path(receipt["state_table"]["path"]).open(
+                "r", encoding="utf-8", newline="",
+            ) as stream:
+                sentinel_rows = list(csv.DictReader(stream))[:13]
+            self.assertEqual(
+                [float(row["z_mm"]) for row in sentinel_rows[:3]],
+                [32.0, 31.9, 32.1],
+            )
+            self.assertEqual(
+                [float(row["kinetic_energy_ev"]) for row in sentinel_rows[3:5]],
+                [definition["kinetic_energy_center_ev"] - 0.05,
+                 definition["kinetic_energy_center_ev"] + 0.05],
+            )
+            self.assertEqual(
+                [float(row["x_mm"]) for row in sentinel_rows[5:7]], [-0.1, 0.1],
+            )
+            self.assertEqual(
+                [float(row["y_mm"]) for row in sentinel_rows[7:9]],
+                [expected[1] - 0.5, expected[1] + 0.5],
+            )
+            self.assertEqual(
+                [float(row["x_mm"]) for row in sentinel_rows[9:11]], [-0.5, 0.5],
+            )
+            self.assertEqual(
+                [float(row["z_mm"]) for row in sentinel_rows[11:13]], [31.5, 32.5],
+            )
+            self.assertEqual(receipt["controlled_head_particle_count"], 13)
+            self.assertEqual(receipt["volume_particle_id_min"], 14)
+            self.assertEqual(
+                [pair["name"] for pair in receipt["controlled_position_pairs"]],
+                ["local_z", "local_x", "envelope_y", "envelope_x", "envelope_z"],
+            )
+            self.assertEqual(receipt["particle_count"], 100)
+            self.assertEqual(receipt["mother_particle_count"], 1000)
+            self.assertEqual(receipt["geometry_contract"]["derived_center_workbench_mm"], expected)
+            self.assertEqual(expected[0:1] + expected[2:3], [0.0, 32.0])
+            self.assertEqual(receipt["accelerator_provider_receipt"]["derived_release_z_mm"], 32.0)
+            self.assertEqual(receipt["field_cache_dependency"], "none")
+            self.assertEqual(receipt["common_time_of_birth_us"], 0.0)
+            self.assertEqual(receipt["species"], {"mass_th": 524.0, "charge_e": 1})
+            self.assertEqual(Path(receipt["state_table"]["path"]).read_text().count("\n"), 101)
+            self.assertEqual(Path(receipt["fly2"]["path"]).read_text().count("standard_beam {"), 100)
+            load_verified_bunch_source_receipt(root / "source.json")
+            frozen_definition = root / "definition.json"
+            frozen_definition.write_text(CANDIDATE_DEFINITION.read_text(encoding="utf-8"), encoding="utf-8")
+            frozen_receipt = materialize_bunch_source_from_definition(
+                definition_path=frozen_definition,
+                geometry_contract_path=GEOMETRY_CONTRACT,
+                accelerator_provider_receipt_path=provider,
+                state_table_path=root / "bound.csv",
+                fly2_path=root / "bound.fly2",
+                receipt_path=root / "bound.json",
+            )
+            self.assertEqual(frozen_receipt["particle_count"], 100)
+            frozen_definition.write_text("{}\n", encoding="utf-8")
+            with self.assertRaisesRegex(CandidateContractError, "definition identity changed"):
+                load_verified_bunch_source_receipt(root / "bound.json")
+
+    def test_schema4_formal_volume_source_contains_no_controlled_head(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            provider = self._write_provider_receipt(root / "provider.json")
+            definition = json.loads(CANDIDATE_DEFINITION.read_text(encoding="utf-8"))
+            definition["source_profile_id"] += "__formal_volume"
+            definition["cohort_role"] = "formal_volume"
+            for name in (
+                "controlled_focus_half_span_fraction_of_radius",
+                "controlled_envelope_half_span_fraction",
+                "controlled_slow_energy_half_span_ev_per_charge",
+            ):
+                definition.pop(name)
+            definition_path = root / "formal_definition.json"
+            definition_path.write_text(json.dumps(definition), encoding="utf-8")
+            receipt = materialize_bunch_source_from_definition(
+                definition_path=definition_path,
+                geometry_contract_path=GEOMETRY_CONTRACT,
+                accelerator_provider_receipt_path=provider,
+                state_table_path=root / "formal.csv",
+                fly2_path=root / "formal.fly2",
+                receipt_path=root / "formal.json",
+            )
+            self.assertEqual(receipt["cohort_role"], "formal_volume")
+            self.assertEqual(
+                receipt["sampling_method"], "halton_volume_position_energy_angle_v1",
+            )
+            self.assertNotIn("center_particle_state", receipt)
+            self.assertNotIn("controlled_focus_pair", receipt)
+            self.assertNotIn("controlled_position_pairs", receipt)
+            self.assertNotIn("volume_particle_id_min", receipt)
+            nominal = receipt["nominal_center_state"]
+            with (root / "formal.csv").open("r", encoding="utf-8", newline="") as stream:
+                rows = list(csv.DictReader(stream))
+            first_position = [float(rows[0][name]) for name in ("x_mm", "y_mm", "z_mm")]
+            self.assertNotEqual(first_position, nominal["position_workbench_mm"])
+            self.assertEqual([int(row["particle_id"]) for row in rows], list(range(1, 101)))
+            load_verified_bunch_source_receipt(root / "formal.json")
+    def test_schema4_definition_rejects_coupled_placement_or_wrong_frame(self) -> None:
+        source = json.loads(CANDIDATE_DEFINITION.read_text(encoding="utf-8"))
+        cases = (
+            ("rule", lambda value: value.__setitem__("center_rule", "absolute"), "provider release position"),
+            ("cache", lambda value: value.__setitem__("field_cache_dependency", "geometry"), "field-cache independent"),
+            ("axis", lambda value: value["coordinate_semantics"].__setitem__("y", "wrong"), "identity project/workbench"),
+        )
+        for label, mutate, message in cases:
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                provider = self._write_provider_receipt(root / "provider.json")
+                definition = json.loads(json.dumps(source))
+                mutate(definition)
+                path = root / "definition.json"
+                path.write_text(json.dumps(definition), encoding="utf-8")
+                with self.assertRaisesRegex(CandidateContractError, message):
+                    materialize_bunch_source_from_definition(
+                        definition_path=path,
+                        geometry_contract_path=GEOMETRY_CONTRACT,
+                        accelerator_provider_receipt_path=provider,
+                        state_table_path=root / "source.csv",
+                        fly2_path=root / "source.fly2",
+                        receipt_path=root / "source.json",
+                    )
+
+    def test_file_schedule_binds_complete_cohort_and_solver_problem(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source_receipt_path = root / "source.json"
+            materialize_bunch_source(
+                states=_states(100), mother_particle_count=1000,
+                source_profile_id="full_mrtof_ideal_bunch_v1",
+                frame_id="mrtof_workbench_v2",
+                state_table_path=root / "source.csv",
+                fly2_path=root / "source.fly2",
+                receipt_path=source_receipt_path,
+            )
+            source = load_verified_bunch_source_receipt(source_receipt_path)
+            trial = {
+                "source_particle_count": 100,
+                "source_cohort": source_cohort_identity(source),
+                "fly2_sha256": source["fly2"]["sha256"],
+                "selected_axial_energy_per_charge_v": 4000.0,
+                "mirror_voltages_v": [0.0, 100.0, 200.0, 300.0, 4500.0],
+                "stripe_biases_v": [-25.0, 51.0],
+                "prism_voltages_v": [177.0, -179.0],
+                "accelerator_endpoint_voltages_v": [4000.0, 1000.0, 0.0],
+                "accelerator_ring_voltages_v": [3500.0, 3000.0, 2500.0, 2000.0, 1500.0],
+                "trajectory_profile": {"profile_id": "pilot", "maximum_step_us": 0.002},
+                "inputs": {"reviewed_contract_sha256": "a" * 64},
+                "flight_scope": "complete_three_dimensional_static_return",
+                "target_drift_period_ratio": 25.5,
+                "target_half_oscillation_count": 51,
+                "accelerator_pulse": {
+                    "mode": "static",
+                    "qualification": "static_accelerator",
+                    "fixed_global_time_applied": False,
+                },
+            }
+            trial_path = root / "trial.json"
+            trial_path.write_text(json.dumps(trial), encoding="utf-8")
+            log_path = root / "pilot.log"
+            log_path.write_text("".join(
+                "MRTOF_EVENT accelerator_safe_exit "
+                f"ion={particle_id} t_us={1.8 + particle_id * 1e-5:.12g} "
+                "from_instance=3 to_instance=1 x_mm=0 y_mm=-55 z_mm=-6 "
+                "vx_mm_us=0 vy_mm_us=1 vz_mm_us=-10\n"
+                for particle_id in range(1, 101)
+            ), encoding="utf-8")
+            schedule = freeze_bunch_pulse_schedule_from_files(
+                source_receipt_path=source_receipt_path,
+                pilot_log_path=log_path,
+                pilot_trial_receipt_path=trial_path,
+                guard_us=0.002,
+                output_path=root / "schedule.json",
+            )
+            self.assertEqual(schedule["safe_exit_definition"]["event_count"], 100)
+            self.assertEqual(schedule["source_cohort"], source_cohort_identity(source))
+            self.assertIn("canonical_sha256", schedule["solver_problem_identity"])
+            self.assertAlmostEqual(schedule["pulse_off_time_us"], 1.803)
+            trial["accelerator_pulse"]["mode"] = "fixed_global_time"
+            trial_path.write_text(json.dumps(trial), encoding="utf-8")
+            with self.assertRaisesRegex(CandidateContractError, "static accelerator"):
+                freeze_bunch_pulse_schedule_from_files(
+                    source_receipt_path=source_receipt_path,
+                    pilot_log_path=log_path,
+                    pilot_trial_receipt_path=trial_path,
+                    guard_us=0.002,
+                    output_path=root / "invalid_schedule.json",
+                )
+
+    def test_file_schedule_accepts_verified_contiguous_source_interval(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source_receipt_path = root / "source.json"
+            materialize_bunch_source(
+                states=_states(100), mother_particle_count=1000,
+                source_profile_id="interval_schedule_test",
+                frame_id="mrtof_workbench_v2",
+                state_table_path=root / "source.csv",
+                fly2_path=root / "source.fly2",
+                receipt_path=source_receipt_path,
+            )
+            interval = resolve_bunch_source_interval(
+                receipt_path=source_receipt_path, particle_id_min=1, particle_id_max=25,
+            )
+            trial = {
+                "source_particle_count": 25,
+                "source_cohort": interval["source_cohort"],
+                "source_selection": interval["source_cohort"]["selection"],
+                "fly2_sha256": interval["fly2_sha256"],
+                "selected_axial_energy_per_charge_v": 4000.0,
+                "mirror_voltages_v": [0.0, 100.0, 200.0, 300.0, 4500.0],
+                "stripe_biases_v": [-25.0, 51.0],
+                "prism_voltages_v": [177.0, -179.0],
+                "accelerator_endpoint_voltages_v": [4000.0, 1000.0, 0.0],
+                "accelerator_ring_voltages_v": [3500.0, 3000.0, 2500.0, 2000.0, 1500.0],
+                "trajectory_profile": {"profile_id": "pilot", "maximum_step_us": 0.002},
+                "inputs": {"reviewed_contract_sha256": "a" * 64},
+                "flight_scope": "complete_three_dimensional_static_return",
+                "target_drift_period_ratio": 25.5,
+                "target_half_oscillation_count": 51,
+                "accelerator_pulse": {
+                    "mode": "static", "qualification": "static_accelerator",
+                    "fixed_global_time_applied": False,
+                },
+            }
+            trial_path = root / "trial.json"
+            trial_path.write_text(json.dumps(trial), encoding="utf-8")
+            log_path = root / "pilot.log"
+            log_path.write_text("".join(
+                "MRTOF_EVENT accelerator_safe_exit "
+                f"ion={particle_id} t_us={1.8 + particle_id * 1e-5:.12g} "
+                "from_instance=3 to_instance=1 x_mm=0 y_mm=-55 z_mm=-6 "
+                "vx_mm_us=0 vy_mm_us=1 vz_mm_us=-10\n"
+                for particle_id in range(1, 26)
+            ), encoding="utf-8")
+            schedule = freeze_bunch_pulse_schedule_from_files(
+                source_receipt_path=source_receipt_path,
+                pilot_log_path=log_path,
+                pilot_trial_receipt_path=trial_path,
+                guard_us=0.002,
+                output_path=root / "schedule.json",
+            )
+            self.assertEqual(schedule["source_cohort"], interval["source_cohort"])
+            self.assertEqual(schedule["safe_exit_definition"]["event_count"], 25)
+
+    def test_file_schedule_accepts_explicit_complete_source_interval(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source_receipt_path = root / "source.json"
+            materialize_bunch_source(
+                states=_states(100), mother_particle_count=1000,
+                source_profile_id="complete_interval_schedule_test",
+                frame_id="mrtof_workbench_v2",
+                state_table_path=root / "source.csv",
+                fly2_path=root / "source.fly2",
+                receipt_path=source_receipt_path,
+            )
+            interval = resolve_bunch_source_interval(
+                receipt_path=source_receipt_path, particle_id_min=1, particle_id_max=100,
+            )
+            trial = {
+                "source_particle_count": 100,
+                "source_cohort": interval["source_cohort"],
+                "source_selection": interval["source_cohort"]["selection"],
+                "fly2_sha256": interval["fly2_sha256"],
+                "selected_axial_energy_per_charge_v": 4000.0,
+                "mirror_voltages_v": [0.0, 100.0, 200.0, 300.0, 4500.0],
+                "stripe_biases_v": [-25.0, 51.0],
+                "prism_voltages_v": [177.0, -179.0],
+                "accelerator_endpoint_voltages_v": [4000.0, 1000.0, 0.0],
+                "accelerator_ring_voltages_v": [3500.0, 3000.0, 2500.0, 2000.0, 1500.0],
+                "trajectory_profile": {"profile_id": "pilot", "maximum_step_us": 0.002},
+                "inputs": {"reviewed_contract_sha256": "a" * 64},
+                "flight_scope": "complete_three_dimensional_static_return",
+                "target_drift_period_ratio": 25.5,
+                "target_half_oscillation_count": 51,
+                "accelerator_pulse": {
+                    "mode": "static", "qualification": "static_accelerator",
+                    "fixed_global_time_applied": False,
+                },
+            }
+            trial_path = root / "trial.json"
+            trial_path.write_text(json.dumps(trial), encoding="utf-8")
+            log_path = root / "pilot.log"
+            log_path.write_text("".join(
+                "MRTOF_EVENT accelerator_safe_exit "
+                f"ion={particle_id} t_us={1.8 + particle_id * 1e-5:.12g} "
+                "from_instance=3 to_instance=1 x_mm=0 y_mm=-55 z_mm=-6 "
+                "vx_mm_us=0 vy_mm_us=1 vz_mm_us=-10\n"
+                for particle_id in range(1, 101)
+            ), encoding="utf-8")
+            schedule = freeze_bunch_pulse_schedule_from_files(
+                source_receipt_path=source_receipt_path,
+                pilot_log_path=log_path,
+                pilot_trial_receipt_path=trial_path,
+                guard_us=0.002,
+                output_path=root / "schedule.json",
+            )
+            self.assertEqual(schedule["source_cohort"], interval["source_cohort"])
+            self.assertEqual(schedule["safe_exit_definition"]["event_count"], 100)
+
+    def test_schedule_uses_last_unique_safe_exit_plus_explicit_guard(self) -> None:
+        events = [
+            {"kind": "accelerator_safe_exit", "ion": 1, "t_us": 1.80,
+             "from_instance": 3, "to_instance": 1, "vz_mm_us": -10.0},
+            {"kind": "accelerator_safe_exit", "ion": 2, "t_us": 1.84,
+             "from_instance": 3, "to_instance": 1, "vz_mm_us": -9.9},
+        ]
+        schedule = derive_bunch_pulse_schedule(
+            events=events,
+            expected_particle_ids=[1, 2],
+            guard_us=0.002,
+            pilot_maximum_step_us=0.002,
+            source_cohort_identity={"particle_states_sha256": "a" * 64},
+            solver_problem_identity={"geometry_sha256": "b" * 64},
+        )
+        self.assertEqual(schedule["schema_version"], 2)
+        self.assertEqual(schedule["safe_exit_definition"]["last_safe_exit_particle_id"], 2)
+        self.assertAlmostEqual(schedule["pulse_off_time_us"], 1.842)
+        self.assertEqual(schedule["pulse_off_authority"], "cohort_last_safe_exit_plus_guard")
+        self.assertAlmostEqual(schedule["minimum_pulse_off_time_us"], 1.842)
+
+    def test_schedule_accepts_native_accelerator_slot(self) -> None:
+        schedule = derive_bunch_pulse_schedule(
+            events=[{
+                "kind": "accelerator_safe_exit", "ion": 1, "t_us": 1.8,
+                "from_instance": 3, "to_instance": 1, "vz_mm_us": -10.0,
+            }],
+            expected_particle_ids=[1], guard_us=0.002,
+            pilot_maximum_step_us=0.002,
+            source_cohort_identity={"state": "x"},
+            solver_problem_identity={"solver": "x"},
+            accelerator_instance=3,
+        )
+        self.assertEqual(schedule["safe_exit_definition"]["from_instance"], 3)
+
+    def test_schedule_accepts_one_later_common_time_and_rejects_an_early_one(self) -> None:
+        events = [
+            {"kind": "accelerator_safe_exit", "ion": 1, "t_us": 1.80,
+             "from_instance": 3, "to_instance": 1, "vz_mm_us": -10.0},
+            {"kind": "accelerator_safe_exit", "ion": 2, "t_us": 1.84,
+             "from_instance": 3, "to_instance": 1, "vz_mm_us": -9.9},
+        ]
+        arguments = {
+            "events": events, "expected_particle_ids": [1, 2], "guard_us": 0.002,
+            "pilot_maximum_step_us": 0.002,
+            "source_cohort_identity": {"particle_states_sha256": "a" * 64},
+            "solver_problem_identity": {"geometry_sha256": "b" * 64},
+        }
+        schedule = derive_bunch_pulse_schedule(**arguments, pulse_off_time_us=1.9)
+        self.assertEqual(
+            schedule["pulse_off_authority"],
+            "caller_common_envelope_verified_against_this_cohort",
+        )
+        self.assertAlmostEqual(schedule["pulse_off_time_us"], 1.9)
+        self.assertAlmostEqual(schedule["additional_common_envelope_margin_us"], 0.058)
+        with self.assertRaisesRegex(CandidateContractError, "precedes"):
+            derive_bunch_pulse_schedule(**arguments, pulse_off_time_us=1.841)
+
+    def test_safe_exit_event_is_accepted_by_the_production_log_parser(self) -> None:
+        line = (
+            "MRTOF_EVENT accelerator_safe_exit ion=1 t_us=1.8 from_instance=3 "
+            "to_instance=1 x_mm=0 y_mm=-55 z_mm=-6 vx_mm_us=0 "
+            "vy_mm_us=1 vz_mm_us=-10"
+        )
+        event = parse_events(line)[0]
+        self.assertEqual(event["kind"], "accelerator_safe_exit")
+        self.assertEqual(event["from_instance"], 3.0)
+
+    def test_schedule_rejects_missing_duplicate_wrong_direction_and_small_guard(self) -> None:
+        valid = [
+            {"kind": "accelerator_safe_exit", "ion": 1, "t_us": 1.8,
+             "from_instance": 3, "to_instance": 1, "vz_mm_us": -10.0},
+        ]
+        arguments = {
+            "expected_particle_ids": [1],
+            "guard_us": 0.002,
+            "pilot_maximum_step_us": 0.002,
+            "source_cohort_identity": {"state": "x"},
+            "solver_problem_identity": {"solver": "x"},
+        }
+        with self.assertRaisesRegex(CandidateContractError, "exactly one"):
+            derive_bunch_pulse_schedule(events=[], **arguments)
+        with self.assertRaisesRegex(CandidateContractError, "exactly one"):
+            derive_bunch_pulse_schedule(events=valid + valid, **arguments)
+        wrong = [{**valid[0], "vz_mm_us": 1.0}]
+        with self.assertRaisesRegex(CandidateContractError, "non-injection"):
+            derive_bunch_pulse_schedule(events=wrong, **arguments)
+        with self.assertRaisesRegex(CandidateContractError, "at least one"):
+            derive_bunch_pulse_schedule(events=valid, **{**arguments, "guard_us": 0.001})
+
+    def test_schedule_rejects_pre_exit_terminal(self) -> None:
+        events = [
+            {"kind": "terminal", "ion": 1, "t_us": 1.0},
+            {"kind": "accelerator_safe_exit", "ion": 1, "t_us": 1.8,
+             "from_instance": 3, "to_instance": 1, "vz_mm_us": -10.0},
+        ]
+        with self.assertRaisesRegex(CandidateContractError, "terminated before"):
+            derive_bunch_pulse_schedule(
+                events=events, expected_particle_ids=[1], guard_us=0.002,
+                pilot_maximum_step_us=0.002,
+                source_cohort_identity={"state": "x"},
+                solver_problem_identity={"solver": "x"},
+            )
+
+    def test_schedule_accepts_pilot_stop_at_the_safe_exit_timestamp(self) -> None:
+        events = [
+            {"kind": "accelerator_safe_exit", "ion": 1, "t_us": 1.8,
+             "from_instance": 3, "to_instance": 1, "vz_mm_us": -10.0},
+            {"kind": "splat", "ion": 1, "t_us": 1.8},
+            {"kind": "terminal", "ion": 1, "t_us": 1.8},
+        ]
+        schedule = derive_bunch_pulse_schedule(
+            events=events, expected_particle_ids=[1], guard_us=0.002,
+            pilot_maximum_step_us=0.002,
+            source_cohort_identity={"state": "x"},
+            solver_problem_identity={"solver": "x"},
+        )
+        self.assertAlmostEqual(schedule["pulse_off_time_us"], 1.802)
+
+    def test_declared_accelerator_instances_freeze_and_validate(self) -> None:
+        for accelerator in (3,):
+            with self.subTest(accelerator=accelerator):
+                schedule = derive_bunch_pulse_schedule(
+                    events=[{"kind": "accelerator_safe_exit", "ion": 1, "t_us": 1.8,
+                             "from_instance": accelerator, "to_instance": 1, "vz_mm_us": -10.0}],
+                    expected_particle_ids=[1], guard_us=0.002, pilot_maximum_step_us=0.002,
+                    source_cohort_identity={"state": "x"}, solver_problem_identity={"solver": "x"},
+                    accelerator_instance=accelerator,
+                )
+                self.assertEqual(schedule["safe_exit_definition"]["from_instance"], accelerator)
+                args = {"expected_particle_ids": [1], "pulse_off_time_us": 1.802,
+                        "time_tolerance_us": 1e-12, "accelerator_instance": accelerator}
+                event = {"kind": "accelerator_global_pulse_applied", "ion": 1,
+                         "t_us": 1.802, "scheduled_t_us": 1.802, "instance": 1.0,
+                         "trigger": "fixed_global_time"}
+                self.assertEqual(validate_fixed_global_pulse_events(events=[event], **args)["status"], "pass")
+                with self.assertRaisesRegex(CandidateContractError, "remained in the accelerator"):
+                    validate_fixed_global_pulse_events(events=[{**event, "instance": accelerator}], **args)
+                for invalid in (None, -1, True, 1.5):
+                    with self.assertRaisesRegex(CandidateContractError, "valid pulse-off instance"):
+                        validate_fixed_global_pulse_events(events=[{**event, "instance": invalid}], **args)
+                with self.assertRaisesRegex(CandidateContractError, "accelerator instance"):
+                    validate_fixed_global_pulse_events(events=[event], **{**args, "accelerator_instance": 2})
+
+    def test_fixed_global_pulse_requires_one_same_time_event_per_particle(self) -> None:
+        events = [
+            {"kind": "accelerator_global_pulse_applied", "ion": particle_id,
+             "t_us": 1.842, "scheduled_t_us": 1.842, "instance": 1,
+             "trigger": "fixed_global_time"}
+            for particle_id in (1, 2)
+        ]
+        result = validate_fixed_global_pulse_events(
+            events=events, expected_particle_ids=[1, 2], pulse_off_time_us=1.842,
+            time_tolerance_us=1e-12,
+        )
+        self.assertEqual(result["event_count"], 2)
+        with self.assertRaisesRegex(CandidateContractError, "exactly one"):
+            validate_fixed_global_pulse_events(
+                events=events[:1], expected_particle_ids=[1, 2], pulse_off_time_us=1.842,
+                time_tolerance_us=1e-12,
+            )
+        with self.assertRaisesRegex(CandidateContractError, "remained in the accelerator"):
+            validate_fixed_global_pulse_events(
+                events=[{**event, "instance": 3} for event in events],
+                expected_particle_ids=[1, 2], pulse_off_time_us=1.842,
+                time_tolerance_us=1e-12,
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()

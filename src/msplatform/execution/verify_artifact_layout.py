@@ -534,12 +534,10 @@ def legacy_identity(repository_root: Path, project_id: str) -> dict | None:
     matches = []
     active_ids: set[str] = set()
     for descriptor_path in sorted(
-        (repository_root / "projects").glob("*/config/project.json")
+        (repository_root / "src/msplatform/components").glob("*/config/project.json")
     ):
         descriptor = json.loads(descriptor_path.read_text(encoding="utf-8-sig"))
         current_id = descriptor.get("project_id")
-        if current_id != descriptor_path.parents[1].name:
-            raise AssertionError(f"project descriptor identity differs: {descriptor_path}")
         active_ids.add(current_id)
         try:
             matches.extend(

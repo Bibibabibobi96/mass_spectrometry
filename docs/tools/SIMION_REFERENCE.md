@@ -2,14 +2,14 @@
 
 本文件维护 SIMION 的通用表示、操作边界与已验证限制。项目任务先读项目 README 和 PROJECT，
 再按问题进入本页；具体 PA 尺寸、粒子参数和 IOB 操作归项目 `docs/SIMION.md`，当前结果与资格归 PROJECT。
-仓库实现的函数、参数、资源画像及回归入口由[公共 SIMION 实现](../../common/simion/README.md)维护。
+仓库实现的函数、参数、资源画像及回归入口由[公共 SIMION 实现](../SIMION_BACKEND.md)维护。
 
 ## 按任务查阅
 
 | 问题 | 正文 |
 |---|---|
 | PA、GEM、IOB 如何分工，重叠实例怎样生效 | [表示与优先级](#pagem-与-iob) |
-| 独立粒子怎样并行，怎样接入已有调度器 | [粒子并行边界](#flym-粒子并行规范)，实现转[公共调度与恢复](../../common/simion/README.md#调度与恢复) |
+| 独立粒子怎样并行，怎样接入已有调度器 | [粒子并行边界](#flym-粒子并行规范)，实现转[公共调度与恢复](../SIMION_BACKEND.md#调度与恢复) |
 | 长 PA 或 immutable cache 怎样交给 SIMION | [已关闭的长路径边界](#长pa输入路径)，再按需读实现 API |
 | GUI、Program、记录或交付缺少什么 | [GUI 对等](#gui-对等)、[记录](#program-与-data-recording)、[交付](#可复现交付) |
 | 怎样启动软件、确认版本或申请主机资源 | [操作指南](../OPERATIONS.md#工具链与执行入口) |
@@ -54,7 +54,7 @@
 为每批重建 IOB、复制/Refine PA、修改 Program 或建立项目私有 worker-count 算法。
 
 拆批适用条件只见[独立粒子与耦合求解的调度](../DEVELOPMENT_STANDARDS.md#独立粒子与耦合求解的调度)。
-并发数、正式首批观测及资源画像的算法由[公共调度与恢复](../../common/simion/README.md#调度与恢复)维护，
+并发数、正式首批观测及资源画像的算法由[公共调度与恢复](../SIMION_BACKEND.md#调度与恢复)维护，
 本页不重复观察时长或容量常量。每个进程会独立加载共享 PA，这是 SIMION 进程隔离的必要成本。
 IOB 必须绑定生命周期覆盖完整飞行的 PA 路径；短期 execution alias 不得写入
 需要在飞行期间延迟打开 `.pa1..paN` 的 IOB。粒子切片、合并覆盖、终态数量和失败批次必须进入运行证据。
@@ -100,10 +100,10 @@ standalone 响应。完整 family 物化仅是通用字节复制原语，不再�
 `20260916_235000__sim__simion__mrtof-r55-detached-flight-r87`。后者从 manifest 绑定的八个 standalone
 运行 PA 建立短副本，真实飞行后复现相同 `798.419772666 us` 探测命中并发布 success manifest；上游
 build/cache 证据由
-[MR-TOF 项目状态](../../projects/parallel_mirror_dual_stripe_mr_tof/docs/PROJECT.md)绑定。自然检测命中属于对应项目 run 的功能证据，不由本公共能力授予统计、数值收敛、
+[MR-TOF 项目状态](../../src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/docs/PROJECT.md)绑定。自然检测命中属于对应项目 run 的功能证据，不由本公共能力授予统计、数值收敛、
 Candidate 或 Formal 资格。本结论不扩展为所有求解器的通用短路径发布层。
 
-[公共实现说明](../../common/simion/README.md#长路径输入-api与证据)维护 API、回归命令、官方依据及完整
+[公共实现说明](../SIMION_BACKEND.md#长路径输入-api与证据)维护 API、回归命令、官方依据及完整
 失败／复验链。后续直接复用并按改动范围验证，不重新建立替代机制。
 
 ## GUI 对等

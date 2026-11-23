@@ -21,7 +21,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..\..')).Path
-$projectRoot = Join-Path $repoRoot 'projects/single_reflection_oa_tof_mass_analyzer'
+$projectRoot = Join-Path $repoRoot 'src/msplatform/components/single_reflection_oa_tof'
 function Copy-ComponentFrozenIon {
   [CmdletBinding()]
   param([Parameter(Mandatory)][string]$Source,[Parameter(Mandatory)][string]$Destination,
@@ -55,7 +55,6 @@ assert all(math.isfinite(float(v)) for row in path.read_text(encoding='ascii').s
     return $identity
   } finally {$guard.Dispose()}
 }
-$repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
 # Candidate execution freezes this script below runs/<run_id>/inputs/code.  In
 # that layout PSScriptRoot no longer identifies the workspace, so the caller
@@ -355,8 +354,8 @@ function Invoke-SegmentedReflectronRefine([string]$Directory,[int]$MaxElectrode)
 function Build-OwnedComponent([string]$Role,[string]$Directory) {
 if($Role-eq'accelerator'){
   $acceleratorStem=Join-Path $Directory 'accelerator.pa#'
-  Invoke-SimionLua -Refines (Join-Path $repoRoot 'projects\orthogonal_accelerator\simion\build_two_zone_pa.lua') @(
-  (Join-Path $repoRoot 'projects\orthogonal_accelerator\simion\two_zone_accelerator.gem'), $acceleratorStem,
+  Invoke-SimionLua -Refines (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\build_two_zone_pa.lua') @(
+  (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\two_zone_accelerator.gem'), $acceleratorStem,
   $build.accelerator.cell_xy_mm, $build.accelerator.cell_z_mm,
   $geometry.accelerator_bore_half, $geometry.accelerator_ring_width,
   $geometry.accelerator_insulation_gap, $geometry.accelerator_rear_clearance,

@@ -141,29 +141,26 @@ def _local_electrodes(frontend: dict[str, Any]) -> tuple[str, dict[str, Any]]:
 
 
 def _on_voltages(electrical: dict[str, Any], bindings: dict[str, Any]) -> dict[str, float]:
-    required = {
-        "grounded_shield_id",
-        "accelerator_repeller_id",
-        "accelerator_grid1_id",
-        "accelerator_intermediate2_id",
-        "accelerator_grid2_id",
-        "accelerator_ring_ids",
+    fixed = {
+        "common_ground": "shield",
+        "accelerator_repeller": "repeller",
+        "accelerator_intermediate_grid_1": "grid1",
+        "accelerator_intermediate_grid_2": "intermediate2",
+        "accelerator_exit_grid": "grid2",
     }
-    if set(bindings) != required:
+    ring_groups = sorted(key for key in bindings if key.startswith("accelerator_ring_"))
+    if any(key not in bindings for key in fixed) or len(bindings) != len(fixed) + len(ring_groups):
         raise ValueError("OA-only comparison requires the exact three-zone OA electrode bindings")
     values = electrical["operating_voltages_v"]
     ids: dict[str, float] = {
-        str(bindings["grounded_shield_id"]): float(values["shield"]),
-        str(bindings["accelerator_repeller_id"]): float(values["repeller"]),
-        str(bindings["accelerator_grid1_id"]): float(values["grid1"]),
-        str(bindings["accelerator_intermediate2_id"]): float(values["intermediate2"]),
-        str(bindings["accelerator_grid2_id"]): float(values["grid2"]),
+        str(bindings[group]): float(values[role]) for group, role in fixed.items()
     }
-    ring_ids, ring_values = bindings["accelerator_ring_ids"], values["rings"]
-    if not isinstance(ring_ids, list) or len(ring_ids) != len(ring_values):
+    ring_values = values["rings"]
+    if len(ring_groups) != len(ring_values):
         raise ValueError("OA ring binding differs from provider ON voltage projection")
-    ids.update({str(electrode_id): float(voltage) for electrode_id, voltage in zip(ring_ids, ring_values, strict=True)})
-    if len(ids) != 5 + len(ring_ids) or any(not math.isfinite(value) for value in ids.values()):
+    ids.update({str(bindings[group]): float(voltage)
+                for group, voltage in zip(ring_groups, ring_values, strict=True)})
+    if len(ids) != len(fixed) + len(ring_groups) or any(not math.isfinite(value) for value in ids.values()):
         raise ValueError("OA static ON electrode table is invalid")
     return ids
 
@@ -311,7 +308,8 @@ def prepare(request_path: Path, output_dir: Path, *, source_snapshot_root: Path 
     gems, compiled = compile_frontend_geometry({}, oatof, composition_plan=scope,
         accelerator_variant=request["accelerator_variant"],
         numerical_domains={"parent": dict(pa_bounds_mm=box, cell_mm_xyz=pitch)},
-        electrode_bindings={oatof_id: bindings})
+        electrode_bindings={oatof_id: bindings},
+        provider_inputs={oatof_id: request["source_records"]["oatof_resolved"]})
     grid = compiled["numerical_domains"]["parent"]
     if (compiled["accelerator_projection"] != projection or compiled["composition_plan"] != scope
             or grid["bounds_mm"] != box or grid["cell_mm_xyz"] != pitch):

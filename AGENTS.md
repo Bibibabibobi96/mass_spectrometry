@@ -8,7 +8,7 @@
 
 部件复用、新增能力或组装任务先按[部件与组装边界](docs/REPOSITORY_ARCHITECTURE.md#部件实例与组装)
 确认知识所有者与现有能力；文档任务按[存放位置](docs/REPOSITORY_ARCHITECTURE.md#文档存放位置)选择唯一正文。
-选择分段接续或联合连续模拟时，从[统一集成入口](integrations/README.md#模拟路径选择)查实际范围、正常命令与复用边界。
+选择分段接续或联合连续模拟时，从[统一集成入口](docs/ASSEMBLY.md#模拟路径选择)查实际范围、正常命令与复用边界。
 参考资料仅在需要核对物理或接口来源时定向读取，不把整本教材加入默认启动阅读链。
 
 ## 必须遵守
@@ -136,7 +136,7 @@ Agent实现或审查workflow时必须应用该合同，并按项目README路由�
   `tests/`下代码必须作为unclassified逐文件警告，不得静默归类。必须排除artifacts、generated、
   vendor/third-party、run目录、任意`docs/history/`只读载荷和仓库根`scratch/`；不得把忽略的或
   排除目录中的untracked产物计入，也不得因普通活动目录恰好名为`archive`而整类排除。统一只读入口为
-  `common/report_cloc_delta.ps1 -Base <sha> [-Current <sha|WORKTREE>]`；CLOC不可用时必须明确失败，不得用
+  `tools/repository/report_cloc_delta.ps1 -Base <sha> [-Current <sha|WORKTREE>]`；CLOC不可用时必须明确失败，不得用
   `wc`、自制行计数或其他口径冒充。默认解析顺序为显式`-ClocExe`、工作区外层固定工具缓存
   `.tools/cloc/2.10/cloc.exe`、系统`PATH`；固定缓存不进入Git，避免依赖WinGet版本化用户目录的执行
   权限。纯文档任务可在报告中写`CLOC_DELTA=N/A (docs-only)`。

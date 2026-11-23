@@ -29,6 +29,10 @@ from msplatform.contracts.rigid_transform import PhaseSpaceState
 
 
 SCHEMA_VERSION = 1
+CANONICAL_SOURCE_COLUMNS = (
+    "particle_id", "birth_time_s", "x_mm", "y_mm", "z_mm",
+    "vx_m_s", "vy_m_s", "vz_m_s", "mass_amu", "charge_state",
+)
 SCHEMA_PATH = SCHEMA_DIR / "component_particle_state.schema.json"
 TIME_TOLERANCE_US = 1e-9
 DERIVED_RELATIVE_TOLERANCE = 1e-9

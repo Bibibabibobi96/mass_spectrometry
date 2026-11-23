@@ -11,7 +11,7 @@ from typing import Any
 from msplatform.contracts.machine_contracts import validate_schema
 from .electrode_topology import _mechanical_groups
 from .sectioned_geometry import resolve_bare_three_zone_component, validate_standalone_first_gap_port
-from .two_zone_geometry import resolve_closed_two_zone_geometry
+from .two_zone_geometry import load_geometry_profile, resolve_closed_two_zone_geometry
 
 
 def _validate_assembly_inputs(requirements: Mapping[str, Any], geometry_profile_id: str | None) -> str:
@@ -145,7 +145,9 @@ def resolve_assembly_interface(requirements: Mapping[str, Any], *, geometry_prof
     variant = _validate_assembly_inputs(requirements, geometry_profile_id)
     if variant == "two_zone":
         if geometry_profile is None:
-            raise ValueError("two-zone interface requires explicit geometry_profile content")
+            if geometry_profile_id is None:
+                raise ValueError("two-zone interface requires an explicit geometry_profile_id")
+            geometry_profile = load_geometry_profile(geometry_profile_id)
         model = resolve_closed_two_zone_geometry(requirements, geometry_profile_id=geometry_profile_id,
                                                 geometry_profile=geometry_profile)
         from dataclasses import asdict

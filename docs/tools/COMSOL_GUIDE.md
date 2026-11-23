@@ -29,7 +29,7 @@
 | 1、10、100 ps 是否足够，怎样按分辨率计算预算 | [TOF 查表与唯一计算入口](../science/TOF_ERROR_BUDGET.md) | 参考峰非高斯、多个峰或有截断时，使用项目直接 FWHM 与配对粒子指标 |
 | 如何创建节点、设置活动属性、读数据 | [API 按专题定位](COMSOL_API.md#按专题定位) | 不确定类型、合法值或物理含义时查官方语义；采用前核对已有验证层级 |
 | 设置不生效、无场、异常停止、崩溃或漏计 | [快速分诊与案例](COMSOL_DEBUGGING.md#快速分诊) | 先确定失败阶段，再读该故障专题及对应项目证据 |
-| 怎样启动或接入仓库的构建原语、资源阶段、组件测试 | [公共实现与验证](../../common/comsol/README.md) | 实际执行前读取操作指南；修改实现时再进入对应 API 或测试源码，源码存在不等于测试已运行 |
+| 怎样启动或接入仓库的构建原语、资源阶段、组件测试 | [公共实现与验证](../COMSOL_BACKEND.md) | 实际执行前读取操作指南；修改实现时再进入对应 API 或测试源码，源码存在不等于测试已运行 |
 | 需要核对供应商原始定义 | [官方资料定位](../references/software/README.md) | 只读问题对应的目标版本章节，不通读全部 PDF |
 | 某项目现在通过了什么、还缺什么 | 下表的项目入口 → PROJECT | 改 COMSOL 实现再读 COMSOL；追溯完整过程再读项目 History 索引 |
 
@@ -40,10 +40,10 @@
 
 | 对象 | 路线与阅读入口 | 首要区别 |
 |---|---|---|
-| 单反射 OA-TOF | [OA 项目](../../projects/single_reflection_oa_tof_mass_analyzer/README.md)：静电 FEM、原生 CPT、事件导出和 Python 分析 | 固定 FEM 上的时间一致性不能授予电场空间收敛；诊断配置不自动成为 Formal |
-| MR-TOF | [MR 项目](../../projects/parallel_mirror_dual_stripe_mr_tof/README.md)：独立静电 FEM → 标量电势导出／PA → SIMION 追踪 | 场求解、转换、返回链的失败不能直接归因于 COMSOL 原生 CPT |
-| RF 四／六／八极杆 | [四极](../../projects/rf_multipole_ion_optics/variants/quadrupole/README.md)、[六极](../../projects/rf_multipole_ion_optics/variants/hexapole/README.md)、[八极](../../projects/rf_multipole_ion_optics/variants/octupole/README.md)：有限三维场与粒子传输 | 传输功能、连续相空间等价、过滤及下游 TOF 是不同资格 |
-| Ion Processor | [IP 项目](../../projects/dual_pressure_rectilinear_ion_processor/README.md)：按项目状态确认 SIMION RF/DC／脉冲／碰撞链与 COMSOL 对照范围 | 不从 OA 无碰撞时间门推导 IP 的数值配置或已验证能力 |
+| 单反射 OA-TOF | [OA 项目](../../src/msplatform/components/single_reflection_oa_tof/README.md)：静电 FEM、原生 CPT、事件导出和 Python 分析 | 固定 FEM 上的时间一致性不能授予电场空间收敛；诊断配置不自动成为 Formal |
+| MR-TOF | [MR 项目](../../src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/README.md)：独立静电 FEM → 标量电势导出／PA → SIMION 追踪 | 场求解、转换、返回链的失败不能直接归因于 COMSOL 原生 CPT |
+| RF 四／六／八极杆 | [四极](../../src/msplatform/components/rf_multipole/variants/quadrupole/README.md)、[六极](../../src/msplatform/components/rf_multipole/variants/hexapole/README.md)、[八极](../../src/msplatform/components/rf_multipole/variants/octupole/README.md)：有限三维场与粒子传输 | 传输功能、连续相空间等价、过滤及下游 TOF 是不同资格 |
+| Ion Processor | [IP 项目](../../src/msplatform/components/dual_pressure_rectilinear_ion_processor/README.md)：按项目状态确认 SIMION RF/DC／脉冲／碰撞链与 COMSOL 对照范围 | 不从 OA 无碰撞时间门推导 IP 的数值配置或已验证能力 |
 
 其他器件从根 README 的项目导航进入，不根据软件目录是否存在推断物理能力。
 

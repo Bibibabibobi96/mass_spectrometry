@@ -29,7 +29,7 @@ $hx = if ($HalfWidthXmm -ge 0) { $HalfWidthXmm } else { $HalfWidthMm }
 $hy = if ($HalfWidthYmm -ge 0) { $HalfWidthYmm } else { $HalfWidthMm }
 $hz = if ($HalfWidthZmm -ge 0) { $HalfWidthZmm } else { $HalfWidthMm }
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..\..')).Path
-$projectRoot = Join-Path $repoRoot 'projects/single_reflection_oa_tof_mass_analyzer'
+$projectRoot = Join-Path $repoRoot 'src/msplatform/components/single_reflection_oa_tof'
 $python = if ($PythonExe) {
   [IO.Path]::GetFullPath($PythonExe)
 } elseif ($env:SIMULATION_PYTHON_EXE) {

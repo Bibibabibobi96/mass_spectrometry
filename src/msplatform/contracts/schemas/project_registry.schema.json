@@ -15,7 +15,7 @@
         "additionalProperties": false,
         "required": ["descriptor", "sha256"],
         "properties": {
-          "descriptor": {"type": "string", "pattern": "^projects/.+/config/project\\.json$"},
+          "descriptor": {"type": "string", "pattern": "^(projects|src/msplatform/components)/.+/config/project\\.json$"},
           "sha256": {"type": "string", "pattern": "^[A-F0-9]{64}$"}
         }
       }

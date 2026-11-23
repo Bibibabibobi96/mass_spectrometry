@@ -40,7 +40,7 @@ $env:SIMULATION_PYTHON_EXE=$python
 $env:PYTHONDONTWRITEBYTECODE='1'
 . (Join-Path $repoRoot 'src/msplatform/workflows/resources/run_artifact_workflow.ps1') `
   -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
-$module='projects.single_reflection_oa_tof_mass_analyzer.workflows.reflectron_voltage_compensation.run_compensation'
+$module='msplatform.workflows.oa_candidate.run_compensation'
 if($ResumeFinalization){
   if(-not$RunId){throw 'ResumeFinalization requires the original RunId.'}
   if(-not$ResultPath){$ResultPath=Join-Path $projectArtifacts ('scratch/workflow_results/'+$RunId+'/result.json')}

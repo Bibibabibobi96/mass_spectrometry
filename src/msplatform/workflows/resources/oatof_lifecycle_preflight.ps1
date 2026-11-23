@@ -24,7 +24,7 @@ function New-OaTofFormalSimionRuntime {
   if (-not $destinationFull.StartsWith("$scratchFull\", [StringComparison]::OrdinalIgnoreCase)) {
     throw "Formal SIMION runtime must remain under project scratch: $destinationFull"
   }
-  & $PythonExe -m projects.single_reflection_oa_tof_mass_analyzer.analysis.stage_formal_simion_runtime `
+  & $PythonExe -m msplatform.workflows.oa_formal.stage_formal_simion_runtime `
     --artifact-root $artifactFull --destination $destinationFull --receipt $Receipt |
     ForEach-Object { Write-Host $_ }
   if ($LASTEXITCODE -ne 0) { throw 'Formal SIMION runtime staging failed.' }

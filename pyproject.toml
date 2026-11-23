@@ -38,18 +38,25 @@ include = ["msplatform*"]
 namespaces = false
 
 [tool.setuptools.package-data]
-"msplatform.components.rf_multipole" = ["family_contract.json"]
-"msplatform.components.orthogonal_accelerator" = ["component_contract*.json"]
-"msplatform.components.parallel_mirror_dual_stripe_mr_tof" = ["*.json"]
+"msplatform.components.rf_multipole" = ["family_contract.json", "config/**/*.json", "config/**/*.csv", "variants/**/*.json", "variants/**/*.csv", "variants/**/*.ion"]
+"msplatform.components.single_reflection_oa_tof" = ["config/**/*.json", "config/**/*.csv"]
+"msplatform.components.orthogonal_accelerator" = ["component_contract*.json", "config/*.json"]
+"msplatform.components.parallel_mirror_dual_stripe_mr_tof" = ["*.json", "config/*.json"]
+"msplatform.components.dual_cone_tandem_quadrupole_ion_interface" = ["config/*.json", "config/modes/*.json"]
+"msplatform.components.dual_pressure_rectilinear_ion_processor" = ["config/*.json", "config/modes/*.json"]
+"msplatform.components.transverse_helical_filament_wehnelt_electron_gun" = ["config/*.json", "config/modes/*.json"]
 "msplatform.workflows.multipole_ip" = ["*.json"]
 "msplatform.contracts" = ["schemas/*.schema.json", "particle_count_policy.json"]
 "msplatform.examples" = ["*.json"]
-"msplatform.backends.simion" = ["resources/*.gem", "resources/*.lua", "resources/*.iob", "resources/*.pa0", "resources/*.ps1", "resources/*.md", "resources/*.schema.json", "resources/reflectron_voltage_fit_authoring.json"]
+"msplatform.backends.simion" = ["resources/*.gem", "resources/*.lua", "resources/*.iob", "resources/*.pa0", "resources/*.fly2", "resources/*.ps1", "resources/*.md", "resources/*.schema.json", "resources/reflectron_voltage_fit_authoring.json", "resources/iob_instance_seeds/*.pa0", "resources/iob_instance_seeds/*.md"]
 "msplatform.workflows" = ["resources/*.ps1", "config/*.json"]
 "msplatform.backends.comsol" = ["matlab/*.m", "matlab/interface_readiness/*.m", "matlab/mass_filter_reference/*.m", "launcher/*.ps1"]
 "msplatform.workflows.single_reflection_flight" = ["*.schema.json"]
 "msplatform.execution" = ["resources/*.ps1", "resources/*.lua", "resources/*.json"]
-"msplatform.exporters.solidworks" = ["resources/*.m"]
+"msplatform.exporters.solidworks" = ["resources/*.m", "resources/*.ps1"]
+
+[tool.setuptools.exclude-package-data]
+"msplatform.components.rf_multipole" = ["docs/theory/figures/generate_figures.py"]
 
 [tool.ruff]
 target-version = "py311"
@@ -59,5 +66,5 @@ line-length = 120
 select = ["E9", "F"]
 
 [tool.pytest.ini_options]
-testpaths = ["projects"]
+testpaths = ["tests"]
 python_files = ["test_*.py"]

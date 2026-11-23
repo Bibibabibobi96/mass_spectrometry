@@ -198,7 +198,7 @@ function Add-IonProcessorFailedOperation {
  return $true
 }
 $repoRoot=$RepositoryRoot
-$projectRoot=Join-Path $repoRoot 'projects/dual_pressure_rectilinear_ion_processor'
+$projectRoot=Join-Path $repoRoot 'src/msplatform/components/dual_pressure_rectilinear_ion_processor'
 $workspaceRoot=Split-Path -Parent $repoRoot
 . (Join-Path $PSScriptRoot '../../execution/resources/require_powershell7.ps1')
 . (Join-Path $PSScriptRoot '../../execution/resources/run_artifact_support.ps1')

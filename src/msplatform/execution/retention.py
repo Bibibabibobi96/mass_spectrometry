@@ -24,9 +24,10 @@ def classify_file(
     name = path.name.lower()
     suffix = path.suffix.lower()
     # Frozen IOB slots are executable inputs, not solved field payloads.
-    if path.parent.as_posix().endswith(
-        "runtime_snapshot/common/simion/assets/iob_instance_seeds"
-    ) and fnmatch.fnmatch(name, "iob_seed_placeholder_[0-9][0-9].pa0"):
+    if path.parent.as_posix().endswith((
+        "runtime_snapshot/src/msplatform/backends/simion/resources/iob_instance_seeds",
+        "runtime_snapshot/common/simion/assets/iob_instance_seeds",
+    )) and fnmatch.fnmatch(name, "iob_seed_placeholder_[0-9][0-9].pa0"):
         return "required_evidence"
     if any(fnmatch.fnmatch(name, pattern.lower()) for pattern in policy["dense_trajectory_globs"]):
         return "dense_trajectory"

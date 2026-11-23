@@ -10,7 +10,7 @@ from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-PROJECT_ROOT = REPO_ROOT / "projects/single_reflection_oa_tof_mass_analyzer"
+PROJECT_ROOT = REPO_ROOT / "src/msplatform/components/single_reflection_oa_tof"
 from msplatform.execution.artifact_naming import validate_run_id
 from msplatform.contracts.machine_contracts import load_json, sha256
 from msplatform.execution.recorded_file_removal import write_json_atomic

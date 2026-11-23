@@ -1,0 +1,46 @@
+# 横置螺旋灯丝 Wehnelt 电子枪
+
+本组件研究面向 EI 离子源的横置螺旋灯丝热电子发射与收集。当前状态、资格和开放任务以
+[PROJECT](docs/PROJECT.md) 为准。
+
+## 按任务阅读
+
+| 任务 | 入口 |
+|---|---|
+| 开始组件工作 | [仓库 README](../../../../README.md) → [PROJECT](docs/PROJECT.md) |
+| 构建、模型树与 GUI 验收 | [COMSOL 实施说明](docs/COMSOL.md) |
+| 物理输入与数值模式 | [baseline](config/baseline.json)、[numerical_modes](config/numerical_modes.json) |
+| 生成唯一 MATLAB 输入 | [resolve_contract.py](resolve_contract.py) → [resolved_model.json](config/resolved_model.json) |
+| 组件发现与可执行能力 | [project.json](config/project.json)、[execution_profiles.json](config/execution_profiles.json) |
+| 静态检查 | [wehnelt_verify.ps1](../../workflows/resources/wehnelt_verify.ps1) |
+| 选型及旧谱系 | [历史索引](../../../../docs/history/projects/transverse_helical_filament_wehnelt_electron_gun/README.md) |
+
+## 执行与产物
+
+从仓库根运行 `pwsh -NoProfile -File src/msplatform/workflows/resources/wehnelt_build_only.ps1 -RunId <run_id>`，使用显式且符合仓库合同的新运行身份。
+The three stage implementations and contract helpers have one canonical owner in [`msplatform.backends.comsol/matlab`](../../backends/comsol/matlab). The public `build_wehnelt_model(resolvedContractPath, runDirectory)` wrapper calls all three stages and retains their individual results. Each stage requires `(resolvedContractPath, runDirectory)` and retains the original intermediate MPH chain. The component runner freezes those package resources and supplies its explicit owner run directory; the obsolete `egun_paths.m` path discovery is retired. Parameters, failure handling and stage/output criteria remain in the COMSOL implementation guide.
+当前构建能力不代表粒子求解、收集效率或 Candidate/Formal 资格。
+
+For an ordinary installation, call
+`msplatform.backends.comsol.build_wehnelt_model(baseline, modes,
+mode_id='build_only_smoke', evidence_particle_count=3, context=environment)`.
+The two mappings are the editable scientific documents linked above. Load the
+environment once with `execution.load_environment`; its profile must declare
+`build_wehnelt_model` and tools `comsol_launcher`/`matlab_root`. The inlet count
+configures the unsolved model and does not create a particle realization. The
+returned artifact includes the final model and both intermediate MPH files.
+
+新产物进入 `artifacts/projects/transverse_helical_filament_wehnelt_electron_gun/runs/<run_id>/`。
+旧谱系与改名前资产按 [PROJECT](docs/PROJECT.md#产物边界) 及 descriptor 只读定位。
+旧轴向灯丝的 phase5 扫描不能作为横置灯丝的参数结论。
+
+## 目录职责与 History 索引
+
+科学配置、解析器和当前文档由本组件唯一维护；原生构建阶段与公开 Python operation 位于
+`src/msplatform/backends/comsol/`，现有 PowerShell runner 位于
+`src/msplatform/workflows/resources/`，长期测试位于
+`tests/projects/transverse_helical_filament_wehnelt_electron_gun/`。
+旧 `projects/transverse_helical_filament_wehnelt_electron_gun/` 已退出活动树，来源提交为
+`7c272feb442945b2a415e1673a760e66ae098243`。
+
+[历史索引](../../../../docs/history/projects/transverse_helical_filament_wehnelt_electron_gun/README.md)集中列出已冻结实验、迁移和旧方案；需要追溯证据时按需进入。

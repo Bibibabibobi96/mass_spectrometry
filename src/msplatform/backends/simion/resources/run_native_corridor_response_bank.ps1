@@ -1,0 +1,537 @@
+[CmdletBinding()]
+param(
+  [string]$AcceleratorComponentContractPath='',
+  [string]$AcceleratorGeometryProfileId='',
+  [string]$FrozenInputDirectory='',
+  [string]$CoarseRawGenerationManifest='',
+  [ValidatePattern('^[0-9A-Fa-f]{64}$')][string]$TransactionCacheKey='',
+  [string[]]$RecoverMembers=@(),
+  [string[]]$RecoverRetainedInventoryMembers=@(),
+  [string]$CorrectPublishedInventoryMember='',
+  [string]$RunId='',
+  [string]$SimionExe='',
+  [string]$PythonExe=''
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+
+# Build the only runtime-safe source bank for the full native corridor.  This
+# never opens C4's published native members: all paN files below are created in
+# this transaction's private staging, exported as new standalone PA objects,
+# verified, then atomically published with the response-set receipt.
+$projectId='parallel_mirror_dual_stripe_mr_tof'
+$repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
+$workspaceRoot=Split-Path -Parent $repoRoot
+$projectRoot=Join-Path $repoRoot "src\msplatform\components\$projectId"
+$artifactRoot=Join-Path $workspaceRoot 'artifacts'
+$projectArtifactRoot=Join-Path $artifactRoot "projects\$projectId"
+$cacheRoot=Join-Path $artifactRoot 'common\simion\pa_family_cache'
+$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
+$simion=if($SimionExe){[IO.Path]::GetFullPath($SimionExe)}else{Join-Path $env:ProgramFiles 'SIMION-2020\simion.exe'}
+$legacyFrozen=if($FrozenInputDirectory){(Resolve-Path -LiteralPath $FrozenInputDirectory).Path}else{''}
+$directCoarseManifest=if($CoarseRawGenerationManifest){(Resolve-Path -LiteralPath $CoarseRawGenerationManifest).Path}else{''}
+if(([string]::IsNullOrWhiteSpace($legacyFrozen))-eq([string]::IsNullOrWhiteSpace($directCoarseManifest))){throw 'Provide exactly one frozen input directory or coarse raw generation manifest.'}
+$bankModule='msplatform.backends.simion.native_corridor_response_bank'
+$bankMembers=@('mrtof_analyzer_corridor.pa#')+@(1..8|ForEach-Object{'mrtof_analyzer_corridor.pa{0}'-f$_})+@(1..8|ForEach-Object{'mrtof_analyzer_corridor.response{0}.pa'-f$_})+@('mrtof_analyzer_corridor.standalone_responses.json')
+$pinReason='MR-TOF detached native-corridor response bank required to construct private Fast Adjust execution families'
+foreach($path in @($python,$simion)){if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "Required response-bank executable is missing: $path"}}
+if(-not$RunId){$RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__build__simion__mrtof-native-corridor-response-bank'}
+
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
+. (Join-Path $repoRoot 'tools\repository\parallel_gate_support.ps1')
+
+function Invoke-ProjectPython {
+  param([Parameter(Mandatory)][string[]]$Arguments)
+  $output=@(Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
+    & $python @Arguments
+    if($LASTEXITCODE-ne0){throw "Python stage failed: $($Arguments -join ' ')"}
+  })
+  return $output
+}
+
+function Invoke-Transaction {
+  param([Parameter(Mandatory)][string]$IdentityPath,[string]$Owner='',[string]$VerificationEvidence='',[string]$MemberRecovery='',[string]$ResponseReceipt='',[string]$RetainedInventoryRecovery='',[string]$PublicationMetadataCorrection='')
+  $arguments=@('-m','msplatform.backends.simion.pa_family_cache','--action','advance-transaction','--cache-root',$cacheRoot,
+    '--identity',$IdentityPath,'--filenames',($bankMembers-join','),'--recovery-policy','none',
+    '--published-pin-reason',$pinReason,'--producer-run-config',$runConfig)
+  if($Owner){$arguments+=@('--owner',$Owner)}
+  if($VerificationEvidence){$arguments+=@('--verification-evidence',$VerificationEvidence)}
+  if($MemberRecovery){$arguments+=@('--member-recovery',$MemberRecovery)}
+  if($ResponseReceipt){$arguments+=@('--response-receipt',$ResponseReceipt)}
+  if($RetainedInventoryRecovery){$arguments+=@('--retained-inventory-recovery',$RetainedInventoryRecovery)}
+  if($PublicationMetadataCorrection){$arguments+=@('--publication-metadata-correction',$PublicationMetadataCorrection)}
+  return ((@(Invoke-ProjectPython -Arguments $arguments)-join"`n")|ConvertFrom-Json -Depth 40)
+}
+
+function Select-FrozenTransactionIdentity {
+  param([Parameter(Mandatory)]$CurrentIdentity,[Parameter(Mandatory)]$Transaction,[switch]$AllowPublishedReuse)
+  # A started build retains its frozen content identity. Only the receipt
+  # validator may change; all physical inputs and PA-producing code must match.
+  $publishedReuse=$AllowPublishedReuse-and[string]$Transaction.status-eq'published'-and$null-ne$Transaction.verification-and$null-ne$Transaction.generation_sha256
+  if(-not$publishedReuse-and([string]$Transaction.status-ne'building'-or$null-ne$Transaction.verification-or$null-ne$Transaction.generation_sha256)){throw 'Frozen identity continuation requires an unverified building transaction.'}
+  $comparison=$CurrentIdentity|ConvertTo-Json -Depth 60|ConvertFrom-Json -Depth 60
+  $comparison.builder_identity.response_set_contract_sha256=$Transaction.identity.builder_identity.response_set_contract_sha256
+  if(($comparison|ConvertTo-Json -Depth 60 -Compress)-cne($Transaction.identity|ConvertTo-Json -Depth 60 -Compress)){throw 'Frozen response-bank physics or PA builder identity differs.'}
+  return $Transaction.identity
+}
+
+function New-ResponseBankMemberRecovery {
+  param([Parameter(Mandatory)]$Transaction,[Parameter(Mandatory)]$Receipt,[Parameter(Mandatory)][string[]]$Names)
+  $members=@()
+  if(@($Names|Sort-Object -Unique).Count-ne$Names.Count){throw 'Recovery members must be unique.'}
+  foreach($name in $Names){
+    $sealed=@($Transaction.files|Where-Object name -CEQ $name)
+    if($sealed.Count-ne1){throw "Recovery member is not a unique sealed member: $name"}
+    $matches=@()
+    for($index=0;$index-lt$Receipt.responses.Count;$index++){
+      foreach($role in @('source','standalone')){
+        $expected=$Receipt.responses[$index].$role
+        if([string]$expected.name-ceq$name){$matches+=@(@{sealed=$sealed[0];expected=$expected;receipt_record_path=@('responses',$index,$role)})}
+      }
+    }
+    if($sealed.Count-ne1-or$matches.Count-ne1){throw "Recovery member is not a unique response: $name"}
+    if([string]$sealed[0].sha256-ceq[string]$matches[0].expected.sha256-and[int64]$sealed[0].bytes-eq[int64]$matches[0].expected.bytes){throw "Recovery member has no receipt mismatch: $name"}
+    $members+=$matches
+  }
+  $receiptRecord=@($Transaction.files|Where-Object name -CEQ 'mrtof_analyzer_corridor.standalone_responses.json')
+  if($receiptRecord.Count-ne1){throw 'Recovery requires one sealed response receipt.'}
+  return [ordered]@{schema_version=1;role='simion_pa_family_member_recovery';cache_key=$Transaction.cache_key;owner=$Transaction.owner;inventory_sha256=$Transaction.inventory_sha256;receipt=$receiptRecord[0];members=$members}
+}
+
+function Invoke-CacheProbe {
+  param([Parameter(Mandatory)][string]$IdentityPath)
+  $arguments=@('-m','msplatform.backends.simion.pa_family_cache','--action','probe','--cache-root',$cacheRoot,
+    '--identity',$IdentityPath,'--filenames',($bankMembers-join','))
+  return ((@(Invoke-ProjectPython -Arguments $arguments)-join"`n")|ConvertFrom-Json -Depth 40)
+}
+
+function Get-FrozenInputGenerationManifests {
+  param([Parameter(Mandatory)][string]$FrozenDirectory)
+  $recipePath=Join-Path $FrozenDirectory 'native_corridor_response_recipe.json'
+  $manifestPath=Join-Path $FrozenDirectory 'native_corridor_freeze_manifest.json'
+  foreach($path in @($recipePath,$manifestPath, (Join-Path $FrozenDirectory 'native_corridor_plan.json'), (Join-Path $FrozenDirectory 'native_corridor_identity.json'))){
+    if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "Frozen native-corridor source is incomplete: $path"}
+  }
+  $recipe=Get-Content -LiteralPath $recipePath -Raw -Encoding UTF8|ConvertFrom-Json -Depth 40
+  $coarseRaw=[string]$recipe.coarse_raw_member.name
+  $coarseGeneration=[string]$recipe.coarse_raw_generation_identity.generation_sha256
+  $coarseKey=[string]$recipe.coarse_raw_generation_identity.cache_key
+  if([IO.Path]::GetFileName($coarseRaw)-ne$coarseRaw-or$coarseKey-notmatch'^[0-9a-fA-F]{64}$'-or$coarseGeneration-notmatch'^[0-9a-fA-F]{64}$'){
+    throw 'Frozen native-corridor source generation identity is invalid.'
+  }
+  $coarseManifest=Join-Path $cacheRoot "$($coarseKey.ToUpperInvariant())\generations\$($coarseGeneration.ToUpperInvariant())\cache_manifest.json"
+  if(-not(Test-Path -LiteralPath $coarseManifest -PathType Leaf)){throw "Frozen native-corridor coarse generation manifest is missing: $coarseManifest"}
+  return [pscustomobject]@{coarse_manifest=(Resolve-Path -LiteralPath $coarseManifest).Path;source_freeze_manifest=(Resolve-Path -LiteralPath $manifestPath).Path}
+}
+
+function New-ManagedFrozenInputs {
+  param([Parameter(Mandatory)]$Package,[string]$LegacyFrozenDirectory='',[string]$CoarseGenerationManifest='')
+  $source=if($CoarseGenerationManifest){[pscustomobject]@{coarse_manifest=$CoarseGenerationManifest;source_freeze_manifest=$null}}else{Get-FrozenInputGenerationManifests -FrozenDirectory $LegacyFrozenDirectory}
+  if($LegacyFrozenDirectory){
+    $priorFreeze=Get-Content -LiteralPath (Join-Path $LegacyFrozenDirectory 'native_corridor_freeze_manifest.json') -Raw|ConvertFrom-Json -AsHashtable
+    $oaAuthority=$priorFreeze.inputs.accelerator_geometry_authority
+    if($oaAuthority-isnot[Collections.IDictionary]-or@($oaAuthority.source_refs).Count-ne1){throw 'New corridor construction requires complete frozen OA authority; old frozen data are not upgraded.'}
+    $oaRecord=$oaAuthority.source_refs[0]
+    Invoke-ProjectPython -Arguments @('-c','import json,sys;from msplatform.io.manifest_records import verify_record;verify_record("OA authority",json.loads(sys.argv[1]))',($oaRecord|ConvertTo-Json -Compress))|Out-Null
+    $oaSource=[string]$oaRecord.path;$oaProfile=[string]$oaAuthority.geometry_profile_id
+  }else{
+    if(-not$AcceleratorComponentContractPath-or-not$AcceleratorGeometryProfileId){throw 'New corridor construction requires explicit OA component contract and profile ID.'}
+    $oaSource=$AcceleratorComponentContractPath;$oaProfile=$AcceleratorGeometryProfileId
+  }
+  $script:oaComponentContractFrozen=Copy-VerifiedRunInput -Source $oaSource -Destination (Join-Path $Package.input_dir 'oa_component_contract.json')
+  $script:oaGeometryProfileId=$oaProfile
+  $destination=Join-Path ([string]$Package.input_dir) 'native_corridor_freeze'
+  Invoke-ProjectPython -Arguments @(
+    '-m','msplatform.backends.simion.native_corridor_freeze',
+    '--accelerator-component-contract',$script:oaComponentContractFrozen,'--accelerator-geometry-profile-id',$script:oaGeometryProfileId,
+    '--contract',(Join-Path $repoRoot 'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json'),
+    '--coarse-generation-manifest',$source.coarse_manifest,
+    '--simion-executable',$simion,'--simion-release','SIMION 2020',
+    '--output-directory',$destination,'--run-config',[string]$Package.run_config
+  )|Out-Null
+  return [pscustomobject]@{directory=(Resolve-Path -LiteralPath $destination).Path;source_freeze_manifest=$source.source_freeze_manifest}
+}
+
+function Move-NewMember {
+  param([Parameter(Mandatory)][string]$Source,[Parameter(Mandatory)][string]$Destination)
+  if(-not(Test-Path -LiteralPath $Source -PathType Leaf)){throw "Response-bank member was not produced: $Source"}
+  if(Test-Path -LiteralPath $Destination){throw "Response-bank member is already present: $Destination"}
+  Move-Item -LiteralPath $Source -Destination $Destination
+}
+
+function Get-CoarseInputs {
+  $recipe=Get-Content -LiteralPath $recipePath -Raw -Encoding UTF8|ConvertFrom-Json -Depth 40
+  $key=([string]$recipe.coarse_raw_generation_identity.cache_key).ToUpperInvariant()
+  $generation=([string]$recipe.coarse_raw_generation_identity.generation_sha256).ToUpperInvariant()
+  if($key-notmatch'^[0-9A-F]{64}$'-or$generation-notmatch'^[0-9A-F]{64}$'){throw 'Frozen response recipe has invalid coarse generation identity.'}
+  $directory=Join-Path $cacheRoot "$key\generations\$generation"
+  $raw=Join-Path $directory ([string]$recipe.coarse_raw_member.name)
+  $manifest=Get-Content -LiteralPath (Join-Path $directory 'cache_manifest.json') -Raw -Encoding UTF8|ConvertFrom-Json -Depth 30
+  if(-not(Test-Path -LiteralPath $raw -PathType Leaf)){throw 'Frozen coarse raw geometry is unavailable.'}
+  $basisCount=@($recipe.response_recipes|ForEach-Object{@($_.scratch_basis_names)}|ForEach-Object{[string]$_}|Sort-Object -Unique).Count
+  if($basisCount-le0){throw 'Frozen response recipe has no scratch physical basis.'}
+  $basisIds=@($recipe.response_recipes|ForEach-Object{@($_.physical_ids)}|ForEach-Object{[int]$_}|Sort-Object -Unique)
+  return [pscustomobject]@{raw=$raw;manifest=(Join-Path $directory 'cache_manifest.json');origin=(@($manifest.identity.grid_phase.analyzer_origin_mm)-join',');basis_count=$basisCount;basis_ids=$basisIds;basis_names=@($basisIds|ForEach-Object{"mrtof_analyzer.pa$_"})}
+}
+
+function Invoke-CoarseBasisTransaction {
+  param([Parameter(Mandatory)][string]$IdentityPath,[Parameter(Mandatory)][string[]]$Names,[string]$Owner='',[string]$Evidence='')
+  $arguments=@('-m','msplatform.backends.simion.pa_family_cache','--action','advance-transaction','--cache-root',$cacheRoot,
+    '--identity',$IdentityPath,'--filenames',($Names-join','),'--recovery-policy','none',
+    '--published-pin-reason','MR-TOF coarse boundary donors reused across native corridor builds','--producer-run-config',$runConfig)
+  if($Owner){$arguments+=@('--owner',$Owner)}
+  if($Evidence){$arguments+=@('--verification-evidence',$Evidence)}
+  return ((@(Invoke-ProjectPython -Arguments $arguments)-join"`n")|ConvertFrom-Json -Depth 40)
+}
+
+function Ensure-CoarseBasisBank {
+  param([Parameter(Mandatory)]$Coarse,[Parameter(Mandatory)][string]$Owner)
+  $identityPath=Join-Path $resultDir 'coarse_basis_bank_identity.json'
+  $builder=Join-Path $PSScriptRoot 'build_component_basis.lua'
+  Invoke-ProjectPython -Arguments @('-m','msplatform.backends.simion.native_corridor_coarse_basis_bank',
+    '--recipe',$recipePath,'--coarse-manifest',$Coarse.manifest,'--builder',$builder,
+    '--simion-executable',$simion,'--simion-release','SIMION 2020','--output',$identityPath)|Out-Null
+  $probe=((@(Invoke-ProjectPython -Arguments @('-m','msplatform.backends.simion.pa_family_cache','--action','probe','--cache-root',$cacheRoot,
+    '--identity',$identityPath,'--filenames',($Coarse.basis_names-join',')))-join"`n")|ConvertFrom-Json -Depth 40)
+  if([string]$probe.disposition-eq'hit'){
+    return [pscustomobject]@{directory=[string]$probe.generation_directory;cache_key=[string]$probe.cache_key;identity=$identityPath;reused=$true}
+  }
+  if([string]$probe.disposition-ne'miss'){throw "Coarse basis bank is not usable: $($probe.disposition)"}
+  $transactionPath=Join-Path $cacheRoot ('.transactions\'+[string]$probe.cache_key+'\transaction.json')
+  $state=if(Test-Path -LiteralPath $transactionPath -PathType Leaf){
+    Invoke-CoarseBasisTransaction -IdentityPath $identityPath -Names $Coarse.basis_names
+  }else{
+    Invoke-CoarseBasisTransaction -IdentityPath $identityPath -Names $Coarse.basis_names -Owner $Owner
+  }
+  if([string]$state.action_required-eq'build'){
+    $scratch=[IO.Path]::GetFullPath([string]$state.scratch_directory)
+    $build=[IO.Path]::GetFullPath([string]$state.build_directory)
+    New-Item -ItemType Directory -Force -Path $scratch,$build|Out-Null
+    $raw=Join-Path $scratch 'mrtof_analyzer.pa#'
+    Copy-Item -LiteralPath $Coarse.raw -Destination $raw
+    $alias=$null;$lease=$null
+    try{
+      $alias=New-RunExecutionAlias -TargetDirectory $scratch
+      $lease=Enter-HostExecutionLease -Role SIMION -Stage dirichlet_response_refine -RunId $RunId
+      & $simion --nogui --noprompt lua $builder (Join-Path ([string]$alias.execution_alias) 'mrtof_analyzer.pa#') ($Coarse.basis_ids-join',')
+      if($LASTEXITCODE-ne0){throw 'Coarse physical-basis generation failed.'}
+      foreach($name in $Coarse.basis_names){Move-NewMember -Source (Join-Path $scratch $name) -Destination (Join-Path $build $name)}
+      Exit-HostExecutionLease -Lease $lease -Outcome success -RunId $RunId;$lease=$null
+    }finally{
+      if($null-ne$lease){Exit-HostExecutionLease -Lease $lease -Outcome failed -RunId $RunId}
+      if($null-ne$alias){Remove-RunExecutionAlias -ExecutionAlias ([string]$alias.execution_alias) -TargetDirectory ([string]$alias.target_directory)}
+    }
+    $state=Invoke-CoarseBasisTransaction -IdentityPath $identityPath -Names $Coarse.basis_names
+  }
+  if([string]$state.action_required-ne'verify'){throw "Coarse basis transaction cannot verify: $($state.action_required)"}
+  $verificationLog=Join-Path $resultDir 'coarse_basis_bank_verify.log'
+  $verifyArguments=@($Coarse.raw)+@($Coarse.basis_names|ForEach-Object{Join-Path ([string]$state.build_directory) $_})
+  & $simion --nogui --noprompt lua (Join-Path $PSScriptRoot 'verify_coarse_basis_bank.lua') @verifyArguments 2>&1|Tee-Object -FilePath $verificationLog|Out-Host
+  if($LASTEXITCODE-ne0){throw 'Coarse physical-basis bank verification failed.'}
+  $evidencePath=Join-Path $resultDir 'coarse_basis_bank_verification.json'
+  Write-RunJson -Path $evidencePath -Depth 10 -Value ([ordered]@{schema_version=1;role='simion_pa_family_verification';status='pass';cache_key=[string]$state.cache_key;inventory_sha256=[string]$state.inventory_sha256;solver_release='SIMION 2020';verifier_path=(Join-Path $PSScriptRoot 'verify_coarse_basis_bank.lua');verifier_sha256=(Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'verify_coarse_basis_bank.lua') -Algorithm SHA256).Hash;verification_output_path=$verificationLog;verification_output_sha256=(Get-FileHash -LiteralPath $verificationLog -Algorithm SHA256).Hash})
+  $state=Invoke-CoarseBasisTransaction -IdentityPath $identityPath -Names $Coarse.basis_names -Evidence $evidencePath
+  if([string]$state.action_required-ne'complete'){throw "Coarse basis transaction did not publish: $($state.action_required)"}
+  # The common transaction's terminal ``complete`` reply exposes the
+  # generation directory but does not repeat the probe identity.  Keep the
+  # already established transaction key instead of assuming both reply shapes
+  # are identical.
+  return [pscustomobject]@{directory=[string]$state.generation_directory;cache_key=[string]$probe.cache_key;identity=$identityPath;reused=$false}
+}
+
+function Get-ResponseBankPeakBytes {
+  $plan=Get-Content -LiteralPath $planPath -Raw -Encoding UTF8|ConvertFrom-Json -Depth 30
+  [int64]$familyBytes=$plan.family_bytes
+  [int64]$nativeMembers=$plan.native_family_members
+  # A response bank has raw geometry plus eight native and eight detached
+  # response arrays.  The physical-ID compilation intermediate is explicitly
+  # released before any response construction, so it is not part of the
+  # workflow peak.  The receipt is negligible and recorded at publication.
+  [int64]$arrayMembers=$bankMembers.Count-1
+  if($familyBytes-le0-or$nativeMembers-le0-or($familyBytes%$nativeMembers)-ne0){throw 'Frozen native corridor plan has no integral PA-array byte estimate.'}
+  return ($familyBytes/$nativeMembers)*$arrayMembers
+}
+
+function Get-ExistingTransactionPayloadBytes {
+  param([Parameter(Mandatory)][string]$CacheKey)
+  $payload=Join-Path $cacheRoot ('.transactions\'+$CacheKey+'\payload')
+  if(-not(Test-Path -LiteralPath $payload -PathType Container)){return [int64]0}
+  $files=@(Get-ChildItem -LiteralPath $payload -File -ErrorAction Stop)
+  if($files.Count-eq0){return [int64]0}
+  return [int64]($files|Measure-Object -Property Length -Sum).Sum
+}
+
+function Build-RawGeometry {
+  param([Parameter(Mandatory)][string]$BuildDirectory,[Parameter(Mandatory)][string]$ScratchDirectory)
+  $destination=Join-Path $BuildDirectory 'mrtof_analyzer_corridor.pa#'
+  if(Test-Path -LiteralPath $destination -PathType Leaf){return}
+  $aliases=@();$lease=$null
+  try {
+    $buildAlias=New-RunExecutionAlias -TargetDirectory $BuildDirectory;$aliases+=@($buildAlias)
+    $scratchAlias=New-RunExecutionAlias -TargetDirectory $ScratchDirectory;$aliases+=@($scratchAlias)
+    $gem=Join-Path ([string]$scratchAlias.execution_alias) 'mrtof_analyzer_corridor.gem'
+    $mappedGem=Join-Path ([string]$scratchAlias.execution_alias) 'mrtof_analyzer_corridor.local.gem'
+    $raw=Join-Path ([string]$scratchAlias.execution_alias) 'mrtof_analyzer_corridor.pa#'
+    Invoke-ProjectPython -Arguments @('-m','msplatform.backends.simion.native_corridor_geometry','--accelerator-component-contract',$script:oaComponentContractFrozen,'--accelerator-geometry-profile-id',$script:oaGeometryProfileId,'--contract',(Join-Path $repoRoot 'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json'),'--output',$gem)|Out-Null
+    # The generator reads the current contract only as a deterministic compiler;
+    # the frozen package remains authoritative.  A changed contract must fail
+    # here rather than silently create a bank under stale frozen identity.
+    $frozenIdentity=Get-Content -LiteralPath (Join-Path $frozen 'native_corridor_identity.json') -Raw -Encoding UTF8|ConvertFrom-Json -Depth 30
+    $generatedGemHash=(Get-FileHash -LiteralPath (Join-Path $ScratchDirectory 'mrtof_analyzer_corridor.gem') -Algorithm SHA256).Hash.ToUpperInvariant()
+    if($generatedGemHash-ne[string]$frozenIdentity.gem.sha256){throw 'Current corridor compiler output differs from the frozen native geometry identity.'}
+    $plan=Get-Content -LiteralPath $planPath -Raw -Encoding UTF8|ConvertFrom-Json -Depth 30
+    $mapping=@($plan.physical_to_local_electrode_id.PSObject.Properties|Sort-Object {[int]$_.Name}|ForEach-Object{"$($_.Name):$($_.Value)"})-join','
+    Invoke-ProjectPython -Arguments @('-m','msplatform.backends.simion.native_corridor_geometry','--accelerator-component-contract',$script:oaComponentContractFrozen,'--accelerator-geometry-profile-id',$script:oaGeometryProfileId,'--contract',(Join-Path $repoRoot 'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json'),'--output',$mappedGem,'--physical-to-local-map',$mapping)|Out-Null
+    $lease=Enter-HostExecutionLease -Role SIMION -Stage pa_refine -RunId $RunId
+    & (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\run_gem2pa.ps1') -SimionExe $simion -GemPath $mappedGem -OutputPaPath $raw
+    Move-NewMember -Source (Join-Path $ScratchDirectory 'mrtof_analyzer_corridor.pa#') -Destination $destination
+    Exit-HostExecutionLease -Lease $lease -Outcome success -RunId $RunId;$lease=$null
+  } finally {
+    if($null-ne$lease){Exit-HostExecutionLease -Lease $lease -Outcome failed -RunId $RunId}
+    foreach($alias in @($aliases)){Remove-RunExecutionAlias -ExecutionAlias ([string]$alias.execution_alias) -TargetDirectory ([string]$alias.target_directory)}
+  }
+}
+
+function Build-DetachedResponse {
+  param([Parameter(Mandatory)][ValidateRange(1,8)][int]$ResponseId,[Parameter(Mandatory)][string]$BuildDirectory,[Parameter(Mandatory)][string]$ScratchDirectory,[Parameter(Mandatory)][string]$CoarseBasisDirectory,[Parameter(Mandatory)]$Coarse)
+  $nativeName='mrtof_analyzer_corridor.pa{0}'-f$ResponseId
+  $detachedName='mrtof_analyzer_corridor.response{0}.pa'-f$ResponseId
+  $native=Join-Path $BuildDirectory $nativeName;$detached=Join-Path $BuildDirectory $detachedName
+  if(-not(Test-Path -LiteralPath $native -PathType Leaf)){
+    $responseLog=Join-Path $resultDir ('native_corridor_response_{0:D2}.log'-f$ResponseId)
+    & (Join-Path $PSScriptRoot 'run_native_corridor_qualification.ps1') -FrozenInputDirectory $frozen -RunId $RunId `
+      -SimionExe $simion -PythonExe $python -InternalResponseId $ResponseId -InternalBuildDirectory $BuildDirectory `
+      -InternalScratchDirectory $ScratchDirectory -InternalCoarseRawGeometryPath $Coarse.raw `
+      -InternalCoarseBasisDirectory $CoarseBasisDirectory -InternalCoarseOrigin $Coarse.origin *>&1 `
+      | Tee-Object -FilePath $responseLog | Out-Host
+    if($LASTEXITCODE-ne0){throw "Private native response build failed for ID $ResponseId"}
+  }
+  if(Test-Path -LiteralPath $detached -PathType Leaf){return}
+  $alias=$null;$lease=$null
+  try {
+    $alias=New-RunExecutionAlias -TargetDirectory $BuildDirectory
+    $lease=Enter-HostExecutionLease -Role SIMION -Stage prepare -RunId $RunId
+    & $simion --nogui --noprompt lua (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\export_standalone_pa.lua') `
+      (Join-Path ([string]$alias.execution_alias) $nativeName) (Join-Path ([string]$alias.execution_alias) $detachedName)
+    if($LASTEXITCODE-ne0){throw "Detached response export failed for ID $ResponseId"}
+    Exit-HostExecutionLease -Lease $lease -Outcome success -RunId $RunId;$lease=$null
+  } finally {
+    if($null-ne$lease){Exit-HostExecutionLease -Lease $lease -Outcome failed -RunId $RunId}
+    if($null-ne$alias){Remove-RunExecutionAlias -ExecutionAlias ([string]$alias.execution_alias) -TargetDirectory ([string]$alias.target_directory)}
+  }
+}
+
+function Verify-PrivateResponseBank {
+  param([Parameter(Mandatory)][string]$BuildDirectory,[Parameter(Mandatory)][string]$OutputPath)
+  $alias=$null;$lease=$null
+  try {
+    $alias=New-RunExecutionAlias -TargetDirectory $BuildDirectory
+    $arguments=@((Join-Path ([string]$alias.execution_alias) 'mrtof_analyzer_corridor.pa#'))
+    foreach($identifier in 1..8){$arguments+=@( (Join-Path ([string]$alias.execution_alias) ('mrtof_analyzer_corridor.pa{0}'-f$identifier)),(Join-Path ([string]$alias.execution_alias) ('mrtof_analyzer_corridor.response{0}.pa'-f$identifier)) )}
+    $lease=Enter-HostExecutionLease -Role SIMION -Stage prepare -RunId $RunId
+    $lines=@(& $simion --nogui --noprompt lua (Join-Path $PSScriptRoot 'verify_native_corridor_response_bank.lua') @arguments 2>&1|Tee-Object -FilePath $OutputPath)
+    if($LASTEXITCODE-ne0-or-not(@($lines|ForEach-Object{"$_"})-contains'MRTOF_NATIVE_CORRIDOR_RESPONSE_BANK_VERIFY=PASS responses=8 detached_runtime_only=true')){throw 'Private response-bank SIMION verification failed.'}
+    Exit-HostExecutionLease -Lease $lease -Outcome success -RunId $RunId;$lease=$null
+  } finally {
+    if($null-ne$lease){Exit-HostExecutionLease -Lease $lease -Outcome failed -RunId $RunId}
+    if($null-ne$alias){Remove-RunExecutionAlias -ExecutionAlias ([string]$alias.execution_alias) -TargetDirectory ([string]$alias.target_directory)}
+  }
+}
+
+$package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $projectArtifactRoot -RunId $RunId `
+  -Project $projectId -Mode 'native_corridor_detached_response_bank' -Software @('SIMION 2020','Python 3.11') `
+  -RetentionContractEnabled -RetentionClass compact -CapacityLedgerLifecycleEnabled -UseShortExecutionPath
+$resultDir=$package.result_dir;$summary=$package.summary;$runConfig=$package.run_config
+$identityPath=Join-Path $resultDir 'response_bank_identity.json';$verificationLog=Join-Path $resultDir 'response_bank_private_verify.log';$evidencePath=Join-Path $resultDir 'response_bank_verification.json'
+$terminalized=$false;$failureStage='freeze_managed_inputs';$capacitySession=$null;$publication=$null
+$managedFrozen=$null;$frozen='';$freezeManifest='';$recipePath='';$planPath='';$frozenOutputs=@()
+$continuationOutputs=@();$memberRecoveryPath='';$retainedInventoryRecoveryPath='';$publishedReuse=$false
+$publicationCorrectionPath='';$correctPublication=-not[string]::IsNullOrWhiteSpace($CorrectPublishedInventoryMember)
+$coarse=$null;$coarseBank=$null
+try {
+  $managedFrozen=New-ManagedFrozenInputs -Package $package -LegacyFrozenDirectory $legacyFrozen -CoarseGenerationManifest $directCoarseManifest
+  $frozen=[string]$managedFrozen.directory
+  $freezeManifest=Join-Path $frozen 'native_corridor_freeze_manifest.json'
+  $recipePath=Join-Path $frozen 'native_corridor_response_recipe.json'
+  $planPath=Join-Path $frozen 'native_corridor_plan.json'
+  $frozenOutputs=@($freezeManifest,(Join-Path $frozen 'native_corridor_identity.json'),$planPath,$recipePath)
+  foreach($path in $frozenOutputs){if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "Managed response-bank input is missing: $path"}}
+  $failureStage='identity'
+  Invoke-ProjectPython -Arguments @('-m',$bankModule,'--frozen-input-directory',$frozen,'--simion-executable',$simion,'--simion-release','SIMION 2020','--output',$identityPath)|Out-Null
+  if($RecoverMembers.Count-gt0-and-not$TransactionCacheKey){throw 'Member recovery requires an explicit frozen transaction key.'}
+  if($RecoverRetainedInventoryMembers.Count-gt0-and(-not$TransactionCacheKey-or$RecoverMembers.Count-gt0)){throw 'Retained inventory repair requires an explicit frozen transaction and cannot rebuild members.'}
+  if($correctPublication-and(-not$TransactionCacheKey-or$RecoverMembers.Count-gt0-or$RecoverRetainedInventoryMembers.Count-gt0)){throw 'Published inventory correction requires one explicit transaction and cannot rebuild members.'}
+  if($TransactionCacheKey){
+    $transactionPath=Join-Path $cacheRoot ('.transactions/'+$TransactionCacheKey.ToUpperInvariant()+'/transaction.json')
+    $transaction=Get-Content -LiteralPath $transactionPath -Raw -Encoding UTF8|ConvertFrom-Json -Depth 60
+    $currentIdentity=Get-Content -LiteralPath $identityPath -Raw -Encoding UTF8|ConvertFrom-Json -Depth 60
+    $isPublished=[string]$transaction.status-eq'published'
+    $publishedReuse=$isPublished-and-not$correctPublication
+    if($isPublished-and($RecoverMembers.Count-gt0-or$RecoverRetainedInventoryMembers.Count-gt0)){throw 'Published bank reuse cannot recover or rebuild members.'}
+    if($correctPublication-and-not$isPublished){throw 'Published inventory correction requires a published transaction.'}
+    $frozenIdentity=Select-FrozenTransactionIdentity -CurrentIdentity $currentIdentity -Transaction $transaction -AllowPublishedReuse:$isPublished
+    $continuationPath=Join-Path $resultDir 'response_bank_identity_continuation.json'
+    Write-RunJson -Path $continuationPath -Depth 60 -Value ([ordered]@{schema_version=1;role='mrtof_response_bank_frozen_identity_continuation';cache_key=$TransactionCacheKey.ToUpperInvariant();transaction_sha256=(Get-FileHash -LiteralPath $transactionPath -Algorithm SHA256).Hash;frozen_identity=$frozenIdentity;current_execution_identity=$currentIdentity})
+    $continuationOutputs+=@($continuationPath)
+    Write-RunJson -Path $identityPath -Depth 60 -Value $frozenIdentity
+    if($publishedReuse){
+      $verifiedOutput=[string]$transaction.verification.verification_output_path
+      if((Get-FileHash -LiteralPath $verifiedOutput -Algorithm SHA256).Hash-ne[string]$transaction.verification.verification_output_sha256){throw 'Published bank verification evidence changed.'}
+      $null=Copy-VerifiedRunInput -Source $verifiedOutput -Destination $verificationLog
+      Write-RunJson -Path $evidencePath -Depth 20 -Value $transaction.verification
+    }
+    if($RecoverRetainedInventoryMembers.Count-gt0){
+      $retainedInventoryRecoveryPath=Join-Path $resultDir 'response_bank_retained_inventory_recovery.json'
+      Write-RunJson -Path $retainedInventoryRecoveryPath -Depth 20 -Value ([ordered]@{
+        schema_version=1;cache_key=$TransactionCacheKey.ToUpperInvariant();owner=$transaction.owner
+        inventory_sha256=$transaction.inventory_sha256;names=@($RecoverRetainedInventoryMembers)
+      })
+      $continuationOutputs+=@($retainedInventoryRecoveryPath)
+    }
+    if($RecoverMembers.Count-gt0){
+      $receipt=Get-Content -LiteralPath (Join-Path (Split-Path -Parent $transactionPath) 'payload/mrtof_analyzer_corridor.standalone_responses.json') -Raw -Encoding UTF8|ConvertFrom-Json -Depth 30
+      $memberRecoveryPath=Join-Path $resultDir 'response_bank_member_recovery.json'
+      Write-RunJson -Path $memberRecoveryPath -Depth 40 -Value (New-ResponseBankMemberRecovery -Transaction $transaction -Receipt $receipt -Names $RecoverMembers)
+      $continuationOutputs+=@($memberRecoveryPath)
+    }
+  }
+  # A pending owner correction deliberately withdraws the old pointer.  The
+  # explicit transaction identifies this operation; it must not fall through
+  # the ordinary cache-miss/build path on retry.
+  $probe=if($correctPublication){[pscustomobject]@{cache_key=$transaction.cache_key;disposition='publication_metadata_correction'}}else{Invoke-CacheProbe -IdentityPath $identityPath}
+  if($TransactionCacheKey-and[string]$probe.cache_key-cne$TransactionCacheKey.ToUpperInvariant()){throw 'Frozen response-bank transaction key differs.'}
+  $responseReceiptPath=''
+  $registeredResponseReceipt=$TransactionCacheKey-and$null-ne$transaction.PSObject.Properties['response_receipt']
+  $receiptAlreadyPresent=Test-Path -LiteralPath (Join-Path $cacheRoot ('.transactions/'+[string]$probe.cache_key+'/payload/mrtof_analyzer_corridor.standalone_responses.json'))
+  # The public owner validates and replays a registered recipe unchanged,
+  # including after explicit member recovery; new recipes use schema 2.
+  if(-not$registeredResponseReceipt-and-not$correctPublication-and[string]$probe.disposition-ne'hit'-and(-not$receiptAlreadyPresent-or$RecoverMembers.Count-gt0)){
+    $responseReceiptPath=Join-Path $resultDir 'response_bank_receipt_recipe.json'
+    Write-RunJson -Path $responseReceiptPath -Depth 20 -Value ([ordered]@{
+      schema_version=2;source_location='payload';receipt_name='mrtof_analyzer_corridor.standalone_responses.json'
+      exporter_path=(Join-Path $repoRoot 'src\msplatform\backends\simion\resources\export_standalone_pa.lua')
+      exports=@(1..8|ForEach-Object{[ordered]@{
+        response_id=$_;source_name=('mrtof_analyzer_corridor.pa{0}'-f$_)
+        standalone_name=('mrtof_analyzer_corridor.response{0}.pa'-f$_)
+      }})
+    })
+    $continuationOutputs+=@($responseReceiptPath)
+  }
+  # A resumed transaction already occupies its payload bytes.  Reserve only
+  # space still capable of being added; otherwise a failed final seal can
+  # falsely block its own no-Refine recovery.
+  [int64]$peakBytes=0
+  if(-not$correctPublication-and[string]$probe.disposition-ne'hit'){
+    [int64]$existingPayloadBytes=Get-ExistingTransactionPayloadBytes -CacheKey ([string]$probe.cache_key)
+    [int64]$remainingPeakBytes=(Get-ResponseBankPeakBytes)-$existingPayloadBytes
+    $peakBytes=[math]::Max([int64]0,$remainingPeakBytes)
+    $coarseForCapacity=Get-CoarseInputs
+    $peakBytes+=([int64]$coarseForCapacity.basis_count+1)*[int64](Get-Item -LiteralPath $coarseForCapacity.raw).Length
+  }
+  if($RecoverRetainedInventoryMembers.Count-gt0){
+    [int64]$snapshotBytes=(@($transaction.files|Where-Object{$_.name-in$RecoverRetainedInventoryMembers})|Measure-Object -Property bytes -Maximum).Maximum
+    $peakBytes=[math]::Max($peakBytes,$snapshotBytes)
+  }
+  $coarseRecipe=Get-Content -LiteralPath $recipePath -Raw -Encoding UTF8|ConvertFrom-Json -Depth 40
+  $coarseKey=([string]$coarseRecipe.coarse_raw_generation_identity.cache_key).ToUpperInvariant()
+  $capacitySession=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
+    -RunDirectory $package.artifact_run_dir -CommittedNewBytes $peakBytes -ProtectedPaths @($package.artifact_run_dir,$frozen,(Join-Path $cacheRoot ('.transactions\'+([string]$probe.cache_key)+'\payload'))) `
+    -ProtectedCacheKeys @([string]$probe.cache_key,$coarseKey) -Owner "mrtof-native-corridor-response-bank:$RunId"
+  if(-not$correctPublication-and[string]$probe.disposition-ne'hit'){
+    $failureStage='coarse_basis_bank'
+    $coarse=Get-CoarseInputs
+    $coarseBank=Ensure-CoarseBasisBank -Coarse $coarse -Owner ([string]$capacitySession.owner)
+    $reservation=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession `
+      -ProtectedCacheKeys @([string]$probe.cache_key,$coarseKey,[string]$coarseBank.cache_key)
+    $capacitySession=$reservation.session
+  }
+  if($correctPublication){
+    $priorCorrection=$transaction.PSObject.Properties['publication_metadata_correction']
+    if($null-ne$priorCorrection){
+      $correctionRequest=$priorCorrection.Value.request|ConvertTo-Json -Depth 30|ConvertFrom-Json -AsHashtable
+      if([string]$correctionRequest.member_name-cne$CorrectPublishedInventoryMember){throw 'Published inventory correction retry selects a different member.'}
+    }else{
+      $sealed=@($transaction.files|Where-Object name -CEQ $CorrectPublishedInventoryMember)
+      $retained=@($transaction.member_recovery.files|Where-Object name -CEQ $CorrectPublishedInventoryMember)
+      if($sealed.Count-ne1-or$retained.Count-ne1){throw 'Published inventory correction requires one original retained inventory member.'}
+      $correctionRequest=[ordered]@{schema_version=1;cache_key=$transaction.cache_key;owner=$transaction.owner;
+        generation_sha256=$transaction.generation_sha256;inventory_sha256=$transaction.inventory_sha256;
+        member_name=$CorrectPublishedInventoryMember;sealed_sha256=$sealed[0].sha256;retained_sha256=$retained[0].sha256}
+    }
+    $correctionRequest.capacity_lease_id=$capacitySession.lease_id
+    $correctionRequest.capacity_lease_owner=$capacitySession.owner
+    $publicationCorrectionPath=Join-Path $resultDir 'response_bank_publication_metadata_correction_request.json'
+    Write-RunJson -Path $publicationCorrectionPath -Depth 30 -Value $correctionRequest
+    $continuationOutputs+=@($publicationCorrectionPath)
+  }
+  $evidence=''
+  for($step=0;$step-lt4;$step++){
+    $transactionOwner=if($TransactionCacheKey){''}else{[string]$capacitySession.owner}
+    $state=Invoke-Transaction -IdentityPath $identityPath -Owner $transactionOwner -VerificationEvidence $evidence -MemberRecovery $memberRecoveryPath -ResponseReceipt $responseReceiptPath -RetainedInventoryRecovery $retainedInventoryRecoveryPath -PublicationMetadataCorrection $publicationCorrectionPath
+    $memberRecoveryPath=''
+    $retainedInventoryRecoveryPath=''
+    if([string]$state.action_required-eq'complete'){
+      $publication=$state;break
+    }
+    if($correctPublication){throw 'Published metadata correction must not build PA or reopen published native members in SIMION.'}
+    if([string]$state.action_required-eq'build'){
+      if($RecoverRetainedInventoryMembers.Count-gt0){throw 'Retained inventory repair must never trigger PA rebuilding.'}
+      $failureStage='private_response_build'
+      $build=[IO.Path]::GetFullPath([string]$state.build_directory);$scratch=[IO.Path]::GetFullPath([string]$state.scratch_directory)
+      [int64]$remainingBytes=[math]::Max([int64]0,((Get-ResponseBankPeakBytes)-(Get-ExistingTransactionPayloadBytes -CacheKey ([string]$state.cache_key))))
+      if($null-eq$coarse){$coarse=Get-CoarseInputs}
+      if($null-eq$coarseBank){throw 'Coarse basis bank was not prepared.'}
+      if(-not$coarseBank.reused){$remainingBytes+=([int64]$coarse.basis_count+1)*[int64](Get-Item -LiteralPath $coarse.raw).Length}
+      $reservation=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession -RemainingCommittedNewBytes $remainingBytes
+      $capacitySession=$reservation.session
+      New-Item -ItemType Directory -Force -Path $build,$scratch|Out-Null
+      Build-RawGeometry -BuildDirectory $build -ScratchDirectory $scratch
+      $coarseBasisDirectory=[string]$coarseBank.directory
+      foreach($identifier in 1..8){Build-DetachedResponse -ResponseId $identifier -BuildDirectory $build -ScratchDirectory $scratch -CoarseBasisDirectory $coarseBasisDirectory -Coarse $coarse}
+      if(-not$responseReceiptPath-and-not$registeredResponseReceipt){Invoke-ProjectPython -Arguments @('-m',$bankModule,'--write-receipt-directory',$build)|Out-Null}
+      $evidence='';continue
+    }
+    if([string]$state.action_required-eq'verify'){
+      $failureStage='private_response_verify';Verify-PrivateResponseBank -BuildDirectory ([string]$state.build_directory) -OutputPath $verificationLog
+      $failureStage='receipt_verify';$transactionInventory=(Join-Path ([string]$state.transaction_directory) 'transaction.json');Invoke-ProjectPython -Arguments @('-m','msplatform.backends.simion.standalone_pa_response_set','--validate-sealed-receipt','--generation-directory',([string]$state.build_directory),'--inventory',$transactionInventory,'--receipt-name','mrtof_analyzer_corridor.standalone_responses.json','--expected-response-ids','1,2,3,4,5,6,7,8')|Out-Null
+      $outputHash=(Get-FileHash -LiteralPath $verificationLog -Algorithm SHA256).Hash.ToUpperInvariant();$verifier=(Join-Path $PSScriptRoot 'verify_native_corridor_response_bank.lua')
+      Write-RunJson -Path $evidencePath -Depth 10 -Value ([ordered]@{schema_version=1;role='simion_pa_family_verification';status='pass';cache_key=[string]$state.cache_key;inventory_sha256=[string]$state.inventory_sha256;solver_release='SIMION 2020';verifier_path=$verifier;verifier_sha256=(Get-FileHash -LiteralPath $verifier -Algorithm SHA256).Hash.ToUpperInvariant();verification_output_path=$verificationLog;verification_output_sha256=$outputHash})
+      $evidence=$evidencePath;continue
+    }
+    throw "Unsupported response-bank transaction action: $($state.action_required)"
+  }
+  if($null-eq$publication){throw 'Response-bank transaction did not publish within four transitions.'}
+  if($correctPublication){
+    $correctionReceipt=Copy-VerifiedRunInput -Source ([string]$publication.publication_metadata_correction_receipt) -Destination (Join-Path $resultDir 'response_bank_publication_metadata_correction.json')
+    $continuationOutputs+=@($correctionReceipt)
+  }
+  $failureStage='publish_run'
+  $publicationPath=Join-Path $resultDir 'pa_family_cache_publication.json';Write-RunJson -Path $publicationPath -Depth 30 -Value $publication
+  $runtimeIdentityPath=Join-Path $resultDir 'native_corridor_runtime_identity.json'
+  Write-RunJson -Path $runtimeIdentityPath -Depth 8 -Value ([ordered]@{
+    schema_version=1;role='mrtof_private_native_corridor_family';status='prepared'
+    response_refine_performed=$false;published_native_members_opened=$false;controller_refine='solutions={0}'
+    cache_key=[string]$publication.cache_key;generation_sha256=[string]$publication.generation_sha256
+  })
+  $protectedPublishedKeys=@([string]$publication.cache_key)
+  if($null-ne$coarseBank){$protectedPublishedKeys+=@([string]$coarseBank.cache_key)}
+  $terminal=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession -ProtectedCacheKeys $protectedPublishedKeys -RemainingCommittedNewBytes 0;$capacitySession=$terminal.session
+  $configuration=Get-Content -LiteralPath $runConfig -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+  $configuration.inputs=[ordered]@{native_corridor_freeze_manifest=$freezeManifest}
+  if($managedFrozen.source_freeze_manifest){$configuration.inputs.native_corridor_freeze_source_manifest=[string]$managedFrozen.source_freeze_manifest}
+  else{$configuration.inputs.coarse_raw_generation_manifest=$directCoarseManifest}
+  Write-RunJson -Path $runConfig -Depth 20 -Value $configuration
+  Write-RunJson -Path $summary -Depth 20 -Value ([ordered]@{schema_version=1;role='mrtof_native_corridor_detached_response_bank';status='success';cache_key=[string]$publication.cache_key;generation_sha256=[string]$publication.generation_sha256;coarse_basis_cache_key=if($null-ne$coarseBank){[string]$coarseBank.cache_key}else{$null};coarse_basis_reused=if($null-ne$coarseBank){[bool]$coarseBank.reused}else{$null};published_bank_reused=$publishedReuse;published_inventory_corrected=$correctPublication;solver_rerun_for_metadata_correction=$false;runtime_input='detached_standalone_responses_only';native_published_member_opening='forbidden'})
+  $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $runConfig
+  $outputs=@($summary,$identityPath,$publicationPath,$runtimeIdentityPath,$retention)+$frozenOutputs+$continuationOutputs
+  foreach($path in @($verificationLog,$evidencePath)){if(Test-Path -LiteralPath $path -PathType Leaf){$outputs+=@($path)}}
+  Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Status success -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
+  $terminalized=$true;Write-Host "MRTOF_NATIVE_CORRIDOR_RESPONSE_BANK=PASS RUN_ID=$RunId CACHE_KEY=$($publication.cache_key)"
+} catch {
+  if(-not$terminalized){Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Summary $summary -SummaryRole 'mrtof_native_corridor_detached_response_bank' -Reason $_.Exception.Message -Software @('SIMION 2020','Python 3.11') -Status failed -FailureStage $failureStage;$terminalized=$true}
+  throw
+} finally {
+  try{if($null-ne$capacitySession){$null=Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession}}
+  finally{Remove-RunPackageExecutionAlias -Package $package}
+}

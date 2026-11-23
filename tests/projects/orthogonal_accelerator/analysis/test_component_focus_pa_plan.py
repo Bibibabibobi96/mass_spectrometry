@@ -1,0 +1,311 @@
+from __future__ import annotations
+from msplatform.components.orthogonal_accelerator.two_zone_geometry import load_geometry_profile
+import json
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from msplatform.io.file_identity import file_sha256
+from msplatform.backends.simion.pa_family_cache import canonical_pa_family_cache_key
+
+from msplatform.backends.simion.oa_focus_plan import derive
+from msplatform.workflows.oa_focus_pa_cache import expected_files, identity
+
+
+class ComponentFocusPAPlanTests(unittest.TestCase):
+    def test_native_verifier_stays_in_build_lease_and_failure_cannot_publish(self) -> None:
+        project = (Path(__file__).resolve().parents[4] / "src/msplatform/components/orthogonal_accelerator")
+        repo = project.parents[3]
+        runner = repo / 'src/msplatform/backends/simion/resources/run_component_focus_pa.ps1'
+        with tempfile.TemporaryDirectory(prefix='focus-pa-lease-') as directory:
+            root = Path(directory)
+            fixture = root / 'native.py'
+            fixture.write_text(
+                "import os,sys\nfrom pathlib import Path\n"
+                "name=Path(sys.argv[4]).name\n"
+                "assert os.environ.get('FOCUS_FIXTURE_LEASE')=='active', 'native operation has no lease'\n"
+                "with Path(os.environ['FOCUS_FIXTURE_EVENTS']).open('a') as stream: stream.write('native:'+name+'\\n')\n"
+                "print('explicit software native fixture',flush=True)\n"
+                "raise SystemExit(int(os.environ['FOCUS_FIXTURE_EXIT']) if name=='verify.lua' else 0)\n",
+                encoding='utf-8',
+            )
+            shim = root / 'native.cmd'
+            shim.write_text(f'@echo off\n"{sys._base_executable}" "{fixture}" %*\nexit /b %errorlevel%\n', encoding='utf-8')
+            driver = root / 'driver.ps1'
+            driver.write_text(r"""
+param($Runner,$Root,$Native,$Code)
+$ErrorActionPreference='Stop';$PSNativeCommandUseErrorActionPreference=$false
+$work=Join-Path $Root ('case'+$Code);New-Item -ItemType Directory $work|Out-Null
+$env:FOCUS_FIXTURE_EVENTS=Join-Path $work 'events.txt';$env:FOCUS_FIXTURE_EXIT=$Code
+$tokens=$null;$errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$tokens,[ref]$errors)
+if($errors){throw $errors[0]}
+$branch=@($ast.FindAll({param($n) $n-is[Management.Automation.Language.IfStatementAst]-and
+ $n.Clauses[0].Item1.Extent.Text-eq'$probe.disposition-eq''hit'''-and$n.ElseClause.Statements.Count-gt1},$true))
+if($branch.Count-ne1){throw 'Expected the unique production cache-miss native branch.'}
+$body=$branch[0].ElseClause.Extent.Text
+$production=[scriptblock]::Create($body.Substring(1,$body.Length-2))
+$probe=@{disposition='miss'};$cacheRoot=Join-Path $work 'cache';$plan='fixture-plan';$SimionExe=$Native
+$RunId='fixture';$capacity=@{owner='fixture'};$responseReceiptRecipe='fixture-recipe';$electrodeCount=2
+$planDocument=@{gem='explicit software geometry fixture'};$domain=@(2,2,2);$mesh=@(1,1,1)
+$package=@{artifact_run_dir=$work;run_config='fixture-config';log_dir=$work;result_dir=$work}
+$frozenBuilder=Join-Path $work 'build.lua';$frozenVerifier=Join-Path $work 'verify.lua';$frozenExporter=Join-Path $work 'export.lua'
+foreach($path in @($frozenBuilder,$frozenVerifier,$frozenExporter)){Set-Content -LiteralPath $path -Value '-- software fixture'}
+$scratch=Join-Path $work 'scratch';$payload=Join-Path $work 'payload'
+New-Item -ItemType Directory $scratch,$payload|Out-Null
+$lease=$null;$buildAlias=$null;$verificationEvidence=$null
+function Enter-HostExecutionLease {param($Role,$Stage,$RunId)
+ if($Role-ne'SIMION'-or$Stage-ne'pa_refine'){throw 'Wrong native admission stage'}
+ $env:FOCUS_FIXTURE_LEASE='active';Add-Content $env:FOCUS_FIXTURE_EVENTS 'acquire';return @{token='fixture'}
+}
+function Exit-HostExecutionLease {param($Lease,$Outcome,$RunId)
+ if($env:FOCUS_FIXTURE_LEASE-ne'active'){throw 'Duplicate native release'}
+ Add-Content $env:FOCUS_FIXTURE_EVENTS ('release:'+$Outcome);$env:FOCUS_FIXTURE_LEASE='released'
+}
+function New-RunExecutionAlias {param($TargetDirectory);return @{execution_alias=$TargetDirectory;target_directory=$TargetDirectory}}
+function Remove-RunExecutionAlias {param($ExecutionAlias,$TargetDirectory)}
+function Invoke-RootPython {param([string[]]$Arguments)
+ if($Arguments-contains'--verification-evidence'){
+  if($env:FOCUS_FIXTURE_LEASE-ne'released'){throw 'Publication preceded native release'}
+  Add-Content $env:FOCUS_FIXTURE_EVENTS 'publish';return '{"action_required":"complete"}'
+ }
+ if($Arguments-contains'--producer-run-config'){
+  return (@{action_required='build';scratch_directory=$scratch;build_directory=$payload}|ConvertTo-Json -Compress)
+ }
+ return '{"action_required":"verify","cache_key":"fixture-key","inventory_sha256":"fixture-inventory"}'
+}
+$failure=$null
+try{. $production}catch{$failure=$_.Exception.Message}
+@{error=$failure;events=@(Get-Content $env:FOCUS_FIXTURE_EVENTS);lease_cleared=($null-eq$lease)}|
+ ConvertTo-Json -Depth 8|Set-Content (Join-Path $work 'report.json') -Encoding utf8
+""", encoding='utf-8')
+            for code in (0, 7):
+                with self.subTest(native_exit=code):
+                    process = subprocess.run(['pwsh', '-NoProfile', '-File', str(driver), str(runner), str(root), str(shim), str(code)],
+                        cwd=repo, capture_output=True, text=True, encoding='utf-8', errors='replace', check=False, timeout=60)
+                    self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+                    result = json.loads((root / f'case{code}/report.json').read_text(encoding='utf-8-sig'))
+                    expected = ['acquire', 'native:build.lua', 'native:export.lua', 'native:export.lua', 'native:verify.lua',
+                                'release:success' if code == 0 else 'release:failed']
+                    self.assertEqual(result['events'], expected + (['publish'] if code == 0 else []))
+                    self.assertTrue(result['lease_cleared'])
+                    if code == 0:
+                        self.assertIsNone(result['error'])
+                    else:
+                        self.assertEqual(result['error'], 'Native focus controller verification failed')
+
+    def test_focus_is_inside_domain_and_closed_end_is_padded(self) -> None:
+        root=(Path(__file__).resolve().parents[4] / "src/msplatform/components/orthogonal_accelerator")
+        plan=derive(root/'config'/'two_zone_component_focus_campaign.json', geometry_profile=load_geometry_profile(json.loads((root/'config'/'two_zone_component_focus_campaign.json').read_text(encoding="utf-8"))["geometry_profile_id"]), mesh_mm_per_gu=[0.25, 0.25, 0.1])
+        domain=plan['numerical_domain']; layout=plan['layout']
+        self.assertAlmostEqual(domain['focus_plane_local_z_mm'], domain['focus_plane_padding_mm'])
+        self.assertGreater(domain['focus_plane_local_z_mm'], 0.0)
+        self.assertGreaterEqual(domain['span_mm'][2], layout['local_exit_z_mm'] + layout['static_axial_length_mm'] + domain['positive_z_enclosure_padding_mm'])
+        self.assertIn('Solid repeller; no coaxial return aperture', plan['gem'])
+        self.assertEqual(plan['cache_policy'], 'one_native_fast_adjust_family__manifest_bound_standalone_runtime_responses')
+        self.assertEqual(plan['electrode_count'], 19)
+        self.assertEqual(plan['geometry_profile_id'], 'closed_two_zone_compact_mr_axial_r3_gap1_4mm')
+        self.assertEqual(plan['layout']['gap_1_mm'], 4.0)
+        self.assertEqual(plan['layout']['gap_2_mm'], 30.0)
+        self.assertEqual(plan['layout']['aperture_height_y_mm'], 26.0)
+        self.assertEqual(plan['layout']['static_minimum_y_extent_mm'], 34.0)
+        self.assertEqual(domain['span_mm'], [44.5, 34.5, 50.0])
+        self.assertEqual(domain['stored_span_mm'], [22.25, 34.5, 50.0])
+        self.assertEqual(domain['mirror_axes'], ['x'])
+        self.assertEqual(domain['iob_origin_mm'], [0.0, -17.25, 0.0])
+        self.assertIn('pa_define($(nx),$(ny),$(nz),planar,x,electrostatic', plan['gem'])
+        self.assertIn('locate(0,$(y_span/2),0)', plan['gem'])
+        self.assertIn('local nx = math.floor(stored_x_span/mmgu_x + 0.5) + 1', plan['gem'])
+        self.assertEqual(plan['layout']['static_axial_length_mm'], 38.0)
+        self.assertEqual(plan['theory_seed']['source_center_exit_mm'], 32.0)
+        self.assertAlmostEqual(plan['theory_seed']['nominal_energy_per_charge_v'], 4371.2351565, places=7)
+        self.assertAlmostEqual(plan['theory_seed']['first_order_focus_drift_mm'], 0.0, places=7)
+
+    def test_identity_includes_dynamic_standalone_response_bank(self) -> None:
+        root=(Path(__file__).resolve().parents[4] / "src/msplatform/components/orthogonal_accelerator"); plan=derive(root/'config'/'two_zone_component_focus_campaign.json', geometry_profile=load_geometry_profile(json.loads((root/'config'/'two_zone_component_focus_campaign.json').read_text(encoding="utf-8"))["geometry_profile_id"]), mesh_mm_per_gu=[0.25, 0.25, 0.1])
+        builder=root.parents[3]/'src/msplatform/backends/simion/resources'/'build_component_focus_pa.lua'
+        executable=Path(__file__) # identity only requires stable existing file for this static unit test
+        value=identity(plan,builder,executable)
+        contract=root.parents[3]/'src/msplatform/backends/simion/standalone_pa_response_set.py'
+        self.assertEqual(value['builder_identity']['response_set_contract_sha256'],file_sha256(contract))
+        def changed_contract(path):
+            return 'A'*64 if Path(path)==contract else file_sha256(path)
+        with patch('msplatform.workflows.oa_focus_pa_cache.file_sha256',side_effect=changed_contract):
+            changed=identity(plan,builder,executable)
+        self.assertNotEqual(canonical_pa_family_cache_key(value),canonical_pa_family_cache_key(changed))
+        self.assertEqual(expected_files(plan), tuple(sorted((
+            'orthogonal_accelerator_focus.pa#',
+            *(f'orthogonal_accelerator_focus.pa{index}' for index in range(20)),
+            *(f'orthogonal_accelerator_focus.response{index}.pa' for index in range(1, 20)),
+            'orthogonal_accelerator_focus.standalone_responses.json',
+        ))))
+        self.assertEqual(value['refine_policy']['response_bank'], 'new_pa_object_standalone_responses_1_through_electrode_count')
+        self.assertEqual(value['basis_namespace']['native_solution_ids'], list(range(20)))
+        self.assertEqual(value['basis_namespace']['electrode_ids'], list(range(1, 20)))
+        self.assertEqual(value['basis_namespace']['runtime'], 'manifest_bound_standalone_responses__private_native_fast_adjust_family')
+        self.assertEqual(value['grid_phase']['stored_span_mm'], [22.25, 34.5, 50.0])
+        self.assertEqual(value['grid_phase']['pa_span_mm'], [44.5, 34.5, 50.0])
+        self.assertEqual(value['grid_phase']['mirror_axes'], ['x'])
+
+    def test_builder_preserves_adjustable_electrode_flags_and_uses_official_solution_pattern(self) -> None:
+        root=(Path(__file__).resolve().parents[4] / "src/msplatform/components/orthogonal_accelerator")
+        builder=(root.parents[3]/'src/msplatform/backends/simion/resources'/'build_component_focus_pa.lua').read_text(encoding='utf-8')
+        self.assertNotIn(':potential(', builder)
+        self.assertIn('family:refine{solutions={0}}', builder)
+        self.assertIn('family:load(output)', builder)
+        self.assertIn('for solution=1,electrode_count do', builder)
+        self.assertIn('family:refine{solutions=solutions}', builder)
+        self.assertIn("for solution=0,electrode_count do", builder)
+
+    def test_runner_applies_retention_before_private_pa_build_and_publishes_receipt(self) -> None:
+        root=(Path(__file__).resolve().parents[4] / "src/msplatform/components/orthogonal_accelerator")
+        runner=(root.parents[3]/'src/msplatform/backends/simion/resources'/'run_component_focus_pa.ps1').read_text(encoding='utf-8')
+        apply=runner.index('Apply-RunArtifactRetention')
+        native=runner.index("$stage='native_build'")
+        publish=runner.index("$stage='publish'")
+        manifest=runner.index('Write-VerifiedRunManifest')
+        self.assertLess(apply, native)
+        self.assertLess(apply, publish)
+        self.assertLess(apply, manifest)
+        self.assertIn('$outputs=@($package.summary,$result,$plan,$identity,$retention,', runner)
+        self.assertIn('$failureDetail=$_.Exception.Message;throw', runner)
+        self.assertIn('Focus PA build failed at $stage.', runner)
+        self.assertIn('$reason+=" $failureDetail"', runner)
+        self.assertIn('-Outputs $outputs', runner[manifest:])
+        self.assertIn("--action','advance-transaction'", runner)
+        self.assertIn("$stage='transaction_start'", runner)
+        self.assertIn("$stage='seal_and_verify'", runner)
+        self.assertIn('simion_pa_family_verification', runner)
+        self.assertIn('verify_component_focus_pa.lua', runner)
+        self.assertIn("'--owner',$capacity.owner", runner)
+        self.assertNotIn("--action','publish'", runner)
+        self.assertNotIn('--source-directory', runner)
+        self.assertIn("$temporary=[string]$transaction.scratch_directory", runner)
+        self.assertNotIn('[IO.Path]::GetTempPath()', runner)
+        self.assertIn('Remove-Item -LiteralPath $temporary -Recurse -Force', runner)
+        self.assertIn('$electrodeCount=[int]$planDocument.electrode_count', runner)
+        self.assertIn('$frozenBuilder $gem $raw $electrodeCount', runner)
+        self.assertIn('export_standalone_pa.lua', runner)
+        self.assertIn('orthogonal_accelerator_focus.standalone_responses.json', runner)
+        self.assertIn("'--response-receipt',$responseReceiptRecipe", runner)
+        self.assertIn('$domain=$probe.identity.grid_phase.stored_span_mm', runner)
+        self.assertIn('$frozenVerifier $raw $electrodeCount $grid[0] $grid[1] $grid[2]', runner)
+        self.assertIn("$cacheRoot=Join-Path $artifactRoot 'common\\simion\\pa_family_cache'", runner)
+        self.assertNotIn("$cacheRoot=Join-Path $artifactRoot 'oa_pa_cache'", runner)
+        self.assertIn("$runtimeOwnerRun=$package.artifact_run_dir", runner)
+        self.assertNotIn("GetFullPath($package.run_dir)", runner)
+
+    def test_cache_adapter_forbids_direct_artifact_publication(self) -> None:
+        root=(Path(__file__).resolve().parents[4] / "src/msplatform/components/orthogonal_accelerator")
+        adapter=(root.parents[3]/'src/msplatform/workflows/oa_focus_pa_cache.py').read_text(encoding='utf-8')
+        self.assertIn('advance_pa_family_cache_transaction', adapter)
+        self.assertNotIn('publish_pa_family_cache', adapter)
+        self.assertIn('verification_evidence=evidence', adapter)
+
+    def test_cache_hit_manifest_only_includes_the_build_log_when_it_exists(self) -> None:
+        root=(Path(__file__).resolve().parents[4] / "src/msplatform/components/orthogonal_accelerator")
+        runner=(root.parents[3]/'src/msplatform/backends/simion/resources'/'run_component_focus_pa.ps1').read_text(encoding='utf-8')
+        self.assertIn("$buildLog=Join-Path $package.log_dir 'build_component_focus_pa.log'", runner)
+        self.assertIn('if(Test-Path -LiteralPath $buildLog -PathType Leaf){$outputs+=@($buildLog)}', runner)
+        manifest=runner[runner.index('Write-VerifiedRunManifest'):]
+        self.assertIn('-Outputs $outputs', manifest)
+        self.assertNotIn("-Outputs @($package.summary,$result,$plan,$identity,$retention", manifest)
+
+    def test_published_generation_can_acquire_a_new_run_owned_runtime(self) -> None:
+        root=(Path(__file__).resolve().parents[4] / "src/msplatform/components/orthogonal_accelerator")
+        runner=(root.parents[3]/'src/msplatform/backends/simion/resources'/'run_component_focus_pa.ps1').read_text(encoding='utf-8')
+        runtime=runner[runner.index("$stage='prepare_shared_private_runtime'"):]
+        self.assertIn("[string]$RuntimeCheckpointPath=''", runner)
+        self.assertIn('$runtimeOwnerRun=$package.artifact_run_dir', runtime)
+        self.assertIn('if($needsRuntime){($electrodeCount+1)*$nodes*8}else{0}', runner)
+        self.assertIn('New-NativeFastAdjustRuntimeFamily', runtime)
+        self.assertNotIn('transactionRecord.producer.run_config_path', runtime)
+        self.assertNotIn('original producer runtime checkpoint', runtime)
+
+    def test_explicit_runtime_checkpoint_is_reused_without_materialization(self) -> None:
+        root=(Path(__file__).resolve().parents[4] / "src/msplatform/components/orthogonal_accelerator")
+        runner=(root.parents[3]/'src/msplatform/backends/simion/resources'/'run_component_focus_pa.ps1').read_text(encoding='utf-8')
+        runtime=runner[runner.index("$stage='prepare_shared_private_runtime'"):]
+        reuse=runtime[runtime.index('if($RuntimeCheckpointPath){'):runtime.index('}else{')]
+        create=runtime[runtime.index('}else{'):runtime.index('$runtimeState=Get-Content')]
+        self.assertIn('(Resolve-Path -LiteralPath $RuntimeCheckpointPath).Path', reuse)
+        self.assertIn('$savedRuntime.directory', reuse)
+        self.assertNotIn('New-NativeFastAdjustRuntimeFamily', reuse)
+        self.assertIn('New-NativeFastAdjustRuntimeFamily', create)
+
+
+
+
+class ExplicitFocusMeshTests(unittest.TestCase):
+    def test_explicit_mesh_rejects_missing_invalid_and_changes_actual_grid(self):
+        root = (Path(__file__).resolve().parents[4] / "src/msplatform/components/orthogonal_accelerator")
+        campaign = root / "config/two_zone_component_focus_campaign.json"
+        profile = load_geometry_profile(json.loads(campaign.read_text(encoding="utf-8"))["geometry_profile_id"])
+        with self.assertRaises(TypeError):
+            derive(campaign, geometry_profile=profile)
+        for mesh in (None, [], [1, 1], [1, 1, 1, 1], [True, .25, .1], [0, .25, .1], [-1, .25, .1], [float("nan"), .25, .1], [float("inf"), .25, .1]):
+            with self.subTest(mesh=mesh), self.assertRaises(ValueError):
+                derive(campaign, geometry_profile=profile, mesh_mm_per_gu=mesh)
+        plan = derive(campaign, geometry_profile=profile, mesh_mm_per_gu=[.2, .5, .2])
+        self.assertEqual(plan["numerical_domain"]["mesh_mm_per_gu"], [.2, .5, .2])
+        self.assertEqual(plan["requirements"]["local_pa"]["mesh_mm_per_gu"], [.2, .5, .2])
+        self.assertIn("contract_mmgu_x, contract_mmgu_y, contract_mmgu_z = 0.2, 0.5, 0.2", plan["gem"])
+        self.assertEqual(plan["numerical_domain"]["mirror_axes"], ["x"])
+        self.assertEqual(plan["electrode_count"], 19)
+
+
+class FrozenFocusPlanTests(unittest.TestCase):
+    def test_actual_pa_runner_plan_cli_is_frozen_and_missing_code_fails(self):
+        repo = Path(__file__).resolve().parents[4]
+        script_text = r'''param($Repo,$Python,$Root,$Mode)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$support=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1'),[ref]$null,[ref]$null)
+$copy=$support.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Copy-VerifiedRunInput'},$true)
+Invoke-Expression $copy.Extent.Text
+$repoRoot=$Repo;$projectRoot=Join-Path $Repo 'src/msplatform/components/orthogonal_accelerator';$resourceRoot=Join-Path $Repo 'src/msplatform/backends/simion/resources';$python=$Python
+. (Join-Path $resourceRoot 'focus_python.ps1')
+[IO.Directory]::CreateDirectory((Join-Path $Root 'inputs'))|Out-Null
+[IO.Directory]::CreateDirectory((Join-Path $Root 'results'))|Out-Null
+$config=Join-Path $Root 'run_config.json'
+@{schema_version=2;inputs=@{};parameters=@{}}|ConvertTo-Json -Depth 10|Set-Content $config -Encoding utf8
+$package=@{input_dir=(Join-Path $Root 'inputs');result_dir=(Join-Path $Root 'results');run_config=$config}
+$frozenCampaign=Copy-VerifiedRunInput (Join-Path $projectRoot 'config/two_zone_component_focus_campaign.json') (Join-Path $package.input_dir 'campaign.json')
+$MeshMmPerGu=@(.2,.5,.2)
+$runner=Get-Content -Raw (Join-Path $resourceRoot 'run_component_focus_pa.ps1')
+$start=$runner.IndexOf('$frozenContract=');$end=$runner.IndexOf('$planDocument=')
+$block=$runner.Substring($start,$end-$start)
+if($Mode-eq'missing'){
+ $block=$block.Replace(' $plan=Join-Path',(' Remove-Item -LiteralPath (Join-Path $focusPython.code_root ''src/msplatform/backends/simion/oa_focus_plan.py'')'+"`n"+' $plan=Join-Path'))
+}
+. ([scriptblock]::Create($block))
+$origins=Get-Content -Raw $focusPython.origins_path|ConvertFrom-Json
+$planFact=@($origins|Where-Object{$_.module-eq'msplatform.backends.simion.oa_focus_plan'})
+if($planFact.Count-ne1){throw 'Actual PA plan CLI did not run'}
+$planFact|ConvertTo-Json -Depth 20
+'''
+        for mode in ("success", "missing"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                script = root / "frozen.ps1"
+                script.write_text(script_text, encoding="utf-8")
+                result = subprocess.run(["pwsh", "-NoProfile", "-File", str(script), str(repo), sys.executable, str(root), mode], cwd=root,
+                                        capture_output=True, text=True, encoding="utf-8", timeout=90)
+                output = root / "results/component_focus_pa_plan.json"
+                if mode == "missing":
+                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertFalse(output.exists())
+                    self.assertIn("Frozen provider focus PA plan failed", result.stdout + result.stderr)
+                else:
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    plan = json.loads(output.read_text(encoding="utf-8"))
+                    self.assertEqual(plan["numerical_domain"]["mesh_mm_per_gu"], [.2, .5, .2])
+                    self.assertEqual(plan["electrode_count"], 19)
+                    origins = json.loads((root / "results/python_execution.json").read_text(encoding="utf-8"))
+                    fact = next(row for row in origins if row["module"] == "msplatform.backends.simion.oa_focus_plan")
+                    self.assertTrue(all(Path(path).is_relative_to(Path(fact["code_root"])) for path in fact["module_paths"].values()))
+
+
+if __name__=='__main__': unittest.main()

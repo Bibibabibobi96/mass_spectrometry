@@ -1,7 +1,7 @@
-[CmdletBinding(DefaultParameterSetName="Run")]
+[CmdletBinding(DefaultParameterSetName="Profile")]
 param(
   [Parameter(Mandatory=$true,ParameterSetName="Run")][string]$ProjectId,
-  [Parameter(Mandatory=$true,ParameterSetName="Run")][string]$RuntimeProfileId,
+  [Parameter(Mandatory=$true,ParameterSetName="Run")][Parameter(Mandatory=$true,ParameterSetName="Profile")][string]$RuntimeProfileId,
   [Parameter(Mandatory=$true,ParameterSetName="Run")][string]$DesignProfileId,
   [Parameter(Mandatory=$true,ParameterSetName="Run")][string]$ParticleSourcePath,
   [Parameter(Mandatory=$true,ParameterSetName="Run")][Parameter(ParameterSetName="Analyze")][string]$EngineeringBudgetPath,
@@ -24,13 +24,28 @@ param(
   [Parameter(ParameterSetName='Analyze')][switch]$ReextractFromModel,
   [Parameter(Mandatory,ParameterSetName='Analyze')][string]$ParentManifestPath,
   [string]$ResultPath='',
-  [Parameter(ParameterSetName='Resume')][string]$ArtifactRootPath=''
+  [Parameter(ParameterSetName='Resume')][string]$ArtifactRootPath='',
+  [Parameter(Mandatory=$true,ParameterSetName='Campaign')][string]$CampaignPath,
+  [Parameter(Mandatory=$true,ParameterSetName='Campaign')][string]$ExperimentId
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 if($AnalyzeOnly-and[string]::IsNullOrWhiteSpace($EngineeringBudgetPath)){throw 'AnalyzeOnly requires an explicit EngineeringBudgetPath for its new analysis payload; parent native commitment is not a fallback.'}
 $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
+if($PSCmdlet.ParameterSetName-in@('Campaign','Profile')){
+  . (Join-Path $PSScriptRoot 'project_transport_launcher_support.ps1')
+  $selection=if($PSCmdlet.ParameterSetName-eq'Campaign'){
+    @{CampaignPath=$CampaignPath;ExperimentId=$ExperimentId}
+  }else{@{}}
+  if($PSCmdlet.ParameterSetName-eq'Profile'){$selection.RuntimeProfileId=$RuntimeProfileId}
+  if($PSBoundParameters.ContainsKey('RetentionClass')){$selection.RetentionClass=$RetentionClass}
+  Invoke-MultipoleProjectFinite3dTransport -Solver comsol -ProjectId 'rf_multipole_ion_optics' @selection `
+    -RepoRoot $repoRoot -ResolvedRuntimeProfilePath $ResolvedRuntimeProfilePath `
+    -EvidenceContractPath $EvidenceContractPath -RunId $RunId -RetentionReason $RetentionReason `
+    -PythonExe $PythonExe -ResultPath $ResultPath
+  return
+}
 $initialPythonPath=$env:PYTHONPATH
 $env:PYTHONPATH=(Join-Path $repoRoot 'src')+$(if($initialPythonPath){[IO.Path]::PathSeparator+$initialPythonPath}else{''})
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
@@ -211,8 +226,12 @@ function Copy-FiniteComsolRuntime {
   })
   Assert-FrozenPythonPackage -Package $frozenPackage
   . (Get-FrozenPythonPackageFile -Package $frozenPackage -RelativePath 'src/msplatform/execution/resources/frozen_python_package.ps1')
-  Invoke-IsolatedFrozenPythonModule -Python $python -Package $frozenPackage -Module msplatform `
-    -Arguments @('--help') -RequiredModuleNames $coreModules -ForbiddenRoots @($repoRoot) -ProbeOnly|Out-Null
+  # Bound Win32 command-line size without dropping any required module probe.
+  for($moduleOffset=0;$moduleOffset-lt$coreModules.Count;$moduleOffset+=100){
+    $moduleEnd=[Math]::Min($moduleOffset+99,$coreModules.Count-1)
+    Invoke-IsolatedFrozenPythonModule -Python $python -Package $frozenPackage -Module msplatform `
+      -Arguments @('--help') -RequiredModuleNames @($coreModules[$moduleOffset..$moduleEnd]) -ForbiddenRoots @($repoRoot) -ProbeOnly|Out-Null
+  }
 
   return @{code_root=$codeRoot;inventory_path=$codeInventory;files=$inventory}
 }
@@ -732,7 +751,7 @@ function Invoke-FiniteComsolAnalysisChild {
       if($LASTEXITCODE-ne0){throw 'Analysis engineering budget differs from frozen parent authority.'}
     }
     $analysisBudget=($budgetText-join"`n")|ConvertFrom-Json -AsHashtable -Depth 100
-    $analysisAreas=@('src/msplatform','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/variants')
+    $analysisAreas=@('src/msplatform','src/msplatform/components/rf_multipole/config','src/msplatform/components/rf_multipole/variants')
     $analysisAdditional=@()
     if($ReextractFromModel){
       $analysisAdditional=@('src/msplatform/execution/resources/host_execution_lease.ps1','src/msplatform/execution/host_resource_scheduler.py','src/msplatform/execution/resources/host_resource_policy.json','src/msplatform/execution/resources/require_powershell7.ps1','src/msplatform/execution/resources/resource_process_support.ps1')
@@ -951,7 +970,7 @@ $hostRuntimeSourcePaths=@(
   'src/msplatform/execution/resources/host_resource_policy.json','src/msplatform/execution/resources/require_powershell7.ps1','src/msplatform/execution/resources/resource_process_support.ps1')
 $analysisSourcePaths=@('src/msplatform/analysis/particle_census.py','src/msplatform/backends/simion/native_completion.py')
 $executionCapacityPaths=Get-RunPackageCopiedSourcePaths -RepoRoot $repoRoot `
-  -SourceRelativeDirectories @('src/msplatform','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/variants') `
+  -SourceRelativeDirectories @('src/msplatform','src/msplatform/components/rf_multipole/config','src/msplatform/components/rf_multipole/variants') `
   -Extensions @('.py','.json','.ps1','.m','.lua')
 $executionCapacityPaths+=@(($hostRuntimeSourcePaths+$analysisSourcePaths)|ForEach-Object{"inputs/code/$_"})
 $entryScriptHash=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash
@@ -991,7 +1010,7 @@ $ownerState.host_lease=Enter-HostExecutionLease -StatePath $workspacePaths.host_
 $comsolRunFailure=$null
 
   $copied=Copy-FiniteComsolRuntime -RepoRoot $repoRoot -InputDir $inputDir -SourceAreas @(
-    'src/msplatform','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/variants') -AdditionalPaths @($hostRuntimeSourcePaths+$analysisSourcePaths)
+    'src/msplatform','src/msplatform/components/rf_multipole/config','src/msplatform/components/rf_multipole/variants') -AdditionalPaths @($hostRuntimeSourcePaths+$analysisSourcePaths)
   $codeRoot=$copied.code_root;$codeInventory=$copied.inventory_path;$inventory=$copied.files
 
   $profileResolution=Join-Path $inputDir 'design_profile_resolution.json'

@@ -1,7 +1,7 @@
 # 质谱仪设计与仿真平台愿景
 
 本页定义长期使命、目标能力和交付边界。实施优先级见[路线图](ROADMAP.md)，当前能力与证据见
-项目`docs/PROJECT.md`和[集成状态](../integrations/docs/INTEGRATION.md)，任务入口见[README](../README.md)。
+项目`docs/PROJECT.md`和[集成状态](INTEGRATION.md)，任务入口见[README](../README.md)。
 
 ## 使命
 

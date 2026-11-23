@@ -1,0 +1,559 @@
+"""Validate project capability descriptors and build their deterministic registry."""
+
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+from typing import Any
+
+if __package__:
+    from msplatform.execution.artifact_identity_archive import historical_project_identities
+    from msplatform.io.file_identity import repository_text_sha256
+    from tools.repository.repository_root import REPO_ROOT
+    from msplatform.contracts.machine_contracts import ContractError, load_json, pointer_value, validate_schema
+else:
+    from msplatform.execution.artifact_identity_archive import historical_project_identities
+    from msplatform.io.file_identity import repository_text_sha256
+    from tools.repository.repository_root import REPO_ROOT
+    from msplatform.contracts.machine_contracts import ContractError, load_json, pointer_value, validate_schema
+
+
+MATURITY = {"prototype": 0, "static": 1, "candidate": 2, "formal": 3}
+EVIDENCE = {"plan": -1, **MATURITY}
+# Registry records retained Formal history; project lifecycle preflight remains the execution authority.
+LIFECYCLE_MATURITY = {**MATURITY, "formal_revalidation_pending": MATURITY["formal"]}
+FORMAL_ASSET_LIFECYCLES = frozenset(("formal", "formal_revalidation_pending"))
+DEFAULT_OUTPUT = REPO_ROOT / "config" / "project_registry.json"
+DESCRIPTOR_ROOTS = (Path("src/msplatform/components"),)
+
+
+def resolve_project_root(project_id: str, repo_root: Path = REPO_ROOT) -> Path:
+    """Resolve the sole component descriptor carrying this scientific project ID."""
+    existing = [path for root in DESCRIPTOR_ROOTS
+                for path in (repo_root / root).glob("*/config/project.json")
+                if load_json(path).get("project_id") == project_id]
+    if not existing:
+        raise ContractError(f"project descriptor is missing: {project_id}")
+    if len(existing) != 1:
+        raise ContractError(f"project descriptor exists in multiple roots: {project_id}")
+    return existing[0].parents[1]
+
+
+def validate_runtime_binding(
+    profile: dict[str, Any], project_root: Path, repo_root: Path = REPO_ROOT
+) -> Path | None:
+    """Validate a schema-checked profile's optional project resolver declaration."""
+    declaration = profile.get("runtime_binding")
+    if declaration is None:
+        return None
+    if not set(declaration["required_bindings"]) <= set(profile["required_bindings"]):
+        raise ContractError("runtime binding selectors must be required bindings of the execution profile")
+    relative = declaration["entrypoint"]
+    package_owned = relative.startswith(("msplatform/", "src/msplatform/"))
+    entrypoint = (repo_root / "src" / relative if relative.startswith("msplatform/")
+                  else repo_root / relative if relative.startswith("src/msplatform/")
+                  else project_root / relative).resolve()
+    expected_root = repo_root / "src" if package_owned else project_root.resolve()
+    if not entrypoint.is_relative_to(expected_root):
+        raise ContractError("runtime binding entrypoint must remain inside its declared owner")
+    if not entrypoint.is_file():
+        raise ContractError(f"runtime binding entrypoint is missing: {declaration['entrypoint']}")
+    return entrypoint
+
+
+def descriptor_paths(repo_root: Path) -> list[Path]:
+    return sorted(path for root in DESCRIPTOR_ROOTS
+                  for path in (repo_root / root).glob("*/config/project.json"))
+
+
+def validate_legacy_identity_mappings(
+    descriptors: list[dict[str, Any]], repo_root: Path = REPO_ROOT
+) -> None:
+    """Reject ambiguous historical owners without promoting their capabilities."""
+    project_ids = {descriptor["project_id"] for descriptor in descriptors}
+    legacy_owners: dict[str, str] = {}
+    mapping_owners: dict[str, str] = {}
+    for descriptor in descriptors:
+        current_id = descriptor["project_id"]
+        try:
+            identities = list(historical_project_identities(descriptor, repo_root))
+        except (OSError, TypeError, ValueError) as exc:
+            raise ContractError(f"{current_id}: legacy artifact location differs: {exc}") from exc
+        for identity in identities:
+            legacy_id = identity.project_id
+            if legacy_id in project_ids:
+                raise ContractError(f"legacy project_id is still active: {legacy_id}")
+            if legacy_id in legacy_owners:
+                raise ContractError(
+                    f"duplicate legacy project_id {legacy_id}: "
+                    f"{legacy_owners[legacy_id]} and {current_id}"
+                )
+            legacy_owners[legacy_id] = current_id
+            if identity.legacy_mapping is None:
+                continue
+            mapping_id = identity.legacy_mapping["mapping_id"]
+            if mapping_id in mapping_owners:
+                raise ContractError(
+                    f"duplicate legacy mapping_id {mapping_id}: "
+                    f"{mapping_owners[mapping_id]} and {current_id}"
+                )
+            mapping_owners[mapping_id] = current_id
+
+
+def consistent_profile_identity(
+    identities: list[dict[str, Any]],
+    profiles_path: Path,
+) -> dict[str, Any]:
+    """Return the sole design-profile identity, rejecting empty or mixed registries."""
+    unique = {
+        json.dumps(identity, sort_keys=True, separators=(",", ":")): identity
+        for identity in identities
+    }
+    if not unique:
+        raise ContractError(f"{profiles_path}: design profiles require an identity")
+    if len(unique) != 1:
+        raise ContractError(f"{profiles_path}: design profile identities differ")
+    return next(iter(unique.values()))
+
+
+def validate_structural_variants(
+    descriptor: dict[str, Any], profiles: list[dict[str, Any]] | None, path: Path
+) -> None:
+    """Validate structural identity and capability ownership without device physics."""
+    variants = descriptor.get("structural_variants", [])
+    if not variants:
+        if profiles is not None:
+            consistent_profile_identity([item["identity"] for item in profiles], path)
+        return
+    by_id = {item["variant_id"]: item for item in variants}
+    if len(by_id) != len(variants):
+        raise ContractError(f"{path}: duplicate structural variant")
+    capability_ids = {item["capability_id"] for item in descriptor["capabilities"]}
+    assigned: set[str] = set()
+    for variant in variants:
+        declared = set(variant["capability_ids"])
+        if not declared.issubset(capability_ids) or assigned.intersection(declared):
+            raise ContractError(f"{path}: structural variant capability ownership differs")
+        assigned.update(declared)
+    if assigned != capability_ids:
+        raise ContractError(f"{path}: capabilities require one structural variant owner")
+    if profiles is None:
+        return
+    seen: set[str] = set()
+    for profile in profiles:
+        variant_id = profile.get("structural_variant_id")
+        variant = by_id.get(variant_id)
+        if variant is None:
+            raise ContractError(f"{path}: design profile has no declared structural variant")
+        seen.add(variant_id)
+    if seen != set(by_id):
+        raise ContractError(f"{path}: structural variant has no design profile")
+
+
+def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path) -> None:
+    validate_schema(descriptor, "project.schema.json")
+    project_root = path.parents[1]
+    if project_root.parent not in {repo_root / root for root in DESCRIPTOR_ROOTS}:
+        raise ContractError(f"{path}: descriptor is outside a canonical component config root")
+
+    execution_relative = descriptor["contracts"]["execution"]
+    execution_modes = set()
+    execution_document = None
+    if execution_relative is not None and (project_root/execution_relative).is_file():
+        execution_document = load_json(project_root/execution_relative)
+        validate_schema(execution_document, "execution_profiles.schema.json")
+        execution_modes = {(profile["capability_id"], profile["mode"]) for profile in execution_document["profiles"]}
+    capability_ids: set[str] = set()
+    for capability in descriptor["capabilities"]:
+        capability_id = capability["capability_id"]
+        if capability_id in capability_ids:
+            raise ContractError(f"{path}: duplicate capability_id {capability_id!r}")
+        capability_ids.add(capability_id)
+        if MATURITY[capability["status"]] > LIFECYCLE_MATURITY[descriptor["lifecycle_status"]]:
+            raise ContractError(f"{path}: capability {capability_id!r} exceeds project maturity")
+        for mode in capability["modes"]:
+            mode_path = project_root / "config" / "modes" / f"{mode}.json"
+            # Caller-input workflows need no invented fixed scientific mode file.
+            # Their entrypoint, inputs and outputs are checked below by the same owner.
+            if not mode_path.is_file() and (capability_id, mode) not in execution_modes:
+                raise ContractError(f"{path}: capability {capability_id!r} references missing mode {mode_path}")
+
+    validate_structural_variants(descriptor, None, path)
+
+    for role, relative in descriptor["contracts"].items():
+        contract_path = (repo_root / relative if relative is not None and relative.startswith("src/")
+                         else project_root / relative if relative is not None else None)
+        if contract_path is not None and not contract_path.is_file():
+            raise ContractError(f"{path}: {role} contract is missing: {relative}")
+
+    profile_identity: dict[str, Any] | None = None
+    profiles_relative = descriptor["contracts"].get("design_profiles")
+    if profiles_relative is not None:
+        profiles_path = project_root / profiles_relative
+        profiles = load_json(profiles_path)
+        validate_schema(profiles, "design_profiles.schema.json")
+        if (
+            profiles["project_id"] != descriptor["project_id"]
+            or profiles["family_id"] != descriptor["family_id"]
+        ):
+            raise ContractError(f"{profiles_path}: design profile identity differs")
+        modes_relative = profiles.get("operating_mode_registry")
+        if modes_relative is not None:
+            modes_path = project_root / modes_relative
+            if (
+                not modes_path.is_file()
+                or repository_text_sha256(modes_path)
+                != profiles["operating_mode_registry_sha256"]
+            ):
+                raise ContractError(
+                    f"{profiles_path}: stale operating mode registry"
+                )
+        profile_ids: set[str] = set()
+        profile_identities: list[dict[str, Any]] = []
+        variant_variable_ids: dict[str, set[str]] = {}
+        for profile in profiles["profiles"]:
+            profile_id = profile["design_profile_id"]
+            if profile_id in profile_ids:
+                raise ContractError(f"{profiles_path}: duplicate design profile {profile_id!r}")
+            profile_ids.add(profile_id)
+            for label in ("design_request", "design_variables", "optimization_envelope"):
+                source = project_root / profile[label]
+                if (
+                    not source.is_file()
+                    or repository_text_sha256(source)
+                    != profile["sha256"][label]
+                ):
+                    raise ContractError(f"{profiles_path}: stale design profile source {label!r}")
+            request = load_json(project_root / profile["design_request"])
+            variables = load_json(project_root / profile["design_variables"])
+            envelope = load_json(project_root / profile["optimization_envelope"])
+            validate_schema(
+                {"request": request, "variables": variables, "envelope": envelope},
+                "design_profile_sources.schema.json",
+            )
+            if descriptor.get("structural_variants"):
+                variant_variable_ids.setdefault(profile["structural_variant_id"], set()).update(
+                    item["variable_id"] for item in variables["variables"]
+                )
+            if (
+                variables["project_id"] != descriptor["project_id"]
+                or variables["family_id"] != descriptor["family_id"]
+                or envelope["project_id"] != descriptor["project_id"]
+                or envelope["family_id"] != descriptor["family_id"]
+                or profile["identity"]["project_id"] != descriptor["project_id"]
+                or profile["identity"]["family_id"] != descriptor["family_id"]
+            ):
+                raise ContractError(f"{profiles_path}: profile governance identity differs")
+            if envelope["reference"]["design_request"] != profile["design_request"]:
+                raise ContractError(f"{profiles_path}: profile envelope request path differs")
+            if envelope["reference"]["design_request_sha256"] != repository_text_sha256(
+                project_root / profile["design_request"]
+            ):
+                raise ContractError(f"{profiles_path}: profile envelope request hash is stale")
+            variable_ids: set[str] = set()
+            for variable in variables["variables"]:
+                if variable["variable_id"] in variable_ids or variable["minimum"] > variable["maximum"]:
+                    raise ContractError(f"{profiles_path}: duplicate variable or invalid bounds")
+                variable_ids.add(variable["variable_id"])
+                try:
+                    current = pointer_value(request, variable["json_pointer"])
+                except (KeyError, TypeError) as exc:
+                    raise ContractError(
+                        f"{profiles_path}: profile catalog pointer is missing"
+                    ) from exc
+                if not isinstance(current, (int, float)) or isinstance(current, bool):
+                    raise ContractError(f"{profiles_path}: profile variable is not numeric")
+                if not variable["minimum"] <= current <= variable["maximum"]:
+                    raise ContractError(f"{profiles_path}: profile variable is outside bounds")
+            if request["identity"] != profile["identity"]:
+                raise ContractError(f"{profiles_path}: profile request identity differs")
+            profile_identities.append(profile["identity"])
+        validate_structural_variants(descriptor, profiles["profiles"], profiles_path)
+        for variant in descriptor.get("structural_variants", []):
+            declared = {
+                variable for capability in descriptor["capabilities"]
+                if capability["capability_id"] in variant["capability_ids"]
+                for variable in capability["design_variables"]
+            }
+            missing = declared - variant_variable_ids[variant["variant_id"]]
+            if missing:
+                raise ContractError(f"{profiles_path}: structural variant capability variables are unsupported: {sorted(missing)}")
+        if not descriptor.get("structural_variants"):
+            profile_identity = consistent_profile_identity(
+                profile_identities, profiles_path
+            )
+
+    execution_relative = descriptor["contracts"]["execution"]
+    if execution_relative is not None:
+        execution_path = project_root / execution_relative
+        execution = execution_document
+        if execution["project_id"] != descriptor["project_id"]:
+            raise ContractError(f"{execution_path}: project_id differs from project descriptor")
+        capabilities = {item["capability_id"]: item for item in descriptor["capabilities"]}
+        profile_ids: set[str] = set()
+        profile_keys: set[tuple[str, str]] = set()
+        for profile in execution["profiles"]:
+            validate_runtime_binding(profile, project_root, repo_root)
+            profile_id = profile["profile_id"]
+            if profile_id in profile_ids:
+                raise ContractError(f"{execution_path}: duplicate profile_id {profile_id!r}")
+            profile_ids.add(profile_id)
+            capability = capabilities.get(profile["capability_id"])
+            if capability is None:
+                raise ContractError(f"{execution_path}: unknown capability {profile['capability_id']!r}")
+            if profile["mode"] not in capability["modes"]:
+                raise ContractError(f"{execution_path}: profile mode {profile['mode']!r} is not declared by capability")
+            key = (profile["capability_id"], profile["mode"])
+            if key in profile_keys:
+                raise ContractError(f"{execution_path}: duplicate capability/mode profile {key!r}")
+            profile_keys.add(key)
+            if any({"none": -1, "candidate": 2, "formal": 3}[level] > MATURITY[capability["status"]]
+                   for level in profile["qualification_support"]):
+                raise ContractError(f"{execution_path}: requested qualification exceeds capability maturity")
+            for step in profile["steps"]:
+                relative = step["entrypoint"]
+                entrypoint = repo_root / relative if relative.startswith("src/") else project_root / relative
+                if not entrypoint.is_file():
+                    raise ContractError(f"{execution_path}: step entrypoint is missing: {step['entrypoint']}")
+
+    variables_relative = descriptor["contracts"]["design_variables"]
+    if variables_relative is not None:
+        variables_path = project_root / variables_relative
+        catalog = load_json(variables_path)
+        validate_schema(catalog, "design_variable_catalog.schema.json")
+        if catalog["project_id"] != descriptor["project_id"]:
+            raise ContractError(f"{variables_path}: project_id differs from project descriptor")
+        strategy = catalog["optimization_strategy"]
+        if strategy == "expandable_reference_envelope_compaction":
+            reference_relative = descriptor["contracts"]["baseline"]
+            if reference_relative is None:
+                raise ContractError(f"{variables_path}: design variables require a baseline contract")
+            reference = load_json(project_root / reference_relative)
+        elif strategy == "multipole_design_request_compilation":
+            if catalog["family_id"] != descriptor["family_id"]:
+                raise ContractError(f"{variables_path}: family_id differs from project descriptor")
+            reference = None
+            if profile_identity is None:
+                raise ContractError(
+                    f"{variables_path}: multipole design variables require "
+                    "a consistent design profile identity"
+                )
+            expected_identity = profile_identity
+            if (
+                expected_identity["project_id"] != descriptor["project_id"]
+                or expected_identity["family_id"] != descriptor["family_id"]
+            ):
+                raise ContractError(
+                    f"{variables_path}: design profile identity differs from project descriptor"
+                )
+        else:
+            raise ContractError(f"{variables_path}: unsupported optimization strategy")
+        catalog_ids: set[str] = set()
+        for variable in catalog["variables"]:
+            variable_id = variable["variable_id"]
+            if variable_id in catalog_ids:
+                raise ContractError(f"{variables_path}: duplicate variable_id {variable_id!r}")
+            catalog_ids.add(variable_id)
+            if variable["minimum"] >= variable["maximum"]:
+                raise ContractError(f"{variables_path}: invalid bounds for {variable_id!r}")
+            if reference is not None:
+                try:
+                    current = pointer_value(reference, variable["json_pointer"])
+                except (KeyError, TypeError) as exc:
+                    raise ContractError(f"{variables_path}: invalid JSON pointer for {variable_id!r}") from exc
+                if not isinstance(current, (int, float)) or isinstance(current, bool):
+                    raise ContractError(f"{variables_path}: variable target is not numeric: {variable_id!r}")
+                if not variable["minimum"] <= current <= variable["maximum"]:
+                    raise ContractError(f"{variables_path}: baseline value is outside bounds: {variable_id!r}")
+                if variable["kind"] == "integer" and not isinstance(current, int):
+                    raise ContractError(f"{variables_path}: integer variable targets non-integer baseline: {variable_id!r}")
+        declared_ids = {item for capability in descriptor["capabilities"] for item in capability["design_variables"]}
+        if catalog_ids != declared_ids:
+            missing = sorted(declared_ids - catalog_ids)
+            extra = sorted(catalog_ids - declared_ids)
+            raise ContractError(f"{variables_path}: catalog/capability mismatch missing={missing} extra={extra}")
+
+        envelope_relative = descriptor["contracts"]["optimization_envelope"]
+        if strategy == "multipole_design_request_compilation":
+            envelope_relative = None
+        elif envelope_relative is None or catalog["envelope_contract"] != envelope_relative:
+            raise ContractError(f"{variables_path}: catalog must reference the project optimization envelope")
+        if envelope_relative is None:
+            envelope = None
+        else:
+            envelope_path = project_root / envelope_relative
+            envelope = load_json(envelope_path)
+            validate_schema(envelope, "optimization_envelope.schema.json")
+        if envelope is not None and envelope["project_id"] != descriptor["project_id"]:
+            raise ContractError(f"{envelope_path}: project_id differs from project descriptor")
+        reference_path = project_root / reference_relative if reference is not None else None
+        if strategy == "expandable_reference_envelope_compaction":
+            if envelope["reference"]["baseline"] != reference_relative:
+                raise ContractError(f"{envelope_path}: reference baseline differs from project descriptor")
+            if envelope["reference"]["baseline_sha256"] != repository_text_sha256(
+                reference_path
+            ):
+                raise ContractError(f"{envelope_path}: reference baseline hash is stale")
+            geometry = reference["geometry_mm"]
+            rings = reference["rings"]
+            limits = envelope["tof_limits"]
+            current_values = {
+                "max_flight_length_mm": geometry["L_flight"],
+                "max_positive_axial_extent_mm": geometry["shield_outer_z_max"] - geometry["detector_z"],
+                "max_outer_radius_mm": geometry["flight_tube_r"] + geometry["flight_tube_wall"],
+                "max_stage1_electrode_count": rings["stage1_count"],
+                "max_stage2_electrode_count": rings["stage2_count"],
+            }
+            for limit, current in current_values.items():
+                if current > limits[limit] + 1e-10:
+                    raise ContractError(f"{envelope_path}: formal baseline exceeds {limit}")
+        elif envelope is not None:
+            if envelope["family_id"] != descriptor["family_id"]:
+                raise ContractError(f"{envelope_path}: family_id differs from project descriptor")
+            if envelope["reference"]["design_request"] != reference_relative:
+                raise ContractError(f"{envelope_path}: reference design request differs from catalog")
+            if envelope["reference"]["design_request_sha256"] != repository_text_sha256(
+                reference_path
+            ):
+                raise ContractError(f"{envelope_path}: reference design request hash is stale")
+            constraint_ids: set[str] = set()
+            for constraint in envelope["constraints"]:
+                constraint_id = constraint["constraint_id"]
+                if constraint_id in constraint_ids:
+                    raise ContractError(f"{envelope_path}: duplicate constraint_id {constraint_id!r}")
+                constraint_ids.add(constraint_id)
+                for pointer in constraint["request_json_pointers"]:
+                    try:
+                        pointer_value(reference, pointer)
+                    except (KeyError, TypeError) as exc:
+                        raise ContractError(
+                            f"{envelope_path}: invalid request JSON pointer in {constraint_id!r}"
+                        ) from exc
+    elif descriptor["contracts"]["optimization_envelope"] is not None:
+        raise ContractError(f"{path}: optimization envelope requires a design-variable catalog")
+
+    assets = descriptor["formal_assets"]
+    identity = assets["identity_contract"]
+    if identity is not None and not (project_root / identity).is_file():
+        raise ContractError(f"{path}: formal identity contract is missing: {identity}")
+    if assets["status"] == "formal":
+        if (
+            descriptor["lifecycle_status"] not in FORMAL_ASSET_LIFECYCLES
+            or identity is None
+            or not assets["types"]
+        ):
+            raise ContractError(
+                f"{path}: formal assets require formal lifecycle or revalidation-pending history, "
+                "types, and identity contract"
+            )
+    elif any(capability["status"] == "formal" for capability in descriptor["capabilities"]):
+        raise ContractError(f"{path}: formal capability declared without formal assets")
+
+
+def build_registry(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
+    paths = descriptor_paths(repo_root)
+    described_roots = {path.parents[1] for path in paths}
+    for root in DESCRIPTOR_ROOTS:
+        owner_root = repo_root / root
+        if not owner_root.is_dir():
+            raise ContractError(f"component descriptor root is missing: {root}")
+        missing = [path.parent.name for path in owner_root.glob("*/config")
+                   if path.parent not in described_roots]
+        if missing:
+            raise ContractError(f"components missing config/project.json: {', '.join(missing)}")
+
+    descriptors: list[dict[str, Any]] = []
+    source_records = []
+    project_ids: set[str] = set()
+    for path in paths:
+        descriptor = load_json(path)
+        validate_descriptor(descriptor, path, repo_root)
+        project_id = descriptor["project_id"]
+        if project_id in project_ids:
+            raise ContractError(f"duplicate project_id: {project_id}")
+        project_ids.add(project_id)
+        descriptors.append(descriptor)
+        source_records.append(
+            {
+                "descriptor": path.relative_to(repo_root).as_posix(),
+                "sha256": repository_text_sha256(path),
+            }
+        )
+    validate_legacy_identity_mappings(descriptors, repo_root)
+    registry = {
+        "schema_version": 1,
+        "role": "generated_project_capability_registry_do_not_edit",
+        "generated_from": source_records,
+        "projects": descriptors,
+    }
+    validate_schema(registry, "project_registry.schema.json")
+    return registry
+
+
+def serialized(registry: dict[str, Any]) -> str:
+    return json.dumps(registry, indent=2, ensure_ascii=False) + "\n"
+
+
+def query_capabilities(registry: dict[str, Any], *, repo_root: Path = REPO_ROOT,
+                       owner: str | None = None) -> list[dict[str, Any]]:
+    """Derive one view from existing project and integration owners, without another registry."""
+    result = []
+    for project in registry["projects"]:
+        identity = project["project_id"]
+        if owner is not None and owner != identity:
+            continue
+        contract = project["contracts"]["execution"]
+        profiles = []
+        if contract is not None:
+            document = load_json(resolve_project_root(identity, repo_root) / contract)
+            validate_schema(document, "execution_profiles.schema.json")
+            profiles = document["profiles"]
+        capabilities = [{**capability, "execution_profiles": [profile["profile_id"] for profile in profiles
+                         if profile["capability_id"] == capability["capability_id"]]}
+                        for capability in project["capabilities"]]
+        result.append(dict(owner_kind="project", owner_id=identity,
+                           capabilities=capabilities, profiles=profiles,
+                           execution_support="declared_owner_entries" if profiles else "no_registered_physical_entry",
+                           limitations=project["known_gaps"]))
+    integration_path = repo_root/"src/msplatform/workflows/config/assembly_registry.json"
+    if integration_path.is_file():
+        integrations = load_json(integration_path)
+        validate_schema(integrations, "integration_registry.schema.json")
+        for integration in integrations["integrations"]:
+            identity = integration["integration_id"]
+            if owner is not None and owner != identity:
+                continue
+            for workflow in integration.get("workflows", []):
+                for relative in [workflow["entrypoint"], *workflow["recipes"]]:
+                    path = (repo_root/relative).resolve()
+                    package_owned = path.is_relative_to((repo_root / "src/msplatform").resolve())
+                    if not (package_owned or path.is_relative_to((repo_root/integration["root"]).resolve())) or not path.is_file():
+                        raise ContractError(f"Integration capability input is outside its owner or missing: {relative}")
+            result.append(dict(owner_kind="integration", owner_id=identity,
+                               profiles=integration.get("workflows", [])))
+    if owner is not None and not result:
+        raise ContractError(f"Unknown capability owner: {owner}")
+    return result
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--check", action="store_true")
+    args = parser.parse_args()
+    registry = build_registry()
+    expected = serialized(registry)
+    output = args.output.resolve()
+    if args.check:
+        if not output.is_file() or output.read_text(encoding="utf-8-sig") != expected:
+            raise SystemExit(f"PROJECT_REGISTRY=FAIL stale_or_missing={output}")
+        print(f"PROJECT_REGISTRY=PASS PROJECTS={len(registry['projects'])} PATH={output}")
+        return
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes(expected.encode("utf-8"))
+    print(f"PROJECT_REGISTRY=BUILT PROJECTS={len(registry['projects'])} PATH={output}")
+
+
+if __name__ == "__main__":
+    main()

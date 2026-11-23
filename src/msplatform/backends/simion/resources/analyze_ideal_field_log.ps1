@@ -12,7 +12,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..\..')).Path
-$projectRoot = Join-Path $repoRoot 'projects/single_reflection_oa_tof_mass_analyzer'
+$projectRoot = Join-Path $repoRoot 'src/msplatform/components/single_reflection_oa_tof'
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } elseif ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) } else {
   throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'
 }

@@ -3,7 +3,7 @@
 本文件只回答“COMSOL实现为什么失败或表现异常，以及怎样定位到具体节点、选择、Study、Solver、
 会话或进程”。先读快速分诊，再只读对应故障章节。需要接口写法或数值验证方法时，
 返回[COMSOL 阅读入口](COMSOL_GUIDE.md)选择分支。项目参数、某次运行数值和历史结论留在项目文档。
-公共启动器的参数、日志和失败分类由[公共实现](../../common/comsol/README.md#正式启动入口)维护；
+公共启动器的参数、日志和失败分类由[公共实现](../COMSOL_BACKEND.md#正式启动入口)维护；
 本页按症状定位，不另建启动或重试合同。
 
 本文经验以 Windows、COMSOL 6.4、MATLAB R2025b 和本仓库统一启动器为记录环境；
@@ -38,8 +38,8 @@
 | 症状或容易误判的情形 | 第一个检查动作 | 案例入口与结论边界 |
 |---|---|---|
 | 写入 `free` 后仍像 Strict，或设置回读通过但实际算法未变 | 读取活动积分算法及其对应步策略键；分别在 Study Compute 前后核对，不能只查闲置 BDF 属性 | [OA 活动步策略修复][oa-policy-case]已定位闲置键假阳性；属性保存重开不等于轨迹精度通过。通用属性映射查 [API](COMSOL_API.md#time-节点的活动步策略)。 |
-| 停止时间正常，坐标平台却在检测面前；冻结后速度仍非零 | 分开查询原生状态、停止时间、所用输出时刻和坐标；确认停止边界是否为目标检测器 | [OA 事件读取顺序](../../projects/single_reflection_oa_tof_mass_analyzer/docs/COMSOL.md#原生事件读取的操作顺序)汇总后续验证；[原始负结果][oa-event-case]保留。不能把查询坐标当撞壁位置，也不能把所有壁面停止时间当检测到达。 |
-| 原生停止时刻和边界查询正常，Counter 却漏计 | 同一已存解上比较 `rL`、Nsel／alpha、事件时刻的 XYZ 与 `bndenv`；另以局部输出时刻作受控对照 | [OA 事件读取顺序](../../projects/single_reflection_oa_tof_mass_analyzer/docs/COMSOL.md#原生事件读取的操作顺序)保留稀疏 58/100 与单插时刻 100/100；保存状态也改变，不能只归因于导出计数或擅自放宽空间容差。 |
+| 停止时间正常，坐标平台却在检测面前；冻结后速度仍非零 | 分开查询原生状态、停止时间、所用输出时刻和坐标；确认停止边界是否为目标检测器 | [OA 事件读取顺序](../../src/msplatform/components/single_reflection_oa_tof/docs/COMSOL.md#原生事件读取的操作顺序)汇总后续验证；[原始负结果][oa-event-case]保留。不能把查询坐标当撞壁位置，也不能把所有壁面停止时间当检测到达。 |
+| 原生停止时刻和边界查询正常，Counter 却漏计 | 同一已存解上比较 `rL`、Nsel／alpha、事件时刻的 XYZ 与 `bndenv`；另以局部输出时刻作受控对照 | [OA 事件读取顺序](../../src/msplatform/components/single_reflection_oa_tof/docs/COMSOL.md#原生事件读取的操作顺序)保留稀疏 58/100 与单插时刻 100/100；保存状态也改变，不能只归因于导出计数或擅自放宽空间容差。 |
 | 全零／近零平台被算成命中，或真实窗口大量事件被拒 | 检查接近段、连续有效 XYZ、真实穿越方向及外推区间；空间近面容差不能兼任静止判据 | [OA 提取器与真实窗口回归][oa-extractor-case]分别保留伪事件修复和错误下界修复；实现回归通过不等于绝对时间误差已受控。 |
 | N 增大后长时间无轨迹，但静电场已经完成 | 先查最后完成的阶段、release 节点数及粒子 Study 是否真正启动 | [四极杆释放案例][rf-release-case]的中断发生在逐粒子构造阶段；单节点向量化候选也未通过等价门禁，不能作为已验证提速方案。 |
 | 网格已生成，随后内存超限或运行被资源观察器终止 | 对照最后阶段标记、进程树峰值、系统可用内存和预登记停止原因 | [四极杆资源案例][rf-release-case]与[八极杆当前边界][octupole-state]保留资源受限结论；不把中断当物理 FAIL，也不据此放宽精度或自动抬高资源帽。 |
@@ -51,9 +51,9 @@
 [oa-event-case]: ../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20261022__native-event-readback-and-counter-validation.md#已关闭的问题
 [oa-extractor-case]: ../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20261021__oatof-cpt-fixed-policy-reference-and-full-flow.md#真实窗口暴露的第二个下界缺陷与修复
 [rf-release-case]: ../../docs/history/projects/rf_multipole_ion_optics/retired_projects/rf_quadrupole_ion_optics/docs/history/20260911__solver-sensitivity-and-retired-interface.md#comsol-数值与物理边界
-[octupole-state]: ../../projects/rf_multipole_ion_optics/docs/PROJECT.md#oct
+[octupole-state]: ../../src/msplatform/components/rf_multipole/docs/PROJECT.md#oct
 [oa-small-n-case]: ../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/COMSOL_EXTREME_N_CRASH_CLOSURE_20260719.md
-[mr-field-route]: ../../projects/parallel_mirror_dual_stripe_mr_tof/docs/PROJECT.md#电场表示与数值资格
+[mr-field-route]: ../../src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/docs/PROJECT.md#电场表示与数值资格
 
 ## 属性和Feature发现
 
@@ -188,7 +188,7 @@ COMSOL或显卡环境后需要重新最小验证，不能照搬这一环境结�
 
 |失败阶段|证据|处理|
 |---|---|---|
-|启动或首次模型打开瞬态|无任务报告，或报告命中启动器白名单|由[共享启动器](../../common/comsol/README.md#正式启动入口)分类并有限重试|
+|启动或首次模型打开瞬态|无任务报告，或报告命中启动器白名单|由[共享启动器](../COMSOL_BACKEND.md#正式启动入口)分类并有限重试|
 |业务脚本已写FAIL|报告含稳定错误和失败步骤|不自动重算，修输入、节点或接口|
 |Compute成功、提取失败|解或MPH已存在|保留解，用干净任务轻量提取|
 |进程退出但无报告|退出码、服务端日志、文件时间戳|按启动失败审计，不凭进程消失判成功|

@@ -21,7 +21,9 @@ class CandidateSciencePaths:
 
     @property
     def project_root(self) -> Path:
-        return self.root / "projects" / PROJECT_ID
+        if (self.root / "config" / "baseline.json").is_file():
+            return self.root
+        return self.root / "src/msplatform/components/single_reflection_oa_tof"
 
     @property
     def config_root(self) -> Path:

@@ -28,11 +28,11 @@ ROLE = "oa_tof_candidate_execution_source_closure"
 # This is intentionally an auditable allowlist, not dependency discovery.
 # Keep paths repository-relative and use forward slashes in the machine record.
 SCIENCE_RELATIVE_PATHS = (
-    "projects/single_reflection_oa_tof_mass_analyzer/config/candidate_consumers.json",
-    "projects/single_reflection_oa_tof_mass_analyzer/config/design_variables.json",
+    "src/msplatform/components/single_reflection_oa_tof/config/candidate_consumers.json",
+    "src/msplatform/components/single_reflection_oa_tof/config/design_variables.json",
     "src/msplatform/components/orthogonal_accelerator/component_contract.json",
-    "projects/orthogonal_accelerator/simion/two_zone_accelerator.gem",
-    "projects/single_reflection_oa_tof_mass_analyzer/config/accelerator_dependency.json",
+    "src/msplatform/backends/simion/resources/two_zone_accelerator.gem",
+    "src/msplatform/components/single_reflection_oa_tof/config/accelerator_dependency.json",
 )
 
 RELATIVE_PATHS = (
@@ -118,14 +118,14 @@ def _source_path(source_id: str, science_root: Path) -> Path:
     relative = Path(source_id)
     if relative.is_absolute() or ".." in relative.parts:
         raise ValueError(f"invalid candidate source path: {source_id}")
-    if relative.parts[:2] == ("src", "msplatform"):
+    if source_id in SCIENCE_RELATIVE_PATHS:
+        root = science_root.resolve(strict=True)
+        source = root.joinpath(*relative.parts).resolve()
+    elif relative.parts[:2] == ("src", "msplatform"):
         root = _package_root()
         source = root.joinpath(*relative.parts[2:]).resolve()
     else:
-        if source_id not in SCIENCE_RELATIVE_PATHS:
-            raise ValueError(f"candidate science input is not explicitly declared: {source_id}")
-        root = science_root.resolve(strict=True)
-        source = root.joinpath(*relative.parts).resolve()
+        raise ValueError(f"candidate science input is not explicitly declared: {source_id}")
     if not source.is_file() or root not in source.parents:
         raise ValueError(f"candidate source is absent or escapes its declared owner: {source_id}")
     return source
@@ -167,7 +167,7 @@ def freeze_candidate_source_closure(
     artifact_path = artifact_root.resolve()
     science_root = science_root.resolve(strict=True)
     load_accelerator_dependency(
-        science_root, science_root / f"projects/{PROJECT_ID}/config/accelerator_dependency.json",
+        science_root, science_root / "src/msplatform/components/single_reflection_oa_tof/config/accelerator_dependency.json",
         consumer_project_id=PROJECT_ID, required_variant="two_zone", validate_implementation_sources=False,
     )
 
@@ -200,8 +200,8 @@ def freeze_candidate_source_closure(
         raise ValueError("Candidate detector analysis requires both explicit physical and analysis contracts")
     if resolved_contract is not None:
         analysis_resources = {
-            "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json": resolved_contract.resolve(strict=True),
-            "projects/single_reflection_oa_tof_mass_analyzer/config/analysis_contract.json": analysis_contract.resolve(strict=True),
+            "src/msplatform/components/single_reflection_oa_tof/config/resolved_geometry.json": resolved_contract.resolve(strict=True),
+            "src/msplatform/components/single_reflection_oa_tof/config/analysis_contract.json": analysis_contract.resolve(strict=True),
         }
         declarations.extend(analysis_resources)
     selected: dict[str, Path] = {}
@@ -465,9 +465,11 @@ def candidate_comsol_source_phases(closure: dict[str, Any]) -> dict[str, Any]:
     sources = {item["source_id"]: item for item in closure["sources"]}
     matlab_prefix = "src/msplatform/backends/comsol/matlab/"
     workflow_prefix = "src/msplatform/workflows/oa_candidate/"
+    component_prefix = "src/msplatform/components/single_reflection_oa_tof/"
     if matlab_prefix + "oatof_build_model_core.m" not in sources:
         matlab_prefix = prefix + "comsol/"
         workflow_prefix = prefix + "analysis/"
+        component_prefix = prefix
     def records(names: tuple[str, ...]) -> list[dict[str, Any]]:
         missing = set(names)-sources.keys()
         if missing:
@@ -511,7 +513,7 @@ def candidate_comsol_source_phases(closure: dict[str, Any]) -> dict[str, Any]:
         "src/msplatform/results/__init__.py", "src/msplatform/results/single_reflection_particle_table.py"))
     # Historical closures retain the source authority they actually froze.
     analysis_names += tuple(name for name in sources if name == "common/contracts/file_identity.py")
-    analysis_names += (prefix+"config/analysis_contract.json",)
+    analysis_names += (component_prefix+"config/analysis_contract.json",)
     sync_names = (matlab_prefix+"verify_oatof_comsol_sync.m",
                   "src/msplatform/backends/comsol/matlab/load_oatof_contract.m", "src/msplatform/backends/comsol/matlab/oatof_cpt_solver_policy.m")
     import ast

@@ -17,7 +17,7 @@ def _verify_required_sources(root: Path, selection: dict) -> None:
         "msplatform/workflows/single_reflection_mass_spectrum_worker.py",
         "msplatform/workflows/single_reflection_mass_spectrum.py",
         "msplatform/results/single_reflection_particle_table.py",
-        "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json",
+        "src/msplatform/components/single_reflection_oa_tof/config/resolved_geometry.json",
     )
     for relative in required:
         matches = [row for row in inventory["files"] if row.get("relative_path") == relative]

@@ -1,7 +1,8 @@
 # 单次反射正交加速飞行时间质量分析器历史索引
 
-返回[项目入口](../../../../projects/single_reflection_oa_tof_mass_analyzer/README.md)；当前结论、资格与开放任务见[PROJECT](../../../../projects/single_reflection_oa_tof_mass_analyzer/docs/PROJECT.md)。
-路径迁移：`projects/single_reflection_oa_tof_mass_analyzer/docs/history/` → `docs/history/projects/single_reflection_oa_tof_mass_analyzer/`；冻结正文保持原字节。
+返回[部件入口](../../../../src/msplatform/components/single_reflection_oa_tof/README.md)；当前结论、资格与开放任务见[PROJECT](../../../../src/msplatform/components/single_reflection_oa_tof/docs/PROJECT.md)。
+源码退休基线为`7c272feb442945b2a415e1673a760e66ae098243`，原路径为`projects/single_reflection_oa_tof_mass_analyzer/`；新实现归安装部件、工作流和后端所有者，测试归`tests/projects/single_reflection_oa_tof_mass_analyzer/`。
+文档路径迁移：`projects/single_reflection_oa_tof_mass_analyzer/docs/history/` → `docs/history/projects/single_reflection_oa_tof_mass_analyzer/`；冻结正文保持原字节。
 本页是可更新导航。以下记录按归档时点解释，不作为当前运行指令；各档案正文及证据身份保持冻结。
 
 ## 归档记录

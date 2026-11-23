@@ -120,7 +120,7 @@ jobs:
         shell: pwsh
         run: |
           Write-Output "POWERSHELL_EDITION=$($PSVersionTable.PSEdition) POWERSHELL_VERSION=$($PSVersionTable.PSVersion)"
-          . .\common\require_powershell7.ps1
+          . .\tools\repository\require_powershell7.ps1
           if ($env:PUBLIC_GATE_WORKERS -notmatch '^(auto|[1-9]|[12][0-9]|3[0-2])$') {
             throw 'workers must be auto or an integer from 1 through 32.'
           }
@@ -195,9 +195,9 @@ jobs:
           }
           $settings.ResourceWaitTimeoutSeconds = [int]$env:PUBLIC_GATE_RESOURCE_WAIT_TIMEOUT_SECONDS
           $plan = if ($scope.full_scope) {
-            @(.\common\verify.ps1 -PythonExe $python -FullScope -PlanOnly -PlanPath $planPath @settings)
+            @(.\tools\repository\verify.ps1 -PythonExe $python -FullScope -PlanOnly -PlanPath $planPath @settings)
           } else {
-            @(.\common\verify.ps1 -PythonExe $python -ChangedPath $scope.changed_paths -PlanOnly -PlanPath $planPath @settings)
+            @(.\tools\repository\verify.ps1 -PythonExe $python -ChangedPath $scope.changed_paths -PlanOnly -PlanPath $planPath @settings)
           }
           $plan | Write-Output
           $planLine = @($plan | Where-Object { $_ -like 'CHANGED_GATE_PLAN=PASS*' })
@@ -223,7 +223,7 @@ jobs:
           import ctypes, datetime, hashlib, json, os, platform, subprocess, sys, threading, time
           from ctypes import wintypes
           from pathlib import Path
-          from common.gate_outcome_report import summary_to_report
+          from tools.repository.gate_outcome_report import summary_to_report
           root = Path(os.environ["RUNNER_TEMP"])
           workers = os.environ.get("PUBLIC_GATE_WORKERS", "4")
           max_concurrency = 0 if workers == "auto" else int(workers)
@@ -299,7 +299,7 @@ jobs:
           summary_path = root / (os.environ["PUBLIC_GATE_OUTPUT_PREFIX"] + "_gate_summary.json")
           timing_path = root / (os.environ["PUBLIC_GATE_OUTPUT_PREFIX"] + "_gate_command_timing.json")
           samples_path = root / (os.environ["PUBLIC_GATE_OUTPUT_PREFIX"] + "_gate_resource_samples.jsonl")
-          command = [os.environ["PUBLIC_GATE_POWERSHELL"], "-NoProfile", "-File", "common/verify.ps1",
+          command = [os.environ["PUBLIC_GATE_POWERSHELL"], "-NoProfile", "-File", "tools/repository/verify.ps1",
                      "-PlanPath", str(plan_path), "-MaxConcurrency", str(max_concurrency), "-SummaryPath", str(summary_path)]
           command.extend(["-ResourceWaitTimeoutSeconds", str(wait_seconds)])
           record = {"schema_version": 1, "role": "public_gate_command_timing", "command": command,
@@ -457,7 +457,7 @@ jobs:
         shell: pwsh
         run: |
           Write-Output "POWERSHELL_EDITION=$($PSVersionTable.PSEdition) POWERSHELL_VERSION=$($PSVersionTable.PSVersion)"
-          . .\common\require_powershell7.ps1
+          . .\tools\repository\require_powershell7.ps1
           if ($env:PUBLIC_GATE_WORKERS -notmatch '^(auto|[1-9]|[12][0-9]|3[0-2])$') {
             throw 'workers must be auto or an integer from 1 through 32.'
           }
@@ -498,7 +498,7 @@ jobs:
             MaxConcurrency = $(if ($env:PUBLIC_GATE_WORKERS -eq 'auto') { 0 } else { [int]$env:PUBLIC_GATE_WORKERS })
           }
           $settings.ResourceWaitTimeoutSeconds = [int]$env:PUBLIC_GATE_RESOURCE_WAIT_TIMEOUT_SECONDS
-          .\common\verify.ps1 @selection -PythonExe $python -PlanOnly -PlanPath (Join-Path $env:RUNNER_TEMP 'software_gate_plan.json') @settings
+          .\tools\repository\verify.ps1 @selection -PythonExe $python -PlanOnly -PlanPath (Join-Path $env:RUNNER_TEMP 'software_gate_plan.json') @settings
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Install locked Python dependencies
         shell: pwsh

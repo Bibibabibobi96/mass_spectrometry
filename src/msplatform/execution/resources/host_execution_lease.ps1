@@ -90,6 +90,23 @@ function Get-HostResourceIoPressure {
     $targetDisks=@($Disks|Where-Object{
       @(([string]$_.Name)-split'\s+') -contains $volume
     })
+    if($targetDisks.Count-eq0){
+      $partitions=@(Get-CimInstance -ClassName Win32_LogicalDiskToPartition | Where-Object {
+        $_.Dependent.DeviceID-eq$volume
+      })
+      $physicalIds=@(foreach($partition in $partitions){
+        Get-CimInstance -ClassName Win32_DiskDriveToDiskPartition | Where-Object {
+          $_.Dependent.DeviceID-eq$partition.Antecedent.DeviceID
+        } | ForEach-Object {$_.Antecedent.DeviceID}
+      })
+      $indexes=@($physicalIds|ForEach-Object{
+        if([string]$_-match'(\d+)$'){$Matches[1]}
+      }|Select-Object -Unique)
+      $targetDisks=@($Disks|Where-Object{
+        $name=([string]$_.Name)-split'\s+'
+        $name.Count-gt0-and$name[0]-in$indexes
+      })
+    }
     if($targetDisks.Count-eq0){return $true}
   }else{$targetDisks=@($Disks)}
   return @($targetDisks|Where-Object{[double]$_.CurrentDiskQueueLength-ge$threshold}).Count-gt0

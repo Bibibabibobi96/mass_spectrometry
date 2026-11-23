@@ -1,0 +1,478 @@
+# COMSOL公共实现与验证
+
+本目录保存跨项目复用的COMSOL启动器、构建原语和组件级验证测试，不保存任何项目的正式参数、模型或
+当前结论。任务分流返回[COMSOL 阅读入口](tools/COMSOL_GUIDE.md)；采用组件测试进入正式项目后，
+其几何、参数、GUI节点和验收状态必须写入该项目文档。
+
+按本次工作选择：[构建原语](#构建原语) · [启动与失败分类](#正式启动入口) · [资源阶段](#主机资源阶段) ·
+[测试设计](#测试分组) · [已登记证据范围](#关键能力的证据索引) · [测试输出上下文](#组件测试的输出上下文)。
+无需为运行一个测试通读全部组件证据。
+
+## 构建原语
+
+| 需要的机制 | 源码入口 |
+|---|---|
+| 圆柱、圆柱壳、开孔板 | [圆柱](../src/msplatform/backends/comsol/matlab/create_comsol_cylinder.m)、[圆柱壳](../src/msplatform/backends/comsol/matlab/create_comsol_cylindrical_shell.m)、[开孔板](../src/msplatform/backends/comsol/matlab/create_comsol_apertured_plate.m) |
+| 圆杆与分段圆杆阵列 | [连续杆](../src/msplatform/backends/comsol/matlab/create_multipole_round_rods.m)、[分段杆](../src/msplatform/backends/comsol/matlab/create_multipole_segmented_round_rods.m) |
+| 全局网格与局部尺寸节点 | [网格配置](../src/msplatform/backends/comsol/matlab/configure_comsol_mesh.m)、[局部 Size](../src/msplatform/backends/comsol/matlab/add_comsol_size_feature.m) |
+
+以上是经实际复用的最小构建原语：圆柱、圆柱壳、开孔板、圆杆多极阵列、全局自动网格和局部
+最大单元尺寸节点。调用方必须显式传入尺寸、轴向、位置、选择和网格值；原语不决定物理设计或收敛资格。
+当前多极杆生产构建器使用几何与网格原语，oaTOF生产网格构建器使用同一个局部Size原语；“生产”
+只描述受维护的代码入口，不授予任何模型Formal资格。
+
+## Complete Assembly geometry stage
+
+`msplatform.components.geometry_members.assembly_geometry_members` is the provider-aware
+complete-member traversal used by CAD and the COMSOL projection. Component
+providers retain physical geometry; the traversal retains source references,
+scientific groups and explicit instance poses. STEP applies its own representation
+checks before resource admission, including in capability queries.
+
+The public `msplatform.backends.comsol.geometry_execution.build_geometry`
+accepts an existing complete `Assembly`, an explicit numerical outer box and
+explicit geometry-validation values. With `instrument` already assembled and
+`context` loaded from the machine deployment:
+
+```python
+from msplatform.backends.comsol.geometry_execution import build_geometry
+
+geometry = build_geometry(
+    instrument,
+    outer_box_mm=study_geometry_domain,
+    geometry_validation=study_geometry_checks,
+    context=context,
+)
+geometry_reference = geometry.reference
+```
+
+The pure `msplatform.capabilities.capabilities` query accepts operation
+`build_comsol_geometry` with the same Assembly, outer box and validation arguments.
+It uses the builder's shared request resolver without a context, tool discovery,
+owner or native launch. Contract acceptance reports that the request can be
+projected; native save/reopen and scientific qualification remain separate.
+
+`study_geometry_domain` contains `min` and `max` triples in assembly-frame mm.
+`study_geometry_checks` contains `position_mm` and dimensionless `normal_abs`;
+these bound native outer-face sanity samples, not physical accuracy. No padding
+or tolerance is selected implicitly. The context requires the existing COMSOL
+launcher, MATLAB root and an explicit `build_comsol_geometry` engineering stage.
+The normal owner freezes inputs, admits resources, builds/saves the MPH, and
+cold-reopens it in a second operation. It publishes product `geometry` of kind
+`geometry_artifact`, including selection reports and the original projection.
+It requests no source, physics, mesh, study, solver or field computation.
+
+The COMSOL projector supports its declared box/circular-solid Boolean shapes,
+solid YZ polygons extruded along their component x axis, signed-permutation poses
+and world-xy ideal sheets. Polygon vertices and extrusion extents come directly
+from the canonical component. The renderer applies the instance pose once and
+uses a workplane and positive extrusion along the corresponding world axis.
+Zero-area polygons fail without introducing a physical size tolerance. Unsupported
+shapes and poses, and a box touching or clipping any selected member, still fail
+explicitly. This is not arbitrary polygon repair or arbitrary-pose support.
+
+The complete canonical OA–MR request is covered by a pure public-stage consumer
+with 45 unchanged members and 41 scientific groups. Native polygon construction,
+resulting selections and ordinary-installed polygon use remain unverified; the
+retained SFI native and installed results below do not qualify this extension.
+The translation follows COMSOL 6.4's [WorkPlane](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_geom.48.143.html),
+[Polygon](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_geom.48.125.html)
+and [Extrude](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_geom.48.088.html)
+APIs (reviewed 2026-11-14); native verification remains a separate requirement.
+
+Complete IP members also retain their canonical boxes, x-axis cylinders and
+convex source vertices. A backend helper identifies translated prisms from exact
+source endpoint sets before applying the pose; its derived native representation
+reports binary64 transform and reconstruction effects separately from physical
+dimensions. Non-prisms use original-vertex tetrahedra only after exact facet
+support and closed/connected boundary checks. This is a bounded translation,
+not arbitrary hull repair or a change to the component's physical contour.
+The renderer uses the documented COMSOL 6.4 [Tetrahedron](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_geom.48.139.html)
+3-by-4 vertex API where needed (reviewed 2026-11-14).
+
+Pure consumers cover the complete RF–IP Assembly, baseline and formed contours,
+parameter changes and two poses. A separately labelled synthetic mixed-dispatch
+fixture checks that IP's parallel native-shape array preserves every MR member
+and ideal sheet; it is not a connected IP–MR design. Native prism/tetra geometry,
+Boolean unions, selections/cold reopen and installed IP translation remain open.
+The retained SFI Assembly passed the public stage in
+[`20261114_015424__build__comsol__geometry-a9588289ec39`](../../artifacts/projects/instrument_assembly/runs/20261114_015424__build__comsol__geometry-a9588289ec39/summary.json).
+Build and cold reopen both reported 77 members, 50 groups and 81 geometric domains,
+with zero physics, mesh, study and solver nodes. Inputs used the explicit retained
+diagnostic outer box and sanity values; the source/checkout guard stayed unchanged.
+The owner finalized successfully with writers stopped; its guarded wall time was
+104.511 seconds. Ordinary wheel and sdist-rebuilt-wheel acceptance passed through
+the full installed parent (1421.093 seconds), including both geometry consumers. This geometry evidence and the solver-free
+MATLAB classifier do not qualify a common electric field, full SFI coupling,
+GUI parity or continuous flight.
+
+### Complete Assembly electrostatic model
+
+`msplatform.backends.comsol.assembly_electrostatic_model.prepare_model` consumes a
+verified published COMSOL `geometry_artifact`, an explicit request and an execution
+context. The request supplies one voltage per selected scientific group, relative
+permittivity, exterior potential, mesh automatic level and electrode `hmax`, and a
+stationary study. The context supplies the existing COMSOL and MATLAB tools and
+`prepare_assembly_electrostatic_model` stage policy. The owner protects the geometry
+source, saves an unsolved `prepared_model`, and cold-reopens it independently; it
+does not call Compute.
+
+The retained [model build](../../artifacts/projects/instrument_assembly/runs/20261114_024952__build__comsol__assembly-model-19e95c7582cc/summary.json)
+and cold reopen succeeded for 50 groups in 105.371 seconds with frozen source and
+stopped writers. The separate [saved-model verifier QA](../../artifacts/projects/instrument_assembly/runs/20261114_032400__analysis__comsol__model-qa-cc71e183c7fa/results/model_qa.json)
+accepted 5 mm and its equivalent 0.005 m and refused 7 mm; it did not mesh, solve,
+or save the source. The earlier failed model `20261114_022813__build__comsol__assembly-model-5848d44f9431`
+and hmax probe remain retained. This is
+native model preparation evidence, not a solved field, installed-model acceptance,
+field convergence, particle flight or scientific qualification.
+
+### Stationary workpoints and read-only recovery
+
+`msplatform.backends.comsol.assembly_field_solution.solve_stationary` consumes
+that verified unsolved model, explicit `{"kind": "comsol_stationary_default"}`
+solver numerics and a `solve_assembly_stationary` engineering policy. Its existing
+owner requests one Compute and an independent cold reopen. It saves a separate
+raw MPH immediately after Compute, before dataset or metadata readback, and then
+saves the final solution MPH. Both files currently remain retained; the declared
+capacity must include both. A failure preserves actual existing models and small
+reports as unqualified evidence under the original failed status.
+
+`recover_stationary(failed_manifest_record, selected_output=output_record,
+context=context)` accepts an explicitly selected, manifest-bound computed model
+from a stopped failed producer. It requires a verified prepared source, successful
+Compute writer and confirmed subsequent writer exits and releases. A new managed
+run cold-verifies the saved physics, selections, study, solution and dataset with
+zero Compute or save. It publishes a `field_solution` borrowing that model as a
+verified input; it does not rewrite the failed run or copy the large MPH. Missing
+datasets and incompatible or changed sources refuse. The corresponding engineering
+policy key is `recover_assembly_stationary`. Host-release receipts use the shared
+`process_transport` validator, so admitted wait/initial-reason telemetry is preserved
+without weakening token, release or inherited-owner checks.
+
+Native evidence and the retained numerical and engineering limits are recorded in
+the [integration state](INTEGRATION.md#current-stationary-field-evidence).
+This is one stationary workpoint, not a dynamic response basis or SIMION FieldBundle.
+The ordinary installation probe checks these modules/resources and their pure
+validators; installed native execution, field/domain/grid convergence and
+complete flight remain open. Its exact scope is recorded in the integration state.
+Capacity protection is not transitive: a later managed consumer of a borrowed model
+must explicitly protect both the field-product manifest and its recorded physical
+model producer, and use the existing immutable-input guard during consumption.
+
+### Saved Assembly scalar export
+
+`msplatform.backends.comsol.assembly_field_export.export_world_scalar` consumes a
+verified `field_solution`, an explicit world grid and an execution context with
+`export_assembly_world_scalar` policy.
+The grid declares the Assembly frame, origin and pitches in mm, dimensions,
+sampling block size, and the stored study/solution/dataset tags. It must lie
+inside the saved model's explicit numerical domain; it does not alter component
+geometry or select a mesh automatically. The installed exporter owns PA
+serialization through `backends.simion.scalar_pa_payload`, reusing the existing
+`PaHeader` format authority. It no longer requires a historical run's writer.
+MATLAB writes owner-private x-fastest little-endian double payloads; Python
+validates both lengths, finite values and binary masks before writing headers.
+Potential payload bits, including signed zero, remain unchanged. Both encoder
+and conductor-support sources stay frozen and guarded; identical original
+process guards are deduplicated, with conflicting records rejected. Old sample
+products retain their explicit historical writer pair and validation rules.
+
+The corrected integrated suite passed 41 pure and managed-owner parents in
+108.786 s, including the two-plane grid and partial/failure preservation. These
+managed leaves are inert. Native MATLAB/COMSOL production, SIMION format readback
+and ordinary installed acceptance of this writer remain open.
+
+The stage cold-loads the existing solution and samples scalar potential in V
+only in its declared vacuum selection. It requests no Compute, model save or
+Fly. World coordinates remain signed; invalid samples retain a separate mask,
+and their storage zeros are not valid field values. A same-session coordinate
+witness compares requested and returned coordinates in mm using the frozen
+geometry sanity bound; an unavailable witness remains explicitly insufficient.
+Both output PA headers and payload lengths are checked against the selected
+grid before publishing `scalar_field_samples`. This is a sampled stationary
+workpoint, not a dynamic response basis, collision geometry, continuous-flight
+FieldBundle or convergence qualification.
+
+`export_world_scalar_grids` accepts an explicit mapping of names to grids and
+samples them sequentially from one cold-loaded saved solution. Each named
+`samples_<name>` product has its own grid, raw PA pair and report; these remain
+ordinary scalar samples for the same offline support derivation. It performs
+no Compute and applies no implicit conductor fill. Normal stage storage and
+memory limits still apply. A failed grid or diagnostic cleanup publishes no
+products and retains completed grid payloads and reports as failure evidence.
+
+The default remains a masked vacuum export. Explicit
+`fill_conductor_interiors=True` additionally fills only invalid nodes strictly
+inside one canonical solid conductor with its frozen Dirichlet voltage. Existing
+valid samples remain byte-for-byte unchanged. Vacuum, boundaries, ideal surfaces
+and unsupported shapes stay invalid; conflicting conductor groups fail. The
+output header voltage bound increases only when an actual fill requires it.
+This is analytic conductor support, not an additional FEM observation.
+
+The canonical query supports IP boxes and x-axis cylinders, and extruded
+concave polygons with their declared Boolean holes. MR observations use the
+same polygon membership calculation. A prepared query copies the selected
+members and validates fixed polygons, IP primitive parameters and poses once per fill; conservative
+polygon bounds avoid unnecessary exact queries. Validated IP-box Boolean trees
+also use an outward-rounded envelope of every base and tool to skip queries
+only when the existing pose uncertainty proves strict separation. Unsupported
+shapes and possible boundary/overlapping-group cases retain their original checks.
+It does not cache across
+runs or turn boundary/unknown nodes into conductor samples. Sampling and
+classification time must still be measured on the actual selected grid;
+focused query timings are not full-export or field-accuracy evidence.
+
+The managed stage retains the raw PA pair and native report, publishes a separate
+support report bound to the projection, request, grid and solution, and selects
+the filled pair only after complete validation. Failure retains owned partial
+staging evidence and publishes no samples product. Selected Python support files
+are recorded and guarded before and after consumption; their copied sources are
+provenance evidence, while the installed implementation executes.
+
+The shared sampling loop also serves the retained MR corridor exporter. That
+consumer keeps its explicit half-domain `abs(x)` mapping and conductor-fill
+policy, and freezes the helper with its other native resources. Assembly export
+does not inherit that coordinate mapping or implicit fill policy. Focused tests
+and fake-MATLAB checks cover their separation. Both previously accepted ordinary wheel/sdist consumers check the stage resources,
+model/solution/grid validators and missing-sampler refusal from site-packages.
+The optional support path has focused source and managed inert-child coverage;
+its resource/validator probe also passed both ordinary installation arms, as
+recorded in the [integration evidence](INTEGRATION.md#依赖冻结与门禁).
+Complete installed native-stage execution and continuous flight remain separate,
+open requirements.
+
+For explicit classification reuse, `export_world_scalar` accepts
+`publish_prepared_support=True` when filling. It publishes ordered conductor-node
+labels alongside their geometry, physical grid, raw-mask and query-code identities.
+A subsequent filled export can select that samples ArtifactRef through
+`prepared_support=...`. It still samples its own solution and validates its complete
+finite voltage vector; mismatched masks or identities fail without fallback.
+The map supplies only proven conductor interiors. Boundary, outside and unknown
+nodes retain their invalid status and accounting.
+
+`derive_world_scalar_support(samples_ref, context=context,
+publish_prepared_support=True)` performs the same postprocess on an already
+published raw sample pair, with no COMSOL tool or MPH read. It uses the existing
+`export_assembly_world_scalar` engineering policy; no native operation is declared.
+Alternatively, pass `prepared_support=map_ref` to consume an explicit map.
+Publishing and consuming a map in one call are mutually exclusive.
+The derived product borrows the original raw pair and small provenance records,
+owns only its new outputs, and records a verified flattened original-producer
+reference. Managed derivation, reuse and the SFI/IP–MR field/tracking consumers
+protect the necessary original owner as well as the selected product. This
+avoids copying a large raw field and does not make capacity protection transitive
+for unrelated product types. Failed derivations preserve owned partial evidence;
+they never adopt or retire borrowed inputs.
+
+## 正式启动入口
+
+`../../src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1`是共享LiveLink任务入口；允许的软件版本和调用命令只以仓库根
+[操作指南](OPERATIONS.md)为权威。项目脚本不得再次调用`mphstart`，
+也不得绕过入口维护另一套长期服务连接。
+Repository callers use the same moved `resolve_comsol_64.ps1` deployment helper: it discovers COMSOL 6.4 from the Windows uninstall registry and derives MATLAB R2025b from `ProgramFiles`. The installed launcher receives absolute tool paths, an explicit working directory and the actual four-field host context serialized as `HostContextJson`; it does not infer a checkout. Nonstandard
+安装分别使用`COMSOL_64_ROOT`和`MATLAB_R2025B_ROOT`覆盖。环境变量只描述软件部署位置，不承载模型参数。
+
+尚未创建任务报告的启动失败由入口有限重试；已经创建报告时，只有命中窄白名单的首次模型打开
+瞬态允许重试：报告必须同时包含首次模型打开链路中的
+`mphload`、`mphopen`和`Not connected to a server`。重试前失败报告以
+`.startup_retry.<attempt>.<timestamp>`归档；进入配置、Study Compute或求解器后的空指针、断连和
+原生崩溃均立即失败，不得用自动重试掩盖。分类回归入口为`test_livelink_failure_classification.ps1`。
+入口通过公共父子进程观测记录本次launcher及后代的PID和创建身份；成功、失败或未创建报告的清理只消费
+这些已证明的身份。`comsolmphserver`名称只筛选服务器角色，不以全机新增PID差集证明所有权。
+launcher退出后仍保留已见身份以收尾其服务器，创建身份不符或归属未知的进程不被当作本次所有。
+公共completion的每次实际launcher observation同时保留该wrapper进程的PID与创建ticks；
+创建时间尚未取得或writer退出未知时保持未确认，启动前失败不补造launcher操作。资源释放收据与该事实独立报告。
+`-StartupReportTimeoutSeconds`默认120秒，只限制MATLAB/LiveLink创建首份任务报告的启动阶段；报告
+创建后不限制Study Compute的正常长运行。`-StartupReportTimeoutAction` 默认 `warn`：超阈只提醒一次，
+继续等待同一进程的报告及真实退出，不因超时杀进程或重启；
+真实退出后缺报告仍失败且不重试，最终退出码和报告判据不变。调用方须冻结这一运行策略。
+只有调用者显式声明`stop`，该启动等待才成为硬超时并终止本次受管进程树；它不能由默认值、低CPU或暂无新报告隐式触发。
+`comsolstartup.m`在进入项目任务前将本次bootstrap报告重置为`STATUS=RUNNING`，项目任务返回后追加
+`STATUS=PASS`；异常则追加`STATUS=FAIL`，保留任务已经写出的阶段诊断。纯MATLAB回归见
+`tests/comsolstartupReportTest.m`，不启动COMSOL。launcher看到`RUNNING`只表示LiveLink已进入任务，不表示
+科学计算成功，它会继续等待进程终态，并且只接受退出码0与最终`PASS`同时成立。进程退出后若报告仍为
+`RUNNING`、缺失或互相矛盾，必须失败关闭。
+只有未创建任务报告时，入口才保存`.launcher.attemptN.stdout/stderr.log`供启动诊断；正常任务不生成
+这组冗余日志。项目运行器必须把实际产生的launcher日志纳入失败manifest。
+launcher的工作目录现显式与`-mlstartdir`相同。本次直接启动进程退出后，入口将该PID且创建于本次启动后的
+`hs_err_pid<PID>.log`原样移入报告目录，由科学owner的正常日志清单发布；不扫描其他目录或覆盖同名目标。
+无法运输时保留源文件并告警，不遮蔽原科学异常。此收尾不改变启动重试、JVM配置或求解设置，
+也不证明任何JVM故障已经修复。
+入口启动前实际探测用户目录下的`.comsol`配置、Tomcat日志和临时目录写权限；受限环境返回
+`EXECUTION_ENVIRONMENT_BLOCKED`并立即停止。此时应在允许商业软件正常访问用户配置目录的执行上下文
+重试同一冻结输入，不能直接归因于COMSOL配置损坏、项目脚本或Study失败，也不能只延长启动超时。
+
+入口的`-ProcessorCount`是可选共享内存线程上限；默认`0`表示沿用COMSOL自动选择，日常结果不变。
+只有排查本地并发库崩溃或项目已验证固定线程数时才显式设置，例如`-ProcessorCount 1`。线程数属于
+运行环境证据，不能借此改变物理、网格或求解器定义。
+
+`-Allocator`可选`auto/scalable/native`，默认`auto`保持COMSOL设置。Windows上若崩溃栈明确落在
+COMSOL自带`tbbmalloc.dll`，可用`-Allocator native`绕过TBB scalable allocator；必须记录该运行
+环境差异，并用同一物理输入核对结果，不得把分配器变化解释成物理或数值参数变化。
+
+`-AssemblyScalabilityMode`可选`auto/off/matrix/vector/on`；默认`auto`不传开关，保持原有COMSOL设置，
+并非供应商枚举值。显式模式传递官方`-memoptassem <mode>`，分别控制关闭、仅矩阵装配、仅向量装配和
+全部装配的内存可扩展性优化。调用方须冻结该执行选项；它不改变入口的资源准入、精度、重试或退出判据。
+依据：[COMSOL 6.4 Commands on Windows](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_ref_running.38.31.html)，
+COMSOL官方，2026-10-22复核。这里列的是当前 wrapper 接受的值；本机6.4.0.293原生解析器在真实启动中
+拒绝 `on`，错误日志列出 `off/matrix/vector/all`，与该官方页面存在差异。当前 wrapper 不接受 `all`，
+不能用它替代 `on` 后绕开入口。`auto` 与 `matrix` 已经通过公共入口完成真实小模型，
+见[冻结配置及两份原始拒绝日志的输入绑定][assembly-evidence]；`off/vector` 本索引未登记真实运行。
+替身参数传递测试、成功启动和小模型 Compute 分别只证明各自范围，不能据此声称修复 MR 矩阵装配断言、
+降低大型模型内存峰值、提高性能或获得数值收敛资格。
+
+[assembly-evidence]: ../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261021_104700__test__comsol__quick-unknown-closure__r03/run_config.json
+
+### 主机资源阶段
+
+入口通过公共主机调度器依次申请 `prepare`、`solver`、`postprocess` 预算；COMSOL求解属于重许可阶段，
+与PA refine、离子飞行及其他重任务串行；PA输入准备、GEM转PA和缓存物化默认轻任务。
+轻任务按公共预算在CPU、内存和I/O准入仍满足时可与之并行，调用方不能根据瞬时低利用率自行改写任务类别。
+`-ResourceBudgets` 可传入冻结资源
+计划中的同名阶段预算；预算仅控制CPU、内存、I/O与独占资源，不修改模型、求解器或物理参数。
+`-RunId`只绑定运行身份，公共策略是默认预算的唯一来源，本入口不维护另一套容量常量。
+所有求解阶段强制追加同一个 `comsol-server-session` 具名独占资源，即使自定义预算未声明它也不能绕过。
+锁一直保留到本次服务器清理完成，受管会话不并行；服务器清理另按本次进程归属和创建身份确定目标。
+普通未知GATE按中央轻任务预算准入后可与COMSOL并行，
+无须先完成专项峰值测量；未列入中央重任务名单的阶段默认轻任务。本入口的solver明确列为重任务，
+且不开放多个受管COMSOL服务器会话并行。
+
+launcher 启动后立即登记 PID；等待报告和 Compute 期间复用公共进程观察器跟踪本次PID及创建身份，
+不反复申请资源许可。已登记的进程身份继续持有预约；进程退出后刷新一次，再按原顺序清理服务器和切换阶段。登记失败时终止
+本次 launcher 并清理本次新增服务器，防止留下无归属求解器。任务成功或失败后，先关闭本次新增服务器
+并确认其退出，再申请后处理预算；不关闭启动前已有的服务器。清理失败时不降级求解阶段预算，调度器
+继续保留存活后代的原资源申请。阶段切换由调度器保留仍驻留的进程内存，
+入口不以传入的零额外保留量清空调度器观测值。所有退出路径释放本层申请，原有连接、重试和失败报告
+判据保持不变。项目调用方若仍持有全程独占父申请，内层继承该预算，不能借分阶段调用缩减父预算；
+要启用阶段间并行，项目运行器须在调用前释放准备阶段申请，并在返回后为自身验证与发布另取预算。
+
+生命周期调用方可传`-CompletionPath`指定不存在的收据路径。入口在资源释放后原子写入
+`comsol_launcher_completion`：逐次实际启动的launcher记录原生退出事实，`host_release`原样携带公共
+调度器的释放结果。launcher退出与全部后代资源释放是两个事实；继承父申请时本层不产生独立释放证明，
+调用方仍须取得父owner的最终收据。缺失、retained、释放异常或未知进程不能成为解除产物保护的依据。
+此收据不代替任务报告、科学成功判据或GUI验收。释放与收据发布失败保留原任务异常；无原异常时失败关闭。
+
+[连接生命周期实测](../../artifacts/projects/instrument_assembly/runs/20261029_075812__test__comsol__connection-lifecycle-smoke/summary.json)
+已由公共 workflow owner 验证：冻结的现入口执行一次连接测试，launcher 退出 0，非继承 host token
+实际释放，完整 manifest 与容量终态闭合。最终 bootstrap 报告为 `STATUS=PASS`，不从被覆盖的
+中间文本推导版本号或模型计数；此测试未创建／加载模型、Study 或 Compute，不提供物理或 GUI 资格。
+
+传入非空 `-RunDir` 时，入口直接消费 owner 已准备的原生执行路径，在其下创建 `comsol_tmp` 和
+`comsol_recovery`，实际探测可写后，将官方全局参数 `-tmpdir/-recoverydir` 置于 `matlab` target 之前。
+它们由同一运行目录的容量计划和 usage 计量覆盖；调用方预算须包含临时文件、recovery/offload 与收尾余量。
+`comsol_launcher_completion.runtime_storage` 记录实际执行位置及 `owned`，不推测 canonical 身份；长期
+身份转换沿已有运行 owner。未传 RunDir 的既有连接调用保持供应商默认并明确记录 `owned=false`，不能据此
+声称临时载荷已归本 run。入口不改用户偏好、许可证或全局配置，不关闭 recovery，也不自行删除目录；
+活动或未知 writer 的保护和退休仍由原 owner 决定。目录冲突或写入准入失败发生在 launcher 启动之前。
+参数传递与惰性进程替身回归不代替真实 COMSOL recovery 路径读回或 GUI Compute 验收。
+2026-10-31实际冷读111112未Compute／save；官方getter返回本run执行alias下的recovery目录，
+useRecovery=false，不能称autosave checkpoint已验。原外命令105.427秒失败于一次性usage参数形状；
+保留原错误后，同run仅收尾6.780秒完成success／complete，零新增native，父记录未改、alias移除。
+临时目录只证明官方argv接线，MATLAB的TEMP不作为COMSOL实际落盘位置的独立读回。
+依据：[COMSOL 6.4 Windows 全局参数](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_ref_running.38.31.html)。
+
+可选`-Limits -RunDir -UsagePath`传入已冻结预算及其受管计量位置；普通耗时、进程树工作集、目录体积和
+可用内存预算越限只告警。目录计量沿公共采样间隔，不在每轮进程观测时递归扫描。
+未传`Limits`时仍观察物理危险，但不生成usage文件或虚构工程预算。危险保留量和持续时间只读取
+[主机策略](../src/msplatform/execution/resources/host_resource_policy.json)；持续危险只停止本次受管进程并失败，不自动重试Compute。
+未知进程范围或未知内存不冒充已确认危险；计量写入失败告警，不抹去已确认危险或遮蔽科学异常。
+该机制由[`tools/repository/resource_budget_support.ps1`](../tools/repository/resource_budget_support.ps1)中的窄观察器提供，科学阶段、成功条件和终态发布仍由调用方拥有。
+
+`test_livelink_resource_stages.py` 在临时目录替换外部调度与进程启动，验证阶段顺序、登记失败清理及
+重试边界；另以实际惰性父子进程验证预算／危险和清理归属，角色候选由替身提供。
+完整故障矩阵在正式门禁使用的隐藏进程模式执行一次；可见模式仅复核真实子进程成功／非零退出、
+启动前失败、双流UTF-8、PID与创建身份及原始／收尾错误传播，不重复整套相同的调度矩阵。
+这些回归不启动商业软件，不代表真实求解器资格；外层测试仍须接受公共GATE准入。
+
+## 测试分组
+
+|主题|测试入口|证明范围|
+|---|---|---|
+|共享连接冒烟|`test_livelink_connection.m`|确认统一入口连接真实COMSOL服务器并读取版本/模型标签；不创建模型、不运行求解器|
+|多极杆几何与静电场|`test_multipole_geometry.m`、`test_multipole_es.m`|偶数多极杆几何、交替电位和近轴场|
+|四极稳定性|`test_quadrupole_stability.m`、`test_multipole_stability.m`|特定理想条件下的稳定/不稳定工作点|
+|Einzel透镜|`test_einzel_lens.m`、`test_einzel_cpt.m`|静电透镜最小几何、场与轨迹验证|
+|线性离子阱|`test_lit_geometry_es.m`、`test_lit_cpt.m`|RF径向与DC轴向约束的最小组合|
+|磁场与线圈|`test_magnetic_coil.m`、`test_cpt_magnetic_force.m`|Numeric Coil和CPT磁力最小链路|
+|磁扇形场与ICR|`test_magnetic_sector.m`、`test_icr_cell.m`|回旋半径标度和组合捕集最小模型|
+|碰撞|`test_collision_cell.m`、`test_resonant_charge_exchange.m`|碰撞父/子特征及可观察碰撞效应|
+|空间电荷|`test_space_charge.m`|粒子间库仑作用的开启/关闭对照|
+|Wien过滤器|`test_wien_filter.m`|交叉电磁场的速度选择条件|
+|GPU对照|`test_collision_cell_gpu_comparison.m`|同一小型测试中CPU/GPU结果与耗时对照|
+
+这些文件是组件验证基线，不是生产脚本，也不代表任一正式仪器已经完成。新的共享测试必须有
+明确理论对照或开启/关闭对照，生成GUI可检查的MPH节点，并说明适用边界。
+
+### 源码覆盖与运行证据
+
+上表描述测试设计覆盖，不是逐文件最近一次 PASS 清单。本索引未建立全部组件测试的独立 run 与
+GUI 验收映射；选择测试时须读取其判据，并核对对应冻结输入、summary 和 manifest，不能由名称、
+注释中的“验证”或现存 MPH 推定实际运行。关键调用的现有小模型证据在
+[关键能力证据索引](#关键能力的证据索引)集中定位，不在这里复制数值结论。
+
+| 要查的层级 | 现有入口 | 证据的含义 |
+|---|---|---|
+| 替身／纯逻辑 | `test_livelink_resource_stages.py`、`test_livelink_failure_classification.ps1`、`test_livelink_environment.ps1` | 分别检查调度与清理、重试分类、环境预检；运行结果须另存，不证明真实 COMSOL 求解 |
+| 真实连接 | `test_livelink_connection.m` | 只连接与读版本；不能替代模型创建或 Compute |
+| 真实组件 Compute | [关键能力证据索引](#关键能力的证据索引)中的场／CPT／插值记录 | 核对模型、唯一变量、解析或对照判据；有负结果时保留，不将整组改称 PASS |
+| 保存重开 | 同一索引中的 Time 属性检查 | 当前证据是空模型属性持久化；不是求解精度，也不是 GUI 点击 Compute |
+| 项目功能与 GUI Compute | 根 [项目导航](../README.md#项目导航)→目标项目 README→PROJECT／验证合同 | 必须绑定具体资产、输入与验收；不从共享组件测试继承项目资格 |
+
+### 关键能力的证据索引
+
+本表只索引已保留证据的范围，不发布新的通用数值设置或仪器资格。真实 Compute 指脚本中的
+Study/Solver 执行；GUI Compute 指 Desktop 重开后操作，二者不能互换。项目参数、功能精度和资格
+仍由各项目 README 导向其 PROJECT 与机器合同。
+
+| 能力 | 官方语义与本地实现入口 | 已登记验证 | 尚不能证明 |
+|---|---|---|---|
+| 活动 Time 步策略 | [Time API](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_solver.51.51.html)；[活动键映射](tools/COMSOL_API.md#time-节点的活动步策略) | [OA 修复记录第 2 节](history/projects/single_reflection_oa_tof_mass_analyzer/20261021__oatof-cpt-fixed-policy-reference-and-full-flow.md#2-已完成的实现验证及其边界)：GA/BDF/DP5 空模型写入、保存重开、回读；DP5/GA 小模型另有真实 Study.run 前后回读 | 空模型不是轨迹求解；诊断配置未完成正式资产保存重开与 GUI Compute 晋升 |
+| 固定网格的代数停止误差 | [CG-AMG](tools/COMSOL_API.md#稳态cg-amg与电势阶次)；[场探针冻结结果][api-field] | 同一 4,879 四面体、7,292 DOF 的线性电势模型，真实 CG 默认/加严及 PARDISO 参考三案，保存活动引用与采样误差 | 未做仪器空间收敛；不能据此规定全仓 stol 或直接法 |
+| 原生粒子读取 | [mphparticle 官方参考](https://doc.comsol.com/6.4/doc/com.comsol.help.llmatlab/llmatlab_ug_ref.9.51.html)；[数值提取](tools/COMSOL_API.md#数值提取) | [输出双通道小模型][api-output]核对默认 p/v 与显式坐标/速度；[OA README](../src/msplatform/components/single_reflection_oa_tof/README.md)导航到真实 N100 配对与事件回归 | 数组有限不代表数值准确；固定 t 查询不能自动获得精确壁面位置或停止时间 |
+| 原生插值函数驱动 CPT | [函数 API](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_api_general.47.34.html)；[小模型结果][api-interpolation] | 规则线性表、显式单位、范围外行为和解析轨迹的真实 Compute | 非均匀三维仪器场的采样收敛、能量一致性及整体提速仍未验证 |
+| Freeze 与停止时间 | [粒子状态](https://doc.comsol.com/6.4/doc/com.comsol.help.particle/particle_ug_math.06.02.html)、[Freeze](https://doc.comsol.com/6.4/doc/com.comsol.help.particle/particle_ug_math.06.38.html) | [平面常速小模型][api-wall]核对全部 N100 的解析停止时间；后续具名曲面阶次及原生事件对照从 [OA 项目入口](../src/msplatform/components/single_reflection_oa_tof/README.md)追溯，稀疏固定 t 查询的负结果保留 | 具名解析夹具不授予任意曲面、多壁面或实际仪器资格，不能直接替换整机检测器 |
+| 装配内存选项 | [Windows 命令](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_ref_running.38.31.html)；[共享入口边界](#正式启动入口) | [冻结启动与恢复配置][api-assembly]：本机拒绝 on，auto/matrix 已完成真实小模型；原始拒绝日志已绑定 | 官方页和当前 wrapper 枚举不等于本机均可启动；没有大型装配峰值或 MR 断言修复结论 |
+
+上述场、插值和输出小模型由 OA 容器承载，仅用于组件诊断；不能算作第二个仪器项目验证。
+共享组件测试的源码分组见[测试分组](#测试分组)。
+
+后续[原生回读与 Counter 五案](history/projects/single_reflection_oa_tof_mass_analyzer/20261022__native-event-readback-and-counter-validation.md)
+另验证了普通时刻库存、实际停止时刻查询，以及 Counter 的求解前／后创建与输出敏感性；
+其中稀疏 Counter 两案为 failed。它补充接口证据，不授予生产检测器资格。
+
+[后续原因隔离与原生事件候选](history/projects/single_reflection_oa_tof_mass_analyzer/20261022__sparse-counter-cause-and-native-event-reader.md)
+区分了保存状态、Counter、原生 st 查询与辅助变量记录：GA／Newtonian 稀疏终态候选通过两真实壁面及重复，
+DP5 晚期辅助表和交点身份路径保留失败。evaluate 数量抽样、all-solnum 缺 t、Particle expr 单字符串等
+接口实证见[数值提取](tools/COMSOL_API.md#数值提取)。这仍不是第二个仪器项目或整机性能验证。
+
+[api-field]: ../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261021_102831__test__comsol__field-and-cpt-followup__r02/results/field_followup_summary.json
+[api-output]: ../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261021_104700__test__comsol__quick-unknown-closure__r03/results/output_controls_summary.json
+[api-interpolation]: ../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261021_104700__test__comsol__quick-unknown-closure__r03/results/interpolation_summary.json
+[api-wall]: ../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261021_104700__test__comsol__quick-unknown-closure__r04/summary.json
+[api-assembly]: ../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20261021_104700__test__comsol__quick-unknown-closure__r03/run_config.json
+
+### 组件测试的输出上下文
+
+使用 `common_artifact_paths` 的组件测试以 `runDir` 为第一个必填参数，其余物理参数及默认值不变。
+调用方先准备已有的 `artifacts/projects/<project>/runs/<run_id>` 或 `scratch/<task_id>` 容器；
+测试仅在其 `comsol/` 保存模型、`results/` 保存图表，不再写共享 `common/models`、`common/results`。
+求解器启动仍使用上述统一入口，launcher 的 `TaskScript` 脚本负责传入该上下文，不新增启动器。
+
+同一测试链的构建和消费阶段必须传入同一个目录，例如任务脚本中的
+`test_multipole_geometry(runDir, 4); test_multipole_es(runDir, 4);`。
+Einzel 和 LIT 的构建、CPT阶段同样共享上下文，以读取该次生成的模型；不得从全局目录选取旧模型。
+独立试验使用不同容器，禁止向已发布终态run追加或覆盖模型。可引用运行仍由调用方按
+[生命周期](LIFECYCLE.md)冻结输入、summary与manifest；临时测试在scratch执行后按该规则清理。
+[路径回归说明](PATHS.md)提供组件显式上下文的静态检查和独立 MATLAB 路径行为测试；
+两者均不代表真实 COMSOL 求解已经验收。
+
+
+显式选区网格最小尺寸：`configure_comsol_mesh(..., minimumElementSizeMm)` 与 `add_comsol_size_feature(..., hmin)` 的末尾参数可省略，缺省不改变原控制。显式值必须为正有限数且不大于已给定的数值 hmax；同一值作用于 default 与工作区 Size。`read_comsol_mesh_size_controls` 按官方 `getValueType` 读取 typed raw 的 hauto/custom/hmin/hmax/hcurve/hgrad/hnarrow，不推测数值单位；设置 hmin 前后如其他控制改变则拒绝。真实消费者为 RF finite；OA 既有省略参数调用保持原行为。
+
+The installed launcher is the original implementation, including startup classification,
+server-session exclusivity, exact launcher/descendant identities, runtime storage and
+completion receipts. Its bootstrap is `msplatform/backends/comsol/matlab/comsolstartup.m`.
+COMSOL 6.4's installed *COMSOL Commands on Windows* documents `comsolmphserver matlab`,
+`-login auto`, `-mlroot`, `-mlstartdir`, `-nodesktop` and `-mlnosplash` (reviewed 2026-11-09;
+`doc/help/wtpwebapps/ROOT/doc/com.comsol.help.comsol/comsol_ref_running.38.31.html`).
+Repository-owned process identity and drain policy is retained; it is not a vendor API claim.

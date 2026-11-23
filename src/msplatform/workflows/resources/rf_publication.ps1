@@ -32,7 +32,7 @@ print(json.dumps(rf_publication.PROFILE_RESOURCES[sys.argv[1]]))
     $package.files = @($sourcePackage.files) + @($resourcePackage.files)
     Assert-FrozenPythonPackage -Package $package
     . (Get-FrozenPythonPackageFile -Package $package -RelativePath 'src/msplatform/execution/resources/frozen_python_package.ps1')
-    $projectRoot = Join-Path $SnapshotRoot 'projects/rf_multipole_ion_optics'
+    $projectRoot = Join-Path $SnapshotRoot 'src/msplatform/components/rf_multipole'
     $check = Invoke-IsolatedFrozenPythonModule -Python $Python -Package $package `
         -Module 'msplatform.workflows.rf_publication' `
         -Arguments @('--project-root',$projectRoot,'--repository-root',$SnapshotRoot,'--profile',$Profile,'--check') `

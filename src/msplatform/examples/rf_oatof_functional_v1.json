@@ -270,7 +270,7 @@
             "family_experiment_port": false
           },
           "authority": {
-            "source_contract": "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json",
+            "source_contract": "src/msplatform/components/single_reflection_oa_tof/config/resolved_geometry.json",
             "source_sha256": "F9C2152E5B1216242D6605A990BA40DC4586D5A278DFE3B1B3D59ABD9DC941A3",
             "bindings": [
               {

@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import argparse
 import json
-import platform
 import sys
+from msplatform.execution.context import python_runtime_version
 from pathlib import Path
 from typing import Any
 
@@ -41,7 +41,7 @@ from msplatform.results import single_reflection_particle_table as particle_tabl
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-PROJECT_DIR = REPO_ROOT / "projects/single_reflection_oa_tof_mass_analyzer"
+PROJECT_DIR = REPO_ROOT / "src/msplatform/components/single_reflection_oa_tof"
 ANALYSIS_DIR = PROJECT_DIR / "analysis"
 DEFAULT_CONTRACT = PROJECT_DIR / "config" / "analysis_contract.json"
 PHYSICAL_CONTRACT = PROJECT_DIR / "config" / "resolved_geometry.json"
@@ -89,7 +89,7 @@ def load_contract(path: Path = DEFAULT_CONTRACT) -> tuple[dict[str, Any], Analys
 
 def runtime_provenance(contract_path: Path) -> dict[str, Any]:
     return {
-        "python_version": platform.python_version(),
+        "python_version": python_runtime_version(),
         "python_executable": sys.executable,
         "numpy_version": np.__version__,
         "scipy_version": scipy.__version__,

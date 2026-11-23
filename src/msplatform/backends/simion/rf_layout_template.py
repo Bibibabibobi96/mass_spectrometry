@@ -47,7 +47,7 @@ def resolve_simion_layout_template(
     registry_path = (
         registry_path.resolve()
         if registry_path
-        else repo_root / "projects/rf_multipole_ion_optics/config/simion_layout_template.json"
+        else repo_root / "src/msplatform/components/rf_multipole/config/simion_layout_template.json"
     )
     registry = _load(registry_path)
     expected_keys = {
@@ -86,7 +86,7 @@ def resolve_simion_layout_template(
     ):
         raise ValueError("template legacy evidence identity differs")
     provider_descriptor = _load(
-        repo_root / "projects" / provider / "config" / "project.json"
+        repo_root / "src/msplatform/components/rf_multipole/config/project.json"
     )
     matching_mappings = [
         identity

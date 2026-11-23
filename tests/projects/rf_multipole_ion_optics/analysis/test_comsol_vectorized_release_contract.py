@@ -1,0 +1,75 @@
+from __future__ import annotations
+
+import json
+import unittest
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parents[4]
+PROJECT_ROOT = REPO_ROOT / "src/msplatform/components/rf_multipole"
+HISTORY_ROOT = REPO_ROOT / "docs/history/projects/rf_multipole_ion_optics"
+MATLAB_CORE = REPO_ROOT / "src/msplatform/backends/comsol/matlab/solve_finite_3d_transport.m"
+RUNNER = REPO_ROOT / "src/msplatform/workflows/resources/run_finite_3d_transport.ps1"
+RUNTIME_PROFILES = REPO_ROOT / "src/msplatform/components/rf_multipole/config/runtime_profiles.json"
+PREREGISTRATION = (
+    HISTORY_ROOT
+    / "retired_projects/rf_quadrupole_ion_optics/config/family_experiment/vectorized_release_validation/preregistration_v3.json"
+)
+FAILED_PREREGISTRATION = (
+    HISTORY_ROOT
+    / "retired_projects/rf_quadrupole_ion_optics/config/family_experiment/vectorized_release_validation/preregistration.json"
+)
+
+
+class ComsolVectorizedReleaseContractTests(unittest.TestCase):
+    def test_failed_vectorized_profiles_are_not_active(self) -> None:
+        profiles = json.loads(RUNTIME_PROFILES.read_text(encoding="utf-8"))["profiles"]
+        self.assertFalse(
+            any(
+                "comsol_particle_release_strategy" in profile
+                for profile in profiles.values()
+            )
+        )
+        failed = json.loads(FAILED_PREREGISTRATION.read_text(encoding="utf-8"))
+        self.assertEqual(failed["status"], "EXECUTED_FAILED")
+        self.assertFalse(failed["observed_result"]["n1000_promotion_allowed"])
+        failed_v2 = json.loads(
+            (
+                HISTORY_ROOT
+                / "retired_projects/rf_quadrupole_ion_optics/config/family_experiment/vectorized_release_validation/"
+                "preregistration_v2.json"
+            ).read_text(encoding="utf-8")
+        )
+        self.assertEqual(failed_v2["status"], "EXECUTED_FAILED")
+        self.assertTrue(failed_v2["observed_result"]["particle_solve_stage_reached"])
+        result = json.loads(PREREGISTRATION.read_text(encoding="utf-8"))
+        self.assertEqual(result["status"], "EXECUTED_NOT_EQUIVALENT")
+        self.assertEqual(
+            result["observed_result"]["decision"],
+            "VECTOR_RELEASE_NOT_EQUIVALENT_RETAIN_INDIVIDUAL_FEATURES",
+        )
+        self.assertFalse(result["observed_result"]["n1000_promotion_allowed"])
+        self.assertEqual(
+            result["observed_result"]["fixed_bin_checks"]["primary"][
+                "changed_particle_ids_by_field"
+            ]["divergence_angle_deg"],
+            [3, 23, 38, 55, 64, 68, 75, 100],
+        )
+
+    def test_active_solvers_share_exact_birth_planner_without_phase_workarounds(self) -> None:
+        # Exact grouping, row mapping, species and weights are exercised by
+        # RfExactBirthReleasePlanTest; keep only the two production adapter seams.
+        for path in (MATLAB_CORE, REPO_ROOT / "src/msplatform/backends/comsol/matlab/solve_deterministic_rf_quadrupole_particles.m"):
+            with self.subTest(consumer=path.name):
+                source = path.read_text(encoding="utf-8-sig")
+                self.assertIn("plan_rf_exact_birth_releases(", source)
+                self.assertIn("ReleaseFromDataFile", source)
+                for forbidden in ("AuxiliaryField", "DistributionFunction_auxphase",
+                                  "particle_phase_offset", "cpt.create('force1','Force',3)"):
+                    self.assertNotIn(forbidden, source)
+        self.assertNotIn("MULTIPOLE_L3_PARTICLE_RELEASE_STRATEGY", RUNNER.read_text(encoding="utf-8-sig"))
+
+
+
+if __name__ == "__main__":
+    unittest.main()

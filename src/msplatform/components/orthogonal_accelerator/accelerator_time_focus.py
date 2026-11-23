@@ -1179,3 +1179,101 @@ def derive(contract: Mapping[str, Any]) -> dict[str, Any]:
             - float(_first_present(reference, "d2_mm", "gap2_mm"))
         )
     return result
+
+
+def _assert_expected(
+    actual: Any, expected: Any, path: str, *, abs_tol: float, rel_tol: float
+) -> None:
+    from msplatform.contracts.expected_values import assert_expected_values
+
+    assert_expected_values(
+        actual, expected, path, abs_tol=abs_tol, rel_tol=rel_tol,
+        sequence_length_message="actual length={actual} expected={expected}",
+    )
+
+
+def run_self_test() -> None:
+    """Run deterministic algebra and compatibility checks."""
+    u1, u2, d1, d2 = 4060.0, 3940.0, 3.0, 112.247459
+    e1 = (u1 - u2) / d1
+    e2 = u2 / d2
+    v2 = math.sqrt(u1 - u2)
+    v3 = math.sqrt(u1 + u2)
+    historical = (v3**3 / e1) * (
+        1.0 / v2 + (e1 / e2) * (1.0 / v3 - 1.0 / v2)
+    )
+    current = focus_drift_mm(u1, u2, d1, d2, require_downstream_focus=False)
+    if not math.isclose(current, historical, rel_tol=0.0, abs_tol=1.0e-12):
+        raise AssertionError("historical centred-source formula changed")
+
+    equal_state = accelerator_state(30.0, 20.0, 10.0, 20.0)
+    expected_equal = 2.0 * (10.0 + 20.0 - 5.0)
+    if not math.isclose(
+        equal_state.first_order_focus_drift_mm, expected_equal,
+        rel_tol=0.0, abs_tol=1.0e-12,
+    ):
+        raise AssertionError("equal-field degeneration failed")
+
+    bound = compact_exit_focus_bound(4000.0, 20.0, 1.0, 3.0)
+    state = accelerator_state(
+        bound["repeller_relative_V"], bound["intermediate_relative_V"],
+        bound["gap1_mm"], bound["gap2_mm"], require_downstream_focus=False,
+    )
+    if abs(state.first_order_focus_drift_mm) > 1.0e-9:
+        raise AssertionError("compact D=0 bound does not focus at exit")
+    expected_total = 0.5 * (200.0 + 6.0 + math.sqrt(600.0))
+    if not math.isclose(
+        bound["compact_accelerator_length_mm"], expected_total,
+        rel_tol=0.0, abs_tol=1.0e-12,
+    ):
+        raise AssertionError("general closed-form compactness bound failed")
+
+    tau_args = (
+        state.nominal_energy_per_charge_v, state.intermediate_relative_v,
+        state.field1_v_per_mm, state.field2_v_per_mm, state.first_order_focus_drift_mm,
+    )
+    t100 = time_to_plane_s(tau_args[0], 100.0, *tau_args[1:])
+    t400 = time_to_plane_s(tau_args[0], 400.0, *tau_args[1:])
+    if not math.isclose(t400 / t100, 2.0, rel_tol=1.0e-12):
+        raise AssertionError("mass-to-charge time scaling failed")
+
+
+def main() -> int:
+    """Execute the public ideal-theory derivation command."""
+    import argparse
+    import json
+    from pathlib import Path
+
+    parser = argparse.ArgumentParser(
+        description="Derive an ideal two-region orthogonal accelerator time focus."
+    )
+    parser.add_argument("contract", type=Path, nargs="?")
+    parser.add_argument("--write-derived", type=Path)
+    parser.add_argument("--self-test", action="store_true")
+    args = parser.parse_args()
+    if args.self_test:
+        run_self_test()
+        print("ACCELERATOR_TIME_FOCUS_SELF_TEST=PASS")
+        if args.contract is None:
+            return 0
+    if args.contract is None:
+        parser.error("contract is required unless --self-test is used")
+    contract = json.loads(args.contract.read_text(encoding="utf-8"))
+    result = derive(contract)
+    tolerance = contract.get("expected_tolerance", {})
+    _assert_expected(
+        result, contract.get("expected_derived", {}), "expected_derived",
+        abs_tol=float(tolerance.get("absolute", 1.0e-10)),
+        rel_tol=float(tolerance.get("relative", 1.0e-12)),
+    )
+    text = json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True)
+    if args.write_derived:
+        args.write_derived.parent.mkdir(parents=True, exist_ok=True)
+        args.write_derived.write_text(text + "\n", encoding="utf-8")
+    print(text)
+    print("ACCELERATOR_TIME_FOCUS_STATUS=PASS")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

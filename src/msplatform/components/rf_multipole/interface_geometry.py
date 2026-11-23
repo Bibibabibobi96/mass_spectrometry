@@ -5,6 +5,10 @@ from __future__ import annotations
 import math
 from typing import Any
 from collections.abc import Mapping
+from msplatform.contracts.transport_interface import transport_numerical_domain, transport_observations
+
+__all__ = ["InterfaceGeometryError", "build_axial_interface_layout", "build_enclosure_layout",
+           "transport_observations", "transport_numerical_domain"]
 
 
 
@@ -140,26 +144,3 @@ def build_enclosure_layout(geometry: Mapping[str, Any]) -> dict[str, Any]:
     if len(cap_faces) == 2 and cap_faces["entrance"][1] > cap_faces["exit"][0]:
         raise InterfaceGeometryError("entrance and exit endcaps overlap axially")
     return dict(bodies=bodies, ports=ports)
-
-
-def transport_observations(resolved: Mapping[str, Any]) -> Mapping[str, Any]:
-    """Read explicit observations; the independent rectangular reference owns its layout."""
-    geometry = resolved["geometry_mm"]
-    if geometry["enclosure"]["model"] != "rectangular_reference_enclosure_v1":
-        return geometry["observations"]
-    interfaces = resolved["interfaces_mm"]
-    return dict(release_plane_z_mm=interfaces["entrance"]["release_plane_z_mm"],
-                handoff_plane_z_mm=interfaces["exit"]["handoff_plane_z_mm"],
-                census_plane_z_mm=interfaces["exit"]["census_plane_z_mm"],
-                acceptance_radius_mm=interfaces["exit"]["aperture_radius_mm"])
-
-
-def transport_numerical_domain(resolved: Mapping[str, Any]) -> Mapping[str, Any]:
-    """Read the declared numerical domain, with no inference from physical shell size."""
-    geometry = resolved["geometry_mm"]
-    if geometry["enclosure"]["model"] != "rectangular_reference_enclosure_v1":
-        return geometry["numerical_domain"]
-    enclosure = geometry["enclosure"]
-    return dict(radius_mm=enclosure["outer_half_width_mm"],
-                z_min_mm=enclosure["vacuum_z_min_mm"], z_max_mm=enclosure["vacuum_z_max_mm"],
-                working_region_radius_mm=enclosure["working_region_radius_mm"])

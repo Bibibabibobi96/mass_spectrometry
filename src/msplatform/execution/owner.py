@@ -46,7 +46,9 @@ def _retention_api(session: RunSession, completion_api: Callable[[], Any] | None
 
 def validate_writer_completion(*, writers_stopped: bool, expected_operation_ids: tuple[str, ...],
                                operations: list[dict[str, Any]],
-                               resource_releases: list[dict[str, Any]]) -> dict[str, Any]:
+                               resource_releases: list[dict[str, Any]],
+                               powershell_owner: bool = False,
+                               require_process_identity: bool = True) -> dict[str, Any]:
     """Validate actual exit/release facts before allowing retention or publication."""
     if not writers_stopped:
         raise ValueError("Native writer completion is unknown; retain all protection")
@@ -55,14 +57,27 @@ def validate_writer_completion(*, writers_stopped: bool, expected_operation_ids:
     for row in resource_releases:
         if set(row) != {"release_id", "completion_receipt"} or row["release_id"] in releases:
             raise ValueError("Resource release identity is missing or duplicated")
-        release = row["completion_receipt"]["host_release"]
+        completion_receipt = row["completion_receipt"]
+        if not isinstance(completion_receipt, dict) or "host_release" not in completion_receipt:
+            raise ValueError("Resource release lacks the actual owner receipt")
+        if ({"bridge_process_exit_confirmed", "bridge_process_returncode"} & completion_receipt.keys()
+                and (completion_receipt.get("bridge_process_exit_confirmed") is not True
+                     or type(completion_receipt.get("bridge_process_returncode")) is not int)):
+            raise ValueError("Resource bridge completion is unconfirmed")
+        if completion_receipt.get("host_release_confirmed") is False:
+            raise ValueError("Resource completion contradicts its owner release")
+        release = completion_receipt["host_release"]
         if (not {"inherited", "token", "result", "error"}.issubset(release)
                 or set(release) - {"inherited", "token", "result", "error",
                                    "admission_wait_seconds", "initial_wait_reason"}
-                or release["inherited"] is not False or release["error"] is not None
+                or type(release["inherited"]) is not bool
+                or (release["inherited"] and not powershell_owner)
+                or release["error"] is not None
                 or not isinstance(release["token"], str) or not release["token"]
-                or release["token"] in tokens or release["result"] != {
-                    "status": "released", "token": release["token"]}):
+                or release["token"] in tokens
+                or (release["inherited"] and release["result"] is not None)
+                or (not release["inherited"] and release["result"] != {
+                    "status": "released", "token": release["token"]})):
             raise ValueError("Resource owner release is unconfirmed or inherited")
         tokens.add(release["token"])
         releases[row["release_id"]] = False
@@ -71,9 +86,11 @@ def validate_writer_completion(*, writers_stopped: bool, expected_operation_ids:
         observation = row["observation"]
         if (row["operation_id"] in operation_ids or row["operation_id"] not in expected_operation_ids
                 or observation.get("exit_confirmed") is not True
-                or any(type(observation.get(name)) is not int for name in (
-                    "returncode", "process_id", "process_started_at_utc_ticks"))
-                or observation["process_id"] <= 0 or observation["process_started_at_utc_ticks"] <= 0
+                or type(observation.get("returncode")) is not int
+                or (require_process_identity and (
+                    any(type(observation.get(name)) is not int for name in (
+                        "process_id", "process_started_at_utc_ticks"))
+                    or observation["process_id"] <= 0 or observation["process_started_at_utc_ticks"] <= 0))
                 or row["resource_release_id"] not in releases):
             raise ValueError("Native writer observation lacks its actual process or bound release")
         operation_ids.add(row["operation_id"])

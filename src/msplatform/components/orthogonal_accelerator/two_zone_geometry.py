@@ -329,3 +329,17 @@ def validate_geometry_profile(profile: Mapping[str, float | int]) -> Mapping[str
             except (TypeError, ValueError) as error:
                 raise TwoZoneGeometryError(f"closed two-zone profile.{key} must be finite and positive") from error
     return values
+
+
+def load_geometry_profile(profile_id: str = CLOSED_TWO_ZONE_PROFILE_ID) -> Mapping[str, float | int]:
+    """Load a named physical profile from this component's versioned contract."""
+    import json
+    from pathlib import Path
+
+    path = Path(__file__).with_name("component_contract.json")
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+        profile = document["geometry_profiles"][profile_id]
+    except (OSError, KeyError, TypeError, json.JSONDecodeError) as error:
+        raise TwoZoneGeometryError("closed two-zone geometry profile is unavailable") from error
+    return validate_geometry_profile(profile)

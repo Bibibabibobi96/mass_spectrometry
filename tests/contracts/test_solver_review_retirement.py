@@ -1,0 +1,3437 @@
+from __future__ import annotations
+
+import copy
+import hashlib
+import io
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from contextlib import redirect_stdout
+from datetime import datetime, timezone
+from pathlib import Path
+from unittest import mock
+
+from msplatform.execution.capacity_protection import create_capacity_protection_lease
+from msplatform.execution.capacity_ledger import initialize_capacity_ledger, load_capacity_ledger
+from msplatform.execution.run_capacity_lifecycle import register_writing, seal_checkpoint, reseal_retired_payload
+from msplatform.execution.retention import file_record
+from msplatform.execution.solver_review_retirement import (
+    LEGACY_INITIALIZATION_SUMMARY,
+    RetirementError,
+    _downstream_references,
+    apply_retirement,
+    main,
+    plan_retirement,
+    structured_target_references,
+    verify_retirement,
+    repair_preserved_native_file,
+)
+
+
+def _sha(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
+
+
+class RetirementWrapperTest(unittest.TestCase):
+    def test_preserved_repair_wrapper_uses_capacity_and_forwards_original_identities(self):
+        pwsh=shutil.which("pwsh")
+        if not pwsh:self.skipTest("PowerShell 7 required")
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);contracts=root/"contracts";contracts.mkdir()
+            wrapper=contracts/"invoke_solver_review_retirement.ps1"
+            wrapper.write_bytes((Path(__file__).resolve().parents[2] / "tools/repository" / wrapper.name).read_bytes())
+            support = root / "src/msplatform/execution/resources/run_artifact_support.ps1"
+            support.parent.mkdir(parents=True)
+            (support.parent/"host_execution_lease.ps1").write_text("""
+param([Parameter(Mandatory)][hashtable]$HostContext)
+function Enter-HostExecutionLease { $global:calls.Add('host-enter');return @{} }
+function Exit-HostExecutionLease { $global:calls.Add('host-exit') }
+""")
+            support.write_text("""
+function Enter-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$ArtifactRoot,$RunDirectory,$CommittedNewBytes,$ProtectedPaths,$Owner)
+ if($CommittedNewBytes-ne63-or$ProtectedPaths.Count-ne2-or$Owner-ne'owned-payload-view-repair:p:audit'){throw 'capacity arguments differ'}
+ $global:calls.Add('capacity-enter');return @{lease_id='fixture'}
+}
+function Exit-ArtifactWorkflowCapacitySession {$global:calls.Add('capacity-exit');@{released=$true}}
+""")
+            script=root/"test.ps1"
+            script.write_text("""
+param($Root)
+$env:SIMULATION_PYTHON_EXE='python'
+$global:calls=[Collections.Generic.List[string]]::new()
+function python {
+ if($args-contains'--apply'){
+  if($args-notcontains'--capacity-lease-id'-or$args-notcontains'fixture'-or$args-notcontains'MANIFEST'-or$args-notcontains'RETIREMENT'){throw 'identity or lease missing'}
+  $global:calls.Add('repair');'{"status":"complete"}'
+ }else{$global:calls.Add('plan');'{"committed_new_bytes":63}'}
+ $global:LASTEXITCODE=0
+}
+$out=@(& "$Root/contracts/invoke_solver_review_retirement.ps1" -ArtifactRoot $Root -RepositoryRoot $Root -TargetRun "$Root/source" -Owner p -ConfirmWritingStopped -RepairPreservedFile simion/collision.pa -RepairEvidenceRun "$Root/audit" -ExpectedManifestSha256 MANIFEST -ExpectedRetirementSha256 RETIREMENT -Apply -Confirm:$false)
+if($out.Count-ne1-or($out[0]|ConvertFrom-Json).status-ne'complete'){throw 'repair stdout was polluted'}
+$global:calls|ConvertTo-Json -Compress
+""")
+            result=subprocess.run([pwsh,"-NoProfile","-File",str(script),str(root)],cwd=Path(__file__).resolve().parents[2],capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=30)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            self.assertEqual(json.loads(result.stdout),["host-enter","plan","capacity-enter","repair","capacity-exit","host-exit"])
+
+    def test_apply_finalizes_opted_in_terminal_under_same_lease(self) -> None:
+        self._check_wrapper("apply", enabled=True, expected=["enter", "retire", "finalize", "exit"])
+        self._check_wrapper("subset", enabled=True, expected=["enter", "retire", "reseal", "exit"])
+
+    def test_nonapply_and_legacy_do_not_finalize(self) -> None:
+        for mode, enabled, expected in (
+            ("plan", True, ["retire"]), ("whatif", True, []),
+            ("apply", False, ["enter", "retire", "exit"]),
+            ("apply", None, ["enter", "retire", "exit"]),
+            ("checkpoint", True, ["enter", "retire", "exit"]),
+            ("subset", False, ["enter", "retire", "exit"]),
+        ):
+            with self.subTest(mode=mode, enabled=enabled):
+                self._check_wrapper(mode, enabled=enabled, expected=expected)
+
+    def test_failure_exits_without_retry_and_releases_lease(self) -> None:
+        self._check_wrapper("retire_fail", enabled=True,
+                            expected=["enter", "retire", "exit"], error="retirement failed with exit code 7")
+        self._check_wrapper("finalize_fail", enabled=True,
+                            expected=["enter", "retire", "finalize", "exit"], error="do not repeat deletion")
+
+    def test_gui_selected_wrapper_forwards_scope_and_reseals(self) -> None:
+        self._check_wrapper("gui_subset", enabled=True, expected=["enter", "retire", "reseal", "exit"])
+        self._check_wrapper("gui_retire_fail", enabled=True, expected=["enter", "retire", "exit"],
+                            error="retirement failed with exit code 7")
+        self._check_wrapper("gui_reseal_fail", enabled=True, expected=["enter", "retire", "reseal", "exit"],
+                            error="do not repeat deletion")
+
+    def test_gui_wrapper_rejects_runtime_and_repair_mixes_before_lease(self) -> None:
+        for mode in ("gui_runtime", "gui_repair", "gui_no_stopped"):
+            with self.subTest(mode=mode):
+                self._check_wrapper(mode, enabled=True, expected=[], error="requires")
+
+    def test_whatif_under_non_utf8_parent_console(self) -> None:
+        self._check_wrapper("whatif", enabled=True, expected=[], legacy_console=True)
+
+    def _check_wrapper(self, mode: str, *, enabled: bool | None, expected: list[str], error: str = "",
+                       legacy_console: bool = False) -> None:
+        """Execute the real wrapper, mocking only Python and host lease command boundaries."""
+        pwsh = shutil.which("pwsh")
+        if not pwsh:
+            self.skipTest("PowerShell 7 is required for the wrapper behavior regression")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            contracts = root / "contracts"
+            contracts.mkdir()
+            wrapper = contracts / "invoke_solver_review_retirement.ps1"
+            wrapper.write_bytes((Path(__file__).resolve().parents[2] / "tools/repository" / wrapper.name).read_bytes())
+            host = root / "src/msplatform/execution/resources/host_execution_lease.ps1"
+            host.parent.mkdir(parents=True)
+            host.write_text("""
+param([Parameter(Mandatory)][hashtable]$HostContext)
+function Enter-HostExecutionLease { $global:calls.Add('enter'); return @{id='fixture'} }
+function Exit-HostExecutionLease { param($Lease); $global:calls.Add('exit') }
+""", encoding="utf-8")
+            config = {} if enabled is None else {"project":"p", "capacity_ledger_lifecycle": {"enabled": enabled}}
+            (root / "run_config.json").write_text(json.dumps(config), encoding="utf-8")
+            harness = root / "check.ps1"
+            harness.write_text("""
+param($Root, $Mode)
+$env:SIMULATION_PYTHON_EXE = 'python'
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+$OutputEncoding = [Console]::OutputEncoding
+Write-Host 'UTF8:缂栫爜杈圭晫'
+$global:calls = [Collections.Generic.List[string]]::new()
+function python {
+  if ($args -contains 'msplatform.execution.run_capacity_lifecycle') {
+    if($args-contains'reseal-retired-payload'){
+      if($args-notcontains'--confirm-writing-stopped'-or$args-notcontains'p'-or$args-contains'--retention-reason'){throw 'reseal authority differs'}
+      $global:calls.Add('reseal')
+    }else{$global:calls.Add('finalize')}
+    '{"status":"ready"}'
+    $global:LASTEXITCODE = $(if ($Mode -in @('finalize_fail','gui_reseal_fail')) {9} else {0})
+  } else {
+    if($Mode -eq 'subset' -and ($args -notcontains '--selected-heavy-path' -or $args -notcontains 'simion/analyzer.pa0')) {throw 'subset selection was not forwarded'}
+    if($Mode -in @('gui_subset','gui_retire_fail','gui_reseal_fail')) {
+      foreach($required in @('--prepared-gui-checkpoint','--confirm-writing-stopped','--selected-heavy-path','simion/processor.pa#','simion/processor.pa0','--apply')) {if($args -notcontains $required){throw "GUI argument missing: $required"}}
+      if($args -contains '--runtime-checkpoint'){throw 'GUI was passed as runtime checkpoint'}
+    }
+    $global:calls.Add('retire'); '{"lifecycle_status":"completed_experiment_payload_retired"}'
+    $global:LASTEXITCODE = $(if ($Mode -in @('retire_fail','gui_retire_fail')) {7} else {0})
+  }
+}
+$params = @{ArtifactRoot=$Root; RepositoryRoot=$Root; TargetRun=$Root;
+  Owner='p'; OwnerAbandonmentReason='isolated wrapper test'}
+if ($Mode -ne 'plan') { $params.Apply = $true }
+if ($Mode -eq 'whatif') { $params.WhatIf = $true }
+if ($Mode -eq 'checkpoint') { $params.RuntimeCheckpoint='frozen.json'; $params.ConfirmWritingStopped=$true }
+if ($Mode -eq 'subset') { $params.SelectedHeavyPaths=@('simion/analyzer.pa0') }
+if ($Mode -like 'gui_*') { $params.PreparedGuiCheckpoint=$true; $params.ConfirmWritingStopped=$true; $params.SelectedHeavyPaths=@('simion/processor.pa#','simion/processor.pa0') }
+if ($Mode -eq 'gui_runtime') { $params.RuntimeCheckpoint='frozen.json' }
+if ($Mode -eq 'gui_repair') { $params.RepairPreservedFile='simion/processor.pa0';$params.RepairEvidenceRun='audit';$params.ExpectedManifestSha256='m';$params.ExpectedRetirementSha256='r' }
+if ($Mode -eq 'gui_no_stopped') { $params.ConfirmWritingStopped=$false }
+$failed = $false; $message = ''; $output = @()
+try { $output = @(& (Join-Path $Root 'contracts/invoke_solver_review_retirement.ps1') @params) }
+catch { $failed=$true; $message=$_.Exception.Message }
+'RESULT:' + (@{calls=@($global:calls.ToArray()); output=@($output); error=$message} | ConvertTo-Json -Compress)
+if ($failed) { exit 1 }
+""", encoding="utf-8")
+            command = [pwsh, "-NoLogo", "-NoProfile", "-File", str(harness), str(root), mode]
+            if legacy_console:
+                parent = root / "cp936_parent.ps1"
+                parent.write_text("""
+param($Pwsh, $Harness, $Root, $Mode)
+[Console]::OutputEncoding = [Text.Encoding]::GetEncoding(936)
+$OutputEncoding = [Console]::OutputEncoding
+'PARENT_CODEPAGE:' + [Console]::OutputEncoding.CodePage
+& $Pwsh -NoLogo -NoProfile -File $Harness $Root $Mode
+exit $LASTEXITCODE
+""", encoding="utf-8")
+                command = [pwsh, "-NoLogo", "-NoProfile", "-File", str(parent), pwsh, str(harness), str(root), mode]
+            result = subprocess.run(command,
+                                    cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
+            self.assertEqual(result.returncode, 1 if error else 0, result.stdout + result.stderr)
+            self.assertIn("UTF8:缂栫爜杈圭晫", result.stdout)
+            if legacy_console:
+                self.assertIn("PARENT_CODEPAGE:936", result.stdout)
+            report = json.loads(next(line[7:] for line in result.stdout.splitlines() if line.startswith("RESULT:")))
+            self.assertEqual(report["calls"], expected)
+            if error:
+                self.assertIn(error, report["error"])
+            elif mode != "whatif":
+                self.assertEqual(len(report["output"]), 1)
+                self.assertEqual(json.loads(report["output"][0])["lifecycle_status"],
+                                 "completed_experiment_payload_retired")
+
+
+class SolverReviewRetirementTest(unittest.TestCase):
+    compatibility_roles = (
+        "candidate_contract", "resolved_prototype_contract", "analyzer_pa0",
+        "accelerator_pa0", "detector_pa", "three_instance_seed",
+    )
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.repo = self.root / "repo"
+        self.artifacts = self.root / "artifacts"
+        self.repo.mkdir()
+        self.runs = self.artifacts / "projects" / "p" / "runs"
+        self.target = self._run("20260101_000000__build__simion__old", "2026-01-01T00:00:00Z")
+        self.replacement = self._run("20260102_000000__build__simion__new", "2026-01-02T00:00:00Z")
+        initialize_capacity_ledger(self.artifacts, objects=[])
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def test_wrapper_real_retirement_updates_opted_in_ledger(self) -> None:
+        self._real_wrapper_retirement(partial=False)
+
+    def test_wrapper_real_two_partial_batches_reseal_without_manual_step(self) -> None:
+        self._real_wrapper_retirement(partial=True)
+
+    def _real_wrapper_retirement(self, *, partial: bool) -> None:
+        """Real Python deletion and finalization; only the lease boundary is isolated."""
+        pwsh = shutil.which("pwsh")
+        if not pwsh:
+            self.skipTest("PowerShell 7 is required for the wrapper integration regression")
+        config_path = self.target / "run_config.json"
+        config = json.loads(config_path.read_text())
+        config["capacity_ledger_lifecycle"] = {
+            "schema_version": 1, "enabled": True, "artifact_root": str(self.artifacts),
+            "light_evidence_budget_bytes": 26_214_400,
+        }
+        config_path.write_text(json.dumps(config), encoding="utf-8")
+        manifest_path = self.target / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["run_config"].update(bytes=config_path.stat().st_size, sha256=_sha(config_path))
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        register_writing(self.artifacts, config_path)
+        seal_checkpoint(self.artifacts, config_path, owner="p", writing_stopped=True,
+                        retain_payload=True, retention_reason="tiny completed experiment")
+        contracts = self.root / "contracts"
+        contracts.mkdir()
+        wrapper = contracts / "invoke_solver_review_retirement.ps1"
+        wrapper.write_bytes((Path(__file__).resolve().parents[2] / "tools/repository" / wrapper.name).read_bytes())
+        host = self.root / "src/msplatform/execution/resources/host_execution_lease.ps1"
+        host.parent.mkdir(parents=True)
+        host.write_text("""
+param([Parameter(Mandatory)][hashtable]$HostContext)
+function Enter-HostExecutionLease {
+  $env:MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID = [string]$PID
+  return @{id='isolated fixture lease'}
+}
+function Exit-HostExecutionLease { param($Lease) }
+""", encoding="utf-8")
+        repository = Path(__file__).resolve().parents[2]
+        command = [
+            pwsh, "-NoLogo", "-NoProfile", "-File", str(wrapper),
+            "-ArtifactRoot", str(self.artifacts), "-RepositoryRoot", str(self.root),
+            "-TargetRun", str(self.target), "-Owner", "p",
+            "-OwnerAbandonmentReason", "completed tiny experiment without consumers", "-Apply",
+        ]
+        original_entry = dict(load_capacity_ledger(self.artifacts)["objects"][0])
+        original_manifest = manifest_path.read_bytes()
+        environment = dict(os.environ, SIMULATION_PYTHON_EXE=sys.executable,
+                           PYTHONPATH=os.pathsep.join((str(repository / "src"), str(repository))),
+                           GIT_DIR=str(repository / ".git"), GIT_WORK_TREE=str(repository))
+        first_receipt = None
+        for selection in (["simion/analyzer.pa0", "simion/accelerator.pa0"] if partial else [None]):
+            result = subprocess.run(command + (["-SelectedHeavyPaths", selection] if selection else []),
+                cwd=repository, env=environment, capture_output=True, text=True, encoding="utf-8", timeout=60, check=False)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            receipt = json.loads(result.stdout)  # Reject a second lifecycle JSON document.
+            self.assertEqual(receipt["lifecycle_status"], "completed_experiment_payload_retired")
+            self.assertGreater(receipt["removed_bytes"], 0)
+            self.assertFalse((self.target / (selection or "simion/analyzer.pa0")).exists())
+            ledger = load_capacity_ledger(self.artifacts)
+            entry = next(item for item in ledger["objects"] if item["path"].endswith(self.target.name))
+            expected = ("ready", "rebuildable_payload", True) if partial else ("ready", "light_evidence", False)
+            self.assertEqual((entry["status"], entry["class"], entry["pin"]), expected)
+            actual = sum(path.stat().st_size for path in self.target.rglob("*") if path.is_file())
+            self.assertEqual(entry["bytes"], actual)
+            self.assertEqual(ledger["resident_bytes"], actual)
+            self.assertEqual(manifest_path.read_bytes(), original_manifest)
+            if partial:
+                self.assertEqual(entry, {**original_entry, "bytes": actual})
+                initial_receipt = self.target / "solver_review_retirement_receipt.json"
+                if first_receipt is not None:
+                    self.assertEqual(initial_receipt.read_bytes(), first_receipt)
+                first_receipt = initial_receipt.read_bytes()
+        if partial:
+            self.assertTrue((self.target / "simion/detector.pa#").is_file())
+
+    def test_structured_references_resolves_target_once_for_nested_strings(self) -> None:
+        resolved = self.target.resolve()
+        value = {
+            "paths": [str(self.target / "simion/analyzer.pa0")] * 100,
+            "nested": ({"run": self.target.name}, ["unrelated prose", "", None]),
+        }
+        with mock.patch.object(Path, "resolve", autospec=True, return_value=resolved) as resolve:
+            actual = structured_target_references(value, self.target, self.target.name)
+        self.assertEqual(actual, {"", "simion/analyzer.pa0"})
+        resolve.assert_called_once_with(self.target)
+
+    def test_structured_references_preserves_path_matching_boundaries(self) -> None:
+        cases = (
+            (str(self.target / "simion/analyzer.pa0"), {"simion/analyzer.pa0"}),
+            (str(self.target / "simion/analyzer.pa0").upper(), {"simion/analyzer.pa0"}),
+            (f"../projects/p/runs/{self.target.name}/summary.json", {"summary.json"}),
+            (self.target.name, {""}),
+            (str(self.target) + "-other/simion/analyzer.pa0", set()),
+            (f"../runs/{self.target.name}-other/summary.json", set()),
+            (f"../runs/{self.target.name}/../../foreign.pa0", set()),
+        )
+        for value, expected in cases:
+            with self.subTest(value=value):
+                self.assertEqual(structured_target_references(value, self.target, self.target.name), expected)
+
+    def test_downstream_scan_resolves_target_once_and_rereads_documents(self) -> None:
+        original_resolve = Path.resolve
+        resolved_calls = []
+        def track(path, *args, **kwargs):
+            resolved_calls.append(path)
+            return original_resolve(path, *args, **kwargs)
+        with mock.patch.object(Path, "resolve", autospec=True, side_effect=track):
+            first = _downstream_references(self.artifacts, self.target, self.target.name)
+        self.assertEqual(resolved_calls.count(self.target), 2)  # target normalization and its directory entry
+        self.assertEqual(first["active"], [])
+        manifest_path = self.replacement / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["status"] = "running"
+        manifest["inputs"]["late_dependency"] = {"path": str(self.target / "simion/analyzer.pa0")}
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        second = _downstream_references(
+            self.artifacts, self.target, self.target.name, removable_paths=["simion/analyzer.pa0"],
+        )
+        self.assertEqual([item["path"] for item in second["active"]], ["simion/analyzer.pa0"])
+
+    def test_host_lease_wrapper_forwards_role_mappings(self) -> None:
+        wrapper = Path(__file__).resolve().parents[2] / "tools/repository/invoke_solver_review_retirement.ps1"
+        source = wrapper.read_text(encoding="utf-8-sig")
+        self.assertIn("[string[]]$CompatibilityInputRoleMaps=@()", source)
+        self.assertIn("$CompatibilityInputRoles.Count -eq 0", source)
+        self.assertIn("$CompatibilityInputRoleMaps.Count -eq 0", source)
+        self.assertIn("'--compatibility-input-role-map',$mapping", source)
+        self.assertIn("[string]$RuntimeCheckpoint=''", source)
+        self.assertIn("[switch]$ConfirmWritingStopped", source)
+        self.assertIn("'--runtime-checkpoint',$RuntimeCheckpoint,'--confirm-writing-stopped'", source)
+        self.assertIn("-not $RuntimeCheckpoint -or -not $ConfirmWritingStopped", source)
+        self.assertIn("[string[]]$ApprovedStoppedConsumers=@()", source)
+        self.assertIn("'--approved-stopped-consumer',$consumer", source)
+
+    def _run(self, run_id: str, recorded: str, *, status: str = "success") -> Path:
+        run = self.runs / run_id
+        simion = run / "simion"
+        simion.mkdir(parents=True, exist_ok=True)
+        roles = {
+            "candidate_contract": run / "candidate.json",
+            "resolved_prototype_contract": run / "resolved.json",
+            "analyzer_pa0": simion / "analyzer.pa0",
+            "accelerator_pa0": simion / "accelerator.pa0",
+            "detector_pa": simion / "detector.pa#",
+            "three_instance_seed": simion / "seed.iob",
+        }
+        for name, path in roles.items():
+            path.write_bytes(b"native" if path.suffix.lower().startswith(".pa") else name.encode())
+        config = {"schema_version": 2, "run_id": run_id, "project": "p", "mode": "three_component_candidate_iob_assembly",
+                  "inputs": {name: str(path) for name, path in roles.items()}, "formal_gate_passed": False,
+                  "artifact_retention": {"policy_version": 1, "class": "solver_review", "reason": "GUI review"}}
+        summary = {"run_id": run_id, "status": status}
+        for name, value in (("run_config.json", config), ("summary.json", summary)):
+            (run / name).write_text(json.dumps(value), encoding="utf-8")
+        inputs = {name: {"path": str(path), "exists": True, "bytes": path.stat().st_size, "sha256": _sha(path)} for name, path in roles.items()}
+        manifest = {"schema_version": 2, "run_id": run_id, "project": "p", "mode": config["mode"], "status": status,
+                    "recorded_at_utc": recorded, "run_config": {"path": str(run / 'run_config.json'), "exists": True,
+                    "bytes": (run / 'run_config.json').stat().st_size, "sha256": _sha(run / 'run_config.json')},
+                    "inputs": inputs, "outputs": [{"path": str(run / 'summary.json'), "exists": True,
+                    "bytes": (run / 'summary.json').stat().st_size, "sha256": _sha(run / 'summary.json'), "retention_role": "required_evidence"}],
+                    "formal_eligible": False, "artifact_retention": config["artifact_retention"]}
+        (run / "run_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        return run
+
+    def _failed_equivalence_fixture(self):
+        target = self.target
+        source = target / "simion/analyzer.pa0"
+        keeper = self.replacement / "simion/analyzer.pa0"
+        def record(path):
+            return dict(path=str(path), exists=True, bytes=path.stat().st_size, sha256=_sha(path))
+        config_path = target / "run_config.json"
+        config = json.loads(config_path.read_text())
+        config["inputs"].pop("analyzer_pa0")
+        config_path.write_text(json.dumps(config))
+        summary_path = target / "summary.json"
+        summary_path.write_text(json.dumps(dict(run_id=target.name, status="failed", writers_stopped=True)))
+        request = target / "request.json"
+        request.write_text(json.dumps(dict(expected_operation_ids=["geometry"])))
+        completion = target / "results/execution_completion.json"
+        completion.parent.mkdir()
+        completion.write_text(json.dumps(dict(role="run_artifact_workflow_completion", status="failed",
+            run_id=target.name, project="p", execution_request=record(request),
+            file_roles={str(source): "solver_native_binary"},
+            writer_completion=dict(operations=[dict(operation_id="geometry", observation=dict(
+                exit_confirmed=True, returncode=0, process_id=123, process_started_at_utc_ticks=1),
+                resource_release_id="host-1")], resource_releases=[dict(release_id="host-1",
+                completion_receipt=dict(host_release=dict(inherited=False, token="fixture-token", error=None,
+                    result=dict(status="released", token="fixture-token"))))]))))
+        manifest_path = target / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest.update(status="failed", run_config=record(config_path))
+        manifest["inputs"].pop("analyzer_pa0")
+        manifest["inputs"]["request"] = record(request)
+        manifest["outputs"] = [record(summary_path), record(completion)]
+        manifest_path.write_text(json.dumps(manifest))
+        km = self.replacement / "run_manifest.json"
+        kmanifest = json.loads(km.read_text())
+        keeper_record = record(keeper)
+        kmanifest.update(role="simulation_run_manifest", products={"geometry": dict(
+            schema_version=1, kind="geometry_artifact", status="complete", metadata={},
+            data={"analyzer": keeper_record})})
+        kmanifest["outputs"].append(keeper_record)
+        km.write_text(json.dumps(kmanifest))
+        entries = [dict(path=target.relative_to(self.artifacts).as_posix(), owner="p",
+            **{"class": "rebuildable_payload"}, status="ready", pin=True, bytes=1000,
+            retention_reason="owner sealed stopped payload; fixture"),
+            dict(path=self.replacement.relative_to(self.artifacts).as_posix(), owner="p",
+            **{"class": "rebuildable_payload"}, status="ready", pin=True, bytes=1000)]
+        selection = {"simion/analyzer.pa0": dict(reference=dict(manifest=record(km),
+            product_id="geometry"), member="analyzer")}
+        return source, keeper, completion, manifest_path, entries, selection
+
+    def _failed_equivalence_plan(self, entries, selection):
+        with mock.patch("msplatform.execution.capacity_ledger.load_capacity_ledger",
+                        return_value={"objects": entries}), mock.patch(
+            "msplatform.execution.solver_review_retirement._git_document_references", return_value=[]):
+            return self._owner_plan(selected_heavy_paths=list(selection), failed_equivalence_members=selection)
+
+    def test_failed_equivalence_plan_uses_published_keeper(self):
+        source, _, _, _, entries, selection = self._failed_equivalence_fixture()
+        plan = self._failed_equivalence_plan(entries, selection)
+        proof = plan["failed_payload_equivalence"]["files"][0]
+        self.assertEqual(proof["sha256"], _sha(source))
+        self.assertEqual(proof["keeper_member"], "analyzer")
+        self.assertIsNone(plan["removed_files"][0]["manifest_sha256"])
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            with self.assertRaisesRegex(RetirementError, "explicit keeper protection lease"):
+                apply_retirement(plan)
+        self.assertTrue(source.is_file())
+
+    def test_failed_equivalence_plan_refuses_foreign_keeper(self):
+        _, _, _, _, entries, selection = self._failed_equivalence_fixture()
+        entries[1]["owner"] = "foreign"
+        with self.assertRaisesRegex(RetirementError, "keeper capacity"):
+            self._failed_equivalence_plan(entries, selection)
+
+    def test_failed_equivalence_plan_refuses_unowned_target(self):
+        source, _, completion, manifest_path, entries, selection = self._failed_equivalence_fixture()
+        body = json.loads(completion.read_text())
+        body["file_roles"] = {}
+        completion.write_text(json.dumps(body))
+        manifest = json.loads(manifest_path.read_text())
+        manifest["outputs"][1].update(bytes=completion.stat().st_size, sha256=_sha(completion))
+        manifest_path.write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(RetirementError, "not an owned"):
+            self._failed_equivalence_plan(entries, selection)
+        self.assertTrue(source.is_file())
+
+    def _apply_failed_equivalence(self, plan, entries):
+        with mock.patch("msplatform.execution.capacity_ledger.load_capacity_ledger",
+                        return_value={"objects": entries}), mock.patch(
+            "msplatform.execution.solver_review_retirement._git_document_references", return_value=[]), mock.patch.dict(
+            os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            return apply_retirement(plan, keeper_lease_id="keeper", keeper_lease_owner="fixture")
+
+    def _protect_keeper(self):
+        create_capacity_protection_lease(self.artifacts, lease_id="keeper", ttl_seconds=600,
+            owner="fixture", protected_paths=[self.replacement], committed_new_bytes=0)
+
+    def test_failed_equivalence_apply_with_keeper_guard(self):
+        source, keeper, _, manifest_path, entries, selection = self._failed_equivalence_fixture()
+        original = manifest_path.read_bytes()
+        plan = self._failed_equivalence_plan(entries, selection)
+        self._protect_keeper()
+        receipt = self._apply_failed_equivalence(plan, entries)
+        self.assertEqual(receipt["lifecycle_status"], "completed_experiment_payload_retired")
+        self.assertFalse(source.exists())
+        self.assertEqual(keeper.read_bytes(), b"native")
+        self.assertEqual(manifest_path.read_bytes(), original)
+        with mock.patch("msplatform.execution.capacity_ledger.load_capacity_ledger", return_value={"objects": entries}):
+            self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+
+    def test_failed_equivalence_apply_refuses_tampered_keeper(self):
+        source, keeper, _, _, entries, selection = self._failed_equivalence_fixture()
+        plan = self._failed_equivalence_plan(entries, selection)
+        self._protect_keeper()
+        keeper.write_bytes(b"wrong!")
+        with self.assertRaises(ValueError):
+            self._apply_failed_equivalence(plan, entries)
+        self.assertTrue(source.exists())
+
+    def test_failed_equivalence_apply_refuses_active_target_lease(self):
+        source, _, _, _, entries, selection = self._failed_equivalence_fixture()
+        plan = self._failed_equivalence_plan(entries, selection)
+        self._protect_keeper()
+        create_capacity_protection_lease(self.artifacts, lease_id="target", ttl_seconds=600,
+            owner="consumer", protected_paths=[self.target], committed_new_bytes=0)
+        with self.assertRaisesRegex(RetirementError, "active capacity protection"):
+            self._apply_failed_equivalence(plan, entries)
+        self.assertTrue(source.exists())
+
+    def test_failed_equivalence_apply_refuses_changed_target(self):
+        source, _, _, _, entries, selection = self._failed_equivalence_fixture()
+        plan = self._failed_equivalence_plan(entries, selection)
+        self._protect_keeper()
+        source.write_bytes(b"unique")
+        with self.assertRaisesRegex(RetirementError, "bytes differ"):
+            self._apply_failed_equivalence(plan, entries)
+        self.assertEqual(source.read_bytes(), b"unique")
+
+    def test_failed_equivalence_apply_refuses_active_consumer(self):
+        source, _, _, _, entries, selection = self._failed_equivalence_fixture()
+        plan = self._failed_equivalence_plan(entries, selection)
+        self._protect_keeper()
+        active = self.runs / "20260103_000000__sim__simion__active"
+        active.mkdir()
+        (active / "run_config.json").write_text(json.dumps({"inputs": {"source": str(source)}}))
+        with self.assertRaisesRegex(RetirementError, "active references"):
+            self._apply_failed_equivalence(plan, entries)
+        self.assertTrue(source.exists())
+
+    def test_failed_equivalence_apply_requires_matching_keeper_lease(self):
+        source, _, _, _, entries, selection = self._failed_equivalence_fixture()
+        plan = self._failed_equivalence_plan(entries, selection)
+        with self.assertRaisesRegex(RetirementError, "keeper protection lease"):
+            self._apply_failed_equivalence(plan, entries)
+        self.assertTrue(source.exists())
+
+    def test_failed_equivalence_apply_retains_pending_after_interrupted_delete(self):
+        source, _, _, _, entries, selection = self._failed_equivalence_fixture()
+        plan = self._failed_equivalence_plan(entries, selection)
+        self._protect_keeper()
+        def interrupted(root, records, **kwargs):
+            (root / records[0]["path"]).unlink()
+            raise ValueError("synthetic interrupted delete")
+            yield
+        with mock.patch("msplatform.execution.solver_review_retirement.remove_recorded_files", interrupted):
+            with self.assertRaisesRegex(RetirementError, "synthetic interrupted delete"):
+                self._apply_failed_equivalence(plan, entries)
+        self.assertFalse(source.exists())
+        receipt = json.loads((self.target / "solver_review_retirement_receipt.json").read_text())
+        self.assertEqual(receipt["lifecycle_status"], "retirement_pending")
+        resumed = self._failed_equivalence_plan(entries, selection)
+        self.assertTrue(resumed["removed_files"][0]["already_removed_before_resume"])
+        receipt = self._apply_failed_equivalence(resumed, entries)
+        self.assertEqual(receipt["lifecycle_status"], "completed_experiment_payload_retired")
+        with mock.patch("msplatform.execution.capacity_ledger.load_capacity_ledger", return_value={"objects": entries}):
+            self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+
+    def _real_failed_equivalence_fixture(self):
+        source, keeper, completion, manifest_path, _, selection = self._failed_equivalence_fixture()
+        def record(path):
+            return dict(path=str(path), exists=True, bytes=path.stat().st_size, sha256=_sha(path))
+        for run in (self.target, self.replacement):
+            config_path = run / "run_config.json"
+            config = json.loads(config_path.read_text())
+            config["capacity_ledger_lifecycle"] = dict(schema_version=1, enabled=True,
+                artifact_root=str(self.artifacts), light_evidence_budget_bytes=26214400)
+            config_path.write_text(json.dumps(config))
+            manifest_file = run / "run_manifest.json"
+            manifest = json.loads(manifest_file.read_text())
+            manifest["run_config"] = record(config_path)
+            manifest_file.write_text(json.dumps(manifest))
+            register_writing(self.artifacts, config_path)
+            seal_checkpoint(self.artifacts, config_path, owner="p", writing_stopped=True,
+                            retain_payload=True, retention_reason="fixture closed owner")
+        selection["simion/analyzer.pa0"]["reference"]["manifest"] = record(self.replacement / "run_manifest.json")
+        return source, keeper, manifest_path, selection
+
+    def _real_failed_plan(self, selection):
+        with mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[]):
+            return self._owner_plan(selected_heavy_paths=list(selection), failed_equivalence_members=selection)
+
+    def _real_failed_apply(self, plan):
+        with mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[]), mock.patch.dict(
+                os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            return apply_retirement(plan, keeper_lease_id="keeper", keeper_lease_owner="fixture")
+
+    def test_real_ledger_failed_equivalence_apply_and_verify(self):
+        source, keeper, manifest_path, selection = self._real_failed_equivalence_fixture()
+        original = manifest_path.read_bytes()
+        plan = self._real_failed_plan(selection)
+        self._protect_keeper()
+        receipt = self._real_failed_apply(plan)
+        self.assertEqual(receipt["lifecycle_status"], "completed_experiment_payload_retired")
+        self.assertFalse(source.exists())
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+        sealed = reseal_retired_payload(self.artifacts, self.target / "run_config.json", owner="p",
+                                        writing_stopped=True)
+        self.assertEqual(sealed["status"], "ready")
+        from msplatform.execution.capacity_protection import delete_capacity_protection_lease
+        delete_capacity_protection_lease(self.artifacts, lease_id="keeper")
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+        with self.assertRaisesRegex(RetirementError, "later batches are not supported"):
+            self._real_failed_plan({"simion/accelerator.pa0": selection["simion/analyzer.pa0"]})
+        self.assertEqual(manifest_path.read_bytes(), original)
+        self.assertEqual(keeper.read_bytes(), b"native")
+        keeper.write_bytes(b"tamper")
+        with self.assertRaises((AssertionError, ValueError, OSError)):
+            verify_retirement(self.target)
+
+    def test_real_ledger_failed_equivalence_refusals(self):
+        from msplatform.execution.capacity_protection import delete_capacity_protection_lease
+        source, keeper, _, selection = self._real_failed_equivalence_fixture()
+        plan = self._real_failed_plan(selection)
+        self._protect_keeper()
+        create_capacity_protection_lease(self.artifacts, lease_id="target", ttl_seconds=600,
+            owner="consumer", protected_paths=[self.target], committed_new_bytes=0)
+        with self.assertRaisesRegex(RetirementError, "active capacity protection"):
+            self._real_failed_apply(plan)
+        delete_capacity_protection_lease(self.artifacts, lease_id="target")
+        active = self.runs / "20260103_000000__sim__simion__active"
+        active.mkdir()
+        (active / "run_config.json").write_text(json.dumps({"inputs": {"source": str(source)}}))
+        with self.assertRaisesRegex(RetirementError, "active references"):
+            self._real_failed_apply(plan)
+        (active / "run_config.json").unlink()
+        active.rmdir()
+        keeper.write_bytes(b"tamper")
+        with self.assertRaises((AssertionError, ValueError, OSError)):
+            self._real_failed_apply(plan)
+        keeper.unlink()
+        with self.assertRaises((AssertionError, ValueError, OSError)):
+            self._real_failed_apply(plan)
+        keeper.write_bytes(b"native")
+        delete_capacity_protection_lease(self.artifacts, lease_id="keeper")
+        with self.assertRaisesRegex(RetirementError, "keeper protection lease"):
+            self._real_failed_apply(plan)
+        self.assertEqual(source.read_bytes(), b"native")
+        self.assertFalse((self.target / "solver_review_retirement_receipt.json").exists())
+
+    def test_real_ledger_failed_equivalence_unknown_writer_refused(self):
+        source, _, _, selection = self._real_failed_equivalence_fixture()
+        completion = self.target / "results/execution_completion.json"
+        body = json.loads(completion.read_text())
+        body["writer_completion"]["operations"][0]["observation"]["exit_confirmed"] = False
+        completion.write_text(json.dumps(body))
+        manifest_file = self.target / "run_manifest.json"
+        manifest = json.loads(manifest_file.read_text())
+        manifest["outputs"][1].update(bytes=completion.stat().st_size, sha256=_sha(completion))
+        manifest_file.write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(RetirementError, "writer completion"):
+            self._real_failed_plan(selection)
+        self.assertTrue(source.exists())
+
+    def test_real_ledger_failed_equivalence_interrupted_resume_and_verify(self):
+        source, keeper, manifest_path, selection = self._real_failed_equivalence_fixture()
+        original = manifest_path.read_bytes()
+        plan = self._real_failed_plan(selection)
+        self._protect_keeper()
+        def interrupted(root, records, **kwargs):
+            (root / records[0]["path"]).unlink()
+            raise ValueError("synthetic interrupted delete")
+            yield
+        with mock.patch("msplatform.execution.solver_review_retirement.remove_recorded_files", interrupted):
+            with self.assertRaisesRegex(RetirementError, "synthetic interrupted delete"):
+                self._real_failed_apply(plan)
+        pending = json.loads((self.target / "solver_review_retirement_receipt.json").read_text())
+        self.assertEqual(pending["lifecycle_status"], "retirement_pending")
+        resumed = self._real_failed_plan(selection)
+        self.assertTrue(resumed["removed_files"][0]["already_removed_before_resume"])
+        self._real_failed_apply(resumed)
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+        sealed = reseal_retired_payload(self.artifacts, self.target / "run_config.json", owner="p",
+                                        writing_stopped=True)
+        self.assertEqual(sealed["status"], "ready")
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+        self.assertFalse(source.exists())
+        self.assertEqual(keeper.read_bytes(), b"native")
+        self.assertEqual(manifest_path.read_bytes(), original)
+
+    def _two_member_equivalence_fixture(self):
+        _, _, completion, manifest_file, entries, selection = self._failed_equivalence_fixture()
+        def record(path):
+            return dict(path=str(path), exists=True, bytes=path.stat().st_size, sha256=_sha(path))
+        source = self.target / "simion/accelerator.pa0"
+        config_path = self.target / "run_config.json"
+        config = json.loads(config_path.read_text())
+        config["inputs"].pop("accelerator_pa0")
+        config_path.write_text(json.dumps(config))
+        body = json.loads(completion.read_text())
+        body["file_roles"][str(source)] = "solver_native_binary"
+        completion.write_text(json.dumps(body))
+        manifest = json.loads(manifest_file.read_text())
+        manifest["run_config"] = record(config_path)
+        manifest["inputs"].pop("accelerator_pa0")
+        manifest["outputs"][1] = record(completion)
+        manifest_file.write_text(json.dumps(manifest))
+        keeper_file = self.replacement / "simion/accelerator.pa0"
+        keeper_manifest = self.replacement / "run_manifest.json"
+        km = json.loads(keeper_manifest.read_text())
+        member = record(keeper_file)
+        km["products"]["geometry"]["data"]["accelerator"] = member
+        km["outputs"].append(member)
+        keeper_manifest.write_text(json.dumps(km))
+        reference = dict(manifest=record(keeper_manifest), product_id="geometry")
+        selection["simion/analyzer.pa0"]["reference"] = copy.deepcopy(reference)
+        selection["simion/accelerator.pa0"] = dict(reference=copy.deepcopy(reference), member="accelerator")
+        return entries, selection
+
+    def test_failed_equivalence_reuses_one_published_keeper_per_call(self):
+        from msplatform.results.artifacts import open_artifact
+        entries, selection = self._two_member_equivalence_fixture()
+        with mock.patch("msplatform.results.artifacts.open_artifact", wraps=open_artifact) as opened:
+            plan = self._failed_equivalence_plan(entries, selection)
+        self.assertEqual(opened.call_count, 1)
+        self.assertEqual({row["keeper_member"] for row in plan["failed_payload_equivalence"]["files"]},
+                         {"analyzer", "accelerator"})
+
+    def test_failed_equivalence_reuse_refuses_missing_member(self):
+        entries, selection = self._two_member_equivalence_fixture()
+        selection["simion/analyzer.pa0"]["member"] = "missing"
+        with self.assertRaisesRegex(RetirementError, "keeper published artifact or member differs"):
+            self._failed_equivalence_plan(entries, selection)
+
+    def test_failed_equivalence_reuse_binds_full_reference(self):
+        entries, selection = self._two_member_equivalence_fixture()
+        selection["simion/analyzer.pa0"]["reference"]["manifest"]["sha256"] = "0" * 64
+        with self.assertRaisesRegex(RetirementError, "keeper published artifact or member differs"):
+            self._failed_equivalence_plan(entries, selection)
+
+    def _closed_diagnostic_fixture(self, suffix, *, with_completion):
+        run = self._run("20260104_00000" + suffix + "__test__simion__diagnostic", "2026-01-04T00:00:00Z", status="checkpoint")
+        def record(path):
+            return dict(path=str(path), exists=True, bytes=path.stat().st_size, sha256=_sha(path))
+        manifest_path = run / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["role"] = "simulation_run_manifest"
+        manifest_path.write_text(json.dumps(manifest))
+        config_path = run / "run_config.json"
+        config = json.loads(config_path.read_text())
+        config["inputs"]["source_geometry"] = str(self.target / "simion/analyzer.pa0")
+        config["capacity_ledger_lifecycle"] = dict(schema_version=1, enabled=True,
+            artifact_root=str(self.artifacts), light_evidence_budget_bytes=26214400)
+        config_path.write_text(json.dumps(config))
+        request = run / "inputs/execution_request.json"
+        request.parent.mkdir()
+        request.write_text(json.dumps(dict(expected_operation_ids=["probe"])))
+        release = dict(inherited=False, token="host-token-" + suffix, error=None,
+                       result=dict(status="released", token="host-token-" + suffix))
+        process = run / "logs/operation_0001.process.json"
+        process.parent.mkdir()
+        usage = run / "logs/operation_0001.usage.json"
+        process.write_text(json.dumps(dict(observation=dict(root_process_id=123,
+            root_process_started_at_utc_ticks=456, exit_code=0, usage_path=str(usage)), host_release=release, error=None)))
+        usage.write_text(json.dumps(dict(process_start=dict(root_process_id=123, root_process_started_at_utc_ticks=456),
+            last_process_observation=dict(root_process_id=123,
+            root_process_started_at_utc_ticks=456, root_exit_confirmed=True,
+            wait_phase="immutable_drain_confirmed_empty", sample=dict(ancestry_complete=True,
+            active_process_ids=[], unknown_ancestry_process_ids=[])))))
+        completion_path = run / "results/execution_completion.json"
+        completion_record = None
+        if with_completion:
+            completion_path.parent.mkdir()
+            completion_path.write_text(json.dumps(dict(role="run_artifact_workflow_completion",
+                run_id=run.name, project="p", status="success", execution_request=record(request),
+                writer_completion=dict(operations=[dict(operation_id="probe", observation=dict(
+                    exit_confirmed=True, returncode=0, process_id=123, process_started_at_utc_ticks=456),
+                    resource_release_id="host-1")], resource_releases=[dict(release_id="host-1",
+                    completion_receipt=dict(host_release=release))]))))
+            completion_record = record(completion_path)
+        workflow = self.artifacts / "projects/p/scratch/workflow_results" / run.name / "result.json"
+        workflow.parent.mkdir(parents=True)
+        workflow.write_text(json.dumps(dict(status="failed", stage="finalization", writers_confirmed=True,
+            run_directory=str(run), execution_request=str(request))))
+        from msplatform.execution.capacity_protection import delete_capacity_protection_lease
+        session = run / "logs/capacity_session.json"
+        lease_id = "workflow-fixture-" + suffix
+        session.write_text(json.dumps(dict(role="artifact_workflow_capacity_session", status="active",
+            owner="run-artifact-workflow:p:" + run.name, lease_id=lease_id, source_protection_leases=[])))
+        create_capacity_protection_lease(self.artifacts, lease_id=lease_id, ttl_seconds=600,
+            owner="run-artifact-workflow:p:" + run.name, protected_paths=[run], committed_new_bytes=0)
+        release_receipt = delete_capacity_protection_lease(self.artifacts, lease_id=lease_id)
+        register_writing(self.artifacts, config_path)
+        closure = seal_checkpoint(self.artifacts, config_path, owner="p", writing_stopped=True,
+                                  retain_payload=True, retention_reason="closed diagnostic fixture")
+        closure_path = self.root / ("closure-" + suffix + ".json")
+        inventory = {item.relative_to(run).as_posix(): record(item) for item in run.rglob("*") if item.is_file()}
+        if with_completion:
+            wrapper = dict(schema_version=1, role="capacity_only_stopped_diagnostic", status="capacity_sealed",
+                run_directory=str(run), seal=closure, release=release_receipt, before_inventory={key: dict(bytes=value["bytes"], sha256=value["sha256"]) for key, value in inventory.items()})
+        else:
+            wrapper = dict(role="capacity_only_administrative_closure", status="capacity_sealed",
+                run_directory=str(run), seal=closure, lease_release=release_receipt, files_before={key.replace("/", "\\"): [value["bytes"], value["sha256"]] for key, value in inventory.items()})
+        closure_path.write_text(json.dumps(wrapper))
+        authority = dict(manifest=record(manifest_path), closure=record(closure_path),
+            workflow_result=record(workflow), process_receipt=record(process), usage=record(usage),
+            execution_request=record(request), capacity_session=record(session), completion=completion_record, writing_stopped=True,
+            abandonment_reason="owner abandoned completed read-only diagnostic")
+        return run, authority
+
+    def _closed_diagnostic_plan(self, selection, consumers):
+        with mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[]):
+            return self._owner_plan(selected_heavy_paths=list(selection), failed_equivalence_members=selection,
+                approved_stopped_consumers=list(consumers),
+                approved_stopped_consumer_closures={str(run): authority for run, authority in consumers.items()},
+                writing_stopped=True)
+
+    def test_closed_diagnostic_selected_equivalence_real_ledger(self):
+        source, _, _, selection = self._real_failed_equivalence_fixture()
+        a, aa = self._closed_diagnostic_fixture("1", with_completion=False)
+        b, bb = self._closed_diagnostic_fixture("2", with_completion=True)
+        original = [(run / "run_manifest.json").read_bytes() for run in (a, b)]
+        plan = self._closed_diagnostic_plan(selection, {a: aa, b: bb})
+        self.assertEqual(len(plan["approved_stopped_consumers"]), 2)
+        aa["abandonment_reason"] = "caller mutation after planning"
+        self.assertNotEqual(plan["approved_stopped_consumers"][0]["authority"]["abandonment_reason"],
+                            aa["abandonment_reason"])
+        self._protect_keeper()
+        self._real_failed_apply(plan)
+        self.assertFalse(source.exists())
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+        self.assertEqual([(run / "run_manifest.json").read_bytes() for run in (a, b)], original)
+
+    def test_closed_diagnostic_rejects_unknown_writer_and_changed_evidence(self):
+        _, _, _, selection = self._real_failed_equivalence_fixture()
+        run, authority = self._closed_diagnostic_fixture("1", with_completion=False)
+        usage_path = Path(authority["usage"]["path"])
+        usage = json.loads(usage_path.read_text())
+        usage["last_process_observation"]["sample"]["ancestry_complete"] = False
+        usage_path.write_text(json.dumps(usage))
+        authority["usage"].update(bytes=usage_path.stat().st_size, sha256=_sha(usage_path))
+        closure_path = Path(authority["closure"]["path"])
+        wrapper = json.loads(closure_path.read_text())
+        wrapper["files_before"]["logs\\operation_0001.usage.json"] = [usage_path.stat().st_size, _sha(usage_path)]
+        closure_path.write_text(json.dumps(wrapper))
+        authority["closure"].update(bytes=closure_path.stat().st_size, sha256=_sha(closure_path))
+        with self.assertRaisesRegex(RetirementError, "writer or drain remains unknown"):
+            self._closed_diagnostic_plan(selection, {run: authority})
+        authority["usage"]["sha256"] = "0" * 64
+        with self.assertRaisesRegex(RetirementError, "closed consumer evidence differs"):
+            self._closed_diagnostic_plan(selection, {run: authority})
+
+    def test_closed_diagnostic_rejects_consumer_lease_and_scope_creep(self):
+        _, _, _, selection = self._real_failed_equivalence_fixture()
+        run, authority = self._closed_diagnostic_fixture("1", with_completion=False)
+        create_capacity_protection_lease(self.artifacts, lease_id="diagnostic", ttl_seconds=600,
+            owner="reader", protected_paths=[run], committed_new_bytes=0)
+        with self.assertRaisesRegex(RetirementError, "active protection lease"):
+            self._closed_diagnostic_plan(selection, {run: authority})
+        with self.assertRaisesRegex(RetirementError, "selected failed equivalence scope"):
+            self._owner_plan(approved_stopped_consumers=[run],
+                approved_stopped_consumer_closures={str(run): authority}, writing_stopped=True)
+
+    def test_closed_diagnostic_pending_rechecks_owner_decision(self):
+        source, _, _, selection = self._real_failed_equivalence_fixture()
+        run, authority = self._closed_diagnostic_fixture("1", with_completion=False)
+        plan = self._closed_diagnostic_plan(selection, {run: authority})
+        self._protect_keeper()
+        def interrupted(root, records, **kwargs):
+            (root / records[0]["path"]).unlink()
+            raise ValueError("synthetic interrupted delete")
+            yield
+        with mock.patch("msplatform.execution.solver_review_retirement.remove_recorded_files", interrupted):
+            with self.assertRaisesRegex(RetirementError, "synthetic interrupted delete"):
+                self._real_failed_apply(plan)
+        changed = copy.deepcopy(authority)
+        changed["abandonment_reason"] = "different owner decision"
+        with self.assertRaisesRegex(RetirementError, "stopped consumer list or identity changed"):
+            self._closed_diagnostic_plan(selection, {run: changed})
+        resumed = self._closed_diagnostic_plan(selection, {run: authority})
+        self._real_failed_apply(resumed)
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+        self.assertFalse(source.exists())
+
+    def test_closed_diagnostic_rejects_changed_closure_config_summary_and_process(self):
+        _, _, _, selection = self._real_failed_equivalence_fixture()
+        run, authority = self._closed_diagnostic_fixture("1", with_completion=False)
+        paths = [Path(authority["closure"]["path"]), run / "run_config.json", run / "summary.json",
+                 Path(authority["process_receipt"]["path"])]
+        for path in paths:
+            original = path.read_bytes()
+            with self.subTest(path=path.name):
+                path.write_bytes(original + b" ")
+                with self.assertRaisesRegex(RetirementError, "closed consumer evidence differs"):
+                    self._closed_diagnostic_plan(selection, {run: authority})
+                path.write_bytes(original)
+        closure_path = Path(authority["closure"]["path"])
+        original = closure_path.read_bytes()
+        closure_path.unlink()
+        with self.assertRaisesRegex(RetirementError, "closed consumer evidence differs"):
+            self._closed_diagnostic_plan(selection, {run: authority})
+        closure_path.write_bytes(original)
+
+    def test_closed_diagnostic_rechecks_gui_and_new_consumer_before_apply(self):
+        source, _, _, selection = self._real_failed_equivalence_fixture()
+        run, authority = self._closed_diagnostic_fixture("1", with_completion=False)
+        plan = self._closed_diagnostic_plan(selection, {run: authority})
+        self._protect_keeper()
+        review = self.artifacts / "projects/p/reviews/current_diagnostic"
+        review.mkdir(parents=True)
+        receipt = review / "inspection_receipt.json"
+        receipt.write_text(json.dumps(dict(status="ready", source_run=run.name)))
+        with self.assertRaisesRegex(RetirementError, "current GUI"):
+            self._real_failed_apply(plan)
+        receipt.unlink()
+        active = self.runs / "20260105_000000__test__simion__other"
+        active.mkdir()
+        (active / "run_config.json").write_text(json.dumps({"inputs": {"source": str(source)}}))
+        with self.assertRaisesRegex(RetirementError, "active references"):
+            self._real_failed_apply(plan)
+        self.assertTrue(source.exists())
+
+    def test_closed_diagnostic_refuses_mismatched_completion_writer(self):
+        _, _, _, selection = self._real_failed_equivalence_fixture()
+        run, authority = self._closed_diagnostic_fixture("1", with_completion=True)
+        completion = Path(authority["completion"]["path"])
+        data = json.loads(completion.read_text())
+        data["writer_completion"]["operations"][0]["observation"]["exit_confirmed"] = False
+        completion.write_text(json.dumps(data))
+        authority["completion"].update(bytes=completion.stat().st_size, sha256=_sha(completion))
+        with self.assertRaisesRegex(RetirementError, "closed consumer evidence differs"):
+            self._closed_diagnostic_plan(selection, {run: authority})
+
+    def test_closed_diagnostic_rejects_wrapper_identity_and_inventory_mutations(self):
+        _, _, _, selection = self._real_failed_equivalence_fixture()
+        run, authority = self._closed_diagnostic_fixture("1", with_completion=True)
+        closure_path = Path(authority["closure"]["path"])
+        original = json.loads(closure_path.read_text())
+        def bad_role(value): value["role"] = "unrecognized"
+        def bad_version(value): value["schema_version"] = True
+        def bad_outer_run(value): value["run_directory"] = str(self.target)
+        def bad_seal_run(value): value["seal"]["run_directory"] = str(self.target)
+        def bad_config(value): value["seal"]["run_config"]["sha256"] = "0" * 64
+        def bad_inventory(value): value["before_inventory"]["logs/operation_0001.usage.json"]["sha256"] = "0" * 64
+        def bad_consumer(value): value["seal"]["ledger_entry"]["consumers"] = ["projects/p/runs/active"]
+        for change in (bad_role, bad_version, bad_outer_run, bad_seal_run, bad_config, bad_inventory, bad_consumer):
+            with self.subTest(change=change.__name__):
+                value = copy.deepcopy(original)
+                change(value)
+                closure_path.write_text(json.dumps(value))
+                authority["closure"].update(bytes=closure_path.stat().st_size, sha256=_sha(closure_path))
+                with self.assertRaisesRegex(RetirementError, "closed consumer evidence differs"):
+                    self._closed_diagnostic_plan(selection, {run: authority})
+
+    def test_direct_public_stopped_receipt_remains_supported(self):
+        from msplatform.execution.run_capacity_lifecycle import resolve_consumed_run_capacity_owner
+        self._real_failed_equivalence_fixture()
+        run, authority = self._closed_diagnostic_fixture("1", with_completion=False)
+        direct = seal_checkpoint(self.artifacts, run / "run_config.json", owner="p", writing_stopped=True,
+                                 retain_payload=True, retention_reason="closed diagnostic fixture")
+        direct_path = self.root / "direct-owner-receipt.json"
+        direct_path.write_text(json.dumps(direct))
+        direct_record = dict(path=str(direct_path), exists=True, bytes=direct_path.stat().st_size,
+                             sha256=_sha(direct_path))
+        resolved = resolve_consumed_run_capacity_owner(authority["manifest"],
+            stopped_receipt_record=direct_record, consumer_artifact_root=self.artifacts)
+        self.assertEqual(resolved["run_directory"], str(run))
+
+    def test_closed_diagnostic_legacy_inventory_and_missing_record_refused(self):
+        _, _, _, selection = self._real_failed_equivalence_fixture()
+        run, authority = self._closed_diagnostic_fixture("1", with_completion=False)
+        closure_path = Path(authority["closure"]["path"])
+        closure = json.loads(closure_path.read_text())
+        closure["files_before"]["logs\\operation_0001.usage.json"][1] = "0" * 64
+        closure_path.write_text(json.dumps(closure))
+        authority["closure"].update(bytes=closure_path.stat().st_size, sha256=_sha(closure_path))
+        with self.assertRaisesRegex(RetirementError, "inventory differs"):
+            self._closed_diagnostic_plan(selection, {run: authority})
+        authority.pop("usage")
+        with self.assertRaisesRegex(RetirementError, "explicit stopped-owner evidence"):
+            self._closed_diagnostic_plan(selection, {run: authority})
+
+    def test_closed_diagnostic_rechecks_consumer_lease_and_evidence_after_plan(self):
+        source, _, _, selection = self._real_failed_equivalence_fixture()
+        run, authority = self._closed_diagnostic_fixture("1", with_completion=False)
+        plan = self._closed_diagnostic_plan(selection, {run: authority})
+        self._protect_keeper()
+        create_capacity_protection_lease(self.artifacts, lease_id="diagnostic", ttl_seconds=600,
+            owner="reader", protected_paths=[run], committed_new_bytes=0)
+        with self.assertRaisesRegex(RetirementError, "active protection lease"):
+            self._real_failed_apply(plan)
+        from msplatform.execution.capacity_protection import delete_capacity_protection_lease
+        delete_capacity_protection_lease(self.artifacts, lease_id="diagnostic")
+        usage = Path(authority["usage"]["path"])
+        usage.write_bytes(usage.read_bytes() + b" ")
+        with self.assertRaisesRegex(RetirementError, "closed consumer evidence differs"):
+            self._real_failed_apply(plan)
+        self.assertTrue(source.exists())
+
+    def _owner_plan(self, **kwargs: object) -> dict[str, object]:
+        return plan_retirement(
+            self.artifacts, self.repo, self.target, owner="p",
+            owner_abandonment_reason="completed pilot comparison; no further payload consumer",
+            **kwargs,
+        )
+
+    def _view_repair_fixture(self, *, with_lease=True, payload=b"original-native-bytes"):
+        """Retire one actual fixture member while preserving a second native PA."""
+        source = self.target / "simion/collision.pa"
+        source.write_bytes(payload)
+        manifest_path = self.target / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["outputs"].append(dict(path=str(source), exists=True, bytes=source.stat().st_size,
+                                        sha256=_sha(source), retention_role="solver_native_binary"))
+        manifest_path.write_text(json.dumps(manifest))
+        with mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[]), mock.patch.dict(
+            os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(self._owner_plan(selected_heavy_paths=["simion/analyzer.pa0"]))
+        audit = self.runs / "20260103_000000__analysis__python__payload-view-repair"
+        audit.mkdir()
+        (audit / "run_config.json").write_text(json.dumps(dict(
+            project="p", run_id=audit.name, mode="owned_payload_view_repair",
+            artifact_retention=dict(policy_version=1, **{"class":"solver_review"}, reason="view repair audit"),
+            capacity_ledger_lifecycle=dict(enabled=True, artifact_root=str(self.artifacts)))))
+        if with_lease:
+            create_capacity_protection_lease(self.artifacts, lease_id="repair", ttl_seconds=60,
+                owner=f"owned-payload-view-repair:p:{audit.name}", protected_paths=[self.target, audit],
+                committed_new_bytes=3 * source.stat().st_size)
+        options = dict(owner="p", expected_manifest_sha256=_sha(manifest_path),
+            expected_retirement_sha256=_sha(self.target / "solver_review_retirement_receipt.json"),
+            writing_stopped=True, capacity_lease_id="repair", apply=True)
+        return source, audit, options
+
+    @unittest.skipUnless(os.name == "nt", "Windows preserved PA read-view repair")
+    def test_preserved_repair_wrapper_real_apply_uses_canonical_support(self):
+        from msplatform.execution.capacity_protection import load_capacity_protection_leases
+
+        pwsh = shutil.which("pwsh")
+        if not pwsh:
+            self.skipTest("PowerShell 7 is required for the wrapper integration regression")
+        source, audit, options = self._view_repair_fixture(
+            with_lease=False, payload=b"original-native-bytes" * 400000,
+        )
+        source_repository = Path(__file__).resolve().parents[2]
+        repository = self.root / "isolated"
+        contracts = repository / "tools/repository"
+        shutil.copytree(source_repository / "tools/repository", contracts)
+        shutil.copytree(source_repository / "src/msplatform", repository / "src/msplatform")
+        capacity_policy = repository / "src/msplatform/execution/resources/artifact_capacity_policy.json"
+        policy = json.loads(capacity_policy.read_text(encoding="utf-8"))
+        policy.update(target_gib=0.1, minimum_free_gib=0.0001)
+        capacity_policy.write_text(json.dumps(policy), encoding="utf-8")
+        wrapper = contracts / "invoke_solver_review_retirement.ps1"
+        wrapper.write_bytes((Path(__file__).resolve().parents[2] / "tools/repository" / wrapper.name).read_bytes())
+        host_calls = self.root / "host-calls.txt"
+        (repository / "src/msplatform/execution/resources/host_execution_lease.ps1").write_text(f"""
+param([Parameter(Mandatory)][hashtable]$HostContext)
+$script:HostResourceExecutionContext = $HostContext
+function Invoke-HostResourceTransaction {{}}
+function Enter-HostExecutionLease {{
+  $env:MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID = [string]$PID
+  Add-Content -LiteralPath '{host_calls}' -Value 'enter'
+  return @{{id='isolated fixture lease'}}
+}}
+function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Value 'exit' }}
+""", encoding="utf-8")
+        command = [
+            pwsh, "-NoLogo", "-NoProfile", "-File", str(wrapper),
+            "-ArtifactRoot", str(self.artifacts), "-RepositoryRoot", str(repository),
+            "-TargetRun", str(self.target), "-Owner", "p", "-ConfirmWritingStopped",
+            "-RepairPreservedFile", "simion/collision.pa", "-RepairEvidenceRun", str(audit),
+            "-ExpectedManifestSha256", options["expected_manifest_sha256"],
+            "-ExpectedRetirementSha256", options["expected_retirement_sha256"],
+            "-Apply", "-Confirm:$false",
+        ]
+        environment = dict(os.environ, SIMULATION_PYTHON_EXE=sys.executable,
+                           PYTHONPATH=os.pathsep.join((str(repository / "src"), str(repository))))
+        original = source.read_bytes()
+        original_id = source.stat().st_ino
+        result = subprocess.run(command, cwd=repository, env=environment, capture_output=True, text=True,
+                                encoding="utf-8", errors="replace", timeout=90, check=False)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        receipt = json.loads(result.stdout)
+        self.assertEqual(receipt["status"], "complete")
+        self.assertEqual(source.read_bytes(), original)
+        self.assertNotEqual(source.stat().st_ino, original_id)
+        self.assertEqual(Path(receipt["quarantine_path"]).stat().st_ino, original_id)
+        self.assertEqual(Path(receipt["quarantine_path"]).read_bytes(), original)
+        self.assertEqual(Path(receipt["retained_snapshot"]).read_bytes(), original)
+        self.assertEqual(_sha(self.target / "run_manifest.json"), options["expected_manifest_sha256"])
+        self.assertEqual(_sha(self.target / "solver_review_retirement_receipt.json"),
+                         options["expected_retirement_sha256"])
+        self.assertEqual(host_calls.read_text().splitlines(), ["enter", "enter", "exit", "exit"])
+        leases = load_capacity_protection_leases(self.artifacts)
+        self.assertEqual((leases["protected_paths"], leases["protected_cache_keys"],
+                          leases["committed_new_bytes"]), (set(), set(), 0))
+        self.assertFalse((self.root / "isolated/common/src").exists())
+
+        replaced_id = source.stat().st_ino
+        failed_command = command.copy()
+        failed_command[failed_command.index("-ExpectedManifestSha256") + 1] = "0" * 64
+        failed = subprocess.run(failed_command, cwd=repository, env=environment, capture_output=True, text=True,
+                                encoding="utf-8", errors="replace", timeout=90, check=False)
+        self.assertNotEqual(failed.returncode, 0, failed.stdout + failed.stderr)
+        self.assertIn("Preserved payload repair preflight failed", failed.stdout + failed.stderr)
+        self.assertEqual(source.read_bytes(), original)
+        self.assertEqual(source.stat().st_ino, replaced_id)
+        self.assertEqual(host_calls.read_text().splitlines(),
+                         ["enter", "enter", "exit", "exit", "enter", "exit"])
+        leases = load_capacity_protection_leases(self.artifacts)
+        self.assertEqual((leases["protected_paths"], leases["protected_cache_keys"],
+                          leases["committed_new_bytes"]), (set(), set(), 0))
+
+    @unittest.skipUnless(os.name == "nt", "Windows preserved PA read-view repair")
+    def test_preserved_payload_view_repair_keeps_large_io_outside_capacity_lock(self):
+        from contextlib import contextmanager
+        from msplatform.execution import solver_review_retirement as module
+        from msplatform.execution.cache_generation import snapshot_immutable_file
+        source, audit, options = self._view_repair_fixture()
+        original_lock = module.protection.capacity_decision_lock
+        original_replace = os.replace
+        original_atomic = module._atomic_json
+        held = False
+        calls = []
+
+        @contextmanager
+        def tracked_lock(root):
+            nonlocal held
+            with original_lock(root):
+                self.assertFalse(held)
+                held = True
+                calls.append("lock")
+                try:
+                    yield
+                finally:
+                    held = False
+
+        def checked_hash(path):
+            if Path(path).suffix == ".pa":
+                self.assertFalse(held, "PA hashing must not hold the capacity lock")
+            return _sha(Path(path))
+
+        def checked_copy(src, dst, record):
+            self.assertFalse(held, "PA snapshots must not hold the capacity lock")
+            return snapshot_immutable_file(src, dst, record)
+
+        def checked_atomic(path, document):
+            self.assertFalse(held, "journal publication must not hold the capacity lock")
+            return original_atomic(path, document)
+
+        def checked_replace(src, dst):
+            if Path(src).suffix == ".pa":
+                self.assertTrue(held, "payload renames require the short capacity CAS lock")
+                calls.append("rename")
+            return original_replace(src, dst)
+
+        with mock.patch.object(module, "_VIEW_REPAIR_MIN_BYTES", 1), mock.patch.object(
+            module.protection, "capacity_decision_lock", side_effect=tracked_lock), mock.patch.object(
+            module, "file_sha256", side_effect=checked_hash), mock.patch.object(
+            module, "file_sha256_unbuffered", side_effect=checked_hash), mock.patch.object(
+            module, "_atomic_json", side_effect=checked_atomic), mock.patch.object(
+            module.os, "replace", side_effect=checked_replace), mock.patch(
+            "msplatform.execution.cache_generation.snapshot_immutable_file", side_effect=checked_copy), mock.patch.dict(
+            os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            result = repair_preserved_native_file(self.artifacts, self.target, "simion/collision.pa", audit, **options)
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(calls, ["lock", "lock", "rename", "lock", "rename"])
+
+    @unittest.skipUnless(os.name == "nt", "Windows preserved PA read-view repair")
+    def test_preserved_payload_view_repair_replaces_object_without_changing_records(self):
+        source, audit, options = self._view_repair_fixture()
+        before = source.stat().st_ino
+        expected = source.read_bytes()
+        def buffered(path):
+            if Path(path) == source and source.stat().st_ino == before:
+                return "A" * 64
+            return _sha(Path(path))
+        with mock.patch("msplatform.execution.solver_review_retirement._VIEW_REPAIR_MIN_BYTES", 1), mock.patch(
+            "msplatform.execution.solver_review_retirement.file_sha256", side_effect=buffered), mock.patch(
+            "msplatform.execution.solver_review_retirement.file_sha256_unbuffered", side_effect=_sha), mock.patch.dict(
+            os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            result = repair_preserved_native_file(self.artifacts, self.target, "simion/collision.pa", audit, **options)
+            self.assertEqual(result,repair_preserved_native_file(self.artifacts,self.target,"simion/collision.pa",audit,**options))
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(result["observations"][0]["buffered_sha256"], "A" * 64)
+        self.assertNotEqual(source.stat().st_ino, before)
+        self.assertEqual(Path(result["quarantine_path"]).stat().st_ino, before)
+        self.assertEqual(Path(result["retained_snapshot"]).read_bytes(), expected)
+        self.assertEqual(source.read_bytes(), expected)
+        self.assertEqual(_sha(self.target/"run_manifest.json"), options["expected_manifest_sha256"])
+        self.assertEqual(_sha(self.target/"solver_review_retirement_receipt.json"), options["expected_retirement_sha256"])
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+
+    @unittest.skipUnless(os.name == "nt", "Windows preserved PA read-view repair")
+    def test_preserved_payload_view_repair_rejects_bad_snapshot_and_protection(self):
+        from msplatform.execution.cache_generation import snapshot_immutable_file
+        source,audit,options=self._view_repair_fixture()
+        before=source.stat().st_ino
+        count=0
+        def bad_copy(src,dst,record):
+            nonlocal count
+            count+=1
+            result=snapshot_immutable_file(src,dst,record)
+            if count==2:dst.write_bytes(b"changed")
+            return result
+        with mock.patch("msplatform.execution.solver_review_retirement._VIEW_REPAIR_MIN_BYTES",1),mock.patch(
+            "msplatform.execution.solver_review_retirement.file_sha256_unbuffered",side_effect=_sha),mock.patch.dict(
+            os.environ,{"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID":"123"}):
+            with mock.patch("msplatform.execution.cache_generation.snapshot_immutable_file",side_effect=bad_copy), self.assertRaisesRegex(RetirementError,"read views"):
+                repair_preserved_native_file(self.artifacts,self.target,"simion/collision.pa",audit,**options)
+            self.assertEqual(source.stat().st_ino,before)
+            create_capacity_protection_lease(self.artifacts,lease_id="other",owner="consumer",ttl_seconds=60,protected_paths=[self.target])
+            with self.assertRaisesRegex(RetirementError,"consumer lease"):
+                repair_preserved_native_file(self.artifacts,self.target,"simion/collision.pa",audit,**options)
+            with self.assertRaisesRegex(RetirementError,"CAS"):
+                repair_preserved_native_file(self.artifacts,self.target,"simion/collision.pa",audit,**{**options,"expected_manifest_sha256":"0"*64})
+
+    @unittest.skipUnless(os.name == "nt", "Windows preserved PA read-view repair")
+    def test_preserved_payload_view_repair_replays_both_rename_boundaries(self):
+        source,audit,options=self._view_repair_fixture()
+        real_replace=os.replace
+        for phase in ("before_quarantine", "quarantine", "replace"):
+            def interrupt(src,dst):
+                if phase == "before_quarantine" and Path(src) == source:
+                    raise OSError("fixture interrupted before rename")
+                real_replace(src,dst)
+                if (phase=="quarantine" and Path(src)==source) or (phase=="replace" and Path(dst)==source):
+                    raise OSError("fixture interrupted after rename")
+            with mock.patch("msplatform.execution.solver_review_retirement._VIEW_REPAIR_MIN_BYTES",1),mock.patch(
+                "msplatform.execution.solver_review_retirement.file_sha256_unbuffered",side_effect=_sha),mock.patch.dict(
+                os.environ,{"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID":"123"}):
+                with mock.patch("msplatform.execution.solver_review_retirement.os.replace",side_effect=interrupt),self.assertRaisesRegex(OSError,"interrupted"):
+                    repair_preserved_native_file(self.artifacts,self.target,"simion/collision.pa",audit,**options)
+        with mock.patch("msplatform.execution.solver_review_retirement._VIEW_REPAIR_MIN_BYTES",1),mock.patch(
+            "msplatform.execution.solver_review_retirement.file_sha256_unbuffered",side_effect=_sha),mock.patch.dict(
+            os.environ,{"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID":"123"}):
+            result=repair_preserved_native_file(self.artifacts,self.target,"simion/collision.pa",audit,**options)
+        self.assertEqual(result["status"],"complete")
+        self.assertEqual(source.read_bytes(),b"original-native-bytes")
+
+    @unittest.skipUnless(os.name == "nt", "Windows preserved PA read-view repair")
+    def test_preserved_payload_view_repair_preflight_is_read_only_and_rejects_scope_changes(self):
+        source,audit,options=self._view_repair_fixture()
+        with mock.patch("msplatform.execution.solver_review_retirement._VIEW_REPAIR_MIN_BYTES",1):
+            plan=repair_preserved_native_file(self.artifacts,self.target,"simion/collision.pa",audit,**{**options,"apply":False})
+            self.assertEqual(plan["status"],"plan")
+            self.assertFalse((audit/"results").exists())
+            cases=({"writing_stopped":False},{"owner":"other"},{"capacity_lease_id":"missing"},
+                   {"expected_retirement_sha256":"0"*64})
+            with mock.patch.dict(os.environ,{"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID":"123"}):
+                for change in cases:
+                    with self.subTest(change=change),self.assertRaises((RetirementError,ValueError)):
+                        repair_preserved_native_file(self.artifacts,self.target,"simion/collision.pa",audit,**{**options,**change})
+                for path in ("simion/analyzer.pa0","simion/unknown.pa","../collision.pa","summary.json"):
+                    with self.subTest(path=path),self.assertRaises(RetirementError):
+                        repair_preserved_native_file(self.artifacts,self.target,path,audit,**options)
+            self.assertFalse((audit/"results").exists())
+            self.assertEqual(source.read_bytes(),b"original-native-bytes")
+
+    @unittest.skipUnless(os.name == "nt", "Windows preserved PA read-view repair")
+    def test_preserved_payload_view_repair_writer_and_final_divergence_fail_closed(self):
+        source,audit,options=self._view_repair_fixture()
+        original_id=source.stat().st_ino
+        def divergent(path):
+            return "F"*64 if Path(path)==source and source.stat().st_ino!=original_id else _sha(Path(path))
+        with mock.patch("msplatform.execution.solver_review_retirement._VIEW_REPAIR_MIN_BYTES",1),mock.patch(
+            "msplatform.execution.solver_review_retirement.file_sha256_unbuffered",side_effect=_sha),mock.patch.dict(
+            os.environ,{"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID":"123"}):
+            with source.open("r+b"),self.assertRaises(OSError):
+                repair_preserved_native_file(self.artifacts,self.target,"simion/collision.pa",audit,**options)
+            with mock.patch("msplatform.execution.solver_review_retirement.file_sha256",side_effect=divergent),self.assertRaisesRegex(RetirementError,"read views"):
+                repair_preserved_native_file(self.artifacts,self.target,"simion/collision.pa",audit,**options)
+        journal=json.loads((audit/"results/payload_view_repair/repair_journal.json").read_text())
+        self.assertEqual(journal["status"],"replaced")
+        self.assertEqual((audit/"results/payload_view_repair/quarantine/collision.pa").stat().st_ino,original_id)
+
+    @unittest.skipUnless(os.name == "nt", "Windows preserved PA read-view repair")
+    def test_preserved_payload_view_repair_original_manifest_cas_after_snapshots(self):
+        from msplatform.execution.cache_generation import snapshot_immutable_file
+        source,audit,options=self._view_repair_fixture()
+        original_id=source.stat().st_ino
+        def change_manifest(src,dst,record):
+            result=snapshot_immutable_file(src,dst,record)
+            if dst.parent.name=="snapshot_2":
+                with (self.target/"run_manifest.json").open("a") as stream:stream.write(" ")
+            return result
+        with mock.patch("msplatform.execution.solver_review_retirement._VIEW_REPAIR_MIN_BYTES",1),mock.patch(
+            "msplatform.execution.solver_review_retirement.file_sha256_unbuffered",side_effect=_sha),mock.patch.dict(
+            os.environ,{"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID":"123"}),mock.patch(
+            "msplatform.execution.cache_generation.snapshot_immutable_file",side_effect=change_manifest),self.assertRaisesRegex(RetirementError,"before quarantine"):
+            repair_preserved_native_file(self.artifacts,self.target,"simion/collision.pa",audit,**options)
+        self.assertEqual(source.stat().st_ino,original_id)
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_selected_heavy_scope_preserves_other_native_assets_and_verifies(self, _scan):
+        plan=self._owner_plan(selected_heavy_paths=["simion/analyzer.pa0"])
+        self.assertEqual([r["path"] for r in plan["removed_files"]],["simion/analyzer.pa0"])
+        self.assertIn("simion/detector.pa#",[r["path"] for r in plan["preserved_files"]])
+        with mock.patch.dict(os.environ,{"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID":"123"}):
+            apply_retirement(plan)
+        self.assertTrue((self.target/"simion/accelerator.pa0").is_file())
+        self.assertTrue((self.target/"simion/detector.pa#").is_file())
+        self.assertEqual(verify_retirement(self.target)["status"],"PASS")
+
+        receipt=self.target/"solver_review_retirement_receipt.json"
+        changed=json.loads(receipt.read_text())
+        from msplatform.execution.run_capacity_lifecycle import _verify_retired_payload_remainder
+
+        records = [{"path": p.relative_to(self.target).as_posix(), "bytes": p.stat().st_size}
+                   for p in self.target.rglob("*") if p.is_file()]
+        _verify_retired_payload_remainder(
+            self.target, {"artifact_retention": {"class": "solver_review"}}, "p",
+            {"pin": True, "bytes": sum(r["bytes"] for r in changed["original_file_inventory"])},
+            records,
+        )
+        changed["selected_heavy_paths"]=["simion/detector.pa#"]
+        receipt.write_text(json.dumps(changed))
+        with self.assertRaises(RetirementError):
+            verify_retirement(self.target)
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_lifecycle_reseal_verifies_large_unclassified_preserved_input(self, _scan):
+        from msplatform.execution.solver_review_retirement import (
+            RetirementError as LifecycleRetirementError, verify_retirement as verify_installed,
+        )
+        candidate = self.target / "candidate.json"
+        original = b'{"padding":"' + b'x' * (8 * 1024 * 1024) + b'"}'
+        candidate.write_bytes(original)
+        manifest_path = self.target / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        record = manifest["inputs"]["candidate_contract"]
+        self.assertNotIn("retention_role", record)
+        record.update(bytes=len(original), sha256=_sha(candidate))
+        manifest_path.write_text(json.dumps(manifest))
+        receipt_bytes, manifest_bytes = self._first_partial_batch(reseal=False)
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+        self.assertEqual(verify_installed(self.target)["status"], "PASS")
+        self.assertEqual(self._seal_partial_batch()["status"], "ready")
+        self.assertEqual(candidate.read_bytes(), original)
+        self.assertEqual(manifest_path.read_bytes(), manifest_bytes)
+        receipt = self.target / "solver_review_retirement_receipt.json"
+        self.assertEqual(receipt.read_bytes(), receipt_bytes)
+        ledger = self.artifacts / "common/capacity_ledger.json"
+        ledger_bytes = ledger.read_bytes()
+        candidate.write_bytes(original.replace(b'x', b'y', 1))
+        self.assertEqual(candidate.stat().st_size, len(original))
+        with self.assertRaises(LifecycleRetirementError):
+            verify_installed(self.target)
+        with self.assertRaises(LifecycleRetirementError):
+            self._seal_partial_batch()
+        self.assertEqual(ledger.read_bytes(), ledger_bytes)
+        self.assertEqual(manifest_path.read_bytes(), manifest_bytes)
+        self.assertEqual(receipt.read_bytes(), receipt_bytes)
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_explicit_retirement_consumption_verifies_only_selected_preserved_evidence(self, _scan):
+        plan = self._owner_plan(selected_heavy_paths=["simion/analyzer.pa0"])
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(plan)
+        unconsumed = self.target / "simion/detector.pa#"
+        unconsumed.write_bytes(b"changed unrelated native payload")
+        with self.assertRaises(RetirementError):
+            verify_retirement(self.target)
+        result = verify_retirement(self.target, consumed_paths=["candidate.json"])
+        self.assertEqual(result["scope"], "consumer_projection")
+        self.assertEqual(result["consumed_paths"], ["candidate.json"])
+        for paths in ([], ["candidate.json"] * 2, ["../candidate.json"], ["./candidate.json"],
+                      ["missing.json"], ["simion/analyzer.pa0"]):
+            with self.subTest(paths=paths), self.assertRaises(RetirementError):
+                verify_retirement(self.target, consumed_paths=paths)
+        candidate = self.target / "candidate.json"
+        candidate.write_text(candidate.read_text() + " ")
+        with self.assertRaises(RetirementError):
+            verify_retirement(self.target, consumed_paths=["candidate.json"])
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_selected_heavy_scope_rejects_invalid_selection_and_manual_plan_changes(self, _scan):
+        for selected in ([],["../outside.pa"],["simion/analyzer.pa0"]*2,["candidate.json"],["missing.pa"]):
+            with self.subTest(selected=selected),self.assertRaises(RetirementError):
+                self._owner_plan(selected_heavy_paths=selected)
+        with self.assertRaisesRegex(RetirementError,"owner completion"):
+            plan_retirement(self.artifacts,self.repo,self.target,self.replacement,"same",self.compatibility_roles,
+                selected_heavy_paths=["simion/analyzer.pa0"])
+        plan=self._owner_plan(selected_heavy_paths=["simion/analyzer.pa0"])
+        plan["removed_files"].append(next(r for r in plan["preserved_files"] if r["path"]=="simion/accelerator.pa0"))
+        with mock.patch.dict(os.environ,{"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID":"123"}):
+            with self.assertRaisesRegex(RetirementError,"scope differs"):
+                apply_retirement(plan)
+        self.assertTrue((self.target/"simion/analyzer.pa0").is_file())
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_full_owner_consumption_still_verifies_run_config_identity(self, _scan):
+        plan = self._owner_plan()
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(plan)
+        self.assertEqual(verify_retirement(self.target, consumed_paths=["candidate.json"])["scope"],
+                         "consumer_projection")
+        config = self.target / "run_config.json"
+        config.write_text(config.read_text() + " ")
+        with self.assertRaisesRegex(RetirementError, "run evidence identity differs"):
+            verify_retirement(self.target, consumed_paths=["candidate.json"])
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_selected_heavy_pending_resume_keeps_exact_scope(self, _scan):
+        selected=["simion/analyzer.pa0"]
+        plan=self._owner_plan(selected_heavy_paths=selected)
+        (self.target/selected[0]).unlink()
+        (self.target/"solver_review_retirement_receipt.json").write_text(json.dumps({**plan,
+            "role":"solver_review_retirement_receipt","lifecycle_status":"retirement_pending"}))
+        with self.assertRaisesRegex(RetirementError,"scope changed"):
+            self._owner_plan(selected_heavy_paths=["simion/accelerator.pa0"])
+        resumed=self._owner_plan(selected_heavy_paths=selected)
+        with mock.patch.dict(os.environ,{"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID":"123"}):
+            apply_retirement(resumed)
+        self.assertEqual(verify_retirement(self.target)["status"],"PASS")
+
+    def _first_partial_batch(self, *, reseal=True):
+        config_path = self.target / "run_config.json"
+        config = json.loads(config_path.read_text())
+        config["capacity_ledger_lifecycle"] = dict(
+            schema_version=1, enabled=True, artifact_root=str(self.artifacts),
+            light_evidence_budget_bytes=26_214_400)
+        config_path.write_text(json.dumps(config))
+        manifest_path = self.target / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["run_config"].update(bytes=config_path.stat().st_size, sha256=_sha(config_path))
+        manifest_path.write_text(json.dumps(manifest))
+        register_writing(self.artifacts, config_path)
+        self._seal_partial_batch()
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(self._owner_plan(selected_heavy_paths=["simion/analyzer.pa0"]))
+        if reseal:
+            self._seal_partial_batch()
+        return (self.target / "solver_review_retirement_receipt.json").read_bytes(), manifest_path.read_bytes()
+
+    def _seal_partial_batch(self):
+        return seal_checkpoint(self.artifacts, self.target / "run_config.json", owner="p",
+                               writing_stopped=True, retain_payload=True, retention_reason="partial fixture")
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_second_selected_batch_preserves_original_receipt_and_manifest(self, _scan):
+        first, manifest = self._first_partial_batch()
+        with mock.patch("msplatform.execution.solver_review_retirement.file_sha256", wraps=_sha) as reader:
+            plan = self._owner_plan(selected_heavy_paths=["simion/accelerator.pa0"])
+        self.assertFalse(any(Path(call.args[0]).suffix.startswith(".pa") for call in reader.call_args_list))
+        self.assertEqual(plan["retirement_batch"]["sequence"], 2)
+        self.assertEqual(plan["retirement_batch"]["previous_receipt"]["sha256"], _sha(
+            self.target / "solver_review_retirement_receipt.json"))
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(plan)
+        with mock.patch("msplatform.execution.solver_review_retirement.file_sha256", wraps=_sha) as reader:
+            result = verify_retirement(self.target)
+        self.assertEqual(sum(Path(call.args[0]).name == "detector.pa#" for call in reader.call_args_list), 1)
+        self.assertEqual((result["retirement_batches"], result["removed_bytes"]), (2, 12))
+        self.assertEqual((self.target / "solver_review_retirement_receipt.json").read_bytes(), first)
+        self.assertEqual((self.target / "run_manifest.json").read_bytes(), manifest)
+        self.assertTrue((self.target / "simion/detector.pa#").is_file())
+        with self.assertRaisesRegex(RetirementError, "reseal"):
+            self._owner_plan(selected_heavy_paths=["simion/detector.pa#"])
+        self._seal_partial_batch()
+        with self.assertRaises(RetirementError):
+            self._owner_plan(selected_heavy_paths=["simion/analyzer.pa0"])
+        self.assertEqual(self._owner_plan(selected_heavy_paths=["simion/detector.pa#"])[
+            "retirement_batch"]["sequence"], 3)
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_second_batch_requires_reseal_and_rechecks_new_lease(self, _scan):
+        self._first_partial_batch(reseal=False)
+        with self.assertRaisesRegex(RetirementError, "reseal"):
+            self._owner_plan(selected_heavy_paths=["simion/accelerator.pa0"])
+        self._seal_partial_batch()
+        plan = self._owner_plan(selected_heavy_paths=["simion/accelerator.pa0"])
+        create_capacity_protection_lease(self.artifacts, lease_id="new-consumer", owner="fixture",
+                                         ttl_seconds=60, protected_paths=[self.target])
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            with self.assertRaisesRegex(RetirementError, "active capacity protection"):
+                apply_retirement(plan)
+        self.assertFalse((self.target / "solver_review_retirement_receipt_0002.json").exists())
+        self.assertTrue((self.target / "simion/accelerator.pa0").is_file())
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_second_batch_pending_replays_exact_scope_without_overwriting_first(self, _scan):
+        first, _ = self._first_partial_batch()
+        selected = ["simion/accelerator.pa0", "simion/detector.pa#"]
+        plan = self._owner_plan(selected_heavy_paths=selected)
+        from msplatform.execution.recorded_file_removal import remove_recorded_files
+
+        def interrupted(root, records, **options):
+            yield from remove_recorded_files(root, records, **options)
+            raise OSError("after unlink")
+
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}), mock.patch(
+            "msplatform.execution.solver_review_retirement.remove_recorded_files", side_effect=interrupted):
+            with self.assertRaisesRegex(OSError, "after unlink"):
+                apply_retirement(plan)
+        with self.assertRaisesRegex(RetirementError, "scope changed"):
+            self._owner_plan(selected_heavy_paths=["simion/detector.pa#"])
+        resumed = self._owner_plan(selected_heavy_paths=selected)
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(resumed)
+        self.assertEqual(verify_retirement(self.target)["removed_bytes"], 18)
+        self.assertEqual((self.target / "solver_review_retirement_receipt.json").read_bytes(), first)
+        self._seal_partial_batch()
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_second_batch_rejects_changed_chain_and_unselected_owner_scope(self, _scan):
+        first, _ = self._first_partial_batch()
+        with self.assertRaisesRegex(RetirementError, "selected heavy scope"):
+            self._owner_plan()
+        plan = self._owner_plan(selected_heavy_paths=["simion/accelerator.pa0"])
+        first_path = self.target / "solver_review_retirement_receipt.json"
+        first_path.write_bytes(first + b"\n")
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            with self.assertRaisesRegex(RetirementError, "batch head changed"):
+                apply_retirement(plan)
+        self.assertFalse((self.target / "solver_review_retirement_receipt_0002.json").exists())
+
+    def _prepared_gui(self, run: Path, **summary_changes: object) -> None:
+        config = json.loads((run / "run_config.json").read_text())
+        config["inputs"] = {key: value for key, value in config["inputs"].items()
+                            if not Path(value).suffix.startswith(".pa")}
+        for path in (run / "simion").glob("*.pa*"):
+            path.unlink()
+        for suffix in (".gem", ".iob", ".pa#", ".pa0", ".pa1", ".pa2"):
+            path = run / "simion" / ("processor" + suffix)
+            path.write_bytes(("frozen " + suffix).encode())
+            config["inputs"]["native" + suffix] = str(path)
+        baseline = run / "baseline_manifest.json"
+        baseline.write_text(json.dumps({"project": "p", "run_id": "scientific-source", "status": "failed"}))
+        config["inputs"]["frozen_source"] = str(baseline)
+        config["parameters"] = {"workflow": "native_gui_replay", "manual_gui_confirmed": False,
+            "native_field_construction": "private_refine_and_native_IOB_prepared_not_flown",
+            "baseline_run": str(self.runs / "scientific-source"), "baseline_manifest_sha256": _sha(baseline)}
+        summary = {"status": "gui_replay_prepared", "gui_fly_completed": False,
+            "trajectory_equivalence_verified": False, "field_construction": "new_private_refine_from_frozen_GEM",
+            **summary_changes}
+        (run / "run_config.json").write_text(json.dumps(config))
+        (run / "summary.json").write_text(json.dumps(summary))
+        def record(path: Path) -> dict[str, object]:
+            return {"path": str(path), "exists": True, "bytes": path.stat().st_size, "sha256": _sha(path)}
+        manifest = json.loads((run / "run_manifest.json").read_text())
+        manifest.update(status="checkpoint", run_config=record(run / "run_config.json"),
+                        inputs={key: record(Path(value)) for key, value in config["inputs"].items()},
+                        outputs=[record(run / "summary.json")])
+        (run / "run_manifest.json").write_text(json.dumps(manifest))
+
+    def _gui_with_surface(self) -> None:
+        self._prepared_gui(self.target)
+        surface = self.target / "simion/processor.pa-surf"
+        surface.write_bytes(b"frozen surface")
+        manifest_path = self.target / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["outputs"].append({"path": str(surface), "exists": True,
+                                    "bytes": surface.stat().st_size, "sha256": _sha(surface)})
+        manifest_path.write_text(json.dumps(manifest))
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_prepared_gui_selected_scope_preserves_surface_and_other_responses(self, _scan: mock.Mock) -> None:
+        self._gui_with_surface()
+        selected = ["simion/processor.pa#", "simion/processor.pa0"]
+        retained = ["simion/processor.pa1", "simion/processor.pa2", "simion/processor.pa-surf",
+                    "simion/processor.iob", "simion/processor.gem", "summary.json", "run_manifest.json", "run_config.json"]
+        before = {name: (self.target / name).read_bytes() for name in retained}
+        plan = self._owner_plan(prepared_gui_checkpoint=True, writing_stopped=True, selected_heavy_paths=selected)
+        self.assertEqual(sorted(row["path"] for row in plan["removed_files"]), sorted(selected))
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(plan)
+        self.assertEqual(verify_retirement(self.target)["target_terminal_status"], "checkpoint")
+        self.assertEqual(before, {name: (self.target / name).read_bytes() for name in retained})
+        self.assertTrue(all(not (self.target / name).exists() for name in selected))
+        with self.assertRaisesRegex(RetirementError, "target already has a completed retirement receipt"):
+            self._owner_plan(prepared_gui_checkpoint=True, writing_stopped=True, selected_heavy_paths=["simion/processor.pa1"])
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_prepared_gui_selected_pending_resume_and_scope_refusals(self, _scan: mock.Mock) -> None:
+        self._gui_with_surface()
+        selected = ["simion/processor.pa#", "simion/processor.pa0"]
+        options = dict(prepared_gui_checkpoint=True, writing_stopped=True, selected_heavy_paths=selected)
+        for bad in ([], ["simion/processor.iob"], ["../escape.pa0"], [selected[0], selected[0]]):
+            with self.subTest(bad=bad), self.assertRaises(RetirementError):
+                self._owner_plan(prepared_gui_checkpoint=True, writing_stopped=True, selected_heavy_paths=bad)
+        plan = self._owner_plan(**options)
+        (self.target / selected[0]).unlink()
+        (self.target / "solver_review_retirement_receipt.json").write_text(json.dumps({
+            **plan, "role": "solver_review_retirement_receipt", "lifecycle_status": "retirement_pending"}))
+        with self.assertRaisesRegex(RetirementError, "selected heavy scope changed"):
+            self._owner_plan(prepared_gui_checkpoint=True, writing_stopped=True, selected_heavy_paths=[selected[1]])
+        resumed = self._owner_plan(**options)
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(resumed)
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+        self.assertTrue((self.target / "simion/processor.pa-surf").is_file())
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_prepared_gui_selected_rechecks_plan_and_guards(self, _scan: mock.Mock) -> None:
+        self._gui_with_surface()
+        options = dict(prepared_gui_checkpoint=True, writing_stopped=True, selected_heavy_paths=["simion/processor.pa0"])
+        plan = self._owner_plan(**options)
+        changed = copy.deepcopy(plan)
+        changed["selected_heavy_paths"] = ["simion/processor.pa1"]
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            with self.assertRaises(RetirementError):
+                apply_retirement(changed)
+            create_capacity_protection_lease(self.artifacts, lease_id="gui-selected-protected", owner="test",
+                                             ttl_seconds=3600, protected_paths=[self.target])
+            with self.assertRaisesRegex(RetirementError, "protection lease"):
+                apply_retirement(plan)
+        self.assertTrue((self.target / "simion/processor.pa0").is_file())
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_prepared_gui_selected_active_consumer_and_unflown_guards(self, _scan: mock.Mock) -> None:
+        self._gui_with_surface()
+        selected = ["simion/processor.pa0"]
+        with self.assertRaises(RetirementError):
+            self._owner_plan(prepared_gui_checkpoint=True, selected_heavy_paths=selected)
+        with self.assertRaises(RetirementError):
+            plan_retirement(self.artifacts, self.repo, self.target, owner="wrong", owner_abandonment_reason="test",
+                prepared_gui_checkpoint=True, writing_stopped=True, selected_heavy_paths=selected)
+        plan = self._owner_plan(prepared_gui_checkpoint=True, writing_stopped=True, selected_heavy_paths=selected)
+        consumer = self.runs / "selected_live_consumer"
+        consumer.mkdir()
+        (consumer / "run_config.json").write_text(json.dumps({"field": str(self.target / selected[0])}))
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            with self.assertRaisesRegex(RetirementError, "active references"):
+                apply_retirement(plan)
+        self.assertTrue((self.target / selected[0]).is_file())
+
+    def _gui_plan(self, **kwargs: object) -> dict[str, object]:
+        return plan_retirement(self.artifacts, self.repo, self.target, self.replacement,
+            "newer prepared GUI replaces the obsolete source", ["candidate_contract"],
+            prepared_gui_checkpoint=True, writing_stopped=True, **kwargs)
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_prepared_gui_supersession_preserves_light_and_replacement(self, _scan: mock.Mock) -> None:
+        self._prepared_gui(self.target)
+        self._prepared_gui(self.replacement)
+        originals = {name: (self.target / name).read_bytes()
+                     for name in ("summary.json", "run_manifest.json", "run_config.json")}
+        plan = self._gui_plan()
+        self.assertEqual(len(plan["removed_files"]), 4)
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(plan)
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+        self.assertTrue((self.replacement / "simion/processor.pa0").exists())
+        self.assertTrue((self.target / "simion/processor.iob").exists())
+        self.assertEqual(originals, {name: (self.target / name).read_bytes() for name in originals})
+
+    def test_prepared_gui_requires_stopped_confirmation_and_explicit_mode(self) -> None:
+        self._prepared_gui(self.target)
+        self._prepared_gui(self.replacement)
+        for options in ({}, {"prepared_gui_checkpoint": True}, {"writing_stopped": True}):
+            with self.subTest(options=options), self.assertRaises(RetirementError):
+                plan_retirement(self.artifacts, self.repo, self.target, self.replacement,
+                    "newer GUI", ["candidate_contract"], **options)
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_prepared_gui_rejects_flown_or_mismatched_summary(self, _scan: mock.Mock) -> None:
+        self._prepared_gui(self.replacement)
+        for changes in ({"gui_fly_completed": True}, {"status": "prepared"},
+                        {"trajectory_equivalence_verified": True}):
+            self._prepared_gui(self.target, **changes)
+            with self.subTest(changes=changes), self.assertRaises(RetirementError):
+                self._gui_plan()
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_prepared_gui_rechecks_replacement_field_and_target_protection(self, _scan: mock.Mock) -> None:
+        self._prepared_gui(self.target)
+        self._prepared_gui(self.replacement)
+        plan = self._gui_plan()
+        create_capacity_protection_lease(self.artifacts, lease_id="old-gui-protected", owner="test",
+                                        ttl_seconds=3600, protected_paths=[self.target])
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            with self.assertRaisesRegex(RetirementError, "protection lease"):
+                apply_retirement(plan)
+        (self.replacement / "simion/processor.pa0").write_bytes(b"changed")
+        with self.assertRaises(RetirementError):
+            self._gui_plan()
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_prepared_gui_partial_retirement_replays_same_scope(self, _scan: mock.Mock) -> None:
+        self._prepared_gui(self.target)
+        self._prepared_gui(self.replacement)
+        plan = self._gui_plan()
+        (self.target / plan["removed_files"][0]["path"]).unlink()
+        (self.target / "solver_review_retirement_receipt.json").write_text(json.dumps({
+            **plan, "role": "solver_review_retirement_receipt", "lifecycle_status": "retirement_pending"}))
+        resumed = self._gui_plan()
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(resumed)
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_prepared_gui_owner_abandonment_without_replacement_preserves_evidence(self, _scan: mock.Mock) -> None:
+        self._prepared_gui(self.target)
+        originals = {path: path.read_bytes() for path in self.target.rglob("*")
+                     if path.is_file() and not path.suffix.startswith(".pa")}
+        plan = self._owner_plan(prepared_gui_checkpoint=True, writing_stopped=True)
+        self.assertEqual(plan["retirement_mode"], "completed_experiment")
+        self.assertIsNone(plan["replacement_run_path"])
+        self.assertIsNone(plan["compatibility_checks"])
+        self.assertEqual(len(plan["removed_files"]), 4)
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            receipt = apply_retirement(plan)
+        self.assertEqual(receipt["lifecycle_status"], "completed_experiment_payload_retired")
+        self.assertEqual(verify_retirement(self.target)["target_terminal_status"], "checkpoint")
+        self.assertEqual(originals, {path: path.read_bytes() for path in originals})
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_prepared_gui_owner_exit_requires_reason_scope_stopped_and_exact_owner(self, _scan: mock.Mock) -> None:
+        self._prepared_gui(self.target)
+        for options in ({"prepared_gui_checkpoint": True}, {"writing_stopped": True}, {}):
+            with self.subTest(options=options), self.assertRaises(RetirementError):
+                self._owner_plan(**options)
+        for owner, reason in (("other", "abandoned"), ("p", ""), ("", "abandoned")):
+            with self.subTest(owner=owner, reason=reason), self.assertRaises(RetirementError):
+                plan_retirement(self.artifacts, self.repo, self.target, owner=owner,
+                    owner_abandonment_reason=reason, prepared_gui_checkpoint=True, writing_stopped=True)
+        with self.assertRaisesRegex(RetirementError, "mutually exclusive"):
+            plan_retirement(self.artifacts, self.repo, self.target, self.replacement,
+                owner="p", owner_abandonment_reason="abandoned", prepared_gui_checkpoint=True, writing_stopped=True)
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_prepared_gui_owner_exit_rechecks_active_native_consumer_before_apply(self, _scan: mock.Mock) -> None:
+        self._prepared_gui(self.target)
+        plan = self._owner_plan(prepared_gui_checkpoint=True, writing_stopped=True)
+        consumer = self.runs/"new_consumer"
+        consumer.mkdir()
+        (consumer/"run_config.json").write_text(json.dumps({"field": str(self.target/"simion/processor.pa0")}))
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            with self.assertRaisesRegex(RetirementError, "active references"):
+                apply_retirement(plan)
+        self.assertTrue((self.target/"simion/processor.pa0").exists())
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_prepared_gui_active_native_consumer_blocks(self, _scan: mock.Mock) -> None:
+        self._prepared_gui(self.target)
+        self._prepared_gui(self.replacement)
+        consumer = self.runs / "waiting_consumer"
+        consumer.mkdir()
+        (consumer / "run_config.json").write_text(json.dumps({"field": str(self.target / "simion/processor.pa0")}))
+        with self.assertRaisesRegex(RetirementError, "active references"):
+            self._gui_plan()
+
+    def _checkpoint_runtime(self) -> Path:
+        """Model sealed small inventory with unlisted private PA members."""
+        for path in (self.target / "simion").glob("*.pa*"):
+            path.unlink()
+        config = json.loads((self.target / "run_config.json").read_text())
+        config["inputs"] = {}
+        config["artifact_retention"] = {"policy_version": 1, "class": "compact", "reason": None}
+        (self.target / "run_config.json").write_text(json.dumps(config))
+        (self.target / "summary.json").write_text(json.dumps({"status": "checkpoint", "run_id": self.target.name}))
+        directory = self.target / "runtime" / "native_family"
+        directory.mkdir(parents=True)
+        members = []
+        for index in range(3):
+            path = directory / f"analyzer.pa{index}"
+            path.write_bytes(b"native" + bytes([index]))
+            members.append({"name": path.name, "bytes": path.stat().st_size, "sha256": _sha(path)})
+        checkpoint = self.target / "results" / "runtime_checkpoint.json"
+        checkpoint.parent.mkdir()
+        checkpoint.write_text(json.dumps({
+            "schema_version": 1, "role": "fixture_native_runtime_checkpoint", "status": "prepared",
+            "directory": str(directory), "members": members,
+            "runtime_receipt": {"status": "prepared", "run_id": self.target.name,
+                                "controller_path": str(directory / "analyzer.pa0"),
+                                "source_responses": [{"response_id": 1}, {"response_id": 2}]},
+        }))
+        def record(path: Path) -> dict[str, object]:
+            return {"path": str(path), "exists": True, "bytes": path.stat().st_size, "sha256": _sha(path)}
+        manifest = json.loads((self.target / "run_manifest.json").read_text())
+        manifest.update(status="checkpoint", inputs={}, artifact_retention=config["artifact_retention"],
+                        run_config=record(self.target / "run_config.json"),
+                        outputs=[record(self.target / "summary.json"), record(checkpoint)])
+        (self.target / "run_manifest.json").write_text(json.dumps(manifest))
+        return checkpoint
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_stopped_checkpoint_runtime_retirement_preserves_originals_without_pa_hash(self, _scan: mock.Mock) -> None:
+        checkpoint = self._checkpoint_runtime()
+        originals = {name: (self.target / name).read_bytes() for name in (
+            "run_config.json", "summary.json", "run_manifest.json", "results/runtime_checkpoint.json")}
+        from msplatform.execution.solver_review_retirement import file_sha256
+        def small_only(path: Path) -> str:
+            self.assertFalse(path.suffix.lower().startswith(".pa"))
+            return file_sha256(path)
+        with mock.patch("msplatform.execution.solver_review_retirement.file_sha256", side_effect=small_only):
+            plan = self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True)
+            self.assertEqual(plan["target_terminal_status"], "checkpoint")
+            self.assertEqual(len(plan["removed_files"]), 3)
+            self.assertTrue(all(item["manifest_role"] == "runtime_checkpoint_member" for item in plan["removed_files"]))
+            with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+                apply_retirement(plan)
+            self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+        self.assertEqual(originals, {name: (self.target / name).read_bytes() for name in originals})
+        self.assertTrue((self.target / "simion/seed.iob").exists())
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_stopped_checkpoint_runtime_requires_explicit_scope_and_stopped_owner(self, _scan: mock.Mock) -> None:
+        checkpoint = self._checkpoint_runtime()
+        for kwargs in ({}, {"runtime_checkpoint_path": checkpoint}, {"writing_stopped": True}):
+            with self.subTest(kwargs=kwargs), self.assertRaises(RetirementError):
+                self._owner_plan(**kwargs)
+        with self.assertRaises(RetirementError):
+            plan_retirement(self.artifacts, self.repo, self.target, self.replacement,
+                            "not an owner exit", self.compatibility_roles,
+                            runtime_checkpoint_path=checkpoint, writing_stopped=True)
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_stopped_checkpoint_runtime_rejects_unbound_inventory_and_payload_drift(self, _scan: mock.Mock) -> None:
+        checkpoint = self._checkpoint_runtime()
+        copied = self.target / "results/unbound.json"
+        copied.write_bytes(checkpoint.read_bytes())
+        with self.assertRaisesRegex(RetirementError, "manifest-bound"):
+            self._owner_plan(runtime_checkpoint_path=copied, writing_stopped=True)
+        payload = self.target / "runtime/native_family/analyzer.pa2"
+        payload.write_bytes(b"changed size")
+        with self.assertRaisesRegex(RetirementError, "member differs"):
+            self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True)
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_stopped_checkpoint_runtime_rechecks_gui_consumer_and_lease(self, _scan: mock.Mock) -> None:
+        checkpoint = self._checkpoint_runtime()
+        plan = self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True)
+        review = self.artifacts / "projects/p/reviews/current_view"
+        review.mkdir(parents=True)
+        receipt_path = review / "inspection_receipt.json"
+        receipt_path.write_text(json.dumps({"status": "ready", "source_run": self.target.name}))
+        with self.assertRaisesRegex(RetirementError, "current GUI"):
+            self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True)
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            with self.assertRaisesRegex(RetirementError, "current GUI"):
+                apply_retirement(plan)
+        receipt_path.unlink()
+        downstream = self.runs / "waiting_consumer"
+        downstream.mkdir()
+        config_path = downstream / "run_config.json"
+        config_path.write_text(json.dumps({"runtime_checkpoint": str(checkpoint)}))
+        with self.assertRaisesRegex(RetirementError, "active references"):
+            self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True)
+        config_path.write_text("{}")
+        create_capacity_protection_lease(self.artifacts, lease_id="runtime-owner-protected", owner="test",
+                                         ttl_seconds=3600, protected_paths=[self.target])
+        with self.assertRaisesRegex(RetirementError, "active capacity protection lease"):
+            self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True)
+        self.assertTrue((self.target / "runtime/native_family/analyzer.pa0").exists())
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_stopped_checkpoint_runtime_rejects_extra_unsealed_pa(self, _scan: mock.Mock) -> None:
+        checkpoint = self._checkpoint_runtime()
+        (self.target / "runtime/native_family/unexpected.pa").write_bytes(b"unknown")
+        with self.assertRaisesRegex(RetirementError, "lacks sealed identity"):
+            self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True)
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_stopped_checkpoint_runtime_partial_retirement_replays(self, _scan: mock.Mock) -> None:
+        checkpoint = self._checkpoint_runtime()
+        plan = self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True)
+        first = self.target / plan["removed_files"][0]["path"]
+        first.unlink()
+        (self.target / "solver_review_retirement_receipt.json").write_text(json.dumps({
+            **plan, "role": "solver_review_retirement_receipt", "lifecycle_status": "retirement_pending",
+        }))
+        resumed = self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True)
+        self.assertEqual(resumed["bytes_to_release"], plan["bytes_to_release"] - plan["removed_files"][0]["bytes"])
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(resumed)
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_stopped_checkpoint_runtime_rejects_sealed_invalid_member_and_owner(self, _scan: mock.Mock) -> None:
+        checkpoint = self._checkpoint_runtime()
+        original = json.loads(checkpoint.read_text())
+        for case in ("owner", "path", "sha", "missing_member"):
+            value = json.loads(json.dumps(original))
+            if case == "owner":
+                value["runtime_receipt"]["run_id"] = self.replacement.name
+            elif case == "path":
+                value["members"][1]["name"] = "../outside.pa1"
+            elif case == "sha":
+                value["members"][1]["sha256"] = "Z" * 64
+            else:
+                value["members"].pop()
+            checkpoint.write_text(json.dumps(value))
+            manifest_path = self.target / "run_manifest.json"
+            manifest = json.loads(manifest_path.read_text())
+            manifest["outputs"][1].update(bytes=checkpoint.stat().st_size, sha256=_sha(checkpoint))
+            manifest_path.write_text(json.dumps(manifest))
+            with self.subTest(case=case), self.assertRaises(RetirementError):
+                self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True)
+
+    def _stopped_consumer(self, checkpoint: Path, name: str = "stopped-consumer") -> Path:
+        """Match real historical owners: sealed checkpoint, summary has no run_id."""
+        run = self.runs / name
+        run.mkdir()
+        config = run / "run_config.json"
+        config.write_text(json.dumps({"run_id": run.name, "project": "p",
+                                      "inputs": {"native_checkpoint": str(checkpoint)}}))
+        summary = run / "summary.json"
+        summary.write_text(json.dumps({"status": "checkpoint", "role": "iteration_summary"}))
+        def record(path: Path) -> dict[str, object]:
+            return {"path": str(path), "exists": True, "bytes": path.stat().st_size, "sha256": _sha(path)}
+        (run / "run_manifest.json").write_text(json.dumps({
+            "run_id": run.name, "project": "p", "status": "checkpoint",
+            "run_config": record(config), "outputs": [record(summary)],
+        }))
+        return run
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_approved_stopped_consumer_exit_is_scoped_and_preserves_scientific_checkpoint(self, _scan: mock.Mock) -> None:
+        checkpoint = self._checkpoint_runtime()
+        consumer = self._stopped_consumer(checkpoint)
+        before = {path.name: path.read_bytes() for path in consumer.iterdir()}
+        with self.assertRaisesRegex(RetirementError, "active references"):
+            self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True)
+        plan = self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True,
+                                approved_stopped_consumers=[consumer])
+        self.assertEqual(plan["approved_stopped_consumers"][0]["run_path"], str(consumer))
+        self.assertTrue(any(item.get("classification_basis") == "owner_explicit_consumer_abandonment_for_this_runtime"
+                            for item in plan["historical_downstream_references"]))
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(plan)
+        self.assertEqual(verify_retirement(self.target)["target_terminal_status"], "checkpoint")
+        self.assertEqual(before, {path.name: path.read_bytes() for path in consumer.iterdir()})
+        with mock.patch("msplatform.execution.solver_review_retirement.plan_retirement", return_value={}) as planner:
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(main(["--artifact-root", str(self.artifacts), "--repository-root", str(self.repo),
+                                       "--target-run", str(self.target), "--owner", "p", "--owner-abandonment-reason", "old GUI reassembly",
+                                       "--runtime-checkpoint", str(checkpoint), "--confirm-writing-stopped",
+                                       "--approved-stopped-consumer", str(consumer)]), 0)
+            self.assertEqual(planner.call_args.kwargs["approved_stopped_consumers"], [consumer])
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_checkpoint_seal_verifies_nonempty_stopped_consumers_under_held_lock(self, _scan):
+        from msplatform.execution.solver_review_retirement import RetirementError as LifecycleRetirementError
+        from contextlib import contextmanager
+        from msplatform.execution import capacity_protection as common_protection
+        from msplatform.execution import capacity_protection as canonical_protection
+
+        checkpoint = self._checkpoint_runtime()
+        # This compact fixture retains no IOB after native runtime retirement.
+        (self.target / "simion/seed.iob").unlink()
+        config_path = self.target / "run_config.json"
+        config = json.loads(config_path.read_text())
+        config["capacity_ledger_lifecycle"] = dict(
+            schema_version=1, enabled=True, artifact_root=str(self.artifacts),
+            light_evidence_budget_bytes=26_214_400)
+        config_path.write_text(json.dumps(config))
+        manifest_path = self.target / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["run_config"].update(bytes=config_path.stat().st_size, sha256=_sha(config_path))
+        manifest_path.write_text(json.dumps(manifest))
+        consumer = self._stopped_consumer(checkpoint)
+        original_consumer = {path.name: path.read_bytes() for path in consumer.iterdir()}
+        register_writing(self.artifacts, config_path)
+        seal_checkpoint(self.artifacts, config_path, owner="p", writing_stopped=True,
+                        retain_payload=True, retention_reason="stopped callback fixture")
+        plan = self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True,
+                                approved_stopped_consumers=[consumer])
+        self.assertEqual(len(plan["approved_stopped_consumers"]), 1)
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(plan)
+        original_manifest = manifest_path.read_bytes()
+        real_lock = canonical_protection.capacity_decision_lock
+        real_reader = common_protection._load_capacity_protection_leases_unlocked
+        held = []
+        reads = []
+
+        @contextmanager
+        def checked_lock(root, **kwargs):
+            self.assertFalse(held, "checkpoint callback reacquired the same decision lock")
+            with real_lock(root, **kwargs):
+                held.append(root.resolve())
+                try:
+                    yield
+                finally:
+                    held.pop()
+
+        def checked_reader(root, **kwargs):
+            self.assertEqual(held, [self.artifacts.resolve()])
+            reads.append(root.resolve())
+            return real_reader(root, **kwargs)
+
+        lease_id = "approved-consumer-seal-guard"
+        canonical_protection.create_capacity_protection_lease(
+            self.artifacts, lease_id=lease_id, owner="fixture-stopped-consumer",
+            ttl_seconds=60, protected_paths=[consumer])
+        ledger_path = self.artifacts / "common/capacity_ledger.json"
+        ledger_before_rejection = ledger_path.read_bytes()
+        try:
+            with mock.patch.object(canonical_protection, "capacity_decision_lock", checked_lock), mock.patch.object(
+                    common_protection, "_load_capacity_protection_leases_unlocked", side_effect=checked_reader):
+                with self.assertRaisesRegex(LifecycleRetirementError, "active protection lease"):
+                    seal_checkpoint(self.artifacts, config_path, owner="p", writing_stopped=True)
+            self.assertEqual(reads, [self.artifacts.resolve()])
+            self.assertEqual(held, [])
+            self.assertEqual(manifest_path.read_bytes(), original_manifest)
+            self.assertEqual(original_consumer, {path.name: path.read_bytes() for path in consumer.iterdir()})
+            self.assertEqual(ledger_path.read_bytes(), ledger_before_rejection)
+        finally:
+            canonical_protection.delete_capacity_protection_lease(self.artifacts, lease_id=lease_id)
+        reads.clear()
+        with mock.patch.object(canonical_protection, "capacity_decision_lock", checked_lock), mock.patch.object(
+                common_protection, "_load_capacity_protection_leases_unlocked", side_effect=checked_reader):
+            result = seal_checkpoint(self.artifacts, config_path, owner="p", writing_stopped=True)
+        self.assertEqual(result["action"], "seal_checkpoint")
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(reads, [self.artifacts.resolve()])
+        self.assertEqual(held, [])
+        self.assertEqual(verify_retirement(self.target)["target_terminal_status"], "checkpoint")
+        self.assertEqual(manifest_path.read_bytes(), original_manifest)
+        self.assertEqual(original_consumer, {path.name: path.read_bytes() for path in consumer.iterdir()})
+        entry = next(item for item in load_capacity_ledger(self.artifacts)["objects"]
+                     if item["path"] == self.target.relative_to(self.artifacts).as_posix())
+        self.assertEqual((entry["status"], entry["class"], entry["pin"]), ("ready", "light_evidence", False))
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_retired_remainder_seal_uses_held_snapshot_and_rejects_active_lease(self, _scan):
+        from contextlib import contextmanager
+        from msplatform.execution import capacity_protection as common_protection
+        from msplatform.execution import capacity_protection as canonical_protection
+
+        receipt_bytes, manifest_bytes = self._first_partial_batch(reseal=False)
+        receipt = json.loads(receipt_bytes)
+        self.assertEqual(receipt.get("approved_stopped_consumers", []), [])
+        self.assertIsNone(receipt.get("stopped_checkpoint_runtime"))
+        config_path = self.target / "run_config.json"
+        self.assertEqual(json.loads(config_path.read_text())["artifact_retention"]["class"], "solver_review")
+        ledger_path = self.artifacts / "common/capacity_ledger.json"
+        ledger_before = ledger_path.read_bytes()
+        real_lock = canonical_protection.capacity_decision_lock
+        real_reader = common_protection._load_capacity_protection_leases_unlocked
+        held = []
+        reads = []
+
+        @contextmanager
+        def checked_lock(root, **kwargs):
+            self.assertFalse(held, "retired-remainder callback reacquired decision lock")
+            with real_lock(root, **kwargs):
+                held.append(root.resolve())
+                try:
+                    yield
+                finally:
+                    held.pop()
+
+        def checked_reader(root, **kwargs):
+            self.assertEqual(held, [self.artifacts.resolve()])
+            reads.append(root.resolve())
+            return real_reader(root, **kwargs)
+
+        lease_id = "retired-remainder-seal-guard"
+        canonical_protection.create_capacity_protection_lease(
+            self.artifacts, lease_id=lease_id, owner="fixture-remainder",
+            ttl_seconds=60, protected_paths=[self.target])
+        try:
+            with mock.patch.object(canonical_protection, "capacity_decision_lock", checked_lock):
+                with self.assertRaisesRegex(ValueError, "active protection lease"):
+                    self._seal_partial_batch()
+            self.assertEqual(held, [])
+            self.assertEqual(ledger_path.read_bytes(), ledger_before)
+            self.assertEqual((self.target / "run_manifest.json").read_bytes(), manifest_bytes)
+            self.assertEqual((self.target / "solver_review_retirement_receipt.json").read_bytes(), receipt_bytes)
+        finally:
+            canonical_protection.delete_capacity_protection_lease(self.artifacts, lease_id=lease_id)
+        with mock.patch.object(canonical_protection, "capacity_decision_lock", checked_lock), mock.patch.object(
+                common_protection, "_load_capacity_protection_leases_unlocked", side_effect=checked_reader), mock.patch(
+                "msplatform.execution.run_capacity_lifecycle.verify_retirement",
+                side_effect=AssertionError("locked remainder used standalone public verifier")):
+            result = self._seal_partial_batch()
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(result["action"], "seal_stopped_payload")
+        self.assertEqual(reads, [self.artifacts.resolve()])
+        self.assertEqual(held, [])
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+        self.assertEqual((self.target / "run_manifest.json").read_bytes(), manifest_bytes)
+        self.assertEqual((self.target / "solver_review_retirement_receipt.json").read_bytes(), receipt_bytes)
+        entry = next(item for item in load_capacity_ledger(self.artifacts)["objects"]
+                     if item["path"] == self.target.relative_to(self.artifacts).as_posix())
+        self.assertEqual((entry["status"], entry["class"], entry["pin"]), ("ready", "rebuildable_payload", True))
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_approved_stopped_consumer_requires_owner_scope_and_new_consumers_still_block(self, _scan: mock.Mock) -> None:
+        checkpoint = self._checkpoint_runtime()
+        consumer = self._stopped_consumer(checkpoint)
+        for values in ({}, {"runtime_checkpoint_path": checkpoint}, {"writing_stopped": True}):
+            with self.subTest(values=values), self.assertRaises(RetirementError):
+                self._owner_plan(approved_stopped_consumers=[consumer], **values)
+        plan = self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True,
+                                approved_stopped_consumers=[consumer])
+        self._stopped_consumer(checkpoint, "new-unapproved-consumer")
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            with self.assertRaisesRegex(RetirementError, "active references"):
+                apply_retirement(plan)
+        self.assertFalse((self.target / "solver_review_retirement_receipt.json").exists())
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_approved_stopped_consumer_bad_evidence_and_owner_fail_closed(self, _scan: mock.Mock) -> None:
+        checkpoint = self._checkpoint_runtime()
+        for case in ("missing_manifest", "config_drift", "summary_drift", "cross_owner", "duplicate"):
+            consumer = self._stopped_consumer(checkpoint, case)
+            if case == "missing_manifest":
+                (consumer / "run_manifest.json").unlink()
+            elif case == "config_drift":
+                (consumer / "run_config.json").write_text("{}")
+            elif case == "summary_drift":
+                (consumer / "summary.json").write_text('{"status":"success"}')
+            elif case == "cross_owner":
+                manifest = consumer / "run_manifest.json"
+                value = json.loads(manifest.read_text())
+                value["project"] = "other"
+                manifest.write_text(json.dumps(value))
+            approved = [consumer, consumer] if case == "duplicate" else [consumer]
+            with self.subTest(case=case), self.assertRaises(RetirementError):
+                self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True,
+                                 approved_stopped_consumers=approved)
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_approved_stopped_consumer_rechecks_lease_gui_and_identity_before_apply(self, _scan: mock.Mock) -> None:
+        checkpoint = self._checkpoint_runtime()
+        consumer = self._stopped_consumer(checkpoint)
+        plan = self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True,
+                                approved_stopped_consumers=[consumer])
+        manifest_path = consumer / "run_manifest.json"
+        original = manifest_path.read_bytes()
+        manifest_path.write_bytes(original + b" ")
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            with self.assertRaisesRegex(RetirementError, "evidence changed"):
+                apply_retirement(plan)
+        manifest_path.write_bytes(original)
+        review = self.artifacts / "projects/p/reviews/current_consumer"
+        review.mkdir(parents=True)
+        receipt = review / "inspection_receipt.json"
+        receipt.write_text(json.dumps({"status": "ready", "source_run": consumer.name}))
+        with self.assertRaisesRegex(RetirementError, "current GUI"):
+            self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True,
+                             approved_stopped_consumers=[consumer])
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            with self.assertRaisesRegex(RetirementError, "current GUI"):
+                apply_retirement(plan)
+        receipt.unlink()
+        create_capacity_protection_lease(self.artifacts, lease_id="stopped-consumer-reader", owner="test",
+                                         ttl_seconds=3600, protected_paths=[consumer])
+        with self.assertRaisesRegex(RetirementError, "consumer has an active protection lease"):
+            self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True,
+                             approved_stopped_consumers=[consumer])
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_approved_stopped_consumer_pending_replay_requires_exact_list_and_identity(self, _scan: mock.Mock) -> None:
+        checkpoint = self._checkpoint_runtime()
+        consumer = self._stopped_consumer(checkpoint)
+        kwargs = {"runtime_checkpoint_path": checkpoint, "writing_stopped": True,
+                  "approved_stopped_consumers": [consumer]}
+        plan = self._owner_plan(**kwargs)
+        (self.target / plan["removed_files"][0]["path"]).unlink()
+        (self.target / "solver_review_retirement_receipt.json").write_text(json.dumps({
+            **plan, "role": "solver_review_retirement_receipt", "lifecycle_status": "retirement_pending",
+        }))
+        with self.assertRaisesRegex(RetirementError, "consumer list or identity changed"):
+            self._owner_plan(runtime_checkpoint_path=checkpoint, writing_stopped=True)
+        consumer_manifest = consumer / "run_manifest.json"
+        original = consumer_manifest.read_bytes()
+        consumer_manifest.write_bytes(original + b" ")
+        with self.assertRaisesRegex(RetirementError, "consumer list or identity changed"):
+            self._owner_plan(**kwargs)
+        consumer_manifest.write_bytes(original)
+        resumed = self._owner_plan(**kwargs)
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(resumed)
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+
+    def _nested_window(self, *, sealed: bool = True) -> Path:
+        child = self.target / "windows/window-001"
+        (child / "inputs").mkdir(parents=True)
+        (child / "inputs/field_v.pa").write_bytes(b"window-native")
+        config = json.loads((self.target / "run_config.json").read_text())
+        config["inputs"] = {}
+        (child / "run_config.json").write_text(json.dumps(config))
+        (child / "summary.json").write_text(json.dumps({"run_id": self.target.name, "status": "success"}))
+        def record(path: Path) -> dict[str, object]:
+            return {"path": str(path), "exists": True, "bytes": path.stat().st_size, "sha256": _sha(path)}
+        manifest = json.loads((self.target / "run_manifest.json").read_text())
+        manifest["run_config"] = record(child / "run_config.json")
+        manifest["inputs"] = {}
+        manifest["outputs"] = [record(child / "summary.json"), record(child / "inputs/field_v.pa")]
+        (child / "run_manifest.json").write_text(json.dumps(manifest))
+        if sealed:
+            parent = json.loads((self.target / "run_manifest.json").read_text())
+            parent["outputs"].append(record(child / "run_manifest.json"))
+            (self.target / "run_manifest.json").write_text(json.dumps(parent))
+        return child
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_nested_sealed_window_apply_and_verify(self, _scan: mock.Mock) -> None:
+        child = self._nested_window()
+        original = (child / "run_manifest.json").read_bytes()
+        from msplatform.execution.solver_review_retirement import file_sha256
+        def small_only(path: Path) -> str:
+            self.assertFalse(path.suffix.lower().startswith(".pa"))
+            return file_sha256(path)
+        with mock.patch("msplatform.execution.solver_review_retirement.file_sha256", side_effect=small_only):
+            plan = self._owner_plan()
+            self.assertEqual(len(plan["removed_files"]), 4)
+            with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+                apply_retirement(plan)
+            self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+        self.assertFalse((child / "inputs/field_v.pa").exists())
+        self.assertEqual((child / "run_manifest.json").read_bytes(), original)
+        self.assertTrue((child / "run_config.json").is_file())
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_nested_manifest_requires_parent_seal(self, _scan: mock.Mock) -> None:
+        self._nested_window(sealed=False)
+        with self.assertRaisesRegex(RetirementError, "lacks sealed identity"):
+            self._owner_plan()
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_nested_manifest_damage_is_rejected(self, _scan: mock.Mock) -> None:
+        child = self._nested_window()
+        with (child / "run_manifest.json").open("a") as stream:
+            stream.write(" ")
+        with self.assertRaises(RetirementError):
+            self._owner_plan()
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_nested_partial_retirement_replays(self, _scan: mock.Mock) -> None:
+        child = self._nested_window()
+        plan = self._owner_plan()
+        (child / "inputs/field_v.pa").unlink()
+        (self.target / "solver_review_retirement_receipt.json").write_text(json.dumps({
+            **plan, "role": "solver_review_retirement_receipt", "lifecycle_status": "retirement_pending",
+        }))
+        resumed = self._owner_plan()
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(resumed)
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+
+    def _bind_external_input_manifest(self) -> Path:
+        outside = self.replacement / "run_manifest.json"
+        config_path = self.target / "run_config.json"
+        config = json.loads(config_path.read_text())
+        config["inputs"]["upstream_manifest"] = str(outside)
+        config_path.write_text(json.dumps(config))
+        parent_path = self.target / "run_manifest.json"
+        parent = json.loads(parent_path.read_text())
+        parent["run_config"].update(bytes=config_path.stat().st_size, sha256=_sha(config_path))
+        parent["inputs"]["upstream_manifest"] = {
+            "path": str(outside), "exists": True,
+            "bytes": outside.stat().st_size, "sha256": _sha(outside),
+        }
+        parent_path.write_text(json.dumps(parent))
+        return outside
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_external_input_manifest_preserved_without_payload_inheritance(self, _scan: mock.Mock) -> None:
+        outside = self._bind_external_input_manifest()
+        before = {str(p.relative_to(self.replacement)): p.read_bytes()
+                  for p in self.replacement.rglob("*") if p.is_file()}
+        plan = self._owner_plan()
+        self.assertTrue(all((self.target / item["path"]).resolve().is_relative_to(self.target)
+                            for item in plan["removed_files"]))
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(plan)
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+        self.assertTrue(outside.is_file())
+        self.assertEqual(before, {str(p.relative_to(self.replacement)): p.read_bytes()
+                                  for p in self.replacement.rglob("*") if p.is_file()})
+        retained = json.loads((self.target / "run_manifest.json").read_text())
+        self.assertEqual(retained["inputs"]["upstream_manifest"]["sha256"], _sha(outside))
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_external_input_manifest_identity_drift_rejected(self, _scan: mock.Mock) -> None:
+        outside = self._bind_external_input_manifest()
+        outside.write_text(outside.read_text() + " ")
+        with self.assertRaises(RetirementError):
+            self._owner_plan()
+
+    def _bind_frozen_input_manifest(self) -> Path:
+        outside = self._bind_external_input_manifest()
+        frozen = self.target / "inputs/reference_parent/run_manifest.json"
+        frozen.parent.mkdir(parents=True)
+        frozen.write_bytes(outside.read_bytes())
+        config_path = self.target / "run_config.json"
+        config = json.loads(config_path.read_text())
+        config["inputs"]["upstream_manifest"] = str(frozen)
+        config_path.write_text(json.dumps(config))
+        parent_path = self.target / "run_manifest.json"
+        parent = json.loads(parent_path.read_text())
+        parent["run_config"].update(bytes=config_path.stat().st_size, sha256=_sha(config_path))
+        parent["inputs"]["upstream_manifest"].update(path=str(frozen))
+        parent_path.write_text(json.dumps(parent))
+        return frozen
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_frozen_input_manifest_preserved_without_payload_inheritance(self, _scan: mock.Mock) -> None:
+        frozen = self._bind_frozen_input_manifest()
+        original = frozen.read_bytes()
+        outside = {str(p.relative_to(self.replacement)): p.read_bytes()
+                   for p in self.replacement.rglob("*") if p.is_file()}
+        self.assertFalse((frozen.parent / "run_config.json").exists())
+        plan = self._owner_plan()
+        self.assertNotIn(frozen.relative_to(self.target).as_posix(),
+                         [item["path"] for item in plan["removed_files"]])
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(plan)
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+        self.assertEqual(frozen.read_bytes(), original)
+        self.assertEqual(outside, {str(p.relative_to(self.replacement)): p.read_bytes()
+                                  for p in self.replacement.rglob("*") if p.is_file()})
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_frozen_input_manifest_identity_drift_rejected(self, _scan: mock.Mock) -> None:
+        frozen = self._bind_frozen_input_manifest()
+        frozen.write_text(frozen.read_text() + " ")
+        with self.assertRaises(RetirementError):
+            self._owner_plan()
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_frozen_manifest_input_cannot_bypass_child_output_contract(self, _scan: mock.Mock) -> None:
+        frozen = self._bind_frozen_input_manifest()
+        parent_path = self.target / "run_manifest.json"
+        parent = json.loads(parent_path.read_text())
+        parent["outputs"].append(dict(parent["inputs"]["upstream_manifest"]))
+        parent_path.write_text(json.dumps(parent))
+        with self.assertRaisesRegex(RetirementError, "unreadable JSON.*run_config"):
+            self._owner_plan()
+        self.assertTrue(frozen.is_file())
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_external_manifest_input_cannot_authorize_output(self, _scan: mock.Mock) -> None:
+        outside = self._bind_external_input_manifest()
+        parent_path = self.target / "run_manifest.json"
+        parent = json.loads(parent_path.read_text())
+        parent["outputs"].append(dict(parent["inputs"]["upstream_manifest"]))
+        parent_path.write_text(json.dumps(parent))
+        with self.assertRaisesRegex(RetirementError, "strict local descendant"):
+            self._owner_plan()
+        self.assertTrue(outside.is_file())
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_external_child_manifest_rejected(self, _scan: mock.Mock) -> None:
+        parent_path = self.target / "run_manifest.json"
+        parent = json.loads(parent_path.read_text())
+        outside = self.replacement / "run_manifest.json"
+        parent["outputs"].append({"path": str(outside), "exists": True,
+                                  "bytes": outside.stat().st_size, "sha256": _sha(outside)})
+        parent_path.write_text(json.dumps(parent))
+        with self.assertRaisesRegex(RetirementError, "strict local descendant"):
+            self._owner_plan()
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_completed_apply_preserves_evidence_without_heavy_hash(self, _scan: mock.Mock) -> None:
+        from msplatform.execution.solver_review_retirement import file_sha256
+
+        def small_only(path: Path) -> str:
+            self.assertFalse(path.name.lower().startswith(("analyzer.pa", "accelerator.pa", "detector.pa")))
+            return file_sha256(path)
+
+        original_manifest = (self.target / "run_manifest.json").read_bytes()
+        with mock.patch("msplatform.execution.solver_review_retirement.file_sha256", side_effect=small_only):
+            plan = self._owner_plan()
+            self.assertIsNone(plan["replacement_manifest"])
+            self.assertTrue(all(item["identity_source"] == "sealed_manifest" for item in plan["removed_files"]))
+            with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+                receipt = apply_retirement(plan)
+            self.assertEqual(receipt["lifecycle_status"], "completed_experiment_payload_retired")
+            self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+        self.assertEqual((self.target / "run_manifest.json").read_bytes(), original_manifest)
+        self.assertTrue((self.target / "simion/seed.iob").is_file())
+        self.assertTrue((self.target / "candidate.json").is_file())
+        self.assertFalse((self.target / "simion/analyzer.pa0").exists())
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_completed_requires_reason_owner_and_exclusive_mode(self, _scan: mock.Mock) -> None:
+        for values in (
+            {"owner": "p"},
+            {"owner_abandonment_reason": "finished"},
+            {"owner": "other", "owner_abandonment_reason": "finished"},
+            {"owner": "p", "owner_abandonment_reason": "finished", "replacement_run": self.replacement},
+            {"owner": "p", "owner_abandonment_reason": "finished", "compatibility_assertion": "compatible"},
+        ):
+            with self.subTest(values=values), self.assertRaises(RetirementError):
+                plan_retirement(self.artifacts, self.repo, self.target, **values)
+        for status in ("checkpoint",):
+            self._set_status(self.target, status)
+            with self.subTest(status=status), self.assertRaisesRegex(RetirementError, "complete failed/interrupted/success"):
+                self._owner_plan()
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_interrupted_preserves_terminal_and_small_evidence(self, _scan: mock.Mock) -> None:
+        self._set_status(self.target, "interrupted")
+        evidence = {name: (self.target / name).read_bytes() for name in (
+            "run_manifest.json", "summary.json", "run_config.json", "candidate.json", "simion/seed.iob",
+        )}
+        with self.assertRaisesRegex(RetirementError, "complete failed/success"):
+            plan_retirement(self.artifacts, self.repo, self.target, self.replacement,
+                            "replacement does not authorize interrupted retirement", self.compatibility_roles)
+        plan = self._owner_plan()
+        self.assertEqual(plan["target_terminal_status"], "interrupted")
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(plan)
+        self.assertEqual(verify_retirement(self.target)["target_terminal_status"], "interrupted")
+        for name, original in evidence.items():
+            self.assertEqual((self.target / name).read_bytes(), original)
+        self.assertFalse((self.target / "simion/analyzer.pa0").exists())
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_interrupted_rechecks_consumer_and_lease(self, _scan: mock.Mock) -> None:
+        self._set_status(self.target, "interrupted")
+        plan = self._owner_plan()
+        downstream = self.runs / "20260103_000000__analysis__python__consumer"
+        downstream.mkdir()
+        config = downstream / "run_config.json"
+        config.write_text(json.dumps({"source": str(self.target / "simion/analyzer.pa0")}), encoding="utf-8")
+        with self.assertRaisesRegex(RetirementError, "active references"):
+            self._owner_plan()
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            with self.assertRaisesRegex(RetirementError, "active references"):
+                apply_retirement(plan)
+        config.write_text("{}", encoding="utf-8")
+        create_capacity_protection_lease(
+            self.artifacts, lease_id="interrupted-owner-protected", owner="test",
+            ttl_seconds=3600, protected_paths=[self.target],
+        )
+        with self.assertRaisesRegex(RetirementError, "active capacity protection lease"):
+            self._owner_plan()
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            with self.assertRaisesRegex(RetirementError, "protection"):
+                apply_retirement(plan)
+        self.assertTrue((self.target / "simion/analyzer.pa0").is_file())
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_failed_apply_and_verify_preserve_terminal_evidence(self, _scan: mock.Mock) -> None:
+        self._set_status(self.target, "failed")
+        original_manifest = (self.target / "run_manifest.json").read_bytes()
+        original_summary = (self.target / "summary.json").read_bytes()
+        with self.assertRaisesRegex(RetirementError, "nonempty abandonment reason"):
+            plan_retirement(self.artifacts, self.repo, self.target, owner="p")
+        plan = self._owner_plan()
+        self.assertEqual(plan["target_terminal_status"], "failed")
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            receipt = apply_retirement(plan)
+        self.assertEqual(receipt["target_terminal_status"], "failed")
+        self.assertEqual(receipt["lifecycle_status"], "completed_experiment_payload_retired")
+        self.assertEqual(verify_retirement(self.target)["target_terminal_status"], "failed")
+        self.assertEqual((self.target / "run_manifest.json").read_bytes(), original_manifest)
+        self.assertEqual((self.target / "summary.json").read_bytes(), original_summary)
+        self.assertTrue((self.target / "simion/seed.iob").is_file())
+        self.assertFalse((self.target / "simion/analyzer.pa0").exists())
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_failed_rejects_active_consumer_at_plan_and_apply(self, _scan: mock.Mock) -> None:
+        self._set_status(self.target, "failed")
+        plan = self._owner_plan()
+        downstream = self.runs / "20260103_000000__analysis__python__consumer"
+        downstream.mkdir()
+        (downstream / "run_config.json").write_text(json.dumps({
+            "source": str(self.target / "simion/analyzer.pa0"),
+        }), encoding="utf-8")
+        with self.assertRaisesRegex(RetirementError, "active references"):
+            self._owner_plan()
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            with self.assertRaisesRegex(RetirementError, "active references"):
+                apply_retirement(plan)
+        self.assertTrue((self.target / "simion/analyzer.pa0").is_file())
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_completed_rejects_lease_and_active_consumer(self, _scan: mock.Mock) -> None:
+        downstream = self.runs / "20260103_000000__analysis__python__consumer"
+        downstream.mkdir()
+        config = downstream / "run_config.json"
+        config.write_text(json.dumps({"source": str(self.target / "simion/analyzer.pa0")}), encoding="utf-8")
+        with self.assertRaisesRegex(RetirementError, "active references"):
+            self._owner_plan()
+        config.write_text("{}", encoding="utf-8")
+        create_capacity_protection_lease(
+            self.artifacts, lease_id="owner-completion-protected", owner="test",
+            ttl_seconds=3600, protected_paths=[self.target],
+        )
+        with self.assertRaisesRegex(RetirementError, "active capacity protection lease"):
+            self._owner_plan()
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_completed_apply_rechecks_new_consumer_and_removal_scope(self, _scan: mock.Mock) -> None:
+        plan = self._owner_plan()
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            altered = {**plan, "removed_files": plan["removed_files"] + [plan["preserved_files"][0]]}
+            with self.assertRaisesRegex(RetirementError, "removal scope"):
+                apply_retirement(altered)
+            downstream = self.runs / "20260103_000000__analysis__python__consumer"
+            downstream.mkdir()
+            (downstream / "run_config.json").write_text(json.dumps({"source": str(self.target)}), encoding="utf-8")
+            with self.assertRaisesRegex(RetirementError, "active references"):
+                apply_retirement(plan)
+        self.assertTrue((self.target / "simion/analyzer.pa0").is_file())
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_completed_pending_receipt_replays_without_replacement(self, _scan: mock.Mock) -> None:
+        plan = self._owner_plan()
+        (self.target / plan["removed_files"][0]["path"]).unlink()
+        (self.target / "solver_review_retirement_receipt.json").write_text(
+            json.dumps({**plan, "role": "solver_review_retirement_receipt", "lifecycle_status": "retirement_pending"}),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(RetirementError, "manifest identity changed"):
+            plan_retirement(self.artifacts, self.repo, self.target, owner="p", owner_abandonment_reason="different")
+        resumed = self._owner_plan()
+        self.assertTrue(any(item.get("already_removed_before_resume") for item in resumed["removed_files"]))
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(resumed)
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_owner_completed_cli_plans_without_replacement(self, _scan: mock.Mock) -> None:
+        output = io.StringIO()
+        with redirect_stdout(output):
+            code = main([
+                "--artifact-root", str(self.artifacts), "--repository-root", str(self.repo),
+                "--target-run", str(self.target), "--owner", "p", "--owner-abandonment-reason", "completed pilot",
+            ])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(output.getvalue())["retirement_mode"], "completed_experiment")
+
+    def _set_status(self, run: Path, status: str) -> None:
+        summary_path = run / "summary.json"
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        summary["status"] = status
+        summary_path.write_text(json.dumps(summary), encoding="utf-8")
+        manifest_path = run / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["status"] = status
+        summary_record = next(
+            item for item in manifest["outputs"]
+            if Path(item["path"]).name == "summary.json"
+        )
+        summary_record["bytes"] = summary_path.stat().st_size
+        summary_record["sha256"] = _sha(summary_path)
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    def _make_real_legacy_initialization_fixture(self, run: Path) -> None:
+        """Match the historical success-manifest/unbound-init-summary shape."""
+
+        (run / "summary.json").write_text(
+            json.dumps(LEGACY_INITIALIZATION_SUMMARY), encoding="utf-8"
+        )
+        manifest_path = run / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["outputs"] = [
+            record
+            for record in manifest["outputs"]
+            if Path(record["path"]).name != "summary.json"
+        ]
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    def _rename_input_role(self, run: Path, old: str, new: str) -> None:
+        config_path = run / "run_config.json"
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        config["inputs"][new] = config["inputs"].pop(old)
+        config_path.write_text(json.dumps(config), encoding="utf-8")
+        manifest_path = run / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["inputs"][new] = manifest["inputs"].pop(old)
+        manifest["run_config"]["bytes"] = config_path.stat().st_size
+        manifest["run_config"]["sha256"] = _sha(config_path)
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    def _rewrite_input_identity(self, run: Path, role: str, payload: bytes) -> None:
+        manifest_path = run / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        input_path = Path(manifest["inputs"][role]["path"])
+        input_path.write_bytes(payload)
+        manifest["inputs"][role]["bytes"] = input_path.stat().st_size
+        manifest["inputs"][role]["sha256"] = _sha(input_path)
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    def _add_config_inputs(self, run: Path, values: dict[str, object]) -> None:
+        config_path = run / "run_config.json"
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        config["inputs"].update(values)
+        config_path.write_text(json.dumps(config), encoding="utf-8")
+        manifest_path = run / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["run_config"]["bytes"] = config_path.stat().st_size
+        manifest["run_config"]["sha256"] = _sha(config_path)
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    def _replace_config_input(self, run: Path, role: str, value: object) -> None:
+        config_path = run / "run_config.json"
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        config["inputs"][role] = value
+        config_path.write_text(json.dumps(config), encoding="utf-8")
+        manifest_path = run / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["run_config"]["bytes"] = config_path.stat().st_size
+        manifest["run_config"]["sha256"] = _sha(config_path)
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_plan_apply_and_retired_verification(self, _scan: mock.Mock) -> None:
+        plan = plan_retirement(
+            self.artifacts, self.repo, self.target, self.replacement,
+            "new successful GUI package supersedes old", self.compatibility_roles,
+        )
+        self.assertGreater(plan["bytes_to_release"], 0)
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            receipt = apply_retirement(plan)
+        self.assertEqual(receipt["lifecycle_status"], "superseded_payload_retired")
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+        self.assertTrue((self.target / "run_manifest.json").is_file())
+        self.assertTrue((self.target / "simion" / "seed.iob").is_file())
+        self.assertFalse((self.target / "simion" / "analyzer.pa0").exists())
+
+        receipt_path = self.target / "solver_review_retirement_receipt.json"
+        legacy_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        legacy_receipt.pop("target_terminal_status")
+        receipt_path.write_text(json.dumps(legacy_receipt), encoding="utf-8")
+        self.assertEqual(
+            verify_retirement(self.target)["target_terminal_status"], "success"
+        )
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_real_legacy_initialization_summary_can_use_superseded_entrypoint(
+        self, _scan: mock.Mock,
+    ) -> None:
+        self._make_real_legacy_initialization_fixture(self.target)
+
+        plan = plan_retirement(
+            self.artifacts,
+            self.repo,
+            self.target,
+            self.replacement,
+            "new verified package supersedes legacy initialized solver review",
+            self.compatibility_roles,
+        )
+
+        self.assertTrue(plan["target_legacy_initialization_summary"])
+        self.assertGreater(plan["bytes_to_release"], 0)
+        self.assertIn(
+            "summary.json", {item["path"] for item in plan["preserved_files"]}
+        )
+        with mock.patch.dict(
+            os.environ,
+            {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"},
+        ):
+            receipt = apply_retirement(plan)
+        self.assertTrue(receipt["target_legacy_initialization_summary"])
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+        self.assertEqual(
+            json.loads((self.target / "summary.json").read_text(encoding="utf-8")),
+            LEGACY_INITIALIZATION_SUMMARY,
+        )
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_legacy_initialization_summary_requires_exact_template(
+        self, _scan: mock.Mock,
+    ) -> None:
+        mutations = {
+            "extra_field": lambda value: value.update(unexpected=True),
+            "reason_text": lambda value: value.update(
+                reason=f"{value['reason']} "
+            ),
+            "role": lambda value: value.update(role="run_package_checkpoint_summary"),
+            "schema": lambda value: value.update(schema_version=2),
+            "running": lambda value: value.update(status="running"),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name=name):
+                self._run(
+                    self.target.name, "2026-01-01T00:00:00Z"
+                )
+                self._make_real_legacy_initialization_fixture(self.target)
+                summary = dict(LEGACY_INITIALIZATION_SUMMARY)
+                mutate(summary)
+                (self.target / "summary.json").write_text(
+                    json.dumps(summary), encoding="utf-8"
+                )
+
+                with self.assertRaisesRegex(
+                    RetirementError, "target is not a complete"
+                ):
+                    plan_retirement(
+                        self.artifacts,
+                        self.repo,
+                        self.target,
+                        self.replacement,
+                        "near-match is not legacy authority",
+                        self.compatibility_roles,
+                    )
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_legacy_exception_does_not_admit_replacement_or_non_solver_review(
+        self, _scan: mock.Mock,
+    ) -> None:
+        self._make_real_legacy_initialization_fixture(self.replacement)
+        with self.assertRaisesRegex(
+            RetirementError, "replacement is not a complete success"
+        ):
+            plan_retirement(
+                self.artifacts,
+                self.repo,
+                self.target,
+                self.replacement,
+                "replacement must remain complete",
+                self.compatibility_roles,
+            )
+
+        self._run(
+            self.replacement.name, "2026-01-02T00:00:00Z"
+        )
+        self._make_real_legacy_initialization_fixture(self.target)
+        config_path = self.target / "run_config.json"
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        config["artifact_retention"] = {
+            "policy_version": 1,
+            "class": "compact",
+            "reason": None,
+        }
+        config_path.write_text(json.dumps(config), encoding="utf-8")
+        manifest_path = self.target / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["run_config"]["bytes"] = config_path.stat().st_size
+        manifest["run_config"]["sha256"] = _sha(config_path)
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        with self.assertRaisesRegex(RetirementError, "not solver_review"):
+            plan_retirement(
+                self.artifacts,
+                self.repo,
+                self.target,
+                self.replacement,
+                "compact target is not eligible",
+                self.compatibility_roles,
+            )
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_checkpoint_manifest_is_not_terminalized_from_success_summary(
+        self, _scan: mock.Mock,
+    ) -> None:
+        manifest_path = self.target / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["status"] = "checkpoint"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+        with self.assertRaisesRegex(RetirementError, "target is not a complete"):
+            plan_retirement(
+                self.artifacts,
+                self.repo,
+                self.target,
+                self.replacement,
+                "summary cannot terminalize a checkpoint manifest",
+                self.compatibility_roles,
+            )
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_active_lease_blocks_legacy_initialization_target(
+        self, _scan: mock.Mock,
+    ) -> None:
+        self._make_real_legacy_initialization_fixture(self.target)
+        create_capacity_protection_lease(
+            self.artifacts,
+            lease_id="active-producer-consumer-chain",
+            owner="test",
+            ttl_seconds=3600,
+            protected_paths=[self.target],
+        )
+
+        with self.assertRaisesRegex(RetirementError, "active capacity protection lease"):
+            plan_retirement(
+                self.artifacts,
+                self.repo,
+                self.target,
+                self.replacement,
+                "active chain must remain protected",
+                self.compatibility_roles,
+            )
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_failed_target_with_identity_equal_role_mapping_can_be_retired(
+        self, _scan: mock.Mock,
+    ) -> None:
+        self._set_status(self.target, "failed")
+        self._rename_input_role(
+            self.target, "candidate_contract", "legacy_candidate_contract"
+        )
+        self._add_config_inputs(self.replacement, {
+            "optional_input": None,
+            "grouped_inputs": [
+                str(self.replacement / "candidate.json"),
+                str(self.replacement / "resolved.json"),
+            ],
+        })
+        self._replace_config_input(
+            self.replacement, "analyzer_pa0",
+            str(self.root / "removed-short-alias" / "simion" / "analyzer.pa0"),
+        )
+        roles = tuple(
+            role for role in self.compatibility_roles if role != "candidate_contract"
+        )
+
+        plan = plan_retirement(
+            self.artifacts, self.repo, self.target, self.replacement,
+            "new successful GUI package supersedes failed legacy package", roles,
+            (("legacy_candidate_contract", "candidate_contract"),),
+        )
+
+        self.assertEqual(plan["target_terminal_status"], "failed")
+        self.assertEqual(
+            plan["compatibility_checks"]["verified_input_role_mappings"][0][
+                "target_role"
+            ],
+            "legacy_candidate_contract",
+        )
+        with mock.patch.dict(
+            os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}
+        ):
+            receipt = apply_retirement(plan)
+        self.assertEqual(receipt["target_terminal_status"], "failed")
+        verification = verify_retirement(self.target)
+        self.assertEqual(verification["target_terminal_status"], "failed")
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_unbound_configured_input_collection_is_rejected(self, _scan: mock.Mock) -> None:
+        self._add_config_inputs(
+            self.replacement,
+            {"grouped_inputs": [str(self.replacement / "unrecorded-input.json")]},
+        )
+
+        with self.assertRaisesRegex(RetirementError, "input collection"):
+            plan_retirement(
+                self.artifacts, self.repo, self.target, self.replacement,
+                "all configured input members remain bound", self.compatibility_roles,
+            )
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_configured_file_record_binds_verified_input_identity(self, _scan: mock.Mock) -> None:
+        configured = file_record(self.target / "candidate.json")
+        configured["sha256"] = configured["sha256"].lower()
+        self._add_config_inputs(self.target, {"frozen_record": configured})
+        self.assertEqual(self._owner_plan()["status"], "eligible")
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_configured_file_record_binds_generated_output_with_source_metadata(self, _scan: mock.Mock) -> None:
+        frozen = self.target / "inputs/finalization.py"
+        frozen.parent.mkdir(exist_ok=True)
+        frozen.write_bytes(b"# frozen loader used at finalization\n")
+        configured = file_record(frozen)
+        configured["source_path"] = str(self.root / "changed-or-missing-live-source.py")
+        manifest_path = self.target / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["outputs"].append(file_record(frozen, "lightweight_optional"))
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        self._add_config_inputs(self.target, {"generated_records": {"group": [configured]}})
+        plan = self._owner_plan()
+        self.assertEqual(plan["status"], "eligible")
+        self.assertTrue(any(item["path"] == "inputs/finalization.py" for item in plan["preserved_files"]))
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_configured_file_record_identity_must_match_verified_record(self, _scan: mock.Mock) -> None:
+        configured = file_record(self.target / "candidate.json")
+        for change in ({"sha256": "0" * 64}, {"bytes": configured["bytes"] + 1}):
+            with self.subTest(change=change):
+                self._add_config_inputs(self.target, {"frozen_record": {**configured, **change}})
+                with self.assertRaisesRegex(RetirementError, "file record identity differs"):
+                    self._owner_plan()
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_configured_file_record_requires_manifest_bound_file(self, _scan: mock.Mock) -> None:
+        unbound = self.target / "unrecorded-input.json"
+        unbound.write_bytes(b"valid file bytes are insufficient without a seal")
+        self._add_config_inputs(self.target, {"frozen_record": file_record(unbound)})
+        with self.assertRaisesRegex(RetirementError, "does not bind configured input file record"):
+            self._owner_plan()
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_configured_file_record_rejects_incomplete_or_extra_metadata_shapes(self, _scan: mock.Mock) -> None:
+        configured = file_record(self.target / "candidate.json")
+        invalid = [
+            {key: value for key, value in configured.items() if key != "bytes"},
+            {**configured, "exists": False}, {**configured, "exists": 1},
+            {**configured, "bytes": True}, {**configured, "bytes": -1},
+            {**configured, "sha256": "x" * 64}, {**configured, "path": 1},
+            {**configured, "source_path": {"unbound": "hidden.json"}},
+            {**configured, "extra_dependency": "unbound.json"},
+        ]
+        for value in invalid:
+            with self.subTest(value=value):
+                self._add_config_inputs(self.target, {"frozen_record": value})
+                with self.assertRaisesRegex(RetirementError, "file record has an invalid shape"):
+                    self._owner_plan()
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_plain_configured_dictionary_retains_strict_collection_validation(self, _scan: mock.Mock) -> None:
+        self._add_config_inputs(self.target, {"grouped_inputs": {"bound": str(self.target / "candidate.json")}})
+        self.assertEqual(self._owner_plan()["status"], "eligible")
+        for member, message in ((str(self.target / "unbound.json"), "input collection"), (False, "invalid shape")):
+            with self.subTest(member=member):
+                self._add_config_inputs(self.target, {"grouped_inputs": {"bound": member}})
+                with self.assertRaisesRegex(RetirementError, message):
+                    self._owner_plan()
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_short_alias_suffix_mismatch_is_rejected(self, _scan: mock.Mock) -> None:
+        self._replace_config_input(
+            self.replacement, "analyzer_pa0",
+            str(self.root / "removed-short-alias" / "simion" / "other.pa0"),
+        )
+
+        with self.assertRaisesRegex(RetirementError, "configured input: analyzer_pa0"):
+            plan_retirement(
+                self.artifacts, self.repo, self.target, self.replacement,
+                "short alias must map exactly", self.compatibility_roles,
+            )
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_failed_replacement_is_not_accepted(self, _scan: mock.Mock) -> None:
+        self._set_status(self.target, "failed")
+        self._set_status(self.replacement, "failed")
+
+        with self.assertRaisesRegex(RetirementError, "replacement is not a complete success"):
+            plan_retirement(
+                self.artifacts, self.repo, self.target, self.replacement,
+                "failed replacement is not authoritative", self.compatibility_roles,
+            )
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_role_mapping_requires_roles_at_both_ends(self, _scan: mock.Mock) -> None:
+        self._set_status(self.target, "failed")
+
+        with self.assertRaisesRegex(RetirementError, "mapping roles missing"):
+            plan_retirement(
+                self.artifacts, self.repo, self.target, self.replacement,
+                "legacy roles must be explicit", (),
+                (("missing_legacy_role", "candidate_contract"),),
+            )
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_role_mapping_requires_equal_manifest_identity(self, _scan: mock.Mock) -> None:
+        self._set_status(self.target, "failed")
+        self._rename_input_role(
+            self.target, "candidate_contract", "legacy_candidate_contract"
+        )
+        replacement_input = self.replacement / "candidate.json"
+        original = replacement_input.read_bytes()
+        for payload in (b"x" * len(original), original + b"-different-size"):
+            with self.subTest(payload_size=len(payload)):
+                self._rewrite_input_identity(
+                    self.replacement, "candidate_contract", payload
+                )
+                with self.assertRaisesRegex(RetirementError, "mapping identity differs"):
+                    plan_retirement(
+                        self.artifacts, self.repo, self.target, self.replacement,
+                        "identity drift must fail closed", (),
+                        (("legacy_candidate_contract", "candidate_contract"),),
+                    )
+                self._rewrite_input_identity(
+                    self.replacement, "candidate_contract", original
+                )
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_role_mappings_must_be_one_to_one(self, _scan: mock.Mock) -> None:
+        for mappings in (
+            (
+                ("candidate_contract", "candidate_contract"),
+                ("candidate_contract", "resolved_prototype_contract"),
+            ),
+            (
+                ("candidate_contract", "candidate_contract"),
+                ("resolved_prototype_contract", "candidate_contract"),
+            ),
+        ):
+            with self.subTest(mappings=mappings), self.assertRaisesRegex(
+                RetirementError, "one-to-one"
+            ):
+                plan_retirement(
+                    self.artifacts, self.repo, self.target, self.replacement,
+                    "ambiguous mappings must fail closed", (), mappings,
+                )
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_cli_accepts_repeated_input_role_mappings(self, _scan: mock.Mock) -> None:
+        self._set_status(self.target, "failed")
+        self._rename_input_role(
+            self.target, "candidate_contract", "legacy_candidate_contract"
+        )
+        output = io.StringIO()
+
+        with redirect_stdout(output):
+            status = main([
+                "--artifact-root", str(self.artifacts),
+                "--repository-root", str(self.repo),
+                "--target-run", str(self.target),
+                "--replacement-run", str(self.replacement),
+                "--compatibility-assertion", "explicit legacy role migration",
+                # Existing lease-owning PowerShell wrapper forwards mappings
+                # through this older repeatable switch.
+                "--compatibility-input-role",
+                "legacy_candidate_contract=candidate_contract",
+                "--compatibility-input-role-map",
+                "analyzer_pa0=analyzer_pa0",
+            ])
+
+        self.assertEqual(status, 0)
+        result = json.loads(output.getvalue())
+        self.assertEqual(result["target_terminal_status"], "failed")
+        self.assertEqual(
+            len(result["compatibility_checks"]["verified_input_role_mappings"]), 2
+        )
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=["docs/x.md"])
+    def test_historical_document_reference_is_audited_not_a_heavy_dependency(
+        self, _scan: mock.Mock,
+    ) -> None:
+        self._set_status(self.target, "failed")
+        plan = plan_retirement(
+            self.artifacts, self.repo, self.target, self.replacement,
+            "compatible", self.compatibility_roles,
+        )
+        self.assertEqual(plan["historical_document_references"], ["docs/x.md"])
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_capacity_protection_lease_blocks_failed_target(self, _scan: mock.Mock) -> None:
+        self._set_status(self.target, "failed")
+        create_capacity_protection_lease(
+            self.artifacts, lease_id="protected-failed-target", owner="test",
+            ttl_seconds=3600, protected_paths=[self.target],
+        )
+
+        with self.assertRaisesRegex(RetirementError, "active capacity protection lease"):
+            plan_retirement(
+                self.artifacts, self.repo, self.target, self.replacement,
+                "protected targets remain immutable", self.compatibility_roles,
+            )
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_apply_rechecks_new_capacity_protection_lease(self, _scan: mock.Mock) -> None:
+        plan = plan_retirement(
+            self.artifacts, self.repo, self.target, self.replacement,
+            "lease changes must be rechecked", self.compatibility_roles,
+        )
+        create_capacity_protection_lease(
+            self.artifacts, lease_id="late-protection", owner="test",
+            ttl_seconds=3600, protected_paths=[self.target],
+        )
+
+        with mock.patch.dict(
+            os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}
+        ), self.assertRaisesRegex(RetirementError, "gained an active capacity"):
+            apply_retirement(plan)
+        self.assertFalse((self.target / "solver_review_retirement_receipt.json").exists())
+        self.assertTrue((self.target / "simion" / "analyzer.pa0").is_file())
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_apply_rechecks_new_downstream_reference(self, _scan: mock.Mock) -> None:
+        plan = plan_retirement(
+            self.artifacts, self.repo, self.target, self.replacement,
+            "references must be rechecked", self.compatibility_roles,
+        )
+        downstream = self.runs / "20260103_000000__analysis__python__late-consumer"
+        downstream.mkdir(parents=True)
+        (downstream / "run_config.json").write_text(
+            json.dumps({"source_run": self.target.name}), encoding="utf-8"
+        )
+
+        with mock.patch.dict(
+            os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}
+        ), self.assertRaisesRegex(RetirementError, "gained active references"):
+            apply_retirement(plan)
+        self.assertFalse((self.target / "solver_review_retirement_receipt.json").exists())
+        self.assertTrue((self.target / "simion" / "analyzer.pa0").is_file())
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_apply_audits_late_terminal_downstream_reference_without_blocking(
+        self, _scan: mock.Mock,
+    ) -> None:
+        plan = plan_retirement(
+            self.artifacts,
+            self.repo,
+            self.target,
+            self.replacement,
+            "terminal references remain historical",
+            self.compatibility_roles,
+        )
+        downstream = self.runs / "20260103_000000__analysis__python__late-history"
+        downstream.mkdir(parents=True)
+        config_path = downstream / "run_config.json"
+        config_path.write_text(
+            json.dumps({"source_run": str(self.target)}), encoding="utf-8"
+        )
+        (downstream / "run_manifest.json").write_text(
+            json.dumps({"run_id": downstream.name, "status": "failed"}),
+            encoding="utf-8",
+        )
+
+        with mock.patch.dict(
+            os.environ,
+            {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"},
+        ):
+            receipt = apply_retirement(plan)
+
+        self.assertEqual(
+            receipt["apply_historical_downstream_references"][0][
+                "run_config_path"
+            ],
+            str(config_path),
+        )
+        self.assertFalse((self.target / "simion" / "analyzer.pa0").exists())
+
+    def test_apply_records_new_historical_document_reference_without_blocking(self) -> None:
+        with mock.patch(
+            "msplatform.execution.solver_review_retirement._git_document_references",
+            return_value=[],
+        ) as scan:
+            plan = plan_retirement(
+                self.artifacts, self.repo, self.target, self.replacement,
+                "document references must be rechecked", self.compatibility_roles,
+            )
+            scan.return_value = ["docs/new-reference.md"]
+            with mock.patch.dict(
+                os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}
+            ):
+                receipt = apply_retirement(plan)
+        self.assertEqual(
+            receipt["apply_historical_document_references"],
+            ["docs/new-reference.md"],
+        )
+        self.assertFalse((self.target / "simion" / "analyzer.pa0").exists())
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_downstream_manifest_reference_preserves_light_evidence_only(self, _scan: mock.Mock) -> None:
+        self._set_status(self.target, "failed")
+        downstream = self.runs / "20260103_000000__analysis__python__consumer"
+        downstream.mkdir(parents=True)
+        (downstream / "run_config.json").write_text(
+            json.dumps(
+                {
+                    "inputs": {
+                        "source_manifest": str(self.target / "run_manifest.json")
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        (downstream / "run_manifest.json").write_text(
+            json.dumps({"run_id": downstream.name, "status": "checkpoint"}),
+            encoding="utf-8",
+        )
+
+        plan = plan_retirement(
+            self.artifacts, self.repo, self.target, self.replacement,
+            "referenced manifest remains immutable", self.compatibility_roles,
+        )
+        self.assertEqual(
+            plan["active_preserved_file_references"][0]["path"],
+            "run_manifest.json",
+        )
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_active_reference_to_preserved_light_file_does_not_pin_heavy_payload(
+        self, _scan: mock.Mock,
+    ) -> None:
+        downstream = self.runs / "20260103_000000__analysis__python__light-consumer"
+        downstream.mkdir(parents=True)
+        (downstream / "run_config.json").write_text(
+            json.dumps({"source_summary": str(self.target / "summary.json")}),
+            encoding="utf-8",
+        )
+        (downstream / "run_manifest.json").write_text(
+            json.dumps({"run_id": downstream.name, "status": "checkpoint"}),
+            encoding="utf-8",
+        )
+
+        plan = plan_retirement(
+            self.artifacts, self.repo, self.target, self.replacement,
+            "preserved evidence remains available", self.compatibility_roles,
+        )
+
+        self.assertEqual(plan["active_preserved_file_references"][0]["path"], "summary.json")
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_active_reference_to_nested_heavy_file_blocks_retirement(
+        self, _scan: mock.Mock,
+    ) -> None:
+        downstream = self.runs / "20260103_000000__analysis__python__payload-consumer"
+        downstream.mkdir(parents=True)
+        (downstream / "run_config.json").write_text(
+            json.dumps({"source_pa": str(self.target / "simion" / "analyzer.pa0")}),
+            encoding="utf-8",
+        )
+        (downstream / "run_manifest.json").write_text(
+            json.dumps({"run_id": downstream.name, "status": "checkpoint"}),
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(RetirementError, "active references"):
+            plan_retirement(
+                self.artifacts, self.repo, self.target, self.replacement,
+                "active payload cannot retire", self.compatibility_roles,
+            )
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_terminal_downstream_reference_is_historical_audit_not_blocker(
+        self, _scan: mock.Mock,
+    ) -> None:
+        downstream = self.runs / "20260103_000000__analysis__python__historical"
+        downstream.mkdir(parents=True)
+        config_path = downstream / "run_config.json"
+        config_path.write_text(
+            json.dumps({"source_run": self.target.name}), encoding="utf-8"
+        )
+        (downstream / "run_manifest.json").write_text(
+            json.dumps({"run_id": downstream.name, "status": "success"}),
+            encoding="utf-8",
+        )
+
+        plan = plan_retirement(
+            self.artifacts,
+            self.repo,
+            self.target,
+            self.replacement,
+            "terminal consumers are historical evidence",
+            self.compatibility_roles,
+        )
+
+        self.assertEqual(
+            plan["historical_downstream_references"],
+            [
+                {
+                    "run_config_path": str(config_path),
+                    "manifest_status": "success",
+                    "reason": "configured_target_run_dependency",
+                }
+            ],
+        )
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_unreadable_active_run_config_blocks_conservatively(
+        self, _scan: mock.Mock,
+    ) -> None:
+        downstream = self.runs / "20260103_000000__analysis__python__uncertain"
+        downstream.mkdir(parents=True)
+        (downstream / "run_config.json").write_text("{", encoding="utf-8")
+        (downstream / "run_manifest.json").write_text(
+            json.dumps({"run_id": downstream.name, "status": "checkpoint"}),
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(
+            RetirementError, "run_config_unreadable_reference_uncertain"
+        ):
+            plan_retirement(
+                self.artifacts,
+                self.repo,
+                self.target,
+                self.replacement,
+                "uncertain active consumers block",
+                self.compatibility_roles,
+            )
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_corrupt_active_run_config_is_audit_only_when_manifest_identity_differs(
+        self, _scan: mock.Mock,
+    ) -> None:
+        downstream = self.runs / "20260103_000000__analysis__python__corrupt-config"
+        downstream.mkdir(parents=True)
+        config_path = downstream / "run_config.json"
+        original = json.dumps(
+            {"source_pa": str(self.target / "simion" / "analyzer.pa0")},
+            separators=(",", ":"),
+        ).encode()
+        config_path.write_bytes(original)
+        manifest = {
+            "run_id": downstream.name,
+            "status": "checkpoint",
+            "run_config": {
+                "path": str(config_path),
+                "exists": True,
+                "bytes": len(original),
+                "sha256": hashlib.sha256(original).hexdigest().upper(),
+            },
+        }
+        (downstream / "run_manifest.json").write_text(
+            json.dumps(manifest), encoding="utf-8"
+        )
+        # Simulate the observed all-zero/corrupt file while retaining the
+        # manifest's last-known identity.
+        config_path.write_bytes(b"\x00" * len(original))
+
+        plan = plan_retirement(
+            self.artifacts,
+            self.repo,
+            self.target,
+            self.replacement,
+            "corrupt downstream config is not usable evidence of a consumer",
+            self.compatibility_roles,
+        )
+
+        self.assertEqual(plan["active_preserved_file_references"], [])
+        self.assertEqual(
+            plan["corrupt_run_config_reference_unavailable"][0]["reason"],
+            "corrupt_run_config_reference_unavailable",
+        )
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_unreadable_active_run_config_with_matching_manifest_identity_still_blocks(
+        self, _scan: mock.Mock,
+    ) -> None:
+        downstream = self.runs / "20260103_000000__analysis__python__matching-invalid-config"
+        downstream.mkdir(parents=True)
+        config_path = downstream / "run_config.json"
+        invalid = b"{"
+        config_path.write_bytes(invalid)
+        manifest = {
+            "run_id": downstream.name,
+            "status": "checkpoint",
+            "run_config": {
+                "path": str(config_path),
+                "exists": True,
+                "bytes": len(invalid),
+                "sha256": hashlib.sha256(invalid).hexdigest().upper(),
+            },
+        }
+        (downstream / "run_manifest.json").write_text(
+            json.dumps(manifest), encoding="utf-8"
+        )
+
+        with self.assertRaisesRegex(
+            RetirementError, "run_config_unreadable_reference_uncertain"
+        ):
+            plan_retirement(
+                self.artifacts,
+                self.repo,
+                self.target,
+                self.replacement,
+                "matching but unparsable config remains uncertain",
+                self.compatibility_roles,
+            )
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_declared_compatibility_role_must_exist_at_both_ends(self, _scan: mock.Mock) -> None:
+        with self.assertRaisesRegex(RetirementError, "identity roles missing"):
+            plan_retirement(
+                self.artifacts, self.repo, self.target, self.replacement,
+                "compatible", (*self.compatibility_roles, "project_specific_missing_role"),
+            )
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_apply_requires_host_lease(self, _scan: mock.Mock) -> None:
+        plan = plan_retirement(
+            self.artifacts, self.repo, self.target, self.replacement,
+            "compatible", self.compatibility_roles,
+        )
+        with mock.patch.dict(os.environ, {}, clear=True), self.assertRaises(RetirementError):
+            apply_retirement(plan)
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_plan_rejects_missing_or_changed_recorded_evidence(self, _scan: mock.Mock) -> None:
+        for run in (self.target, self.replacement):
+            payload = run / "simion" / "analyzer.pa0"
+            original = payload.read_bytes()
+            for mutation in (None, b"drift!"):
+                with self.subTest(run=run.name, mutation=mutation):
+                    if mutation is None:
+                        payload.unlink()
+                    else:
+                        payload.write_bytes(mutation)
+                    with self.assertRaisesRegex(RetirementError, "identity differs"):
+                        plan_retirement(
+                            self.artifacts, self.repo, self.target, self.replacement,
+                            "compatible", self.compatibility_roles,
+                        )
+                    payload.write_bytes(original)
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_replacement_cannot_omit_compatibility_input_record(self, _scan: mock.Mock) -> None:
+        path = self.replacement / "run_manifest.json"
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+        del manifest["inputs"]["analyzer_pa0"]
+        path.write_text(json.dumps(manifest), encoding="utf-8")
+        with self.assertRaisesRegex(RetirementError, "does not bind configured input"):
+            plan_retirement(
+                self.artifacts, self.repo, self.target, self.replacement,
+                "compatible", self.compatibility_roles,
+            )
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_apply_rechecks_evidence_before_any_removal(self, _scan: mock.Mock) -> None:
+        plan = plan_retirement(
+            self.artifacts, self.repo, self.target, self.replacement,
+            "compatible", self.compatibility_roles,
+        )
+        for run, relative in (
+            (self.replacement, "simion/analyzer.pa0"),
+            (self.target, "summary.json"),
+            (self.replacement, "run_manifest.json"),
+        ):
+            path = run / relative
+            original = path.read_bytes()
+            with self.subTest(run=run.name, relative=relative):
+                path.write_bytes(original + b" ")
+                with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+                    with self.assertRaises(RetirementError):
+                        apply_retirement(plan)
+                marker = json.loads(
+                    (self.target / "solver_review_retirement_receipt.json").read_text(
+                        encoding="utf-8"
+                    )
+                )
+                self.assertEqual(marker["status"], "preflight_pending")
+                self.assertEqual(marker["lifecycle_status"], "retirement_pending")
+                for item in plan["removed_files"]:
+                    self.assertTrue((self.target / item["path"]).is_file())
+                path.write_bytes(original)
+
+    @mock.patch("msplatform.execution.solver_review_retirement._git_document_references", return_value=[])
+    def test_pending_receipt_resumes_only_recorded_partial_removal(self, _scan: mock.Mock) -> None:
+        plan = plan_retirement(
+            self.artifacts, self.repo, self.target, self.replacement,
+            "compatible", self.compatibility_roles,
+        )
+        first = plan["removed_files"][0]
+        (self.target / first["path"]).unlink()
+        pending = {
+            **plan,
+            "role": "solver_review_retirement_receipt",
+            "lifecycle_status": "retirement_pending",
+            "started_at_utc": datetime.now(timezone.utc).isoformat(),
+        }
+        (self.target / "solver_review_retirement_receipt.json").write_text(json.dumps(pending), encoding="utf-8")
+        resumed = plan_retirement(
+            self.artifacts, self.repo, self.target, self.replacement,
+            "compatible", self.compatibility_roles,
+        )
+        self.assertTrue(any(item.get("already_removed_before_resume") for item in resumed["removed_files"]))
+        with mock.patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "123"}):
+            apply_retirement(resumed)
+        self.assertEqual(verify_retirement(self.target)["status"], "PASS")
+
+
+if __name__ == "__main__":
+    unittest.main()

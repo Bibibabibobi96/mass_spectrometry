@@ -1,0 +1,736 @@
+"""Synthetic replay planning/identity tests; no PA solve or physical evidence."""
+from __future__ import annotations
+from msplatform.backends.simion.resources import native_resource_path
+
+import json
+import os
+import shutil
+import subprocess
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+
+from msplatform.execution.retention import file_record
+from msplatform.backends.simion.ip_gui_replay import prepare_replay, finalize_replay, record_prepared_native_family, validate_baseline_for_private_gui
+from msplatform.workflows.ion_processor import analysis as ion_analysis
+from msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates import (
+    to_local_position, to_local_vector, to_project_position, to_project_vector,
+    transform_from_config,
+)
+
+
+class CoordinateTests(unittest.TestCase):
+    """Exact frame contracts; these tests do not provide native field evidence."""
+
+    def setUp(self) -> None:
+        path = Path(__file__).resolve().parents[3] / "src/msplatform/components/dual_pressure_rectilinear_ion_processor" / "config/coordinate_transform.json"
+        self.config = {"coordinate_transform": json.loads(path.read_text())}
+
+    def test_legacy_identity(self) -> None:
+        self.assertEqual(to_project_position({}, (1, 2, 3)), (1, 2, 3))
+        self.assertEqual(to_local_vector({}, (1, 2, 3)), (1, 2, 3))
+
+    def test_native_origin(self) -> None:
+        self.assertEqual(to_project_position(self.config, (-1, -4, -4)), (4, -1, 13.8))
+
+    def test_exit_plane(self) -> None:
+        self.assertEqual(to_project_position(self.config, (170, 9.8, 0)), (0, 170, 0))
+
+    def test_slow_axis(self) -> None:
+        self.assertEqual(to_project_vector(self.config, (1, 0, 0)), (0, 1, 0))
+
+    def test_acceleration_axis(self) -> None:
+        self.assertEqual(to_project_vector(self.config, (0, 1, 0)), (0, 0, -1))
+
+    def test_transverse_axis(self) -> None:
+        self.assertEqual(to_project_vector(self.config, (0, 0, 1)), (-1, 0, 0))
+
+    def test_position_inverse(self) -> None:
+        original = (123.5, 2.25, -0.4)
+        for left, right in zip(to_local_position(self.config, to_project_position(self.config, original)), original):
+            self.assertAlmostEqual(left, right)
+
+    def test_vector_inverse_without_translation(self) -> None:
+        self.assertEqual(to_local_vector(self.config, to_project_vector(self.config, (2, 3, 4))), (2, 3, 4))
+        self.assertEqual(to_project_vector(self.config, (0, 0, 0)), (0, 0, 0))
+
+    def test_source_frame_rejected(self) -> None:
+        self.config["baseline"] = {"clock": {"frame_id": "other"}}
+        with self.assertRaisesRegex(ValueError, "source frame"):
+            transform_from_config(self.config)
+
+    def test_improper_rotation_rejected(self) -> None:
+        self.config["coordinate_transform"]["rotation"] = [[1, 0, 0], [0, 1, 0], [0, 0, -1]]
+        with self.assertRaisesRegex(ValueError, "right handed"):
+            transform_from_config(self.config)
+
+
+class GuiReplayPlanTests(unittest.TestCase):
+    """Use tiny fake PA bytes exclusively to test frozen file identity mechanics."""
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory(prefix="ion_processor_replay_plan_")
+        self.addCleanup(self.temporary.cleanup)
+        root = Path(self.temporary.name)
+        self.baseline, self.run = root / "baseline", root / "replay"
+        for base in (self.baseline, self.run):
+            for sub in ("inputs", "simion", "logs", "results"):
+                (base / sub).mkdir(parents=True, exist_ok=True)
+            (base / "run_config.json").write_text('{"inputs":{}}', encoding="utf-8")
+        for suffix in ["#", *map(str, range(16)), "-surf"]:
+            (self.baseline / "simion" / ("processor.pa" + suffix)).write_bytes(b"synthetic-test-not-a-real-pa")
+        for name in ("frozen_config.lua", "collision_hs1.lua", "source_states.lua", "native_drive.lua", "simion_rf_drive.lua", "voltage_waveforms.lua", "processor.fly2", "processor.lua", "processor.gem", "probe_native_field.lua"):
+            (self.baseline / "simion" / name).write_text("-- synthetic frozen input", encoding="utf-8")
+        shutil.copyfile(native_resource_path("ip_build_workbench.lua"), self.baseline / "simion/build_workbench.lua")
+        from msplatform.execution.resources import resource_path
+        shutil.copyfile(resource_path("native_run_path.lua"), self.baseline / "simion/native_run_path.lua")
+        config = {"source_profile": "functional", "native_projection": {"origin_mm": [-1, -4, -4], "electrode_ids": list(range(1, 16))}, "numerics": {"seed": 42, "trajectory_quality": 0}}
+        config["native_timing"] = {"policy":"synthetic_frozen_timing", "primary_quench_us":.25, "pulse_start_us":.75}
+        (self.baseline / "inputs/native_timing.json").write_text(json.dumps(config["native_timing"]), encoding="utf-8")
+        (self.baseline / "inputs/resolved_model.json").write_text(json.dumps(config), encoding="utf-8")
+        (self.baseline / "summary.json").write_text(json.dumps({"role": "ion_processor_functional_summary", "status": "failed", "functional_status": "functional_incomplete", "source_profile": "functional"}), encoding="utf-8")
+        (self.baseline / "logs/flight.log").write_text("ION_PROCESSOR_END\n", encoding="utf-8")
+        table = "particle_id,event,t_us,x_mm\n1,source,0,1\n1,terminal,1,2\n"
+        for relative in ("simion/events.csv", "simion/samples.csv", "results/particle_state.csv"):
+            (self.baseline / relative).write_text(table, encoding="utf-8")
+        (self.baseline / "simion/samples.csv").write_text("particle_id,t_us,x_mm,y_mm,z_mm,vx_mm_us,vy_mm_us,vz_mm_us\n1,0,1,0,0,1,0,0\n1,1,2,0,0,1,0,0\n", encoding="utf-8")
+        self.publish_manifest()
+        # Real public pair freezing, but its source PA is explicit inert test
+        # data. No checkout-local 16 MB seed or scientific PA is required.
+        from msplatform.backends.simion.workbench_seed import freeze_workbench_seed as freeze_pair
+        from msplatform.backends.simion.resources import structural_seed_path
+        from msplatform.backends.simion import ip_gui_replay as gui_replay
+        self.seed_repository = root / "explicit_seed_source"
+        public_seed = self.seed_repository / "src/msplatform/backends/simion/resources/1_instance_seed.iob"
+        public_seed.parent.mkdir(parents=True)
+        shutil.copyfile(structural_seed_path(1), public_seed)
+        public_placeholder = self.seed_repository / "src/msplatform/backends/simion/resources/iob_seed_placeholder_01.pa0"
+        public_placeholder.parent.mkdir(parents=True, exist_ok=True)
+        public_placeholder.write_bytes(b"INERT_STRUCTURE_ONLY_NOT_A_SCIENTIFIC_PA")
+        def selected_pair(run, *, seed_path, placeholder_path):
+            self.assertEqual(seed_path, structural_seed_path(1))
+            self.assertEqual(placeholder_path, gui_replay.native_resource_path("iob_seed_placeholder_01.pa0"))
+            return freeze_pair(run, seed_path=public_seed, placeholder_path=public_placeholder)
+        selected_seed = patch.object(gui_replay, "freeze_workbench_seed", side_effect=selected_pair)
+        selected_seed.start()
+        self.addCleanup(selected_seed.stop)
+
+    def publish_manifest(self) -> None:
+        records = [file_record(p) for p in self.baseline.rglob("*") if p.is_file() and p.name != "run_manifest.json"]
+        (self.baseline / "run_manifest.json").write_text(json.dumps({"project": "dual_pressure_rectilinear_ion_processor", "status": "failed", "run_config": file_record(self.baseline / "run_config.json"), "inputs": {}, "outputs": records}), encoding="utf-8")
+
+    def prepare_native(self, count: int = 1) -> dict:
+        # Synthetic post-build fixture only: this never runs GEM/Refine or claims
+        # native evidence. Production PS must complete the real vendor stages.
+        prepare_replay(self.run, self.baseline, count)
+        for suffix in ["#", *map(str, range(16)), "-surf"]:
+            (self.run / "simion" / ("processor.pa" + suffix)).write_bytes(b"inert independently built field " + suffix.encode())
+        (self.run / "simion/processor.iob").write_bytes(b"inert native IOB fixture")
+        (self.run / "logs/refine.log").write_text("INERT TEST FIXTURE\nFast adjust Refining completed", encoding="utf-8")
+        (self.run / "logs/workbench.log").write_text("INERT TEST FIXTURE\nION_PROCESSOR_WORKBENCH=PASS", encoding="utf-8")
+        if (self.run / "inputs/field_diagnostics.json").is_file():
+            for name in ("native_field_samples.csv", "native_potential_audit.csv"):
+                (self.run / "simion" / name).write_text(
+                    (self.baseline / "simion" / name).read_text().replace("170,0,0,1", "170,0,0,2"), encoding="utf-8")
+        return record_prepared_native_family(self.run)
+
+    def add_native_field_diagnostics(self) -> None:
+        (self.baseline / "inputs/field_diagnostics.json").write_text('{"synthetic_test":true}', encoding="utf-8")
+        (self.baseline / "simion/native_field_samples.csv").write_text(
+            "stage_id,section_id,sample_kind,t_us,x_mm,y_mm,z_mm,potential_v,ex_v_per_mm,ey_v_per_mm,ez_v_per_mm,electrode\n"
+            "capture,axis,axial,750,170,0,0,1,0,0,0,1\n", encoding="utf-8")
+        (self.baseline / "simion/native_potential_audit.csv").write_text(
+            "t_us,x_mm,y_mm,z_mm,potential_v\n750,170,0,0,1\n", encoding="utf-8")
+        self.publish_manifest()
+
+    def test_gui_seed_pair_is_owned_and_bound_without_altering_source(self) -> None:
+        before = {path.relative_to(self.baseline): path.read_bytes()
+                  for path in self.baseline.rglob("*") if path.is_file()}
+        seed_before = {path.relative_to(self.seed_repository): path.read_bytes()
+                       for path in self.seed_repository.rglob("*") if path.is_file()}
+        plan = prepare_replay(self.run, self.baseline)
+        config = json.loads((self.run / "inputs/resolved_model.json").read_text(encoding="utf-8"))
+        seed = self.run / "simion/iob_seed/1_instance_seed.iob"
+        placeholder = seed.parent / "iob_seed_placeholder_01.pa0"
+        self.assertEqual(Path(config["workbench_seed_path"]), seed)
+        self.assertEqual(plan["workbench_seed_record"], file_record(seed))
+        self.assertEqual(plan["workbench_seed_placeholder_record"], file_record(placeholder))
+        self.assertTrue(seed.is_file() and placeholder.is_file())
+        self.assertFalse((self.run / "simion/1_instance_seed.iob").exists())
+        run_config = json.loads((self.run / "run_config.json").read_text(encoding="utf-8"))
+        self.assertEqual(Path(run_config["inputs"]["public_workbench_seed"]), seed)
+        self.assertEqual(Path(run_config["inputs"]["public_seed_placeholder"]), placeholder)
+        self.assertEqual({path.relative_to(self.baseline): path.read_bytes()
+                          for path in self.baseline.rglob("*") if path.is_file()}, before)
+        self.assertEqual({path.relative_to(self.seed_repository): path.read_bytes()
+                          for path in self.seed_repository.rglob("*") if path.is_file()}, seed_before)
+        for role, path in (("seed", seed), ("placeholder", placeholder)):
+            self.assertEqual(config["workbench_seed_records"][role]["frozen"], file_record(path))
+            self.assertEqual(Path(config["workbench_seed_records"][role]["source"]["path"]).read_bytes(), path.read_bytes())
+
+    def test_modified_run_owned_seed_pair_rejected_by_existing_freezer(self) -> None:
+        prepare_replay(self.run, self.baseline)
+        placeholder = self.run / "simion/iob_seed/iob_seed_placeholder_01.pa0"
+        placeholder.write_bytes(b"ALTERED_OWNED_STRUCTURAL_FIXTURE")
+        source_before = {path.relative_to(self.seed_repository): path.read_bytes()
+                         for path in self.seed_repository.rglob("*") if path.is_file()}
+        with self.assertRaisesRegex(AssertionError, "official frozen IOB seed byte count changed"):
+            prepare_replay(self.run, self.baseline)
+        self.assertEqual({path.relative_to(self.seed_repository): path.read_bytes()
+                          for path in self.seed_repository.rglob("*") if path.is_file()}, source_before)
+        self.assertFalse((self.run / "simion/processor.iob").exists())
+
+    def test_frozen_locator_is_selected_and_copied_from_its_bound_consumer(self) -> None:
+        plan = prepare_replay(self.run, self.baseline)
+        original = self.baseline / "simion/native_run_path.lua"
+        copied = self.run / "simion/native_run_path.lua"
+        self.assertEqual(copied.read_bytes(), original.read_bytes())
+        records = [record for record in plan["frozen_control_records"] if Path(record["path"]) == copied]
+        self.assertEqual(records, [file_record(copied)])
+
+    def test_frozen_probe_alone_selects_its_bound_locator(self) -> None:
+        self.add_native_field_diagnostics()
+        (self.baseline / "simion/build_workbench.lua").write_text(
+            "-- INERT FROZEN LEGACY BUILDER WITHOUT LOCATOR\n", encoding="utf-8")
+        probe = native_resource_path("ip_probe_native_field.lua")
+        shutil.copyfile(probe, self.baseline / "simion/probe_native_field.lua")
+        self.publish_manifest()
+        plan = prepare_replay(self.run, self.baseline)
+        copied = self.run / "simion/native_run_path.lua"
+        self.assertEqual(copied.read_bytes(), (self.baseline / "simion/native_run_path.lua").read_bytes())
+        self.assertEqual([record for record in plan["frozen_control_records"]
+                          if Path(record["path"]) == copied], [file_record(copied)])
+
+    def test_missing_or_tampered_bound_locator_rejects_before_gui_output(self) -> None:
+        helper = self.baseline / "simion/native_run_path.lua"
+        original = helper.read_bytes()
+        before = {path.relative_to(self.run): path.read_bytes() for path in self.run.rglob("*") if path.is_file()}
+        for mode in ("missing", "same_length_tamper"):
+            with self.subTest(mode=mode):
+                if mode == "missing":
+                    helper.unlink()
+                else:
+                    helper.write_bytes(b"x" * len(original))
+                try:
+                    with self.assertRaises(AssertionError) as caught:
+                        prepare_replay(self.run, self.baseline)
+                    self.assertIn("native_run_path.lua", str(caught.exception))
+                    self.assertEqual({path.relative_to(self.run): path.read_bytes()
+                                      for path in self.run.rglob("*") if path.is_file()}, before)
+                finally:
+                    helper.write_bytes(original)
+
+    def test_historical_frozen_controls_without_locator_do_not_gain_current_helper(self) -> None:
+        builder = self.baseline / "simion/build_workbench.lua"
+        builder.write_text("-- INERT FROZEN LEGACY CONTROL WITHOUT LOCATOR\n", encoding="utf-8")
+        (self.baseline / "simion/native_run_path.lua").unlink()
+        self.publish_manifest()
+        plan = prepare_replay(self.run, self.baseline)
+        self.assertFalse((self.run / "simion/native_run_path.lua").exists())
+        self.assertFalse(any(Path(record["path"]).name == "native_run_path.lua" for record in plan["frozen_control_records"]))
+        self.assertEqual((self.run / "simion/build_gui_workbench.lua").read_bytes(), builder.read_bytes())
+
+    def test_gui_preparation_consumes_frozen_controls_bound_only_as_inputs(self) -> None:
+        manifest_path = self.baseline/"run_manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        controls = [record for record in manifest["outputs"] if
+                    Path(record["path"]).parent == self.baseline/"inputs" or
+                    Path(record["path"]).suffix in {".lua", ".gem", ".fly2"}]
+        manifest["inputs"] = {str(index):record for index,record in enumerate(controls)}
+        manifest["outputs"] = [record for record in manifest["outputs"] if record not in controls]
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        plan = prepare_replay(self.run, self.baseline)
+        self.assertEqual(plan["construction_status"], "inputs_prepared_no_field_or_IOB_yet")
+        self.assertEqual((self.run/"simion/processor.gem").read_bytes(), (self.baseline/"simion/processor.gem").read_bytes())
+
+    def test_declared_force_audit_copies_its_frozen_module_into_gui_package(self) -> None:
+        path=self.baseline/"inputs/resolved_model.json"
+        config=json.loads(path.read_text())
+        config["extraction_force_audit"]={"schema_version":1,"role":"native_extraction_force_audit"}
+        path.write_text(json.dumps(config),encoding="utf-8")
+        module=self.baseline/"simion/extraction_force_audit.lua"
+        module.write_text("-- immutable source force-audit module fixture\n",encoding="utf-8")
+        self.publish_manifest()
+        prepare_replay(self.run,self.baseline)
+        self.assertEqual((self.run/"simion/extraction_force_audit.lua").read_bytes(),module.read_bytes())
+        copied=json.loads((self.run/"inputs/resolved_model.json").read_text())
+        self.assertEqual(copied["extraction_force_audit"],config["extraction_force_audit"])
+
+    def test_historical_gui_source_without_force_contract_stays_without_new_module(self) -> None:
+        prepare_replay(self.run,self.baseline)
+        self.assertFalse((self.run/"simion/extraction_force_audit.lua").exists())
+        copied=json.loads((self.run/"inputs/resolved_model.json").read_text())
+        self.assertNotIn("extraction_force_audit",copied)
+
+    def test_gui_limits_match_legacy_budget_without_copying_derived_budget(self) -> None:
+        profile = json.loads((Path(__file__).resolve().parents[3] / "src/msplatform/components/dual_pressure_rectilinear_ion_processor"/"config/runtime_profiles.json").read_text(encoding="utf-8"))
+        profile["role"] = "ion_processor_execution_profiles"
+        profile["profiles"][0]["limits"]["transient_run_directory_sample_interval_seconds"] = 17
+        profile_path = self.baseline/"inputs/execution_profiles.json"
+        profile_path.write_text(json.dumps(profile), encoding="utf-8")
+        old_limits = dict(profile["profiles"][0]["limits"], transient_run_directory_bytes=123456789)
+        old_budget = self.baseline/"inputs/resource_budget.json"
+        old_budget.write_text(json.dumps({"limits":old_limits}), encoding="utf-8")
+        self.publish_manifest()
+        source_records = {path:file_record(path) for path in (profile_path,old_budget)}
+        prepare_replay(self.run,self.baseline)
+        self.assertFalse((self.run/"inputs/resource_budget.json").exists())
+        inputs = json.loads((self.run/"run_config.json").read_text())["inputs"]
+        self.assertTrue(all(Path(path).name != "resource_budget.json" for path in inputs.values()))
+        copied_profile = self.run/"inputs/execution_profiles.json"
+        self.assertIn(str(copied_profile), inputs.values())
+        self.assertEqual(copied_profile.read_bytes(), profile_path.read_bytes())
+        for path,record in source_records.items():
+            self.assertEqual(file_record(path),record)
+        powershell = shutil.which("pwsh")
+        if not powershell:
+            self.skipTest("PowerShell 7 unavailable for the GUI limits projection")
+        script = (Path(__file__).resolve().parents[3]/"src/msplatform/backends/simion/resources/ip_prepare_gui_replay.ps1").read_text(encoding="utf-8")
+        projection = script[script.index(" $limits=$profile.limits"):script.index(" $runConfig=Get-Content")]
+        committed = profile["profiles"][0]["gui_preparation_committed_new_bytes"]
+        command = f"$profile=(Get-Content -Raw -LiteralPath '{copied_profile}'|ConvertFrom-Json).profiles[0];$guiCommitted=[long]{committed};" + projection + ";$limits|ConvertTo-Json -Compress"
+        result = subprocess.run([powershell,"-NoProfile","-NonInteractive","-Command",command],
+                                cwd=self.run,capture_output=True,text=True,encoding="utf-8",check=False,timeout=20)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertEqual(json.loads(result.stdout),dict(old_limits,transient_run_directory_bytes=committed))
+
+    def test_prepare_never_clones_native_baseline_family(self) -> None:
+        plan = prepare_replay(self.run, self.baseline)
+        self.assertFalse(list((self.run / "simion").glob("processor.pa*")))
+        self.assertEqual(plan["construction_status"], "inputs_prepared_no_field_or_IOB_yet")
+        self.assertEqual((self.run / "simion/processor.gem").read_bytes(), (self.baseline / "simion/processor.gem").read_bytes())
+        self.assertEqual(json.loads((self.run / "inputs/resolved_model.json").read_text())["native_timing"],
+                         json.loads((self.baseline / "inputs/native_timing.json").read_text()))
+        with self.assertRaisesRegex(ValueError, "preparation is not sealed"):
+            finalize_replay(self.run, analyzer=lambda run: ion_analysis.analyze(run))
+        with self.assertRaises(FileNotFoundError):
+            record_prepared_native_family(self.run)
+
+    def test_new_private_family_is_flushed_before_any_native_identity_read(self) -> None:
+        self.prepare_native()
+        from msplatform.backends.simion import ip_gui_replay as gui_replay
+        family = list((self.run / "simion").glob("processor.pa*"))
+        expected = {path.stat().st_ino for path in family}
+        baseline = {path.stat().st_ino for path in (self.baseline / "simion").glob("processor.pa*")}
+        flushed = set()
+        actual_fsync, actual_record = os.fsync, gui_replay.file_record
+        def flush(fd):
+            flushed.add(os.fstat(fd).st_ino)
+            return actual_fsync(fd)
+        def record(path, **kwargs):
+            if Path(path) in family:
+                self.assertEqual(flushed, expected)
+            return actual_record(path, **kwargs)
+        with patch.object(gui_replay.os, "fsync", side_effect=flush), patch.object(gui_replay, "file_record", side_effect=record):
+            record_prepared_native_family(self.run)
+        self.assertEqual(flushed, expected)
+        self.assertFalse(flushed & baseline)
+
+    def test_baseline_hardlink_alias_is_rejected_before_any_flush(self) -> None:
+        self.prepare_native()
+        alias = self.run / "simion/processor.pa1"
+        alias.unlink()
+        os.link(self.baseline / "simion/processor.pa1", alias)
+        with patch("msplatform.backends.simion.ip_gui_replay.os.fsync") as flush:
+            with self.assertRaisesRegex(ValueError, "alias an external source"):
+                record_prepared_native_family(self.run)
+            flush.assert_not_called()
+
+    def test_active_GUI_receipts_require_full_cohort_and_actual_HS1_values(self) -> None:
+        from msplatform.backends.simion.ip_gui_replay import _verify_active_gui_receipts
+        project = Path(__file__).resolve().parents[3] / "src/msplatform/components/dual_pressure_rectilinear_ion_processor"
+        config = {name: json.loads((project / "config" / (name + ".json")).read_text(encoding="utf-8"))
+                  for name in ("baseline", "numerics", "source")}
+        config["source"]["particle_count"] = 1  # Synthetic receipt contract, no ion flight.
+        self.prepare_native()
+        (self.run / "simion/events.csv").write_bytes((self.baseline / "simion/events.csv").read_bytes())
+        (self.run / "simion/collision_rng_seeds.csv").write_text("particle_id,global_particle_id,seed\n1,1,42\n", encoding="utf-8")
+        audit = self.run / "simion/hs1_bound_parameters.csv"
+        header = "phase,gas_mass_amu,temperature_k,pressure_pa,sigma_m2,mean_free_path_mm,steps_per_mfp,random_seed,mark_collisions,trace_level\n"
+        audit.write_text(header + "before_init,28,300,0,2.27e-18,-1,20,43,0,0\nafter_init,28,300,0,2.27e-18,-1,20,43,0,0\n", encoding="utf-8")
+        self.assertTrue(_verify_active_gui_receipts(self.run, config)["verified"])
+        audit.write_text(audit.read_text(encoding="utf-8").replace(",28,", ",4,"), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "HS1 binding"):
+            _verify_active_gui_receipts(self.run, config)
+        (self.run / "simion/events.csv").write_text("particle_id,event\n1,source\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "cohort does not close"):
+            _verify_active_gui_receipts(self.run, config)
+
+    def test_random_trajectory_row_differences_are_diagnostic_not_delivery_gate(self) -> None:
+        self.prepare_native()
+        for relative in ("simion/events.csv", "simion/samples.csv", "results/particle_state.csv"):
+            (self.run / relative).write_bytes((self.baseline / relative).read_bytes())
+        with (self.run / "simion/samples.csv").open("a", encoding="utf-8") as stream:
+            stream.write("1,1.1,2.1,0,0,1,0,0\n")
+        with patch("msplatform.workflows.ion_processor.analysis.analyze", return_value={"status": "success", "functional_status": "functional_pass", "source_profile": "functional"}):
+            result = finalize_replay(self.run, analyzer=lambda run: ion_analysis.analyze(run))
+        self.assertFalse(result["numerical_equivalence"])
+        self.assertFalse(result["exact_trajectory_match_required"])
+        self.assertEqual(result["measured_functional_status"], "functional_pass")
+
+    def test_seal_rejects_modified_frozen_runtime(self) -> None:
+        self.prepare_native()
+        (self.run / "simion/processor.lua").write_text("changed runtime", encoding="utf-8")
+        with self.assertRaises(AssertionError):
+            record_prepared_native_family(self.run)
+
+    def test_seal_requires_fractional_surface_and_completed_refine(self) -> None:
+        self.prepare_native()
+        (self.run / "simion/processor.pa-surf").unlink()
+        with self.assertRaisesRegex(ValueError, "fractional surface"):
+            record_prepared_native_family(self.run)
+        (self.run / "logs/refine.log").write_text("not complete", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "Refine evidence"):
+            record_prepared_native_family(self.run)
+
+    def test_prepare_isolated_inputs_and_pa_references(self) -> None:
+        original = (self.baseline / "simion/processor.pa0").read_bytes()
+        plan = self.prepare_native()
+        self.assertEqual(len(plan["local_native_pa_records"]), 17)
+        self.assertFalse(plan["gui_manual_fly_completed"])
+        self.assertNotEqual((self.run / "simion/processor.pa0").read_bytes(), original)
+        builder = (self.run / "simion/build_gui_workbench.lua").read_text(encoding="utf-8")
+        self.assertNotIn("pa:save", builder)
+        self.assertIn("load_particles", builder)
+        self.assertIn("debug.getinfo", builder)
+        self.assertNotIn("pa:fast_adjust", builder)
+        self.assertEqual(len(plan["local_native_pa_records"]), 17)
+        resolved = json.loads((self.run / "inputs/resolved_model.json").read_text())
+        self.assertEqual(Path(resolved["native_field"]["directory"]), self.run / "simion")
+        self.assertIn(str(self.run / "simion").replace("\\", "\\\\"), (self.run / "simion/frozen_config.lua").read_text())
+        self.assertNotIn("wb:save('processor.iob')", builder)
+        self.assertIn("wb:save(directory..'processor.iob')", builder)
+        self.assertIn("wb:load_particles(directory..'processor.fly2')", builder)
+        self.assertEqual((self.run / "simion/voltage_waveforms.lua").read_bytes(), (self.baseline / "simion/voltage_waveforms.lua").read_bytes())
+        self.assertEqual((self.run / "simion/source_states.lua").read_bytes(), (self.baseline / "simion/source_states.lua").read_bytes())
+        self.assertEqual((self.baseline / "simion/processor.pa0").read_bytes(), original)
+        self.assertEqual((self.run / "simion/processor.lua").read_bytes(), (self.baseline / "simion/processor.lua").read_bytes())
+
+    def test_modified_baseline_or_missing_completion_rejected(self) -> None:
+        pa = self.baseline / "simion/processor.pa0"
+        pa.write_bytes(b"tampered")
+        validate_baseline_for_private_gui(self.baseline)  # PA payload is outside the light projection.
+        (self.baseline / "simion/processor.lua").write_text("tampered control", encoding="utf-8")
+        with self.assertRaises(AssertionError):
+            self.prepare_native()
+        self.publish_manifest()
+        (self.baseline / "logs/flight.log").write_text("not complete", encoding="utf-8")
+        self.publish_manifest()
+        with self.assertRaisesRegex(ValueError, "sentinel"):
+            self.prepare_native()
+
+    def test_preparation_references_verified_samples_without_copy_or_source_mutation(self) -> None:
+        source = self.baseline/"simion/samples.csv"
+        original = source.read_bytes()
+        plan = prepare_replay(self.run, self.baseline)
+        self.assertEqual(plan["baseline_trajectory_storage"], "verified_immutable_source_reference")
+        self.assertEqual(plan["baseline_samples_record"], file_record(source))
+        self.assertFalse((self.run/"inputs/baseline_samples.csv").exists())
+        config = json.loads((self.run/"run_config.json").read_text(encoding="utf-8"))
+        self.assertEqual(config["inputs"]["baseline_samples"], str(source.resolve()))
+        self.assertEqual(source.read_bytes(), original)
+        for name in ("baseline_manifest.json", "baseline_summary.json"):
+            self.assertTrue((self.run/"inputs"/name).is_file())
+
+    def test_finalize_uses_bound_sample_record_for_main_and_both_repeats(self) -> None:
+        from msplatform.backends.simion import ip_gui_replay as gui_replay
+        self.prepare_native(2)
+        for relative in ("simion/events.csv", "simion/samples.csv", "results/particle_state.csv"):
+            (self.run/relative).write_bytes((self.baseline/relative).read_bytes())
+        for index in (1, 2):
+            for kind in ("events", "samples"):
+                (self.run/f"simion/repeat_{index}_{kind}.csv").write_bytes((self.baseline/f"simion/{kind}.csv").read_bytes())
+        with patch.object(gui_replay, "_compare_tables", wraps=gui_replay._compare_tables) as compare:
+            with patch("msplatform.workflows.ion_processor.analysis.analyze", return_value={"status":"failed", "functional_status":"functional_incomplete", "source_profile":"functional"}):
+                self.assertTrue(finalize_replay(self.run, analyzer=lambda run: ion_analysis.analyze(run))["numerical_equivalence"])
+        sample_calls = [call for call in compare.call_args_list if call.args[0].name.endswith("samples.csv")]
+        self.assertEqual(len(sample_calls), 3)
+        self.assertTrue(all(call.args[1] == self.baseline/"simion/samples.csv" for call in sample_calls))
+
+    def test_changed_referenced_samples_refused_before_analysis(self) -> None:
+        self.prepare_native()
+        source = self.baseline/"simion/samples.csv"
+        source.write_bytes(source.read_bytes()+b"1,2,3,0,0,1,0,0\n")
+        with patch("msplatform.workflows.ion_processor.analysis.analyze") as analyze:
+            with self.assertRaises(AssertionError):
+                finalize_replay(self.run, analyzer=lambda run: ion_analysis.analyze(run))
+            analyze.assert_not_called()
+
+    def test_complete_hundred_particle_controls_stay_private_and_byte_exact(self) -> None:
+        from msplatform.backends.simion.source import render_source_states, render_standard_beams
+        states = [dict(particle_id=i, t=0, x=i, y=0, z=0, vx=1, vy=0, vz=0, ke=5) for i in range(1,101)]
+        beams = [dict(tob=0, mass=524, charge=1, x=i, y=0, z=0, direction=[1,0,0], ke=5, cwf=1, color=1) for i in range(1,101)]
+        (self.baseline/"simion/source_states.lua").write_text(render_source_states(states), encoding="utf-8")
+        (self.baseline/"simion/processor.fly2").write_text(render_standard_beams(beams), encoding="utf-8")
+        self.publish_manifest()
+        prepare_replay(self.run, self.baseline)
+        for name in ("source_states.lua", "processor.fly2", "processor.gem", "processor.lua"):
+            self.assertEqual((self.run/"simion"/name).read_bytes(), (self.baseline/"simion"/name).read_bytes())
+            self.assertNotEqual((self.run/"simion"/name).resolve(), (self.baseline/"simion"/name).resolve())
+        self.assertEqual((self.run/"simion/processor.fly2").read_text().count("standard_beam {"), 100)
+        self.assertIn("[100]", (self.run/"simion/source_states.lua").read_text())
+
+    def test_legacy_local_sample_record_uses_same_finalize_path(self) -> None:
+        self.prepare_native()
+        for relative in ("simion/events.csv", "simion/samples.csv", "results/particle_state.csv"):
+            (self.run/relative).write_bytes((self.baseline/relative).read_bytes())
+        local = self.run/"inputs/legacy_recorded_samples.csv"
+        local.write_bytes((self.baseline/"simion/samples.csv").read_bytes())
+        plan_path = self.run/"inputs/gui_replay_plan.json"
+        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+        plan["baseline_samples_record"] = file_record(local)
+        plan.pop("baseline_trajectory_storage")
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        with patch("msplatform.workflows.ion_processor.analysis.analyze", return_value={"status":"failed", "functional_status":"functional_incomplete", "source_profile":"functional"}):
+            self.assertTrue(finalize_replay(self.run, analyzer=lambda run: ion_analysis.analyze(run))["numerical_equivalence"])
+
+    def test_local_basis_mutation_rejected_before_analysis(self) -> None:
+        self.prepare_native()
+        (self.run / "simion/processor.pa7").write_bytes(b"changed GUI basis")
+        with self.assertRaises(AssertionError):
+            finalize_replay(self.run, analyzer=lambda run: ion_analysis.analyze(run))
+
+    def test_unconsumed_source_PA_changes_do_not_enter_light_projection(self) -> None:
+        self.prepare_native()
+        (self.baseline / "simion/processor.pa0").write_bytes(b"unconsumed old source")
+        projection = validate_baseline_for_private_gui(self.baseline)
+        self.assertFalse(any(Path(path).suffix.startswith(".pa") for path in projection["verified"]))
+
+    def test_completed_retirement_is_verified_before_consuming_preserved_inputs(self) -> None:
+        # Consumer delegation fixture; common retirement tests own receipt validity.
+        for path in (self.baseline / "simion").glob("processor.pa*"):
+            path.unlink()
+        (self.baseline / "solver_review_retirement_receipt.json").write_text("{}", encoding="utf-8")
+        with patch("msplatform.execution.solver_review_retirement.verify_retirement", return_value={"status": "PASS"}) as verify:
+            plan = self.prepare_native()
+            verify.assert_called_once_with(self.baseline)
+        self.assertTrue(plan["baseline_retirement_verified"])
+        self.assertFalse(plan["source_PA_bytes_consumed"])
+        self.assertEqual(len(plan["expected_native_members"]), 18)
+        with patch("msplatform.execution.solver_review_retirement.verify_retirement", side_effect=ValueError("receipt invalid")):
+            with self.assertRaisesRegex(ValueError, "receipt invalid"):
+                validate_baseline_for_private_gui(self.baseline)
+
+    def test_local_pa0_mutation_is_explicit_and_source_stays_intact(self) -> None:
+        source = (self.baseline / "simion/processor.pa0").read_bytes()
+        self.prepare_native()
+        (self.run / "simion/processor.pa0").write_bytes(b"GUI saved adjusted initial state")
+        for relative in ("simion/events.csv", "simion/samples.csv", "results/particle_state.csv"):
+            (self.run / relative).write_bytes((self.baseline / relative).read_bytes())
+        with patch("msplatform.workflows.ion_processor.analysis.analyze", return_value={"status": "failed", "functional_status": "functional_incomplete", "source_profile": "functional"}):
+            result = finalize_replay(self.run, analyzer=lambda run: ion_analysis.analyze(run))
+        self.assertTrue(result["gui_pa0_changed"])
+        self.assertTrue(result["local_immutable_basis_verified"])
+        self.assertEqual((self.baseline / "simion/processor.pa0").read_bytes(), source)
+        registered = json.loads((self.run / "run_config.json").read_text())["inputs"]
+        self.assertNotIn(str(self.run / "simion/processor.pa0"), registered.values())
+
+    def test_finalize_compares_every_table_and_does_not_claim_manual_gui(self) -> None:
+        self.prepare_native()
+        for relative in ("simion/events.csv", "simion/samples.csv", "results/particle_state.csv"):
+            (self.run / relative).write_bytes((self.baseline / relative).read_bytes())
+        with patch("msplatform.workflows.ion_processor.analysis.analyze", return_value={"status": "failed", "functional_status": "functional_incomplete", "source_profile": "functional"}):
+            result = finalize_replay(self.run, analyzer=lambda run: ion_analysis.analyze(run))
+            self.assertTrue(result["numerical_equivalence"])
+            self.assertFalse(result["gui_visual_review"])
+            self.assertEqual(result["comparison_scope"], "headless_replay_vs_baseline")
+            (self.run / "simion/events.csv").write_text("particle_id,event,t_us,x_mm\n1,source,0,1\n1,terminal,1,2.1\n", encoding="utf-8")
+            result = finalize_replay(self.run, analyzer=lambda run: ion_analysis.analyze(run))
+            self.assertFalse(result["numerical_equivalence"])
+            self.assertAlmostEqual(result["raw_events"]["max_absolute_difference"]["x_mm"], 0.1)
+            self.assertTrue(result["canonical_particle_state"]["passed"])
+
+    def test_exploration_identity_preserved_without_functional_promotion(self) -> None:
+        config_path = self.baseline / "inputs/resolved_model.json"
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        config["source_profile"] = "exploration"
+        config_path.write_text(json.dumps(config), encoding="utf-8")
+        summary_path = self.baseline / "summary.json"
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        summary.update(source_profile="exploration", status="failed", functional_status="exploration_incomplete")
+        summary_path.write_text(json.dumps(summary), encoding="utf-8")
+        self.publish_manifest()
+        plan = self.prepare_native()
+        self.assertEqual(plan["baseline_evidence_scope"], "exploration_baseline")
+        self.assertEqual(plan["source_profile"], "exploration")
+        for relative in ("simion/events.csv", "simion/samples.csv", "results/particle_state.csv"):
+            (self.run / relative).write_bytes((self.baseline / relative).read_bytes())
+        with patch("msplatform.workflows.ion_processor.analysis.analyze", return_value={"status": "success", "functional_status": "exploration_pass", "source_profile": "exploration"}):
+            result = finalize_replay(self.run, analyzer=lambda run: ion_analysis.analyze(run))
+        self.assertEqual(result["qualification"], "unqualified_exploration_replay_no_Candidate_or_Formal")
+        self.assertEqual(result["measured_functional_status"], "exploration_pass")
+        self.assertFalse(result["gui_visual_review"])
+        with patch("msplatform.workflows.ion_processor.analysis.analyze", return_value={"status": "success", "functional_status": "functional_pass", "source_profile": "exploration"}):
+            with self.assertRaisesRegex(ValueError, "upgrade"):
+                finalize_replay(self.run, analyzer=lambda run: ion_analysis.analyze(run))
+
+    def test_recorded_samples_change_breaks_replay_equivalence(self) -> None:
+        self.prepare_native()
+        for relative in ("simion/events.csv", "simion/samples.csv", "results/particle_state.csv"):
+            (self.run / relative).write_bytes((self.baseline / relative).read_bytes())
+        (self.run / "simion/samples.csv").write_text("particle_id,t_us,x_mm,y_mm,z_mm,vx_mm_us,vy_mm_us,vz_mm_us\n1,0,1,0,0,1,0,0\n1,1,2.25,0,0,1,0,0\n", encoding="utf-8")
+        with patch("msplatform.workflows.ion_processor.analysis.analyze", return_value={"status": "failed", "functional_status": "functional_incomplete", "source_profile": "functional"}):
+            result = finalize_replay(self.run, analyzer=lambda run: ion_analysis.analyze(run))
+        self.assertFalse(result["numerical_equivalence"])
+        self.assertFalse(result["sampled_trajectory"]["passed"])
+        self.assertTrue(result["raw_events"]["passed"])
+        self.assertTrue(result["canonical_particle_state"]["passed"])
+        self.assertEqual(result["sampled_trajectory"]["max_absolute_difference"]["x_mm"], 0.25)
+        self.assertIn("not_every_integration_step", result["comparison_coverage"])
+
+    def test_wrapper_identity_uses_final_runtime_bytes(self) -> None:
+        current_runtime = native_resource_path("ip_runtime.lua")
+        (self.baseline / "simion/processor.lua").write_bytes(current_runtime.read_bytes())
+        self.publish_manifest()
+        plan = self.prepare_native()
+        self.assertFalse(plan["runtime_wrapper_changed"])
+        self.assertIn("identical", plan["wrapper_difference"])
+        config = json.loads((self.run / "run_config.json").read_text(encoding="utf-8"))
+        self.assertFalse(config["parameters"]["runtime_wrapper_changed"])
+        plan = self.prepare_native(2)
+        self.assertTrue(plan["runtime_wrapper_changed"])
+        self.assertNotEqual(plan["baseline_runtime_record"]["sha256"], plan["replay_runtime_record"]["sha256"])
+        config = json.loads((self.run / "run_config.json").read_text(encoding="utf-8"))
+        self.assertTrue(config["parameters"]["runtime_wrapper_changed"])
+        self.assertIn("repeat-Fly orchestration only", plan["wrapper_difference"])
+
+    def test_workspace_runtime_change_cannot_affect_frozen_replay(self) -> None:
+        # No worktree mutation is needed: interpose the file copy boundary and
+        # prove that the workspace runtime is never requested as an input.
+        import shutil as copy_module
+        original_copy = copy_module.copyfile
+        workspace_runtime = native_resource_path("ip_runtime.lua")
+        def reject_worktree_runtime(source, target, **kwargs):
+            if Path(source).resolve() == workspace_runtime.resolve():
+                raise AssertionError("working-tree runtime must not affect replay")
+            return original_copy(source, target, **kwargs)
+        with patch("msplatform.backends.simion.ip_gui_replay.shutil.copyfile", side_effect=reject_worktree_runtime):
+            plan = self.prepare_native()
+        self.assertFalse(plan["runtime_wrapper_changed"])
+        self.assertEqual(plan["runtime_source_policy"], "baseline_exact_copy")
+        self.assertEqual(plan["baseline_runtime_record"]["sha256"], plan["replay_runtime_record"]["sha256"])
+        self.assertEqual((self.run / "simion/processor.lua").read_bytes(), b"-- synthetic frozen input")
+
+    def test_optional_field_diagnostics_are_queried_from_new_private_field(self) -> None:
+        self.add_native_field_diagnostics()
+        plan=self.prepare_native()
+        self.assertEqual(plan["field_diagnostics_source_records"],[])
+        self.assertTrue(plan["field_diagnostics_enabled"])
+        for name in ("native_field_samples.csv","native_potential_audit.csv"):
+            self.assertNotEqual((self.run/"simion"/name).read_bytes(),(self.baseline/"simion"/name).read_bytes())
+        config=json.loads((self.run/"run_config.json").read_text(encoding="utf-8"))
+        self.assertIn(str(self.run/"simion/native_field_samples.csv"),config["inputs"].values())
+        (self.baseline / "simion/probe_native_field.lua").write_text("tampered probe", encoding="utf-8")
+        with self.assertRaises(AssertionError):
+            prepare_replay(self.run, self.baseline)
+
+    def test_native_comparison_records_identities_and_differences_without_gui_or_fly_claim(self) -> None:
+        self.add_native_field_diagnostics()
+        before = {name: (self.baseline / "simion" / name).read_bytes()
+                  for name in ("native_field_samples.csv", "native_potential_audit.csv")}
+        plan = self.prepare_native()
+        report_path = self.run / "results/native_field_preparation_comparison.json"
+        report = json.loads(report_path.read_text())
+        self.assertEqual(report["status"], "compared")
+        self.assertTrue(report["numerical_differences_are_diagnostic_only"])
+        self.assertFalse(report["all_sampled_values_within_existing_comparison_tolerances"])
+        for name, table in report["tables"].items():
+            self.assertEqual(table["baseline"], file_record(self.baseline / "simion" / name))
+            self.assertEqual(table["prepared"], file_record(self.run / "simion" / name))
+            self.assertEqual(table["rows"], 1)
+            self.assertEqual(table["max_absolute_difference"]["potential_v"], 1)
+            self.assertFalse(table["passed"])
+            self.assertEqual(table["column_tolerances"]["potential_v"]["absolute"], 1e-9)
+            self.assertEqual(before[name], (self.baseline / "simion" / name).read_bytes())
+        for name in ("solver_fly_executed", "gui_operated", "gui_visual_review", "trajectory_equivalence_verified"):
+            self.assertFalse(report[name])
+        self.assertIn("no_Candidate_or_Formal", report["qualification"])
+        self.assertEqual(plan["construction_status"], "private_refine_and_native_IOB_prepared_not_flown")
+        self.assertEqual(plan["native_field_preparation_comparison_record"], file_record(report_path))
+
+    def test_native_comparison_identity_and_required_manifest_binding_fail_closed(self) -> None:
+        self.add_native_field_diagnostics()
+        manifest_path = self.baseline / "run_manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["outputs"] = [record for record in manifest["outputs"]
+                               if Path(record["path"]).name != "native_field_samples.csv"]
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "not manifest-bound"):
+            self.prepare_native()
+
+    def test_native_comparison_rejects_tampered_or_mismatched_sample_evidence(self) -> None:
+        self.add_native_field_diagnostics()
+        self.prepare_native()
+        path = self.run / "simion/native_field_samples.csv"
+        path.write_text(path.read_text().replace("capture,axis", "lift,axis"), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "identity/event order"):
+            record_prepared_native_family(self.run)
+        path.write_text((self.baseline / "simion/native_field_samples.csv").read_text(), encoding="utf-8")
+        baseline_path = self.baseline / "simion/native_field_samples.csv"
+        baseline_path.write_bytes(baseline_path.read_bytes() + b"\n")
+        with self.assertRaises(AssertionError):
+            record_prepared_native_family(self.run)
+
+    def test_native_comparison_accepts_retired_baseline_light_projection(self) -> None:
+        self.add_native_field_diagnostics()
+        (self.baseline / "solver_review_retirement_receipt.json").write_text('{"test_only":true}', encoding="utf-8")
+        self.publish_manifest()
+        for path in (self.baseline / "simion").glob("processor.pa*"):
+            path.unlink()  # Inert test bytes only, not solver payload.
+        with patch("msplatform.execution.solver_review_retirement.verify_retirement", return_value={"status": "PASS"}):
+            plan = self.prepare_native()
+        self.assertTrue(plan["baseline_retirement_verified"])
+        report = json.loads((self.run / "results/native_field_preparation_comparison.json").read_text())
+        self.assertEqual(report["status"], "compared")
+        self.assertFalse(plan["source_PA_bytes_consumed"])
+
+    def test_invalid_repeat_count_rejected(self) -> None:
+        for count in (0, 3, True, 1.0):
+            with self.subTest(count=count):
+                with self.assertRaisesRegex(ValueError, "repeat_fly_count"):
+                    self.prepare_native(count)
+
+    def test_repeat_orchestration_snapshots_each_complete_stub_fly(self) -> None:
+        lua = os.environ.get("SIMION_LUA_EXE") or shutil.which("lua") or shutil.which("lua5.1") or str(Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SIMION-2020/lua.exe")
+        if not Path(lua).is_file():
+            self.skipTest("ordinary Lua interpreter unavailable")
+        plan = self.prepare_native(2)
+        self.assertEqual(plan["repeat_fly_count"], 2)
+        runtime = (self.run / "simion/processor.lua").read_text(encoding="utf-8")
+        appended = runtime[runtime.index("-- BEGIN_REPEAT_FLY_ORCHESTRATION"):]
+        directory = json.dumps(str((self.run / "simion").resolve()).replace("\\", "/") + "/")
+        stub = "segment={};local count=0;local d=" + directory + ";function run() count=count+1;for _,name in ipairs({'events.csv','samples.csv'}) do local f=assert(io.open(d..name,'w'));f:write(tostring(count));f:close() end end\n"
+        script = self.run / "stub_repeat.lua"
+        script.write_text(stub + appended + "\nsegment.flym();assert(count==2)\n", encoding="utf-8")
+        result = subprocess.run([lua, str(script)], cwd=self.run, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for index in (1, 2):
+            for kind in ("events", "samples"):
+                self.assertEqual((self.run / f"simion/repeat_{index}_{kind}.csv").read_text(encoding="utf-8"), str(index))
+
+    def test_repeat_drift_fails_even_when_final_tables_match(self) -> None:
+        self.prepare_native(2)
+        for relative in ("simion/events.csv", "simion/samples.csv", "results/particle_state.csv"):
+            (self.run / relative).write_bytes((self.baseline / relative).read_bytes())
+        for index in (1, 2):
+            for kind in ("events", "samples"):
+                (self.run / f"simion/repeat_{index}_{kind}.csv").write_bytes((self.baseline / f"simion/{kind}.csv").read_bytes())
+        path = self.run / "simion/repeat_1_samples.csv"
+        path.write_text(path.read_text(encoding="utf-8").replace("1,1,2,0,0", "1,1,2.5,0,0"), encoding="utf-8")
+        with patch("msplatform.workflows.ion_processor.analysis.analyze", return_value={"status": "failed", "functional_status": "functional_incomplete", "source_profile": "functional"}):
+            result = finalize_replay(self.run, analyzer=lambda run: ion_analysis.analyze(run))
+        self.assertFalse(result["numerical_equivalence"])
+        self.assertEqual(len(result["repeated_fly_comparisons"]), 2)
+        self.assertTrue(result["raw_events"]["passed"])
+        self.assertFalse(result["repeated_fly_comparisons"][0]["sampled_trajectory"]["passed"])
+        self.assertTrue(result["repeated_fly_comparisons"][1]["sampled_trajectory"]["passed"])
+        self.assertFalse(result["gui_visual_review"])
+
+    def test_overlap_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "nonoverlapping"):
+            prepare_replay(self.baseline, self.baseline)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -10,8 +10,8 @@ import math
 import re
 import json
 import shutil
-import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -49,7 +49,7 @@ from msplatform.workflows.oa_candidate.sync_geometry_contract import PROGRAM_PAT
 PROJECT = "single_reflection_oa_tof_mass_analyzer"
 MODULE = "msplatform.workflows.oa_candidate.run_compensation"
 REPO_ROOT = Path(__file__).resolve().parents[4]
-PROJECT_ROOT = REPO_ROOT / "projects/single_reflection_oa_tof_mass_analyzer"
+PROJECT_ROOT = REPO_ROOT / "src/msplatform/components/single_reflection_oa_tof"
 RUN_SOURCE_ID = "src/msplatform/workflows/oa_candidate/run_compensation.py"
 ADAPTER_SOURCE_ID = "src/msplatform/workflows/resources/execute_oatof_compensation.ps1"
 LABELS = ("baseline", "compensated", "ideal_reflectron")
@@ -825,7 +825,7 @@ def main() -> None:
         _load(args.case_dir.resolve() / "contracts/candidate_resolved_geometry.json")
     elif not args.run_id:
         parser.error("--resume-finalization requires the original --run-id")
-    command = ["pwsh", "-NoLogo", "-NoProfile", "-File", str(Path(__file__).with_name("execute_compensation.ps1")),
+    command = ["pwsh", "-NoLogo", "-NoProfile", "-File", str(Path(__file__).parents[1] / "resources" / "execute_oatof_compensation.ps1"),
                "-PythonExe", sys.executable]
     if args.resume_finalization:
         command += ["-ResumeFinalization", "-RunId", args.run_id]
@@ -844,7 +844,16 @@ def main() -> None:
                 command += ["-"+name, str(value)]
     # The public PowerShell owner applies the declared native/resource budget;
     # a Python transport deadline must not kill its healthy solver children.
-    subprocess.run(command, cwd=REPO_ROOT, timeout=None, check=True)
+    from msplatform.execution.process_observation import run_observed_process
+
+    with tempfile.TemporaryDirectory(prefix="oatof_compensation_owner_") as directory:
+        log = Path(directory) / "owner.log"
+        completed, _ = run_observed_process(
+            command, cwd=REPO_ROOT, stdout=log, stderr=log, merge_stderr=True,
+        )
+        sys.stdout.write(log.read_text(encoding="utf-8", errors="replace"))
+        if completed.returncode != 0:
+            raise RuntimeError(f"compensation owner failed with exit code {completed.returncode}")
 
 
 if __name__ == "__main__":

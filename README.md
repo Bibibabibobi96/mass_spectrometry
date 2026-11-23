@@ -9,9 +9,9 @@ Mass Spectrometer Design and Simulation Platform
 
 ## 开始任务
 
-1. Agent先读[执行规则](AGENTS.md)，再从下表选择项目或[组装入口](integrations/README.md)。
+1. Agent先读[执行规则](AGENTS.md)，再从下表选择项目或[组装入口](docs/ASSEMBLY.md)。
 2. 项目任务读目标README和`docs/PROJECT.md`；组装任务读`docs/INTEGRATION.md`，确认能力、资格、限制和开放动作。
-   公共工具任务从[公共机制](common/README.md)进入最近的实现说明，不创建占位PROJECT。
+   公共工具任务从[公共机制](docs/REPOSITORY_OPERATIONS.md)进入最近的实现说明，不创建占位PROJECT。
 3. 按[文档任务目录](docs/README.md)选择本次需要的理论、操作或规范；修改或审查代码先读
    [开发标准阅读导航](docs/DEVELOPMENT_STANDARDS.md#阅读导航)。
 4. 创建文件、运行或归档前查[生命周期](docs/LIFECYCLE.md)，执行与提交前查[操作指南](docs/OPERATIONS.md)。
@@ -26,26 +26,26 @@ Mass Spectrometer Design and Simulation Platform
 
 | 设计项目 | 入口与可见变体 |
 |---|---|
-| RF多极杆离子光学 | [项目](projects/rf_multipole_ion_optics/README.md)；[四极杆](projects/rf_multipole_ion_optics/variants/quadrupole/README.md)、[六极杆](projects/rf_multipole_ion_optics/variants/hexapole/README.md)、[八极杆](projects/rf_multipole_ion_optics/variants/octupole/README.md) |
-| 正交脉冲加速器 | [二区／三区加速器](projects/orthogonal_accelerator/README.md) |
-| 单次反射正交加速飞行时间质量分析器 | [oa-TOF](projects/single_reflection_oa_tof_mass_analyzer/README.md) |
-| 开放路径平行镜双条带多次反射飞行时间质量分析器 | [MR-TOF](projects/parallel_mirror_dual_stripe_mr_tof/README.md) |
-| 双压力区矩形射频离子处理器 | [Ion Processor](projects/dual_pressure_rectilinear_ion_processor/README.md) |
-| 双锥串联四极杆离子传输接口 | [双锥接口](projects/dual_cone_tandem_quadrupole_ion_interface/README.md) |
-| 开孔长管电子轰击离子源 | [EI离子源](projects/apertured_tube_electron_impact_ion_source/README.md) |
-| 横置螺旋灯丝Wehnelt电子枪 | [电子枪](projects/transverse_helical_filament_wehnelt_electron_gun/README.md) |
+| RF多极杆离子光学 | [项目](src/msplatform/components/rf_multipole/README.md)；[四极杆](src/msplatform/components/rf_multipole/variants/quadrupole/README.md)、[六极杆](src/msplatform/components/rf_multipole/variants/hexapole/README.md)、[八极杆](src/msplatform/components/rf_multipole/variants/octupole/README.md) |
+| 正交脉冲加速器 | [二区／三区加速器](src/msplatform/components/orthogonal_accelerator/README.md) |
+| 单次反射正交加速飞行时间质量分析器 | [oa-TOF](src/msplatform/components/single_reflection_oa_tof/README.md)（已安装部件所有者；科学项目ID不变） |
+| 开放路径平行镜双条带多次反射飞行时间质量分析器 | [MR-TOF](src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/README.md) |
+| 双压力区矩形射频离子处理器 | [Ion Processor](src/msplatform/components/dual_pressure_rectilinear_ion_processor/README.md) |
+| 双锥串联四极杆离子传输接口 | [双锥接口](src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/README.md) |
+| 开孔长管电子轰击离子源 | [EI离子源](src/msplatform/components/apertured_tube_electron_impact_ion_source/README.md) |
+| 横置螺旋灯丝Wehnelt电子枪 | [电子枪](src/msplatform/components/transverse_helical_filament_wehnelt_electron_gun/README.md) |
 
 ## 按问题查阅
 
-模拟入口分为[分段接续模拟](integrations/README.md#分段接续模拟)和
-[联合连续模拟](integrations/README.md#联合连续模拟)。选择表、完整命令及实际场范围只在组装入口维护。
+模拟入口分为[分段接续模拟](docs/ASSEMBLY.md#分段接续模拟)和
+[联合连续模拟](docs/ASSEMBLY.md#联合连续模拟)。选择表、完整命令及实际场范围只在组装入口维护。
 
 | 要解决的问题 | 入口 |
 |---|---|
-| 选择部件、配置实例、组装和联合研究 | [组装入口](integrations/README.md)、[当前集成状态](integrations/docs/INTEGRATION.md) |
+| 选择部件、配置实例、组装和联合研究 | [组装入口](docs/ASSEMBLY.md)、[当前集成状态](docs/INTEGRATION.md) |
 | 文件放哪里、项目怎样划分、谁拥有知识 | [仓库架构](docs/REPOSITORY_ARCHITECTURE.md) |
 | 查理论、验证方法、软件操作、规范或参考资料 | [文档任务目录](docs/README.md) |
-| 查公共API、运行机制和机器合同 | [公共机制导航](common/README.md) |
+| 查公共API、运行机制和机器合同 | [公共机制导航](docs/REPOSITORY_OPERATIONS.md) |
 | 查长期目标和建设顺序 | [愿景](docs/VISION.md)、[路线图](docs/ROADMAP.md) |
 | 追溯已完成全仓审计 | [审计索引](docs/AUDITS.md)；项目历史从所属README进入 |
 

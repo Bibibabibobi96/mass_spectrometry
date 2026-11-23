@@ -1,10 +1,10 @@
-[CmdletBinding(DefaultParameterSetName='IsotropicCell')]
+[CmdletBinding(DefaultParameterSetName='Profile')]
 param(
-  [Parameter(Mandatory=$true)][string]$ProjectId,
-  [Parameter(Mandatory=$true)][string]$RuntimeProfileId,
-  [Parameter(Mandatory=$true)][string]$DesignProfileId,
+  [Parameter(Mandatory=$true,ParameterSetName='IsotropicCell')][Parameter(Mandatory=$true,ParameterSetName='AnisotropicCell')][string]$ProjectId,
+  [Parameter(Mandatory=$true,ParameterSetName='IsotropicCell')][Parameter(Mandatory=$true,ParameterSetName='AnisotropicCell')][Parameter(Mandatory=$true,ParameterSetName='Profile')][string]$RuntimeProfileId,
+  [Parameter(Mandatory=$true,ParameterSetName='IsotropicCell')][Parameter(Mandatory=$true,ParameterSetName='AnisotropicCell')][string]$DesignProfileId,
   [string]$ParticleSourcePath='',
-  [Parameter(Mandatory=$true)][string]$EngineeringBudgetPath,
+  [Parameter(Mandatory=$true,ParameterSetName='IsotropicCell')][Parameter(Mandatory=$true,ParameterSetName='AnisotropicCell')][string]$EngineeringBudgetPath,
   [string]$ResolvedRuntimeProfilePath='',
   [string]$EvidenceContractPath='',
   [string]$RunId='',
@@ -31,7 +31,10 @@ param(
   [ValidateSet('transport','field_solve')][string]$StopStage='transport',
   [string]$ContinuationPredecessorManifestPath='',
   [string]$NativeFieldRunPath='',
-  [string]$ResultPath=''
+  [string]$ResultPath='',
+  [Parameter(Mandatory=$true,ParameterSetName='Campaign')][string]$CampaignPath,
+  [Parameter(Mandatory=$true,ParameterSetName='Campaign')][string]$ExperimentId,
+  [Parameter(Mandatory=$true,ParameterSetName='Recovery')][switch]$ResumeFinalization
 )
 
 Set-StrictMode -Version Latest
@@ -86,6 +89,48 @@ function Get-SimionPaGridAudit {
 $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
 $workspaceRoot=Split-Path -Parent $repoRoot
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
+if($PSCmdlet.ParameterSetName-eq'Profile'){
+  . (Join-Path $PSScriptRoot 'project_transport_launcher_support.ps1')
+  $arguments=@{
+    RepoRoot=$repoRoot;EvidenceContractPath=$EvidenceContractPath;RunId=$RunId
+    RetentionClass=$RetentionClass;RetentionReason=$RetentionReason;PythonExe=$python
+    ReferenceComsolRunId=$ReferenceComsolRunId;SimionExe=$SimionExe
+    ContinuationPredecessorManifestPath=$ContinuationPredecessorManifestPath
+    ResolvedRuntimeProfilePath=$ResolvedRuntimeProfilePath;NativeFieldRunPath=$NativeFieldRunPath
+    ResultPath=$ResultPath;RuntimeProfileId=$RuntimeProfileId
+  }
+  $arguments.Remove('RetentionClass')
+  if($PSBoundParameters.ContainsKey('RetentionClass')){$arguments.RetentionClass=$RetentionClass}
+  Invoke-MultipoleProjectFinite3dTransport -Solver simion -ProjectId 'rf_multipole_ion_optics' @arguments
+  return
+}
+if($PSCmdlet.ParameterSetName-eq'Campaign'){
+  . (Join-Path $PSScriptRoot 'project_transport_launcher_support.ps1')
+  $arguments=@{
+    RepoRoot=$repoRoot;EvidenceContractPath=$EvidenceContractPath;RunId=$RunId
+    RetentionReason=$RetentionReason;PythonExe=$python;ReferenceComsolRunId=$ReferenceComsolRunId
+    SimionExe=$SimionExe;ContinuationPredecessorManifestPath=$ContinuationPredecessorManifestPath
+    ResolvedRuntimeProfilePath=$ResolvedRuntimeProfilePath;NativeFieldRunPath=$NativeFieldRunPath
+    ResultPath=$ResultPath;CampaignPath=$CampaignPath;ExperimentId=$ExperimentId
+  }
+  if($PSBoundParameters.ContainsKey('RetentionClass')){$arguments.RetentionClass=$RetentionClass}
+  Invoke-MultipoleProjectFinite3dTransport -Solver simion -ProjectId 'rf_multipole_ion_optics' @arguments
+  return
+}
+if($ResumeFinalization){
+  & $python -m msplatform.execution.artifact_naming run $RunId | Out-Null
+  if($LASTEXITCODE-ne 0){throw 'Recovery requires a valid existing RunId.'}
+  $projectArtifacts=Join-Path $workspaceRoot 'artifacts/projects/rf_multipole_ion_optics'
+  $runRoot=Join-Path $projectArtifacts "runs/$RunId"
+  if(-not$ResultPath){$ResultPath=Join-Path $projectArtifacts "scratch/workflow_results/$RunId/result.json"}
+  New-Item -ItemType Directory -Force -Path (Split-Path -Parent ([IO.Path]::GetFullPath($ResultPath))) | Out-Null
+  . (Join-Path $PSScriptRoot 'run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization
+  $recovery=Invoke-RunArtifactWorkflow -RequestPath (Join-Path $runRoot 'inputs/execution_request.json') `
+    -ResultPath $ResultPath -ResumeFinalization
+  Write-Output "MULTIPOLE_SIMION_FINALIZATION=$($recovery.status) RUN_ID=$RunId RESULT=$ResultPath"
+  if($recovery.status-ne'success'){exit 1}
+  return
+}
 $executionResources=Join-Path $repoRoot 'src/msplatform/execution/resources'
 . (Join-Path $executionResources 'run_artifact_support.ps1')
 $hostState=if($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH}else{Join-Path $workspaceRoot 'artifacts/common/host_resources.sqlite3'}
@@ -216,7 +261,7 @@ $hostRuntimeSourcePaths=@(
   'src/msplatform/execution/resources/host_resource_policy.json','src/msplatform/execution/resources/require_powershell7.ps1','src/msplatform/execution/resources/resource_process_support.ps1')
 $analysisSourcePaths=@('src/msplatform/analysis/particle_census.py')
 $executionCapacityPaths=Get-RunPackageCopiedSourcePaths -RepoRoot $repoRoot `
-  -SourceRelativeDirectories @('src/msplatform','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/variants') `
+  -SourceRelativeDirectories @('src/msplatform','src/msplatform/components/rf_multipole/config','src/msplatform/components/rf_multipole/variants') `
   -Extensions @('.py','.json','.ps1','.lua')
 $executionCapacityPaths+=@(($hostRuntimeSourcePaths+$analysisSourcePaths)|ForEach-Object{"inputs/code/$_"})
 $continuationCapacity=$null;$continuationGuards=[Collections.ArrayList]::new();$continuationPredecessor=$null;$continuationChain=@()
@@ -291,7 +336,7 @@ catch{$leaseFailure=$_;foreach($stream in $continuationGuards){$stream.Dispose()
 
 try{
   $codeRoot=Join-Path $inputDir 'code'
-  foreach($area in @('src/msplatform','projects/rf_multipole_ion_optics/config','projects/rf_multipole_ion_optics/variants')){
+  foreach($area in @('src/msplatform','src/msplatform/components/rf_multipole/config','src/msplatform/components/rf_multipole/variants')){
     $sourceRoot=Join-Path $repoRoot $area;$destinationRoot=Join-Path $codeRoot $area
     Get-ChildItem -LiteralPath $sourceRoot -Recurse -File|Where-Object{
       $_.Extension -in @('.py','.json','.ps1','.lua')
@@ -331,8 +376,11 @@ try{
   })
   Assert-FrozenPythonPackage -Package $frozenPackage
   . (Get-FrozenPythonPackageFile -Package $frozenPackage -RelativePath 'src/msplatform/execution/resources/frozen_python_package.ps1')
-  Invoke-IsolatedFrozenPythonModule -Python $python -Package $frozenPackage -Module msplatform `
-    -Arguments @('--help') -RequiredModuleNames $coreModules -ForbiddenRoots @($repoRoot) -ProbeOnly|Out-Null
+  for($moduleOffset=0;$moduleOffset-lt$coreModules.Count;$moduleOffset+=100){
+    $moduleEnd=[Math]::Min($moduleOffset+99,$coreModules.Count-1)
+    Invoke-IsolatedFrozenPythonModule -Python $python -Package $frozenPackage -Module msplatform `
+      -Arguments @('--help') -RequiredModuleNames @($coreModules[$moduleOffset..$moduleEnd]) -ForbiddenRoots @($repoRoot) -ProbeOnly|Out-Null
+  }
 
   $ownerSource=Join-Path $physicalRunDir 'inputs/code/src/msplatform/workflows/resources/run_simion_finite_3d_transport.ps1'
   $ownerRecord=Get-Item -LiteralPath $ownerSource
@@ -351,7 +399,7 @@ try{
   . (Join-Path $codeRoot 'src/msplatform/backends/simion/resources/simion_field_checkpoint_support.ps1')
 
   $templateDir=Join-Path $inputDir 'simion_layout_template'
-  $templateRegistryFrozen=Join-Path $codeRoot 'projects\rf_multipole_ion_optics\config\simion_layout_template.json'
+  $templateRegistryFrozen=Join-Path $codeRoot 'src\msplatform\components\rf_multipole\config\simion_layout_template.json'
   $template=Resolve-MultipoleSimionLayoutTemplate -Python $python `
     -RepositoryRoot $repoRoot -TemplateDirectory $templateDir `
     -RegistryPath $templateRegistryFrozen -ModuleRoot $codeRoot
@@ -1114,7 +1162,7 @@ print(json.dumps(prepare_exit_observation_inputs(run,json.loads(resolved.read_te
       $electrodeGroups[[string]$group.Name]=@($group.Group|ForEach-Object{[int]$_.electrode_id}|Sort-Object -Unique)
     }
     Write-RunJson -Path $sampleRequest -Depth 12 -Value ([ordered]@{schema_version=1;role='multipole_stationary_simion_sampling_request';
-      resolved_design=$resolved;sampling_plan=(Join-Path $codeRoot 'projects/rf_multipole_ion_optics/config/contracts/stationary_field_sampling_plan.json');
+      resolved_design=$resolved;sampling_plan=(Join-Path $codeRoot 'src/msplatform/components/rf_multipole/config/contracts/stationary_field_sampling_plan.json');
       controller_pa=$controller;producer_manifest=(Join-Path $physicalRunDir 'run_manifest.json');origin_mm=@(0,0,0);
       cell_mm=@($resolvedCellMmX,$resolvedCellMmY,$resolvedCellMmZ);electrode_ids_by_group=$electrodeGroups})
     $sampleRunId=$RunId+'__stationary_samples'

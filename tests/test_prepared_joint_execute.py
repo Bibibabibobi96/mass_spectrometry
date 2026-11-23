@@ -12,7 +12,6 @@ import unittest
 from unittest.mock import patch
 
 REPO = Path(__file__).resolve().parents[1]
-MR = REPO / "projects/parallel_mirror_dual_stripe_mr_tof"
 PREPARED_ENTRY = Path("src/msplatform/workflows/resources/prepared_joint_execute.ps1")
 PREPARED_ENTRY_ID = "msplatform_workflows_prepared_joint_execute_ps1"
 
@@ -111,10 +110,10 @@ class PreparedJointAnalysisTests(unittest.TestCase):
         pwsh = shutil.which("pwsh")
         if not pwsh:
             self.skipTest("PowerShell 7 is unavailable")
-        from common.contracts.test_support.fixture_process import run_fixture_process
+        from tests.contracts.test_support.fixture_process import run_fixture_process
 
         inventory = prepared_joint_dependency_inventory()
-        from integrations.tests.test_support.single_reflection_execute_fixture import declared_dependency_paths
+        from tests.integration.test_support.single_reflection_execute_fixture import declared_dependency_paths
         records = [{'source_repo_path': path} for path in declared_dependency_paths(REPO, inventory, 'prepared_joint')]
         support = {"src/msplatform/execution/resources/run_artifact_support.ps1", "src/msplatform/execution/resources/require_powershell7.ps1", "src/msplatform/execution/resources/host_execution_lease.ps1", "src/msplatform/execution/artifact_identity_archive.py"}
         capacity_fixture = r'''
@@ -710,7 +709,7 @@ if($script:assetChecks-ne$(if($Scenario-eq'zero'){0}else{1})){throw 'Native payl
                 with self.subTest(scenario=scenario):
                     case_root = Path(directory) / scenario
                     case_root.mkdir()
-                    from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_static_field_binding import NativeStaticBindingTest
+                    from tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_static_field_binding import NativeStaticBindingTest
                     field_root = case_root / "live_fields"
                     field_root.mkdir()
                     binding = NativeStaticBindingTest().fixture(field_root)
@@ -741,9 +740,9 @@ if($script:assetChecks-ne$(if($Scenario-eq'zero'){0}else{1})){throw 'Native payl
         script = r"""
 param($Repository)
 $ErrorActionPreference='Stop'
-$old=Join-Path $Repository 'projects/parallel_mirror_dual_stripe_mr_tof/simion/run_two_prism_trial.ps1'
+$old=Join-Path $Repository 'src/msplatform/backends/simion/resources/run_two_prism_trial.ps1'
 if(Test-Path -LiteralPath $old){throw 'Old public entry remains'}
-$controller=Join-Path $Repository 'projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_downstream_workpoint_iteration.ps1'
+$controller=Join-Path $Repository 'src/msplatform/workflows/resources/run_downstream_workpoint_iteration.ps1'
 $ast=[Management.Automation.Language.Parser]::ParseFile($controller,[ref]$null,[ref]$null)
 $selected=$ast.FindAll({param($n) $n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-in@('$trialRunner','$trialArtifactRoot')},$true)
 $repoRoot=$Repository;$controllerDirectory=Split-Path -Parent $controller;$artifactWorkspaceRoot='artifacts';$artifactRoot='artifacts/projects/parallel_mirror_dual_stripe_mr_tof'
@@ -752,7 +751,7 @@ foreach($kind in @('Prepared','Legacy')){
  foreach($assignment in $selected){Invoke-Expression ($assignment.Extent.Text.Replace('$PSCmdlet','$selection').Replace('$PSScriptRoot','$controllerDirectory'))}
  if($kind-eq'Prepared'){
   if($trialRunner-ne(Join-Path $Repository 'src/msplatform/workflows/resources/prepared_joint_execute.ps1')-or$trialArtifactRoot-ne(Join-Path $artifactWorkspaceRoot 'projects/instrument_assembly')){throw 'Prepared route differs'}
- }elseif([IO.Path]::GetFullPath($trialRunner)-ne[IO.Path]::GetFullPath((Join-Path $Repository 'integrations/workflows/oa_mr/execute.ps1'))-or$trialArtifactRoot-ne(Join-Path $artifactWorkspaceRoot 'projects/instrument_assembly')){throw 'Ordinary OA route changed'}
+ }elseif([IO.Path]::GetFullPath($trialRunner)-ne[IO.Path]::GetFullPath((Join-Path $Repository 'src/msplatform/workflows/resources/oa_mr.ps1'))-or$trialArtifactRoot-ne(Join-Path $artifactWorkspaceRoot 'projects/instrument_assembly')){throw 'Ordinary OA route changed'}
 }
 'PREPARED_ROUTE=PASS'
 """
@@ -775,7 +774,7 @@ foreach($kind in @('Prepared','Legacy')){
                     load_prepared_centroid_trial(manifest, manifest, manifest)
 
     def test_frozen_prepared_consumer_materializes_without_repository(self):
-        from projects.parallel_mirror_dual_stripe_mr_tof.tests.analysis.test_measured_component_source import MeasuredComponentSourceTests
+        from tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_measured_component_source import MeasuredComponentSourceTests
         pwsh = shutil.which("pwsh")
         if pwsh is None:
             self.skipTest("PowerShell 7 is unavailable")
@@ -786,7 +785,7 @@ foreach($kind in @('Prepared','Legacy')){
         inputs = fixture.root / "inputs"
         frozen_repo = fixture.root / "frozen_repo"
         inventory = prepared_joint_dependency_inventory()
-        from integrations.tests.test_support.single_reflection_execute_fixture import declared_dependency_paths
+        from tests.integration.test_support.single_reflection_execute_fixture import declared_dependency_paths
         for relative in declared_dependency_paths(REPO, inventory, "prepared_joint") | {
                 "src/msplatform/workflows/config/assembly_registry.json"}:
             target = frozen_repo / relative

@@ -184,12 +184,12 @@ def _freeze_code(session: RunSession, task_script: Path | None, resolved: Path) 
                 path=str(target), sha256=record["sha256"]))
             session.add_input(f"comsol_support_{index}", record)
     geometry_target = session.declare_file(
-        code_root / f"projects/{PROJECT}/config/resolved_geometry.json", "required_evidence")
+        code_root / "src/msplatform/components/single_reflection_oa_tof/config/resolved_geometry.json", "required_evidence")
     geometry_target.parent.mkdir(parents=True, exist_ok=True)
     freeze_file(resolved, geometry_target)
     geometry_record = file_record(geometry_target, "required_evidence")
     package["files"].append(dict(
-        relative_path=f"projects/{PROJECT}/config/resolved_geometry.json",
+        relative_path="src/msplatform/components/single_reflection_oa_tof/config/resolved_geometry.json",
         path=str(geometry_target), sha256=geometry_record["sha256"]))
     session.add_input("frozen_geometry", geometry_record)
     inventory_path = session.declare_file(session.input_dir / "code_inventory.json", "required_evidence")

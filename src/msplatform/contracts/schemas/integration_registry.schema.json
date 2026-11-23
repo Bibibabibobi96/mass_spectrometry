@@ -62,7 +62,7 @@
                 },
                 "entrypoint": {
                   "type": "string",
-                  "pattern": "^(?:integrations/workflows/.+|src/msplatform/workflows/resources/[A-Za-z0-9_]+)\\.ps1$"
+                  "pattern": "^src/msplatform/workflows/resources/[A-Za-z0-9_]+\\.ps1$"
                 },
                 "required_bindings": {
                   "type": "array",
@@ -189,11 +189,11 @@
     },
     "direct_registry_path": {
       "type": "string",
-      "pattern": "^integrations/config/[A-Za-z0-9._-]+\\.json$"
+      "pattern": "^src/msplatform/workflows/config/[A-Za-z0-9._-]+\\.json$"
     },
     "family_registry_path": {
       "type": "string",
-      "pattern": "^integrations/[a-z][a-z0-9_]*/config/[A-Za-z0-9._-]+\\.json$",
+      "pattern": "^src/msplatform/workflows/config/[A-Za-z0-9._-]+\\.json$",
       "description": "Consumers must also verify that the path belongs to the declared root."
     }
   }

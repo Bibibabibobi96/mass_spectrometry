@@ -8,11 +8,16 @@ import signal
 import subprocess
 import time
 import warnings
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Literal, Mapping, Sequence
 
 
 HardDeadlineAction = Literal["terminate_process_tree"]
+
+
+class ObservedProcessDeadlineExceeded(subprocess.TimeoutExpired):
+    """The caller explicitly requested and completed process-tree termination."""
 
 
 def process_working_set_bytes(process_id: int) -> int | None:
@@ -91,6 +96,8 @@ def _wait_after_observation_failure(process: subprocess.Popen[bytes], failure: B
 def run_observed_process(
     command: Sequence[str], *, cwd: Path, stdout: Path, stderr: Path,
     environment: Mapping[str, str] | None = None,
+    environment_overrides: Mapping[str, str] | None = None,
+    merge_stderr: bool = False,
     warning_seconds: float | None = None,
     hard_deadline_seconds: float | None = None,
     hard_deadline_action: HardDeadlineAction | None = None,
@@ -117,6 +124,10 @@ def run_observed_process(
     """
     if not command:
         raise ValueError("observed process command cannot be empty")
+    if environment is not None and environment_overrides is not None:
+        raise ValueError("environment and environment_overrides are mutually exclusive")
+    if environment_overrides is not None:
+        environment = {**os.environ, **environment_overrides}
     if sample_interval_seconds <= 0:
         raise ValueError("sampling interval must be positive")
     if warning_seconds is not None and warning_seconds <= 0:
@@ -142,7 +153,7 @@ def run_observed_process(
     process = None
     observation_failure = None
     try:
-        with stdout.open("wb") as out, stderr.open("wb") as err:
+        with stdout.open("wb") as out, (nullcontext(out) if merge_stderr else stderr.open("wb")) as err:
             try:
                 process = subprocess.Popen(
                     list(command), cwd=cwd, stdout=out, stderr=err, env=environment,
@@ -164,7 +175,7 @@ def run_observed_process(
                     if hard_deadline_seconds is not None and elapsed > hard_deadline_seconds:
                         _terminate_process_tree(process)
                         process.wait()
-                        raise subprocess.TimeoutExpired(command, hard_deadline_seconds)
+                        raise ObservedProcessDeadlineExceeded(command, hard_deadline_seconds)
                     time.sleep(sample_interval_seconds)
                 observed = process_working_set_bytes(process.pid)
                 if observed is not None:

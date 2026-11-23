@@ -18,6 +18,22 @@ $ErrorActionPreference='Stop'
 $packageRoot=Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $RepoRoot=(Resolve-Path -LiteralPath $RepoRoot).Path
 . (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
+if(-not$ResumeFinalization){
+  $Request=(Resolve-Path -LiteralPath $Request).Path
+  if(-not$DryRun-and(-not$SolverAuthorized-or-not$ExecutionBudgetPath)){
+    throw 'Native paired pulse execution requires SolverAuthorized and an explicit ExecutionBudgetPath.'
+  }
+}
+$executionResources=Join-Path $packageRoot 'execution/resources'
+. (Join-Path $executionResources 'require_powershell7.ps1')
+. (Join-Path $executionResources 'run_artifact_support.ps1')
+if(-not$Python){$Python=if($env:SIMULATION_PYTHON_EXE){$env:SIMULATION_PYTHON_EXE}else{throw 'Explicit Python or SIMULATION_PYTHON_EXE is required'}}
+. (Join-Path $executionResources 'workspace_paths.ps1')
+$pathArguments=@{SourceRoot=$RepoRoot;Python=$Python}
+if($ArtifactRoot){$pathArguments.ArtifactRoot=$ArtifactRoot}
+$pathContext=Resolve-WorkspacePaths @pathArguments
+$hostContext=@{workspace=(Split-Path -Parent $RepoRoot);python_executable=$Python;host_state_path=[string]$pathContext.host_resource_state_path;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
+. (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 . (Join-Path $packageRoot 'workflows/resources/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
 if($ResumeFinalization){
   if(-not$ResultPath){throw 'ResumeFinalization requires the original ResultPath.'}
@@ -28,24 +44,10 @@ if($ResumeFinalization){
   if($result.status-ne'success'){throw 'Paired finalization remains incomplete; inspect Result recovery_action.'}
   return
 }
-$Request=(Resolve-Path -LiteralPath $Request).Path
-if(-not$DryRun-and(-not$SolverAuthorized-or-not$ExecutionBudgetPath)){
-  throw 'Native paired pulse execution requires SolverAuthorized and an explicit ExecutionBudgetPath.'
-}
-$executionResources=Join-Path $packageRoot 'execution/resources'
-. (Join-Path $executionResources 'require_powershell7.ps1')
-. (Join-Path $executionResources 'run_artifact_support.ps1')
 . (Join-Path $executionResources 'resource_process_support.ps1')
 . (Join-Path $packageRoot 'backends/simion/resources/short_pa_path_support.ps1')
 . (Join-Path $packageRoot 'execution/resources/dependencies.ps1')
 . (Join-Path $packageRoot 'workflows/resources/frontend_flight_support.ps1')
-if(-not$Python){$Python=if($env:SIMULATION_PYTHON_EXE){$env:SIMULATION_PYTHON_EXE}else{throw 'Explicit Python or SIMULATION_PYTHON_EXE is required'}}
-. (Join-Path $executionResources 'workspace_paths.ps1')
-$pathArguments=@{SourceRoot=$RepoRoot;Python=$Python}
-if($ArtifactRoot){$pathArguments.ArtifactRoot=$ArtifactRoot}
-$pathContext=Resolve-WorkspacePaths @pathArguments
-$hostContext=@{workspace=(Split-Path -Parent $RepoRoot);python_executable=$Python;host_state_path=[string]$pathContext.host_resource_state_path;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
-. (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 $ArtifactRoot=[string]$pathContext.artifact_root
 if(-not$RunId){$RunId=(Get-Date -Format yyyyMMdd_HHmmss)+$(if($DryRun){'__test__python__paired-accelerator-pulse'}else{'__sim__cross__paired-accelerator-pulse'})}
 $project='instrument_assembly';$consumer='paired_accelerator_pulse'

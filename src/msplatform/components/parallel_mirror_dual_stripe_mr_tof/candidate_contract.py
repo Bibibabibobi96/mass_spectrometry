@@ -31,6 +31,21 @@ class CandidateContractError(ValueError):
     """Raised when the prototype contract cannot describe a physical candidate."""
 
 
+def named_record(records: object, filename: str, label: str) -> dict[str, Any]:
+    """Return exactly one named manifest record or fail closed."""
+    from collections.abc import Mapping
+
+    values = records.values() if isinstance(records, Mapping) else records
+    candidates = values if isinstance(values, list) or hasattr(values, "__iter__") else []
+    matches = [
+        item for item in candidates
+        if isinstance(item, Mapping) and Path(str(item.get("path", ""))).name == filename
+    ]
+    if len(matches) != 1:
+        raise CandidateContractError(f"Stripe run must bind exactly one {label}")
+    return matches[0]
+
+
 class TwoZoneTheoryError(ValueError):
     """Raised when the MR two-zone adapter receives an invalid physical state."""
 

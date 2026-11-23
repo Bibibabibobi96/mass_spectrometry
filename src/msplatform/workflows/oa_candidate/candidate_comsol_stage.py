@@ -57,7 +57,7 @@ def execute_comsol_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe
         "model": stage["model_path"], "build_report": str(build_report),
         "sync_report": str(sync_report), "analysis_request": str(analysis_request),
         "analysis_receipt": str(analysis_receipt),
-        "analysis_contract": frozen_source_path(closure, "projects/single_reflection_oa_tof_mass_analyzer/config/analysis_contract.json"),
+        "analysis_contract": frozen_source_path(closure, "src/msplatform/components/single_reflection_oa_tof/config/analysis_contract.json"),
     }
 
 
@@ -213,7 +213,8 @@ def execute_saved_postprocess(selection: dict, root: Path, closure: dict, plan: 
         _FROZEN_PYTHON_BOOTSTRAP +
         "from msplatform.workflows.oa_candidate.analyze_comsol_detector_events import analyze_request;"
         "from msplatform.workflows.oa_candidate.reference_analysis_core import load_contract,DEFAULT_CONTRACT;check_frozen_core();load_contract(DEFAULT_CONTRACT)",
-        str(closure["code_root"])], root / "logs/analysis_import_preflight.log")
+        str(closure["code_root"])], root / "logs/analysis_import_preflight.log",
+        run_directory=root, execution_directory=Path(execution))
     exports = selection["exports"]
     receipt_path = None
     if exports is not None:
@@ -230,7 +231,7 @@ def execute_saved_postprocess(selection: dict, root: Path, closure: dict, plan: 
                    "output_dir": str(output), "parent_run_directory": selection["parent"],
                    "child_run_directory": str(root),
                    "candidate_contract_path": frozen_source_path(closure,
-                       "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json")}
+                       "src/msplatform/components/single_reflection_oa_tof/config/resolved_geometry.json")}
         source_context = plan.get("source_execution_context")
         if (not isinstance(source_context, dict) or source_context.get("schema_version") != 1
                 or source_context.get("role") != "run_source_execution_context"
@@ -249,7 +250,7 @@ def execute_saved_postprocess(selection: dict, root: Path, closure: dict, plan: 
         request_path = root / "inputs/cold_request.json"
         request_path.write_text(json.dumps(request, ensure_ascii=False)+"\n", encoding="utf-8")
         code = execution_path(Path(closure["code_root"]))
-        project = str(Path(code) / "projects/single_reflection_oa_tof_mass_analyzer")
+        project = str(Path(code) / "src/msplatform/components/single_reflection_oa_tof")
         def quote(value: str) -> str:
             return "'"+value.replace("'", "''")+"'"
         task = root / "inputs/cold_postprocess.m"
@@ -344,7 +345,7 @@ def execute_reused_comsol_phases(stage: dict, plan: dict, evidence: dict, record
         exported = execute_saved_postprocess(selection, root, closure, plan, runtime=runtime, analyze=False)
         result['analysis_request'] = exported['analysis_request']
         result['analysis_contract'] = frozen_source_path(closure,
-            'projects/single_reflection_oa_tof_mass_analyzer/config/analysis_contract.json')
+            'src/msplatform/components/single_reflection_oa_tof/config/analysis_contract.json')
         phase_execution.update(export='executed', analysis='pending')
         runtime._publish_comsol_phase_sources(root, plan, result, phase_execution, disposition['origins'])
         runtime.refresh_candidate_provisional_manifest(root)
@@ -358,7 +359,7 @@ def execute_reused_comsol_phases(stage: dict, plan: dict, evidence: dict, record
         result['analysis_request'] = str(request)
         result['analysis_receipt'] = str(analyze_detector_request(request, closure, root/'logs/comsol_reanalysis.log', runtime=runtime))
         result['analysis_contract'] = frozen_source_path(closure,
-            'projects/single_reflection_oa_tof_mass_analyzer/config/analysis_contract.json')
+            'src/msplatform/components/single_reflection_oa_tof/config/analysis_contract.json')
         phase_execution['analysis'] = 'executed'
         runtime._publish_comsol_phase_sources(root, plan, result, phase_execution, disposition['origins'])
         runtime.refresh_candidate_provisional_manifest(root)

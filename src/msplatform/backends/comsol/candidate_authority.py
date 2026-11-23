@@ -6,7 +6,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import CandidateContractError, load_contract, mirror_power_supply_limits
+from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract, mirror_power_supply_limits, named_record
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.operating_authority import apply_terminal_mirror_variation, fixed_mirror_stripe_source_state
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import candidate_authority
 from .static_field_binding import _record as record
@@ -74,18 +74,3 @@ def derive_candidate_authority(
         source_authority, request["candidate_voltages_v"], mirror_voltages_v=mirror_target
     )
     return candidate, mirror_paths
-
-
-def named_record(records: object, filename: str, label: str) -> dict[str, Any]:
-    """Return exactly one named manifest record or fail closed."""
-    from collections.abc import Mapping
-
-    values = records.values() if isinstance(records, Mapping) else records
-    candidates = values if isinstance(values, list) or hasattr(values, "__iter__") else []
-    matches = [
-        item for item in candidates
-        if isinstance(item, Mapping) and Path(str(item.get("path", ""))).name == filename
-    ]
-    if len(matches) != 1:
-        raise CandidateContractError(f"Stripe run must bind exactly one {label}")
-    return matches[0]

@@ -1,0 +1,170 @@
+[CmdletBinding()]
+param(
+  [ValidateSet('Core', 'Static')][string]$Level = 'Static',
+  [string]$PythonExe = '',
+  [string]$LuaExe = '',
+  [string[]]$ChangedTestModules = @(),
+  [string[]]$SelectedTestModules = @(),
+  [switch]$PreflightOnly,
+  [switch]$PreflightValidated,
+  [switch]$RegistryPrevalidated
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
+$projectRoot = Join-Path $repoRoot 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof'
+$testRoot = Join-Path $repoRoot 'tests/projects/parallel_mirror_dual_stripe_mr_tof'
+. (Join-Path $repoRoot 'src\msplatform\execution\resources\require_powershell7.ps1')
+$lease = $null
+$savedPythonPath = $env:PYTHONPATH
+$savedNoBytecode = $env:PYTHONDONTWRITEBYTECODE
+$savedSimionExe = $env:SIMION_EXE
+try {
+  if (($PreflightOnly -and $SelectedTestModules.Count) -or
+      (($PreflightOnly -or $SelectedTestModules.Count) -and $Level -ne 'Static') -or
+      (($PreflightOnly -or $SelectedTestModules.Count) -and $ChangedTestModules.Count) -or
+      ($PreflightValidated -and -not $SelectedTestModules.Count)) {
+    throw 'Static preflight and selected test modules are mutually exclusive with other modes.'
+  }
+  $python = if ($PythonExe) {
+    (Resolve-Path -LiteralPath $PythonExe -ErrorAction Stop).Path
+  } elseif ($env:SIMULATION_PYTHON_EXE) {
+    [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)
+  } else {
+    throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'
+  }
+  if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
+    throw "Python 3.11 runtime missing: $python"
+  }
+  $env:PYTHONPATH = @((Join-Path $repoRoot 'src'), $repoRoot) -join [IO.Path]::PathSeparator
+  $env:PYTHONDONTWRITEBYTECODE = '1'
+  Remove-Item Env:SIMION_EXE -ErrorAction SilentlyContinue
+  $executionResources = Join-Path $repoRoot 'src/msplatform/execution/resources'
+  $hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path (Split-Path -Parent $repoRoot) 'artifacts/common/host_resources.sqlite3' }
+  $hostContext = @{workspace=(Split-Path -Parent $repoRoot);python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
+  . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
+  $lease = Enter-HostExecutionLease -Role GATE
+
+  Push-Location $repoRoot
+  try {
+    & $python -c "import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 11) else 1)"
+    if ($LASTEXITCODE -ne 0) { throw 'MR-TOF requires Python 3.11.' }
+    if (-not ($PreflightValidated -or $RegistryPrevalidated)) {
+      & $python -m tools.repository.build_project_registry --check
+      if ($LASTEXITCODE -ne 0) { throw 'MR-TOF project registration is stale or invalid.' }
+    } elseif ($RegistryPrevalidated) {
+      'PROJECT_REGISTRY=PREVALIDATED'
+    }
+
+    if ($PreflightOnly) {
+      Write-Output 'MRTOF_PYTHON_TESTS=DEFERRED REASON=repository_integration_partition'
+    } elseif ($SelectedTestModules.Count) {
+      $testModules = @($SelectedTestModules | Sort-Object -Unique)
+      if ($testModules.Count -ne $SelectedTestModules.Count -or @($testModules | Where-Object {
+        $_ -notmatch '^tests\.projects\.parallel_mirror_dual_stripe_mr_tof\.[A-Za-z0-9_.]+$'
+      }).Count) { throw 'MR-TOF test partition has duplicate or foreign modules.' }
+      & $python -m tools.repository.gate_unittest @testModules
+      if ($LASTEXITCODE -ne 0) { throw 'MR-TOF test partition failed.' }
+      Write-Output "MRTOF_TEST_PARTITION=PASS PREFLIGHT_PREVALIDATED=$([bool]$PreflightValidated) FULL_PROJECT_GATE=False"
+      return
+    } elseif ($Level -eq 'Core') {
+      $coreTests = @(
+        'tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_drift_phase_contract',
+        'tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_prism_analytic',
+        'tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_native_corridor_plan',
+        'tests.projects.parallel_mirror_dual_stripe_mr_tof.analysis.test_native_corridor_freeze'
+      )
+      $coreTests = @($coreTests + $ChangedTestModules | Sort-Object -Unique)
+      Write-Output "PROJECT_TEST_MODULES=$($coreTests -join ',')"
+      & $python -m tools.repository.gate_unittest @coreTests
+      if ($LASTEXITCODE -ne 0) { throw 'MR-TOF core contract tests failed.' }
+    } else {
+      $testModules = @(@(
+        Get-ChildItem -LiteralPath ($testRoot) -Filter 'test_*.py' -File -Recurse |
+          ForEach-Object {
+            $_.FullName.Substring($repoRoot.Length + 1, $_.FullName.Length - $repoRoot.Length - 4).Replace('\', '.')
+          }
+      ) + $ChangedTestModules | Sort-Object -Unique)
+      & $python -m tools.repository.gate_unittest @testModules
+      if ($LASTEXITCODE -ne 0) { throw 'MR-TOF solver-free Python tests failed.' }
+    }
+  } finally {
+    Pop-Location
+  }
+
+  $parseErrors = @()
+  $mrRunnerNames = @(
+    'mr_verify.ps1', 'run_native_candidate_condition.ps1', 'run_mirror_l0_l1_candidate.ps1',
+    'run_downstream_workpoint_iteration.ps1', 'run_native_corridor_bunch_screening.ps1',
+    'run_target_operating_point_chain.ps1', 'run_two_prism_segmented_coverage.ps1',
+    'run_mirror_fixed_grid_voltage_correction.ps1', 'run_downstream_fixed_grid_workpoint.ps1',
+    'run_native_candidate_chain.ps1', 'run_dual_stripe_operating_seed.ps1',
+    'run_mirror_exact_k_operating_point.ps1', 'run_two_prism_segmented_continuation.ps1',
+    'run_source_z_energy_timing_diagnostic.ps1', 'run_native_candidate_campaign.ps1',
+    'run_resolved_cad_export.ps1', 'run_single_center_timestep_convergence.ps1',
+    'run_publish_bunch_source.ps1', 'run_ip_prism_distance_study.ps1',
+    'run_freeze_bunch_pulse_schedule.ps1'
+  )
+  $runnerPaths = @(
+    Get-ChildItem -LiteralPath (Join-Path $repoRoot 'src/msplatform/workflows/resources') -Filter '*.ps1' -File |
+      Where-Object { $_.Name -in $mrRunnerNames }
+    Get-ChildItem -LiteralPath (Join-Path $repoRoot 'src/msplatform/backends/simion/resources') -Filter 'run_native_*.ps1' -File |
+      Where-Object { $_.Name -in @('run_native_analyzer_coarse_raw.ps1', 'run_native_corridor_qualification.ps1', 'run_native_corridor_response_bank.ps1') }
+    Get-Item -LiteralPath (Join-Path $repoRoot 'src/msplatform/backends/comsol/launcher/run_corridor_field_provider.ps1')
+  )
+  $runnerPaths | ForEach-Object {
+    $tokens = $null
+    $fileErrors = $null
+    [Management.Automation.Language.Parser]::ParseFile(
+      $_.FullName, [ref]$tokens, [ref]$fileErrors
+    ) | Out-Null
+    if ($fileErrors) { $parseErrors += $fileErrors }
+  }
+  if ($parseErrors.Count -gt 0) {
+    throw "MR-TOF PowerShell syntax gate failed: $($parseErrors -join '; ')"
+  }
+
+  if ($LuaExe -and -not (Test-Path -LiteralPath $LuaExe -PathType Leaf)) {
+    throw "Explicit Lua executable is missing: $LuaExe"
+  }
+  if (-not $LuaExe) {
+    foreach ($commandName in @('lua', 'lua5.1')) {
+      $candidate = Get-Command -Name $commandName -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+      if ($candidate) { $LuaExe = $candidate.Source; break }
+    }
+  }
+  if (-not $LuaExe -and $env:ProgramFiles) {
+    $installedLua = Join-Path $env:ProgramFiles 'SIMION-2020\lua.exe'
+    if (Test-Path -LiteralPath $installedLua -PathType Leaf) { $LuaExe = $installedLua }
+  }
+  if ($LuaExe) {
+    Push-Location $repoRoot
+    try {
+      foreach ($name in @(
+        'test_candidate_plane_events.lua',
+        'test_candidate_voltage_map.lua',
+        'test_mirror_cycle_counter.lua'
+      )) {
+        & $LuaExe (Join-Path $testRoot "simion\$name") $repoRoot
+        if ($LASTEXITCODE -ne 0) { throw "MR-TOF plain-Lua regression failed: $name" }
+      }
+    } finally {
+      Pop-Location
+    }
+  } else {
+    Write-Output 'MRTOF_PLAIN_LUA=SKIP REASON=Lua_runtime_unavailable'
+  }
+
+  if ($PreflightOnly) { 'MRTOF_STATIC_PREFLIGHT=PASS PYTHON_TESTS=DEFERRED' }
+  else { "PROJECT_GATE=PASS PROJECT=parallel_mirror_dual_stripe_mr_tof LEVEL=$Level COMMERCIAL_SOLVER_EXECUTED=false" }
+} finally {
+  $env:PYTHONPATH = $savedPythonPath
+  $env:PYTHONDONTWRITEBYTECODE = $savedNoBytecode
+  if ($null -eq $savedSimionExe) {
+    Remove-Item Env:SIMION_EXE -ErrorAction SilentlyContinue
+  } else {
+    $env:SIMION_EXE = $savedSimionExe
+  }
+  if ($null -ne $lease) { Exit-HostExecutionLease -Lease $lease }
+}
