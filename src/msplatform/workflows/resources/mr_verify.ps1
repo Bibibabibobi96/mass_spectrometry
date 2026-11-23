@@ -62,7 +62,7 @@ try {
     } elseif ($SelectedTestModules.Count) {
       $testModules = @($SelectedTestModules | Sort-Object -Unique)
       if ($testModules.Count -ne $SelectedTestModules.Count -or @($testModules | Where-Object {
-        $_ -notmatch '^tests\.projects\.parallel_mirror_dual_stripe_mr_tof\.[A-Za-z0-9_.]+$'
+        $_ -notmatch '^tests\.(?:components|assembly)\.parallel_mirror_dual_stripe_mr_tof\.[A-Za-z0-9_.]+$'
       }).Count) { throw 'MR-TOF test partition has duplicate or foreign modules.' }
       & $python -m tools.repository.gate_unittest @testModules
       if ($LASTEXITCODE -ne 0) { throw 'MR-TOF test partition failed.' }

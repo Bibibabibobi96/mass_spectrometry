@@ -492,7 +492,7 @@ function Get-GateChangedTests {
                 Reason = 'explicit_discovery_preserves_native_exclusions'
             }
         }
-        $related = @($roots | ForEach-Object { $_ + '__init__.py' })
+        return $null
     }
     if ($FullScope) { $related = @($roots | ForEach-Object { $_ + '__init__.py' }) }
     if ($related.Count -eq 0 -and $mappedModules.Count -eq 0) { return $null }
@@ -517,7 +517,9 @@ function Get-GateChangedTests {
         }
         $modules = @(
             foreach ($root in ($discoveryRoots | Sort-Object -Unique)) {
-                Get-ChildItem -LiteralPath (Join-Path $RepoRoot $root) -Filter 'test_*.py' -File -Recurse |
+                $rootPath = Join-Path $RepoRoot $root
+                if (-not (Test-Path -LiteralPath $rootPath -PathType Container)) { continue }
+                Get-ChildItem -LiteralPath $rootPath -Filter 'test_*.py' -File -Recurse |
                     ForEach-Object { $_.FullName.Substring($RepoRoot.Length + 1).Replace('\', '/') } |
                     Where-Object {
                         $path = $_

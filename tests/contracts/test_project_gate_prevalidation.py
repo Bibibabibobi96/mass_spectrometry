@@ -184,6 +184,15 @@ class ProjectGatePrevalidationTests(unittest.TestCase):
         self.assertIn("mr_verify.ps1", syntax.stderr)
 
 
+    def test_mr_selected_partition_accepts_assembly_test_module(self):
+        module = "tests.assembly.parallel_mirror_dual_stripe_mr_tof.analysis.test_assembly_interface"
+        result = self.run_gate(MR, "-SelectedTestModules", module, "-PreflightValidated")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        calls = [row for row in self.calls() if row[0] == "gate_unittest"]
+        self.assertEqual(calls, [["gate_unittest", module]])
+        self.assertIn("MRTOF_TEST_PARTITION=PASS", result.stdout)
+
+
     def test_actual_plain_lua_scripts_use_path_and_keep_explicit_authority_and_failure(self):
         lua = Path(shutil.which("lua") or shutil.which("lua5.1") or
                    "C:/Program Files/SIMION-2020/lua.exe")

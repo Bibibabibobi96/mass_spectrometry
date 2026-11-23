@@ -1285,6 +1285,25 @@ ConvertTo-Json -InputObject $results -Depth 16 -Compress
                     self.assertFalse(selected['CompleteOwner'])
                     self.assertFalse(selected['OnlyTestModules'])
 
+    def test_full_scope_skips_a_missing_discovery_root(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="missing_test_root_") as directory:
+            script = r"""
+. __SUPPORT__
+$route=[pscustomobject]@{
+ dependency_profile='stdlib'
+ test_selection=[pscustomobject]@{roots=@('tests/missing/');scope='tests/missing/'}
+}
+$selected=Get-GateChangedTests -Route $route -RepoRoot $PWD.Path -KnownTestRoots @() -FullScope -ChangedPaths @()
+@{modules=@($selected.Modules);expanded=$selected.Expanded}|ConvertTo-Json -Compress
+""".replace("__SUPPORT__", powershell_literal(REPO_ROOT / "tools/repository/gate_catalog_support.ps1"))
+            result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=directory,
+                                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            selected = json.loads(result.stdout)
+            self.assertEqual(selected["modules"], [])
+            self.assertTrue(selected["expanded"])
+
+
     def test_weighted_partitions_cover_each_actual_owner_scope_once(self) -> None:
         script = r"""
 . __SUPPORT__

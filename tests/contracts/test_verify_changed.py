@@ -2423,7 +2423,8 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
                    'src/msplatform/backends/simion/native_system_geometry.py')
         prefix = 'tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.'
         required = {prefix+name for name in ('test_mr_provider_freeze','test_mr_provider_trial_transport',
-                    'test_assembly_interface','test_simion_candidate_reference','test_two_prism_simion_trial')}
+                    'test_simion_candidate_reference','test_two_prism_simion_trial')}
+        required.add('tests.assembly.parallel_mirror_dual_stripe_mr_tof.analysis.test_assembly_interface')
         for path in sources:
             with self.subTest(path=path):
                 request, _ = self.plan('-ChangedPath',path)
