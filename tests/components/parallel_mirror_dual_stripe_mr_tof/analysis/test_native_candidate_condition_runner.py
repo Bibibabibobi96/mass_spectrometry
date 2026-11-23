@@ -23,7 +23,7 @@ class NativeCandidateConditionRunnerTests(unittest.TestCase):
         stages = [
             "run_dual_stripe_operating_seed.ps1",
             "run_component_focus_workflow.ps1",
-            "src/msplatform/workflows/resources/oa_mr.ps1",
+            "oa_mr.ps1",
             "run_two_prism_segmented_coverage.ps1",
             "run_two_prism_segmented_continuation.ps1",
             "run_downstream_workpoint_iteration.ps1",
@@ -132,7 +132,7 @@ class NativeCandidateConditionRunnerTests(unittest.TestCase):
             self.source,
         )
         start = self.source.index("if($workpointResumeArguments.Count-eq3){")
-        end = self.source.index("if($PythonExe){$workpointArgs.PythonExe", start)
+        end = self.source.index("$workpointArgs.PythonExe=$python", start)
         resume_branch = self.source[start:end]
         self.assertIn("$workpointArgs.InitialWorkpointManifest=", resume_branch)
         self.assertIn("$workpointArgs.ResumeParentCheckpoint=", resume_branch)
@@ -156,7 +156,7 @@ class NativeCandidateConditionRunnerTests(unittest.TestCase):
 
     def test_new_provider_rebinds_only_the_accelerator_before_any_mr_flight(self) -> None:
         rebind = self.source.index("native_system_runtime rebind-accelerator")
-        safe_exit = self.source.index("src/msplatform/workflows/resources/oa_mr.ps1")
+        safe_exit = self.source.index("Join-Path $workflowResources 'oa_mr.ps1'")
         workpoint = self.source.index("run_downstream_workpoint_iteration.ps1")
         candidate = self.source.index("run_native_candidate_chain.ps1")
         self.assertLess(rebind, safe_exit)
@@ -239,6 +239,22 @@ class NativeCandidateConditionRunnerTests(unittest.TestCase):
         self.assertNotIn("ForEach-Object -Parallel", self.source)
         self.assertNotIn("Enter-HostExecutionLease", self.source)
 
+    def test_condition_uses_installed_resources_and_forwards_explicit_execution_roots(self) -> None:
+        self.assertIn("[Parameter(Mandatory)][string]$WorkspaceRoot", self.source)
+        self.assertIn("[Parameter(Mandatory)][string]$ArtifactRoot", self.source)
+        self.assertIn("import msplatform;print(Path(msplatform.__file__).resolve().parent)", self.source)
+        self.assertIn("$workflowResources=Join-Path $packageRoot 'workflows/resources'", self.source)
+        self.assertIn("$simionResources=Join-Path $packageRoot 'backends/simion/resources'", self.source)
+        self.assertIn("WorkspaceRoot=$workspaceRoot;ArtifactRoot=$artifactRoot;PythonExe=$python", self.source)
+        for name in ("stripeArgs", "safeExitArgs", "coverageArgs", "continuationArgs",
+                     "workpointArgs", "candidateArgs"):
+            self.assertIn(f"${name}.PythonExe=$python", self.source)
+        self.assertIn("$safeExitManifest=Join-Path $artifactRoot", self.source)
+        self.assertIn("& $python -I -B -m msplatform.workflows.oa_mr.native_system_runtime", self.source)
+        self.assertNotIn(".venv", self.source)
+        self.assertNotIn("Join-Path $PSScriptRoot", self.source)
+        self.assertNotIn("PYTHONPATH", self.source)
+
     def test_continuation_runner_supports_auto_and_legacy_explicit_selection(self) -> None:
         continuation = CONTINUATION_RUNNER.read_text(encoding="utf-8-sig")
         self.assertIn("$automaticSelection=$explicitSelection.Count-eq0", continuation)
@@ -290,6 +306,21 @@ function Complete-FailedRun {
                     "throw 'PREPARE_BOUNDARY_BEFORE_PHYSICS'\n",
                     encoding="utf-8",
                 )
+                selected_python = root / "selected_python.cmd"
+                selected_python.write_text(
+                    f"@echo off\r\necho {(repo / 'src/msplatform').as_posix()}\r\n",
+                    encoding="utf-8",
+                )
+                condition_entry = analysis / "condition_entry.ps1"
+                condition_entry.write_text(
+                    "param($ConditionPath,$ContextPath,$RunId,$CompositionPlanPath,$LocalScopePath='',$WorkspaceRoot,$ArtifactRoot,$PythonExe)\n"
+                    f"$arguments=@{{ConditionPath=$ConditionPath;ContextPath=$ContextPath;RunId=$RunId;"
+                    f"CompositionPlanPath=$CompositionPlanPath;WorkspaceRoot='{repo.as_posix()}';"
+                    f"ArtifactRoot='{(root / 'artifacts').as_posix()}';PythonExe='{selected_python.as_posix()}'}}\n"
+                    "if($LocalScopePath){$arguments.LocalScopePath=$LocalScopePath}\n"
+                    f"& (Join-Path $PSScriptRoot '{RUNNER.name}') @arguments\n",
+                    encoding="utf-8",
+                )
                 campaign = root / "campaign.json"
                 campaign.write_text(json.dumps([{"K": 25.5, "accelerator_y": -55.0}]), encoding="utf-8")
                 contract = root / "contract.json"
@@ -319,6 +350,9 @@ function Complete-FailedRun {
                     str(analysis / "run_native_candidate_campaign.ps1"),
                     "-CampaignPath", str(campaign), "-CheckpointPath", str(checkpoint),
                     "-ConditionContextPath", str(context), "-CompositionPlanPath", str(plan),
+                    "-ConditionRunnerPath", str(condition_entry),
+                    "-WorkspaceRoot", str(repo), "-ArtifactRoot", str(root / "artifacts"),
+                    "-PythonExe", str(selected_python),
                     "-CampaignStamp", "20261028_000000"]
                 if with_scope:
                     command.extend(["-LocalScopePath", str(scope)])

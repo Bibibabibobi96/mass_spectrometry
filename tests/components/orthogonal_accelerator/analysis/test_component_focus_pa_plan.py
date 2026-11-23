@@ -265,7 +265,7 @@ $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $support=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1'),[ref]$null,[ref]$null)
 $copy=$support.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Copy-VerifiedRunInput'},$true)
 Invoke-Expression $copy.Extent.Text
-$repoRoot=$Repo;$projectRoot=Join-Path $Repo 'src/msplatform/components/orthogonal_accelerator';$resourceRoot=Join-Path $Repo 'src/msplatform/backends/simion/resources';$python=$Python
+$repoRoot=$Repo;$packageRoot=Join-Path $Repo 'src/msplatform';$projectRoot=Join-Path $packageRoot 'components/orthogonal_accelerator';$resourceRoot=Join-Path $packageRoot 'backends/simion/resources';$python=$Python
 . (Join-Path $resourceRoot 'focus_python.ps1')
 [IO.Directory]::CreateDirectory((Join-Path $Root 'inputs'))|Out-Null
 [IO.Directory]::CreateDirectory((Join-Path $Root 'results'))|Out-Null

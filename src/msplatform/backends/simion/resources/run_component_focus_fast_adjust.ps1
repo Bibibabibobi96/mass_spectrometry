@@ -6,32 +6,36 @@ param(
     [Parameter(Mandatory)][string]$RuntimeControllerPath,
     [Parameter(Mandatory)][string]$CampaignPath,
     [Parameter(Mandatory)][string]$ReleaseSpecPath,
+    [Parameter(Mandatory)][string]$WorkspaceRoot,
+    [Parameter(Mandatory)][string]$ArtifactRoot,
+    [string]$PythonExe='',
     [string]$InitialAnalysisPath='',
     [ValidateRange(4,20)][int]$MaximumTrials=7,
     [string]$SimionExe=''
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-$repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..\..')).Path
-$workspaceRoot=(Resolve-Path (Join-Path $repoRoot '..')).Path
-. (Join-Path $repoRoot 'src\msplatform\execution\resources\require_powershell7.ps1')
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
-. (Join-Path $PSScriptRoot 'focus_python.ps1')
-$python=Join-Path $repoRoot '.venv\Scripts\python.exe'
+$workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path;$artifactRoot=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot);$repoRoot=$workspaceRoot
+$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
+$packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
+if($LASTEXITCODE-ne0){throw 'Installed msplatform package is unavailable.'};$packageRoot=(Resolve-Path -LiteralPath $packageRootText).Path
+$executionResources=Join-Path $packageRoot 'execution/resources';$simionResources=Join-Path $packageRoot 'backends/simion/resources'
+. (Join-Path $executionResources 'require_powershell7.ps1')
+. (Join-Path $executionResources 'run_artifact_support.ps1')
+. (Join-Path $simionResources 'focus_python.ps1')
 if(-not$SimionExe){$SimionExe=Join-Path $env:ProgramFiles 'SIMION-2020\simion.exe'}
 foreach($item in @($python,$SimionExe,$CampaignPath,$ReleaseSpecPath)){if(-not(Test-Path -LiteralPath $item -PathType Leaf)){throw "Required Fast-Adjust input is missing: $item"}}
 $family=(Resolve-Path -LiteralPath $PABuildRunPath).Path
-& $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' (Join-Path $family 'run_manifest.json') --require-status success --require-project orthogonal_accelerator --require-mode component_focus_pa_build
+& $python -I -B -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' (Join-Path $family 'run_manifest.json') --require-status success --require-project orthogonal_accelerator --require-mode component_focus_pa_build
 if($LASTEXITCODE-ne0){throw 'Fast-Adjust controller requires a verified published provider PA build run'}
-$artifactRoot=Join-Path $workspaceRoot 'artifacts'
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot (Join-Path $artifactRoot 'projects\orthogonal_accelerator') -RunId $RunId -Project orthogonal_accelerator -Mode component_focus_fast_adjust -Software @('SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass solver_review -RetentionReason 'Bounded provider-owned component voltage search using one existing published native Fast-Adjust PA family.' -AdditionalDirectories @('simion') -UseShortExecutionPath -CapacityLedgerLifecycleEnabled
 $done=$false;$failureDetail='';$stage='freeze_inputs'
 try {
     $campaign=Copy-VerifiedRunInput (Resolve-Path -LiteralPath $CampaignPath).Path (Join-Path $package.input_dir 'campaign.json')
     $release=Copy-VerifiedRunInput (Resolve-Path -LiteralPath $ReleaseSpecPath).Path (Join-Path $package.input_dir 'release_spec.json')
-    $flightRunner=Join-Path $PSScriptRoot 'run_component_focus_flight.ps1'
+    $flightRunner=Join-Path $simionResources 'run_component_focus_flight.ps1'
     $state=Join-Path $package.result_dir 'fast_adjust_controller_state.json'
-    $focusPython=Initialize-FocusFrozenPython -RepoRoot $repoRoot -RunConfig $package.run_config -Python $python -CampaignPath $campaign -InputNames @('campaign.json','release_spec.json')
+    $focusPython=Initialize-FocusFrozenPython -PackageRoot $packageRoot -RunConfig $package.run_config -Python $python -CampaignPath $campaign -InputNames @('campaign.json','release_spec.json')
     $componentContract=Join-Path $focusPython.code_root 'src/msplatform/components/orthogonal_accelerator/component_contract.json'
     $stateArguments=@('--component-contract',$componentContract,'--campaign',$campaign,'--state',$state,'--maximum-trials',$MaximumTrials)
     Invoke-FocusFrozenPython -Python $python -CodeRoot $focusPython.code_root -OriginsPath $focusPython.origins_path -Module msplatform.workflows.oa_focus_fast_adjust -Arguments $stateArguments;if($LASTEXITCODE-ne0){throw 'Fast-Adjust controller initialization failed'}
@@ -46,7 +50,7 @@ try {
         $candidate=Join-Path $package.result_dir ("candidate_campaign_{0}.json" -f $index)
         $stage="derive_candidate_$index";Invoke-FocusFrozenPython -Python $python -CodeRoot $focusPython.code_root -OriginsPath $focusPython.origins_path -Module msplatform.workflows.oa_focus_fast_adjust -Arguments @('--component-contract',$componentContract,'--campaign',$campaign,'--state',$state,'--candidate-campaign',$candidate);if($LASTEXITCODE-ne0){throw 'Fast-Adjust candidate derivation failed'}
         $childRunId="$RootRunId`__fast-adjust-trial$index`__r$('{0:d2}' -f ($index + 2))"
-        $stage="flight_$index";&$flightRunner -RunId $childRunId -PABuildRunPath $family -RuntimeControllerPath $RuntimeControllerPath -CampaignPath $candidate -ReleaseSpecPath $release -SimionExe $SimionExe
+        $stage="flight_$index";&$flightRunner -RunId $childRunId -PABuildRunPath $family -RuntimeControllerPath $RuntimeControllerPath -CampaignPath $candidate -ReleaseSpecPath $release -WorkspaceRoot $workspaceRoot -ArtifactRoot $artifactRoot -PythonExe $python -SimionExe $SimionExe
         if($LASTEXITCODE-ne0){throw 'Fast-Adjust trial flight failed'}
         $childRun=Join-Path $artifactRoot (Join-Path 'projects\orthogonal_accelerator\runs' $childRunId)
         $childManifest=Join-Path $childRun 'run_manifest.json';$analysis=Join-Path $childRun 'results\focus_analysis.json'

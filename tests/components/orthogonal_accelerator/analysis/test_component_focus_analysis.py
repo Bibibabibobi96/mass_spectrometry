@@ -281,13 +281,14 @@ class ComponentFocusAnalysisTests(unittest.TestCase):
             return "'" + str(path).replace("'", "''") + "'"
         script = """$ErrorActionPreference='Stop'
 $repoRoot=REPO
+$simionResources=Join-Path $repoRoot 'src/msplatform/backends/simion/resources'
 $solver=DESTINATION
 . (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $source=Join-Path $repoRoot 'src/msplatform/backends/simion/resources/run_component_focus_flight.ps1'
 $tokens=$null;$errors=$null
 $tree=[System.Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Runner parse failed'}
-$copies=@($tree.FindAll({param($node) $node -is [System.Management.Automation.Language.CommandAst] -and $node.GetCommandName() -eq 'Copy-VerifiedRunInput' -and $node.Extent.Text.Contains('src/msplatform/backends/simion/resources/scientific_event_csv.lua')},$true))
+$copies=@($tree.FindAll({param($node) $node -is [System.Management.Automation.Language.CommandAst] -and $node.GetCommandName() -eq 'Copy-VerifiedRunInput' -and $node.Extent.Text.Contains('scientific_event_csv.lua')},$true))
 if($copies.Count -ne 1){throw 'Expected one actual writer freeze command'}
 Invoke-Expression $copies[0].Extent.Text | Out-Null
 """.replace('REPO', quote(repo)).replace('DESTINATION', quote(self.root))

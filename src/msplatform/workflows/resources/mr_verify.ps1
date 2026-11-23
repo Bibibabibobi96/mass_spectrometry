@@ -58,7 +58,7 @@ try {
     }
 
     if ($PreflightOnly) {
-      Write-Output 'MRTOF_PYTHON_TESTS=DEFERRED REASON=repository_integration_partition'
+      Write-Output 'MRTOF_PYTHON_TESTS=DEFERRED REASON=repository_gate_partition'
     } elseif ($SelectedTestModules.Count) {
       $testModules = @($SelectedTestModules | Sort-Object -Unique)
       if ($testModules.Count -ne $SelectedTestModules.Count -or @($testModules | Where-Object {

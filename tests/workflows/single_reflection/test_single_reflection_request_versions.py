@@ -12,18 +12,33 @@ import unittest
 
 from tests.workflows.single_reflection.test_single_reflection_preparation import fixture
 from msplatform.workflows.single_reflection_flight.prepare import (
-    SCHEMA, SCHEMA_V10, validate_preparation_request,
+    SCHEMA, SCHEMA_V10, SCHEMA_V11, validate_preparation_request,
 )
 
 ROOT = Path(__file__).resolve().parents[3]
 
 
 class SingleReflectionRequestVersionTests(unittest.TestCase):
+    def test_current_schema_uses_schemas_namespace_without_rewriting_history(self):
+        self.assertEqual(
+            json.loads(SCHEMA_V11.read_text())["$id"],
+            "https://mass-spectrometry.local/schemas/single_reflection_flight_request_v11.schema.json",
+        )
+        self.assertEqual(
+            json.loads(SCHEMA.read_text())["$id"],
+            "https://mass-spectrometry.local/integrations/single_reflection_flight/request.schema.json",
+        )
+        self.assertEqual(
+            json.loads(SCHEMA_V10.read_text())["$id"],
+            "https://mass-spectrometry.local/integrations/single_reflection_flight/request_v10.schema.json",
+        )
+
     @classmethod
     def setUpClass(cls):
         cls.directory = tempfile.TemporaryDirectory(prefix="request versions ")
         cls.addClassCleanup(cls.directory.cleanup)
         _, _, cls.legacy = fixture(Path(cls.directory.name))
+        cls.legacy["schema_version"] = 9
 
     def current(self):
         request = copy.deepcopy(self.legacy)

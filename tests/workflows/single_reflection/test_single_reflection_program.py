@@ -24,7 +24,7 @@ from msplatform.backends.simion.tracking_program import (
     DOWNSTREAM_STATIC_ASSET_ROLE, DOWNSTREAM_STATIC_ASSET_REPRESENTATION,
 )
 from msplatform.backends.simion.source import lua_value as _lua_value
-from tests.workflows.single_reflection.test_single_reflection_preparation import fixture, release_fixture, rename_recipe_instances, rename_author_instances
+from tests.workflows.single_reflection.test_single_reflection_preparation import fixture, rename_recipe_instances, rename_author_instances
 from tests.workflows.single_reflection.test_single_reflection_preparation import scientific_preparation_fixture
 from tests.workflows.single_reflection.test_single_reflection_fields import multipole_source
 from msplatform.workflows.single_reflection_flight.prepare import prepare
@@ -43,6 +43,17 @@ def read_designs(run):
     if len(multipole) > 1:
         raise ValueError('this fixture reads one multipole provider')
     return load(multipole[0]) if multipole else None, load(oatof)
+
+
+def scientific_source_fixture(root, **kwargs):
+    from tests.workflows.single_reflection.test_single_reflection_geometry import scientific_inputs
+
+    def current_inputs(source, oatof):
+        return scientific_inputs({'multipole': source}, oatof, root/'provider_inputs')[0]
+
+    with patch('tests.workflows.single_reflection.test_single_reflection_preparation.inputs',
+               side_effect=current_inputs):
+        return fixture(root, **kwargs)
 
 
 def response_paths(bank, directory):
@@ -592,7 +603,7 @@ ion_px_mm=tonumber(arg[5]);ion_instance=5;segment.instance_adjust();assert(ion_i
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        request,run,_ = fixture(self.root)
+        request,run,_ = scientific_preparation_fixture(self.root)
         prepare(request,run)
         self.upstream, self.oatof = read_designs(run)
         self.design = json.loads((run/"inputs/frontend_field_design.json").read_text())
@@ -758,24 +769,9 @@ end
 
     @unittest.skipUnless(LUA.is_file(), 'plain Lua interpreter unavailable')
     def test_plan5_two_and_three_actual_rf_callbacks_keep_independent_provider_drives(self):
-        from tests.workflows.single_reflection.test_single_reflection_geometry import scientific_inputs
-        from msplatform.backends.simion.geometry import compile_frontend_geometry
-        from msplatform.backends.simion.fields import prepare_field_design, POLICY
-
         original = self.multiple_provider_inputs
         def current_inputs(count):
-            providers, _, oatof, kwargs, names = original(count)
-            old = kwargs['frontend_geometry']
-            legacy = dict(composition_plan=old['composition_plan'],accelerator_variant='three_zone_square',
-                electrode_bindings=old['electrode_bindings'],numerical_domains={name:dict(cell_mm_xyz=row['cell_mm_xyz'],
-                    pa_bounds_mm=row['bounds_mm']) for name,row in old['numerical_domains'].items()})
-            options, _ = scientific_inputs(providers, oatof, self.root/f'scientific_multi_{count}',legacy_inputs=legacy)
-            _, geometry = compile_frontend_geometry(providers, oatof, **options)
-            design = prepare_field_design(providers,oatof,geometry,variant_id='three_zone_square',
-                pulse_voltage_policy_id=POLICY,boundary_policy='native_zero_neumann',rf_reference_voltage_v=10000.,
-                frontend_domains={'parent':{'refine_convergence_v':dict(carrier_off=.1,rf_reference=.1,pulse_delta=.1)}})
-            kwargs['frontend_geometry'] = geometry
-            return providers,design,oatof,kwargs,names
+            return original(count)
         # Reuse the complete existing real-Lua response/phase/edge oracle,
         # replacing only its author-side geometry/field inputs with plan5.
         with patch.object(self,'multiple_provider_inputs',side_effect=current_inputs):
@@ -927,6 +923,13 @@ print('INJECTED_PUBLIC_EDGE_CAP=PASS')
         plan['scope']['instance_ids'] = ['tof_b','guide_a']
         self.geometry['electrode_bindings'] = {names[key]: value
             for key,value in self.geometry['electrode_bindings'].items()}
+        binding = self.geometry['backend_electrode_bindings']
+        binding['provider_inputs'] = {names[key]: value
+            for key,value in binding['provider_inputs'].items()}
+        binding['electrode_group_scope'] = {names[key]: value
+            for key,value in binding['electrode_group_scope'].items()}
+        for row in binding['bindings']:
+            row['instance_id'] = names[row['instance_id']]
         # Compiler mechanical checks are unchanged physical values, not role names.
         renamed = self.build()
         self.assertEqual(renamed,original)
@@ -977,8 +980,8 @@ print('INJECTED_PUBLIC_EDGE_CAP=PASS')
         carrier = self.design['working_points'][0]['electrode_voltages_v']
         instances, downstream = native_frontend_instances(self.geometry['composition_plan'])
         native_binding = self.geometry['electrode_bindings'][instances[0]]
-        self.assertEqual({int(electrode) for electrode in native_binding}, set(range(1,9)))
-        shield = self.geometry['electrode_bindings'][downstream]['grounded_shield_id']
+        self.assertEqual(set(native_binding.values()), {17 + 7 * index for index in range(8)})
+        shield = self.geometry['electrode_bindings'][downstream]['common_ground']
         self.assertEqual(carrier[str(shield)],0.)
         self.assertNotIn('single_flight_rf.apply_static', program)
         drive = _upstream_rod_drive(self.upstream)
@@ -1000,7 +1003,7 @@ print('INJECTED_PUBLIC_EDGE_CAP=PASS')
         for project, rod_count in [('quadrupole', 4), ('hexapole', 6),
                                    ('octupole', 8)]:
             with self.subTest(project=project), tempfile.TemporaryDirectory() as directory:
-                path, run, _ = fixture(Path(directory), source=multipole_source(project))
+                path, run, _ = scientific_source_fixture(Path(directory), source=multipole_source(project))
                 prepare(path, run)
                 self.upstream, self.oatof = read_designs(run)
                 self.design = json.loads((run / 'inputs/frontend_field_design.json').read_text())
@@ -1024,7 +1027,7 @@ print('INJECTED_PUBLIC_EDGE_CAP=PASS')
     def multiple_provider_inputs(self, count):
         """Compile real provider geometry/voltages; never construct physical PAs."""
         from tests.workflows.single_reflection.test_single_reflection_geometry import (
-            multi_inputs, quadrupole_source, candidate_300mm_fixture,
+            scientific_inputs, multi_inputs, quadrupole_source, candidate_300mm_fixture,
         )
         from msplatform.backends.simion.geometry import compile_frontend_geometry
         from msplatform.backends.simion.fields import prepare_field_design, POLICY
@@ -1038,8 +1041,9 @@ print('INJECTED_PUBLIC_EDGE_CAP=PASS')
         names = ['q_z', 'q_a', 'q_m'][:count]
         providers = dict(reversed(list(zip(names, sources, strict=True))))
         oatof = candidate_300mm_fixture()
-        _, geometry = compile_frontend_geometry(providers, oatof,
-            **multi_inputs(sources, oatof, names=names))
+        options, _ = scientific_inputs(providers, oatof, self.root/f'multiple_{count}',
+            legacy_inputs=multi_inputs(sources, oatof, names=names))
+        _, geometry = compile_frontend_geometry(providers, oatof, **options)
         design = prepare_field_design(providers, oatof, geometry,
             variant_id='three_zone_square', pulse_voltage_policy_id=POLICY,
             boundary_policy='native_zero_neumann', rf_reference_voltage_v=10000.,
@@ -1196,7 +1200,7 @@ print('MULTIPLE_INDEPENDENT_RF_PROGRAM=PASS COUNT='..#drives)
         from msplatform.workflows.single_reflection_flight.runtime import _instance_rows
         folder=self.root/"local_oatof"
         folder.mkdir()
-        request,run,author,_=release_fixture(folder,local=True)
+        request,run,author=scientific_preparation_fixture(folder,local=True)
         rename_author_instances(request,author)
         prepare(request,run)
         self.geometry=json.loads((run/"inputs/frontend_geometry.json").read_text())
@@ -1385,8 +1389,10 @@ print('LOCAL_OATOF_NO_RF=PASS')
                 else:
                     index = {"missing_group": 1, "wrong_rf": 1, "wrong_carrier": 0, "wrong_delta": 2}[mutation]
                     voltages = self.design["working_points"][index]["electrode_voltages_v"]
-                    if mutation == "missing_group": voltages.pop("1")
-                    else: voltages["1"] += 1.
+                    instances, _ = native_frontend_instances(self.geometry['composition_plan'])
+                    native = str(next(iter(self.geometry['electrode_bindings'][instances[0]].values())))
+                    if mutation == "missing_group": voltages.pop(native)
+                    else: voltages[native] += 1.
                 with self.assertRaises(ValueError):
                     self.build()
         self.design, self.dynamic = original_design, original_bank
@@ -1402,7 +1408,11 @@ print('LOCAL_OATOF_NO_RF=PASS')
                     instance=self.geometry['composition_plan']['recipe']['connections'][0]['upstream']['instance_id']
                     self.geometry['electrode_bindings'][instance]['10']=9
                 elif label=="placement": self.geometry["downstream_pa_instances"][0]["x_mm"]+=1
-                else: self.design["accelerator_voltage_states"]["operating_voltages_v"]["12"]+=1
+                else:
+                    _, downstream = native_frontend_instances(self.geometry['composition_plan'])
+                    binding = self.geometry['electrode_bindings'][downstream]
+                    native = str(next(iter(binding.values())))
+                    self.design["accelerator_voltage_states"]["operating_voltages_v"][native]+=1
                 with self.assertRaises(ValueError): self.build()
                 self.upstream,self.design,self.geometry=upstream,design,geometry
 
@@ -1446,7 +1456,7 @@ print('LOCAL_OATOF_NO_RF=PASS')
         if entrance_refinement:
             folder = self.root / "fine"
             folder.mkdir()
-            request, run, _ = fixture(folder, source=self.upstream, entrance_refinement=True)
+            request, run, _ = scientific_source_fixture(folder, source=self.upstream, entrance_refinement=True)
             prepare(request,run)
             self.design = json.loads((run/"inputs/frontend_field_design.json").read_text())
             self.geometry = json.loads((run/"inputs/frontend_geometry.json").read_text())
@@ -2278,7 +2288,7 @@ print('HELD_OFF_RESPONSE_FIXTURE=PASS')
         import csv
         from msplatform.backends.simion.field_bank import field_bank
         with tempfile.TemporaryDirectory() as directory:
-            path,run,request,_=release_fixture(Path(directory),local=True)
+            path,run,request=scientific_preparation_fixture(Path(directory),local=True)
             flight=dict(pulse={'mode':'held_off'},maximum_flight_us=200.,maximum_step_us=.001,trajectory_quality=10)
             request['flight']=flight;path.write_text(json.dumps(request));prepare(path,run)
             design=json.loads((run/'inputs/frontend_field_design.json').read_text())

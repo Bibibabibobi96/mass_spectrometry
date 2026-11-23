@@ -523,6 +523,6 @@ jobs:
             ${{ runner.temp }}/integration_gate_command_timing.json
             ${{ runner.temp }}/integration_gate_test_outcomes.json
             ${{ runner.temp }}/integration_gate_resource_samples.jsonl
-            ${{ runner.temp }}/repository_integration_gate_*/**
+            ${{ runner.temp }}/repository_gate_gate_*/**
             ${{ runner.temp }}/oatof_fixture_diagnostics/**
           if-no-files-found: warn

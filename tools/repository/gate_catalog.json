@@ -5,7 +5,7 @@
     {
       "stage": "host_resource_scheduler_tests",
       "dependency_profile": "locked",
-      "repository_integration_group": "fast",
+      "repository_gate_group": "fast",
       "matches": [
         {
           "exact": "src/msplatform/execution/host_resource_scheduler.py",
@@ -67,7 +67,7 @@
     {
       "stage": "host_resource_adapter_tests",
       "dependency_profile": "stdlib",
-      "repository_integration_group": "fast",
+      "repository_gate_group": "fast",
       "matches": [
         {
           "exact": "src/msplatform/execution/host_resource_scheduler.py",
@@ -102,7 +102,7 @@
     {
       "stage": "livelink_resource_stages_tests",
       "dependency_profile": "stdlib",
-      "repository_integration_group": "fast",
+      "repository_gate_group": "fast",
       "matches": [
         {
           "exact": "src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1",
@@ -134,7 +134,7 @@
     {
       "stage": "longitudinal_fit_tests",
       "dependency_profile": "locked",
-      "repository_integration_group": "regression",
+      "repository_gate_group": "regression",
       "matches": [
         {
           "exact": "src/msplatform/analysis/longitudinal_fit.py",
@@ -159,7 +159,7 @@
     {
       "stage": "workspace_paths_tests",
       "dependency_profile": "stdlib",
-      "repository_integration_group": "fast",
+      "repository_gate_group": "fast",
       "matches": [
         {
           "prefix": "tests/paths/",
@@ -212,7 +212,7 @@
     {
       "stage": "peak_metrics_tests",
       "dependency_profile": "locked",
-      "repository_integration_group": "regression",
+      "repository_gate_group": "regression",
       "matches": [
         {
           "exact": "src/msplatform/analysis/peak_metrics.py",
@@ -237,7 +237,7 @@
     {
       "stage": "figure_export_tests",
       "dependency_profile": "locked",
-      "repository_integration_group": "regression",
+      "repository_gate_group": "regression",
       "matches": [
         {
           "exact": "src/msplatform/io/figure_export.py",
@@ -262,7 +262,7 @@
     {
       "stage": "beam_focus_diagnostics_tests",
       "dependency_profile": "locked",
-      "repository_integration_group": "regression",
+      "repository_gate_group": "regression",
       "matches": [
         {
           "exact": "src/msplatform/analysis/beam_focus_diagnostics.py",
@@ -287,7 +287,7 @@
     {
       "stage": "particle_census_tests",
       "dependency_profile": "stdlib",
-      "repository_integration_group": "regression",
+      "repository_gate_group": "regression",
       "matches": [
         {
           "exact": "src/msplatform/analysis/particle_census.py",
@@ -312,7 +312,7 @@
     {
       "stage": "plane_crossings_tests",
       "dependency_profile": "stdlib",
-      "repository_integration_group": "regression",
+      "repository_gate_group": "regression",
       "matches": [
         {
           "exact": "src/msplatform/analysis/plane_crossings.py",
@@ -337,7 +337,7 @@
     {
       "stage": "population_moments_tests",
       "dependency_profile": "locked",
-      "repository_integration_group": "regression",
+      "repository_gate_group": "regression",
       "matches": [
         {
           "exact": "src/msplatform/analysis/population_moments.py",
@@ -366,7 +366,7 @@
     {
       "stage": "particle_events_tests",
       "dependency_profile": "stdlib",
-      "repository_integration_group": "regression",
+      "repository_gate_group": "regression",
       "matches": [
         {
           "exact": "src/msplatform/analysis/particle_events.py",
@@ -391,7 +391,7 @@
     {
       "stage": "tof_error_budget_tests",
       "dependency_profile": "stdlib",
-      "repository_integration_group": "fast",
+      "repository_gate_group": "fast",
       "matches": [
         {
           "exact": "src/msplatform/analysis/tof_error_budget.py",
@@ -416,7 +416,7 @@
     {
       "stage": "static_field_comparison_tests",
       "dependency_profile": "locked",
-      "repository_integration_group": "fast",
+      "repository_gate_group": "fast",
       "matches": [
         {
           "exact": "src/msplatform/analysis/field_comparison.py",
@@ -453,7 +453,7 @@
     {
       "stage": "documentation_link_tests",
       "dependency_profile": "stdlib",
-      "repository_integration_group": "fast",
+      "repository_gate_group": "fast",
       "matches": [
         {
           "exact": "tools/repository/documentation_links.py",
@@ -481,19 +481,11 @@
     {
       "stage": "project_registry",
       "dependency_profile": "locked",
-      "repository_integration_group": "fast",
+      "repository_gate_group": "fast",
       "matches": [
         {
           "exact": "config/project_registry.json",
           "reason": "project_registry_changed"
-        },
-        {
-          "regex": "^projects/[^/]+/config/project\\.json$",
-          "reason": "project_descriptor_changed"
-        },
-        {
-          "regex": "^projects/[^/]+/docs/history/retired_projects/[^/]+/config/project\\.json$",
-          "reason": "retired_project_descriptor_changed"
         }
       ],
       "command": {
@@ -509,7 +501,7 @@
     {
       "stage": "livelink_failure_classification",
       "dependency_profile": "stdlib",
-      "repository_integration_group": "fast",
+      "repository_gate_group": "fast",
       "matches": [
         {
           "exact": "src/msplatform/backends/comsol/launcher/livelink_failure_classification.ps1",
@@ -529,7 +521,7 @@
     {
       "stage": "livelink_environment",
       "dependency_profile": "stdlib",
-      "repository_integration_group": "fast",
+      "repository_gate_group": "fast",
       "matches": [
         {
           "exact": "src/msplatform/backends/comsol/launcher/livelink_environment.ps1",
@@ -549,7 +541,7 @@
     {
       "stage": "rf_multipole_generated_publications",
       "dependency_profile": "locked",
-      "repository_integration_group": "fast",
+      "repository_gate_group": "fast",
       "matches": [
         {
           "exact": "tests/comsol/test_unclassified_support.py",
@@ -679,7 +671,7 @@
     {
       "stage": "common_contracts",
       "dependency_profile": "locked",
-      "repository_integration_group": "regression",
+      "repository_gate_group": "regression",
       "matches": [
         {
           "regex": "^src/msplatform/backends/comsol/matlab/(?:ms_stage1_ei_source|load_ei_source_contract|verify_ei_source_model|verify_ei_source_parameter_bindings|ei_source_unit_text|build_wehnelt_model|phase1_geometry_coil_transverse|phase2_electrostatics_coil_transverse|phase4_thermal_emission_coil_transverse|load_wehnelt_contract|apply_wehnelt_contract_parameters|wehnelt_contract_parameter_bindings|verify_wehnelt_contract_parameters|verify_wehnelt_model)\\.m$",
@@ -782,7 +774,7 @@
           "reason": "workspace_path_transport_changed"
         },
         {
-          "regex": "^(?:src/msplatform/.+\\.(?:py|schema\\.json|json|gem|ps1|lua)|common/(?:ion_release/test_[^/]+\\.py|integration/__init__\\.py|analysis/peak_metrics\\.py))$",
+          "regex": "^src/msplatform/.+\\.(?:py|schema\\.json|json|gem|ps1|lua)$",
           "reason": "installed_scientific_core_changed"
         },
         {
@@ -1447,7 +1439,7 @@
                 "reason": "optional_cad_dependency_lock_changed"
               },
               {
-                "regex": "^(?:src/msplatform/.+\\.(?:py|schema\\.json|json|gem|ps1|lua|iob)|common/(?:ion_release/test_[^/]+\\.py|integration/__init__\\.py|analysis/peak_metrics\\.py))$",
+                "regex": "^src/msplatform/.+\\.(?:py|schema\\.json|json|gem|ps1|lua|iob)$",
                 "reason": "installed_scientific_core_changed"
               }
             ],
@@ -2326,7 +2318,7 @@
       },
       "owner": "common_contracts",
       "partition_preflight": false,
-      "repository_integration_partition": {
+      "repository_gate_partition": {
         "count": 4,
         "default_seconds": 1,
         "measured_seconds": {
@@ -2396,7 +2388,7 @@
     {
       "stage": "simion_common",
       "dependency_profile": "locked",
-      "repository_integration_group": "regression",
+      "repository_gate_group": "regression",
       "matches": [
         {
           "prefix": "tests/simion/",
@@ -2596,7 +2588,7 @@
     {
       "stage": "simion_dirichlet_native",
       "dependency_profile": "locked",
-      "repository_integration_group": "regression",
+      "repository_gate_group": "regression",
       "resource_role": "SIMION",
       "resource_stage": "pa_refine",
       "matches": [
@@ -2650,7 +2642,7 @@
     {
       "stage": "rf_multipole_domain_tests",
       "dependency_profile": "locked",
-      "repository_integration_group": "regression",
+      "repository_gate_group": "regression",
       "matches": [
         {
           "exact": "tests/comsol/test_unclassified_support.py",
@@ -2876,7 +2868,7 @@
     {
       "stage": "integration_common",
       "dependency_profile": "locked",
-      "repository_integration_group": "regression",
+      "repository_gate_group": "regression",
       "matches": [
         {
           "prefix": "tests/assembly/",
@@ -2952,7 +2944,7 @@
     {
       "stage": "instrument_assembly_integration",
       "dependency_profile": "locked",
-      "repository_integration_group": "regression",
+      "repository_gate_group": "regression",
       "matches": [
         {
           "exact": "tests/components/orthogonal_accelerator/__init__.py",
@@ -3017,10 +3009,6 @@
         {
           "prefix": "tests/ion_release/",
           "reason": "source_release_dependency_changed"
-        },
-        {
-          "regex": "^integrations/(?:runtime/|analysis/|workflows/|tests/|config/|recipes/|docs/|README\\.md$|registry\\.json$|verify_integration\\.ps1$)",
-          "reason": "instrument_assembly_changed"
         },
         {
           "regex": "^src/msplatform/components/orthogonal_accelerator/(?!tests/)",
@@ -3203,7 +3191,7 @@
         }
       },
       "runtime_dependencies_path": "src/msplatform/workflows/config/runtime_dependencies.json",
-      "repository_integration_command": {
+      "repository_gate_command": {
         "runner": "powershell",
         "script": "tools/repository/verify_integration.ps1",
         "parameters": {
@@ -3211,7 +3199,7 @@
           "PreflightOnly": true
         }
       },
-      "repository_integration_partition": {
+      "repository_gate_partition": {
         "count": 4,
         "parameter": "SelectedTestModules",
         "default_seconds": 5,
@@ -3597,7 +3585,7 @@
     {
       "stage": "solidworks_common",
       "dependency_profile": "locked",
-      "repository_integration_group": "regression",
+      "repository_gate_group": "regression",
       "matches": [
         {
           "prefix": "src/msplatform/exporters/solidworks/",
@@ -3625,7 +3613,7 @@
     {
       "stage": "orthogonal_accelerator_static",
       "dependency_profile": "locked",
-      "repository_integration_group": "regression",
+      "repository_gate_group": "regression",
       "project_id": "orthogonal_accelerator",
       "matches": [
         {
@@ -3705,7 +3693,7 @@
     {
       "stage": "parallel_mirror_dual_stripe_mr_tof_static",
       "dependency_profile": "locked",
-      "repository_integration_group": "regression",
+      "repository_gate_group": "regression",
       "project_id": "parallel_mirror_dual_stripe_mr_tof",
       "matches": [
         {
@@ -3929,7 +3917,7 @@
           "PythonExe": "{python}"
         }
       },
-      "repository_integration_command": {
+      "repository_gate_command": {
         "runner": "powershell",
         "script": "src/msplatform/workflows/resources/mr_verify.ps1",
         "parameters": {
@@ -3938,7 +3926,7 @@
           "PreflightOnly": true
         }
       },
-      "repository_integration_partition": {
+      "repository_gate_partition": {
         "count": 4,
         "parameter": "SelectedTestModules",
         "default_seconds": 5,
@@ -4669,7 +4657,7 @@
     {
       "stage": "single_reflection_oa_tof_mass_analyzer_static",
       "dependency_profile": "locked",
-      "repository_integration_group": "regression",
+      "repository_gate_group": "regression",
       "project_id": "single_reflection_oa_tof_mass_analyzer",
       "matches": [
         {
@@ -5004,7 +4992,7 @@
         ]
       },
       "owner": "single_reflection_oa_tof_mass_analyzer",
-      "repository_integration_command": {
+      "repository_gate_command": {
         "runner": "powershell",
         "script": "src/msplatform/workflows/resources/oatof_verify.ps1",
         "parameters": {
@@ -5012,7 +5000,7 @@
           "PreflightOnly": true
         }
       },
-      "repository_integration_partition": {
+      "repository_gate_partition": {
         "count": 4,
         "parameter": "SelectedTestModules",
         "default_seconds": 5,
@@ -5097,7 +5085,7 @@
     {
       "stage": "rf_multipole_quadrupole_static",
       "dependency_profile": "locked",
-      "repository_integration_group": "regression",
+      "repository_gate_group": "regression",
       "requires_stages": [
         "rf_multipole_generated_publications"
       ],
@@ -5345,7 +5333,7 @@
           "PythonExe": "{python}"
         }
       },
-      "repository_integration_command": {
+      "repository_gate_command": {
         "runner": "powershell",
         "script": "src/msplatform/workflows/resources/verify_project.ps1",
         "parameters": {
@@ -5642,7 +5630,7 @@
         ]
       },
       "owner": "rf_multipole_ion_optics",
-      "repository_integration_partition": {
+      "repository_gate_partition": {
         "count": 4,
         "parameter": "SelectedTestModules",
         "default_seconds": 5,
@@ -5693,7 +5681,7 @@
     {
       "stage": "rf_multipole_hexapole_static",
       "dependency_profile": "locked",
-      "repository_integration_group": "regression",
+      "repository_gate_group": "regression",
       "matches": [
         {
           "exact": "src/msplatform/workflows/rf_campaign_analysis.py",
@@ -5850,7 +5838,7 @@
     {
       "stage": "rf_multipole_octupole_static",
       "dependency_profile": "locked",
-      "repository_integration_group": "regression",
+      "repository_gate_group": "regression",
       "matches": [
         {
           "exact": "src/msplatform/workflows/rf_campaign_analysis.py",
@@ -6007,7 +5995,7 @@
     {
       "stage": "dual_pressure_rectilinear_ion_processor_static",
       "dependency_profile": "locked",
-      "repository_integration_group": "regression",
+      "repository_gate_group": "regression",
       "project_id": "dual_pressure_rectilinear_ion_processor",
       "matches": [
         {
@@ -6171,7 +6159,7 @@
     {
       "stage": "dual_cone_tandem_quadrupole_ion_interface_static",
       "dependency_profile": "locked",
-      "repository_integration_group": "regression",
+      "repository_gate_group": "regression",
       "project_id": "dual_cone_tandem_quadrupole_ion_interface",
       "matches": [
         {
@@ -6312,7 +6300,7 @@
     {
       "stage": "transverse_helical_filament_wehnelt_electron_gun_static",
       "dependency_profile": "locked",
-      "repository_integration_group": "regression",
+      "repository_gate_group": "regression",
       "project_id": "transverse_helical_filament_wehnelt_electron_gun",
       "matches": [
         {
@@ -6365,7 +6353,7 @@
     {
       "stage": "apertured_tube_electron_impact_ion_source_static",
       "dependency_profile": "locked",
-      "repository_integration_group": "regression",
+      "repository_gate_group": "regression",
       "project_id": "apertured_tube_electron_impact_ion_source",
       "matches": [
         {

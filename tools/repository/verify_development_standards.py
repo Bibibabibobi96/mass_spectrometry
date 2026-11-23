@@ -365,7 +365,7 @@ def _declared_python_roots(root: Path, modules: dict) -> set[str]:
     catalog = root / "tools/repository/gate_catalog.json"
     if catalog.is_file():
         for route in json.loads(catalog.read_text(encoding="utf-8-sig"))["routes"]:
-            for key in ("command", "repository_integration_command"):
+            for key in ("command", "repository_gate_command"):
                 command = route.get(key, {})
                 if command.get("runner") == "powershell":
                     scripts.add((root / command["script"]).resolve())

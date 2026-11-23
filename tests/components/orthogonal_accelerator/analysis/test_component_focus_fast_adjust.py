@@ -159,7 +159,8 @@ class ComponentFocusFastAdjustTests(unittest.TestCase):
         self.assertEqual(candidate["operating_point"]["finite_3d_gain_correction_v"], 25.0)
 
     def test_runner_reuses_existing_pa_and_applies_retention(self) -> None:
-        runner = (PROJECT.parents[1] / "backends/simion/resources" / "run_component_focus_fast_adjust.ps1").read_text(encoding="utf-8")
+        resources = PROJECT.parents[1] / "backends/simion/resources"
+        runner = (resources / "run_component_focus_fast_adjust.ps1").read_text(encoding="utf-8")
         self.assertEqual(runner.count("-Module msplatform.workflows.oa_focus_fast_adjust"), 6)
         self.assertNotIn("Push-Location $repoRoot", runner)
         self.assertEqual(runner.count("'--component-contract',$componentContract"), 6)
@@ -171,6 +172,24 @@ class ComponentFocusFastAdjustTests(unittest.TestCase):
         self.assertIn("best_campaign.json", runner)
         self.assertIn("-InitialAnalysisPath $initialAnalysis", workflow)
         self.assertIn("MR runtime receipt is withheld", workflow)
+
+    def test_controller_and_contrast_use_installed_resources_and_forward_explicit_roots(self) -> None:
+        resources = PROJECT.parents[1] / "backends/simion/resources"
+        for name in ("run_component_focus_fast_adjust.ps1", "run_component_focus_field_contrast.ps1"):
+            with self.subTest(entry=name):
+                source = (resources / name).read_text(encoding="utf-8")
+                self.assertIn("[Parameter(Mandatory)][string]$WorkspaceRoot", source)
+                self.assertIn("[Parameter(Mandatory)][string]$ArtifactRoot", source)
+                self.assertIn("[string]$PythonExe=''", source)
+                self.assertIn("import msplatform;print(Path(msplatform.__file__).resolve().parent)", source)
+                self.assertIn("$simionResources=Join-Path $packageRoot 'backends/simion/resources'", source)
+                self.assertIn("-WorkspaceRoot $workspaceRoot -ArtifactRoot $artifactRoot -PythonExe $python", source)
+                self.assertNotIn(".venv", source)
+                self.assertNotIn("Join-Path $PSScriptRoot", source)
+                self.assertNotIn("PYTHONPATH", source)
+        controller = (resources / "run_component_focus_fast_adjust.ps1").read_text(encoding="utf-8")
+        self.assertIn("Initialize-FocusFrozenPython -PackageRoot $packageRoot", controller)
+        self.assertIn("& $python -I -B -c", controller)
 
 
 if __name__ == "__main__":

@@ -2,6 +2,8 @@
 param(
   [Parameter(Mandatory)][string]$CampaignPath,
   [Parameter(Mandatory)][string]$CheckpointPath,
+  [Parameter(Mandatory)][string]$WorkspaceRoot,
+  [Parameter(Mandatory)][string]$ArtifactRoot,
   [string]$ConditionRunnerPath='',
   [Parameter(Mandatory)][string]$ConditionContextPath,
   [Parameter(Mandatory)][string]$CompositionPlanPath,
@@ -21,14 +23,17 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $project='parallel_mirror_dual_stripe_mr_tof'
 $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
-$workspaceRoot=Split-Path -Parent $repoRoot
-$artifactRuns=Join-Path $workspaceRoot "artifacts\projects\$project\runs"
+$workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path;$artifactRoot=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)
+$artifactRuns=Join-Path $artifactRoot "projects\$project\runs"
+$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
+$packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
+if($LASTEXITCODE-ne0){throw 'Installed msplatform package is unavailable.'};$packageRoot=(Resolve-Path -LiteralPath $packageRootText).Path
 . (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $campaign=(Resolve-Path -LiteralPath $CampaignPath).Path
 $conditionRunner=if($ConditionRunnerPath){
   (Resolve-Path -LiteralPath $ConditionRunnerPath).Path
 }else{
-  Join-Path $PSScriptRoot 'run_native_candidate_condition.ps1'
+  Join-Path $packageRoot 'workflows/resources/run_native_candidate_condition.ps1'
 }
 $conditionContext=(Resolve-Path -LiteralPath $ConditionContextPath).Path
 $compositionPlan=(Resolve-Path -LiteralPath $CompositionPlanPath).Path
@@ -473,7 +478,6 @@ function New-CampaignComparison {
       }
     $rows+=,[ordered]@{baseline=$baselineInput;focused=$focusedInput;row=$row}
   }
-  $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv/Scripts/python.exe'}
   Push-Location -LiteralPath $repoRoot;$saved=$env:PYTHONPATH
   try{
     $env:PYTHONPATH=(Join-Path $repoRoot 'src')+[IO.Path]::PathSeparator+$repoRoot+$(if($saved){[IO.Path]::PathSeparator+$saved}else{''})
@@ -683,7 +687,7 @@ for($index=0;$index-lt$conditionCount;$index++){
   $condition.attempt_count=$attempt;$condition.run_manifest=$null;$condition.workflow_outcome=$null
   Write-Checkpoint -Value $state
 
-  $arguments=@{ConditionPath=[string]$condition.condition_path;ContextPath=$conditionContext;RunId=$runId}
+  $arguments=@{ConditionPath=[string]$condition.condition_path;ContextPath=$conditionContext;RunId=$runId;WorkspaceRoot=$workspaceRoot;ArtifactRoot=$artifactRoot;PythonExe=$python}
   $arguments.CompositionPlanPath=[string]$state.composition_plan.path
   if($null-ne$state.local_scope){$arguments.LocalScopePath=[string]$state.local_scope.path}
   if(-not[string]::IsNullOrWhiteSpace([string]$state.accelerator_runtime_checkpoint)){
@@ -714,7 +718,6 @@ for($index=0;$index-lt$conditionCount;$index++){
     Write-JsonAtomically -Value $reuse -Path $reusePath -Depth 6
     $arguments.ProviderReusePath=$reusePath
   }
-  if($PythonExe){$arguments.PythonExe=$PythonExe}
   if($SimionExe){$arguments.SimionExe=$SimionExe}
   $invocationError=$null
   try{& $conditionRunner @arguments|Out-Host}catch{$invocationError=$_.Exception}

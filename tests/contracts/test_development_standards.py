@@ -532,7 +532,8 @@ def _helper():
             root = Path(directory)
             self.write(root, "tools/repository/gate_catalog.json", '''{"routes":[
                 {"command":{"runner":"python","arguments":["tools/repository/entry.py"]}},
-                {"command":{"runner":"python","arguments":["-m","unittest","tests.contracts.test_case"]}}
+                {"command":{"runner":"python","arguments":["-m","unittest","tests.contracts.test_case"]}},
+                {"repository_gate_command":{"runner":"python","arguments":["tools/repository/entry.py"]}}
             ]}''')
             self.write(root, "tools/repository/entry.py", "from tools.repository.subject import _production\n_production()")
             self.write(root, "tests/contracts/test_case.py", "from tools.repository.subject import _tested\n_tested()")

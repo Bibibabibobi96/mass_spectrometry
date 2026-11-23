@@ -45,12 +45,13 @@ $config=Join-Path $Root 'run_config.json'
 @{schema_version=2;project='orthogonal_accelerator';run_id='20261031_010000__test__python__focus-snapshot';mode='component_focus_flight';inputs=@{};parameters=@{sentinel='preserve'};paths=@{artifact_root='sentinel-frozen-root'};artifact_retention=@{policy_version=1;class='compact';reason=$null};capacity_ledger_lifecycle=@{enabled=$true;light_evidence_budget_bytes=26214400}}|ConvertTo-Json -Depth 20|Set-Content $config -Encoding utf8
 $oldPath=$env:PYTHONPATH;$env:PYTHONPATH=$Repo
 try{
- $sourceAlias=Join-Path (Split-Path -Parent $Root) '中文源码'
+ $sourceAlias=Join-Path (Split-Path -Parent $Root) '中文源码/msplatform'
  $OutputEncoding=[Text.Encoding]::ASCII
  $savedEncoding=$OutputEncoding
- New-Item -ItemType Junction -Path $sourceAlias -Target $Repo|Out-Null
+ New-Item -ItemType Directory -Path (Split-Path -Parent $sourceAlias) -Force|Out-Null
+ New-Item -ItemType Junction -Path $sourceAlias -Target (Join-Path $Repo 'src/msplatform')|Out-Null
  try{
-  $context=Initialize-FocusFrozenPython -RepoRoot $sourceAlias -RunConfig $config -Python $Python -CampaignPath (Join-Path $Root 'inputs/campaign.json') -InputNames @('campaign_template.json','campaign.json','component_focus_pa_plan.json','release_spec.json','resolved_projection.json')
+  $context=Initialize-FocusFrozenPython -PackageRoot $sourceAlias -RunConfig $config -Python $Python -CampaignPath (Join-Path $Root 'inputs/campaign.json') -InputNames @('campaign_template.json','campaign.json','component_focus_pa_plan.json','release_spec.json','resolved_projection.json')
  }finally{Remove-Item -LiteralPath $sourceAlias -Force}
  if(-not[object]::ReferenceEquals($OutputEncoding,$savedEncoding)){throw 'Package enumeration changed caller OutputEncoding'}
  if($Mode-eq'failure'){
@@ -84,6 +85,39 @@ def _geometry_profile():
     import json
     document=json.loads((REPO/"src/msplatform/components/orthogonal_accelerator/component_contract.json").read_text(encoding="utf-8"))
     return document["geometry_profiles"]["closed_two_zone_compact_mr_axial_r3_gap1_4mm"]
+
+
+class ComponentFocusEntrypointTests(unittest.TestCase):
+    def test_entries_resolve_resources_from_selected_installed_package(self):
+        resources = ENTRY.parent
+        for name in ("run_component_focus_pa.ps1", "run_component_focus_workflow.ps1",
+                     "run_component_focus_flight.ps1"):
+            with self.subTest(entry=name):
+                source = (resources / name).read_text(encoding="utf-8")
+                self.assertIn("[Parameter(Mandatory)][string]$WorkspaceRoot", source)
+                self.assertIn("[Parameter(Mandatory)][string]$ArtifactRoot", source)
+                self.assertIn("[string]$PythonExe=''", source)
+                self.assertIn("import msplatform;print(Path(msplatform.__file__).resolve().parent)", source)
+                self.assertIn("$executionResources=Join-Path $packageRoot 'execution/resources'", source)
+                self.assertNotIn("Join-Path $PSScriptRoot '..\\..\\..\\..\\..'", source)
+                self.assertNotIn(".venv", source)
+                self.assertNotIn("PYTHONPATH", source)
+
+    def test_parent_forwards_explicit_execution_and_output_roots(self):
+        source = (ENTRY.parent / "run_component_focus_workflow.ps1").read_text(encoding="utf-8")
+        for child in ("$paRunner @paArgs", "&$flightRunner -RunId"):
+            self.assertIn(child, source)
+        self.assertIn("WorkspaceRoot=$workspaceRoot;ArtifactRoot=$artifactRoot;PythonExe=$python", source)
+        self.assertIn("-WorkspaceRoot $workspaceRoot -ArtifactRoot $artifactRoot -PythonExe $python", source)
+        self.assertIn("$paRunner=Join-Path $simionResources", source)
+        self.assertIn("$flightRunner=Join-Path $simionResources", source)
+
+    def test_snapshot_helper_audits_only_installed_package_modules(self):
+        source = (ENTRY.parent / "focus_python.ps1").read_text(encoding="utf-8")
+        self.assertIn('if name.split(\'.\')[0] == "msplatform"', source)
+        self.assertNotIn('"common","projects"', source)
+        self.assertIn("enumerate_python_sources(root.parent,package_roots=['msplatform'])", source)
+        self.assertIn("Copy-VerifiedRunInput (Join-Path $PackageRoot $relative.Substring('src/msplatform/'.Length))", source)
 
 
 @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")

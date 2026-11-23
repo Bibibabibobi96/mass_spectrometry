@@ -181,7 +181,7 @@ function Invoke-ChangedStageGroup {
             '-MaxConcurrency', [string]$MaxConcurrency,
             '-ResourceWaitTimeoutSeconds', [string]$ResourceWaitTimeoutSeconds
         ) `
-        -TempNamePrefix $(if ($repositoryScope) { 'repository_integration_gate_' } else { 'changed_gate_' }) `
+        -TempNamePrefix $(if ($repositoryScope) { 'repository_gate_gate_' } else { 'changed_gate_' }) `
         -FailureMessage 'Changed-files gate stages failed' `
         -RequestPayload $request `
         -InternalRequestParameter '-InternalRequestPath' `
@@ -342,10 +342,10 @@ $partialPartitionParents = @{}
 $selectedPowerShellSubsetParents = @{}
 function Test-CompletePartitionOwnerCommand {
     param($Route, $Command, $TestSelection, [string]$RepoRoot)
-    if ($null -eq $Route.PSObject.Properties['repository_integration_partition'] -or
+    if ($null -eq $Route.PSObject.Properties['repository_gate_partition'] -or
         $Command.runner -notin @('powershell','python')) { return $false }
-    $complete = if ($null -ne $Route.PSObject.Properties['repository_integration_command']) {
-        $Route.repository_integration_command
+    $complete = if ($null -ne $Route.PSObject.Properties['repository_gate_command']) {
+        $Route.repository_gate_command
     } else { $Route.command }
     if ($Command.runner -eq 'python') {
         if ($complete.runner -ne 'python') { return $false }
@@ -360,7 +360,7 @@ function Test-CompletePartitionOwnerCommand {
         [string]$Route.test_selection.module_parameter
     } else { '' }
     if ($moduleParameter -and
-        $moduleParameter -ceq [string]$Route.repository_integration_partition.parameter -and
+        $moduleParameter -ceq [string]$Route.repository_gate_partition.parameter -and
         $null -ne $Command.parameters.PSObject.Properties[$moduleParameter]) {
         # The partition parameter executes a replacement module set. Compare
         # its actual union, not just the surrounding owner command shape.
@@ -382,9 +382,9 @@ function Test-SelectedPowerShellSubsetCommand {
     # Only the existing declared replacement parameter may bypass augmentation.
     param($Route, $Command, $TestSelection)
     if ($Command.runner -ne 'powershell' -or $null -eq $TestSelection -or $TestSelection.CompleteOwner -or
-        $null -eq $Route.PSObject.Properties['repository_integration_partition'] -or
+        $null -eq $Route.PSObject.Properties['repository_gate_partition'] -or
         $null -eq $Route.PSObject.Properties['partition_preflight'] -or [bool]$Route.partition_preflight) { return $false }
-    $replacement = [string]$Route.repository_integration_partition.parameter
+    $replacement = [string]$Route.repository_gate_partition.parameter
     if ([string]$Route.test_selection.module_parameter -cne $replacement -or
         $null -eq $Command.parameters.PSObject.Properties[$replacement]) { return $false }
     return -not ($null -ne $Command.parameters.PSObject.Properties['PreflightOnly'] -and $Command.parameters.PreflightOnly)
@@ -395,7 +395,7 @@ function Get-SelectedPartialTestPartitions {
     param($Route, $Command, $TestSelection, [string]$RepoRoot, [int]$Concurrency, [bool]$SharedPreflight = $false)
     if ($Concurrency -lt 2 -or $env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN -or
         $Command.runner -notin @('python','powershell') -or $null -eq $TestSelection -or $TestSelection.CompleteOwner -or
-        $null -eq $Route.PSObject.Properties['repository_integration_partition']) { return @() }
+        $null -eq $Route.PSObject.Properties['repository_gate_partition']) { return @() }
     if ($Command.runner -eq 'python') {
         $arguments = @($Command.arguments)
         if ($arguments.Count -lt 3 -or $arguments[0] -cne '-m' -or
@@ -403,7 +403,7 @@ function Get-SelectedPartialTestPartitions {
         $actualModules = @($arguments | Select-Object -Skip 2)
     } else {
         if (-not $SharedPreflight -or -not (Test-SelectedPowerShellSubsetCommand $Route $Command $TestSelection)) { return @() }
-        $replacement = [string]$Route.repository_integration_partition.parameter
+        $replacement = [string]$Route.repository_gate_partition.parameter
         $actualModules = @($Command.parameters.$replacement)
     }
     $modules = @($TestSelection.Modules)
@@ -411,8 +411,8 @@ function Get-SelectedPartialTestPartitions {
     $expected = @($modules | ForEach-Object { $_.Replace('/','.') -replace '\.py$','' })
     if ($actual.Count -ne $expected.Count -or
         (($actual | Sort-Object -Unique) -join '|') -cne (($expected | Sort-Object -Unique) -join '|')) { return @() }
-    if ($null -eq $Route.repository_integration_partition.PSObject.Properties['measured_seconds']) { return @() }
-    $weights = $Route.repository_integration_partition.measured_seconds
+    if ($null -eq $Route.repository_gate_partition.PSObject.Properties['measured_seconds']) { return @() }
+    $weights = $Route.repository_gate_partition.measured_seconds
     $serialSeconds = [double]0
     foreach ($module in $expected) {
         $name = ($module -split '\.')[-1]
@@ -420,7 +420,7 @@ function Get-SelectedPartialTestPartitions {
         # Unknown runtime is a scheduling estimate, not missing test coverage.
         # Use the same declared fallback as the existing repository partitioner.
         $seconds = if ($null -eq $property) {
-            [double]$Route.repository_integration_partition.default_seconds
+            [double]$Route.repository_gate_partition.default_seconds
         } else { [double]$property.Value }
         if ($seconds -le 0 -or [double]::IsNaN($seconds) -or [double]::IsInfinity($seconds)) { return @() }
         $serialSeconds += $seconds
@@ -450,12 +450,12 @@ foreach ($route in $routes) {
     }
     if ($reason) {
         $command = if (($repositoryScope -or $ownerScope) -and
-            $null -ne $route.PSObject.Properties['repository_integration_command']) {
-            $route.repository_integration_command
+            $null -ne $route.PSObject.Properties['repository_gate_command']) {
+            $route.repository_gate_command
         } else { $route.command }
         # FullScope selects the complete owner contract. Its preflight is
         # separated below only when the existing catalog partitions apply.
-        if (($FullScope -or $ownerScope) -and $command.runner -eq 'powershell' -and $null -ne $route.PSObject.Properties['repository_integration_partition']) {
+        if (($FullScope -or $ownerScope) -and $command.runner -eq 'powershell' -and $null -ne $route.PSObject.Properties['repository_gate_partition']) {
             $command = $command | ConvertTo-Json -Depth 32 | ConvertFrom-Json -Depth 32
             $command.parameters.PSObject.Properties.Remove('PreflightOnly')
         }
@@ -502,8 +502,8 @@ foreach ($route in $routes) {
                 $partitionArguments.Modules = @($testSelection.Modules)
             }
             $partitions = @(Get-GateRepositoryTestPartitions @partitionArguments)
-            $command = $(if ($null -ne $route.PSObject.Properties['repository_integration_command']) {
-                $route.repository_integration_command
+            $command = $(if ($null -ne $route.PSObject.Properties['repository_gate_command']) {
+                $route.repository_gate_command
             } else { $route.command }) | ConvertTo-Json -Depth 32 | ConvertFrom-Json -Depth 32
         }
         if (-not $partitions.Count -and -not $FullScope -and -not $ownerScope) {
@@ -537,13 +537,13 @@ foreach ($route in $routes) {
                     arguments=@('-m','unittest')+@($partition.modules);
                     python_path_roots=@($(if ($partialPartitions) {$command.python_path_roots} else {@('.') + @($route.test_selection.roots)}))}
             } else {
-                $partCommand = $(if ($partialPartitions) {$command} else {$route.repository_integration_command}) |
+                $partCommand = $(if ($partialPartitions) {$command} else {$route.repository_gate_command}) |
                     ConvertTo-Json -Depth 32 | ConvertFrom-Json -Depth 32
                 if (-not $partialPartitions) {
                     $partCommand.parameters.PSObject.Properties.Remove('PreflightOnly')
                     $partCommand.parameters | Add-Member -NotePropertyName 'PreflightValidated' -NotePropertyValue $true
                 }
-                $partCommand.parameters | Add-Member -NotePropertyName ([string]$route.repository_integration_partition.parameter) `
+                $partCommand.parameters | Add-Member -NotePropertyName ([string]$route.repository_gate_partition.parameter) `
                     -NotePropertyValue @($partition.modules) -Force
             }
             $partCommand = ConvertTo-GateExecutionCommand -Command $partCommand
@@ -574,8 +574,8 @@ while ($prerequisitesAdded) {
             if ($stageItems[[string]$requiredName].Run) { continue }
             $required = $routes | Where-Object stage -eq $requiredName | Select-Object -First 1
             $command = if (($repositoryScope -or $ownerScope) -and
-                $null -ne $required.PSObject.Properties['repository_integration_command']) {
-                $required.repository_integration_command
+                $null -ne $required.PSObject.Properties['repository_gate_command']) {
+                $required.repository_gate_command
             } else { $required.command }
             $command = ConvertTo-GateExecutionCommand -Command $command
             Add-ChangedStageItem ([string]$requiredName) $true ('required_by_' + $route.stage) `

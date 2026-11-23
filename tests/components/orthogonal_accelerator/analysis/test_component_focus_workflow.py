@@ -133,6 +133,7 @@ class ComponentFocusWorkflowTests(unittest.TestCase):
         self.assertNotIn("build_component_focus_pa.lua", runner)
         self.assertNotIn("New-NativeFastAdjustRuntimeFamily", runner)
         self.assertIn("runtime_checkpoint_path", runner)
+        self.assertEqual(runner.count("-WorkspaceRoot $workspaceRoot -ArtifactRoot $artifactRoot -PythonExe $python"), 3)
         self.assertNotIn("Remove-Item -LiteralPath $runtimeDirectory", runner)
 
     @staticmethod

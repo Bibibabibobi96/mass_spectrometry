@@ -42,6 +42,10 @@ def write_csv(path, rows, columns):
 
 
 class MultipoleIPPreparationTests(unittest.TestCase):
+    def test_current_request_schema_uses_schemas_namespace(self):
+        schema = json.loads((REPO / 'src/msplatform/workflows/multipole_ip/request.schema.json').read_text())
+        self.assertEqual(schema['$id'], 'https://mass-spectrometry.local/schemas/multipole_ip_request.schema.json')
+
     def test_current_three_component_parent_derives_both_scopes_without_repositioning(self):
         parent = json.loads((REPO / 'src/msplatform/workflows/config/multipole_ip_mr_y_minus55_plan.json').read_text())
         self.assertEqual(parent, derive_assembly_scope(parent))

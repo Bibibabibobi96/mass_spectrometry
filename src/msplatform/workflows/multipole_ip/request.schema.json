@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://mass-spectrometry.local/integrations/multipole_ip_request.schema.json",
+  "$id": "https://mass-spectrometry.local/schemas/multipole_ip_request.schema.json",
   "title": "Real multipole mechanical exit to native IP state handoff preparation",
   "type": "object", "additionalProperties": false,
   "required": ["schema_version", "role", "source", "receiver", "species_id", "particle_weight", "composition_plan"],

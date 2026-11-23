@@ -3,6 +3,8 @@ param(
   [Parameter(Mandatory)][string]$ConditionPath,
   [Parameter(Mandatory)][string]$ContextPath,
   [Parameter(Mandatory)][string]$RunId,
+  [Parameter(Mandatory)][string]$WorkspaceRoot,
+  [Parameter(Mandatory)][string]$ArtifactRoot,
   [string]$ProviderReusePath='',
   [Parameter(Mandatory)][string]$CompositionPlanPath,
   [string]$LocalScopePath='',
@@ -23,12 +25,14 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $project='parallel_mirror_dual_stripe_mr_tof'
-$repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
-$workspaceRoot=Split-Path -Parent $repoRoot
-$artifactProject=Join-Path $workspaceRoot "artifacts\projects\$project"
+$workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path;$artifactRoot=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot);$repoRoot=$workspaceRoot
+$artifactProject=Join-Path $artifactRoot "projects\$project"
 $artifactRuns=Join-Path $artifactProject 'runs'
-$oaArtifactRuns=Join-Path $workspaceRoot 'artifacts\projects\orthogonal_accelerator\runs'
-$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
+$oaArtifactRuns=Join-Path $artifactRoot 'projects\orthogonal_accelerator\runs'
+$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
+$packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
+if($LASTEXITCODE-ne0){throw 'Installed msplatform package is unavailable.'};$packageRoot=(Resolve-Path -LiteralPath $packageRootText).Path
+$workflowResources=Join-Path $packageRoot 'workflows/resources';$simionResources=Join-Path $packageRoot 'backends/simion/resources'
 $conditionSource=(Resolve-Path -LiteralPath $ConditionPath).Path
 $contextSource=(Resolve-Path -LiteralPath $ContextPath).Path
 $contextDirectory=Split-Path -Parent $contextSource
@@ -37,7 +41,7 @@ $localScopeSource=if($LocalScopePath){(Resolve-Path -LiteralPath $LocalScopePath
 if(-not(Test-Path -LiteralPath $compositionPlanSource -PathType Leaf)){throw 'CompositionPlanPath must be a file.'}
 if($localScopeSource-and-not(Test-Path -LiteralPath $localScopeSource -PathType Leaf)){throw 'LocalScopePath must be a file.'}
 
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
+. (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
 
 function Resolve-ContextPath {
   param([Parameter(Mandatory)][string]$Value)
@@ -335,8 +339,8 @@ try{
     $failureStage='fixed_grid_stripe_seed'
     $stripeId=$stamp+'__analysis__python__mrtof-condition-stripe'
     $stripeArgs=@{AcceleratorComponentContractPath=$frozenOaComponentContract;AcceleratorGeometryProfileId=$oaGeometryProfileId;FixedGridRunManifest=$fixedMirrorManifest;ContractPath=$conditionContract;RunId=$stripeId}
-    if($PythonExe){$stripeArgs.PythonExe=$PythonExe}
-    & (Join-Path $PSScriptRoot 'run_dual_stripe_operating_seed.ps1') @stripeArgs|Out-Host
+    $stripeArgs.PythonExe=$python
+    & (Join-Path $workflowResources 'run_dual_stripe_operating_seed.ps1') @stripeArgs|Out-Host
     $stripeManifest=Get-RunManifest -ChildRunId $stripeId
   }
   $stripeRun=Split-Path -Parent $stripeManifest
@@ -374,10 +378,10 @@ try{
     $acceleratorReceipt=(Resolve-Path -LiteralPath ([string]$reuse.runtime_receipt)).Path
   }else{
     $providerId=$stamp+'__sim__simion__mrtof-condition-oa-provider'
-    $providerArgs=@{RunId=$providerId;RequestPath=$frozenOaRequest;ReleaseSpecPath=$releaseSpec}
+    $providerArgs=@{RunId=$providerId;RequestPath=$frozenOaRequest;ReleaseSpecPath=$releaseSpec;WorkspaceRoot=$workspaceRoot;ArtifactRoot=$artifactRoot;PythonExe=$python}
     if($AcceleratorRuntimeCheckpoint){$providerArgs.RuntimeCheckpointPath=(Resolve-Path -LiteralPath $AcceleratorRuntimeCheckpoint).Path}
     if($SimionExe){$providerArgs.SimionExe=$SimionExe}
-    & (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\run_component_focus_workflow.ps1') @providerArgs|Out-Host
+    & (Join-Path $simionResources 'run_component_focus_workflow.ps1') @providerArgs|Out-Host
     $providerRun=Join-Path $oaArtifactRuns $providerId
     $providerManifest=Join-Path $providerRun 'run_manifest.json'
     $acceleratorReceipt=Join-Path $providerRun 'results\mrtof_runtime_receipt.json'
@@ -399,13 +403,10 @@ try{
       response_refine_performed=$false;published_native_members_opened=$false;controller_refine='solutions={0}'
       cache_key=[string]$bankPublication.cache_key;generation_sha256=[string]$bankPublication.generation_sha256
     })
-    Push-Location $repoRoot
-    try{
-      & $python -m msplatform.workflows.oa_mr.native_system_runtime rebind-accelerator `
-        --native-corridor-runtime-receipt $nativeIdentityPath --base-bundle $nativeBundle `
-        --accelerator-provider-receipt $acceleratorReceipt --bundle-output $providerBoundBundle
-      if($LASTEXITCODE-ne0){throw 'OA provider accelerator binding failed.'}
-    }finally{Pop-Location}
+    & $python -I -B -m msplatform.workflows.oa_mr.native_system_runtime rebind-accelerator `
+      --native-corridor-runtime-receipt $nativeIdentityPath --base-bundle $nativeBundle `
+      --accelerator-provider-receipt $acceleratorReceipt --bundle-output $providerBoundBundle
+    if($LASTEXITCODE-ne0){throw 'OA provider accelerator binding failed.'}
   }finally{Remove-Item -LiteralPath $nativeIdentityPath -Force -ErrorAction SilentlyContinue}
   $nativeBundle=$providerBoundBundle
 
@@ -442,9 +443,9 @@ try{
       AcceleratorYAnchorMm=$acceleratorY;ContractPath=$conditionContract;RunId=$safeExitId
     }
     if($nativeRuntimeCheckpoint){$safeExitArgs.NativeRuntimeCheckpoint=$nativeRuntimeCheckpoint}
-    if($PythonExe){$safeExitArgs.PythonExe=$PythonExe};if($SimionExe){$safeExitArgs.SimionExe=$SimionExe}
-    & (Join-Path $repoRoot 'src/msplatform/workflows/resources/oa_mr.ps1') @safeExitArgs|Out-Host
-    $safeExitManifest=Join-Path (Split-Path -Parent $repoRoot) "artifacts/projects/instrument_assembly/runs/$safeExitId/run_manifest.json"
+    $safeExitArgs.PythonExe=$python;if($SimionExe){$safeExitArgs.SimionExe=$SimionExe}
+    & (Join-Path $workflowResources 'oa_mr.ps1') @safeExitArgs|Out-Host
+    $safeExitManifest=Join-Path $artifactRoot "projects/instrument_assembly/runs/$safeExitId/run_manifest.json"
 
     $failureStage='pair_specific_coverage'
     $coverageId=$stamp+'__analysis__python__mrtof-condition-prism-coverage'
@@ -456,8 +457,8 @@ try{
     $coverageArgs.FixedMirrorStripeRunManifest=$stripeManifest
     $coverageArgs.AcceleratorExitRunManifest=$safeExitManifest
     $coverageArgs.ContractPath=$conditionContract;$coverageArgs.RunId=$coverageId
-    if($PythonExe){$coverageArgs.PythonExe=$PythonExe}
-    & (Join-Path $PSScriptRoot 'run_two_prism_segmented_coverage.ps1') @coverageArgs|Out-Host
+    $coverageArgs.PythonExe=$python
+    & (Join-Path $workflowResources 'run_two_prism_segmented_coverage.ps1') @coverageArgs|Out-Host
     $coverageManifest=Get-RunManifest -ChildRunId $coverageId
 
     $failureStage='pair_specific_continuation'
@@ -466,8 +467,8 @@ try{
       'CoverageRunManifest','ExpectedTopologySignatureSha256','SolveMode','InitialP1V','InitialP2LowerV','InitialP2UpperV',
       'P1MinimumV','P1MaximumV','P2MinimumV','P2MaximumV','RunId','PythonExe')
     $continuationArgs.CoverageRunManifest=$coverageManifest
-    $continuationArgs.RunId=$continuationId;if($PythonExe){$continuationArgs.PythonExe=$PythonExe}
-    & (Join-Path $PSScriptRoot 'run_two_prism_segmented_continuation.ps1') @continuationArgs|Out-Host
+    $continuationArgs.RunId=$continuationId;$continuationArgs.PythonExe=$python
+    & (Join-Path $workflowResources 'run_two_prism_segmented_continuation.ps1') @continuationArgs|Out-Host
     $continuationManifest=Get-RunManifest -ChildRunId $continuationId
   }
   $continuationSummary=Get-Content -LiteralPath (Join-Path (Split-Path -Parent $continuationManifest) 'summary.json') -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
@@ -543,8 +544,8 @@ try{
       $workpointArgs.ContinuationRunManifest=$continuationManifest
       if($nativeRuntimeCheckpoint){$workpointArgs.NativeRuntimeCheckpoint=$nativeRuntimeCheckpoint}
       }
-      if($PythonExe){$workpointArgs.PythonExe=$PythonExe};if($SimionExe){$workpointArgs.SimionExe=$SimionExe}
-      & (Join-Path $PSScriptRoot 'run_downstream_workpoint_iteration.ps1') @workpointArgs|Out-Host
+      $workpointArgs.PythonExe=$python;if($SimionExe){$workpointArgs.SimionExe=$SimionExe}
+      & (Join-Path $workflowResources 'run_downstream_workpoint_iteration.ps1') @workpointArgs|Out-Host
       $workpointManifest=Get-RunManifest -ChildRunId $workpointId
       $workpointRun=Split-Path -Parent $workpointManifest
       if(-not(Test-Path -LiteralPath (Join-Path $workpointRun 'results\best_physical_workpoint_handoff.json') -PathType Leaf)){
@@ -584,8 +585,8 @@ try{
       ContractPath=$conditionContract;RunId=$candidateId
     }
     if($nativeRuntimeCheckpoint){$candidateArgs.NativeRuntimeCheckpoint=$nativeRuntimeCheckpoint}
-    if($PythonExe){$candidateArgs.PythonExe=$PythonExe};if($SimionExe){$candidateArgs.SimionExe=$SimionExe}
-    & (Join-Path $PSScriptRoot 'run_native_candidate_chain.ps1') @candidateArgs|Out-Host
+    $candidateArgs.PythonExe=$python;if($SimionExe){$candidateArgs.SimionExe=$SimionExe}
+    & (Join-Path $workflowResources 'run_native_candidate_chain.ps1') @candidateArgs|Out-Host
     $candidateManifest=Get-RunManifest -ChildRunId $candidateId
     $candidateSummary=Get-Content -LiteralPath (Join-Path (Split-Path -Parent $candidateManifest) 'summary.json') -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
     if($candidateSummary.status-ne'success'-or[string]::IsNullOrWhiteSpace([string]$candidateSummary.workflow_outcome)){

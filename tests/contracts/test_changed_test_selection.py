@@ -336,11 +336,11 @@ class Probe(unittest.TestCase):
         route["requires_stages"] = ["partition_prerequisite"]
         route["test_selection"]["dependencies"] = [dict(matches=[dict(exact=leaf, reason="fixture_leaf")],
                                                        modules=modules, dependency_profile="stdlib")]
-        route["repository_integration_partition"]["count"] = 3
-        route["repository_integration_partition"]["measured_seconds"] = {
+        route["repository_gate_partition"]["count"] = 3
+        route["repository_gate_partition"]["measured_seconds"] = {
             "test_a": 120, "test_b": 110, "test_c": 100, "test_d": 10, "test_e": 1}
         prerequisite = dict(stage="partition_prerequisite", dependency_profile="stdlib",
-                            repository_integration_group="fast",
+                            repository_gate_group="fast",
                             matches=[dict(exact="tools/repository/prerequisite.py", reason="fixture_prerequisite")],
                             command=dict(runner="python", arguments=["tools/repository/prerequisite.py"]))
         catalog["routes"] = [prerequisite, route]
@@ -397,10 +397,10 @@ function Set-GateStageResult {
                         # must declare preflight=false to be a valid catalog.
                         route["command"] = dict(runner="powershell", script="tools/repository/original_owner.ps1",
                                                 parameters=dict(PythonExe="{python}"))
-                        route["repository_integration_command"] = dict(
+                        route["repository_gate_command"] = dict(
                             runner="powershell", script="tools/repository/original_owner.ps1",
                             parameters=dict(PythonExe="{python}", PreflightOnly=True))
-                        route["repository_integration_partition"]["parameter"] = "SelectedTestModules"
+                        route["repository_gate_partition"]["parameter"] = "SelectedTestModules"
                     if preflight == "missing":
                         route.pop("partition_preflight", None)
                     else:
@@ -498,8 +498,8 @@ try {
  foreach($case in @(Get-Content __CASES__ -Raw|ConvertFrom-Json -AsHashtable)) {
   $current=$catalog|ConvertTo-Json -Depth 32|ConvertFrom-Json -AsHashtable
   $route=$current.routes|Where-Object stage -eq common_contracts
-  $route.repository_integration_partition.measured_seconds=$case.weights
-  if($case.ContainsKey('default_seconds')){$route.repository_integration_partition.default_seconds=$case.default_seconds}
+  $route.repository_gate_partition.measured_seconds=$case.weights
+  if($case.ContainsKey('default_seconds')){$route.repository_gate_partition.default_seconds=$case.default_seconds}
   if($case.ContainsKey('modules')){$route.test_selection.dependencies[0].modules=$case.modules}
   $current|ConvertTo-Json -Depth 32|Set-Content tools/repository/gate_catalog.json -Encoding UTF8
   $env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN=if($case.ContainsKey('token')){$case.token}else{$null}
@@ -561,14 +561,14 @@ try {
                 with self.subTest(default_seconds=invalid):
                     catalog = json.loads(json.dumps(original))
                     route = next(row for row in catalog["routes"] if row["stage"] == "common_contracts")
-                    route["repository_integration_partition"]["default_seconds"] = invalid
-                    route["repository_integration_partition"]["measured_seconds"] = {}
+                    route["repository_gate_partition"]["default_seconds"] = invalid
+                    route["repository_gate_partition"]["measured_seconds"] = {}
                     catalog_path.write_text(json.dumps(catalog), encoding="utf-8")
                     result = subprocess.run(["pwsh", "-NoProfile", "-File", str(root / "tools/repository/verify.ps1"),
                         "-PythonExe", sys.executable, "-ChangedPath", leaf, "-MaxConcurrency", "2", "-PlanOnly"],
                         cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
                     self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-                    self.assertIn("Invalid repository integration test partition", result.stdout + result.stderr)
+                    self.assertIn("Invalid repository gate test partition", result.stdout + result.stderr)
                     self.assertFalse((root / "events").exists())
 
     def selected_powershell_fixture(self, root: Path) -> tuple[str, list[str]]:
@@ -639,8 +639,8 @@ function Set-GateStageResult {
         route["test_selection"]["module_parameter"] = "SelectedTestModules"
         route["test_selection"]["dependencies"] = [dict(matches=[dict(exact=leaf, reason="fixture_field_plan")],
                                                        modules=modules, dependency_profile="stdlib")]
-        route["repository_integration_partition"]["count"] = 4
-        route["repository_integration_partition"]["measured_seconds"] = {
+        route["repository_gate_partition"]["count"] = 4
+        route["repository_gate_partition"]["measured_seconds"] = {
             "test_a": 120, "test_b": 110, "test_c": 100, "test_d": 10, "test_e": 1}
         catalog["routes"] = [catalog["routes"][0], route]
         path.write_text(json.dumps(catalog), encoding="utf-8")
@@ -653,11 +653,11 @@ function Set-GateStageResult {
             catalog_path = root / "tools/repository/gate_catalog.json"
             catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
             route = catalog["routes"][1]
-            weights = route["repository_integration_partition"]["measured_seconds"]
+            weights = route["repository_gate_partition"]["measured_seconds"]
             if mode == "unknown":
                 weights.pop("test_e")
             elif mode == "short":
-                route["repository_integration_partition"]["measured_seconds"] = {k: v / 100 for k, v in weights.items()}
+                route["repository_gate_partition"]["measured_seconds"] = {k: v / 100 for k, v in weights.items()}
             elif mode == "no_shared_ruff":
                 leaf = "src/msplatform/workflows/field_plan.json"
                 (root / leaf).write_text("{}", encoding="utf-8")
@@ -939,7 +939,7 @@ foreach($scope in @('Owner','Repository')){
         script = r"""
 . __SUPPORT__
 $route=(Read-GateCatalog -RepoRoot $PWD.Path)|Where-Object stage -eq 'parallel_mirror_dual_stripe_mr_tof_static'
-$route.repository_integration_partition.parameter='ChangedTestModules'
+$route.repository_gate_partition.parameter='ChangedTestModules'
 $selected=Get-GateChangedTests -Route $route -RepoRoot $PWD.Path -KnownTestRoots @($route.test_selection.roots) `
  -ChangedPaths @(__TEST__, 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/analysis/unknown_source.py')
 @{selection=$selected}|ConvertTo-Json -Depth 8 -Compress
@@ -1315,7 +1315,7 @@ foreach($route in @($routes|Where-Object stage -in @('parallel_mirror_dual_strip
 $selection=Get-GateChangedTests -Route $route -RepoRoot $PWD.Path -KnownTestRoots $roots -FullScope -ChangedPaths @()
 $partitions=@(Get-GateRepositoryTestPartitions -Route $route -RepoRoot $PWD.Path -Modules $selection.Modules)
 $results[$route.stage]=@{partitions=$partitions;selected=@($selection.Modules);expanded=$selection.Expanded;
- only_tests=$selection.OnlyTestModules;preflight=$route.repository_integration_command.parameters.PreflightOnly;
+ only_tests=$selection.OnlyTestModules;preflight=$route.repository_gate_command.parameters.PreflightOnly;
  parent_preserved=($null-eq$route.PSObject.Properties['partition_preflight'] -or $route.partition_preflight)}
 }
 $planPath=Join-Path ([IO.Path]::GetTempPath()) (([guid]::NewGuid().ToString('N'))+'.json')
@@ -1348,7 +1348,7 @@ $results|ConvertTo-Json -Depth 12 -Compress
                             if not any(path.relative_to(REPO_ROOT).as_posix().startswith(root)
                                        for root in known_roots - owned_roots)}
                 actual = [module for part in selected['partitions'] for module in part['modules']]
-                self.assertEqual(len(selected['partitions']), route['repository_integration_partition']['count'])
+                self.assertEqual(len(selected['partitions']), route['repository_gate_partition']['count'])
                 self.assertEqual(set(actual), expected)
                 self.assertEqual(len(actual), len(set(actual)))
                 self.assertCountEqual(selected['actual_planned_modules'], actual)
@@ -1365,7 +1365,7 @@ $results=@{}
 foreach($owner in @('first','second')){
  $weight=if($owner-eq'first'){100}else{10}
  $route=[pscustomobject]@{stage=$owner;test_selection=[pscustomobject]@{scope='unused/'};
-  repository_integration_partition=[pscustomobject]@{count=2;default_seconds=7;
+  repository_gate_partition=[pscustomobject]@{count=2;default_seconds=7;
    measured_seconds=[pscustomobject]@{test_same_name=$weight}}}
  $results[$owner]=@(Get-GateRepositoryTestPartitions -Route $route -RepoRoot $PWD.Path `
   -Modules @("$owner/tests/test_same_name.py","$owner/tests/new_area/test_unknown.py"))
@@ -2001,7 +2001,10 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
                     self.assertFalse(selection["CompleteOwner"])
                     self.assertFalse(selection["Expanded"])
                 else:
-                    self.assertIsNotNone(selection, "Provider or shared fixture must retain the full owner")
+                    if index < 5:
+                        self.assertIsNone(selection, "Unmapped provider must retain the original full-owner command")
+                        continue
+                    self.assertIsNotNone(selection, "Shared fixture must retain the full owner")
                     full_owner = [path.relative_to(REPO_ROOT).as_posix()
                                   for root in ("tests/assembly", "tests/workflows", "tests/execution")
                                   for path in (REPO_ROOT / root).rglob("test_*.py")]
@@ -2420,7 +2423,7 @@ $reports|ConvertTo-Json -Depth 100|Set-Content -LiteralPath (Join-Path $Root 'pl
             owner["matches"] = [dict(prefix=fixture_root, reason="fixture_selection_changed")]
             owner["test_selection"] = {"roots": [fixture_root]}
             # This tiny fixture dispatches one owner stage, not repository shards.
-            owner.pop("repository_integration_partition", None)
+            owner.pop("repository_gate_partition", None)
             catalog_path.write_text(json.dumps(catalog), encoding="utf-8", newline="\n")
             environment = dict(os.environ, TEMP=logs, TMP=logs, PYTHONDONTWRITEBYTECODE="1")
             environment["MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH"] = os.environ.get(

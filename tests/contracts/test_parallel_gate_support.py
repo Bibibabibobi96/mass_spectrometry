@@ -271,7 +271,7 @@ catch{{if($_.Exception.Message-eq'accepted missing invocation'){{throw}};$reject
                 f"print('EXECUTED_{name}')\n"+("raise SystemExit(int(os.environ.get('PLAN_FAIL','0')))\n" if name=="a" else ""),
                 encoding="utf-8",newline="\n")
         routes=[{"stage":"fixture_"+name,"owner":"fixture_group","dependency_profile":"stdlib",
-            "repository_integration_group":"regression","matches":[{"exact":"fixture.policy","reason":"fixture"}],
+            "repository_gate_group":"regression","matches":[{"exact":"fixture.policy","reason":"fixture"}],
             "command":{"runner":"python","arguments":["tools/repository/fixture_"+name+".py"]}} for name in ("a","b")]
         (common/"gate_catalog.json").write_text(json.dumps({"schema_version":2,"role":"repository_gate_catalog","routes":routes}),encoding="utf-8",newline="\n")
         (root/"fixture.policy").write_text("selected input\n",encoding="utf-8",newline="\n")
@@ -758,7 +758,7 @@ function Read-GateCatalog {
     param($RepoRoot)
     return [pscustomobject]@{
         stage='fixture_regression'; dependency_profile='stdlib'
-        repository_integration_group='regression'
+        repository_gate_group='regression'
         command=[pscustomobject]@{runner='python'; arguments=@('tools/repository/fixture_regression.py')}
     }
 }
@@ -903,7 +903,7 @@ function Exit-HostResourceStage {param($Lease)}
                             "print('FAILURE_COLLECTION_OBSERVED')\nprint('STAGE_DONE')\n"
                         )
                     (common / (name + '.py')).write_text(program, encoding='utf-8')
-                    routes.append(dict(stage=name, dependency_profile='stdlib', repository_integration_group='regression',
+                    routes.append(dict(stage=name, dependency_profile='stdlib', repository_gate_group='regression',
                                        matches=[dict(prefix='tools/repository/', reason='fixture')],
                                        command=dict(runner='python', arguments=['tools/repository/' + name + '.py'])))
                 (common / 'fixture_catalog.json').write_text(json.dumps(routes), encoding='utf-8')
@@ -1366,7 +1366,7 @@ if ($script:performed -ne 1) {{ throw 'nested action did not execute once' }}
             (common / "host_execution_lease.ps1").write_text("# no resource admission in PlanOnly\n", encoding="utf-8")
             routes = []
             for name, profile in (("alpha", "stdlib"), ("beta", "stdlib"), ("unrelated", "locked")):
-                routes.append({"stage":name,"dependency_profile":profile,"repository_integration_group":"fast",
+                routes.append({"stage":name,"dependency_profile":profile,"repository_gate_group":"fast",
                     "execution_batch":"analysis","matches":[{"exact":"fixture.policy" if profile=="stdlib" else "other.policy","reason":"fixture"}],
                     "command":{"runner":"python","arguments":["-m","unittest","tools.repository.analysis.test_"+name]}})
             (common / "gate_catalog.json").write_text(json.dumps({"schema_version":2,"role":"repository_gate_catalog","routes":routes}),encoding="utf-8")
@@ -1918,11 +1918,11 @@ try {{
             process_support = root / "src/msplatform/execution/resources/resource_process_support.ps1"
             process_support.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / process_support.relative_to(root), process_support)
-            route=dict(stage="fixture",owner="fixture",dependency_profile="locked",repository_integration_group="regression",
+            route=dict(stage="fixture",owner="fixture",dependency_profile="locked",repository_gate_group="regression",
                 matches=[dict(prefix="tools/repository/",reason="fixture")],
                 command=dict(runner="python",arguments=["-m","unittest","discover","-s","tests/contracts","-p","test_*.py"]),
                 test_selection=dict(scope="tests/contracts/",roots=["tests/contracts/"]),partition_preflight=False,
-                repository_integration_partition=dict(count=3,default_seconds=1,measured_seconds={}))
+                repository_gate_partition=dict(count=3,default_seconds=1,measured_seconds={}))
             (common/"gate_catalog.json").write_text(json.dumps(dict(schema_version=2,role="repository_gate_catalog",routes=[route])),encoding="utf-8")
             result=self.run_script(f"""
 . {quote(common/'gate_catalog_support.ps1')}
@@ -1936,7 +1936,7 @@ foreach($case in @('scope','runner','parent')){{
  if($case-eq'parent'){{$document.routes[0].partition_preflight=$true}}
  $document|ConvertTo-Json -Depth 32|Set-Content $path
  $rejected=$false
- try{{$null=Read-GateCatalog -RepoRoot $root}}catch{{$rejected=$_.Exception.Message-match'Invalid repository integration test partition'}}
+ try{{$null=Read-GateCatalog -RepoRoot $root}}catch{{$rejected=$_.Exception.Message-match'Invalid repository gate test partition'}}
  if(-not$rejected){{throw "Invalid Python partition accepted: $case"}}
 }}
 'PYTHON_PARTITION_CONTRACT=PASS'
@@ -1968,7 +1968,7 @@ $selection|ConvertTo-Json -Depth 16 -Compress
         expected = {name.removesuffix(".py").replace("/", ".") for name in selected}
         route = next(row for row in json.loads((ROOT/"tools/repository/gate_catalog.json").read_text(encoding="utf-8"))["routes"]
                      if row["stage"] == "common_contracts")
-        configured_count = route["repository_integration_partition"]["count"]
+        configured_count = route["repository_gate_partition"]["count"]
         result = self.run_script(self.prelude()+f"""
 . {quote(ROOT/'tools/repository/gate_catalog_support.ps1')}
 $route=(Get-Content {quote(ROOT/'tools/repository/gate_catalog.json')} -Raw|ConvertFrom-Json -Depth 32).routes|Where-Object stage -eq 'common_contracts'
@@ -2005,11 +2005,11 @@ function Get-GateRepositoryTestPartitions {param($Route,$RepoRoot,$Modules)
 }
 function Read-GateCatalog {param($RepoRoot)
  Add-Content -LiteralPath $env:CATALOG_COUNT -Value 'catalog'
- @([pscustomobject]@{stage='common_contracts';owner='common_contracts';dependency_profile='locked';repository_integration_group='regression';
+ @([pscustomobject]@{stage='common_contracts';owner='common_contracts';dependency_profile='locked';repository_gate_group='regression';
  matches=@([pscustomobject]@{prefix='tests/contracts/';reason='fixture'});
  command=[pscustomobject]@{runner='python';arguments=@('-m','unittest','discover','-s','tests/contracts','-p','test_*.py')};
  test_selection=[pscustomobject]@{scope='tests/contracts/';roots=@('tests/contracts/')};partition_preflight=$false;
- repository_integration_partition=[pscustomobject]@{count=3;default_seconds=1;measured_seconds=[pscustomobject]@{test_a=3;test_b=2;test_c=1}}})
+ repository_gate_partition=[pscustomobject]@{count=3;default_seconds=1;measured_seconds=[pscustomobject]@{test_a=3;test_b=2;test_c=1}}})
 }
 """,encoding="utf-8",newline="\n")
             (common/"host_execution_lease.ps1").write_text(
@@ -2088,11 +2088,11 @@ function Read-GateCatalog {param($RepoRoot)
 $script:originalPartitioner=${function:Get-GateRepositoryTestPartitions}
 function Get-GateRepositoryTestPartitions {param($Route,$RepoRoot,$Modules);Add-Content -LiteralPath $env:PARTITION_COUNT -Value 'partition';& $script:originalPartitioner @PSBoundParameters}
 function Read-GateCatalog {param($RepoRoot)
-    @([pscustomobject]@{stage='fixture';dependency_profile='locked';repository_integration_group='regression';
+    @([pscustomobject]@{stage='fixture';dependency_profile='locked';repository_gate_group='regression';
       command=[pscustomobject]@{runner='powershell';script='tools/repository/owner.ps1';parameters=[pscustomobject]@{PythonExe='{python}'}};
-      repository_integration_command=[pscustomobject]@{runner='powershell';script='tools/repository/owner.ps1';parameters=[pscustomobject]@{PythonExe='{python}';PreflightOnly=$true}};
+      repository_gate_command=[pscustomobject]@{runner='powershell';script='tools/repository/owner.ps1';parameters=[pscustomobject]@{PythonExe='{python}';PreflightOnly=$true}};
       test_selection=[pscustomobject]@{scope='tests/components/fixture/tests/';roots=@('tests/components/fixture/tests/');module_parameter='ChangedTestModules'};
-      repository_integration_partition=[pscustomobject]@{count=3;parameter='SelectedTestModules';default_seconds=1;measured_seconds=[pscustomobject]@{test_a=10}}})
+      repository_gate_partition=[pscustomobject]@{count=3;parameter='SelectedTestModules';default_seconds=1;measured_seconds=[pscustomobject]@{test_a=10}}})
 }
 ''', encoding="utf-8", newline="\n")
             (common / "host_execution_lease.ps1").write_text(

@@ -132,8 +132,10 @@ def fixture(root, *, source=None, source_rows=None, source_metadata=None, clock_
             pa_bounds_mm=dict(domains['parent']['pa_bounds_mm'], y_min=-21.5,y_max=21.5,
                               z_min=repeller-20.,z_max=repeller+24.),
             refine_convergence_v=dict(convergence),guard_cells=2)
+    from msplatform.components.rf_multipole.assembly_interface import build_assembly_interface
     from msplatform.components.rf_multipole.electrode_topology import build_electrode_topology
     from msplatform.components.single_reflection_oa_tof.accelerator_geometry import resolve_accelerator_geometry
+    from msplatform.components.single_reflection_oa_tof.assembly_interface import resolve_assembly_interface
     from msplatform.components.single_reflection_oa_tof.electrode_topology import resolve_frontend_field_domain
     from msplatform.backends.simion.accelerator_projection import project_side_opening
     projection = resolve_accelerator_geometry(oatof, variant_id=kw["accelerator_variant"])
@@ -145,9 +147,21 @@ def fixture(root, *, source=None, source_rows=None, source_metadata=None, clock_
                           height_mm=port["cross_section"]["height_mm"]),
         cell_mm_xyz=parent_domain["cell_mm_xyz"],
         pa_origin_mm={axis: parent_domain["pa_bounds_mm"][axis + "_min"] for axis in "xyz"})
+    interfaces = dict(
+        multipole=build_assembly_interface(
+            source, geometry_profile_id=parent_plan["components"]["multipole"]["geometry_profile_id"]
+        ),
+        oatof=resolve_assembly_interface(
+            oatof, projection=projection,
+            geometry_profile_id=parent_plan["components"]["oatof"]["geometry_profile_id"], schema_version=3,
+        ),
+    )
+    parent_plan = compile_assembly_layout(parent_plan["recipe"], interfaces)
+    write_json(author / "parent_plan.json", parent_plan)
     rf_groups = [row["electrode_group_id"] for row in build_electrode_topology(source)]
-    oa_groups = resolve_frontend_field_domain(oatof, projection=projection,
-        geometry_profile_id=json.loads((author / "parent_plan.json").read_text())["components"]["oatof"]["geometry_profile_id"])["electrode_group_ids"]
+    oa_groups = resolve_frontend_field_domain(
+        oatof, projection=projection, geometry_profile_id=interfaces["oatof"]["geometry_profile_id"]
+    )["electrode_group_ids"]
     group_maps = dict(
         multipole=dict(zip(rf_groups, (17 + 7 * index for index in range(len(rf_groups))), strict=True)),
         oatof=dict(zip(oa_groups, (201 + 11 * index for index in range(len(oa_groups))), strict=True)))

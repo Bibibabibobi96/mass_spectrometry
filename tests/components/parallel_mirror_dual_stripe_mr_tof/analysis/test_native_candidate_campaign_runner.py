@@ -25,6 +25,10 @@ class NativeCandidateCampaignRunnerTests(unittest.TestCase):
         self.assertIn("[Parameter(Mandatory)][string]$ConditionContextPath", self.source)
         self.assertIn("ConditionRunnerPath must be a file.", self.source)
         self.assertIn("run_native_candidate_condition.ps1", self.source)
+        self.assertIn("[Parameter(Mandatory)][string]$WorkspaceRoot", self.source)
+        self.assertIn("[Parameter(Mandatory)][string]$ArtifactRoot", self.source)
+        self.assertIn("Join-Path $packageRoot 'workflows/resources/run_native_candidate_condition.ps1'", self.source)
+        self.assertIn("WorkspaceRoot=$workspaceRoot;ArtifactRoot=$artifactRoot;PythonExe=$python", self.source)
         self.assertIn("& $conditionRunner @arguments|Out-Host", self.source)
         self.assertNotIn("run_target_operating_point_chain.ps1", self.source)
         self.assertNotIn("run_two_prism_segmented_coverage.ps1", self.source)
@@ -134,7 +138,7 @@ class NativeCandidateCampaignBehaviorTests(unittest.TestCase):
             f"$repoRoot='{RUNNER.parents[4].as_posix()}'",
         )
         source = source.replace(
-            '$artifactRuns=Join-Path $workspaceRoot "artifacts\\projects\\$project\\runs"',
+            '$artifactRuns=Join-Path $artifactRoot "projects\\$project\\runs"',
             f"$artifactRuns='{self.artifact_runs.as_posix()}'",
         )
         self.runner = self.root / "campaign.ps1"
@@ -145,6 +149,8 @@ class NativeCandidateCampaignBehaviorTests(unittest.TestCase):
   [Parameter(Mandatory)][string]$ConditionPath,
   [Parameter(Mandatory)][string]$ContextPath,
   [Parameter(Mandatory)][string]$RunId,
+  [Parameter(Mandatory)][string]$WorkspaceRoot,
+  [Parameter(Mandatory)][string]$ArtifactRoot,
   [Parameter(Mandatory)][string]$CompositionPlanPath,
   [string]$LocalScopePath='',
   [string]$ProviderReusePath='',
@@ -251,6 +257,10 @@ if($status-eq'success'){
                 str(self.runner),
                 "-PythonExe",
                 sys.executable,
+                "-WorkspaceRoot",
+                str(self.root),
+                "-ArtifactRoot",
+                str(self.root / "artifacts"),
                 "-CampaignPath",
                 str(self.campaign),
                 "-CheckpointPath",

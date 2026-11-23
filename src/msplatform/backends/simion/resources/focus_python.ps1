@@ -5,7 +5,7 @@ function Invoke-FocusFrozenPython {
   [CmdletBinding()]
   param([Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$CodeRoot,
     [Parameter(Mandatory)][string]$OriginsPath,[string]$Module='',[string[]]$Arguments=@())
-  # -I ignores cwd/PYTHONPATH. All project/common imports use this one snapshot.
+  # -I ignores cwd/PYTHONPATH. All installed imports use this one snapshot.
   $bootstrap=@'
 import importlib,importlib.util,json,runpy,sys
 from pathlib import Path
@@ -31,7 +31,7 @@ try:
         validate_campaign(campaign,geometry_profile=contract["geometry_profiles"][campaign["geometry_profile_id"]])
 finally:
     paths={name:str(Path(value.__file__).resolve()) for name,value in sys.modules.items()
-           if name.split('.')[0] in ("common","projects","msplatform") and getattr(value,"__file__",None)}
+           if name.split('.')[0] == "msplatform" and getattr(value,"__file__",None)}
     if entry_origin is not None:
         paths[module]=str(entry_origin)
     if any(not Path(path).is_relative_to(root) for path in paths.values()):
@@ -47,7 +47,7 @@ finally:
 
 function Initialize-FocusFrozenPython {
   [CmdletBinding()]
-  param([Parameter(Mandatory)][string]$RepoRoot,[Parameter(Mandatory)][string]$RunConfig,
+  param([Parameter(Mandatory)][string]$PackageRoot,[Parameter(Mandatory)][string]$RunConfig,
     [Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][string]$CampaignPath,
     [Parameter(Mandatory)][string[]]$InputNames)
   $config=Get-Content -LiteralPath $RunConfig -Raw -Encoding utf8|ConvertFrom-Json -AsHashtable
@@ -59,27 +59,25 @@ function Initialize-FocusFrozenPython {
 import json,sys
 from pathlib import Path
 root=Path(sys.argv[1]).resolve()
-sys.path[:0]=[str(root/'src'),str(root)] if (root/'src').is_dir() else [str(root)]
+sys.path.insert(0,str(root.parent))
 from msplatform.execution.inputs import enumerate_python_sources
-request=json.load(sys.stdin)
-paths=enumerate_python_sources(Path(request["source_root"]),package_roots=request["package_roots"])
-paths=sorted(set(paths)|set(enumerate_python_sources(root,package_roots=['src/msplatform'],
-    provider_root='src/msplatform',resource_suffixes=('.schema.json',))))
+paths=enumerate_python_sources(root.parent,package_roots=['msplatform'])
+paths=sorted(set(paths)|set(enumerate_python_sources(root.parent,package_roots=['msplatform'],
+    provider_root='msplatform',resource_suffixes=('.schema.json',))))
 print(json.dumps(paths))
 '@
-  $request=@{source_root=$RepoRoot;package_roots=$groups}|ConvertTo-Json -Depth 10 -Compress
   $savedOutputEncoding=$OutputEncoding
   try{
     $OutputEncoding=[Text.UTF8Encoding]::new($false)
-    $selection=($request|& $Python -X utf8 -I -B -c $enumerate $RepoRoot)-join"`n"
+    $selection=(& $Python -X utf8 -I -B -c $enumerate $PackageRoot)-join"`n"
   }finally{$OutputEncoding=$savedOutputEncoding}
   if($LASTEXITCODE-ne0){throw 'Focus Python package enumeration failed'}
-  $files=@($selection|ConvertFrom-Json)
+  $files=@($selection|ConvertFrom-Json|ForEach-Object{'src/'+[string]$_})
   $files+='src/msplatform/components/orthogonal_accelerator/component_contract.json'
   $files+='src/msplatform/backends/simion/resources/focus_python.ps1'
   foreach($relative in @($files|Sort-Object)){
     $destination=Join-Path $code $relative
-    Copy-VerifiedRunInput (Join-Path $RepoRoot $relative) $destination|Out-Null
+    Copy-VerifiedRunInput (Join-Path $PackageRoot $relative.Substring('src/msplatform/'.Length)) $destination|Out-Null
     $config.inputs['python_code__'+$relative.Replace('/','__')]=$destination
   }
   $config.parameters.python_package_groups=$groups

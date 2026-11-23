@@ -523,7 +523,7 @@ foreach($case in $cases){{
                 self.assertTrue(rows[stage]['command']['parameters']['PreflightOnly'])
                 shards = [row for name, row in rows.items() if name.startswith(stage + '__tests_')]
                 route = next(row for row in self.routes if row['stage'] == stage)
-                self.assertEqual(len(shards), route['repository_integration_partition']['count'])
+                self.assertEqual(len(shards), route['repository_gate_partition']['count'])
                 actual = [module for row in shards
                           for module in row['command']['parameters']['SelectedTestModules']]
                 self.assertCountEqual(actual, expected)
@@ -544,7 +544,7 @@ foreach($case in $cases){{
         stages = {row["name"]:row for row in request["stages"]}
         owner_route = next(route for route in self.routes if route.get("project_id")=="orthogonal_accelerator")
         self.assertIn(owner_route["stage"], stages)
-        expected = owner_route.get("repository_integration_command", owner_route["command"])
+        expected = owner_route.get("repository_gate_command", owner_route["command"])
         actual = stages[owner_route["stage"]]["command"]
         self.assertEqual(actual["script"], expected["script"])
         for key, value in expected.get("parameters", {}).items():
@@ -1097,7 +1097,7 @@ exit 0
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, destination)
         (common / "host_execution_lease.ps1").write_text("function Get-HostResourceBudget {param($Role,$Stage) @{}}\nfunction Enter-HostResourceStage {param($Role,$Stage,$Budget) @{}}\nfunction Exit-HostResourceStage {param($Lease)}\n",encoding="utf-8")
-        (common / "gate_catalog.json").write_text('{"schema_version":2,"role":"repository_gate_catalog","routes":[{"stage":"unrelated_project","dependency_profile":"locked","repository_integration_group":"regression","matches":[{"exact":"src/msplatform/components/unrelated/source.py","reason":"unrelated"}],"command":{"runner":"python","arguments":["-c","print(42)"]}}]}',encoding="utf-8")
+        (common / "gate_catalog.json").write_text('{"schema_version":2,"role":"repository_gate_catalog","routes":[{"stage":"unrelated_project","dependency_profile":"locked","repository_gate_group":"regression","matches":[{"exact":"src/msplatform/components/unrelated/source.py","reason":"unrelated"}],"command":{"runner":"python","arguments":["-c","print(42)"]}}]}',encoding="utf-8")
         (common / "verify_repository_hygiene.ps1").write_text("Write-Output 'REPOSITORY_HYGIENE=PASS'\n",encoding="utf-8")
         (common / "verify_repository_text_bytes.py").write_text("print('TEXT_BYTES_FIXTURE=PASS')\n",encoding="utf-8")
         (common / "verify_documentation.ps1").write_text("param($PythonExe,[switch]$StructureOnly,[string[]]$ChangedPath)\nWrite-Output 'DOCUMENTATION_FIXTURE=PASS'\n",encoding="utf-8")
@@ -1208,7 +1208,7 @@ exit 0
             with self.subTest(implementation=implementation):
                 self.assertIn(stage, self.routed_stages(implementation))
                 route = next(row for row in self.routes if row["stage"] == stage)
-                self.assertIn(route["repository_integration_group"], {"fast", "regression", "covered"})
+                self.assertIn(route["repository_gate_group"], {"fast", "regression", "covered"})
                 if stage == "common_contracts":
                     request, _ = self.plan("-ChangedPath", implementation)
                     arguments = [arg for row in request["stages"] if row["name"] == stage or row["name"].startswith(stage + "__tests_") for arg in row["command"]["arguments"]]
@@ -1247,7 +1247,7 @@ exit 0
         routes = [route for route in self.routes if route["stage"] == stage]
         self.assertEqual(len(routes), 1)
         self.assertEqual(routes[0]["dependency_profile"], "locked")
-        self.assertEqual(routes[0]["repository_integration_group"], "fast")
+        self.assertEqual(routes[0]["repository_gate_group"], "fast")
         self.assertEqual(routes[0]["command"]["arguments"],
                          ["-m", "unittest", "tests.repository.test_host_resource_scheduler",
                           "tests.repository.test_host_resource_python", "tests.repository.test_observed_preparation_drain"])
@@ -1264,7 +1264,7 @@ exit 0
         self.assertEqual(selected[1].split(",").count(stage), 1)
         script = (f". '{REPO_ROOT}/tools/repository/gate_catalog_support.ps1';"
                   f"$routes=@(Read-GateCatalog -RepoRoot '{REPO_ROOT}');"
-                  "$stages=@($routes|Where-Object repository_integration_group -eq 'fast'|ForEach-Object stage);"
+                  "$stages=@($routes|Where-Object repository_gate_group -eq 'fast'|ForEach-Object stage);"
                   "ConvertTo-Json -Compress -InputObject $stages")
         result = subprocess.run([pwsh, "-NoProfile", "-Command", script], cwd=REPO_ROOT,
                                 capture_output=True, text=True, encoding="utf-8", timeout=30)
@@ -1333,13 +1333,26 @@ exit 0
             selected = self.routed_stages(descriptors[project_id]["descriptor"])
             self.assertIn(route["stage"], selected)
 
+    def test_retired_root_paths_do_not_match_the_current_catalog(self) -> None:
+        retired_paths = (
+            "projects/example/config/project.json",
+            "projects/example/docs/history/retired_projects/former/config/project.json",
+            "common/ion_release/test_release.py",
+            "common/integration/__init__.py",
+            "common/analysis/peak_metrics.py",
+            "integrations/runtime/example.py",
+        )
+        for path in retired_paths:
+            with self.subTest(path=path):
+                self.assertEqual(self.routed_stages(path), {})
+
     def test_catalog_declares_dependency_and_l2_ownership_for_every_stage(self) -> None:
         self.assertEqual(self.route_contract["schema_version"], 2)
         self.assertEqual(self.route_contract["role"], "repository_gate_catalog")
         for route in self.routes:
             self.assertIn(route["dependency_profile"], {"stdlib", "locked"})
             self.assertIn(
-                route["repository_integration_group"],
+                route["repository_gate_group"],
                 {"fast", "regression", "covered"},
             )
         integration_gates = sorted(
@@ -1635,10 +1648,10 @@ $result|ConvertTo-Json -Compress
             {"Level": "Core", "PythonExe": "{python}"},
         )
         self.assertEqual(
-            route["repository_integration_command"]["parameters"],
+            route["repository_gate_command"]["parameters"],
             {"Level": "Static", "PythonExe": "{python}", "PreflightOnly": True},
         )
-        self.assertEqual(route["repository_integration_partition"]["parameter"], "SelectedTestModules")
+        self.assertEqual(route["repository_gate_partition"]["parameter"], "SelectedTestModules")
         self.assertNotIn("SimionExe", json.dumps(route))
 
     def test_l2_mr_partitions_cover_the_actual_owner_discovery_once(self) -> None:
@@ -1672,7 +1685,7 @@ Invoke-Expression $node.Extent.Text
 $routes=@(Read-GateCatalog -RepoRoot $PWD.Path)
 $mr=$routes|Where-Object stage -eq 'parallel_mirror_dual_stripe_mr_tof_static'
 $integration=$routes|Where-Object stage -eq 'instrument_assembly_integration'
-$full=$mr.repository_integration_command|ConvertTo-Json -Depth 16|ConvertFrom-Json -Depth 16
+$full=$mr.repository_gate_command|ConvertTo-Json -Depth 16|ConvertFrom-Json -Depth 16
 $full.parameters.PSObject.Properties.Remove('PreflightOnly')
 @{mr_core=(Test-CompletePartitionOwnerCommand $mr $mr.command);mr_full=(Test-CompletePartitionOwnerCommand $mr $full);integration_full=(Test-CompletePartitionOwnerCommand $integration $integration.command)}|ConvertTo-Json -Compress
 '''
@@ -1792,7 +1805,7 @@ $full.parameters.PSObject.Properties.Remove('PreflightOnly')
                 "function Enter-HostResourceStage { param($Role,$Stage,$Budget) return @{} }\n"
                 "function Exit-HostResourceStage { param($Lease) }\n", encoding="utf-8")
             catalog = {"schema_version": 2, "role": "repository_gate_catalog", "routes": [{
-                "stage": "probe", "dependency_profile": "stdlib", "repository_integration_group": "fast",
+                "stage": "probe", "dependency_profile": "stdlib", "repository_gate_group": "fast",
                 "matches": [{"exact": "probe.py", "reason": "probe_changed"}],
                 "command": {"runner": "python", "arguments": ["-c", "print('RESOLVED_STAGE_RAN')"]},
             }]}
@@ -2355,7 +2368,7 @@ exit ([int]$env:CI_FIXTURE_EXIT)
         )
 
         self.assertEqual(
-            freshness_route["repository_integration_group"], "fast"
+            freshness_route["repository_gate_group"], "fast"
         )
         quadrupole_route = next(
             route
@@ -2363,7 +2376,7 @@ exit ([int]$env:CI_FIXTURE_EXIT)
             if route["stage"] == "rf_multipole_quadrupole_static"
         )
         self.assertEqual(
-            quadrupole_route["repository_integration_group"], "regression"
+            quadrupole_route["repository_gate_group"], "regression"
         )
         self.assertEqual(
             quadrupole_route["requires_stages"],
@@ -2377,7 +2390,7 @@ exit ([int]$env:CI_FIXTURE_EXIT)
         # be confused with executing that launcher as a gate command.
         commands = [
             route[key] for route in self.routes
-            for key in ("command", "repository_integration_command") if key in route
+            for key in ("command", "repository_gate_command") if key in route
         ]
         serialized_commands = json.dumps(commands)
         for forbidden in (
@@ -2697,7 +2710,7 @@ class RuntimeInventoryRouteTests(unittest.TestCase):
             gate.write_text("throw 'PlanOnly must not execute stages'\n", encoding="utf-8")
             inventory_path = "src/msplatform/workflows/config/runtime_dependencies.json"
             route = dict(stage="instrument_assembly_integration", dependency_profile="locked",
-                         repository_integration_group="regression",
+                         repository_gate_group="regression",
                          matches=[dict(prefix="src/msplatform/workflows/", reason="assembly_changed")],
                          runtime_dependencies_path=inventory_path,
                          command=dict(runner="powershell", script="tools/repository/verify_integration.ps1"))

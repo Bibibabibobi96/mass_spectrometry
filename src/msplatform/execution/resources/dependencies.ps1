@@ -265,10 +265,7 @@ function Freeze-ConsumerDependencies {
       throw "Dependency provider is empty or duplicated: $scope/$provider"
     }
     $providerRelative = switch ($scope) {
-      'repository_common' { if ($provider -cne 'common') { throw "Invalid repository-common provider: $provider" }; 'common' }
       'repository_core' { if ($provider -cne 'msplatform') { throw "Invalid scientific-core provider: $provider" }; 'src/msplatform' }
-      'project' { "projects/$provider" }
-      'integration' { Get-DependencyIntegrationRoot -RepoRoot $repo -OwnerId $provider -CorePackageRoot $CorePackageRoot }
       default { throw "Unsupported dependency provider scope: $scope" }
     }
     $installedCore = $scope -eq 'repository_core' -and $CorePackageRoot

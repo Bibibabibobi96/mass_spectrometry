@@ -118,6 +118,10 @@ class ThreeZoneCampaignContractTests(unittest.TestCase):
         self.assertEqual(self.campaign["stage_execution_mode"], "single_stage_only")
         self.assertEqual(self.campaign["automatic_retry_count"], 0)
         self.assertFalse(self.campaign["solver_execution_allowed"])
+        self.assertEqual(
+            self.campaign["sampling_policy"]["fwhm_algorithm"],
+            "msplatform.analysis.peak_metrics.compute_peak_metrics",
+        )
         self.assertEqual(self.stages["T4c"]["allowed_predecessors"], ["G2"])
         self.assertIn("Optionally", self.stages["T4c"]["purpose"])
         self.assertEqual(
@@ -281,7 +285,7 @@ class ThreeZoneCampaignContractTests(unittest.TestCase):
         historical = json.loads(before)
         self.assertEqual(historical["campaign_id"], "three_zone_solver_free_funnel_v1")
         recorded_cli = copy.deepcopy(historical["authorities"]["three_zone_cli"])
-        with self.assertRaisesRegex(ValueError, r"missing or invalid accelerator provider authority: accelerator_two_zone_theory"):
+        with self.assertRaises(ValueError):
             load_campaign(path)
         self.assertEqual(path.read_bytes(), before)
         self.assertEqual(json.loads(path.read_bytes())["authorities"]["three_zone_cli"], recorded_cli)

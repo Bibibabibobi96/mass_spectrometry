@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://mass-spectrometry.local/integrations/single_reflection_flight/request_v11.schema.json",
+  "$id": "https://mass-spectrometry.local/schemas/single_reflection_flight_request_v11.schema.json",
   "title": "Canonical component SFI request with explicit backend geometry numerics",
   "type": "object",
   "additionalProperties": false,

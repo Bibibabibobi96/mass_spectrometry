@@ -15,6 +15,7 @@ from msplatform.backends.simion.rf_finite_geometry import render_physical_gem, p
 from tests.components.rf_multipole_ion_optics.domain.test_compile_design_request import design_request
 from msplatform.assembly.resolve_assembly import compile_assembly_layout
 from msplatform.components.rf_multipole.assembly_interface import build_assembly_interface
+from msplatform.backends.simion.rf_assembly_interface import build_legacy_assembly_interface
 from msplatform.backends.simion.geometry import (
     compile_frontend_geometry, render_frontend_body, render_frontend_domain,
 )
@@ -122,7 +123,11 @@ def inputs(source, oatof, *, accelerator_variant="three_zone_square"):
         cell_mm_xyz=dict(x=.3,y=.25,z=.1),pa_origin_mm=dict(x=-300.,y=-80.,z=-380.))
     components=dict(multipole=build_assembly_interface(source,geometry_profile_id=None),
                     oatof=resolve_assembly_interface(oatof,projection=projection,geometry_profile_id=None,schema_version=3))
-    return dict(composition_plan=compile_assembly_layout(recipe,components), accelerator_variant=accelerator_variant,
+    legacy_plan = compile_assembly_layout(recipe, components)
+    legacy_plan['schema_version'] = 3
+    legacy_plan['components']['multipole'] = build_legacy_assembly_interface(
+        source, geometry_profile_id=None, schema_version=1)
+    return dict(composition_plan=legacy_plan, accelerator_variant=accelerator_variant,
         numerical_domains=dict(parent=dict(cell_mm_xyz=dict(x=.3,y=.25,z=.1),
         pa_bounds_mm=dict(x_min=-300.,x_max=60.,y_min=-80.,y_max=80.,z_min=-380.,z_max=-30.))),
         electrode_bindings=dict(multipole=native_mapping(source), oatof=dict(
@@ -170,7 +175,12 @@ def multi_inputs(sources, oatof, *, names, multipole_gap_mm=1.):
     numerical_domains['parent']['pa_bounds_mm']['x_min'] = -999.9
     repeller = oatof['accelerator_topology']['planes_global_z_mm']['repeller']
     numerical_domains['parent']['pa_bounds_mm'].update(z_min=repeller - 40., z_max=repeller + 310.)
-    return dict(composition_plan=compile_assembly_layout(recipe, components),
+    legacy_plan = compile_assembly_layout(recipe, components)
+    legacy_plan['schema_version'] = 3
+    for name, source in zip(names, sources, strict=True):
+        legacy_plan['components'][name] = build_legacy_assembly_interface(
+            source, geometry_profile_id=None, schema_version=1)
+    return dict(composition_plan=legacy_plan,
                 accelerator_variant=base['accelerator_variant'], numerical_domains=numerical_domains,
                 electrode_bindings=bindings)
 
@@ -311,7 +321,9 @@ class ScientificFrontendGeometryTests(unittest.TestCase):
 class SingleReflectionGeometryTests(unittest.TestCase):
     def setUp(self):
         self.source, self.oatof = source_fixture(), candidate_300mm_fixture()
-        self.kw = inputs(self.source, self.oatof)
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.kw, _ = scientific_inputs({'multipole': self.source}, self.oatof, Path(directory.name))
 
     def compile(self):
         from msplatform.assembly.resolve_assembly import compile_assembly_layout
@@ -331,10 +343,17 @@ class SingleReflectionGeometryTests(unittest.TestCase):
         names = rename_recipe_instances(plan['recipe'])
         plan['components']={names[key]:value for key,value in plan['components'].items()}
         self.kw['electrode_bindings']={names[key]:value for key,value in self.kw['electrode_bindings'].items()}
+        self.kw['provider_inputs']={names[key]:value for key,value in self.kw['provider_inputs'].items()}
         renamed_gem, renamed = self.compile()
         self.assertEqual(gem,renamed_gem)
-        self.assertEqual({k:v for k,v in original.items() if k not in ('composition_plan','electrode_bindings')},
-                         {k:v for k,v in renamed.items() if k not in ('composition_plan','electrode_bindings')})
+        expected = {k:copy.deepcopy(v) for k,v in original.items()
+                    if k not in ('composition_plan','electrode_bindings')}
+        record = expected['backend_electrode_bindings']
+        record['provider_inputs'] = {names[key]:value for key,value in record['provider_inputs'].items()}
+        record['electrode_group_scope'] = {names[key]:value for key,value in record['electrode_group_scope'].items()}
+        for row in record['bindings']:
+            row['instance_id'] = names[row['instance_id']]
+        self.assertEqual(expected, {k:v for k,v in renamed.items() if k not in ('composition_plan','electrode_bindings')})
         self.assertEqual(renamed['electrode_bindings'],
                          {names[key]: value for key,value in original['electrode_bindings'].items()})
         self.assertEqual(set(renamed['composition_plan']['components']),set(names.values()))
@@ -353,20 +372,22 @@ class SingleReflectionGeometryTests(unittest.TestCase):
     def test_local_oatof_removes_only_native_multipole_body_without_remapping(self):
         from tests.workflows.single_reflection.test_single_reflection_fields import multipole_source
         self.source = multipole_source('octupole')
-        self.kw = inputs(self.source, self.oatof)
-        self.kw['electrode_bindings']['multipole'] = native_mapping(self.source)
-        self.kw['electrode_bindings']['oatof']['accelerator_ring_ids'] = list(range(16,36))
+        with tempfile.TemporaryDirectory() as directory:
+            self.kw, _ = scientific_inputs({'multipole': self.source}, self.oatof, Path(directory))
         from tests.workflows.single_reflection.test_single_reflection_preparation import rename_recipe_instances
         plan=self.kw['composition_plan']
         names=rename_recipe_instances(plan['recipe'])
         plan['components']={names[key]:value for key,value in plan['components'].items()}
         self.kw['electrode_bindings']={names[key]:value for key,value in self.kw['electrode_bindings'].items()}
+        self.kw['provider_inputs']={names[key]:value for key,value in self.kw['provider_inputs'].items()}
         full_gem, full = self.compile()
         declaration = dict(instance_ids=['tof_b'], research_scope='OA and TOF only',
                            boundary_assumptions='Omit multipole metal and fields at the unchanged side aperture')
         full_bindings=copy.deepcopy(self.kw['electrode_bindings'])
+        full_provider_inputs=copy.deepcopy(self.kw['provider_inputs'])
         self.kw['composition_plan']['local_scope'] = declaration
         self.kw['electrode_bindings']={'tof_b':full_bindings['tof_b']}
+        self.kw['provider_inputs']={'tof_b':self.kw['provider_inputs']['tof_b']}
         with patch('msplatform.backends.simion.geometry.render_physical_gem') as native:
             local_gem, local = self.compile()
             native.assert_not_called()
@@ -380,13 +401,14 @@ class SingleReflectionGeometryTests(unittest.TestCase):
         self.assertTrue(full_gem.endswith(local_body+'\n}\n'))
         for eid in full_bindings[names['multipole']].values():
             self.assertNotIn(f'e({eid})', local_body)
-        for eid in range(11,36):
+        for eid in [11,12,13,14,15,*range(20,40)]:
             self.assertIn(f'e({eid})', local_body)
         # A declared local numerical box may exclude the absent upstream body.
         self.kw['numerical_domains']['parent']['pa_bounds_mm']['x_min'] = -129.9
         self.compile()
         del self.kw['composition_plan']['local_scope']
         self.kw['electrode_bindings']=full_bindings
+        self.kw['provider_inputs']=full_provider_inputs
         with self.assertRaisesRegex(ValueError, 'clip a provider'):
             self.compile()
 
@@ -395,11 +417,11 @@ class SingleReflectionGeometryTests(unittest.TestCase):
                            boundary_assumptions='Omit upstream metal and fields')
         self.kw['composition_plan']['local_scope']={**declaration,'instance_ids':['multipole']}
         self.kw['electrode_bindings']={'multipole':self.kw['electrode_bindings']['multipole']}
+        self.kw['provider_inputs']={'multipole':self.kw['provider_inputs']['multipole']}
         with self.assertRaisesRegex(ValueError, 'requires one oaTOF'):
             self.compile()
-        self.kw=inputs(self.source,self.oatof)
-        self.kw['composition_plan']['local_scope'] = declaration
-        self.kw['electrode_bindings']={'oatof':self.kw['electrode_bindings']['oatof']}
+        with tempfile.TemporaryDirectory() as directory:
+            self.kw, _ = scientific_inputs({'multipole': self.source}, self.oatof, Path(directory), local=True)
         self.kw['numerical_domains']['entrance_refinement'] = dict(
             copy.deepcopy(self.kw['numerical_domains']['parent']),guard_cells=1)
         with self.assertRaisesRegex(ValueError, 'cannot use multipole entrance_refinement'):
@@ -411,18 +433,23 @@ class SingleReflectionGeometryTests(unittest.TestCase):
         self.assertEqual((self.source, self.oatof, self.kw), before)
         self.assertEqual(gem.count("pa_define("), 1)
         self.assertEqual(gem.count(",1,90,90,0) {"), 1)
-        self.assertIn("locate(300,80,380) {", gem)
+        origin = geometry['numerical_domains']['parent']['instance_origin_mm']
+        self.assertIn(f"locate({-origin['x']:g},{-origin['y']:g},{-origin['z']:.12g}) {{", gem)
         self.assertIn("locate(-211.8,0,-340.742615462,1,90,90,0) {", gem)
         native_cells = dict(x=.25,y=.1,z=.3)
         self.assertEqual(geometry["numerical_domains"]["parent"]["cell_mm_xyz"], dict(x=.3,y=.25,z=.1))
         provider_syntax = gem.replace(" within_inside_or_on {", " within {")
-        self.assertIn(render_physical_gem(self.source, native_cells, electrode_ids=native_mapping(self.source)).rstrip(), provider_syntax)
+        self.assertIn(render_physical_gem(self.source, native_cells,
+            electrode_group_native_ids=geometry['electrode_bindings']['multipole']).rstrip(), provider_syntax)
         self.assertIn("cylinder(0,0,89,20,,0.5)", gem)  # actual endcap
         self.assertIn("cylinder(0,0,89.3,3.25,,1.1)", gem)  # original hole overrun
         self.assertNotIn("numerical absorber", gem)
         self.assertNotIn("Integration-owned", gem)
+        from msplatform.backends.simion.tof_electrode_mapping import native_frontend_electrodes
+        native_oa = native_frontend_electrodes(self.kw['electrode_bindings']['oatof'],
+            frontend_domain=geometry['frontend_field_domain'])
         expected_oa = render_accelerator_local_geometry(geometry["accelerator_projection"], cell_x_mm=.3,
-            cell_z_mm=.1, electrodes=self.kw['electrode_bindings']['oatof'], render_intermediate2_sheet=True)
+            cell_z_mm=.1, electrodes=native_oa, render_intermediate2_sheet=True)
         self.assertIn("\n".join(expected_oa), provider_syntax)
         for electrode in [11,12,13,14,15,*range(20,40)]:
             self.assertIn(f"e({electrode})", gem)
@@ -439,7 +466,8 @@ class SingleReflectionGeometryTests(unittest.TestCase):
         # Orientation .125 in the real source fixture gives non-symmetric rod centres.
         rod = self.source["geometry_mm"]["rod_array"]["rods"][0]
         self.assertNotEqual(rod["center_x_mm"], rod["center_y_mm"])
-        self.assertIn(f"e({geometry['electrode_bindings']['multipole'][rod['electrode_group']]})", gem)
+        group = f"rod_group_{rod['electrode_group']}"
+        self.assertIn(f"e({geometry['electrode_bindings']['multipole'][group]})", gem)
 
     def test_numerical_domains_reuse_the_exact_complete_body_without_rendering_again(self):
         module = "msplatform.backends.simion.geometry"
@@ -486,20 +514,9 @@ class SingleReflectionGeometryTests(unittest.TestCase):
         self.assertEqual(render_frontend_domain(strict_body, **domain), gem)
 
 
-    def test_two_zone_renderer_does_not_invent_intermediate_sheet(self):
-        planes = self.oatof.pop("accelerator_topology")["planes_global_z_mm"]
-        self.oatof["geometry_derivation"]["accelerator"].update(
-            canonical_repeller_z_mm=planes["repeller"], canonical_grid1_z_mm=planes["intermediate1"],
-            canonical_grid2_z_mm=planes["exit"], d2_mm=planes["exit"]-planes["intermediate1"])
-        self.oatof["rings"].update(accelerator_count=5)
-        self.oatof["rings"].pop("accelerator_placement")
-        self.oatof["electrodes_V"].pop("intermediate2")
-        self.kw = inputs(self.source, self.oatof, accelerator_variant="two_zone_square")
-        self.kw['electrode_bindings']['oatof'].pop("accelerator_intermediate2_id")
-        self.kw['electrode_bindings']['oatof']["accelerator_ring_ids"] = list(range(20,25))
-        gem, _ = self.compile()
-        self.assertNotIn("e(14)", gem)
-        self.assertIn("e(24)", gem)
+    def test_two_zone_renderer_rejects_unsupported_provider_projection(self):
+        with self.assertRaisesRegex(ValueError, 'topology conflicts with variant two_zone_square'):
+            inputs(self.source, self.oatof, accelerator_variant="two_zone_square")
 
     def test_downstream_domains_use_final_nonzero_axis_and_numerical_detector_plane(self):
         self.oatof["coordinate_convention"].update(reflectron_axis=[7.,-9.],detector_x=81.)
@@ -560,9 +577,9 @@ class SingleReflectionGeometryTests(unittest.TestCase):
 
     def test_electrode_collisions_missing_map_wrong_numerics_fail(self):
         for mutation in (
-            lambda k: k['electrode_bindings']['oatof'].update(grounded_shield_id=3),
-            lambda k: k['electrode_bindings']['oatof']["accelerator_ring_ids"].pop(),
-            lambda k: k['electrode_bindings']['multipole'].pop(2),
+            lambda k: k['electrode_bindings']['oatof'].update(common_ground=3),
+            lambda k: k['electrode_bindings']['oatof'].pop('accelerator_ring_0020'),
+            lambda k: k['electrode_bindings']['multipole'].pop(next(iter(k['electrode_bindings']['multipole']))),
             lambda k: k["numerical_domains"]["parent"]["cell_mm_xyz"].update(x=0),
             lambda k: k["numerical_domains"]["parent"]["pa_bounds_mm"].update(x_min=-180.),
             lambda k: k["numerical_domains"]["parent"]["pa_bounds_mm"].update(x_max=60.1),
@@ -577,7 +594,8 @@ class SingleReflectionGeometryTests(unittest.TestCase):
         sources = [source_fixture(), multipole_source('hexapole'), multipole_source('quadrupole')]
         for count in (2, 3):
             names = [f'mp_{index}' for index in range(count)]
-            kw = multi_inputs(sources[:count], self.oatof, names=names)
+            with tempfile.TemporaryDirectory() as directory:
+                kw, _ = scientific_inputs(dict(zip(names, sources[:count], strict=True)), self.oatof, Path(directory))
             gems, geometry = compile_frontend_geometry(dict(zip(names, sources[:count], strict=True)), self.oatof, **kw)
             self.assertNotIn(' within {', gems['parent'])
             self.assertIn(' within_inside_or_on {', gems['parent'])
@@ -586,7 +604,9 @@ class SingleReflectionGeometryTests(unittest.TestCase):
             self.assertEqual(len([row for row in geometry['composition_plan']['connection_checks']
                                   if row['connection_id'].startswith('chain_')]), count)
             bound = {value for name in names for value in geometry['electrode_bindings'][name].values()}
-            self.assertTrue(bound.isdisjoint(set(geometry['electrode_bindings']['oatof']['accelerator_ring_ids'])))
+            rings = {value for key, value in geometry['electrode_bindings']['oatof'].items()
+                     if key.startswith('accelerator_ring_')}
+            self.assertTrue(bound.isdisjoint(rings))
             if count == 3:
                 renamed = copy.deepcopy(kw)
                 aliases = {name: f'renamed_{index}' for index, name in enumerate(names, 1)} | {'oatof': 'detector_body'}
@@ -598,6 +618,7 @@ class SingleReflectionGeometryTests(unittest.TestCase):
                     edge['downstream']['instance_id'] = aliases[edge['downstream']['instance_id']]
                 renamed['composition_plan']['components'] = {aliases[key]: value for key, value in renamed['composition_plan']['components'].items()}
                 renamed['electrode_bindings'] = {aliases[key]: value for key, value in renamed['electrode_bindings'].items()}
+                renamed['provider_inputs'] = {aliases[key]: value for key, value in renamed['provider_inputs'].items()}
                 renamed['composition_plan'] = compile_assembly_layout(recipe, renamed['composition_plan']['components'])
                 renamed_sources = {aliases[key]: value for key, value in zip(names, sources[:count], strict=True)}
                 renamed_gems, renamed_geometry = compile_frontend_geometry(renamed_sources, self.oatof, **renamed)
@@ -606,7 +627,8 @@ class SingleReflectionGeometryTests(unittest.TestCase):
 
     def test_zero_gap_bare_rods_to_oa_are_rejected(self):
         source = multipole_source('octupole')
-        kw = inputs(source, self.oatof)
+        with tempfile.TemporaryDirectory() as directory:
+            kw, _ = scientific_inputs({'multipole': source}, self.oatof, Path(directory))
         recipe = kw['composition_plan']['recipe']
         recipe['connections'][0]['gap_mm'] = 0.
         recipe['instances'][0]['transform']['translation_mm'][0] += 1.
@@ -617,14 +639,18 @@ class SingleReflectionGeometryTests(unittest.TestCase):
     def test_zero_gap_bare_rods_with_independent_drives_are_rejected(self):
         sources = [multipole_source('quadrupole'), multipole_source('quadrupole')]
         names = ['q1', 'q2']
-        kw = multi_inputs(sources, self.oatof, names=names, multipole_gap_mm=0.)
+        with tempfile.TemporaryDirectory() as directory:
+            kw, _ = scientific_inputs(dict(zip(names, sources, strict=True)), self.oatof, Path(directory),
+                legacy_inputs=multi_inputs(sources, self.oatof, names=names, multipole_gap_mm=0.))
         with self.assertRaisesRegex(ValueError, r'q1 rod group \S+ member /\S+ contacts q2 rod group \S+ member /'):
             compile_frontend_geometry(dict(zip(names, sources, strict=True)), self.oatof, **kw)
 
     def test_zero_gap_distinct_size_rods_without_contact_are_allowed(self):
         sources = [quadrupole_source(r0=r0, dc=0., frequency_hz=1e6, phase_rad=0.) for r0 in (4.,10.)]
         names = ['small', 'large']
-        kw = multi_inputs(sources, self.oatof, names=names, multipole_gap_mm=0.)
+        with tempfile.TemporaryDirectory() as directory:
+            kw, _ = scientific_inputs(dict(zip(names, sources, strict=True)), self.oatof, Path(directory),
+                legacy_inputs=multi_inputs(sources, self.oatof, names=names, multipole_gap_mm=0.))
         gems, _ = compile_frontend_geometry(dict(zip(names,sources,strict=True)), self.oatof, **kw)
         self.assertIn('pa_define(',gems['parent'])
 
@@ -632,7 +658,9 @@ class SingleReflectionGeometryTests(unittest.TestCase):
         for aperture in (3.,10.):
             sources = [multipole_source('octupole'), source_fixture(entrance_aperture_radius_mm=aperture)]
             names = ['bare', 'housing']
-            kw = multi_inputs(sources,self.oatof,names=names,multipole_gap_mm=0.)
+            with tempfile.TemporaryDirectory() as directory:
+                kw, _ = scientific_inputs(dict(zip(names, sources, strict=True)), self.oatof, Path(directory),
+                    legacy_inputs=multi_inputs(sources, self.oatof, names=names, multipole_gap_mm=0.))
             with self.subTest(aperture=aperture):
                 if aperture == 3.:
                     with self.assertRaisesRegex(ValueError,r'bare rod group \S+ member /\S+ contacts housing entrance_endcap group grounded_shell member /'):
@@ -643,7 +671,8 @@ class SingleReflectionGeometryTests(unittest.TestCase):
 
     def test_zero_gap_rods_inside_real_large_oa_hole_are_allowed(self):
         source = multipole_source('octupole')
-        kw = inputs(source,self.oatof)
+        with tempfile.TemporaryDirectory() as directory:
+            kw, _ = scientific_inputs({'multipole': source}, self.oatof, Path(directory))
         plan = kw['composition_plan']
         recipe = copy.deepcopy(plan['recipe'])
         components = copy.deepcopy(plan['components'])
@@ -662,7 +691,8 @@ class SingleReflectionGeometryTests(unittest.TestCase):
         sources = [quadrupole_source(r0=r0, dc=dc, frequency_hz=freq, phase_rad=phase)
                    for r0, dc, freq, phase in ((4., 1., 1_000_000., .1), (4.5, 2., 1_100_000., .2), (5., 3., 1_200_000., .3))]
         names = ['q1', 'q2', 'q3']
-        kw = multi_inputs(sources, self.oatof, names=names)
+        with tempfile.TemporaryDirectory() as directory:
+            kw, _ = scientific_inputs(dict(zip(names, sources, strict=True)), self.oatof, Path(directory))
         gems, geometry = compile_frontend_geometry(dict(zip(names, sources, strict=True)), self.oatof, **kw)
         self.assertEqual([source['geometry_mm']['inscribed_radius_r0'] for source in sources], [4., 4.5, 5.])
         self.assertEqual([source['drive']['dc_amplitude_V_per_group'] for source in sources], [1., 2., 3.])
@@ -678,7 +708,8 @@ class SingleReflectionGeometryTests(unittest.TestCase):
             with self.subTest(count=count):
                 names = [f'mp_{index}' for index in range(count)]
                 providers = dict(zip(names, sources[:count], strict=True))
-                kw = multi_inputs(sources[:count], self.oatof, names=names)
+                with tempfile.TemporaryDirectory() as directory:
+                    kw, _ = scientific_inputs(providers, self.oatof, Path(directory))
                 kw['numerical_domains']['parent']['pa_bounds_mm']['x_min'] = -1000.
                 kw['numerical_domains']['parent']['cell_mm_xyz']['x'] = .5
                 baseline, geometry = compile_frontend_geometry(providers, self.oatof, **kw)
@@ -713,12 +744,12 @@ class SingleReflectionGeometryTests(unittest.TestCase):
             with self.subTest(key=key), self.assertRaisesRegex(ValueError, 'clip a provider physical envelope'):
                 _require_domain_contains(dict(box, **{key: box[key]+shift}), [], accelerator,
                                          entrance_opening=opening)
-        kw = inputs(self.source, self.oatof)
+        kw = copy.deepcopy(self.kw)
         fine = copy.deepcopy(kw['numerical_domains']['parent'])
         fine['guard_cells'] = 1
         # Raw coverage is valid but an oversized guard excludes physical metal.
         fine['cell_mm_xyz'] = dict(x=30., y=20., z=10.)
-        fine['guard_cells'] = 2
+        fine['guard_cells'] = 3
         kw['numerical_domains']['entrance_refinement'] = fine
         with self.assertRaisesRegex(ValueError, 'clip a provider physical envelope'):
             compile_frontend_geometry({'multipole': self.source}, self.oatof, **kw)

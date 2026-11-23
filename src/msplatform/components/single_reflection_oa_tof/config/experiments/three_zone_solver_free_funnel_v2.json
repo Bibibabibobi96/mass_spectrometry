@@ -52,8 +52,8 @@
     },
     "three_zone_funnel_schema": {
       "path": "src/msplatform/contracts/schemas/oatof_three_zone_solver_free_funnel.schema.json",
-      "bytes": 24523,
-      "sha256": "6828F3B7581A1A1B7D3378929B023B36D7F0456EB73859CC36FE472EB32FFC18"
+      "bytes": 24527,
+      "sha256": "9FC0049E9E8A044C6268B023EF6BE371A073E60A51EB834B96F2507D34DCAFFC"
     },
     "three_zone_resolved_plan_schema": {
       "path": "src/msplatform/contracts/schemas/oatof_three_zone_resolved_plan.schema.json",
@@ -195,7 +195,7 @@
     "population_sample_counts": [501, 1001, 2001],
     "population_sigma_relative_convergence": 0.01,
     "primary_sample_count": 1001,
-    "fwhm_algorithm": "common.analysis.peak_metrics.compute_peak_metrics",
+    "fwhm_algorithm": "msplatform.analysis.peak_metrics.compute_peak_metrics",
     "fwhm_cross_sample_convergence_allowed": false,
     "mode_count_cross_sample_stability_required": true
   },

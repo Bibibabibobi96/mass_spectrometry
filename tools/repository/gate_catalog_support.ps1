@@ -200,10 +200,10 @@ function Read-GateCatalog {
         if ([string]$route.dependency_profile -notin @('stdlib', 'locked')) {
             throw "Gate catalog dependency profile is invalid: $stage"
         }
-        if ([string]$route.repository_integration_group -notin @(
+        if ([string]$route.repository_gate_group -notin @(
                 'fast', 'regression'
             )) {
-            throw "Gate catalog repository integration group is invalid: $stage"
+            throw "Gate catalog repository gate group is invalid: $stage"
         }
         if ($null -ne $route.PSObject.Properties['runtime_dependencies_path']) {
             $inventoryPath = Join-Path $RepoRoot ([string]$route.runtime_dependencies_path)
@@ -311,18 +311,18 @@ function Read-GateCatalog {
                 }
             }
         }
-        if ($null -ne $route.PSObject.Properties['repository_integration_command']) {
+        if ($null -ne $route.PSObject.Properties['repository_gate_command']) {
             Test-GateCatalogCommand `
-                -Command $route.repository_integration_command `
+                -Command $route.repository_gate_command `
                 -Stage $stage -RepoRoot $RepoRoot
         }
-        if ($null -ne $route.PSObject.Properties['repository_integration_partition']) {
-            $partition = $route.repository_integration_partition
-            $completeCommand = if ($null -ne $route.PSObject.Properties['repository_integration_command']) {
-                $route.repository_integration_command
+        if ($null -ne $route.PSObject.Properties['repository_gate_partition']) {
+            $partition = $route.repository_gate_partition
+            $completeCommand = if ($null -ne $route.PSObject.Properties['repository_gate_command']) {
+                $route.repository_gate_command
             } else { $route.command }
             $validRunner = if ($completeCommand.runner -eq 'powershell') {
-                $null -ne $route.PSObject.Properties['repository_integration_command'] -and
+                $null -ne $route.PSObject.Properties['repository_gate_command'] -and
                 $null -ne $partition.PSObject.Properties['parameter'] -and
                 [string]$partition.parameter -match '^[A-Za-z][A-Za-z0-9]*$'
             } else {
@@ -335,17 +335,17 @@ function Read-GateCatalog {
                 $arguments[5] -eq '-p' -and $arguments[6] -eq 'test_*.py' -and
                 $null -ne $route.PSObject.Properties['partition_preflight'] -and -not [bool]$route.partition_preflight
             }
-            if ($route.repository_integration_group -ne 'regression' -or -not $validRunner -or
+            if ($route.repository_gate_group -ne 'regression' -or -not $validRunner -or
                 $null -eq $route.PSObject.Properties['test_selection'] -or
                 $null -eq $route.test_selection.PSObject.Properties['scope'] -or
                 [int]$partition.count -lt 2 -or [int]$partition.count -gt 8 -or
                 [double]$partition.default_seconds -le 0) {
-                throw "Invalid repository integration test partition: $stage"
+                throw "Invalid repository gate test partition: $stage"
             }
             $scope = [string]$route.test_selection.scope
             if ([IO.Path]::IsPathRooted($scope) -or $scope -match '(^|/)\.\.(/|$)' -or
                 -not $scope.EndsWith('/') -or -not (Test-Path -LiteralPath (Join-Path $RepoRoot $scope) -PathType Container)) {
-                throw "Invalid repository integration partition scope: $stage -> $scope"
+                throw "Invalid repository gate partition scope: $stage -> $scope"
             }
         }
         $requiredStages = if (
@@ -469,8 +469,8 @@ function Get-GateChangedTests {
         [bool]$selection.preserve_command -and
         $null -ne $selection.PSObject.Properties['module_parameter'] -and
         [string]$selection.module_parameter -ceq 'ChangedTestModules'
-    if ($preservesOwner -and $null -ne $Route.PSObject.Properties['repository_integration_partition']) {
-        $partition = $Route.repository_integration_partition
+    if ($preservesOwner -and $null -ne $Route.PSObject.Properties['repository_gate_partition']) {
+        $partition = $Route.repository_gate_partition
         $preservesOwner = [string]$selection.module_parameter -cne [string]$partition.parameter
     }
     if (-not $FullScope -and $unmappedProduction.Count -gt 0 -and -not $preservesOwner) {
@@ -555,7 +555,7 @@ function Get-GateRepositoryTestPartitions {
     <# Enumerate the owner's complete test scope once; weights affect order only. #>
     param([Parameter(Mandatory)]$Route, [Parameter(Mandatory)][string]$RepoRoot,
         [AllowEmptyCollection()][string[]]$Modules)
-    $config = $Route.repository_integration_partition
+    $config = $Route.repository_gate_partition
     $discoveryRoots = if ($null -ne $Route.test_selection.PSObject.Properties['roots']) {
         @($Route.test_selection.roots)
     } else { @([string]$Route.test_selection.scope) }
@@ -579,7 +579,7 @@ function Get-GateRepositoryTestPartitions {
             seconds = if ($weights.ContainsKey($baseName)) { $weights[$baseName] } else { [double]$config.default_seconds }
         }
     } | Sort-Object -Property @{Expression='seconds';Descending=$true}, @{Expression='name';Descending=$false})
-    if (-not $weightedModules.Count) { throw "Repository integration test partition is empty: $($Route.stage)" }
+    if (-not $weightedModules.Count) { throw "Repository gate test partition is empty: $($Route.stage)" }
     $groups = @(@(for ($i = 0; $i -lt [int]$config.count; $i++) {
         [pscustomobject]@{ index = $i; seconds = [double]0; modules = [Collections.Generic.List[string]]::new() }
     }))
