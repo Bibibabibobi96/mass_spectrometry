@@ -131,6 +131,23 @@ def attach_terminal_evidence(result: dict, log_paths: Sequence[str | Path],
     return result
 
 
+def render_terminal_6d_rec(evidence: Mapping) -> str:
+    """Serialize verified native start/terminal states without assigning a cause."""
+    if not isinstance(evidence, Mapping) or evidence.get('status') != 'recorded_v1':
+        raise ValueError('REC requires complete current terminal evidence')
+    lines = ['Ion,Event,TOF,X,Y,Z,Vx,Vy,Vz']
+    for particle in evidence['particle_evidence']:
+        phases = {row['event']: row for row in particle['raw']['records']}
+        for phase, label in (('initialize', 'Start'), ('terminate', 'Splat')):
+            row = phases[phase]
+            values = (row['raw_tof_us'], *(row[key] for key in COORDINATES))
+            if any(type(value) not in (int, float) or not math.isfinite(value) for value in values):
+                raise ValueError('REC requires finite native TOF and 6D')
+            lines.append(','.join((str(row['ion']), label,
+                *(format(value, '.17g') for value in values))))
+    return '\n'.join(lines) + '\n'
+
+
 def _finalize_records(rows):
     if not rows:
         return {'status': 'legacy_absent', 'records': []}

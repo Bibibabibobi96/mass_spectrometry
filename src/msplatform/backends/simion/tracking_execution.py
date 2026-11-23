@@ -1154,6 +1154,12 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
             verification='actual_native_stdout_readback_only_not_inferred_from_request',
             phase='before_fly_command_not_after_iob_load',
             stdout_data_keys=[key for key in records if key=='native_stdout' or key.startswith('native_stdout__')]))
+    if collection.get('terminal_evidence',{}).get('status') == 'recorded_v1':
+        from .terminal_evidence import render_terminal_6d_rec
+        terminal_rec = session.declare_file(session.result_dir/'terminal-6d.rec','required_evidence')
+        with terminal_rec.open('x',encoding='utf-8',newline='\n') as stream:
+            stream.write(render_terminal_6d_rec(collection['terminal_evidence']))
+        records['terminal_6d_rec'] = file_record(session.canonical_path(terminal_rec),'required_evidence')
     with output.open('x',encoding='utf-8',newline='\n') as stream:
         stream.write(json.dumps(collection,ensure_ascii=False,allow_nan=False,indent=2)+'\n')
     records['collection'] = file_record(session.canonical_path(output),'required_evidence')

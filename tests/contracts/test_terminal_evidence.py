@@ -7,6 +7,7 @@ import unittest
 
 from msplatform.backends.simion.terminal_evidence import (
     attach_terminal_evidence, collect_terminal_evidence, parse_terminal_wire, reconcile_terminal_evidence,
+    render_terminal_6d_rec,
 )
 
 
@@ -63,6 +64,24 @@ class TerminalEvidenceTests(unittest.TestCase):
         self.assertFalse(partial['terminal_6d_complete'])
         self.assertFalse(any(partial['raw_clock_available'].values()))
         self.assertEqual(partial['physical_cause'],'unknown')
+
+    def test_rec_preserves_native_start_terminal_6d_without_cause_relabeling(self):
+        initial = row('initialize', 1, raw_tof_us=0., raw_step_us=None)
+        terminal = row(raw_tof_us=1.25, raw_step_us=None)
+        evidence = {'status': 'recorded_v1', 'particle_evidence': [
+            {'raw': {'records': [initial, terminal]},
+             'reconciliation': {'physical_cause': 'unknown'}}]}
+        actual = render_terminal_6d_rec(evidence).splitlines()
+        self.assertEqual(actual[0], 'Ion,Event,TOF,X,Y,Z,Vx,Vy,Vz')
+        self.assertEqual(actual[1], '1,Start,0,1,2,3,4,5,6')
+        self.assertEqual(actual[2], '1,Splat,1.25,1,2,3,4,5,6')
+        self.assertEqual(evidence['particle_evidence'][0]['reconciliation']['physical_cause'], 'unknown')
+        incomplete = copy.deepcopy(evidence)
+        incomplete['particle_evidence'][0]['raw']['records'][1]['vz_mm_per_us'] = None
+        with self.assertRaisesRegex(ValueError, 'finite native TOF and 6D'):
+            render_terminal_6d_rec(incomplete)
+        with self.assertRaisesRegex(ValueError, 'complete current terminal evidence'):
+            render_terminal_6d_rec({'status': 'legacy_absent'})
 
     def test_own_stop_and_legacy_observations_do_not_replace_terminal(self):
         end=row();pre=row('other_actions_before',2,splat=0,x_mm=9.);post=row('other_actions_after',3,splat=1,x_mm=8.)
