@@ -417,7 +417,8 @@ def plan_ip_mr_tracking_workbench(compiled: Any, *, admission: Mapping[str, Any]
     def record(key):
         source_record = source.data_records[key]
         source_path = source.data_path(key)
-        destination = root/'inputs/native_fields'/(key+source_path.suffix)
+        stem = key[:-len('_surface')]+'_collision' if key.endswith('_surface') else key
+        destination = root/'inputs/native_fields'/(stem+source_path.suffix)
         external_copies.append(dict(source_record=source_record,destination=str(destination)))
         copy_paths[str(source_path)] = str(destination)
         return dict(source_record)

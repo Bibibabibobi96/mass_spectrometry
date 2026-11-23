@@ -1,4 +1,5 @@
 """Real managed field owner; native child replaced with inert process only."""
+import copy
 import os
 from pathlib import Path
 import tempfile
@@ -220,6 +221,24 @@ class SampledTrackingProducerTests(unittest.TestCase):
                 self.assertTrue(Path(copied['destination']).is_relative_to(root/'inputs'))
             self.assertIn('native_fields',spec)
             self.assertNotIn('/runs/',spec.split('native_fields',1)[1])
+            from msplatform.backends.simion.source import lua_value
+            for copied in native.input_copies:
+                if copied['source_record']['path'].endswith('.pa-surf'):
+                    companion = Path(copied['destination'])
+                    pa = companion.with_suffix('').with_suffix('.pa')
+                    self.assertTrue(any(Path(row['destination']) == pa for row in native.input_copies))
+                    self.assertIn('fractional_surface='+lua_value(str(companion)),spec)
+            without_surfaces=copy.deepcopy(admission)
+            for key in list(without_surfaces['source'].data_records):
+                if key.endswith('_surface'):
+                    del without_surfaces['source'].data_records[key]
+            absent=plan_ip_mr_tracking_workbench(model_geometry(without_surfaces['model']),admission=without_surfaces,
+                run_directory=root/'empty',program='-- inert Program',program_metadata={'collision_priority_applied':True},
+                native_source_rows=[dict(mass_amu='1',charge_state='1',position_x_mm='0',position_y_mm='0',position_z_mm='0',velocity_x_m_s='0',velocity_y_m_s='0',velocity_z_m_s='0')],
+                native_path_resource=resource_path('native_run_path.lua'))
+            empty_spec=absent.materializations[str(root/'empty/inputs/tracking_iob.lua')]
+            self.assertIn('fractional_surface='+lua_value(str(root/'empty/inputs/native_fields/multipole_collision.pa-surf')),empty_spec)
+            self.assertNotIn('multipole_surface.pa-surf',empty_spec)
             self.assertEqual(len(native.operations),2)
             basis_path=fields.data_path('sampled_basis');saved=basis_path.read_bytes()
             try:

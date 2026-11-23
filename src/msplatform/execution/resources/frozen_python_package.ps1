@@ -199,7 +199,9 @@ function Invoke-IsolatedFrozenPythonModule {
     $savedPythonPath = $env:PYTHONPATH
     $savedNoUserSite = $env:PYTHONNOUSERSITE
     $savedNoBytecode = $env:PYTHONDONTWRITEBYTECODE
+    $savedConsoleOutputEncoding = [Console]::OutputEncoding
     try {
+        [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
         $env:PYTHONPATH = $packageRoots -join [IO.Path]::PathSeparator
         $env:PYTHONNOUSERSITE = '1'
         $env:PYTHONDONTWRITEBYTECODE = '1'
@@ -365,6 +367,7 @@ finally:
         $env:PYTHONPATH = $savedPythonPath
         $env:PYTHONNOUSERSITE = $savedNoUserSite
         $env:PYTHONDONTWRITEBYTECODE = $savedNoBytecode
+        [Console]::OutputEncoding = $savedConsoleOutputEncoding
     }
     Assert-FrozenPythonPackage -Package $Package
     $executionResult = [pscustomobject]@{

@@ -121,6 +121,10 @@ class FrozenInputTests(unittest.TestCase):
                 with patch("msplatform.execution.inputs.shutil.copyfile", side_effect=corrupt_copy):
                     with self.assertRaisesRegex(AssertionError, "SHA-256 changed"):
                         freeze_file(source, target, retention_classifier=classifier)
+                role_target = source.with_name("role-copy.bin")
+                frozen = freeze_file(source, role_target, retention_role="solver_native_binary")
+                self.assertEqual(frozen["retention_role"], "solver_native_binary")
+                self.assertEqual(role_target.read_bytes(), source.read_bytes())
 
 class PythonPackageSelectionTests(unittest.TestCase):
     def test_probe_invocation_executes_same_frozen_module_with_isolation(self):
@@ -166,8 +170,17 @@ Invoke-IsolatedFrozenPythonModule @options | ConvertTo-Json -Depth 30 -Compress
 """, encoding='utf-8')
             environment = {**os.environ, 'FROZEN_TEST_PYTHON': sys.executable, 'PYTHONPATH': str(author)}
             def invoke(mode):
-                return subprocess.run([pwsh, '-NoProfile', '-File', str(script), str(helper), str(config), mode],
-                    cwd=root, env=environment, timeout=30, capture_output=True, text=True, encoding='utf-8')
+                completed = subprocess.run([pwsh, '-NoProfile', '-File', str(script), str(helper), str(config), mode],
+                    cwd=root, env=environment, timeout=30, capture_output=True)
+                def decode(stream):
+                    if stream is None:
+                        return None
+                    try:
+                        return stream.decode('utf-8')
+                    except UnicodeDecodeError:
+                        return stream.decode('mbcs')
+                streams = [decode(completed.stdout), decode(completed.stderr)]
+                return subprocess.CompletedProcess(completed.args, completed.returncode, *streams)
             probe = invoke('probe')
             self.assertEqual(probe.returncode, 0, probe.stdout + probe.stderr)
             result = json.loads(probe.stdout)
@@ -179,7 +192,7 @@ Invoke-IsolatedFrozenPythonModule @options | ConvertTo-Json -Depth 30 -Compress
             self.assertEqual(invocation['arguments'][:5], ['-I', '-X', 'utf8', '-B', '-c'])
             actual = subprocess.run([invocation['file_path'], *invocation['arguments']],
                 cwd=invocation['working_directory'], env=environment, timeout=30,
-                capture_output=True, text=True, encoding='utf-8')
+                capture_output=True, text=True, encoding='utf-8', errors='replace')
             self.assertEqual(actual.returncode, 0, actual.stdout + actual.stderr)
             witness = json.loads(actual.stdout)
             self.assertEqual(witness['arguments'], arguments)
@@ -198,7 +211,7 @@ Invoke-IsolatedFrozenPythonModule @options | ConvertTo-Json -Depth 30 -Compress
             frozen_module.unlink()
             denied = subprocess.run([invocation['file_path'], *invocation['arguments']],
                 cwd=invocation['working_directory'], env=environment, timeout=30,
-                capture_output=True, text=True, encoding='utf-8')
+                capture_output=True, text=True, encoding='utf-8', errors='replace')
             self.assertNotEqual(denied.returncode, 0)
             self.assertIn('entry module escaped frozen roots', denied.stderr)
             self.assertEqual(module.read_bytes(), original)
@@ -391,8 +404,9 @@ Invoke-IsolatedFrozenPythonModule @options | ConvertTo-Json -Depth 30 -Compress
             (external / "hidden.py").write_text("not imported", encoding="utf-8")
             if os.name == "nt":
                 linked = subprocess.run(["cmd.exe", "/c", "mklink", "/J", str(provider / "linked"),
-                                         str(external)], cwd=root, capture_output=True, text=True, check=False, timeout=None)
-                self.assertEqual(linked.returncode, 0, linked.stdout + linked.stderr)
+                                         str(external)], cwd=root, capture_output=True, check=False, timeout=None)
+                diagnostic = (linked.stdout + b'\n' + linked.stderr).decode('mbcs', errors='replace')
+                self.assertEqual(linked.returncode, 0, diagnostic)
             else:
                 (provider / "linked").symlink_to(external, target_is_directory=True)
             with self.assertRaisesRegex(ValueError, "escapes its declared provider"):

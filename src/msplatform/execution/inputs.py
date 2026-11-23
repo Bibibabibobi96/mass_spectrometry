@@ -13,7 +13,7 @@ from msplatform.io.manifest_records import file_record, verify_record
 
 
 def freeze_file(source: Path, destination: Path, *, retention_classifier: Any = None,
-                overwrite_existing: bool = False) -> dict[str, Any]:
+                retention_role: str | None = None, overwrite_existing: bool = False) -> dict[str, Any]:
     """Copy exact input bytes to a caller-selected, previously absent path.
 
     The caller creates the parent. Explicit overwrite is for the caller's owned
@@ -27,7 +27,7 @@ def freeze_file(source: Path, destination: Path, *, retention_classifier: Any = 
         raise FileExistsError(destination)
     if overwrite_existing and not source.is_file():
         raise FileNotFoundError(source)
-    before = file_record(source.resolve(), retention_classifier=retention_classifier)
+    before = file_record(source.resolve(), retention_role=retention_role, retention_classifier=retention_classifier)
     if overwrite_existing and destination.exists():
         destination.chmod(destination.stat().st_mode | stat.S_IWRITE)
     shutil.copyfile(source, destination)
