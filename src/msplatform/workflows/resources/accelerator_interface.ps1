@@ -10,7 +10,7 @@ ContinuationPredecessorManifestPath remains the downstream joint-flight parent.
 IP recovery reuses the explicit sealed MultipoleIpRunId preparation and requires
 its unchanged request, a new IP run ID, MatchingRequestPath and FieldRequestPath.
 Sources, automatic stages, complete examples and field limits:
-integrations/README.md (simulation path selection).
+docs/ASSEMBLY.md (simulation path selection).
 #>
 [CmdletBinding()]
 param(

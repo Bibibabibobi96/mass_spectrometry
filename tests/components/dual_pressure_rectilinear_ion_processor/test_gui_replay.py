@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -34,6 +35,7 @@ class GuiReplayEntrypointTests(unittest.TestCase):
              "-PythonExe", sys.executable],
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30, check=False,
             cwd=self.source,
+            env={**os.environ, "MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH": str(self.source / "host_resources.sqlite3")},
         )
 
     def test_missing_manifest_rejected_without_new_files(self) -> None:
@@ -55,6 +57,13 @@ class GuiReplayEntrypointTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("GUI replay plan is missing; finalize refused before allocation", result.stdout + result.stderr)
         self.assertEqual(list(self.source.iterdir()), [])
+
+    def test_python_consumers_use_explicit_run_root_context(self) -> None:
+        for name in ("ip_prepare_gui_replay.ps1", "ip_finalize_gui_replay.ps1"):
+            with self.subTest(script=name):
+                text = (SCRIPT.parent / name).read_text(encoding="utf-8")
+                self.assertIn("Invoke-RunToolRootContext -RepoRoot $repoRoot", text)
+                self.assertNotIn("$env:PYTHONPATH", text)
 
     def test_foreign_or_incomplete_manifest_rejected_without_new_files(self) -> None:
         manifest = self.source / "run_manifest.json"

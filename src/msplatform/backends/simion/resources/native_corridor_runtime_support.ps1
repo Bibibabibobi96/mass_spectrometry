@@ -6,13 +6,43 @@ $ErrorActionPreference='Stop'
 function Protect-MrtofContinuationEvidence {
   param([string]$Parent,$Session,[string]$Python,[string]$RepoRoot,$Guards)
   function Get-MrtofContinuationProjection {
-    Push-Location -LiteralPath $RepoRoot;$saved=$env:PYTHONPATH
+    $code=@'
+import importlib.machinery,importlib.util,runpy,sys
+from pathlib import Path
+root=Path(sys.argv[1]).resolve()
+package_root=root/'src' if (root/'src').is_dir() else root
+entry=package_root/'msplatform/workflows/prepared_joint/continuation.py'
+if not entry.is_file():
+    raise FileNotFoundError('Selected continuation implementation is missing: '+str(entry))
+sys.path=[str(package_root)]+[value for value in sys.path if value and not (Path(value)/'msplatform').exists()]
+sys.meta_path=[finder for finder in sys.meta_path if finder in (importlib.machinery.BuiltinImporter,importlib.machinery.FrozenImporter,importlib.machinery.PathFinder)]
+spec=importlib.util.find_spec('msplatform.workflows.prepared_joint.continuation')
+if spec is None or spec.origin is None or Path(spec.origin).resolve()!=entry:
+    raise RuntimeError('Continuation implementation escaped its selected code source')
+sys.argv=[spec.name,'--predecessor-run-dir',str(Path(sys.argv[2]).resolve()),'--protection-projection']
+failure=None
+try:
+    runpy.run_module(spec.name,run_name='__main__',alter_sys=True)
+except BaseException as error:
+    failure=error
+    raise
+finally:
+    for name,loaded in tuple(sys.modules.items()):
+        if name.split('.')[0]=='msplatform' and getattr(loaded,'__file__',None):
+            if not Path(loaded.__file__).resolve().is_relative_to(package_root):
+                detail='Continuation imported code outside its selected source: '+name
+                if failure is None:
+                    raise RuntimeError(detail)
+                failure.add_note(detail)
+'@
+    Push-Location -LiteralPath $Parent
     try {
-      $env:PYTHONPATH=$RepoRoot
-      $output=& $Python -B -m msplatform.workflows.prepared_joint.continuation --predecessor-run-dir $Parent --protection-projection
-      if($LASTEXITCODE-ne0){throw 'Continuation protection projection failed.'}
+      $PSNativeCommandUseErrorActionPreference=$false
+      $output=& $Python -I -B -X utf8 -c $code $RepoRoot $Parent
+      $exitCode=$LASTEXITCODE
+      if($exitCode-ne0){throw "Continuation protection projection failed with exit code $exitCode."}
       return (($output -join "`n")|ConvertFrom-Json -AsHashtable -Depth 100)
-    } finally {$env:PYTHONPATH=$saved;Pop-Location}
+    } finally {Pop-Location}
   }
   $before=Get-MrtofContinuationProjection
   $sourceReferences=@()

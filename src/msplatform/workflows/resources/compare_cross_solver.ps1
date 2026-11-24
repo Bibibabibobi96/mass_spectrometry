@@ -2,21 +2,28 @@ param(
     [Parameter(Mandatory)][ValidateSet('transport_no_collision','transport_interface_readiness')][string]$Mode,
     [Parameter(Mandatory)][string]$ComsolRunId,
     [Parameter(Mandatory)][string]$SimionRunId,
+    [Parameter(Mandatory)][string]$WorkspaceRoot,
+    [Parameter(Mandatory)][string]$ArtifactRootPath,
     [string]$RunId='',[string]$PythonExe='',[string]$ParticleTablePath='',
     [double]$FrequencyHz=[double]::NaN,[double]$PhaseRad=0.0
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-$projectRoot=(Resolve-Path (Join-Path $PSScriptRoot '../../components/rf_multipole')).Path
-$repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '../../../..')).Path
-$workspaceRoot=Split-Path -Parent $repoRoot
-$artifactRoot=Join-Path $workspaceRoot 'artifacts\projects\rf_multipole_ion_optics'
-$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
-. (Join-Path $PSScriptRoot 'cross_solver_analysis_lifecycle.ps1')
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
-. (Join-Path $repoRoot 'src/msplatform/workflows/resources/rf_publication.ps1')
-. (Join-Path $PSScriptRoot 'particle_table_identity.ps1')
+$workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path
+$repoRoot=$workspaceRoot
+$artifactRootPath=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRootPath)
+$artifactRoot=Join-Path $artifactRootPath 'projects\rf_multipole_ion_optics'
+$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
+$packageRootText=& $python -I -B -c 'from importlib.resources import files;print(files("msplatform"))'
+if($LASTEXITCODE-ne0){throw 'Installed msplatform package is unavailable.'}
+$packageRoot=(Resolve-Path -LiteralPath $packageRootText).Path
+$sourceRoot=Split-Path -Parent $packageRoot
+$projectRoot=Join-Path $packageRoot 'components/rf_multipole'
+. (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
+. (Join-Path $packageRoot 'workflows/resources/cross_solver_analysis_lifecycle.ps1')
+. (Join-Path $packageRoot 'execution/resources/frozen_python_package.ps1')
+. (Join-Path $packageRoot 'workflows/resources/rf_publication.ps1')
+. (Join-Path $packageRoot 'workflows/resources/particle_table_identity.ps1')
 function Resolve-Input([object]$Config,[string]$Name){$m=$Config.inputs.PSObject.Properties[$Name];if($null-eq$m){throw "Source run config lacks input $Name."};$v=[string]$m.Value;if([IO.Path]::IsPathRooted($v)){return [IO.Path]::GetFullPath($v)};[IO.Path]::GetFullPath((Join-Path ([string]$Config.project_root) $v))}
 function Copy-ModeInput([object[]]$Pairs){Copy-CrossSolverAnalysisInputs -Pairs $Pairs}
 $short=if($Mode -eq 'transport_no_collision'){'no-collision'}else{'interface-readiness'}
@@ -29,7 +36,7 @@ try{
   $cc,$sc=$source.comsol.config,$source.simion.config;$cp,$sp=$source.comsol.config_path,$source.simion.config_path;$cr,$sr=$source.comsol.run,$source.simion.run
   $modeFile=Join-Path $projectRoot "config\modes\quadrupole_${Mode}.json"
   $frozen=New-CrossSolverFrozenPathSet -InputDir $inputDir -AnalyzerRelativePath 'src\msplatform\workflows\rf_transport_comparison.py' -ModeFilename 'mode_contract.json'
-  $frozenPackage=New-FrozenPythonPackage -SourceRoot $repoRoot -CodeRoot $frozen.module_root -Python $python `
+  $frozenPackage=New-FrozenPythonPackage -SourceRoot $sourceRoot -CodeRoot $frozen.module_root -Python $python `
     -PythonModules @('src/msplatform/workflows/rf_transport_comparison.py') `
     -RelativePaths @('src/msplatform/contracts/particle_count_policy.json')
   . (Get-FrozenPythonPackageFile -Package $frozenPackage -RelativePath 'src/msplatform/execution/resources/frozen_python_package.ps1')
@@ -45,7 +52,7 @@ try{
     if((Get-RunFileSha256 $resolved)-ne(Get-RunFileSha256 $sresolved)){throw 'No-collision source resolved designs differ.'};if((Get-RunFileSha256 $particles)-ne(Get-RunFileSha256 $sparticles)){throw 'No-collision source particle files differ.'}
     $metadata=Resolve-Input $cc 'particle_source_metadata';$count=[int]((Get-Content $metadata -Raw -Encoding UTF8|ConvertFrom-Json).particle_count);if($count-le0){throw 'No-collision particle source count is missing or empty.'}
     $fres=Join-Path $inputDir 'resolved_design.json';$fpart=Join-Path $inputDir 'particles.dat';$fmeta=Join-Path $inputDir 'particle_source_metadata.json';$fpolicy=Join-Path $inputDir 'particle_count_policy.json'
-    $base+=@(@($resolved,$fres),@($particles,$fpart),@($metadata,$fmeta),@((Join-Path $repoRoot 'src\msplatform\contracts\particle_count_policy.json'),$fpolicy));$arguments+=@('--resolved',$fres,'--particle-count-policy',$fpolicy,'--particles',$fpart,'--particle-count',[string]$count);$inputs.resolved_design=$fres;$inputs.particle_table=$fpart;$inputs.particle_source_metadata=$fmeta;$inputs.particle_count_policy=$fpolicy;$role='rf_quadrupole_no_collision_cross_solver';$resultName='no_collision_cross_solver.json';$censusName='no_collision_particle_event_census.csv'
+    $base+=@(@($resolved,$fres),@($particles,$fpart),@($metadata,$fmeta),@((Join-Path $packageRoot 'contracts\particle_count_policy.json'),$fpolicy));$arguments+=@('--resolved',$fres,'--particle-count-policy',$fpolicy,'--particles',$fpart,'--particle-count',[string]$count);$inputs.resolved_design=$fres;$inputs.particle_table=$fpart;$inputs.particle_source_metadata=$fmeta;$inputs.particle_count_policy=$fpolicy;$role='rf_quadrupole_no_collision_cross_solver';$resultName='no_collision_cross_solver.json';$censusName='no_collision_particle_event_census.csv'
   }else{
     if($cc.role-ne'rf_quadrupole_comsol_run_config'-or $sc.role-ne'rf_quadrupole_simion_run_config'-or $cc.mode-ne$Mode-or $sc.mode-ne$Mode){throw 'Interface comparison accepts only interface transport run configs.'};if($cc.operating_point-ne$sc.operating_point){throw 'COMSOL and SIMION operating points differ.'}
     $cb=Join-Path $inputDir 'comsol_particle_source_binding.json';$sb=Join-Path $inputDir 'simion_particle_source_binding.json';$identity=Assert-RfTransportParticleTableIdentity -Python $python -RepoRoot $repoRoot -Package $frozenPackage -ParticleCountPolicyPath $selectedCountPolicy -ComsolRunConfig $cc -SimionRunConfig $sc -ComsolBindingOutput $cb -SimionBindingOutput $sb -ExplicitIon11Path $ParticleTablePath

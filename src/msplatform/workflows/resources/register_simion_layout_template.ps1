@@ -12,6 +12,8 @@ param(
   [Parameter(Mandatory = $true)] [string]$SourceConPath,
   [Parameter(Mandatory = $true)] [string]$RunId,
   [Parameter(Mandatory = $true)] [switch]$ConfirmGuiCreatedAndReopened,
+  [Parameter(Mandatory = $true)] [string]$WorkspaceRoot,
+  [string]$PythonExe = '',
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$ArtifactProjectRoot = ''
 )
@@ -19,8 +21,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../../..')).Path
-$workspaceRoot = Split-Path -Parent $repoRoot
+$workspaceRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
 $providerProject = 'rf_multipole_ion_optics'
 if ([string]::IsNullOrWhiteSpace($ArtifactProjectRoot)) {
   $ArtifactProjectRoot = Join-Path $workspaceRoot "artifacts\projects\$providerProject"
@@ -28,8 +29,16 @@ if ([string]::IsNullOrWhiteSpace($ArtifactProjectRoot)) {
 $artifactRoot = [IO.Path]::GetFullPath($ArtifactProjectRoot)
 $scratchRoot = [IO.Path]::GetFullPath((Join-Path $artifactRoot 'scratch'))
 $runsRoot = Join-Path $artifactRoot 'runs'
-$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
-if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { $python = 'python' }
+$python = if ($PythonExe) {
+  [IO.Path]::GetFullPath($PythonExe)
+} elseif ($env:SIMULATION_PYTHON_EXE) {
+  [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)
+} else {
+  throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'
+}
+$packageRootText = & $python -I -B -c 'from importlib.resources import files;print(files("msplatform"))'
+if ($LASTEXITCODE -ne 0) { throw 'Installed msplatform package is unavailable.' }
+$packageRoot = (Resolve-Path -LiteralPath $packageRootText).Path
 
 if (-not $ConfirmGuiCreatedAndReopened) {
   throw 'ConfirmGuiCreatedAndReopened is required.'
@@ -37,7 +46,7 @@ if (-not $ConfirmGuiCreatedAndReopened) {
 if (-not (Test-Path -LiteralPath $SimionExe -PathType Leaf)) {
   throw "SIMION executable is missing: $SimionExe"
 }
-& $python -m msplatform.execution.artifact_naming run $RunId
+& $python -I -B -m msplatform.execution.artifact_naming run $RunId
 if ($LASTEXITCODE -ne 0) { throw "Invalid template registration RunId: $RunId" }
 
 $sourceIob = (Resolve-Path -LiteralPath $SourceIobPath).Path
@@ -76,7 +85,7 @@ $inspector = Join-Path $codeDir 'inspect_simion_layout_template.lua'
 Copy-Item -LiteralPath $sourceIob -Destination $templateIob
 Copy-Item -LiteralPath $sourceCon -Destination $templateCon
 Copy-Item -LiteralPath $sourcePa -Destination $templatePa
-Copy-Item -LiteralPath (Join-Path $repoRoot 'src/msplatform/backends/simion/resources/inspect_simion_layout_template.lua') -Destination $inspector
+Copy-Item -LiteralPath (Join-Path $packageRoot 'backends/simion/resources/inspect_simion_layout_template.lua') -Destination $inspector
 
 $runConfigPath = Join-Path $runRoot 'run_config.json'
 $summaryPath = Join-Path $runRoot 'summary.json'
@@ -146,12 +155,12 @@ try {
     particle_fly_executed = $false
     formal_modified = $false
   } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
-  & $python -c 'from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' `
+  & $python -I -B -c 'from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' `
     --run-config $runConfigPath --manifest $manifestPath --status success `
     --software 'SIMION 2020 no-GUI structure verifier' `
     --output $summaryPath --output $reportPath --output $stdoutPath --output $stderrPath
   if ($LASTEXITCODE -ne 0) { throw 'Registration manifest generation failed.' }
-  & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $manifestPath `
+  & $python -I -B -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $manifestPath `
     --require-status success --require-local-run-config --require-run-id $RunId `
     --require-project $providerProject --require-mode simion_layout_template_build
   if ($LASTEXITCODE -ne 0) { throw 'Registration manifest verification failed.' }
@@ -168,7 +177,7 @@ try {
     formal_modified = $false
   } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
   try {
-    & $python -c 'from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' `
+    & $python -I -B -c 'from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' `
       --run-config $runConfigPath --manifest $manifestPath --status failed --output $summaryPath
   } catch { }
   throw

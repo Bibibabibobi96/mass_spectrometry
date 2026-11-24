@@ -12,12 +12,17 @@ function Get-FrozenPythonPackageExecutionPaths {
 function Invoke-FrozenPythonInputs {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Python,[Parameter(Mandatory)][hashtable]$Request)
-    $Request.inputs_module = Join-Path ([IO.Path]::GetFullPath([string]$Request.source_root)) 'src/msplatform/execution/inputs.py'
+    $selectedRoot = [IO.Path]::GetFullPath([string]$Request.source_root)
+    $Request.inputs_module = Join-Path $selectedRoot 'src/msplatform/execution/inputs.py'
+    if (-not (Test-Path -LiteralPath $Request.inputs_module -PathType Leaf) -and
+        (Test-Path -LiteralPath (Join-Path $selectedRoot 'msplatform/execution/inputs.py') -PathType Leaf)) {
+        $Request.inputs_module = Join-Path $selectedRoot 'msplatform/execution/inputs.py'
+    }
     if (-not (Test-Path -LiteralPath $Request.inputs_module -PathType Leaf)) {
         throw "Selected Python inputs implementation is missing: $($Request.inputs_module)"
     }
     $command = @'
-import json, pathlib, sys, traceback
+import contextlib, json, pathlib, shutil, sys, tempfile, traceback
 try:
     request = json.load(sys.stdin)
     selected = pathlib.Path(request['inputs_module']).resolve(strict=True)
@@ -27,22 +32,32 @@ try:
     from msplatform.execution import inputs
     if pathlib.Path(inputs.__file__).resolve() != selected:
         raise RuntimeError('Python package builder escaped its explicitly selected implementation')
-    if request['action'] == 'enumerate':
-        root = pathlib.Path(request['source_root']).resolve(strict=True)
-        selected_paths = set()
-        for selection in request['selections']:
-            selected_paths.update(inputs.enumerate_python_sources(root, **selection))
-        for relative in request['required_resources']:
-            resource = root / relative
-            if not resource.is_file() or not resource.resolve().is_relative_to(root):
-                raise FileNotFoundError('Selected frozen Python execution resource is missing: ' + str(resource))
-            selected_paths.add(relative)
-        result = sorted(selected_paths)
-    elif request['action'] == 'freeze':
-        result = inputs.freeze_python_package(pathlib.Path(request['source_root']), pathlib.Path(request['code_root']),
-                                             relative_paths=request['relative_paths'])
-    else:
-        raise ValueError('Unsupported internal Python inputs operation')
+    @contextlib.contextmanager
+    def repository_source(root):
+        root = root.resolve(strict=True)
+        if (root / 'src/msplatform').is_dir() or not (root / 'msplatform').is_dir():
+            yield root
+            return
+        with tempfile.TemporaryDirectory(prefix='msplatform-installed-sources-') as directory:
+            view = pathlib.Path(directory)
+            shutil.copytree(root / 'msplatform', view / 'src/msplatform')
+            yield view
+    with repository_source(pathlib.Path(request['source_root'])) as root:
+        if request['action'] == 'enumerate':
+            selected_paths = set()
+            for selection in request['selections']:
+                selected_paths.update(inputs.enumerate_python_sources(root, **selection))
+            for relative in request['required_resources']:
+                resource = root / relative
+                if not resource.is_file() or not resource.resolve().is_relative_to(root):
+                    raise FileNotFoundError('Selected frozen Python execution resource is missing: ' + str(resource))
+                selected_paths.add(relative)
+            result = sorted(selected_paths)
+        elif request['action'] == 'freeze':
+            result = inputs.freeze_python_package(root, pathlib.Path(request['code_root']),
+                                                 relative_paths=request['relative_paths'])
+        else:
+            raise ValueError('Unsupported internal Python inputs operation')
     print(json.dumps({'ok': True, 'value': result}))
 except Exception as error:
     print(json.dumps({'ok': False, 'error': {'type': type(error).__name__, 'message': str(error), 'traceback': traceback.format_exc()}}))

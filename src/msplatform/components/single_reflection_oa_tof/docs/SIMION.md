@@ -88,8 +88,8 @@ Candidate SIMION门禁通过`run_parameterized_geometry_smoke.ps1`隔离构建�
 
 Candidate文本由`workflows/design_candidate/prepare_candidate_consumers.py`生成；PA、IOB、Fly和run
 生命周期必须由上层Candidate workflow冻结。非Formal模板只允许通过
-`../simion/workbench/register_candidate_layout_template.ps1`登记的四槽IOB/CON；placeholder PA仅用于
-GUI布局，必须在Fly前被真实Candidate PA替换。
+`../../backends/simion/resources/register_candidate_layout_template.ps1`登记的四槽IOB/CON；登记要求显式工作区和Python选择，
+结构验证器来自所选安装包。placeholder PA仅用于GUI布局，必须在Fly前被真实Candidate PA替换。
 
 `build_formal_delivery.ps1`只输出到run；晋升为独立事务。交付必须包含同basename Program/Fly2、四套
 完整PA家族、固定ION、manifest和SHA清单。移动或重建后必须重新加载IOB并验证四实例、优先级、

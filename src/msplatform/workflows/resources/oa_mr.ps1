@@ -4,7 +4,7 @@ Run the supported OA-to-MR continuous trajectory assembly.
 .DESCRIPTION
 Explicit provider, geometry and field sources must satisfy the frozen composition
 plan and the declared interface domain. A single Fly does not prove field coupling.
-Input sources, supported scope and complete normal examples: integrations/README.md
+Input sources, supported scope and complete normal examples: docs/ASSEMBLY.md
 (simulation path selection).
 #>
 [CmdletBinding(DefaultParameterSetName='Run')]

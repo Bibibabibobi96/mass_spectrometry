@@ -29,8 +29,7 @@ if($manifest.project-ne'dual_pressure_rectilinear_ion_processor'-or$manifest.sta
 $artifacts=Join-Path $workspaceRoot 'artifacts'
 $projectArtifacts=Join-Path $artifacts 'projects/dual_pressure_rectilinear_ion_processor'
 $capacity=$null;$package=$null;$lease=$null;$prepared=$false
-$savedPythonPath=$env:PYTHONPATH;$env:PYTHONPATH=$repoRoot
-Push-Location $repoRoot
+Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
 try {
  $lease=Enter-HostExecutionLease -Role GATE -Stage prepare
  & $PythonExe -c 'import sys; from pathlib import Path; from msplatform.backends.simion.ip_gui_replay import validate_baseline_for_private_gui; validate_baseline_for_private_gui(Path(sys.argv[1]))' $sourceRun
@@ -110,7 +109,6 @@ try {
   }
  } finally {
   if($null-ne$capacity){Exit-ArtifactWorkflowCapacitySession -Python $PythonExe -RepoRoot $repoRoot -Session $capacity|Out-Null}
-  $env:PYTHONPATH=$savedPythonPath
-  Pop-Location
  }
+}
 }

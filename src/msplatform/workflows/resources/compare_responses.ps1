@@ -2,26 +2,34 @@ param(
     [Parameter(Mandatory = $true)][string]$ComsolRunId,
     [Parameter(Mandatory = $true)][string]$SimionRunId,
     [Parameter(Mandatory = $true)][string]$L1RunId,
+    [Parameter(Mandatory = $true)][string]$WorkspaceRoot,
+    [Parameter(Mandatory = $true)][string]$ArtifactRootPath,
     [string]$RunId = '',
     [string]$PythonExe = ''
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../components/rf_multipole')).Path
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../../..')).Path
-$workspaceRoot = Split-Path -Parent $repoRoot
-$artifactRoot = Join-Path $workspaceRoot `
-    'artifacts\projects\rf_multipole_ion_optics'
+$workspaceRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
+$repoRoot = $workspaceRoot
+$artifactRootPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRootPath)
+$artifactRoot = Join-Path $artifactRootPath 'projects\rf_multipole_ion_optics'
 $python = if ($PythonExe) {
     [IO.Path]::GetFullPath($PythonExe)
+} elseif ($env:SIMULATION_PYTHON_EXE) {
+    [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)
 } else {
-    Join-Path $repoRoot '.venv\Scripts\python.exe'
+    throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'
 }
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
-. (Join-Path $PSScriptRoot 'analysis_run_lifecycle.ps1')
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')
-. (Join-Path $repoRoot 'src/msplatform/workflows/resources/rf_publication.ps1')
+$packageRootText = & $python -I -B -c 'from importlib.resources import files;print(files("msplatform"))'
+if ($LASTEXITCODE -ne 0) { throw 'Installed msplatform package is unavailable.' }
+$packageRoot = (Resolve-Path -LiteralPath $packageRootText).Path
+$sourceRoot = Split-Path -Parent $packageRoot
+$projectRoot = Join-Path $packageRoot 'components/rf_multipole'
+. (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
+. (Join-Path $packageRoot 'workflows/resources/analysis_run_lifecycle.ps1')
+. (Join-Path $packageRoot 'execution/resources/frozen_python_package.ps1')
+. (Join-Path $packageRoot 'workflows/resources/rf_publication.ps1')
 
 if ([string]::IsNullOrWhiteSpace($RunId)) {
     $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') +
@@ -102,7 +110,7 @@ try {
         L1 = $l1Closure
     }
     foreach ($closure in $closures.Values) {
-        & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' `
+        & $python -I -B -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' `
             $closure.manifest --require-status success `
             --require-project rf_multipole_ion_optics
         if ($LASTEXITCODE -ne 0) {
@@ -202,10 +210,10 @@ try {
             'runtime\analysis_run_lifecycle.ps1') `
         -Destination (Join-Path $inputDir 'analysis_run_lifecycle.ps1')
     $frozenPythonSupport = Copy-VerifiedRunInput `
-        -Source (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1') `
+        -Source (Join-Path $packageRoot 'execution/resources/frozen_python_package.ps1') `
         -Destination (Join-Path $inputDir 'frozen_python_package.ps1')
     $runtimeRoot = Join-Path $inputDir 'runtime'
-    $runtimeFiles = Get-FrozenPythonPackageRelativePaths -SourceRoot $repoRoot -Python $python `
+    $runtimeFiles = Get-FrozenPythonPackageRelativePaths -SourceRoot $sourceRoot -Python $python `
         -PythonModules @(
             'src/msplatform/workflows/rf_mass_filter/response_comparison.py'
         ) `
@@ -213,7 +221,7 @@ try {
             'src/msplatform/components/rf_multipole/family_contract.json'
         )
     $frozenPythonPackage = New-FrozenPythonPackage -Python $python `
-        -SourceRoot $repoRoot -CodeRoot $runtimeRoot `
+        -SourceRoot $sourceRoot -CodeRoot $runtimeRoot `
         -RelativePaths $runtimeFiles
     $inputs = [ordered]@{
         analysis_run_support = $frozenAnalysisSupport

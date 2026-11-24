@@ -244,6 +244,13 @@ execution alias preserved for native paths. Missing frozen resources never fall
 back to the installed package. This selects source provenance without changing
 geometry, native mappings or scientific inputs.
 
+The SIMION layout-registration, oa-TOF compensation and RF comparison PowerShell
+entries use explicit workspace/artifact roots and the selected installed package,
+not a checkout-relative `.venv` or ambient `PYTHONPATH`. Their analysis packages
+retain the existing `src/msplatform/...` snapshot identities; the common freezer
+also accepts an installed source root containing `msplatform` directly. After
+freezing, execution uses only the run-local snapshot.
+
 本批保留发行名`mass-spectrometry-analysis`与import名`msplatform`，描述覆盖源、装配、合同和分析核心，
 不宣称仓库运行器或商业后端均可安装。正式对外发行或发行边界重整前，最迟P4发行收口时，
 发行维护者须依据外部索引所有权、锁和metadata消费者、旧wheel、冻结恢复以及同一import包的安装冲突

@@ -210,6 +210,7 @@ $manifest=Join-Path $source 'run_manifest.json'
 @{project='dual_pressure_rectilinear_ion_processor';status='success';inputs=@{};outputs=$records}|ConvertTo-Json -Depth 10|Set-Content $manifest
 @{native_projection=@{electrode_ids=@(1,2)};native_field=@{source_manifest=$manifest;source_manifest_sha256=(Get-FileHash $manifest -Algorithm SHA256).Hash}}|ConvertTo-Json -Depth 10|Set-Content (Join-Path $inputs 'resolved_model.json')
 $package=@{input_dir=$inputs};$continuationFieldRun=$source
+$pythonContext=@{projected_paths=@($Root,$Root);environment=@{}}
 # Adoption's pure Python projection has separate behavior tests. This fixture
 # executes both real owner branches and their real source/PA guards without Fly.
 $python={$script:adoptCalls++;$global:LASTEXITCODE=0}
@@ -487,7 +488,8 @@ $run=$Root;$dispatchPath=Join-Path $Root 'results/dispatch.json';$batchPlanPath=
 $partialContinuation=$true;$partialPlan=@{units=@(1..8|ForEach-Object{
  @{key=('batch_{0:D4}'-f$_);action=$(if($_-in@(2,4,8)){'replay'}else{'reuse'})}
 })}
-$python=$Python;$env:PYTHONPATH=$Repo
+$python=$Python
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $Repo 'tools/repository/resource_budget_support.ps1')
 # Only host measurements and the vendor command adapter are fixture data.
 # The real public phase, process launcher, executor and natural exits run.
@@ -503,8 +505,10 @@ function Get-ManagedSolverProcessSample {
 }
 function Invoke-PreparedPython {param($Arguments)
  if($Arguments[1]-ne'msplatform.execution.simion_dispatch'){throw 'fixed partition was rematerialized'}
- & $python @Arguments|Out-Host
- if($LASTEXITCODE-ne0){throw 'real scheduler failed'}
+ Invoke-RunToolRootContext -RepoRoot $Repo -Operation {
+  & $python @Arguments|Out-Host
+  if($LASTEXITCODE-ne0){throw 'real scheduler failed'}
+ }
 }
 $baseDispatch=Get-Content $dispatchPath -Raw
 $worker=Join-Path $Root 'inert_worker.ps1'
@@ -727,7 +731,7 @@ function pythonFixture {$global:LASTEXITCODE=0; $script:arguments=@($args); 'syn
 function Enter-HostExecutionLease {param($Role,$Stage,$StatePath) if($Role-ne'SIMION'-or$Stage-ne'postprocess'){throw 'heavy admission'};return @{stage=$Stage}}
 function Invoke-ResourceBudgetedProcess {throw 'native process started'}
 function Invoke-ResourceBudgetedProcesses {throw 'native wave started'}
-$lease=Invoke-IonProcessorCompletedContinuation -Package $package -Python 'pythonFixture' -Run $Root -Predecessor (Join-Path $Root 'parent') -RepoRoot $Root
+$lease=Invoke-IonProcessorCompletedContinuation -Package $package -Python 'pythonFixture' -Run $Root -Predecessor (Join-Path $Root 'parent')
 if($lease.stage-ne'postprocess'-or$script:arguments-notcontains'prepare-continuation'){throw 'continuation routing differs'}
 ''', encoding="utf-8")
             result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(REPO / "src/msplatform/workflows/resources/ip_functional.ps1"), directory,str(REPO),sys.executable],

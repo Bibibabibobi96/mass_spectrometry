@@ -23,7 +23,6 @@ from msplatform.execution.terminal_publication import publish_terminal_state
 
 class CandidateAuthorityTest(unittest.TestCase):
     def test_installed_provider_imports_from_public_root_context(self) -> None:
-        repo = Path(__file__).resolve().parents[4]
         with tempfile.TemporaryDirectory(prefix="mrtof-provider-import-") as directory:
             environment = dict(os.environ)
             environment.pop("PYTHONPATH", None)

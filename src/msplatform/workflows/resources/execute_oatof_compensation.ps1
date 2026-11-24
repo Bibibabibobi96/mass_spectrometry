@@ -10,19 +10,28 @@ param(
   [Parameter(ParameterSetName='Run')][string]$ContinuationPredecessorManifestPath='',
   [Parameter(ParameterSetName='Run')][int]$ParticleCount=1000,
   [string]$RunId='', [string]$ResultPath='', [string]$PythonExe='',
+  [string]$WorkspaceRoot='', [string]$ArtifactRootPath='',
   [Parameter(Mandatory,ParameterSetName='Resume')][switch]$ResumeFinalization
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-$repoRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../..'))
+$repoRoot=if($WorkspaceRoot){(Resolve-Path -LiteralPath $WorkspaceRoot).Path}else{(Get-Location).Path}
 $project='single_reflection_oa_tof_mass_analyzer'
 $python=if($PythonExe){(Resolve-Path -LiteralPath $PythonExe).Path}elseif($env:SIMULATION_PYTHON_EXE){
   (Resolve-Path -LiteralPath $env:SIMULATION_PYTHON_EXE).Path
-}else{Join-Path $repoRoot '.venv/Scripts/python.exe'}
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
+}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
+$packageRoot=Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$sourceRoot=Split-Path -Parent $packageRoot
+. (Join-Path $packageRoot 'execution/resources/workspace_paths.ps1')
 $pathContext=$null;$artifactRoot='';$projectArtifacts=''
 if(-not($ResumeFinalization-and$ResultPath)){
-  $pathContext=Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
+  $pathArguments=@{SourceRoot=$repoRoot;Python=$python}
+  if($ArtifactRootPath){$pathArguments.ArtifactRoot=$ArtifactRootPath}
+  $previousPythonPath=[Environment]::GetEnvironmentVariable('PYTHONPATH','Process')
+  try{
+    $env:PYTHONPATH=$sourceRoot
+    $pathContext=Resolve-WorkspacePaths @pathArguments
+  }finally{[Environment]::SetEnvironmentVariable('PYTHONPATH',$previousPythonPath,'Process')}
   $artifactRoot=[string]$pathContext.artifact_root
   $projectArtifacts=Join-Path $artifactRoot ('projects/'+$project)
 }
@@ -38,7 +47,7 @@ if($null-ne$pathContext){
 $env:SIMULATION_PYTHON_EXE=$python
 # Every child imports the immutable frozen tree; it must not add bytecode files.
 $env:PYTHONDONTWRITEBYTECODE='1'
-. (Join-Path $repoRoot 'src/msplatform/workflows/resources/run_artifact_workflow.ps1') `
+. (Join-Path $packageRoot 'workflows/resources/run_artifact_workflow.ps1') `
   -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
 $module='msplatform.workflows.oa_candidate.run_compensation'
 if($ResumeFinalization){
@@ -59,7 +68,7 @@ if($ResumeFinalization){
 if(-not$CaseDirectory){throw 'CaseDirectory is required.'}
 if(-not$RunId){$RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__sim__simion__reflectron-compensation'}
 if(-not$SimionExe){$SimionExe=Join-Path $env:ProgramFiles 'SIMION-2020/simion.exe'}
-$script:run='';$script:codeRoot=$repoRoot;$script:owner=$null;$script:capacity=$null;$script:lease=$null
+$script:run='';$script:codeRoot=$sourceRoot;$script:owner=$null;$script:capacity=$null;$script:lease=$null
 $script:materialized=$false;$script:iobReady=$false;$script:writersStopped=$true;$script:stage='inspect'
 $script:releaseAttempted=$false;$script:releaseConfirmed=$false
 $script:operations=[ordered]@{}

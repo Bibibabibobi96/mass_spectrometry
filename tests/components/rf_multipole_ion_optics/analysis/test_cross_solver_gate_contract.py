@@ -167,7 +167,7 @@ class ParticleTableIdentityTests(unittest.TestCase):
             "$t=$null;$e=$null;$entry=Join-Path $env:RF_REPO_ROOT 'src/msplatform/workflows/resources/compare_cross_solver.ps1'; "
             "$ast=[Management.Automation.Language.Parser]::ParseFile($entry,[ref]$t,[ref]$e);if($e.Count){throw 'Cross-solver entry did not parse'}; "
             "$selection=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$frozenPackage'},$true); "
-            "$repoRoot=$env:RF_REPO_ROOT;$python=$env:RF_PYTHON;$frozen=[pscustomobject]@{module_root=$env:RF_CODE_ROOT};Invoke-Expression $selection.Extent.Text;$package=$frozenPackage; "
+            "$repoRoot=$env:RF_REPO_ROOT;$sourceRoot=$env:RF_REPO_ROOT;$python=$env:RF_PYTHON;$frozen=[pscustomobject]@{module_root=$env:RF_CODE_ROOT};Invoke-Expression $selection.Extent.Text;$package=$frozenPackage; "
             "if(Test-Path -LiteralPath (Join-Path $env:RF_CODE_ROOT 'common/contracts')){throw 'Unselected common/contracts appeared in child snapshot'}; "
             ". (Get-FrozenPythonPackageFile -Package $package -RelativePath 'src/msplatform/execution/resources/frozen_python_package.ps1'); "
             "$policy=Get-FrozenPythonPackageFile -Package $package -RelativePath 'src/msplatform/contracts/particle_count_policy.json'; "
@@ -673,7 +673,7 @@ class CandidateGateParameterContractTests(unittest.TestCase):
                     ["-m", "msplatform.workflows.rf_publication", "--structural-variant", "quadrupole", "--check"],
                     ["-m", "msplatform.workflows.rf_publication", "--check"],
                     ["-m", "msplatform.workflows.rf_publication", "--profile", "mass_filter", "--check"],
-                    ["-m", analysis + "sync_simion_geometry", "--check"],
+                    ["-m", "msplatform.workflows.rf_simion_geometry", "--check"],
                     ["-m", analysis + "generate_official_particle_table", "--check",
                      str(config / "particles/official_fixed_100.ion"), "--check-canonical",
                      str(config / "particles/official_fixed_100_canonical.csv"), "--resolved-design",

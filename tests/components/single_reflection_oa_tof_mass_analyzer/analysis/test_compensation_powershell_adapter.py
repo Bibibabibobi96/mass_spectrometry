@@ -212,32 +212,36 @@ Write-Output 'PUBLIC_CONTEXT_PASS'
     def test_public_python_cli_transports_only_requested_resume_inputs(self):
         import argparse
         import ast
-        import types
 
         source = PYTHON_ENTRY
         tree = ast.parse(source.read_text(encoding="utf-8"))
         functions = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in {"main", "_load"}]
-        launch = unittest.mock.Mock()
         namespace = dict(__file__=str(source), __doc__="actual public CLI transport",
-            argparse=argparse, json=json, Path=Path, sys=sys, Any=object, REPO_ROOT=ROOT,
-            LABELS=("baseline", "compensated", "ideal_reflectron"), subprocess=types.SimpleNamespace(run=launch))
+            argparse=argparse, json=json, Path=Path, sys=sys, tempfile=tempfile, Any=object, REPO_ROOT=ROOT,
+            LABELS=("baseline", "compensated", "ideal_reflectron"))
         exec(compile(ast.Module(body=functions, type_ignores=[]), str(source), "exec"), namespace)
-        with patch.object(sys, "argv", [str(source), "--resume-finalization", "--run-id", "existing", "--result-path", "original-result.json"]):
-            namespace["main"]()
-        command = launch.call_args.args[0]
-        self.assertEqual(command[command.index("-PythonExe")+1], sys.executable)
-        self.assertEqual(command[command.index("-ResultPath")+1], "original-result.json")
-        self.assertIn("-ResumeFinalization", command)
-        self.assertNotIn("-SimionExe", command)
-        self.assertNotIn("-ParticleCount", command)
-        self.assertEqual(launch.call_args.kwargs, dict(cwd=ROOT, timeout=None, check=True))
-        launch.reset_mock()
-        for option in ("--case-dir", "--numerics-path", "--response-basis-manifest", "--resume-from", "--particle-count"):
-            value = "100" if option == "--particle-count" else "must-not-read"
-            with self.subTest(option=option), patch.object(sys, "argv", [str(source), "--resume-finalization", "--run-id", "existing", option, value]), self.assertRaises(SystemExit) as raised:
+        def complete(command, **kwargs):
+            Path(kwargs["stdout"]).write_text("", encoding="utf-8")
+            return subprocess.CompletedProcess(command, 0), None
+        with patch("msplatform.execution.process_observation.run_observed_process", side_effect=complete) as launch:
+            with patch.object(sys, "argv", [str(source), "--resume-finalization", "--run-id", "existing", "--result-path", "original-result.json"]):
                 namespace["main"]()
-            self.assertEqual(raised.exception.code, 2)
-        launch.assert_not_called()
+            command = launch.call_args.args[0]
+            self.assertEqual(command[command.index("-PythonExe")+1], sys.executable)
+            self.assertEqual(command[command.index("-ResultPath")+1], "original-result.json")
+            self.assertIn("-ResumeFinalization", command)
+            self.assertNotIn("-SimionExe", command)
+            self.assertNotIn("-ParticleCount", command)
+            self.assertEqual(launch.call_args.kwargs["cwd"], ROOT)
+            self.assertEqual(launch.call_args.kwargs["stdout"], launch.call_args.kwargs["stderr"])
+            self.assertTrue(launch.call_args.kwargs["merge_stderr"])
+            launch.reset_mock()
+            for option in ("--case-dir", "--numerics-path", "--response-basis-manifest", "--resume-from", "--particle-count"):
+                value = "100" if option == "--particle-count" else "must-not-read"
+                with self.subTest(option=option), patch.object(sys, "argv", [str(source), "--resume-finalization", "--run-id", "existing", option, value]), self.assertRaises(SystemExit) as raised:
+                    namespace["main"]()
+                self.assertEqual(raised.exception.code, 2)
+            launch.assert_not_called()
 
     def test_resume_binding_rejects_new_science_before_source_or_owner_reads(self):
         with tempfile.TemporaryDirectory() as directory:

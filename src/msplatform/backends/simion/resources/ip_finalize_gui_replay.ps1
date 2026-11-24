@@ -26,8 +26,7 @@ if($baseline-eq$run){throw 'GUI replay cannot finalize its baseline run'}
 if(-not $PythonExe){$PythonExe=$env:SIMULATION_PYTHON_EXE}
 if(-not $PythonExe){throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
 $capacity=$null;$lease=$null;$published=$false;$accepted=$false
-$savedPythonPath=$env:PYTHONPATH;$env:PYTHONPATH=$repoRoot
-Push-Location $repoRoot
+Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
 try {
  $profileJson=& $PythonExe -c 'import json,sys; from pathlib import Path; from msplatform.backends.simion.ip_batching import frozen_runtime_profile; print(json.dumps(frozen_runtime_profile(Path(sys.argv[1]),allow_legacy=True)))' $run
  if($LASTEXITCODE-ne0){throw 'Replay frozen runtime profile is invalid'}
@@ -71,6 +70,5 @@ try {
 } finally {
  if($null-ne$lease){Exit-HostExecutionLease -Lease $lease -Outcome $(if($published-and$accepted){'success'}else{'failed'}) -RunId $config.run_id}
  if($null-ne$capacity){Exit-ArtifactWorkflowCapacitySession -Python $PythonExe -RepoRoot $repoRoot -Session $capacity|Out-Null}
- $env:PYTHONPATH=$savedPythonPath
- Pop-Location
+}
 }

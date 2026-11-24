@@ -165,14 +165,12 @@ function Protect-IonProcessorContinuationInputs {
  }
 }
 function Invoke-IonProcessorCompletedContinuation {
- param([Parameter(Mandatory)]$Package,[string]$Python,[string]$Run,[string]$Predecessor,[string]$RepoRoot)
+ param([Parameter(Mandatory)]$Package,[string]$Python,[string]$Run,[string]$Predecessor)
  $pythonContext=Get-RunNativeExecutionContext -Package $Package -Paths @((Join-Path $Run 'inputs/code'),$Run) -Tool Python
- $env:PYTHONPATH=$pythonContext.projected_paths[0]
- Push-Location $pythonContext.projected_paths[1]
- try {
+ Invoke-RunToolRootContext -RepoRoot $pythonContext.projected_paths[1] -Environment $pythonContext.environment -Operation {
   & $Python -m msplatform.workflows.ion_processor.functional prepare-continuation --run $Run --baseline-run $Predecessor | Out-Host
   if($LASTEXITCODE-ne0){throw 'IP continuation requires a complete compatible native population'}
- } finally {Pop-Location;$env:PYTHONPATH=$RepoRoot}
+ }
  return Enter-HostExecutionLease -StatePath $pathContext.host_resource_state_path -Role SIMION -Stage postprocess
 }
 function Write-IonProcessorBatchCompletion {
@@ -260,8 +258,7 @@ $partialContinuation=$false;$partialReplayCount=0;$continuationFieldRun=$null;$c
 $continuationReadGuards=@{streams=[Collections.Generic.List[object]]::new()}
 $pathEnvironmentNames=@('MASS_SPECTROMETRY_ARTIFACT_ROOT','MASS_SPECTROMETRY_EXECUTION_ROOT','MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH','MASS_SPECTROMETRY_RUN_DIRECTORY','MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY')
 $savedPathEnvironment=Save-RunEnvironment -Names $pathEnvironmentNames
-$savedPythonPath=$env:PYTHONPATH;$env:PYTHONPATH=$repoRoot
-Push-Location $repoRoot
+Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
 try {
  $artifactPrefix=[IO.Path]::GetFullPath($artifacts).TrimEnd([IO.Path]::DirectorySeparatorChar)+[IO.Path]::DirectorySeparatorChar
  $protected=@();$sourceReferences=@();$injectedAuthorities=@();$continuationAuthorities=@()
@@ -369,40 +366,42 @@ print(json.dumps(refs))
  if($partialContinuation){
   Set-IonProcessorRunStage -Context $runObservation -Stage continuation_plan
   $pythonContext=Get-RunNativeExecutionContext -Package $package -Paths @((Join-Path $run 'inputs/code'),$run) -Tool Python
-  $env:PYTHONPATH=$pythonContext.projected_paths[0];Push-Location $pythonContext.projected_paths[1]
-  try {
+  Invoke-RunToolRootContext -RepoRoot $pythonContext.projected_paths[1] -Environment $pythonContext.environment -Operation {
    & $python -m msplatform.workflows.ion_processor.functional prepare-partial-continuation --run $run --baseline-run $predecessor | Out-Host
    if($LASTEXITCODE-ne0){throw 'IP partial continuation planning failed'}
-   $partialPlan=Get-Content (Join-Path $run 'inputs/partial_batch_replay/simion_whole_unit_replay_plan.json') -Raw|ConvertFrom-Json
-   $partialReplayCount=[int]$partialPlan.replay_unit_count
-   Copy-Item -LiteralPath (Join-Path $run 'inputs/partial_batch_replay/batch_plan.json') -Destination (Join-Path $package.result_dir 'simion_execution_batch_plan.json')
+  }
+  $partialPlan=Get-Content (Join-Path $run 'inputs/partial_batch_replay/simion_whole_unit_replay_plan.json') -Raw|ConvertFrom-Json
+  $partialReplayCount=[int]$partialPlan.replay_unit_count
+  Copy-Item -LiteralPath (Join-Path $run 'inputs/partial_batch_replay/batch_plan.json') -Destination (Join-Path $package.result_dir 'simion_execution_batch_plan.json')
+  Invoke-RunToolRootContext -RepoRoot $pythonContext.projected_paths[1] -Environment $pythonContext.environment -Operation {
    & $python -m msplatform.workflows.ion_processor.functional restore-partial-batches --run $run | Out-Host
    if($LASTEXITCODE-ne0){throw 'IP partial continuation materialization failed'}
-   if($partialReplayCount-gt0){
-    $model=Get-Content (Join-Path $run 'inputs/resolved_model.json') -Raw|ConvertFrom-Json
-    $expectedFieldRun=if($model.native_field.source_manifest){Split-Path -Parent ([string]$model.native_field.source_manifest)}else{Split-Path -Parent ([string]$model.native_field.directory)}
-    if([IO.Path]::GetFullPath($expectedFieldRun)-ne[IO.Path]::GetFullPath($continuationFieldRun)){throw 'Continuation field authority changed after capacity admission'}
-    Protect-IonProcessorPreviousField -FieldRun $continuationFieldRun -ResolvedModel $model -Context $continuationFieldGuards
+  }
+  if($partialReplayCount-gt0){
+   $model=Get-Content (Join-Path $run 'inputs/resolved_model.json') -Raw|ConvertFrom-Json
+   $expectedFieldRun=if($model.native_field.source_manifest){Split-Path -Parent ([string]$model.native_field.source_manifest)}else{Split-Path -Parent ([string]$model.native_field.directory)}
+   if([IO.Path]::GetFullPath($expectedFieldRun)-ne[IO.Path]::GetFullPath($continuationFieldRun)){throw 'Continuation field authority changed after capacity admission'}
+   Protect-IonProcessorPreviousField -FieldRun $continuationFieldRun -ResolvedModel $model -Context $continuationFieldGuards
+   Invoke-RunToolRootContext -RepoRoot $pythonContext.projected_paths[1] -Environment $pythonContext.environment -Operation {
     & $python -m msplatform.workflows.ion_processor.functional adopt-native-field --run $run --native-field-run $continuationFieldRun | Out-Host
     if($LASTEXITCODE-ne0){throw 'IP continuation field binding failed'}
-    $NativeFieldRun=$continuationFieldRun
    }
-  } finally {Pop-Location;$env:PYTHONPATH=$repoRoot}
+   $NativeFieldRun=$continuationFieldRun
+  }
  }
  if($ContinuationPredecessorManifestPath-and-not$partialContinuation){
-  $lease=Invoke-IonProcessorCompletedContinuation -Package $package -Python $python -Run $run -Predecessor $predecessor -RepoRoot $repoRoot
+  $lease=Invoke-IonProcessorCompletedContinuation -Package $package -Python $python -Run $run -Predecessor $predecessor
   $nativeCompleted=$true
   Write-Output "ION_PROCESSOR_CONTINUATION=REANALYZE PREDECESSOR=$predecessor RUN=$run NATIVE_STARTS=0"
  } elseif($partialContinuation-and$partialReplayCount-eq0){
   $lease=Enter-HostExecutionLease -StatePath $pathContext.host_resource_state_path -Role SIMION -Stage postprocess
   $pythonContext=Get-RunNativeExecutionContext -Package $package -Paths @((Join-Path $run 'inputs/code'),$run) -Tool Python
-  $env:PYTHONPATH=$pythonContext.projected_paths[0];Push-Location $pythonContext.projected_paths[1]
-  try {
+  Invoke-RunToolRootContext -RepoRoot $pythonContext.projected_paths[1] -Environment $pythonContext.environment -Operation {
    & $python -m msplatform.workflows.ion_processor.functional merge-batches --run $run --batch-plan (Join-Path $run 'inputs/partial_batch_replay/batch_plan.json') | Out-Host
    if($LASTEXITCODE-ne0){throw 'IP reused batch merge failed'}
    $count=@($partialPlan.units|Where-Object{$_.action-eq'reuse'}).Count
    Write-RunJson -Path (Join-Path $package.result_dir 'simion_batch_resource_usage.json') -Value @{schema_version=2;role='multipole_resource_usage';status='completed';failure_class=$null;limit_name=$null;execution_wave=@{process_count=0;reused_batch_count=$count}}
-  } finally {Pop-Location;$env:PYTHONPATH=$repoRoot}
+  }
   $nativeCompleted=$true
   Write-Output "ION_PROCESSOR_CONTINUATION=REUSE_BATCHES PREDECESSOR=$predecessor RUN=$run NATIVE_STARTS=0"
  } else {
@@ -445,9 +444,6 @@ print(json.dumps(refs))
  # Python closure, and keep the original heavy permission through all workers.
  $nativeFlightGuardContext=$null
  Set-IonProcessorRunStage -Context $runObservation -Stage flight
- $pythonContext=Get-RunNativeExecutionContext -Package $package -Paths @((Join-Path $run 'inputs/code'),$run) -Tool Python
- $env:PYTHONPATH=$pythonContext.projected_paths[0]
- Push-Location $pythonContext.projected_paths[1]
  try {
   function Invoke-PreparedPython {
    param([string[]]$Arguments)
@@ -571,9 +567,7 @@ print(json.dumps(refs))
   Invoke-PreparedPython -Arguments @('-m','msplatform.workflows.ion_processor.functional','merge-batches','--run',$run,'--batch-plan',$batchPlanPath)
   $nativeCompleted=$true
  } finally {
-  try {
-   if($writersStopped-and$null-ne$nativeFlightGuardContext){Complete-IonProcessorNativeFlightGuards -Context $nativeFlightGuardContext -VerificationPath (Join-Path $run 'results/native_flight_family_verification.json')}
-  } finally {Pop-Location;$env:PYTHONPATH=$repoRoot}
+  if($writersStopped-and$null-ne$nativeFlightGuardContext){Complete-IonProcessorNativeFlightGuards -Context $nativeFlightGuardContext -VerificationPath (Join-Path $run 'results/native_flight_family_verification.json')}
  }
  }
  $lease=Update-HostResourceStage -Lease $lease -Stage postprocess -Budget (Get-HostResourceBudget -Role SIMION -Stage postprocess) -RetainedMemoryBytes 0
@@ -581,12 +575,10 @@ print(json.dumps(refs))
  # Run the prepared source closure from the run directory so an editable repo
  # cannot shadow it through Python's current-directory import precedence.
  $pythonContext=Get-RunNativeExecutionContext -Package $package -Paths @((Join-Path $run 'inputs/code'),$run) -Tool Python
- $env:PYTHONPATH=$pythonContext.projected_paths[0]
- Push-Location $pythonContext.projected_paths[1]
- try {
-  & $python -m msplatform.workflows.ion_processor.functional analyze --run $run
-  $analysisExit=$LASTEXITCODE
- } finally {Pop-Location;$env:PYTHONPATH=$repoRoot}
+ $analysisExit=Invoke-RunToolRootContext -RepoRoot $pythonContext.projected_paths[1] -Environment $pythonContext.environment -Operation {
+  & $python -m msplatform.workflows.ion_processor.functional analyze --run $run | Out-Host
+  return $LASTEXITCODE
+ }
  if($analysisExit-ne0-and-not(Test-Path -LiteralPath $package.summary)){throw 'Analysis did not publish measured summary'}
  $summary=Get-Content $package.summary -Raw|ConvertFrom-Json -AsHashtable
  if($summary.role-ne'ion_processor_functional_summary'){throw 'Missing physical summary'}
@@ -661,7 +653,6 @@ print(json.dumps(refs))
   if($writersStopped-and$null-ne$capacity-and$null-eq$ownerContext){Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacity|Out-Null}
   if($writersStopped-and$null-ne$package){Remove-RunPackageExecutionAlias -Package $package}
   Restore-RunEnvironment -Names $pathEnvironmentNames -Snapshot $savedPathEnvironment
-  $env:PYTHONPATH=$savedPythonPath
-  Pop-Location
  }
+}
 }

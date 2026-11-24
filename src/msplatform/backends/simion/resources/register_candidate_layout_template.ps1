@@ -14,6 +14,8 @@ param(
   [Parameter(Mandatory = $true)] [string]$SourceIobPath,
   [Parameter(Mandatory = $true)] [string]$SourceConPath,
   [Parameter(Mandatory = $true)] [string]$RunId,
+  [Parameter(Mandatory = $true)] [string]$WorkspaceRoot,
+  [string]$PythonExe = '',
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$ArtifactProjectRoot = ''
 )
@@ -21,9 +23,18 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..\..')).Path
-$projectRoot = Join-Path $repoRoot 'src/msplatform/components/single_reflection_oa_tof'
-$workspaceRoot = Split-Path -Parent $repoRoot
+$workspaceRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
+$python = if ($PythonExe) {
+  [IO.Path]::GetFullPath($PythonExe)
+} elseif ($env:SIMULATION_PYTHON_EXE) {
+  [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)
+} else {
+  throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'
+}
+$packageRootText = & $python -I -B -c 'from importlib.resources import files;print(files("msplatform"))'
+if ($LASTEXITCODE -ne 0) { throw 'Installed msplatform package is unavailable.' }
+$packageRoot = (Resolve-Path -LiteralPath $packageRootText).Path
+$projectRoot = Join-Path $packageRoot 'components/single_reflection_oa_tof'
 if ([string]::IsNullOrWhiteSpace($ArtifactProjectRoot)) {
   $ArtifactProjectRoot = Join-Path $workspaceRoot 'artifacts\projects\single_reflection_oa_tof_mass_analyzer'
 }
@@ -47,9 +58,7 @@ function Assert-NonFormalSource([string]$Path, [string]$Label) {
 }
 
 # Validate before creating the target run directory.
-$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
-if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { $python = 'python' }
-& $python -m msplatform.execution.artifact_naming run $RunId
+& $python -I -B -m msplatform.execution.artifact_naming run $RunId
 if ($LASTEXITCODE -ne 0) { throw "Invalid template-build RunId: $RunId" }
 
 $sourceIob = Assert-NonFormalSource $SourceIobPath 'SourceIobPath'
@@ -91,7 +100,7 @@ $summaryPath = Join-Path $runRoot 'summary.json'
 $runtimeReport = Join-Path $runRoot 'simion_layout_runtime_report.txt'
 try {
   $runConfig | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $runConfigPath -Encoding UTF8
-  $verifier = Join-Path $PSScriptRoot 'verify_iob_runtime_contract.ps1'
+  $verifier = Join-Path $packageRoot 'backends/simion/resources/verify_iob_runtime_contract.ps1'
   & $verifier -IobPath $sourceIob -ExpectedInstances 4 -TemplateStructureOnly -SimionExe $SimionExe |
     Set-Content -LiteralPath $runtimeReport -Encoding UTF8
   if ($LASTEXITCODE -ne 0) { throw "SIMION template structure verification failed with exit code $LASTEXITCODE" }
@@ -117,10 +126,10 @@ try {
   } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
   $manifestWriter = 'from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)'
   $manifestVerifier = 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)'
-  & $python -c $manifestWriter --run-config $runConfigPath --manifest (Join-Path $runRoot 'run_manifest.json') --status success `
+  & $python -I -B -c $manifestWriter --run-config $runConfigPath --manifest (Join-Path $runRoot 'run_manifest.json') --status success `
     --software 'SIMION 2020 no-GUI layout structure verifier' --output $summaryPath --output $runtimeReport
   if ($LASTEXITCODE -ne 0) { throw 'Template-build manifest generation failed.' }
-  & $python -c $manifestVerifier (Join-Path $runRoot 'run_manifest.json') --require-status success --require-local-run-config `
+  & $python -I -B -c $manifestVerifier (Join-Path $runRoot 'run_manifest.json') --require-status success --require-local-run-config `
     --require-run-id $RunId --require-project single_reflection_oa_tof_mass_analyzer --require-mode candidate_layout_template_build
   if ($LASTEXITCODE -ne 0) { throw 'Template-build manifest verification failed.' }
   "CANDIDATE_LAYOUT_TEMPLATE_REGISTER=PASS RUN_ROOT=$runRoot"
@@ -136,7 +145,7 @@ catch {
     error = $message; particle_fly_executed = $false; formal_modified = $false
   } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
   try {
-    & $python -c 'from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' --run-config $runConfigPath `
+    & $python -I -B -c 'from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' --run-config $runConfigPath `
       --manifest (Join-Path $runRoot 'run_manifest.json') --status failed --output $summaryPath
   } catch { }
   throw

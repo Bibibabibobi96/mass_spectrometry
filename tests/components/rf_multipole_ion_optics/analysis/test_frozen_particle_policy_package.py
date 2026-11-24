@@ -730,6 +730,7 @@ $ErrorActionPreference = 'Stop'
 . {_ps(SUPPORT)}
 . {_ps(HELPER)}
 $repoRoot = {_ps(REPO_ROOT)}
+$sourceRoot = {_ps(REPO_ROOT)}
 $projectRoot = {_ps(PROJECT_ROOT)}
 $python = {_ps(Path(sys.executable).resolve())}
 $fixtureRoot = {_ps(root)}
@@ -924,6 +925,7 @@ $ErrorActionPreference='Stop'
 . {_ps(SUPPORT)}
 . {_ps(HELPER)}
 $repoRoot={_ps(REPO_ROOT)}
+$sourceRoot={_ps(REPO_ROOT)}
 $projectRoot={_ps(PROJECT_ROOT)}
 $python={_ps(Path(sys.executable).resolve())}
 $inputDir={_ps(input_directory)}

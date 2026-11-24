@@ -1,4 +1,5 @@
 """Behavior fixture for bounded private native-family preparation."""
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -10,9 +11,62 @@ import unittest
 
 
 PROJECT = Path(__file__).resolve().parents[4] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof"
+REPO = PROJECT.parents[3]
+SUPPORT = REPO / "src/msplatform/backends/simion/resources/native_corridor_runtime_support.ps1"
 
 
 class NativeCorridorRuntimeSupportTest(unittest.TestCase):
+    def invoke_continuation_protection(self, code_root: Path, parent: Path, workspace: Path) -> subprocess.CompletedProcess:
+        script = r"""
+param($Support,$Parent,$CodeRoot,$Python)
+$ErrorActionPreference='Stop'
+. $Support
+function Update-ArtifactWorkflowCapacitySession {
+  param($Python,$RepoRoot,$Session,$ProtectedPaths,$SourceReferences)
+  return @{session=$Session}
+}
+$guards=[Collections.Generic.List[object]]::new()
+try {
+  $null=Protect-MrtofContinuationEvidence -Parent $Parent -Session ([pscustomobject]@{lease_id='fixture'}) -Python $Python -RepoRoot $CodeRoot -Guards $guards
+  Write-Output 'CONTINUATION_PROTECTION=PASS'
+} finally {
+  foreach($guard in $guards){$guard.Dispose()}
+}
+"""
+        fixture = workspace / "invoke.ps1"
+        fixture.write_text(script, encoding="utf-8")
+        caller = workspace / "caller"
+        caller.mkdir()
+        return subprocess.run(
+            ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(fixture),
+             str(SUPPORT), str(parent), str(code_root), sys.executable],
+            cwd=caller, capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=30, env={**os.environ, "PYTHONPATH": str(workspace / "unselected")},
+        )
+
+    @staticmethod
+    def continuation_run(workspace: Path, status: str = "success") -> Path:
+        run = workspace / "artifacts/projects/instrument_assembly/runs/fixture-run"
+        run.mkdir(parents=True)
+        config = run / "run_config.json"
+        config.write_text(json.dumps({"run_id": run.name, "project": "instrument_assembly",
+                                      "mode": "prepared_joint", "inputs": {}}), encoding="utf-8")
+        payload = config.read_bytes()
+        manifest = {
+            "role": "simulation_run_manifest", "status": status, "run_id": run.name,
+            "project": "instrument_assembly", "mode": "prepared_joint",
+            "run_config": {"path": str(config), "exists": True, "bytes": len(payload),
+                           "sha256": hashlib.sha256(payload).hexdigest()},
+            "inputs": {}, "outputs": [],
+        }
+        (run / "run_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        return run
+
+    def selected_continuation_source(self, workspace: Path) -> Path:
+        selected = workspace / "selected"
+        shutil.copytree(REPO / "src/msplatform", selected / "src/msplatform")
+        return selected
+
     @unittest.skipUnless(os.environ.get('SIMION_EXE'), 'requires explicit SIMION_EXE')
     def test_real_workbench_loader_preserves_refinable_collision_without_writing(self):
         script = r"""
@@ -91,6 +145,62 @@ try{
         source = (PROJECT.parents[3] / 'src/msplatform/backends/simion/resources/native_corridor_runtime_support.ps1').read_text(encoding='utf-8-sig')
         self.assertIn("short_pa_path_support.ps1", source)
         self.assertIn("[math]::Max([int64]0,[int64]$CapacityWorkflowSession.committed_new_bytes", source)
+
+    def test_continuation_projection_uses_selected_source_with_workspace_local_cwd(self) -> None:
+        with TemporaryDirectory(prefix="mrtof-continuation-normal-") as temporary:
+            workspace = Path(temporary)
+            selected = self.selected_continuation_source(workspace)
+            entry = selected / "src/msplatform/workflows/prepared_joint/continuation.py"
+            entry.write_text(entry.read_text(encoding="utf-8").replace(
+                "if args.protection_projection:",
+                "if args.protection_projection:\n        print('SELECTED_CONTINUATION_SOURCE', file=__import__('sys').stderr)",
+            ), encoding="utf-8")
+            parent = self.continuation_run(workspace)
+            result = self.invoke_continuation_protection(selected, parent, workspace)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("CONTINUATION_PROTECTION=PASS", result.stdout)
+            self.assertIn("SELECTED_CONTINUATION_SOURCE", result.stderr)
+
+    def test_continuation_projection_preserves_nonzero_python_exit(self) -> None:
+        with TemporaryDirectory(prefix="mrtof-continuation-exit-") as temporary:
+            workspace = Path(temporary)
+            selected = workspace / "installed"
+            entry = selected / "msplatform/workflows/prepared_joint/continuation.py"
+            entry.parent.mkdir(parents=True)
+            entry.write_text("raise SystemExit(23)\n", encoding="utf-8")
+            parent = workspace / "predecessor"
+            parent.mkdir()
+            result = self.invoke_continuation_protection(selected, parent, workspace)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("failed with exit code 23", result.stdout + result.stderr)
+
+    def test_continuation_projection_observes_selected_source_change(self) -> None:
+        with TemporaryDirectory(prefix="mrtof-continuation-source-") as temporary:
+            workspace = Path(temporary)
+            selected = workspace / "frozen"
+            entry = selected / "src/msplatform/workflows/prepared_joint/continuation.py"
+            entry.parent.mkdir(parents=True)
+            entry.write_text(
+                "import json,sys\n"
+                "print('CHANGED_SELECTED_SOURCE',file=sys.stderr)\n"
+                "print(json.dumps({'manifests':{},'run_directories':[],'files':[]}))\n",
+                encoding="utf-8",
+            )
+            parent = workspace / "predecessor"
+            parent.mkdir()
+            result = self.invoke_continuation_protection(selected, parent, workspace)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(result.stderr.count("CHANGED_SELECTED_SOURCE"), 2, result.stderr)
+
+    def test_continuation_projection_rejects_unknown_run_status(self) -> None:
+        with TemporaryDirectory(prefix="mrtof-continuation-status-") as temporary:
+            workspace = Path(temporary)
+            selected = self.selected_continuation_source(workspace)
+            parent = self.continuation_run(workspace, status="unknown")
+            result = self.invoke_continuation_protection(selected, parent, workspace)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("terminal owner run", result.stdout + result.stderr)
+            self.assertNotIn("CONTINUATION_PROTECTION=PASS", result.stdout)
 
     def test_accelerator_reuses_provider_owned_checkpoint_without_materialization(self) -> None:
         source = (PROJECT.parents[3] / 'src/msplatform/backends/simion/resources/native_corridor_runtime_support.ps1').read_text(encoding='utf-8-sig')
@@ -296,7 +406,7 @@ try{
 
     def test_complete_program_csv_fixture_generation_is_explicit_and_byte_exact(self):
         import importlib.util
-        helper_path=PROJECT/'tests/test_support/native_csv_fixture.py'
+        helper_path=Path(__file__).resolve().parents[1]/'test_support/native_csv_fixture.py'
         spec=importlib.util.spec_from_file_location('native_csv_fixture',helper_path)
         helper=importlib.util.module_from_spec(spec)
         spec.loader.exec_module(helper)

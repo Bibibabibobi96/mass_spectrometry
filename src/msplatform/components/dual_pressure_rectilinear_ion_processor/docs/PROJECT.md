@@ -1,5 +1,11 @@
 # 双压力区矩形射频离子处理器项目状态
 
+IP functional and GUI-replay Python consumers now share the explicit run-root context for both
+installed source (`src` plus root) and frozen closures. Direct `PYTHONPATH` assignment and checkout
+working-directory fallback are absent from those launchers; native path environments, recovery,
+resource ownership and scientific behavior remain unchanged. This software routing change adds no
+native or scientific qualification.
+
 The project verifier now loads the installed execution lease resource with an explicit HostContext. Callers must select Python through `-PythonExe` or `SIMULATION_PYTHON_EXE`; the verifier no longer assumes a checkout `.venv`. Test discovery and scientific behavior are unchanged.
 
 Functional and GUI-replay preparation call the installed SIMION seed-freezing owner with their
