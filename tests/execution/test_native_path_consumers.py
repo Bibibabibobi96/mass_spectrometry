@@ -168,7 +168,7 @@ $session=Enter-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $Repo -
 try{
  if($session.source_protection_leases.Count-ne1){throw 'entry did not retain original source capacity owner'}
  if($session.source_protection_leases[0].artifact_root-eq$session.artifact_root){throw 'source root was relabeled target'}
- $lease=Get-Content (Join-Path $session.source_protection_leases[0].artifact_root ('common/capacity_protection_leases/'+$session.source_protection_leases[0].lease_id+'.json')) -Raw|ConvertFrom-Json
+ $lease=Get-Content (Join-Path $session.source_protection_leases[0].artifact_root ('platform/capacity_protection_leases/'+$session.source_protection_leases[0].lease_id+'.json')) -Raw|ConvertFrom-Json
  if($lease.committed_new_bytes-ne0){throw 'borrowed data counted as new bytes'}
 }finally{$null=Exit-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $Repo -Session $session}
 """, encoding="utf-8", newline="\n")

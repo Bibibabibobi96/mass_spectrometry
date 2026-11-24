@@ -24,7 +24,7 @@ class ManagedMultipoleIPTests(unittest.TestCase):
         run_id = "20261109_120001__analysis__python__mpip-managed-failed"
         with self.assertRaisesRegex(ValueError, "receiver geometry"):
             prepare_managed(fixture.request_path, context=context, run_id=run_id)
-        run = root / "projects/instrument_assembly/runs" / run_id
+        run = root / "assemblies/instrument_assembly/runs" / run_id
         published = json.loads((run / "run_manifest.json").read_text(encoding="utf-8"))
         self.assertEqual(published["status"], "failed")
         self.assertFalse((run / "results/multipole_ip/ip_injected_source.json").exists())

@@ -131,7 +131,7 @@ $session=Enter-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $Repo -
  -RunDirectory (Join-Path $data.target 'projects/fixture/runs/new') -CommittedNewBytes 1024 -SourceReferences @($data.references)
 if($session.source_protection_leases.Count-ne1){throw 'Source has no independent original-root lease'}
 $source=$session.source_protection_leases[0]
-$lease=Get-Content -LiteralPath (Join-Path $source.artifact_root ('common/capacity_protection_leases/'+$source.lease_id+'.json')) -Raw|ConvertFrom-Json
+$lease=Get-Content -LiteralPath (Join-Path $source.artifact_root ('platform/capacity_protection_leases/'+$source.lease_id+'.json')) -Raw|ConvertFrom-Json
 if($lease.committed_new_bytes-ne0-or$session.committed_new_bytes-ne1024){throw 'Source became new target payload'}
 if($lease.protected_cache_keys.Count-ne1-or$session.protected_cache_keys.Count-ne0){throw 'Source key was pinned under target owner'}
 $null=Exit-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $Repo -Session $session
@@ -197,6 +197,6 @@ $null=Exit-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $Repo -Sess
                 ledger = load_capacity_ledger(run.parents[3])
                 ledger["objects"][0]["pin"] = False
                 ledger["objects"][0].pop("pin_reason", None)
-                write(run.parents[3] / "common/capacity_ledger.json", ledger)
+                write(run.parents[3] / "platform/capacity_ledger.json", ledger)
                 with self.assertRaisesRegex(ValueError, "actual ready pinned owner range"):
                     lifecycle.resolve_consumed_run_capacity_owner(manifest_record, stopped_receipt_record=stopped_record)
