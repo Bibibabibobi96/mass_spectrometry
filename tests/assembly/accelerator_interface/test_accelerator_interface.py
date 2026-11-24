@@ -187,7 +187,7 @@ if(-not$caught){throw 'segmented and continuous inputs were accepted together'}
             (site_packages / "parent-test-environment.pth").write_text(
                 str(parent_site_packages) + "\n", encoding="utf-8")
             (site_packages / "selected-test-package.pth").write_text(
-                str(repo / "src") + "\n", encoding="utf-8")
+                f"import sys; sys.path.insert(0, {str(repo / 'src')!r})\n", encoding="utf-8")
 
             _, _, _, _, propagation, numerics = rf_tracking_case()
             propagation["dynamics"]["collisions"] = "hs1"
@@ -275,7 +275,7 @@ if(-not$caught){throw 'segmented and continuous inputs were accepted together'}
             owner_source = repo / "src/msplatform/workflows/multipole_ip/continuous.py"
             source = owner_source.read_text(encoding="utf-8")
             marker = "from msplatform.ion_release.authoring import ReleaseRealization\n"
-            injection = marker + f'''\nfrom types import SimpleNamespace as _InertNamespace\n\ndef _inert_native_track(fields, particles, **kwargs):\n    import json, sys\n    Path(r"{capture}").write_text(json.dumps({{\n        "executable": sys.executable, "fields": fields.reference, "particles": particles.to_dict(),\n        "propagation": kwargs["propagation"], "observations": kwargs["observations"],\n        "numerics": kwargs["numerics"], "vendor": kwargs["hs1_request"]["vendor_record"]["path"],\n        "workspace": str(kwargs["context"].workspace), "environment": kwargs["context"].environment,\n        "recovery": kwargs["recovery_reference"], "dispatch": kwargs["dispatch_profiles"]}}), encoding="utf-8")\n    return _InertNamespace(reference={{"path": r"{artifact}"}})\n\noperations.track = _inert_native_track\n'''
+            injection = marker + f'''\nfrom types import SimpleNamespace as _InertNamespace\n\ndef _inert_native_track(fields, particles, **kwargs):\n    import json, sys\n    Path(r"{capture}").write_text(json.dumps({{\n        "executable": sys.executable, "module": __file__, "fields": fields.reference, "particles": particles.to_dict(),\n        "propagation": kwargs["propagation"], "observations": kwargs["observations"],\n        "numerics": kwargs["numerics"], "vendor": kwargs["hs1_request"]["vendor_record"]["path"],\n        "workspace": str(kwargs["context"].workspace), "environment": kwargs["context"].environment,\n        "recovery": kwargs["recovery_reference"], "dispatch": kwargs["dispatch_profiles"]}}), encoding="utf-8")\n    return _InertNamespace(reference={{"path": r"{artifact}"}})\n\noperations.track = _inert_native_track\n'''
             self.assertIn(marker, source)
             instrumented = source.replace(marker, injection, 1)
             owner_source.write_text(instrumented, encoding="utf-8", newline="\n")
@@ -318,6 +318,7 @@ if(-not$caught){throw 'segmented and continuous inputs were accepted together'}
             self.assertEqual(json.loads(artifact.read_text()), {"artifact": "returned"})
             observed = json.loads(capture.read_text(encoding="utf-8"))
             self.assertEqual(Path(observed["executable"]), python_executable)
+            self.assertEqual(Path(observed["module"]), owner_source)
             self.assertEqual(observed["fields"], documents["fields.json"])
             expected_release = json.loads(json.dumps(sample_release(documents["release.json"]).to_dict()))
             self.assertEqual(observed["particles"], expected_release)
