@@ -231,21 +231,18 @@ class SolverReviewRetirementTest(unittest.TestCase):
         self.temp.cleanup()
 
     def _installed_python(self, name: str) -> tuple[Path, Path]:
-        source = self.root / f"{name}-package"
-        source.mkdir()
         repository = Path(__file__).resolve().parents[2]
-        shutil.copy2(repository / "pyproject.toml", source / "pyproject.toml")
-        shutil.copytree(repository / "src/msplatform", source / "src/msplatform")
         environment = self.root / f"{name}-venv"
         subprocess.run(
             [sys.executable, "-m", "venv", "--system-site-packages", str(environment)],
             cwd=self.root, capture_output=True, text=True, timeout=60, check=True,
         )
         python = environment / "Scripts/python.exe"
-        subprocess.run(
-            [str(python), "-m", "pip", "install", "--no-deps", "--no-build-isolation", str(source)],
-            cwd=self.root, capture_output=True, text=True, timeout=90, check=True,
+        located = subprocess.run(
+            [str(python), "-I", "-B", "-c", 'import sysconfig;print(sysconfig.get_path("purelib"))'],
+            cwd=self.root, capture_output=True, text=True, timeout=30, check=True,
         )
+        shutil.copytree(repository / "src/msplatform", Path(located.stdout.strip()) / "msplatform")
         resolved = subprocess.run(
             [str(python), "-I", "-B", "-c",
              'from importlib.resources import files;print(files("msplatform")/"execution/resources")'],

@@ -268,6 +268,8 @@ $package=@{input_dir=(Join-Path $Root 'inputs')};$frozen=[ordered]@{};$frozenInp
 $ResolvedInputsPath=$Bundle;$compiledInputs=$null
 Invoke-Expression $assignment.Extent.Text
 $files=Get-Variable -Name $Variable -ValueOnly
+$scientificInputs=[ordered]@{}
+foreach($name in @('baseline','numerical_modes','resolved_contract','mode')){$scientificInputs[$name]=Join-Path $projectRoot $files[$name]}
 foreach($path in $files.Values){$file=Join-Path $projectRoot $path;New-Item -ItemType Directory -Force -Path (Split-Path -Parent $file)|Out-Null;Set-Content $file '{"value":1}'}
 Invoke-Expression $selection.Extent.Text
 Invoke-Expression $loop.Extent.Text

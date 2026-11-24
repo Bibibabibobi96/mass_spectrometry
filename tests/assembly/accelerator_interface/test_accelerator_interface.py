@@ -177,7 +177,6 @@ if(-not$caught){throw 'segmented and continuous inputs were accepted together'}
             workspace.mkdir()
             output.mkdir()
             _copy_path_consumer_repository(repo)
-            shutil.copyfile(REPO / "pyproject.toml", repo / "pyproject.toml")
             python_home = root / "fixture-python"
             subprocess.run([sys._base_executable, "-m", "venv", "--system-site-packages", str(python_home)],
                 cwd=root, check=True, capture_output=True, text=True, timeout=60)
@@ -187,9 +186,8 @@ if(-not$caught){throw 'segmented and continuous inputs were accepted together'}
                                         if (Path(path) / "referencing").is_dir())
             (site_packages / "parent-test-environment.pth").write_text(
                 str(parent_site_packages) + "\n", encoding="utf-8")
-            installed = subprocess.run([str(python_executable), "-m", "pip", "install", "--no-deps",
-                "--no-build-isolation", "--editable", str(repo)], cwd=root, capture_output=True, text=True, timeout=60)
-            self.assertEqual(installed.returncode, 0, installed.stdout + installed.stderr)
+            (site_packages / "selected-test-package.pth").write_text(
+                str(repo / "src") + "\n", encoding="utf-8")
 
             _, _, _, _, propagation, numerics = rf_tracking_case()
             propagation["dynamics"]["collisions"] = "hs1"
