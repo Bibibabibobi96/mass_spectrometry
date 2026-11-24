@@ -45,7 +45,7 @@ class FailureOutputTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError) as caught:
                     owner.run_managed_stage(context, **args)
                 self.assertIs(caught.exception, primary)
-                manifest_path = next(context.workspace.glob("artifacts/projects/*/runs/*/run_manifest.json"))
+                manifest_path = next(context.workspace.glob("artifacts/assemblies/instrument_assembly/runs/*/run_manifest.json"))
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
                 if scenario == "valid":
                     self.assertEqual(manifest["status"], "failed", getattr(primary, "__notes__", []))
@@ -94,7 +94,7 @@ class FailureOutputTests(unittest.TestCase):
             self.assertIs(caught.exception, primary)
             self.assertTrue(any("RETENTION_INTERRUPTED_BEFORE_PLAN" in note for note in primary.__notes__))
             artifacts = context.workspace / "artifacts"
-            result_path = next(artifacts.glob("projects/*/scratch/workflow_results/*/result.json"))
+            result_path = next(artifacts.glob("assemblies/instrument_assembly/scratch/workflow_results/*/result.json"))
             pending = json.loads(result_path.read_text(encoding="utf-8"))
             run = Path(pending["run_directory"])
             self.assertEqual(pending["stage"], "finalization")

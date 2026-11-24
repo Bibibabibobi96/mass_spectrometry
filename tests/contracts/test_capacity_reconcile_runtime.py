@@ -152,7 +152,7 @@ Write-Output ('HOST_RELEASE_RESULT='+($results|ConvertTo-Json -Depth 15 -Compres
                                if "--" + name + "-protection-lease" in args), None)
                 mode = args[args.index("--execution-mode") + 1] if "--execution-mode" in args else None
                 if mode == "startup" and scenario in {"invalid_lease", "missing_scope"}:
-                    lease_path = next((root / "common/capacity_protection_leases").glob("*.json"))
+                    lease_path = next((root / "platform/capacity_protection_leases").glob("*.json"))
                     lease = json.loads(lease_path.read_text(encoding="utf-8"))
                     if scenario == "invalid_lease": lease["committed_new_bytes"] = -1
                     else: lease["protected_paths"] = ["future_run"]
@@ -181,7 +181,7 @@ Write-Output ('HOST_RELEASE_RESULT='+($results|ConvertTo-Json -Depth 15 -Compres
                     def fail_renewal(*args, **kwargs): raise ValueError("fixture lease renewal failure")
                     protection.refresh_capacity_protection_lease = fail_renewal
                 if scenario == "expired_before_renewal" and action == "renew" and not (root / "disposable").exists():
-                    lease_path = next((root / "common/capacity_protection_leases").glob("*.json"))
+                    lease_path = next((root / "platform/capacity_protection_leases").glob("*.json"))
                     lease = json.loads(lease_path.read_text(encoding="utf-8"))
                     lease["expires_at_utc"] = (datetime.fromisoformat(lease["created_at_utc"].replace("Z", "+00:00"))
                                                 + timedelta(milliseconds=1)).isoformat()
@@ -285,7 +285,7 @@ if fixture_scenario == "renewal_failure" and fixture_action == "renew" and not (
     fixture_protection.refresh_capacity_protection_lease=fixture_fail_renewal
 if fixture_scenario == "expired_before_renewal" and fixture_action == "renew" and not (fixture_root/"disposable").exists():
     from datetime import datetime,timedelta
-    fixture_path=next((fixture_root/"common/capacity_protection_leases").glob("*.json"))
+    fixture_path=next((fixture_root/"platform/capacity_protection_leases").glob("*.json"))
     fixture_lease=json.loads(fixture_path.read_text(encoding="utf-8"))
     fixture_lease["expires_at_utc"]=(datetime.fromisoformat(fixture_lease["created_at_utc"].replace("Z","+00:00"))+timedelta(milliseconds=1)).isoformat()
     fixture_path.write_text(json.dumps(fixture_lease),encoding="utf-8")
@@ -311,7 +311,7 @@ if fixture_scenario == "cleanup_failure" and fixture_action == "delete":
                     self.assertEqual(sum(row.get("mode") == "maintenance" for row in events), maintenance_count, result)
                     self.assertEqual(sum(row.get("mode") == "startup" for row in events), startup_count, result)
                     self.assertEqual((root / "input").read_bytes(), b"keep")
-                    remaining_leases = list((root / "common/capacity_protection_leases").glob("*.json"))
+                    remaining_leases = list((root / "platform/capacity_protection_leases").glob("*.json"))
                     self.assertEqual(len(remaining_leases), 1 if scenario == "cleanup_failure" else 0)
                     if maintenance_count:
                         self.assertTrue(all(row["active_leases"] == 1 for row in events if row.get("mode") in {"startup", "maintenance"}))
@@ -390,67 +390,76 @@ if fixture_scenario == "cleanup_failure" and fixture_action == "delete":
             self.assertEqual(refreshed["total_active_lease_committed_new_bytes"], 2)
 
     def test_owner_recovers_only_stale_atomic_ledger_temp_without_payload_hash(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            target = root / "common" / ".capacity_ledger.json.crashed"
-            target.parent.mkdir(parents=True)
-            target.write_bytes(b"truncated ledger")
-            os.utime(target, (0, 0))
-            capacity_ledger.initialize_capacity_ledger(root, objects=[{
-                "path": target.relative_to(root).as_posix(),
-                "class": "rebuildable_payload", "bytes": target.stat().st_size,
-                "status": "writing", "pin": False,
-                "owner": "common.capacity_lifecycle",
-                "recovery_reason": "stale_capacity_ledger_atomic_temp_requires_recovery",
-                "review_deadline": "2026-10-22",
-            }])
-            original_open = Path.open
-            def deny_payload_open(path, *args, **kwargs):
-                if path == target:
-                    raise AssertionError("payload read forbidden")
-                return original_open(path, *args, **kwargs)
-            with patch.object(Path, "open", deny_payload_open):
-                with self.assertRaisesRegex(AssertionError, "payload read forbidden"):
-                    target.read_bytes()
-                outcome = capacity_ledger.recover_stale_atomic_ledger_temps(root)
-            self.assertEqual(outcome["retired_count"], 1)
-            self.assertEqual(outcome["removed_bytes"], len(b"truncated ledger"))
-            self.assertFalse(target.exists())
-            entry = capacity_ledger.load_capacity_ledger(root)["objects"][0]
-            self.assertEqual(entry["status"], "retired")
-            receipt = next((root / "common" / "capacity_disposal_receipts").glob("atomic-ledger-temp-*.json"))
-            self.assertEqual(json.loads(receipt.read_text(encoding="utf-8"))["status"], "retired")
+        for name in ("platform", "common"):
+            with self.subTest(ledger_root=name), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                target = root / name / ".capacity_ledger.json.crashed"
+                target.parent.mkdir(parents=True)
+                target.write_bytes(b"truncated ledger")
+                os.utime(target, (0, 0))
+                capacity_ledger.initialize_capacity_ledger(root, objects=[{
+                    "path": target.relative_to(root).as_posix(),
+                    "class": "rebuildable_payload", "bytes": target.stat().st_size,
+                    "status": "writing", "pin": False,
+                    "owner": "common.capacity_lifecycle",
+                    "recovery_reason": "stale_capacity_ledger_atomic_temp_requires_recovery",
+                    "review_deadline": "2026-10-22",
+                }])
+                original_open = Path.open
+                def deny_payload_open(path, *args, **kwargs):
+                    if path == target:
+                        raise AssertionError("payload read forbidden")
+                    return original_open(path, *args, **kwargs)
+                with patch.object(Path, "open", deny_payload_open):
+                    with self.assertRaisesRegex(AssertionError, "payload read forbidden"):
+                        target.read_bytes()
+                    outcome = capacity_ledger.recover_stale_atomic_ledger_temps(root)
+                self.assertEqual(outcome["retired_count"], 1)
+                self.assertEqual(outcome["removed_bytes"], len(b"truncated ledger"))
+                self.assertFalse(target.exists())
+                entry = capacity_ledger.load_capacity_ledger(root)["objects"][0]
+                self.assertEqual(entry["status"], "retired")
+                receipt = next((root / "platform" / "capacity_disposal_receipts").glob("atomic-ledger-temp-*.json"))
+                self.assertEqual(json.loads(receipt.read_text(encoding="utf-8"))["status"], "retired")
 
     def test_pa_runtime_directories_become_ready_without_removal(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            paths = sorted(capacity_ledger.PA_RUNTIME_STATE_RELATIVE_PATHS)
-            for relative in paths:
-                (root / relative).mkdir(parents=True)
-            (root / paths[1] / "key.lock").write_bytes(b"lock")
-            capacity_ledger.initialize_capacity_ledger(root, objects=[{
-                "path": relative,
-                "class": "rebuildable_payload",
-                "bytes": 4 if relative == paths[1] else 0,
-                "status": "writing", "pin": False,
-                "owner": "common.simion.pa_family_cache",
-                "recovery_reason": "pa_runtime_state_recovery_required",
-                "review_deadline": "2026-10-22",
-            } for relative in paths])
-            outcome = capacity_ledger.reconcile_pa_runtime_state(root)
-            self.assertEqual(outcome["ready_count"], 3)
-            self.assertEqual(outcome["ready_bytes"], 4)
-            self.assertTrue((root / paths[1] / "key.lock").exists())
-            self.assertTrue(all(
-                item["status"] == "ready" and item["class"] == "light_evidence"
-                for item in capacity_ledger.load_capacity_ledger(root)["objects"]
-            ))
+        for name, prefix in (
+            ("current", "platform/simion/pa_family_cache/"),
+            ("historical", "common/simion/pa_family_cache/"),
+        ):
+            with self.subTest(prefix=name), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                paths = sorted(
+                    path for path in capacity_ledger.PA_RUNTIME_STATE_RELATIVE_PATHS
+                    if path.startswith(prefix)
+                )
+                self.assertEqual(len(paths), 3)
+                for relative in paths:
+                    (root / relative).mkdir(parents=True)
+                (root / paths[1] / "key.lock").write_bytes(b"lock")
+                capacity_ledger.initialize_capacity_ledger(root, objects=[{
+                    "path": relative,
+                    "class": "rebuildable_payload",
+                    "bytes": 4 if relative == paths[1] else 0,
+                    "status": "writing", "pin": False,
+                    "owner": "common.simion.pa_family_cache",
+                    "recovery_reason": "pa_runtime_state_recovery_required",
+                    "review_deadline": "2026-10-22",
+                } for relative in paths])
+                outcome = capacity_ledger.reconcile_pa_runtime_state(root)
+                self.assertEqual(outcome["ready_count"], 3)
+                self.assertEqual(outcome["ready_bytes"], 4)
+                self.assertTrue((root / paths[1] / "key.lock").exists())
+                self.assertTrue(all(
+                    item["status"] == "ready" and item["class"] == "light_evidence"
+                    for item in capacity_ledger.load_capacity_ledger(root)["objects"]
+                ))
 
     def test_loading_calibrated_ledger_does_not_resolve_payload_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             capacity_ledger.initialize_capacity_ledger(root, objects=[{
-                "path": "projects/p/runs/r1", "class": "light_evidence",
+                "path": "components/p/runs/r1", "class": "light_evidence",
                 "bytes": 1, "status": "ready", "pin": False,
                 **READY_DUTIES,
             }])
@@ -489,13 +498,13 @@ if fixture_scenario == "cleanup_failure" and fixture_action == "delete":
                 "retirement_route": "owner_managed_disposition",
                 "recovery_task": "workflow-a must recover or retire",
                 "recovery_evidence_paths": ["incomplete"],
-                "consumers": ["projects/p/runs/consumer"],
+                "consumers": ["components/p/runs/consumer"],
             }])
             self.assertEqual(document["objects"][0]["owner"], "workflow-a")
             self.assertEqual(document["objects"][0]["review_deadline"], "2026-09-27")
             self.assertEqual(
                 document["objects"][0]["consumers"],
-                ["projects/p/runs/consumer"],
+                ["components/p/runs/consumer"],
             )
             with self.assertRaisesRegex(ValueError, "ready ledger objects cannot carry"):
                 capacity_ledger.record_capacity_object(
@@ -534,7 +543,7 @@ if fixture_scenario == "cleanup_failure" and fixture_action == "delete":
                 "status": "calibrated", "complete": True,
                 "artifact_root": str(root), "resident_bytes": 0, "objects": [],
             }
-            ledger = root / "common" / "capacity_ledger.json"
+            ledger = root / "platform" / "capacity_ledger.json"
             ledger.parent.mkdir()
             ledger.write_text(json.dumps(legacy), encoding="utf-8")
             self.assertIsNone(capacity_ledger.load_capacity_ledger(root))
@@ -704,7 +713,7 @@ for name in (
                 root, lease_id="legacy", owner="legacy", ttl_seconds=3600,
                 protected_paths=[root / "legacy"], committed_new_bytes=1,
             )
-            legacy_path = root / "common" / "capacity_protection_leases" / "legacy.json"
+            legacy_path = root / "platform" / "capacity_protection_leases" / "legacy.json"
             document = json.loads(legacy_path.read_text(encoding="utf-8"))
             document.pop("committed_new_bytes")
             legacy_path.write_text(json.dumps(document), encoding="utf-8")
@@ -747,16 +756,16 @@ for name in (
     def test_overdue_admission_uses_current_lease_input_overlap_and_cache_family(self) -> None:
         key, generation, other_key = "a" * 64, "b" * 64, "c" * 64
         cases = [
-            ("ancestor", "projects/p/runs/old", ["projects/p/runs/old/input.json"], [], True),
-            ("descendant", "projects/p/runs/old/input.json", ["projects/p/runs/old"], [], True),
-            ("other_lease", "projects/p/runs/old", ["projects/current"], [], False),
-            ("generation", f"common/simion/pa_family_cache/{key}/generations/{generation}", [], [key], True),
-            ("transaction", f"common/simion/pa_family_cache/.transactions/{key}/build-scratch", [], [key], True),
-            ("staging", f"projects/p/cache/simion_pa_basis/.staging/{key}/pending", [], [key], True),
-            ("project_generation", f"projects/p/cache/simion_pa_basis/{key}/generations/{generation}", [], [key], True),
-            ("different_key", f"common/simion/pa_family_cache/{other_key}/generations/{generation}", [], [key], False),
-            ("generation_is_not_key", f"common/simion/pa_family_cache/{key}/generations/{generation}", [], [generation], False),
-            ("ordinary_sha_path", f"projects/p/runs/{key}/results", [], [key], False),
+            ("ancestor", "components/p/runs/old", ["components/p/runs/old/input.json"], [], True),
+            ("descendant", "components/p/runs/old/input.json", ["components/p/runs/old"], [], True),
+            ("other_lease", "components/p/runs/old", ["components/current"], [], False),
+            ("generation", f"platform/simion/pa_family_cache/{key}/generations/{generation}", [], [key], True),
+            ("transaction", f"platform/simion/pa_family_cache/.transactions/{key}/build-scratch", [], [key], True),
+            ("staging", f"components/p/cache/simion_pa_basis/.staging/{key}/pending", [], [key], True),
+            ("project_generation", f"components/p/cache/simion_pa_basis/{key}/generations/{generation}", [], [key], True),
+            ("different_key", f"platform/simion/pa_family_cache/{other_key}/generations/{generation}", [], [key], False),
+            ("generation_is_not_key", f"platform/simion/pa_family_cache/{key}/generations/{generation}", [], [generation], False),
+            ("ordinary_sha_path", f"components/p/runs/{key}/results", [], [key], False),
         ]
         for name, relative, current_paths, current_keys, blocked in cases:
             with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
@@ -778,7 +787,7 @@ for name in (
                     protected_paths=[root / value for value in current_paths],
                     protected_cache_keys=current_keys, committed_new_bytes=2,
                 )
-                ledger_path = root / "common/capacity_ledger.json"
+                ledger_path = root / "platform/capacity_ledger.json"
                 original = ledger_path.read_bytes()
                 # No explicit required arguments: the current lease itself is
                 # still the declared input scope, while other leases are not.

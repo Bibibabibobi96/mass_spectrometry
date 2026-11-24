@@ -86,7 +86,7 @@ class CapacityDeploymentTests(unittest.TestCase):
             self.assertEqual(Path(captured["capacity_policy"]["frozen_record"]["path"]), run / "inputs/capacity_policy.json")
             before = {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in run.rglob("*") if p.is_file()}
             path.write_text("now invalid deployment", encoding="utf-8")
-            resumed = owner.resume_finalization(context, context.workspace / "artifacts/projects/instrument_assembly/scratch/workflow_results" / args["run_id"] / "result.json")
+            resumed = owner.resume_finalization(context, context.workspace / "artifacts/assemblies/instrument_assembly/scratch/workflow_results" / args["run_id"] / "result.json")
             self.assertEqual(resumed, result)
             self.assertEqual(before, {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in run.rglob("*") if p.is_file()})
 
@@ -170,7 +170,7 @@ class CapacityDeploymentTests(unittest.TestCase):
                 self.assertEqual(lease_path.read_bytes(), before)
                 session["owner"] = "clock"
                 # Missing-ledger bootstrap still cannot expand scope at the same tick.
-                (root / "common/capacity_ledger.json").unlink()
+                (root / "platform/capacity_ledger.json").unlink()
                 with self.assertRaisesRegex(ValueError, "bootstrap lease renewal cannot expand"):
                     sessions.renew_capacity_session(session, protected_paths=[root / "other"])
                 self.assertEqual(lease_path.read_bytes(), before)

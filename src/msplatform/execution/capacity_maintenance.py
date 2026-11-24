@@ -541,7 +541,7 @@ def recover_stale_atomic_ledger_temps(root: Path) -> dict[str, int]:
             item for item in ledger["objects"]
             if item.get("status") in {"writing", "retirement_pending"}
             and item.get("owner") == "common.capacity_lifecycle"
-            and Path(str(item.get("path", ""))).parent.as_posix() == "common"
+            and Path(str(item.get("path", ""))).parent.as_posix() in {"platform", "common"}
             and Path(str(item.get("path", ""))).name.startswith(STALE_ATOMIC_TEMP_PREFIX)
         ]
         for entry in candidates:

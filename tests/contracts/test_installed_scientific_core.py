@@ -4624,7 +4624,7 @@ try:
                 with section_timing('rf_owner',rf_l1_case):
                     rf_l1.run(rf_l1_context,baseline_path=rf_l1_paths['baseline'],resolved_path=rf_l1_paths['resolved'],
                         mode_path=rf_l1_paths['mode'],source_path=rf_l1_paths['source'],run_id=rf_l1_id)
-        except RuntimeError as error:
+        except (RuntimeError, PermissionError) as error:
             if 'session' not in rf_l1_seen:
                 raise
             rf_l1_error=error

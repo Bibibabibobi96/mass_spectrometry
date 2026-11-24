@@ -11,6 +11,8 @@ import sys
 import tempfile
 import unittest
 
+from tests.contracts.test_support.run_artifact_workflow import copy_workspace_path_support
+
 
 REPO = Path(__file__).resolve().parents[2]
 RUFF_PROJECTS = (
@@ -30,6 +32,7 @@ class ProjectGatePrevalidationTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.log = self.root / "calls.jsonl"
+        copy_workspace_path_support(REPO, self.root)
         self.gate_scripts = {
             RUFF_PROJECTS[0]: "ei_verify.ps1",
             RUFF_PROJECTS[1]: "wehnelt_verify.ps1",
@@ -38,9 +41,9 @@ class ProjectGatePrevalidationTests(unittest.TestCase):
             MR: "mr_verify.ps1",
         }
         resources = self.root / "src/msplatform/workflows/resources"
-        resources.mkdir(parents=True)
+        resources.mkdir(parents=True, exist_ok=True)
         preflight = self.root / "src/msplatform/execution/resources/require_powershell7.ps1"
-        preflight.parent.mkdir(parents=True)
+        preflight.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(REPO / "src/msplatform/execution/resources/require_powershell7.ps1", preflight)
         # Admission is outside this fixture's responsibility. Actual project
         # dispatch, Python exits and PowerShell parsing remain real processes.
@@ -59,7 +62,7 @@ class ProjectGatePrevalidationTests(unittest.TestCase):
             target.write_text(module, encoding="utf-8")
         for project, script_name in self.gate_scripts.items():
             target = self.root / "src/msplatform/components" / project
-            target.mkdir(parents=True)
+            target.mkdir(parents=True, exist_ok=True)
             source_path = REPO / "src/msplatform/workflows/resources" / script_name
             source = source_path.read_text(encoding="utf-8")
             shutil.copyfile(source_path, resources / script_name)
@@ -100,7 +103,8 @@ class ProjectGatePrevalidationTests(unittest.TestCase):
             [PWSH, "-NoProfile", "-File", str(self.root / "src/msplatform/workflows/resources" / self.gate_scripts[project]),
              "-PythonExe", sys.executable, *arguments], cwd=self.root,
             env=dict(os.environ, GATE_CALLS=str(self.log), GATE_FAIL=fail,
-                     ProgramFiles=str(self.root / "no_vendor"), PYTHONPATH=str(self.root),
+                     ProgramFiles=str(self.root / "no_vendor"),
+                     PYTHONPATH=os.pathsep.join((str(self.root / "src"), str(self.root))),
                      TEMP=str(lua_temporary) if lua_temporary else os.environ.get("TEMP", ""),
                      PATH=(str(lua_directory) + os.pathsep + os.environ.get("PATH", "")) if lua_directory else os.environ.get("PATH", "")),
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)

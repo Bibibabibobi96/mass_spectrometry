@@ -45,6 +45,28 @@ def copy_scientific_core(source_root: Path, destination_root: Path) -> None:
                 shutil.copyfile(source, destination)
 
 
+def copy_workspace_path_support(source_root: Path, destination_root: Path) -> None:
+    """Copy the real workspace path bridge and its Python import closure."""
+    for relative in (
+        "src/msplatform/__init__.py",
+        "src/msplatform/contracts/__init__.py",
+        "src/msplatform/contracts/machine_contracts.py",
+        "src/msplatform/io/__init__.py",
+        "src/msplatform/io/file_identity.py",
+        "src/msplatform/execution/__init__.py",
+        "src/msplatform/execution/context.py",
+        "src/msplatform/execution/recovery.py",
+        "src/msplatform/execution/run_paths.py",
+        "src/msplatform/execution/process_transport.py",
+        "src/msplatform/execution/resources/__init__.py",
+        "src/msplatform/execution/resources/workspace_paths.ps1",
+        "src/msplatform/execution/resources/workspace_paths.py",
+    ):
+        destination = destination_root / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source_root / relative, destination)
+
+
 CALLBACK = '''import json, os, sys, time
 from pathlib import Path
 sys.path.insert(0, REPOSITORY)

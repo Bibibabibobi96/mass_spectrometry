@@ -13,6 +13,8 @@ import tempfile
 import time
 import unittest
 
+from tests.contracts.test_support.run_artifact_workflow import copy_workspace_path_support
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MR = "tests/components/parallel_mirror_dual_stripe_mr_tof"
@@ -2206,6 +2208,7 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
 
     def campaign_leaf_fixture(self, root: Path) -> tuple[str, list[str], str]:
         """Tiny catalog fixture, real planner and SFI owner, inert prerequisites."""
+        copy_workspace_path_support(REPO_ROOT, root)
         common = root / "tools/repository"
         common.mkdir(parents=True)
         for name in ("verify.ps1", "parallel_gate_support.ps1", "gate_catalog_support.ps1",
@@ -2214,9 +2217,9 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
         owner = "src/msplatform/components/single_reflection_oa_tof"
         project = root / owner
         for directory in ("config", "docs"):
-            (project / directory).mkdir(parents=True)
+            (project / directory).mkdir(parents=True, exist_ok=True)
         workflow_resources = root / "src/msplatform/workflows/resources"
-        workflow_resources.mkdir(parents=True)
+        workflow_resources.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(REPO_ROOT / "src/msplatform/workflows/resources/oatof_verify.ps1",
                         workflow_resources / "oatof_verify.ps1")
         (project / "config/project.json").write_text(

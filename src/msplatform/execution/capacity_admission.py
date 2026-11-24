@@ -172,7 +172,7 @@ def _writing_overlaps_current_inputs(
     parts = relative.parts
     if parts[:3] in {("platform", "simion", "pa_family_cache"), ("common", "simion", "pa_family_cache")}:
         tail = parts[3:]
-    elif len(parts) >= 5 and parts[0] == "projects" and parts[2] == "cache":
+    elif len(parts) >= 5 and parts[0] in {"components", "projects"} and parts[2] == "cache":
         tail = parts[4:]
     else:
         return False

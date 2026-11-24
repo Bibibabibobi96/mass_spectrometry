@@ -59,7 +59,7 @@ class ExecutionAccountingHoldTests(unittest.TestCase):
                 authority = run/'logs/capacity_session.json'
                 authority_bytes = authority.read_bytes()
                 self.assertNotIn('defer_capacity_finalization', json.loads(authority_bytes))
-                lease_path = context.workspace/'artifacts/common/capacity_protection_leases'/(
+                lease_path = context.workspace/'artifacts/platform/capacity_protection_leases'/(
                     json.loads(authority_bytes)['lease_id']+'.json')
                 lease_bytes = lease_path.read_bytes()
                 completion = (run/'results/execution_completion.json').read_bytes()
@@ -132,7 +132,7 @@ class ExecutionAccountingHoldTests(unittest.TestCase):
                 payload.write_bytes(b"INERT_OUTPUT_NOT_SOLVER_EVIDENCE")
                 session.defer_capacity_finalization("STOPPED_STAGE_ACCOUNTING_FAILURE")
                 session.defer_capacity_finalization("MUST_NOT_REPLACE_FIRST_REASON")
-                lease = session.artifact_root / "common/capacity_protection_leases" / (
+                lease = session.artifact_root / "platform/capacity_protection_leases" / (
                     session.capacity_session["lease_id"] + ".json")
                 for path in (lease, session.artifact_run_dir / "run_manifest.json", payload,
                              session.artifact_run_dir / "logs/capacity_session.json"):

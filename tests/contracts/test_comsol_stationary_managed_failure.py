@@ -49,7 +49,7 @@ class StationaryManagedFailureTests(unittest.TestCase):
                 capacity = root / 'capacity.json'
                 capacity.write_text(json.dumps(helper._policy()), encoding='utf-8')
                 context = replace(helper._context(root), capacity_policy_path=capacity,
-                    host_state_path=Path(os.environ['MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH']),
+                    host_state_path=root/'private-host.sqlite3',
                     tools={'comsol_launcher': Path(sys.executable), 'matlab_root': root})
                 context.workspace.mkdir(parents=True)
                 limits = {'wall_clock_seconds': 120, 'transient_run_directory_bytes': 64 * 1024**2,
@@ -86,7 +86,7 @@ class StationaryManagedFailureTests(unittest.TestCase):
                     with self.assertRaises(ProcessExecutionError) as caught:
                         assembly_field_solution.solve_stationary(source, solver_numerics={'kind': 'comsol_stationary_default'}, context=context)
                 self.assertIn('23', str(caught.exception))
-                manifests = list((context.workspace / 'artifacts/projects/instrument_assembly/runs').glob('*assembly-field*/run_manifest.json'))
+                manifests = list((context.workspace / 'artifacts/assemblies/instrument_assembly/runs').glob('*assembly-field*/run_manifest.json'))
                 self.assertEqual(len(manifests), 1)
                 manifest = json.loads(manifests[0].read_text(encoding='utf-8-sig'))
                 self.assertEqual(manifest['status'], 'failed')

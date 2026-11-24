@@ -986,7 +986,7 @@ class PlatformApiTests(unittest.TestCase):
             self.assertEqual(context.stage_policy_path, base / "stages.json")
             self.assertEqual(Path(authority["path"]), base / "stages.json")
             self.assertEqual(context.policy_path.name, "host_resource_policy.json")
-            self.assertEqual(context.execution_root, workspace / "artifacts/common/execution_aliases")
+            self.assertEqual(context.execution_root, workspace / "artifacts/platform/execution_aliases")
             overrides["export_cad"]["limits"]["wall_clock_seconds"] = 1
             snapshot = context.environment
             snapshot["overrides"]["export_cad"]["limits"]["wall_clock_seconds"] = 2

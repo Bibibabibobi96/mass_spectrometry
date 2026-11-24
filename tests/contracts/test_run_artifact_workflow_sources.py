@@ -105,7 +105,7 @@ class RunArtifactSourceTests(fixture.RunArtifactWorkflowFixture):
             result = self.run_ps(root, f""". '{OWNER}'
 function Invoke-ArtifactCapacityGate {{return @{{satisfied=$true;fixture_admission=$true}}}}
 $source=Get-Content -Raw '{request}'|ConvertFrom-Json -AsHashtable
-$session=Enter-ArtifactWorkflowCapacitySession -Python '{sys.executable}' -RepoRoot '{REPO}' -ArtifactRoot '{artifacts}' -RunDirectory '{artifacts / 'projects' / PROJECT / 'runs/20261031_120000__test__python__stdin'}' -CommittedNewBytes 0 -SourceReferences $source.references
+$session=Enter-ArtifactWorkflowCapacitySession -Python '{sys.executable}' -RepoRoot '{REPO}' -ArtifactRoot '{artifacts}' -RunDirectory '{artifacts / 'components' / PROJECT / 'runs/20261031_120000__test__python__stdin'}' -CommittedNewBytes 0 -SourceReferences $source.references
 try{{
  $session|Add-Member -Force -NotePropertyName startup_gate -NotePropertyValue @{{diagnostic=('多字节' * 30000)}}
  $json=$session|ConvertTo-Json -Depth 64 -Compress

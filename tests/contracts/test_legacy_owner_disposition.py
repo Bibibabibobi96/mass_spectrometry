@@ -59,7 +59,7 @@ class OwnerDispositionAuthoringTests(unittest.TestCase):
             root = Path(temporary) / "artifacts"
             run, heavy, preserved = self._run(root)
             self._initialize(root, run, heavy, preserved)
-            ledger_before = (root / "common" / "capacity_ledger.json").read_bytes()
+            ledger_before = (root / "platform" / "capacity_ledger.json").read_bytes()
             created = self._author(root, run)
             document_path = Path(str(created["document_path"]))
             document = json.loads(document_path.read_text(encoding="utf-8"))
@@ -67,7 +67,7 @@ class OwnerDispositionAuthoringTests(unittest.TestCase):
             self.assertEqual(document["disposition"]["files"], [{
                 "path": "simion/field.pa0", "bytes": heavy.stat().st_size,
             }])
-            self.assertEqual((root / "common" / "capacity_ledger.json").read_bytes(), ledger_before)
+            self.assertEqual((root / "platform" / "capacity_ledger.json").read_bytes(), ledger_before)
             self.assertFalse(self._author(root, run)["created"])
 
             self.assertEqual(legacy_owner_disposition.activate_owner_dispositions(root)["activated_count"], 1)

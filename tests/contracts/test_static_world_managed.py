@@ -138,6 +138,7 @@ class StaticWorldManagedTests(unittest.TestCase):
             return prior_process(session,operation_id,executable=Path(sys.executable),arguments=['-I','-B','-c',code],role='GATE',stage='inert_static_world',limits=kwargs['limits'],immutable_input_records=immutable_input_records)
         private={'MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN':'','MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID':'','MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE':''}
         with retained_on_failure() as directory, patch.dict(os.environ,private):
+            os.environ['MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH']=str(Path(directory)/'private-host.sqlite3')
             context,_,_=make_context(Path(directory));policy=json.loads(context.stage_policy_path.read_text(encoding='utf-8'))
             for name in ('build_geometry','prepare_model','solve_fields'):
                 policy['stages'][name]=copy.deepcopy(policy['stages']['track'])
@@ -204,7 +205,7 @@ class StaticWorldManagedTests(unittest.TestCase):
                 fail_refine[0]=True
                 with self.assertRaisesRegex(ProcessExecutionError, '7'):operations.solve_fields(model,numerics=dict(refine_policy='vendor_default'),context=context)
             self.assertEqual(calls.count('refine_world'),2)
-            runs=context.workspace/'artifacts/projects/instrument_assembly/runs'
+            runs=context.workspace/'artifacts/assemblies/instrument_assembly/runs'
             manifests=[json.loads(path.read_text(encoding='utf-8')) for path in runs.glob('*/run_manifest.json')]
             failed=[row for row in manifests if row.get('status')=='failed']
             self.assertEqual(len(failed),1);self.assertFalse(failed[0].get('products'))
@@ -215,7 +216,7 @@ class StaticWorldManagedTests(unittest.TestCase):
             self.assertTrue(ops[-1]['observation']['exit_confirmed']);self.assertEqual(ops[-1]['observation']['returncode'],7)
             self.assertIn('INERT_REFINE_FAILURE',(failed_dir/'logs/operation_0002.stdout.log').read_text(encoding='utf-8'))
             self.assertTrue((failed_dir/'simion/fields/world/world.pa#').is_file())
-            failed_result_path=context.workspace/'artifacts/projects/instrument_assembly/scratch/workflow_results'/failed_dir.name/'result.json'
+            failed_result_path=context.workspace/'artifacts/assemblies/instrument_assembly/scratch/workflow_results'/failed_dir.name/'result.json'
             failed_result=json.loads(failed_result_path.read_text(encoding='utf-8'));failed_capacity=failed_result['capacity_session']
             self.assertEqual(failed_result['status'],'failed');self.assertEqual(failed_capacity['status'],'released')
             self.assertIn(model.manifest_location.parent.resolve(),{Path(path).resolve() for path in failed_capacity['protected_paths']})
@@ -224,7 +225,7 @@ class StaticWorldManagedTests(unittest.TestCase):
             for source_lease in failed_capacity.get('source_protection_leases',[]):
                 self.assertFalse(_lease_path(Path(source_lease['artifact_root']),source_lease['lease_id']).exists())
             for artifact,source in ((geometry,None),(model,geometry),(field,model),(reused,field),(trajectory,reused)):
-                result_path=context.workspace/'artifacts/projects/instrument_assembly/scratch/workflow_results'/artifact.manifest_location.parent.name/'result.json'
+                result_path=context.workspace/'artifacts/assemblies/instrument_assembly/scratch/workflow_results'/artifact.manifest_location.parent.name/'result.json'
                 result=json.loads(result_path.read_text(encoding='utf-8'));capacity=result['capacity_session']
                 self.assertEqual(capacity['status'],'released');self.assertFalse(_lease_path(Path(capacity['artifact_root']),capacity['lease_id']).exists())
                 if source is not None:self.assertIn(source.manifest_location.parent.resolve(),{Path(path).resolve() for path in capacity['protected_paths']})

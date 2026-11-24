@@ -36,7 +36,7 @@ class ManifestOutputListTests(unittest.TestCase):
             ("src/msplatform/backends/simion/resources/ip_prepare_gui_replay.ps1",
              "Write-RunManifest", "", "dual_pressure_rectilinear_ion_processor", "gui_fixture", ("checkpoint", "failed"), ("project",)),
             ("src/msplatform/workflows/resources/run_cross_solver_diagnostics.ps1",
-             "& $python @manifestArgs", "$runRecordComplete", "single_reflection_oa_tof_mass_analyzer", "formal_cross_solver_diagnostics", ("success",), ("project", "mode")),
+             "& $python -I -B @manifestArgs", "$runRecordComplete", "single_reflection_oa_tof_mass_analyzer", "formal_cross_solver_diagnostics", ("success",), ("project", "mode")),
         )
         with tempfile.TemporaryDirectory(prefix="producer_manifest_boundary_") as directory:
             root = Path(directory)
