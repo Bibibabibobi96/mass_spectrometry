@@ -229,7 +229,7 @@ def _create_capacity_protection_lease_unlocked(
     closure_deadline_at_utc: datetime | str | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Create one TTL protection lease below ``artifacts/common``."""
+    """Create one TTL protection lease below ``artifacts/platform``."""
 
     root = root.absolute()
     if not root.is_dir():
