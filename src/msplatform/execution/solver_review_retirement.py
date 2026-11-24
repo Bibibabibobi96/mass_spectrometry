@@ -20,6 +20,7 @@ from typing import Any, Iterable
 from msplatform.execution.recorded_file_removal import remove_recorded_files, write_json_atomic as _atomic_json
 from msplatform.io.file_identity import file_sha256, file_sha256_unbuffered
 from msplatform.execution.retention import classify_file
+from msplatform.execution.resources.workspace_paths import resolve_run_artifact_root
 from msplatform.execution.artifact_retention import validate_retention
 from msplatform.execution import capacity_protection as protection
 from msplatform.io.manifest_records import record_path, verify_record
@@ -39,6 +40,12 @@ LEGACY_INITIALIZATION_SUMMARY = {
 
 class RetirementError(ValueError):
     """One retirement precondition or verification condition failed."""
+
+
+def _owner_run_roots(artifact_root: Path, owner: str) -> tuple[Path, Path]:
+    kind = "assembly" if owner == "instrument_assembly" else "component"
+    current = resolve_run_artifact_root(artifact_root, owner_kind=kind, owner_id=owner) / "runs"
+    return current, artifact_root / "projects" / owner / "runs"
 
 
 def select_retirement_receipt(
@@ -684,7 +691,7 @@ def _freeze_stopped_consumers(
     for path in paths:
         run = _under(path, artifact_root)
         if (run in seen or run == target or path.is_symlink() or not run.is_dir()
-                or run.parent != artifact_root / "projects" / owner / "runs"):
+                or run.parent not in _owner_run_roots(artifact_root, owner)):
             raise RetirementError("approved stopped consumer must be a unique same-owner project run")
         seen.add(run)
         config, summary, manifest = (_json(run / name) for name in (
@@ -739,7 +746,7 @@ def _freeze_closed_diagnostic_consumers(
     for supplied in paths:
         run = _under(supplied, artifact_root)
         if (run in seen or run == target or supplied.is_symlink() or not run.is_dir()
-                or run.parent != artifact_root / "projects" / owner / "runs"):
+                or run.parent not in _owner_run_roots(artifact_root, owner)):
             raise RetirementError("closed consumer must be a unique same-owner project run")
         seen.add(run)
         authority = authorities.get(str(run))
@@ -805,7 +812,7 @@ def _freeze_closed_diagnostic_consumers(
                 raise ValueError("consumer summary is not bound by checkpoint")
             verify_record("closed consumer checkpoint summary", summaries[0], base_dir=run)
             expected_paths = {
-                "workflow_result": artifact_root / "projects" / owner / "scratch" / "workflow_results" / run.name / "result.json",
+                "workflow_result": run.parent.parent / "scratch" / "workflow_results" / run.name / "result.json",
                 "process_receipt": run / "logs" / "operation_0001.process.json",
                 "usage": run / "logs" / "operation_0001.usage.json",
                 "execution_request": run / "inputs" / "execution_request.json",
@@ -1856,10 +1863,10 @@ def repair_preserved_native_file(
     from msplatform.execution.cache_generation import snapshot_immutable_file
     root, run, audit = artifact_root.resolve(), run_dir.resolve(), evidence_run.resolve()
     for selected in (run, audit):
-        parts = selected.relative_to(root).parts
-        if len(parts) != 4 or parts[:3] != ("projects", owner, "runs"):
+        selected.relative_to(root)
+        if selected.parent not in _owner_run_roots(root, owner):
             raise RetirementError("payload repair requires canonical same-owner runs")
-        validate_run_id(parts[3])
+        validate_run_id(selected.name)
     if run == audit or os.name != "nt" or not writing_stopped:
         raise RetirementError("payload repair requires Windows, a separate audit run and stopped-writing confirmation")
     selected = _selected_heavy_paths([relative_path])[0]

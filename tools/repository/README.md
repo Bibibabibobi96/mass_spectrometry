@@ -93,7 +93,7 @@ consumers can therefore run concurrently with this negative case.
 `canonical_clock_authority.py`与同名Schema定义跨项目事件链唯一instrument clock权威：求解器局部时钟
 从零累计，adapter仅一次物化`epoch + elapsed`，handoff保留时间戳；新run不得使用legacy相对时钟旁路。
 
-`artifact_project.py`统一artifact项目根索引，`particle_state.py`统一SIMION/COMSOL适配后的粒子事件字段、
+`artifact_project.py`统一当前组件artifact根索引（输入全局artifact根），`particle_state.py`统一SIMION/COMSOL适配后的粒子事件字段、
 身份、三维位置/速度、全局时间和RF相位校验；`run_artifact_support.ps1`统一PowerShell运行器创建目录、
 冻结输入、失败收尾和三件套manifest。它们不得内置器件参数；项目入口保留科学与结果语义，复用公共运行机制。
 保留分类将科学场样本、验证／核验记录及执行、容量、launcher、usage、process收据识别为`required_evidence`，与发布和独立复核的同一角色一致。
@@ -165,7 +165,12 @@ Windows实现采用官方[LockFileEx](https://learn.microsoft.com/en-us/windows/
 的共享字节锁，与Python现有独占锁互操作；允许锁EOF之外，空文件的初始化仅在writer取得独占后执行。
 2026-10-30已在Windows 10.0.19045核对两独立读者与Python发布者，包含空lock文件首次创建。
 
-运行初始化统一使用`New-RunPackage`；原仅由测试调用的初始化包装和无调用的依赖复制包装已移除。
+运行初始化统一使用`New-RunPackage`；`-ArtifactRoot`由`Resolve-RunArtifactRoot`从全局artifact根和owner身份解析。
+组件结果为`artifacts/components/<component_id>/runs/`，Assembly为`artifacts/assemblies/instrument_assembly/runs/`；
+旧`artifacts/projects/`及`artifacts/common/`不是新RunPackage的合法输出根，调用者不得继续手工拼接。
+Python对应API为`resolve_run_artifact_root`；平台cache/host/alias/capacity路径由`resolve_platform_artifact_path`解析。
+现有冻结run的manifest、config和路径记录保持原字节，只读消费使用其显式位置，不自动映射到新目录。
+原仅由测试调用的初始化包装和无调用的依赖复制包装已移除。
 writer与verifier共用保留策略入口，独立消费时仍重新验证完整内容，不维护两份同义导入逻辑。
 冻结执行快照中的公共IOB占位模板属于必需输入，所有已引用槽位均须保留；该分类不适用于运行目录中
 同名的普通求解PA。它们的来源与用途见[模板说明](../../src/msplatform/backends/simion/resources/iob_instance_seeds/README.md)。
@@ -277,8 +282,9 @@ Pillow provenance uses its `PIL` import namespace with the existing installation
 不因当前环境改变根。没有冻结上下文的历史run沿原有恢复边界处理，不回写父记录。
 
 请求为schema 1、role `run_artifact_workflow_request`，固定包含`repository_root`、`python_executable`、
-`package`、`capacity`、`prepared`和不透明科学`payload`。`package`声明project/run_id/mode、
-`artifact_project_root`、software、retention_class/reason；可选的
+`package`、`capacity`、`prepared`和不透明科学`payload`。`package`声明project/run_id/mode、`artifact_project_root`、software、retention_class/reason；
+其中`artifact_project_root`字段名为既有机器合同保持不变，但其新值必须由公共owner解析器生成：
+组件为`artifacts/components/<component_id>`，Assembly为`artifacts/assemblies/instrument_assembly`，不再传旧projects根。可选的
 `package.expected_execution_relative_paths`为本次计划派生的原生输出和配套文件相对路径数组，
 在prepared回调启动前交给既有路径容量检查及运行包选择执行表示。绝对路径、越界路径和非字符串成员
 在创建run前拒绝；外部来源仍用`prepared.native_input_paths`及原有来源保护声明。
@@ -567,7 +573,7 @@ audit须为同项目规范run、`mode=owned_payload_view_repair`、solver_review
 [MoveFileExW](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexw)定义同卷替换限制。
 这是基于官方接口的仓库owner恢复协议，复用既有`snapshot_immutable_file`，不声称厂商推荐该恢复算法。
 
-`New-RunPackage`在创建前要求受管`ArtifactRoot`精确指向`artifacts/projects/<Project>`。
+`New-RunPackage`在创建前要求受管`ArtifactRoot`精确指向公共解析器给出的当前组件或Assembly owner根。
 历史误传导致的`projects/<owner>/runs/runs/<run-id>`轻证据包，可显式用
 `python -m msplatform.execution.legacy_owner_disposition --action retire-misplaced-light-run --artifact-root <root> --run-config <original-config> --backup-manifest <backup-manifest> --owner <project>`预检。
 备份须为同项目规范run、模式`misplaced_light_run_backup`，其完整manifest绑定
@@ -792,7 +798,7 @@ partial-retirement在原容量锁内一次建立run与路径索引，索引引�
 每次实际移除前继续检查最新租约、消费者和原批准身份，pending收据重放与删除授权保持原边界。
 
 缺少现行事务而已被明确放弃的历史范围，只能由其目标项目 owner 在
-`artifacts/common/capacity_calibration/owner_dispositions/`提供一次性、代际绑定的范围处置记录。显式校准只复核
+`artifacts/platform/capacity_calibration/owner_dispositions/`提供一次性、代际绑定的范围处置记录。显式校准只复核
 该记录所列完整路径和字节数及已封存的代际/manifest 路径，不重新读取或哈希 PA payload；仅在该元数据不一致
 时才升级为受影响成员的身份诊断。随后复用既有 sealed disposition、处置收据和重放路径；日常启动与维护不扫描
 这些范围，也不会为它们推断 owner、终态或删除资格。
@@ -808,7 +814,7 @@ maintenance激活授权时，文档读取、校验、归档或对象激活失败
 重叠目标、符号链接、活动消费者和受保护路径；先冻结这些目标的路径/字节清单及可续做收据，随后才可用`--apply`。
 它只哈希小型授权证据，不为可重建大 payload 进行删除前或删除时的内容扫描。
 它绝不删除未列出的兄弟目录；所有记录子范围完成后，才可移除已为空的`scratch/`根。台账保留外部范围记录并只扣除已处置字节。
-将这类已批准证据放入`common/capacity_calibration/scratch_dispositions/`后，日常maintenance会复用同一入口完成处置并删除已消费的授权文件；没有批准证据的范围只在维护报告中保留，不会被推断删除。
+将这类已批准证据放入`platform/capacity_calibration/scratch_dispositions/`后，日常maintenance会复用同一入口完成处置并删除已消费的授权文件；没有批准证据的范围只在维护报告中保留，不会被推断删除。
 
 maintenance先处理`ready`、未pin且无租约保护的`rebuildable_payload`。`published_cache`不会进入通用删除队列；
 已开始的退休优先续做；同类可重建载荷按字节数降序选择，达到容量目标即停止，避免为很小的空间缺口

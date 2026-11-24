@@ -12,11 +12,12 @@ $ErrorActionPreference='Stop'
 $workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path
 $repoRoot=$workspaceRoot
 $artifactRootPath=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRootPath)
-$artifactRoot=Join-Path $artifactRootPath 'projects\rf_multipole_ion_optics'
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
 $packageRootText=& $python -I -B -c 'from importlib.resources import files;print(files("msplatform"))'
 if($LASTEXITCODE-ne0){throw 'Installed msplatform package is unavailable.'}
 $packageRoot=(Resolve-Path -LiteralPath $packageRootText).Path
+. (Join-Path $packageRoot 'execution/resources/workspace_paths.ps1')
+$artifactRoot=Resolve-RunArtifactRoot -ArtifactRoot $artifactRootPath -OwnerKind component -OwnerId rf_multipole_ion_optics -Python $python
 $sourceRoot=Split-Path -Parent $packageRoot
 $projectRoot=Join-Path $packageRoot 'components/rf_multipole'
 . (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')

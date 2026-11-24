@@ -10,6 +10,7 @@ import argparse
 import json
 from pathlib import Path
 
+from msplatform.execution.resources.workspace_paths import resolve_run_artifact_root
 from msplatform.workflows.rf_mass_filter import finite_length
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2] / "components" / "rf_multipole"
@@ -44,7 +45,7 @@ def resume(run_id: str, result_path: Path | None, artifact_project_root: Path | 
     from msplatform.execution.completion import no_particle_batch_completion_api
     from msplatform.execution.owner import resume_finalization
 
-    expected_root = context.workspace / 'artifacts/projects/rf_multipole_ion_optics'
+    expected_root = resolve_run_artifact_root(context.workspace / 'artifacts', owner_kind='component', owner_id='rf_multipole_ion_optics')
     if artifact_project_root is not None and artifact_project_root.resolve() != expected_root.resolve():
         raise ValueError(f'Explicit artifact root must use the selected managed research workspace: {expected_root}')
     selected = result_path or expected_root / 'scratch/workflow_results' / run_id / 'result.json'

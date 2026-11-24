@@ -16,7 +16,8 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
 $hostRole = if ($ValidateConfigOnly) { 'GATE' } else { 'SIMION' }
 $python = if ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) } else { throw 'Explicit SIMULATION_PYTHON_EXE is required' }
 $executionResources = Join-Path $repoRoot 'src/msplatform/execution/resources'
-$hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path (Split-Path -Parent $repoRoot) 'artifacts/common/host_resources.sqlite3' }
+. (Join-Path $executionResources 'workspace_paths.ps1')
+$hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Resolve-PlatformArtifactPath -ArtifactRoot (Join-Path (Split-Path -Parent $repoRoot) 'artifacts') -RelativePath @('host_resources.sqlite3') -Python $python }
 $hostContext = @{workspace=(Split-Path -Parent $repoRoot);python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 $hostStage = 'prepare'
@@ -24,7 +25,7 @@ $hostExecutionLease = Enter-HostExecutionLease -Role $hostRole -Stage $hostStage
 try {
 $workspaceRoot = Split-Path -Parent $repoRoot
 $projectRoot = Join-Path $repoRoot 'src\msplatform\components\single_reflection_oa_tof'
-$artifactRoot = Join-Path $workspaceRoot 'artifacts\src\msplatform\components\single_reflection_oa_tof'
+$artifactRoot = Resolve-RunArtifactRoot -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -OwnerKind component -OwnerId single_reflection_oa_tof_mass_analyzer -Python $python
 $formalDir = Join-Path $artifactRoot 'formal\simion'
 if (-not $CaseConfig) { $CaseConfig = Join-Path $projectRoot 'config\diagnostics\field_idealization_feasibility.json' }
 

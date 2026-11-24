@@ -26,8 +26,6 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $project='parallel_mirror_dual_stripe_mr_tof'
 $workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path;$artifactRoot=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot);$repoRoot=$workspaceRoot
-$artifactProject=Join-Path $artifactRoot "projects\$project"
-$artifactRuns=Join-Path $artifactProject 'runs'
 $oaArtifactRuns=Join-Path $artifactRoot 'projects\orthogonal_accelerator\runs'
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
 $packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
@@ -42,6 +40,8 @@ if(-not(Test-Path -LiteralPath $compositionPlanSource -PathType Leaf)){throw 'Co
 if($localScopeSource-and-not(Test-Path -LiteralPath $localScopeSource -PathType Leaf)){throw 'LocalScopePath must be a file.'}
 
 . (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
+$artifactProject=Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind component -OwnerId $project -Python $python
+$artifactRuns=Join-Path $artifactProject 'runs'
 
 function Resolve-ContextPath {
   param([Parameter(Mandatory)][string]$Value)
@@ -445,7 +445,7 @@ try{
     if($nativeRuntimeCheckpoint){$safeExitArgs.NativeRuntimeCheckpoint=$nativeRuntimeCheckpoint}
     $safeExitArgs.PythonExe=$python;if($SimionExe){$safeExitArgs.SimionExe=$SimionExe}
     & (Join-Path $workflowResources 'oa_mr.ps1') @safeExitArgs|Out-Host
-    $safeExitManifest=Join-Path $artifactRoot "projects/instrument_assembly/runs/$safeExitId/run_manifest.json"
+    $safeExitManifest=Join-Path (Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind assembly -OwnerId instrument_assembly -Python $python) "runs/$safeExitId/run_manifest.json"
 
     $failureStage='pair_specific_coverage'
     $coverageId=$stamp+'__analysis__python__mrtof-condition-prism-coverage'

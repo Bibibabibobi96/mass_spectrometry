@@ -60,8 +60,7 @@ $flightTubeGemPath = Join-Path $repoRoot 'src\msplatform\backends\simion\resourc
 $flightTubeBuilderPath = Join-Path $repoRoot 'src\msplatform\backends\simion\resources\build_flight_tube_variant.lua'
 $reflectronGemPath = Join-Path $repoRoot 'src\msplatform\backends\simion\resources\oatof_reflectron_ideal_10_5.gem'
 $reflectronBuilderPath = Join-Path $repoRoot 'src\msplatform\backends\simion\resources\build_reflectron_variant.lua'
-$artifactRoot = Join-Path $projectRoot 'artifacts\projects\single_reflection_oa_tof_mass_analyzer'
-$formalDir = Join-Path $artifactRoot 'formal\simion'
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
 
 function Assert-Near([double]$Actual, [double]$Expected, [string]$Label, [double]$Tolerance = 1e-9) {
   if ([Math]::Abs($Actual - $Expected) -gt $Tolerance) { throw "$Label mismatch: actual=$Actual expected=$Expected" }
@@ -94,6 +93,8 @@ $formalResultsManifest = Join-Path $artifactRoot $formalAssets.results.sha256_ma
 $simionStablePath = Join-Path $componentDir "config\$($formalAssets.simion_manifest)"
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 project runtime missing: $python" }
+$artifactRoot = Resolve-RunArtifactRoot -ArtifactRoot (Join-Path $projectRoot 'artifacts') -OwnerKind component -OwnerId single_reflection_oa_tof_mass_analyzer -Python $python
+$formalDir = Join-Path $artifactRoot 'formal\simion'
 $derivationOutput = & $python -m msplatform.workflows.oa_formal.verify_geometry_derivation $baselinePath
 if ($LASTEXITCODE -ne 0 -or $derivationOutput -notcontains 'GEOMETRY_DERIVATION_STATUS=PASS') {
   throw 'Physics-input to engineering-geometry derivation gate failed.'
@@ -379,7 +380,7 @@ if (-not $SkipRuntime) {
   if ($cadReport.solidWorks.assembly.saveErrors -ne 0 -or $cadReport.solidWorks.assembly.saveWarnings -ne 0) { throw 'Formal SolidWorks assembly report contains save errors or warnings.' }
   if (($cadReport.solidWorks.parts | Measure-Object -Property saveErrors -Maximum).Maximum -ne 0 -or ($cadReport.solidWorks.parts | Measure-Object -Property saveWarnings -Maximum).Maximum -ne 0) { throw 'Formal SolidWorks part report contains save errors or warnings.' }
   $stableGate = Join-Path $repoRoot 'src/msplatform/workflows/resources/verify_stable_entry.ps1'
-  & $stableGate -ManifestPath $simionStablePath -SimionExe $SimionExe -SkipRuntime
+  & $stableGate -ManifestPath $simionStablePath -SimionExe $SimionExe -PythonExe $python -SkipRuntime
   if ($LASTEXITCODE -ne 0) { throw 'Formal SIMION stable-entry gate failed.' }
   $verifyLua = Join-Path $simionDir 'verify_formal_runtime.lua'
   $report = Join-Path $env:TEMP 'oatof_geometry_contract_simion.txt'

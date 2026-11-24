@@ -10,7 +10,9 @@ import unittest
 from unittest.mock import patch
 
 from msplatform.execution.resources import workspace_paths
-from msplatform.execution.resources.workspace_paths import resolve_workspace_paths
+from msplatform.execution.resources.workspace_paths import (
+    resolve_platform_artifact_path, resolve_run_artifact_root, resolve_workspace_paths,
+)
 from msplatform.execution.run_paths import project_native_run_path, project_run_path
 
 PWSH = shutil.which("pwsh")
@@ -79,10 +81,37 @@ assert not any(name.split('.')[0] in {'common','projects','integrations'} for na
             source.mkdir()
             default = resolve_workspace_paths(source)
             self.assertEqual(default["artifact_root"], str(root / "artifacts"))
-            self.assertEqual(default["execution_root"], str(root / "artifacts/common/execution_aliases"))
+            self.assertEqual(default["execution_root"], str(root / "artifacts/platform/execution_aliases"))
+            self.assertEqual(default["host_resource_state_path"], str(root / "artifacts/platform/host_resources.sqlite3"))
             overridden = resolve_workspace_paths(source, artifact_root=root / "short")
-            self.assertEqual(overridden["execution_root"], str(root / "short/common/execution_aliases"))
+            self.assertEqual(overridden["execution_root"], str(root / "short/platform/execution_aliases"))
             self.assertEqual(default["host_resource_state_path"], overridden["host_resource_state_path"])
+
+    def test_run_owner_and_platform_paths_have_one_current_layout(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "artifacts"
+            self.assertEqual(
+                resolve_run_artifact_root(root, owner_kind="component", owner_id="example_component"),
+                root / "components/example_component",
+            )
+            self.assertEqual(
+                resolve_run_artifact_root(root, owner_kind="assembly", owner_id="instrument_assembly"),
+                root / "assemblies/instrument_assembly",
+            )
+            self.assertEqual(
+                resolve_platform_artifact_path(root, "capacity_protection_leases", "lease.json"),
+                root / "platform/capacity_protection_leases/lease.json",
+            )
+            for arguments in (
+                dict(owner_kind="project", owner_id="example_component"),
+                dict(owner_kind="assembly", owner_id="other_assembly"),
+                dict(owner_kind="component", owner_id="../escape"),
+            ):
+                with self.subTest(arguments=arguments), self.assertRaises(ValueError):
+                    resolve_run_artifact_root(root, **arguments)
+            for parts in ((), ("../escape",), ("absolute", "../escape")):
+                with self.subTest(parts=parts), self.assertRaises(ValueError):
+                    resolve_platform_artifact_path(root, *parts)
 
     def test_explicit_environment_and_frozen_precedence(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -140,6 +169,10 @@ assert not any(name.split('.')[0] in {'common','projects','integrations'} for na
 $python=$args[1];$root=$args[2]
 New-Item -ItemType Directory -Path (Join-Path $root 'source') | Out-Null
 $context=Resolve-WorkspacePaths -SourceRoot (Join-Path $root 'source') -ArtifactRoot (Join-Path $root 'payload') -Python $python
+$owner=Resolve-RunArtifactRoot -ArtifactRoot $context.artifact_root -OwnerKind component -OwnerId example_component -Python $python
+if($owner-ne(Join-Path $context.artifact_root 'components/example_component')){throw 'component owner path differs'}
+$platform=Resolve-PlatformArtifactPath -ArtifactRoot $context.artifact_root -RelativePath @('capacity_disposal_receipts','receipt.json') -Python $python
+if($platform-ne(Join-Path $context.artifact_root 'platform/capacity_disposal_receipts/receipt.json')){throw 'platform path differs'}
 $env:MASS_SPECTROMETRY_ARTIFACT_ROOT='relative-invalid'
 $frozen=Resolve-WorkspacePaths -SourceRoot (Join-Path $root 'snapshot') -FrozenContext $context -Python $python
 if($frozen.artifact_root-ne$context.artifact_root){throw 'frozen roots drifted'}
@@ -153,9 +186,14 @@ if($one-ne(Join-Path $alias 'two.pa0')){throw 'single projection differs'}
 try{Resolve-WorkspacePaths -SourceRoot relative -Python $python;throw 'missing rejection'}catch{if($_-notmatch'absolute path'){throw}}
 $frozen|ConvertTo-Json -Compress
 """, encoding="utf-8", newline="\n")
+            poison = root / "poisoned-site"
+            (poison / "msplatform/execution").mkdir(parents=True)
+            (poison / "msplatform/__init__.py").write_text("raise RuntimeError('external PYTHONPATH was consumed')", encoding="utf-8")
+            (poison / "msplatform/execution/__init__.py").write_text("", encoding="utf-8")
+            (poison / "msplatform/execution/run_paths.py").write_text("raise RuntimeError('wrong run_paths owner')", encoding="utf-8")
             result = subprocess.run([PWSH, "-NoProfile", "-File", str(script), str(bridge), sys.executable, str(root), str(canonical)],
                                     cwd=root, timeout=30, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                                    env=dict(os.environ, PYTHONUTF8="0", PYTHONIOENCODING="cp1252"))
+                                    env=dict(os.environ, PYTHONUTF8="0", PYTHONIOENCODING="cp1252", PYTHONPATH=str(poison)))
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual(json.loads(result.stdout)["artifact_root"], str(root / "payload"))
 

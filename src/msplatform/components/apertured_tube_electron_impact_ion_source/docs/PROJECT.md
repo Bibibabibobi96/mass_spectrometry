@@ -54,7 +54,7 @@ Changed routing now selects the original EI/Wehnelt project owners and the exist
 
 ## 产物边界
 
-新活动产物根为`artifacts/projects/apertured_tube_electron_impact_ion_source/`，新运行进入
+新活动产物根为`artifacts/components/apertured_tube_electron_impact_ion_source/`，新运行进入
 `runs/<run_id>/`。重命名前的旧试验按原manifest身份只读保存在该根的
 `archive/20260801_130001__migration-snapshot__repo__electron-impact-ion-source/legacy-project-root/`；
 候选模型留在其来源run，正式目录只有通过上述门禁后才能在新根建立。

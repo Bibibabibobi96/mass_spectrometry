@@ -6,7 +6,7 @@
 
 ### 工作区顶层卫生
 
-源码默认位于`simulation_repo/`，生成产物按所属owner放入相邻`artifacts/projects/`或`artifacts/common/`。
+源码默认位于`simulation_repo/`；新组件、组装与平台产物分别放入相邻`artifacts/components/`、`artifacts/assemblies/`或`artifacts/platform/`。既有`projects/common`产物保留原路径，只读追溯。
 工具缓存与本机软件、Agent或IDE状态可留在工作区；兄弟目录、根目录和`.tools`的名称不作固定白名单。
 额外本地目录和根日志本身不阻断研发，也不因此自动成为可消费、可删除或可信资产。整理重复副本时仍须
 确认归属与实际引用，遵循既有删除授权与生命周期；运行与产物入口继续执行其实际路径、容量和输入保护。
@@ -14,7 +14,7 @@
 ### Git / artifacts 边界
 
 Git 只管理可复现、可审阅的轻量源码与文档。MPH、PA/PA#、IOB、SolidWorks 文件、运行日志、
-粒子表和运行结果图放在仓库同级 `artifacts/projects/<project>/`，不进入 Git。用于解释正文的示意图与
+粒子表和运行结果图放在仓库同级 `artifacts/components/<component_id>/`（Assembly为`artifacts/assemblies/instrument_assembly/`），不进入 Git。用于解释正文的示意图与
 轻量再生成脚本可放在所属文档的`figures/`并进入Git，标明假设、来源和复现方法；不能把运行结果
 改名为示意图以绕过产物合同。正式运行使用所属owner的scratch；`tools/repository/verify_repository_hygiene.ps1`只负责生成大资产误入Git的边界，
 不检查未消费的本地目录与日志。
@@ -37,7 +37,7 @@ SHA-256与索引引用后，按已确认保留范围处置重复副本。不以�
 唯一结构：
 
 ```text
-artifacts/projects/<project>/
+artifacts/components/<component_id>/
 ├─ 00_README.txt
 ├─ cache/                       # 可删除的、内容寻址且经机器校验的性能缓存
 ├─ formal/
@@ -64,16 +64,16 @@ artifacts/projects/<project>/
 比较同样属于run，不得另建顶层`analysis/`或`comparisons/`。项目根也不再建立`models/`、`cad/`、
 `results/`或`logs/`，不按软件或工作类型拆第二棵运行树。`00_README.txt`只提供面向资源管理器的导航，
 不得成为项目状态或规则权威。各目录的状态、保留与清理条件由本节末尾统一定义。脚本必须通过项目
-路径解析器定位这里，禁止硬编码用户名或重建旧 `artifacts/components/`。
+路径解析器定位这里，禁止硬编码用户名或为新run重建旧`artifacts/projects/`。Assembly只使用`artifacts/assemblies/instrument_assembly/`；其内部run角色目录相同。平台cache、host状态、执行alias、容量ledger/lease及处置收据统一位于`artifacts/platform/`；旧`artifacts/common/`仅按显式历史位置读取。
 `cache/`不是运行证据或第二份项目状态，只允许机器校验器显式注册的内容寻址性能缓存；缓存命中必须
 复核配置、代码、几何/网格、求解器版本与关键选项身份，以及manifest中的完整文件字节数和SHA-256。
 损坏、不完整或旧schema条目只能视为MISS并重建，不能作为run输入。当前注册角色为：
 
 | cache根 | 注册角色 |
 |---|---|
-| `artifacts/common/simion/pa_family_cache/<cache-key>/generations/<generation-sha256>/` | `simion_pa_family_cache`；公共可重建PA性能缓存，键与当前代均由 manifest 和完整 payload 校验 |
-| `artifacts/common/capacity_protection_leases/<lease-id>.json` | 公共容量TTL保护租约；只临时钉住精确cache key或artifact-root相对路径，过期自动失效，损坏则门禁失败关闭 |
-| `artifacts/common/capacity_disposal_receipts/*.json` | 容量或卫生处置收据；保存精确路径、身份、原因和结果，仅允许直接JSON记录，不存放求解器载荷；保留在被清理树之外 |
+| `artifacts/platform/simion/pa_family_cache/<cache-key>/generations/<generation-sha256>/` | `simion_pa_family_cache`；公共可重建PA性能缓存，键与当前代均由 manifest 和完整 payload 校验 |
+| `artifacts/platform/capacity_protection_leases/<lease-id>.json` | 公共容量TTL保护租约；只临时钉住精确cache key或artifact-root相对路径，过期自动失效，损坏则门禁失败关闭 |
+| `artifacts/platform/capacity_disposal_receipts/*.json` | 容量或卫生处置收据；保存精确路径、身份、原因和结果，仅允许直接JSON记录，不存放求解器载荷；保留在被清理树之外 |
 | `cache/simion_pa_basis/<cache-key>/generations/<generation-sha256>/` | `simion_pa_family_cache`（multipole PA-basis 适配器） |
 | `cache/<registered-role>/<SHA-256>/` | 集成PA及已验证脉冲收据；目录名与允许角色的唯一对应表为[`verify_artifact_layout.py`](../src/msplatform/execution/verify_artifact_layout.py)的`INTEGRATION_CACHE_ROLES`，新增角色同步机器校验及测试，不在文档抄写第二份名单 |
 
@@ -99,14 +99,14 @@ SIMION IOB 可能嵌入 PA 的绝对路径，移动工作区后必须重新打�
 | 对象 | 归属与发布边界 |
 |---|---|
 | 配方、实验作者输入、实现和规范 | Git内固定组装目录及既有公共／项目权威；不保存生成模型或结果 |
-| 组件独立构建与验证 | 原`artifacts/projects/<provider_project_id>/runs/<run_id>/`，由提供者负责发布 |
-| 目标跨项目组装、联合飞行与联合分析 | `artifacts/projects/instrument_assembly/runs/<run_id>/`，以`integration_id=instrument_assembly`归属；不为每份配方新增artifact根 |
+| 组件独立构建与验证 | `artifacts/components/<provider_component_id>/runs/<run_id>/`，由提供者负责发布 |
+| 目标跨项目组装、联合飞行与联合分析 | `artifacts/assemblies/instrument_assembly/runs/<run_id>/`，以`integration_id=instrument_assembly`归属；不为每份配方新增artifact根 |
 | 冻结装配、来源与执行计划 | 该组装run的`inputs/`及三件套；绑定recipe、workflow、实验行、组件实例、接口与实际依赖身份 |
 | PA、MPH、STEP、IOB、粒子表、图与日志 | 同一owner的run内部既有角色目录；保留类别仍由本页run合同决定，不能因组装用途扩大保留 |
 | 共享PA与其他已登记缓存 | 既有公共owner及内容身份，不因源码迁移复制、重命名或接管缓存 |
 | 既有run、Formal、GUI交付与历史证据 | 保持原owner、路径、manifest和资格，新的组装run通过已核验引用消费 |
 
-路径沿用`artifacts/projects/`并不把integration变成硬件project。机器身份须区分集成owner、组件
+路径使用独立`artifacts/assemblies/`并不把integration变成硬件component。机器身份须区分集成owner、组件
 project和组件instance；配方ID用于选择，冻结内容身份用于判定实际装配，不能仅凭配方名复用结果。
 父组装run引用组件子run的manifest，不把子run复制成另一份发布权威；重型资产仍只有一个生命周期owner。
 
@@ -368,7 +368,7 @@ run生成阶段的自动保留行为只按上文预注册的run产物保留合�
 |---|---|---|
 |正式功能|`src/msplatform/`中最邻近的`components/`、`assembly/`、`workflows/`、`backends/`、`execution/`、`contracts/`或`exporters/`等职责目录；仓库门禁与维护工具归`tools/repository/`。名称表达稳定能力，不使用`tmp/new/final/v2/retry`表示状态|接入唯一正式入口或机器注册能力，具备配置/Schema、失败关闭、相称测试、最近文档和artifact合同；活动入口采用当前标准，历史证据只读|
 |长期验证|根`tests/`下的`components/`、`assembly/`、`workflows/`、`execution/`及`simion/`、`comsol/`等职责目录，或具名验证入口；使用`test_*`或`verify_*`语义|保留可重复输入和明确PASS/FAIL判据；不得被生产入口反向依赖，也不得把一次性打印探针伪装成回归测试|
-|一次性实现|默认位于`artifacts/projects/<project>/scratch/<task_id>/`或操作系统临时目录；文件名显式含`tmp_`、`diagnostic_`或`migration_`，不得进入正式源码目录|创建前向用户说明准确路径、名称、用途和删除时点；不得被正式入口、活动配置、文档结论或长期测试引用；使用完、方案放弃、任务中断后恢复或任务结束前必须删除|
+|一次性实现|默认位于`artifacts/components/<component_id>/scratch/<task_id>/`（Assembly使用其唯一owner根）或操作系统临时目录；文件名显式含`tmp_`、`diagnostic_`或`migration_`，不得进入正式源码目录|创建前向用户说明准确路径、名称、用途和删除时点；不得被正式入口、活动配置、文档结论或长期测试引用；使用完、方案放弃、任务中断后恢复或任务结束前必须删除|
 
 一次性实现若显现稳定复用价值，必须先停止沿用，按正式功能或长期验证重新设计、迁入规范位置并补齐
 合同、测试和文档；不能仅改名后保留。一次性输出若成为故障根因、科学结论或审计所需证据，须先按

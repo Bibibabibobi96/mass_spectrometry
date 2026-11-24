@@ -41,7 +41,8 @@ try {
   $env:PYTHONDONTWRITEBYTECODE = '1'
   Remove-Item Env:SIMION_EXE -ErrorAction SilentlyContinue
   $executionResources = Join-Path $repoRoot 'src/msplatform/execution/resources'
-  $hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path (Split-Path -Parent $repoRoot) 'artifacts/common/host_resources.sqlite3' }
+  . (Join-Path $executionResources 'workspace_paths.ps1')
+  $hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Resolve-PlatformArtifactPath -ArtifactRoot (Join-Path (Split-Path -Parent $repoRoot) 'artifacts') -RelativePath host_resources.sqlite3 -Python $python }
   $hostContext = @{workspace=(Split-Path -Parent $repoRoot);python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
   . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
   $lease = Enter-HostExecutionLease -Role GATE

@@ -11,6 +11,7 @@ from scipy.constants import electron_volt
 from msplatform.analysis.mass_response import (export_response_figure as export_sampled_response_figure, prepare_response_analysis)
 from msplatform.components.rf_multipole import finite_length_transport as _transport
 from msplatform.components.rf_multipole import mass_filter_theory as _mathieu
+from msplatform.execution.resources.workspace_paths import resolve_run_artifact_root
 from . import reference as _reference
 
 if TYPE_CHECKING:
@@ -535,7 +536,7 @@ def analyze(context: ExecutionContext, *, parent_manifest_path: Path, run_id: st
     from msplatform.execution.stage_policy import read_stage_policy
     from msplatform.io.manifest_records import file_record
 
-    expected_root = context.workspace / 'artifacts/projects/rf_multipole_ion_optics'
+    expected_root = resolve_run_artifact_root(context.workspace / 'artifacts', owner_kind='component', owner_id='rf_multipole_ion_optics')
     if artifact_project_root is not None and artifact_project_root.resolve() != expected_root.resolve():
         raise ValueError(f'Explicit artifact root must use the selected managed research workspace: {expected_root}')
     parent = _analysis_parent(Path(parent_manifest_path))
@@ -572,7 +573,7 @@ def run(context: ExecutionContext, *, baseline_path: Path, resolved_path: Path, 
     from msplatform.execution.completion import no_particle_batch_completion_api
     from msplatform.execution.stage_policy import read_stage_policy
     from msplatform.io.manifest_records import file_record, verify_record
-    expected_root = context.workspace / 'artifacts/projects/rf_multipole_ion_optics'
+    expected_root = resolve_run_artifact_root(context.workspace / 'artifacts', owner_kind='component', owner_id='rf_multipole_ion_optics')
     if artifact_project_root is not None and artifact_project_root.resolve() != expected_root.resolve():
         raise ValueError(f'Explicit artifact root must use the selected managed research workspace: {expected_root}')
     requested = dict(baseline=Path(baseline_path), resolved_design=Path(resolved_path),

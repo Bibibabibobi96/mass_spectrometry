@@ -30,9 +30,9 @@ $packageRootText = & $python -I -B -c 'from importlib.resources import files;pri
 if ($LASTEXITCODE -ne 0) { throw 'Installed msplatform package is unavailable.' }
 $packageRoot = (Resolve-Path -LiteralPath $packageRootText).Path
 . (Join-Path $packageRoot 'execution/resources/require_powershell7.ps1')
-
-$canonicalScratchRoot = [IO.Path]::GetFullPath(
-  (Join-Path $workspaceRoot 'artifacts\projects\rf_multipole_ion_optics\scratch'))
+. (Join-Path $packageRoot 'execution/resources/workspace_paths.ps1')
+$componentArtifactRoot=Resolve-RunArtifactRoot -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -OwnerKind component -OwnerId rf_multipole_ion_optics -Python $python
+$canonicalScratchRoot = [IO.Path]::GetFullPath((Join-Path $componentArtifactRoot 'scratch'))
 $source = (Resolve-Path -LiteralPath $SourceGemPath).Path
 $output = [IO.Path]::GetFullPath($OutputDir)
 $scratchPrefix = $canonicalScratchRoot + [IO.Path]::DirectorySeparatorChar

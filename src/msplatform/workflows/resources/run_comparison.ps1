@@ -24,7 +24,7 @@ $python = if ($PythonExe) {
 $pathArguments = @{SourceRoot = $repoRoot; Python = $python}
 if ($ArtifactRootPath) {$pathArguments.ArtifactRoot = $ArtifactRootPath}
 $workspacePaths = Resolve-WorkspacePaths @pathArguments
-$artifactRoot = Join-Path $workspacePaths.artifact_root 'projects/rf_multipole_ion_optics'
+$artifactRoot = Resolve-RunArtifactRoot -ArtifactRoot $workspacePaths.artifact_root -OwnerKind component -OwnerId rf_multipole_ion_optics -Python $python
 . (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $PSScriptRoot 'analysis_run_lifecycle.ps1')
 . (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')

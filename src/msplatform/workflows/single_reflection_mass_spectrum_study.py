@@ -18,6 +18,7 @@ from msplatform.execution.owner import resume_finalization as resume_owner_final
 from msplatform.execution.owner import run_managed_stage
 from msplatform.execution.recorded_file_removal import write_json_atomic
 from msplatform.execution.run_session import RunSession
+from msplatform.execution.resources.workspace_paths import resolve_run_artifact_root
 from msplatform.execution.stage_policy import read_stage_policy
 from msplatform.io.manifest_records import file_record, record_path, verify_record
 from msplatform.ion_release.dotnet_gaussian_box_ion11 import (
@@ -674,8 +675,8 @@ def analyze(context: ExecutionContext, *, run_id: str, selection: dict[str, Any]
 def resume_finalization(context: ExecutionContext, *, run_id: str,
                         result_path: Path | None = None) -> dict[str, Any]:
     """Resume only the existing public owner; never import scientific inputs."""
-    selected = result_path or (context.workspace / "artifacts/projects" / PROJECT /
-        "scratch/workflow_results" / run_id / "result.json")
+    selected = result_path or (resolve_run_artifact_root(context.workspace / "artifacts",
+        owner_kind="component", owner_id=PROJECT) / "scratch/workflow_results" / run_id / "result.json")
     result = _json(selected)
     if Path(result.get("run_directory", "")).name != run_id:
         raise ValueError("Finalization Result run identity differs")

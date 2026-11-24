@@ -170,7 +170,7 @@ def _writing_overlaps_current_inputs(
     if protection.path_is_protected(root / relative, paths):
         return True
     parts = relative.parts
-    if parts[:3] == ("common", "simion", "pa_family_cache"):
+    if parts[:3] in {("platform", "simion", "pa_family_cache"), ("common", "simion", "pa_family_cache")}:
         tail = parts[3:]
     elif len(parts) >= 5 and parts[0] == "projects" and parts[2] == "cache":
         tail = parts[4:]

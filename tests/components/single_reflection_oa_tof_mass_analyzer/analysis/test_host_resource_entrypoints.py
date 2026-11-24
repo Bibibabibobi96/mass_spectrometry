@@ -117,6 +117,12 @@ function Resolve-WorkspacePaths {param($SourceRoot,$ArtifactRoot,$ExecutionRoot,
  execution_root=$([IO.Path]::GetFullPath($(if($ExecutionRoot){$ExecutionRoot}else{$env:MASS_SPECTROMETRY_EXECUTION_ROOT})));
  host_resource_state_path=$(if($HostResourceStatePath){$HostResourceStatePath}else{$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH})}
 }
+function Resolve-RunArtifactRoot {param($ArtifactRoot,$OwnerKind,$OwnerId,$Python)
+ return (Join-Path $ArtifactRoot "$(if($OwnerKind-eq'assembly'){'assemblies'}else{'components'})/$OwnerId")
+}
+function Resolve-PlatformArtifactPath {param($ArtifactRoot,$RelativePath,$Python)
+ return (Join-Path $ArtifactRoot (@('platform')+@($RelativePath)-join'/'))
+}
 ''', encoding="utf-8")
             (paths / "run_artifact_support.ps1").write_text(r'''
 . (Join-Path $PSScriptRoot 'host_execution_lease.ps1')

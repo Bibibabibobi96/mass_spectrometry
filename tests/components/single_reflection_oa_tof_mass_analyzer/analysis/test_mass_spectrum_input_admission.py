@@ -343,7 +343,7 @@ def mass_native_fixture(root):
         shutil.copyfile(source, target)
     (backend/'run_fixed_particle_retrace.m').write_text('% inert native fixture\n', encoding='utf-8')
     artifacts = root/'artifacts'
-    formal = artifacts/f'projects/{"single_reflection_oa_tof_mass_analyzer"}/formal'
+    formal = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/formal'
     (formal/'comsol').mkdir(parents=True, exist_ok=True)
     (formal/'simion').mkdir(parents=True, exist_ok=True)
     (formal/'comsol/single_reflection_oa_tof_mass_analyzer__model.mph').write_bytes(b'inert formal model')
@@ -581,7 +581,7 @@ class MassSpectrumReanalysisTests(unittest.TestCase):
                 '-AnalysisNewBytes', str(8*1024*1024)], cwd=fixture, env=env,
                 capture_output=True, text=True, encoding='utf-8', timeout=90)
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
-            child = artifacts/f'projects/{"single_reflection_oa_tof_mass_analyzer"}/runs/{run_id}'
+            child = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/runs/{run_id}'
             code = child/'inputs/code'
             inventory_path = child/'inputs/code_inventory.json'
             inventory = json.loads(inventory_path.read_text(encoding='utf-8-sig'))
@@ -702,7 +702,7 @@ class MassSpectrumReanalysisTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertTrue((root/'mutation_calls').is_file())
                 self.assertIn(expected, result.stdout + result.stderr)
-                result_dir = artifacts/f'projects/{"single_reflection_oa_tof_mass_analyzer"}/runs/{run_id}/results'
+                result_dir = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/runs/{run_id}/results'
                 self.assertFalse((result_dir/'mass_spectrum_metrics.json').exists())
                 self.assertTrue((fixture/'src/msplatform/analysis/peak_metrics.py').is_file())
                 self.assertTrue((fixture/'src/msplatform/execution/resources/frozen_python_package.ps1').is_file())
@@ -723,8 +723,8 @@ class MassSpectrumReanalysisTests(unittest.TestCase):
                        '-RunId', run_id, '-PythonExe', sys.executable, '-AnalysisNewBytes', str(8*1024*1024)]
             result = _run_cli(command, cwd=fixture, env=env, capture_output=True, text=True, encoding='utf-8', timeout=90)
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
-            child = artifacts/f'projects/{"single_reflection_oa_tof_mass_analyzer"}/runs/{run_id}'
-            result_path = artifacts/f'projects/{"single_reflection_oa_tof_mass_analyzer"}/scratch/workflow_results/{run_id}/result.json'
+            child = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/runs/{run_id}'
+            result_path = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/scratch/workflow_results/{run_id}/result.json'
             assert_managed_terminal(self, result_path)
             completion = json.loads((child/'results/execution_completion.json').read_text(encoding='utf-8-sig'))
             self.assertEqual(len(completion['writer_completion']['operations']), 1)
@@ -770,8 +770,8 @@ class MassSpectrumReanalysisTests(unittest.TestCase):
                                '-RunId', run_id, '-PythonExe', sys.executable, '-AnalysisNewBytes', str(8*1024*1024)]
                     failed = _run_cli(command, cwd=fixture, env=env, capture_output=True, text=True, encoding='utf-8', timeout=90)
                     self.assertNotEqual(failed.returncode, 0, failed.stdout+failed.stderr)
-                    child = artifacts/f'projects/{"single_reflection_oa_tof_mass_analyzer"}/runs/{run_id}'
-                    result_path = artifacts/f'projects/{"single_reflection_oa_tof_mass_analyzer"}/scratch/workflow_results/{run_id}/result.json'
+                    child = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/runs/{run_id}'
+                    result_path = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/scratch/workflow_results/{run_id}/result.json'
                     receipt = json.loads(result_path.read_text(encoding='utf-8-sig'))
                     if case == 'analysis':
                         self.assertIn('reanalysis failed', receipt['exception']['message'])
@@ -841,16 +841,16 @@ ConvertTo-Json -Depth 8 -InputObject $results
                        cwd=fixture, env=env, capture_output=True, text=True, encoding='utf-8', timeout=90)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('mixed-species mother population', result.stderr)
-            receipt = json.loads((artifacts/f'projects/{"single_reflection_oa_tof_mass_analyzer"}/scratch/workflow_results/{run_id}/result.json').read_text(encoding='utf-8-sig'))
+            receipt = json.loads((artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/scratch/workflow_results/{run_id}/result.json').read_text(encoding='utf-8-sig'))
             self.assertIn('mixed-species mother population', receipt['exception']['message'])
-            process = json.loads((artifacts/f'projects/{"single_reflection_oa_tof_mass_analyzer"}/runs/{run_id}/logs/operation_0001.process.json').read_text(encoding='utf-8-sig'))
+            process = json.loads((artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/runs/{run_id}/logs/operation_0001.process.json').read_text(encoding='utf-8-sig'))
             self.assertEqual(process['host_release']['error'], 'RELEASE_SECONDARY_SENTINEL')
             self.assertIn('Resource owner release is unconfirmed', '\n'.join(receipt['exception']['notes']))
             self.assertEqual(receipt['stage'], 'finalization')
             self.assertTrue(receipt['writers_confirmed'])
             self.assertEqual(receipt['resume_action'], 'inspect_writer_completion')
-            self.assertEqual(json.loads((artifacts/f'projects/{"single_reflection_oa_tof_mass_analyzer"}/runs/{run_id}/run_manifest.json').read_text(encoding='utf-8-sig'))['status'], 'checkpoint')
-            self.assertEqual(json.loads((artifacts/f'projects/{"single_reflection_oa_tof_mass_analyzer"}/runs/{run_id}/logs/capacity_session.json').read_text(encoding='utf-8-sig'))['status'], 'active')
+            self.assertEqual(json.loads((artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/runs/{run_id}/run_manifest.json').read_text(encoding='utf-8-sig'))['status'], 'checkpoint')
+            self.assertEqual(json.loads((artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/runs/{run_id}/logs/capacity_session.json').read_text(encoding='utf-8-sig'))['status'], 'active')
             self.assertEqual((root/'release_calls.txt').read_text(encoding='utf-8').splitlines(), ['release'])
             self.assertEqual(snapshot, {str(p.relative_to(source)): p.read_bytes() for p in source.rglob('*') if p.is_file()})
 
@@ -886,7 +886,7 @@ ConvertTo-Json -Depth 8 -InputObject $results
                        cwd=fixture, env=env, capture_output=True, text=True, encoding='utf-8', timeout=90)
             self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr+
                 (capture.read_text(encoding='utf-8-sig') if capture.is_file() else 'no observer'))
-            child = artifacts/f'projects/{"single_reflection_oa_tof_mass_analyzer"}/runs/{run_id}'
+            child = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/runs/{run_id}'
             self.assertGreater(len(str(child/'inputs/code')), 259)
             observed = json.loads(capture.read_text(encoding='utf-8-sig'))
             self.assertLessEqual(len(observed['cwd']), 259)
@@ -904,7 +904,7 @@ ConvertTo-Json -Depth 8 -InputObject $results
             self.assertEqual(details['summary']['solver_native_calls'], 0)
             self.assertEqual(details['summary']['pa_materializations'], 0)
             owner.write_text(original, encoding='utf-8')
-            result_path = artifacts/f'projects/{"single_reflection_oa_tof_mass_analyzer"}/scratch/workflow_results/{run_id}/result.json'
+            result_path = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/scratch/workflow_results/{run_id}/result.json'
             env['MASS_SPECTROMETRY_ARTIFACT_ROOT'] = str(root/'different-current-root')
             resumed = _run_cli(['pwsh', '-NoProfile', '-File', str(owner), '-ResumeFinalization', '-RunId', run_id,
                        '-ResultPath', str(result_path), '-PythonExe', sys.executable],
@@ -990,11 +990,11 @@ class MassSpectrumNativeLifecycleTests(unittest.TestCase):
             env = mass_native_environment(root, fixture, artifacts, simion, leaf, Path(sys.executable))
             run_id = '20261116_100000__sim__cross__mass-owner-success'
             result = run_mass_native(owner, fixture, env, run_id, simion)
-            child = artifacts/f'projects/{"single_reflection_oa_tof_mass_analyzer"}/runs/{run_id}'
+            child = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/runs/{run_id}'
             native_log = child/'logs/simion_stderr.log'
             diagnostic = native_log.read_text(encoding='utf-8', errors='replace') if native_log.is_file() else ''
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr+diagnostic)
-            receipt_path = artifacts/f'projects/{"single_reflection_oa_tof_mass_analyzer"}/scratch/workflow_results/{run_id}/result.json'
+            receipt_path = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/scratch/workflow_results/{run_id}/result.json'
             assert_managed_terminal(self, receipt_path)
             completion = json.loads((child/'results/execution_completion.json').read_text(encoding='utf-8-sig'))
             self.assertEqual(len(completion['writer_completion']['operations']), 6)
@@ -1026,7 +1026,7 @@ class MassSpectrumNativeLifecycleTests(unittest.TestCase):
             self.assertTrue(arguments[17].startswith('diagnostic_max_tof_us='))
             self.assertTrue(arguments[18].endswith('oatof_ideal_grounded.iob'))
             legacy_id = '20261116_100001__sim__cross__mass-legacy-resume'
-            legacy = artifacts/f'projects/{"single_reflection_oa_tof_mass_analyzer"}/runs/{legacy_id}'
+            legacy = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/runs/{legacy_id}'
             for relative in ('inputs', 'results', 'logs', 'ions', 'comsol'):
                 (legacy/relative).mkdir(parents=True, exist_ok=True)
             legacy_config = dict(config)
@@ -1048,7 +1048,7 @@ class MassSpectrumNativeLifecycleTests(unittest.TestCase):
             env['TEST_MASS_FAIL_SPECIES'] = 'mz100_z1'
             failed = run_mass_native(owner, fixture, env, run_id, simion)
             self.assertNotEqual(failed.returncode, 0)
-            parent = artifacts/f'projects/{"single_reflection_oa_tof_mass_analyzer"}/runs/{run_id}'
+            parent = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/runs/{run_id}'
             self.assertEqual(json.loads((parent/'run_manifest.json').read_text(encoding='utf-8-sig'))['status'], 'failed')
             self.assertEqual(len((root/'comsol-capture.jsonl').read_text(encoding='utf-8').splitlines()), 2)
             csv_path = parent/'comsol/mz10_z1.csv'
@@ -1064,13 +1064,13 @@ class MassSpectrumNativeLifecycleTests(unittest.TestCase):
             resumed = run_mass_native(owner, fixture, env, successor_id, simion,
                                       '-ResumeAfterComsol', '-SourceRunPath', str(parent))
             self.assertEqual(resumed.returncode, 0, resumed.stdout+resumed.stderr)
-            child = artifacts/f'projects/{"single_reflection_oa_tof_mass_analyzer"}/runs/{successor_id}'
+            child = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/runs/{successor_id}'
             captures = [json.loads(line)['environment']['OATOF_ION_TABLE'] for line in
                         (root/'comsol-capture.jsonl').read_text(encoding='utf-8').splitlines()]
             self.assertEqual(len(captures), 6)
             self.assertEqual(sum(path.endswith('mz10_z1.ion') for path in captures), 1)
             self.assertEqual(sum(path.endswith('mz100_z1.ion') for path in captures), 2)
-            receipt_path = artifacts/f'projects/{"single_reflection_oa_tof_mass_analyzer"}/scratch/workflow_results/{successor_id}/result.json'
+            receipt_path = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/scratch/workflow_results/{successor_id}/result.json'
             assert_managed_terminal(self, receipt_path)
             completion = json.loads((child/'results/execution_completion.json').read_text(encoding='utf-8-sig'))
             self.assertEqual(len(completion['writer_completion']['operations']), 5)
@@ -1086,7 +1086,7 @@ class MassSpectrumNativeLifecycleTests(unittest.TestCase):
             env['TEST_MASS_FAIL_SPECIES'] = 'mz100_z1'
             failed = run_mass_native(owner, fixture, env, failed_id, simion)
             self.assertNotEqual(failed.returncode, 0)
-            receipt_path = artifacts/f'projects/{"single_reflection_oa_tof_mass_analyzer"}/scratch/workflow_results/{failed_id}/result.json'
+            receipt_path = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/scratch/workflow_results/{failed_id}/result.json'
             receipt = assert_managed_terminal(self, receipt_path, status='failed')
             self.assertIn('INERT_COMSOL_FAILURE', receipt['exception']['message'])
             replay = run_mass_native(owner, fixture, env, failed_id, simion, '-ResumeAfterComsol')
@@ -1098,8 +1098,8 @@ class MassSpectrumNativeLifecycleTests(unittest.TestCase):
             env['TEST_MASS_UNKNOWN_SPECIES'] = 'mz10_z1'
             unknown = run_mass_native(owner, fixture, env, unknown_id, simion)
             self.assertNotEqual(unknown.returncode, 0)
-            child = artifacts/f'projects/{"single_reflection_oa_tof_mass_analyzer"}/runs/{unknown_id}'
-            retained_path = artifacts/f'projects/{"single_reflection_oa_tof_mass_analyzer"}/scratch/workflow_results/{unknown_id}/result.json'
+            child = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/runs/{unknown_id}'
+            retained_path = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/scratch/workflow_results/{unknown_id}/result.json'
             retained = json.loads(retained_path.read_text(encoding='utf-8-sig'))
             self.assertFalse(retained['writers_confirmed'])
             self.assertEqual(retained['resume_action'], 'inspect_writer_completion')
@@ -1126,10 +1126,10 @@ class MassSpectrumNativeLifecycleTests(unittest.TestCase):
             failed = run_mass_native(owner, fixture, env, run_id, simion)
             self.assertNotEqual(failed.returncode, 0)
             self.assertIn('NORMAL_FINALIZATION_SENTINEL', failed.stdout+failed.stderr)
-            child = artifacts/f'projects/{"single_reflection_oa_tof_mass_analyzer"}/runs/{run_id}'
+            child = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/runs/{run_id}'
             completion_path = child/'results/execution_completion.json'
             completion = completion_path.read_bytes()
-            receipt_path = artifacts/f'projects/{"single_reflection_oa_tof_mass_analyzer"}/scratch/workflow_results/{run_id}/result.json'
+            receipt_path = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/scratch/workflow_results/{run_id}/result.json'
             self.assertEqual(json.loads(receipt_path.read_text(encoding='utf-8-sig'))['stage'], 'finalization')
             env.pop('TEST_MASS_FINALIZATION_SENTINEL')
             resumed = _run_cli(['pwsh', '-NoProfile', '-File', str(owner), '-ResumeFinalization',
@@ -1154,13 +1154,13 @@ class MassSpectrumInputAdmissionTests(unittest.TestCase):
                        MASS_SPECTROMETRY_EXECUTION_ROOT=str(root/'execution'),
                        MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(root/'host.sqlite3'))
             run_id = '20261031_100100__analysis__python__mass-context'
-            result_path = artifacts/f'projects/{"single_reflection_oa_tof_mass_analyzer"}/scratch/workflow_results/{run_id}/result.json'
+            result_path = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/scratch/workflow_results/{run_id}/result.json'
             completed = _run_cli(['pwsh', '-NoProfile', '-File', str(owner), '-ReanalyzeOnly',
                 '-SourceRunPath', str(source), '-RunId', run_id, '-PythonExe', sys.executable,
                 '-AnalysisNewBytes', str(8*1024*1024)], cwd=fixture, env=env, capture_output=True,
                 text=True, encoding='utf-8', timeout=90)
             self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr)
-            child = artifacts/f'projects/{"single_reflection_oa_tof_mass_analyzer"}/runs/{run_id}'
+            child = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/runs/{run_id}'
             config = json.loads((child/'run_config.json').read_text(encoding='utf-8-sig'))
             self.assertEqual(config['schema_version'], 2)
             self.assertEqual(config['paths']['execution_root'], str(root/'execution'))

@@ -273,7 +273,7 @@ $bankManifest=if($staticFieldMode){$null}else{Join-Path $bankRun 'run_manifest.j
 $sourceRun=Split-Path -Parent (Split-Path -Parent $sourceReceipt)
 $sourceManifest=Join-Path $sourceRun 'run_manifest.json'
 $trialRunner=Join-Path $packageRoot 'workflows/resources/oa_mr.ps1'
-$artifactProjectRoot=Join-Path $artifactWorkspaceRoot "projects\$projectId"
+$artifactProjectRoot=Resolve-RunArtifactRoot -ArtifactRoot $artifactWorkspaceRoot -OwnerKind component -OwnerId $projectId -Python $python
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactProjectRoot `
   -RunId $RunId -Project $projectId -Mode 'native_corridor_candidate_bunch_screening' `
   -Software @('SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass compact `
@@ -455,7 +455,7 @@ try{
     }
     $failureStage="cohort_n$CohortParticleCount"
     & $trialRunner @cohortArguments
-    $cohortRun=Join-Path $artifactWorkspaceRoot "projects/instrument_assembly/runs/$cohortRunId";$cohortManifest=Join-Path $cohortRun 'run_manifest.json'
+    $cohortRun=Join-Path (Resolve-RunArtifactRoot -ArtifactRoot $artifactWorkspaceRoot -OwnerKind assembly -OwnerId instrument_assembly -Python $python) "runs/$cohortRunId";$cohortManifest=Join-Path $cohortRun 'run_manifest.json'
   }
   Assert-VerifiedManifest -ManifestPath $cohortManifest -Status 'success' -Mode 'oa_mr' -Owner instrument_assembly -ReadOnlyFlightEvidence:($null-ne$initialCohortRun)
   $cohortGate=Get-VerifiedManifestOutput -ManifestPath $cohortManifest -Name 'bunch_collection_gate.json'

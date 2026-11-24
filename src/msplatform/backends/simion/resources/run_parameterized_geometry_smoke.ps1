@@ -13,16 +13,18 @@ $ErrorActionPreference = 'Stop'
 $workspaceRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
 $repoRoot = $workspaceRoot
 $artifactRootPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRootPath)
-$artifactRoot = Join-Path $artifactRootPath 'projects\single_reflection_oa_tof_mass_analyzer'
+$artifactRoot = $artifactRootPath
 $projectRoot = (Resolve-Path -LiteralPath $ScienceRoot).Path
 $python = if ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) } else { throw 'Explicit SIMULATION_PYTHON_EXE is required' }
 $packageRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
 $executionResources = Join-Path $packageRoot 'execution/resources'
+. (Join-Path $executionResources 'workspace_paths.ps1')
+$artifactRoot = Resolve-RunArtifactRoot -ArtifactRoot $artifactRootPath -OwnerKind component -OwnerId single_reflection_oa_tof_mass_analyzer -Python $python
 . (Join-Path $executionResources 'run_artifact_support.ps1')
 if ([string]::IsNullOrWhiteSpace($RunId)) {
   $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__gate__simion__native-ideal-grid__smoke'
 }
-$hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path $artifactRootPath 'common/host_resources.sqlite3' }
+$hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Resolve-PlatformArtifactPath -ArtifactRoot $artifactRootPath -RelativePath @('host_resources.sqlite3') -Python $python }
 $hostContext = @{workspace=$workspaceRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 $hostExecutionLease = Enter-HostExecutionLease -Role SIMION -Stage prepare -RunId $RunId

@@ -125,7 +125,7 @@ if($PSCmdlet.ParameterSetName-eq'Campaign'){
 if($ResumeFinalization){
   & $python -m msplatform.execution.artifact_naming run $RunId | Out-Null
   if($LASTEXITCODE-ne 0){throw 'Recovery requires a valid existing RunId.'}
-  $projectArtifacts=Join-Path $workspaceRoot 'artifacts/projects/rf_multipole_ion_optics'
+  $projectArtifacts=Resolve-RunArtifactRoot -ArtifactRoot $workspacePaths.artifact_root -OwnerKind component -OwnerId rf_multipole_ion_optics -Python $python
   $runRoot=Join-Path $projectArtifacts "runs/$RunId"
   if(-not$ResultPath){$ResultPath=Join-Path $projectArtifacts "scratch/workflow_results/$RunId/result.json"}
   New-Item -ItemType Directory -Force -Path (Split-Path -Parent ([IO.Path]::GetFullPath($ResultPath))) | Out-Null
@@ -270,9 +270,9 @@ $executionCapacityPaths=Get-RunPackageCopiedSourcePaths -RepoRoot $repoRoot `
   -Extensions @('.py','.json','.ps1','.lua')
 $executionCapacityPaths+=@(($hostRuntimeSourcePaths+$analysisSourcePaths)|ForEach-Object{"inputs/code/$_"})
 $continuationCapacity=$null;$continuationGuards=[Collections.ArrayList]::new();$continuationPredecessor=$null;$continuationChain=@()
-$projectRuns=[IO.Path]::GetFullPath((Join-Path $workspaceRoot "artifacts\projects\$ProjectId\runs"))
+$projectRuns=[IO.Path]::GetFullPath((Join-Path (Resolve-RunArtifactRoot -ArtifactRoot $workspacePaths.artifact_root -OwnerKind component -OwnerId $ProjectId -Python $python) 'runs'))
 $prefix=$projectRuns.TrimEnd([IO.Path]::DirectorySeparatorChar)+[IO.Path]::DirectorySeparatorChar
-if(-not$ResultPath){$ResultPath=Join-Path $workspaceRoot "artifacts\projects\$ProjectId\scratch\workflow_results\$RunId\result.json"}
+if(-not$ResultPath){$ResultPath=Join-Path (Resolve-RunArtifactRoot -ArtifactRoot $workspacePaths.artifact_root -OwnerKind component -OwnerId $ProjectId -Python $python) "scratch\workflow_results\$RunId\result.json"}
 $ResultPath=[IO.Path]::GetFullPath($ResultPath)
 $targetRun=[IO.Path]::GetFullPath((Join-Path $projectRuns $RunId)).TrimEnd('\')+'\'
 if($ResultPath.StartsWith($targetRun,[StringComparison]::OrdinalIgnoreCase)){throw 'Workflow Result must be outside the owner run.'}
@@ -317,7 +317,7 @@ if($ContinuationPredecessorManifestPath){
   }
 }
 try{$package=New-RunPackage -Python $python -RepoRoot $repoRoot `
-  -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$ProjectId") -RunId $RunId `
+  -ArtifactRoot (Resolve-RunArtifactRoot -ArtifactRoot $workspacePaths.artifact_root -OwnerKind component -OwnerId $ProjectId -Python $python) -RunId $RunId `
   -Project $ProjectId -Mode 'resolved_design_transport' -Software @('SIMION 2020','Python 3.11') `
   -RetentionContractEnabled -CapacityLedgerLifecycleEnabled `
   -RetentionClass $RetentionClass -RetentionReason $RetentionReason `
@@ -638,7 +638,7 @@ try{
       if($LASTEXITCODE-ne 0 -or -not($referenceIdValidation-match '^ARTIFACT_ID=PASS ')){
         throw "Invalid ReferenceComsolRunId: $ReferenceComsolRunId"
       }
-      $projectRunsRoot=[IO.Path]::GetFullPath((Join-Path $workspaceRoot "artifacts\projects\$ProjectId\runs"))
+      $projectRunsRoot=[IO.Path]::GetFullPath((Join-Path (Resolve-RunArtifactRoot -ArtifactRoot $workspacePaths.artifact_root -OwnerKind component -OwnerId $ProjectId -Python $python) 'runs'))
       $referenceRunDir=[IO.Path]::GetFullPath((Join-Path $projectRunsRoot $ReferenceComsolRunId))
       if(-not $referenceRunDir.StartsWith(
         $projectRunsRoot+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase
@@ -690,7 +690,7 @@ try{
         time_integration_profile_id=$RuntimeProfileId;
         rf_steps_per_period=$(if([string]$automaticDispatch.field_kind-eq'rf'){$RfStepsPerPeriod}else{$null})}
       $dispatchRequestDocument|ConvertTo-Json -Depth 5|Set-Content -LiteralPath $dispatchRequest -Encoding UTF8
-      $projectRunsRoot=Join-Path $workspaceRoot "artifacts\projects\$ProjectId\runs"
+      $projectRunsRoot=Join-Path (Resolve-RunArtifactRoot -ArtifactRoot $workspacePaths.artifact_root -OwnerKind component -OwnerId $ProjectId -Python $python) 'runs'
       & $python -m msplatform.execution.resource_profile discover --runs-root $projectRunsRoot --output $resourceProfiles
       if($LASTEXITCODE-ne 0){throw 'SIMION resource profile discovery failed.'}
       & $python -m msplatform.execution.simion_dispatch --request $dispatchRequest `

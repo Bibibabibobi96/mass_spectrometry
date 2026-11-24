@@ -520,9 +520,9 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
             projects.mkdir(parents=True)
             capacity_ledger.initialize_capacity_ledger(artifacts, objects=[])
             verify_artifacts_root(projects)
-            extra = artifacts / "common" / "unexpected.json"
+            extra = artifacts / "platform" / "unexpected.json"
             extra.write_text("{}", encoding="utf-8")
-            with self.assertRaisesRegex(AssertionError, "unexpected common artifact entries"):
+            with self.assertRaisesRegex(AssertionError, "unexpected platform artifact entries"):
                 verify_artifacts_root(projects)
             extra.unlink()
             ledger = artifacts / capacity_ledger.CAPACITY_LEDGER_RELATIVE_PATH
@@ -542,7 +542,7 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
 
             verify_artifacts_root(projects)
 
-            lease = artifacts / "common" / "capacity_protection_leases" / "layout.json"
+            lease = artifacts / "platform" / "capacity_protection_leases" / "layout.json"
             document = json.loads(lease.read_text(encoding="utf-8"))
             document["unexpected"] = True
             lease.write_text(json.dumps(document), encoding="utf-8")

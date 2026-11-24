@@ -749,7 +749,7 @@ class ManagedTransportTests(unittest.TestCase):
                                 context=context,
                             )
                         self.assertEqual(calls, [])
-                        self.assertEqual(list(context.workspace.glob("artifacts/projects/*/runs/20*")), [])
+                        self.assertEqual(list(context.workspace.glob("artifacts/components/*/runs/20*")), [])
                         self.assertEqual(load_capacity_protection_leases(artifact_root)["audit"], [])
                         continue
                     if scenario in {"invalid_bool", "invalid_key"}:
@@ -766,7 +766,7 @@ class ManagedTransportTests(unittest.TestCase):
                                 context=context,
                             )
                         self.assertEqual(calls, [])
-                        self.assertEqual(list(context.workspace.glob("artifacts/projects/*/runs/20*")), [])
+                        self.assertEqual(list(context.workspace.glob("artifacts/components/*/runs/20*")), [])
                         continue
                     if scenario == "insufficient_gas_coverage":
                         with self.assertRaisesRegex(ValueError, "governed axial domain") as caught:
@@ -788,7 +788,7 @@ class ManagedTransportTests(unittest.TestCase):
                                 for note in getattr(caught.exception, "__notes__", [])
                             )
                         )
-                        failed = next(context.workspace.glob("artifacts/projects/*/runs/20*/run_manifest.json"))
+                        failed = next(context.workspace.glob("artifacts/components/*/runs/20*/run_manifest.json"))
                         self.assertEqual(json.loads(failed.read_text())["status"], "failed")
                         self.assertEqual(load_capacity_protection_leases(artifact_root)["audit"], [])
                         continue

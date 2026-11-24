@@ -246,7 +246,7 @@ def execute_fields(session, *, model_reference: Mapping, numerics: dict, limits:
                     for index, path in enumerate(row['response_paths'], 1)]
             materialized_reuse[role] = asset
         reused_assets = materialized_reuse
-    cache_root = session.artifact_root/'common/simion/pa_family_cache'
+    cache_root = session.artifact_root/'platform/simion/pa_family_cache'
     parents, members = {}, []
     for member in graph['field_plan']['ordered_members']:
         domain, member_id = member['domain_id'], member['member_id']

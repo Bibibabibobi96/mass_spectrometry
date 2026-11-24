@@ -11,7 +11,7 @@ from msplatform.execution import artifact_capacity_maintenance
 
 
 def _audit_transactions(root: Path) -> dict[str, int]:
-    return audit_pa_transaction_maintenance(root / "common" / "simion" / "pa_family_cache")
+    return audit_pa_transaction_maintenance(root / "platform" / "simion" / "pa_family_cache")
 
 
 def main() -> None:

@@ -15,7 +15,7 @@ from msplatform.execution import capacity_maintenance as capacity_ledger
 from msplatform.io.file_identity import file_sha256
 from msplatform.execution.recorded_file_removal import remove_recorded_files, write_json_atomic
 
-RECEIPTS = Path("common") / "capacity_disposal_receipts"
+RECEIPTS = Path("platform") / "capacity_disposal_receipts"
 ROLE = "historical_source_scratch_disposition"
 
 

@@ -37,7 +37,7 @@ class CapacityLedgerV3Test(unittest.TestCase):
         document = capacity_ledger.initialize_capacity_ledger(root, objects=[record])
         ledger = capacity_ledger.resolve_ledger_path(root)
         raw = ledger.read_bytes()
-        directory = root/"common/capacity_disposal_receipts"
+        directory = root/"platform/capacity_disposal_receipts"
         backup, receipt = directory/"original_raw.json", directory/"original_recovery.json"
         digest = file_sha256(ledger)
         write_json_atomic(backup, dict(schema_version=1, role="capacity_ledger_damaged_raw_backup",
@@ -278,7 +278,7 @@ class CapacityLedgerV3Test(unittest.TestCase):
         document = capacity_ledger.initialize_capacity_ledger(root, objects=[dict(
             path=relative, **{"class": "rebuildable_payload"}, bytes=10, status="retired", pin=False,
             owner="example", disposition=disposition)])
-        receipt = root/"common/capacity_disposal_receipts"/("ledger_disposition_"+"A"*64+".json")
+        receipt = root/"platform/capacity_disposal_receipts"/("ledger_disposition_"+"A"*64+".json")
         write_json_atomic(receipt, dict(schema_version=1, role="artifact_capacity_disposal_receipt",
             status="complete", reason="manager_approved_disposition", target_path=str(root/relative),
             disposition=disposition, removed=["logs/ok.log", "logs/old.log"], removed_bytes=10,

@@ -46,7 +46,7 @@ from msplatform.execution.capacity_protection import (
 )
 
 PROTECTION_LEASE_PRUNING_RECEIPT_DIRECTORY = (
-    Path("common") / "capacity_protection_lease_pruning_receipts"
+    Path("platform") / "capacity_protection_lease_pruning_receipts"
 )
 # A caller may choose a shorter, explicit closure date.  The default keeps
 # existing short workflow callers usable while still making every new lease

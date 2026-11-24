@@ -253,7 +253,7 @@ function Initialize-RfSimionPreparedContinuation {
  [pscustomobject]@{all_reused=$true;units=@{}}
 }
 $ContinuationPredecessorManifestPath='parent/run_manifest.json';$package=@{artifact_run_dir=$env:RF_TEST_TEMP}
-$artifactRoot=Join-Path $env:RF_TEST_TEMP 'artifacts/projects/rf_multipole_ion_optics'
+$artifactRoot=Join-Path $env:RF_TEST_TEMP 'artifacts/components/rf_multipole_ion_optics'
 $python='unused';$repoRoot=$PWD;$runConfig=@{};$runConfigPath='unused';$runDir='alias'
 $batchPlan=Join-Path $env:RF_TEST_TEMP 'batches.json';$dispatchPlan=Join-Path $env:RF_TEST_TEMP 'dispatch.json'
 foreach($runner in @('run_simion.ps1','run_mass_filter_simion.ps1')){
@@ -1212,7 +1212,7 @@ exit 0
             environment = os.environ.copy()
             # Exercise the governed project layout in an isolated artifact tree.
             artifact_workspace = root / "artifacts"
-            artifact_root = artifact_workspace / "projects" / "rf_multipole_ion_optics"
+            artifact_root = artifact_workspace / "components" / "rf_multipole_ion_optics"
             artifact_root.mkdir(parents=True)
             initialize_capacity_ledger(artifact_workspace, objects=[])
             run_id = "20260725_120000__test__simion__source-preflight"

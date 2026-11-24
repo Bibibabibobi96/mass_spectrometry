@@ -33,7 +33,7 @@ $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitio
 Invoke-Expression $node.Extent.Text
 $repoRoot=$Code;$expectedRunRoot=$Artifacts;$script:codeExecutionAlias=$null
 [IO.Directory]::CreateDirectory($expectedRunRoot)|Out-Null
-Write-RunJson -Path (Join-Path $expectedRunRoot 'run_config.json') -Value @{paths=@{execution_root=(Join-Path $Artifacts 'common/execution_aliases')}}
+Write-RunJson -Path (Join-Path $expectedRunRoot 'run_config.json') -Value @{paths=@{execution_root=(Join-Path $Artifacts 'platform/execution_aliases')}}
 $script:nativeSequence=0;$nativeOperations=[Collections.Generic.List[object]]::new()
 function Invoke-OwnedSimionArguments {param($ArgumentList,$OperationId)
   if($ArgumentList[3].Length-ge260){throw 'Native script still exceeds MAX_PATH'}
@@ -49,7 +49,7 @@ if(-not(Test-Path -LiteralPath $Lua)){throw 'Frozen input was deleted'}
             result = subprocess.run(["pwsh", "-NoProfile", "-File", str(script), str(ROOT), str(code), str(lua), str(root / "artifacts")],
                                     cwd=ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertFalse(list((root / "artifacts/common/execution_aliases").glob("run_*")))
+            self.assertFalse(list((root / "artifacts/platform/execution_aliases").glob("run_*")))
 
     def test_original_rows_clocks_and_bytes_are_copied_and_invalid_sources_fail_before_native(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

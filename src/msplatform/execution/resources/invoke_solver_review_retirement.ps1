@@ -28,7 +28,7 @@ if ($LASTEXITCODE -ne 0 -or $resourceOutput.Count -ne 1) { throw 'Could not reso
 $executionResources = (Resolve-Path -LiteralPath ([string]$resourceOutput[0])).Path
 $artifactRootPath = [IO.Path]::GetFullPath($ArtifactRoot)
 $workspace = Split-Path -Parent $artifactRootPath
-$hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path $artifactRootPath 'common/host_resources.sqlite3' }
+$hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path $artifactRootPath 'platform/host_resources.sqlite3' }
 $hostContext = @{workspace=$workspace;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 function Enter-RetirementHostLease {

@@ -30,6 +30,7 @@ from msplatform.execution.artifact_naming import validate_run_id
 from msplatform.execution.context import python_runtime_version
 from msplatform.execution.artifact_retention import validate_retention
 from msplatform.execution.retention import file_record, verify_record, classify_file
+from msplatform.execution.resources.workspace_paths import resolve_run_artifact_root
 from msplatform.io.file_identity import file_sha256
 from msplatform.io.manifest_records import require_completed_terminal_publication
 from .source_experiment import build_case_plan, summarize_stage, validate_experiment
@@ -881,7 +882,9 @@ def _execute_role(config_path: Path, *, input_root: Path, context: Any, seed: in
             stage=stage, policy_record=policy_record, legacy_protection=legacy),
         action_record=file_record(Path(__file__).resolve(), "required_evidence"),
         source_references=references, completion_api=no_particle_batch_completion_api)
-    return artifact_root / "projects" / PROJECT_ID / "runs" / run_id
+    return resolve_run_artifact_root(
+        artifact_root, owner_kind="component", owner_id=PROJECT_ID,
+    ) / "runs" / run_id
 
 
 def execute(config_path: Path, *, input_root: Path, context: Any, seed: int,

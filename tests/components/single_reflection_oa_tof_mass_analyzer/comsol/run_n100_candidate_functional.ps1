@@ -10,7 +10,8 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $repoRoot = Split-Path -Parent (Split-Path -Parent $projectRoot)
 $workspaceRoot = Split-Path -Parent $repoRoot
-$artifactRoot = Join-Path $workspaceRoot 'artifacts\src\msplatform\components\single_reflection_oa_tof'
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
+$artifactRoot = Resolve-RunArtifactRoot -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -OwnerKind component -OwnerId single_reflection_oa_tof_mass_analyzer -Python $python
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } elseif ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) } else { throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required' }
 $launcher = Join-Path $repoRoot 'src\msplatform\backends\comsol\launcher\run_comsol_r2025b.ps1'
 $task = Join-Path $repoRoot 'src\msplatform\backends\comsol\matlab\run_candidate_contract_build.m'
@@ -18,7 +19,7 @@ $contract = Join-Path $projectRoot 'config\resolved_geometry.json'
 $ion = if ($IonPath) { [IO.Path]::GetFullPath($IonPath) } else { Join-Path $artifactRoot 'formal\simion\oatof_comsol_524amu_gaussian_N100.ion' }
 . (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $executionResources = Join-Path $repoRoot 'src/msplatform/execution/resources'
-$hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path $workspaceRoot 'artifacts/common/host_resources.sqlite3' }
+$hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Resolve-PlatformArtifactPath -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -RelativePath @('host_resources.sqlite3') -Python $python }
 $hostContext = @{workspace=$workspaceRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 

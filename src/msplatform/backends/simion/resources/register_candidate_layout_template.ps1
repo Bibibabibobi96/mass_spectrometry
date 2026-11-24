@@ -35,8 +35,9 @@ $packageRootText = & $python -I -B -c 'from importlib.resources import files;pri
 if ($LASTEXITCODE -ne 0) { throw 'Installed msplatform package is unavailable.' }
 $packageRoot = (Resolve-Path -LiteralPath $packageRootText).Path
 $projectRoot = Join-Path $packageRoot 'components/single_reflection_oa_tof'
+. (Join-Path $packageRoot 'execution/resources/workspace_paths.ps1')
 if ([string]::IsNullOrWhiteSpace($ArtifactProjectRoot)) {
-  $ArtifactProjectRoot = Join-Path $workspaceRoot 'artifacts\projects\single_reflection_oa_tof_mass_analyzer'
+  $ArtifactProjectRoot = Resolve-RunArtifactRoot -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -OwnerKind component -OwnerId single_reflection_oa_tof_mass_analyzer -Python $python
 }
 $artifactRoot = [IO.Path]::GetFullPath($ArtifactProjectRoot)
 $runsRoot = Join-Path $artifactRoot 'runs'

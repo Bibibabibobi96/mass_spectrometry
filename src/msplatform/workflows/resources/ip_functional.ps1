@@ -202,7 +202,7 @@ $workspaceRoot=Split-Path -Parent $repoRoot
 . (Join-Path $PSScriptRoot '../../execution/resources/run_artifact_support.ps1')
 . (Join-Path $PSScriptRoot '../../backends/simion/resources/short_pa_path_support.ps1')
 $python=if($PythonExe){$PythonExe}elseif($env:SIMULATION_PYTHON_EXE){$env:SIMULATION_PYTHON_EXE}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
-$hostState=if($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH}else{Join-Path $workspaceRoot 'artifacts/common/host_resources.sqlite3'}
+$hostState=if($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH}else{Resolve-PlatformArtifactPath -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -RelativePath host_resources.sqlite3 -Python $python}
 $script:HostResourceExecutionContext=@{workspace=$workspaceRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $PSScriptRoot '../../execution/resources/host_resource_policy.json')}
 . (Join-Path $PSScriptRoot '../../execution/resources/host_execution_lease.ps1') -HostContext $script:HostResourceExecutionContext
 . (Join-Path $PSScriptRoot '../../execution/resources/resource_process_support.ps1')
@@ -210,7 +210,7 @@ $script:HostResourceExecutionContext=@{workspace=$workspaceRoot;python_executabl
 . (Join-Path $PSScriptRoot '../../execution/resources/workspace_paths.ps1')
 $pathContext=Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
 if($ResumeFinalization){
- $projectArtifacts=Join-Path $pathContext.artifact_root 'projects/dual_pressure_rectilinear_ion_processor'
+ $projectArtifacts=Resolve-RunArtifactRoot -ArtifactRoot ([string]$pathContext.artifact_root) -OwnerKind component -OwnerId dual_pressure_rectilinear_ion_processor -Python $python
  $recoveryRun=Join-Path $projectArtifacts ('runs/'+$RunId)
  if($ResultPath-and(Test-Path -LiteralPath $ResultPath -PathType Leaf)){
   $transport=Get-Content -LiteralPath $ResultPath -Raw|ConvertFrom-Json -AsHashtable
@@ -248,7 +248,7 @@ if($NativeFieldRun){
  $committedNewBytes=[long][Math]::Max(2GB,([long]$count*50MB+256MB))
 }
 $artifacts=[string]$pathContext.artifact_root
-$projectArtifacts=Join-Path $artifacts 'projects/dual_pressure_rectilinear_ion_processor'
+$projectArtifacts=Resolve-RunArtifactRoot -ArtifactRoot $artifacts -OwnerKind component -OwnerId dual_pressure_rectilinear_ion_processor -Python $python
 $capacity=$null;$package=$null;$lease=$null;$finished=$false;$runSucceeded=$false;$writersStopped=$true;$nativeCompleted=$false;$nativeContext=$null
 $primaryRunFailure=$null
 $ownerContext=$null;$nativeOperations=[Collections.Generic.List[object]]::new();$hostRelease=$null

@@ -679,7 +679,7 @@ Write-Output 'FROZEN_BUDGET_OBSERVATION=PASS'
             "src/msplatform/execution/inputs.py",
         )
         with tempfile.TemporaryDirectory() as directory:
-            installed_python, _ = self.make_installed_python(Path(directory) / "installed")
+            installed_python, installed_package = self.make_installed_python(Path(directory) / "installed")
             snapshot = Path(directory) / "repository"
             frozen_project = snapshot / PROJECT_ROOT.relative_to(REPO_ROOT)
             declared: set[Path] = set()
@@ -709,13 +709,14 @@ function Get-HostResourceSnapshot {
             expected_core = [
                 "src/" + relative
                 for relative in enumerate_python_sources(
-                    REPO_ROOT / "src", package_roots=("msplatform",),
+                    installed_package.parent, package_roots=("msplatform",),
                     provider_root="msplatform",
                     resource_suffixes=(".json", ".csv", ".ion", ".ps1", ".m", ".gem",
                                        ".lua", ".iob", ".pa0", ".fly2", ".md"),
                 )
             ]
             self.assertIn("src/msplatform/backends/comsol/matlab/write_wehnelt_build_only_report.m", expected_core)
+            self.assertIn("src/msplatform/workflows/oa_candidate/prepare_candidate_run.py", expected_core)
             selection_start = self.build_runner.index("  $selectCoreSources = @'")
             selection_end = self.build_runner.index(
                 "\nforeach ($entry in $bootstrapIdentity", selection_start
@@ -731,12 +732,13 @@ function Get-HostResourceSnapshot {
             selected = subprocess.run(
                 ["pwsh", "-NoProfile", "-NonInteractive", "-Command", freeze_script],
                 cwd=snapshot, env=freeze_environment, check=False, capture_output=True,
-                text=True, encoding="utf-8", errors="replace", timeout=30,
+                text=True, encoding="utf-8", errors="replace", timeout=120,
             )
             self.assertEqual(selected.returncode, 0, selected.stdout + selected.stderr)
             for relative in expected_core:
                 target = snapshot / relative
-                self.assertEqual(target.read_bytes(), (REPO_ROOT / relative).read_bytes())
+                installed_source = installed_package.parent / Path(relative).relative_to("src")
+                self.assertEqual(target.read_bytes(), installed_source.read_bytes(), relative)
                 declared.add(target.resolve())
 
             environment = os.environ.copy()
@@ -924,7 +926,7 @@ function Get-HostResourceSnapshot {
             environment.pop("MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN", None)
             environment["MASS_SPECTROMETRY_HOST_CONTEXT_JSON"] = json.dumps({
                 "workspace": str(workspace), "python_executable": str(python),
-                "host_state_path": str(artifacts / "common/host_resources.sqlite3"),
+                "host_state_path": str(artifacts / "platform/host_resources.sqlite3"),
                 "policy_path": str(package / "execution/resources/host_resource_policy.json"),
             })
             if shadow_installed_package:
@@ -952,7 +954,7 @@ function Get-HostResourceSnapshot {
             self.assertNotEqual(result.returncode, 0, details)
             self.assertIn("WEHNELT_TEST_PREFLIGHT_BOUNDARY", details)
             self.assertNotIn("SHADOW_MSPPLATFORM_WAS_IMPORTED", details)
-            run = artifacts / "projects" / PROJECT_ROOT.name / "runs" / run_id
+            run = artifacts / "components" / PROJECT_ROOT.name / "runs" / run_id
             summary = json.loads((run / "summary.json").read_text(encoding="utf-8"))
             self.assertEqual(summary["failure_stage"], "commercial_wrapper_pending")
             self.assertFalse(summary["commercial_wrapper_invocation_attempted"])

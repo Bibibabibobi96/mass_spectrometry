@@ -10,7 +10,10 @@ from typing import Any, Callable, Iterable
 from msplatform.execution import capacity_protection as protection
 from msplatform.execution.recorded_file_removal import write_json_atomic
 
-CAPACITY_LEDGER_RELATIVE_PATH = Path("common") / "capacity_ledger.json"
+CAPACITY_LEDGER_RELATIVE_PATH = Path("platform") / "capacity_ledger.json"
+PA_CACHE_RELATIVE_PREFIX = "platform/simion/pa_family_cache/"
+LEGACY_PA_CACHE_RELATIVE_PREFIX = "common/simion/pa_family_cache/"
+PA_CACHE_RELATIVE_PREFIXES = (PA_CACHE_RELATIVE_PREFIX, LEGACY_PA_CACHE_RELATIVE_PREFIX)
 
 
 LEDGER_CLASSES = {"light_evidence", "published_cache", "rebuildable_payload"}
@@ -303,7 +306,7 @@ def _is_valid_capacity_ledger(root: Path, document: object) -> bool:
             or SHA256.fullmatch(item["identity"]) is None
         ):
             return False
-        is_pa_family_range = item["path"].startswith("common/simion/pa_family_cache/")
+        is_pa_family_range = item["path"].startswith(PA_CACHE_RELATIVE_PREFIXES)
         if is_v3 and is_pa_family_range and item["class"] == "published_cache" and item["status"] == "ready":
             if item.get("manager") != PA_CACHE_MANAGER:
                 return False
@@ -482,7 +485,7 @@ def record_capacity_object(
         }
         if identity is not None:
             entry["identity"] = str(identity)
-        if object_class == "published_cache" and relative.startswith("common/simion/pa_family_cache/"):
+        if object_class == "published_cache" and relative.startswith(PA_CACHE_RELATIVE_PREFIXES):
             entry["manager"] = PA_CACHE_MANAGER
         if pin:
             entry["pin_reason"] = pin_reason.strip()
@@ -523,9 +526,9 @@ def pending_disposal_targets(root: Path, path: Path | None = None) -> set[Path]:
 
 
 PA_RUNTIME_STATE_RELATIVE_PATHS = {
-    "common/simion/pa_family_cache/.build-locks",
-    "common/simion/pa_family_cache/.locks",
-    "common/simion/pa_family_cache/.staging",
+    f"{prefix}.{state}"
+    for prefix in PA_CACHE_RELATIVE_PREFIXES
+    for state in ("build-locks", "locks", "staging")
 }
 
 
@@ -816,12 +819,14 @@ def _assert_abandoned_pa_transaction_allowed(
     entry = by_path.get(relative)
     is_transaction_container = False
     if entry is None and allow_transaction_container:
-        container = "common/simion/pa_family_cache/.transactions"
-        candidate = by_path.get(container)
-        if (relative.startswith(container + "/") and candidate is not None
-                and candidate.get("owner") == PA_CACHE_MANAGER):
-            entry = candidate
-            is_transaction_container = True
+        for prefix in PA_CACHE_RELATIVE_PREFIXES:
+            container = f"{prefix}.transactions"
+            candidate = by_path.get(container)
+            if (relative.startswith(container + "/") and candidate is not None
+                    and candidate.get("owner") == PA_CACHE_MANAGER):
+                entry = candidate
+                is_transaction_container = True
+                break
     if (entry is None or entry.get("pin", False) or "pin_reason" in entry
             or not ((entry.get("status") == "writing"
                      and entry.get("class") == "rebuildable_payload"

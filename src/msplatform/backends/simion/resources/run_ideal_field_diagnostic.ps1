@@ -25,7 +25,7 @@ $packageRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScr
 . (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
 . (Join-Path $packageRoot 'execution/resources/workspace_paths.ps1')
 $pathContext = Resolve-WorkspacePaths -SourceRoot $repoRoot -ArtifactRoot $artifactRootPath -Python $python
-$artifactRoot = Join-Path $pathContext.artifact_root 'projects/single_reflection_oa_tof_mass_analyzer'
+$artifactRoot = Resolve-RunArtifactRoot -ArtifactRoot $pathContext.artifact_root -OwnerKind component -OwnerId single_reflection_oa_tof_mass_analyzer -Python $python
 $environmentNames = @('SIMULATION_PYTHON_EXE','MASS_SPECTROMETRY_ARTIFACT_ROOT','MASS_SPECTROMETRY_EXECUTION_ROOT','MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH')
 $environmentSnapshot = Save-RunEnvironment -Names $environmentNames
 $hostRole = if ($AnalyzeOnly) { 'GATE' } else { 'SIMION' }

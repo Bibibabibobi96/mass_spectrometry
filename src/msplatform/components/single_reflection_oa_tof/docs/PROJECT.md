@@ -1124,7 +1124,7 @@ COMSOL 实施步骤只在 COMSOL 文档维护，完整逐轮矩阵不再进入�
 
 ## 产物与历史
 
-新活动产物根为`artifacts/projects/single_reflection_oa_tof_mass_analyzer/`。重命名前的Formal、
+新活动产物根为`artifacts/components/single_reflection_oa_tof_mass_analyzer/`，由公共component路径解析器生成；平台cache、执行alias和host状态位于`artifacts/platform/`。重命名前的Formal、
 Candidate run及归档已以原manifest项目身份只读迁入该根的
 `archive/20260801_130003__migration-snapshot__repo__oa-tof/legacy-project-root/`。保留证据保持原文件名、
 SHA、身份、资格和声明边界；迁移后按根README独立裁剪的可重建重型载荷只由pruning manifest追溯，

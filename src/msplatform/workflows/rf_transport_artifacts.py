@@ -13,9 +13,9 @@ from types import SimpleNamespace
 from typing import Any, Iterator, Mapping
 
 from msplatform.execution.artifact_naming import validate_run_id
-from msplatform.execution.artifact_project import ensure_artifact_project
 from msplatform.execution.manifest_publication import build_run_manifest
 from msplatform.execution.manifest_publication import publish_run_manifest
+from msplatform.execution.resources.workspace_paths import resolve_run_artifact_root
 from msplatform.execution.terminal_publication import publish_terminal_state
 from msplatform.workflows.rf_design_profiles import resolve_design_profile
 from msplatform.components.rf_multipole.family_contract import (
@@ -27,7 +27,7 @@ from msplatform.components.rf_multipole.family_contract import (
 
 _MODULE_PATH = Path(__file__).resolve()
 REPO_ROOT = _MODULE_PATH.parents[3] if _MODULE_PATH.parents[2].name == "src" else _MODULE_PATH.parents[2]
-ARTIFACT_PROJECTS_ROOT = REPO_ROOT.parent / "artifacts" / "projects"
+ARTIFACT_PROJECTS_ROOT = REPO_ROOT.parent / "artifacts" / "components"
 
 
 def _write_json(path: Path, value: Mapping[str, Any]) -> None:
@@ -79,7 +79,9 @@ def transport_run(
     if structural_variant_id not in {"hexapole", "octupole"} or design_profile_id != f"{structural_variant_id}_no_acceleration_full_length":
         raise ValueError("L1/L2 transport only supports the registered hexapole/octupole no-acceleration baseline designs")
     contract = l1_l2_transport_contract_from_resolved_design(resolved_design)
-    run_dir = ensure_artifact_project(artifact_projects_root, project_id) / "runs" / run_id
+    run_dir = resolve_run_artifact_root(
+        artifact_projects_root.parent, owner_kind="component", owner_id=project_id,
+    ) / "runs" / run_id
     if run_dir.exists():
         raise FileExistsError(f"run directory already exists: {run_dir}")
     input_dir, result_dir = run_dir / "inputs", run_dir / "results"

@@ -305,7 +305,7 @@ runtime checkpoint复用已经使用，但未发布事务的跨run重入仍未�
 
 ## 产物
 
-独立器件新运行归`artifacts/projects/orthogonal_accelerator/`。既有OA/MR run、冻结包与Formal资产
+独立器件新运行归`artifacts/components/orthogonal_accelerator/`；focus运行器和PA cache分别使用公共component与platform路径解析器。既有OA/MR run、冻结包与Formal资产
 保持原owner及身份。
 
 ## 机器能力与解析输入

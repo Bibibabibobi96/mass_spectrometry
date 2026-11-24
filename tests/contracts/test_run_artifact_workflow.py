@@ -509,7 +509,7 @@ if('{external}'-notin@($snapshot.protected_paths)){{throw 'latest source scope w
                 old_id = first["lease_id"]
                 baseline = sum(path.stat().st_size for path in run.rglob("*") if path.is_file())
                 if lease_state != "active":
-                    lease = artifacts / "common/capacity_protection_leases" / f"{old_id}.json"
+                    lease = artifacts / "platform/capacity_protection_leases" / f"{old_id}.json"
                     if lease_state == "expired":
                         data = json.loads(lease.read_text()); data["expires_at_utc"] = "2001-01-01T00:00:00Z"
                         lease.write_text(json.dumps(data), encoding="utf-8")
@@ -556,19 +556,19 @@ if('{external}'-notin@($snapshot.protected_paths)){{throw 'latest source scope w
         with tempfile.TemporaryDirectory(prefix="workflow-recover-proof-") as directory:
             root = Path(directory)
             first, run, artifacts, _ = self.invoke_fixture(root, {"disposable": True}, failure_stage="retention_pending")
-            lease = artifacts / "common/capacity_protection_leases" / f"{first['lease_id']}.json"
+            lease = artifacts / "platform/capacity_protection_leases" / f"{first['lease_id']}.json"
             data = json.loads(lease.read_text()); data["expires_at_utc"] = "2001-01-01T00:00:00Z"
             lease.write_text(json.dumps(data), encoding="utf-8")
             wait = run / "logs/prepared_wait.json"
             wait_before = wait.read_bytes()
             receipt_before = (run / "retention_actions.json").read_bytes()
-            ledger_before = (artifacts / "common/capacity_ledger.json").read_bytes()
+            ledger_before = (artifacts / "platform/capacity_ledger.json").read_bytes()
             modified = json.loads(wait_before); modified["fixture_tamper"] = True
             wait.write_text(json.dumps(modified), encoding="utf-8")
             _, rejected = self.resume_fixture(root, run)
             self.assertNotEqual(rejected.returncode, 0)
             self.assertEqual((run / "retention_actions.json").read_bytes(), receipt_before)
-            self.assertEqual((artifacts / "common/capacity_ledger.json").read_bytes(), ledger_before)
+            self.assertEqual((artifacts / "platform/capacity_ledger.json").read_bytes(), ledger_before)
             self.assertEqual(len(list(lease.parent.glob("workflow-*.json"))), 1)
             wait.write_bytes(wait_before)
             # Project wrappers may already have removed their TEMP result.
@@ -590,13 +590,13 @@ if('{external}'-notin@($snapshot.protected_paths)){{throw 'latest source scope w
             self.assertEqual(third["lease_id"], recovery_id)
             self.assertEqual((root / "callback_count.txt").read_text(), "1")
             manifest = (run / "run_manifest.json").read_bytes()
-            ledger = (artifacts / "common/capacity_ledger.json").read_bytes()
+            ledger = (artifacts / "platform/capacity_ledger.json").read_bytes()
             science = run / "results/science.json"
             science.write_bytes(science.read_bytes() + b" ")
             _, rejected = self.resume_fixture(stable, run)
             self.assertNotEqual(rejected.returncode, 0)
             self.assertEqual((run / "run_manifest.json").read_bytes(), manifest)
-            self.assertEqual((artifacts / "common/capacity_ledger.json").read_bytes(), ledger)
+            self.assertEqual((artifacts / "platform/capacity_ledger.json").read_bytes(), ledger)
 
     def test_recovery_publication_budget_bounds_combined_metadata_peak(self) -> None:
         with tempfile.TemporaryDirectory(prefix="workflow-recover-budget-") as directory:
@@ -605,7 +605,7 @@ if('{external}'-notin@($snapshot.protected_paths)){{throw 'latest source scope w
                 "summary_padding_bytes": 9 * 1024 * 1024, "fixture_commitment_bytes": 16 * 1024 * 1024,
             }, failure_stage="retention_before")
             self.assertNotEqual(process.returncode, 0)
-            lease = artifacts / "common/capacity_protection_leases" / f"{first['lease_id']}.json"
+            lease = artifacts / "platform/capacity_protection_leases" / f"{first['lease_id']}.json"
             lease.unlink()
             baseline = sum(path.stat().st_size for path in run.rglob("*") if path.is_file())
             before = {name: (run / name).read_bytes() for name in ("summary.json", "run_manifest.json")}

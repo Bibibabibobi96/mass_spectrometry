@@ -37,7 +37,7 @@ from msplatform.io.file_identity import canonical_json_sha256
 
 SHA256 = re.compile(r"[0-9A-Fa-f]{64}")
 ROLE = "artifact_capacity_owner_retirement_disposition"
-OWNER_DISPOSITION_DIRECTORY = Path("common") / "capacity_calibration" / "owner_dispositions"
+OWNER_DISPOSITION_DIRECTORY = Path("platform") / "capacity_calibration" / "owner_dispositions"
 
 
 def _canonical(value: object) -> str:
@@ -70,7 +70,9 @@ def _expected_owner(target_relative: str) -> str:
     parts = Path(target_relative).parts
     if len(parts) >= 2 and parts[0] == "projects" and parts[1]:
         return parts[1]
-    if len(parts) >= 4 and parts[:3] == ("common", "simion", "pa_family_cache"):
+    if len(parts) >= 4 and parts[:3] in {
+        ("platform", "simion", "pa_family_cache"), ("common", "simion", "pa_family_cache"),
+    }:
         return "common.simion.pa_family_cache"
     raise ValueError("owner disposition target has no approved owner namespace")
 
@@ -522,7 +524,7 @@ def _archive_completed_disposition(
     authorization = {"owner": candidate["owner_hint"], "target_path": target_path,
                      "authority_evidence": {"path": disposition["manifest_path"]}}
     entry = next((item for item in ledger["objects"] if item.get("path") == target_path), None)
-    receipt_path = root / "common/capacity_disposal_receipts" / f"ledger_disposition_{disposition_id}.json"
+    receipt_path = root / "platform/capacity_disposal_receipts" / f"ledger_disposition_{disposition_id}.json"
     if (entry is None or entry.get("status") != "retired"
             or entry.get("disposition", {}).get("id") != disposition_id or not receipt_path.is_file()):
         return False
@@ -590,7 +592,7 @@ def activate_owner_dispositions(root: Path) -> dict[str, Any]:
     """
 
     root = root.resolve(strict=False)
-    directory = root / "common" / "capacity_calibration" / "owner_dispositions"
+    directory = root / "platform" / "capacity_calibration" / "owner_dispositions"
     if not directory.exists():
         return {"activated_count": 0, "activated_bytes": 0, "archived_document_count": 0,
                 "failed_count": 0, "failures": []}
@@ -752,7 +754,7 @@ def retire_misplaced_light_run(artifact_root: Path, run_config: Path, *,
     if total > budget or any(classify_file(source / r["path"], bytes_count=r["bytes"]) in HEAVY_RETENTION_ROLES for r in records):
         raise ValueError("misplaced source is not a complete light-evidence package")
     identity = canonical_json_sha256(dict(source=relative, backup=file_record(backup_manifest), files=records))
-    journal_path = root / "common/capacity_disposal_receipts" / f"misplaced_light_run_{identity}.json"
+    journal_path = root / "platform/capacity_disposal_receipts" / f"misplaced_light_run_{identity}.json"
     with capacity_protection.capacity_decision_lock(root):
         ledger = capacity_ledger.load_capacity_ledger(root)
         if ledger is None:

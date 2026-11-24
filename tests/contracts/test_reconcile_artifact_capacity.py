@@ -128,7 +128,7 @@ class MaintenanceTargetCliTest(unittest.TestCase):
         from tools.repository import legacy_capacity_calibration as calibration
         with tempfile.TemporaryDirectory() as temporary:
             workspace = Path(temporary); root = workspace / 'artifacts'; root.mkdir()
-            aliases = root / 'common/execution_aliases'; aliases.mkdir(parents=True)
+            aliases = root / 'platform/execution_aliases'; aliases.mkdir(parents=True)
             inside = root / 'missing_internal'; inside.mkdir()
             foreign = workspace / 'foreign'; foreign.mkdir()
             dead_foreign = workspace / 'missing_foreign'; dead_foreign.mkdir()
@@ -145,7 +145,7 @@ New-Item -ItemType Junction -Path (Join-Path $env:ALIAS_ROOT 'external_dangling'
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             try:
                 inside.rmdir(); dead_foreign.rmdir()
-                _initialize_fixture_ledger(root, objects=[{'path': 'common/execution_aliases', 'class': 'light_evidence',
+                _initialize_fixture_ledger(root, objects=[{'path': 'platform/execution_aliases', 'class': 'light_evidence',
                     'bytes': 123, 'status': 'ready', 'pin': False, 'owner': 'common.run_artifact_support'}])
                 with patch.object(Path, 'rglob', side_effect=AssertionError('foreign tree inventoried')), \
                         patch.object(calibration, '_candidate', side_effect=AssertionError('generic alias counter used')):
@@ -167,9 +167,9 @@ New-Item -ItemType Junction -Path (Join-Path $env:ALIAS_ROOT 'external_dangling'
     def test_maintenance_reconciles_execution_alias_root_without_scanning_targets(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            (root / "common" / "execution_aliases").mkdir(parents=True)
+            (root / "platform" / "execution_aliases").mkdir(parents=True)
             _initialize_fixture_ledger(root, objects=[{
-                "path": "common/execution_aliases", "class": "light_evidence",
+                "path": "platform/execution_aliases", "class": "light_evidence",
                 "bytes": 123, "status": "ready", "pin": False,
                 "owner": "common.run_artifact_support",
             }])
@@ -404,8 +404,8 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
                 protected_paths=[root / "payload"],
             )
             self.assertEqual(created["protected_paths"], ["payload"])
-            self.assertFalse((root / "common" / "capacity_ledger.json").exists())
-            ledger = root / "common" / "capacity_ledger.json"
+            self.assertFalse((root / "platform" / "capacity_ledger.json").exists())
+            ledger = root / "platform" / "capacity_ledger.json"
             ledger.parent.mkdir(exist_ok=True)
             ledger.write_text("{}", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "pending state is unknown"):
@@ -422,7 +422,7 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
             root = Path(temporary)
             target = root / "common" / "simion" / "pa_family_cache" / ("a" * 64)
             target.mkdir(parents=True)
-            receipts = root / "common" / "capacity_disposal_receipts"
+            receipts = root / "platform" / "capacity_disposal_receipts"
             receipts.mkdir(parents=True)
             (receipts / "pending.json").write_text(json.dumps({
                 "schema_version": 1,
@@ -440,12 +440,12 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
                     root, lease_id="path-conflict", owner="test", ttl_seconds=60,
                     protected_paths=[target],
                 )
-            self.assertFalse((root / "common" / "capacity_ledger.json").exists())
+            self.assertFalse((root / "platform" / "capacity_ledger.json").exists())
 
     def test_lease_registration_ignores_empty_historical_plan_placeholder(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            receipts = root / "common" / "capacity_disposal_receipts"
+            receipts = root / "platform" / "capacity_disposal_receipts"
             receipts.mkdir(parents=True)
             (receipts / "residual_sweep_plan_latest.json").touch()
             created = _create_capacity_protection_lease(
@@ -457,7 +457,7 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
     def test_maintenance_selects_only_ready_unpinned_heavy_classes(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            ledger = root / "common" / "capacity_ledger.json"
+            ledger = root / "platform" / "capacity_ledger.json"
             _initialize_fixture_ledger(
                 root,
                 objects=[
@@ -530,7 +530,7 @@ assert 'tools.repository.legacy_capacity_backfill' not in sys.modules
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             (root / "projects").mkdir()
-            ledger = root / "common" / "capacity_ledger.json"
+            ledger = root / "platform" / "capacity_ledger.json"
             ledger.parent.mkdir(exist_ok=True)
             _initialize_fixture_ledger(root, objects=[{
                 "path": "projects/existing", "class": "light_evidence",
@@ -632,8 +632,8 @@ assert 'tools.repository.legacy_capacity_backfill' not in sys.modules
     def test_lease_pending_check_reads_only_the_capacity_ledger(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            (root / "common").mkdir()
-            (root / "common" / "capacity_ledger.json").write_text(json.dumps({
+            (root / "platform").mkdir()
+            (root / "platform" / "capacity_ledger.json").write_text(json.dumps({
                 "schema_version": 2,
                 "role": "artifact_capacity_ledger",
                 "status": "calibrated",
@@ -664,7 +664,7 @@ assert 'tools.repository.legacy_capacity_backfill' not in sys.modules
             payload = target / "payload.pa0"
             payload.write_bytes(b"payload")
             payload_bytes = payload.stat().st_size
-            ledger = root / "common" / "capacity_ledger.json"
+            ledger = root / "platform" / "capacity_ledger.json"
             ledger.parent.mkdir(exist_ok=True)
             _initialize_fixture_ledger(root, objects=[{
                 "path": "projects/p/runs/rebuildable", "class": "rebuildable_payload",
@@ -714,7 +714,7 @@ assert 'tools.repository.legacy_capacity_backfill' not in sys.modules
     def test_ledger_retirement_updates_resident_bytes_without_scanning(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            ledger_path = root / "common" / "capacity_ledger.json"
+            ledger_path = root / "platform" / "capacity_ledger.json"
             _initialize_fixture_ledger(root, objects=[])
             _record_fixture_object(
                 root, path="runs/old", object_class="rebuildable_payload",
@@ -930,7 +930,7 @@ assert 'tools.repository.legacy_capacity_backfill' not in sys.modules
             with patch.object(normal_capacity, "_delete_approved_file", interrupt_after_delete):
                 _assert_target_failure(self, normal_capacity.apply(receipt), "injected")
             fixed = (
-                root / "common" / "capacity_disposal_receipts"
+                root / "platform" / "capacity_disposal_receipts"
                 / f"ledger_disposition_{'d' * 64}.json"
             )
             self.assertTrue(fixed.is_file())
@@ -1215,7 +1215,7 @@ assert 'tools.repository.legacy_capacity_backfill' not in sys.modules
                     root, path="cache/key", object_class="published_cache",
                     bytes_count=1, identity="b" * 64,
                 )
-            ledger = root / "common" / "capacity_ledger.json"
+            ledger = root / "platform" / "capacity_ledger.json"
             ledger.parent.mkdir(exist_ok=True)
             ledger.write_text(json.dumps({
                 "schema_version": 2, "role": "artifact_capacity_ledger",
@@ -1231,7 +1231,7 @@ assert 'tools.repository.legacy_capacity_backfill' not in sys.modules
     def test_loader_rejects_duplicate_paths_and_resident_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            ledger = root / "common" / "capacity_ledger.json"
+            ledger = root / "platform" / "capacity_ledger.json"
             ledger.parent.mkdir()
             base = {
                 "schema_version": 2, "role": "artifact_capacity_ledger",
@@ -1260,7 +1260,7 @@ assert 'tools.repository.legacy_capacity_backfill' not in sys.modules
             root = Path(temporary)
             target = root / "cache" / "old"
             target.mkdir(parents=True)
-            ledger = root / "common" / "capacity_ledger.json"
+            ledger = root / "platform" / "capacity_ledger.json"
             ledger.parent.mkdir()
             ledger.write_text(json.dumps({
                 "schema_version": 2, "role": "artifact_capacity_ledger",
@@ -1788,7 +1788,7 @@ assert 'tools.repository.legacy_capacity_backfill' not in sys.modules
                 root, lease_id="bootstrap", owner="same-owner", ttl_seconds=120,
                 protected_paths=[protected], committed_new_bytes=100, now=started,
             )
-            (root / "common" / "capacity_ledger.json").unlink()
+            (root / "platform" / "capacity_ledger.json").unlink()
             with self.assertRaisesRegex(ValueError, "cannot expand protection scope"):
                 renew_capacity_protection_lease(
                     root, lease_id="bootstrap", owner="same-owner", ttl_seconds=300,
@@ -1821,7 +1821,7 @@ assert 'tools.repository.legacy_capacity_backfill' not in sys.modules
                 root, lease_id="damaged", owner="same-owner", ttl_seconds=120,
                 protected_cache_keys=["a" * 64], now=started,
             )
-            (root / "common" / "capacity_ledger.json").write_text("{}", encoding="utf-8")
+            (root / "platform" / "capacity_ledger.json").write_text("{}", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "pending state is unknown"):
                 renew_capacity_protection_lease(
                     root, lease_id="damaged", owner="same-owner", ttl_seconds=300,
@@ -2855,7 +2855,7 @@ class FiniteCapacityProtectionLeaseTest(unittest.TestCase):
                 protected_cache_keys=["a" * 64], now=started,
             )
             self.assertEqual(created["closure_deadline_at_utc"], "2026-01-31T00:00:00Z")
-            legacy_path = root / "common" / "capacity_protection_leases" / "legacy.json"
+            legacy_path = root / "platform" / "capacity_protection_leases" / "legacy.json"
             legacy_path.write_text(json.dumps({
                 "schema_version": 1, "role": "artifact_capacity_protection_lease",
                 "lease_id": "legacy", "owner": "old-workflow",
@@ -2887,7 +2887,7 @@ class FiniteCapacityProtectionLeaseTest(unittest.TestCase):
                 root, lease_id="referenced", owner="finished", ttl_seconds=1,
                 protected_cache_keys=["b" * 64], now=expired_at,
             )
-            receipt_root = root / "common" / "capacity_disposal_receipts"
+            receipt_root = root / "platform" / "capacity_disposal_receipts"
             receipt_root.mkdir(parents=True)
             (receipt_root / "pending.json").write_text(json.dumps({
                 "schema_version": 1, "role": "artifact_capacity_disposal_receipt",
@@ -2901,10 +2901,10 @@ class FiniteCapacityProtectionLeaseTest(unittest.TestCase):
             self.assertEqual(
                 [item["lease_id"] for item in pruned["skipped_pending_disposal"]], ["referenced"],
             )
-            self.assertFalse((root / "common" / "capacity_protection_leases" / "prunable.json").exists())
-            self.assertTrue((root / "common" / "capacity_protection_leases" / "referenced.json").exists())
+            self.assertFalse((root / "platform" / "capacity_protection_leases" / "prunable.json").exists())
+            self.assertTrue((root / "platform" / "capacity_protection_leases" / "referenced.json").exists())
             receipt = json.loads((
-                root / "common" / "capacity_protection_lease_pruning_receipts" / "lease_prunable.json"
+                root / "platform" / "capacity_protection_lease_pruning_receipts" / "lease_prunable.json"
             ).read_text(encoding="utf-8"))
             self.assertEqual(receipt["status"], "complete")
             self.assertEqual(receipt["reason"], "expired_finite_protection_lease")
@@ -2921,7 +2921,7 @@ class FiniteCapacityProtectionLeaseTest(unittest.TestCase):
                 root, now=datetime(2026, 1, 1, 0, 1, tzinfo=timezone.utc),
             )
             self.assertEqual(outcome["pruned"], [])
-            self.assertTrue((root / "common" / "capacity_protection_leases" / "active.json").exists())
+            self.assertTrue((root / "platform" / "capacity_protection_leases" / "active.json").exists())
 
 
 class RetiredDispositionRecoveryCliTests(unittest.TestCase):

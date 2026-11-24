@@ -44,7 +44,7 @@ function New-RunPackage {
  # The public owner validates FrozenContext before any capacity/ledger operation.
  $actual=Resolve-WorkspacePaths -SourceRoot $RepoRoot -Python $Python -FrozenContext $PathContext
  if($actual.artifact_root-ne$expectedRoot-or$actual.host_resource_state_path-ne$expectedHost){throw 'Root drifted from frozen context'}
- if($ArtifactRoot-ne(Join-Path $expectedRoot ('projects/'+$Project))){throw 'Wrong project artifact root'}
+ if($ArtifactRoot-ne(Join-Path $expectedRoot ('components/'+$Project))){throw 'Wrong project artifact root'}
  $script:ledgerTouched=$true
  return [pscustomobject]@{artifact_run_dir=(Join-Path $ArtifactRoot ('runs/'+$RunId))}
 }

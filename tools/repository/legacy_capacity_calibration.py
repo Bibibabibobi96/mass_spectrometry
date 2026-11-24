@@ -32,7 +32,7 @@ LEGACY_LEDGER_KEYS = {
     "schema_version", "role", "status", "complete", "artifact_root",
     "resident_bytes", "objects",
 }
-LEDGER_MIGRATION_DIRECTORY = Path("common") / "capacity_calibration" / "ledger_migrations"
+LEDGER_MIGRATION_DIRECTORY = Path("platform") / "capacity_calibration" / "ledger_migrations"
 COMMON_CAPACITY_LIFECYCLE_ROOTS = {
     "capacity_disposal_receipts",
     "capacity_calibration",
@@ -807,7 +807,7 @@ def build_calibration_inventory(
     )
     objects: list[dict[str, Any]] = []
     unresolved: list[dict[str, Any]] = []
-    disposition_directory = root / "common" / "capacity_calibration" / "owner_dispositions"
+    disposition_directory = root / "platform" / "capacity_calibration" / "owner_dispositions"
     approved_dispositions: dict[str, dict[str, Any]] = {}
     if disposition_directory.exists():
         if not disposition_directory.is_dir() or disposition_directory.is_symlink():
@@ -825,7 +825,7 @@ def build_calibration_inventory(
             approved_dispositions[target] = approved
     for child in sorted(root.iterdir()):
         _report_progress(progress, "scan_artifact_root_entry", child)
-        if child.name == "common" and child.is_dir():
+        if child.name in {"common", "platform"} and child.is_dir():
             for common_child in sorted(child.iterdir()):
                 if common_child.name == "simion" and common_child.is_dir():
                     cache = common_child / "pa_family_cache"
@@ -853,7 +853,8 @@ def build_calibration_inventory(
                     candidate, pending = _execution_alias_root(root, common_child, review_deadline)
                     (objects if candidate else unresolved).append(candidate or pending)
                 elif common_child.name in {
-                    "capacity_protection_leases", "capacity_disposal_receipts", "host_resources.sqlite3",
+                    "capacity_protection_leases", "capacity_protection_lease_pruning_receipts",
+                    "capacity_disposal_receipts", "host_resources.sqlite3",
                 }:
                     objects.append(_candidate(root, common_child, "light_evidence"))
                 elif common_child.name == "capacity_calibration" and common_child.is_dir():
@@ -1622,7 +1623,7 @@ def _legacy_v3_duties(
         parts = Path(path).parts
         governance_root = (
             len(parts) >= 2
-            and parts[0] == "common"
+            and parts[0] in {"common", "platform"}
             and (
                 parts[1] in COMMON_CAPACITY_LIFECYCLE_ROOTS
                 or parts[1].startswith(".capacity_ledger.json.")
@@ -1630,9 +1631,11 @@ def _legacy_v3_duties(
         )
         common_owner = (
             COMMON_GOVERNANCE_OWNERS.get(parts[1])
-            if len(parts) >= 2 and parts[0] == "common" else None
+            if len(parts) >= 2 and parts[0] in {"common", "platform"} else None
         )
-        if len(parts) >= 4 and parts[:3] == ("common", "simion", "pa_family_cache"):
+        if len(parts) >= 4 and parts[:3] in {
+            ("common", "simion", "pa_family_cache"), ("platform", "simion", "pa_family_cache"),
+        }:
             owner = capacity_ledger.PA_CACHE_MANAGER
         elif governance_root:
             owner = "common.capacity_lifecycle"

@@ -1366,7 +1366,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         self.assertEqual(manifest_path.read_bytes(), manifest_bytes)
         receipt = self.target / "solver_review_retirement_receipt.json"
         self.assertEqual(receipt.read_bytes(), receipt_bytes)
-        ledger = self.artifacts / "common/capacity_ledger.json"
+        ledger = self.artifacts / "platform/capacity_ledger.json"
         ledger_bytes = ledger.read_bytes()
         candidate.write_bytes(original.replace(b'x', b'y', 1))
         self.assertEqual(candidate.stat().st_size, len(original))
@@ -1982,7 +1982,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         canonical_protection.create_capacity_protection_lease(
             self.artifacts, lease_id=lease_id, owner="fixture-stopped-consumer",
             ttl_seconds=60, protected_paths=[consumer])
-        ledger_path = self.artifacts / "common/capacity_ledger.json"
+        ledger_path = self.artifacts / "platform/capacity_ledger.json"
         ledger_before_rejection = ledger_path.read_bytes()
         try:
             with mock.patch.object(canonical_protection, "capacity_decision_lock", checked_lock), mock.patch.object(
@@ -2022,7 +2022,7 @@ function Exit-HostExecutionLease {{ Add-Content -LiteralPath '{host_calls}' -Val
         self.assertIsNone(receipt.get("stopped_checkpoint_runtime"))
         config_path = self.target / "run_config.json"
         self.assertEqual(json.loads(config_path.read_text())["artifact_retention"]["class"], "solver_review")
-        ledger_path = self.artifacts / "common/capacity_ledger.json"
+        ledger_path = self.artifacts / "platform/capacity_ledger.json"
         ledger_before = ledger_path.read_bytes()
         real_lock = canonical_protection.capacity_decision_lock
         real_reader = common_protection._load_capacity_protection_leases_unlocked

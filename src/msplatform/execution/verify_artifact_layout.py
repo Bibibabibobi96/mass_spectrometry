@@ -50,7 +50,7 @@ ALLOWED_PROJECT_ENTRIES = {
     "scratch",
     "cache",
 }
-ALLOWED_ARTIFACT_ROOT_ENTRIES = {"common", "projects"}
+ALLOWED_ARTIFACT_ROOT_ENTRIES = {"common", "projects", "components", "assemblies", "platform"}
 REQUIRED_RUN_FILES = {"run_config.json", "summary.json", "run_manifest.json"}
 CACHE_SHA256 = re.compile(r"[A-Fa-f0-9]{64}")
 
@@ -729,7 +729,7 @@ def verify_project(
 
 
 def verify_artifacts_root(projects: Path, verify_hashes: bool = False) -> None:
-    """Reject unregistered files or sibling trees beside artifacts/projects."""
+    """Verify current owner/platform trees and explicit historical projects/common trees."""
     if projects.name != "projects" or not projects.is_dir():
         raise AssertionError("artifact layout root must be the artifacts/projects directory")
     artifacts = projects.parent
@@ -738,39 +738,38 @@ def verify_artifacts_root(projects: Path, verify_hashes: bool = False) -> None:
         raise AssertionError(
             f"artifacts: unexpected top-level entries: {sorted(unexpected)}"
         )
-    common = artifacts / "common"
-    if common.exists():
-        allowed_common = {
-            "simion", "capacity_protection_leases", "capacity_disposal_receipts",
-            "capacity_calibration", "execution_aliases", "host_resources.sqlite3",
-            capacity_ledger.CAPACITY_LEDGER_RELATIVE_PATH.name,
+    for name in ("common", "platform"):
+        shared = artifacts / name
+        if not shared.exists():
+            continue
+        allowed_shared = {
+            "simion", "capacity_protection_leases", "capacity_protection_lease_pruning_receipts",
+            "capacity_disposal_receipts", "capacity_calibration", "execution_aliases", "host_resources.sqlite3",
+            "capacity_ledger.json",
         }
-        common_entries = {item.name for item in common.iterdir()} if common.is_dir() else set()
-        if (
-            not common.is_dir()
-            or (common_entries - allowed_common)
-        ):
-            raise AssertionError("artifacts/common: unexpected common artifact entries")
-        aliases = common / "execution_aliases"
-        if "execution_aliases" in common_entries and (
+        entries = {item.name for item in shared.iterdir()} if shared.is_dir() else set()
+        if not shared.is_dir() or entries - allowed_shared:
+            raise AssertionError(f"artifacts/{name}: unexpected {name} artifact entries")
+        aliases = shared / "execution_aliases"
+        if "execution_aliases" in entries and (
             not aliases.is_dir() or aliases.is_symlink()
             or getattr(aliases.lstat(), "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
             or not execution_alias_root_is_valid(artifacts, aliases)
         ):
-            raise AssertionError("artifacts/common: invalid execution aliases")
-        database = common / "host_resources.sqlite3"
-        if "host_resources.sqlite3" in common_entries and (
+            raise AssertionError(f"artifacts/{name}: invalid execution aliases")
+        database = shared / "host_resources.sqlite3"
+        if "host_resources.sqlite3" in entries and (
             not database.is_file() or database.is_symlink()
             or getattr(database.lstat(), "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
         ):
             raise AssertionError("host resource database must be a regular file")
-        ledger_path = artifacts / capacity_ledger.CAPACITY_LEDGER_RELATIVE_PATH
+        ledger_path = shared / "capacity_ledger.json"
         if ledger_path.exists() and (
             not ledger_path.is_file() or ledger_path.is_symlink()
-            or capacity_ledger.load_capacity_ledger(artifacts) is None
+            or capacity_ledger.load_capacity_ledger(artifacts, ledger_path) is None
         ):
-            raise AssertionError("artifacts/common: invalid capacity ledger")
-        receipts = common / "capacity_disposal_receipts"
+            raise AssertionError(f"artifacts/{name}: invalid capacity ledger")
+        receipts = shared / "capacity_disposal_receipts"
         if receipts.exists():
             if not receipts.is_dir() or receipts.is_symlink():
                 raise AssertionError("capacity disposal receipts must be a regular directory")
@@ -783,9 +782,9 @@ def verify_artifacts_root(projects: Path, verify_hashes: bool = False) -> None:
                     raise AssertionError(f"invalid capacity disposal receipt: {receipt.name}") from exc
                 if not isinstance(document, dict):
                     raise AssertionError("capacity disposal receipt must be a JSON object")
-        leases = common / "capacity_protection_leases"
+        leases = shared / "capacity_protection_leases"
         if leases.exists():
             try:
-                protection.load_capacity_protection_leases(artifacts)
+                protection._load_capacity_protection_leases_unlocked(artifacts, lease_directory=leases)
             except protection.CapacityProtectionLeaseError as exc:
                 raise AssertionError(str(exc)) from exc

@@ -133,7 +133,7 @@ qualification.
 
 ## 产物边界
 
-新活动产物根为`artifacts/projects/transverse_helical_filament_wehnelt_electron_gun/`。当前没有通过
+新活动产物根为`artifacts/components/transverse_helical_filament_wehnelt_electron_gun/`。当前没有通过
 现行门禁的Formal资产。旧模型、结果与谱系按原manifest身份只读保存在
 该根的`archive/20260801_130004__migration-snapshot__repo__wehnelt-electron-gun/legacy-project-root/`，
 不改写、不追加新run，也不改变原资格和声明边界；

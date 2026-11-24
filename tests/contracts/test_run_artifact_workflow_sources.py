@@ -194,7 +194,7 @@ try{{
                 session = json.loads((run / 'logs/capacity_session.json').read_text(encoding='utf-8-sig'))
                 for artifact, lease_id in [(artifacts, session['lease_id']),
                         (source_root, session['source_protection_leases'][0]['lease_id'])]:
-                    path = artifact / 'common/capacity_protection_leases' / f'{lease_id}.json'
+                    path = artifact / 'platform/capacity_protection_leases' / f'{lease_id}.json'
                     value = json.loads(path.read_text(encoding='utf-8-sig'))
                     value['expires_at_utc'] = '2001-01-01T00:00:00Z'
                     path.write_text(json.dumps(value), encoding='utf-8')
@@ -326,7 +326,7 @@ try{{
                     source_references=[reference], native_input_paths=[str(model)], failure_stage='source_alias_cleanup')
                 self.assertNotEqual(process.returncode, 0, process.stdout + process.stderr)
                 context = result['source_execution_context']
-                aliases = artifacts / 'common/execution_aliases'
+                aliases = artifacts / 'platform/execution_aliases'
                 self.assertEqual(Path(context['execution_root']).resolve(), aliases.resolve())
                 source_alias = Path(context['sources'][0]['execution_alias'])
                 self.assertTrue(source_alias.is_dir())
@@ -392,7 +392,7 @@ catch{{if($_.Exception.Message-notmatch'only for Python prepared'){{throw}}}}
             leases = [(artifacts, session["lease_id"]),
                       (source_root, session["source_protection_leases"][0]["lease_id"])]
             for artifact, lease_id in leases:
-                lease = artifact / "common/capacity_protection_leases" / f"{lease_id}.json"
+                lease = artifact / "platform/capacity_protection_leases" / f"{lease_id}.json"
                 value = json.loads(lease.read_text(encoding="utf-8-sig"))
                 value["expires_at_utc"] = "2001-01-01T00:00:00Z"
                 lease.write_text(json.dumps(value), encoding="utf-8")

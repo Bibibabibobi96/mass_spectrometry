@@ -10,6 +10,7 @@ from typing import Any
 
 from msplatform.io.file_identity import file_sha256 as _sha256
 from msplatform.contracts.machine_contracts import ContractError, validate_schema
+from msplatform.execution.resources.workspace_paths import resolve_run_artifact_root
 from msplatform.io.manifest_records import record_path
 from msplatform.workflows.rf_campaign_status import _verify_manifest as verify_campaign_manifest
 from msplatform.analysis.numerical_qualification import run_data
@@ -222,7 +223,7 @@ def campaign_request_preflight(
         raise ValueError(f"invalid multipole transport campaign: {error}") from error
     status_by_experiment = {}
     for row in campaign["experiments"]:
-        run_dir = workspace_root / "artifacts" / "projects" / row["project_id"] / "runs" / row["authorized_run_id"]
+        run_dir = resolve_run_artifact_root(workspace_root / "artifacts", owner_kind="component", owner_id=row["project_id"]) / "runs" / row["authorized_run_id"]
         manifest_path = run_dir / "run_manifest.json"
         if not run_dir.is_dir():
             status, manifest, reason = "NOT_STARTED", None, "source run is not present"
@@ -323,9 +324,9 @@ def campaign_request_preflight(
         project_id = baseline["project_id"]
         run_id = request["analysis_run_id"]
         mode = f"multipole_campaign_{request['capability_id']}"
-        run_dir = (
-            workspace_root / "artifacts" / "projects" / project_id / "runs" / run_id
-        ).resolve()
+        run_dir = resolve_run_artifact_root(
+            workspace_root / "artifacts", owner_kind="component", owner_id=project_id,
+        ).joinpath("runs", run_id).resolve()
         status, reason = _existing_analysis_state(
             run_dir,
             repo_root=repo_root,

@@ -467,7 +467,7 @@ class GasFlowOwnerTests(unittest.TestCase):
                                 "dual_cone_axisymmetric_gas_flow_science_contract",
                             )
                 self.assertEqual(len(calls), 1)
-                location = next(context.workspace.glob("artifacts/projects/*/runs/*/run_manifest.json"))
+                location = next(context.workspace.glob("artifacts/components/*/runs/*/run_manifest.json"))
                 manifest = json.loads(location.read_text(encoding="utf-8"))
                 self.assertEqual(manifest["status"], "failed" if failure else "success")
                 if failure:

@@ -31,7 +31,7 @@ def analysis_source_fixture(workspace, *, status="failed", owner="instrument_ass
     from msplatform.execution.manifest_publication import build_run_manifest
     from msplatform.execution.retention import file_record
     root = workspace / "artifacts"
-    run = root / "projects/instrument_assembly/runs/20261022_120000__test__simion__source"
+    run = root / "assemblies/instrument_assembly/runs/20261022_120000__test__simion__source"
     results = run / "results"
     results.mkdir(parents=True)
     logs = run / "logs"
@@ -354,7 +354,7 @@ try { & $entry @forwardParameters } finally { Write-AnalysisFixtureEvent 'actual
                 self.assertTrue((workspace / "host_events.txt").is_file(), completed.stdout + completed.stderr)
                 self.assertEqual((workspace / "host_events.txt").read_text().splitlines(),
                                  ["enter:GATE/unclassified", "exit:success" if scenario in successful_scenarios else "exit:failed"])
-                self.assertFalse((workspace / "artifacts/common/host_resources.sqlite3").exists())
+                self.assertFalse((workspace / "artifacts/platform/host_resources.sqlite3").exists())
                 manifest = json.loads((run / "run_manifest.json").read_text(encoding="utf-8-sig"))
                 configuration = json.loads((run / "run_config.json").read_text(encoding="utf-8-sig"))
                 summary = json.loads((run / "summary.json").read_text(encoding="utf-8-sig"))
@@ -600,7 +600,7 @@ $code=$function.Extent.Text -replace '(?m)^  \. \(Join-Path[^\r\n]+',''
 Invoke-Expression $code
 $sourceRefFunction=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Get-PreparedJointSourceReferences'},$true)
 Invoke-Expression $sourceRefFunction.Extent.Text
-$repoRoot=$TestRoot;$workspaceRoot=$TestRoot;$projectId='instrument_assembly';$packageRoot=Join-Path $Repository 'src/msplatform'
+$repoRoot=$TestRoot;$workspaceRoot=$TestRoot;$projectId='instrument_assembly';$projectArtifacts=Join-Path $pathContext.artifact_root 'assemblies/instrument_assembly';$packageRoot=Join-Path $Repository 'src/msplatform'
 New-Item -ItemType Directory -Path (Join-Path $repoRoot 'src/msplatform/workflows/config')|Out-Null
 @{schema_version=2;role='workflow_runtime_dependencies';owner_id='instrument_assembly';consumer_ids=@('prepared_joint');providers=@()}|ConvertTo-Json -Depth 5|Set-Content (Join-Path $repoRoot 'src/msplatform/workflows/config/runtime_dependencies.json')
 function Freeze-ConsumerDependencies {
@@ -827,13 +827,17 @@ if(Test-Path -LiteralPath $old){throw 'Old public entry remains'}
 $controller=Join-Path $Repository 'src/msplatform/workflows/resources/run_downstream_workpoint_iteration.ps1'
 $ast=[Management.Automation.Language.Parser]::ParseFile($controller,[ref]$null,[ref]$null)
 $selected=$ast.FindAll({param($n) $n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-in@('$trialRunner','$trialArtifactRoot')},$true)
-$repoRoot=$Repository;$controllerDirectory=Split-Path -Parent $controller;$artifactWorkspaceRoot='artifacts';$artifactRoot='artifacts/projects/parallel_mirror_dual_stripe_mr_tof'
+$repoRoot=$Repository;$packageRoot=Join-Path $Repository 'src/msplatform';$controllerDirectory=Split-Path -Parent $controller;$artifactWorkspaceRoot='artifacts';$artifactRoot='artifacts/components/parallel_mirror_dual_stripe_mr_tof'
+function Resolve-RunArtifactRoot {param($ArtifactRoot,$OwnerKind,$OwnerId,$Python)
+ if($OwnerKind-ne'assembly'-or$OwnerId-ne'instrument_assembly'){throw 'Unexpected trial owner'}
+ Join-Path $ArtifactRoot 'assemblies/instrument_assembly'
+}
 foreach($kind in @('Prepared','Legacy')){
  $selection=@{ParameterSetName=$kind}
  foreach($assignment in $selected){Invoke-Expression ($assignment.Extent.Text.Replace('$PSCmdlet','$selection').Replace('$PSScriptRoot','$controllerDirectory'))}
  if($kind-eq'Prepared'){
-  if($trialRunner-ne(Join-Path $Repository 'src/msplatform/workflows/resources/prepared_joint_execute.ps1')-or$trialArtifactRoot-ne(Join-Path $artifactWorkspaceRoot 'projects/instrument_assembly')){throw 'Prepared route differs'}
- }elseif([IO.Path]::GetFullPath($trialRunner)-ne[IO.Path]::GetFullPath((Join-Path $Repository 'src/msplatform/workflows/resources/oa_mr.ps1'))-or$trialArtifactRoot-ne(Join-Path $artifactWorkspaceRoot 'projects/instrument_assembly')){throw 'Ordinary OA route changed'}
+  if($trialRunner-ne(Join-Path $Repository 'src/msplatform/workflows/resources/prepared_joint_execute.ps1')-or$trialArtifactRoot-ne(Join-Path $artifactWorkspaceRoot 'assemblies/instrument_assembly')){throw 'Prepared route differs'}
+ }elseif([IO.Path]::GetFullPath($trialRunner)-ne[IO.Path]::GetFullPath((Join-Path $Repository 'src/msplatform/workflows/resources/oa_mr.ps1'))-or$trialArtifactRoot-ne(Join-Path $artifactWorkspaceRoot 'assemblies/instrument_assembly')){throw 'Ordinary OA route changed'}
 }
 'PREPARED_ROUTE=PASS'
 """

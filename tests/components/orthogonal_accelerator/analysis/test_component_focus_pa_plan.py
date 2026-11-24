@@ -193,7 +193,7 @@ try{. $production}catch{$failure=$_.Exception.Message}
         self.assertIn("'--response-receipt',$responseReceiptRecipe", runner)
         self.assertIn('$domain=$probe.identity.grid_phase.stored_span_mm', runner)
         self.assertIn('$frozenVerifier $raw $electrodeCount $grid[0] $grid[1] $grid[2]', runner)
-        self.assertIn("$cacheRoot=Join-Path $artifactRoot 'common\\simion\\pa_family_cache'", runner)
+        self.assertIn("$cacheRoot=Resolve-PlatformArtifactPath -ArtifactRoot $artifactRoot -RelativePath @('simion','pa_family_cache') -Python $python", runner)
         self.assertNotIn("$cacheRoot=Join-Path $artifactRoot 'oa_pa_cache'", runner)
         self.assertIn("$runtimeOwnerRun=$package.artifact_run_dir", runner)
         self.assertNotIn("GetFullPath($package.run_dir)", runner)

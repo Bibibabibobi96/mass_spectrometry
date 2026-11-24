@@ -20,6 +20,7 @@ $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION
 $packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
 if($LASTEXITCODE-ne0){throw 'Installed msplatform package is unavailable.'};$packageRoot=(Resolve-Path -LiteralPath $packageRootText).Path
 $executionResources=Join-Path $packageRoot 'execution/resources';$simionResources=Join-Path $packageRoot 'backends/simion/resources'
+. (Join-Path $executionResources 'workspace_paths.ps1');$componentArtifactRoot=Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind component -OwnerId orthogonal_accelerator -Python $python
 . (Join-Path $executionResources 'require_powershell7.ps1')
 . (Join-Path $executionResources 'run_artifact_support.ps1')
 . (Join-Path $simionResources 'focus_python.ps1')
@@ -28,7 +29,7 @@ foreach($item in @($python,$SimionExe,$CampaignPath,$ReleaseSpecPath)){if(-not(T
 $family=(Resolve-Path -LiteralPath $PABuildRunPath).Path
 & $python -I -B -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' (Join-Path $family 'run_manifest.json') --require-status success --require-project orthogonal_accelerator --require-mode component_focus_pa_build
 if($LASTEXITCODE-ne0){throw 'Fast-Adjust controller requires a verified published provider PA build run'}
-$package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot (Join-Path $artifactRoot 'projects\orthogonal_accelerator') -RunId $RunId -Project orthogonal_accelerator -Mode component_focus_fast_adjust -Software @('SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass solver_review -RetentionReason 'Bounded provider-owned component voltage search using one existing published native Fast-Adjust PA family.' -AdditionalDirectories @('simion') -UseShortExecutionPath -CapacityLedgerLifecycleEnabled
+$package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot ($componentArtifactRoot) -RunId $RunId -Project orthogonal_accelerator -Mode component_focus_fast_adjust -Software @('SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass solver_review -RetentionReason 'Bounded provider-owned component voltage search using one existing published native Fast-Adjust PA family.' -AdditionalDirectories @('simion') -UseShortExecutionPath -CapacityLedgerLifecycleEnabled
 $done=$false;$failureDetail='';$stage='freeze_inputs'
 try {
     $campaign=Copy-VerifiedRunInput (Resolve-Path -LiteralPath $CampaignPath).Path (Join-Path $package.input_dir 'campaign.json')
@@ -52,7 +53,7 @@ try {
         $childRunId="$RootRunId`__fast-adjust-trial$index`__r$('{0:d2}' -f ($index + 2))"
         $stage="flight_$index";&$flightRunner -RunId $childRunId -PABuildRunPath $family -RuntimeControllerPath $RuntimeControllerPath -CampaignPath $candidate -ReleaseSpecPath $release -WorkspaceRoot $workspaceRoot -ArtifactRoot $artifactRoot -PythonExe $python -SimionExe $SimionExe
         if($LASTEXITCODE-ne0){throw 'Fast-Adjust trial flight failed'}
-        $childRun=Join-Path $artifactRoot (Join-Path 'projects\orthogonal_accelerator\runs' $childRunId)
+        $childRun=Join-Path $componentArtifactRoot (Join-Path 'runs' $childRunId)
         $childManifest=Join-Path $childRun 'run_manifest.json';$analysis=Join-Path $childRun 'results\focus_analysis.json'
         foreach($required in @($childManifest,$analysis)){if(-not(Test-Path -LiteralPath $required -PathType Leaf)){throw "Fast-Adjust trial output is missing: $required"}}
         $stage="record_trial_$index";Invoke-FocusFrozenPython -Python $python -CodeRoot $focusPython.code_root -OriginsPath $focusPython.origins_path -Module msplatform.workflows.oa_focus_fast_adjust -Arguments @('--component-contract',$componentContract,'--campaign',$campaign,'--state',$state,'--analysis',$analysis);if($LASTEXITCODE-ne0){throw 'Fast-Adjust trial analysis recording failed'}

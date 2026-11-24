@@ -42,6 +42,7 @@ import json,stat,sys
 from pathlib import Path
 from msplatform.io.file_identity import file_sha256_unbuffered
 from msplatform.execution.capacity_protection import load_capacity_protection_leases, path_is_protected
+from msplatform.execution.resources.workspace_paths import resolve_platform_artifact_path
 from msplatform.backends.simion.pa_family_cache import validate_pa_family_cache_generation, load_pa_family_cache_transaction
 from msplatform.backends.simion.standalone_pa_response_set import validate_standalone_pa_response_set
 p=Path(sys.argv[1]); receipt=sys.argv[2]; raw_name=sys.argv[3]
@@ -49,7 +50,7 @@ ids=tuple(int(value) for value in sys.argv[4].split(','))
 transaction_record=None
 if sys.argv[7]=='Transaction':
     session=json.loads(Path(sys.argv[10]).read_text(encoding='utf-8-sig'))
-    root=Path(session['artifact_root']).resolve(); cache=root/'common/simion/pa_family_cache'
+    root=Path(session['artifact_root']).resolve(); cache=resolve_platform_artifact_path(root,'simion','pa_family_cache')
     assert p.resolve()==cache/'.transactions'/sys.argv[5]/'transaction.json', 'transaction must be the governed cache owner record'
     m=load_pa_family_cache_transaction(cache,sys.argv[5])
     producer=Path(sys.argv[9]).resolve(); run=producer.parent

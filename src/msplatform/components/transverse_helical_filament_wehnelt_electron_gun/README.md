@@ -30,7 +30,7 @@ environment once with `execution.load_environment`; its profile must declare
 configures the unsolved model and does not create a particle realization. The
 returned artifact includes the final model and both intermediate MPH files.
 
-新产物进入 `artifacts/projects/transverse_helical_filament_wehnelt_electron_gun/runs/<run_id>/`。
+新产物进入 `artifacts/components/transverse_helical_filament_wehnelt_electron_gun/runs/<run_id>/`。
 旧谱系与改名前资产按 [PROJECT](docs/PROJECT.md#产物边界) 及 descriptor 只读定位。
 旧轴向灯丝的 phase5 扫描不能作为横置灯丝的参数结论。
 

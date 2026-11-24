@@ -70,7 +70,7 @@ Do not refresh it to make current execution pass or reinterpret its old T5 evide
 Its present source bindings fail strict current loading; existing historical snapshots keep their own bytes.
 
 T5三区理论结果沿用`three_zone_t5_simion_candidate.py`唯一CLI进入后续Candidate。canonical发布使用
-`--run-dir artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/<candidate-run>`，并同时传入
+`--run-dir artifacts/components/single_reflection_oa_tof_mass_analyzer/runs/<candidate-run>`，并同时传入
 `--campaign`和`--t5-receipt`；发布器排他、原子地产生
 `results/three_zone_t5_simion_candidate_resolved.json`、`run_config.json`、`summary.json`和
 `run_manifest.json`，固定`formal_gate_passed=false`。持久化身份路径为workspace或run-relative，

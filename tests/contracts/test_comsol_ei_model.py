@@ -144,7 +144,7 @@ class EiModelTests(unittest.TestCase):
                         if failure:
                             with self.assertRaisesRegex(ProcessExecutionError, "inert native failure"):
                                 operation(*documents, mode_id="build_only_smoke", context=context, **request_options)
-                            manifests = list(context.workspace.glob("artifacts/projects/*/runs/*/run_manifest.json"))
+                            manifests = list(context.workspace.glob("artifacts/components/*/runs/*/run_manifest.json"))
                             self.assertEqual(len(manifests), 1)
                             manifest = json.loads(manifests[0].read_text(encoding="utf-8"))
                             self.assertEqual(manifest["status"], "failed")

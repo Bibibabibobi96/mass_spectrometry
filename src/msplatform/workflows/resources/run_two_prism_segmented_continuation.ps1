@@ -64,12 +64,12 @@ if ([string]::IsNullOrWhiteSpace($RunId)) {
 }
 
 $executionResources = Join-Path $packageRoot 'execution/resources'
-$hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path $workspaceRoot 'artifacts/common/host_resources.sqlite3' }
+$hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Resolve-PlatformArtifactPath -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -RelativePath host_resources.sqlite3 -Python $python }
 $hostContext = @{workspace=$workspaceRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 . (Join-Path $executionResources 'run_artifact_support.ps1')
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot `
-  -ArtifactRoot (Join-Path $artifactRoot "projects\$projectId") `
+  -ArtifactRoot (Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind component -OwnerId $projectId -Python $python) `
   -RunId $RunId -Project $projectId -Mode 'two_prism_segmented_voltage_branch_continuation' `
   -Software @('Python 3.11', 'SciPy') -RetentionContractEnabled -RetentionClass compact `
   -CapacityLedgerLifecycleEnabled

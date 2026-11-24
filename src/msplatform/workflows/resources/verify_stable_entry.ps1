@@ -3,6 +3,7 @@ param(
   [string]$ManifestPath = '',
   [string]$EntryId = '',
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
+  [string]$PythonExe = '',
   [switch]$SkipRuntime
 )
 
@@ -11,6 +12,8 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
 $projectRoot = Join-Path $repoRoot 'src/msplatform/components/single_reflection_oa_tof'
 $workspaceRoot = Split-Path -Parent $repoRoot
+$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } elseif ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) } else { throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required' }
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
 . (Join-Path $projectRoot 'oatof_lifecycle_preflight.ps1')
 if (-not $ManifestPath) {
   $ManifestPath = Join-Path $projectRoot 'config\simion_stable_entry.json'
@@ -75,7 +78,7 @@ foreach ($expected in $expectedRoles.GetEnumerator()) {
   }
 }
 
-$formalRoot = Join-Path $workspaceRoot ('artifacts\projects\single_reflection_oa_tof_mass_analyzer\' + $stable.artifact_workspace_relative.Replace('/', '\'))
+$formalRoot = Join-Path (Resolve-RunArtifactRoot -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -OwnerKind component -OwnerId single_reflection_oa_tof_mass_analyzer -Python $python) $stable.artifact_workspace_relative.Replace('/', '\')
 $formalManifestPath = Assert-FileRecord $formalRoot `
   $entry.manifests.formal_asset_manifest 'Formal asset manifest binding' 'relative_path'
 $formalManifest = Get-Content -LiteralPath $formalManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json

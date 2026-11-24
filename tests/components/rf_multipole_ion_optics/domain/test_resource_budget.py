@@ -3341,7 +3341,7 @@ if(-not(Update-RepositoryProcessObservation -Observation $metrics -Sample $sampl
                 "not authorized",
                 completed.stdout + completed.stderr,
             )
-            run_dir = REPO_ROOT.parent / "artifacts/projects" / PROJECT_ID / "runs" / run_id
+            run_dir = REPO_ROOT.parent / "artifacts/components" / PROJECT_ID / "runs" / run_id
             self.assertFalse(run_dir.exists(), "rejected numerics created a run package")
 
 

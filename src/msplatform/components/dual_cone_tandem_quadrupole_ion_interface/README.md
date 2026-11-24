@@ -74,7 +74,7 @@ tests/components/dual_cone_tandem_quadrupole_ion_interface/
 `projects/dual_cone_tandem_quadrupole_ion_interface/` 已退出活动树，历史仍由原历史索引追溯。
 
 不存在的实现目录不为空占位。大型模型、场、PA/IOB、轨迹、结果和日志只进入工作区
-`artifacts/projects/dual_cone_tandem_quadrupole_ion_interface/`，不进入 Git。
+`artifacts/components/dual_cone_tandem_quadrupole_ion_interface/`，不进入 Git。
 
 ## History索引
 

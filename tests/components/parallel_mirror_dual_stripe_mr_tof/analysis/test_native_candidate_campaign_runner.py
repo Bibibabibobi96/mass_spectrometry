@@ -138,7 +138,7 @@ class NativeCandidateCampaignBehaviorTests(unittest.TestCase):
         self.artifact_runs.mkdir(parents=True)
         source = RUNNER.read_text(encoding="utf-8-sig")
         source = source.replace(
-            '$artifactRuns=Join-Path $artifactRoot "projects\\$project\\runs"',
+            "$artifactRuns=Join-Path (Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind component -OwnerId $project -Python $python) 'runs'",
             f"$artifactRuns='{self.artifact_runs.as_posix()}'",
         )
         self.runner = self.root / "campaign.ps1"

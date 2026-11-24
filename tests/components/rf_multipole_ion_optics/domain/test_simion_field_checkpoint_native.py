@@ -32,7 +32,7 @@ $OutputEncoding=[Text.UTF8Encoding]::new($false)
 . (Join-Path $Repo 'src/msplatform/backends/simion/resources/simion_layout_template_support.ps1')
 if($env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN){throw 'Native checkpoint fixture requires its own standalone host owner.'}
 $artifacts=Join-Path (Split-Path -Parent $Repo) 'artifacts'
-$projectArtifacts=Join-Path $artifacts 'projects/rf_multipole_ion_optics'
+$projectArtifacts=Join-Path $artifacts 'components/rf_multipole_ion_optics'
 $reason='Opt-in 9x9x9 fractional N1 exploration: software field/IOB ownership only, no Candidate or scientific qualification.'
 $package=$null;$capacity=$null;$lease=$null;$guard=$null;$writersStopped=$true;$terminalPublished=$false;$sealPending=$false
 $software=@('SIMION 2020','Python 3.11');$stage='producer_package'
@@ -270,7 +270,7 @@ class NativeFieldCheckpointTests(unittest.TestCase):
         self.assertTrue(simion.is_file(), "SIMION 2020 is required for this explicit native test")
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         tag = uuid.uuid4().hex[:8]
-        evidence = REPO.parent / "artifacts/projects" / PROJECT / "scratch/native_field_checkpoint" / (stamp + "_" + tag)
+        evidence = REPO.parent / "artifacts/components" / PROJECT / "scratch/native_field_checkpoint" / (stamp + "_" + tag)
         evidence.mkdir(parents=True)
         script = evidence / "execute.ps1"
         script.write_text(HARNESS, encoding="utf-8", newline="\n")

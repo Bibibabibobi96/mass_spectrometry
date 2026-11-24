@@ -460,7 +460,7 @@ class CandidateCausalPhaseTests(CandidateFixtures, unittest.TestCase):
             config={'inputs':{},'provenance':{'stage_reuse':{}}}
             original_paths=[];model=None
             for index,stage_id in enumerate(('comsol_candidate','simion_candidate')):
-                owner=root/f'root{index}'/'artifacts/projects/p/runs'/f'20261031_22000{index}__sim__cross__owner'
+                owner=root/f'root{index}'/'artifacts/components/p/runs'/f'20261031_22000{index}__sim__cross__owner'
                 owner.mkdir(parents=True)
                 manifest=owner/'run_manifest.json';manifest.write_text(json.dumps({'run_id':owner.name,'owner':index}),encoding='utf-8')
                 source=owner/'same.dat';source.write_bytes(b'original-model' if index==0 else b'original-simion')

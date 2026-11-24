@@ -129,7 +129,7 @@ if(-not$caught){throw 'Actual selector error was swallowed'}
                                ("mass_filter_reference", "mass_filter_reference")):
             with self.subTest(workflow=workflow), tempfile.TemporaryDirectory() as directory:
                 artifact_root = Path(directory) / "artifacts"
-                project_root = artifact_root / "projects/rf_multipole_ion_optics"
+                project_root = artifact_root / "components/rf_multipole_ion_optics"
                 root = project_root / "runs"
                 artifact_root.mkdir()
                 initialize_capacity_ledger(artifact_root, objects=[])

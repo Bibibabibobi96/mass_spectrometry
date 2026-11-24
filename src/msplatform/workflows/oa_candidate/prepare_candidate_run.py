@@ -11,6 +11,7 @@ from pathlib import Path
 
 from msplatform.execution.artifact_naming import validate_run_id, validate_task_id
 from msplatform.execution.inputs import python_import_roots
+from msplatform.execution.resources.workspace_paths import resolve_platform_artifact_path, resolve_run_artifact_root
 from msplatform.contracts.machine_contracts import load_json, sha256, validate_schema
 from msplatform.execution.process_observation import run_observed_process
 from msplatform.workflows.oa_candidate.candidate_source_closure import (
@@ -26,7 +27,7 @@ def plan_pa_producer_handoffs(pairs: list[tuple[Path, Path]], *, expected_cache_
     from msplatform.backends.simion.pa_family_cache import load_pa_family_cache_transaction
 
     artifact_root = artifact_root.resolve(strict=True)
-    cache = artifact_root / "common/simion/pa_family_cache"
+    cache = resolve_platform_artifact_path(artifact_root, "simion", "pa_family_cache")
     sources, records, protected = {}, {}, set()
     for transaction_path, result_path in pairs:
         transaction_path, result_path = transaction_path.resolve(strict=True), result_path.resolve(strict=True)
@@ -55,7 +56,7 @@ def plan_pa_producer_handoffs(pairs: list[tuple[Path, Path]], *, expected_cache_
                 parts = Path(value).resolve().relative_to(artifact_root).parts
             except (ValueError, OSError):
                 continue
-            if len(parts) >= 4 and parts[0] == "projects" and parts[2] == "runs":
+            if len(parts) >= 4 and parts[0] in {"components", "projects"} and parts[2] == "runs":
                 protected.add(artifact_root.joinpath(*parts[:4]))
         for path in (transaction_path, result_path, predecessor / "run_manifest.json"):
             records[str(path)] = file_record(path)
@@ -214,7 +215,7 @@ def freeze_pa_producer_handoffs(run_root: Path, handoff_plan: dict, *, expected_
     destination = run_root / "inputs/pa_producer_handoffs"
     destination.mkdir()
     entries, frozen_records = {}, []
-    cache = Path(capacity_session["artifact_root"]).resolve() / "common/simion/pa_family_cache"
+    cache = resolve_platform_artifact_path(capacity_session["artifact_root"], "simion", "pa_family_cache")
     for source in sources:
         if set(source) != {"transaction_path", "owner_result_path"}:
             raise ValueError("PA handoff requires explicit transaction and public owner-result paths")
@@ -479,7 +480,9 @@ def prepare_candidate_run(
     workflow = load_json(WORKFLOW_PATH)
     validate_workflow(workflow)
     from msplatform.execution.resources.workspace_paths import resolve_workspace_paths
-    artifact_project_root = (artifact_project_root or Path(resolve_workspace_paths(REPO_ROOT)["artifact_root"]) / "projects" / PROJECT_ID).resolve()
+    artifact_project_root = (artifact_project_root or resolve_run_artifact_root(
+        resolve_workspace_paths(REPO_ROOT)["artifact_root"], owner_kind="component", owner_id=PROJECT_ID,
+    )).resolve()
     formal_root = artifact_project_root / "formal"
     run_root = artifact_project_root / "runs" / run_id
     task_id = f"{run_identity['stamp']}__cross__candidate-plan-{sha256(candidate_resolved.resolve())[:8].lower()}"
@@ -1026,7 +1029,7 @@ def prepare_postprocess_request(parent: Path, run_id: str, *, science_root: Path
     paths = resolve_workspace_paths(REPO_ROOT)
     artifact_root = Path(paths["artifact_root"])
     selection = select_postprocess_parent(parent, artifact_root)
-    project_root = artifact_root / "projects" / PROJECT_ID
+    project_root = resolve_run_artifact_root(artifact_root, owner_kind="component", owner_id=PROJECT_ID)
     run_root = project_root / "runs" / run_id
     if run_root.exists():
         raise FileExistsError(f"New postprocessing run already exists: {run_root}")

@@ -202,7 +202,7 @@ class CandidateDesignTests(CandidateFixtures, unittest.TestCase):
         for failed in (False, True):
             with self.subTest(failed=failed), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
-                run = root / "artifacts/projects/fixture/runs/20261029_030001__test__cross__handoff"
+                run = root / "artifacts/components/fixture/runs/20261029_030001__test__cross__handoff"
                 result_path = root / "owner_result.json"
                 request = {"host_context": self.host_context(root), "execution_run_directory": str(run),
                     "package": {"artifact_project_root": str(run.parent.parent), "run_id": run.name,

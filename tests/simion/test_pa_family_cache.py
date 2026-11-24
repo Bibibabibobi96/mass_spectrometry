@@ -602,7 +602,7 @@ class PAFamilyCacheTest(unittest.TestCase):
                 recovery_task="fixture owner closes producer", review_deadline="2026-10-01",
                 recovery_evidence_paths=(self.producer_run_config,),
             )
-        return artifacts, artifacts / "common" / "simion" / "pa_family_cache"
+        return artifacts, artifacts / "platform" / "simion" / "pa_family_cache"
 
     def _producer_handoff_fixture(self, *, complete=False, sealed=False, prepared=False, retention_class="solver_review"):
         from msplatform.execution.inputs import freeze_file

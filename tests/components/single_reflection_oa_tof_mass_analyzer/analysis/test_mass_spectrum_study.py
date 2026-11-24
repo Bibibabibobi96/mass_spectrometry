@@ -32,6 +32,25 @@ def _write_json(path: Path, value) -> None:
 
 
 class MassSpectrumStudyTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.cli_environment = tempfile.TemporaryDirectory(prefix="oatof-spectrum-cli-python-")
+        environment_root = Path(cls.cli_environment.name)
+        subprocess.run([sys.executable, "-m", "venv", "--system-site-packages", str(environment_root)],
+            check=True, capture_output=True, text=True, timeout=120, cwd=environment_root)
+        cls.cli_python = environment_root / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+        subprocess.run([str(cls.cli_python), "-m", "pip", "install", "--no-deps",
+            "--no-build-isolation", str(REPO)], check=True, capture_output=True, text=True, timeout=120, cwd=environment_root)
+        origin = subprocess.run([str(cls.cli_python), "-I", "-c",
+            "from pathlib import Path;import msplatform.workflows.single_reflection_mass_spectrum_study as m;print(Path(m.__file__).resolve())"],
+            check=True, capture_output=True, text=True, timeout=30, cwd=environment_root).stdout.strip()
+        if not Path(origin).is_relative_to(environment_root):
+            raise RuntimeError("CLI environment did not use its installed current package")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.cli_environment.cleanup()
+
     @contextmanager
     def workspace(self):
         root = Path(tempfile.mkdtemp(prefix="oatof-managed-spectrum-"))
@@ -43,7 +62,7 @@ class MassSpectrumStudyTests(unittest.TestCase):
             raise
         finally:
             holds = []
-            for path in root.glob("artifacts/projects/*/scratch/workflow_results/*/result.json"):
+            for path in root.glob("artifacts/components/*/scratch/workflow_results/*/result.json"):
                 value = _json(path)
                 if value.get("resume_action") is not None or value.get("writers_confirmed") is False:
                     holds.append(path)
@@ -77,7 +96,7 @@ class MassSpectrumStudyTests(unittest.TestCase):
 
     def inputs(self, root: Path) -> dict[str, Path]:
         context = self.context(root)
-        artifact_project = root / "artifacts/projects/single_reflection_oa_tof_mass_analyzer"
+        artifact_project = root / "artifacts/components/single_reflection_oa_tof_mass_analyzer"
         formal = artifact_project / "formal"
         (formal / "comsol").mkdir(parents=True, exist_ok=True)
         (formal / "simion").mkdir(parents=True, exist_ok=True)
@@ -173,7 +192,7 @@ for index,row in enumerate(rows,1):
         context = self.context(root)
         path = root / "execution-environment.json"
         _write_json(path, dict(schema_version=1, role="execution_environment",
-            tools=dict(python=str(Path(sys.executable).resolve()),
+            tools=dict(python=str(type(self).cli_python.resolve()),
                        powershell=str(context.powershell_executable)),
             policy=dict(host_state_path=str(context.host_state_path),
                         policy_path=str(context.policy_path),
@@ -193,6 +212,7 @@ for index,row in enumerate(rows,1):
         return subprocess.run([*arguments, *options], cwd=REPO, capture_output=True, text=True,
             encoding="utf-8", errors="replace", timeout=120,
             env={**os.environ, "PYTHONPATH": str(REPO / "src"),
+                 "SIMULATION_PYTHON_EXE": str(type(self).cli_python.resolve()),
                  "MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN": "",
                  "MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "",
                  "MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE": ""})
@@ -241,7 +261,7 @@ for index,row in enumerate(rows,1):
         with self.workspace() as root:
             result = self.run_study(root, RUN_ID, fail_species="mz500_z1")
             self.assertEqual(result["status"], "failed")
-            parent = root / f"artifacts/projects/{study.PROJECT}/runs/{RUN_ID}"
+            parent = root / f"artifacts/components/{study.PROJECT}/runs/{RUN_ID}"
             summary = _json(parent / "summary.json")
             self.assertEqual(summary["scientific_failures"], ["mz500_z1"])
             selection = study.select_partial_source(parent, root / "artifacts")
@@ -286,14 +306,14 @@ for index,row in enumerate(rows,1):
             tampered.write_bytes(tampered.read_bytes() + b"tamper\n")
             with self.assertRaises(Exception):
                 study.select_analysis_source(parent, root / "artifacts")
-            self.assertFalse((root / f"artifacts/projects/{study.PROJECT}/runs/tampered-child").exists())
+            self.assertFalse((root / f"artifacts/components/{study.PROJECT}/runs/tampered-child").exists())
 
     def test_original_cli_rejects_external_retrace_override(self):
         with self.workspace() as root:
             result = self.cli(root, RUN_ID, "--comsol-task", "external-retrace.m")
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("comsol-task", result.stderr)
-            self.assertFalse((root / "artifacts/projects" / study.PROJECT / "runs" / RUN_ID).exists())
+            self.assertFalse((root / "artifacts/components" / study.PROJECT / "runs" / RUN_ID).exists())
 
     def test_unknown_writer_and_scientific_receipt_negatives(self):
         with self.workspace() as root:

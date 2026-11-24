@@ -35,7 +35,8 @@ if($ResumeFinalization){
   $success='MASS_SPECTRUM_FINALIZATION=PASS'
 }else{
   $projectRoot=if($ScienceRoot){(Resolve-Path -LiteralPath $ScienceRoot).Path}else{''}
-  $artifactProject=if($ArtifactRootPath){Join-Path ($ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRootPath)) 'projects/single_reflection_oa_tof_mass_analyzer'}else{''}
+  . (Join-Path $packageRoot 'execution/resources/workspace_paths.ps1')
+  $artifactProject=if($ArtifactRootPath){Resolve-RunArtifactRoot -ArtifactRoot ($ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRootPath)) -OwnerKind component -OwnerId single_reflection_oa_tof_mass_analyzer -Python $python}else{''}
   if($ReanalyzeOnly){
     $action='analyze';$success='MASS_SPECTRUM_ANALYSIS=PASS'
   }else{

@@ -8,7 +8,8 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $executionResources = Join-Path $RepositoryRoot 'src/msplatform/execution/resources'
-$hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path (Split-Path -Parent $RepositoryRoot) 'artifacts/common/host_resources.sqlite3' }
+. (Join-Path $executionResources 'workspace_paths.ps1')
+$hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Resolve-PlatformArtifactPath -ArtifactRoot (Join-Path (Split-Path -Parent $RepositoryRoot) 'artifacts') -RelativePath @('host_resources.sqlite3') -Python $PythonExe }
 $hostContext = @{workspace=(Split-Path -Parent $RepositoryRoot);python_executable=$PythonExe;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 . (Join-Path $executionResources 'run_artifact_support.ps1')

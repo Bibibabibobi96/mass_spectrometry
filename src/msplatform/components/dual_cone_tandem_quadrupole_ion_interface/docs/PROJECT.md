@@ -490,7 +490,7 @@ continuation 解或裸 CSV 都不是可执行证据入口。
 
 ## 产物边界
 
-活动产物位于 `artifacts/projects/dual_cone_tandem_quadrupole_ion_interface/`。COMSOL 气流和 SIMION
+新活动产物位于 `artifacts/components/dual_cone_tandem_quadrupole_ion_interface/`。COMSOL 气流和 SIMION
 轨迹各自使用独立 run 三件套；下游 SIMION run 按所选输入冻结上游 manifest、源合同与编译 runtime
 身份，并保留所引用已发布气体场的原始记录。旧 Python run 只读保留，不因旧路径退役而删除或改写。
 

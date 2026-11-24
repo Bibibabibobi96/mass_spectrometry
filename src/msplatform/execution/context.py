@@ -48,7 +48,7 @@ class ExecutionContext:
             if not value.is_absolute():
                 raise ValueError(f"execution context {name} must be absolute")
             object.__setattr__(self, name, value)
-        execution_root = self.workspace / "artifacts" / "common" / "execution_aliases" if self.execution_root is None else Path(self.execution_root)
+        execution_root = self.workspace / "artifacts" / "platform" / "execution_aliases" if self.execution_root is None else Path(self.execution_root)
         if not execution_root.is_absolute():
             raise ValueError("execution context execution_root must be absolute")
         object.__setattr__(self, "execution_root", execution_root)

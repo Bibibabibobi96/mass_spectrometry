@@ -21,7 +21,7 @@ class RoundRodBindingTest(unittest.TestCase):
         run_id = '20260729_120001__test__python__field-screen-binding'
         design = resolve_design_profile(ROOT, project, 'hexapole_no_acceleration_full_length')['resolved_design']
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory) / 'components'
             source = root / project / 'runs' / run_id
             (source / 'inputs').mkdir(parents=True)
             (source / 'results').mkdir()

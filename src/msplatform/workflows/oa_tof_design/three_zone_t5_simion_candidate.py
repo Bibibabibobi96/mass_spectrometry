@@ -25,6 +25,7 @@ from typing import Any, Mapping, Sequence
 
 from msplatform.components.single_reflection_oa_tof import three_zone_ideal_theory as _tof_theory
 from msplatform.execution.artifact_naming import validate_run_id
+from msplatform.execution.resources.workspace_paths import resolve_run_artifact_root
 from msplatform.io.file_identity import file_sha256
 from msplatform.execution.inputs import freeze_file
 from msplatform.contracts.machine_contracts import SCHEMA_DIR, load_json, validate_schema
@@ -465,9 +466,9 @@ def publish_t5_simion_candidate(
     receipt_path = receipt_path.resolve()
     run_dir = run_dir.resolve()
     validate_run_id(run_dir.name)
-    canonical_runs = (
-        workspace_root / "artifacts" / "projects" / PROJECT_ID / "runs"
-    ).resolve()
+    canonical_runs = resolve_run_artifact_root(
+        workspace_root / "artifacts", owner_kind="component", owner_id=PROJECT_ID,
+    ).joinpath("runs").resolve()
     if run_dir.parent != canonical_runs:
         raise ValueError("T5 Candidate run_dir must use the canonical workspace artifact root")
     if run_dir.exists():

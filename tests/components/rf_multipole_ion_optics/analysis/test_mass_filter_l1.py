@@ -172,7 +172,7 @@ class MassFilterL1Tests(unittest.TestCase):
         original = canonical.read_bytes()
         with self._workspace() as temporary:
             root = Path(temporary)
-            context = self._context(root / 'artifacts/projects/rf_multipole_ion_optics')
+            context = self._context(root / 'artifacts/components/rf_multipole_ion_optics')
             self.assertEqual(context.capacity_policy_path, root / 'test-owned-capacity-policy.json')
             selection = capture_capacity_policy(context.capacity_policy_path)
             self.assertEqual(selection['snapshot']['target_gib'], 1)
@@ -219,7 +219,7 @@ class MassFilterL1Tests(unittest.TestCase):
                 capacity_root = Path(temporary) / "artifacts"
                 capacity_root.mkdir()
                 initialize_capacity_ledger(capacity_root, objects=[])
-                artifact_root = capacity_root / "projects/rf_multipole_ion_optics"
+                artifact_root = capacity_root / "components/rf_multipole_ion_optics"
                 run_id = f"20261028_12000{index}__test__python__l1-failure"
                 destination = artifact_root / "runs" / run_id
                 error = OSError(f"injected {stage} failure")
@@ -292,7 +292,7 @@ class MassFilterL1Tests(unittest.TestCase):
                 capacity_root = Path(temporary) / "artifacts"
                 capacity_root.mkdir()
                 initialize_capacity_ledger(capacity_root, objects=[])
-                artifact_root = capacity_root / "projects/rf_multipole_ion_optics"
+                artifact_root = capacity_root / "components/rf_multipole_ion_optics"
                 run_id = "20261028_120005__test__python__l1-terminal"
                 destination = artifact_root / "runs" / run_id
 
@@ -325,7 +325,7 @@ class MassFilterL1Tests(unittest.TestCase):
                 capacity_root = Path(temporary) / "artifacts"
                 capacity_root.mkdir()
                 initialize_capacity_ledger(capacity_root, objects=[])
-                artifact_root = capacity_root / "projects/rf_multipole_ion_optics"
+                artifact_root = capacity_root / "components/rf_multipole_ion_optics"
                 run_id = "20261028_120006__test__python__l1-cleanup"
                 destination = artifact_root / "runs" / run_id
                 error = OSError("original workflow failure")
@@ -382,7 +382,7 @@ class MassFilterL1Tests(unittest.TestCase):
             capacity_root = root / 'artifacts'
             capacity_root.mkdir()
             initialize_capacity_ledger(capacity_root, objects=[])
-            artifact_root = capacity_root / 'projects/rf_multipole_ion_optics'
+            artifact_root = capacity_root / 'components/rf_multipole_ion_optics'
             run_id = '20261116_120016__test__python__l1-cli-recovery'
             destination = artifact_root / 'runs' / run_id
             original = OSError('original action remains untouched')
@@ -460,7 +460,7 @@ class MassFilterL1Tests(unittest.TestCase):
             capacity_root = root / 'artifacts'
             capacity_root.mkdir()
             initialize_capacity_ledger(capacity_root, objects=[])
-            artifact_root = capacity_root / 'projects/rf_multipole_ion_optics'
+            artifact_root = capacity_root / 'components/rf_multipole_ion_optics'
             provider = self._controlled_provider(artifact_root)
             parent_id = '20261116_120017__test__python__l1-analysis-parent'
             with patch.object(MODULE, '_source_package_root', return_value=provider):
@@ -543,7 +543,7 @@ class MassFilterL1Tests(unittest.TestCase):
     def test_actual_frozen_kernel_os_failure_keeps_original_observed_facts(self) -> None:
         from msplatform.execution.processes import ProcessExecutionError
         with self._workspace() as temporary:
-            artifact_root = Path(temporary) / 'artifacts/projects/rf_multipole_ion_optics'
+            artifact_root = Path(temporary) / 'artifacts/components/rf_multipole_ion_optics'
             provider = self._controlled_provider(artifact_root)
             (provider / 'components/rf_multipole/finite_length_transport.py').write_text(
                 'def simulate_mass(*args):\n'
@@ -583,7 +583,7 @@ class MassFilterL1Tests(unittest.TestCase):
             expected_rows = MODULE.scan_response(self.baseline, self.resolved, self.mode, self.source)
             expected = root / 'expected.csv'
             MODULE.write_response_csv(expected, expected_rows)
-            artifact_root = root / 'artifacts/projects/rf_multipole_ion_optics'
+            artifact_root = root / 'artifacts/components/rf_multipole_ion_optics'
             run_id = '20261110_120013__test__python__l1-numeric'
             captured = {}
             invoke = MODULE._invoke_frozen_stage
@@ -612,7 +612,7 @@ class MassFilterL1Tests(unittest.TestCase):
         with self._workspace() as temporary:
             workspace = Path(temporary) / 'explicit-alternate-workspace'
             workspace.mkdir()
-            artifact_root = workspace / 'artifacts/projects/rf_multipole_ion_optics'
+            artifact_root = workspace / 'artifacts/components/rf_multipole_ion_optics'
             context = self._context(artifact_root)
             with self.assertRaisesRegex(ValueError, 'selected managed research workspace'):
                 RUNNER.run(RUNNER.DEFAULT_BASELINE, RUNNER.DEFAULT_RESOLVED, RUNNER.DEFAULT_MODE,
@@ -742,7 +742,7 @@ $r | ConvertTo-Json -Depth 20 -Compress
     def test_frozen_l1_analysis_runs_from_snapshot_and_rejects_changed_peak_source(self) -> None:
         with self._workspace() as temporary:
             root = Path(temporary)
-            artifact_root = root / 'artifacts/projects/rf_multipole_ion_optics'
+            artifact_root = root / 'artifacts/components/rf_multipole_ion_optics'
             provider = self._controlled_provider(artifact_root)
             run_id = '20261110_120010__test__python__l1-frozen'
             destination = artifact_root / 'runs' / run_id
@@ -811,7 +811,7 @@ $r | ConvertTo-Json -Depth 20 -Compress
 
             def rejected(case: str) -> None:
                 case_root = root / case
-                target_root = case_root / 'artifacts/projects/rf_multipole_ion_optics'
+                target_root = case_root / 'artifacts/components/rf_multipole_ion_optics'
                 target_provider = self._controlled_provider(target_root)
                 seen = {}
                 target_id = '20261110_120011__test__python__l1-frozen-identity'
@@ -842,8 +842,6 @@ $r | ConvertTo-Json -Depth 20 -Compress
                         self.assertEqual((seen['session'].artifact_run_dir / 'inputs/analysis_request.json').read_bytes(), seen['request'])
                         self.assertEqual((seen['session'].artifact_run_dir / 'inputs/analysis_package.json').read_bytes(), seen['package'])
                         from msplatform.execution.capacity_protection import load_capacity_protection_leases
-                        from msplatform.execution.completion import no_particle_batch_completion_api
-                        from msplatform.execution.owner import resume_finalization
                         result_path = target_root / 'scratch/workflow_results' / target_id / 'result.json'
                         result = load_json(result_path)
                         failure_path = target_root / 'runs' / target_id / 'results/failure_context.json'
@@ -852,18 +850,9 @@ $r | ConvertTo-Json -Depth 20 -Compress
                         self.assertTrue(result['writers_confirmed'])
                         seen['peak'] = _owned_path(seen['session'], seen['peak'])
                         if case == 'missing':
-                            # Restore only this test-owned original, after the
-                            # missing-input rejection. Never adopt new bytes or
-                            # rerun the action to close a finalization hold.
-                            self.assertEqual(result['resume_action'], 'resume_finalization')
-                            self.assertFalse(seen['peak'].exists())
+                            self.assertIsNone(result['resume_action'])
+                            self.assertEqual(seen['peak'].read_bytes(), seen['original'])
                             self.assertEqual(hashlib.sha256(seen['original']).hexdigest().upper(), seen['sha256'])
-                            with seen['peak'].open('xb') as stream:
-                                stream.write(seen['original'])
-                            self.assertEqual(seen['peak'].stat().st_size, len(seen['original']))
-                            self.assertEqual(hashlib.sha256(seen['peak'].read_bytes()).hexdigest().upper(), seen['sha256'])
-                            result = resume_finalization(self._context(target_root), result_path,
-                                completion_api=no_particle_batch_completion_api)
                         self.assertEqual(result['status'], 'failed')
                         self.assertIsNone(result['resume_action'])
                         self.assertEqual(result['capacity_session']['status'], 'released')
@@ -871,9 +860,9 @@ $r | ConvertTo-Json -Depth 20 -Compress
                         self.assertEqual(load_capacity_protection_leases(case_root / 'artifacts')['audit'], [])
                         self.assertEqual([row['operation_id'] for row in seen['session'].operations], ['prepare'])
                         self.assertFalse((target_root / 'runs' / target_id / 'results/simulation_execution.json').exists())
-            with self.assertRaisesRegex(RuntimeError, "hash differs"):
+            with self.assertRaises(PermissionError):
                 rejected('changed')
-            with self.assertRaisesRegex(RuntimeError, "missing"):
+            with self.assertRaises(PermissionError):
                 rejected('missing')
 
 

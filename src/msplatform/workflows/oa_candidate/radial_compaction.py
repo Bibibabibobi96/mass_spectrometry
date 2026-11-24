@@ -14,6 +14,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from msplatform.execution.resources import resource_path
+from msplatform.execution.resources.workspace_paths import resolve_run_artifact_root
 from typing import Any
 
 
@@ -26,11 +27,8 @@ BASELINE_PATH = PROJECT_ROOT / "config" / "baseline.json"
 NUMERICS_PATH = PROJECT_ROOT / "config" / "formal_solver_numerics.json"
 MODE_PATH = PROJECT_ROOT / "config" / "modes" / "formal.json"
 CANDIDATE_RUNTIME_PATH = PROJECT_ROOT / "config" / "candidate_runtime.json"
-ARTIFACT_ROOT = (
-    WORKSPACE_ROOT
-    / "artifacts"
-    / "projects"
-    / "single_reflection_oa_tof_mass_analyzer"
+ARTIFACT_ROOT = resolve_run_artifact_root(
+    WORKSPACE_ROOT / "artifacts", owner_kind="component", owner_id="single_reflection_oa_tof_mass_analyzer"
 )
 PYTHON = Path(sys.executable).resolve()
 

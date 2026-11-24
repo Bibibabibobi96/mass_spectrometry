@@ -44,7 +44,9 @@ $workspaceRoot = Split-Path -Parent $repoRoot
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } elseif ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) } else { throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required' }
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 runtime missing: $python" }
 $executionResources = Join-Path $repoRoot 'src/msplatform/execution/resources'
-$hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path $workspaceRoot 'artifacts/common/host_resources.sqlite3' }
+. (Join-Path $executionResources 'workspace_paths.ps1')
+$hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Resolve-PlatformArtifactPath -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -RelativePath @('host_resources.sqlite3') -Python $python }
+$componentArtifactRoot = Resolve-RunArtifactRoot -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -OwnerKind component -OwnerId single_reflection_oa_tof_mass_analyzer -Python $python
 $hostContext = @{workspace=$workspaceRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 $hostExecutionLease = Enter-HostExecutionLease -Role $hostRole -Stage $hostStage
@@ -96,7 +98,7 @@ if ($Level -eq 'Candidate') {
   if ($CandidateTarget -eq 'SIMION') {
     $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
     $runId = "${stamp}__gate__simion__native-ideal-grid__smoke"
-    $output = Join-Path $workspaceRoot "artifacts\projects\single_reflection_oa_tof_mass_analyzer\runs\$runId\simion"
+    $output = Join-Path $componentArtifactRoot "runs\$runId\simion"
     # Standalone orchestration yields to the child lifecycle; inherited grants stay owned by the parent.
     if ($null -ne $hostExecutionLease -and -not $hostExecutionLease.inherited) {
       Exit-HostExecutionLease -Lease $hostExecutionLease
@@ -117,7 +119,7 @@ if ($Level -eq 'Candidate') {
     }
     $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
     $runId = "${stamp}__gate__comsol__candidate-sync"
-    $runDir = Join-Path $workspaceRoot "artifacts\projects\single_reflection_oa_tof_mass_analyzer\runs\$runId"
+    $runDir = Join-Path $componentArtifactRoot "runs\$runId"
     $logDir = Join-Path $runDir 'logs'
     New-Item -ItemType Directory -Path $logDir -Force | Out-Null
     $report = Join-Path $logDir 'comsol_sync_report.txt'
@@ -189,15 +191,15 @@ if ($Level -eq 'Candidate') {
 elseif ($Level -eq 'Formal') {
   Assert-OaTofFormalAssetsReadable -ProjectRoot $projectRoot
   & $python -m msplatform.execution.verify_artifact_layout `
-    (Join-Path $workspaceRoot 'artifacts\projects') --formal-only --repository-root $repoRoot
+    (Join-Path $workspaceRoot 'artifacts\components') --formal-only --repository-root $repoRoot
   if ($LASTEXITCODE -ne 0) { throw 'Formal asset-manifest structure gate failed.' }
   & (Join-Path $repoRoot 'tools\repository\verify_toolchain.ps1')
   if ($LASTEXITCODE -ne 0) { throw 'Toolchain gate failed.' }
 
-  $formalModel = Join-Path $workspaceRoot 'artifacts\projects\single_reflection_oa_tof_mass_analyzer\formal\comsol\single_reflection_oa_tof_mass_analyzer__model.mph'
+  $formalModel = Join-Path $componentArtifactRoot 'formal\comsol\single_reflection_oa_tof_mass_analyzer__model.mph'
   $formalStamp = Get-Date -Format 'yyyyMMdd_HHmmss'
   $formalRunId = "${formalStamp}__gate__comsol__formal-sync"
-  $formalRunDir = Join-Path $workspaceRoot "artifacts\projects\single_reflection_oa_tof_mass_analyzer\runs\$formalRunId"
+  $formalRunDir = Join-Path $componentArtifactRoot "runs\$formalRunId"
   $formalLogDir = Join-Path $formalRunDir 'logs'
   New-Item -ItemType Directory -Path $formalLogDir -Force | Out-Null
   $comsolReport = Join-Path $formalLogDir 'comsol_sync_report.txt'

@@ -72,7 +72,8 @@ function Initialize-RunArtifactPowerShellOwner {
     [Parameter(Mandatory)][string[]]$CommitmentInputPaths,[string[]]$Software=@(),
     [bool]$OwnCapacitySession=$true)
   $config=Get-Content -LiteralPath $Package.run_config -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
-  $projectRoot=Join-Path (Join-Path ([string]$CapacitySession.artifact_root) 'projects') ([string]$config.project)
+  $ownerKind=if([string]$config.project-eq'instrument_assembly'){'assembly'}else{'component'}
+  $projectRoot=Resolve-RunArtifactRoot -ArtifactRoot ([string]$CapacitySession.artifact_root) -OwnerKind $ownerKind -OwnerId ([string]$config.project) -Python $Python
   $runRoot=[IO.Path]::GetFullPath((Join-Path $projectRoot ('runs/'+$config.run_id)))
   if(-not(Test-Path -LiteralPath $runRoot -PathType Container)){throw 'PowerShell owner package directory is missing.'}
   $paths=@{execution_run_directory=[IO.Path]::GetFullPath([string]$Package.run_dir);run_directory=$runRoot}
@@ -569,7 +570,7 @@ function Invoke-RunArtifactWorkflow {
     if(-not(Get-Command Resolve-HostResourceStatePath -ErrorAction SilentlyContinue)){
       $hostContext=if($request.Contains('host_context')){$request.host_context}else{$null}
       if($hostContext-isnot[Collections.IDictionary]){
-        $hostState=if($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH}else{Join-Path $artifactRoot 'common/host_resources.sqlite3'}
+        $hostState=if($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH}else{Resolve-PlatformArtifactPath -ArtifactRoot $artifactRoot -RelativePath host_resources.sqlite3 -Python $python}
         $hostContext=@{workspace=(Split-Path -Parent $artifactRoot);python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $repo 'src/msplatform/execution/resources/host_resource_policy.json')}
       }
       . (Join-Path $PSScriptRoot '../../execution/resources/host_execution_lease.ps1') -HostContext $hostContext

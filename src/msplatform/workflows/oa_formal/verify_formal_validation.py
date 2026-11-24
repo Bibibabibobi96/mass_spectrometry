@@ -6,12 +6,16 @@ import json
 import math
 from pathlib import Path
 
+from msplatform.execution.resources.workspace_paths import resolve_run_artifact_root
 from msplatform.io.file_identity import file_sha256
 
 ANALYSIS_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = ANALYSIS_DIR.parents[1] / "components/single_reflection_oa_tof"
 REPO_ROOT = ANALYSIS_DIR.parents[3]
-ARTIFACT_ROOT = REPO_ROOT.parent / "artifacts" / "projects" / "single_reflection_oa_tof_mass_analyzer"
+ARTIFACT_ROOT = resolve_run_artifact_root(
+    REPO_ROOT.parent / "artifacts", owner_kind="component",
+    owner_id="single_reflection_oa_tof_mass_analyzer",
+)
 CONFIG_PATH = PROJECT_DIR / "config" / "formal_validation.json"
 
 

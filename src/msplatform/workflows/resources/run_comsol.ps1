@@ -71,7 +71,7 @@ function Read-InterfaceExecutionLimits {
 }
 . (Join-Path $packageRoot 'execution/resources/workspace_paths.ps1')
 $pathContext=Resolve-WorkspacePaths -SourceRoot $repoRoot -ArtifactRoot $artifactRootPath -Python $python
-$artifactRoot=Join-Path ([string]$pathContext.artifact_root) 'projects/rf_multipole_ion_optics'
+$artifactRoot=Resolve-RunArtifactRoot -ArtifactRoot ([string]$pathContext.artifact_root) -OwnerKind component -OwnerId rf_multipole_ion_optics -Python $python
 $Limits=Read-InterfaceExecutionLimits -Path $LimitsPath
 $CommittedNewBytes=[long]$Limits.transient_run_directory_bytes
 $executionResources = Join-Path $packageRoot 'execution/resources'

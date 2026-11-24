@@ -24,6 +24,7 @@ from msplatform.execution.manifest_publication import build_run_manifest
 from msplatform.io.manifest_records import file_record, verify_record
 from msplatform.execution.recorded_file_removal import write_json_atomic
 from msplatform.execution.run_paths import create_execution_alias, path_capacity, remove_execution_alias
+from msplatform.execution.resources.workspace_paths import resolve_run_artifact_root
 from msplatform.execution.run_session import RunSession
 from msplatform.io.manifest_records import TERMINAL_JOURNAL_NAME
 from msplatform.execution.terminal_publication import TERMINAL_LOCK_NAME
@@ -263,10 +264,12 @@ def run_managed_stage(context: ExecutionContext, *, descriptor: Mapping[str, Any
     if capacity_ledger.load_capacity_ledger(root) is None:
         raise ValueError("Existing artifact root lacks its explicit calibrated capacity ledger")
     project = descriptor["project"]
-    run_root = root / "projects" / project / "runs" / run_id
+    owner_kind = "assembly" if project == "instrument_assembly" else "component"
+    owner_root = resolve_run_artifact_root(root, owner_kind=owner_kind, owner_id=project)
+    run_root = owner_root / "runs" / run_id
     if run_root.exists():
         raise FileExistsError("Run already exists; resume its original finalization")
-    result_path = root / "projects" / project / "scratch/workflow_results" / run_id / "result.json"
+    result_path = owner_root / "scratch/workflow_results" / run_id / "result.json"
     if result_path.exists():
         raise FileExistsError("Workflow Result already exists")
     policy_selection = capture_capacity_policy(context.capacity_policy_path)

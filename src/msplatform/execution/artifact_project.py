@@ -1,14 +1,16 @@
-"""Create the standard artifact-project index without device assumptions."""
+"""Create the standard component artifact index without device assumptions."""
 
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
 
+from msplatform.execution.resources.workspace_paths import resolve_run_artifact_root
 
-def ensure_artifact_project(artifact_projects_root: Path, project_id: str) -> Path:
-    """Ensure one artifact project root and its stable human-readable index exist."""
-    project_root = artifact_projects_root / project_id
+
+def ensure_artifact_project(artifact_root: Path, project_id: str) -> Path:
+    """Ensure one current component root and its stable human-readable index exist."""
+    project_root = resolve_run_artifact_root(artifact_root, owner_kind="component", owner_id=project_id)
     project_root.mkdir(parents=True, exist_ok=True)
     readme = project_root / "00_README.txt"
     expected = (
@@ -28,10 +30,10 @@ def ensure_artifact_project(artifact_projects_root: Path, project_id: str) -> Pa
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--artifact-projects-root", required=True, type=Path)
+    parser.add_argument("--artifact-root", required=True, type=Path)
     parser.add_argument("--project-id", required=True)
     args = parser.parse_args()
-    path = ensure_artifact_project(args.artifact_projects_root.resolve(), args.project_id)
+    path = ensure_artifact_project(args.artifact_root.resolve(), args.project_id)
     print(f"ARTIFACT_PROJECT=PASS PROJECT={args.project_id} PATH={path}")
 
 

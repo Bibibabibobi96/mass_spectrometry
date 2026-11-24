@@ -224,7 +224,7 @@ class RunArtifactWorkflowFixture(unittest.TestCase):
         budget = root / "budget.json"
         committed = payload.get("fixture_commitment_bytes", 1048576)
         budget.write_text(json.dumps({"peak_bytes": committed}), encoding="utf-8")
-        project_root = artifacts / "projects" / project
+        project_root = artifacts / "components" / project
         run = project_root / "runs/20261028_120000__test__python__workflow-fixture"
         request = {
             "schema_version": 1, "role": "run_artifact_workflow_request", "repository_root": str(REPO),
@@ -353,7 +353,7 @@ $env:MASS_SPECTROMETRY_ARTIFACT_ROOT='changed-relative-payload'""" if drift_cont
         outcome = self.run_ps(root, f""". '{OWNER}'
 function Invoke-ArtifactCapacityGate {{
  param($ArtifactRoot,$CapacityProtectionLeaseId)
- $lease=Get-Content -LiteralPath (Join-Path $ArtifactRoot ('common/capacity_protection_leases/'+$CapacityProtectionLeaseId+'.json')) -Raw|ConvertFrom-Json
+ $lease=Get-Content -LiteralPath (Join-Path $ArtifactRoot ('platform/capacity_protection_leases/'+$CapacityProtectionLeaseId+'.json')) -Raw|ConvertFrom-Json
  return @{{satisfied=$true;fixture_admission=$true;admitted_lease_committed_new_bytes=$lease.committed_new_bytes}}
 }}
 {hook}

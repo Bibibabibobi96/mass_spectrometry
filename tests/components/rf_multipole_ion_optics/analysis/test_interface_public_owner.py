@@ -291,7 +291,7 @@ $complete=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefin
 . ([scriptblock]::Create($complete.Extent.Text))
 foreach($status in @('success','failed')){
  $RunId='20261031_220000__test__python__interface-rewrite-'+$status;$workflowId='transport_interface_readiness'
- $projectArtifact=Join-Path $artifact 'projects/rf_multipole_ion_optics'
+ $projectArtifact=Join-Path $artifact 'components/rf_multipole_ion_optics'
  $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $projectArtifact -RunId $RunId -Project rf_multipole_ion_optics -Mode $workflowId -Software @('PowerShell software fixture') -RetentionContractEnabled -RetentionClass solver_review -RetentionReason 'inert actual config rewrite' -CapacityLedgerLifecycleEnabled -UseShortExecutionPath -ExecutionRoot (Join-Path $artifact 'execution')
  $authority=Join-Path $package.input_dir 'limits.json';Write-RunJson -Path $authority -Value @{transient_run_directory_bytes=8388608}
  $hostAuthority=Join-Path $package.input_dir 'host.json';Write-RunJson -Path $hostAuthority -Value @{}

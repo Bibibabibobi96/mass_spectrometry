@@ -30,7 +30,7 @@ if ([string]::IsNullOrWhiteSpace($RunId)) {
 
 . (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot `
-  -ArtifactRoot (Join-Path $artifactRoot "projects\$projectId") `
+  -ArtifactRoot (Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind component -OwnerId $projectId -Python $python) `
   -RunId $RunId -Project $projectId -Mode 'analytic_mirror_l0_l1_candidate' `
   -Software @('Python 3.11', 'SciPy') -RetentionContractEnabled `
   -CapacityLedgerLifecycleEnabled

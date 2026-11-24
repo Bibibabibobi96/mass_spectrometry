@@ -16,13 +16,13 @@ CACHE_KEY = re.compile(r"\b[a-f0-9]{64}\b", re.IGNORECASE)
 LEASE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 
 
-PROTECTION_LEASE_DIRECTORY = Path("common") / "capacity_protection_leases"
+PROTECTION_LEASE_DIRECTORY = Path("platform") / "capacity_protection_leases"
 
 
 CAPACITY_DECISION_LOCK_NAME = ".capacity_decision.lock"
 
 
-DISPOSAL_RECEIPT_DIRECTORY = Path("common") / "capacity_disposal_receipts"
+DISPOSAL_RECEIPT_DIRECTORY = Path("platform") / "capacity_disposal_receipts"
 
 
 DEFAULT_MAX_LEASE_LIFETIME_SECONDS = 30 * 24 * 60 * 60
@@ -540,11 +540,11 @@ def load_capacity_protection_leases(
 
 
 def _load_capacity_protection_leases_unlocked(
-    root: Path, *, now: datetime | None = None,
+    root: Path, *, now: datetime | None = None, lease_directory: Path | None = None,
 ) -> dict[str, Any]:
     """Load and union active leases, failing closed on an ambiguous document."""
 
-    lease_root = root / PROTECTION_LEASE_DIRECTORY
+    lease_root = lease_directory or root / PROTECTION_LEASE_DIRECTORY
     result = _empty_capacity_protection_view()
     if not lease_root.exists():
         return result

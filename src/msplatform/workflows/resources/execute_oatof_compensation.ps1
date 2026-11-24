@@ -33,7 +33,7 @@ if(-not($ResumeFinalization-and$ResultPath)){
     $pathContext=Resolve-WorkspacePaths @pathArguments
   }finally{[Environment]::SetEnvironmentVariable('PYTHONPATH',$previousPythonPath,'Process')}
   $artifactRoot=[string]$pathContext.artifact_root
-  $projectArtifacts=Join-Path $artifactRoot ('projects/'+$project)
+  $projectArtifacts=Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind component -OwnerId $project -Python $python
 }
 $environmentNames=@('SIMULATION_PYTHON_EXE','PYTHONDONTWRITEBYTECODE','MASS_SPECTROMETRY_ARTIFACT_ROOT','MASS_SPECTROMETRY_EXECUTION_ROOT','MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH')
 $originalEnvironment=@{}

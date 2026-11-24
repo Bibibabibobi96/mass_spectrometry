@@ -1,5 +1,7 @@
 # 开放路径平行镜双条带 MR-TOF 项目状态
 
+新组件 run 通过公共 `Resolve-RunArtifactRoot` 写入 `artifacts/components/parallel_mirror_dual_stripe_mr_tof/`；Assembly 子 run 使用 `owner_kind=assembly` 写入 `artifacts/assemblies/instrument_assembly/`。平台 cache 与调度状态使用公共 platform 路径。历史 manifest、run 链接和资产路径保持只读，不作迁移或回退。
+
 现行生产实现、科研配置、当前文档、Lua/PowerShell 资源及测试均已迁至规范组件、工作流、backend
 和 `tests/components/parallel_mirror_dual_stripe_mr_tof/`；旧项目目录不再保留活动文件或回退入口。
 完整 MR 几何、固定镜、IP LP60 平移接口、原 ID/clock/6D/weight、未知终态、接触/损失及五质量

@@ -33,12 +33,12 @@ if(-not$researchRootExplicit-and-not[string]::Equals($selectedPackageRoot,[IO.Pa
 $executionResources=Join-Path $packageRoot 'execution/resources'
 . (Join-Path $executionResources 'workspace_paths.ps1')
 $pathContext=Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
+$projectArtifacts=Resolve-RunArtifactRoot -ArtifactRoot ([string]$pathContext.artifact_root) -OwnerKind assembly -OwnerId $projectId -Python $python
 $hostContext=@{workspace=$workspaceRoot;python_executable=$python;host_state_path=[string]$pathContext.host_resource_state_path;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 . (Join-Path $PSScriptRoot 'run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
 if($ResumeFinalization){
   if(-not$RunId){throw 'Finalization recovery requires the existing RunId.'}
-  $projectArtifacts=Join-Path $pathContext.artifact_root "projects/$projectId"
   if(-not$ResultPath){$ResultPath=Join-Path $projectArtifacts "scratch/workflow_results/$RunId/result.json"}
   $recoveryRun=Join-Path $projectArtifacts "runs/$RunId"
   if(Test-Path -LiteralPath $ResultPath -PathType Leaf){
@@ -128,7 +128,7 @@ function Invoke-PreparedJointTrial {
   $recording=(@(Invoke-ProjectPython -Arguments @('-m','msplatform.contracts.trajectory_recording','--contract',$observation))-join"`n")|ConvertFrom-Json
   if($null-eq$recording){throw 'Prepared joint flight requires retained trajectory observations.'}
   $jointRunId=if($RunId){$RunId}else{(Get-Date -Format 'yyyyMMdd_HHmmss')+'__sim__simion__ip-mr-joint-'+[guid]::NewGuid().ToString('N').Substring(0,8)}
-  $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot (Join-Path $pathContext.artifact_root "projects/$projectId") `
+  $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $projectArtifacts `
     -RunId $jointRunId -Project $projectId -Mode prepared_joint -Software @('SIMION 2020','Python 3.11') `
     -RetentionContractEnabled -RetentionClass solver_review -RetentionReason $recording.reason -CapacityLedgerLifecycleEnabled -PathContext $pathContext
   $script:preparedPackage=$package
@@ -197,7 +197,7 @@ function Invoke-PreparedJointTrial {
       $request=[string]$continuation.dispatch_request.path
       $profiles=[string]$continuation.resource_profiles.path
     }else{
-      Invoke-ProjectPython -Arguments @('-m','msplatform.execution.resource_profile','discover','--runs-root',(Join-Path $pathContext.artifact_root "projects/$projectId/runs"),'--output',$profiles)
+      Invoke-ProjectPython -Arguments @('-m','msplatform.execution.resource_profile','discover','--runs-root',(Join-Path $projectArtifacts 'runs'),'--output',$profiles)
       Invoke-ProjectPython -Arguments @('-m','msplatform.execution.simion_dispatch','--request',$request,'--profiles',$profiles,'--output',$dispatch)
       Invoke-ProjectPython -Arguments @('-m','msplatform.backends.simion.particle_batching','--from-dispatch-plan',$dispatch,'--output',$plan)
     }
@@ -475,7 +475,7 @@ function Invoke-PreparedJointAnalysis {
   $recording=(@(Invoke-ProjectPython -Arguments @('-m','msplatform.contracts.trajectory_recording','--contract',$contract))-join"`n")|ConvertFrom-Json
   if($null-eq$recording){throw 'Joint analysis requires the original retained-observation budget.'}
   $analysisRunId=if($RunId){$RunId}else{(Get-Date -Format 'yyyyMMdd_HHmmss')+'__analysis__python__ip-mr-joint-'+[guid]::NewGuid().ToString('N').Substring(0,8)}
-  $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot (Join-Path $pathContext.artifact_root "projects/$projectId") `
+  $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $projectArtifacts `
     -RunId $analysisRunId -Project $projectId -Mode prepared_joint_analysis -Software @('Python 3.11') `
     -RetentionContractEnabled -RetentionClass solver_review -RetentionReason $recording.reason -CapacityLedgerLifecycleEnabled -PathContext $pathContext
   $script:preparedPackage=$package

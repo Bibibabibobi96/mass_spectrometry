@@ -650,7 +650,7 @@ function Invoke-RunToolRootContext {param($RepoRoot,$Operation);Push-Location $R
                     resources = repo / "src/msplatform/execution/resources/resource_process_support.ps1"
                     resources.write_text(resources.read_text(encoding="utf-8") +
                         "\nfunction Get-ManagedSolverProcessSample {throw 'deliberate initial identity observation failure'}\n", encoding="utf-8")
-                run = root / "artifacts/projects/fixture/runs/fixture-run"
+                run = root / "artifacts/components/fixture/runs/fixture-run"
                 runtime = run / "simion"
                 runtime.mkdir(parents=True)
                 logs = run / "logs"

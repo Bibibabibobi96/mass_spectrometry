@@ -39,6 +39,7 @@ $workspaceRoot=if($researchRootExplicit){Split-Path -Parent $RepoRoot}else{$Repo
 $pathArguments=@{SourceRoot=$RepoRoot;Python=$Python}
 if($ArtifactRoot){$pathArguments.ArtifactRoot=$ArtifactRoot}
 $pathContext=Resolve-WorkspacePaths @pathArguments
+$projectArtifacts=Resolve-RunArtifactRoot -ArtifactRoot ([string]$pathContext.artifact_root) -OwnerKind assembly -OwnerId instrument_assembly -Python $Python
 $hostContext=@{workspace=$workspaceRoot;python_executable=$Python;host_state_path=[string]$pathContext.host_resource_state_path;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 . (Join-Path $packageRoot 'workflows/resources/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
@@ -145,12 +146,12 @@ function Set-PairedStage([string]$Name){
 $pathEnvironmentNames=@('MASS_SPECTROMETRY_ARTIFACT_ROOT','MASS_SPECTROMETRY_EXECUTION_ROOT','MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH','MASS_SPECTROMETRY_RUN_DIRECTORY','MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY')
 $savedPathEnvironment=Save-RunEnvironment -Names $pathEnvironmentNames
 try{
-  $destination=Join-Path $ArtifactRoot ('projects/instrument_assembly/runs/'+$RunId)
+  $destination=Join-Path $projectArtifacts ('runs/'+$RunId)
   $parentEnvironment=@{MASS_SPECTROMETRY_ARTIFACT_ROOT=$ArtifactRoot;MASS_SPECTROMETRY_EXECUTION_ROOT=$pathContext.execution_root;
     MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=$pathContext.host_resource_state_path;MASS_SPECTROMETRY_RUN_DIRECTORY=$destination;MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY=$destination}
   foreach($key in $parentEnvironment.Keys){[Environment]::SetEnvironmentVariable([string]$key,[string]$parentEnvironment[$key],'Process')}
   $lease=Enter-HostResourceStage -StatePath $pathContext.host_resource_state_path -Role GATE -Stage prepare -Budget (Get-HostResourceBudget -Role GATE -Stage prepare) -RunId $RunId
-  $package=New-RunPackage -Python $Python -RepoRoot $RepoRoot -ArtifactRoot (Join-Path $ArtifactRoot 'projects/instrument_assembly') `
+  $package=New-RunPackage -Python $Python -RepoRoot $RepoRoot -ArtifactRoot $projectArtifacts `
     -RunId $RunId -Project $project -Mode $consumer -Software $software -RetentionContractEnabled -RetentionClass solver_review `
     -RetentionReason $reason -CapacityLedgerLifecycleEnabled -CapacityLedgerArtifactRoot $ArtifactRoot -PathContext $pathContext `
     -UseShortExecutionPath -AdditionalDirectories @('simion','comsol')
@@ -215,7 +216,7 @@ try{
     }
     if(-not$SimionExe){$SimionExe=Join-Path $env:ProgramFiles 'SIMION-2020/simion.exe'}
     $SimionExe=(Resolve-Path -LiteralPath $SimionExe).Path
-    $cache=Invoke-PairedPython 'print(json.dumps(cache_plan(*map(Path,sys.argv[1:]))))' @($package.run_dir,$frozen.execution_root,$SimionExe,(Join-Path $ArtifactRoot 'common/simion/pa_family_cache'))
+    $cache=Invoke-PairedPython 'print(json.dumps(cache_plan(*map(Path,sys.argv[1:]))))' @($package.run_dir,$frozen.execution_root,$SimionExe,(Resolve-PlatformArtifactPath -ArtifactRoot $ArtifactRoot -RelativePath @('simion','pa_family_cache') -Python $Python))
     $cachePath=Join-Path $package.input_dir 'pa_cache_plan.json';Write-RunJson -Path $cachePath -Depth 100 -Value $cache
     if($ComsolSourceManifest){
       $completedSimionExports=Invoke-PairedPython 'print(json.dumps(completed_simion_exports(*map(Path,sys.argv[1:3]),read(Path(sys.argv[3])),Path(sys.argv[4]))))' @($package.run_dir,$ComsolSourceManifest,(Join-Path $package.input_dir 'pa_cache_plan.json'),$frozen.execution_root)

@@ -114,7 +114,7 @@ function Enter-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Artifac
 function Exit-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session);Event capacity_exit}
 function New-RunPackage {
  param($Python,$RepoRoot,$ArtifactRoot,$RunId,$Project,$Mode,$Software,[switch]$RetentionContractEnabled,$RetentionClass,$RetentionReason,[switch]$CapacityLedgerLifecycleEnabled,$AdditionalDirectories,$PathContext)
- if($null-eq$PathContext-or$PathContext.host_resource_state_path-cne$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH-or$ArtifactRoot-cne(Join-Path $PathContext.artifact_root 'projects/single_reflection_oa_tof_mass_analyzer')){throw 'Package must freeze the selected workspace context'}
+ if($null-eq$PathContext-or$PathContext.host_resource_state_path-cne$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH-or$ArtifactRoot-cne(Join-Path $PathContext.artifact_root 'components/single_reflection_oa_tof_mass_analyzer')){throw 'Package must freeze the selected workspace context'}
  $run=Join-Path $ArtifactRoot ('runs/'+$RunId);foreach($d in @('inputs','results','logs','simion')){[IO.Directory]::CreateDirectory((Join-Path $run $d))|Out-Null}
  $config=Join-Path $run 'run_config.json';Write-RunJson $config @{inputs=@{}}
  return @{artifact_run_dir=$run;run_dir=$run;input_dir=(Join-Path $run 'inputs');result_dir=(Join-Path $run 'results');log_dir=(Join-Path $run 'logs');run_config=$config}
@@ -181,7 +181,7 @@ $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 . (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $Repo 'src/msplatform/execution/resources/workspace_paths.ps1')
 $configuredPaths=Resolve-WorkspacePaths -SourceRoot $Repo -ArtifactRoot (Join-Path $Root 'configured-artifacts') -ExecutionRoot (Join-Path $Root 'exec') -HostResourceStatePath (Join-Path $Root 'host.sqlite3') -Python $Python
-$run=Join-Path $configuredPaths.artifact_root 'projects/test/runs/fixture'
+$run=Join-Path $configuredPaths.artifact_root 'components/test/runs/fixture'
 foreach($d in @('logs','results','simion')){[IO.Directory]::CreateDirectory((Join-Path $run $d))|Out-Null}
 $package=[pscustomobject]@{artifact_run_dir=$run;run_dir=$run;execution_alias=$null;execution_path_capacity=$null;python=$Python;path_context=$configuredPaths}
 $ast=[Management.Automation.Language.Parser]::ParseFile($Adapter,[ref]$null,[ref]$null)

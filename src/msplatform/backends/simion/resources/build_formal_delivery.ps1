@@ -60,17 +60,16 @@ $workspaceRoot = Split-Path -Parent $repoRoot
 # that layout PSScriptRoot no longer identifies the workspace, so the caller
 # supplies the already-frozen artifact project root.  Formal/default callers
 # retain the repository-relative resolution below.
-if ([string]::IsNullOrWhiteSpace($ArtifactProjectRoot)) {
-  $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\single_reflection_oa_tof_mass_analyzer'
-}
-else {
-  $artifactRoot = [IO.Path]::GetFullPath($ArtifactProjectRoot)
-}
+$artifactRoot = if ([string]::IsNullOrWhiteSpace($ArtifactProjectRoot)) { '' } else { [IO.Path]::GetFullPath($ArtifactProjectRoot) }
 $formalBaselinePath = Join-Path $projectRoot 'config\baseline.json'
 $modePath = Join-Path $projectRoot 'config\modes\formal.json'
 $formalContractPath = Join-Path $projectRoot 'config\resolved_geometry.json'
 . (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $python = if ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) } else { throw 'Explicit SIMULATION_PYTHON_EXE is required' }
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
+if (-not $artifactRoot) {
+  $artifactRoot = Resolve-RunArtifactRoot -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -OwnerKind component -OwnerId single_reflection_oa_tof_mass_analyzer -Python $python
+}
 $nativeOperations=[Collections.Generic.List[object]]::new()
 $producerComponents=[Collections.Generic.List[object]]::new()
 $hostExecutionLease=$null;$hostRelease=$null;$buildFailure=$null
@@ -113,7 +112,7 @@ else {
 }
 
 $executionResources = Join-Path $repoRoot 'src/msplatform/execution/resources'
-$hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path $workspaceRoot 'artifacts/common/host_resources.sqlite3' }
+$hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Resolve-PlatformArtifactPath -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -RelativePath @('host_resources.sqlite3') -Python $python }
 $hostContext = @{workspace=$workspaceRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 . (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\native_fast_adjust_runtime_support.ps1')
@@ -126,7 +125,7 @@ if($capacitySession.role-ne'artifact_workflow_capacity_session'-or$capacitySessi
 }
 $scope=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession
 $capacitySession=$scope.session
-$cacheRoot=Join-Path ([string]$capacitySession.artifact_root) 'common/simion/pa_family_cache'
+$cacheRoot=Resolve-PlatformArtifactPath -ArtifactRoot ([string]$capacitySession.artifact_root) -RelativePath @('simion','pa_family_cache') -Python $python
 $planCode=@'
 import json,sys
 from pathlib import Path
@@ -189,7 +188,7 @@ else {
 }
 
 $outputAlias=New-RunExecutionAlias -TargetDirectory $outputFull `
-  -ExecutionRoot (Join-Path ([string]$capacitySession.artifact_root) 'common/execution_aliases')
+  -ExecutionRoot (Resolve-PlatformArtifactPath -ArtifactRoot ([string]$capacitySession.artifact_root) -RelativePath @('execution_aliases') -Python $python)
 $runtimeOutput=[string]$outputAlias.execution_alias
 $buildLogs=Join-Path $outputFull 'build_logs'
 New-Item -ItemType Directory -Path $buildLogs|Out-Null
@@ -515,7 +514,7 @@ foreach($component in $componentPlan.components){
           }
         }
         $scratchAlias=New-RunExecutionAlias -TargetDirectory $scratch `
-          -ExecutionRoot (Join-Path ([string]$capacitySession.artifact_root) 'common/execution_aliases')
+          -ExecutionRoot (Resolve-PlatformArtifactPath -ArtifactRoot ([string]$capacitySession.artifact_root) -RelativePath @('execution_aliases') -Python $python)
         $nativeScratch=[string]$scratchAlias.execution_alias
         if($rebuild){
           $responseOperationStart=$nativeOperations.Count

@@ -131,7 +131,7 @@ def parent_fixture(root, *, fault=None):
                        run_id=run.name, mode='resolved_design_transport', inputs=paths,
                        parameters=dict(stop_stage='transport', runtime_profile_id='frozen-runtime', design_profile_id='frozen-design'),
                        paths=dict(source_root=str(REPO), artifact_root=str(artifacts),
-                                  execution_root=str(artifacts/'common/execution_aliases'),
+                                  execution_root=str(artifacts/'platform/execution_aliases'),
                                   host_resource_state_path=str(root/'host.sqlite3'))))
     if fault == 'bad_plot':
         state[0]['time_us'] = 'NaN'
@@ -187,7 +187,7 @@ class ComsolAnalysisRecoveryTests(unittest.TestCase):
                     partial = partial.decode("utf-8", errors="replace")
                 print(f"RF_ANALYSIS_TIMEOUT_PARTIAL_{stream.upper()}={partial or ''}", file=sys.stderr, flush=True)
             raise
-        child = root/'artifacts/projects/rf_multipole_ion_optics/runs'/run_id
+        child = root/'artifacts/components/rf_multipole_ion_optics/runs'/run_id
         return outcome, result, child
 
     def test_external_process_diagnostics_replace_non_utf8_without_changing_result_files(self):

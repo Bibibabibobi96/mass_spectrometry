@@ -57,7 +57,7 @@ function Initialize-RfSimionPreparedField {
  if($Preparation.RfDriveKernelPath-cne'kernel'-or$Preparation.ProgramSourcePath-cne'program'){throw 'frozen native inputs absent'}
  $script:calls++;[pscustomobject]@{capacity=$CapacitySession;iob_path='original.iob';source_reused=$true;checkpoint_path='small.json';producer_manifest='producer/run_manifest.json'}
 }
-$template=@{placeholder_pa0='registered-seed'};$package=@{};$execution=@{};$candidateDir='candidate';$simion='unused';$flyPath='source';$iobBuilder='builder';$programSource='program';$runConfigLua=Join-Path $env:RF_TEST_TEMP 'run.lua';$inspectScript='inspect';$iobReport='report';$logDir='logs';$rfDriveKernel='kernel';$hostExecutionLease=@{};$templateIob='template';$templateCon='con';$python='python';$repoRoot=$PWD;$artifactRoot=Join-Path $env:RF_TEST_TEMP 'artifacts/projects/rf';$nativePreparation=[Collections.Generic.List[object]]::new();$runConfigPath='unused'
+$template=@{placeholder_pa0='registered-seed'};$package=@{};$execution=@{};$candidateDir='candidate';$simion='unused';$flyPath='source';$iobBuilder='builder';$programSource='program';$runConfigLua=Join-Path $env:RF_TEST_TEMP 'run.lua';$inspectScript='inspect';$iobReport='report';$logDir='logs';$rfDriveKernel='kernel';$hostExecutionLease=@{};$templateIob='template';$templateCon='con';$python='python';$repoRoot=$PWD;$artifactRoot=Join-Path $env:RF_TEST_TEMP 'artifacts/components/rf';$nativePreparation=[Collections.Generic.List[object]]::new();$runConfigPath='unused'
 foreach($workflow in @('interface_readiness','mass_filter_reference')){
  $name=if($workflow-eq'mass_filter_reference'){'run_mass_filter_simion.ps1'}else{'run_simion.ps1'}
  $path=Join-Path $PWD "src/msplatform/workflows/resources/$name"

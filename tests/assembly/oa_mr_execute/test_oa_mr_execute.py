@@ -870,7 +870,7 @@ try{
         # materializer can turn it into a scientifically different source.
         command = r"""
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-$python='Check-Source';$sourceRoot='repo';$workspaceRoot='workspace';$artifactRoot='workspace/artifacts';$RunId='fixture'
+$python='Check-Source';$sourceRoot='repo';$workspaceRoot='workspace';$artifactRoot='workspace/artifacts';$projectArtifacts=Join-Path $artifactRoot 'assemblies/instrument_assembly';$RunId='fixture'
 $trajectoryRetentionClass='compact';$trajectoryRetentionReason='fixture'
 $bunchSourceManifest='source';$mirrorManifest='source';$stripeManifest='source';$manifest='source';$nativeBankManifest='source'
 function New-RunPackage {

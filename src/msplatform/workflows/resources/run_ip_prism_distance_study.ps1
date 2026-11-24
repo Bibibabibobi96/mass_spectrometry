@@ -18,14 +18,14 @@ $packageRoot=(Resolve-Path -LiteralPath ([string]$packageRootText).Trim()).Path
 $executionResources=Join-Path $packageRoot 'execution/resources'
 . (Join-Path $executionResources 'require_powershell7.ps1')
 . (Join-Path $executionResources 'run_artifact_support.ps1')
-$hostState=Join-Path $artifactRoot 'common/host_resources.sqlite3'
+$hostState=Resolve-PlatformArtifactPath -ArtifactRoot $artifactRoot -RelativePath host_resources.sqlite3 -Python $python
 $hostContext=@{workspace=$repoRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 . (Join-Path $executionResources 'resource_process_support.ps1')
 . (Join-Path $executionResources 'simion_dispatch_support.ps1')
 $module='msplatform.workflows.mr_design.ip_prism_distance_study'
 $projectId='parallel_mirror_dual_stripe_mr_tof'
-$projectArtifacts=Join-Path $artifactRoot "projects/$projectId"
+$projectArtifacts=Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind component -OwnerId $projectId -Python $python
 $contract=(Resolve-Path -LiteralPath $ContractPath).Path
 $author=Get-Content -LiteralPath $contract -Raw|ConvertFrom-Json
 if($author.role-eq'ip_prism_recorded_aperture_comparison'){

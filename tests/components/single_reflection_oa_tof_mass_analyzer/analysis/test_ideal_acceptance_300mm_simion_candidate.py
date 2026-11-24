@@ -200,7 +200,7 @@ class IdealAcceptanceCandidateTests(unittest.TestCase):
         repo, _, _ = self.publication_code_root()
         schema_source = compiler.SCHEMA_DIR / compiler.OUTPUT_SCHEMA
         self.assertFalse(schema_source.resolve().is_relative_to(self.workspace.resolve()))
-        run = (self.workspace / "artifacts/projects" / compiler.PROJECT_ID / "runs"
+        run = (self.workspace / "artifacts/components" / compiler.PROJECT_ID / "runs"
                / "20261029_080000__build__python__synthetic-300mm-candidate")
         before = {p: p.read_bytes() for p in self.parent.rglob("*") if p.is_file()}
         self.live_reference.unlink()
@@ -234,7 +234,7 @@ class IdealAcceptanceCandidateTests(unittest.TestCase):
 
     def test_publication_failure_cleans_staging_and_keeps_project_source_local(self) -> None:
         self.publication_code_root()
-        run = (self.workspace / "artifacts/projects" / compiler.PROJECT_ID / "runs"
+        run = (self.workspace / "artifacts/components" / compiler.PROJECT_ID / "runs"
                / "20261102_190002__build__python__300mm-publication-failure")
         before = {path: path.read_bytes() for path in self.parent.rglob("*") if path.is_file()}
         arguments = dict(workspace_root=self.workspace)

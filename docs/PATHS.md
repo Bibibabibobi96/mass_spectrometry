@@ -17,12 +17,22 @@ MATLAB `resolve_path_identity` 仅供身份与写入授权比较：沿 Java `Pat
 
 Python `resolve_workspace_paths`与PowerShell `Resolve-WorkspacePaths`在启动时接收显式源码根，
 解析源码、可写产物、执行和主机调度器四个规范位置；显式参数优先于环境。
-`MASS_SPECTROMETRY_ARTIFACT_ROOT`可一次配置短产物根，执行根默认跟随其`common/execution_aliases`，
-也可用既有`MASS_SPECTROMETRY_EXECUTION_ROOT`指定。主机库沿既有
-`MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH`保持原身份，不随产物根或源码快照位置新建调度器。
+新run根只有一个公共解析器：Python `resolve_run_artifact_root(artifact_root, owner_kind="component"|"assembly", owner_id=...)`；
+PowerShell `Resolve-RunArtifactRoot -ArtifactRoot ... -OwnerKind ... -OwnerId ...`经同一Python bridge调用。
+组件写入`components/<component_id>/`，唯一Assembly写入`assemblies/instrument_assembly/`。
+平台路径使用Python `resolve_platform_artifact_path(artifact_root, *relative_parts)`或PowerShell
+`Resolve-PlatformArtifactPath -ArtifactRoot ... -RelativePath ...`，根为`platform/`。
+`MASS_SPECTROMETRY_ARTIFACT_ROOT`可一次配置短产物根，执行根默认跟随其`platform/execution_aliases`，
+也可用既有`MASS_SPECTROMETRY_EXECUTION_ROOT`指定。主机库默认位于默认产物根的`platform/host_resources.sqlite3`；
+`MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH`保持显式部署身份，不随产物根或源码快照位置新建调度器。
 四字段上下文交现有run配置冻结；后续消费完整冻结上下文，不重新解释当前环境默认。
+`New-RunPackage`的`-ArtifactRoot`必须是上述解析器返回的owner根，不能传全局artifacts根、`runs/`或旧`projects/common`路径；
+`-Project`继续保存现有机器身份，`instrument_assembly`自动选择Assembly根，其他ID选择组件根。
+迁移调用者只替换根的计算，不改run ID、manifest字段或历史字节。旧run由manifest绑定的显式路径只读打开，没有旧根fallback。
 PowerShell与Python路径桥的JSON管道及Python诊断显式使用UTF-8；输入、输出不随系统locale或
-`PYTHONIOENCODING`改变，中文路径在解析、冻结根和执行路径投影中保持原值。
+`PYTHONIOENCODING`改变，中文路径在解析、冻结根和执行路径投影中保持原值。PowerShell bridge以`-I -B`
+启动调用方选择的解释器，只把当前资源树对应的`src`置于导入根，并断言实际`run_paths.py`来自该根；
+外部`PYTHONPATH`不能替换公共实现。
 `Remove-RunPackageExecutionAlias`成功移除junction后，将Package恢复为持久run位置并清除旧执行表示；
 `Get-RunNativeExecutionContext`也处理从冻结记录恢复、但登记alias已不存在的Package，依据本次明确的
 持久路径和冻结执行根重新准备。它不迁移载荷、不搜索其他根，也不修改旧manifest。

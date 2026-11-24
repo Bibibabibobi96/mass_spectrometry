@@ -122,6 +122,7 @@ function Resolve-WorkspacePaths {param($SourceRoot,$ArtifactRoot,$ExecutionRoot,
  execution_root=$([IO.Path]::GetFullPath($(if($ExecutionRoot){$ExecutionRoot}else{$env:MASS_SPECTROMETRY_EXECUTION_ROOT})));
  host_resource_state_path=$(if($HostResourceStatePath){$HostResourceStatePath}else{$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH})}
 }
+function Resolve-RunArtifactRoot {param($ArtifactRoot,$OwnerKind,$OwnerId,$Python) return (Join-Path $ArtifactRoot "components/$OwnerId")}
 ''')
         write(repo/'src/msplatform/execution/resources/host_execution_lease.ps1', r'''
 function Enter-HostExecutionLease {param($Role,$Stage,$StatePath) if($StatePath-cne$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){throw 'Host state differs'};Add-Content $env:DIAGNOSTIC_TRACE "lease:$Role";return @{role=$Role}}
@@ -137,7 +138,7 @@ foreach($name in @('Save-RunEnvironment','Restore-RunEnvironment','Write-RunJson
  Invoke-Expression $node.Extent.Text
 }
 function New-RunPackage {param($Python,$RepoRoot,$ArtifactRoot,$RunId,$Project,$Mode,$Software,$RetentionClass,$RetentionReason,$AdditionalDirectories,$PathContext,[switch]$RetentionContractEnabled,[switch]$CapacityLedgerLifecycleEnabled)
- if($null-eq$PathContext-or$ArtifactRoot-cne(Join-Path $PathContext.artifact_root ('projects/'+$Project))){throw 'Package roots differ'}
+ if($null-eq$PathContext-or$ArtifactRoot-cne(Join-Path $PathContext.artifact_root ('components/'+$Project))){throw 'Package roots differ'}
  $run=Join-Path $ArtifactRoot "runs/$RunId";foreach($name in @('inputs','results','logs','simion')){New-Item -ItemType Directory (Join-Path $run $name) -Force|Out-Null}
  $config=Join-Path $run 'run_config.json';Write-RunJson -Path $config -Value @{schema_version=2;run_id=$RunId;project=$Project;mode=$Mode;paths=$PathContext;package_sentinel='keep';artifact_retention=@{policy_version=1;class=$RetentionClass;reason=$RetentionReason};capacity_ledger_lifecycle=@{artifact_root=$PathContext.artifact_root}}
  return @{artifact_run_dir=$run;input_dir=(Join-Path $run 'inputs');result_dir=(Join-Path $run 'results');log_dir=(Join-Path $run 'logs');run_config=$config}
@@ -199,7 +200,7 @@ return [pscustomobject]@{Distribution=$Distribution;Mode=$Mode;Hit=0;EfficiencyP
                 cwd=ROOT, timeout=120, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
             self.assertEqual(trace.read_text(encoding="utf-8-sig").splitlines(), ['lease:GATE','source_guard'])
-            run = root/'artifacts/projects'/PROJECT_ID/'runs'/run_id
+            run = root/'artifacts/components'/PROJECT_ID/'runs'/run_id
             config = json.loads((run/'run_config.json').read_text(encoding='utf-8-sig'))
             self.assertEqual((config['particles'], config['seed']), (2, 17))
             self.assertTrue(config['analysis_only'])
@@ -207,7 +208,7 @@ return [pscustomobject]@{Distribution=$Distribution;Mode=$Mode;Hit=0;EfficiencyP
             self.assertEqual(config['paths']['artifact_root'], str(root/'artifacts'))
             self.assertEqual(config['paths']['host_resource_state_path'], str(root/'configured-host.sqlite3'))
             self.assertEqual(json.loads((run/'summary.json').read_text(encoding='utf-8-sig'))['cases'], 24)
-            self.assertFalse((root/'artifacts/projects'/PROJECT_ID/'formal').exists())
+            self.assertFalse((root/'artifacts/components'/PROJECT_ID/'formal').exists())
             self.assertFalse(list(run.rglob('*.pa*')))
 
     def test_analyze_only_missing_bound_record_reports_stable_reason_and_no_native(self):
@@ -229,7 +230,7 @@ return [pscustomobject]@{Distribution=$Distribution;Mode=$Mode;Hit=0;EfficiencyP
             self.assertNotIn('lease:SIMION', events)
             self.assertNotIn('native_fly', events)
             self.assertNotIn('prepare_runtime', events)
-            error_log = root/'artifacts/projects'/PROJECT_ID/'runs'/run_id/'logs/analysis_source_validation.stderr.log'
+            error_log = root/'artifacts/components'/PROJECT_ID/'runs'/run_id/'logs/analysis_source_validation.stderr.log'
             details = error_log.read_text(encoding='utf-8-sig')
             self.assertIn('ACTION=provide_complete_manifest_bound', details)
             self.assertIn(CASES[0]+'.log', details)
@@ -275,7 +276,7 @@ foreach($name in $names){if([Environment]::GetEnvironmentVariable($name)-cne$bef
                 str(repo),str(root/'separate-data')],
                 cwd=root, timeout=60, env=environment, capture_output=True, text=True, encoding='utf-8', errors='replace')
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
-            run = root/'separate-data/projects'/PROJECT_ID/'runs'/run_id
+            run = root/'separate-data/components'/PROJECT_ID/'runs'/run_id
             config = json.loads((run/'run_config.json').read_text(encoding='utf-8-sig'))
             self.assertEqual(config['package_sentinel'], 'keep')
             self.assertEqual(config['paths']['artifact_root'], str(root/'separate-data'))

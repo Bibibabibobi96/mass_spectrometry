@@ -182,7 +182,7 @@ class IdealSourceComparisonTests(unittest.TestCase):
             self.assertEqual([row["operation_id"] for row in operations], ["scientific_analysis"])
             self.assertEqual(operations[0]["observation"]["returncode"], 0)
             self.assertGreater(operations[0]["observation"]["process_id"], 0)
-            owner_result = (context.workspace / "artifacts/projects" / result.parent.parent.name /
+            owner_result = (context.workspace / "artifacts/components" / result.parent.parent.name /
                 "scratch/workflow_results" / run_id / "result.json")
             public = json.loads(owner_result.read_text(encoding="utf-8"))
             self.assertIs(public["writers_confirmed"], True)
@@ -207,7 +207,7 @@ class IdealSourceComparisonTests(unittest.TestCase):
         config["scope"] = "Pure Python legacy projection fixture; no solver or scientific qualification"
         config_path = root / "experiment.json"
         config_path.write_text(json.dumps(config), encoding="utf-8")
-        artifact_root = context.workspace / "artifacts/projects" / project.name
+        artifact_root = context.workspace / "artifacts/components" / project.name
         artifact_root.mkdir(parents=True)
         initialize_capacity_ledger(artifact_root.parents[1], objects=[])
         parent = artifact_root / "runs/20261031_150100__analysis__python__legacy-ideal"
@@ -345,7 +345,7 @@ class IdealSourceComparisonTests(unittest.TestCase):
                 command.assert_not_called()
                 source_reads.assert_not_called()
             self.assertEqual(before, {path: path.read_bytes() for path in parent.iterdir()})
-            self.assertFalse((context.workspace / "artifacts/projects").exists())
+            self.assertFalse((context.workspace / "artifacts/components").exists())
 
     def test_legacy_association_requires_both_exact_source_identities(self):
         for name, original, current in (

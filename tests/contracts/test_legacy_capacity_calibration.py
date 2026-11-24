@@ -59,13 +59,13 @@ def _write_owner_disposition(
         "disposition": {"id": disposition_id, "generation": seed["generation"],
                         "manifest_path": evidence["path"], "files": files},
     }
-    path = root / "common" / "capacity_calibration" / "owner_dispositions" / f"{disposition_id}.json"
+    path = root / "platform" / "capacity_calibration" / "owner_dispositions" / f"{disposition_id}.json"
     _write_json(path, document)
     return path
 
 
 def _write_legacy_v1_ledger(root: Path, *, resident_bytes: int = 0) -> Path:
-    path = root / "common" / "capacity_ledger.json"
+    path = root / "platform" / "capacity_ledger.json"
     _write_json(path, {
         "schema_version": 1,
         "role": "artifact_capacity_ledger",
@@ -79,7 +79,7 @@ def _write_legacy_v1_ledger(root: Path, *, resident_bytes: int = 0) -> Path:
 
 
 def _write_v2_ledger(root: Path, objects: list[dict]) -> Path:
-    path = root / "common" / "capacity_ledger.json"
+    path = root / "platform" / "capacity_ledger.json"
     document = {
         "schema_version": 2, "role": "artifact_capacity_ledger",
         "status": "calibrated", "complete": True,
@@ -389,7 +389,7 @@ class LegacyCapacityCalibrationTests(unittest.TestCase):
                         "bytes": candidate["bytes"], "status": "retired", "pin": False, "owner": "instrument",
                         "disposition": candidate["disposition"], "retired_at_utc": "2026-10-22T00:00:00Z"}
             capacity_ledger.initialize_capacity_ledger(root, objects=ledger["objects"], overwrite=True)
-            receipt = root / "common/capacity_disposal_receipts" / f"ledger_disposition_{candidate['disposition']['id']}.json"
+            receipt = root / "platform/capacity_disposal_receipts" / f"ledger_disposition_{candidate['disposition']['id']}.json"
             receipt.parent.mkdir(parents=True)
             receipt.write_text("null", encoding="utf-8")
             outcome = legacy_owner_disposition.activate_owner_dispositions(root)
@@ -424,7 +424,7 @@ class LegacyCapacityCalibrationTests(unittest.TestCase):
                         if corruption == "ledger_inventory":
                             ledger["objects"][index]["disposition"]["generation"] = "F" * 64
                 capacity_ledger.initialize_capacity_ledger(root, objects=ledger["objects"], overwrite=True)
-                receipt = root / "common/capacity_disposal_receipts" / f"ledger_disposition_{candidate['disposition']['id']}.json"
+                receipt = root / "platform/capacity_disposal_receipts" / f"ledger_disposition_{candidate['disposition']['id']}.json"
                 receipt_data = {"role": "artifact_capacity_disposal_receipt", "status": "complete",
                                 "disposition": candidate["disposition"], "target_path": str((root / candidate["path"]).resolve())}
                 if corruption == "receipt_inventory": receipt_data["disposition"]["generation"] = "F" * 64
@@ -499,7 +499,7 @@ class LegacyCapacityCalibrationTests(unittest.TestCase):
                 "status": "retired", "pin": False, "owner": candidate["owner_hint"],
                 "disposition": candidate["disposition"], "retired_at_utc": "2026-09-22T00:00:00Z",
             }], external_scopes=[])
-            receipt = root / "common" / "capacity_disposal_receipts" / (
+            receipt = root / "platform" / "capacity_disposal_receipts" / (
                 f"ledger_disposition_{candidate['disposition']['id']}.json"
             )
             _write_json(receipt, {
@@ -576,9 +576,9 @@ class LegacyCapacityCalibrationTests(unittest.TestCase):
             root = Path(temporary) / "artifacts"
             root.mkdir()
             known = [
-                "common/capacity_disposal_receipts",
-                "common/capacity_calibration/ledger_migrations",
-                "common/capacity_protection_leases",
+                "platform/capacity_disposal_receipts",
+                "platform/capacity_calibration/ledger_migrations",
+                "platform/capacity_protection_leases",
                 "common/.capacity_ledger.json.fixture",
                 "common/execution_aliases",
                 "common/host_resources.sqlite3",
@@ -594,9 +594,9 @@ class LegacyCapacityCalibrationTests(unittest.TestCase):
                 root, review_deadline="2026-10-22",
             )
             owners = {item["path"]: item["owner"] for item in migrated["objects"]}
-            self.assertEqual(owners["common/capacity_disposal_receipts"], "common.capacity_lifecycle")
-            self.assertEqual(owners["common/capacity_calibration/ledger_migrations"], "common.capacity_lifecycle")
-            self.assertEqual(owners["common/capacity_protection_leases"], "common.capacity_lifecycle")
+            self.assertEqual(owners["platform/capacity_disposal_receipts"], "common.capacity_lifecycle")
+            self.assertEqual(owners["platform/capacity_calibration/ledger_migrations"], "common.capacity_lifecycle")
+            self.assertEqual(owners["platform/capacity_protection_leases"], "common.capacity_lifecycle")
             self.assertEqual(owners["common/.capacity_ledger.json.fixture"], "common.capacity_lifecycle")
             self.assertEqual(owners["common/execution_aliases"], "common.run_artifact_support")
             self.assertEqual(owners["common/host_resources.sqlite3"], "common.host_resources")
@@ -693,7 +693,7 @@ class LegacyCapacityCalibrationTests(unittest.TestCase):
 
             self.assertEqual(ledger["schema_version"], 3)
             self.assertEqual(capacity_ledger.load_capacity_ledger(root), ledger)
-            receipts = list((root / "common" / "capacity_calibration" / "ledger_migrations").glob("*.json"))
+            receipts = list((root / "platform" / "capacity_calibration" / "ledger_migrations").glob("*.json"))
             self.assertEqual(sorted(path.suffixes[-2:] for path in receipts), [[".complete", ".json"], [".pending", ".json"]])
             pending = json.loads(next(path for path in receipts if path.name.endswith(".pending.json")).read_text(encoding="utf-8"))
             complete = json.loads(next(path for path in receipts if path.name.endswith(".complete.json")).read_text(encoding="utf-8"))
@@ -708,13 +708,13 @@ class LegacyCapacityCalibrationTests(unittest.TestCase):
             root.mkdir()
             inventory = build_calibration_inventory(root, review_deadline="2026-09-29")
             initialize_from_inventory(inventory)
-            before = (root / "common" / "capacity_ledger.json").read_bytes()
+            before = (root / "platform" / "capacity_ledger.json").read_bytes()
 
             with self.assertRaisesRegex(CalibrationError, "will not be overwritten"):
                 initialize_from_inventory(inventory)
 
-            self.assertEqual((root / "common" / "capacity_ledger.json").read_bytes(), before)
-            self.assertFalse((root / "common" / "capacity_calibration" / "ledger_migrations").exists())
+            self.assertEqual((root / "platform" / "capacity_ledger.json").read_bytes(), before)
+            self.assertFalse((root / "platform" / "capacity_calibration" / "ledger_migrations").exists())
 
     def test_invalid_v1_ledger_is_refused_without_receipt_or_replacement(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -728,7 +728,7 @@ class LegacyCapacityCalibrationTests(unittest.TestCase):
                 initialize_from_inventory(inventory)
 
             self.assertEqual(destination.read_bytes(), before)
-            self.assertFalse((root / "common" / "capacity_calibration" / "ledger_migrations").exists())
+            self.assertFalse((root / "platform" / "capacity_calibration" / "ledger_migrations").exists())
 
     def test_pending_v1_migration_resumes_after_ledger_replace_interruption(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -747,7 +747,7 @@ class LegacyCapacityCalibrationTests(unittest.TestCase):
                 with self.assertRaisesRegex(OSError, "fixture interruption"):
                     initialize_from_inventory(inventory)
             self.assertIsNotNone(capacity_ledger.load_capacity_ledger(root))
-            receipts = root / "common" / "capacity_calibration" / "ledger_migrations"
+            receipts = root / "platform" / "capacity_calibration" / "ledger_migrations"
             self.assertEqual(len(list(receipts.glob("*.pending.json"))), 1)
             self.assertEqual(len(list(receipts.glob("*.complete.json"))), 0)
 
@@ -862,7 +862,7 @@ class LegacyCapacityCalibrationTests(unittest.TestCase):
             ):
                 main()
             initialize.assert_called_once()
-            self.assertFalse((root / "common" / "capacity_ledger.json").exists())
+            self.assertFalse((root / "platform" / "capacity_ledger.json").exists())
             events = [json.loads(line)["event"] for line in stderr.getvalue().splitlines()]
             self.assertEqual(events, [
                 "existing_calibration_report_initialization_started",
@@ -919,7 +919,7 @@ class LegacyCapacityCalibrationTests(unittest.TestCase):
                         review_deadline="2026-09-29",
                     )
             with self.subTest("in_root"):
-                in_root = root / "common" / "capacity_calibration" / "report.json"
+                in_root = root / "platform" / "capacity_calibration" / "report.json"
                 _write_json(in_root, inventory)
                 with self.assertRaisesRegex(CalibrationError, "external calibration report"):
                     load_existing_calibration_report(
@@ -1423,7 +1423,7 @@ class LegacyCapacityCalibrationTests(unittest.TestCase):
             self.assertIn("calibration_report_written", events)
             self.assertEqual(events[-1], "ledger_initialization_rejected")
             self.assertEqual(stdout.getvalue(), "")
-            self.assertFalse((root / "common" / "capacity_ledger.json").exists())
+            self.assertFalse((root / "platform" / "capacity_ledger.json").exists())
 
 
 if __name__ == "__main__":

@@ -50,7 +50,7 @@ class PublishIdealAcceptanceApertureComparisonTest(unittest.TestCase):
         }
 
     def _run_dir(self, root: Path, name: str) -> Path:
-        return root / "artifacts" / "projects" / publisher.PROJECT_ID / "runs" / name
+        return root / "artifacts" / "components" / publisher.PROJECT_ID / "runs" / name
 
     def test_publishes_pre_pulse_result_with_all_arm_manifest_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

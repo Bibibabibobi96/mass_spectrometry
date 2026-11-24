@@ -109,7 +109,7 @@ fixture／未知目录的owner发现沿公共目录；Core／Static内部集合�
 `tests/components/rf_multipole_ion_optics`，不为变体复制通用实现。
 
 新运行的owner为`rf_multipole_ion_optics`，产物进入工作区
-`artifacts/projects/rf_multipole_ion_optics/`。旧run、manifest、源和资格保留原owner与字节身份，
+`artifacts/components/rf_multipole_ion_optics/`。旧run、manifest、源和资格保留原owner与字节身份，
 由[历史索引](../../../../docs/history/projects/rf_multipole_ion_optics/README.md)定位；旧结果不会因目录合并变成新项目已通过的证据。
 
 The same installed `solve_fields` now plans independent RF fields with explicit

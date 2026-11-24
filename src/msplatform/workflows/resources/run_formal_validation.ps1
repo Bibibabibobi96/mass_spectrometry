@@ -16,14 +16,15 @@ $ErrorActionPreference = 'Stop'
 $workspaceRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
 $repoRoot = $workspaceRoot
 $artifactRootPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRootPath)
-$artifactRoot = Join-Path $artifactRootPath 'projects\single_reflection_oa_tof_mass_analyzer'
+. (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'execution/resources/workspace_paths.ps1')
 $projectRoot = (Resolve-Path -LiteralPath $ScienceRoot).Path
 $python = if ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) } else { throw 'Explicit SIMULATION_PYTHON_EXE is required' }
+$artifactRoot = Resolve-RunArtifactRoot -ArtifactRoot $artifactRootPath -OwnerKind component -OwnerId single_reflection_oa_tof_mass_analyzer -Python $python
 $packageRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $runRecordComplete = $true
 $hostRole = 'SIMION'
 $executionResources = Join-Path $packageRoot 'execution/resources'
-$hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path $artifactRootPath 'common/host_resources.sqlite3' }
+$hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Resolve-PlatformArtifactPath -ArtifactRoot $artifactRootPath -RelativePath @('host_resources.sqlite3') -Python $python }
 $hostContext = @{workspace=$workspaceRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 $hostExecutionLease = Enter-HostExecutionLease -Role $hostRole -Stage prepare
@@ -49,7 +50,7 @@ if ($Phase -eq 'Verify') {
   . (Join-Path $packageRoot 'workflows/resources/oatof_lifecycle_preflight.ps1')
   Assert-OaTofFormalAssetsReadable -ProjectRoot $projectRoot
   & $python -I -B -m msplatform.execution.verify_artifact_layout `
-    (Join-Path $artifactRootPath 'projects') --formal-only --verify-hashes `
+    (Join-Path $artifactRootPath 'components') --formal-only --verify-hashes `
     --project single_reflection_oa_tof_mass_analyzer --repository-root $repoRoot
   if ($LASTEXITCODE -ne 0) { throw 'Formal asset-manifest structure gate failed.' }
   & (Join-Path $packageRoot 'workflows/resources/verify_geometry_contract.ps1') `

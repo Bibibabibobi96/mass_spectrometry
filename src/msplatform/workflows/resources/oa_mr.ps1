@@ -237,14 +237,15 @@ $packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;
 if($LASTEXITCODE-ne0-or[string]::IsNullOrWhiteSpace([string]$packageRootText)){throw 'Installed msplatform package is unavailable.'}
 $selectedPackageRoot=(Resolve-Path -LiteralPath ([string]$packageRootText).Trim()).Path
 if(-not$researchRootExplicit-and-not[string]::Equals($selectedPackageRoot,[IO.Path]::GetFullPath($packageRoot),[StringComparison]::OrdinalIgnoreCase)){throw 'Selected Python msplatform package differs from the entry package.'}
-$artifactRoot=if($env:MASS_SPECTROMETRY_ARTIFACT_ROOT){[IO.Path]::GetFullPath($env:MASS_SPECTROMETRY_ARTIFACT_ROOT)}else{Join-Path $workspaceRoot 'artifacts'}
-$hostState=if($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH}else{Join-Path $artifactRoot 'common/host_resources.sqlite3'}
+$pathContext=Resolve-WorkspacePaths -SourceRoot $sourceRoot -Python $python
+$artifactRoot=[string]$pathContext.artifact_root
+$projectArtifacts=Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind assembly -OwnerId $projectId -Python $python
+$hostState=[string]$pathContext.host_resource_state_path
 $hostContext=@{workspace=$workspaceRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 . (Join-Path $PSScriptRoot 'run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
 if($ResumeFinalization){
   if(-not$RunId){throw 'Finalization recovery requires the existing RunId.'}
-  $projectArtifacts=Join-Path $artifactRoot "projects/$projectId"
   if(-not$ResultPath){$ResultPath=Join-Path $projectArtifacts "scratch/workflow_results/$RunId/result.json"}
   $result=Invoke-RunArtifactWorkflow -RequestPath (Join-Path $projectArtifacts "runs/$RunId/inputs/execution_request.json") -ResultPath $ResultPath -ResumeFinalization
   Write-Output $result
@@ -437,7 +438,7 @@ if([string]::IsNullOrWhiteSpace($RunId)){$RunId=(Get-Date -Format 'yyyyMMdd_HHmm
 . (Join-Path $executionResources 'resource_process_support.ps1')
 . (Join-Path $packageRoot 'backends/simion/resources/short_pa_path_support.ps1')
 . (Join-Path $packageRoot 'execution/resources/dependencies.ps1')
-$package=New-RunPackage -Python $python -RepoRoot $sourceRoot -ArtifactRoot (Join-Path $artifactRoot "projects\$projectId") `
+$package=New-RunPackage -Python $python -RepoRoot $sourceRoot -ArtifactRoot $projectArtifacts `
   -RunId $RunId -Project $projectId -Mode 'oa_mr' -Software @('SIMION 2020','Python 3.11') `
   -RetentionContractEnabled -RetentionClass $trajectoryRetentionClass -RetentionReason $trajectoryRetentionReason `
   -CapacityLedgerLifecycleEnabled -AdditionalDirectories @('simion') -UseShortExecutionPath
@@ -669,7 +670,7 @@ try{
     $runtimeDispatchPlanPath=Join-Path $resultDir 'simion_repository_dispatch_plan.json'
     $batchPlanPath=Join-Path $resultDir 'simion_execution_batch_plan.json'
     $batchResourceUsagePath=Join-Path $logDir 'simion_batch_resource_usage.json'
-    Invoke-ProjectPython -Arguments @('-m','msplatform.execution.resource_profile','discover','--runs-root',(Join-Path $artifactRoot "projects\$projectId\runs"),'--output',$resourceProfilesPath)
+    Invoke-ProjectPython -Arguments @('-m','msplatform.execution.resource_profile','discover','--runs-root',(Join-Path $projectArtifacts 'runs'),'--output',$resourceProfilesPath)
     Write-RunJson -Path $dispatchRequestPath -Depth 10 -Value ([ordered]@{
       solver='SIMION';field_kind='electrostatic';particle_count=[int]$trial.source_particle_count;independent_particles=$true
       frontend_grid_profile_id=$(if($staticFieldRequested){if($staticFieldMode-eq'native_static_pa'){'mrtof_native_static_pa_four_collision_instances'}else{'mrtof_static_comsol_four_collision_instances'}}else{'mrtof_native_corridor_four_instance__bank_'+[string]$nativeBankCache.generation_sha256})

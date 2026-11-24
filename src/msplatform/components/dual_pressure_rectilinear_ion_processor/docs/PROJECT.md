@@ -317,7 +317,7 @@ IP的210 DPI及白底。manifest记录实际导出的尺寸／格式／DPI／字
 4. 声明定量性能前补齐截面标定、网格／全程步长、随机重复及实机几何依据；COMSOL与空间电荷作为独立能力建设。
 5. 新GUI包用独立可写运行目录准备，用户验收与文件默认重放分别记录，不覆盖已确认包。
 
-独立产物归`artifacts/projects/dual_pressure_rectilinear_ion_processor/`；跨组件装配及联合证据归集成owner。
+新独立产物归`artifacts/components/dual_pressure_rectilinear_ion_processor/`；跨组件装配及联合证据归集成owner。
 
 IP功能入口的正式首批观测及重规划由公共SIMION机制执行；IP继续负责批次物化和物理判据。
 

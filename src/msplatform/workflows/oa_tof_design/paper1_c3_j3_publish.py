@@ -24,6 +24,7 @@ import tempfile
 from typing import Any, Mapping, Sequence
 
 from msplatform.execution.artifact_naming import validate_run_id
+from msplatform.execution.resources.workspace_paths import resolve_run_artifact_root
 from msplatform.io.file_identity import file_sha256
 from msplatform.execution.inputs import freeze_file
 from msplatform.contracts.machine_contracts import load_json
@@ -100,7 +101,9 @@ def publish_c3_j3_candidates(
     campaign_path, c2_result_path = campaign_path.resolve(), c2_result_path.resolve()
     base_candidate_path, run_dir = base_candidate_path.resolve(), run_dir.resolve()
     validate_run_id(run_dir.name)
-    canonical_runs = (workspace_root / "artifacts" / "projects" / PROJECT_ID / "runs").resolve()
+    canonical_runs = resolve_run_artifact_root(
+        workspace_root / "artifacts", owner_kind="component", owner_id=PROJECT_ID,
+    ).joinpath("runs").resolve()
     if run_dir.parent != canonical_runs:
         raise ValueError("C3-J3 Candidate run_dir must use the canonical workspace artifact root")
     if run_dir.exists():

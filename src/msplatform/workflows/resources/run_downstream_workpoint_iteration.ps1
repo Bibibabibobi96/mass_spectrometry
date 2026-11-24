@@ -75,7 +75,7 @@ $executionResources = Join-Path $packageRoot 'execution/resources'
 . (Join-Path $packageRoot 'backends/simion/resources/native_corridor_runtime_support.ps1')
 $project = 'parallel_mirror_dual_stripe_mr_tof'
 $projectRoot = Join-Path $packageRoot 'components/parallel_mirror_dual_stripe_mr_tof'
-$hostState = Join-Path $artifactWorkspaceRoot 'common/host_resources.sqlite3'
+$hostState = Resolve-PlatformArtifactPath -ArtifactRoot $artifactWorkspaceRoot -RelativePath host_resources.sqlite3 -Python $python
 $hostContext = @{workspace=$workspaceRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 $contract = if ($ContractPath) { (Resolve-Path -LiteralPath $ContractPath).Path } else { Join-Path $projectRoot 'simion_candidate_two_zone.json' }
@@ -89,8 +89,8 @@ $trialRunner = if($PSCmdlet.ParameterSetName-eq'Prepared'){
 }else{Join-Path $packageRoot 'workflows/resources/oa_mr.ps1'}
 $auditRunner = Join-Path $packageRoot 'workflows/resources/run_downstream_fixed_grid_workpoint.ps1'
 $bunchScreeningRunner = Join-Path $packageRoot 'workflows/resources/run_native_corridor_bunch_screening.ps1'
-$artifactRoot = Join-Path $artifactWorkspaceRoot "projects\$project"
-$trialArtifactRoot = Join-Path $artifactWorkspaceRoot 'projects/instrument_assembly'
+$artifactRoot = Resolve-RunArtifactRoot -ArtifactRoot $artifactWorkspaceRoot -OwnerKind component -OwnerId $project -Python $python
+$trialArtifactRoot = Resolve-RunArtifactRoot -ArtifactRoot $artifactWorkspaceRoot -OwnerKind assembly -OwnerId instrument_assembly -Python $python
 $preparedCallerParameters=@($PSBoundParameters.Keys)
 $preparedProviderRunner=Join-Path $packageRoot 'backends/simion/resources/run_native_static_field_provider.ps1'
 $preparedStagedMode=$PSCmdlet.ParameterSetName-eq'Prepared'-and-not[string]::IsNullOrWhiteSpace($PreparedTargetAuthorityPath)

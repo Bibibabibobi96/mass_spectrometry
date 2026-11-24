@@ -671,7 +671,7 @@ IP自身提供的裸八杆导引与本项目八极杆保持不同来源，不能
 
 ## 产物与历史
 
-新运行的owner是`rf_multipole_ion_optics`，只写`artifacts/projects/rf_multipole_ion_optics/`。
+新运行的owner是`rf_multipole_ion_optics`，只写`artifacts/components/rf_multipole_ion_optics/`；运行器统一通过`resolve_run_artifact_root`／`Resolve-RunArtifactRoot`解析该根，平台cache、执行alias和host状态使用`platform/`。
 旧三个项目的run、manifest和冻结资格继续使用原身份与原artifact解析位置，不提供猜测旧路径的fallback。
 [历史索引](../../../../../docs/history/projects/rf_multipole_ion_optics/README.md)登记原owner、原路径、固定Git版本及迁移映射；冻结内容不改字节。
 普通README／PROJECT编辑由Git保留版本，不因本次合并再复制一套全文快照或逐会话状态历史。

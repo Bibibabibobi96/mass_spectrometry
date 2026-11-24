@@ -188,11 +188,12 @@ def verify_common_pa_family_cache(cache_root: Path, verify_hashes: bool = False)
 def verify_artifacts_root(projects: Path, verify_hashes: bool = False) -> None:
     """Run generic artifact checks followed by the SIMION-owned cache check."""
     artifacts = projects.parent
-    simion = artifacts / "common/simion"
-    if simion.exists():
-        if not simion.is_dir() or {item.name for item in simion.iterdir()} != {"pa_family_cache"}:
-            raise AssertionError("artifacts/common/simion: unexpected common SIMION artifact entries")
-        verify_common_pa_family_cache(simion / "pa_family_cache", verify_hashes=verify_hashes)
+    for owner in ("common", "platform"):
+        simion = artifacts / owner / "simion"
+        if simion.exists():
+            if not simion.is_dir() or {item.name for item in simion.iterdir()} != {"pa_family_cache"}:
+                raise AssertionError(f"artifacts/{owner}/simion: unexpected SIMION artifact entries")
+            verify_common_pa_family_cache(simion / "pa_family_cache", verify_hashes=verify_hashes)
     verify_generic_artifacts_root(projects, verify_hashes=verify_hashes)
 
 
@@ -248,11 +249,15 @@ def main() -> None:
     verify_artifacts_root(projects, verify_hashes=args.verify_hashes)
     repository_root = args.repository_root.resolve() if args.repository_root else None
     project_dirs = [project for project in projects.iterdir() if project.is_dir()]
+    for collection in ("components", "assemblies"):
+        root = projects.parent / collection
+        if root.is_dir():
+            project_dirs.extend(project for project in root.iterdir() if project.is_dir())
     if args.project:
-        selected = projects / args.project
-        if not selected.is_dir():
-            raise FileNotFoundError(f"artifact project is absent: {selected}")
-        project_dirs = [selected]
+        matches = [project for project in project_dirs if project.name == args.project]
+        if len(matches) != 1:
+            raise FileNotFoundError(f"artifact owner must be unique and present: {args.project}")
+        project_dirs = matches
     if args.formal_only:
         for project in project_dirs:
             verify_formal(project, args.verify_hashes, repository_root)

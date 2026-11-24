@@ -888,7 +888,7 @@ dofile('{Path(tasks['lua']).as_posix()}')
                 '-Python',str(python),'-RunId',run_id,'-DryRun','-RepoRoot',str(ROOT)],
                 cwd=ROOT,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=180)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-            run=artifacts/'projects/instrument_assembly/runs'/run_id
+            run=artifacts/'assemblies/instrument_assembly/runs'/run_id
             self.assertIn('TEST_CAPACITY_ADMISSION=ISOLATED', result.stdout)
             summary=runtime.read(run/'summary.json')
             self.assertFalse(summary['native_executed'])
@@ -918,7 +918,7 @@ dofile('{Path(tasks['lua']).as_posix()}')
                 cwd=workspace,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=240)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
             self.assertFalse((workspace/'src').exists())
-            run=artifacts/'projects/instrument_assembly/runs'/run_id
+            run=artifacts/'assemblies/instrument_assembly/runs'/run_id
             self.assertEqual(runtime.read(run/'run_manifest.json')['status'],'success')
             snapshot=run/'inputs/runtime_snapshot/src/msplatform'
             self.assertEqual((snapshot/'workflows/resources/paired_accelerator_static_field.ps1').read_bytes(),owner.read_bytes())
@@ -930,7 +930,7 @@ dofile('{Path(tasks['lua']).as_posix()}')
             root=Path(directory).resolve();_,author=self.prepared(root)
             artifacts=root/'artifacts';artifacts.mkdir()
             initialize_capacity_ledger(artifacts,objects=[])
-            wrong=artifacts/'projects/instrument_assembly/runs/20261025_010000__test__python__inert-producer/run_manifest.json'
+            wrong=artifacts/'assemblies/instrument_assembly/runs/20261025_010000__test__python__inert-producer/run_manifest.json'
             runtime.write(wrong,{'role':'not_a_terminal_run'})
             run_id='20261025_010002__test__python__paired-static-invalid-source'
             budget=root/'budget_not_parsed.json'
@@ -943,7 +943,7 @@ dofile('{Path(tasks['lua']).as_posix()}')
                 cwd=ROOT,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=180)
             self.assertNotEqual(result.returncode,0)
             self.assertIn('terminal instrument_assembly COMSOL producer required',result.stderr)
-            run=artifacts/'projects/instrument_assembly/runs'/run_id
+            run=artifacts/'assemblies/instrument_assembly/runs'/run_id
             self.assertEqual(runtime.read(run/'run_manifest.json')['status'],'failed')
             self.assertEqual(runtime.read(run/'summary.json')['failure_stage'],'verify_saved_comsol_source')
             self.assertEqual((run/'inputs/execution_budget.json').read_bytes(),budget.read_bytes())

@@ -263,7 +263,7 @@ $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=Join-Path $artifact 'host.sqlite
 . (Join-Path $repo 'src/msplatform/execution/resources/host_execution_lease.ps1') -HostContext @{workspace=$artifact;python_executable=$python;host_state_path=$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH;policy_path=(Join-Path $repo 'src/msplatform/execution/resources/host_resource_policy.json')}
 $paths=Resolve-WorkspacePaths -SourceRoot $repo -Python $python
 $parentId='20261031_230000__test__python__interface-parent'
-$parent=New-RunPackage -Python $python -RepoRoot $repo -ArtifactRoot (Join-Path $artifact 'projects/rf_multipole_ion_optics') -PathContext $paths -RunId $parentId -Project rf_multipole_ion_optics -Mode transport_interface_readiness -RetentionContractEnabled -RetentionClass solver_review -RetentionReason 'synthetic completed stage test' -CapacityLedgerLifecycleEnabled -Software @('Python software fixture') -AdditionalDirectories @('comsol')
+$parent=New-RunPackage -Python $python -RepoRoot $repo -ArtifactRoot (Join-Path $artifact 'components/rf_multipole_ion_optics') -PathContext $paths -RunId $parentId -Project rf_multipole_ion_optics -Mode transport_interface_readiness -RetentionContractEnabled -RetentionClass solver_review -RetentionReason 'synthetic completed stage test' -CapacityLedgerLifecycleEnabled -Software @('Python software fixture') -AdditionalDirectories @('comsol')
 $config=Get-Content $parent.run_config -Raw|ConvertFrom-Json -AsHashtable
 $config.parameters=@{execution_stage='full_particle_transport'}
 $source=Join-Path $parent.input_dir 'source.ion';Copy-Item IONS $source
@@ -294,12 +294,12 @@ Push-Location $repo;try{$json=& $python -B -c $seal $artifact $parent.run_config
 $before=@{};foreach($file in @('run_config.json','run_manifest.json','summary.json','logs/native_completion.json','results/solver_raw_metadata.json','results/release_source_mapping.json','results/particle_state.csv','inputs/source.ion')){$before[$file]=[Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $parent.artifact_run_dir $file)))}
 $badStopped=Join-Path ROOT 'bad_stopped.json';'{}'|Set-Content $badStopped
 $badId='20261031_230050__analysis__python__invalid-source';$caught=$false
-$leaseDirectory=Join-Path $artifact 'common/capacity_protection_leases'
+$leaseDirectory=Join-Path $artifact 'platform/capacity_protection_leases'
 $leasesBefore=@(Get-ChildItem $leaseDirectory -File -ErrorAction SilentlyContinue|ForEach-Object Name)
 try{& ENTRY -AnalyzeOnly -ParentManifestPath (Join-Path $parent.artifact_run_dir 'run_manifest.json') -StoppedReceiptPath $badStopped -LimitsPath LIMITS -RunId $badId -ResultPath (Join-Path ROOT 'bad_result.json') -PythonExe $python}catch{if($_.Exception.Message-cne'checkpoint source stopped payload receipt differs'){throw};$caught=$true}
 $leasesAfter=@(Get-ChildItem $leaseDirectory -File -ErrorAction SilentlyContinue|ForEach-Object Name)
 if(($leasesBefore-join',')-cne($leasesAfter-join',')){throw 'invalid source leaked a new capacity lease'}
-if(-not$caught-or(Test-Path (Join-Path $artifact ('projects/rf_multipole_ion_optics/runs/'+$badId)))){throw 'invalid checkpoint source was accepted or created a new run'}
+if(-not$caught-or(Test-Path (Join-Path $artifact ('components/rf_multipole_ion_optics/runs/'+$badId)))){throw 'invalid checkpoint source was accepted or created a new run'}
 $result=Join-Path ROOT 'child_result.json';$childId='20261031_230100__analysis__python__interface'
 & ENTRY -AnalyzeOnly -ParentManifestPath (Join-Path $parent.artifact_run_dir 'run_manifest.json') -StoppedReceiptPath $stopped -LimitsPath LIMITS -RunId $childId -ResultPath $result -PythonExe $python
 $out=Get-Content $result -Raw|ConvertFrom-Json

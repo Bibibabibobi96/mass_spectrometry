@@ -50,7 +50,8 @@ $initialPythonPath=$env:PYTHONPATH
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
 $executionResources=Join-Path $repoRoot 'src/msplatform/execution/resources'
 $workspaceRoot=Split-Path -Parent $repoRoot
-$hostState=if($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH}else{Join-Path $workspaceRoot 'artifacts/common/host_resources.sqlite3'}
+. (Join-Path $executionResources 'workspace_paths.ps1')
+$hostState=if($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH}else{Resolve-PlatformArtifactPath -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -RelativePath @('host_resources.sqlite3') -Python $python}
 $hostContext=@{workspace=$workspaceRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $repoRoot 'src/msplatform/workflows/resources/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
 if($ResumeFinalization){
@@ -65,7 +66,7 @@ if($ResumeFinalization){
   }
   if(-not$ResultPath){
     $recoveryPaths=Resolve-WorkspacePaths @pathArguments
-    $projectArtifacts=Join-Path $recoveryPaths.artifact_root 'projects/rf_multipole_ion_optics'
+    $projectArtifacts=Resolve-RunArtifactRoot -ArtifactRoot $recoveryPaths.artifact_root -OwnerKind component -OwnerId rf_multipole_ion_optics -Python $python
     if(-not$RunId){throw 'Resume requires the original RunId or ResultPath.'}
     $ResultPath=Join-Path $projectArtifacts ('scratch/workflow_results/'+$RunId+'/result.json')
   }
@@ -75,7 +76,7 @@ if($ResumeFinalization){
   if(-not$recoveryConfig.Contains('paths')){throw 'Recovery configuration omits its frozen workspace roots.'}
   $recoveryPaths=Resolve-WorkspacePaths -SourceRoot $repoRoot -FrozenContext $recoveryConfig.paths -Python $python
   if($ArtifactRootPath-and[IO.Path]::GetFullPath($ArtifactRootPath)-ine[IO.Path]::GetFullPath($recoveryPaths.artifact_root)){throw 'Recovery ArtifactRootPath differs from the frozen workspace roots.'}
-  $projectArtifacts=Join-Path $recoveryPaths.artifact_root 'projects/rf_multipole_ion_optics'
+  $projectArtifacts=Resolve-RunArtifactRoot -ArtifactRoot $recoveryPaths.artifact_root -OwnerKind component -OwnerId rf_multipole_ion_optics -Python $python
   $originalRunId=Split-Path -Leaf $prior.run_directory
   if($RunId-and$RunId-cne$originalRunId){throw 'Recovery RunId differs from the original Result.'}
   if(-not$RunId){
@@ -98,7 +99,7 @@ if(-not [double]::IsNaN($WorkingRegionMaximumElementSizeMm) -and $WorkingRegionM
 }
 . (Join-Path $repoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
 $workspacePaths=Resolve-WorkspacePaths -SourceRoot $repoRoot -ArtifactRoot $(if($ArtifactRootPath){$ArtifactRootPath}elseif($env:MASS_SPECTROMETRY_ARTIFACT_ROOT){$env:MASS_SPECTROMETRY_ARTIFACT_ROOT}else{Join-Path (Split-Path -Parent $repoRoot) 'artifacts'}) -Python $python
-$projectArtifactRoot=if($ProjectId){Join-Path ([string]$workspacePaths.artifact_root) ('projects/'+$ProjectId)}else{$null}
+$projectArtifactRoot=if($ProjectId){Resolve-RunArtifactRoot -ArtifactRoot ([string]$workspacePaths.artifact_root) -OwnerKind component -OwnerId $ProjectId -Python $python}else{$null}
 $hostContext.host_state_path=[string]$workspacePaths.host_resource_state_path
 . (Join-Path $executionResources 'resource_process_support.ps1')
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
@@ -739,7 +740,7 @@ function Invoke-FiniteComsolAnalysisChild {
     $env:MASS_SPECTROMETRY_EXECUTION_ROOT=[string]$paths.execution_root
     $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=[string]$paths.host_resource_state_path
     if(-not$RunId){$RunId=(Get-Date -Format yyyyMMdd_HHmmss)+$(if($ReextractFromModel){'__analysis__comsol__rf-finite-reextract'}else{'__analysis__python__rf-finite-comsol'})}
-    $projectRoot=Join-Path $paths.artifact_root ('projects/'+$projectId)
+    $projectRoot=Resolve-RunArtifactRoot -ArtifactRoot $paths.artifact_root -OwnerKind component -OwnerId $projectId -Python $Python
     $analysisBudgetPath=(Resolve-Path -LiteralPath $EngineeringBudgetPath).Path
     Assert-WorkflowFileRecord $source.inputs.engineering_budget
     Assert-WorkflowFileRecord $source.inputs.particle_source_metadata

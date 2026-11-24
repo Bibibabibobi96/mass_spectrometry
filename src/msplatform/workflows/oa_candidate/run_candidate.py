@@ -12,7 +12,7 @@ from typing import Any
 from msplatform.workflows.oa_candidate.science_paths import CandidateSciencePaths, PROJECT_ID
 from msplatform.execution.artifact_naming import validate_run_id
 from msplatform.contracts.machine_contracts import load_json, sha256
-from msplatform.execution.resources.workspace_paths import resolve_workspace_paths
+from msplatform.execution.resources.workspace_paths import resolve_run_artifact_root, resolve_workspace_paths
 from msplatform.workflows.oa_candidate.compile_candidate_design import write_candidate
 from msplatform.workflows.oa_candidate.prepare_candidate_run import prepare_candidate_run
 from msplatform.workflows.oa_candidate.candidate_source_closure import verify_candidate_source_closure
@@ -34,7 +34,7 @@ def validate_candidate_runtime(
     paths = CandidateSciencePaths(science_root)
     artifact_root = (
         artifact_project_root
-        or Path(resolve_workspace_paths(paths.root)["artifact_root"]) / "projects" / PROJECT_ID
+        or resolve_run_artifact_root(resolve_workspace_paths(paths.root)["artifact_root"], owner_kind="component", owner_id=PROJECT_ID)
     ).resolve()
     runtime = load_json(paths.runtime)
     if runtime.get("role") != "oa_tof_candidate_runtime":
@@ -220,7 +220,7 @@ def prepare_execution(
     identity = validate_run_id(run_id)
     artifact_root = (
         artifact_project_root
-        or Path(resolve_workspace_paths(paths.root)["artifact_root"]) / "projects" / PROJECT_ID
+        or resolve_run_artifact_root(resolve_workspace_paths(paths.root)["artifact_root"], owner_kind="component", owner_id=PROJECT_ID)
     ).resolve()
     run_root = artifact_root / "runs" / run_id
     if run_root.exists():

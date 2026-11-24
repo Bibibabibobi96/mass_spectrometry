@@ -37,7 +37,7 @@ if ($ChainStamp -notmatch '^\d{8}_\d{6}(?:-[A-Za-z0-9][A-Za-z0-9_-]*)?$') {
 
 $exactRunId = $ChainStamp + '__analysis__python__mirror-exact-k-operating-point'
 $stripeRunId = $ChainStamp + '__analysis__python__dual-stripe-exact-k-operating-seed'
-$chainRunsRoot = Join-Path $artifactRoot "projects\$projectId\runs"
+$chainRunsRoot = Join-Path (Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind component -OwnerId $projectId -Python $python) 'runs'
 $exactRun = Join-Path $chainRunsRoot $exactRunId
 $stripeRun = Join-Path $chainRunsRoot $stripeRunId
 foreach ($path in @($exactRun, $stripeRun)) {

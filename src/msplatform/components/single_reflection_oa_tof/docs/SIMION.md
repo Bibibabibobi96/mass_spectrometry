@@ -23,7 +23,7 @@
 - 重命名前的只读Formal资产：工作区`artifacts/projects/single_reflection_oa_tof_mass_analyzer/archive/`
   `20260801_130003__migration-snapshot__repo__oa-tof/legacy-project-root/formal/simion/`；不改写、
   不追加新run
-- vNext活动产物：工作区`artifacts/projects/single_reflection_oa_tof_mass_analyzer/`
+- vNext活动产物：工作区`artifacts/components/single_reflection_oa_tof_mass_analyzer/`
 
 当前项目处于`formal`。稳定清单绑定当前Formal SIMION交付包；重命名前和拆层前的Formal包只保留
 可追溯身份。Candidate仍必须使用独立、已登记的非Formal IOB/CON模板，不能读取旧Formal或archive资产。

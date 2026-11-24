@@ -15,7 +15,7 @@ $workspaceRoot=Split-Path -Parent $repoRoot
 . (Join-Path $PSScriptRoot '../../../execution/resources/run_artifact_support.ps1')
 if(-not $PythonExe){$PythonExe=$env:SIMULATION_PYTHON_EXE}
 if(-not $PythonExe){throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
-$hostState=if($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH}else{Join-Path $workspaceRoot 'artifacts/common/host_resources.sqlite3'}
+$hostState=if($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH}else{Resolve-PlatformArtifactPath -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -RelativePath host_resources.sqlite3 -Python $PythonExe}
 $script:HostResourceExecutionContext=@{workspace=$workspaceRoot;python_executable=$PythonExe;host_state_path=$hostState;policy_path=(Join-Path $PSScriptRoot '../../../execution/resources/host_resource_policy.json')}
 . (Join-Path $PSScriptRoot '../../../execution/resources/host_execution_lease.ps1') -HostContext $script:HostResourceExecutionContext
 . (Join-Path $PSScriptRoot '../../../execution/resources/resource_process_support.ps1')
@@ -27,7 +27,7 @@ if($manifest.project-ne'dual_pressure_rectilinear_ion_processor'-or$manifest.sta
  throw 'GUI replay requires a terminal run of this project; failed physical acceptance is allowed only with complete solver evidence'
 }
 $artifacts=Join-Path $workspaceRoot 'artifacts'
-$projectArtifacts=Join-Path $artifacts 'projects/dual_pressure_rectilinear_ion_processor'
+$projectArtifacts=Resolve-RunArtifactRoot -ArtifactRoot $artifacts -OwnerKind component -OwnerId dual_pressure_rectilinear_ion_processor -Python $PythonExe
 $capacity=$null;$package=$null;$lease=$null;$prepared=$false
 Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
 try {

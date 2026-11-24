@@ -24,7 +24,7 @@ $ErrorActionPreference = 'Stop'
 $project = 'transverse_helical_filament_wehnelt_electron_gun'
 $componentRoot = "src/msplatform/components/$project"
 $workspaceRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
-$artifactRoot = Join-Path $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot) "projects\$project"
+$artifactWorkspaceRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)
 $python = if ($PythonExe) {
   [IO.Path]::GetFullPath($PythonExe)
 } elseif ($env:SIMULATION_PYTHON_EXE) {
@@ -35,6 +35,8 @@ $python = if ($PythonExe) {
 $packageRootText = & $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
 if ($LASTEXITCODE -ne 0) { throw 'Installed msplatform package is unavailable.' }
 $packageRoot = (Resolve-Path -LiteralPath $packageRootText).Path
+$artifactRoot = & $python -I -B -c 'import sys;from msplatform.execution.resources.workspace_paths import resolve_run_artifact_root;print(resolve_run_artifact_root(sys.argv[1],owner_kind="component",owner_id=sys.argv[2]))' $artifactWorkspaceRoot $project
+if ($LASTEXITCODE -ne 0) { throw 'Wehnelt run root resolution failed.' }
 $projectRoot = Join-Path $packageRoot "components/$project"
 $scientificInputs = [ordered]@{
   baseline = $BaselinePath

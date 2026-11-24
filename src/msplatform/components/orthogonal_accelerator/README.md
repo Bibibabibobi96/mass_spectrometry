@@ -49,7 +49,7 @@
 仪器项目通过明确接口复用本组件，保留系统布局约束、联合聚焦与整机科学验收；
 [统一集成](../../../../docs/ASSEMBLY.md)拥有组件实例装配、跨组件执行及冻结依赖，不保存第二份加速器模型。
 Candidate、Formal、radial、compensation和五物种研究保持各自workflow，不共用隐式科学合同。
-新器件独立运行产物归`artifacts/projects/orthogonal_accelerator/`；既有OA/MR历史证据不迁移、不改身份。
+新器件独立运行产物归`artifacts/components/orthogonal_accelerator/`；既有OA/MR历史证据不迁移、不改身份。
 旧`projects/orthogonal_accelerator/`活动树已退役，不保留兼容桥。
 
 ## History索引

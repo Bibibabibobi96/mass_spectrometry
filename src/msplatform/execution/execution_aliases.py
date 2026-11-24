@@ -37,7 +37,7 @@ def reconcile_execution_alias_root(root: Path) -> dict[str, int]:
     """Correct only the recorded zero-byte junction range, without scanning targets."""
     from msplatform.execution import capacity_ledger
 
-    alias_root = root / "common" / "execution_aliases"
+    alias_root = root / "platform" / "execution_aliases"
     if not alias_root.exists():
         return {"corrected_count": 0, "released_bytes": 0}
     if not execution_alias_root_is_valid(root, alias_root):
@@ -47,7 +47,7 @@ def reconcile_execution_alias_root(root: Path) -> dict[str, int]:
         raise RuntimeError("capacity ledger is missing or invalid")
     recorded = next((
         item for item in ledger["objects"]
-        if item.get("path") == "common/execution_aliases" and item.get("status") != "retired"
+        if item.get("path") in {"platform/execution_aliases", "common/execution_aliases"} and item.get("status") != "retired"
     ), None)
     if recorded is None:
         raise RuntimeError("execution alias root is absent from the calibrated ledger")

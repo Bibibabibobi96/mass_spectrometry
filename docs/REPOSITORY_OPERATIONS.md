@@ -345,7 +345,7 @@ shared host ledger and tools are declared there; daily studies reuse that deploy
 
 上述预算沿本批实际导出使用的600秒／100MiB载荷与保留／4GiB进程树内存／1GiB可用内存，
 重试0；是显式工程申报，不是适用于所有装配的测得峰值。更改规模前按实际成本调整这份输入，
-不把科学尺寸放进context。owner在`my_study/artifacts/projects/instrument_assembly/runs/<新run_id>/`
+不把科学尺寸放进context。owner在`my_study/artifacts/assemblies/instrument_assembly/runs/<新run_id>/`
 保存冻结装配、选项、STEP、报告、日志与manifest；不要移动单个STEP后仍使用原ref冒充完整闭包。
 教程本身不改库内文件，也无需Agent或商业软件操作。重复实践使用新study目录，原输入和产物保留。
 

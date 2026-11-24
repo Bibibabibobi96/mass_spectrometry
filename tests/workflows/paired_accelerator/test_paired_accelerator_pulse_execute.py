@@ -135,7 +135,7 @@ exit 0
                 '-ArtifactRoot', str(artifacts), '-Python', str(python), '-RunId', run_id,'-RepoRoot',str(ROOT)])
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn('TEST_CAPACITY_ADMISSION=ISOLATED', result.stdout)
-            run = artifacts / 'projects/instrument_assembly/runs' / run_id
+            run = artifacts / 'assemblies/instrument_assembly/runs' / run_id
             summary = json.loads((run / 'summary.json').read_text())
             self.assertEqual(summary['particle_count'], 100)
             self.assertFalse(summary['native_executed'])
@@ -248,7 +248,7 @@ ConvertTo-Json -InputObject $strings -Compress -Depth 4
                 capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=240, check=False)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertFalse((workspace / 'src').exists())
-            run = artifacts / 'projects/instrument_assembly/runs' / run_id
+            run = artifacts / 'assemblies/instrument_assembly/runs' / run_id
             self.assertEqual(json.loads((run / 'run_manifest.json').read_text())['status'], 'success')
             snapshot = run / 'inputs/runtime_snapshot/src/msplatform'
             self.assertEqual((snapshot / 'workflows/resources/paired_accelerator_pulse.ps1').read_bytes(), owner.read_bytes())

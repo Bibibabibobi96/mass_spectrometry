@@ -355,7 +355,7 @@ def execute_member(context: ExecutionContext, *, field_plan: dict, domain_id: st
         artifact_root = cache._artifact_root_for_cache(cache_root)
         if artifact_root is None:
             raise ValueError("Field member requires its original governed capacity root")
-        if cache_root.resolve() != (artifact_root / "common/simion/pa_family_cache").resolve():
+        if cache_root.resolve() != (artifact_root / "platform/simion/pa_family_cache").resolve():
             raise ValueError("Field member cache must use the original PA manager's governed range")
         protections = load_capacity_protection_leases(artifact_root)
         if frozen_field_source is None and not any(row.get("status") == "active" and row.get("lease_id") == capacity_lease_id

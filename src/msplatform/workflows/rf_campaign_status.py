@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from msplatform.execution.resources.workspace_paths import resolve_run_artifact_root
 from msplatform.io.manifest_records import verify_record
 from msplatform.workflows.rf_runtime_profiles import resolve_campaign_path, resolve_runtime_selection
 
@@ -73,14 +74,9 @@ def campaign_status(
         ]["scope"]["authorized_run_id"]
         if authorized != run_id:
             raise ValueError(f"authorized run identity differs for {experiment_id}")
-        run_dir = (
-            workspace_root
-            / "artifacts"
-            / "projects"
-            / project_id
-            / "runs"
-            / run_id
-        )
+        run_dir = resolve_run_artifact_root(
+            workspace_root / "artifacts", owner_kind="component", owner_id=project_id,
+        ) / "runs" / run_id
         manifest_path = run_dir / "run_manifest.json"
         if not run_dir.exists():
             status, manifest = "NOT_STARTED", None

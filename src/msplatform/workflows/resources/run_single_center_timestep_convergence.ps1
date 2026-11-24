@@ -27,7 +27,7 @@ if([string]::IsNullOrWhiteSpace($RunId)){
 
 . (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
 
-$artifactProjectRoot=Join-Path $artifactRoot "projects\$projectId"
+$artifactProjectRoot=Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind component -OwnerId $projectId -Python $python
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactProjectRoot `
   -RunId $RunId -Project $projectId -Mode 'single_center_timestep_convergence' `
   -Software @('Python 3.11') -RetentionContractEnabled -RetentionClass compact `

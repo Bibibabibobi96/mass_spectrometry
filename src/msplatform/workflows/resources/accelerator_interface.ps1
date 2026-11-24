@@ -91,6 +91,9 @@ if(-not$researchRootExplicit-and-not[string]::Equals($selectedPackageRoot,[IO.Pa
 . (Join-Path $executionResources 'workspace_paths.ps1')
 $pathContext=Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
 $artifactRoot=[string]$pathContext.artifact_root
+$assemblyArtifactRoot=Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind assembly -OwnerId $projectId -Python $python
+$mrArtifactRoot=Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind component -OwnerId parallel_mirror_dual_stripe_mr_tof -Python $python
+$ipArtifactRoot=Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind component -OwnerId dual_pressure_rectilinear_ion_processor -Python $python
 $pathEnvironment=@{MASS_SPECTROMETRY_ARTIFACT_ROOT=$artifactRoot;
   MASS_SPECTROMETRY_EXECUTION_ROOT=[string]$pathContext.execution_root;
   MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=[string]$pathContext.host_resource_state_path}
@@ -269,7 +272,7 @@ function Invoke-JointWorkflow {
     }
     $workbench=(Resolve-Path -LiteralPath $PreparedJointWorkbenchRunPath).Path
     $flightId=if($RunId){$RunId}else{(Get-Date -Format 'yyyyMMdd_HHmmss')+'__sim__simion__ip-mr-joint-'+[guid]::NewGuid().ToString('N').Substring(0,8)}
-    $flightRun=Join-Path $artifactRoot "projects/instrument_assembly/runs/$flightId"
+    $flightRun=Join-Path $assemblyArtifactRoot "runs/$flightId"
     $flight=@{PreparedJointWorkbenchRunPath=$workbench;ContractPath=$ContractPath;RunId=$flightId;RepoRoot=$repoRoot}
     if($ResultPath){$flight.ResultPath=$ResultPath}
     if($PythonExe){$flight.PythonExe=$PythonExe};if($SimionExe){$flight.SimionExe=$SimionExe}
@@ -314,12 +317,12 @@ function Invoke-JointWorkflow {
     Assert-JointFieldRunId -Id $fieldId
   }
   $designId=if($RunId){$RunId}else{New-AcceleratorInterfaceRunId -Provider $AcceleratorProvider}
-  $designRun=if($PreparedInterfaceRunPath){(Resolve-Path -LiteralPath $PreparedInterfaceRunPath).Path}else{Join-Path $artifactRoot "projects/instrument_assembly/runs/$designId"}
-  $fieldRun=if($JointFieldRunPath){(Resolve-Path -LiteralPath $JointFieldRunPath).Path}else{Join-Path $artifactRoot "projects/parallel_mirror_dual_stripe_mr_tof/runs/$fieldId"}
+  $designRun=if($PreparedInterfaceRunPath){(Resolve-Path -LiteralPath $PreparedInterfaceRunPath).Path}else{Join-Path $assemblyArtifactRoot "runs/$designId"}
+  $fieldRun=if($JointFieldRunPath){(Resolve-Path -LiteralPath $JointFieldRunPath).Path}else{Join-Path $mrArtifactRoot "runs/$fieldId"}
   $finalId=New-AcceleratorInterfaceRunId -Provider $AcceleratorProvider
-  $finalRun=Join-Path $artifactRoot "projects/instrument_assembly/runs/$finalId"
+  $finalRun=Join-Path $assemblyArtifactRoot "runs/$finalId"
   $flightId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__sim__simion__ip-mr-joint-'+[guid]::NewGuid().ToString('N').Substring(0,8)
-  $flightRun=Join-Path $artifactRoot "projects/instrument_assembly/runs/$flightId"
+  $flightRun=Join-Path $assemblyArtifactRoot "runs/$flightId"
   $common=@{ReferenceMrRunPath=$ReferenceMrRunPath;AcceleratorProvider=$AcceleratorProvider;IonProcessorRunPath=$IonProcessorRunPath;RepoRoot=$repoRoot}
   if($LuaExe){$common.LuaExe=$LuaExe};if($PythonExe){$common.PythonExe=$PythonExe};if($SimionExe){$common.SimionExe=$SimionExe}
   $stage='design';$temporary=$null
@@ -328,7 +331,7 @@ function Invoke-JointWorkflow {
       $stage='multipole_ip_preparation'
       $sourceRequest=(Resolve-Path -LiteralPath $MultipoleIpRequestPath).Path
       $ipConfiguration=(Resolve-Path -LiteralPath $IonProcessorConfigurationDirectory).Path
-      $sourceRun=Join-Path $artifactRoot "projects/instrument_assembly/runs/$MultipoleIpRunId"
+      $sourceRun=Join-Path $assemblyArtifactRoot "runs/$MultipoleIpRunId"
       $sourceArguments=@{Request=$sourceRequest;RunId=$MultipoleIpRunId;PythonExe=$python;
         EnvironmentPath=$MultipoleIpEnvironmentPath;Workspace=$MultipoleIpWorkspace;EngineeringProfile=$MultipoleIpEngineeringProfile}
       if(-not$IonProcessorContinuationPredecessorManifestPath){
@@ -362,7 +365,7 @@ if context.python_executable.resolve()!=pathlib.Path(sys.executable).resolve():
         return
       }
       $stage='ion_processor_flight'
-      $IonProcessorRunPath=Join-Path $artifactRoot "projects/dual_pressure_rectilinear_ion_processor/runs/$IonProcessorRunId"
+      $IonProcessorRunPath=Join-Path $ipArtifactRoot "runs/$IonProcessorRunId"
       $ipArguments=@{RunId=$IonProcessorRunId;RepositoryRoot=$repoRoot;InjectedSource=(Join-Path $sourceRun 'results/multipole_ip/ip_injected_source.json');ConfigurationDirectory=$ipConfiguration}
       if($SimionExe){$ipArguments.SimionExe=$SimionExe}
       if($IonProcessorFieldRunPath){$ipArguments.NativeFieldRun=(Resolve-Path -LiteralPath $IonProcessorFieldRunPath).Path}
@@ -479,7 +482,7 @@ if($FinalizeJointWorkbench){
 }
 if(-not$RunId){$RunId=New-AcceleratorInterfaceRunId -Provider $AcceleratorProvider}
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot `
-  -ArtifactRoot (Join-Path $artifactRoot "projects/$projectId") `
+  -ArtifactRoot $assemblyArtifactRoot `
   -RunId $RunId -Project $projectId -Mode accelerator_interface_preparation `
   -Software $software -RetentionContractEnabled -RetentionClass compact -CapacityLedgerLifecycleEnabled -PathContext $pathContext
 $terminalized=$false

@@ -198,7 +198,7 @@ class TransportCampaignTests(unittest.TestCase):
         campaign = analysis_campaign_fixture()
         run_dirs = [
             REPO_ROOT.parent
-            / "artifacts/projects"
+            / "artifacts/components"
             / row["project_id"]
             / "runs"
             / row["authorized_run_id"]
@@ -206,7 +206,7 @@ class TransportCampaignTests(unittest.TestCase):
         ]
         analysis_dir = (
             REPO_ROOT.parent
-            / "artifacts/projects"
+            / "artifacts/components"
             / campaign["experiments"][0]["project_id"]
             / "runs"
             / campaign["analysis_requests"][0]["analysis_run_id"]

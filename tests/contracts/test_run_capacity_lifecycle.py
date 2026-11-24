@@ -124,7 +124,7 @@ class RunCapacityLifecycleTests(unittest.TestCase):
                         status="failed" if action == "finalize" else "checkpoint")))
                     register_writing(root, config)
                     before = {p.relative_to(run): p.read_bytes() for p in run.rglob("*") if p.is_file()}
-                    ledger = root / "common/capacity_ledger.json"
+                    ledger = root / "platform/capacity_ledger.json"
                     ledger_bytes = ledger.read_bytes()
                     def transition():
                         return (finalize_ready(root, config) if action == "finalize" else

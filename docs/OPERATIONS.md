@@ -157,7 +157,7 @@ Get-HostResourceStatus
 终止条件；不得删除账本、另设账本或绕过准入。停止和恢复遵循
 [进程与失败规则](DEVELOPMENT_STANDARDS.md#6-外部进程失败与日志)。
 
-默认账本为同级`artifacts/common/host_resources.sqlite3`。不同父目录的工作树必须显式共用同一绝对
+新部署默认账本为同级`artifacts/platform/host_resources.sqlite3`；既有部署继续显式使用其冻结的绝对账本路径。不同父目录的工作树必须显式共用同一绝对
 账本；部署、阶段切换、子进程登记与释放的完整合同见[主机资源实现](REPOSITORY_OPERATIONS.md#主机资源实现)。
 本机资源许可与artifact容量保护分别生效；资源可用不代表输出容量已获准。
 
@@ -189,7 +189,7 @@ ledger-only日常startup/maintenance。首次校准或台账失准时，必须�
 仓库`scratch/`和`generated/`，而日常启动绝不遍历这些目录。`legacy_capacity_backfill.py`
 只保留历史发现／恢复，不能作为日常准入或覆盖容量水位。
 未核对候选不得追加`--apply`。清理收据统一放在
-`artifacts/common/capacity_disposal_receipts/`，不留在工作区顶层。主机资源许可不替代容量保护租约，
+`artifacts/platform/capacity_disposal_receipts/`，不留在工作区顶层。主机资源许可不替代容量保护租约，
 调用与保护参数见[公共容量合同](../tools/repository/README.md#运行身份与生命周期)。
 
 本机存在artifacts时运行：
@@ -203,7 +203,7 @@ ledger-only日常startup/maintenance。首次校准或台账失准时，必须�
 载荷内容已验证。显式`--cache-entry`是冻结输入的消费边界，始终完整核对哈希，不受该默认范围影响。
 因此结构检查适合每次产物整理后运行，但不放进不具备本机artifacts的GitHub Workflow；命名合同单元测试仍属于轻量门禁。
 
-公共根识别既有`execution_aliases`与具名当前`host_resources.sqlite3`：alias沿原owner校验junction目标，
+公共根识别`platform/`中的当前`execution_aliases`与`host_resources.sqlite3`，并只读核验既有`common/`记录：alias沿原owner校验junction目标，
 不递归遍历目标；数据库只检查具名普通文件，不把动态大小当内容身份。历史备份和一次性任务目录
 仍须按其owner受管归档或处置，不能为使结构门禁通过而一并放行。
 

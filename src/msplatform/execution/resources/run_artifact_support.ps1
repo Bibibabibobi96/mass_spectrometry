@@ -9,6 +9,7 @@ if($null-ne$availableHostContext){
   }
 }
 . (Join-Path $PSScriptRoot 'run_paths.ps1')
+. (Join-Path $PSScriptRoot 'workspace_paths.ps1')
 
 if(-not('RunTerminalSharedReadGuard'-as[type])){
   Add-Type -TypeDefinition @'
@@ -417,7 +418,7 @@ function Invoke-ArtifactCapacityGate {
     '-m',$module,
     '--artifact-root',$ArtifactRoot,
     '--execution-mode',$ExecutionMode,
-    '--capacity-ledger',(Join-Path $ArtifactRoot 'common\capacity_ledger.json'),
+    '--capacity-ledger',(Join-Path $ArtifactRoot 'platform\capacity_ledger.json'),
     '--apply'
   )
   if($null-ne$MaintenanceTargetGiB){
@@ -1056,17 +1057,20 @@ function New-RunPackage {
   if(-not$CapacityLedgerLifecycleEnabled-and-not[string]::IsNullOrWhiteSpace($CapacityLedgerArtifactRoot)){
     throw 'CapacityLedgerArtifactRoot requires CapacityLedgerLifecycleEnabled.'
   }
-  . (Join-Path $PSScriptRoot 'workspace_paths.ps1')
   $projectDirectory=[IO.DirectoryInfo][IO.Path]::GetFullPath($ArtifactRoot)
-  $structuredProject=$null-ne$projectDirectory.Parent-and$projectDirectory.Parent.Name-eq'projects'
-  if($CapacityLedgerLifecycleEnabled-and-not$structuredProject){
-    throw 'ArtifactRoot must be the canonical artifacts/projects/<Project> directory, not its runs directory.'
+  if($projectDirectory.Name-in@('runs','artifacts')-or
+     ($null-ne$projectDirectory.Parent-and$projectDirectory.Parent.Name-in@('projects','common'))-or
+     $projectDirectory.FullName-match'[\\/]artifacts[\\/](projects|common)([\\/]|$)'){
+    throw 'ArtifactRoot must be the canonical artifacts/components/<component_id> or artifacts/assemblies/instrument_assembly owner directory; historical projects/common roots are read-only.'
   }
+  $ownerKind=if($Project-eq'instrument_assembly'){'assembly'}else{'component'}
+  $ownerCollection=if($ownerKind-eq'assembly'){'assemblies'}else{'components'}
+  $structuredOwner=$null-ne$projectDirectory.Parent-and$projectDirectory.Parent.Name-eq$ownerCollection
   $rootArguments=@{SourceRoot=$RepoRoot;Python=$Python}
   if($null-ne$PathContext){$rootArguments.FrozenContext=$PathContext}
   else{
     if($CapacityLedgerArtifactRoot){$rootArguments.ArtifactRoot=$CapacityLedgerArtifactRoot}
-    elseif($structuredProject){$rootArguments.ArtifactRoot=$projectDirectory.Parent.Parent.FullName}
+    elseif($structuredOwner){$rootArguments.ArtifactRoot=$projectDirectory.Parent.Parent.FullName}
     if($ExecutionRoot){$rootArguments.ExecutionRoot=$ExecutionRoot}
   }
   $resolvedPaths=Resolve-WorkspacePaths @rootArguments
@@ -1075,29 +1079,25 @@ function New-RunPackage {
   $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=[string]$resolvedPaths.host_resource_state_path
   if($ExecutionRoot-and$null-ne$PathContext-and$ExecutionRoot-cne$resolvedPaths.execution_root){throw 'ExecutionRoot differs from the frozen path context.'}
   $ExecutionRoot=[string]$resolvedPaths.execution_root
-  # A configured root is governed regardless of its directory name. Also
-  # recognize the existing projects/<owner> shape before creating any files.
   $governedArtifactsRoot=$null
   $configuredRoot=[IO.Path]::GetFullPath([string]$resolvedPaths.artifact_root).TrimEnd('\','/')
-  if($structuredProject-or$projectDirectory.FullName.StartsWith($configuredRoot+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){
+  if($projectDirectory.FullName.TrimEnd('\','/').Equals($configuredRoot,[StringComparison]::OrdinalIgnoreCase)){
+    throw 'ArtifactRoot must be the canonical artifacts/components/<component_id> or artifacts/assemblies/instrument_assembly owner directory; historical projects/common roots are read-only.'
+  }
+  if($structuredOwner-or$projectDirectory.FullName.StartsWith($configuredRoot+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){
     $governedArtifactsRoot=[IO.DirectoryInfo]$configuredRoot
   }
   if($null-ne$governedArtifactsRoot-and(-not$RetentionContractEnabled-or-not$CapacityLedgerLifecycleEnabled)){
     throw 'Runs beneath artifacts require retention and capacity-ledger lifecycle before package creation.'
   }
   if($null-ne$governedArtifactsRoot){
-    $expectedProjectRoot=Join-Path $governedArtifactsRoot.FullName ('projects/'+$Project)
-    $actualProjectRoot=[IO.Path]::GetFullPath($ArtifactRoot)
-    if($structuredProject){
-      $actualRoots=Resolve-WorkspacePaths -SourceRoot $RepoRoot -ArtifactRoot $projectDirectory.Parent.Parent.FullName `
-        -ExecutionRoot $resolvedPaths.execution_root -HostResourceStatePath $resolvedPaths.host_resource_state_path -Python $Python
-      $actualProjectRoot=Join-Path $actualRoots.artifact_root ('projects/'+$projectDirectory.Name)
+    $expectedOwnerRoot=Resolve-RunArtifactRoot -ArtifactRoot $governedArtifactsRoot.FullName -OwnerKind $ownerKind -OwnerId $Project -Python $Python
+    $actualOwnerRoot=[IO.Path]::GetFullPath($ArtifactRoot)
+    if(-not($actualOwnerRoot.TrimEnd('\','/').Equals(
+        [IO.Path]::GetFullPath([string]$expectedOwnerRoot).TrimEnd('\','/'),[StringComparison]::OrdinalIgnoreCase))){
+      throw 'ArtifactRoot must be the canonical artifacts/components/<component_id> or artifacts/assemblies/instrument_assembly owner directory; historical projects/common roots are read-only.'
     }
-    if(-not($actualProjectRoot.TrimEnd('\','/').Equals(
-        [IO.Path]::GetFullPath($expectedProjectRoot).TrimEnd('\','/'),[StringComparison]::OrdinalIgnoreCase))){
-      throw 'ArtifactRoot must be the canonical artifacts/projects/<Project> directory, not its runs directory.'
-    }
-    $ArtifactRoot=$expectedProjectRoot
+    $ArtifactRoot=[string]$expectedOwnerRoot
   }
   if($CapacityLedgerLifecycleEnabled){
     if([string]::IsNullOrWhiteSpace($CapacityLedgerArtifactRoot)){

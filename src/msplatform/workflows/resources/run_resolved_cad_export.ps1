@@ -21,11 +21,11 @@ if($LASTEXITCODE-ne0-or[string]::IsNullOrWhiteSpace([string]$packageRootText)){t
 $packageRoot=(Resolve-Path -LiteralPath ([string]$packageRootText).Trim()).Path
 $executionResources=Join-Path $packageRoot 'execution/resources'
 . (Join-Path $executionResources 'run_artifact_support.ps1')
-$hostState=Join-Path $allArtifacts 'common/host_resources.sqlite3'
+$hostState=Resolve-PlatformArtifactPath -ArtifactRoot $allArtifacts -RelativePath host_resources.sqlite3 -Python $python
 $hostContext=@{workspace=$repoRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 $project='parallel_mirror_dual_stripe_mr_tof'
-$projectArtifacts=Join-Path $allArtifacts "projects/$project"
+$projectArtifacts=Resolve-RunArtifactRoot -ArtifactRoot $allArtifacts -OwnerKind component -OwnerId $project -Python $python
 $field=(Resolve-Path -LiteralPath $FieldRunPath).Path
 $assembly=(Resolve-Path -LiteralPath $AssemblyRunPath).Path
 foreach($run in @($field,$assembly)){

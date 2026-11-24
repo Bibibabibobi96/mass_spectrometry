@@ -13,12 +13,14 @@ $ErrorActionPreference = 'Stop'
 $workspaceRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
 $repoRoot = $workspaceRoot
 $artifactRootPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRootPath)
-$artifactRoot = Join-Path $artifactRootPath 'projects\single_reflection_oa_tof_mass_analyzer'
+$artifactRoot = $artifactRootPath
 $projectRoot = (Resolve-Path -LiteralPath $ScienceRoot).Path
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) }
   elseif ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) }
   else { throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required' }
 $packageRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+. (Join-Path $packageRoot 'execution/resources/workspace_paths.ps1')
+$artifactRoot = Resolve-RunArtifactRoot -ArtifactRoot $artifactRootPath -OwnerKind component -OwnerId single_reflection_oa_tof_mass_analyzer -Python $python
 $formalValidationLive = Join-Path $projectRoot 'config\formal_validation.json'
 $resolvedGeometryLive = Join-Path $projectRoot 'config\resolved_geometry.json'
 $comsolAdapterRoot = Join-Path $packageRoot 'backends/comsol/matlab'

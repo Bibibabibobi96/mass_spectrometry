@@ -79,7 +79,7 @@ class Paper1C3J3MappingTests(unittest.TestCase):
         schema_source = publisher.SCHEMA_DIR / "oatof_three_zone_simion_candidate_resolved.schema.json"
         self.assertFalse(schema_source.resolve().is_relative_to(workspace.resolve()))
         parents = {path: path.read_bytes() for path in (campaign, candidate, self.path)}
-        run = workspace / "artifacts/projects" / publisher.PROJECT_ID / "runs/20261102_190000__build__python__c3-installed-schema"
+        run = workspace / "artifacts/components" / publisher.PROJECT_ID / "runs/20261102_190000__build__python__c3-installed-schema"
         with mock.patch.dict(os.environ, {"PYTHONPATH": str(ROOT)}):
             summary = publisher.publish_c3_j3_candidates(
                 campaign_path=campaign, c2_result_path=self.path, source_id="S1",
@@ -129,7 +129,7 @@ class Paper1C3J3MappingTests(unittest.TestCase):
     def test_publication_failure_cleans_staging_and_keeps_project_sources_local(self) -> None:
         campaign, candidate, _, _ = self.publication_inputs()
         workspace = Path(self.temp.name)
-        run = workspace / "artifacts/projects" / publisher.PROJECT_ID / "runs/20261102_190001__build__python__c3-publication-failure"
+        run = workspace / "artifacts/components" / publisher.PROJECT_ID / "runs/20261102_190001__build__python__c3-publication-failure"
         parents = {path: path.read_bytes() for path in (campaign, candidate, self.path)}
         arguments = dict(campaign_path=campaign, c2_result_path=self.path, source_id="S1",
                          base_candidate_path=candidate, run_dir=run, workspace_root=workspace)

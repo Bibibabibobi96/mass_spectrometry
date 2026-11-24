@@ -30,7 +30,7 @@ try{
     if($holder.StartTime.ToUniversalTime().Ticks-ne$credential.holder_started_at_utc_ticks){
       throw 'Immutable input session holder identity differs.'
     }
-    $leaseState=& $request.context.python_executable -I -B -c 'import sys;from pathlib import Path;from msplatform.execution.capacity_protection import load_capacity_protection_leases;view=load_capacity_protection_leases(Path(sys.argv[1]));matches=[row for row in view["audit"] if row.get("lease_id")==sys.argv[2] and row.get("status")=="active" and row.get("owner")==sys.argv[3]];print("ACTIVE" if len(matches)==1 else "INVALID")' $credential.artifact_root $credential.lease_id $credential.lease_owner
+    $leaseState=& $request.context.python_executable -I -B -c 'import sys;from pathlib import Path;sys.path.insert(0,str(Path(sys.argv[4]).parents[2]));from msplatform.execution.capacity_protection import load_capacity_protection_leases;view=load_capacity_protection_leases(Path(sys.argv[1]));matches=[row for row in view["audit"] if row.get("lease_id")==sys.argv[2] and row.get("status")=="active" and row.get("owner")==sys.argv[3]];print("ACTIVE" if len(matches)==1 else "INVALID")' $credential.artifact_root $credential.lease_id $credential.lease_owner $PSScriptRoot
     if($LASTEXITCODE-ne0-or$leaseState-cne'ACTIVE'){throw 'Immutable input session capacity lease is not active.'}
   }elseif($protected){
     . (Join-Path $PSScriptRoot 'payload_file_support.ps1') -UnbufferedIdentityReader {

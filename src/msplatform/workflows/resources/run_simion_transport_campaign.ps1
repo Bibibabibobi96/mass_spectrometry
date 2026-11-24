@@ -44,7 +44,8 @@ function Invoke-AnalysisLifecycle {
   if([string]$Plan.status-ne'READY'){throw "Unknown campaign analysis state: $($Plan.status)"}
 
   . (Join-Path $Repository 'src/msplatform/execution/resources/run_artifact_support.ps1')
-  $artifactRoot=Join-Path $Workspace "artifacts\projects\$([string]$Plan.project_id)"
+  . (Join-Path $Repository 'src/msplatform/execution/resources/workspace_paths.ps1')
+  $artifactRoot=Resolve-RunArtifactRoot -ArtifactRoot (Join-Path $Workspace 'artifacts') -OwnerKind component -OwnerId ([string]$Plan.project_id) -Python $Python
   $package=New-RunPackage -Python $Python -RepoRoot $Repository -ArtifactRoot $artifactRoot `
     -RunId ([string]$Plan.analysis_run_id) -Project ([string]$Plan.project_id) `
     -Mode ([string]$Plan.mode) -Software @('Python 3.11') `

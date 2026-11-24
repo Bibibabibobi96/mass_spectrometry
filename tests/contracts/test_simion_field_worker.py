@@ -164,7 +164,7 @@ field_worker.main()
                             return run_member(session, operation_id='member', parameters=dict(field_plan=plan,
                                 domain_id='parent', member_id='carrier_off', tool_identity=tool,
                                 raw_geometry_record=file_record(raw,'solver_native_binary'), resources=resources,
-                                cache_root=session.artifact_root/'common/simion/pa_family_cache'), limits={})
+                                cache_root=session.artifact_root/'platform/simion/pa_family_cache'), limits={})
                         run_id = '20261104_120000__test__python__preflight-'+case.replace('_','-')
                         with self.assertRaisesRegex(ProcessExecutionError,'Observed process failed with exit 1') as caught:
                             owner.run_managed_stage(context, descriptor=dict(project='instrument_assembly', mode='inert_preflight',software=[]),
@@ -175,7 +175,7 @@ field_worker.main()
                                 action_record=file_record(Path(__file__),'required_evidence'),
                                 completion_api=lambda:SimpleNamespace(recoverable_batch_logs=lambda _root:set()))
                         self.assertFalse(any('accounting receipt failed' in value for value in getattr(caught.exception,'__notes__',[])))
-                        run = context.workspace/'artifacts/projects/instrument_assembly/runs'/run_id
+                        run = context.workspace/'artifacts/assemblies/instrument_assembly/runs'/run_id
                         report = json.loads((run/'results/member.json').read_text())
                         self.assertEqual(report['status'],'failed')
                         self.assertEqual(report['native_count'],0)
@@ -189,7 +189,7 @@ field_worker.main()
                         expected = 'builder source identity differs' if case == 'valid_tool_bad_builder' else 'SHA-256 changed' if case == 'tool_sha' else 'byte count changed'
                         self.assertIn(expected,report['exception']['message'])
                         self.assertNotIn('UNBUFFERED',report['exception']['message'])
-                        result_path = context.workspace/'artifacts/projects/instrument_assembly/scratch/workflow_results'/run_id/'result.json'
+                        result_path = context.workspace/'artifacts/assemblies/instrument_assembly/scratch/workflow_results'/run_id/'result.json'
                         result = json.loads(result_path.read_text())
                         self.assertEqual(result['stage'],'complete')
                         self.assertEqual(result['exception']['message'],'Observed process failed with exit 1')
@@ -200,7 +200,7 @@ field_worker.main()
                         self.assertTrue(observation['exit_confirmed'])
                         self.assertGreater(observation['process_id'],0)
                         self.assertGreater(observation['process_started_at_utc_ticks'],0)
-                        self.assertFalse((context.workspace/'artifacts/common/simion/pa_family_cache').exists())
+                        self.assertFalse((context.workspace/'artifacts/platform/simion/pa_family_cache').exists())
 
     def test_unsafe_receipt_path_is_never_written_by_direct_worker_or_main(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -278,10 +278,10 @@ field_worker.main()
                 reports.append(run_member(session, operation_id="member", parameters=dict(field_plan=current["plan"],
                     domain_id="parent", member_id=current["member_id"], tool_identity=tool,
                     raw_geometry_record=file_record(raw, "solver_native_binary"), resources=resources,
-                    cache_root=session.artifact_root / "common/simion/pa_family_cache"), limits={}))
+                    cache_root=session.artifact_root / "platform/simion/pa_family_cache"), limits={}))
                 parent = dict(cache_key=reports[-1]["cache_key"], record=dict(reports[-1]["record"], kind="carrier_off"))
                 parent_kwargs = dict(lease_id=session.capacity_session["lease_id"], lease_owner=session.capacity_session["owner"])
-                cache_root = session.artifact_root / "common/simion/pa_family_cache"
+                cache_root = session.artifact_root / "platform/simion/pa_family_cache"
                 _require_published_parent(cache_root, parent, "carrier_off", **parent_kwargs)
                 if reports[-1]['native_count']:
                     transaction_path = cache_root / cache.TRANSACTION_DIRECTORY / reports[-1]['cache_key'] / cache.TRANSACTION_NAME
@@ -319,7 +319,7 @@ field_worker.main()
                 from msplatform.execution.capacity_admission import capture_capacity_policy
                 from msplatform.execution.run_capacity_lifecycle import register_writing_range
                 artifact_root = context.workspace / "artifacts"
-                run = artifact_root / "projects/instrument_assembly/runs" / ("20261104_120000__test__python__direct-" + stage)
+                run = artifact_root / "assemblies/instrument_assembly/runs" / ("20261104_120000__test__python__direct-" + stage)
                 run.mkdir(parents=True)
                 register_writing_range(artifact_root, run)
                 for name in ("inputs", "results", "logs"):
@@ -393,7 +393,7 @@ field_worker.main()
                         self.assertTrue(inner["inherited"])
                         self.assertEqual(inner["token"], outer["token"])
                         self.assertGreater(row["receipt"]["observation"]["root_process_id"], 0)
-                cache_root = context.workspace / "artifacts/common/simion/pa_family_cache"
+                cache_root = context.workspace / "artifacts/platform/simion/pa_family_cache"
                 pointer = cache_root / key / cache.POINTER_NAME
                 original_pointer = pointer.read_bytes()
                 try:
@@ -431,7 +431,7 @@ field_worker.main()
                                     expected_operation_ids=["member"], operation_dependencies={}, protected_cache_keys=[fault_key],
                                     action=action, action_record=file_record(Path(__file__), "required_evidence"),
                                     completion_api=lambda: SimpleNamespace(recoverable_batch_logs=lambda _root: set()))
-                            run = context.workspace / "artifacts/projects/instrument_assembly/runs" / fault_run_id
+                            run = context.workspace / "artifacts/assemblies/instrument_assembly/runs" / fault_run_id
                             report = json.loads((run/"results/member.json").read_text())
                         self.assertEqual(report["status"], "failed")
                         self.assertEqual(report["native_count"], 3 if stage in {"audit","publication"} else 2)
@@ -449,7 +449,7 @@ field_worker.main()
                         if stage in {"export", "audit"}:
                             self.assertEqual(report["stopped_stage_accounting"]["status"], "building")
                         if stage not in {"export", "audit"}:
-                            result_path = context.workspace / "artifacts/projects/instrument_assembly/scratch/workflow_results" / fault_run_id / "result.json"
+                            result_path = context.workspace / "artifacts/assemblies/instrument_assembly/scratch/workflow_results" / fault_run_id / "result.json"
                             failed = json.loads(result_path.read_text())
                             self.assertTrue(failed["writers_confirmed"])
                             self.assertEqual(failed["exception"]["message"], "Observed process failed with exit 1")
@@ -519,7 +519,7 @@ class ExplicitFutureGeometryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); run = root / "run"; (run / "inputs").mkdir(parents=True)
             (run / "results").mkdir(); (run / "run_config.json").write_text("{}")
-            artifact_root = root / "artifacts"; cache_root = artifact_root / "common/simion/pa_family_cache"
+            artifact_root = root / "artifacts"; cache_root = artifact_root / "platform/simion/pa_family_cache"
             plan, resources, tool = self._plan(root)
             gem = run / "inputs/frontend.gem"; gem.write_bytes(b"INERT_GEM_NOT_EXECUTED")
             gem_record = file_record(gem, "required_evidence")

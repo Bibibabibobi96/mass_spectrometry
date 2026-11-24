@@ -70,7 +70,7 @@ function Exit-ArtifactWorkflowCapacitySession {
 function Invoke-ResourceBudgetedProcess {$script:nativeCount++;throw 'NATIVE_MUST_NOT_START'}
 function Remove-RunPackageExecutionAlias {$script:aliasCount++;throw 'NO_PACKAGE_ALIAS_MUST_EXIST'}
 $python='@@PYTHON@@';$repoRoot=Join-Path '@@ROOT@@' 'no-venv-source'
-$projectArtifactRoot=Join-Path '@@ROOT@@' 'artifacts/projects/rf_multipole_ion_optics'
+$projectArtifactRoot=Join-Path '@@ROOT@@' 'artifacts/components/rf_multipole_ion_optics'
 $workspacePaths=@{artifact_root=(Join-Path '@@ROOT@@' 'artifacts');host_resource_state_path=(Join-Path '@@ROOT@@' 'host.sqlite3')}
 $RunId='20261031_030000__test__comsol__inert-bootstrap';$ProjectId='rf_multipole_ion_optics'
 $resolvedBudget=@{limits=@{transient_run_directory_bytes=1048576L}}

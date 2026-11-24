@@ -35,7 +35,7 @@
 上游器件提供真实几何／出口，跨组件装配和状态交接由[统一集成](../../../../docs/ASSEMBLY.md)维护。
 本器件的抽象引导段不表示已消费真实上游端口。旧`projects/dual_pressure_rectilinear_ion_processor/`已退出活动树。
 
-运行产物进入工作区 `artifacts/projects/dual_pressure_rectilinear_ion_processor/runs/`；当前状态统一见 PROJECT。
+运行产物进入工作区 `artifacts/components/dual_pressure_rectilinear_ion_processor/runs/`；当前状态统一见 PROJECT。
 
 ## History 索引
 

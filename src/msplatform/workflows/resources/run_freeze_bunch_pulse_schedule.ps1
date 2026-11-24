@@ -54,7 +54,7 @@ function Get-VerifiedOutputRecord {
   return $record
 }
 
-$artifactProjectRoot=Join-Path $artifactRoot "projects\$projectId"
+$artifactProjectRoot=Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind component -OwnerId $projectId -Python $python
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactProjectRoot `
   -RunId $RunId -Project $projectId -Mode 'bunch_global_pulse_schedule_freeze' `
   -Software @('Python 3.11') -RetentionContractEnabled -RetentionClass compact `

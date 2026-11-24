@@ -47,7 +47,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $project='parallel_mirror_dual_stripe_mr_tof'
 $workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path;$repoRoot=$workspaceRoot
-$artifactRoot=Join-Path $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot) "projects\$project"
+$artifactWorkspaceRoot=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)
 $python=[IO.Path]::GetFullPath($PythonExe)
 $packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
 if($LASTEXITCODE-ne0){throw 'Installed msplatform package is unavailable.'};$packageRoot=(Resolve-Path -LiteralPath $packageRootText).Path
@@ -73,6 +73,8 @@ if($completedRootScreeningRuns.Count-gt$MaximumTe1RootFlights){
 }
 
 . (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
+$artifactRoot=& $python -I -B -c 'import sys;from msplatform.execution.resources.workspace_paths import resolve_run_artifact_root;print(resolve_run_artifact_root(sys.argv[1],owner_kind="component",owner_id=sys.argv[2]))' $artifactWorkspaceRoot $project
+if($LASTEXITCODE-ne0){throw 'MR candidate run root resolution failed.'}
 $workpointRunner=Join-Path $workflowResources 'run_downstream_workpoint_iteration.ps1'
 $sourceRunner=Join-Path $workflowResources 'run_publish_bunch_source.ps1'
 $screeningRunner=Join-Path $workflowResources 'run_native_corridor_bunch_screening.ps1'

@@ -12,7 +12,7 @@
 ## 合同与执行入口
 
 规范 COMSOL 构建器是 [`ms_stage1_ei_source.m`](../../backends/comsol/matlab/ms_stage1_ei_source.m)，配套解析合同加载器位于同一后端资源目录。构建器要求 `resolvedContractPath` 和显式 owner `runDirectory`，可选第三个参数为标签；不检索项目根或环境回退。新模型和结果只进入
-`artifacts/projects/apertured_tube_electron_impact_ion_source/`，不进入 Git。
+`artifacts/components/apertured_tube_electron_impact_ion_source/`，不进入 Git。
 
 机器身份、能力边界和 `prototype` 成熟度由 [`config/project.json`](config/project.json)声明；物理输入只在 [`config/baseline.json`](config/baseline.json)维护，数值与证据模式只在 [`config/numerical_modes.json`](config/numerical_modes.json)维护。安装包解析器 `msplatform.components.apertured_tube_electron_impact_ion_source.resolve_contract` 生成 MATLAB 唯一允许读取的 [`config/resolved_model.json`](config/resolved_model.json)。当前 `build_only_smoke` fixture 不具 Candidate 证据资格。
 

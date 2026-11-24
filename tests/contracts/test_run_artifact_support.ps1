@@ -50,12 +50,15 @@ $originalPythonPath=[Environment]::GetEnvironmentVariable('PYTHONPATH')
 $originalNoUserSite=[Environment]::GetEnvironmentVariable('PYTHONNOUSERSITE')
 
 $hostEnvironment=@{}
-foreach($name in @('MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN','MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH','SIMULATION_PYTHON_EXE')) {
+foreach($name in @('MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN','MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH','MASS_SPECTROMETRY_HOST_CONTEXT_JSON','SIMULATION_PYTHON_EXE')) {
   $hostEnvironment[$name]=[Environment]::GetEnvironmentVariable($name,'Process')
 }
 try {
   $env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN=''
   $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=Join-Path $testRoot 'host.sqlite3'
+  $env:MASS_SPECTROMETRY_HOST_CONTEXT_JSON=(@{workspace=$repoRoot;python_executable=$python;
+    host_state_path=$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH;
+    policy_path=(Join-Path $repoRoot 'src/msplatform/execution/resources/host_resource_policy.json')}|ConvertTo-Json -Compress)
   $env:SIMULATION_PYTHON_EXE=$python
   . (Join-Path $PSScriptRoot '../../src/msplatform/execution/resources/run_artifact_support.ps1')
   Test-RunJsonAtomic -Root $testRoot
@@ -79,7 +82,8 @@ try {
     }
     function Invoke-ArtifactCapacityGate { return [pscustomobject]@{satisfied_after_apply=$true} }
     $leaseFixturePythonExe=$python
-    $script:leaseFixtureCode='import json;print(json.dumps({"lease_id":"fixture","protected_paths":[],"protected_cache_keys":[]}))'
+    $fixtureRootJson=ConvertTo-Json -InputObject $testRoot -Compress
+    $script:leaseFixtureCode="import json;lease={""lease_id"":""fixture"",""protected_paths"":[],""protected_cache_keys"":[]};session={""artifact_root"":$fixtureRootJson,""lease_id"":""fixture"",""status"":""active"",""protected_paths"":[],""protected_cache_keys"":[],""lease"":lease,""startup_gate"":None};print(json.dumps({""ok"":True,""session"":session,""result"":session}))"
     function Invoke-LeaseFixturePython {
       [CmdletBinding(PositionalBinding=$false)]
       param([Parameter(ValueFromRemainingArguments)]$NativeArguments,
@@ -153,6 +157,12 @@ try {
     $satisfied=$true
     function Invoke-RunToolRootContext {
       $script:renewalFixtureCalls++
+      if(($satisfied-and$script:renewalFixtureCalls-lt4)-or(-not$satisfied-and$script:renewalFixtureCalls%2-eq1)){
+        $session.protected_paths=@(@(@($session.protected_paths)+@($ProtectedPaths))|ForEach-Object{if([IO.Path]::IsPathRooted($_)){[IO.Path]::GetFullPath($_)}else{Join-Path $testRoot $_}}|Select-Object -Unique)
+        $session.protected_cache_keys=@(@($session.protected_cache_keys)+@($ProtectedCacheKeys)|Select-Object -Unique)
+        if($null-ne$RemainingCommittedNewBytes){$session.committed_new_bytes=$RemainingCommittedNewBytes}
+        return (@{ok=$true;session=$session;result=$session}|ConvertTo-Json -Depth 10)
+      }
       return (@{satisfied_after_apply=$satisfied;blocking_reason='TARGET_CAPACITY_EXCEEDED';
         protected_paths=@($session.protected_paths|ForEach-Object{
           if([IO.Path]::IsPathRooted($_)){[IO.Path]::GetRelativePath($testRoot,$_)}else{$_}
@@ -175,7 +185,7 @@ try {
         Assert-Equal ($raised.session.$name-is[Array]) $true 'Renewal must preserve an array, including empty/singleton.'
       }
       Assert-Equal $raised.session.protected_cache_keys.Count $case.keys.Count 'Renewal must not manufacture null keys or retain duplicates.'
-      Assert-Equal $raised.session.protected_paths.Count $case.paths.Count 'Renewal must not manufacture null paths or retain duplicates.'
+      Assert-Equal $raised.session.protected_paths.Count $case.paths.Count "Renewal must not manufacture null paths or retain duplicates: $($raised.session.protected_paths-join' | ')"
       Assert-Equal ($raised.session.protected_paths-join',') (@($case.paths|ForEach-Object{Join-Path $testRoot $_})-join',') 'Renewal must retain canonical owner paths from the actual receipt.'
       Assert-Equal ($raised.session.protected_cache_keys-join',') ($case.keys-join',') 'Renewal cache identities changed.'
       Assert-Equal $raised.session.committed_new_bytes 11 'Raised reservation was not retained.'
@@ -183,6 +193,7 @@ try {
       Assert-Equal $raised.admission_gate.satisfied_after_apply $true 'Raised commitment did not reach admission.'
     }
     $satisfied=$false
+    $script:renewalFixtureCalls=0
     $session=[pscustomobject]@{status='active';artifact_root=$testRoot;lease_id='fixture';owner='fixture';
       lease=$null;lease_ttl_seconds=60;committed_new_bytes=10;protected_paths=@();protected_cache_keys=@();capacity_threshold_action='warn'}
     $message=$null
@@ -193,6 +204,7 @@ try {
     }
     Assert-Equal $session.committed_new_bytes 11 'Failed re-admission must retain the increased reservation.'
     $session.PSObject.Properties.Remove('capacity_threshold_action')
+    $script:renewalFixtureCalls=0
     $message=$null
     try{Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $session `
       -RemainingCommittedNewBytes 12|Out-Null}catch{$message=$_.Exception.Message}
@@ -233,11 +245,13 @@ try {
       if($message-notlike "Artifact capacity gate blocked startup: $reason;*"){throw 'Capacity gate must reject invalid safety decisions.'}
     }
     $fakeReceipt.blocking_reason='MINIMUM_FREE_CAPACITY_UNAVAILABLE'
+    $leaseSession=@{artifact_root=$testRoot;lease_id='fixture';status='active';protected_paths=@();protected_cache_keys=@();startup_gate=$null}
+    $leaseSession.lease=@{lease_id='fixture';protected_paths=@();protected_cache_keys=@()}
     function Invoke-RunToolRootContext {
       $script:capacityStartupTestCalls++
-      if($script:capacityStartupTestCalls-eq1){return '{"lease_id":"fixture","protected_paths":[],"protected_cache_keys":[]}'}
+      if($script:capacityStartupTestCalls-eq1){return (@{ok=$true;session=$leaseSession;result=$leaseSession}|ConvertTo-Json -Depth 10)}
       if($script:capacityStartupTestCalls-eq2){return ($fakeReceipt|ConvertTo-Json)}
-      return '{"deleted":true}'
+      return (@{ok=$true;session=$session;result=@{deleted=$true}}|ConvertTo-Json -Depth 10)
     }
     $script:capacityStartupTestCalls=0
     $message=$null
@@ -276,7 +290,7 @@ try {
     }
   }
   Assert-Equal $context.location $repoRoot 'Tool context did not use RepoRoot.'
-  Assert-Equal $context.python_path $repoRoot 'Tool context did not bind PYTHONPATH.'
+  Assert-Equal $context.python_path (@((Join-Path $repoRoot 'src'),$repoRoot)-join[IO.Path]::PathSeparator) 'Tool context did not bind PYTHONPATH.'
   Assert-Equal $context.no_user_site '1' 'Tool context did not disable user site.'
   Assert-Equal (Get-Location).Path $originalLocation 'Tool context did not restore location.'
   Assert-Equal ([Environment]::GetEnvironmentVariable('PYTHONPATH')) 'run-artifact-test-pythonpath' `
@@ -285,8 +299,8 @@ try {
     'Tool context did not restore PYTHONNOUSERSITE.'
 
   $governedRoot=Join-Path $testRoot 'artifacts'
-  $governedProjectRoot=Join-Path $governedRoot 'projects\fixture_project'
-  foreach($badArtifactRoot in @((Join-Path $governedProjectRoot 'runs'),(Join-Path $governedRoot 'projects\wrong_project'),$governedRoot)){
+  $governedProjectRoot=Join-Path $governedRoot 'components\fixture_project'
+  foreach($badArtifactRoot in @((Join-Path $governedProjectRoot 'runs'),(Join-Path $governedRoot 'components\wrong_project'),(Join-Path $governedRoot 'projects\fixture_project'),(Join-Path $governedRoot 'common'),$governedRoot)){
     $badRunId='20260723_165956__test__cross__wrong-artifact-root__n1'
     $message=$null
     try{
@@ -294,7 +308,7 @@ try {
         -RunId $badRunId -Project fixture_project -Mode contract_test -Software @('contract test') `
         -RetentionContractEnabled -CapacityLedgerLifecycleEnabled|Out-Null
     }catch{$message=$_.Exception.Message}
-    if(-not$message-or-not$message.Contains('ArtifactRoot must be the canonical artifacts/projects/<Project>')){
+    if(-not$message-or-not$message.Contains('ArtifactRoot must be the canonical artifacts/components/<component_id> or artifacts/assemblies/instrument_assembly')){
       throw "Wrong ArtifactRoot was not rejected before creation: $badArtifactRoot; $message"
     }
     if(Test-Path -LiteralPath (Join-Path $badArtifactRoot ('runs/'+$badRunId))){
@@ -320,11 +334,17 @@ try {
     -RunId '20260723_165958__test__cross__prewrite-registered__n1' -Project fixture_project `
     -Mode contract_test -Software @('contract test') -RetentionContractEnabled -RetentionClass compact `
     -CapacityLedgerLifecycleEnabled
-  $governedLedger=Get-Content -LiteralPath (Join-Path $governedRoot 'common\capacity_ledger.json') -Raw|ConvertFrom-Json
-  $governedEntry=@($governedLedger.objects|Where-Object {$_.path -eq 'projects/fixture_project/runs/20260723_165958__test__cross__prewrite-registered__n1'})
+  $governedLedger=Get-Content -LiteralPath (Join-Path $governedRoot 'platform\capacity_ledger.json') -Raw|ConvertFrom-Json
+  $governedEntry=@($governedLedger.objects|Where-Object {$_.path -eq 'components/fixture_project/runs/20260723_165958__test__cross__prewrite-registered__n1'})
   Assert-Equal $governedEntry.Count 1 'Governed package must retain exactly one registered run range.'
   Assert-Equal $governedEntry[0].status 'writing' 'Governed package range must remain writing after initialization.'
   Assert-Equal $governedEntry[0].recovery_reason 'run_manifest_not_terminal' 'Initialization must replace the pre-write recovery reason.'
+  $assemblyRoot=Resolve-RunArtifactRoot -ArtifactRoot $governedRoot -OwnerKind assembly -OwnerId instrument_assembly -Python $python
+  $assemblyPackage=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $assemblyRoot `
+    -RunId '20260723_165955__test__cross__assembly-owner__n1' -Project instrument_assembly `
+    -Mode contract_test -Software @('contract test') -RetentionContractEnabled -CapacityLedgerLifecycleEnabled
+  Assert-Equal $assemblyPackage.artifact_run_dir (Join-Path $governedRoot 'assemblies\instrument_assembly\runs\20260723_165955__test__cross__assembly-owner__n1') `
+    'Assembly package did not use its sole assembly owner root.'
 
   & {
     $ordinaryRoot=Join-Path $testRoot 'ordinary_workspace'
@@ -344,15 +364,15 @@ try {
         throw "Ordinary workspace supplied a same-name module: $origin"
       }
     }
-    $mrProjectRoot=Join-Path $governedRoot 'projects\parallel_mirror_dual_stripe_mr_tof'
+    $mrProjectRoot=Join-Path $governedRoot 'components\parallel_mirror_dual_stripe_mr_tof'
     $mrPackage=New-RunPackage -Python $python -RepoRoot $ordinaryRoot -ArtifactRoot $mrProjectRoot `
       -RunId '20260723_165957__test__python__installed-mr-binding' -Project parallel_mirror_dual_stripe_mr_tof `
       -Mode native_static_field_provider -Software @('contract test') -RetentionContractEnabled `
       -CapacityLedgerLifecycleEnabled
     Assert-Equal (Get-Content (Join-Path $mrPackage.run_dir 'run_manifest.json') -Raw|ConvertFrom-Json).status checkpoint `
       'Approved MR run-package initialization did not retain checkpoint behavior.'
-    $mrLedger=Get-Content -LiteralPath (Join-Path $governedRoot 'common\capacity_ledger.json') -Raw|ConvertFrom-Json
-    Assert-Equal @($mrLedger.objects|Where-Object{$_.path-eq'projects/parallel_mirror_dual_stripe_mr_tof/runs/20260723_165957__test__python__installed-mr-binding'}).Count 1 `
+    $mrLedger=Get-Content -LiteralPath (Join-Path $governedRoot 'platform\capacity_ledger.json') -Raw|ConvertFrom-Json
+    Assert-Equal @($mrLedger.objects|Where-Object{$_.path-eq'components/parallel_mirror_dual_stripe_mr_tof/runs/20260723_165957__test__python__installed-mr-binding'}).Count 1 `
       'Approved MR package did not retain capacity preflight registration.'
 
     $frozenRoot=Join-Path $testRoot 'verified_frozen_code'
@@ -409,7 +429,7 @@ try {
     & $python -m msplatform.execution.run_capacity_lifecycle --action seal-stopped-payload --artifact-root $governedRoot `
       --run-config $heavy.run_config --owner fixture_project --confirm-writing-stopped --retention-reason 'Inert owner-seal regression.'|Out-Null
     if($LASTEXITCODE-ne0){throw 'Public owner stopped-payload seal failed.'}
-    $ledger=Get-Content (Join-Path $governedRoot 'common/capacity_ledger.json') -Raw|ConvertFrom-Json
+    $ledger=Get-Content (Join-Path $governedRoot 'platform/capacity_ledger.json') -Raw|ConvertFrom-Json
     $entry=@($ledger.objects|Where-Object {$_.path.EndsWith('/'+$runId)})[0]
     Assert-Equal $entry.status 'ready' 'Owner seal did not close writing range.'
     Assert-Equal $entry.class 'rebuildable_payload' 'Heavy evidence was incorrectly classified as light.'
@@ -447,7 +467,7 @@ try {
     $capacityReceipt.projected_bytes-le$capacityReceipt.target_bytes)
   Assert-Equal $capacityReceipt.satisfied_after_apply $expectedSatisfied `
     'Capacity gate must report the actual volume decision, not assume fixture free space.'
-  $policy=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'artifact_capacity_policy.json') -Raw |
+  $policy=Get-Content -LiteralPath (Join-Path $repoRoot 'src/msplatform/execution/resources/artifact_capacity_policy.json') -Raw |
     ConvertFrom-Json
   Assert-Equal $capacityReceipt.target_bytes ([int64]$policy.target_gib * 1GB) `
     'Omitted target must use the shared capacity policy.'

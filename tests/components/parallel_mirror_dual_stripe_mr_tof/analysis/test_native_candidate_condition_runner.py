@@ -249,7 +249,7 @@ class NativeCandidateConditionRunnerTests(unittest.TestCase):
         for name in ("stripeArgs", "safeExitArgs", "coverageArgs", "continuationArgs",
                      "workpointArgs", "candidateArgs"):
             self.assertIn(f"${name}.PythonExe=$python", self.source)
-        self.assertIn("$safeExitManifest=Join-Path $artifactRoot", self.source)
+        self.assertIn("Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind assembly", self.source)
         self.assertIn("& $python -I -B -m msplatform.workflows.oa_mr.native_system_runtime", self.source)
         self.assertNotIn(".venv", self.source)
         self.assertNotIn("Join-Path $PSScriptRoot", self.source)
@@ -281,6 +281,10 @@ class NativeCandidateConditionPreparationTests(unittest.TestCase):
                 real_support = RUNNER.parents[4] / "src" / "msplatform" / "execution" / "resources" / support.name
                 support.write_text(
                     f". '{real_support.as_posix()}'\n" + r"""
+function Resolve-RunArtifactRoot {
+  param($ArtifactRoot,$OwnerKind,$OwnerId,$Python)
+  return Join-Path $ArtifactRoot (Join-Path $OwnerKind's' $OwnerId)
+}
 function New-RunPackage {
   param($Python,$RepoRoot,$ArtifactRoot,$RunId,$Project,$Mode,$Software,
     [switch]$RetentionContractEnabled,$RetentionClass,[switch]$CapacityLedgerLifecycleEnabled)

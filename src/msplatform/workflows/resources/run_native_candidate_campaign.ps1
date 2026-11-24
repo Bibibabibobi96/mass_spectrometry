@@ -23,11 +23,11 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $project='parallel_mirror_dual_stripe_mr_tof'
 $workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path;$artifactRoot=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot);$repoRoot=$workspaceRoot
-$artifactRuns=Join-Path $artifactRoot "projects\$project\runs"
 $python=[IO.Path]::GetFullPath($PythonExe)
 $packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
 if($LASTEXITCODE-ne0){throw 'Installed msplatform package is unavailable.'};$packageRoot=(Resolve-Path -LiteralPath $packageRootText).Path
 . (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
+$artifactRuns=Join-Path (Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind component -OwnerId $project -Python $python) 'runs'
 $campaign=(Resolve-Path -LiteralPath $CampaignPath).Path
 $conditionRunner=if($ConditionRunnerPath){
   (Resolve-Path -LiteralPath $ConditionRunnerPath).Path

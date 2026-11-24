@@ -10,6 +10,7 @@ from typing import Any, Callable
 from msplatform.execution import capacity_ledger, capacity_protection
 from msplatform.io.manifest_records import file_record, verify_record
 from msplatform.execution.recorded_file_removal import remove_recorded_files, write_json_atomic
+from msplatform.execution.resources.workspace_paths import resolve_run_artifact_root
 from msplatform.execution.retention import classify_file
 from msplatform.execution.solver_review_retirement import (
     RECEIPT_NAME, _assert_runtime_retirement_unprotected, verify_retirement, select_retirement_receipt,
@@ -60,6 +61,14 @@ def _run_context(artifact_root: Path, run_config: Path) -> tuple[Path, dict[str,
         raise ValueError("capacity-ledger run_config must be a direct runs/<run-id>/run_config.json")
     capacity_ledger.capacity_object_path(root, run_dir)
     config = _load_json(config_path, "run config")
+    project = config.get("project")
+    run_id = config.get("run_id")
+    if isinstance(project, str) and isinstance(run_id, str):
+        owner_kind = "assembly" if project == "instrument_assembly" else "component"
+        current = resolve_run_artifact_root(root, owner_kind=owner_kind, owner_id=project) / "runs" / run_id
+        legacy = root / "projects" / project / "runs" / run_id
+        if run_dir not in {current, legacy}:
+            raise ValueError("run config identity differs from its owner run directory")
     lifecycle = config.get("capacity_ledger_lifecycle")
     if not isinstance(lifecycle, dict) or lifecycle.get("schema_version") != 1 or lifecycle.get("enabled") is not True:
         raise ValueError("run config has not opted into capacity-ledger lifecycle")

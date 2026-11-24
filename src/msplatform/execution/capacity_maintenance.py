@@ -111,7 +111,7 @@ def restore_retired_disposition_paths(
     if SHA256.fullmatch(expected) is None or SHA256.fullmatch(source_sha) is None:
         raise ValueError("recovery requires explicit ledger and receipt SHA-256")
     receipt_path = receipt_path.resolve(strict=True)
-    directory = root / "common" / "capacity_disposal_receipts"
+    directory = root / "platform" / "capacity_disposal_receipts"
     if receipt_path.parent != directory.resolve(strict=False):
         raise ValueError("recovery requires a public completed disposal receipt")
     destination = resolve_ledger_path(root)
@@ -258,7 +258,7 @@ def restore_ledger_object_key(
     changes. No payload discovery, class inference or recalibration occurs.
     """
     root = root.resolve(strict=False)
-    directory = root / "common" / "capacity_disposal_receipts"
+    directory = root / "platform" / "capacity_disposal_receipts"
     receipt_path = receipt_path.resolve(strict=True)
     expected, authority = expected_ledger_sha256.upper(), expected_receipt_sha256.upper()
     if receipt_path.parent != directory.resolve() or any(SHA256.fullmatch(s) is None for s in (expected, authority)):
@@ -529,7 +529,7 @@ def recover_stale_atomic_ledger_temps(root: Path) -> dict[str, int]:
     """
 
     root = root.resolve(strict=False)
-    receipt_directory = root / "common" / "capacity_disposal_receipts"
+    receipt_directory = root / "platform" / "capacity_disposal_receipts"
     result = {"checked_count": 0, "retired_count": 0, "removed_bytes": 0,
               "fresh_count": 0, "invalid_count": 0, "replayed_count": 0}
     with protection.capacity_decision_lock(root):

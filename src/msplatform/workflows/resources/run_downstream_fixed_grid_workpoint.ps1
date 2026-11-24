@@ -36,7 +36,7 @@ if (($hasPrior -and $hasAnyPerturbation) -or (-not $hasPrior -and -not $hasAllPe
 }
 if (-not $RunId) { $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__analysis__python__mrtof-downstream-fixed-grid-workpoint' }
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot `
-  -ArtifactRoot (Join-Path $artifactWorkspaceRoot "projects\$project") `
+  -ArtifactRoot (Resolve-RunArtifactRoot -ArtifactRoot $artifactWorkspaceRoot -OwnerKind component -OwnerId $project -Python $python) `
   -RunId $RunId -Project $project -Mode downstream_fixed_grid_workpoint `
   -Software @('Python 3.11', 'NumPy') -RetentionContractEnabled -RetentionClass compact `
   -CapacityLedgerLifecycleEnabled

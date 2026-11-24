@@ -39,7 +39,7 @@ $artifactRoot = if ($ArtifactRootPath) {
 } else {
     . (Join-Path $repoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
     $workspacePaths = Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
-    Join-Path $workspacePaths.artifact_root 'projects/rf_multipole_ion_optics'
+    Resolve-RunArtifactRoot -ArtifactRoot $workspacePaths.artifact_root -OwnerKind component -OwnerId rf_multipole_ion_optics -Python $python
 }
 if($ResumeFinalization){
     if(-not$RunId){throw 'Finalization recovery requires the original RunId.'}

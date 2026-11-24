@@ -23,9 +23,6 @@ $ErrorActionPreference = 'Stop'
 
 $workspaceRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
 $providerProject = 'rf_multipole_ion_optics'
-if ([string]::IsNullOrWhiteSpace($ArtifactProjectRoot)) {
-  $ArtifactProjectRoot = Join-Path $workspaceRoot "artifacts\projects\$providerProject"
-}
 $artifactRoot = [IO.Path]::GetFullPath($ArtifactProjectRoot)
 $scratchRoot = [IO.Path]::GetFullPath((Join-Path $artifactRoot 'scratch'))
 $runsRoot = Join-Path $artifactRoot 'runs'
@@ -39,6 +36,10 @@ $python = if ($PythonExe) {
 $packageRootText = & $python -I -B -c 'from importlib.resources import files;print(files("msplatform"))'
 if ($LASTEXITCODE -ne 0) { throw 'Installed msplatform package is unavailable.' }
 $packageRoot = (Resolve-Path -LiteralPath $packageRootText).Path
+. (Join-Path $packageRoot 'execution/resources/workspace_paths.ps1')
+if ([string]::IsNullOrWhiteSpace($ArtifactProjectRoot)) {
+  $ArtifactProjectRoot = Resolve-RunArtifactRoot -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -OwnerKind component -OwnerId $providerProject -Python $python
+}
 
 if (-not $ConfirmGuiCreatedAndReopened) {
   throw 'ConfirmGuiCreatedAndReopened is required.'

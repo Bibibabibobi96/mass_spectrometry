@@ -287,7 +287,7 @@ class ThreeZoneT5SimionCandidateTests(unittest.TestCase):
         run_dir = (
             self.root
             / "artifacts"
-            / "projects"
+            / "components"
             / "single_reflection_oa_tof_mass_analyzer"
             / "runs"
             / run_id
@@ -397,7 +397,7 @@ class ThreeZoneT5SimionCandidateTests(unittest.TestCase):
             )
 
     def test_external_schema_publication_failure_is_atomic_and_sources_stay_bounded(self):
-        run_dir = self.root / "artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20260817_170000__build__python__three-zone-t5-candidate"
+        run_dir = self.root / "artifacts/components/single_reflection_oa_tof_mass_analyzer/runs/20260817_170000__build__python__three-zone-t5-candidate"
         sources = self._relocated_publication_sources()
         schema_bytes = candidate_compiler.OUTPUT_SCHEMA_SOURCE.read_bytes()
 
@@ -427,7 +427,7 @@ class ThreeZoneT5SimionCandidateTests(unittest.TestCase):
             )
         invalid_run = (
             self.root
-            / "artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/not-a-run"
+            / "artifacts/components/single_reflection_oa_tof_mass_analyzer/runs/not-a-run"
         )
         with self.assertRaisesRegex(ValueError, "run_id"):
             publish_t5_simion_candidate(

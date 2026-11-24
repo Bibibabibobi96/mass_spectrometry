@@ -15,7 +15,8 @@ function Invoke-WorkspacePathRequest {
   $start.StandardInputEncoding=[Text.UTF8Encoding]::new($false)
   $start.StandardOutputEncoding=[Text.UTF8Encoding]::new($false)
   $start.StandardErrorEncoding=[Text.UTF8Encoding]::new($false)
-  foreach($argument in @('-B','-c','import sys,runpy;from pathlib import Path;p=Path(sys.argv[1]);sys.path.insert(0,str(p.parents[2]/''src''));runpy.run_path(str(p),run_name=''__main__'')',(Join-Path $PSScriptRoot 'workspace_paths.py'))){$start.ArgumentList.Add($argument)}
+  $bootstrap='import sys,runpy;from pathlib import Path;p=Path(sys.argv[1]).resolve();root=p.parents[3].resolve();sys.path.insert(0,str(root));from msplatform.execution import run_paths;assert Path(run_paths.__file__).resolve()==root/''msplatform''/''execution''/''run_paths.py'',f''selected run_paths={run_paths.__file__}; expected root={root}'';runpy.run_path(str(p),run_name=''__main__'')'
+  foreach($argument in @('-I','-B','-c',$bootstrap,(Join-Path $PSScriptRoot 'workspace_paths.py'))){$start.ArgumentList.Add($argument)}
   $process=[Diagnostics.Process]::Start($start)
   try{
     $outputTask=$process.StandardOutput.ReadToEndAsync();$errorTask=$process.StandardError.ReadToEndAsync()
@@ -37,4 +38,17 @@ function Resolve-WorkspacePaths {
   if($PSBoundParameters.ContainsKey('HostResourceStatePath')){$arguments.host_resource_state_path=$HostResourceStatePath}
   if($null-ne$FrozenContext){$arguments.frozen_context=$FrozenContext}
   Invoke-WorkspacePathRequest -Request @{operation='resolve';arguments=$arguments} -Python $Python
+}
+
+function Resolve-RunArtifactRoot {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$ArtifactRoot,[Parameter(Mandatory)][ValidateSet('component','assembly')][string]$OwnerKind,
+    [Parameter(Mandatory)][string]$OwnerId,[string]$Python='')
+  Invoke-WorkspacePathRequest -Request @{operation='run_root';arguments=@{artifact_root=$ArtifactRoot;owner_kind=$OwnerKind;owner_id=$OwnerId}} -Python $Python
+}
+
+function Resolve-PlatformArtifactPath {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$ArtifactRoot,[Parameter(Mandatory)][string[]]$RelativePath,[string]$Python='')
+  Invoke-WorkspacePathRequest -Request @{operation='platform';arguments=@{artifact_root=$ArtifactRoot;relative_parts=$RelativePath}} -Python $Python
 }

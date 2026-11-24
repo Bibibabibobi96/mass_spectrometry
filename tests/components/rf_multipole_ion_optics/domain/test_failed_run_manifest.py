@@ -35,7 +35,7 @@ class FailedRunManifestTest(unittest.TestCase):
             capacity_root = Path(directory) / "artifacts"
             capacity_root.mkdir()
             initialize_capacity_ledger(capacity_root, objects=[])
-            artifact_root = capacity_root / "projects" / "fixture"
+            artifact_root = capacity_root / "components" / "fixture"
             support = ROOT / "src/msplatform/execution/resources/run_artifact_support.ps1"
             python = Path(sys.executable)
             command = (
@@ -165,7 +165,7 @@ class TransportRunArtifactsTest(unittest.TestCase):
     def test_success_freezes_inputs_and_terminalizes_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            with patch.object(artifacts, "ARTIFACT_PROJECTS_ROOT", root / "artifacts/projects"):
+            with patch.object(artifacts, "ARTIFACT_PROJECTS_ROOT", root / "artifacts/components"):
                 with _transport_run("20260729_120000__test__python__transport-success", ("metrics.json",)) as run:
                     provisional = json.loads((run.run_dir / "run_manifest.json").read_text(encoding="utf-8"))
                     self.assertEqual(provisional["status"], "interrupted")
@@ -180,7 +180,7 @@ class TransportRunArtifactsTest(unittest.TestCase):
     def test_exception_replaces_interrupted_state_with_failed_partial_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            with patch.object(artifacts, "ARTIFACT_PROJECTS_ROOT", root / "artifacts/projects"):
+            with patch.object(artifacts, "ARTIFACT_PROJECTS_ROOT", root / "artifacts/components"):
                 with self.assertRaisesRegex(RuntimeError, "scientific failure"):
                     with _transport_run(
                         "20260729_120001__test__python__transport-failure", ("partial.json", "absent.json")

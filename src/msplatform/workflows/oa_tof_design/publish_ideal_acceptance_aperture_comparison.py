@@ -24,6 +24,7 @@ import tempfile
 from typing import Any, Callable
 
 from msplatform.execution.artifact_naming import validate_run_id
+from msplatform.execution.resources.workspace_paths import resolve_run_artifact_root
 import msplatform
 from msplatform import analysis, io
 from msplatform.io import file_identity as io_file_identity
@@ -164,7 +165,9 @@ def publish_aperture_comparison(
     workspace_root = workspace_root.resolve()
     campaign_path, runs_root, run_dir = campaign_path.resolve(), runs_root.resolve(), run_dir.resolve()
     validate_run_id(run_dir.name)
-    canonical_runs = (workspace_root / "artifacts" / "projects" / PROJECT_ID / "runs").resolve()
+    canonical_runs = resolve_run_artifact_root(
+        workspace_root / "artifacts", owner_kind="component", owner_id=PROJECT_ID,
+    ).joinpath("runs").resolve()
     if run_dir.parent != canonical_runs:
         raise ValueError("analysis run_dir must use the canonical workspace artifact root")
     if run_dir.exists():
