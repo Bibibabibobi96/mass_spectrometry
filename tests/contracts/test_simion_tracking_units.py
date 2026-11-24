@@ -255,7 +255,7 @@ class TrackingUnitOwnerTests(unittest.TestCase):
                     'msplatform.execution.simion_dispatch.plan_simion_dispatch',side_effect=dispatch),patch(
                     'msplatform.execution.processes.resource_path',side_effect=lambda name:copied/name if name=='batch_process_owner.ps1' else real_resource(name)):
                 with self.assertRaisesRegex(Exception,'batch wave failed'):run('failed')
-                predecessor=context.workspace/'artifacts/projects/instrument_assembly/runs/20261104_120000__test__python__tracking-failed'
+                predecessor=context.workspace/'artifacts/assemblies/instrument_assembly/runs/20261104_120000__test__python__tracking-failed'
                 reference=file_record(predecessor/'run_manifest.json','required_evidence')
                 index=json.loads((predecessor/'logs/tracking_units.json').read_text())
                 self.assertEqual([row['complete'] for row in index['units']],[True,False,True,False])
@@ -317,7 +317,7 @@ class TrackingUnitOwnerTests(unittest.TestCase):
                 # replay plan must remain bound by this FAILED direct parent.
                 with self.assertRaisesRegex(RuntimeError,'INERT_FAIL_AFTER_REUSE'):
                     run('failed-after-reuse',file_record(child/'run_manifest.json','required_evidence'),after_error=True)
-                failed_child=context.workspace/'artifacts/projects/instrument_assembly/runs/20261104_120000__test__python__tracking-failed-after-reuse'
+                failed_child=context.workspace/'artifacts/assemblies/instrument_assembly/runs/20261104_120000__test__python__tracking-failed-after-reuse'
                 failed_manifest=file_record(failed_child/'run_manifest.json','required_evidence')
                 self.assertEqual(inspect_tracking_recovery(graph,failed_manifest)['reused_unit_keys'],
                     ['unit_0001','unit_0002','unit_0003','unit_0004'])

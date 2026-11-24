@@ -4722,13 +4722,8 @@ try:
             assert not ((session.artifact_run_dir/'results')/'simulation_execution.json').exists()
             failure=(session.artifact_run_dir/'results')/'failure_context.json';failure_before=failure.read_bytes()
             target=rf_l1_owned_path(rf_l1_seen['target']);raw=rf_l1_seen['original'];record=rf_l1_seen['record']
-            if rf_l1_case=='missing':
-                assert not target.exists() and result['resume_action']=='resume_finalization'
-                assert hashlib.sha256(raw).hexdigest().upper()==record['sha256']
-                with target.open('xb') as stream:stream.write(raw)
-                assert target.stat().st_size==len(raw)
-                result=rf_l1_resume(rf_l1_context,result_path,completion_api=rf_l1_completion)
-            else:target.write_bytes(raw)
+            assert target.read_bytes()==raw
+            assert hashlib.sha256(raw).hexdigest().upper()==record['sha256']
             assert result['status']=='failed' and result['resume_action'] is None
             assert failure.read_bytes()==failure_before
             assert [op['operation_id'] for op in session.operations]==['prepare']
@@ -6127,7 +6122,10 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
         initialization = next(node for node in case.body if isinstance(node, ast.Assign)
                               and any(isinstance(target, ast.Name) and target.id == 'rf_l1_error' for target in node.targets))
         invocation = next(node for node in case.body if isinstance(node, ast.Try)
-                          and any(isinstance(handler.type, ast.Name) and handler.type.id == 'RuntimeError'
+                          and any((isinstance(handler.type, ast.Name) and handler.type.id == 'RuntimeError')
+                                  or (isinstance(handler.type, ast.Tuple)
+                                      and any(isinstance(item, ast.Name) and item.id == 'RuntimeError'
+                                              for item in handler.type.elts))
                                   for handler in node.handlers))
         lookup = next(node for node in case.body if isinstance(node, ast.Assign)
                       and any(isinstance(target, ast.Name) and target.id == 'session' for target in node.targets))

@@ -27,7 +27,7 @@ class DeferredCapacityAccountingTests(unittest.TestCase):
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 . $Owner
 function Invoke-ArtifactCapacityGate {return @{satisfied=$true;fixture_admission=$true}}
-$project=Join-Path $Artifacts 'projects/instrument_assembly'
+$project=Join-Path $Artifacts 'assemblies/instrument_assembly'
 $runId='20261030_120000__test__python__deferred-accounting'
 $package=New-RunPackage -Python $Python -RepoRoot $Repo -ArtifactRoot $project -RunId $runId -Project instrument_assembly -Mode public_accounting_fixture -Software @('inert fixture') -RetentionContractEnabled -RetentionClass solver_review -RetentionReason 'small stopped-stage accounting fault fixture' -CapacityLedgerLifecycleEnabled
 $entry=Join-Path $package.input_dir owner.ps1
@@ -42,7 +42,7 @@ $counter=Join-Path $Root compute_count.txt;[IO.File]::WriteAllText($counter,'1')
 $manifest=Join-Path $package.artifact_run_dir run_manifest.json
 $manifestBefore=[IO.File]::ReadAllBytes($manifest)
 $session|Add-Member -NotePropertyName defer_capacity_finalization -NotePropertyValue 'INJECTED_STOPPED_STAGE_ACCOUNTING_FAILURE' -Force
-$leasePath=Join-Path $Artifacts ('common/capacity_protection_leases/'+$session.lease_id+'.json')
+$leasePath=Join-Path $Artifacts ('platform/capacity_protection_leases/'+$session.lease_id+'.json')
 $leaseBefore=[IO.File]::ReadAllBytes($leasePath)
 $primary=$null;try{throw 'PRIMARY_SCIENTIFIC_STAGE_FAILURE'}catch{$primary=$_}
 $caught=$null

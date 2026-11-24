@@ -60,7 +60,7 @@ class SampledFieldExecutionTests(unittest.TestCase):
             for record in prepared['immutable_input_records']:verify_record('preserved source',record)
             sample=open_artifact(selected['scalar_field_basis']['samples']['carrier'],expected_kind='scalar_field_samples')
             sample_path=sample.data_path('field_v');sample_record=sample.data_records['field_v'];original=sample_path.read_bytes()
-            runs=selected['context'].workspace/'artifacts/projects/instrument_assembly/runs'
+            runs=selected['context'].workspace/'artifacts/assemblies/instrument_assembly/runs'
             observed.clear();locked='20261114_000104__test__python__collision-lock'
             with fixture.inert_native_leaf(observed,child_mutate=sample_path):
                 with self.assertRaises(ProcessExecutionError):launch(locked)

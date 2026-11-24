@@ -56,7 +56,8 @@ if ($Phase -eq 'Verify') {
   & (Join-Path $packageRoot 'workflows/resources/verify_geometry_contract.ps1') `
     -SimionExe $SimionExe -PythonExe $python
   if ($LASTEXITCODE -ne 0) { throw 'Formal geometry/runtime/CAD gate failed.' }
-  & (Join-Path $packageRoot 'workflows/resources/verify_reference_analysis.ps1') -PythonExe $python
+  & (Join-Path $packageRoot 'workflows/resources/verify_reference_analysis.ps1') `
+    -WorkspaceRoot $workspaceRoot -ArtifactRootPath $artifactRootPath -ScienceRoot $projectRoot -PythonExe $python
   if ($LASTEXITCODE -ne 0) { throw 'Formal reference-analysis gate failed.' }
   'FORMAL_RELEASE_VERIFY=PASS'
   return

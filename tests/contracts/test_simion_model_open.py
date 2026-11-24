@@ -233,7 +233,7 @@ class SimionModelOpenTests(unittest.TestCase):
                     else:
                         with self.assertRaisesRegex(ValueError, 'automatic build/source/Program'):
                             owner.run_managed_stage(**arguments)
-                    run = context.workspace/'artifacts/projects/instrument_assembly/runs'/run_id
+                    run = context.workspace/'artifacts/assemblies/instrument_assembly/runs'/run_id
                     receipt = json.loads((run/'results/simion_view_receipt.json').read_text(encoding='utf-8'))
                     completion = json.loads((run/'results/execution_completion.json').read_text(encoding='utf-8'))
                     operations = completion['writer_completion']['operations']

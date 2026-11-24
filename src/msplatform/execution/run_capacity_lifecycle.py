@@ -452,8 +452,14 @@ def resolve_consumed_run_capacity_owner(manifest_record: dict[str, Any], *,
             raise ValueError("source has no frozen capacity owner; provide sufficient source evidence")
         root = consumer_artifact_root.resolve(strict=True)
         run_dir = config_path.parent
-        expected = root / "projects" / str(config.get("project", "")) / "runs" / str(config.get("run_id", ""))
-        if run_dir != expected.resolve() or run_dir.parent.name != "runs":
+        project = config.get("project")
+        run_id = config.get("run_id")
+        expected = root / "projects" / str(project or "") / "runs" / str(run_id or "")
+        candidates = {expected.resolve()}
+        if isinstance(project, str) and isinstance(run_id, str):
+            owner_kind = "assembly" if project == "instrument_assembly" else "component"
+            candidates.add(resolve_run_artifact_root(root, owner_kind=owner_kind, owner_id=project) / "runs" / run_id)
+        if run_dir not in candidates or run_dir.parent.name != "runs":
             raise ValueError("cross-root source has no frozen capacity owner; provide sufficient source evidence")
         capacity_ledger.capacity_object_path(root, run_dir)
     for name in ("run_id", "project", "mode"):

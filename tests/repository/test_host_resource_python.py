@@ -448,7 +448,9 @@ class HeavyConsumerEntryTests(unittest.TestCase):
             "msplatform.workflows.mr_design.mirror_l0_l1_hardware_candidate":
                 ["--l0-receipt", "missing.json", "--contract", "missing.json", "--output", "unused.json"],
             "msplatform.workflows.rf_ideal_transport": [
-                "--project-root", "missing", "--design-profile-id", "hexapole_no_acceleration_full_length"
+                "--workspace-root", "missing", "--artifact-root", "missing",
+                "--component-root", "missing",
+                "--design-profile-id", "hexapole_no_acceleration_full_length",
             ],
         }
         for name, arguments in consumers.items():

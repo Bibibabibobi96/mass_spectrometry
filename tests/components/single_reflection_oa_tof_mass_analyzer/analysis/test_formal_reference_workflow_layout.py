@@ -48,6 +48,11 @@ class FormalReferenceWorkflowLayoutTests(unittest.TestCase):
         self.assertIn("--verify-hashes", runner)
         self.assertIn("--project single_reflection_oa_tof_mass_analyzer", runner)
         self.assertIn(
+            "-WorkspaceRoot $workspaceRoot -ArtifactRootPath $artifactRootPath "
+            "-ScienceRoot $projectRoot -PythonExe $python",
+            runner,
+        )
+        self.assertIn(
             "msplatform.workflows.oa_formal."
             "publish_formal_release",
             runner,
@@ -100,6 +105,30 @@ class FormalReferenceWorkflowLayoutTests(unittest.TestCase):
         )
         self.assertTrue(
             (PROJECT_ROOT.parents[1] / "workflows/oa_formal" / "publish_formal_release.py").is_file()
+        )
+
+    def test_project_formal_gate_forwards_explicit_reference_context(self):
+        gate = (
+            PROJECT_ROOT.parents[1] / "workflows/resources" / "oatof_verify.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "$packageRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)",
+            gate,
+        )
+        self.assertIn("$artifactRootPath = Join-Path $workspaceRoot 'artifacts'", gate)
+        self.assertIn(
+            "& (Join-Path $packageRoot 'workflows/resources/verify_reference_analysis.ps1')",
+            gate,
+        )
+        self.assertIn(
+            "-WorkspaceRoot $workspaceRoot -ArtifactRootPath $artifactRootPath "
+            "-ScienceRoot $projectRoot -PythonExe $python",
+            gate,
+        )
+        self.assertNotIn(
+            "& (Join-Path $repoRoot "
+            "'src/msplatform/workflows/resources/verify_reference_analysis.ps1')",
+            gate,
         )
 
     def test_formal_runtime_accepts_governed_result_generations(self):

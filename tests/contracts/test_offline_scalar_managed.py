@@ -79,7 +79,7 @@ class SupportOwner(unittest.TestCase):
     with self.assertRaisesRegex(ValueError,'identity differs'):
      subject.derive_world_scalar_support(raw3,context=offline,prepared_support=first.reference)
    for k,v in original.items():self.assertEqual(raw1.data_path(k).read_bytes(),v)
-   manifests=list((context.workspace/'artifacts/projects/instrument_assembly/runs').glob('*assembly-scalar*/run_manifest.json'));statuses=[json.loads(x.read_text(encoding='utf-8-sig'))['status'] for x in manifests];self.assertCountEqual(statuses,['success','success','success','success','success','success','failed'])
+   manifests=list((context.workspace/'artifacts/assemblies/instrument_assembly/runs').glob('*assembly-scalar*/run_manifest.json'));statuses=[json.loads(x.read_text(encoding='utf-8-sig'))['status'] for x in manifests];self.assertCountEqual(statuses,['success','success','success','success','success','success','failed'])
    for m in manifests:
     d=json.loads(m.read_text(encoding='utf-8-sig'))
     if d['status']=='failed':self.assertNotIn('samples',d.get('products',{}))

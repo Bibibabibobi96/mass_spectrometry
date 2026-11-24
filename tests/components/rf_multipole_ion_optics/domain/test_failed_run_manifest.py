@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -176,6 +177,74 @@ class TransportRunArtifactsTest(unittest.TestCase):
             self.assertEqual(manifest["status"], "success")
             self.assertEqual(config["inputs"]["mode"], str(run.run_dir / "inputs/transport_no_collision.json"))
             self.assertEqual([Path(item["path"]).name for item in manifest["outputs"]], ["metrics.json", "summary.json"])
+
+    def test_ideal_transport_cli_uses_explicit_roots_outside_checkout(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package_root = root / "installed"
+            shutil.copytree(
+                ROOT / "src/msplatform", package_root / "msplatform",
+                ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+            )
+            outside = root / "outside"
+            outside.mkdir()
+            artifact_root = root / "artifacts"
+            run_id = "20260729_120002__test__python__installed-ideal-transport"
+            child = r"""
+import os
+import sys
+from pathlib import Path
+from unittest.mock import patch
+
+package_root = Path(sys.argv[1]).resolve()
+author_source = Path(sys.argv[2]).resolve()
+def reject_author_source(event, args):
+    if event == "open" and args and isinstance(args[0], (str, bytes)):
+        path = Path(os.fsdecode(args[0])).resolve()
+        if path.is_relative_to(author_source):
+            raise AssertionError(f"ideal transport accessed author source: {path}")
+sys.addaudithook(reject_author_source)
+sys.path.insert(0, str(package_root))
+from msplatform.execution import host_resource_python
+from msplatform.workflows import rf_ideal_transport
+sys.argv = [
+    "msplatform.workflows.rf_ideal_transport",
+    "--workspace-root", str(package_root),
+    "--artifact-root", sys.argv[3],
+    "--component-root", str(package_root / "msplatform/components/rf_multipole"),
+    "--run-id", sys.argv[4],
+    "--design-profile-id", "hexapole_no_acceleration_full_length",
+]
+with patch.object(host_resource_python, "ensure_heavy_entry"):
+    rf_ideal_transport.main()
+print(f"RF_IDEAL_TRANSPORT_ORIGIN={Path(rf_ideal_transport.__file__).resolve()}")
+"""
+            result = subprocess.run(
+                [sys.executable, "-I", "-B", "-c", child,
+                 str(package_root), str(ROOT / "src"), str(artifact_root), run_id],
+                cwd=outside, capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=60, check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("IDEAL_MULTIPOLE_L1=PASS", result.stdout)
+            self.assertIn(
+                f"RF_IDEAL_TRANSPORT_ORIGIN={package_root / 'msplatform/workflows/rf_ideal_transport.py'}",
+                result.stdout,
+            )
+            run = artifact_root / "components/rf_multipole_ion_optics/runs" / run_id
+            config = json.loads((run / "run_config.json").read_text(encoding="utf-8"))
+            manifest = json.loads((run / "run_manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(config["project_root"], str(package_root / "msplatform/components/rf_multipole"))
+            self.assertEqual(config["parameters"], {
+                "model_level": "L1", "collision_model": "disabled",
+                "space_charge_model": "disabled", "magnetic_field_model": "disabled",
+                "solver_field_used": False,
+            })
+            self.assertEqual(manifest["status"], "success")
+            self.assertEqual(
+                json.loads((run / "results/ideal_transport_metrics.json").read_text(encoding="utf-8"))["status"],
+                "PASS",
+            )
 
     def test_exception_replaces_interrupted_state_with_failed_partial_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

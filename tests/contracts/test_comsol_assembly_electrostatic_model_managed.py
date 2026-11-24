@@ -95,7 +95,7 @@ class ManagedSyntheticModelTests(unittest.TestCase):
                         with self.assertRaises(ProcessExecutionError if case == 'process_failure' else (AssertionError, ProcessExecutionError)) as caught:
                             subject.prepare_model(geometry, request=REQUEST, context=context)
                         self.assertRegex(str(caught.exception), '23' if case == 'process_failure' else '(?i)(changed|immutable|denied|access|exit)')
-                        manifests = list((context.workspace / 'artifacts/projects/instrument_assembly/runs').glob('*assembly-model*/run_manifest.json'))
+                        manifests = list((context.workspace / 'artifacts/assemblies/instrument_assembly/runs').glob('*assembly-model*/run_manifest.json'))
                         self.assertEqual(len(manifests), 1)
                         manifest = json.loads(manifests[0].read_text(encoding='utf-8-sig'))
                         self.assertEqual(manifest['status'], 'failed')

@@ -150,7 +150,7 @@ class NeutralSampledRecoveryTests(unittest.TestCase):
             value['limits'].update(maximum_concurrency=1, launch_stagger_seconds=1)
             return value
         real_resource = resource_path
-        run_root = context.workspace / 'artifacts/projects/instrument_assembly/runs'
+        run_root = context.workspace / 'artifacts/assemblies/instrument_assembly/runs'
         before = set(run_root.iterdir())
         def track(recovery=None):
             return operations.track(field, packet, propagation=propagation, observations=dict(plane_observations=[]),

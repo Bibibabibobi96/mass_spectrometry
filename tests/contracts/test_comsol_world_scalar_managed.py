@@ -82,7 +82,7 @@ class ManagedScalarOwnerTests(unittest.TestCase):
                     else:
                         with self.assertRaises(Exception) as caught:subject.export_world_scalar(source,grid=grid,context=context,fill_conductor_interiors=True)
                         self.assertRegex(str(caught.exception),'(?i)(binary|immutable|denied|access|exit|changed|zero or one)')
-                        manifests=list((context.workspace/'artifacts/projects/instrument_assembly/runs').glob('*assembly-scalar*/run_manifest.json'));self.assertEqual(len(manifests),1)
+                        manifests=list((context.workspace/'artifacts/assemblies/instrument_assembly/runs').glob('*assembly-scalar*/run_manifest.json'));self.assertEqual(len(manifests),1)
                         run_dir=manifests[0].parent;manifest=json.loads(manifests[0].read_text(encoding='utf-8-sig'));self.assertEqual(manifest['status'],'failed');self.assertNotIn('samples',manifest.get('products',{}))
                         if case=='late_failure':
                             partial=run_dir/'scalar/field_v_filled.pa'
@@ -90,7 +90,7 @@ class ManagedScalarOwnerTests(unittest.TestCase):
                             self.assertEqual((run_dir/'scalar/field_v.pa').read_bytes(),sample.read_bytes())
                             self.assertEqual((run_dir/'scalar/field_valid.pa').read_bytes(),valid.read_bytes())
                             self.assertTrue((run_dir/'results/export_world_scalar.json').is_file())
-                            result_path=context.workspace/'artifacts/projects/instrument_assembly/scratch/workflow_results'/run_dir.name/'result.json'
+                            result_path=context.workspace/'artifacts/assemblies/instrument_assembly/scratch/workflow_results'/run_dir.name/'result.json'
                             owner_result=json.loads(result_path.read_text(encoding='utf-8-sig'))
                             self.assertEqual(owner_result['status'],'failed')
                             self.assertIn('scalar validity payload must contain only zero or one',owner_result['exception']['message'])

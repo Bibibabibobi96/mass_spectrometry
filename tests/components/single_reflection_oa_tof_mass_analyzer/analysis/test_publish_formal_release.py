@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
+import sysconfig
 import tempfile
 import unittest
+import venv
 from pathlib import Path
 from unittest import mock
 
@@ -70,7 +74,7 @@ class FormalReleasePublisherTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        self.artifact = self.root / "artifacts" / promotion.PROJECT_ID
+        self.artifact = self.root / "artifacts" / "components" / promotion.PROJECT_ID
         self.runs = self.artifact / "runs"
         self.candidate = self.runs / CANDIDATE_ID
         self.validation = self.runs / VALIDATION_ID
@@ -358,13 +362,66 @@ class FormalReleasePublisherTests(unittest.TestCase):
         self.assertTrue((formal / "simion/source_SHA256SUMS.csv").is_file())
         self.assertEqual(manifest["validation_contract"]["sha256"],
                          promotion.sha256(self.config_paths["formal_validation"]))
-        with (
-            mock.patch.object(validation_gate, "PROJECT_DIR", self.project),
-            mock.patch.object(validation_gate, "ARTIFACT_ROOT", self.artifact),
-            mock.patch.object(validation_gate, "CONFIG_PATH",
-                              self.config_paths["formal_validation"]),
-        ):
-            validation_gate.main()
+        validation_gate.verify(self.project, self.artifact)
+
+    def test_installed_public_verify_uses_explicit_roots(self) -> None:
+        promotion.promote(self.request, self.artifact)
+        original_configs = self._config_snapshot()
+        source_package = Path(validation_gate.__file__).resolve().parents[2]
+        installed_environment = self.root / "installed"
+        venv.EnvBuilder(with_pip=False, system_site_packages=True).create(
+            installed_environment
+        )
+        installed_python = installed_environment / "Scripts/python.exe"
+        installed_package = (
+            installed_environment / "Lib/site-packages/msplatform"
+        )
+        shutil.copytree(
+            source_package,
+            installed_package,
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+        )
+        (installed_package.parent / "formal_test_dependencies.pth").write_text(
+            sysconfig.get_path("purelib") + "\n", encoding="utf-8"
+        )
+        (installed_package / "execution/verify_artifact_layout.py").write_text(
+            "print('INSTALLED_LAYOUT_FIXTURE=PASS')\n", encoding="utf-8"
+        )
+        (installed_package / "workflows/resources/verify_geometry_contract.ps1").write_text(
+            "param($SimionExe, $PythonExe)\n'INSTALLED_GEOMETRY_FIXTURE=PASS'\n",
+            encoding="utf-8",
+        )
+        (installed_package / "execution/resources/host_execution_lease.ps1").write_text(
+            "param($HostContext)\n"
+            "function Enter-HostExecutionLease { param($Role, $Stage) @{inherited=$false} }\n"
+            "function Exit-HostExecutionLease { param($Lease) }\n",
+            encoding="utf-8",
+        )
+
+        result = subprocess.run(
+            [
+                "pwsh", "-NoProfile", "-NonInteractive", "-File",
+                str(installed_package / "workflows/resources/run_formal_validation.ps1"),
+                "-Phase", "Verify",
+                "-WorkspaceRoot", str(self.repository),
+                "-ArtifactRootPath", str(self.root / "artifacts"),
+                "-ScienceRoot", str(self.project),
+            ],
+            cwd=self.root,
+            env={**os.environ, "SIMULATION_PYTHON_EXE": str(installed_python)},
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=60,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("FORMAL_VALIDATION_STATUS=PASS", result.stdout)
+        self.assertIn("REFERENCE_ANALYSIS_STATUS=PASS", result.stdout)
+        self.assertIn("FORMAL_RELEASE_VERIFY=PASS", result.stdout)
+        self.assertEqual(original_configs, self._config_snapshot())
 
     def test_candidate_source_tamper_fails_before_publication(self) -> None:
         (self.candidate / "comsol/candidate.mph").write_bytes(b"tampered")

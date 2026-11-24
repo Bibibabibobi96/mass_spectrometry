@@ -15,6 +15,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
+$packageRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $projectRoot = Join-Path $repoRoot 'src/msplatform/components/single_reflection_oa_tof'
 $testRoot = Join-Path $repoRoot 'tests/components/single_reflection_oa_tof_mass_analyzer'
 $partitionOptions = @('SelectedTestModules','PreflightOnly','PreflightValidated')
@@ -41,12 +42,13 @@ $hostStage = 'prepare'
 try {
 $env:PYTHONPATH = (@((Join-Path $repoRoot 'src'),$repoRoot,(Join-Path $testRoot ''),(Join-Path $testRoot 'analysis'),(Join-Path $testRoot 'simion'),$savedPythonPath) | Where-Object { $_ }) -join [IO.Path]::PathSeparator
 $workspaceRoot = Split-Path -Parent $repoRoot
+$artifactRootPath = Join-Path $workspaceRoot 'artifacts'
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } elseif ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) } else { throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required' }
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 runtime missing: $python" }
 $executionResources = Join-Path $repoRoot 'src/msplatform/execution/resources'
 . (Join-Path $executionResources 'workspace_paths.ps1')
-$hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Resolve-PlatformArtifactPath -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -RelativePath @('host_resources.sqlite3') -Python $python }
-$componentArtifactRoot = Resolve-RunArtifactRoot -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -OwnerKind component -OwnerId single_reflection_oa_tof_mass_analyzer -Python $python
+$hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Resolve-PlatformArtifactPath -ArtifactRoot $artifactRootPath -RelativePath @('host_resources.sqlite3') -Python $python }
+$componentArtifactRoot = Resolve-RunArtifactRoot -ArtifactRoot $artifactRootPath -OwnerKind component -OwnerId single_reflection_oa_tof_mass_analyzer -Python $python
 $hostContext = @{workspace=$workspaceRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 $hostExecutionLease = Enter-HostExecutionLease -Role $hostRole -Stage $hostStage
@@ -241,7 +243,8 @@ elseif ($Level -eq 'Formal') {
   & (Join-Path $repoRoot 'src/msplatform/workflows/resources/verify_geometry_contract.ps1') -SimionExe $SimionExe
   if ($LASTEXITCODE -ne 0) { throw 'Formal runtime/CAD/COMSOL gate failed.' }
 
-  & (Join-Path $repoRoot 'src/msplatform/workflows/resources/verify_reference_analysis.ps1')
+  & (Join-Path $packageRoot 'workflows/resources/verify_reference_analysis.ps1') `
+    -WorkspaceRoot $workspaceRoot -ArtifactRootPath $artifactRootPath -ScienceRoot $projectRoot -PythonExe $python
   if ($LASTEXITCODE -ne 0) { throw 'Formal Python reference-analysis gate failed.' }
 }
 

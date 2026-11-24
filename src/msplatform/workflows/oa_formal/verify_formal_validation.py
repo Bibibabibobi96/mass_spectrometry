@@ -2,21 +2,14 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import math
 from pathlib import Path
 
-from msplatform.execution.resources.workspace_paths import resolve_run_artifact_root
 from msplatform.io.file_identity import file_sha256
 
-ANALYSIS_DIR = Path(__file__).resolve().parent
-PROJECT_DIR = ANALYSIS_DIR.parents[1] / "components/single_reflection_oa_tof"
-REPO_ROOT = ANALYSIS_DIR.parents[3]
-ARTIFACT_ROOT = resolve_run_artifact_root(
-    REPO_ROOT.parent / "artifacts", owner_kind="component",
-    owner_id="single_reflection_oa_tof_mass_analyzer",
-)
-CONFIG_PATH = PROJECT_DIR / "config" / "formal_validation.json"
+PROJECT_ID = "single_reflection_oa_tof_mass_analyzer"
 
 
 def require_hash(path: Path, expected: str) -> None:
@@ -32,7 +25,7 @@ def require_close(label: str, actual: float, expected: float) -> None:
         raise ValueError(f"{label} mismatch: {actual} != {expected}")
 
 
-def require_artifact_references(node: object) -> None:
+def require_artifact_references(node: object, artifact_root: Path) -> None:
     if isinstance(node, dict):
         for key, value in node.items():
             if key.endswith("artifact_relative_path"):
@@ -48,28 +41,32 @@ def require_artifact_references(node: object) -> None:
                     raise ValueError(
                         f"Missing one of {hash_candidates} beside {key}"
                     )
-                require_hash(ARTIFACT_ROOT / str(value), str(node[hash_key]))
+                require_hash(artifact_root / str(value), str(node[hash_key]))
             else:
-                require_artifact_references(value)
+                require_artifact_references(value, artifact_root)
     elif isinstance(node, list):
         for value in node:
-            require_artifact_references(value)
+            require_artifact_references(value, artifact_root)
 
 
-def main() -> None:
-    record = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+def verify(science_root: Path, artifact_root: Path) -> None:
+    """Read and verify one explicitly selected Formal record without writing it."""
+
+    project_dir = science_root.resolve()
+    config_path = project_dir / "config" / "formal_validation.json"
+    record = json.loads(config_path.read_text(encoding="utf-8"))
     if record["status"] != "formal_cross_solver_validation":
         raise ValueError("Formal validation record is not active")
 
     require_hash(
-        PROJECT_DIR / "config" / record["physical_contract"],
+        project_dir / "config" / record["physical_contract"],
         record["physical_contract_sha256"],
     )
     require_hash(
-        PROJECT_DIR / "config" / record["analysis_contract"],
+        project_dir / "config" / record["analysis_contract"],
         record["analysis_contract_sha256"],
     )
-    require_artifact_references(record)
+    require_artifact_references(record, artifact_root)
     if record.get("schema_version", 0) < 4:
         diagnostics = record.get("diagnostics", {})
         if diagnostics.get("status") != "peak_shoulder_source_localized":
@@ -109,7 +106,7 @@ def main() -> None:
                 manifest_keys.append("evidence_run_manifest_artifact_relative_path")
             for key in manifest_keys:
                 source_manifest = json.loads(
-                    (ARTIFACT_ROOT / promotion[key]).read_text(encoding="utf-8-sig")
+                    (artifact_root / promotion[key]).read_text(encoding="utf-8-sig")
                 )
                 if source_manifest.get("status") != "success":
                     raise ValueError(f"Promotion source run is not successful: {promotion[key]}")
@@ -121,14 +118,14 @@ def main() -> None:
                 }
                 for key, expected_role in expected_roles.items():
                     evidence = json.loads(
-                        (ARTIFACT_ROOT / promotion[key]).read_text(
+                        (artifact_root / promotion[key]).read_text(
                             encoding="utf-8-sig"
                         )
                     )
                     if (
                         evidence.get("schema_version") != 1
                         or evidence.get("role") != expected_role
-                        or evidence.get("project") != "single_reflection_oa_tof_mass_analyzer"
+                        or evidence.get("project") != PROJECT_ID
                         or evidence.get("status") != "PASS"
                     ):
                         raise ValueError(f"GUI/CAD evidence is not PASS: {promotion[key]}")
@@ -138,11 +135,11 @@ def main() -> None:
                     "cad_sync_report_artifact_relative_path",
                 ):
                     report = (
-                        ARTIFACT_ROOT / promotion[key]
+                        artifact_root / promotion[key]
                     ).read_text(encoding="utf-8-sig")
                     if "STATUS=PASS" not in report.splitlines():
                         raise ValueError(f"Promotion report is not PASS: {promotion[key]}")
-    comparison_path = ARTIFACT_ROOT / record["comparison_artifact_relative_path"]
+    comparison_path = artifact_root / record["comparison_artifact_relative_path"]
     comparison = json.loads(comparison_path.read_text(encoding="utf-8"))
     if comparison["status"] != "PASS":
         raise ValueError("Canonical comparison result did not pass")
@@ -219,6 +216,14 @@ def main() -> None:
         record["comparison"]["comsol_resolution_higher_than_simion_pct"],
     )
     print("FORMAL_VALIDATION_STATUS=PASS")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--science-root", required=True, type=Path)
+    parser.add_argument("--artifact-root", required=True, type=Path)
+    arguments = parser.parse_args()
+    verify(arguments.science_root, arguments.artifact_root)
 
 
 if __name__ == "__main__":

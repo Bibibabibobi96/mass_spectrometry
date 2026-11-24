@@ -67,7 +67,7 @@ class StationaryRecoveryManagedTests(unittest.TestCase):
                   patch.object(RunSession, 'run_process', new=inert_transport)):
                 with self.assertRaises(ProcessExecutionError):
                     assembly_field_solution.solve_stationary(source, solver_numerics={'kind': 'comsol_stationary_default'}, context=context)
-                manifests = list((context.workspace / 'artifacts/projects/instrument_assembly/runs').glob('*assembly-field*/run_manifest.json'))
+                manifests = list((context.workspace / 'artifacts/assemblies/instrument_assembly/runs').glob('*assembly-field*/run_manifest.json'))
                 self.assertEqual(len(manifests), 1)
                 failed_path = manifests[0]
                 failed_bytes = failed_path.read_bytes()
@@ -192,7 +192,7 @@ class StationaryRecoveryManagedTests(unittest.TestCase):
                 control.write_text(json.dumps({'case':'reuse_reopen_failure'}),encoding='utf-8')
                 with self.assertRaises(ProcessExecutionError):
                     assembly_field_solution.solve_stationary(parent,solver_numerics={'kind':'comsol_stationary_default'},request=new_request,context=context)
-                manifests=list((context.workspace/'artifacts/projects/instrument_assembly/runs').glob('*assembly-field*/run_manifest.json'))
+                manifests=list((context.workspace/'artifacts/assemblies/instrument_assembly/runs').glob('*assembly-field*/run_manifest.json'))
                 failed_paths=[path for path in manifests if json.loads(path.read_text(encoding='utf-8-sig'))['status']=='failed']
                 self.assertEqual(len(failed_paths),1);failed_path=failed_paths[0];failed_bytes=failed_path.read_bytes()
                 failed=json.loads(failed_bytes);outputs={Path(record['path']).name:record for record in failed['outputs']}

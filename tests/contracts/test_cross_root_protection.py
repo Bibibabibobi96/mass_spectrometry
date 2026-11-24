@@ -127,14 +127,14 @@ $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 function Invoke-ArtifactWorkflowCapacityAdmission {return @{satisfied=$true;fixture_admission=$true}}
 $data=Get-Content -LiteralPath $Request -Raw|ConvertFrom-Json -AsHashtable
 $session=Enter-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $Repo -ArtifactRoot $data.target `
- -RunDirectory (Join-Path $data.target 'projects/fixture/runs/new') -CommittedNewBytes 1024 -SourceReferences @($data.references)
+ -RunDirectory (Join-Path $data.target 'components/fixture/runs/new') -CommittedNewBytes 1024 -SourceReferences @($data.references)
 if($session.source_protection_leases.Count-ne1){throw 'Duplicate source references created duplicate leases'}
 $source=$session.source_protection_leases[0]
 if($source.artifact_root-eq$session.artifact_root){throw 'Source root became a target object'}
-$lease=Get-Content -LiteralPath (Join-Path $source.artifact_root ('common/capacity_protection_leases/'+$source.lease_id+'.json')) -Raw|ConvertFrom-Json
+$lease=Get-Content -LiteralPath (Join-Path $source.artifact_root ('platform/capacity_protection_leases/'+$source.lease_id+'.json')) -Raw|ConvertFrom-Json
 if($lease.committed_new_bytes-ne0-or$session.committed_new_bytes-ne1024){throw 'Borrowed bytes were reserved as new payload'}
 # No release occurs until the owner explicitly settles its writers.
-if(-not(Test-Path -LiteralPath (Join-Path $source.artifact_root ('common/capacity_protection_leases/'+$source.lease_id+'.json')))){throw 'Unsettled source protection disappeared'}
+if(-not(Test-Path -LiteralPath (Join-Path $source.artifact_root ('platform/capacity_protection_leases/'+$source.lease_id+'.json')))){throw 'Unsettled source protection disappeared'}
 $script:realCapacity=${function:Invoke-RunCapacityCommand};$script:rejectSourceRelease=$true
 function Invoke-RunCapacityCommand {
  param($Python,$RepoRoot,$Arguments,$FailureLabel)
@@ -206,7 +206,7 @@ try{
  $caught=$false
  try{
   $session=Enter-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $Repo -ArtifactRoot $data.target `
-   -RunDirectory (Join-Path $data.target 'projects/fixture/runs/new') -CommittedNewBytes 1024 -SourceReferences @($data.references)
+   -RunDirectory (Join-Path $data.target 'components/fixture/runs/new') -CommittedNewBytes 1024 -SourceReferences @($data.references)
  }catch{
   if($data.scenario-ne'second_pin_failure'-or$_.Exception.Message-ne'fixture second source pin failure'){throw}
   if($_.Exception.Data['capacity_lease_cleanup'].status-ne'released'){throw 'Failed source acquisition lost cleanup facts'}
@@ -216,7 +216,7 @@ try{
   if($session.source_protection_leases.Count-ne1){throw 'Physical alias created duplicate source owners'}
   $source=$session.source_protection_leases[0]
   if(@($source.protected_paths|Where-Object{$_.StartsWith($data.alias,[StringComparison]::OrdinalIgnoreCase)}).Count){throw 'Temporary alias leaked into the persisted source descriptor'}
-  $leasePath=Join-Path $source.artifact_root ('common/capacity_protection_leases/'+$source.lease_id+'.json')
+  $leasePath=Join-Path $source.artifact_root ('platform/capacity_protection_leases/'+$source.lease_id+'.json')
   $before=[datetimeoffset](Get-Content -LiteralPath $leasePath -Raw|ConvertFrom-Json).expires_at_utc
   Remove-Item -LiteralPath $data.alias -Force
   $session.lease_ttl_seconds+=100
@@ -276,7 +276,7 @@ function Invoke-RunCapacityCommand {
  & $script:realCapacity @PSBoundParameters
 }
 $session=Enter-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $Repo -ArtifactRoot $data.root `
- -RunDirectory (Join-Path $data.root 'projects/fixture/runs/new') -CommittedNewBytes 1024 -SourceReferences @($data.references)
+ -RunDirectory (Join-Path $data.root 'components/fixture/runs/new') -CommittedNewBytes 1024 -SourceReferences @($data.references)
 if($session.source_protection_leases.Count){throw 'Same-root source created a second lease'}
 if(@($session.protected_paths|Where-Object{$_.StartsWith($data.alias,[StringComparison]::OrdinalIgnoreCase)}).Count){throw 'Same-root session retained an execution alias'}
 Remove-Item -LiteralPath $data.alias -Force

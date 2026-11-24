@@ -173,7 +173,7 @@ class ArtifactIdentityArchiveTests(unittest.TestCase):
             support = Path(__file__).resolve().parents[2] / "src/msplatform/execution/resources/run_artifact_support.ps1"
             script = f"""
 . '{support}'
-New-RunPackage -Python '{sys.executable}' -RepoRoot '{root}' -ArtifactRoot '{root}/artifacts/projects/instrument_assembly' `
+New-RunPackage -Python '{sys.executable}' -RepoRoot '{root}' -ArtifactRoot '{root}/artifacts/assemblies/instrument_assembly' `
   -RunId '20261121_120000__test__python__invalid-policy' -Project instrument_assembly `
   -Mode fixture -Software @('python') -RetentionContractEnabled -CapacityLedgerLifecycleEnabled `
   -CapacityPolicyPath '{policy}'
@@ -195,11 +195,11 @@ New-RunPackage -Python '{sys.executable}' -RepoRoot '{root}' -ArtifactRoot '{roo
             target = repository / "src/msplatform/execution/artifact_identity_archive.py"
             target.parent.mkdir(parents=True)
             shutil.copyfile(source, target)
+            from tests.contracts.test_support.run_artifact_workflow import copy_workspace_path_support
+            copy_workspace_path_support(Path(__file__).resolve().parents[2], repository)
             for relative in (
                 "src/msplatform/execution/resources/run_artifact_support.ps1",
                 "src/msplatform/execution/resources/require_powershell7.ps1",
-                "src/msplatform/execution/resources/workspace_paths.ps1",
-                "src/msplatform/execution/resources/workspace_paths.py",
                 "src/msplatform/execution/resources/run_paths.ps1",
                 "src/msplatform/execution/resources/host_execution_lease.ps1",
                 "src/msplatform/execution/resources/host_resource_policy.json",
@@ -207,7 +207,7 @@ New-RunPackage -Python '{sys.executable}' -RepoRoot '{root}' -ArtifactRoot '{roo
                 support = repository / relative
                 support.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(Path(__file__).resolve().parents[2] / relative, support)
-            ledger = fixture / "artifacts/common/fixture.sqlite3"
+            ledger = fixture / "artifacts/platform/fixture.sqlite3"
             ledger.parent.mkdir(parents=True)
             ledger.write_bytes(b"untouched ledger fixture")
             quote = lambda value: "'" + str(value).replace("'", "''") + "'"
@@ -220,7 +220,7 @@ foreach($owner in @('electron_impact_ion_source','mr_tof')) {{
   $rejected=$false
   try {{
     New-RunPackage -Python {quote(sys.executable)} -RepoRoot {quote(repository)} `
-      -ArtifactRoot (Join-Path {quote(fixture / 'artifacts/projects')} $owner) `
+      -ArtifactRoot (Join-Path {quote(fixture / 'artifacts/components')} $owner) `
       -RunId '20261026_120000__test__python__retired-owner' -Project $owner `
       -Mode 'fixture' -Software @('python') -RetentionContractEnabled -CapacityLedgerLifecycleEnabled | Out-Null
   }} catch {{
@@ -238,7 +238,7 @@ Write-Output 'RETIRED_RUN_GUARD=PASS'
             )
             self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
             self.assertIn("RETIRED_RUN_GUARD=PASS", process.stdout)
-            self.assertFalse((fixture / "artifacts/projects").exists())
+            self.assertFalse((fixture / "artifacts/components").exists())
             self.assertEqual(ledger.read_bytes(), b"untouched ledger fixture")
 
     def test_location_contract_has_one_active_root(self) -> None:

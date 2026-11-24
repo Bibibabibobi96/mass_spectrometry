@@ -63,15 +63,20 @@ def _finalize(run: TransportRun, status: str, fields: Mapping[str, Any]) -> None
 
 @contextmanager
 def transport_run(
-    project_root: Path, run_id: str, *, mode: str, run_config_role: str, summary_role: str,
+    component_root: Path, run_id: str, *, mode: str, run_config_role: str, summary_role: str,
     design_profile_id: str, parameters: Mapping[str, Any], identity_inputs: Mapping[str, Path], output_names: tuple[str, ...],
-    repository_root: Path = REPO_ROOT, artifact_projects_root: Path | None = None,
+    repository_root: Path = REPO_ROOT, artifact_root: Path | None = None,
+    artifact_projects_root: Path | None = None,
 ) -> Iterator[TransportRun]:
     """Prepare, freeze, and terminalize one analytic multipole transport run."""
-    if artifact_projects_root is None:
-        artifact_projects_root = ARTIFACT_PROJECTS_ROOT
+    if artifact_root is not None and artifact_projects_root is not None:
+        raise ValueError("artifact_root and artifact_projects_root are mutually exclusive")
+    if artifact_root is None:
+        if artifact_projects_root is None:
+            artifact_projects_root = ARTIFACT_PROJECTS_ROOT
+        artifact_root = artifact_projects_root.parent
     validate_run_id(run_id)
-    descriptor = json.loads((project_root / "config/project.json").read_text(encoding="utf-8"))
+    descriptor = json.loads((component_root / "config/project.json").read_text(encoding="utf-8"))
     project_id = descriptor["project_id"]
     resolution = resolve_design_profile(repository_root, project_id, design_profile_id)
     resolved_design = resolution["resolved_design"]
@@ -80,7 +85,7 @@ def transport_run(
         raise ValueError("L1/L2 transport only supports the registered hexapole/octupole no-acceleration baseline designs")
     contract = l1_l2_transport_contract_from_resolved_design(resolved_design)
     run_dir = resolve_run_artifact_root(
-        artifact_projects_root.parent, owner_kind="component", owner_id=project_id,
+        artifact_root, owner_kind="component", owner_id=project_id,
     ) / "runs" / run_id
     if run_dir.exists():
         raise FileExistsError(f"run directory already exists: {run_dir}")
@@ -92,7 +97,7 @@ def transport_run(
     _write_json(frozen_resolved, resolved_design)
     _write_json(
         frozen_mode,
-        json.loads((project_root / f"config/modes/{structural_variant_id}_{mode}.json").read_text(encoding="utf-8")),
+        json.loads((component_root / f"config/modes/{structural_variant_id}_{mode}.json").read_text(encoding="utf-8")),
     )
     frozen_design = json.loads(frozen_resolved.read_text(encoding="utf-8"))
     if frozen_design["identity"]["project_id"] != project_id:
@@ -109,7 +114,7 @@ def transport_run(
     inputs = {**frozen_identity, "resolved_design": frozen_resolved, "mode": frozen_mode, "family_operating_contract": family_operating}
     _write_json(run_dir / "run_config.json", {
         "schema_version": 1, "role": run_config_role, "run_id": run_id, "project": project_id,
-        "mode": mode, "project_root": str(project_root),
+        "mode": mode, "project_root": str(component_root),
         "design_profile_id": design_profile_id, "structural_variant_id": structural_variant_id,
         "inputs": {name: str(path) for name, path in inputs.items()},
         "parameters": dict(parameters), "formal_gate_passed": False,

@@ -350,7 +350,7 @@ simion={wb={instances={item}},pas={open=function() return {close=function()end} 
                 self.assertEqual(len(writer['operations']),0 if product is zero else 3)
                 self.assertTrue(all(r['observation']['exit_confirmed'] and r['observation']['returncode']==0 for r in writer['operations']))
                 self.assertTrue(all(r['completion_receipt']['host_release']['result']['status']=='released' for r in writer['resource_releases']))
-                result_path=root/'study/artifacts/projects/instrument_assembly/scratch/workflow_results'/product.manifest_location.parent.name/'result.json'
+                result_path=root/'study/artifacts/assemblies/instrument_assembly/scratch/workflow_results'/product.manifest_location.parent.name/'result.json'
                 final=json.loads(result_path.read_text());capacity=final['capacity_session']
                 self.assertEqual((final['status'],capacity['status']),('success','released'))
                 self.assertFalse(_lease_path(Path(capacity['artifact_root']),capacity['lease_id']).exists())

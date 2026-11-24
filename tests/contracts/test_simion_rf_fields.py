@@ -413,7 +413,7 @@ class RfFieldTests(unittest.TestCase):
                         if '_family_' in key:self.assertEqual(row,first.data_records[key])
                     completion=json.loads((current.manifest_location.parent/'results/execution_completion.json').read_text())
                     self.assertEqual([r['operation_id'] for r in completion['writer_completion']['operations']],['audit_fields'])
-                    result_path=root/'study/artifacts/projects/instrument_assembly/scratch/workflow_results'/current.manifest_location.parent.name/'result.json'
+                    result_path=root/'study/artifacts/assemblies/instrument_assembly/scratch/workflow_results'/current.manifest_location.parent.name/'result.json'
                     final=json.loads(result_path.read_text());capacity=final['capacity_session']
                     self.assertEqual((final['status'],final['stage'],capacity['status']),('success','complete','released'))
                     self.assertFalse(_lease_path(Path(capacity['artifact_root']),capacity['lease_id']).exists())

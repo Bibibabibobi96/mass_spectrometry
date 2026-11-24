@@ -29,6 +29,12 @@ class StaticPartitionEntryTests(unittest.TestCase):
         (self.workflow_resources / "oatof_lifecycle_preflight.ps1").write_text("# Original preflight's domain fixture boundary.\n")
         resources = self.root / "src/msplatform/execution/resources"
         resources.mkdir(parents=True)
+        (resources / "workspace_paths.ps1").write_text(
+            "function Resolve-PlatformArtifactPath { param($ArtifactRoot,$RelativePath,$Python) "
+            "return (Join-Path $ArtifactRoot (@('platform')+@($RelativePath)-join'/')) }\n"
+            "function Resolve-RunArtifactRoot { param($ArtifactRoot,$OwnerKind,$OwnerId,$Python) "
+            "return (Join-Path $ArtifactRoot \"components/$OwnerId\") }\n"
+        )
         (resources / "host_execution_lease.ps1").write_text(
             "function Enter-HostExecutionLease { param($Role,$Stage) return @{inherited=$false} }\n"
             "function Exit-HostExecutionLease { param($Lease) }\n")
@@ -38,7 +44,7 @@ class StaticPartitionEntryTests(unittest.TestCase):
 Add-Content -LiteralPath $env:SFI_CALLS -Value ($args -join ' ')
 $global:LASTEXITCODE=0
 if (($env:SFI_FAIL -eq 'preflight' -and ($args -join ' ') -match 'oa_tof_design.resolve_geometry') -or
-    ($env:SFI_FAIL -eq 'tests' -and ($args -join ' ') -match 'common.gate_unittest')) {
+    ($env:SFI_FAIL -eq 'tests' -and ($args -join ' ') -match 'tools.repository.gate_unittest')) {
  $global:LASTEXITCODE=19
 }
 """)
@@ -62,22 +68,22 @@ if (($env:SFI_FAIL -eq 'preflight' -and ($args -join ' ') -match 'oa_tof_design.
         direct, calls = self.invoke(f"-SelectedTestModules @('{MODULE}')")
         self.assertEqual(direct.returncode, 0, direct.stdout + direct.stderr)
         self.assertEqual(sum('oa_tof_design.resolve_geometry' in x for x in calls), 1)
-        self.assertEqual(sum('common.gate_unittest' in x for x in calls), 1)
+        self.assertEqual(sum('tools.repository.gate_unittest' in x for x in calls), 1)
         self.assertIn(MODULE, calls[-1])
         self.assertIn('FULL_PROJECT_GATE=False', direct.stdout)
         parent, parent_calls = self.invoke('-PreflightOnly')
         self.assertEqual(parent.returncode, 0, parent.stdout + parent.stderr)
         self.assertEqual(sum('oa_tof_design.resolve_geometry' in x for x in parent_calls), 1)
-        self.assertFalse(any('common.gate_unittest' in x for x in parent_calls))
+        self.assertFalse(any('tools.repository.gate_unittest' in x for x in parent_calls))
         selected, selected_calls = self.invoke(f"-PreflightValidated -SelectedTestModules @('{MODULE}')")
         self.assertEqual(selected.returncode, 0, selected.stdout + selected.stderr)
-        self.assertEqual(selected_calls, [f'-m common.gate_unittest {MODULE}'])
+        self.assertEqual(selected_calls, [f'-m tools.repository.gate_unittest {MODULE}'])
 
     def test_preflight_and_selected_failure_propagate(self):
         result, calls = self.invoke(f"-SelectedTestModules @('{MODULE}')", fail='preflight')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('Resolved-geometry gate failed', result.stderr)
-        self.assertFalse(any('common.gate_unittest' in x for x in calls))
+        self.assertFalse(any('tools.repository.gate_unittest' in x for x in calls))
         result, calls = self.invoke(f"-PreflightValidated -SelectedTestModules @('{MODULE}')", fail='tests')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('Python analysis tests failed', result.stderr)

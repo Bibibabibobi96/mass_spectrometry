@@ -61,7 +61,7 @@ class ScalarMultiGridManagedTests(unittest.TestCase):
      with self.assertRaisesRegex(OSError,'injected second header finalization failure'):
       subject.export_world_scalar_grids(source.reference,grids=grids,context=context)
     self.assertEqual(len(calls),2)
-   runs=list((context.workspace/'artifacts/projects/instrument_assembly/runs').glob('*assembly-scalar-*/run_manifest.json'));self.assertEqual(len(runs),4)
+   runs=list((context.workspace/'artifacts/assemblies/instrument_assembly/runs').glob('*assembly-scalar-*/run_manifest.json'));self.assertEqual(len(runs),4)
    docs=[json.loads(p.read_text(encoding='utf-8-sig')) for p in runs];self.assertCountEqual([x['status'] for x in docs],['success','failed','failed','failed'])
    for path,doc in zip(runs,docs,strict=True):
     completion=json.loads((path.parent/'results/execution_completion.json').read_text(encoding='utf-8-sig'))['writer_completion'];self.assertEqual(len(completion['operations']),1);self.assertTrue(completion['operations'][0]['observation']['exit_confirmed']);self.assertEqual(completion['resource_releases'][0]['completion_receipt']['host_release']['result']['status'],'released')
