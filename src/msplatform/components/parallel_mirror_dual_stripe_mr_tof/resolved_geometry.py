@@ -14,6 +14,7 @@ import json
 import math
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 
 from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
@@ -230,6 +231,9 @@ def _bspline_edge(value: Any, name: str) -> tuple[tuple[float, ...], tuple[tuple
     return knots, controls, order
 
 
+# The measured canonical resolution uses 42,542 distinct edge/parameter pairs;
+# retain one such working set without allowing unbounded process-global growth.
+@lru_cache(maxsize=65536)
 def _evaluate_bspline(edge: tuple[tuple[float, ...], tuple[tuple[float, float], ...], int], parameter: float) -> tuple[float, float]:
     knots, controls, order = edge
     degree = order - 1
