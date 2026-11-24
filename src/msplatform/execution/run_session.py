@@ -1,14 +1,17 @@
 """One existing run package's neutral action/observed-process facts, not another scheduler."""
 from __future__ import annotations
 from dataclasses import dataclass, field
+from contextlib import ExitStack
 import copy
 import json
+import os
 from pathlib import Path
 from threading import RLock
 from typing import Any, Iterable, Mapping, Sequence
 from msplatform.execution.context import ExecutionContext
 from msplatform.execution.capacity_session import renew_capacity_session
 from msplatform.io.manifest_records import verify_record
+from msplatform.io.file_identity import FileIdentityGuard, file_sha256_unbuffered, guarded_file_identity
 from msplatform.execution.processes import ProcessExecutionError, _prepare_process_request, run_observed_process, run_observed_process_group
 from msplatform.execution.recorded_file_removal import write_json_atomic
 
@@ -40,6 +43,10 @@ class RunSession:
     _attempted: set[str] = field(default_factory=set, repr=False)
     _lock: Any = field(default_factory=RLock, repr=False)
     _input_binding_active: bool = field(default=False, init=False, repr=False)
+    _immutable_guard_stacks: dict[str, ExitStack] = field(default_factory=dict, init=False, repr=False)
+    _immutable_guards: dict[str, FileIdentityGuard] = field(default_factory=dict, init=False, repr=False)
+    _unbuffered_identities: dict[str, tuple[int, str]] = field(default_factory=dict, init=False, repr=False)
+    _holder_started_at_utc_ticks: int | None = field(default=None, init=False, repr=False)
 
     @property
     def run_dir(self) -> Path:
@@ -178,6 +185,80 @@ class RunSession:
         except KeyError as error:
             raise ValueError(f"Run contains an undeclared file: {target}") from error
 
+    def _holder_start_ticks(self) -> int:
+        if self._holder_started_at_utc_ticks is None:
+            if os.name != "nt":
+                raise OSError("Run-session immutable input guards require Windows")
+            import ctypes
+            from ctypes import wintypes
+            api = ctypes.WinDLL("kernel32", use_last_error=True)
+            api.GetCurrentProcess.restype = wintypes.HANDLE
+            api.GetProcessTimes.argtypes = [wintypes.HANDLE, *([ctypes.POINTER(wintypes.FILETIME)] * 4)]
+            api.GetProcessTimes.restype = wintypes.BOOL
+            creation, exit, kernel, user = (wintypes.FILETIME() for _ in range(4))
+            if not api.GetProcessTimes(api.GetCurrentProcess(), *(ctypes.byref(value) for value in
+                    (creation, exit, kernel, user))):
+                raise ctypes.WinError(ctypes.get_last_error())
+            filetime = (creation.dwHighDateTime << 32) | creation.dwLowDateTime
+            # Convert the Win32 1601 epoch to .NET DateTime year-one ticks.
+            self._holder_started_at_utc_ticks = filetime + 504911232000000000
+        return self._holder_started_at_utc_ticks
+
+    def _immutable_input_credential(self, operation_id: str,
+            records: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+        """Verify new inputs once, then bind later operations to their live handles."""
+        with self._lock:
+            if self.capacity_session.get("status") != "active":
+                raise ValueError("Immutable input session capacity lease is not active")
+            for record in records:
+                path = str(Path(record["path"]).resolve())
+                expected_bytes = record["bytes"]
+                expected_sha256 = str(record["sha256"]).upper()
+                guard = self._immutable_guards.get(path)
+                if guard is not None:
+                    unbuffered = self._unbuffered_identities.get(path)
+                    if unbuffered is None:
+                        guard.assert_matches(path, expected_bytes=expected_bytes, expected_sha256=expected_sha256)
+                    elif (guard.bytes_count, expected_sha256) != unbuffered or (expected_bytes, expected_sha256) != unbuffered:
+                        raise ValueError("guarded file identity does not match the requested file record")
+                    continue
+                stack = ExitStack()
+                try:
+                    guard = stack.enter_context(guarded_file_identity(path))
+                    if expected_bytes >= 8 * 1024 * 1024:
+                        actual_sha256 = file_sha256_unbuffered(path)
+                        if actual_sha256 != expected_sha256:
+                            raise ValueError("guarded file SHA-256 does not match the file record")
+                        self._unbuffered_identities[path] = (expected_bytes, actual_sha256)
+                    else:
+                        guard.assert_matches(path, expected_bytes=expected_bytes, expected_sha256=expected_sha256)
+                except BaseException:
+                    stack.close()
+                    raise
+                self._immutable_guard_stacks[path] = stack
+                self._immutable_guards[path] = guard
+            return {"immutable_input_session": dict(schema_version=1, role="run_immutable_input_session",
+                run_id=self.run_id, operation_id=operation_id, lease_id=self.capacity_session["lease_id"],
+                artifact_root=str(self.artifact_root.resolve()), lease_owner=self.capacity_session["owner"],
+                holder_pid=os.getpid(), holder_started_at_utc_ticks=self._holder_start_ticks())}
+
+    def close_immutable_inputs(self) -> None:
+        """Release every session-owned OS guard, preserving all close failures."""
+        with self._lock:
+            failures = []
+            for path, stack in reversed(list(self._immutable_guard_stacks.items())):
+                try:
+                    stack.close()
+                except BaseException as failure:
+                    failures.append(failure)
+            self._immutable_guard_stacks.clear()
+            self._immutable_guards.clear()
+            self._unbuffered_identities.clear()
+            if failures:
+                for failure in failures[1:]:
+                    failures[0].add_note(f"Additional immutable input release failed: {failure!r}")
+                raise failures[0]
+
     def _record_process(self, operation_id: str, receipt: dict[str, Any]) -> None:
         observation = receipt.get("observation")
         if not isinstance(observation, dict):
@@ -251,6 +332,8 @@ class RunSession:
                 environment=actual_environment, window_style=window_style,
                 immutable_input_records=immutable_input_records)
             self.renew_capacity()
+            immutable_session = (self._immutable_input_credential(operation_id, immutable_input_records)
+                                 if immutable_input_records else {})
             self.declare_file(stdout, stdout_role)
             self.declare_file(stderr, "required_evidence")
             self.declare_file(usage, "required_evidence")
@@ -260,7 +343,7 @@ class RunSession:
         receipt = None
         primary = None
         try:
-            protected = ({"immutable_input_records": immutable_input_records} if immutable_input_records else {})
+            protected = immutable_session if immutable_input_records else {}
             receipt = run_observed_process(self.context, executable=executable, arguments=arguments,
                 working_directory=self.run_dir, run_directory=self.artifact_run_dir,
                 stdout_path=stdout, stderr_path=stderr, usage_path=usage,

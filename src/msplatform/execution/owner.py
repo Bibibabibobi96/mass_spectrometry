@@ -11,6 +11,7 @@ import inspect
 import json
 from pathlib import Path
 import re
+import sys
 from typing import Any, Callable, Mapping, Sequence
 
 from msplatform.execution import artifact_retention as retention_policy
@@ -413,6 +414,15 @@ def run_managed_stage(context: ExecutionContext, *, descriptor: Mapping[str, Any
         except BaseException as secondary:
             failure.add_note(f"Workflow Result preservation failed: {secondary!r}")
         raise failure
+    finally:
+        try:
+            session.close_immutable_inputs()
+        except BaseException as release_failure:
+            active_failure = primary if primary is not None else sys.exception()
+            if active_failure is not None:
+                active_failure.add_note(f"Immutable input session release failed: {release_failure!r}")
+            else:
+                raise
 
 
 def resume_finalization(context: ExecutionContext, result_path: Path, *,

@@ -72,7 +72,7 @@ class SampledFieldExecutionTests(unittest.TestCase):
                 if operation=='collision_build_01':sample_path.write_bytes(original+b'X')
             try:
                 with fixture.inert_native_leaf(observed,after_operation=mutate):
-                    with self.assertRaisesRegex(AssertionError,'byte count changed'):launch(between)
+                    with self.assertRaises(PermissionError):launch(between)
                 completion=runs/between/'results/execution_completion.json';self.assertTrue(completion.is_file())
                 writer=json.loads(completion.read_text(encoding='utf8'))['writer_completion']
                 self.assertTrue(all(row['observation']['exit_confirmed'] for row in writer['operations']))
@@ -80,7 +80,11 @@ class SampledFieldExecutionTests(unittest.TestCase):
                 self.assertEqual(json.loads((runs/between/'run_manifest.json').read_text(encoding='utf8'))['status'],'failed');safe=True
             finally:
                 if safe:sample_path.write_bytes(original)
-            verify_record('restored synthetic sample',sample_record);self.assertEqual(len(observed),11)
+            verify_record('restored synthetic sample',sample_record);self.assertEqual(len(observed),1)
+            sample_path.write_bytes(original+b'X')
+            with self.assertRaisesRegex(AssertionError,'byte count changed'):
+                verify_record('publication identity after guard release',sample_record)
+            sample_path.write_bytes(original)
             outside=Path(tmp)/'unprotected.bin';outside.write_bytes(b'INERT');outside_record=file_record(outside,'required_evidence')
             from msplatform.backends.simion import ip_mr_field_execution as subject
             original_prepare=subject.prepare_ip_mr_field_inputs

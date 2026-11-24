@@ -38,6 +38,53 @@ class RunSessionInputBindingTests(unittest.TestCase):
         path.write_bytes(content)
         return file_record(path, "required_evidence")
 
+    @unittest.skipUnless(os.name == "nt", "Windows immutable handles required")
+    def test_immutable_session_reuses_live_identity_and_releases_on_close_or_failure(self):
+        from msplatform.execution import run_session
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            session = self._session(root)
+            session.capacity_session = {"status": "active", "lease_id": "lease-fixture", "owner": "run-artifact-workflow:fixture:input-binding-only"}
+            first = self._record(root, "first.bin", b"first")
+            second = self._record(root, "second.bin", b"second")
+            with patch.object(run_session, "guarded_file_identity", wraps=run_session.guarded_file_identity) as guard:
+                initial = session._immutable_input_credential("first-operation", [first])
+                repeated = session._immutable_input_credential("second-operation", [first])
+            self.assertEqual(guard.call_count, 1)
+            self.assertEqual(initial["immutable_input_session"]["holder_pid"], os.getpid())
+            self.assertNotEqual(initial["immutable_input_session"]["operation_id"],
+                                repeated["immutable_input_session"]["operation_id"])
+            with self.assertRaisesRegex(ValueError, "identity"):
+                session._immutable_input_credential("wrong-identity", [dict(first, sha256="0" * 64)])
+            session.close_immutable_inputs()
+            Path(first["path"]).write_bytes(b"released")
+
+            Path(first["path"]).write_bytes(b"first")
+            session.capacity_session["status"] = "active"
+            with self.assertRaisesRegex(ValueError, "identity"):
+                session._immutable_input_credential("partial-failure", [first, dict(second, sha256="0" * 64)])
+            session.close_immutable_inputs()
+            Path(first["path"]).write_bytes(b"partial failure released")
+            session.capacity_session["status"] = "released"
+            with self.assertRaisesRegex(ValueError, "not active"):
+                session._immutable_input_credential("inactive-lease", [first])
+
+    @unittest.skipUnless(os.name == "nt", "Windows immutable handles required")
+    def test_large_immutable_session_uses_unbuffered_identity_only_once(self):
+        from msplatform.execution import run_session
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            session = self._session(root)
+            session.capacity_session = {"status": "active", "lease_id": "lease-fixture", "owner": "run-artifact-workflow:fixture:input-binding-only"}
+            record = self._record(root, "large.bin", b"x" * (8 * 1024 * 1024))
+            with patch.object(run_session, "file_sha256_unbuffered",
+                              wraps=run_session.file_sha256_unbuffered) as unbuffered:
+                session._immutable_input_credential("first-operation", [record])
+                session._immutable_input_credential("second-operation", [record])
+            self.assertEqual(unbuffered.call_count, 1)
+            session.close_immutable_inputs()
+            Path(record["path"]).unlink()
+
     def test_bulk_input_binding_commits_once_and_single_calls_keep_record_durability(self):
         from msplatform.execution import run_session
         with tempfile.TemporaryDirectory() as directory:

@@ -95,6 +95,7 @@ def _prepare_process_request(
     usage_path: Path, role: str, stage: str, run_id: str,
     limits: Mapping[str, Any] | None, environment: Mapping[str, str] | None = None,
     immutable_input_records: Sequence[Mapping[str, Any]] = (),
+    immutable_input_session: Mapping[str, Any] | None = None,
     window_style: str = "Hidden",
 ) -> dict[str, Any]:
     """Validate and freeze the original single-process owner request."""
@@ -116,6 +117,23 @@ def _prepare_process_request(
                "argument_line": subprocess.list2cmdline(list(arguments)), "role": role,
                "stage": stage, "run_id": run_id, "limits": None if limits is None else dict(limits),
                "environment": {} if environment is None else dict(environment), "window_style": window_style}
+    if immutable_input_records and immutable_input_session is not None:
+        raise ValueError("immutable records and a session credential are mutually exclusive")
+    if immutable_input_session is not None:
+        expected = {"schema_version", "role", "run_id", "operation_id", "lease_id",
+                    "artifact_root", "lease_owner", "holder_pid", "holder_started_at_utc_ticks"}
+        credential = dict(immutable_input_session)
+        if (set(credential) != expected or credential["schema_version"] != 1
+                or credential["role"] != "run_immutable_input_session"
+                or credential["run_id"] != run_id
+                or not isinstance(credential["operation_id"], str) or not credential["operation_id"]
+                or not isinstance(credential["lease_id"], str) or not credential["lease_id"]
+                or not isinstance(credential["lease_owner"], str) or not credential["lease_owner"]
+                or not Path(credential["artifact_root"]).is_absolute()
+                or any(type(credential[name]) is not int or credential[name] <= 0
+                       for name in ("holder_pid", "holder_started_at_utc_ticks"))):
+            raise ValueError("immutable input session credential is invalid")
+        request["immutable_input_session"] = credential
     if immutable_input_records:
         records = [dict(record) for record in immutable_input_records]
         seen = set()
@@ -141,6 +159,7 @@ def run_observed_process(
     usage_path: Path, role: str, stage: str, run_id: str,
     limits: Mapping[str, Any] | None, environment: Mapping[str, str] | None = None,
     immutable_input_records: Sequence[Mapping[str, Any]] = (),
+    immutable_input_session: Mapping[str, Any] | None = None,
     window_style: str = "Hidden",
 ) -> dict[str, Any]:
     """Execute one explicit process under the unchanged owner, without a timeout.
@@ -153,7 +172,7 @@ def run_observed_process(
         working_directory=working_directory, run_directory=run_directory, stdout_path=stdout_path,
         stderr_path=stderr_path, usage_path=usage_path, role=role, stage=stage, run_id=run_id,
         limits=limits, environment=environment, immutable_input_records=immutable_input_records,
-        window_style=window_style)
+        immutable_input_session=immutable_input_session, window_style=window_style)
     return _invoke_process_owner(context, request, 'process_owner.ps1', _interpret_process_result)
 
 

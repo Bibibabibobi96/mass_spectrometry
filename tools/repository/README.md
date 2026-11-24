@@ -202,6 +202,16 @@ The complete runtime module and nine actual inert consumer seams passed together
 on one source-stable candidate: 43 parents in 367.919 seconds. No commercial
 solver was run in that regression; complete Repository remains separate.
 
+同一活跃`RunSession`的不可变输入由Python owner持续持有只读、禁止写／删／替换的Windows句柄。
+首次准入在句柄有效期内核对完整bytes／SHA-256；大文件仍在该保护内执行既有unbuffered复核。
+后续operation验证同一路径、冻结身份、活动句柄和容量lease，只向`process_owner.ps1`传递绑定run、operation、
+holder PID／出生ticks的当次凭证，不按mtime或路径缓存内容，也不重复全文哈希。holder身份不符、lease非活动、
+身份冲突或句柄失效均失败关闭；run成功、失败或中止收尾统一释放。既有operation前及发布前的内容身份复核保持，
+独立`run_observed_process`调用仍使用原逐次PowerShell保护，不获得跨调用信任。
+2026-11-24同机Python 3.11固定合成输入单次对照中，IP–MR直接owner用例测试内墙钟773.941→696.331秒（−10.03%）；
+Neutral managed小文件用例116.480→119.627秒（+2.70%），后者不声称提速。两臂均保留原operation、篡改反例、
+发布身份与科学fixture；这些软件结果不代表原生求解、完整Repository或大型PA生产吞吐。
+
 The synthetic Assembly-model test checks the requested COMSOL operation and the
 exact frozen PowerShell fixture before dispatching that inert child as ordinary
 GATE work. Production resource policy, process guards, exit and release checks

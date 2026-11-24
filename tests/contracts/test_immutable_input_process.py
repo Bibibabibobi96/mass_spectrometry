@@ -89,6 +89,36 @@ function Write-ResourceUsage {
                         run_observed_process(context, **dict(kwargs, immutable_input_records=[broken]))
                     launch.assert_not_called()
 
+    def test_session_credential_requires_the_same_live_holder_and_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            context, _, result, kwargs = self._case(root)
+            kwargs.pop('immutable_input_records')
+            credential = dict(schema_version=1, role='run_immutable_input_session',
+                run_id=kwargs['run_id'], operation_id='forged-operation', lease_id='forged-lease',
+                artifact_root=str(root/'artifacts'), lease_owner='forged-owner',
+                holder_pid=os.getpid(), holder_started_at_utc_ticks=0)
+            with self.assertRaisesRegex((ValueError, ProcessExecutionError), 'holder|credential'):
+                run_observed_process(context, **kwargs, immutable_input_session=credential)
+            self.assertFalse(result.exists())
+            from msplatform.execution.run_session import RunSession
+            holder = object.__new__(RunSession)
+            holder._holder_started_at_utc_ticks = None
+            credential.update(holder_started_at_utc_ticks=holder._holder_start_ticks())
+            from msplatform.execution.capacity_protection import create_capacity_protection_lease, delete_capacity_protection_lease
+            artifact_root = Path(credential['artifact_root']);(artifact_root/'payload').mkdir(parents=True)
+            create_capacity_protection_lease(artifact_root, lease_id=credential['lease_id'],
+                owner=credential['lease_owner'], ttl_seconds=60, protected_paths=[artifact_root/'payload'])
+            kwargs.update(arguments=['-I', '-c', 'print("LIVE_SESSION_HOLDER")'])
+            try:
+                with self.assertRaisesRegex(ProcessExecutionError, 'lease is not active'):
+                    run_observed_process(context, **kwargs,
+                        immutable_input_session=dict(credential, lease_owner='wrong-owner'))
+                receipt = run_observed_process(context, **kwargs, immutable_input_session=credential)
+            finally:
+                delete_capacity_protection_lease(artifact_root, lease_id=credential['lease_id'])
+            self.assertEqual(receipt['observation']['exit_code'], 0)
+
     def test_empty_arguments_launch_real_process_and_confirm_exit(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

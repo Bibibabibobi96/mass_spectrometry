@@ -12,8 +12,27 @@ $lease=$null;$failure=$null;$observation=$null;$release=$null
 $guards=[Collections.Generic.List[string]]::new()
 try{
   $lease=Enter-HostExecutionLease -Role $request.role -Stage $request.stage -RunId $request.run_id
-  $protected=$request.ContainsKey('immutable_input_records')-and@($request.immutable_input_records).Count-gt0
-  if($protected){
+  $sessionProtected=$request.ContainsKey('immutable_input_session')
+  $protected=($request.ContainsKey('immutable_input_records')-and@($request.immutable_input_records).Count-gt0)-or$sessionProtected
+  if($sessionProtected){
+    $credential=$request.immutable_input_session
+    $expectedCredential=@('schema_version','role','run_id','operation_id','lease_id','artifact_root','lease_owner','holder_pid','holder_started_at_utc_ticks')
+    if(@($credential.Keys|Where-Object{$_-cnotin$expectedCredential}).Count-ne0-or
+       @($expectedCredential|Where-Object{-not$credential.ContainsKey($_)}).Count-ne0-or
+       $credential.schema_version-ne1-or$credential.role-cne'run_immutable_input_session'-or
+       $credential.run_id-cne$request.run_id-or$credential.operation_id-isnot[string]-or-not$credential.operation_id-or
+       $credential.lease_id-isnot[string]-or-not$credential.lease_id-or
+       $credential.artifact_root-isnot[string]-or-not[IO.Path]::IsPathFullyQualified($credential.artifact_root)-or
+       $credential.lease_owner-isnot[string]-or-not$credential.lease_owner-or
+       $credential.holder_pid-isnot[long]-and$credential.holder_pid-isnot[int]-or$credential.holder_pid-le0-or
+       $credential.holder_started_at_utc_ticks-isnot[long]-or$credential.holder_started_at_utc_ticks-le0){throw 'Invalid immutable input session credential.'}
+    $holder=Get-Process -Id $credential.holder_pid -ErrorAction Stop
+    if($holder.StartTime.ToUniversalTime().Ticks-ne$credential.holder_started_at_utc_ticks){
+      throw 'Immutable input session holder identity differs.'
+    }
+    $leaseState=& $request.context.python_executable -I -B -c 'import sys;from pathlib import Path;from msplatform.execution.capacity_protection import load_capacity_protection_leases;view=load_capacity_protection_leases(Path(sys.argv[1]));matches=[row for row in view["audit"] if row.get("lease_id")==sys.argv[2] and row.get("status")=="active" and row.get("owner")==sys.argv[3]];print("ACTIVE" if len(matches)==1 else "INVALID")' $credential.artifact_root $credential.lease_id $credential.lease_owner
+    if($LASTEXITCODE-ne0-or$leaseState-cne'ACTIVE'){throw 'Immutable input session capacity lease is not active.'}
+  }elseif($protected){
     . (Join-Path $PSScriptRoot 'payload_file_support.ps1') -UnbufferedIdentityReader {
       param([string]$Source,[int64]$Length)
       $digest=& $request.context.python_executable -I -B -c 'from msplatform.io.file_identity import file_sha256_unbuffered;import sys;print(file_sha256_unbuffered(sys.argv[1]))' $Source
