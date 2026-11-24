@@ -7,13 +7,12 @@ their original x-directed canonical mapping. No particle is resampled between th
 from __future__ import annotations
 
 import argparse
+from importlib.resources import files
 import json
-import sys
 from pathlib import Path
 from typing import Any
 
 from msplatform.execution.retention import classify_file
-from msplatform.execution.source_identity import git_worktree_context
 from msplatform.execution.inputs import enumerate_python_sources, freeze_file
 from msplatform.backends.simion.workbench_seed import freeze_workbench_seed
 from msplatform.workflows.ion_processor import preparation
@@ -62,14 +61,17 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
             source_profile: str = "functional", configuration_directory: Path | None = None,
             injected_source: Path | None = None, protected_injected_paths: list[Path] | None = None) -> None:
     """Freeze contracts, official HS1, RF kernel and shared release for one run."""
-    repo = project.parents[3]
-    package_root = Path(__file__).resolve().parents[3]
-    resource_root = package_root.parent if package_root.name == "src" else package_root
+    repo = project.resolve(strict=True).parents[3]
+    provider = Path(str(files("msplatform"))).resolve(strict=True)
+    resource_root = provider.parent
 
     def installed_resource(relative: str) -> Path:
         path = Path(relative)
-        installed_relative = path.relative_to("src") if path.parts[0] == "src" else path
-        return resource_root / relative if package_root.name == "src" else package_root / installed_relative
+        if path.parts[:2] == ("src", "msplatform"):
+            path = path.relative_to("src/msplatform")
+        else:
+            path = path.relative_to("msplatform")
+        return provider / path
 
     configuration = configuration_directory.resolve() if configuration_directory is not None else project / "config"
     inputs, solver = run / "inputs", run / "simion"
@@ -91,7 +93,7 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
         "src/msplatform/backends/simion/resources/1_instance_seed.iob",
         "src/msplatform/backends/simion/resources/iob_seed_placeholder_01.pa0"))
     runtime_resources.append(installed_resource("src/msplatform/execution/resources/native_run_path.lua"))
-    source_selection = dict(package_roots=("src/msplatform",), provider_root="src/msplatform") if package_root.name == "src" else dict(package_roots=("msplatform",), provider_root="msplatform")
+    source_selection = dict(package_roots=(provider.name,), provider_root=provider.name)
     core_sources = [resource_root / relative for relative in enumerate_python_sources(
         resource_root, **source_selection, resource_suffixes=(".schema.json",))]
     runtime_resources.extend(path for path in core_sources if path.suffix != ".py")
@@ -124,8 +126,10 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
     compiled = preparation.materialize_inputs(run, config, configuration_files=authorities,
         hs1_source=simion_dir / "examples/collision_hs1/collision_hs1.lua", admission=admission)
     config, states = compiled["config"], compiled["states"]
-    git_context = git_worktree_context(repo)
-    write_json(inputs / "source_context.json", git_context)
+    write_json(inputs / "source_context.json", {
+        "git_sha": "unavailable", "worktree_porcelain": "unavailable",
+        "worktree_dirty": None, "origin": "installed_or_frozen_provider",
+    })
     seed = freeze_workbench_seed(run, seed_path=installed_resource("src/msplatform/backends/simion/resources/1_instance_seed.iob"),
         placeholder_path=installed_resource("src/msplatform/backends/simion/resources/iob_seed_placeholder_01.pa0"))
     config["workbench_seed_path"] = seed["seed"]["frozen"]["path"]
@@ -162,25 +166,11 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
     source_paths = {path for path in core_sources if path.suffix == ".py"}
     source_paths.update(installed_resource(relative) for relative in enumerate_python_sources(
         resource_root,
-        module_paths=tuple(relative if package_root.name == "src" else relative.removeprefix("src/")
+        module_paths=tuple(relative.removeprefix("src/")
                            for relative in (*FROZEN_SCIENTIFIC_BRIDGE_MODULES, *FROZEN_RUNTIME_MODULES))))
 
     def frozen_relative(path: Path) -> Path:
-        return path.relative_to(resource_root) if package_root.name == "src" else Path("src") / path.relative_to(package_root)
-    for module in tuple(sys.modules.values()):
-        file=getattr(module,"__file__",None)
-        if not file:
-            continue
-        path=Path(file).resolve()
-        if path.suffix!=".py" or repo not in path.parents:
-            continue
-        relative=path.relative_to(repo)
-        if relative.parts[0] not in {"common","projects"}:
-            continue
-        if (path.name.startswith("test_") or path.name.endswith("_test.py")
-                or {"test_support", "testing_support"}.intersection(relative.parts)):
-            continue
-        source_paths.add(path)
+        return Path("src") / path.relative_to(resource_root)
     # A module can have several import names; freeze each physical source once.
     for path in sorted(source_paths):
         target = inputs / "code" / frozen_relative(path)
@@ -245,7 +235,8 @@ def main() -> None:
         print(json.dumps({key:result[key] for key in ("status","source_counts","extracted_counts")}))
     elif args.action=="prepare":
         if args.simion_dir is None: parser.error("prepare requires --simion-dir")
-        project_root = args.project_root or Path("src/msplatform/components/dual_pressure_rectilinear_ion_processor")
+        project_root = args.project_root or Path(str(files(
+            "msplatform.components.dual_pressure_rectilinear_ion_processor")))
         prepare(args.run,project_root,args.simion_dir,args.native_field_run,args.source_profile,
                 args.configuration_directory,args.injected_source,args.protected_injected_path)
     elif args.action=="adopt-native-field":

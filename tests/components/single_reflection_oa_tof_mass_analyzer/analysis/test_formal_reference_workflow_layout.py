@@ -68,7 +68,7 @@ class FormalReferenceWorkflowLayoutTests(unittest.TestCase):
         self.assertIn("$ion = Join-Path $candidateSimion", runner)
         self.assertIn("$iob = Join-Path $candidateSimion", runner)
         self.assertLess(
-            runner.index("src\\msplatform\\backends\\comsol\\launcher\\run_comsol_r2025b.ps1"),
+            runner.index("backends\\comsol\\launcher\\run_comsol_r2025b.ps1"),
             runner.index("Start-Process -FilePath $SimionExe"),
         )
         self.assertLess(

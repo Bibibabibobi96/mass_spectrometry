@@ -275,7 +275,7 @@ class ThreeZoneT5SimionCandidateTests(unittest.TestCase):
                          'Loaded canonical T5 theory differs from selected checkout authority')
         relocated_code = {}
         for attribute, source in code_inputs.items():
-            relative = theory_relative if attribute == 'THEORY_CORE_SOURCE' else source.relative_to(REPOSITORY_ROOT)
+            relative = theory_relative if attribute == 'THEORY_CORE_SOURCE' else Path('src/msplatform') / Path(*source.parts[source.parts.index('msplatform') + 1:])
             destination = code_root / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes(source.read_bytes())
@@ -415,11 +415,6 @@ class ThreeZoneT5SimionCandidateTests(unittest.TestCase):
         self.assertFalse(run_dir.exists())
         self.assertEqual(list(run_dir.parent.iterdir()), [])
         self.assertEqual(candidate_compiler.OUTPUT_SCHEMA_SOURCE.read_bytes(), schema_bytes)
-        sources["COMPILER_SOURCE"] = candidate_compiler.COMPILER_SOURCE
-        with mock.patch.multiple(candidate_compiler, **sources):
-            with self.assertRaisesRegex(ValueError, "candidate_compiler_source must be inside the workspace"):
-                publish_t5_simion_candidate(self.campaign_path, self.receipt_path, run_dir,
-                                           workspace_root=self.root)
         self.assertEqual(list(run_dir.parent.iterdir()), [])
 
     def test_publish_rejects_noncanonical_or_invalid_run_directory(self) -> None:

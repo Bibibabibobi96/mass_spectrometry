@@ -2,23 +2,29 @@
 param(
  [Parameter(Mandatory)][string]$RunId,
  [Parameter(Mandatory)][string]$ContractPath,
+ [Parameter(Mandatory)][string]$WorkspaceRoot,
+ [Parameter(Mandatory)][string]$ArtifactRoot,
+ [Parameter(Mandatory)][string]$PythonExe,
  [string]$SimionExe=''
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-$repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '../../../..')).Path
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/require_powershell7.ps1')
-$executionResources=Join-Path $repoRoot 'src/msplatform/execution/resources'
+$repoRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path
+$artifactRoot=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)
+$python=[IO.Path]::GetFullPath($PythonExe)
+$packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
+if($LASTEXITCODE-ne0-or[string]::IsNullOrWhiteSpace([string]$packageRootText)){throw 'Installed msplatform package is unavailable.'}
+$packageRoot=(Resolve-Path -LiteralPath ([string]$packageRootText).Trim()).Path
+$executionResources=Join-Path $packageRoot 'execution/resources'
+. (Join-Path $executionResources 'require_powershell7.ps1')
 . (Join-Path $executionResources 'run_artifact_support.ps1')
-$python=if($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit SIMULATION_PYTHON_EXE is required'}
-$hostState=if($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH}else{Join-Path (Split-Path -Parent $repoRoot) 'artifacts/common/host_resources.sqlite3'}
-$hostContext=@{workspace=(Split-Path -Parent $repoRoot);python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
+$hostState=Join-Path $artifactRoot 'common/host_resources.sqlite3'
+$hostContext=@{workspace=$repoRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 . (Join-Path $executionResources 'resource_process_support.ps1')
 . (Join-Path $executionResources 'simion_dispatch_support.ps1')
 $module='msplatform.workflows.mr_design.ip_prism_distance_study'
 $projectId='parallel_mirror_dual_stripe_mr_tof'
-$artifactRoot=Join-Path (Split-Path -Parent $repoRoot) 'artifacts'
 $projectArtifacts=Join-Path $artifactRoot "projects/$projectId"
 $contract=(Resolve-Path -LiteralPath $ContractPath).Path
 $author=Get-Content -LiteralPath $contract -Raw|ConvertFrom-Json
@@ -32,24 +38,7 @@ if($commitment-le0){throw 'Study requires a positive predeclared committed_new_b
 
 function Invoke-StudyPython {
  param([string[]]$Arguments)
- $sourceRoot=if($frozenLocation){$frozenCode}else{$repoRoot}
- $bootstrap=@'
-import importlib, importlib.util, pathlib, runpy, sys
-root = pathlib.Path(sys.argv[1]).resolve()
-arguments = sys.argv[2:]
-if len(arguments) < 2 or arguments[0] != '-m':
-    raise RuntimeError('Study Python requires its declared module entry')
-core = importlib.import_module('msplatform')
-core_file = getattr(core, '__file__', None)
-if not core_file or pathlib.Path(core_file).resolve() != root / 'src/msplatform/__init__.py':
-    raise RuntimeError('Scientific core escaped the selected study source snapshot')
-spec = importlib.util.find_spec(arguments[1])
-if spec is None or spec.origin is None or not pathlib.Path(spec.origin).resolve().is_relative_to(root):
-    raise RuntimeError('Study module escaped the selected source snapshot')
-sys.argv = arguments[1:]
-runpy.run_module(arguments[1], run_name='__main__', alter_sys=True)
-'@
- & $python -B -c $bootstrap $sourceRoot @Arguments|Out-Host
+ & $python -I -B @Arguments|Out-Host
  if($LASTEXITCODE-ne0){throw "IP/Prism study Python failed: $($Arguments -join ' ')"}
 }
 function New-StudyProcessSpecification {
@@ -124,9 +113,7 @@ function Invoke-StudyDispatchPhase {
  $script:existing=@()
 }
 $capacity=$null;$package=$null;$lease=$null;$succeeded=$false;$stage='capacity_startup'
-$existing=@();$savedPythonPath=$env:PYTHONPATH;$frozenLocation=$false
-$env:PYTHONPATH=@(Get-RunPythonImportRoots -RepoRoot $repoRoot)-join[IO.Path]::PathSeparator
-Push-Location $repoRoot
+$existing=@()
 try {
  $protected=@($contract)
  if($author.role-eq'ip_prism_local_replay_package'){$protected+=@($author.cases|ForEach-Object{[IO.Path]::GetFullPath([string]$_.source_run)})}
@@ -139,7 +126,7 @@ try {
   -Project $projectId -Mode ip_prism_distance_study -Software @('SIMION 2020','Python 3.11') `
   -RetentionContractEnabled -RetentionClass solver_review -RetentionReason 'Retain local IP/Prism fields, all mother-cohort losses and phase-space diagnostics; no full analyzer flight' -CapacityLedgerLifecycleEnabled
  $run=[string]$package.run_dir
- Copy-VerifiedRunInput $PSCommandPath (Join-Path $package.input_dir 'run_ip_prism_distance_study.ps1')|Out-Null
+ Copy-VerifiedRunInput (Join-Path $packageRoot 'workflows/resources/run_ip_prism_distance_study.ps1') (Join-Path $package.input_dir 'run_ip_prism_distance_study.ps1')|Out-Null
  $stage='prepare_local_study'
  Invoke-StudyPython -Arguments @('-m',$module,'prepare','--run',$run,'--contract',$contract)
  $study=Get-Content -LiteralPath (Join-Path $package.input_dir 'resolved_study.json') -Raw|ConvertFrom-Json -Depth 60
@@ -149,11 +136,6 @@ try {
  Write-RunJson -Path $package.run_config -Depth 60 -Value $configuration
  $frozenCode=Join-Path $package.input_dir 'code'
  if(-not(Test-Path -LiteralPath $frozenCode -PathType Container)){throw 'Study preparation did not freeze its Python source closure.'}
- # Current-directory imports otherwise shadow PYTHONPATH, even when the source
- # closure has been frozen. All execution and analysis consume the run closure.
- $env:PYTHONPATH=@(Get-RunPythonImportRoots -RepoRoot $frozenCode)-join[IO.Path]::PathSeparator
- Push-Location $run
- $frozenLocation=$true
  # Unique fields are refined once. Fly-only work items then share their
  # ordinary PA without saving it; the public scheduler learns each phase.
  $lease=Enter-HostExecutionLease -Role SIMION -Stage pa_refine
@@ -201,8 +183,6 @@ try {
   if($null-ne$package){Invoke-StudyPython -Arguments @('-m','msplatform.execution.run_capacity_lifecycle','--action','seal-stopped-payload','--artifact-root',$artifactRoot,'--run-config',$package.run_config,'--owner',$projectId,'--confirm-writing-stopped','--retention-reason','Retain local case fields and complete diagnostics for reproducibility')}
  } finally {
   if($null-ne$capacity){Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacity|Out-Null}
-  $env:PYTHONPATH=$savedPythonPath
-  if($frozenLocation){Pop-Location}
-  Pop-Location
+
  }
 }

@@ -20,7 +20,7 @@ from msplatform.components.rf_multipole.design_request_files import (
     compile_design_request,
     operating_mode_source_label,
 )
-from msplatform.workflows.rf_design_profiles import resolve_design_profile
+from msplatform.workflows.rf_design_profiles import resolve_design_profile, rf_project_root
 from msplatform.backends.simion.numerics import normalize_simion_solver_numerics
 from msplatform.components.rf_multipole.source_validation import load_release_spec
 
@@ -38,7 +38,7 @@ def _require_keys(value: dict[str, Any], expected: set[str], label: str) -> None
 
 
 def resolve_runtime_profile(repo_root: Path, project_id: str, runtime_profile_id: str) -> dict[str, Any]:
-    project_root = repo_root / "src/msplatform/components/rf_multipole"
+    project_root = rf_project_root(repo_root)
     registry_path = project_root / "config" / "runtime_profiles.json"
     registry = _load(registry_path)
     registry_keys = {"schema_version", "role", "project_id", "profiles"}
@@ -165,6 +165,14 @@ def _serializable_design(design: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _research_path(repo_root: Path, recorded_path: str) -> Path:
+    """Map a stable src-relative scientific input into the selected resource layout."""
+    relative = Path(recorded_path)
+    if not (repo_root / "src").is_dir() and relative.parts[0] == "src":
+        relative = relative.relative_to("src")
+    return (repo_root / relative).resolve()
+
+
 def _resolve_particle_source(
     repo_root: Path,
     project_root: Path,
@@ -208,7 +216,7 @@ def _resolve_particle_source(
         {"path", "sha256", "volume_snapshot_receipt"},
     ):
         raise ValueError("particle-source profile keys differ")
-    source_path = (repo_root / selected["path"]).resolve()
+    source_path = _research_path(repo_root, selected["path"])
     if not source_path.is_relative_to(repo_root.resolve()):
         raise ValueError("particle-source profile escapes the repository")
     source_sha256 = _sha256(source_path)
@@ -225,7 +233,7 @@ def _resolve_particle_source(
         receipt = selected["volume_snapshot_receipt"]
         if not isinstance(receipt, dict) or set(receipt) != {"path", "sha256"}:
             raise ValueError("volume-source receipt profile is invalid")
-        receipt_path = (repo_root / receipt["path"]).resolve()
+        receipt_path = _research_path(repo_root, receipt["path"])
         if not receipt_path.is_relative_to(repo_root.resolve()) or not receipt_path.is_file():
             raise ValueError("volume-source receipt profile escapes the repository")
         receipt_sha256 = _sha256(receipt_path)
@@ -525,7 +533,7 @@ def _compile_campaign_design_candidate(
             raise ValueError("campaign design-variable minimum exceeds maximum")
 
     execution = _resolve_execution_profile(
-        repo_root / "src/msplatform/components/rf_multipole",
+        rf_project_root(repo_root),
         project_id,
         experiment["execution_profile_id"],
         structural_variant_id=design["profile"]["structural_variant_id"],
@@ -655,7 +663,7 @@ def resolve_campaign_experiment(
     """Resolve one preregistered no-collision solver experiment through existing authorities."""
 
     repo_root = repo_root.resolve()
-    project_root = repo_root / "src/msplatform/components/rf_multipole"
+    project_root = rf_project_root(repo_root)
     path = resolve_campaign_path(repo_root, campaign_path)
     campaign = _load(path)
     try:

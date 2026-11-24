@@ -54,8 +54,6 @@ from msplatform.components.orthogonal_accelerator.three_zone_ideal_theory import
 OUTPUT_SCHEMA = "oatof_three_zone_simion_candidate_resolved.schema.json"
 PROJECT_ID = "single_reflection_oa_tof_mass_analyzer"
 PUBLISH_MODE = "ideal_acceptance_300mm_simion_candidate_compile"
-REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
-DEFAULT_WORKSPACE_ROOT = REPOSITORY_ROOT.parent
 CANDIDATE_NAME = "ideal_acceptance_300mm_simion_candidate_resolved.json"
 
 
@@ -477,7 +475,7 @@ def publish_ideal_acceptance_300mm_candidate(
     selected_result_path: Path,
     run_dir: Path,
     *,
-    workspace_root: Path = DEFAULT_WORKSPACE_ROOT,
+    workspace_root: Path,
     axial_grid_z_mm: float | None = None, total_length_mm: float = 300.0,
 ) -> dict[str, Any]:
     """Atomically publish the selected ideal point as a Candidate-only run.
@@ -526,7 +524,6 @@ def publish_ideal_acceptance_300mm_candidate(
     for label, path in code_inputs.items():
         if not path.is_file():
             raise ValueError(f"{label} is missing: {path}")
-        _workspace_relative(path, workspace_root, label=label)
 
     canonical_runs.mkdir(parents=True, exist_ok=True)
     lock_path = canonical_runs / f".{run_dir.name}.publish.lock"
@@ -609,7 +606,7 @@ def main() -> int:
     destinations = parser.add_mutually_exclusive_group(required=True)
     destinations.add_argument("--output", type=Path)
     destinations.add_argument("--run-dir", type=Path)
-    parser.add_argument("--workspace-root", type=Path, default=DEFAULT_WORKSPACE_ROOT)
+    parser.add_argument("--workspace-root", type=Path)
     parser.add_argument(
         "--axial-grid-z-mm", type=float,
         help="re-close the 300 mm Candidate on this fine axial grid before publication",
@@ -617,7 +614,7 @@ def main() -> int:
     parser.add_argument("--total-length-mm", type=float, choices=(250.0, 300.0), default=300.0)
     arguments = parser.parse_args()
     if arguments.output is not None:
-        if arguments.workspace_root != DEFAULT_WORKSPACE_ROOT:
+        if arguments.workspace_root is not None:
             parser.error("--workspace-root is only valid with --run-dir")
         result = (
             compile_ideal_acceptance_300mm_candidate(
@@ -631,6 +628,8 @@ def main() -> int:
         )
         _write_exclusive_json(arguments.output, result)
     else:
+        if arguments.workspace_root is None:
+            parser.error("--run-dir requires --workspace-root")
         publish_ideal_acceptance_300mm_candidate(
             arguments.configuration,
             arguments.run_manifest,

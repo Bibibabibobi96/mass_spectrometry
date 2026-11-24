@@ -14,6 +14,8 @@ param(
   [switch]$DryRun,
   [string]$DryRunOutput = '',
   [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../../..')),
+  [string]$WorkspaceRoot = '',
+  [string]$ArtifactRootPath = '',
   [string]$PythonExe = '',
   [string]$SimionExe = '',
   [string]$ResolvedRuntimeProfilePath = ''
@@ -124,8 +126,17 @@ function Invoke-AnalysisLifecycle {
 }
 
 $repo = [IO.Path]::GetFullPath($RepoRoot)
-$workspace = Split-Path -Parent $repo
 $python = if ($PythonExe) {[IO.Path]::GetFullPath($PythonExe)} elseif ($env:SIMULATION_PYTHON_EXE) {[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)} else {throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
+$workspaceSupport = Join-Path $repo 'src/msplatform/execution/resources/workspace_paths.ps1'
+if (-not (Test-Path -LiteralPath $workspaceSupport -PathType Leaf)) {
+  $workspaceSupport = Join-Path $repo 'msplatform/execution/resources/workspace_paths.ps1'
+}
+. $workspaceSupport
+$pathArguments = @{SourceRoot = $repo; Python = $python}
+if ($ArtifactRootPath) {$pathArguments.ArtifactRoot = $ArtifactRootPath}
+elseif ($WorkspaceRoot) {$pathArguments.ArtifactRoot = Join-Path ([IO.Path]::GetFullPath($WorkspaceRoot)) 'artifacts'}
+$workspacePaths = Resolve-WorkspacePaths @pathArguments
+$workspace = Split-Path -Parent $workspacePaths.artifact_root
 # Pure input location uses the same project API as resolution/status/analysis.
 # This grants no output, cleanup, solver or external-code permission.
 Push-Location $repo
@@ -143,7 +154,7 @@ if ([int]$campaign.schema_version -ne 7 -or
 }
 $python = if ($PythonExe) {[IO.Path]::GetFullPath($PythonExe)} elseif ($env:SIMULATION_PYTHON_EXE) {[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)} else {throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
 if ($PSCmdlet.ParameterSetName -eq 'Status') {
-  & $python -m msplatform.workflows.rf_campaign_status --repo-root $repo --campaign $candidate
+  & $python -m msplatform.workflows.rf_campaign_status --repo-root $repo --campaign $candidate --workspace-root $workspace
   if ($LASTEXITCODE -ne 0) {throw 'Campaign status verification failed.'}
   $preflight=Get-AnalysisPreflight $python $repo $workspace $candidate
   foreach($plan in @($preflight.analyses)){
@@ -233,7 +244,8 @@ try {
       [string]$campaign.campaign_id,[string]$experiment.experiment_id,[string]$experiment.authorized_run_id)
     $arguments = @{Solver=[string]$experiment.solver;ProjectId=[string]$experiment.project_id;CampaignPath=$candidate;
       ExperimentId=[string]$experiment.experiment_id;RepoRoot=$repo;RunId=[string]$experiment.authorized_run_id;
-      RetentionClass=[string]$experiment.retention_class;PythonExe=$python;ResolvedRuntimeProfilePath=$item.snapshot}
+      RetentionClass=[string]$experiment.retention_class;PythonExe=$python;ResolvedRuntimeProfilePath=$item.snapshot;
+      ArtifactRootPath=[string]$workspacePaths.artifact_root}
     if ($SimionExe-and[string]$experiment.solver-eq'simion') {$arguments.SimionExe = $SimionExe}
     if ([string]$experiment.solver-eq'simion'-and $experiment.PSObject.Properties.Name -contains 'case_set' -and
       -not [string]::IsNullOrWhiteSpace([string]$experiment.case_set)) {$arguments.CaseSet = [string]$experiment.case_set}

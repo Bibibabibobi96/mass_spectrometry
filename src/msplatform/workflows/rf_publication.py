@@ -13,6 +13,7 @@ from msplatform.io.file_identity import repository_text_sha256 as _sha256
 from msplatform.contracts.machine_contracts import validate_schema
 from msplatform.components.rf_multipole.design_request_files import (
     compile_governed_design_request_file,
+    resolved_design_sha256,
 )
 from msplatform.workflows.rf_design_profiles import resolve_design_profile
 from msplatform.workflows.rf_runtime_profiles import resolve_runtime_profile
@@ -89,13 +90,22 @@ def resolve(
 ) -> dict:
     """Compile one named full request through the canonical component compiler."""
     selected = (profiles or profile_paths(project_root))[profile]
-    return compile_governed_design_request_file(
+    resolved = compile_governed_design_request_file(
         selected["request"],
         selected["design_variables"],
         selected["optimization_envelope"],
         expected_identity=EXPECTED_IDENTITY,
         provenance_root=repository_root,
     )
+    resource_keys = {
+        "design_request": "request",
+        "design_variables": "design_variables",
+        "optimization_envelope": "optimization_envelope",
+    }
+    for source in resolved["sources"]:
+        source["path"] = PROFILE_RESOURCES[profile][resource_keys[source["label"]]]
+    resolved["resolved_sha256"] = resolved_design_sha256(resolved)
+    return resolved
 
 
 def check_variant(variant: str, *, project_root: Path, repository_root: Path) -> None:
@@ -240,7 +250,8 @@ def main(
 
 if __name__ == "__main__":
     installed_project_root = Path(__file__).resolve().parents[1] / "components" / "rf_multipole"
-    installed_repository_root = Path(__file__).resolve().parents[3]
+    module_path = Path(__file__).resolve()
+    installed_repository_root = module_path.parents[3] if module_path.parents[2].name == "src" else module_path.parents[2]
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--project-root", type=Path, default=installed_project_root)
     parser.add_argument("--repository-root", type=Path, default=installed_repository_root)

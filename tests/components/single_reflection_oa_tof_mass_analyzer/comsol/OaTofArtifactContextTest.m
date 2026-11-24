@@ -7,12 +7,11 @@ classdef OaTofArtifactContextTest < matlab.unittest.TestCase
     methods (TestMethodSetup)
         function prepare(testCase)
             clear oatof_paths workspace_paths resolve_path_identity run_oatof_model oatof_build_model_core oatof_build_saved_particle_solution
-            testCase.activeProject=fileparts(fileparts(fileparts(mfilename('fullpath'))));
-            testCase.repositoryRoot=fileparts(fileparts(fileparts(testCase.activeProject)));
+            testCase.repositoryRoot=fileparts(fileparts(fileparts(fileparts(fileparts(mfilename('fullpath'))))));
+            testCase.activeProject=fullfile(testCase.repositoryRoot,'src','msplatform','components','single_reflection_oa_tof');
             testCase.applyFixture(matlab.unittest.fixtures.PathFixture(testCase.activeProject));
             testCase.applyFixture(matlab.unittest.fixtures.EnvironmentVariableFixture('OATOF_PROJECT_ROOT',testCase.activeProject));
             testCase.applyFixture(matlab.unittest.fixtures.EnvironmentVariableFixture('OATOF_REPOSITORY_ROOT',testCase.repositoryRoot));
-            testCase.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(testCase.activeProject,'comsol')));
             testCase.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(testCase.repositoryRoot,'src','msplatform','backends','comsol','matlab')));
             fixture=testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
             testCase.folder=fixture.Folder;
@@ -76,7 +75,7 @@ classdef OaTofArtifactContextTest < matlab.unittest.TestCase
             testCase.verifyEqual(paths.artifactRoot,expected);
             testCase.verifyEqual(paths.runsRoot,fullfile(expected,'runs'));
             testCase.verifyEqual(string(paths.commonComsolDir), ...
-                string(fullfile(project,'..','..','backends','comsol','matlab')));
+                string(resolve_path_identity(fullfile(project,'..','..','backends','comsol','matlab'))));
         end
         function namedEntryAcceptsManagedScratchBeforeNativeBoundary(testCase)
             [~,artifact,contract]=testCase.snapshot();
@@ -94,7 +93,7 @@ classdef OaTofArtifactContextTest < matlab.unittest.TestCase
             clear oatof_build_model_core
             rehash
             testCase.assertEqual(which('oatof_build_model_core'), ...
-                fullfile(project,'..','..','backends','comsol','matlab','oatof_build_model_core.m'));
+                resolve_path_identity(fullfile(project,'..','..','backends','comsol','matlab','oatof_build_model_core.m')));
             result=run_oatof_model(ArtifactRoot=artifact,ContractPath=contract,OutputModelPath=output);
             testCase.verifyEqual(result.execution_output,string(output));
             testCase.verifyNotEqual(result.execution_output, ...
@@ -153,7 +152,7 @@ classdef OaTofArtifactContextTest < matlab.unittest.TestCase
             originalPath=path;originalFolder=pwd;
             restore=onCleanup(@() path(originalPath));
             folderRestore=onCleanup(@() cd(originalFolder));
-            backend=fullfile(project,'..','..','backends','comsol','matlab');
+            backend=resolve_path_identity(fullfile(project,'..','..','backends','comsol','matlab'));
             addpath(backend);
             result=run_oatof_model(ArtifactRoot=artifact,ContractPath=contract,OutputModelPath=output);
             testCase.verifyEqual(result.execution_output,string(output));

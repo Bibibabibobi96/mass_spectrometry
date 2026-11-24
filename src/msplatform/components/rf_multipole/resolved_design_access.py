@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 
-from msplatform.components.rf_multipole.design_request_files import validate_resolved_design
+from msplatform.components.rf_multipole.design_request_files import (
+    resolved_design_sha256,
+    validate_resolved_design,
+)
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1] / "components" / "rf_multipole"
+PROJECT_ROOT = Path(__file__).resolve().parent
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_RESOLVED = PROJECT_ROOT / "variants" / "quadrupole" / "config" / "resolved_design_official.json"
 DEFAULT_REQUEST = PROJECT_ROOT / "variants" / "quadrupole" / "config" / "requests" / "official.json"
@@ -29,6 +33,11 @@ def load(
     resolved = json.loads(
         (resolved_path or DEFAULT_RESOLVED).read_text(encoding="utf-8")
     )
+    if not (REPOSITORY_ROOT / "src").is_dir():
+        resolved = copy.deepcopy(resolved)
+        for source in resolved["sources"]:
+            source["path"] = Path(source["path"]).relative_to("src").as_posix()
+        resolved["resolved_sha256"] = resolved_design_sha256(resolved)
     interface = json.loads(
         (interface_path or DEFAULT_INTERFACE).read_text(encoding="utf-8")
     )
@@ -38,6 +47,7 @@ def load(
             request_path=DEFAULT_REQUEST,
             source_root=REPOSITORY_ROOT,
             expected_identity=EXPECTED_IDENTITY,
+            repository_text_sources=True,
         ),
         interface,
     )

@@ -25,16 +25,22 @@ param(
   [Parameter(Mandatory)][int]$MaximumSteps,
   [Parameter(Mandatory)][double]$StageAMaximumReducedTimeMmPerSqrtV,
   [Parameter(Mandatory)][double]$StageBMaximumReducedTimeMmPerSqrtV,
-  [string]$ContractPath = '', [string]$RunId = '', [string]$PythonExe = ''
+  [string]$ContractPath = '', [string]$RunId = '',
+  [Parameter(Mandatory)][string]$WorkspaceRoot,
+  [Parameter(Mandatory)][string]$ArtifactRoot,
+  [Parameter(Mandatory)][string]$PythonExe
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $projectId = 'parallel_mirror_dual_stripe_mr_tof'
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
-$packageRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$workspaceRoot = Split-Path -Parent $repoRoot
-$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } elseif ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) } else { throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required' }
+$workspaceRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
+$repoRoot = $workspaceRoot
+$artifactRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)
+$python = [IO.Path]::GetFullPath($PythonExe)
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 environment is missing: $python" }
+$packageRootText = & $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
+if ($LASTEXITCODE -ne 0) { throw 'Installed msplatform package is unavailable.' }
+$packageRoot = (Resolve-Path -LiteralPath $packageRootText).Path
 $contract = if ($ContractPath) { (Resolve-Path -LiteralPath $ContractPath).Path } else { Join-Path $packageRoot 'components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json' }
 $fixedMode = -not [string]::IsNullOrWhiteSpace($FixedMirrorStripeRunManifest)
 $legacyMode = (
@@ -61,12 +67,12 @@ if ($explicitBoundCount -ne 0 -and $explicitBoundCount -ne 4) {
 $exitManifest = (Resolve-Path -LiteralPath $AcceleratorExitRunManifest).Path
 if ([string]::IsNullOrWhiteSpace($RunId)) { $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__analysis__python__mrtof-two-prism-segmented-coverage' }
 
-$executionResources = Join-Path $repoRoot 'src/msplatform/execution/resources'
+$executionResources = Join-Path $packageRoot 'execution/resources'
 $hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path $workspaceRoot 'artifacts/common/host_resources.sqlite3' }
 $hostContext = @{workspace=$workspaceRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 . (Join-Path $executionResources 'run_artifact_support.ps1')
-$package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$projectId") `
+$package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot (Join-Path $artifactRoot "projects\$projectId") `
   -RunId $RunId -Project $projectId -Mode 'two_prism_segmented_voltage_branch_coverage' `
   -Software @('Python 3.11', 'SciPy') -RetentionContractEnabled -RetentionClass compact `
   -CapacityLedgerLifecycleEnabled
@@ -77,24 +83,23 @@ $capacitySession = $null
 function Invoke-ProjectPython {
   param([Parameter(Mandatory)][string[]]$Arguments, [Parameter(Mandatory)][string]$LogPath,
     [pscustomobject]$ResourceLease=$null)
-  Push-Location -LiteralPath $repoRoot
-  $savedPythonPath = $env:PYTHONPATH
+  Push-Location -LiteralPath $workspaceRoot
   $savedOpenBlasThreads = $env:OPENBLAS_NUM_THREADS
   $savedOmpThreads = $env:OMP_NUM_THREADS
   $savedMklThreads = $env:MKL_NUM_THREADS
   $savedNumExprThreads = $env:NUMEXPR_NUM_THREADS
   try {
-    $env:PYTHONPATH = @(Get-RunPythonImportRoots -RepoRoot $repoRoot) -join [IO.Path]::PathSeparator; $env:OPENBLAS_NUM_THREADS = '1'; $env:OMP_NUM_THREADS = '1'; $env:MKL_NUM_THREADS = '1'; $env:NUMEXPR_NUM_THREADS = '1'
+    $env:OPENBLAS_NUM_THREADS = '1'; $env:OMP_NUM_THREADS = '1'; $env:MKL_NUM_THREADS = '1'; $env:NUMEXPR_NUM_THREADS = '1'
     if($null-eq$ResourceLease){
-      & $python @Arguments 2>&1 | Tee-Object -FilePath $LogPath
+      & $python -I -B @Arguments 2>&1 | Tee-Object -FilePath $LogPath
       if ($LASTEXITCODE -ne 0) { throw "MR-TOF coverage stage failed: $($Arguments -join ' ')" }
     }else{
       $start=[Diagnostics.ProcessStartInfo]::new()
-      $start.FileName=$python;$start.WorkingDirectory=$repoRoot;$start.UseShellExecute=$false;$start.CreateNoWindow=$true
+      $start.FileName=$python;$start.WorkingDirectory=$workspaceRoot;$start.UseShellExecute=$false;$start.CreateNoWindow=$true
       $start.RedirectStandardOutput=$true;$start.RedirectStandardError=$true
       $start.StandardOutputEncoding=[Text.UTF8Encoding]::new($false);$start.StandardErrorEncoding=[Text.UTF8Encoding]::new($false)
-      foreach($argument in $Arguments){$start.ArgumentList.Add($argument)}
-      $start.Environment['PYTHONPATH']=$env:PYTHONPATH;$start.Environment['OPENBLAS_NUM_THREADS']='1';$start.Environment['OMP_NUM_THREADS']='1'
+      foreach($argument in @('-I','-B')+$Arguments){$start.ArgumentList.Add($argument)}
+      $start.Environment['OPENBLAS_NUM_THREADS']='1';$start.Environment['OMP_NUM_THREADS']='1'
       $start.Environment['MKL_NUM_THREADS']='1';$start.Environment['NUMEXPR_NUM_THREADS']='1'
       $process=[Diagnostics.Process]::Start($start)
       try{
@@ -113,7 +118,7 @@ function Invoke-ProjectPython {
       }finally{$process.Dispose()}
     }
   } finally {
-    $env:PYTHONPATH = $savedPythonPath; $env:OPENBLAS_NUM_THREADS = $savedOpenBlasThreads; $env:OMP_NUM_THREADS = $savedOmpThreads
+    $env:OPENBLAS_NUM_THREADS = $savedOpenBlasThreads; $env:OMP_NUM_THREADS = $savedOmpThreads
     $env:MKL_NUM_THREADS = $savedMklThreads; $env:NUMEXPR_NUM_THREADS = $savedNumExprThreads; Pop-Location
   }
 }
@@ -121,7 +126,7 @@ function Invoke-ProjectPython {
 try {
   $failureStage = 'capacity_startup'
   $capacitySession = Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
-    -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -RunDirectory $package.artifact_run_dir `
+    -ArtifactRoot ($artifactRoot) -RunDirectory $package.artifact_run_dir `
     -CommittedNewBytes 1048576 -ProtectedPaths @($package.artifact_run_dir) `
     -Owner "mrtof-two-prism-segmented-coverage:$RunId"
   $startupPath = Join-Path $resultDir 'artifact_capacity_gate_startup.json'; Write-RunJson -Path $startupPath -Depth 14 -Value $capacitySession
@@ -201,7 +206,7 @@ try {
   $sourceInputs = [ordered]@{}
   $sourceChecks = @()
   for ($i = 0; $i -lt $sourcePaths.Count; $i++) {
-    $source = Join-Path $repoRoot $sourcePaths[$i]
+    $source = Join-Path $packageRoot ($sourcePaths[$i] -replace '^src\\msplatform\\', '')
     $destination = Join-Path $sourceDir (('source_{0:D2}' -f ($i + 1)) + [IO.Path]::GetExtension($sourcePaths[$i]))
     $sourceInputs[('analytic_source_{0:D2}' -f ($i + 1))] = Copy-VerifiedRunInput -Source $source -Destination $destination
     $sourceChecks += [pscustomobject]@{ source=$source; frozen=$destination }

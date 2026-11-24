@@ -1,16 +1,26 @@
-param([string]$RunId = '')
+param(
+  [Parameter(Mandatory = $true)][string]$WorkspaceRoot,
+  [Parameter(Mandatory = $true)][string]$ArtifactRootPath,
+  [Parameter(Mandatory = $true)][string]$ScienceRoot,
+  [string]$PythonExe = '',
+  [string]$RunId = ''
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
-$projectRoot = Join-Path $repoRoot 'src/msplatform/components/single_reflection_oa_tof'
-$workspaceRoot = Split-Path -Parent $repoRoot
-$artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\single_reflection_oa_tof_mass_analyzer'
-$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+$workspaceRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
+$repoRoot = $workspaceRoot
+$artifactRootPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRootPath)
+$artifactRoot = Join-Path $artifactRootPath 'projects\single_reflection_oa_tof_mass_analyzer'
+$projectRoot = (Resolve-Path -LiteralPath $ScienceRoot).Path
+$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) }
+  elseif ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) }
+  else { throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required' }
+$packageRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 if ([string]::IsNullOrWhiteSpace($RunId)) {
   $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__analysis__comsol__accelerator-transverse-field__grid'
 }
-& $python -m msplatform.execution.artifact_naming run $RunId
+& $python -I -B -m msplatform.execution.artifact_naming run $RunId
 if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
 $runDir = Join-Path $artifactRoot "runs\$RunId"
 if (Test-Path -LiteralPath $runDir) { throw "Run already exists: $runDir" }
@@ -23,8 +33,8 @@ $task = Join-Path $inputDir 'export_accelerator_transverse_field_uniformity.m'
 $analysis = Join-Path $inputDir 'analyze_accelerator_transverse_field_uniformity.py'
 $baseline = Join-Path $inputDir 'baseline.json'
 $runner = Join-Path $inputDir 'run_accelerator_transverse_field_uniformity.ps1.txt'
-Copy-Item -LiteralPath (Join-Path $repoRoot 'src/msplatform/backends/comsol/matlab/export_accelerator_transverse_field_uniformity.m') -Destination $task
-Copy-Item -LiteralPath (Join-Path $repoRoot 'src/msplatform/workflows/oa_tof_design/analyze_accelerator_transverse_field_uniformity.py') -Destination $analysis
+Copy-Item -LiteralPath (Join-Path $packageRoot 'backends/comsol/matlab/export_accelerator_transverse_field_uniformity.m') -Destination $task
+Copy-Item -LiteralPath (Join-Path $packageRoot 'workflows/oa_tof_design/analyze_accelerator_transverse_field_uniformity.py') -Destination $analysis
 Copy-Item -LiteralPath (Join-Path $projectRoot 'config\baseline.json') -Destination $baseline
 Copy-Item -LiteralPath $PSCommandPath -Destination $runner
 $formalModel = Join-Path $artifactRoot 'formal\comsol\single_reflection_oa_tof_mass_analyzer__model.mph'
@@ -44,10 +54,10 @@ $summary = Join-Path $runDir 'summary.json'
   status='interrupted';reason='Run package initialized; final status was not yet recorded.'
 } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $summary -Encoding UTF8
 $manifestWriter = 'from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)'
-& $python -c $manifestWriter --run-config $runConfig --status interrupted `
+& $python -I -B -c $manifestWriter --run-config $runConfig --status interrupted `
   --software 'COMSOL 6.4 saved field' --software 'MATLAB R2025b' --software 'Python 3.11'
 if ($LASTEXITCODE -ne 0) { throw 'Initial run manifest generation failed.' }
-& $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' `
+& $python -I -B -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' `
   (Join-Path $runDir 'run_manifest.json') --require-status interrupted
 if ($LASTEXITCODE -ne 0) { throw 'Initial run manifest verification failed.' }
 
@@ -59,25 +69,25 @@ try {
     $env:OATOF_PROJECT_ROOT = $projectRoot
     $env:OATOF_COMSOL_MODEL_PATH = $formalModel
     $env:OATOF_TRANSVERSE_FIELD_CSV = $fieldCsv
-    . (Join-Path (Split-Path -Parent ((Join-Path $repoRoot 'src\msplatform\backends\comsol\launcher\run_comsol_r2025b.ps1'))) 'resolve_comsol_64.ps1')
+    . (Join-Path (Split-Path -Parent ((Join-Path $packageRoot 'backends\comsol\launcher\run_comsol_r2025b.ps1'))) 'resolve_comsol_64.ps1')
     $comsolLauncherParameters=Get-ComsolLauncherParameters -HostContext $script:HostResourceExecutionContext -WorkingDirectory $script:HostResourceExecutionContext.workspace
-    & (Join-Path $repoRoot 'src\msplatform\backends\comsol\launcher\run_comsol_r2025b.ps1') @comsolLauncherParameters -TaskScript $task -ReportPath $report
+    & (Join-Path $packageRoot 'backends\comsol\launcher\run_comsol_r2025b.ps1') @comsolLauncherParameters -TaskScript $task -ReportPath $report
     if ($LASTEXITCODE -ne 0) { throw 'COMSOL field export failed.' }
   } finally {
     $env:OATOF_PROJECT_ROOT = $oldProject
     $env:OATOF_COMSOL_MODEL_PATH = $oldModel
     $env:OATOF_TRANSVERSE_FIELD_CSV = $oldOutput
   }
-  & $python $analysis --input $fieldCsv --baseline $baseline --output-dir $resultDir
+  & $python -I -B $analysis --input $fieldCsv --baseline $baseline --output-dir $resultDir
   if ($LASTEXITCODE -ne 0) { throw 'Transverse field analysis failed.' }
 } catch {
   [ordered]@{
     schema_version=1;role='oatof_accelerator_transverse_field_uniformity_run_summary'
     status='failed';reason=$_.Exception.Message
   } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $summary -Encoding UTF8
-  & $python -c $manifestWriter --run-config $runConfig --status failed `
+  & $python -I -B -c $manifestWriter --run-config $runConfig --status failed `
     --software 'COMSOL 6.4 saved field' --software 'MATLAB R2025b' --software 'Python 3.11'
-  & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' `
+  & $python -I -B -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' `
     (Join-Path $runDir 'run_manifest.json') --require-status failed
   throw
 }
@@ -101,7 +111,7 @@ $manifestArgs = @(
 foreach ($output in $outputs) { $manifestArgs += @('--output',$output) }
 & $python @manifestArgs
 if ($LASTEXITCODE -ne 0) { throw 'Run manifest generation failed.' }
-& $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' `
+& $python -I -B -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' `
   (Join-Path $runDir 'run_manifest.json') --require-status success
 if ($LASTEXITCODE -ne 0) { throw 'Run manifest verification failed.' }
 Write-Output "STATUS=PASS RUN_ID=$RunId"

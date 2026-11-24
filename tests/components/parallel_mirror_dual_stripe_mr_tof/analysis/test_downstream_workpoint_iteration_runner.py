@@ -153,7 +153,7 @@ foreach($case in $cases){
                 process = subprocess.Popen(['pwsh', '-NoProfile', '-File', str(batch_path),
                     str(PROJECT.parents[3] / 'src/msplatform/workflows/resources/run_downstream_workpoint_iteration.ps1'), str(fixture_path)],
                     cwd=PROJECT if cwd is None else cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr,
-                    text=True, encoding='utf-8', bufsize=1)
+                    text=True, encoding='utf-8', errors='replace', bufsize=1)
                 with self._fixture_lines(process, requests,
                         timeout=timeout * max(1, len(requests))) as lines:
                     for line in lines:
@@ -166,6 +166,16 @@ foreach($case in $cases){
                         yield row['observation']
                 self.assertEqual(process.returncode, 0, stderr_path.read_text(encoding='utf-8'))
             self.assertEqual(received, [case['name'] for case in requests], 'Missing fixture case row.')
+
+    def test_runner_uses_explicit_installed_execution_context(self):
+        source = (PROJECT.parents[3] / "src/msplatform/workflows/resources/run_downstream_workpoint_iteration.ps1").read_text(encoding="utf-8-sig")
+        for parameter in ("WorkspaceRoot", "ArtifactRoot", "PythonExe"):
+            self.assertIn(f"[Parameter(Mandatory)][string]${parameter}", source)
+        self.assertIn("Join-Path $projectRoot 'simion_candidate_two_zone.json'", source)
+        self.assertIn("WorkspaceRoot=$workspaceRoot", source)
+        self.assertIn("ArtifactRoot=$artifactWorkspaceRoot", source)
+        for retired in ("SIMULATION_PYTHON_EXE", "PYTHONPATH", "Invoke-RunToolRootContext"):
+            self.assertNotIn(retired, source)
 
     def test_fixture_cleanup_failure_is_visible_on_close_and_preserves_real_error(self):
         # A finite in-memory process double covers only exception precedence;
@@ -413,6 +423,7 @@ function Invoke-CenterTrial {param($Arguments)$script:flights+=,$Arguments}
 function Get-CenterTrialPhysicalEvidence {param($Manifest,$Voltages)@{passed=$true;observation_path='probe-observation.json';materialization_path='probe-materialization.json'}}
 function Write-RunJson {param($Path,$Depth,$Value)$Value|ConvertTo-Json -Depth $Depth|Set-Content -LiteralPath $Path}
 function Invoke-MockRefresh {
+ param([switch]$I,[switch]$B)
  $output=[array]::IndexOf($args,'--output');$radius=[array]::IndexOf($args,'--refresh-trusted-radius-linf-v');$directions=[array]::IndexOf($args,'--refresh-supported-directions')
  $script:refresh=@{radius=[double]$args[$radius+1];directions=@([int]$args[$directions+1],[int]$args[$directions+2])}
  Write-RunJson -Path $args[$output+1] -Depth 30 -Value $fixture.model
@@ -470,7 +481,7 @@ $modelPath=Join-Path $Root 'iteration_local_s_model.json'
                     str(PROJECT.parents[3] / 'src/msplatform/workflows/resources/run_downstream_workpoint_iteration.ps1'), str(batch_root),
                     sys.executable, str(PROJECT.parents[3])], cwd=PROJECT.parents[3],
                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr,
-                    text=True, encoding='utf-8', bufsize=1)
+                    text=True, encoding='utf-8', errors='replace', bufsize=1)
                 # Fixture-only cap: historical same-method slow result47.14s,
                 # allowing about5x headroom; no solver is invoked by this batch.
                 with self._fixture_lines(process, probes, timeout=240) as lines:
@@ -614,7 +625,7 @@ function Write-RunJson {param($Path,$Depth,$Value)$Value|ConvertTo-Json -Depth $
 function Invoke-RunToolRootContext {param($RepoRoot,$Operation)&$Operation}
 function Invoke-PreclosureDecision {param($Stage,$Anchor,$Columns,$OutputPath,$Context)@{status='needs_stencil';next_action='measure_stencil';full_workpoint_qualified=$false;maximum_scaled_abs_residual=2.}}
 function Invoke-TestPython {
- param([Parameter(ValueFromRemainingArguments=$true)][object[]]$Arguments)
+ param([switch]$I,[switch]$B,[Parameter(ValueFromRemainingArguments=$true)][object[]]$Arguments)
  $script:argumentChars=($Arguments|ForEach-Object{([string]$_).Length}|Measure-Object -Sum).Sum
  $script:inputPath=[string]$Arguments[4];$script:expectedBytes=[long]$Arguments[7];$script:expectedSha=[string]$Arguments[8]
  if($Scenario-eq'missing'){Remove-Item -LiteralPath $inputPath}
@@ -706,6 +717,7 @@ if($Scenario-eq'already_reanchored'){$prior.stage_state.target_reanchor=@{abando
 $prior|ConvertTo-Json -Depth 100|Set-Content (Join-Path $parent 'workpoint_bootstrap.json')
 function Invoke-RunToolRootContext {param($RepoRoot,$Operation)&$Operation}
 function mock-python {
+ param([switch]$I,[switch]$B)
  if($args[0]-eq'-c'-and$args[1]-match'reanchor_prepared_target\(read'){
   $state=Get-Content $args[2] -Raw|ConvertFrom-Json -AsHashtable -Depth 100
   if($state.Contains('pending_trial')){throw 'Pending was not archived before pure reanchor'}
@@ -758,7 +770,7 @@ $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $ast=$PreparedAst
 $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Restore-PreparedOriginalStages'},$true)
 Invoke-Expression $node.Extent.Text
-$repoRoot=$Repo;$project='parallel_mirror_dual_stripe_mr_tof';$python='mock-python';$RunId='new-parent'
+$repoRoot=$Repo;$projectRoot=Join-Path $Repo 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof';$project='parallel_mirror_dual_stripe_mr_tof';$python='mock-python';$RunId='new-parent'
 $PreparedFieldBuildMode='composition';$ResumeSuccessfulChildManifest=''
 $parent=Join-Path $Root 'old';$inputs=Join-Path $Root 'inputs';$results=Join-Path $Root 'results'
 New-Item -ItemType Directory -Path $parent,$inputs,$results|Out-Null
@@ -790,6 +802,7 @@ if($Scenario-eq'stripe'){$prior.stage_state.stage='stripe_preclosure'}
 $prior|ConvertTo-Json -Depth 30|Set-Content (Join-Path $parent 'workpoint_bootstrap.json')
 function Invoke-RunToolRootContext {param($RepoRoot,$Operation)&$Operation}
 function mock-python {
+ param([switch]$I,[switch]$B)
  if($args[0]-eq'-c'-and$args[1]-match'print\(json.dumps\(resolve_prism_controller_policy') {& $RealPython @args;return}
  $global:LASTEXITCODE=0
 }
@@ -886,6 +899,7 @@ $prior=@{role='mrtof_downstream_workpoint_bootstrap';source_projection='measured
 $prior|ConvertTo-Json -Depth 20|Set-Content (Join-Path $parent 'workpoint_bootstrap.json')
 function Invoke-RunToolRootContext {param($RepoRoot,$Operation)&$Operation}
 function mock-python {
+ param([switch]$I,[switch]$B)
  if($args[0]-eq'-c'-and$args[1]-ceq'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)'){
   if($args[3]-cne'--require-status'-or$args[4]-cne$document.status-or$args[5]-cne'--require-project'-or$args[6]-cne$project-or
      $args[7]-cne'--require-mode'-or$args[8]-cne'downstream_fixed_grid_workpoint_iteration'){throw 'Wrong public verifier identity'}
@@ -968,7 +982,7 @@ foreach($name in @('New-CenterTrialArguments','Invoke-CenterTrial','New-StagedCo
  Invoke-Expression $node.Extent.Text
 }
 $script:preparedStagedMode=$true;$script:PreparedFieldBuildMode='refine'
-$repoRoot=$Root;$artifactRoot=$Root;$RunId='parent';$project='parallel_mirror_dual_stripe_mr_tof';$python='mock-python'
+$repoRoot=$Root;$workspaceRoot=$Root;$artifactWorkspaceRoot=$Root;$artifactRoot=$Root;$RunId='parent';$project='parallel_mirror_dual_stripe_mr_tof';$python='mock-python';$hostContext=@{workspace=$Root}
 $trialArtifactRoot=$artifactRoot
 $package=@{input_dir=(Join-Path $Root 'inputs')};New-Item -ItemType Directory -Path $package.input_dir|Out-Null
 $staticFieldMode=$true;$staticBinding=@{authority=@{analyzer_electrode_voltages_v=@(0,0,0,0,0,0,0,0,0,0,-27,-27,0,0,0,343,-186,0,0,0)}}
@@ -978,12 +992,12 @@ $PreparedJointWorkbenchRunPath='same-audited-prepared-source';$frozenContract='s
 $script:providerCalls=0;$script:flights=@();$script:request=$null
 function Invoke-RunToolRootContext {param($RepoRoot,$Operation)&$Operation}
 function Write-RunJson {param($Path,$Depth,$Value)$Value|ConvertTo-Json -Depth 100|Set-Content $Path}
-function mock-python {$global:LASTEXITCODE=0;if($args-contains'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)'){return};'false'}
+function mock-python {param([switch]$I,[switch]$B);$global:LASTEXITCODE=0;if($args-contains'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)'){return};'false'}
 function Update-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session,$ProtectedPaths)return @{session=$Session}}
 function Save-WorkpointBootstrap {param($Bootstrap,$BootstrapPath)}
 function public-provider {
- param($RequestPath,$RunDirectory,[switch]$Approved)
- if(-not$Approved){throw 'Public provider not authorized'}
+ param($RequestPath,$RunDirectory,[switch]$Approved,$PythonExe,$HostContextJson)
+ if(-not$Approved-or$PythonExe-ne'mock-python'-or-not$HostContextJson){throw 'Public provider context not authorized'}
  $script:providerCalls++;$script:request=Get-Content $RequestPath -Raw|ConvertFrom-Json -AsHashtable
  if($request.source_binding_path-ne'sealed-IP-baseline'-or$request.numerical_contract_path-ne'same-frozen-contract'){throw 'Baseline/numerical authority changed'}
  foreach($key in @('response_basis_paths','response_axis','te1_reference_path','consumer_view_source_path','reuse_source_levels')){
@@ -1004,7 +1018,8 @@ function public-provider {
  }
 }
 function prepared-public-trial {
- param($PreparedJointWorkbenchRunPath,$PreparedSourceMode,$FieldBindingPath,$ContractPath,$RunId,$PythonExe)
+ param($PreparedJointWorkbenchRunPath,$PreparedSourceMode,$FieldBindingPath,$ContractPath,$RunId,$PythonExe,$RepoRoot)
+ if($RepoRoot-ne$Root){throw 'Trial workspace differs'}
  if($PreparedJointWorkbenchRunPath-ne'same-audited-prepared-source'-or$PreparedSourceMode-ne'centroid_probe'){throw 'Resampled or wrong source'}
  $script:flights+=,@{binding=$FieldBindingPath;source=$PreparedJointWorkbenchRunPath;source_mode=$PreparedSourceMode}
 }
@@ -1086,7 +1101,7 @@ foreach($name in @('Invoke-PreparedOriginalStagedWorkflow','New-CenterTrialArgum
  $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$name},$true)
  Invoke-Expression $node.Extent.Text
 }
-$repoRoot=$Root;$artifactRoot=$Root;$artifactWorkspaceRoot=$Root;$project='parallel_mirror_dual_stripe_mr_tof'
+$repoRoot=$Root;$workspaceRoot=$Root;$packageRoot=Join-Path $Root 'src/msplatform';$hostContext=@{};$artifactRoot=$Root;$artifactWorkspaceRoot=$Root;$project='parallel_mirror_dual_stripe_mr_tof'
 $trialArtifactRoot=$artifactRoot
 $inputFile=Join-Path $Root 'input.json';'{}'|Set-Content $inputFile
 $PreparedJointWorkbenchRunPath=$Root;$PreparedPrism1ResponseBasisPath=$inputFile;$PreparedPrism2ResponseBasisPath=$inputFile
@@ -1108,13 +1123,14 @@ function Exit-ArtifactWorkflowCapacitySession {$script:exited=$true}
 function Copy-VerifiedRunInput {param($Source,$Destination)'frozen-source'|Set-Content $Destination;return $Destination}
 function Invoke-RunToolRootContext {param($RepoRoot,$Operation)&$Operation}
 function mock-python {
+ param([switch]$I,[switch]$B)
  if($args[1]-match 'prepare_measured_centroid_acquisition'){
-  $i=$args[-1];'{}'|Set-Content (Join-Path $i 'trajectory_contract.json');'{}'|Set-Content (Join-Path $i 'initial_proposal.json')
+  $outputDirectory=$args[-1];'{}'|Set-Content (Join-Path $outputDirectory 'trajectory_contract.json');'{}'|Set-Content (Join-Path $outputDirectory 'initial_proposal.json')
   $request=@{source_binding_path='baseline-binding';response_basis_paths=@{p1='P1';p2='P2'}}
   if($BuildMode-eq'refine'){
     foreach($key in @('response_axis','te1_reference_path','consumer_view_source_path','reuse_source_levels')){$request[$key]='must-not-survive'}
   }
-  $request|ConvertTo-Json|Set-Content (Join-Path $i 'acquisition_field_request.json')
+  $request|ConvertTo-Json|Set-Content (Join-Path $outputDirectory 'acquisition_field_request.json')
  }elseif($args[1]-match 'load_prepared_centroid_trial'){
   if($args[-2]-ne'__none__'-or$args[-1]-ne$BuildMode){throw 'Source/mode argument lost'}
   '{"mode":"native_static_pa"}'
@@ -1148,7 +1164,7 @@ if($summary.N100_executed-or$summary.gui_executed-or$summary.final_decision.full
             with self.subTest(mode=mode),TemporaryDirectory() as directory:
                 root=Path(directory);path=root/"stages.ps1";path.write_text(script)
                 result=subprocess.run(["pwsh","-NoProfile","-File",str(path),str(PROJECT.parents[3]/"src/msplatform/workflows/resources/run_downstream_workpoint_iteration.ps1"),str(root),mode],
-                    cwd=PROJECT.parents[3],capture_output=True,text=True,encoding="utf-8",timeout=30)
+                    cwd=PROJECT.parents[3],capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=30)
                 self.assertEqual(result.returncode,0,result.stdout+result.stderr)
                 self.assertIn("PREPARED_ORIGINAL_STAGES_PASS",result.stdout)
                 config=json.loads((root/"run_config.json").read_text(encoding="utf-8-sig"))
@@ -1165,7 +1181,7 @@ $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitio
 Invoke-Expression $node.Extent.Text
 $repoRoot=$Root;$artifactRoot=Join-Path $Root 'artifacts';$artifactWorkspaceRoot=$artifactRoot;$project='parallel_mirror_dual_stripe_mr_tof'
 $trialArtifactRoot=$artifactRoot
-$python='mock-python';$RunId='test-parent';$SimionExe='';$PSScriptRoot=Join-Path $Root 'analysis'
+$python='mock-python';$hostContext=@{};$RunId='test-parent';$SimionExe='';$PSScriptRoot=Join-Path $Root 'analysis'
 New-Item -ItemType Directory -Path $PSScriptRoot,(Join-Path $Root 'simion')|Out-Null
 $input=Join-Path $Root 'input.json';'{}'|Set-Content $input
 $PreparedJointWorkbenchRunPath=$Root;$PreparedPrism1ResponseBasisPath=$input;$PreparedPrism2ResponseBasisPath=$input;$PreparedInitialProposalPath=$input;$ContractPath=$input
@@ -1180,24 +1196,26 @@ function Enter-ArtifactWorkflowCapacitySession {return @{status='active'}}
 function Exit-ArtifactWorkflowCapacitySession {$script:exited=$true}
 function Apply-RunArtifactRetention {return 'mock-retention.json'}
 function Write-RunManifest {param($Status)$script:terminal=$Status}
-function Invoke-RunToolRootContext {
- # The pure Python API has its own tests. Here exercise actual public-stage
- # control flow without invoking a commercial process or replacing the body.
+function mock-python {
+ param([switch]$I,[switch]$B,[Parameter(ValueFromRemainingArguments=$true)][object[]]$Arguments)
+ if(-not$I-or-not$B){throw 'Acquisition Python is not isolated'}
  '{}'|Set-Content (Join-Path $Root 'parent/inputs/acquisition_field_request.json')
+ $global:LASTEXITCODE=0
 }
 $provider=Join-Path $Root 'src/msplatform/backends/simion/resources/run_native_static_field_provider.ps1'
 $preparedProviderRunner=$provider
 New-Item -ItemType Directory -Path (Split-Path -Parent $provider) -Force|Out-Null
 @'
-param($RequestPath,$RunDirectory,[switch]$Approved)
-if(-not$Approved-or-not(Test-Path $RequestPath)){throw 'Public provider request missing'}
+param($RequestPath,$RunDirectory,[switch]$Approved,$PythonExe,$HostContextJson)
+if(-not$Approved-or$PythonExe-ne'mock-python'-or-not$HostContextJson-or-not(Test-Path $RequestPath)){throw 'Public provider request missing'}
 New-Item -ItemType Directory -Path $RunDirectory -Force|Out-Null
 @{status='success';field_binding='actual-candidate-binding.json'}|ConvertTo-Json|Set-Content (Join-Path $RunDirectory 'summary.json')
 'public-compose'|Set-Content (Join-Path (Split-Path (Split-Path $RunDirectory -Parent) -Parent) 'provider-called.txt')
 '@|Set-Content $provider
 $trialRunner=Join-Path $Root 'trial.ps1'
 @'
-param($PreparedJointWorkbenchRunPath,$PreparedSourceMode,$FieldBindingPath,$ContractPath,$RunId,$PythonExe)
+param($PreparedJointWorkbenchRunPath,$PreparedSourceMode,$FieldBindingPath,$ContractPath,$RunId,$PythonExe,$RepoRoot)
+if($RepoRoot-ne$Root){throw 'Acquisition workspace differs'}
 if($PreparedSourceMode-ne'centroid_probe'-or$FieldBindingPath-ne'actual-candidate-binding.json'){throw 'Probe source or actual field was replaced'}
 $child=Join-Path $PreparedJointWorkbenchRunPath ('artifacts/runs/'+$RunId+'/results/diagnostics')
 New-Item -ItemType Directory -Path $child -Force|Out-Null
@@ -1257,7 +1275,7 @@ $controllerContext=@{repo_root=$Root;python='Invoke-MockController';contract_pat
 function Copy-VerifiedRunInput {param($Source,$Destination)Copy-Item -LiteralPath $Source -Destination $Destination;return $Destination}
 function Invoke-RunToolRootContext {param($RepoRoot,$Operation)&$Operation}
 function Invoke-MockController {
- param([Parameter(ValueFromRemainingArguments=$true)][object[]]$Arguments)
+ param([switch]$I,[switch]$B,[Parameter(ValueFromRemainingArguments=$true)][object[]]$Arguments)
  $handoff=$Arguments[[array]::IndexOf($Arguments,'--prism-handoff-replay-manifest')+1]
  if($handoff-ne(Join-Path $inputs 'prism_handoff_replay_manifest.json')){throw 'Decision read unfrozen handoff path'}
  if((Get-Content $handoff -Raw|ConvertFrom-Json).marker-ne'frozen'){throw 'Decision read changed external authority'}
@@ -1296,7 +1314,7 @@ $mat=Join-Path $Root 'mat.json';@{stripe_biases_v=@(-27.,0.);prism_voltages_v=@(
 function Get-ManifestOutputPath {param($ManifestPath,$FileName)$mat}
 function Invoke-RunToolRootContext {param($RepoRoot,$Operation)& $Operation}
 function Invoke-MockPython {
- param([Parameter(ValueFromRemainingArguments=$true)][object[]]$Arguments)
+ param([switch]$I,[switch]$B,[Parameter(ValueFromRemainingArguments=$true)][object[]]$Arguments)
  $global:LASTEXITCODE=0
  if($Arguments-contains'--control-stage'){
   foreach($pair in @(@('--contract','contract.json'),@('--prepared-target-authority','target.json'),@('--prepared-initial-proposal','proposal.json'),@('--prism-handoff-replay-manifest','handoff.json'))){
@@ -1552,7 +1570,7 @@ function Get-ManifestOutputPath {param($ManifestPath,$FileName)
 }
 function Invoke-RunToolRootContext {param($RepoRoot,$Operation) & $Operation}
 function Invoke-IdentityFixture {
- param([Parameter(ValueFromRemainingArguments=$true)][object[]]$Arguments)
+ param([switch]$I,[switch]$B,[Parameter(ValueFromRemainingArguments=$true)][object[]]$Arguments)
  $global:LASTEXITCODE=0
  if([string]$Arguments[1]-like'*assess_staged_prediction*'){@{status='unmeasured';reason='fixture identity boundary'}|ConvertTo-Json -Compress}
 }
@@ -1701,9 +1719,9 @@ function Get-ManifestOutputPath {param($ManifestPath,$FileName)
 }
 function Invoke-RunToolRootContext {param($RepoRoot,$Operation) & $Operation}
 function Read-BindingMock {
- param([Parameter(ValueFromRemainingArguments=$true)][object[]]$Arguments)
- if($Arguments[2]-notlike'*load_binding*'-or$Arguments[2]-notlike'*refinement_windows*'){throw 'Not the live binding validator'}
- $script:seenBinding=$Arguments[3];$global:LASTEXITCODE=0
+ param([switch]$I,[switch]$B,[Parameter(ValueFromRemainingArguments=$true)][object[]]$Arguments)
+ if($Arguments[1]-notlike'*load_binding*'-or$Arguments[1]-notlike'*refinement_windows*'){throw 'Not the live binding validator'}
+ $script:seenBinding=$Arguments[2];$global:LASTEXITCODE=0
  $paths|ConvertTo-Json -Compress
 }
 function Update-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session,$ProtectedPaths)
@@ -1763,8 +1781,8 @@ foreach($id in @('003','006')){
 function Get-ManifestOutputPath {param($ManifestPath,$FileName) Join-Path (Split-Path $ManifestPath) 'materialization.json'}
 function Invoke-RunToolRootContext {param($RepoRoot,$Operation) & $Operation}
 function Read-BindingMock {
- param([Parameter(ValueFromRemainingArguments=$true)][object[]]$Arguments)
- $id=$Arguments[3];$script:calls+=,$id;$global:LASTEXITCODE=0
+ param([switch]$I,[switch]$B,[Parameter(ValueFromRemainingArguments=$true)][object[]]$Arguments)
+ $id=$Arguments[2];$script:calls+=,$id;$global:LASTEXITCODE=0
  @('shared_collision',"$id-owner", "$id-parent.pa", "$id-parent.pa-surf", "$id-window0.pa", "$id-window0.pa-surf", "$id-window1.pa", "$id-window1.pa-surf", "$id-window2.pa", "$id-window2.pa-surf")|ConvertTo-Json -Compress
 }
 function Update-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session,$ProtectedPaths)
@@ -1815,9 +1833,8 @@ $target=Join-Path $Root 'provider';$null=New-Item -ItemType Directory -Path $tar
 $owner=@{provider_run=$target;child_run_id='parent-stage-001';operation='compose'}
 if($Completed-eq'yes'){@{lifecycle_status='completed_experiment_payload_retired'}|ConvertTo-Json|Set-Content (Join-Path $target 'solver_review_retirement_receipt.json')}
 function Invoke-PublicMock {
- param([Parameter(ValueFromRemainingArguments=$true)][object[]]$Arguments)
- $expectedPythonPath=@(Get-RunPythonImportRoots -RepoRoot $Root)-join[IO.Path]::PathSeparator
- if((Get-Location).Path-ne$Root-or$env:PYTHONPATH-ne$expectedPythonPath-or$env:PYTHONNOUSERSITE-ne'1'){throw 'Public CLI repository context differs'}
+ param([switch]$I,[switch]$B,[Parameter(ValueFromRemainingArguments=$true)][object[]]$Arguments)
+ if(-not$I-or-not$B-or$env:PYTHONPATH-ne'caller-python-path'-or$env:PYTHONNOUSERSITE-ne'caller-site'){throw 'Public CLI isolated context differs'}
  if($Arguments-contains'--verify'){'verify'|Add-Content (Join-Path $Root 'calls.txt')}
  elseif($Arguments-contains'finalize-ready'){'finalize'|Add-Content (Join-Path $Root 'calls.txt');@{status='ready';action='finalize_ready'}|ConvertTo-Json -Compress}
  else{throw 'Unknown public CLI'}
@@ -1831,8 +1848,7 @@ try{$result=Invoke-StagedComposeRetirement -Owner $owner -Disposition stencil}ca
         wrapper = r'''
 [CmdletBinding(SupportsShouldProcess)]
 param($ArtifactRoot,$RepositoryRoot,$TargetRun,$Owner,$OwnerAbandonmentReason,[switch]$Apply)
-$expectedPythonPath=@(Get-RunPythonImportRoots -RepoRoot $RepositoryRoot)-join[IO.Path]::PathSeparator
-if((Get-Location).Path-ne$RepositoryRoot-or$env:PYTHONPATH-ne$expectedPythonPath-or$env:PYTHONNOUSERSITE-ne'1'){throw 'Retirement wrapper repository context differs'}
+if($env:PYTHONPATH-ne'caller-python-path'-or$env:PYTHONNOUSERSITE-ne'caller-site'){throw 'Retirement wrapper changed the caller environment'}
 if($Owner-ne'parallel_mirror_dual_stripe_mr_tof'-or-not$OwnerAbandonmentReason.Contains('parent/parent-stage-001')){throw 'Owner scope differs'}
 $(if($Apply){'apply'}else{'plan'})|Add-Content (Join-Path $RepositoryRoot 'calls.txt')
 if(Test-Path (Join-Path $RepositoryRoot 'refuse')){exit 2}
@@ -2318,10 +2334,10 @@ if($Enabled-eq'yes'){$fieldProviderRequest.response_basis_paths=@{s1='bank/s1.js
 $workflowInputPaths=@('source.json');$contract='actual.json';$repoRoot='repo';$python='Invoke-MockPython';$script:calls=0
 function Invoke-RunToolRootContext {param($RepoRoot,[scriptblock]$Operation)& $Operation}
 function Invoke-MockPython {
- param([Parameter(ValueFromRemainingArguments=$true)][object[]]$TestArguments)
+ param([switch]$I,[switch]$B,[Parameter(ValueFromRemainingArguments=$true)][object[]]$TestArguments)
  $script:calls++;$global:LASTEXITCODE=0
- if($TestArguments[2]-notlike'*compile_request*protected_paths*'){throw 'Not the existing compiler'}
- $r=$TestArguments[3]|ConvertFrom-Json -AsHashtable
+ if($TestArguments[1]-notlike'*compile_request*protected_paths*'){throw 'Not the existing compiler'}
+ $r=$TestArguments[2]|ConvertFrom-Json -AsHashtable
  if($r.numerical_contract_path-ne'actual.json'-or$r.response_basis_paths.s1-ne'bank/s1.json'){throw 'Bank request changed'}
  @('bank/base.json','bank/base.pa','bank/s1.json','bank/s1.pa')|ConvertTo-Json -Compress
 }
@@ -2353,7 +2369,7 @@ $fieldProviderRequest=@{role='mrtof_native_static_field_provider_request';source
 $staticBinding=@{};$fieldProviderRunner='Invoke-MockProvider';$trialRunner='Invoke-MockTrial'
 function Invoke-RunToolRootContext {param($RepoRoot,[scriptblock]$Operation)& $Operation}
 function Invoke-MockPython {
- param([Parameter(ValueFromRemainingArguments=$true)][object[]]$TestArguments)
+ param([switch]$I,[switch]$B,[Parameter(ValueFromRemainingArguments=$true)][object[]]$TestArguments)
  $global:LASTEXITCODE=0;$r=$TestArguments[2]|ConvertFrom-Json -AsHashtable
  if($r.response_basis_paths.s1-ne'axis.json'-or$r.candidate_voltages_v.s1-ne-27){throw 'Request lost bank/target'}
  Write-Output 'true'
@@ -2481,7 +2497,7 @@ function Invoke-RunToolRootContext {param($RepoRoot,[scriptblock]$Operation)& $O
 function Write-RunJson {param($Path,$Depth,$Value)$Value|ConvertTo-Json -Depth $Depth|Set-Content $Path}
 function Update-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session,$ProtectedPaths)@{session=$Session}}
 function Invoke-MockPython {
- param([Parameter(ValueFromRemainingArguments=$true)][object[]]$TestArguments)
+ param([switch]$I,[switch]$B,[Parameter(ValueFromRemainingArguments=$true)][object[]]$TestArguments)
  $CommandArgs=$TestArguments
  $global:LASTEXITCODE=0
  if([string]$CommandArgs[1]-like'*Retained provider ownership differs*'){
@@ -2848,7 +2864,7 @@ function Invoke-CenterTrial {
  if($fixture.interrupt_after_publish){$fixture.interrupt_after_publish=$false;throw 'published child interruption'}
 }
 function Invoke-MockController {
- param([Parameter(ValueFromRemainingArguments=$true)][object[]]$TestArguments)
+ param([switch]$I,[switch]$B,[Parameter(ValueFromRemainingArguments=$true)][object[]]$TestArguments)
  $CommandArgs=$TestArguments
  if($CommandArgs-contains'-c'){$global:LASTEXITCODE=0;return}
  $request=[ordered]@{}
@@ -3604,7 +3620,7 @@ function Get-ManifestOutputPath {
   return Join-Path $Root $FileName
 }
 function Invoke-MockController {
-  param([Parameter(ValueFromRemainingArguments=$true)][object[]]$CommandArgs)
+  param([switch]$I,[switch]$B,[Parameter(ValueFromRemainingArguments=$true)][object[]]$CommandArgs)
   $outputIndex=[array]::IndexOf($CommandArgs,'--output')
   if($outputIndex-lt0){throw 'controller output missing'}
   $decision=@{
@@ -3666,7 +3682,7 @@ if(@((Get-Content $history -Raw|ConvertFrom-Json).decisions).Count-ne0){throw 'b
             encoding="utf-8-sig"
         )
         self.assertEqual(
-            source.count("$auditRunner = Join-Path $PSScriptRoot 'run_downstream_fixed_grid_workpoint.ps1'"),
+            source.count("$auditRunner = Join-Path $packageRoot 'workflows/resources/run_downstream_fixed_grid_workpoint.ps1'"),
             1,
         )
         self.assertIn(
@@ -3869,12 +3885,14 @@ foreach($name in @('Get-WorkpointBootstrapEvidence','Save-WorkpointBootstrap','I
   Invoke-Expression $node.Extent.Text
 }
 $repoRoot=(Get-Item $Source).Directory.Parent.Parent.Parent.FullName
+$workspaceRoot=$repoRoot;$artifactWorkspaceRoot=$Root
 $project='fixture';$python='Invoke-MockPython';$frozenContract='frozen'
 $script:feedbackCalls=0;$script:verificationCalls=0;$script:stencilPlans=0
 $staticFieldMode=$false
 $capacitySession=@{lease_id='owner'};$nativeRuntimeSession=@{checkpoint_path=(Join-Path $Root 'family.json')}
 [IO.File]::WriteAllText($nativeRuntimeSession.checkpoint_path,'{}')
 function Invoke-MockPython {
+  param([switch]$I,[switch]$B)
   if($args[0]-eq'-X'){
     $payload=@($input)
     if(($payload-join''|ConvertFrom-Json).action-eq'center_trial_physical_gate'){$script:feedbackCalls++}else{$script:stencilPlans++}
@@ -3912,7 +3930,7 @@ function Invoke-MockTrial {
   if($script:scenario-eq'baseline_failure'-and$ChildRunId-like'*-baseline'){$valid=$false}
   $null=New-FixtureChild $ChildRunId $Voltages $valid
 }
-function Invoke-MockAudit {param($BaselineManifest,$Stripe1PerturbationManifest,$Stripe2PerturbationManifest,$Prism1PerturbationManifest,$Prism2PerturbationManifest,$ContractPath,$RunId,$PythonExe,$CapacityWorkflowSession)
+function Invoke-MockAudit {param($BaselineManifest,$Stripe1PerturbationManifest,$Stripe2PerturbationManifest,$Prism1PerturbationManifest,$Prism2PerturbationManifest,$ContractPath,$RunId,$WorkspaceRoot,$ArtifactRoot,$PythonExe,$CapacityWorkflowSession)
   if($Stripe2PerturbationManifest-notlike'*-stencil-2-reverse*'){throw 'Invalid forward stencil reached audit'}
   $script:audits++
 }
@@ -3976,6 +3994,7 @@ foreach($name in @('Invoke-WorkpointStencil','Invoke-WorkpointControllerRequest'
   Invoke-Expression $node.Extent.Text
 }
 $repoRoot=(Get-Item $Source).Directory.Parent.Parent.Parent.FullName
+$workspaceRoot=$repoRoot;$artifactWorkspaceRoot=$Root
 $python=$FixturePython
 $RunId='reference';$artifactRoot=$Root;$trialArtifactRoot=$Root;$frozenContract='frozen';$capacitySession=@{}
 $script:flights=@();$script:saves=@();$script:lastTier=$true
@@ -3985,7 +4004,7 @@ function Get-WorkpointBootstrapEvidence {param($Manifest,$Voltages)
   @{passed=(-not$script:lastTier-or$Manifest-like'*-baseline*'-or$Manifest-like'*-tier-3-reverse*');reasons=@();child_manifest=$Manifest;child_manifest_sha256='M';materialization_sha256='A';observation_sha256='B'}
 }
 function Save-WorkpointBootstrap {param($Bootstrap,$BootstrapPath)$script:saves+=@{attempts=$Bootstrap.attempts.Count;children=$Bootstrap.children.Count;signed_steps=@($Bootstrap.signed_steps_v)}}
-function Invoke-ReferenceAudit {}
+function Invoke-ReferenceAudit {param($WorkspaceRoot,$ArtifactRoot)}
 $auditRunner='Invoke-ReferenceAudit'
 $bootstrap=[ordered]@{seed_voltages_v=@(-27.,54.,190.,-190.);forward_steps_v=@(.27,.54,1.9000000000000001,1.9000000000000001);stencil_step_scales=@(1.,.25,.05);children=@()}
 $null=Invoke-WorkpointStencil -Bootstrap $bootstrap -BootstrapPath 'unused'
@@ -4024,11 +4043,12 @@ foreach($name in @('Invoke-WorkpointStencil','Save-WorkpointBootstrap','Save-Nat
   Invoke-Expression $node.Extent.Text
 }
 $staticFieldMode=$false
-$RunId='new-parent';$artifactRoot=$Root;$repoRoot=(Get-Item $Source).Directory.Parent.Parent.Parent.FullName;$project='fixture';$python='Invoke-MockPython'
+$RunId='new-parent';$artifactRoot=$Root;$repoRoot=(Get-Item $Source).Directory.Parent.Parent.Parent.FullName;$workspaceRoot=$repoRoot;$artifactWorkspaceRoot=$Root;$project='fixture';$python='Invoke-MockPython'
 $trialArtifactRoot=$artifactRoot
 $frozenContract='frozen';$capacitySession=[pscustomobject]@{lease_id='new-lease'}
 $script:flights=@();$script:audit=0;$script:checks=0;$script:events=@()
 function Invoke-MockPython {
+  param([switch]$I,[switch]$B)
   if($args[0]-eq'-X'){$input | & $FixturePython @args;return}
   $script:checks++;$global:LASTEXITCODE=0
 }
@@ -4037,7 +4057,7 @@ function Get-ManifestOutputPath {param($ManifestPath,$FileName) return (Join-Pat
 [IO.File]::WriteAllText((Join-Path $Root 'materialization.json'),' {"stripe_biases_v":[1,2],"prism_voltages_v":[3,4]} ')
 function New-CenterTrialArguments {param($Voltages,$ChildRunId) return @{Voltages=$Voltages;ChildRunId=$ChildRunId}}
 function Invoke-MockTrial {param($Voltages,$ChildRunId) $script:flights+=,$ChildRunId}
-function Invoke-MockAudit {param($BaselineManifest,$Stripe1PerturbationManifest,$Stripe2PerturbationManifest,$Prism1PerturbationManifest,$Prism2PerturbationManifest,$ContractPath,$RunId,$PythonExe,$CapacityWorkflowSession)
+function Invoke-MockAudit {param($BaselineManifest,$Stripe1PerturbationManifest,$Stripe2PerturbationManifest,$Prism1PerturbationManifest,$Prism2PerturbationManifest,$ContractPath,$RunId,$WorkspaceRoot,$ArtifactRoot,$PythonExe,$CapacityWorkflowSession)
   if($BaselineManifest-ne'old-parent-baseline'){throw 'Completed baseline was discarded'}
   $script:audit++
 }
@@ -4189,6 +4209,7 @@ $GeometryReviewRunPath='geometry';$MirrorRunPath='mirror';$StripeRunPath='stripe
 $script:oaComponentContractFrozen='selected-fixture-authority';$AcceleratorGeometryProfileId='selected-fixture-profile'
 $NativeSystemRuntimeBundlePath='native-system-bundle.json';$TrajectoryStepScale=1.;$AcceleratorSourceYOffsetMm=-1.7
 $repoRoot=(Get-Item $Source).Directory.Parent.Parent.Parent.FullName
+$workspaceRoot=$repoRoot;$artifactWorkspaceRoot=$Root
 $python=$FixturePython;$capacitySession=[pscustomobject]@{lease_id='owner'}
 $nativeRuntimeSession=[pscustomobject]@{lease_id='owner';directory=$null;runtime=$null;checkpoint_path=(Join-Path $Root 'not-yet-created.json')}
 $NativeCorridorBankRunPath='native-bank'
@@ -4201,13 +4222,13 @@ $script:flights=@();$script:audits=0;$script:failAt=0
 function Write-RunJson {param($Path,$Depth,$Value)}
 function Get-WorkpointBootstrapEvidence {param($Manifest,$Voltages) return @{passed=$true;reasons=@();observation_sha256='A';materialization_sha256='B';child_manifest_sha256='C';child_manifest=$Manifest}}
 function Invoke-MockTrial {
-  param($AcceleratorComponentContractPath,$AcceleratorGeometryProfileId,$GeometryReviewRunPath,$MirrorRunPath,$StripeRunPath,$AcceleratorProviderReceiptPath,$Prism1VoltageV,$Prism2VoltageV,$Stripe1VoltageV,$Stripe2VoltageV,$NativeSystemRuntimeBundlePath,$TrajectoryStepScale,$AcceleratorSourceYOffsetMm,$RunId,$PythonExe,$CapacityWorkflowSession,$NativeCorridorBankRunPath,$NativeCorridorRuntimeSession,$SimionExe,[switch]$PulseAcceleratorUntilInitialExit,$TrajectoryProfileId,$CompositionPlanPath,$LocalScopePath)
+  param($AcceleratorComponentContractPath,$AcceleratorGeometryProfileId,$GeometryReviewRunPath,$MirrorRunPath,$StripeRunPath,$AcceleratorProviderReceiptPath,$Prism1VoltageV,$Prism2VoltageV,$Stripe1VoltageV,$Stripe2VoltageV,$NativeSystemRuntimeBundlePath,$TrajectoryStepScale,$AcceleratorSourceYOffsetMm,$RunId,$PythonExe,$CapacityWorkflowSession,$NativeCorridorBankRunPath,$NativeCorridorRuntimeSession,$SimionExe,[switch]$PulseAcceleratorUntilInitialExit,$TrajectoryProfileId,$CompositionPlanPath,$LocalScopePath,$RepoRoot)
   if($NativeCorridorBankRunPath-ne'native-bank'-or$NativeSystemRuntimeBundlePath-ne'native-system-bundle.json'-or$CapacityWorkflowSession.lease_id-ne'owner'){throw 'Lost field, native-system, or owner binding'}
   $script:flights+=,@($Stripe1VoltageV,$Stripe2VoltageV,$Prism1VoltageV,$Prism2VoltageV)
   if($script:failAt-eq$script:flights.Count){throw 'injected solver failure'}
 }
 function Invoke-MockAudit {
-  param($BaselineManifest,$Stripe1PerturbationManifest,$Stripe2PerturbationManifest,$Prism1PerturbationManifest,$Prism2PerturbationManifest,$ContractPath,$RunId,$PythonExe,$CapacityWorkflowSession)
+  param($BaselineManifest,$Stripe1PerturbationManifest,$Stripe2PerturbationManifest,$Prism1PerturbationManifest,$Prism2PerturbationManifest,$ContractPath,$RunId,$WorkspaceRoot,$ArtifactRoot,$PythonExe,$CapacityWorkflowSession)
   $script:audits++
   if($script:flights.Count-ne5-or$ContractPath-ne'frozen.json'-or$CapacityWorkflowSession.lease_id-ne'owner'){throw 'Audit ran before the full stencil'}
   if($BaselineManifest-notlike'*auto-baseline*'-or$Prism2PerturbationManifest-notlike'*auto-stencil-4*'){throw 'Wrong lineage'}

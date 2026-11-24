@@ -657,6 +657,15 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
                  patch(module + ".scalar_binding_problem", return_value=family):
                 self.assertNotEqual(problems[0], _static_field_problem(receipt))
 
+    def test_runner_uses_explicit_installed_execution_context(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8-sig")
+        for parameter in ("WorkspaceRoot", "ArtifactRoot", "PythonExe"):
+            self.assertIn(f"[Parameter(Mandatory)][string]${parameter}", source)
+        self.assertIn("& $python -I -B -m msplatform.workflows.prepared_joint.fixed_grid_workpoint", source)
+        self.assertIn("Join-Path $packageRoot 'components\\parallel_mirror_dual_stripe_mr_tof\\simion_candidate_two_zone.json'", source)
+        for retired in (".venv", "SIMULATION_PYTHON_EXE", "PYTHONPATH", "Invoke-RunToolRootContext"):
+            self.assertNotIn(retired, source)
+
     def test_runner_uses_ledger_lifecycle_and_one_capacity_session(self) -> None:
         source = RUNNER.read_text(encoding="utf-8-sig")
         for token in (

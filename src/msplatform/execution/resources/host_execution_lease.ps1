@@ -363,7 +363,6 @@ function Invoke-HostResourceTransaction {
   $timer = [Diagnostics.Stopwatch]::StartNew()
   $lastReport = -[double]$policy.status_interval_seconds
   $identityRecollections=0; $identityFailures=[Collections.Generic.List[object]]::new()
-  $repo = [string]$script:HostResourceExecutionContext.workspace
   $python = [string]$script:HostResourceExecutionContext.python_executable
   if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
     throw "Host scheduler requires the explicitly configured Python runtime: $python"
@@ -379,9 +378,7 @@ function Invoke-HostResourceTransaction {
     if ($owner.Count -ne 1) { throw 'Cannot establish the current process creation identity.' }
     $Request.owner = @{pid=$PID; started=[string]$owner[0].started}
     $start = [Diagnostics.ProcessStartInfo]::new()
-    $pythonPath = (Join-Path $repo 'src') + [IO.Path]::PathSeparator + $repo
-    if ($env:PYTHONPATH) { $pythonPath += [IO.Path]::PathSeparator + $env:PYTHONPATH }
-    $start.Environment['PYTHONPATH'] = $pythonPath
+    $null = $start.Environment.Remove('PYTHONPATH')
     $start.FileName = $python; $start.WorkingDirectory = $PSScriptRoot
     $start.UseShellExecute = $false; $start.CreateNoWindow = $true
     $start.RedirectStandardInput = $true; $start.RedirectStandardOutput = $true

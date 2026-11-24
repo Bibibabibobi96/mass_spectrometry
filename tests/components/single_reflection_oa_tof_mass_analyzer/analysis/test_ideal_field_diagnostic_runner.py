@@ -74,7 +74,7 @@ class DiagnosticInputTests(unittest.TestCase):
                     path.unlink()
                 else:
                     write(path, 'changed')
-                with self.subTest(change=change), self.assertRaises(subprocess.CalledProcessError):
+                with self.subTest(change=change), self.assertRaises((AssertionError, subprocess.CalledProcessError)):
                     stage_diagnostic_inputs(source, root/'inputs/source', root/'inputs/receipt.json', CASES)
                 self.assertFalse((root/'inputs/source').exists())
 
@@ -102,7 +102,7 @@ class DiagnosticInputTests(unittest.TestCase):
                 write(manifest_path, json.dumps(manifest))
                 before = {p: p.read_bytes() for p in source.rglob('*') if p.is_file()}
                 destination = root/'new-inputs/source'
-                with self.assertRaises((ValueError, subprocess.CalledProcessError)):
+                with self.assertRaises((ValueError, AssertionError, subprocess.CalledProcessError)):
                     stage_diagnostic_inputs(source, destination, root/'new-inputs/receipt.json', CASES)
                 self.assertFalse(destination.exists())
                 self.assertEqual(before, {p: p.read_bytes() for p in before})
@@ -113,12 +113,16 @@ class DiagnosticRunnerTests(unittest.TestCase):
     def fixture(self, root: Path):
         repo = root/'repo'
         project = repo/'projects'/PROJECT_ID
-        script = project/'simion/workbench/run_ideal_field_diagnostic.ps1'
+        script = repo/'src/msplatform/backends/simion/resources/run_ideal_field_diagnostic.ps1'
         body = (PROJECT.parents[1]/'backends/simion/resources/run_ideal_field_diagnostic.ps1').read_text(encoding='utf-8')
         write(script, body)
-        for name in ('workspace_paths.ps1', 'workspace_paths.py'):
-            resource = repo/'src/msplatform/execution/resources'/name
-            write(resource, (ROOT/'src/msplatform/execution/resources'/name).read_text(encoding='utf-8'))
+        write(repo/'src/msplatform/execution/resources/workspace_paths.ps1', r'''
+function Resolve-WorkspacePaths {param($SourceRoot,$ArtifactRoot,$ExecutionRoot,$HostResourceStatePath,$FrozenContext,$Python)
+ return @{source_root=$SourceRoot;artifact_root=$(if($ArtifactRoot){$ArtifactRoot}else{$env:MASS_SPECTROMETRY_ARTIFACT_ROOT});
+ execution_root=$([IO.Path]::GetFullPath($(if($ExecutionRoot){$ExecutionRoot}else{$env:MASS_SPECTROMETRY_EXECUTION_ROOT})));
+ host_resource_state_path=$(if($HostResourceStatePath){$HostResourceStatePath}else{$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH})}
+}
+''')
         write(repo/'src/msplatform/execution/resources/host_execution_lease.ps1', r'''
 function Enter-HostExecutionLease {param($Role,$Stage,$StatePath) if($StatePath-cne$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){throw 'Host state differs'};Add-Content $env:DIAGNOSTIC_TRACE "lease:$Role";return @{role=$Role}}
 function Exit-HostExecutionLease {param($Lease)}
@@ -147,22 +151,22 @@ function Start-Process {param($FilePath,$ArgumentList,$WorkingDirectory,$Redirec
         lifecycle = (PROJECT.parents[1]/'workflows/resources/oatof_lifecycle_preflight.ps1').read_text(encoding='utf-8')
         readable_guard = lifecycle[:lifecycle.index('function New-OaTofFormalSimionRuntime')]
         write(project/'config/project.json', json.dumps({'lifecycle_status': 'formal'}))
-        write(project/'oatof_lifecycle_preflight.ps1', readable_guard + r'''
+        write(repo/'src/msplatform/workflows/resources/oatof_lifecycle_preflight.ps1', readable_guard + r'''
 function New-OaTofFormalSimionRuntime {param($ProjectRoot,$ArtifactRoot,$PythonExe,$Destination,$Receipt)
  Add-Content $env:DIAGNOSTIC_TRACE 'prepare_runtime';New-Item -ItemType Directory $Destination -Force|Out-Null;'inert'|Set-Content (Join-Path $Destination 'oatof_ideal_grounded.iob');'{}'|Set-Content $Receipt;return $Destination
 }
 function Remove-OaTofFormalSimionRuntime {param($ArtifactRoot,$RuntimeRoot) Add-Content $env:DIAGNOSTIC_TRACE 'remove_runtime'}
 ''')
-        write(project/'workflows/formal_reference/verify_geometry_contract.ps1', r'''
+        write(repo/'src/msplatform/workflows/resources/verify_geometry_contract.ps1', r'''
 param($PreparedRuntime,$SimionExe,$RuntimeReportPath)
 if(-not$PreparedRuntime-or-not(Test-Path (Join-Path $PreparedRuntime 'oatof_ideal_grounded.iob'))){throw 'validation used another runtime'}
 Add-Content $env:DIAGNOSTIC_TRACE 'validate_actual_runtime';'STATUS=PASS'|Set-Content $RuntimeReportPath
 ''')
-        write(project/'simion/workbench/generate_comsol_consistent_ions.ps1', r'''
+        write(script.parent/'generate_comsol_consistent_ions.ps1', r'''
 param($N,$Seed,$HalfWidthXmm,$HalfWidthYmm,$HalfWidthZmm,$EnergyStdEv,$Output,[switch]$AllowNonstandardDiagnosticCount)
 Add-Content $env:DIAGNOSTIC_TRACE 'generate_ion';'inert'|Set-Content $Output
 ''')
-        write(project/'simion/workbench/analyze_ideal_field_log.ps1', r'''
+        write(script.parent/'analyze_ideal_field_log.ps1', r'''
 param($Log,$IonFile,$Mode,$Distribution,$ParticleCsv)
 if(-not(Test-Path $Log)-or-not(Test-Path $IonFile)){throw 'actual consumed records missing'}
 'inert'|Set-Content $ParticleCsv
@@ -173,7 +177,7 @@ return [pscustomobject]@{Distribution=$Distribution;Mode=$Mode;Hit=0;EfficiencyP
         return script, repo
 
     def environment(self, root: Path, trace: Path):
-        return dict(os.environ, PYTHONPATH=os.pathsep.join((str(ROOT/"src"), str(ROOT))), DIAGNOSTIC_TRACE=str(trace),
+        return dict(os.environ, DIAGNOSTIC_TRACE=str(trace),
                     SIMULATION_PYTHON_EXE=sys.executable,
                     DIAGNOSTIC_PUBLIC_SUPPORT=str(ROOT/'src/msplatform/execution/resources/run_artifact_support.ps1'),
                     MASS_SPECTROMETRY_ARTIFACT_ROOT=str(root/'artifacts'),
@@ -190,6 +194,7 @@ return [pscustomobject]@{Distribution=$Distribution;Mode=$Mode;Hit=0;EfficiencyP
             env = self.environment(root, trace)
             run_id = '20261030_120100__analysis__python__diagnostic-fixture'
             result = subprocess.run(['pwsh','-NoProfile','-File',str(script),'-AnalyzeOnly',
+                '-WorkspaceRoot',str(repo),'-ArtifactRootPath',str(root/'artifacts'),
                 '-SourceRunPath',str(source),'-RunId',run_id,'-SimionExe',str(root/'missing_simion.exe')],
                 cwd=ROOT, timeout=120, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
@@ -214,6 +219,7 @@ return [pscustomobject]@{Distribution=$Distribution;Mode=$Mode;Hit=0;EfficiencyP
             trace = root/'trace.txt'
             run_id = '20261030_120400__analysis__python__diagnostic-missing'
             result = subprocess.run(['pwsh','-NoProfile','-File',str(script),'-AnalyzeOnly',
+                '-WorkspaceRoot',str(repo),'-ArtifactRootPath',str(root/'artifacts'),
                 '-SourceRunPath',str(source),'-RunId',run_id], cwd=ROOT, timeout=60,
                 env=self.environment(root, trace),
                 capture_output=True, text=True, encoding='utf-8', errors='replace')
@@ -235,6 +241,8 @@ return [pscustomobject]@{Distribution=$Distribution;Mode=$Mode;Hit=0;EfficiencyP
             trace = root/'trace.txt'
             env = self.environment(root, trace)
             result = subprocess.run(['pwsh','-NoProfile','-File',str(script),'-N','2',
+                '-WorkspaceRoot',str(repo),'-ArtifactRootPath',str(root/'artifacts'),
+                '-ScienceRoot',str(repo/'projects'/PROJECT_ID),
                 '-RunId','20261030_120200__test__simion__diagnostic-fixture'],
                 cwd=ROOT, timeout=120, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
@@ -255,15 +263,16 @@ return [pscustomobject]@{Distribution=$Distribution;Mode=$Mode;Hit=0;EfficiencyP
             environment['MASS_SPECTROMETRY_ARTIFACT_ROOT'] = str(root/'unused/../separate-data')
             environment['MASS_SPECTROMETRY_EXECUTION_ROOT'] = str(root/'unused/../short-execution')
             wrapper = root/'invoke.ps1'
-            write(wrapper, r'''param($Entry,$Source,$RunId)
+            write(wrapper, r'''param($Entry,$Source,$RunId,$Workspace,$ArtifactRoot)
 $ErrorActionPreference='Stop'
 $names=@('SIMULATION_PYTHON_EXE','MASS_SPECTROMETRY_ARTIFACT_ROOT','MASS_SPECTROMETRY_EXECUTION_ROOT','MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH')
 $before=@{};foreach($name in $names){$before[$name]=[Environment]::GetEnvironmentVariable($name)}
-& $Entry -AnalyzeOnly -SourceRunPath $Source -RunId $RunId
+& $Entry -AnalyzeOnly -SourceRunPath $Source -RunId $RunId -WorkspaceRoot $Workspace -ArtifactRootPath $ArtifactRoot
 foreach($name in $names){if([Environment]::GetEnvironmentVariable($name)-cne$before[$name]){throw 'Caller environment was not restored'}}
 ''')
             run_id = '20261030_120500__analysis__python__diagnostic-context'
-            result = subprocess.run(['pwsh','-NoProfile','-File',str(wrapper),str(script),str(source),run_id],
+            result = subprocess.run(['pwsh','-NoProfile','-File',str(wrapper),str(script),str(source),run_id,
+                str(repo),str(root/'separate-data')],
                 cwd=root, timeout=60, env=environment, capture_output=True, text=True, encoding='utf-8', errors='replace')
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
             run = root/'separate-data/projects'/PROJECT_ID/'runs'/run_id
@@ -283,6 +292,8 @@ foreach($name in $names){if([Environment]::GetEnvironmentVariable($name)-cne$bef
             write(repo/'projects'/PROJECT_ID/'config/project.json', json.dumps({'lifecycle_status': 'formal_revalidation_pending'}))
             trace = root/'trace.txt'
             result = subprocess.run(['pwsh','-NoProfile','-File',str(script),'-N','2',
+                '-WorkspaceRoot',str(repo),'-ArtifactRootPath',str(root/'artifacts'),
+                '-ScienceRoot',str(repo/'projects'/PROJECT_ID),
                 '-RunId','20261030_120300__test__simion__diagnostic-pending'],
                 cwd=ROOT, timeout=60, env=self.environment(root, trace),
                 capture_output=True, text=True, encoding='utf-8', errors='replace')
@@ -298,9 +309,9 @@ foreach($name in $names){if([Environment]::GetEnvironmentVariable($name)-cne$bef
             project = root/'repo/projects'/PROJECT_ID
             verifier = project/'workflows/formal_reference/verify_geometry_contract.ps1'
             write(verifier, (PROJECT.parents[1]/'workflows/resources/verify_geometry_contract.ps1').read_text(encoding='utf-8'))
-            write(project/'oatof_lifecycle_preflight.ps1',
+            write(root/'repo/src/msplatform/workflows/resources/oatof_lifecycle_preflight.ps1',
                   "function Assert-OaTofFormalAssetsReadable {param($ProjectRoot) throw 'FORMAL_QUALIFICATION_REQUIRED'}\n")
-            write(project/'simion/workbench/verify_iob_runtime_contract.ps1', r'''
+            write(root/'repo/src/msplatform/backends/simion/resources/verify_iob_runtime_contract.ps1', r'''
 param($IobPath,$ExpectedTrajectoryQuality,$ExpectedInstances,$SimionExe)
 if(-not(Test-Path $IobPath)-or$ExpectedTrajectoryQuality-ne8-or$ExpectedInstances-ne4){throw 'wrong actual runtime'}
 Add-Content $env:DIAGNOSTIC_TRACE 'verify_saved_iob';$global:LASTEXITCODE=0

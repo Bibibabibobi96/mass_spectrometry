@@ -32,6 +32,7 @@ param(
   [string]$ContinuationPredecessorManifestPath='',
   [string]$NativeFieldRunPath='',
   [string]$ResultPath='',
+  [string]$ArtifactRootPath='',
   [Parameter(Mandatory=$true,ParameterSetName='Campaign')][string]$CampaignPath,
   [Parameter(Mandatory=$true,ParameterSetName='Campaign')][string]$ExperimentId,
   [Parameter(Mandatory=$true,ParameterSetName='Recovery')][switch]$ResumeFinalization
@@ -87,8 +88,12 @@ function Get-SimionPaGridAudit {
 }
 
 $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
-$workspaceRoot=Split-Path -Parent $repoRoot
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
+$pathArguments=@{SourceRoot=$repoRoot;Python=$python}
+if($ArtifactRootPath){$pathArguments.ArtifactRoot=$ArtifactRootPath}
+$workspacePaths=Resolve-WorkspacePaths @pathArguments
+$workspaceRoot=Split-Path -Parent $workspacePaths.artifact_root
 if($PSCmdlet.ParameterSetName-eq'Profile'){
   . (Join-Path $PSScriptRoot 'project_transport_launcher_support.ps1')
   $arguments=@{
@@ -97,7 +102,7 @@ if($PSCmdlet.ParameterSetName-eq'Profile'){
     ReferenceComsolRunId=$ReferenceComsolRunId;SimionExe=$SimionExe
     ContinuationPredecessorManifestPath=$ContinuationPredecessorManifestPath
     ResolvedRuntimeProfilePath=$ResolvedRuntimeProfilePath;NativeFieldRunPath=$NativeFieldRunPath
-    ResultPath=$ResultPath;RuntimeProfileId=$RuntimeProfileId
+    ResultPath=$ResultPath;RuntimeProfileId=$RuntimeProfileId;ArtifactRootPath=$ArtifactRootPath
   }
   $arguments.Remove('RetentionClass')
   if($PSBoundParameters.ContainsKey('RetentionClass')){$arguments.RetentionClass=$RetentionClass}
@@ -111,7 +116,7 @@ if($PSCmdlet.ParameterSetName-eq'Campaign'){
     RetentionReason=$RetentionReason;PythonExe=$python;ReferenceComsolRunId=$ReferenceComsolRunId
     SimionExe=$SimionExe;ContinuationPredecessorManifestPath=$ContinuationPredecessorManifestPath
     ResolvedRuntimeProfilePath=$ResolvedRuntimeProfilePath;NativeFieldRunPath=$NativeFieldRunPath
-    ResultPath=$ResultPath;CampaignPath=$CampaignPath;ExperimentId=$ExperimentId
+    ResultPath=$ResultPath;CampaignPath=$CampaignPath;ExperimentId=$ExperimentId;ArtifactRootPath=$ArtifactRootPath
   }
   if($PSBoundParameters.ContainsKey('RetentionClass')){$arguments.RetentionClass=$RetentionClass}
   Invoke-MultipoleProjectFinite3dTransport -Solver simion -ProjectId 'rf_multipole_ion_optics' @arguments
@@ -133,7 +138,7 @@ if($ResumeFinalization){
 }
 $executionResources=Join-Path $repoRoot 'src/msplatform/execution/resources'
 . (Join-Path $executionResources 'run_artifact_support.ps1')
-$hostState=if($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH}else{Join-Path $workspaceRoot 'artifacts/common/host_resources.sqlite3'}
+$hostState=[string]$workspacePaths.host_resource_state_path
 $hostContext=@{workspace=$workspaceRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $PSScriptRoot '../../backends/simion/resources/simion_execution.ps1')
 . (Join-Path $PSScriptRoot '../../backends/simion/resources/simion_field_checkpoint_support.ps1')
@@ -1166,7 +1171,7 @@ print(json.dumps(prepare_exit_observation_inputs(run,json.loads(resolved.read_te
       controller_pa=$controller;producer_manifest=(Join-Path $physicalRunDir 'run_manifest.json');origin_mm=@(0,0,0);
       cell_mm=@($resolvedCellMmX,$resolvedCellMmY,$resolvedCellMmZ);electrode_ids_by_group=$electrodeGroups})
     $sampleRunId=$RunId+'__stationary_samples'
-    $hostState=if($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH}else{Join-Path $workspaceRoot 'artifacts/common/host_resources.sqlite3'}
+    $hostState=[string]$workspacePaths.host_resource_state_path
     Push-Location $codeRoot
     try{
       $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)

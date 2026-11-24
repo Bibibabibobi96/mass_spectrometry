@@ -268,7 +268,7 @@ class ThreeZoneCampaignContractTests(unittest.TestCase):
                 json.dumps(drifted, indent=2) + "\n", encoding="utf-8"
             )
             with self.assertRaisesRegex(ValueError, "authority SHA-256 differs"):
-                load_campaign(campaign_path, repository_root=Path(__file__).resolve().parents[4])
+                load_campaign(campaign_path)
 
     def test_live_campaign_refresh_preserves_science_and_is_idempotent(self) -> None:
         original = load_campaign(CAMPAIGN_PATH)

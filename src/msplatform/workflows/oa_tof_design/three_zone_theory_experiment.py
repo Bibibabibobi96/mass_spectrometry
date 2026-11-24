@@ -12,6 +12,7 @@ import itertools
 import json
 import math
 import re
+from importlib.resources import files
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -41,7 +42,6 @@ from msplatform.workflows.oa_tof_design.three_zone_theory_numeric_execution impo
 )
 
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
 CAMPAIGN_SCHEMA = "oatof_three_zone_solver_free_funnel.schema.json"
 PLAN_SCHEMA = "oatof_three_zone_resolved_plan.schema.json"
 REPORT_SCHEMA = "oatof_three_zone_stage_report.schema.json"
@@ -73,18 +73,18 @@ def _content_sha256(document: Mapping[str, Any], identity_field: str) -> str:
     return canonical_sha256(payload)
 
 
-def _repository_authority_path(root: Path, relative_path: str, label: str) -> Path:
+def _repository_authority_path(relative_path: str, label: str) -> Path:
     relative = Path(relative_path)
-    path = (root / relative).resolve()
-    if relative.is_absolute() or ".." in relative.parts or root.resolve() not in path.parents:
-        raise ValueError(f"{label} authority must be a repository-relative source")
+    if relative.parts[:2] != ("src", "msplatform") or ".." in relative.parts:
+        raise ValueError(f"{label} authority must be a package-relative source")
+    path = Path(str(files("msplatform").joinpath(*relative.parts[2:]))).resolve()
     if not path.is_file():
         raise ValueError(f"{label} authority is missing: {path}")
     return path
 
 
-def _bound_file(root: Path, record: Mapping[str, Any], label: str) -> Path:
-    path = _repository_authority_path(root, str(record["path"]), label)
+def _bound_file(record: Mapping[str, Any], label: str) -> Path:
+    path = _repository_authority_path(str(record["path"]), label)
     canonical = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
     if len(canonical) != int(record["bytes"]):
         raise ValueError(f"{label} authority byte count differs")
@@ -93,9 +93,7 @@ def _bound_file(root: Path, record: Mapping[str, Any], label: str) -> Path:
     return path
 
 
-def render_campaign_authorities(
-    campaign_path: Path, *, repository_root: Path = REPOSITORY_ROOT,
-) -> str:
+def render_campaign_authorities(campaign_path: Path) -> str:
     """Refresh repository-source identities without changing scientific fields.
 
     This explicit authoring operation does not execute stages or update run
@@ -127,7 +125,7 @@ def render_campaign_authorities(
         if label in authorities:
             authorities[label] = {"path": path}
     for label, record in authorities.items():
-        path = _repository_authority_path(repository_root, record["path"], label)
+        path = _repository_authority_path(record["path"], label)
         canonical = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
         record.update(bytes=len(canonical), sha256=repository_text_sha256(path))
     # Replace only the authority object; preserve the author's scientific
@@ -141,9 +139,7 @@ def render_campaign_authorities(
     return source[:marker.end()] + rendered + source[marker.end()+length:]
 
 
-def load_campaign(
-    campaign_path: Path, *, repository_root: Path = REPOSITORY_ROOT
-) -> dict[str, Any]:
+def load_campaign(campaign_path: Path) -> dict[str, Any]:
     """Load a campaign and fail closed on schema or authority drift."""
 
     campaign = load_json(campaign_path)
@@ -167,7 +163,7 @@ def load_campaign(
         if record is not None and record.get("path") != expected_path:
             raise ValueError(f"missing or invalid design implementation authority: {label}")
     for label, record in campaign["authorities"].items():
-        _bound_file(repository_root, record, label)
+        _bound_file(record, label)
     return campaign
 
 
@@ -479,13 +475,12 @@ def resolve_stage_plan(
     stage_id: str,
     *,
     predecessor_receipt_path: Path | None = None,
-    repository_root: Path = REPOSITORY_ROOT,
 ) -> dict[str, Any]:
     """Resolve one deterministic stage plan and bind every row by SHA-256."""
 
     if stage_id not in STAGE_ORDER:
         raise ValueError(f"unknown stage_id {stage_id!r}")
-    campaign = load_campaign(campaign_path, repository_root=repository_root)
+    campaign = load_campaign(campaign_path)
     predecessor, predecessor_reference = _load_predecessor(
         predecessor_receipt_path, campaign, stage_id
     )

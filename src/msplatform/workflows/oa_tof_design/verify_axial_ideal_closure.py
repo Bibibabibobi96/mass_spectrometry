@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+from importlib.resources import files
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -35,7 +36,11 @@ from msplatform.analysis.peak_metrics import (
 from msplatform.io.file_identity import file_sha256 as _sha256
 
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
+def _package_resource(relative: str) -> Path:
+    parts = Path(relative).parts
+    if parts[:2] != ("src", "msplatform") or ".." in parts:
+        raise PhysicsContractError(f"resource must be package-relative: {relative}")
+    return Path(str(files("msplatform").joinpath(*parts[2:]))).resolve(strict=True)
 
 
 def _load_json(path: Path) -> Mapping[str, Any]:
@@ -213,9 +218,7 @@ def compute_receipt(
     detector_center_x_mm = float(detector["detector_center_x_mm"])
     detector_center_y_mm = float(detector["detector_center_y_mm"])
     detector_radius_mm = float(detector["detector_active_radius_mm"])
-    profile_registry_path = (
-        REPOSITORY_ROOT / contract["layout_profile_registry_path"]
-    ).resolve()
+    profile_registry_path = _package_resource(contract["layout_profile_registry_path"])
     profile_registry = _load_json(profile_registry_path)
     profiles = [
         item
@@ -565,7 +568,7 @@ def main() -> int:
 
     contract_path = args.contract.resolve()
     contract = _load_json(contract_path)
-    resolved_path = (REPOSITORY_ROOT / contract["resolved_geometry_path"]).resolve()
+    resolved_path = _package_resource(contract["resolved_geometry_path"])
     resolved = _load_json(resolved_path)
     receipt = compute_receipt(
         contract,

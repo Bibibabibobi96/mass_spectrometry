@@ -84,7 +84,6 @@ class FormalReleasePublisherTests(unittest.TestCase):
         for target, value in (
             ("CONFIG_PATHS", self.config_paths),
             ("PROJECT_ROOT", self.project),
-            ("REPOSITORY_ROOT", self.repository),
         ):
             patcher = mock.patch.object(promotion, target, value)
             patcher.start()

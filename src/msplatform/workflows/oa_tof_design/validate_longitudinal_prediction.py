@@ -21,9 +21,6 @@ import numpy as np
 from msplatform.io.file_identity import file_sha256 as _sha256
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2] / "components/single_reflection_oa_tof"
-REPO_ROOT = Path(__file__).resolve().parents[4]
-
 from msplatform.components.orthogonal_accelerator.accelerator_time_focus import accelerator_state
 from msplatform.contracts.particle_physics import (
     LEGACY_OA_TOF_ATOMIC_MASS_CONSTANT_KG as ATOMIC_MASS_CONSTANT_KG,
@@ -177,7 +174,7 @@ def compare_dataset(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--baseline", type=Path, default=PROJECT_ROOT / "config" / "baseline.json")
+    parser.add_argument("--baseline", type=Path, required=True)
     parser.add_argument("--mass-to-charge-th", type=float, default=524.0)
     parser.add_argument("--comsol-csv", type=Path, required=True)
     parser.add_argument("--simion-csv", type=Path, required=True)

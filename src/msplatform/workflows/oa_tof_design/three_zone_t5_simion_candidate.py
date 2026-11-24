@@ -30,6 +30,7 @@ from msplatform.execution.inputs import freeze_file
 from msplatform.contracts.machine_contracts import SCHEMA_DIR, load_json, validate_schema
 from msplatform.components.orthogonal_accelerator import (
     accelerator_time_focus as _accelerator_two_zone,
+    three_zone_ideal_theory as _accelerator_three_zone,
     two_zone_geometry as _accelerator_geometry,
 )
 from msplatform.components.orthogonal_accelerator.three_zone_ideal_theory import (
@@ -53,11 +54,9 @@ OUTPUT_SCHEMA = "oatof_three_zone_simion_candidate_resolved.schema.json"
 PROJECT_ID = "single_reflection_oa_tof_mass_analyzer"
 PUBLISH_MODE = "three_zone_t5_simion_candidate_compile"
 CANDIDATE_NAME = "three_zone_t5_simion_candidate_resolved.json"
-REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
-DEFAULT_WORKSPACE_ROOT = REPOSITORY_ROOT.parent
 COMPILER_SOURCE = Path(__file__).resolve()
 THEORY_CORE_SOURCE = Path(_tof_theory.__file__).resolve()
-ACCELERATOR_THEORY_SOURCE = REPOSITORY_ROOT / "src/msplatform/components/orthogonal_accelerator/three_zone_ideal_theory.py"
+ACCELERATOR_THEORY_SOURCE = Path(_accelerator_three_zone.__file__).resolve()
 ACCELERATOR_TWO_ZONE_SOURCE = Path(_accelerator_two_zone.__file__).resolve()
 ACCELERATOR_GEOMETRY_SOURCE = Path(_accelerator_geometry.__file__).resolve()
 EXPERIMENT_CORE_SOURCE = Path(__file__).with_name(
@@ -457,7 +456,7 @@ def publish_t5_simion_candidate(
     receipt_path: Path,
     run_dir: Path,
     *,
-    workspace_root: Path = DEFAULT_WORKSPACE_ROOT,
+    workspace_root: Path,
 ) -> dict[str, Any]:
     """Atomically publish one portable, non-Formal T5 Candidate artifact run."""
 
@@ -493,7 +492,6 @@ def publish_t5_simion_candidate(
     for name, path in code_inputs.items():
         if not path.is_file():
             raise ValueError(f"T5 Candidate code identity is missing: {name}")
-        _workspace_relative(path, workspace_root, label=name)
     if not OUTPUT_SCHEMA_SOURCE.is_file():
         raise ValueError("T5 Candidate code identity is missing: candidate_output_schema")
 
@@ -590,15 +588,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     destinations = parser.add_mutually_exclusive_group(required=True)
     destinations.add_argument("--output", type=Path)
     destinations.add_argument("--run-dir", type=Path)
-    parser.add_argument("--workspace-root", type=Path, default=DEFAULT_WORKSPACE_ROOT)
+    parser.add_argument("--workspace-root", type=Path)
     arguments = parser.parse_args(argv)
     if arguments.output is not None:
-        if arguments.workspace_root != DEFAULT_WORKSPACE_ROOT:
+        if arguments.workspace_root is not None:
             parser.error("--workspace-root is only valid with --run-dir")
         write_t5_simion_candidate(
             arguments.campaign, arguments.t5_receipt, arguments.output
         )
     else:
+        if arguments.workspace_root is None:
+            parser.error("--run-dir requires --workspace-root")
         publish_t5_simion_candidate(
             arguments.campaign,
             arguments.t5_receipt,

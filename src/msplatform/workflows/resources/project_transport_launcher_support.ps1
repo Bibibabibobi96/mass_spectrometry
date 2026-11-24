@@ -30,6 +30,7 @@ function Invoke-MultipoleProjectFinite3dTransport {
     [string]$ContinuationPredecessorManifestPath = '',
     [string]$NativeFieldRunPath = '',
     [string]$ResultPath = '',
+    [string]$ArtifactRootPath = '',
     [string]$ResolvedRuntimeProfilePath = ''
   )
 
@@ -48,11 +49,7 @@ function Invoke-MultipoleProjectFinite3dTransport {
     "multipole_runtime_{0}_{1}.json" -f $ProjectId, [guid]::NewGuid()
   )
 
-  $savedPythonPath = $env:PYTHONPATH
   try {
-    $env:PYTHONPATH = (Join-Path $RepoRoot 'src') + $(if ($savedPythonPath) {
-      [IO.Path]::PathSeparator + $savedPythonPath
-    } else { '' })
     if($ResolvedRuntimeProfilePath){
       Copy-Item -LiteralPath $ResolvedRuntimeProfilePath -Destination $resolutionPath
     }else{
@@ -118,6 +115,7 @@ function Invoke-MultipoleProjectFinite3dTransport {
       MaximumTimeUs = [double]$numerics.trajectory.maximum_global_time_us
     }
     if ($ResultPath) {$arguments.ResultPath = $ResultPath}
+    if ($ArtifactRootPath) {$arguments.ArtifactRootPath = $ArtifactRootPath}
     if ($profile.particle_source.PSObject.Properties.Name -contains 'release_spec') {
       if ($Solver -ne 'simion') { throw 'Release-spec materialization is currently implemented for SIMION only.' }
     } else {
@@ -170,7 +168,6 @@ function Invoke-MultipoleProjectFinite3dTransport {
       throw "Multipole $Solver transport failed for '$ProjectId'."
     }
   } finally {
-    $env:PYTHONPATH = $savedPythonPath
     Remove-Item -LiteralPath $resolutionPath -Force -ErrorAction SilentlyContinue
   }
 }

@@ -7,13 +7,15 @@ param(
   [string]$SourceCorrectionRunPath = '',
   [string]$SecantFixedGridRunPath = '',
   [string]$RunId = '',
-  [string]$PythonExe = ''
+  [Parameter(Mandatory)][string]$WorkspaceRoot,
+  [Parameter(Mandatory)][string]$ArtifactRoot,
+  [Parameter(Mandatory)][string]$PythonExe
 )
 
 function Resolve-FixedGridSecantL1Inputs {
   param([string]$Python,[string]$SourceCorrectionPath,[string]$SecantDirectory)
   $code = 'import json,sys; from msplatform.workflows.mr_design.mirror_fixed_grid_voltage_correction import _source_gamma_operator_id; print(_source_gamma_operator_id(json.loads(open(sys.argv[1],encoding="utf-8-sig").read())))'
-  $lines = @(& $Python -X utf8 -c $code $SourceCorrectionPath 2>&1)
+  $lines = @(& $Python -I -B -X utf8 -c $code $SourceCorrectionPath 2>&1)
   if ($LASTEXITCODE -ne 0) {
     throw "Source gamma operator validation failed before endpoint selection: $($lines -join [Environment]::NewLine)"
   }
@@ -38,15 +40,19 @@ function Resolve-FixedGridSecantL1Inputs {
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $projectId = 'parallel_mirror_dual_stripe_mr_tof'
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
-$workspaceRoot = Split-Path -Parent $repoRoot
-$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } elseif ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) } else { throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required' }
+$workspaceRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
+$repoRoot = $workspaceRoot
+$artifactRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)
+$python = [IO.Path]::GetFullPath($PythonExe)
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 environment is missing: $python" }
+$packageRootText = & $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
+if ($LASTEXITCODE -ne 0) { throw 'Installed msplatform package is unavailable.' }
+$packageRoot = (Resolve-Path -LiteralPath $packageRootText).Path
 if ([string]::IsNullOrWhiteSpace($RunId)) {
   $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__analysis__python__mrtof-fixed-grid-voltage-correction'
 }
 
-$executionResources = Join-Path $repoRoot 'src/msplatform/execution/resources'
+$executionResources = Join-Path $packageRoot 'execution/resources'
 . (Join-Path $executionResources 'run_artifact_support.ps1')
 $hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path $workspaceRoot 'artifacts/common/host_resources.sqlite3' }
 $hostContext = @{workspace=$workspaceRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
@@ -68,12 +74,12 @@ if ($nativeL1 -and ($gradientSource -or $sourceCorrection)) {
 }
 $inputRoots = @($coarse, $fixed) + $(if ($nativeL1) { @($nativeL1) } else { @() }) + $(if ($gradientSource) { @($gradientSource) } else { @() }) + $(if ($sourceCorrection) { @($sourceCorrection, $secantFixed) } else { @() })
 foreach ($root in $inputRoots) {
-  & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' `
+  & $python -I -B -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' `
     (Join-Path $root 'run_manifest.json') --require-status success
   if ($LASTEXITCODE -ne 0) { throw "Input manifest failed: $root" }
 }
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot `
-  -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$projectId") `
+  -ArtifactRoot (Join-Path $artifactRoot "projects\$projectId") `
   -RunId $RunId -Project $projectId -Mode 'fixed_grid_multifidelity_voltage_correction' `
   -Software @('Python 3.11') -RetentionContractEnabled -RetentionClass compact `
   -CapacityLedgerLifecycleEnabled
@@ -88,19 +94,17 @@ $lease = $null
 $capacitySession = $null
 try {
   $capacitySession = Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
-    -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -RunDirectory $package.artifact_run_dir `
+    -ArtifactRoot ($artifactRoot) -RunDirectory $package.artifact_run_dir `
     -CommittedNewBytes 1048576 -ProtectedPaths $inputRoots `
     -Owner "mrtof-fixed-grid-voltage-correction:$RunId"
   $startupPath = Join-Path $resultDir 'artifact_capacity_gate_startup.json'
   Write-RunJson -Path $startupPath -Depth 14 -Value $capacitySession
   $contract = Copy-VerifiedRunInput `
-    -Source (Join-Path $repoRoot "src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json") `
+    -Source (Join-Path $packageRoot "components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json") `
     -Destination (Join-Path $inputDir 'simion_candidate_two_zone.json')
   $result = Join-Path $resultDir 'fixed_grid_multifidelity_voltage_correction.json'
-  Push-Location -LiteralPath $repoRoot
-  $savedPythonPath = $env:PYTHONPATH
+  Push-Location -LiteralPath $workspaceRoot
   try {
-    $env:PYTHONPATH = $repoRoot
     $arguments = @('-m', 'msplatform.workflows.mr_design.mirror_fixed_grid_voltage_correction',
       '--refinement', (Join-Path $coarse 'results\real_3d_mirror_l1_continuous_refinement.json'),
       '--family', (Join-Path $coarse 'inputs\real_3d_mirror_l0_voltage_family.json'),
@@ -139,13 +143,12 @@ try {
     }
     $lease = Enter-HostExecutionLease -Role GATE -Stage theory_compute -RunId $RunId
     $analysisLog = Join-Path $logDir 'analysis_python.log'
-    & $python @arguments *>&1 | Tee-Object -FilePath $analysisLog
+    & $python -I -B @arguments *>&1 | Tee-Object -FilePath $analysisLog
     $pythonExitCode = $LASTEXITCODE
     if ($pythonExitCode -ne 0) { throw "Fixed-grid voltage correction analysis failed; see $analysisLog" }
     Exit-HostExecutionLease -Lease $lease -Outcome success -RunId $RunId
     $lease = $null
   } finally {
-    $env:PYTHONPATH = $savedPythonPath
     Pop-Location
   }
   $value = Get-Content -LiteralPath $result -Raw | ConvertFrom-Json -Depth 40

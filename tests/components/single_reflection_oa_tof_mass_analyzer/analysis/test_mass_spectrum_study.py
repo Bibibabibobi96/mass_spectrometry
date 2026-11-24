@@ -184,10 +184,13 @@ for index,row in enumerate(rows,1):
 
     def cli(self, root: Path, run_id: str, *options: str):
         environment = self.saved_environment(root)
-        return subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-File",
+        arguments = ["pwsh", "-NoProfile", "-NonInteractive", "-File",
             str(PROJECT.parents[1] / "workflows/resources" / "run_mass_spectrum_candidate.ps1"),
             "-RunId", run_id, "-Workspace", str(root), "-ExecutionEnvironment", str(environment),
-            "-EngineeringProfile", "test", *options], cwd=REPO, capture_output=True, text=True,
+            "-EngineeringProfile", "test"]
+        if "-ResumeFinalization" not in options:
+            arguments += ["-ArtifactRootPath", str(root / "artifacts"), "-ScienceRoot", str(PROJECT)]
+        return subprocess.run([*arguments, *options], cwd=REPO, capture_output=True, text=True,
             encoding="utf-8", errors="replace", timeout=120,
             env={**os.environ, "PYTHONPATH": str(REPO / "src"),
                  "MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN": "",

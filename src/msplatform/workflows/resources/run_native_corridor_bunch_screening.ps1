@@ -16,7 +16,9 @@ param(
   [Nullable[double]]$TrajectoryStepScaleOverride=$null,
   [string]$RunId='',
   [string]$SimionExe='',
-  [string]$PythonExe=''
+  [Parameter(Mandatory)][string]$WorkspaceRoot,
+  [Parameter(Mandatory)][string]$ArtifactRoot,
+  [Parameter(Mandatory)][string]$PythonExe
 )
 
 # Candidate continuation only.  It runs one static cohort from the checkpointed
@@ -24,9 +26,13 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $projectId='parallel_mirror_dual_stripe_mr_tof'
-$repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
-$workspaceRoot=Split-Path -Parent $repoRoot
-$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
+$workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path
+$artifactWorkspaceRoot=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)
+$repoRoot=$workspaceRoot
+$python=[IO.Path]::GetFullPath($PythonExe)
+$packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
+if($LASTEXITCODE-ne0-or[string]::IsNullOrWhiteSpace([string]$packageRootText)){throw 'Installed msplatform package is unavailable.'}
+$packageRoot=(Resolve-Path -LiteralPath ([string]$packageRootText).Trim()).Path
 $workpointRun=(Resolve-Path -LiteralPath $WorkpointRunPath).Path
 $workpointConfig=Get-Content -LiteralPath (Join-Path $workpointRun 'run_config.json') -Raw|ConvertFrom-Json -AsHashtable
 $staticFieldMode=$workpointConfig.parameters.ContainsKey('corridor_field')-and$workpointConfig.parameters.corridor_field-in@('comsol_static_scalar_v','native_static_pa')
@@ -55,8 +61,8 @@ if(($requiredDiagnosticCount -eq 0 -and $CohortParticleCount -notin @(100,1000))
 }
 if([string]::IsNullOrWhiteSpace($RunId)){$RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__sim__simion__mrtof-native-corridor-bunch-screening'}
 
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
-. (Join-Path $repoRoot 'src/msplatform/backends/simion/resources/native_corridor_runtime_support.ps1')
+. (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
+. (Join-Path $packageRoot 'backends/simion/resources/native_corridor_runtime_support.ps1')
 
 function Get-VerifiedManifestOutput {
   param([Parameter(Mandatory)][string]$ManifestPath,[Parameter(Mandatory)][string]$Name)
@@ -91,7 +97,7 @@ function Assert-VerifiedManifest {
   }
   $arguments=@($ManifestPath,'--require-status',$Status,'--require-project',$Owner,'--require-mode',$Mode)
   if($ConsumedOutput){$arguments+=@('--consumer-projection-id','mrtof_static_screening_center_v1','--consumed-output',$ConsumedOutput)}
-  & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' @arguments|Out-Host
+  & $python -I -B -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' @arguments|Out-Host
   if($LASTEXITCODE-ne0){throw "Manifest verification failed: $ManifestPath"}
 }
 
@@ -249,16 +255,8 @@ if _native_static_binding_problem(actual, materialization, canonical_consumer_la
 
 function Invoke-ProjectPython {
   param([Parameter(Mandatory)][string[]]$Arguments)
-  Push-Location -LiteralPath $repoRoot
-  $savedPythonPath=$env:PYTHONPATH
-  try{
-    $env:PYTHONPATH=@(Get-RunPythonImportRoots -RepoRoot $repoRoot)-join[IO.Path]::PathSeparator
-    & $python @Arguments
-    if($LASTEXITCODE-ne0){throw "Python stage failed: $($Arguments -join ' ')"}
-  }finally{
-    $env:PYTHONPATH=$savedPythonPath
-    Pop-Location
-  }
+  & $python -I -B @Arguments
+  if($LASTEXITCODE-ne0){throw "Python stage failed: $($Arguments -join ' ')"}
 }
 
 function New-CohortRunId {
@@ -274,8 +272,8 @@ $workpointManifest=Join-Path $workpointRun 'run_manifest.json'
 $bankManifest=if($staticFieldMode){$null}else{Join-Path $bankRun 'run_manifest.json'}
 $sourceRun=Split-Path -Parent (Split-Path -Parent $sourceReceipt)
 $sourceManifest=Join-Path $sourceRun 'run_manifest.json'
-$trialRunner=Join-Path $repoRoot 'src/msplatform/workflows/resources/oa_mr.ps1'
-$artifactProjectRoot=Join-Path $workspaceRoot "artifacts\projects\$projectId"
+$trialRunner=Join-Path $packageRoot 'workflows/resources/oa_mr.ps1'
+$artifactProjectRoot=Join-Path $artifactWorkspaceRoot "projects\$projectId"
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactProjectRoot `
   -RunId $RunId -Project $projectId -Mode 'native_corridor_candidate_bunch_screening' `
   -Software @('SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass compact `
@@ -292,11 +290,11 @@ try{
     Assert-VerifiedManifest -ManifestPath $workpointManifest -Status success -Mode downstream_fixed_grid_workpoint_iteration
   }else{
   $checkpoint=Get-DeclaredManifestOutputPath -ManifestPath $workpointManifest -Name 'native_corridor_runtime_checkpoint.json'
-  & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $workpointManifest --require-status checkpoint --require-project $projectId --require-mode downstream_fixed_grid_workpoint_iteration `
+  & $python -I -B -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $workpointManifest --require-status checkpoint --require-project $projectId --require-mode downstream_fixed_grid_workpoint_iteration `
     --consumer-projection-id mrtof_native_bunch_workpoint_consumer_v1 --consumed-output $handoff --consumed-output $checkpoint|Out-Host
   if($LASTEXITCODE-ne0){throw 'Workpoint handoff/checkpoint projection failed verification.'}
   $bankPublication=Join-Path $bankRun 'results\pa_family_cache_publication.json'
-  & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $bankManifest --require-status success --require-project $projectId --require-mode native_corridor_detached_response_bank `
+  & $python -I -B -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $bankManifest --require-status success --require-project $projectId --require-mode native_corridor_detached_response_bank `
     --consumer-projection-id mrtof_native_bunch_bank_consumer_v1 --consumed-output $bankPublication|Out-Host
   if($LASTEXITCODE-ne0){throw 'Native bank publication projection failed verification.'}
   }
@@ -383,7 +381,7 @@ try{
   if([IO.Path]::GetFullPath($sourceReceiptBound)-ne$sourceReceipt){throw 'Requested source receipt is not the source manifest receipt.'}
   $configuration=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable
   $configuration.inputs=[ordered]@{}
-  $smallInputs=[ordered]@{workpoint_manifest=$workpointManifest;workpoint_handoff=$handoff;contract=$workpointContract;source_receipt=$sourceReceipt;accelerator_provider_receipt=$providerReceipt;workflow_source=$PSCommandPath}
+  $smallInputs=[ordered]@{workpoint_manifest=$workpointManifest;workpoint_handoff=$handoff;contract=$workpointContract;source_receipt=$sourceReceipt;accelerator_provider_receipt=$providerReceipt;workflow_source=(Join-Path $packageRoot 'workflows/resources/run_native_corridor_bunch_screening.ps1')}
   if($null-ne$oaComponentContract){$smallInputs.accelerator_component_contract=$oaComponentContract}
   if($mirrorVoltageVariation){$smallInputs.mirror_voltage_variation=$mirrorVoltageVariation}
   if($staticFieldMode){
@@ -404,7 +402,7 @@ try{
 
   $failureStage='capacity_startup'
   $capacitySession=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
-    -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -RunDirectory $package.artifact_run_dir `
+    -ArtifactRoot $artifactWorkspaceRoot -RunDirectory $package.artifact_run_dir `
     -CommittedNewBytes 52428800 -ProtectedPaths @(@($package.artifact_run_dir,$workpointRun,$bankRun,$sourceRun,$nativeSystemRuntimeBundlePath,$FieldBindingPath)|Where-Object{$_}) `
     -Owner "mrtof-native-corridor-bunch-screening:$RunId"
   $startup=Join-Path $package.result_dir 'artifact_capacity_gate_startup.json';Write-RunJson -Path $startup -Depth 20 -Value $capacitySession
@@ -419,7 +417,7 @@ try{
     RetainGuiWorkbench=$true
     Stripe1VoltageV=$voltages[0];Stripe2VoltageV=$voltages[1];Prism1VoltageV=$voltages[2];Prism2VoltageV=$voltages[3]
     TrajectoryProfileId=[string]$problem.trajectory_profile;TrajectoryStepScale=$(if($null-eq$trajectoryStepScale){[double]$problem.trajectory_step_scale}else{$trajectoryStepScale})
-    AcceleratorSourceYOffsetMm=[double]$problem.source_y_offset_mm;RunId=$cohortRunId;PythonExe=$python
+    AcceleratorSourceYOffsetMm=[double]$problem.source_y_offset_mm;RunId=$cohortRunId;PythonExe=$python;RepoRoot=$workspaceRoot
   }
   if($staticFieldMode){
     $cohortArguments.Remove('NativeCorridorBankRunPath')
@@ -457,7 +455,7 @@ try{
     }
     $failureStage="cohort_n$CohortParticleCount"
     & $trialRunner @cohortArguments
-    $cohortRun=Join-Path $workspaceRoot "artifacts/projects/instrument_assembly/runs/$cohortRunId";$cohortManifest=Join-Path $cohortRun 'run_manifest.json'
+    $cohortRun=Join-Path $artifactWorkspaceRoot "projects/instrument_assembly/runs/$cohortRunId";$cohortManifest=Join-Path $cohortRun 'run_manifest.json'
   }
   Assert-VerifiedManifest -ManifestPath $cohortManifest -Status 'success' -Mode 'oa_mr' -Owner instrument_assembly -ReadOnlyFlightEvidence:($null-ne$initialCohortRun)
   $cohortGate=Get-VerifiedManifestOutput -ManifestPath $cohortManifest -Name 'bunch_collection_gate.json'

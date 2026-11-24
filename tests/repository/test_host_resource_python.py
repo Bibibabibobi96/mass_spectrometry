@@ -639,6 +639,38 @@ if($null-ne(Exit-HostResourceStage -Lease $lease -PassThru)){throw 'Inherited ca
                 self.assertFalse(failure["exit_confirmed"])
                 self.assertEqual(events[-1], "release")
 
+    def test_real_scheduler_child_uses_selected_installation_not_workspace_or_pythonpath(self):
+        import base64
+        source = Path(adapter.__file__).parent / "resources" / "host_execution_lease.ps1"
+        for case in ("clean", "workspace_src", "workspace_root", "pythonpath"):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                shadow = root / {"clean": "unused", "workspace_src": "src",
+                                 "workspace_root": ".", "pythonpath": "external"}[case]
+                package = shadow / "msplatform"
+                package.mkdir(parents=True)
+                (package / "__init__.py").write_text(
+                    "raise RuntimeError('WORKSPACE_OR_PYTHONPATH_CODE_WAS_IMPORTED')\n", encoding="utf-8")
+                script = f"""
+$ErrorActionPreference='Stop'
+$context=@{{workspace={str(root)!r};python_executable={sys.executable!r};host_state_path={str(root / 'state.sqlite3')!r};policy_path={str(resource_path('host_resource_policy.json'))!r}}}
+. {str(source)!r} -HostContext $context
+function Get-HostResourceSnapshot {{return @{{complete=$true;logical_processors=4;cpu_percent=0;total_memory_bytes=32GB;available_memory_bytes=24GB;io_pressure=$false;processes=@(@{{pid=$PID;parent_pid=0;started='fixture';memory_bytes=32MB}})}}}}
+$null=Invoke-HostResourceTransaction -StatePath $context.host_state_path -Request @{{operation='status'}}
+'INSTALLED_SCHEDULER=PASS'
+"""
+                encoded = base64.b64encode(script.encode("utf-16-le")).decode()
+                environment = dict(os.environ)
+                if case == "pythonpath":
+                    environment["PYTHONPATH"] = str(shadow)
+                else:
+                    environment.pop("PYTHONPATH", None)
+                completed = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
+                                           cwd=root, env=environment, capture_output=True, timeout=30)
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertIn(b"INSTALLED_SCHEDULER=PASS", completed.stdout)
+                self.assertNotIn(b"WORKSPACE_OR_PYTHONPATH_CODE_WAS_IMPORTED", completed.stderr)
+
     def run_fixture(self, *, flags=0, task=_TASK, real_scheduler=False, **extra):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -671,7 +703,18 @@ function Get-HostResourceSnapshot {
             for key in list(environment):
                 if key.startswith("MASS_SPECTROMETRY_") or key.startswith("FIXTURE_"):
                     del environment[key]
-            host_context = {"workspace": str(root), "python_executable": str(Path(sys.executable).resolve()),
+            selected_python = Path(sys.executable).resolve()
+            if real_scheduler:
+                environment_root = root / "scheduler-python"
+                subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(environment_root)],
+                               check=True, capture_output=True, timeout=45, cwd=root)
+                selected_python = environment_root / "Scripts/python.exe"
+                installed = subprocess.run([str(selected_python), "-c",
+                    "import sysconfig; print(sysconfig.get_paths()['purelib'])"],
+                    check=True, capture_output=True, text=True, timeout=15, cwd=root).stdout.strip()
+                shutil.copytree(Path(adapter.__file__).resolve().parents[2] / "msplatform",
+                                Path(installed) / "msplatform")
+            host_context = {"workspace": str(root), "python_executable": str(selected_python),
                 "host_state_path": str(root / "state.sqlite3"),
                 "policy_path": str(resources / "host_resource_policy.json")}
             environment.update(PYTHONPATH=str(root / "src"), PYTHONIOENCODING="utf-8", FIXTURE_EVENTS=str(events),

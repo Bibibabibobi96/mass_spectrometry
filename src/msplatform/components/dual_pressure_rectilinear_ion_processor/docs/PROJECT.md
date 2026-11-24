@@ -7,6 +7,13 @@ explicitly selected IOB and common PA placeholder; the placeholder remains uncha
 preparation and functional software tests cover the moved source. This does not add IP native
 flight, collision or scientific qualification.
 
+IP preparation now freezes only the selected installed `msplatform` provider and no longer scans
+loaded modules under retired `common`/`projects` roots or queries a checkout for new source context.
+Recorded extraction comparison reads the analysis run's frozen source context instead of inferring a
+repository from the installed module. All 43 functional tests (one existing optional-tier skip), both
+detached-preparation tests and all 31 extraction-comparison tests passed without SIMION; this does not
+add native or scientific qualification.
+
 本页维护独立器件的输入、有效结论、资格和开放动作。操作见[项目入口](../README.md)与
 [SIMION说明](SIMION.md)；完整局部实验、接口迁移及实现修复见
 [文档收口里程碑](../../../../../docs/history/projects/dual_pressure_rectilinear_ion_processor/20261026__assembly-documentation-consolidation.md)。

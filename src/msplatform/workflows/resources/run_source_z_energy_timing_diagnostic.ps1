@@ -2,15 +2,22 @@
 param(
   [Parameter(Mandatory)][string]$FlightRunPath,
   [string]$RunId='',
-  [string]$PythonExe=''
+  [Parameter(Mandatory)][string]$WorkspaceRoot,
+  [Parameter(Mandatory)][string]$ArtifactRoot,
+  [Parameter(Mandatory)][string]$PythonExe
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $projectId='parallel_mirror_dual_stripe_mr_tof'
-$repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
-$workspaceRoot=Split-Path -Parent $repoRoot
-$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
+$workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path
+$repoRoot=$workspaceRoot
+$artifactRoot=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)
+$python=[IO.Path]::GetFullPath($PythonExe)
+if(-not(Test-Path -LiteralPath $python -PathType Leaf)){throw "Python 3.11 environment is missing: $python"}
+$packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
+if($LASTEXITCODE-ne0){throw 'Installed msplatform package is unavailable.'}
+$packageRoot=(Resolve-Path -LiteralPath $packageRootText).Path
 $sourceRun=(Resolve-Path -LiteralPath $FlightRunPath).Path
 $sourceManifest=Join-Path $sourceRun 'run_manifest.json'
 if(-not(Test-Path -LiteralPath $sourceManifest -PathType Leaf)){throw 'FlightRunPath has no run_manifest.json.'}
@@ -18,9 +25,9 @@ if([string]::IsNullOrWhiteSpace($RunId)){
   $RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__analysis__python__mrtof-source-z-energy-timing'
 }
 
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
+. (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
 
-$artifactProjectRoot=Join-Path $workspaceRoot "artifacts\projects\$projectId"
+$artifactProjectRoot=Join-Path $artifactRoot "projects\$projectId"
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactProjectRoot `
   -RunId $RunId -Project $projectId -Mode 'source_z_energy_timing_diagnostic' `
   -Software @('Python 3.11') -RetentionContractEnabled -RetentionClass compact `
@@ -30,7 +37,7 @@ $terminalized=$false;$failureStage='preflight';$capacitySession=$null
 try{
   $failureStage='capacity_startup'
   $capacitySession=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
-    -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -RunDirectory $package.artifact_run_dir `
+    -ArtifactRoot ($artifactRoot) -RunDirectory $package.artifact_run_dir `
     -CommittedNewBytes 8388608 -ProtectedPaths @($package.artifact_run_dir,$sourceRun) `
     -Owner "mrtof-source-z-energy-timing:$RunId"
   $startupPath=Join-Path $resultDir 'artifact_capacity_gate_startup.json'
@@ -69,16 +76,15 @@ try{
   $failureStage='analyze'
   $result=Join-Path $resultDir 'source_z_energy_timing_diagnostic.json'
   $log=Join-Path $logDir 'source_z_energy_timing_diagnostic.log'
-  Push-Location -LiteralPath $repoRoot;$saved=$env:PYTHONPATH
+  Push-Location -LiteralPath $workspaceRoot
   try{
-    $env:PYTHONPATH=$repoRoot
-    & $python -m msplatform.workflows.oa_mr.source_z_energy_timing_diagnostic `
+    & $python -I -B -m msplatform.workflows.oa_mr.source_z_energy_timing_diagnostic `
       --run-dir $sourceRun --output $result 2>&1|Tee-Object -FilePath $log
     if($LASTEXITCODE-ne 0){throw 'Source-z energy/timing analysis failed.'}
     if(-not(Test-Path -LiteralPath $log -PathType Leaf)){
       [IO.File]::WriteAllText($log,'',[Text.UTF8Encoding]::new($false))
     }
-  }finally{$env:PYTHONPATH=$saved;Pop-Location}
+  }finally{Pop-Location}
   $data=Get-Content -LiteralPath $result -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
   if($data.status-ne'candidate_diagnostic'-or$data.cohort.particle_count-ne$particleCount){
     throw 'Source-z energy/timing result is incomplete.'

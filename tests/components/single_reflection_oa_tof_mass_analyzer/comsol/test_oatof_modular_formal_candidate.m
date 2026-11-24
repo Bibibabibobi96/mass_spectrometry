@@ -1,9 +1,9 @@
 reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
 testDir = fileparts(mfilename('fullpath'));
-projectRoot = fileparts(fileparts(testDir));
-addpath(projectRoot);
-addpath(fullfile(projectRoot, 'comsol'));
-paths = oatof_paths();
+repositoryRoot = fileparts(fileparts(fileparts(fileparts(fileparts(testDir)))));
+projectRoot = fullfile(repositoryRoot,'src','msplatform','components','single_reflection_oa_tof');
+addpath(fullfile(repositoryRoot,'src','msplatform','backends','comsol','matlab'));
+paths = oatof_paths('',projectRoot);
 
 ionPath = fullfile(paths.simionFormalDir, ...
     'oatof_comsol_524amu_gaussian_N100.ion');

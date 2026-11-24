@@ -75,6 +75,9 @@ def authorized_campaign_fixture():
         yield campaign_path, campaign
 
 
+REPO_ROOT = Path(__file__).resolve().parents[4]
+
+
 class ExperimentCampaignTests(unittest.TestCase):
     def test_external_campaign_public_status_cli_keeps_request_and_authority(self):
         repo = Path(__file__).resolve().parents[4]
@@ -86,7 +89,8 @@ class ExperimentCampaignTests(unittest.TestCase):
             for path in (inside, outside):
                 actual = subprocess.run([sys.executable, "-B", "-m",
                     "msplatform.workflows.oa_tof_design.run_campaign",
-                    "--campaign", str(path), "--status"], cwd=repo, capture_output=True,
+                    "--campaign", str(path), "--status", "--artifact-root", str(Path(directory) / "artifacts"),
+                    "--science-root", str(REPO_ROOT)], cwd=repo, capture_output=True,
                     text=True, encoding="utf-8", timeout=30)
                 self.assertEqual(actual.returncode, 0, actual.stdout + actual.stderr)
                 statuses.append(json.loads(actual.stdout))
@@ -95,7 +99,8 @@ class ExperimentCampaignTests(unittest.TestCase):
             outside.write_text("{}", encoding="utf-8")
             rejected = subprocess.run([sys.executable, "-B", "-m",
                 "msplatform.workflows.oa_tof_design.run_campaign",
-                "--campaign", str(outside), "--status"], cwd=repo, capture_output=True,
+                "--campaign", str(outside), "--status", "--artifact-root", str(Path(directory) / "artifacts"),
+                    "--science-root", str(REPO_ROOT)], cwd=repo, capture_output=True,
                 text=True, encoding="utf-8", timeout=30)
             self.assertNotEqual(rejected.returncode, 0)
             self.assertEqual(inside.read_bytes(), payload)
@@ -134,7 +139,7 @@ class ExperimentCampaignTests(unittest.TestCase):
                 for key in ("document", "profile", "authorities", "axes", "request", "sha256"):
                     self.assertEqual(first[key], second[key])
                 plans = [preflight_campaign(path, "20261030_234500__test__cross__external-campaign",
-                            run_all=True, artifact_root=root/("artifact"+str(index)))
+                            run_all=True, artifact_root=root/("artifact"+str(index)), science_root=REPO_ROOT)
                          for index,path in enumerate(paths)]
                 self.assertEqual([row["experiment"] for row in plans[0]["rows"]],
                                  [row["experiment"] for row in plans[1]["rows"]])
@@ -153,7 +158,8 @@ class ExperimentCampaignTests(unittest.TestCase):
                     raise RuntimeError("software fixture stops before native")
                 with mock.patch.object(campaign_module, "preflight_campaign", return_value=plans[0]):
                     run, summary = execute_campaign(paths[0], plans[0]["campaign_run_id"], run_all=True,
-                        artifact_root=plans[0]["artifact_root"], candidate_executor=no_native_executor)
+                        artifact_root=plans[0]["artifact_root"], science_root=REPO_ROOT,
+                        candidate_executor=no_native_executor)
                 self.assertEqual(observed, [payload])
                 self.assertEqual((run/"inputs/experiment_campaign.json").read_bytes(), payload)
                 self.assertEqual(summary["status"], "failed")
@@ -175,7 +181,7 @@ class ExperimentCampaignTests(unittest.TestCase):
             stale = Path(directory) / "stale_retired_campaign.json"
             stale.write_text(json.dumps(document), encoding="utf-8")
             stale_before = stale.read_bytes()
-            status = campaign_status(stale)
+            status = campaign_status(stale, artifact_root=Path(directory))
             self.assertEqual(status["status"], "retired")
             self.assertFalse(status["execution_authorized"])
             self.assertEqual(status["science_status"], "not_evaluated")
@@ -216,7 +222,10 @@ class ExperimentCampaignTests(unittest.TestCase):
                 sys.executable,
                 "-m",
                 "msplatform.workflows.oa_tof_design.run_campaign",
+                "--campaign", str(DEFAULT_CAMPAIGN),
                 "--status",
+                "--artifact-root", str(REPO_ROOT),
+                "--science-root", str(REPO_ROOT),
             ],
             cwd=Path(__file__).resolve().parents[4],
             capture_output=True,
@@ -230,7 +239,7 @@ class ExperimentCampaignTests(unittest.TestCase):
     def test_checked_in_campaign_is_retired_after_its_completed_runs(self):
         with tempfile.TemporaryDirectory() as root:
             artifact_root = Path(root)
-            status = campaign_status(artifact_root=artifact_root)
+            status = campaign_status(DEFAULT_CAMPAIGN, artifact_root=artifact_root)
             self.assertEqual(status["status"], "retired")
             self.assertFalse(status["execution_authorized"])
             self.assertIn("campaign status is retired", status["authorization_blockers"])
@@ -245,6 +254,7 @@ class ExperimentCampaignTests(unittest.TestCase):
                     "20260802_122900__test__cross__campaign-preflight",
                     run_all=True,
                     artifact_root=artifact_root,
+                    science_root=REPO_ROOT,
                 )
 
     def test_campaign_value_outside_narrow_envelope_is_rejected(self):
@@ -321,6 +331,7 @@ class ExperimentCampaignTests(unittest.TestCase):
                     "20260731_231100__test__cross__campaign-preflight",
                     run_all=True,
                     artifact_root=Path(root),
+                    science_root=REPO_ROOT,
                 )
                 self.assertEqual(
                     [item["experiment"]["experiment_id"] for item in prepared["rows"]],
@@ -343,6 +354,7 @@ class ExperimentCampaignTests(unittest.TestCase):
                         "20260731_231150__test__cross__campaign-single-preflight",
                         experiment_id=campaign["experiments"][0]["experiment_id"],
                         artifact_root=Path(root),
+                        science_root=REPO_ROOT,
                     )
                 self.assertEqual(compiler.call_count, len(campaign["experiments"]))
                 self.assertEqual(len(prepared["rows"]), 1)
@@ -360,6 +372,7 @@ class ExperimentCampaignTests(unittest.TestCase):
                         "20260731_231200__test__cross__campaign-bad-row",
                         run_all=True,
                         artifact_root=Path(root),
+                        science_root=REPO_ROOT,
                         candidate_executor=executor,
                     )
             executor.assert_not_called()
@@ -378,6 +391,7 @@ class ExperimentCampaignTests(unittest.TestCase):
                     "20260731_231300__test__cross__campaign-serial",
                     run_all=True,
                     artifact_root=Path(root),
+                    science_root=REPO_ROOT,
                     candidate_executor=failing_executor,
                 )
                 self.assertEqual(calls, [campaign["experiments"][0]["authorized_run_id"]])

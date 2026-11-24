@@ -114,9 +114,22 @@ try {
   } finally {
     Set-Item -Path function:Invoke-HostResourceTransaction -Value $realTransaction
   }
-  $fixturePackage = Join-Path $testRoot 'msplatform/execution'
+  $fixtureEnvironment = Join-Path $testRoot 'fixture-python'
+  $fixtureBase = (& $PythonExe -c 'import sys; print(sys.base_prefix)').Trim()
+  if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $fixtureBase -PathType Container)) {
+    throw 'Could not resolve the base Python installation for the isolated scheduler fixture.'
+  }
+  New-Item -ItemType Directory -Path $fixtureEnvironment | Out-Null
+  Copy-Item -LiteralPath (Join-Path $fixtureBase 'python.exe') -Destination $fixtureEnvironment
+  Copy-Item -Path (Join-Path $fixtureBase '*.dll') -Destination $fixtureEnvironment
+  Copy-Item -LiteralPath (Join-Path $fixtureBase 'Lib') -Destination $fixtureEnvironment -Recurse
+  Copy-Item -LiteralPath (Join-Path $fixtureBase 'DLLs') -Destination $fixtureEnvironment -Recurse
+  $fixturePython = Join-Path $fixtureEnvironment 'python.exe'
+  $fixtureSite = Join-Path $fixtureEnvironment 'Lib/site-packages'
+  New-Item -ItemType Directory -Path $fixtureSite -Force | Out-Null
+  $fixturePackage = Join-Path $fixtureSite 'msplatform/execution'
   New-Item -ItemType Directory -Path $fixturePackage -Force | Out-Null
-  Set-Content -LiteralPath (Join-Path $testRoot 'msplatform/__init__.py') -Value '' -Encoding utf8
+  Set-Content -LiteralPath (Join-Path $fixtureSite 'msplatform/__init__.py') -Value '' -Encoding utf8
   Set-Content -LiteralPath (Join-Path $fixturePackage '__init__.py') -Value '' -Encoding utf8
   Set-Content -LiteralPath (Join-Path $fixturePackage 'host_resource_scheduler.py') -Encoding utf8 -Value @'
 import os,sys,time
@@ -127,7 +140,9 @@ time.sleep(0.5)
 sys.exit(23)
 '@
   $originalWorkspace = $script:HostResourceExecutionContext.workspace
+  $originalPython = $script:HostResourceExecutionContext.python_executable
   $script:HostResourceExecutionContext.workspace = $testRoot
+  $script:HostResourceExecutionContext.python_executable = $fixturePython
   try {
     $stdinError = $null
     try {
@@ -142,18 +157,17 @@ sys.exit(23)
       'The closed-pipe fixture produced unexpected stdout.'
     Assert-True ([string]$stdinError.Exception.Data['scheduler_process_stderr']-match'HOST_SCHEDULER_STDIN_CLOSED_SENTINEL') `
       'The closed-pipe path lost the scheduler stderr diagnostic.'
-  } finally { $script:HostResourceExecutionContext.workspace = $originalWorkspace }
+  } finally {
+    $script:HostResourceExecutionContext.workspace = $originalWorkspace
+    $script:HostResourceExecutionContext.python_executable = $originalPython
+  }
   Write-Output 'HOST_RESOURCE_STDIN_CLOSED_TEST=PASS EXIT=23 STDERR=CAPTURED'
 
   # This child closes stdin and stays alive until its owned stop marker or
   # finite safety deadline; no actual scheduler or host ledger is opened.
-  $basePython=(& $PythonExe -c 'import sys; print(sys._base_executable)').Trim()
-  Assert-True ($LASTEXITCODE-eq0-and(Test-Path -LiteralPath $basePython -PathType Leaf)) 'Base Python is unavailable for closed-stdin fixture.'
   $stallRoot=Join-Path $testRoot 'stdin-stall'
-  $stallPackage=Join-Path $stallRoot 'msplatform/execution'
-  New-Item -ItemType Directory -Path $stallPackage -Force | Out-Null
-  [IO.File]::WriteAllText((Join-Path $stallRoot 'msplatform/__init__.py'),'')
-  [IO.File]::WriteAllText((Join-Path $stallPackage '__init__.py'),'')
+  $stallPackage=$fixturePackage
+  New-Item -ItemType Directory -Path $stallRoot -Force | Out-Null
   [IO.File]::WriteAllText((Join-Path $stallPackage 'host_resource_scheduler.py'), @"
 import ctypes,json,os,pathlib,sys,time
 from ctypes import wintypes
@@ -164,7 +178,7 @@ created,exited,kernel_time,user_time=(wintypes.FILETIME() for _ in range(4))
 if not kernel.GetProcessTimes(kernel.GetCurrentProcess(),ctypes.byref(created),ctypes.byref(exited),ctypes.byref(kernel_time),ctypes.byref(user_time)):
     raise ctypes.WinError(ctypes.get_last_error())
 ticks=(created.dwHighDateTime<<32)+created.dwLowDateTime+504911232000000000
-root=pathlib.Path(__file__).resolve().parents[2]
+root=pathlib.Path(r'$($stallRoot)')
 (root/'child-identity.json').write_text(json.dumps({'pid':os.getpid(),'started_ticks':str(ticks)}),encoding='utf-8')
 os.close(0)
 (root/'child-ready').write_text('closed', encoding='utf-8')
@@ -179,7 +193,7 @@ sys.exit(23)
   $stallState=Join-Path $stallRoot 'never-created.sqlite3'
   try {
     $script:HostResourceExecutionContext.workspace=$stallRoot
-    $script:HostResourceExecutionContext.python_executable=$basePython
+    $script:HostResourceExecutionContext.python_executable=$fixturePython
     function Get-HostResourceSnapshot {
       param([Diagnostics.Stopwatch]$WaitTimer=$null,[double]$WaitTimeoutSeconds=0)
       return @{processes=@(@{pid=$PID;started='fixture'});complete=$true;padding=('X'*2000000)}

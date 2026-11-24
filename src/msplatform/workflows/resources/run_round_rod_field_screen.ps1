@@ -2,14 +2,20 @@
 param(
   [Parameter(Mandatory = $true)][string]$ProjectId,
   [Parameter(Mandatory = $true)][string]$DesignProfileId,
-  [string]$RunId = ''
+  [string]$RunId = '',
+  [string]$ArtifactRootPath = '',
+  [string]$PythonExe = ''
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../../..')).Path
-$workspaceRoot = Split-Path -Parent $repoRoot
-$python = if ($env:SIMULATION_PYTHON_EXE) { $env:SIMULATION_PYTHON_EXE } else { throw 'Explicit SIMULATION_PYTHON_EXE is required' }
+$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } elseif ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) } else { throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required' }
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
+$pathArguments = @{SourceRoot = $repoRoot; Python = $python}
+if ($ArtifactRootPath) {$pathArguments.ArtifactRoot = $ArtifactRootPath}
+$workspacePaths = Resolve-WorkspacePaths @pathArguments
+$artifactProjectsRoot = Join-Path $workspacePaths.artifact_root 'projects'
 if ($ProjectId -ne 'rf_multipole_ion_optics' -or $DesignProfileId -notin @('hexapole_no_acceleration_full_length','octupole_no_acceleration_full_length')) {
   throw 'L2 field screen only supports the registered hexapole/octupole no-acceleration baseline designs.'
 }
@@ -17,7 +23,7 @@ $registryPreflight = Get-Content -LiteralPath (Join-Path $repoRoot 'config\proje
 $projectMatches = @($registryPreflight.projects | Where-Object { [string]$_.project_id -eq $ProjectId })
 if ($projectMatches.Count -ne 1) { throw "ProjectId is not unique in the canonical project registry: $ProjectId" }
 & $python -I -B -m msplatform.execution.artifact_project `
-  --artifact-projects-root (Join-Path $workspaceRoot 'artifacts\projects') --project-id $ProjectId
+  --artifact-projects-root $artifactProjectsRoot --project-id $ProjectId
 if ($LASTEXITCODE -ne 0) { throw 'Multipole artifact project initialization failed.' }
 if ([string]::IsNullOrWhiteSpace($RunId)) {
   $taskLabel = $ProjectId.Replace('_','-') + '-' + $DesignProfileId + '-round-rod-screen'
@@ -26,19 +32,16 @@ if ([string]::IsNullOrWhiteSpace($RunId)) {
 & $python -m msplatform.execution.artifact_naming run $RunId
 if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
 
-$runDir = Join-Path $workspaceRoot "artifacts\projects\$ProjectId\runs\$RunId"
+$runDir = Join-Path $artifactProjectsRoot "$ProjectId\runs\$RunId"
 if (Test-Path -LiteralPath $runDir) { throw "Run already exists: $runDir" }
 $inputDir = Join-Path $runDir 'inputs'
 $resultDir = Join-Path $runDir 'results'
 $logDir = Join-Path $runDir 'logs'
 New-Item -ItemType Directory -Force -Path $inputDir,$resultDir,$logDir | Out-Null
 $profileResolution = Join-Path $inputDir 'design_profile_resolution.json'
-$env:PYTHONPATH = $repoRoot
-try {
-  & $python -m msplatform.workflows.rf_design_profiles --repo-root $repoRoot --project-id $ProjectId `
-    --design-profile-id $DesignProfileId --output $profileResolution
-  if ($LASTEXITCODE -ne 0) { throw 'Governed design profile resolution failed.' }
-} finally { Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue }
+& $python -m msplatform.workflows.rf_design_profiles --repo-root $repoRoot --project-id $ProjectId `
+  --design-profile-id $DesignProfileId --output $profileResolution
+if ($LASTEXITCODE -ne 0) { throw 'Governed design profile resolution failed.' }
 $profile = Get-Content -LiteralPath $profileResolution -Raw -Encoding UTF8 | ConvertFrom-Json
 $identity = $profile.profile.identity
 $projectRootPath = [string]$profile.project_root
@@ -57,14 +60,13 @@ Copy-Item -LiteralPath $profile.paths.optimization_envelope -Destination $envelo
 $resolved = Join-Path $inputDir 'multipole_resolved_design.json'
 Push-Location $repoRoot
 try {
-  $env:PYTHONPATH = $repoRoot
   & $python -m msplatform.components.rf_multipole.design_request_files --request $request `
     --design-variables $variables --optimization-envelope $envelope --output $resolved `
     --provenance-root $inputDir --project-id $ProjectId `
     --radial-order-n ([int]$identity.radial_order_n) `
     --electrode-count ([int]$identity.electrode_count)
   if ($LASTEXITCODE -ne 0) { throw 'Governed multipole design compilation failed.' }
-} finally { Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue; Pop-Location }
+} finally { Pop-Location }
 $design = Get-Content -LiteralPath $resolved -Raw -Encoding UTF8 | ConvertFrom-Json
 $resolvedHash = [string]$design.resolved_sha256
 $contract = Join-Path $inputDir 'round_rod_field_screen.json'

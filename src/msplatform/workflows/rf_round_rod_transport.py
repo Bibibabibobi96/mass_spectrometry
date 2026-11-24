@@ -16,7 +16,7 @@ from msplatform.io.manifest_records import record_path
 from msplatform.io.manifest_records import verified_successful_run_reference
 from msplatform.execution.retention import verify_record
 from msplatform.analysis.analyze_round_rod_screen import analyze
-from msplatform.workflows.rf_transport_artifacts import ARTIFACT_PROJECTS_ROOT, transport_run
+from msplatform.workflows.rf_transport_artifacts import ARTIFACT_PROJECTS_ROOT, REPO_ROOT, transport_run
 from msplatform.components.rf_multipole import ideal_transport
 from msplatform.workflows.rf_design_profiles import resolve_design_profile
 
@@ -76,9 +76,12 @@ def _validated_selected_samples(rows: list[dict[str, str]], contract: dict, desi
     return selected
 
 
-def _load_source(project_id: str, source_run_id: str, *, expected_design: dict) -> tuple[Path, dict, list[dict[str, str]]]:
+def _load_source(project_id: str, source_run_id: str, *, expected_design: dict,
+                 artifact_projects_root: Path | None = None) -> tuple[Path, dict, list[dict[str, str]]]:
     validate_run_id(source_run_id)
-    source_dir = ARTIFACT_PROJECTS_ROOT / project_id / "runs" / source_run_id
+    if artifact_projects_root is None:
+        artifact_projects_root = ARTIFACT_PROJECTS_ROOT
+    source_dir = artifact_projects_root / project_id / "runs" / source_run_id
     manifest = json.loads((source_dir / "run_manifest.json").read_text(encoding="utf-8-sig"))
     if (manifest.get("status") != "success" or manifest.get("project") != project_id
             or manifest.get("mode") != "round_rod_field_screen" or manifest.get("run_id") != source_run_id):
@@ -132,14 +135,19 @@ def _verify_frozen_source(frozen: dict[str, Path], source_dir: Path, initial_man
         verify_record(name, {**records[0], "path": str(frozen[name])})
 
 
-def execute(project_root: Path, source_run_id: str, run_id: str, *, design_profile_id: str) -> Path:
+def execute(project_root: Path, source_run_id: str, run_id: str, *, design_profile_id: str,
+            repository_root: Path = REPO_ROOT,
+            artifact_projects_root: Path | None = None) -> Path:
     validate_run_id(run_id)
+    if artifact_projects_root is None:
+        artifact_projects_root = ARTIFACT_PROJECTS_ROOT
     project_id = json.loads((project_root / "config/project.json").read_text(encoding="utf-8"))["project_id"]
-    selection = resolve_design_profile(Path(__file__).resolve().parents[3], project_id, design_profile_id)
-    source_manifest = ARTIFACT_PROJECTS_ROOT / project_id / "runs" / source_run_id / "run_manifest.json"
+    selection = resolve_design_profile(repository_root, project_id, design_profile_id)
+    source_manifest = artifact_projects_root / project_id / "runs" / source_run_id / "run_manifest.json"
     initial_manifest = json.loads(source_manifest.read_text(encoding="utf-8-sig"))
     source_dir, screen_contract, screen_rows = _load_source(
         project_id, source_run_id, expected_design=selection["resolved_design"],
+        artifact_projects_root=artifact_projects_root,
     )
     with transport_run(
         project_root, run_id, design_profile_id=design_profile_id, mode="round_rod_no_collision",
@@ -155,6 +163,7 @@ def execute(project_root: Path, source_run_id: str, run_id: str, *, design_profi
             "field_screen_analysis": Path(__file__).resolve().parents[1] / "analysis" / "analyze_round_rod_screen.py",
         },
         output_names=("round_rod_transport_metrics.json", "particle_events.csv", "transport_comparison.png"),
+        repository_root=repository_root, artifact_projects_root=artifact_projects_root,
     ) as run:
         frozen = run.frozen_identity
         _verify_frozen_source(frozen, source_dir, initial_manifest)
@@ -185,6 +194,8 @@ def execute(project_root: Path, source_run_id: str, run_id: str, *, design_profi
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-root", required=True, type=Path)
+    parser.add_argument("--repository-root", required=True, type=Path)
+    parser.add_argument("--artifact-projects-root", required=True, type=Path)
     parser.add_argument("--field-screen-run-id", required=True)
     parser.add_argument("--run-id")
     parser.add_argument("--design-profile-id", required=True)
@@ -192,7 +203,12 @@ def main() -> None:
     project_root = args.project_root.resolve()
     project_label = project_root.name.replace("_", "-")
     run_id = args.run_id or datetime.now().strftime("%Y%m%d_%H%M%S") + f"__sim__python__{project_label}-round-rod__l2-n100"
-    execute(project_root, args.field_screen_run_id, run_id, design_profile_id=args.design_profile_id)
+    execute(
+        project_root, args.field_screen_run_id, run_id,
+        design_profile_id=args.design_profile_id,
+        repository_root=args.repository_root.resolve(),
+        artifact_projects_root=args.artifact_projects_root.resolve(),
+    )
 
 
 if __name__ == "__main__":

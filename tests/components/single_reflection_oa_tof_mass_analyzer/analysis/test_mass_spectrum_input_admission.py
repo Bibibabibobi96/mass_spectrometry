@@ -2,6 +2,7 @@
 
 from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
 from pathlib import Path
+import atexit
 import hashlib
 import json
 import csv
@@ -62,7 +63,7 @@ def _configure_original_cli(command, *args, **kwargs):
             execution_root=env.get('MASS_SPECTROMETRY_EXECUTION_ROOT', str(root/'execution')),
             capacity_policy_path=str(fixture/'src/msplatform/execution/resources/artifact_capacity_policy.json')),
         profiles=dict(test=dict(stage_policy_path=str(stage))))), encoding='utf-8')
-    (fixture/'sitecustomize.py').write_text(r'''
+    sitecustomize = r'''
 import csv,hashlib,json,os
 from pathlib import Path
 from msplatform.execution.run_session import RunSession
@@ -170,11 +171,43 @@ if os.environ.get('TEST_MASS_FINALIZATION_SENTINEL'):
     from msplatform.execution import owner
     def _held(*args,**kwargs):raise RuntimeError(os.environ['TEST_MASS_FINALIZATION_SENTINEL'])
     owner._finalize=_held
-''', encoding='utf-8')
-    env['PYTHONPATH'] = os.pathsep.join((str(fixture), str(fixture/'src')))
+'''
+    scoped = "import sys\nif '--code-root' not in sys.argv:\n" + '\n'.join(
+        '    '+line for line in sitecustomize.splitlines())+'\n'
+    (fixture/'sitecustomize.py').write_text(scoped, encoding='utf-8')
+    isolated_root = root
+    if len(str(root/'fixture-python')) > 180:
+        isolated_root = Path(tempfile.mkdtemp(prefix='oa-fixture-python-'))
+        atexit.register(shutil.rmtree, isolated_root, ignore_errors=True)
+    isolated_python = isolated_root/'fixture-python'
+    if not isolated_python.exists():
+        _SUBPROCESS_RUN([sys.executable, '-B', '-m', 'venv', '--system-site-packages',
+                         str(isolated_python)], check=True, capture_output=True)
+        selected = isolated_python/('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
+        purelib = Path(_SUBPROCESS_RUN([str(selected), '-I', '-B', '-c',
+            'import sysconfig;print(sysconfig.get_paths()["purelib"])'], check=True,
+            capture_output=True, text=True).stdout.strip())
+        import sysconfig
+        selected_packages = Path(sysconfig.get_paths()['purelib'])
+        shutil.copytree(selected_packages, purelib, dirs_exist_ok=True,
+                        ignore=shutil.ignore_patterns('msplatform', '__pycache__', '*.pth'))
+        (purelib/'oa_test_fixture.pth').write_text(
+            os.linesep.join((str(fixture), str(fixture/'src')))+os.linesep, encoding='utf-8')
+    else:
+        selected = isolated_python/('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
+    deployment = json.loads(environment_path.read_text(encoding='utf-8'))
+    deployment['tools']['python'] = str(selected)
+    environment_path.write_text(json.dumps(deployment), encoding='utf-8')
+    env.pop('PYTHONPATH', None)
+    env['SIMULATION_PYTHON_EXE'] = str(selected)
     env['PYTHONDONTWRITEBYTECODE'] = '1'
+    if '-PythonExe' in command:
+        command[command.index('-PythonExe')+1] = str(selected)
     command += ['-Workspace', str(root), '-ExecutionEnvironment', str(environment_path),
                 '-EngineeringProfile', 'test']
+    if not any(option in command for option in ('-ReanalyzeOnly', '-ResumeFinalization')):
+        command += ['-ArtifactRootPath', str(artifacts),
+                    '-ScienceRoot', str(fixture/'src/msplatform/components/single_reflection_oa_tof')]
     completed = _SUBPROCESS_RUN(command, *args, **kwargs)
     if completed.stderr is not None:
         completed.stderr += f"\nTEST_DEPLOYMENT={root}; HOST={env['MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH']}"
@@ -1179,8 +1212,10 @@ $result=Get-Content -LiteralPath $configFile -Raw|ConvertFrom-Json -AsHashtable
 if($result.schema_version-ne2-or$result.package_sentinel-cne'keep'-or$result.paths.execution_root-cne$original.execution_root-or$result.paths.host_resource_state_path-cne$original.host_resource_state_path-or$result.capacity_ledger_lifecycle.artifact_root-cne$result.paths.artifact_root-or$result.inputs.science-cne'source-record'){throw 'Final scientific publication discarded package identity'}
 'WORKSPACE_PUBLICATION=PASS'
 ''', encoding='utf-8', newline='\n')
+            ideal_environment = dict(os.environ)
+            ideal_environment.pop('MASS_SPECTROMETRY_HOST_CONTEXT_JSON', None)
             ideal = _run_cli(['pwsh','-NoProfile','-File',str(script),str(REPO),sys.executable,str(root)],
-                cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=60)
+                cwd=root, env=ideal_environment, capture_output=True, text=True, encoding='utf-8', timeout=60)
             self.assertEqual(ideal.returncode, 0, ideal.stdout+ideal.stderr)
             self.assertIn('WORKSPACE_PUBLICATION=PASS', ideal.stdout)
 

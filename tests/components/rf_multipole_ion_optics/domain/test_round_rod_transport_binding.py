@@ -85,3 +85,16 @@ class RoundRodBindingTest(unittest.TestCase):
                 samples.write_text('tampered', encoding='utf-8')
                 with self.assertRaises((ValueError, AssertionError)):
                     run_round_rod_transport._load_source(project, run_id, expected_design=design)
+
+                write_rows(rows)
+                result_dir = run_round_rod_transport.execute(
+                    PROJECT,
+                    run_id,
+                    "20260729_120002__test__python__explicit-installed-roots",
+                    design_profile_id="hexapole_no_acceleration_full_length",
+                    repository_root=ROOT,
+                    artifact_projects_root=root,
+                )
+                self.assertEqual(result_dir, root / project / "runs" / result_dir.name)
+                manifest = json.loads((result_dir / "run_manifest.json").read_text(encoding="utf-8-sig"))
+                self.assertEqual(manifest["status"], "success")

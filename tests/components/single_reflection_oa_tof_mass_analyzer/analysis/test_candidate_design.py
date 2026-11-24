@@ -268,13 +268,11 @@ class CandidateDesignTests(CandidateFixtures, unittest.TestCase):
         self.assertNotIn("resolve_code_root", source)
         self.assertNotIn(".venv", source)
         self.assertIn("OATOF_CANDIDATE_PYTHON_EXECUTABLE", source)
-        self.assertIn("setenv('PYTHONPATH', moduleRoot)", source)
-        self.assertIn("[moduleRoot pathsep previousPythonPath]", source)
-        self.assertIn("setenv('PYTHONPATH'", source)
-        self.assertIn("setenv('PYTHONDONTWRITEBYTECODE', '1')", source)
-        self.assertIn("-B -m msplatform.exporters.solidworks.import_step_to_solidworks", source)
-        self.assertIn("cleanupPythonPath", source)
-        self.assertIn("cleanupBytecodePolicy", source)
+        self.assertNotIn("PYTHONPATH", source)
+        self.assertNotIn("setenv(", source)
+        self.assertIn("sys.path.insert(0,", source)
+        self.assertIn("-I -B -c", source)
+        self.assertIn("runpy.run_module", source)
 
         with tempfile.TemporaryDirectory() as root:
             code_root = Path(root) / "frozen_code"
@@ -296,14 +294,13 @@ class CandidateDesignTests(CandidateFixtures, unittest.TestCase):
             environment = dict(os.environ)
             environment["PYTHONPATH"] = str(code_root / "src")
             environment["PYTHONDONTWRITEBYTECODE"] = "1"
+            loader = (
+                "import runpy,sys;sys.path.insert(0,"
+                + json.dumps(str(code_root / "src"))
+                + ");runpy.run_module('msplatform.exporters.solidworks.import_step_to_solidworks',run_name='__main__')"
+            )
             result = subprocess.run(
-                [
-                    sys.executable,
-                    "-B",
-                    "-m",
-                    "msplatform.exporters.solidworks.import_step_to_solidworks",
-                    "--help",
-                ],
+                [sys.executable, "-I", "-B", "-c", loader, "--help"],
                 cwd=working_directory,
                 env=environment,
                 capture_output=True,
@@ -326,6 +323,7 @@ class CandidateDesignTests(CandidateFixtures, unittest.TestCase):
             environment["PYTHONNOUSERSITE"] = "1"
             program = (
                 "import sys; from pathlib import Path; "
+                "sys.path.insert(0, sys.argv[2]); "
                 "from msplatform.exporters.solidworks import import_step_to_solidworks as bridge; "
                 "expected = Path(sys.argv[1]).resolve(); "
                 "actual = Path(bridge.__file__).resolve(); "
@@ -333,7 +331,8 @@ class CandidateDesignTests(CandidateFixtures, unittest.TestCase):
                 "print('SOLIDWORKS_FROZEN_MODULE=' + str(actual))"
             )
             loaded = subprocess.run(
-                [sys.executable, "-B", "-c", program, str(solidworks / "import_step_to_solidworks.py")],
+                [sys.executable, "-I", "-B", "-c", program,
+                 str(solidworks / "import_step_to_solidworks.py"), str(code_root / "src")],
                 cwd=working_directory,
                 env=environment,
                 capture_output=True,

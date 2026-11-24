@@ -15,7 +15,6 @@ import math
 from importlib.resources import files
 from pathlib import Path
 import shutil
-import sys
 
 from msplatform.contracts.particle_count_policy import load_particle_count_policy, POLICY_PATH
 from msplatform.execution.inputs import enumerate_python_sources, freeze_file
@@ -136,14 +135,14 @@ def read_source(path: Path, census_path: Path) -> tuple[list, list]:
     return source,census
 
 
-def freeze_code(repo: Path, inputs: Path) -> None:
-    """Freeze selected canonical bytes plus the actually loaded research closure.
+def installed_resource(relative: str) -> Path:
+    """Resolve one resource only from the selected installed/frozen provider."""
+    provider = Path(str(files("msplatform"))).resolve(strict=True)
+    return provider / Path(relative).relative_to("src/msplatform")
 
-    An ordinary installation may live outside the research checkout. Its source
-    and policies retain the existing logical src/msplatform snapshot layout.
-    Missing selected inputs never fall back to a checkout copy.
-    """
-    repo = repo.resolve(strict=True)
+
+def freeze_code(inputs: Path) -> None:
+    """Freeze selected canonical sources and policies from the active provider."""
     provider = Path(str(files("msplatform"))).resolve(strict=True)
     provider_parent = provider.parent
     canonical = set(enumerate_python_sources(
@@ -162,24 +161,6 @@ def freeze_code(repo: Path, inputs: Path) -> None:
         if not source.is_relative_to(provider):
             raise ValueError("Execution policy escapes the selected canonical provider")
         sources["src/msplatform/" + source.relative_to(provider).as_posix()] = source
-    loaded = set()
-    for module in tuple(sys.modules.values()):
-        value=getattr(module,"__file__",None)
-        if not value:
-            continue
-        path=Path(value).resolve()
-        if path.suffix!=".py" or repo not in path.parents:
-            continue
-        relative=path.relative_to(repo)
-        if relative.parts[0] not in {"common","projects"}:
-            continue
-        if (path.name.startswith("test_") or path.name.endswith("_test.py")
-                or {"tests", "test_support", "testing_support", "history"}.intersection(relative.parts)):
-            continue
-        loaded.add(relative.as_posix())
-    if loaded:
-        for relative in enumerate_python_sources(repo, module_paths=sorted(loaded)):
-            sources[relative] = repo / relative
     for relative, source in sorted(sources.items()):
         destination=inputs/"code"/relative
         destination.parent.mkdir(parents=True,exist_ok=True)
@@ -387,7 +368,7 @@ def _contour_source_tables(case: dict, registration: dict) -> tuple[list[dict], 
 
 
 def _contour_geometry_and_voltage(case: dict, registration: dict, geometry: dict,
-                                  inputs: Path, lua_executable: Path, repo: Path) -> tuple[dict, dict]:
+                                  inputs: Path, lua_executable: Path) -> tuple[dict, dict]:
     """Project exact native CSG and evaluate the unchanged sole Lua voltage schedule."""
     import copy
     from msplatform.contracts.particle_physics import kinetic_energy_ev
@@ -405,9 +386,10 @@ def _contour_geometry_and_voltage(case: dict, registration: dict, geometry: dict
     for source_relative, current_relative in (
             ("simion/native_drive.lua", "src/msplatform/backends/simion/resources/native_drive.lua"),
             ("simion/voltage_waveforms.lua", "src/msplatform/backends/simion/resources/voltage_waveforms.lua")):
-        if file_record(inputs / source_relative)["sha256"] != file_record(repo / current_relative)["sha256"]:
+        if file_record(inputs / source_relative)["sha256"] != file_record(installed_resource(current_relative))["sha256"]:
             raise ValueError("current native voltage schedule differs from frozen source schedule: " + source_relative)
-    shutil.copyfile(repo / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/config/ion_processor_dependency.json",
+    shutil.copyfile(installed_resource(
+        "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/config/ion_processor_dependency.json"),
                     inputs / "accelerator_dependency.json")
     mass = model["source"]["species"]["mass_amu"]
     charge = model["source"]["species"]["charge_state"]
@@ -442,7 +424,7 @@ def _collision_config(contract: dict, geometry: dict) -> dict:
                 lens_electrodes=geometry.get("geometry", geometry).get("lens_electrodes", []))
 
 
-def _materialize_contour_case(run: Path, repo: Path, index: int, row: dict, prepared: dict,
+def _materialize_contour_case(run: Path, index: int, row: dict, prepared: dict,
                               source: list[dict], census: list[dict], model: dict, contract: dict,
                               field_path: Path) -> dict:
     """Write one complete local vendor case; no solver is invoked here."""
@@ -476,7 +458,7 @@ def _materialize_contour_case(run: Path, repo: Path, index: int, row: dict, prep
     write_json(folder/"source_states.json", states)
     (folder/"local.fly2").write_text(render_standard_beams(beams), encoding="utf-8", newline="\n")
     for original, target in (("ip_prism_local.lua", "local.lua"), ("run_ip_prism_local_case.lua", "run_case.lua"), ("ip_prism_lens_contact.lua", "lens_contact.lua")):
-        shutil.copyfile(repo/"src/msplatform/backends/simion/resources"/original, folder/target)
+        shutil.copyfile(installed_resource("src/msplatform/backends/simion/resources")/original, folder/target)
     return dict(row, directory=str(folder), script=str(folder/"run_case.lua"), exit_z_mm=prepared["exit_z_mm"],
                 delta_z_mm=prepared["delta_z_mm"], gap_mm=prepared["gap_mm"], source_count=len(source), mother_count=len(census),
                 sample_interval_us=numerics["sample_interval_us"], source_epoch_us=epoch,
@@ -586,15 +568,14 @@ def prepare_contour_study(run: Path, contract_path: Path) -> dict:
     contract = read_json(contract_path)
     validate_contour_contract(contract)
     run = run.resolve()
-    repo = Path(__file__).resolve().parents[4]
     inputs = run / "inputs"
     shutil.copyfile(contract_path, inputs/"experiment_contract.json")
     refs = freeze_references(contract, inputs)
     geometry, authority = (read_json(refs[k]) for k in ("geometry", "voltages"))
     prism_voltage = authority["analyzer_electrode_voltages_v"][15]
-    seed = repo/"src/msplatform/backends/simion/resources/1_instance_seed.iob"
+    seed = installed_resource("src/msplatform/backends/simion/resources/1_instance_seed.iob")
     shutil.copyfile(seed, inputs/"workbench_seed.iob")
-    shutil.copyfile(repo/"src/msplatform/backends/simion/resources/iob_seed_placeholder_01.pa0", inputs/"iob_seed_placeholder_01.pa0")
+    shutil.copyfile(installed_resource("src/msplatform/backends/simion/resources/iob_seed_placeholder_01.pa0"), inputs/"iob_seed_placeholder_01.pa0")
     source_cache, fields, field_paths, pending = {}, {}, {}, []
     reused, reuse_cache, reuse_paths = {}, {}, {}
     policy = load_particle_count_policy()
@@ -607,7 +588,7 @@ def prepare_contour_study(run: Path, contract_path: Path) -> dict:
             if len(census) != policy["functional_check_count"]:
                 raise ValueError("contour study requires the complete functional mother cohort")
             local, projection = _contour_geometry_and_voltage(case, contract["source_registration"], geometry,
-                                 destination, Path(contract["plain_lua_executable"]), repo)
+                                 destination, Path(contract["plain_lua_executable"]))
             source_cache[source_run] = (case, source, census, local, projection)
         case, source, census, local, projection = source_cache[source_run]
         prepared = prepare_geometry(local, projection["values_v15"], prism_voltage, row["distance_mm"],
@@ -642,7 +623,7 @@ def prepare_contour_study(run: Path, contract_path: Path) -> dict:
         # A private inventory directory keeps every associated surface adjacent.
         reuse_paths.setdefault(key,field_paths[field_id].parent/"field"/Path(source_field["source_field_path"]).name)
         field_paths[field_id] = reuse_paths[key]
-    cases = [_materialize_contour_case(run, repo, index, row, prepared, source, census, model, contract,
+    cases = [_materialize_contour_case(run, index, row, prepared, source, census, model, contract,
                                      field_paths[row["field_case_id"]])
              for index, row, prepared, source, census, model in pending]
     build_owners = {}
@@ -674,7 +655,7 @@ def prepare_contour_study(run: Path, contract_path: Path) -> dict:
                              field_loading_policy_id="one_ordinary_static_pa_per_field_owner")
         resource_scheduler.plan_simion_dispatch(build_request, [])
         write_json(inputs/"simion_build_dispatch_request.json", build_request)
-    freeze_code(repo, inputs)
+    freeze_code(inputs)
     config = read_json(run/"run_config.json")
     config["inputs"] = {str(p.relative_to(run)): str(p) for root in (inputs, run/"simion") for p in root.rglob("*") if p.is_file()}
     config["parameters"] = dict(workflow="ip_prism_contour_focus_study", claim=contract["claim"],
@@ -746,7 +727,7 @@ def prepare(run: Path, contract_path: Path) -> dict:
         from msplatform.workflows.mr_design.ip_prism_aperture_diagnostics import prepare_aperture_comparison
         run = run.resolve()
         result = prepare_aperture_comparison(run, contract_path)
-        freeze_code(Path(__file__).resolve().parents[4], run/"inputs")
+        freeze_code(run/"inputs")
         config = read_json(run/"run_config.json")
         config["inputs"] = {str(p.relative_to(run)):str(p) for p in (run/"inputs").rglob("*") if p.is_file()}
         config["parameters"] = dict(workflow="ip_prism_recorded_aperture_comparison",
@@ -766,7 +747,7 @@ def prepare(run: Path, contract_path: Path) -> dict:
     assert artifact_retention and run_capacity_lifecycle
     assert resource_profile.PROFILE_ROLE and resource_scheduler.RESOURCE_IDENTITY_KEYS and particle_batching
     contract=read_json(contract_path);validate_contract(contract)
-    run=run.resolve();inputs=run/"inputs";repo=Path(__file__).resolve().parents[4]
+    run=run.resolve();inputs=run/"inputs"
     shutil.copyfile(contract_path,inputs/"experiment_contract.json")
     refs=freeze_references(contract,inputs)
     source,census=read_source(refs["component_particle_state"],refs["source_census"])
@@ -778,9 +759,9 @@ def prepare(run: Path, contract_path: Path) -> dict:
     epoch=min(float(r["instrument_time_us"]) for r in source)
     ip_voltage=[next(v["voltage_v"] for v in authority["component_voltages_v"] if v["component_namespace"]=="ion_processor" and v["component_electrode_id"]==k) for k in range(1,16)]
     prism_voltage=authority["analyzer_electrode_voltages_v"][15]
-    seed=repo/"src/msplatform/backends/simion/resources/1_instance_seed.iob"
+    seed=installed_resource("src/msplatform/backends/simion/resources/1_instance_seed.iob")
     shutil.copyfile(seed,inputs/"workbench_seed.iob")
-    shutil.copyfile(repo/"src/msplatform/backends/simion/resources/iob_seed_placeholder_01.pa0",inputs/"iob_seed_placeholder_01.pa0")
+    shutil.copyfile(installed_resource("src/msplatform/backends/simion/resources/iob_seed_placeholder_01.pa0"),inputs/"iob_seed_placeholder_01.pa0")
     cases=[]
     for index,distance in enumerate(contract["distances_mm"],1):
         prepared=prepare_geometry(geometry,ip_voltage,prism_voltage,distance,contract["numerics"]["box_mm"],contract["numerics"]["pitch_mm"],contract["numerics"]["convergence_v"])
@@ -807,7 +788,7 @@ def prepare(run: Path, contract_path: Path) -> dict:
         write_json(folder/"source_states.json",states)
         (folder/"local.fly2").write_text(render_standard_beams(beams),encoding="utf-8")
         for original,target in (("ip_prism_local.lua","local.lua"),("run_ip_prism_local_case.lua","run_case.lua"),("ip_prism_lens_contact.lua","lens_contact.lua")):
-            shutil.copyfile(repo/"src/msplatform/backends/simion/resources"/original,folder/target)
+            shutil.copyfile(installed_resource("src/msplatform/backends/simion/resources")/original,folder/target)
         cases.append(dict(case_id=config["case_id"],distance_mm=distance,directory=str(folder),script=str(folder/"run_case.lua"),
                           exit_z_mm=prepared["exit_z_mm"],delta_z_mm=prepared["delta_z_mm"],gap_mm=prepared["gap_mm"]))
     resolved=dict(schema_version=1,role="resolved_ip_prism_distance_study",contract=contract,cases=cases,
@@ -823,7 +804,7 @@ def prepare(run: Path, contract_path: Path) -> dict:
                  case_input_sha256=hashlib.sha256(json.dumps(resolved,sort_keys=True).encode()).hexdigest().upper())
     resource_scheduler.plan_simion_dispatch(request,[])
     write_json(inputs/"simion_dispatch_request.json",request)
-    freeze_code(repo,inputs)
+    freeze_code(inputs)
     config=read_json(run/"run_config.json")
     config["inputs"]={str(path.relative_to(run)).replace("/","_"):str(path) for root in (inputs,run/"simion") for path in root.rglob("*") if path.is_file()}
     config["parameters"]={"workflow":"ip_prism_distance_study","claim":contract["claim"],"gui_executed":False,"full_analyzer_flight_executed":False}
@@ -885,7 +866,6 @@ def prepare_replay_package(run: Path, contract_path: Path) -> dict:
     validate_replay_contract(contract)
     run = run.resolve()
     inputs = run/"inputs"
-    repo = Path(__file__).resolve().parents[4]
     shutil.copyfile(contract_path, inputs/"experiment_contract.json")
     pending, bindings = [], []
     native_stages = {}
@@ -948,8 +928,8 @@ def prepare_replay_package(run: Path, contract_path: Path) -> dict:
                              producer_status=read_json(owner/"run_manifest.json")["status"],
                              payload_source=str(field.parent), payload_inventory=inventory))
         pending.append((case, resolved, directory, field, inventory, states))
-    seed = repo/"src/msplatform/backends/simion/resources/1_instance_seed.iob"
-    for original, target in ((seed, inputs/"workbench_seed.iob"), (repo/"src/msplatform/backends/simion/resources/iob_seed_placeholder_01.pa0", inputs/"iob_seed_placeholder_01.pa0")):
+    seed = installed_resource("src/msplatform/backends/simion/resources/1_instance_seed.iob")
+    for original, target in ((seed, inputs/"workbench_seed.iob"), (installed_resource("src/msplatform/backends/simion/resources/iob_seed_placeholder_01.pa0"), inputs/"iob_seed_placeholder_01.pa0")):
         shutil.copyfile(original, target)
     cases = []
     for index, (case, resolved, directory, field, inventory, states) in enumerate(pending, 1):
@@ -958,7 +938,7 @@ def prepare_replay_package(run: Path, contract_path: Path) -> dict:
         for name in ("geometry.json", "source_states.json", "local.fly2"):
             shutil.copyfile(directory/name, folder/name)
         for original, target in (("ip_prism_local.lua", "local.lua"), ("run_ip_prism_local_case.lua", "run_case.lua"), ("ip_prism_lens_contact.lua", "lens_contact.lua")):
-            shutil.copyfile(repo/"src/msplatform/backends/simion/resources"/original, folder/target)
+            shutil.copyfile(installed_resource("src/msplatform/backends/simion/resources")/original, folder/target)
         private_field = folder/"field"/field.name
         geometry = read_json(folder/"geometry.json")
         config = dict(resolved["numerics"], pitch_mm=case["pitch_mm"], maximum_step_us=case["maximum_step_us"],
@@ -989,7 +969,7 @@ def prepare_replay_package(run: Path, contract_path: Path) -> dict:
     write_json(inputs/"simion_dispatch_request.json", request)
     companions = [file_record(p) for case in cases for p in Path(case["directory"]).iterdir() if p.is_file()]
     write_json(inputs/"replay_companion_identity.json", dict(records=companions))
-    freeze_code(repo, inputs)
+    freeze_code(inputs)
     payload_bytes = sum(r["bytes"] for item in pending for r in item[4])
     current_bytes = sum(p.stat().st_size for p in run.rglob("*") if p.is_file())
     if current_bytes+payload_bytes > contract["committed_new_bytes"]:
@@ -1194,7 +1174,7 @@ def prepare_recorded_analysis(run: Path, source_run: Path, contract_path: Path |
         write_json(inputs/"resolved_study.json",resolved)
     write_json(inputs/"recorded_source_binding.json",dict(producer_manifest=file_record(source_run/"run_manifest.json"),
         consumed_records=consumed,stage_qualification=stage_receipt,scope="Path-bound small native observations only; no PA reread or new Fly"))
-    freeze_code(Path(__file__).resolve().parents[4],inputs)
+    freeze_code(inputs)
     config=read_json(run/"run_config.json")
     config["inputs"]={str(p.relative_to(run)):str(p) for p in inputs.rglob("*") if p.is_file()}
     config["inputs"].update({"native_record_"+str(k):p for k,p in enumerate(consumed)})

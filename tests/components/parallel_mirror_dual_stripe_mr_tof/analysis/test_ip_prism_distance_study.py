@@ -27,7 +27,7 @@ MODULE = "msplatform.workflows.mr_design.ip_prism_distance_study"
 
 
 class FrozenStudySourceTests(unittest.TestCase):
-    def test_real_source_snapshot_and_runner_refuse_installed_core_fallback(self):
+    def test_real_source_snapshot_and_runner_use_selected_installed_core(self):
         repo = Path(__file__).resolve().parents[4]
         runner = repo / "src/msplatform/workflows/resources/run_ip_prism_distance_study.ps1"
         with tempfile.TemporaryDirectory() as directory:
@@ -36,7 +36,7 @@ class FrozenStudySourceTests(unittest.TestCase):
             inputs.mkdir()
             with patch.dict(sys.modules, study_source_alias=sys.modules[MODULE],
                             study_test_alias=sys.modules[__name__]):
-                freeze_code(repo, inputs)
+                freeze_code(inputs)
             code = inputs / "code"
             for relative in FROZEN_SCIENTIFIC_BRIDGE_MODULES:
                 self.assertEqual((code / relative).read_bytes(), (Path(str(files("msplatform"))).parent / relative.removeprefix("src/")).read_bytes())
@@ -64,29 +64,30 @@ print('FROZEN_STUDY_SOURCE=PASS')
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("FROZEN_STUDY_SOURCE=PASS", result.stdout)
             script = r'''
-param($Runner,$Code,$Python,$Support)
+param($Runner,$Python)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. $Support
 $ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]$null)
 $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-StudyPython'},$true)
 Invoke-Expression $node.Extent.Text
-$repoRoot=$Code;$frozenCode=$Code;$frozenLocation=$true;$python=$Python
-$env:PYTHONPATH=@(Get-RunPythonImportRoots -RepoRoot $Code)-join[IO.Path]::PathSeparator
+$python=$Python
 Invoke-StudyPython -Arguments @('-m','msplatform.workflows.mr_design.ip_prism_distance_study','--help')
 '''
             script_path = root / "invoke_study.ps1"
             script_path.write_text(script, encoding="utf-8", newline="\n")
             command = ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(script_path),
-                       str(runner), str(code), sys.executable,
-                       str(repo / "src/msplatform/execution/resources/run_artifact_support.ps1")]
+                       str(runner), sys.executable]
             admitted = subprocess.run(command, cwd=root, capture_output=True, text=True,
                                       encoding="utf-8", errors="backslashreplace", timeout=60, check=False)
             self.assertEqual(admitted.returncode, 0, admitted.stdout + admitted.stderr)
             (code / "src/msplatform/__init__.py").unlink()
-            refused = subprocess.run(command, cwd=root, capture_output=True, text=True,
-                                     encoding="utf-8", errors="backslashreplace", timeout=60, check=False)
-            self.assertNotEqual(refused.returncode, 0)
-            self.assertRegex(refused.stderr, "core|msplatform")
+            independent = subprocess.run(command, cwd=root, capture_output=True, text=True,
+                                         encoding="utf-8", errors="backslashreplace", timeout=60, check=False)
+            self.assertEqual(independent.returncode, 0, independent.stdout + independent.stderr)
+            runner_source = runner.read_text(encoding="utf-8-sig")
+            for parameter in ("WorkspaceRoot", "ArtifactRoot", "PythonExe"):
+                self.assertIn(f"[Parameter(Mandatory)][string]${parameter}", runner_source)
+            self.assertNotIn("PYTHONPATH", runner_source)
+            self.assertNotIn("SIMULATION_PYTHON_EXE", runner_source)
 
 
     def test_external_selected_core_provider_is_frozen_without_checkout_fallback(self):
@@ -133,9 +134,9 @@ if mode == "tamper":
             target.write_bytes(b"#" + payload[1:])
         return result
     with patch.object(inputs.shutil, "copyfile", side_effect=corrupt):
-        study.freeze_code(repo, output)
+        study.freeze_code(output)
 else:
-    study.freeze_code(repo, output)
+    study.freeze_code(output)
 if mode == "new":
     selected = ["contracts/particle_physics.py", "contracts/particle_count_policy.json",
                 "execution/resources/host_resource_policy.json", "execution/resources/artifact_retention.json",
@@ -151,7 +152,7 @@ if mode == "new":
     # The original function overwrites its owned staging files on reentry.
     target = output / "code/src/msplatform/contracts/particle_physics.py"
     target.write_bytes(b"changed owned staging")
-    study.freeze_code(repo, output)
+    study.freeze_code(output)
     assert target.read_bytes() == (provider / "contracts/particle_physics.py").read_bytes()
     print("EXTERNAL_SELECTED_PROVIDER=" + json.dumps(receipts))
 '''
@@ -354,8 +355,7 @@ class ContourPreparationTests(unittest.TestCase):
 
     def test_missing_original_placeholder_fails_without_adjacent_seed_fallback(self):
         original_copy=shutil.copyfile
-        repo=Path(__file__).resolve().parents[4]
-        placeholder=repo/'src/msplatform/backends/simion/resources/iob_seed_placeholder_01.pa0'
+        placeholder=Path(str(files('msplatform')))/'backends/simion/resources/iob_seed_placeholder_01.pa0'
         attempted=[]
         def missing_original(source,destination,*args,**kwargs):
             if Path(source).resolve()==placeholder.resolve():
@@ -500,7 +500,7 @@ class ContourPreparationTests(unittest.TestCase):
                                     native_projection=dict(frame_id="native")))
             with patch("msplatform.workflows.prepared_joint.native_preparation.project_provider_voltages") as projection:
                 with self.assertRaisesRegex(ValueError, "schedule differs"):
-                    _contour_geometry_and_voltage(case, self.contract()["source_registration"], fixture(), source_inputs, root/"lua.exe", root)
+                    _contour_geometry_and_voltage(case, self.contract()["source_registration"], fixture(), source_inputs, root/"lua.exe")
                 projection.assert_not_called()
 
     def test_current_waveforms_mismatch_fails_before_plain_lua(self):
@@ -515,8 +515,9 @@ class ContourPreparationTests(unittest.TestCase):
             case = dict(config=dict(coordinate_transform=dict(from_frame_id='native',to_frame_id='IP-world'),
                 native_projection=dict(frame_id='native')))
             helper = 'msplatform.workflows.prepared_joint.native_preparation.project_provider_voltages'
-            with patch(helper) as projection, self.assertRaisesRegex(ValueError, 'voltage_waveforms'):
-                _contour_geometry_and_voltage(case, self.contract()['source_registration'], fixture(), inputs, root/'lua.exe', root)
+            with patch(MODULE+'.installed_resource', side_effect=lambda relative: root/relative), \
+                 patch(helper) as projection, self.assertRaisesRegex(ValueError, 'voltage_waveforms'):
+                _contour_geometry_and_voltage(case, self.contract()['source_registration'], fixture(), inputs, root/'lua.exe')
             projection.assert_not_called()
 
     def test_failed_source_freezes_verified_small_projection_without_relabeling(self):
@@ -608,8 +609,9 @@ class ContourPreparationTests(unittest.TestCase):
             case=dict(config=model,exits={1:dict(vz_mm_us=-40)})
             projection=dict(values_v15=list(range(15)),evaluated_native_operating_point=model["native_operating_point"])
             helper="msplatform.workflows.prepared_joint.native_preparation.project_provider_voltages"
-            with patch(helper,return_value=projection) as native_projection:
-                geometry,actual=_contour_geometry_and_voltage(case,self.contract()["source_registration"],fixture(),inputs,root/"lua.exe",root)
+            with patch(MODULE+'.installed_resource', side_effect=lambda relative: root/relative), \
+                 patch(helper,return_value=projection) as native_projection:
+                geometry,actual=_contour_geometry_and_voltage(case,self.contract()["source_registration"],fixture(),inputs,root/"lua.exe")
             arguments=native_projection.call_args.args
             self.assertEqual(arguments[1]["policies"]["energy_adjustment"],"preserve_measured_workpoint")
             self.assertGreater(arguments[1]["target"]["axial_energy_per_charge_v"],4000)

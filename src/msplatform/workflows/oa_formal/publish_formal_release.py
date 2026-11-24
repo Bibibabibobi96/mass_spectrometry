@@ -7,6 +7,7 @@ import csv
 import json
 import os
 import shutil
+from importlib.resources import files
 from datetime import date, datetime
 from pathlib import Path, PurePosixPath
 from typing import Callable
@@ -20,9 +21,7 @@ from msplatform.execution.write_formal_asset_manifest import (
 
 
 PROJECT_ID = "single_reflection_oa_tof_mass_analyzer"
-PROJECT_ROOT = Path(__file__).resolve().parents[2] / "components/single_reflection_oa_tof"
-REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
-DEFAULT_ARTIFACT_ROOT = REPOSITORY_ROOT.parent / "artifacts/projects" / PROJECT_ID
+PROJECT_ROOT = Path(str(files("msplatform.components.single_reflection_oa_tof"))).resolve()
 CONFIG_PATHS = {
     name: PROJECT_ROOT / "config" / f"{name}.json"
     for name in ("formal_assets", "simion_stable_entry", "formal_validation", "project")
@@ -413,9 +412,9 @@ def write_release_asset_manifest(artifact_root: Path, staging: Path, validation_
         project=PROJECT_ID,
         source_run_id=validation_id,
         source_run_root=run,
-        validation_contract_path=CONFIG_PATHS["formal_validation"].relative_to(
-            REPOSITORY_ROOT
-        ).as_posix(),
+        validation_contract_path=(
+            "src/msplatform/components/single_reflection_oa_tof/config/formal_validation.json"
+        ),
         validation_contract_bytes=validation_bytes,
         assets=release_assets,
     )
@@ -512,7 +511,7 @@ def verify_manifest_assets(formal: Path, manifest: dict) -> list[dict]:
 
 def recover(
     request_path: Path,
-    artifact_root: Path = DEFAULT_ARTIFACT_ROOT,
+    artifact_root: Path,
     *,
     replace: Callable[[os.PathLike, os.PathLike], None] = os.replace,
 ) -> dict:
@@ -655,7 +654,7 @@ def replace_configs(payloads: dict[str, dict], transaction: str,
                 path.unlink()
 
 
-def promote(request_path: Path, artifact_root: Path = DEFAULT_ARTIFACT_ROOT, *,
+def promote(request_path: Path, artifact_root: Path, *,
             replace: Callable[[os.PathLike, os.PathLike], None] = os.replace) -> dict:
     request_path, artifact_root = request_path.resolve(strict=True), artifact_root.resolve()
     request = load_json(request_path)
@@ -706,7 +705,7 @@ def promote(request_path: Path, artifact_root: Path = DEFAULT_ARTIFACT_ROOT, *,
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--request", type=Path, required=True)
-    parser.add_argument("--artifact-root", type=Path, default=DEFAULT_ARTIFACT_ROOT)
+    parser.add_argument("--artifact-root", type=Path, required=True)
     parser.add_argument("--recover", action="store_true")
     args = parser.parse_args()
     if args.recover:

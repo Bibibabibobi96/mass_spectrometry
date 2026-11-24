@@ -231,7 +231,7 @@ foreach($name in @('run_two_prism_segmented_coverage.ps1','run_two_prism_segment
  $copies=@($tree.FindAll({param($n)$n-is[Management.Automation.Language.ForStatementAst]-and$n.Extent.Text.Contains('Copy-VerifiedRunInput -Source $source -Destination $destination')},$true))
  if($lists.Count-ne1-or$copies.Count-ne1){throw 'Actual source declaration/copy boundary must be unique'}
  . ([scriptblock]::Create($lists[0].Extent.Text))
- $repoRoot=$Repository;$sourceDir=Join-Path $Output $name
+ $repoRoot=$Repository;$packageRoot=Join-Path $Repository 'src/msplatform';$sourceDir=Join-Path $Output $name
  New-Item -ItemType Directory -Path $sourceDir|Out-Null
  $sourceInputs=[ordered]@{};$configuration=@{inputs=$sourceInputs};$inputDir=$sourceDir;$sourceChecks=@()
  . ([scriptblock]::Create($copies[0].Extent.Text))

@@ -53,6 +53,7 @@ class FailedRunManifestTest(unittest.TestCase):
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
+                errors="replace",
                 cwd=ROOT,
                 timeout=30,
             )
@@ -105,6 +106,7 @@ class FailedRunManifestTest(unittest.TestCase):
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
+                errors="replace",
                 cwd=ROOT,
                 timeout=30,
             )

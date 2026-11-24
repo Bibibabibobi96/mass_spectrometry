@@ -24,7 +24,7 @@ class ComsolWorkspaceContextTests(unittest.TestCase):
                 script = root / "boundary.ps1"
                 body = r"""
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-$repoRoot=@@REPO@@;$python=@@PYTHON@@;$runner=@@RUNNER@@;$testRoot=@@ROOT@@;$ProjectId='rf_multipole_ion_optics'
+$repoRoot=@@REPO@@;$python=@@PYTHON@@;$runner=@@RUNNER@@;$testRoot=@@ROOT@@;$ProjectId='rf_multipole_ion_optics';$ArtifactRootPath=''
 . (Join-Path $repoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
 $env:MASS_SPECTROMETRY_ARTIFACT_ROOT=Join-Path $testRoot 'managed_data'
 $env:MASS_SPECTROMETRY_EXECUTION_ROOT=Join-Path $testRoot 'execution'

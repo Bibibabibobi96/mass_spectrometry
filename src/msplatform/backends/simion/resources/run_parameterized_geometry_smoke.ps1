@@ -1,5 +1,8 @@
 # Candidate gate runner for parameterized accelerator and reflectron builds.
 param(
+  [Parameter(Mandatory = $true)][string]$WorkspaceRoot,
+  [Parameter(Mandatory = $true)][string]$ArtifactRootPath,
+  [Parameter(Mandatory = $true)][string]$ScienceRoot,
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$OutputDir = '',
   [string]$RunId = ''
@@ -7,22 +10,24 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..\..')).Path
-$projectRoot = Join-Path $repoRoot 'src/msplatform/components/single_reflection_oa_tof'
-$workspaceRoot = Split-Path -Parent $repoRoot
-$artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\single_reflection_oa_tof_mass_analyzer'
+$workspaceRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
+$repoRoot = $workspaceRoot
+$artifactRootPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRootPath)
+$artifactRoot = Join-Path $artifactRootPath 'projects\single_reflection_oa_tof_mass_analyzer'
+$projectRoot = (Resolve-Path -LiteralPath $ScienceRoot).Path
 $python = if ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) } else { throw 'Explicit SIMULATION_PYTHON_EXE is required' }
-$executionResources = Join-Path $repoRoot 'src/msplatform/execution/resources'
+$packageRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
+$executionResources = Join-Path $packageRoot 'execution/resources'
 . (Join-Path $executionResources 'run_artifact_support.ps1')
 if ([string]::IsNullOrWhiteSpace($RunId)) {
   $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__gate__simion__native-ideal-grid__smoke'
 }
-$hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path $workspaceRoot 'artifacts/common/host_resources.sqlite3' }
+$hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path $artifactRootPath 'common/host_resources.sqlite3' }
 $hostContext = @{workspace=$workspaceRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 $hostExecutionLease = Enter-HostExecutionLease -Role SIMION -Stage prepare -RunId $RunId
 try {
-& $python -m msplatform.execution.artifact_naming run $RunId
+& $python -I -B -m msplatform.execution.artifact_naming run $RunId
 if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
   $OutputDir = Join-Path $artifactRoot "runs\$RunId\simion"
@@ -106,8 +111,8 @@ function Invoke-Builder([string]$Script, [object[]]$Arguments, [string]$LogStem)
 
 try {
 $failureStage = 'accelerator_build'
-Invoke-Builder (Join-Path $repoRoot 'src\msplatform\components\orthogonal_accelerator\simion\build_two_zone_pa.lua') @(
-  (Join-Path $repoRoot 'src\msplatform\components\orthogonal_accelerator\simion\two_zone_accelerator.gem'),
+Invoke-Builder (Join-Path $packageRoot 'components\orthogonal_accelerator\simion\build_two_zone_pa.lua') @(
+  (Join-Path $packageRoot 'components\orthogonal_accelerator\simion\two_zone_accelerator.gem'),
   (Join-Path $outputFull 'accelerator.pa#'),
   $acceleratorBuild.cell_xy_mm, $acceleratorBuild.cell_z_mm, $geometry.accelerator_bore_half, $geometry.accelerator_ring_width,
   $geometry.accelerator_insulation_gap, $geometry.accelerator_rear_clearance,
@@ -119,8 +124,8 @@ Invoke-Builder (Join-Path $repoRoot 'src\msplatform\components\orthogonal_accele
 ) 'accelerator_builder'
 
 $failureStage = 'reflectron_build'
-Invoke-Builder (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\build_reflectron_variant.lua') @(
-  (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\oatof_reflectron_ideal_10_5.gem'),
+Invoke-Builder (Join-Path $packageRoot 'backends\simion\resources\build_reflectron_variant.lua') @(
+  (Join-Path $packageRoot 'backends\simion\resources\oatof_reflectron_ideal_10_5.gem'),
   (Join-Path $outputFull 'reflectron.pa#'),
   (Join-Path $PSScriptRoot 'oatof_resolved.lua'), 'refine-all'
 ) 'reflectron_builder'
@@ -128,12 +133,12 @@ Invoke-Builder (Join-Path $repoRoot 'src\msplatform\backends\simion\resources\bu
 $expectedAcceleratorElectrodes = 4 + [int]$contract.rings.accelerator_count
 $expectedReflectronElectrodes = 4 + [int]$contract.rings.stage1_count + [int]$contract.rings.stage2_count
 $failureStage = 'post_build_family_validation'
-$paFamilyValidator = Join-Path $repoRoot 'src/msplatform/workflows/oa_tof_design/validate_simion_pa_family.py'
+$paFamilyValidator = Join-Path $packageRoot 'workflows/oa_tof_design/validate_simion_pa_family.py'
 foreach ($family in @(
   [pscustomobject]@{Stem='accelerator';Highest=$expectedAcceleratorElectrodes},
   [pscustomobject]@{Stem='reflectron';Highest=$expectedReflectronElectrodes}
 )) {
-  & $python $paFamilyValidator $outputFull $family.Stem $family.Highest
+  & $python -I -B $paFamilyValidator $outputFull $family.Stem $family.Highest
   if ($LASTEXITCODE -ne 0) { throw "$($family.Stem) surface=none PA family validation failed." }
 }
 

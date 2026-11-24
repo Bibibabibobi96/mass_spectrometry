@@ -147,7 +147,6 @@ class FixedGridVoltageCorrectionTests(unittest.TestCase):
 
     def test_powershell_endpoint_selection_uses_python_classifier_and_propagates_failure(self) -> None:
         repo = RUNNER.parents[4]
-        self.assertTrue((repo / "common/contracts").is_dir())
         with tempfile.TemporaryDirectory(prefix="gamma-operator-") as directory:
             root = Path(directory)
             results = root / "results"

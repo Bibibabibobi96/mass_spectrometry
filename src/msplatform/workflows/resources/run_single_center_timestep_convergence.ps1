@@ -2,15 +2,22 @@
 param(
   [Parameter(Mandatory)][ValidateCount(3,3)][string[]]$RunManifestPaths,
   [string]$RunId='',
-  [string]$PythonExe=''
+  [Parameter(Mandatory)][string]$WorkspaceRoot,
+  [Parameter(Mandatory)][string]$ArtifactRoot,
+  [Parameter(Mandatory)][string]$PythonExe
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $projectId='parallel_mirror_dual_stripe_mr_tof'
-$repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
-$workspaceRoot=Split-Path -Parent $repoRoot
-$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
+$workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path
+$repoRoot=$workspaceRoot
+$artifactRoot=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)
+$python=[IO.Path]::GetFullPath($PythonExe)
+if(-not(Test-Path -LiteralPath $python -PathType Leaf)){throw "Python 3.11 environment is missing: $python"}
+$packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
+if($LASTEXITCODE-ne0){throw 'Installed msplatform package is unavailable.'}
+$packageRoot=(Resolve-Path -LiteralPath $packageRootText).Path
 $manifests=@($RunManifestPaths|ForEach-Object{(Resolve-Path -LiteralPath $_).Path})
 $sourceRuns=@($manifests|ForEach-Object{Split-Path -Parent $_})
 if(($sourceRuns|Select-Object -Unique).Count-ne 3){throw 'Three distinct source runs are required.'}
@@ -18,9 +25,9 @@ if([string]::IsNullOrWhiteSpace($RunId)){
   $RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__analysis__python__mrtof-single-center-timestep-convergence'
 }
 
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
+. (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
 
-$artifactProjectRoot=Join-Path $workspaceRoot "artifacts\projects\$projectId"
+$artifactProjectRoot=Join-Path $artifactRoot "projects\$projectId"
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactProjectRoot `
   -RunId $RunId -Project $projectId -Mode 'single_center_timestep_convergence' `
   -Software @('Python 3.11') -RetentionContractEnabled -RetentionClass compact `
@@ -30,14 +37,14 @@ $terminalized=$false;$failureStage='preflight';$capacitySession=$null
 try{
   $failureStage='capacity_startup'
   $capacitySession=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
-    -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -RunDirectory $package.artifact_run_dir `
+    -ArtifactRoot ($artifactRoot) -RunDirectory $package.artifact_run_dir `
     -CommittedNewBytes 2097152 -ProtectedPaths (@($package.artifact_run_dir)+$sourceRuns) `
     -Owner "mrtof-single-center-timestep-convergence:$RunId"
   $startupPath=Join-Path $resultDir 'artifact_capacity_gate_startup.json'
   Write-RunJson -Path $startupPath -Depth 14 -Value $capacitySession
   $failureStage='verify_sources'
   foreach($manifest in $manifests){
-    & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $manifest `
+    & $python -I -B -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $manifest `
       --require-status success --require-project $projectId --require-mode finite_3d_two_prism_voltage_trial
     if($LASTEXITCODE-ne 0){throw "Source flight manifest failed verification: $manifest"}
   }
@@ -63,12 +70,11 @@ try{
   $arguments=@('-m','msplatform.workflows.mr_design.single_center_timestep_convergence')
   foreach($run in $sourceRuns){$arguments+=@('--run',$run)}
   $arguments+=@('--output',$result)
-  Push-Location -LiteralPath $repoRoot;$saved=$env:PYTHONPATH
+  Push-Location -LiteralPath $workspaceRoot
   try{
-    $env:PYTHONPATH=$repoRoot
-    & $python @arguments 2>&1|Tee-Object -FilePath $log
+    & $python -I -B @arguments 2>&1|Tee-Object -FilePath $log
     if($LASTEXITCODE-ne 0){throw 'Single-centre time-step convergence analysis failed.'}
-  }finally{$env:PYTHONPATH=$saved;Pop-Location}
+  }finally{Pop-Location}
   $data=Get-Content -LiteralPath $result -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
   Write-RunJson -Path $summary -Depth 16 -Value ([ordered]@{
     schema_version=1

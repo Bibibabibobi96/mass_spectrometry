@@ -24,7 +24,7 @@ param(
   [Parameter(ParameterSetName='Analyze')][switch]$ReextractFromModel,
   [Parameter(Mandatory,ParameterSetName='Analyze')][string]$ParentManifestPath,
   [string]$ResultPath='',
-  [Parameter(ParameterSetName='Resume')][string]$ArtifactRootPath='',
+  [string]$ArtifactRootPath='',
   [Parameter(Mandatory=$true,ParameterSetName='Campaign')][string]$CampaignPath,
   [Parameter(Mandatory=$true,ParameterSetName='Campaign')][string]$ExperimentId
 )
@@ -43,11 +43,10 @@ if($PSCmdlet.ParameterSetName-in@('Campaign','Profile')){
   Invoke-MultipoleProjectFinite3dTransport -Solver comsol -ProjectId 'rf_multipole_ion_optics' @selection `
     -RepoRoot $repoRoot -ResolvedRuntimeProfilePath $ResolvedRuntimeProfilePath `
     -EvidenceContractPath $EvidenceContractPath -RunId $RunId -RetentionReason $RetentionReason `
-    -PythonExe $PythonExe -ResultPath $ResultPath
+    -PythonExe $PythonExe -ResultPath $ResultPath -ArtifactRootPath $ArtifactRootPath
   return
 }
 $initialPythonPath=$env:PYTHONPATH
-$env:PYTHONPATH=(Join-Path $repoRoot 'src')+$(if($initialPythonPath){[IO.Path]::PathSeparator+$initialPythonPath}else{''})
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
 $executionResources=Join-Path $repoRoot 'src/msplatform/execution/resources'
 $workspaceRoot=Split-Path -Parent $repoRoot
@@ -98,7 +97,7 @@ if(-not [double]::IsNaN($WorkingRegionMaximumElementSizeMm) -and $WorkingRegionM
   throw 'WorkingRegionMaximumElementSizeMm must be positive when supplied.'
 }
 . (Join-Path $repoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
-$workspacePaths=Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
+$workspacePaths=Resolve-WorkspacePaths -SourceRoot $repoRoot -ArtifactRoot $(if($ArtifactRootPath){$ArtifactRootPath}elseif($env:MASS_SPECTROMETRY_ARTIFACT_ROOT){$env:MASS_SPECTROMETRY_ARTIFACT_ROOT}else{Join-Path (Split-Path -Parent $repoRoot) 'artifacts'}) -Python $python
 $projectArtifactRoot=if($ProjectId){Join-Path ([string]$workspacePaths.artifact_root) ('projects/'+$ProjectId)}else{$null}
 $hostContext.host_state_path=[string]$workspacePaths.host_resource_state_path
 . (Join-Path $executionResources 'resource_process_support.ps1')
@@ -984,7 +983,6 @@ $environmentNames=@('PYTHONPATH','SIMULATION_PYTHON_EXE','MULTIPOLE_RESOLVED_DES
  'MULTIPOLE_L3_SOLVER_PROGRESS_DIR','MULTIPOLE_L3_STOP_STAGE','MULTIPOLE_L3_FIELD_SAMPLE_POINTS','MULTIPOLE_L3_FIELD_SAMPLES','MULTIPOLE_L3_MAXIMUM_MESH_CELLS','MULTIPOLE_FINITE_EXTRACTION_SCIENCE')
 $env:PYTHONPATH=$initialPythonPath
 $oldEnvironment=Save-RunEnvironment -Names $environmentNames
-$env:PYTHONPATH=(Join-Path $repoRoot 'src')+$(if($initialPythonPath){[IO.Path]::PathSeparator+$initialPythonPath}else{''})
 $env:SIMULATION_PYTHON_EXE=$python
 try{
 $capacity=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -ArtifactRoot $workspacePaths.artifact_root `

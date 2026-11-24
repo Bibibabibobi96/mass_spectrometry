@@ -121,7 +121,7 @@ class MassFilterSimionContractTests(unittest.TestCase):
 
     def test_mass_filter_voltage_contract_is_unambiguous(self) -> None:
         mode = json.loads(
-            (PROJECT_ROOT / "config" / "modes" / "quadrupole_msplatform.workflows.rf_mass_filter.json").read_text(encoding="utf-8")
+            (PROJECT_ROOT / "config" / "modes" / "quadrupole_mass_filter_reference.json").read_text(encoding="utf-8")
         )
         self.assertAlmostEqual(mode["rf"]["dc_amplitude_V_per_group"], 22.763014939677756)
         self.assertAlmostEqual(mode["rf"]["axis_common_mode_offset_V"], -8.0)
@@ -137,7 +137,7 @@ class MassFilterSimionContractTests(unittest.TestCase):
     def test_shared_geometry_drive_and_solver_numerics_have_one_authority(self) -> None:
         config = PROJECT_ROOT / "variants" / "quadrupole" / "config"
         mode = json.loads(
-            (REPO_ROOT / "src/msplatform/components/rf_multipole/config/modes/quadrupole_msplatform.workflows.rf_mass_filter.json").read_text(
+            (REPO_ROOT / "src/msplatform/components/rf_multipole/config/modes/quadrupole_mass_filter_reference.json").read_text(
                 encoding="utf-8"
             )
         )

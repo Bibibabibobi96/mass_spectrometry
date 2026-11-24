@@ -35,11 +35,11 @@ arguments
 end
 
 matlabRoot = fileparts(mfilename('fullpath'));
-codeRoot = fileparts(fileparts(fileparts(fileparts(fileparts(matlabRoot)))));
-projectRoot = fullfile(codeRoot, 'projects', 'single_reflection_oa_tof_mass_analyzer');
+msplatformRoot = fileparts(fileparts(fileparts(matlabRoot)));
+projectRoot = fullfile(msplatformRoot, 'components', 'single_reflection_oa_tof');
 originalPath = path;
-pathRestore = onCleanup(@() path(originalPath));
-addpath(projectRoot, matlabRoot);
+pathRestore = onCleanup(@() path(originalPath)); %#ok<NASGU>
+addpath(matlabRoot);
 contractPath = options.ContractPath;
 if options.GeometryOnly
     assert(strlength(contractPath)>0 && strlength(options.OutputModelPath)>0, ...

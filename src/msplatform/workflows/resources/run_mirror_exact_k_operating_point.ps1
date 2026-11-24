@@ -3,18 +3,23 @@ param(
   [Parameter(Mandatory)][string]$MirrorRunManifest,
   [string]$ContractPath = '',
   [string]$RunId = '',
-  [string]$PythonExe = ''
+  [Parameter(Mandatory)][string]$WorkspaceRoot,
+  [Parameter(Mandatory)][string]$ArtifactRoot,
+  [Parameter(Mandatory)][string]$PythonExe
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $projectId = 'parallel_mirror_dual_stripe_mr_tof'
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
-$packageRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$workspaceRoot = Split-Path -Parent $repoRoot
-$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } elseif ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) } else { throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required' }
+$workspaceRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
+$repoRoot = $workspaceRoot
+$artifactRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)
+$python = [IO.Path]::GetFullPath($PythonExe)
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 environment is missing: $python" }
+$packageRootText = & $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
+if ($LASTEXITCODE -ne 0) { throw 'Installed msplatform package is unavailable.' }
+$packageRoot = (Resolve-Path -LiteralPath $packageRootText).Path
 $contract = if ($ContractPath) {
   (Resolve-Path -LiteralPath $ContractPath).Path
 } else {
@@ -25,13 +30,13 @@ if ([string]::IsNullOrWhiteSpace($RunId)) {
   $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__analysis__python__mirror-exact-k-operating-point'
 }
 
-$executionResources = Join-Path $repoRoot 'src/msplatform/execution/resources'
+$executionResources = Join-Path $packageRoot 'execution/resources'
 $hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path $workspaceRoot 'artifacts/common/host_resources.sqlite3' }
 $hostContext = @{workspace=$workspaceRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 . (Join-Path $executionResources 'run_artifact_support.ps1')
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot `
-  -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$projectId") `
+  -ArtifactRoot (Join-Path $artifactRoot "projects\$projectId") `
   -RunId $RunId -Project $projectId -Mode 'analytic_mirror_exact_k_operating_point' `
   -Software @('Python 3.11', 'SciPy') -RetentionContractEnabled -RetentionClass compact `
   -CapacityLedgerLifecycleEnabled
@@ -46,24 +51,21 @@ $capacitySession = $null
 
 function Invoke-ProjectPython {
   param([Parameter(Mandatory)][string[]]$Arguments, [Parameter(Mandatory)][string]$LogPath)
-  Push-Location -LiteralPath $repoRoot
-  $savedPythonPath = $env:PYTHONPATH
+  Push-Location -LiteralPath $workspaceRoot
   $savedOpenBlasThreads = $env:OPENBLAS_NUM_THREADS
   $savedOmpThreads = $env:OMP_NUM_THREADS
   $savedMklThreads = $env:MKL_NUM_THREADS
   $savedNumExprThreads = $env:NUMEXPR_NUM_THREADS
   try {
-    $env:PYTHONPATH = @(Get-RunPythonImportRoots -RepoRoot $repoRoot) -join [IO.Path]::PathSeparator
     # The outer energy-node pool owns CPU parallelism.  Keep numerical kernels
     # single-threaded so each worker does not create a nested BLAS/OpenMP pool.
     $env:OPENBLAS_NUM_THREADS = '1'
     $env:OMP_NUM_THREADS = '1'
     $env:MKL_NUM_THREADS = '1'
     $env:NUMEXPR_NUM_THREADS = '1'
-    & $python @Arguments 2>&1 | Tee-Object -FilePath $LogPath
+    & $python -I -B @Arguments 2>&1 | Tee-Object -FilePath $LogPath
     if ($LASTEXITCODE -ne 0) { throw "MR-TOF Python stage failed: $($Arguments -join ' ')" }
   } finally {
-    $env:PYTHONPATH = $savedPythonPath
     $env:OPENBLAS_NUM_THREADS = $savedOpenBlasThreads
     $env:OMP_NUM_THREADS = $savedOmpThreads
     $env:MKL_NUM_THREADS = $savedMklThreads
@@ -75,7 +77,7 @@ function Invoke-ProjectPython {
 try {
   $failureStage = 'capacity_startup'
   $capacitySession = Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
-    -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -RunDirectory $package.artifact_run_dir `
+    -ArtifactRoot ($artifactRoot) -RunDirectory $package.artifact_run_dir `
     -CommittedNewBytes 2097152 -ProtectedPaths @($package.artifact_run_dir) `
     -Owner "mrtof-mirror-exact-k-operating-point:$RunId"
   $startupPath = Join-Path $resultDir 'artifact_capacity_gate_startup.json'
@@ -141,7 +143,7 @@ try {
   }
   $sourceChecks = @()
   for ($index = 0; $index -lt $sourcePaths.Count; $index++) {
-    $source = Join-Path $repoRoot $sourcePaths[$index]
+    $source = Join-Path $packageRoot ($sourcePaths[$index] -replace '^src\\msplatform\\', '')
     $destination = Join-Path $inputDir (Join-Path 'source' $sourcePaths[$index])
     $frozen = Copy-VerifiedRunInput -Source $source -Destination $destination
     $configuration.inputs[('analytic_source_{0:D2}' -f ($index + 1))] = $frozen

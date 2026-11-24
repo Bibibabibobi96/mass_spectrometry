@@ -2,9 +2,9 @@
 reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
 assert(~isempty(reportPath), 'COMSOL_BOOTSTRAP_REPORT is required.');
 testDir = fileparts(mfilename('fullpath'));
-codeRoot = fileparts(fileparts(fileparts(fileparts(fileparts(testDir)))));
-projectRoot = fullfile(codeRoot, 'projects', 'single_reflection_oa_tof_mass_analyzer');
-addpath(projectRoot, testDir);
+previousPath = path;
+pathRestore = onCleanup(@() path(previousPath)); %#ok<NASGU>
+addpath(testDir);
 fid = fopen(reportPath, 'w');
 assert(fid >= 0, 'Could not open report: %s', reportPath);
 cleanup = onCleanup(@() fclose(fid));

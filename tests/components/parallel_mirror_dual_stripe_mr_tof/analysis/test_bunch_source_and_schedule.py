@@ -131,7 +131,7 @@ function Enter-ArtifactWorkflowCapacitySession {
  @{status='active';protected_count=$ProtectedPaths.Count;
    committed_bytes=$CommittedNewBytes;owner=$Owner}|ConvertTo-Json -Compress
 }
-$python='python';$repoRoot='repo';$workspaceRoot='workspace';$RunId='fixture'
+$python='python';$repoRoot='repo';$workspaceRoot='workspace';$artifactRoot='artifacts';$RunId='fixture'
 $package=@{artifact_run_dir='artifact-run'};$sourceDefinition='source'
 $geometryContract='geometry';$acceleratorProviderReceipt='provider'
 Invoke-Expression $node.Extent.Text

@@ -49,6 +49,35 @@ class GovernedRunEntrypointTests(unittest.TestCase):
                 # Its actual normal-entrypoint test checks retained paths/capacity/sentinel values;
                 # the public New-RunPackage/retention/lifecycle switches above remain required here.
 
+    def test_installed_entrypoints_require_explicit_roots_without_checkout_fallbacks(self):
+        public_entries = (
+            "workflows/formal_reference/run_formal_validation.ps1",
+            "workflows/cross_solver_diagnostics/run_cross_solver_diagnostics.ps1",
+            "workflows/accelerator_transverse_field_uniformity/run_accelerator_transverse_field_uniformity.ps1",
+            "simion/workbench/run_parameterized_geometry_smoke.ps1",
+            "simion/workbench/run_ideal_field_diagnostic.ps1",
+        )
+        for relative in public_entries:
+            with self.subTest(entry=relative):
+                source = entry_source(relative).read_text(encoding="utf-8")
+                self.assertIn("$WorkspaceRoot", source)
+                self.assertIn("$ArtifactRootPath", source)
+                self.assertIn("$ScienceRoot", source)
+                self.assertIn("$packageRoot", source)
+                for fallback in (".venv", "PYTHONPATH", "Join-Path $repoRoot 'src"):
+                    self.assertNotIn(fallback, source)
+        mass = entry_source("workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1").read_text(encoding="utf-8")
+        self.assertIn("$Workspace", mass)
+        self.assertIn("$ArtifactRootPath", mass)
+        self.assertIn("$ScienceRoot", mass)
+        self.assertNotIn("MASS_SPECTRUM_WORKSPACE", mass)
+        self.assertNotIn("PYTHONPATH", mass)
+        transport = entry_source("simion/workbench/run_n100_transport.ps1").read_text(encoding="utf-8")
+        self.assertIn("$packageRoot", transport)
+        self.assertIn("inputs/code", transport)
+        self.assertNotIn(".venv", transport)
+        self.assertNotIn("PYTHONPATH", transport)
+
     def test_public_output_directory_overrides_are_canonical_run_paths(self):
         for relative in (
             "simion/workbench/run_ideal_field_diagnostic.ps1",

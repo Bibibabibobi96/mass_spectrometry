@@ -86,7 +86,7 @@ throw 'deliberate guard boundary rejection'
             self.assertEqual(record["runtime"], inputs["RuntimeReceiptPath"])
             self.assertEqual(record["session"], inputs["CapacitySessionPath"])
             self.assertEqual(record["python"], sys.executable)
-            self.assertEqual(Path(record["repo"]), root)
+            self.assertEqual(Path(record["repo"]), root / "inputs/code")
             request = record["request"]
             self.assertEqual(request["context_sha256"], "a" * 64)
             self.assertEqual(request["run_id"], "fixture-run")
@@ -111,8 +111,13 @@ throw 'deliberate guard boundary rejection'
             paths = root / "src/msplatform/execution/resources"
             paths.mkdir(parents=True, exist_ok=True)
             (paths / "host_execution_lease.ps1").write_text(LEASE_STUB, encoding="utf-8")
-            for name in ("workspace_paths.ps1", "workspace_paths.py"):
-                shutil.copyfile(PROJECT.parents[3] / "src/msplatform/execution/resources" / name, paths / name)
+            (paths / "workspace_paths.ps1").write_text(r'''
+function Resolve-WorkspacePaths {param($SourceRoot,$ArtifactRoot,$ExecutionRoot,$HostResourceStatePath,$FrozenContext,$Python)
+ return @{source_root=$SourceRoot;artifact_root=$(if($ArtifactRoot){$ArtifactRoot}else{$env:MASS_SPECTROMETRY_ARTIFACT_ROOT});
+ execution_root=$([IO.Path]::GetFullPath($(if($ExecutionRoot){$ExecutionRoot}else{$env:MASS_SPECTROMETRY_EXECUTION_ROOT})));
+ host_resource_state_path=$(if($HostResourceStatePath){$HostResourceStatePath}else{$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH})}
+}
+''', encoding="utf-8")
             (paths / "run_artifact_support.ps1").write_text(r'''
 . (Join-Path $PSScriptRoot 'host_execution_lease.ps1')
 $public=[Management.Automation.Language.Parser]::ParseFile($env:OA_TEST_PUBLIC_SUPPORT,[ref]$null,[ref]$null)
@@ -128,6 +133,16 @@ foreach($name in @('Save-RunEnvironment','Restore-RunEnvironment')){
                 MASS_SPECTROMETRY_ARTIFACT_ROOT=str(root/"artifacts"),
                 MASS_SPECTROMETRY_EXECUTION_ROOT=str(root/"execution"),
                 MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(root/"host.sqlite3"))
+            science = root / "science"
+            (science / "config").mkdir(parents=True)
+            if installed == "src/msplatform/backends/simion/resources/run_parameterized_geometry_smoke.ps1" or installed == "src/msplatform/workflows/resources/run_formal_validation.ps1":
+                arguments = ["-WorkspaceRoot", str(root), "-ArtifactRootPath", str(root / "artifacts"),
+                             "-ScienceRoot", str(science), *arguments]
+            elif installed == "src/msplatform/backends/simion/resources/run_ideal_field_diagnostic.ps1":
+                arguments = ["-WorkspaceRoot", str(root), "-ArtifactRootPath", str(root / "artifacts"), *arguments]
+            elif installed == "src/msplatform/workflows/resources/run_mass_spectrum_candidate.ps1":
+                arguments = ["-Workspace", str(root), "-ArtifactRootPath", str(root / "artifacts"),
+                             "-ScienceRoot", str(science), *arguments]
             result = subprocess.run(
                 ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(target), *arguments],
                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30, check=False, env=environment, cwd=root,
@@ -256,6 +271,7 @@ if(-not$rejected-or$null-ne$script:codeExecutionAlias){throw 'External code was 
         with tempfile.TemporaryDirectory(prefix="oa-lua-path-") as directory:
             environment = dict(os.environ, TEMP=directory, OA_TEST_REPO=str(PROJECT.parents[3]),
                                OA_TEST_BUILDER=str(PROJECT.parents[1] / "backends/simion/resources" / "build_formal_delivery.ps1"))
+            environment.pop("MASS_SPECTROMETRY_HOST_CONTEXT_JSON", None)
             result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
                                     cwd=PROJECT, env=environment, capture_output=True, encoding="utf-8", errors="replace", timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

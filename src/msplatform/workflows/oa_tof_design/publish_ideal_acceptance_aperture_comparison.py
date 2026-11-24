@@ -39,8 +39,6 @@ from msplatform.workflows.oa_tof_design import (
 
 PROJECT_ID = "single_reflection_oa_tof_mass_analyzer"
 PUBLISH_MODE = "analysis"
-REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
-DEFAULT_WORKSPACE_ROOT = REPOSITORY_ROOT.parent
 MODES: dict[str, tuple[str, str, Callable[..., dict[str, Any]]]] = {
     "pre-pulse": (
         pre_pulse.CAMPAIGN_ID,
@@ -148,11 +146,7 @@ def _publish_manifest(*, run_dir: Path, run_config: Path, outputs: tuple[Path, .
 
 
 def _source_snapshot_relative_path(source: Path) -> Path:
-    """Map repository or installed-package source into the frozen source tree."""
-    try:
-        return source.relative_to(REPOSITORY_ROOT)
-    except ValueError:
-        pass
+    """Map an actual loaded package source into the frozen source tree."""
     package_anchors = [index for index, part in enumerate(source.parts) if part == "msplatform"]
     if not package_anchors:
         raise ValueError(f"analysis implementation is outside the repository and installed package: {source}")
@@ -161,7 +155,7 @@ def _source_snapshot_relative_path(source: Path) -> Path:
 
 def publish_aperture_comparison(
     *, campaign_path: Path, runs_root: Path, run_dir: Path, mode: str,
-    threshold_mm: float = 4.0, workspace_root: Path = DEFAULT_WORKSPACE_ROOT,
+    workspace_root: Path, threshold_mm: float = 4.0,
 ) -> dict[str, Any]:
     """Run one fail-closed reader and atomically publish its immutable result."""
 
@@ -248,7 +242,7 @@ def main() -> None:
     parser.add_argument("--run-dir", required=True, type=Path)
     parser.add_argument("--mode", choices=tuple(MODES), required=True)
     parser.add_argument("--axial-width-threshold-mm", type=float, default=4.0)
-    parser.add_argument("--workspace-root", type=Path, default=DEFAULT_WORKSPACE_ROOT)
+    parser.add_argument("--workspace-root", type=Path, required=True)
     args = parser.parse_args()
     summary = publish_aperture_comparison(
         campaign_path=args.campaign, runs_root=args.runs_root, run_dir=args.run_dir,

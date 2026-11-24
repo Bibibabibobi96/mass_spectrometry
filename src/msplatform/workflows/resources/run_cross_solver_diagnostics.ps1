@@ -1,33 +1,41 @@
 [CmdletBinding()]
 param(
+  [Parameter(Mandatory = $true)][string]$WorkspaceRoot,
+  [Parameter(Mandatory = $true)][string]$ArtifactRootPath,
+  [Parameter(Mandatory = $true)][string]$ScienceRoot,
+  [string]$PythonExe = '',
   [string]$RunId = ((Get-Date -Format 'yyyyMMdd_HHmmss') + '__analysis__cross__formal-diagnostics'),
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe'
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
-$projectRoot = Join-Path $repoRoot 'src/msplatform/components/single_reflection_oa_tof'
-$workspaceRoot = Split-Path -Parent $repoRoot
-$artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\single_reflection_oa_tof_mass_analyzer'
-$python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+$workspaceRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
+$repoRoot = $workspaceRoot
+$artifactRootPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRootPath)
+$artifactRoot = Join-Path $artifactRootPath 'projects\single_reflection_oa_tof_mass_analyzer'
+$projectRoot = (Resolve-Path -LiteralPath $ScienceRoot).Path
+$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) }
+  elseif ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) }
+  else { throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required' }
+$packageRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $formalValidationLive = Join-Path $projectRoot 'config\formal_validation.json'
 $resolvedGeometryLive = Join-Path $projectRoot 'config\resolved_geometry.json'
-$comsolAdapterRoot = Join-Path $repoRoot 'src/msplatform/backends/comsol/matlab'
-$simionAdapterRoot = Join-Path $repoRoot 'src/msplatform/backends/simion/resources'
+$comsolAdapterRoot = Join-Path $packageRoot 'backends/comsol/matlab'
+$simionAdapterRoot = Join-Path $packageRoot 'backends/simion/resources'
 $comsolAxisTask = Join-Path $comsolAdapterRoot 'export_axis_field_profiles.m'
 $comsolTrajectoryTask = Join-Path $comsolAdapterRoot 'export_selected_particle_trajectories.m'
 $comsolVectorTask = Join-Path $comsolAdapterRoot 'export_accelerator_vector_field_samples.m'
 $simionAxisTask = Join-Path $simionAdapterRoot 'export_axis_field_profiles.lua'
 $simionVectorTask = Join-Path $simionAdapterRoot 'export_accelerator_vector_field_samples.lua'
-$axisAnalysis = Join-Path $repoRoot 'src/msplatform/workflows/oa_tof_design/compare_field_profiles.py'
-$trajectoryAnalysis = Join-Path $repoRoot 'src/msplatform/workflows/oa_tof_design/compare_particle_trajectories.py'
-$vectorAnalysis = Join-Path $repoRoot 'src/msplatform/analysis/vector_field_samples.py'
+$axisAnalysis = Join-Path $packageRoot 'workflows/oa_tof_design/compare_field_profiles.py'
+$trajectoryAnalysis = Join-Path $packageRoot 'workflows/oa_tof_design/compare_particle_trajectories.py'
+$vectorAnalysis = Join-Path $packageRoot 'analysis/vector_field_samples.py'
 
-. (Join-Path $projectRoot 'oatof_lifecycle_preflight.ps1')
+. (Join-Path $packageRoot 'workflows/resources/oatof_lifecycle_preflight.ps1')
 Assert-OaTofFormalAssetsReadable -ProjectRoot $projectRoot
 
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
+. (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
 $runRecordComplete = $false
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project 'single_reflection_oa_tof_mass_analyzer' -Mode 'formal_cross_solver_diagnostics' `
@@ -91,7 +99,7 @@ foreach ($item in @(
     throw "Formal input identity differs from formal_validation.json: $($item[0])"
   }
 }
-& $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $sourceManifest `
+& $python -I -B -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $sourceManifest `
   --require-status success --require-project single_reflection_oa_tof_mass_analyzer
 if ($LASTEXITCODE -ne 0) { throw 'Formal source run manifest verification failed.' }
 if (-not (Select-String -LiteralPath $sourceTraceLog -Pattern '^TRACE: \d+,' -Quiet)) {
@@ -99,7 +107,7 @@ if (-not (Select-String -LiteralPath $sourceTraceLog -Pattern '^TRACE: \d+,' -Qu
 }
 
 $pairingDir = Join-Path $resultDir 'particle_pairing'
-& $python -m msplatform.workflows.oa_candidate.reference_analysis compare `
+& $python -I -B -m msplatform.workflows.oa_candidate.reference_analysis compare `
   $formalComsolCsv $formalSimionCsv --mass 524 --output $pairingDir `
   --left-label COMSOL --right-label SIMION --require-paired-particle-ids
 if ($LASTEXITCODE -ne 0) { throw 'Formal particle pairing failed.' }
@@ -137,9 +145,9 @@ try {
       @($comsolAxisTask,$comsolAxisReport),
       @($comsolTrajectoryTask,$comsolTrajectoryReport)
     )) {
-    . (Join-Path (Split-Path -Parent ((Join-Path $repoRoot 'src\msplatform\backends\comsol\launcher\run_comsol_r2025b.ps1'))) 'resolve_comsol_64.ps1')
+    . (Join-Path (Split-Path -Parent ((Join-Path $packageRoot 'backends\comsol\launcher\run_comsol_r2025b.ps1'))) 'resolve_comsol_64.ps1')
     $comsolLauncherParameters=Get-ComsolLauncherParameters -HostContext $script:HostResourceExecutionContext -WorkingDirectory $script:HostResourceExecutionContext.workspace
-    & (Join-Path $repoRoot 'src\msplatform\backends\comsol\launcher\run_comsol_r2025b.ps1') @comsolLauncherParameters `
+    & (Join-Path $packageRoot 'backends\comsol\launcher\run_comsol_r2025b.ps1') @comsolLauncherParameters `
       -TaskScript $task[0] -ReportPath $task[1]
     if ($LASTEXITCODE -ne 0) { throw "COMSOL diagnostic export failed: $($task[0])" }
   }
@@ -230,9 +238,9 @@ try {
     $oldComsolVectorEnvironment[$entry.Key] = [Environment]::GetEnvironmentVariable($entry.Key,'Process')
     [Environment]::SetEnvironmentVariable($entry.Key,$entry.Value,'Process')
   }
-  . (Join-Path (Split-Path -Parent ((Join-Path $repoRoot 'src\msplatform\backends\comsol\launcher\run_comsol_r2025b.ps1'))) 'resolve_comsol_64.ps1')
+  . (Join-Path (Split-Path -Parent ((Join-Path $packageRoot 'backends\comsol\launcher\run_comsol_r2025b.ps1'))) 'resolve_comsol_64.ps1')
   $comsolLauncherParameters=Get-ComsolLauncherParameters -HostContext $script:HostResourceExecutionContext -WorkingDirectory $script:HostResourceExecutionContext.workspace
-  & (Join-Path $repoRoot 'src\msplatform\backends\comsol\launcher\run_comsol_r2025b.ps1') @comsolLauncherParameters `
+  & (Join-Path $packageRoot 'backends\comsol\launcher\run_comsol_r2025b.ps1') @comsolLauncherParameters `
     -TaskScript $comsolVectorTask -ReportPath $comsolVectorReport
   if ($LASTEXITCODE -ne 0) { throw 'COMSOL vector-field export failed.' }
 } finally {
@@ -244,14 +252,14 @@ try {
 $axisResultDir = Join-Path $resultDir 'axis_field'
 $vectorResultDir = Join-Path $resultDir 'accelerator_vector_field'
 $trajectoryResultDir = Join-Path $resultDir 'selected_trajectories'
-& $python -m msplatform.workflows.oa_tof_design.compare_field_profiles `
+& $python -I -B -m msplatform.workflows.oa_tof_design.compare_field_profiles `
   $comsolAxisCsv $simionAxisCsv --output $axisResultDir `
   --contract $resolvedGeometryPath
 if ($LASTEXITCODE -ne 0) { throw 'Axis-field comparison failed.' }
-& $python -m msplatform.analysis.vector_field_samples `
+& $python -I -B -m msplatform.analysis.vector_field_samples `
   $comsolVectorCsv $simionVectorCsv --output $vectorResultDir
 if ($LASTEXITCODE -ne 0) { throw 'Vector-field comparison failed.' }
-& $python -m msplatform.workflows.oa_tof_design.compare_particle_trajectories `
+& $python -I -B -m msplatform.workflows.oa_tof_design.compare_particle_trajectories `
   $comsolTrajectoryCsv $sourceTraceLog --arrivals $pairedArrivals `
   --particle-ids '18,52,97' --output $trajectoryResultDir --contract $resolvedGeometryPath
 if ($LASTEXITCODE -ne 0) { throw 'Selected-particle trajectory comparison failed.' }
@@ -310,7 +318,7 @@ $manifestArgs = @(
   '--software','COMSOL R2025b saved solution','--software','SIMION 2020','--software','Python 3.11'
 )
 foreach ($output in $outputs) { $manifestArgs += @('--output',$output) }
-& $python @manifestArgs
+& $python -I -B @manifestArgs
 if ($LASTEXITCODE -ne 0) { throw 'Cross-solver diagnostics manifest creation failed.' }
 # This producer has just published the complete records; retain its local identity check.
 $published = Get-Content -LiteralPath (Join-Path $runDir 'run_manifest.json') -Raw | ConvertFrom-Json

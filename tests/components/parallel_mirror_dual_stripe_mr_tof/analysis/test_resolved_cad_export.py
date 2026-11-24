@@ -536,6 +536,16 @@ class CadPlanTests(unittest.TestCase):
 
 
 
+    def test_launcher_uses_explicit_installed_execution_context(self):
+        repo = Path(__file__).resolve().parents[4]
+        launcher = (repo/'src/msplatform/workflows/resources/run_resolved_cad_export.ps1').read_text(encoding='utf-8-sig')
+        for parameter in ('WorkspaceRoot', 'ArtifactRoot', 'PythonExe'):
+            self.assertIn(f'[Parameter(Mandatory)][string]${parameter}', launcher)
+        self.assertIn("$preflight=@('-I','-B','-m',$module", launcher)
+        self.assertIn("$arguments=@('-I','-B','-m',$module", launcher)
+        for retired in ('SIMULATION_PYTHON_EXE', 'PYTHONPATH', 'Invoke-RunToolRootContext'):
+            self.assertNotIn(retired, launcher)
+
     def test_selected_cad_parts_copy_and_live_source_guard_preserve_primary_failure(self):
         # Execute the actual launcher audit blocks, with a real inert Python child.
         # The package directories are test-owned; no CAD/owner receipt is invented.
@@ -556,7 +566,10 @@ class CadPlanTests(unittest.TestCase):
         for case in ('success', 'before', 'during', 'child_failure', 'during_failure', 'missing'):
             with self.subTest(case=case), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
-                provider = root/'selected'; selected = provider/'src/msplatform/exporters/mr_cad_parts.py'
+                environment_root = root/'venv'
+                subprocess.run([sys.executable, '-m', 'venv', str(environment_root)], check=True,
+                               capture_output=True, text=True, timeout=60, cwd=root)
+                selected = environment_root/'Lib/site-packages/msplatform/exporters/mr_cad_parts.py'
                 selected.parent.mkdir(parents=True)
                 for directory in (selected.parent, selected.parent.parent):
                     (directory/'__init__.py').write_text('', encoding='utf-8')
@@ -595,8 +608,9 @@ exit 0
                 script = root/'actual-source-audit.ps1'
                 script.write_text(header+preparation+setup+execution+footer, encoding='utf-8')
                 environment = dict(os.environ, PYTHONPATH=str(competitor.parent.parent))
-                result = subprocess.run([pwsh, '-NoProfile', '-File', str(script), str(repo), sys.executable,
-                    str(provider), str(package), case], cwd=root, env=environment,
+                selected_python = environment_root/'Scripts/python.exe'
+                result = subprocess.run([pwsh, '-NoProfile', '-File', str(script), str(repo), str(selected_python),
+                    str(environment_root), str(package), case], cwd=root, env=environment,
                     capture_output=True, text=True, encoding='utf-8', timeout=60)
                 self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
                 observed = json.loads(result.stdout)

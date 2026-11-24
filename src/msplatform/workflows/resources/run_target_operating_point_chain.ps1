@@ -5,16 +5,23 @@ param(
   [Parameter(Mandatory)][string]$MirrorRunManifest,
   [string]$ContractPath = '',
   [string]$ChainStamp = '',
-  [string]$PythonExe = ''
+  [Parameter(Mandatory)][string]$WorkspaceRoot,
+  [Parameter(Mandatory)][string]$ArtifactRoot,
+  [Parameter(Mandatory)][string]$PythonExe
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $projectId = 'parallel_mirror_dual_stripe_mr_tof'
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
-$packageRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$workspaceRoot = Split-Path -Parent $repoRoot
+$workspaceRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
+$artifactRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)
+$python = [IO.Path]::GetFullPath($PythonExe)
+if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 environment is missing: $python" }
+$packageRootText = & $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
+if ($LASTEXITCODE -ne 0) { throw 'Installed msplatform package is unavailable.' }
+$packageRoot = (Resolve-Path -LiteralPath $packageRootText).Path
+$workflowResources = Join-Path $packageRoot 'workflows/resources'
 $contract = if ($ContractPath) {
   (Resolve-Path -LiteralPath $ContractPath).Path
 } else {
@@ -30,9 +37,9 @@ if ($ChainStamp -notmatch '^\d{8}_\d{6}(?:-[A-Za-z0-9][A-Za-z0-9_-]*)?$') {
 
 $exactRunId = $ChainStamp + '__analysis__python__mirror-exact-k-operating-point'
 $stripeRunId = $ChainStamp + '__analysis__python__dual-stripe-exact-k-operating-seed'
-$artifactRoot = Join-Path $workspaceRoot "artifacts\projects\$projectId\runs"
-$exactRun = Join-Path $artifactRoot $exactRunId
-$stripeRun = Join-Path $artifactRoot $stripeRunId
+$chainRunsRoot = Join-Path $artifactRoot "projects\$projectId\runs"
+$exactRun = Join-Path $chainRunsRoot $exactRunId
+$stripeRun = Join-Path $chainRunsRoot $stripeRunId
 foreach ($path in @($exactRun, $stripeRun)) {
   if (Test-Path -LiteralPath $path) {
     throw "Target operating-point chain refuses to overwrite an existing run: $path"
@@ -43,9 +50,11 @@ $exactArguments = @{
   MirrorRunManifest = $mirrorManifest
   ContractPath = $contract
   RunId = $exactRunId
+  WorkspaceRoot = $workspaceRoot
+  ArtifactRoot = $artifactRoot
+  PythonExe = $python
 }
-if ($PythonExe) { $exactArguments.PythonExe = $PythonExe }
-& (Join-Path $PSScriptRoot 'run_mirror_exact_k_operating_point.ps1') @exactArguments
+& (Join-Path $workflowResources 'run_mirror_exact_k_operating_point.ps1') @exactArguments
 $exactManifest = Join-Path $exactRun 'run_manifest.json'
 if (-not (Test-Path -LiteralPath $exactManifest -PathType Leaf)) {
   throw "Exact-K stage did not publish its terminal manifest: $exactManifest"
@@ -57,9 +66,11 @@ $stripeArguments = @{
   ExactKRunManifest = $exactManifest
   ContractPath = $contract
   RunId = $stripeRunId
+  WorkspaceRoot = $workspaceRoot
+  ArtifactRoot = $artifactRoot
+  PythonExe = $python
 }
-if ($PythonExe) { $stripeArguments.PythonExe = $PythonExe }
-& (Join-Path $PSScriptRoot 'run_dual_stripe_operating_seed.ps1') @stripeArguments
+& (Join-Path $workflowResources 'run_dual_stripe_operating_seed.ps1') @stripeArguments
 $stripeManifest = Join-Path $stripeRun 'run_manifest.json'
 if (-not (Test-Path -LiteralPath $stripeManifest -PathType Leaf)) {
   throw "Dual-Stripe stage did not publish its terminal manifest: $stripeManifest"

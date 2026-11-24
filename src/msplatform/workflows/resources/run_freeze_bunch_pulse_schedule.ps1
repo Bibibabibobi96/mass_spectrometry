@@ -7,15 +7,22 @@ param(
   [Parameter(Mandatory)][ValidateRange(0.0,[double]::MaxValue)][double]$GuardUs,
   [Nullable[double]]$PulseOffTimeUs=$null,
   [string]$RunId='',
-  [string]$PythonExe=''
+  [Parameter(Mandatory)][string]$WorkspaceRoot,
+  [Parameter(Mandatory)][string]$ArtifactRoot,
+  [Parameter(Mandatory)][string]$PythonExe
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $projectId='parallel_mirror_dual_stripe_mr_tof'
-$repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
-$workspaceRoot=Split-Path -Parent $repoRoot
-$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
+$workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path
+$repoRoot=$workspaceRoot
+$artifactRoot=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)
+$python=[IO.Path]::GetFullPath($PythonExe)
+if(-not(Test-Path -LiteralPath $python -PathType Leaf)){throw "Python 3.11 environment is missing: $python"}
+$packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
+if($LASTEXITCODE-ne0){throw 'Installed msplatform package is unavailable.'}
+$packageRoot=(Resolve-Path -LiteralPath $packageRootText).Path
 $sourceManifest=(Resolve-Path -LiteralPath $BunchSourceRunManifest).Path
 $pilotManifest=(Resolve-Path -LiteralPath $StaticPilotRunManifest).Path
 $pilotReceipt=(Resolve-Path -LiteralPath $PilotTrialReceiptPath).Path
@@ -26,7 +33,7 @@ if([string]::IsNullOrWhiteSpace($RunId)){
   $RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__analysis__python__mrtof-bunch-pulse-schedule'
 }
 
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
+. (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
 
 function Get-VerifiedOutputRecord {
   param(
@@ -47,7 +54,7 @@ function Get-VerifiedOutputRecord {
   return $record
 }
 
-$artifactProjectRoot=Join-Path $workspaceRoot "artifacts\projects\$projectId"
+$artifactProjectRoot=Join-Path $artifactRoot "projects\$projectId"
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactProjectRoot `
   -RunId $RunId -Project $projectId -Mode 'bunch_global_pulse_schedule_freeze' `
   -Software @('Python 3.11') -RetentionContractEnabled -RetentionClass compact `
@@ -57,16 +64,16 @@ $terminalized=$false;$failureStage='preflight';$capacitySession=$null
 try{
   $failureStage='capacity_startup'
   $capacitySession=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
-    -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -RunDirectory $package.artifact_run_dir `
+    -ArtifactRoot ($artifactRoot) -RunDirectory $package.artifact_run_dir `
     -CommittedNewBytes 1048576 -ProtectedPaths @($package.artifact_run_dir,$sourceRun,$pilotRun) `
     -Owner "mrtof-freeze-bunch-pulse-schedule:$RunId"
   $startupPath=Join-Path $resultDir 'artifact_capacity_gate_startup.json'
   Write-RunJson -Path $startupPath -Depth 14 -Value $capacitySession
   $failureStage='verify_sources'
-  & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $sourceManifest `
+  & $python -I -B -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $sourceManifest `
     --require-status success --require-project $projectId --require-mode deterministic_bunch_source_materialization
   if($LASTEXITCODE-ne 0){throw 'Bunch source run manifest failed verification.'}
-  & $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $pilotManifest `
+  & $python -I -B -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $pilotManifest `
     --require-status success --require-project $projectId
   if($LASTEXITCODE-ne 0){throw 'Static pilot run manifest failed verification.'}
   $sourceData=Get-Content -LiteralPath $sourceManifest -Raw -Encoding UTF8|ConvertFrom-Json
@@ -106,16 +113,15 @@ try{
   $failureStage='freeze_schedule'
   $schedule=Join-Path $resultDir 'bunch_global_pulse_schedule.json'
   $log=Join-Path $logDir 'freeze_bunch_pulse_schedule.log'
-  Push-Location -LiteralPath $repoRoot;$saved=$env:PYTHONPATH
+  Push-Location -LiteralPath $workspaceRoot
   try{
-    $env:PYTHONPATH=$repoRoot
     $freezeArguments=@('-m','msplatform.backends.simion.mr_bunch_source',
       'freeze-schedule','--source-receipt',$frozenSourceReceipt,'--pilot-log',$frozenPilotLog,
       '--pilot-trial-receipt',$frozenPilotReceipt,'--guard-us',([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',$GuardUs)),'--output',$schedule)
     if($null-ne$PulseOffTimeUs){$freezeArguments+=@('--pulse-off-time-us',([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',[double]$PulseOffTimeUs)))}
-    & $python @freezeArguments 2>&1|Tee-Object -FilePath $log
+    & $python -I -B @freezeArguments 2>&1|Tee-Object -FilePath $log
     if($LASTEXITCODE-ne 0){throw 'Bunch pulse schedule freeze failed.'}
-  }finally{$env:PYTHONPATH=$saved;Pop-Location}
+  }finally{Pop-Location}
   $scheduleData=Get-Content -LiteralPath $schedule -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
   Write-RunJson -Path $summary -Depth 16 -Value ([ordered]@{
     schema_version=1;role='mrtof_bunch_global_pulse_schedule_run_summary';status='success'

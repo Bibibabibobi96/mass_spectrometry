@@ -24,6 +24,31 @@ unchanged. Native composition also uses the same isolated `python -I -B -m` boun
 and binding; direct child-process negatives prove that same-named modules in both the working
 directory and `PYTHONPATH` cannot replace the installed provider. No native solver was started.
 
+The mirror/Stripe, single-centre timing, source-z, segmented-prism and bunch-source PowerShell
+entries now require explicit `WorkspaceRoot`, `ArtifactRoot` and `PythonExe`. They resolve
+execution resources, default scientific contracts and audited source copies from that Python's
+installed package; the target operating-point parent forwards the same three values to both
+children. Python calls use `-I -B`, with no checkout `.venv` or `PYTHONPATH` fallback. Scientific
+inputs, numerical controls and host-lease ownership are unchanged. Eleven real PowerShell
+missing-input preflights rejected foreign `PYTHONPATH` code without creating artifacts, and the
+seven directly affected modules passed 151 tests with 14 existing external-evidence skips using
+a temporary installation of this checkout. No native solver or scientific qualification follows.
+
+The COMSOL-corridor, downstream fixed-grid/iteration, IP/prism-distance, bunch-screening and
+resolved-CAD entries likewise require explicit `WorkspaceRoot`, `ArtifactRoot` and `PythonExe`.
+Their direct Python calls use `-I -B` and the selected installed package; audited source copies,
+scientific defaults and child entry points resolve there instead of a checkout `.venv` or
+`PYTHONPATH`. Corridor finalization and IP/prism analysis therefore consume the selected installed
+implementation while retaining their run-local source/resource evidence. Native arguments,
+host/capacity leases, checkpoint recovery, source protection and public retirement remain owned
+by the existing mechanisms. This wiring change grants no native solver or scientific qualification.
+
+All IP/prism preparation, contour and replay resources now resolve from the selected installed/frozen
+`msplatform` provider. `freeze_code` no longer accepts or scans a checkout and no retired
+`common`/`projects` module closure is collected. The complete 32-test distance-study module passed with
+a temporary local installation, including its real PowerShell runner and missing-resource controls;
+no native solver was started.
+
 ## Installed native static-field provider
 
 `msplatform.backends.simion.native_static_field_provider` and `native_corridor_plan`
@@ -275,8 +300,8 @@ IP/Prism 距离研究的 `freeze_code` 显式冻结规范核心与 schema，并�
 `resolve_assembly`、`release`；调度职责已由 `msplatform.execution.simion_dispatch` 承担，
 生命周期职责直接使用 `msplatform.execution.run_capacity_lifecycle`，相关旧桥均已退出。
 机器合同校验直接使用安装实现，仓库路径边界与科学校验保持分离。
-runner 使用公共导入根，并在每次 Python 调用前校验核心及目标模块来自本次快照；
-缺少冻结核心时拒绝宿主安装补齐。上述桥随具名调用迁移退出，最迟 P4 删除。
+runner 使用所选 Python 的 `-I` 安装实现；准备仍冻结并校验完整源码闭包作为证据，
+但运行时不以该快照或宿主 `PYTHONPATH` 替换所选安装。上述桥随具名调用迁移退出，最迟 P4 删除。
 MR 距离研究整模块 30 项及 IP 隔离 probe 1 项通过（17.414 秒），包括真实冻结源码、
 核心来源、缺文件拒绝及原 source/clock/velocity 断言；这是软件验收，没有重跑旧局部物理。
 
@@ -335,7 +360,8 @@ prepare 现沿公共源码冻结机制把 `msplatform` Python 闭包及 JSON／M
 并将 plan 的 MATLAB 资源目录改为 run 的 `inputs/`；Child 因而消费已复制的四个项目 MATLAB 文件，
 finalize 通过公共导入根从 `inputs/code` 加载 Python，而不是当前 editable 安装。回归实际删除准备时的
 原 MATLAB 资源目录，并在隔离 Python 进程中完成冻结代码收尾；准备后原安装移走或更新不会改变该闭包。
-公共 PowerShell 启动器、资源／容量入口和 `.venv` 解释器仍由 `repo_root` 提供，故本项不支持整个原仓库移除。
+当前原生入口的 prepare/finalize 由显式选择的 Python `-I` 安装实现执行，冻结闭包保留为来源证据；
+workspace、artifact 和 Python 均显式输入，不再由 `repo_root` 选择 `.venv` 或公共启动器。
 最终完整 Static 为 1785 项、3 failure、20 error、12 skip；这些失败均来自尚未同步的
 `integrations` 旧 binding/Lua 引用，由主 Agent 在 integration 边界处理。MR 内定向及完整门禁
 未留下其他失败；该结果不冒充完整 Static PASS。

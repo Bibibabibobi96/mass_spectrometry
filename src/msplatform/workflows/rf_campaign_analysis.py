@@ -13,7 +13,7 @@ from msplatform.contracts.machine_contracts import ContractError, validate_schem
 from msplatform.io.manifest_records import record_path
 from msplatform.workflows.rf_campaign_status import _verify_manifest as verify_campaign_manifest
 from msplatform.analysis.numerical_qualification import run_data
-from msplatform.workflows.rf_design_profiles import resolve_design_profile
+from msplatform.workflows.rf_design_profiles import resolve_design_profile, rf_project_root
 from msplatform.workflows.rf_runtime_profiles import resolve_campaign_path
 
 
@@ -46,7 +46,8 @@ def _resolve_catalog_module(repo_root: Path, module: str) -> str:
     public_owned = module == "msplatform.workflows.rf_exit_state_plot"
     if not project_owned and not public_owned:
         raise ValueError(f"analysis capability module is outside multipole analysis: {module}")
-    relative = Path("src") / Path(*module.split(".")).with_suffix(".py")
+    source_prefix = Path("src") if (repo_root / "src").is_dir() else Path()
+    relative = source_prefix / Path(*module.split(".")).with_suffix(".py")
     if not (repo_root / relative).is_file():
         raise ValueError(f"analysis capability module is missing: {module}")
     return module
@@ -247,7 +248,7 @@ def campaign_request_preflight(
             "campaign_sha256": _sha256(campaign_path),
             "analyses": [],
         }
-    catalog_path = repo_root / "src/msplatform/components/rf_multipole/config/contracts/analysis_capabilities.json"
+    catalog_path = rf_project_root(repo_root) / "config/contracts/analysis_capabilities.json"
     catalog = _load_json(catalog_path)
     if catalog.get("schema_version") != 1 or catalog.get("role") != CATALOG_ROLE:
         raise ValueError("analysis capability catalog identity differs")

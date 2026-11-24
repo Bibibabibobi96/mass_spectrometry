@@ -8,7 +8,6 @@ import json
 from pathlib import Path
 
 from msplatform.workflows.oa_tof_design.experiment_campaign import (
-    DEFAULT_CAMPAIGN,
     campaign_status,
     execute_campaign,
     read_campaign_receipt,
@@ -21,25 +20,31 @@ from msplatform.workflows.oa_candidate.run_candidate import (
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--campaign", type=Path, default=DEFAULT_CAMPAIGN)
+    parser.add_argument("--campaign", type=Path, required=True)
     action = parser.add_mutually_exclusive_group(required=True)
     action.add_argument("--status", action="store_true")
     action.add_argument("--receipt", metavar="CAMPAIGN_RUN_ID")
     action.add_argument("--experiment-id")
     action.add_argument("--all", action="store_true")
     parser.add_argument("--campaign-run-id")
+    parser.add_argument("--artifact-root", type=Path, required=True)
+    parser.add_argument("--science-root", type=Path, required=True)
     parser.add_argument("--simion-exe", type=Path)
     args = parser.parse_args()
 
     if args.status:
         if args.campaign_run_id:
             parser.error("--status is read-only and does not accept --campaign-run-id")
-        print(json.dumps(campaign_status(args.campaign), ensure_ascii=False, indent=2))
+        print(json.dumps(campaign_status(
+            args.campaign, artifact_root=args.artifact_root,
+        ), ensure_ascii=False, indent=2))
         return
     if args.receipt:
         if args.campaign_run_id:
             parser.error("--receipt is read-only and does not accept --campaign-run-id")
-        print(json.dumps(read_campaign_receipt(args.receipt), ensure_ascii=False, indent=2))
+        print(json.dumps(read_campaign_receipt(
+            args.receipt, artifact_root=args.artifact_root,
+        ), ensure_ascii=False, indent=2))
         return
     if not args.campaign_run_id:
         parser.error("execution requires --campaign-run-id")
@@ -48,12 +53,14 @@ def main() -> None:
 
     # Machine/runtime evidence is intentionally outside CI artifacts. Validate it
     # before execute_campaign is allowed to allocate campaign or child evidence.
-    validate_candidate_runtime()
+    validate_candidate_runtime(args.artifact_root, science_root=args.science_root)
     run_root, summary = execute_campaign(
         args.campaign,
         args.campaign_run_id,
         experiment_id=args.experiment_id,
         run_all=args.all,
+        artifact_root=args.artifact_root,
+        science_root=args.science_root,
         candidate_executor=partial(execute_request, simion_executable=args.simion_exe),
     )
     print(

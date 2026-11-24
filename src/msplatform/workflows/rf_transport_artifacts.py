@@ -25,7 +25,8 @@ from msplatform.components.rf_multipole.family_contract import (
 )
 
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+_MODULE_PATH = Path(__file__).resolve()
+REPO_ROOT = _MODULE_PATH.parents[3] if _MODULE_PATH.parents[2].name == "src" else _MODULE_PATH.parents[2]
 ARTIFACT_PROJECTS_ROOT = REPO_ROOT.parent / "artifacts" / "projects"
 
 
@@ -64,18 +65,21 @@ def _finalize(run: TransportRun, status: str, fields: Mapping[str, Any]) -> None
 def transport_run(
     project_root: Path, run_id: str, *, mode: str, run_config_role: str, summary_role: str,
     design_profile_id: str, parameters: Mapping[str, Any], identity_inputs: Mapping[str, Path], output_names: tuple[str, ...],
+    repository_root: Path = REPO_ROOT, artifact_projects_root: Path | None = None,
 ) -> Iterator[TransportRun]:
     """Prepare, freeze, and terminalize one analytic multipole transport run."""
+    if artifact_projects_root is None:
+        artifact_projects_root = ARTIFACT_PROJECTS_ROOT
     validate_run_id(run_id)
     descriptor = json.loads((project_root / "config/project.json").read_text(encoding="utf-8"))
     project_id = descriptor["project_id"]
-    resolution = resolve_design_profile(REPO_ROOT, project_id, design_profile_id)
+    resolution = resolve_design_profile(repository_root, project_id, design_profile_id)
     resolved_design = resolution["resolved_design"]
     structural_variant_id = resolution["profile"]["structural_variant_id"]
     if structural_variant_id not in {"hexapole", "octupole"} or design_profile_id != f"{structural_variant_id}_no_acceleration_full_length":
         raise ValueError("L1/L2 transport only supports the registered hexapole/octupole no-acceleration baseline designs")
     contract = l1_l2_transport_contract_from_resolved_design(resolved_design)
-    run_dir = ensure_artifact_project(ARTIFACT_PROJECTS_ROOT, project_id) / "runs" / run_id
+    run_dir = ensure_artifact_project(artifact_projects_root, project_id) / "runs" / run_id
     if run_dir.exists():
         raise FileExistsError(f"run directory already exists: {run_dir}")
     input_dir, result_dir = run_dir / "inputs", run_dir / "results"

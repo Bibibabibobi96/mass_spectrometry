@@ -8,19 +8,23 @@ param(
  [ValidateSet('step','parasolid')][string]$ExchangeFormat='step',
  [string]$PublishCadRunPath,[string]$EnglishOverviewPath,[string]$OverviewManifestPath,
  [switch]$InspectMachiningHoles,[switch]$OmitMountingHoles,[string]$MachiningHoleAuditRunPath,
- [string]$ElectricalStepCadRunPath,[string]$IndividualStepDeliveryRunPath,[switch]$ConnectedStepContacts,[switch]$FrozenMirrorPose
+ [string]$ElectricalStepCadRunPath,[string]$IndividualStepDeliveryRunPath,[switch]$ConnectedStepContacts,[switch]$FrozenMirrorPose,
+ [Parameter(Mandatory)][string]$WorkspaceRoot,[Parameter(Mandatory)][string]$ArtifactRoot,[Parameter(Mandatory)][string]$PythonExe
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-$repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '../../../..')).Path
-$python=if($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit SIMULATION_PYTHON_EXE is required'}
-$executionResources=Join-Path $repoRoot 'src/msplatform/execution/resources'
+$repoRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path
+$allArtifacts=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)
+$python=[IO.Path]::GetFullPath($PythonExe)
+$packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
+if($LASTEXITCODE-ne0-or[string]::IsNullOrWhiteSpace([string]$packageRootText)){throw 'Installed msplatform package is unavailable.'}
+$packageRoot=(Resolve-Path -LiteralPath ([string]$packageRootText).Trim()).Path
+$executionResources=Join-Path $packageRoot 'execution/resources'
 . (Join-Path $executionResources 'run_artifact_support.ps1')
-$hostState=if($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH}else{Join-Path (Split-Path -Parent $repoRoot) 'artifacts/common/host_resources.sqlite3'}
-$hostContext=@{workspace=(Split-Path -Parent $repoRoot);python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
+$hostState=Join-Path $allArtifacts 'common/host_resources.sqlite3'
+$hostContext=@{workspace=$repoRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 $project='parallel_mirror_dual_stripe_mr_tof'
-$allArtifacts=Join-Path (Split-Path -Parent $repoRoot) 'artifacts'
 $projectArtifacts=Join-Path $allArtifacts "projects/$project"
 $field=(Resolve-Path -LiteralPath $FieldRunPath).Path
 $assembly=(Resolve-Path -LiteralPath $AssemblyRunPath).Path
@@ -110,7 +114,7 @@ if($ReuseCadRunPath){
  if($ExchangeFormat-eq'step'){foreach($part in $nativeParts){if(-not(Test-Path -LiteralPath (Join-Path $part.DirectoryName ($part.BaseName+'.step')))){throw 'Saved part STEP is missing.'}}}
 }
 $module='msplatform.exporters.mr_resolved_cad'
-$preflight=@('-B','-m',$module,'--geometry',$geometry,'--authority',$authority,'--materialization',$materialization,
+$preflight=@('-I','-B','-m',$module,'--geometry',$geometry,'--authority',$authority,'--materialization',$materialization,
  '--output',(Join-Path $projectArtifacts "runs/$RunId/cad"),'--exchange-format',$ExchangeFormat,'--check-only')
 if($Smoke){$preflight+='--smoke'}
 if($SmokePart){$preflight+=@('--smoke-part',$SmokePart)}
@@ -124,7 +128,8 @@ if($individual){$preflight+=@('--individual-step-delivery-run',$individual)}
 if($ConnectedStepContacts){$preflight+='--connected-step-contacts'}
 if($FrozenMirrorPose){$preflight+='--frozen-mirror-pose'}
 if($electrical-and$overview){$preflight+=@('--english-overview',$overview,'--overview-manifest',$overviewManifest)}
-Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {& $python @preflight;if($LASTEXITCODE-ne0){throw 'CAD physical input preflight failed.'}}
+& $python @preflight
+if($LASTEXITCODE-ne0){throw 'CAD physical input preflight failed.'}
 if($CheckOnly){Write-Host 'MRTOF_CAD_CHECK_ONLY=PASS';return}
 if(-not$Approved){throw 'Actual CAD export or publication requires -Approved.'}
 $package=$null;$capacity=$null;$hostLease=$null
@@ -135,17 +140,17 @@ try{
   -AdditionalDirectories @('cad') -CapacityLedgerLifecycleEnabled -CapacityLedgerArtifactRoot $allArtifacts
  $capacity=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -ArtifactRoot $allArtifacts `
   -RunDirectory $package.artifact_run_dir -CommittedNewBytes $committedBytes -Owner "mrtof-cad:$RunId" -ProtectedPaths @($field,$assembly,$reuse,$original,$pose,$publish,$overview,$overviewManifest,$holeAudit,$electrical,$individual|Where-Object {$_})
- $exporterSelectedSource=Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
-  $selected=& $python -B -c 'import json;from pathlib import Path;from msplatform.exporters import mr_resolved_cad;print(json.dumps(str(Path(mr_resolved_cad.__file__).resolve(strict=True))))'
+ $exporterSelectedSource=& {
+  $selected=& $python -I -B -c 'import json;from pathlib import Path;from msplatform.exporters import mr_resolved_cad;print(json.dumps(str(Path(mr_resolved_cad.__file__).resolve(strict=True))))'
   if($LASTEXITCODE-ne0){throw 'Selected canonical CAD exporter is unavailable.'}
   $selected|ConvertFrom-Json
  }
  $source=Copy-VerifiedRunInput -Source $exporterSelectedSource -Destination (Join-Path $package.input_dir 'cad_exporter.py')
- $null=Copy-VerifiedRunInput -Source $PSCommandPath -Destination (Join-Path $package.input_dir 'launcher.ps1')
+ $null=Copy-VerifiedRunInput -Source (Join-Path $packageRoot 'workflows/resources/run_resolved_cad_export.ps1') -Destination (Join-Path $package.input_dir 'launcher.ps1')
  # CAD_PARTS_SOURCE_AUDIT_BEGIN
  # Resolve the actual selected provider in the same Python/root context as CAD.
- $cadPartsSelectedSource=Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
-  $selected=& $python -B -c 'import json;from pathlib import Path;from msplatform.exporters import mr_cad_parts;print(json.dumps(str(Path(mr_cad_parts.__file__).resolve(strict=True))))'
+ $cadPartsSelectedSource=& {
+  $selected=& $python -I -B -c 'import json;from pathlib import Path;from msplatform.exporters import mr_cad_parts;print(json.dumps(str(Path(mr_cad_parts.__file__).resolve(strict=True))))'
   if($LASTEXITCODE-ne0){throw 'Selected canonical CAD parts source is unavailable.'}
   $selected|ConvertFrom-Json
  }
@@ -241,7 +246,7 @@ try{
  $cadBudget.memory_bytes=if($publish){536870912}else{8589934592}
  if($publish){$cadBudget.exclusive_resources=@()}else{$cadBudget.exclusive_resources=@('solidworks-2022-cad')}
  $hostLease=Enter-HostResourceStage -Role GATE -Stage $cadStage -RunId $RunId -Budget $cadBudget
- $arguments=@('-B','-m',$module,'--geometry',$geometry,'--authority',$authority,'--materialization',$materialization,
+ $arguments=@('-I','-B','-m',$module,'--geometry',$geometry,'--authority',$authority,'--materialization',$materialization,
   '--output',(Join-Path $package.artifact_run_dir 'cad'),'--exchange-format',$ExchangeFormat)
  if($Smoke){$arguments+='--smoke'}
  if($SmokePart){$arguments+=@('--smoke-part',$SmokePart)}
@@ -262,7 +267,7 @@ if($electrical-and$overview){$arguments+=@('--english-overview',$overview,'--ove
  }
  $cadPartsExecutionError=$null
  try{
-  Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
+  & {
    & $python @arguments 1> (Join-Path $package.log_dir 'cad_stdout.log') 2> (Join-Path $package.log_dir 'cad_stderr.log')
    $cadExitCode=$LASTEXITCODE
    if($cadExitCode-ne0){throw "CAD export/publication failed; see $($package.log_dir)."}

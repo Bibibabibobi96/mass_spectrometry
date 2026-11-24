@@ -27,15 +27,19 @@ $modeName = 'mass_filter_reference'
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../components/rf_multipole'))
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../../..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
+$python = if ($PythonExe) {
+    [IO.Path]::GetFullPath($PythonExe)
+} elseif ($env:SIMULATION_PYTHON_EXE) {
+    [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)
+} else {
+    throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'
+}
 $artifactRoot = if ($ArtifactRootPath) {
     [IO.Path]::GetFullPath($ArtifactRootPath)
 } else {
-    Join-Path $workspaceRoot 'artifacts\projects\rf_multipole_ion_optics'
-}
-$python = if ($PythonExe) {
-    [IO.Path]::GetFullPath($PythonExe)
-} else {
-    Join-Path $repoRoot '.venv\Scripts\python.exe'
+    . (Join-Path $repoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
+    $workspacePaths = Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
+    Join-Path $workspacePaths.artifact_root 'projects/rf_multipole_ion_optics'
 }
 if($ResumeFinalization){
     if(-not$RunId){throw 'Finalization recovery requires the original RunId.'}

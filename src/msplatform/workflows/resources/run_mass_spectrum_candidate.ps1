@@ -10,20 +10,21 @@ param(
   [string]$ResultPath='',
   [Parameter(Mandatory,ParameterSetName='ResumeFinalization')][switch]$ResumeFinalization,
   [string]$PythonExe='',
-  [string]$Workspace='',
+  [Parameter(Mandatory=$true)][string]$Workspace,
+  [Parameter(Mandatory=$true,ParameterSetName='Run')][string]$ArtifactRootPath,
+  [Parameter(Mandatory=$true,ParameterSetName='Run')][string]$ScienceRoot,
   [string]$ExecutionEnvironment='',
   [string]$EngineeringProfile=''
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-$repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '../../../..')).Path
-$projectRoot=Join-Path $repoRoot 'src/msplatform/components/single_reflection_oa_tof'
-$Workspace=if($Workspace){$Workspace}elseif($env:MASS_SPECTRUM_WORKSPACE){$env:MASS_SPECTRUM_WORKSPACE}else{$repoRoot}
+$Workspace=(Resolve-Path -LiteralPath $Workspace).Path
+$python=if($PythonExe){(Resolve-Path -LiteralPath $PythonExe).Path}elseif($env:SIMULATION_PYTHON_EXE){
+  (Resolve-Path -LiteralPath $env:SIMULATION_PYTHON_EXE).Path}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required.'}
+$packageRoot=Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $ExecutionEnvironment=if($ExecutionEnvironment){$ExecutionEnvironment}else{$env:MASS_SPECTRUM_EXECUTION_ENVIRONMENT}
 $EngineeringProfile=if($EngineeringProfile){$EngineeringProfile}else{$env:MASS_SPECTRUM_ENGINEERING_PROFILE}
 if(-not$ExecutionEnvironment-or-not$EngineeringProfile){throw 'Select an explicit execution environment and engineering profile.'}
-$python=if($PythonExe){(Resolve-Path -LiteralPath $PythonExe).Path}elseif($env:SIMULATION_PYTHON_EXE){
-  (Resolve-Path -LiteralPath $env:SIMULATION_PYTHON_EXE).Path}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required.'}
 $module='msplatform.workflows.single_reflection_mass_spectrum_study'
 $common=@('--run-id',$RunId,'--workspace',$Workspace,'--execution-environment',$ExecutionEnvironment,
   '--engineering-profile',$EngineeringProfile)
@@ -33,7 +34,8 @@ if($ResumeFinalization){
   if($ResultPath){$arguments+=@('--result-path',$ResultPath)}
   $success='MASS_SPECTRUM_FINALIZATION=PASS'
 }else{
-  $artifactProject=Join-Path $Workspace 'artifacts/projects/single_reflection_oa_tof_mass_analyzer'
+  $projectRoot=if($ScienceRoot){(Resolve-Path -LiteralPath $ScienceRoot).Path}else{''}
+  $artifactProject=if($ArtifactRootPath){Join-Path ($ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRootPath)) 'projects/single_reflection_oa_tof_mass_analyzer'}else{''}
   if($ReanalyzeOnly){
     $action='analyze';$success='MASS_SPECTRUM_ANALYSIS=PASS'
   }else{
@@ -45,7 +47,7 @@ if($ResumeFinalization){
     $arguments+=@(
       '--mode-config',(Join-Path $projectRoot 'config/modes/mass_spectrum.json'),
       '--resolved-geometry',(Join-Path $projectRoot 'config/resolved_geometry.json'),
-      '--particle-count-policy',(Join-Path $repoRoot 'src/msplatform/contracts/particle_count_policy.json'),
+      '--particle-count-policy',(Join-Path $packageRoot 'contracts/particle_count_policy.json'),
       '--formal-mph',(Join-Path $artifactProject 'formal/comsol/single_reflection_oa_tof_mass_analyzer__model.mph'),
       '--formal-asset-manifest',(Join-Path $artifactProject 'formal/asset_manifest.json'),
       '--simion-executable',$SimionExe,'--artifact-project-root',$artifactProject,
@@ -59,6 +61,6 @@ if($ResumeFinalization){
   if($SourceStoppedReceiptPath){$arguments+=@('--stopped-receipt',$SourceStoppedReceiptPath)}
   if($ReanalyzeOnly){$arguments+=@('--analysis-new-bytes',[string]$AnalysisNewBytes)}
 }
-& $python -c "from msplatform.workflows.single_reflection_mass_spectrum_study import main; main()" @($arguments | Select-Object -Skip 1)
+& $python -I -B -c "from msplatform.workflows.single_reflection_mass_spectrum_study import main; main()" @($arguments | Select-Object -Skip 1)
 if($LASTEXITCODE-ne0){throw "Mass-spectrum installed workflow failed with exit code $LASTEXITCODE."}
 Write-Output ($success+' RUN_ID='+$RunId)

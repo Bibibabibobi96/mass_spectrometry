@@ -2,29 +2,35 @@
 param(
   [string]$ContractPath = '',
   [string]$RunId = '',
-  [string]$PythonExe = ''
+  [Parameter(Mandatory)][string]$WorkspaceRoot,
+  [Parameter(Mandatory)][string]$ArtifactRoot,
+  [Parameter(Mandatory)][string]$PythonExe
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $projectId = 'parallel_mirror_dual_stripe_mr_tof'
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
-$workspaceRoot = Split-Path -Parent $repoRoot
-$projectRoot = Join-Path $repoRoot "src\msplatform\components\$projectId"
-$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } elseif ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) } else { throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required' }
+$workspaceRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
+$repoRoot = $workspaceRoot
+$artifactRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)
+$python = [IO.Path]::GetFullPath($PythonExe)
+if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 environment is missing: $python" }
+$packageRootText = & $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
+if ($LASTEXITCODE -ne 0) { throw 'Installed msplatform package is unavailable.' }
+$packageRoot = (Resolve-Path -LiteralPath $packageRootText).Path
 $contractInput = if ($ContractPath) {
   (Resolve-Path -LiteralPath $ContractPath).Path
 } else {
-  Join-Path $repoRoot 'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json'
+  Join-Path $packageRoot 'components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json'
 }
 if ([string]::IsNullOrWhiteSpace($RunId)) {
   $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__analysis__python__mirror-l0-l1-family'
 }
 
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
+. (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot `
-  -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$projectId") `
+  -ArtifactRoot (Join-Path $artifactRoot "projects\$projectId") `
   -RunId $RunId -Project $projectId -Mode 'analytic_mirror_l0_l1_candidate' `
   -Software @('Python 3.11', 'SciPy') -RetentionContractEnabled `
   -CapacityLedgerLifecycleEnabled
@@ -33,7 +39,7 @@ $resultDir = $package.result_dir
 $logDir = $package.log_dir
 $runConfig = $package.run_config
 $summary = $package.summary
-$artifactCapacityRoot = Join-Path $workspaceRoot 'artifacts'
+$artifactCapacityRoot = $artifactRoot
 $capacitySession = $null
 $terminalized = $false
 $failureStage = 'preflight'
@@ -43,21 +49,12 @@ function Invoke-MirrorPython {
     [Parameter(Mandatory)][string]$Stage,
     [Parameter(Mandatory)][string[]]$Arguments
   )
-  $savedPythonPath = $env:PYTHONPATH
-  $savedNoUserSite = $env:PYTHONNOUSERSITE
+  Push-Location -LiteralPath $workspaceRoot
   try {
-    $env:PYTHONPATH = @(Get-RunPythonImportRoots -RepoRoot $repoRoot) -join [IO.Path]::PathSeparator
-    $env:PYTHONNOUSERSITE = '1'
-    Push-Location -LiteralPath $repoRoot
-    try {
-      & $python @Arguments 2>&1 | Tee-Object -FilePath (Join-Path $logDir "$Stage.log")
+      & $python -I -B @Arguments 2>&1 | Tee-Object -FilePath (Join-Path $logDir "$Stage.log")
       if ($LASTEXITCODE -ne 0) { throw "MR-TOF analytic stage failed: $Stage" }
-    } finally {
-      Pop-Location
-    }
   } finally {
-    $env:PYTHONPATH = $savedPythonPath
-    $env:PYTHONNOUSERSITE = $savedNoUserSite
+    Pop-Location
   }
 }
 
@@ -89,7 +86,7 @@ try {
     'src\msplatform\workflows\resources\run_mirror_l0_l1_candidate.ps1',
     'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\candidate_contract.py'
   )
-  $sourcePaths = @($sourceRelativePaths | ForEach-Object { Join-Path $repoRoot $_ })
+  $sourcePaths = @($sourceRelativePaths | ForEach-Object { Join-Path $packageRoot ($_ -replace '^src\\msplatform\\', '') })
   $inputCopyBytes = [int64](Get-Item -LiteralPath $contractInput).Length
   foreach ($sourcePath in $sourcePaths) {
     if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) { throw "Analytic source is missing: $sourcePath" }

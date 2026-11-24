@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -72,25 +71,16 @@ class Paper1C3J3MappingTests(unittest.TestCase):
         family = compile_c2_j3_physical_control_family(
             campaign_path=campaign, c2_result_path=self.path, source_id="S1")
         candidate = _write_base_candidate(parent, campaign, family)
-        code_root = workspace / "simulation_repo"
-        for relative in ("src/msplatform/workflows/oa_tof_design/paper1_c3_j3_publish.py",
-                         "src/msplatform/workflows/oa_tof_design/paper1_c3_j3_mapping.py"):
-            copied = code_root / relative
-            copied.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(ROOT / relative, copied)
-        copied_publisher = code_root / Path(publisher.__file__).relative_to(ROOT)
-        return campaign, candidate, code_root, copied_publisher
+        return campaign, candidate, workspace / "simulation_repo", Path(publisher.__file__)
 
     def test_publication_freezes_installed_schema_for_all_five_candidates(self) -> None:
-        campaign, candidate, code_root, copied_publisher = self.publication_inputs()
+        campaign, candidate, _, _ = self.publication_inputs()
         workspace = Path(self.temp.name)
         schema_source = publisher.SCHEMA_DIR / "oatof_three_zone_simion_candidate_resolved.schema.json"
         self.assertFalse(schema_source.resolve().is_relative_to(workspace.resolve()))
         parents = {path: path.read_bytes() for path in (campaign, candidate, self.path)}
         run = workspace / "artifacts/projects" / publisher.PROJECT_ID / "runs/20261102_190000__build__python__c3-installed-schema"
-        with (mock.patch.object(publisher, "__file__", str(copied_publisher)),
-              mock.patch.object(publisher, "REPOSITORY_ROOT", code_root),
-              mock.patch.dict(os.environ, {"PYTHONPATH": str(ROOT)})):
+        with mock.patch.dict(os.environ, {"PYTHONPATH": str(ROOT)}):
             summary = publisher.publish_c3_j3_candidates(
                 campaign_path=campaign, c2_result_path=self.path, source_id="S1",
                 base_candidate_path=candidate, run_dir=run, workspace_root=workspace)
@@ -137,18 +127,13 @@ class Paper1C3J3MappingTests(unittest.TestCase):
                 base_candidate_path=candidate, run_dir=run, workspace_root=workspace)
 
     def test_publication_failure_cleans_staging_and_keeps_project_sources_local(self) -> None:
-        campaign, candidate, code_root, copied_publisher = self.publication_inputs()
+        campaign, candidate, _, _ = self.publication_inputs()
         workspace = Path(self.temp.name)
         run = workspace / "artifacts/projects" / publisher.PROJECT_ID / "runs/20261102_190001__build__python__c3-publication-failure"
         parents = {path: path.read_bytes() for path in (campaign, candidate, self.path)}
         arguments = dict(campaign_path=campaign, c2_result_path=self.path, source_id="S1",
                          base_candidate_path=candidate, run_dir=run, workspace_root=workspace)
-        with self.assertRaisesRegex(ValueError, "publisher_source must be inside"):
-            publisher.publish_c3_j3_candidates(**arguments)
-        self.assertFalse(run.exists())
-        with (mock.patch.object(publisher, "__file__", str(copied_publisher)),
-              mock.patch.object(publisher, "REPOSITORY_ROOT", code_root),
-              mock.patch.object(publisher, "_publish_manifest", side_effect=RuntimeError("publication fault")),
+        with (mock.patch.object(publisher, "_publish_manifest", side_effect=RuntimeError("publication fault")),
               self.assertRaisesRegex(RuntimeError, "publication fault")):
             publisher.publish_c3_j3_candidates(**arguments)
         self.assertFalse(run.exists())

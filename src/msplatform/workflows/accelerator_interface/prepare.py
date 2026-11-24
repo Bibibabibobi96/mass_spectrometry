@@ -7,6 +7,7 @@ import os
 from functools import partial
 from pathlib import Path
 import shutil
+from importlib.resources import files
 from typing import Any
 
 from jsonschema import Draft202012Validator
@@ -21,8 +22,14 @@ from msplatform.workflows.prepared_joint.preparation import (
     ION_PROCESSOR, PROJECT, verified_reference, validate_execution_contract,
 )
 
-REPO = Path(__file__).resolve().parents[4]
-CONFIG = REPO / "src/msplatform/components" / PROJECT / "config"
+CONFIG = Path(str(files(f"msplatform.components.{PROJECT}"))).resolve() / "config"
+
+
+def _package_source(relative: str) -> Path:
+    parts = Path(relative).parts
+    if parts[:2] != ("src", "msplatform") or ".." in parts:
+        raise ValueError(f"dependency must name an installed package source: {relative}")
+    return Path(str(files("msplatform").joinpath(*parts[2:]))).resolve(strict=True)
 from msplatform.backends.simion.mr_prepared_field import collision_workbench_layout
 from msplatform.backends.simion.resources import native_resource_path
 from msplatform.workflows.prepared_joint.native_preparation import (
@@ -388,9 +395,9 @@ def prepare_interface(*, source_run: Path | None, reference_mr_run: Path,
     frozen: dict[str, Any] = {}
     sources = {
         "accelerator_selection": CONFIG / "accelerator_interfaces.json",
-        "accelerator_dependency": REPO / selection["dependency_contract"],
+        "accelerator_dependency": _package_source(selection["dependency_contract"]),
         "accelerator_request": (matching_request_path.resolve() if matching_request_path is not None
-                                else REPO / selection["request_contract"]),
+                                else _package_source(selection["request_contract"])),
         "reference_manifest": reference_mr_run / "run_manifest.json",
         "reference_trajectory": verified_reference(reference_mr_run, "simion/trajectory_contract.json"),
         "reference_provider": verified_reference(reference_mr_run, "simion/accelerator_provider_runtime_receipt.json"),

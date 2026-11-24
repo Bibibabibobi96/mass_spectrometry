@@ -63,26 +63,16 @@ function result = import_step_to_solidworks(stepPaths, sldprtPaths, visible, ass
     assert(isfolder(fullfile(moduleRoot, 'msplatform', 'exporters', 'solidworks')), ...
         'oatofCadExport:CodeRootUnavailable', ...
         'Installed SolidWorks Python source root is unavailable: %s', moduleRoot);
-    previousPythonPath = getenv('PYTHONPATH');
-    cleanupPythonPath = onCleanup(@() setenv('PYTHONPATH', previousPythonPath));
-    previousBytecodePolicy = getenv('PYTHONDONTWRITEBYTECODE');
-    cleanupBytecodePolicy = onCleanup(@() setenv( ...
-        'PYTHONDONTWRITEBYTECODE', previousBytecodePolicy));
-    if isempty(previousPythonPath)
-        setenv('PYTHONPATH', moduleRoot);
-    else
-        setenv('PYTHONPATH', [moduleRoot pathsep previousPythonPath]);
-    end
-    setenv('PYTHONDONTWRITEBYTECODE', '1');
-    command = sprintf('"%s" -B -m msplatform.exporters.solidworks.import_step_to_solidworks --manifest "%s"%s', ...
-        pythonExecutable, manifestPath, visibleArg);
+    loader = ['import runpy,sys;' ...
+        'sys.path.insert(0,' jsonencode(char(moduleRoot)) ');' ...
+        'runpy.run_module(''msplatform.exporters.solidworks.import_step_to_solidworks'',run_name=''__main__'')'];
+    command = sprintf('"%s" -I -B -c "%s" --manifest "%s"%s', ...
+        pythonExecutable, loader, manifestPath, visibleArg);
     [status, output] = system(command);
     if status ~= 0
         error('oatofCadExport:SolidWorksImportFailed', '%s', output);
     end
     result = jsondecode(output);
-    clear cleanupBytecodePolicy
-    clear cleanupPythonPath
 end
 
 function pythonExecutable = resolve_python_executable()

@@ -5,6 +5,7 @@ param(
     [Parameter(Mandatory = $true)][string]$BaselineRunId,
     [Parameter(Mandatory = $true)][string]$RefinedRunId,
     [string]$RunId = '',
+    [string]$ArtifactRootPath = '',
     [string]$PythonExe = ''
 )
 
@@ -12,13 +13,18 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../components/rf_multipole')).Path
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../../..')).Path
-$workspaceRoot = Split-Path -Parent $repoRoot
-$artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\rf_multipole_ion_optics'
 $python = if ($PythonExe) {
     [IO.Path]::GetFullPath($PythonExe)
+} elseif ($env:SIMULATION_PYTHON_EXE) {
+    [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)
 } else {
-    Join-Path $repoRoot '.venv\Scripts\python.exe'
+    throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'
 }
+. (Join-Path $repoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
+$pathArguments = @{SourceRoot = $repoRoot; Python = $python}
+if ($ArtifactRootPath) {$pathArguments.ArtifactRoot = $ArtifactRootPath}
+$workspacePaths = Resolve-WorkspacePaths @pathArguments
+$artifactRoot = Join-Path $workspacePaths.artifact_root 'projects/rf_multipole_ion_optics'
 . (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $PSScriptRoot 'analysis_run_lifecycle.ps1')
 . (Join-Path $repoRoot 'src/msplatform/execution/resources/frozen_python_package.ps1')

@@ -19,14 +19,13 @@ classdef commonArtifactPathsTest < matlab.unittest.TestCase
             temporary = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
             testCase.Workspace = char(java.io.File(temporary.Folder).getCanonicalPath());
             source = fileparts(fileparts(mfilename('fullpath')));
-            isolatedPaths = fullfile(testCase.Workspace, 'repo', 'common', 'paths');
-            mkdir(isolatedPaths);
-            copyfile(fullfile(source, 'common_artifact_paths.m'), isolatedPaths);
+            backendSource = fullfile(fileparts(fileparts(source)), 'src', 'msplatform', 'backends', 'comsol', 'matlab');
             backend = fullfile(testCase.Workspace, 'repo', 'src', 'msplatform', 'backends', 'comsol', 'matlab');
             mkdir(backend);
-            copyfile(fullfile(fileparts(fileparts(source)), 'src', 'msplatform', 'backends', 'comsol', 'matlab', 'workspace_paths.m'), backend);
-            copyfile(fullfile(fileparts(fileparts(source)), 'src', 'msplatform', 'backends', 'comsol', 'matlab', 'resolve_path_identity.m'), backend);
-            testCase.applyFixture(matlab.unittest.fixtures.PathFixture(isolatedPaths));
+            copyfile(fullfile(backendSource, 'common_artifact_paths.m'), backend);
+            copyfile(fullfile(backendSource, 'workspace_paths.m'), backend);
+            copyfile(fullfile(backendSource, 'resolve_path_identity.m'), backend);
+            testCase.applyFixture(matlab.unittest.fixtures.PathFixture(backend));
             testCase.ProjectRoot = fullfile(testCase.Workspace, 'artifacts', 'projects', 'example');
             mkdir(testCase.ProjectRoot);
         end

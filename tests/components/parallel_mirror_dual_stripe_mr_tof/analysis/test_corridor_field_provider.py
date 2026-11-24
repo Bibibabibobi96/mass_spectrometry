@@ -28,16 +28,26 @@ class CandidateAuthorityTest(unittest.TestCase):
             environment = dict(os.environ)
             environment.pop("PYTHONPATH", None)
             command = (
-                ". '" + str(repo / "src/msplatform/execution/resources/run_artifact_support.ps1").replace("'", "''") + "'; "
-                "Invoke-RunToolRootContext -RepoRoot '" + str(repo).replace("'", "''") + "' -Operation { "
-                "& '" + sys.executable.replace("'", "''") + "' -m msplatform.backends.comsol.corridor_field --help; "
-                "if ($LASTEXITCODE -ne 0) { throw 'Installed provider import failed' } }"
+                "& '" + sys.executable.replace("'", "''") + "' -I -B -m msplatform.backends.comsol.corridor_field --help; "
+                "if ($LASTEXITCODE -ne 0) { throw 'Installed provider import failed' }"
             )
             result = subprocess.run(["pwsh", "-NoProfile", "-Command", command],
                                     cwd=directory, env=environment, timeout=30,
                                     capture_output=True, text=True, encoding="utf-8")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("--resolve-completed-request", result.stdout)
+
+    def test_runner_uses_explicit_installed_execution_context(self) -> None:
+        repo = Path(__file__).resolve().parents[4]
+        runner = (repo / "src/msplatform/backends/comsol/launcher/run_corridor_field_provider.ps1").read_text(encoding="utf-8-sig")
+        for parameter in ("WorkspaceRoot", "ArtifactRoot", "PythonExe"):
+            self.assertIn(f"[Parameter(Mandatory=$true)][string]${parameter}", runner)
+        self.assertIn("& $python -I -B -m msplatform.backends.comsol.corridor_field", runner)
+        self.assertIn("-WorkspaceRoot \"'+$repo+'\"", runner)
+        self.assertIn("-ArtifactRoot \"'+$artifactWorkspaceRoot+'\"", runner)
+        self.assertIn("-PythonExe \"'+$python+'\"", runner)
+        for retired in ("SIMULATION_PYTHON_EXE", "PYTHONPATH", "Invoke-RunToolRootContext"):
+            self.assertNotIn(retired, runner)
 
     def setUp(self) -> None:
         self.authority = {"analyzer_electrode_voltages_v": list(range(20)),
@@ -678,7 +688,8 @@ class RefinementWindowProviderTest(unittest.TestCase):
         self.assertIn("awaiting natural completion", finalizer)
         self.assertIn("$process.WaitForExit()", finalizer)
         self.assertNotIn("$process.Kill($true)", finalizer)
-        self.assertIn("Invoke-RunToolRootContext -RepoRoot ([string]$plan.python_code_root)", finalizer)
+        self.assertIn("& $python -I -B -m msplatform.backends.comsol.corridor_field --run-directory $RunDirectory --finalize", finalizer)
+        self.assertNotIn("Invoke-RunToolRootContext", finalizer)
 
     def test_run_finalizes_without_original_resources_or_installed_python_code(self):
         module = "msplatform.backends.comsol.corridor_field"

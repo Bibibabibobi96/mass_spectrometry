@@ -1,26 +1,31 @@
+[CmdletBinding(DefaultParameterSetName='Run')]
 param(
+  [Parameter(Mandatory = $true)][string]$WorkspaceRoot,
+  [Parameter(Mandatory = $true)][string]$ArtifactRootPath,
+  [Parameter(Mandatory = $true,ParameterSetName='Run')][string]$ScienceRoot,
   [int]$N = 100,
   [int]$Seed = 20260713,
   [int]$TrajectoryQuality = 8,
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$OutputDir = '',
   [string]$RunId = '',
-  [string]$SourceRunPath = '',
-  [switch]$AnalyzeOnly
+  [Parameter(ParameterSetName='Analyze')][string]$SourceRunPath = '',
+  [Parameter(Mandatory = $true,ParameterSetName='Analyze')][switch]$AnalyzeOnly
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..\..')).Path
-if ($AnalyzeOnly -and -not $SourceRunPath) { throw 'AnalyzeOnly requires an explicit SourceRunPath.' }
-if (-not $AnalyzeOnly -and $SourceRunPath) { throw 'SourceRunPath is only valid with AnalyzeOnly.' }
+$workspaceRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
+$repoRoot = $workspaceRoot
+$artifactRootPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRootPath)
 $python = if ($env:SIMULATION_PYTHON_EXE) { (Resolve-Path -LiteralPath $env:SIMULATION_PYTHON_EXE).Path }
-  else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
-$pathContext = Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
-$artifactRoot = Join-Path $pathContext.artifact_root 'src/msplatform/components/single_reflection_oa_tof'
+  else { throw 'Explicit SIMULATION_PYTHON_EXE is required' }
+$packageRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
+. (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
+. (Join-Path $packageRoot 'execution/resources/workspace_paths.ps1')
+$pathContext = Resolve-WorkspacePaths -SourceRoot $repoRoot -ArtifactRoot $artifactRootPath -Python $python
+$artifactRoot = Join-Path $pathContext.artifact_root 'projects/single_reflection_oa_tof_mass_analyzer'
 $environmentNames = @('SIMULATION_PYTHON_EXE','MASS_SPECTROMETRY_ARTIFACT_ROOT','MASS_SPECTROMETRY_EXECUTION_ROOT','MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH')
 $environmentSnapshot = Save-RunEnvironment -Names $environmentNames
 $hostRole = if ($AnalyzeOnly) { 'GATE' } else { 'SIMION' }
@@ -31,14 +36,14 @@ $env:MASS_SPECTROMETRY_ARTIFACT_ROOT = [string]$pathContext.artifact_root
 $env:MASS_SPECTROMETRY_EXECUTION_ROOT = [string]$pathContext.execution_root
 $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH = [string]$pathContext.host_resource_state_path
 $hostExecutionLease = Enter-HostExecutionLease -Role $hostRole -Stage prepare -StatePath $pathContext.host_resource_state_path
-$componentRoot = Join-Path $repoRoot 'src/msplatform/components/single_reflection_oa_tof'
-. (Join-Path $repoRoot 'src/msplatform/workflows/resources/oatof_lifecycle_preflight.ps1')
+$componentRoot = if ($ScienceRoot) { (Resolve-Path -LiteralPath $ScienceRoot).Path } else { $null }
+. (Join-Path $packageRoot 'workflows/resources/oatof_lifecycle_preflight.ps1')
 if (-not $RunId) {
   if ($OutputDir) { $RunId = Split-Path -Leaf ([IO.Path]::GetFullPath($OutputDir)) }
   elseif ($AnalyzeOnly) { $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + "__analysis__python__ideal-field-matrix" }
   else { $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + "__test__simion__ideal-field-matrix__n${N}" }
 }
-& $python -m msplatform.execution.artifact_naming run $RunId
+& $python -I -B -m msplatform.execution.artifact_naming run $RunId
 if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
 $expectedOutputDir = [IO.Path]::GetFullPath((Join-Path $artifactRoot "runs\$RunId"))
 if ($OutputDir -and [IO.Path]::GetFullPath($OutputDir) -cne $expectedOutputDir) {
@@ -88,7 +93,7 @@ $resultDir = Join-Path $executionOutputDir 'results'
 $logDir = Join-Path $executionOutputDir 'logs'
 $simionDir = Join-Path $executionOutputDir 'simion'
 
-$geometryGate = Join-Path $repoRoot 'src/msplatform/workflows/resources/verify_geometry_contract.ps1'
+$geometryGate = Join-Path $packageRoot 'workflows/resources/verify_geometry_contract.ps1'
 $runtimeReceipt = Join-Path $inputDir 'formal_simion_runtime_receipt.json'
 if (-not $AnalyzeOnly) {
   Assert-OaTofFormalAssetsReadable -ProjectRoot $componentRoot
@@ -127,7 +132,7 @@ if ($AnalyzeOnly) {
   $SourceRunPath = (Resolve-Path -LiteralPath $SourceRunPath).Path
   $sourceGuard = Enter-RunTerminalConsumptionGuard -RunDirectory $SourceRunPath
   try {
-    $freezeArguments = @('-B','-m','msplatform.workflows.oa_formal.stage_formal_simion_runtime',
+    $freezeArguments = @('-I','-B','-m','msplatform.workflows.oa_formal.stage_formal_simion_runtime',
       '--artifact-root',$artifactRoot,'--analysis-source-run',$SourceRunPath,
       '--destination',(Join-Path $inputDir 'diagnostic_source'),'--receipt',(Join-Path $inputDir 'analysis_source_receipt.json'))
     foreach ($d in $distributions) { foreach ($m in $modes) { $freezeArguments += @('--case',($d.Name+'__'+$m.Name)) } }
@@ -228,12 +233,12 @@ Write-RunJson -Path $runConfig -Value $finalConfig -Depth 100
 $summaryPath = Join-Path $OutputDir 'summary.json'
 [ordered]@{schema_version=1;role='oa_tof_ideal_field_matrix_summary';status='success';cases=$summaries.Count;results='results/ideal_field_matrix_summary.csv'} |
   ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
-$manifestArgs=@('-c','from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)','--run-config',$runConfig,'--status','success','--output',$summaryPath)
+$manifestArgs=@('-I','-B','-c','from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)','--run-config',$runConfig,'--status','success','--output',$summaryPath)
 foreach($name in $software){$manifestArgs+=@('--software',$name)}
 foreach($file in Get-ChildItem -LiteralPath $artifactResultDir,$artifactLogDir,$artifactSimionDir -Recurse -File){$manifestArgs+=@('--output',$file.FullName)}
 & $python @manifestArgs
 if($LASTEXITCODE -ne 0){throw 'Ideal-field diagnostic manifest failed.'}
-& $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' `
+& $python -I -B -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' `
   (Join-Path $OutputDir 'run_manifest.json') --require-status success
 if($LASTEXITCODE -ne 0){throw 'Ideal-field diagnostic manifest verification failed.'}
 $runRecordComplete = $true

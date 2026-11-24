@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import unittest
 import json
+import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -179,14 +181,12 @@ class ManagedAnalysisRunnerContractTests(unittest.TestCase):
     def test_default_contracts_resolve_beside_the_installed_workflow_resources(self) -> None:
         runners = (
             "run_downstream_fixed_grid_workpoint.ps1",
-            "run_downstream_workpoint_iteration.ps1",
             "run_dual_stripe_operating_seed.ps1",
             "run_mirror_exact_k_operating_point.ps1",
             "run_native_candidate_chain.ps1",
             "run_target_operating_point_chain.ps1",
             "run_two_prism_segmented_coverage.ps1",
         )
-        package_root = "Split-Path -Parent (Split-Path -Parent $PSScriptRoot)"
         default = (
             "Join-Path $packageRoot "
             "'components\\parallel_mirror_dual_stripe_mr_tof\\simion_candidate_two_zone.json'"
@@ -196,7 +196,6 @@ class ManagedAnalysisRunnerContractTests(unittest.TestCase):
                 source = (PROJECT.parents[3] / "src/msplatform/workflows/resources" / runner).read_text(
                     encoding="utf-8-sig"
                 )
-                self.assertIn(package_root, source)
                 self.assertEqual(source.count(default), 1)
                 self.assertNotIn("Join-Path $PSScriptRoot '..\\..\\src", source)
                 if runner != "run_native_candidate_chain.ps1":
@@ -206,6 +205,104 @@ class ManagedAnalysisRunnerContractTests(unittest.TestCase):
                     "run_native_candidate_chain.ps1",
                 }:
                     self.assertIn("Resolve-Path -LiteralPath $ContractPath", source)
+
+    def test_runners_require_explicit_context_and_use_isolated_installed_python(self) -> None:
+        runners = [case["path"] for case in CASES.values()] + [
+            "src/msplatform/workflows/resources/run_dual_stripe_operating_seed.ps1",
+            "src/msplatform/workflows/resources/run_mirror_exact_k_operating_point.ps1",
+            "src/msplatform/workflows/resources/run_mirror_fixed_grid_voltage_correction.ps1",
+            "src/msplatform/workflows/resources/run_mirror_l0_l1_candidate.ps1",
+            "src/msplatform/workflows/resources/run_two_prism_segmented_continuation.ps1",
+            "src/msplatform/workflows/resources/run_two_prism_segmented_coverage.ps1",
+        ]
+        for runner in runners:
+            with self.subTest(runner=runner):
+                source = (PROJECT.parents[3] / runner).read_text(encoding="utf-8-sig")
+                for parameter in ("WorkspaceRoot", "ArtifactRoot", "PythonExe"):
+                    self.assertIn(f"[Parameter(Mandatory)][string]${parameter}", source)
+                for forbidden in (".venv", "PYTHONPATH", "SIMULATION_PYTHON_EXE", "Get-RunPythonImportRoots"):
+                    self.assertNotIn(forbidden, source)
+                self.assertIn("from pathlib import Path;import msplatform", source)
+                if not runner.endswith("run_target_operating_point_chain.ps1"):
+                    self.assertIn("run_artifact_support.ps1", source)
+
+    def test_real_pwsh_preflights_reject_missing_inputs_without_checkout_or_pythonpath(self) -> None:
+        shell = shutil.which("pwsh")
+        if shell is None:
+            self.skipTest("PowerShell 7 is required")
+        resource_root = PROJECT.parents[3] / "src/msplatform/workflows/resources"
+        arguments = {
+            "run_dual_stripe_operating_seed.ps1": ["-MirrorRunManifest", "missing.json"],
+            "run_mirror_exact_k_operating_point.ps1": ["-MirrorRunManifest", "missing.json"],
+            "run_mirror_fixed_grid_voltage_correction.ps1": [
+                "-CoarseRefinementRunPath", "missing-coarse", "-FixedGridRunPath", "missing-fixed",
+            ],
+            "run_mirror_l0_l1_candidate.ps1": ["-ContractPath", "missing.json"],
+            "run_single_center_timestep_convergence.ps1": [
+                "-RunManifestPaths", "missing-1.json,missing-2.json,missing-3.json",
+            ],
+            "run_source_z_energy_timing_diagnostic.ps1": ["-FlightRunPath", "missing-run"],
+            "run_target_operating_point_chain.ps1": [
+                "-AcceleratorComponentContractPath", "missing-oa.json",
+                "-AcceleratorGeometryProfileId", "profile", "-MirrorRunManifest", "missing.json",
+            ],
+            "run_two_prism_segmented_continuation.ps1": [
+                "-CoverageRunManifest", "missing.json", "-AngleToleranceDeg", "1",
+                "-PositiveMirrorTurnYToleranceMm", "1", "-P2RootToleranceV", "1",
+                "-InitialP1StepV", "1", "-MinimumP1StepV", "1", "-MaximumP1StepV", "1",
+                "-P1StepGrowthFactor", "1", "-P2InitialHalfWidthV", "1",
+                "-P2BracketExpansionFactor", "1", "-P2BracketMaximumExpansions", "1",
+                "-MaximumInnerIterations", "1", "-MaximumOuterIterations", "1",
+                "-MaximumTransportEvaluations", "1", "-MaximumNodesPerDirection", "1",
+                "-RelativeTolerance", "1", "-AbsoluteTolerance", "1",
+                "-MaximumStepMmPerSqrtV", "1", "-EventSamplesPerStep", "1",
+                "-RootTimeToleranceMmPerSqrtV", "1", "-BoundaryRootToleranceMm", "1",
+                "-MomentumToleranceSqrtV", "1", "-NormalEnergyToleranceV", "1",
+                "-MaximumSteps", "1", "-StageAMaximumReducedTimeMmPerSqrtV", "1",
+                "-StageBMaximumReducedTimeMmPerSqrtV", "1",
+            ],
+            "run_two_prism_segmented_coverage.ps1": [
+                "-AcceleratorComponentContractPath", "missing-oa.json",
+                "-AcceleratorGeometryProfileId", "profile", "-FixedMirrorStripeRunManifest", "missing.json",
+                "-AcceleratorExitRunManifest", "missing-exit.json", "-SobolSampleCount", "1",
+                "-LocalP1ValuesV", "1", "-LocalP2ValuesV", "1", "-WorkerCount", "1",
+                "-RelativeTolerance", "1", "-AbsoluteTolerance", "1",
+                "-MaximumStepMmPerSqrtV", "1", "-EventSamplesPerStep", "1",
+                "-RootTimeToleranceMmPerSqrtV", "1", "-BoundaryRootToleranceMm", "1",
+                "-MomentumToleranceSqrtV", "1", "-NormalEnergyToleranceV", "1",
+                "-MaximumSteps", "1", "-StageAMaximumReducedTimeMmPerSqrtV", "1",
+                "-StageBMaximumReducedTimeMmPerSqrtV", "1",
+            ],
+            "run_freeze_bunch_pulse_schedule.ps1": [
+                "-BunchSourceRunManifest", "missing-source.json", "-StaticPilotRunManifest", "missing-pilot.json",
+                "-PilotTrialReceiptPath", "missing-receipt.json", "-PilotLogPath", "missing.log",
+                "-GuardUs", "0.002",
+            ],
+            "run_publish_bunch_source.ps1": [
+                "-SourceDefinitionPath", "missing-source.json", "-GeometryContractPath", "missing-geometry.json",
+                "-AcceleratorProviderReceiptPath", "missing-provider.json",
+            ],
+        }
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            foreign = root / "foreign/msplatform"
+            foreign.mkdir(parents=True)
+            (foreign / "__init__.py").write_text("raise RuntimeError('foreign PYTHONPATH loaded')\n", encoding="utf-8")
+            for name, specific in arguments.items():
+                with self.subTest(runner=name):
+                    result = subprocess.run(
+                        [
+                            shell, "-NoProfile", "-NonInteractive", "-File", str(resource_root / name),
+                            *specific, "-WorkspaceRoot", str(root), "-ArtifactRoot", str(root / "artifacts"),
+                            "-PythonExe", sys.executable,
+                        ],
+                        cwd=root, env=dict(os.environ, PYTHONPATH=str(foreign.parent)),
+                        capture_output=True, text=True, encoding="utf-8", errors="replace",
+                        timeout=30, check=False,
+                    )
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertNotIn("foreign PYTHONPATH loaded", result.stdout + result.stderr)
+                    self.assertFalse((root / "artifacts").exists())
 
     def test_runner_contract_matrix(self) -> None:
         for name, case in CASES.items():

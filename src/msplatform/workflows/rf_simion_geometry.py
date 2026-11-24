@@ -14,7 +14,8 @@ from msplatform.backends.simion.resources import native_resource_path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1] / "components" / "rf_multipole"
-REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+_MODULE_PATH = Path(__file__).resolve()
+REPOSITORY_ROOT = _MODULE_PATH.parents[3] if _MODULE_PATH.parents[2].name == "src" else _MODULE_PATH.parents[2]
 CONTRACT = PROJECT_ROOT / "variants" / "quadrupole" / "config" / "resolved_design_official.json"
 INCLUDE = native_resource_path("quad_include.gem")
 MONOLITHIC = native_resource_path("quad_monolithic.gem")
@@ -87,9 +88,11 @@ include(quad_include.gem)
     return include, monolithic
 
 
-def render(*, cell_mm: float = 0.2) -> dict[Path, str]:
-    contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
-    digest = file_sha256(CONTRACT)
+def render(*, cell_mm: float = 0.2, contract_path: Path = CONTRACT) -> dict[Path, str]:
+    """Render the installed native resources from an explicit resolved design."""
+    contract_path = contract_path.resolve()
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    digest = file_sha256(contract_path)
     include, monolithic = render_contract(
         contract,
         digest,
@@ -102,6 +105,7 @@ def render(*, cell_mm: float = 0.2) -> dict[Path, str]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--cell-mm", type=float, default=0.2)
+    parser.add_argument("--contract", type=Path, default=CONTRACT)
     choice = parser.add_mutually_exclusive_group(required=True)
     choice.add_argument("--check", action="store_true")
     choice.add_argument("--write", action="store_true")
@@ -109,7 +113,7 @@ def main() -> None:
     stale = []
     if args.cell_mm <= 0:
         raise SystemExit("--cell-mm must be positive")
-    for path, expected in render(cell_mm=args.cell_mm).items():
+    for path, expected in render(cell_mm=args.cell_mm, contract_path=args.contract).items():
         current = path.read_text(encoding="utf-8") if path.exists() else ""
         if current != expected:
             stale.append(path)

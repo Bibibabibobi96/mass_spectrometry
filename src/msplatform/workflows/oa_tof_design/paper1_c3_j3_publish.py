@@ -28,6 +28,7 @@ from msplatform.io.file_identity import file_sha256
 from msplatform.execution.inputs import freeze_file
 from msplatform.contracts.machine_contracts import load_json
 from msplatform.contracts.machine_contracts import SCHEMA_DIR
+from msplatform.workflows.oa_tof_design import paper1_c3_j3_mapping
 from msplatform.workflows.oa_tof_design.paper1_c3_j3_mapping import (
     compile_c2_j3_physical_control_family,
     compile_c3_j3_variant_candidate,
@@ -36,8 +37,6 @@ from msplatform.workflows.oa_tof_design.paper1_c3_j3_mapping import (
 
 PROJECT_ID = "single_reflection_oa_tof_mass_analyzer"
 PUBLISH_MODE = "paper1_c3_j3_candidate_compile"
-REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
-DEFAULT_WORKSPACE_ROOT = REPOSITORY_ROOT.parent
 SCALES: tuple[int, ...] = (-2, -1, 0, 1, 2)
 
 
@@ -93,7 +92,7 @@ def _portable_family(family: Mapping[str, Any], workspace_root: Path) -> dict[st
 def publish_c3_j3_candidates(
     *, campaign_path: Path, c2_result_path: Path, source_id: str,
     base_candidate_path: Path, run_dir: Path,
-    workspace_root: Path = DEFAULT_WORKSPACE_ROOT,
+    workspace_root: Path,
 ) -> dict[str, Any]:
     """Publish one hash-bound five-point C3-J3 Candidate family atomically."""
 
@@ -112,10 +111,8 @@ def publish_c3_j3_candidates(
         _workspace_relative(path, workspace_root, label=label)
     code_sources = {
         "publisher_source": Path(__file__).resolve(),
-        "mapping_source": REPOSITORY_ROOT / "src/msplatform/workflows/oa_tof_design/paper1_c3_j3_mapping.py",
+        "mapping_source": Path(paper1_c3_j3_mapping.__file__).resolve(),
     }
-    for label, path in code_sources.items():
-        _workspace_relative(path, workspace_root, label=label)
     canonical_runs.mkdir(parents=True, exist_ok=True)
     lock_path = canonical_runs / f".{run_dir.name}.publish.lock"
     try:
@@ -190,7 +187,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--source-id", required=True)
     parser.add_argument("--base-candidate", required=True, type=Path)
     parser.add_argument("--run-dir", required=True, type=Path)
-    parser.add_argument("--workspace-root", type=Path, default=DEFAULT_WORKSPACE_ROOT)
+    parser.add_argument("--workspace-root", type=Path, required=True)
     arguments = parser.parse_args(argv)
     publish_c3_j3_candidates(
         campaign_path=arguments.campaign, c2_result_path=arguments.c2_j3_result,

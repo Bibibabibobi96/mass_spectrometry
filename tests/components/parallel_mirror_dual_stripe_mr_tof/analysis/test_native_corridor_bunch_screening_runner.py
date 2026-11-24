@@ -37,9 +37,9 @@ class NativeCorridorBunchScreeningRunnerTest(unittest.TestCase):
                         "$repoRoot='repo';$python='Invoke-IdentityVerifier';"
                         + helper + "\n"
                         + "function Invoke-IdentityVerifier {"
-                        + "if($args[0]-cne'-c'-or$args[1]-cne'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)'){throw 'Wrong canonical manifest verifier'};"
-                        + "if($args[3]-cne'--require-status'-or$args[4]-cne'success'){throw 'Wrong manifest status selector'};"
-                        + "$d=Get-Content -LiteralPath $args[2] -Raw|ConvertFrom-Json;"
+                        + "if($args[0]-cne'-I'-or$args[1]-cne'-B'-or$args[2]-cne'-c'-or$args[3]-cne'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)'){throw 'Wrong canonical manifest verifier'};"
+                        + "if($args[5]-cne'--require-status'-or$args[6]-cne'success'){throw 'Wrong manifest status selector'};"
+                        + "$d=Get-Content -LiteralPath $args[4] -Raw|ConvertFrom-Json;"
                         + "$p=$args[[array]::IndexOf($args,'--require-project')+1];"
                         + "$m=$args[[array]::IndexOf($args,'--require-mode')+1];"
                         + "$global:LASTEXITCODE=[int]($p-ne$d.project-or$m-ne$d.mode)};"
@@ -53,20 +53,23 @@ class NativeCorridorBunchScreeningRunnerTest(unittest.TestCase):
                     self.assertEqual(result.returncode == 0, accepted, result.stdout + result.stderr)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
-    def test_public_entry_requires_explicit_python_before_reading_scientific_inputs(self) -> None:
+    def test_public_entry_requires_explicit_execution_context_before_reading_scientific_inputs(self) -> None:
         arguments = [RUNNER, "-WorkpointRunPath", "absent", "-BunchSourceReceiptPath", "absent",
-                     "-CompositionPlanPath", "absent"]
-        with patch.dict("os.environ", {"SIMULATION_PYTHON_EXE": ""}):
-            missing = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", *map(str, arguments)],
-                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
-            explicit = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", *map(str, arguments),
-                "-PythonExe", sys.executable], cwd=REPO_ROOT, capture_output=True, text=True,
-                encoding="utf-8", errors="replace", timeout=30)
+                     "-CompositionPlanPath", "absent", "-WorkspaceRoot", str(REPO_ROOT),
+                     "-ArtifactRoot", str(REPO_ROOT.parent / "artifacts")]
+        missing = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", *map(str, arguments)],
+            cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
+        explicit = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", *map(str, arguments),
+            "-PythonExe", sys.executable], cwd=REPO_ROOT, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=30)
         self.assertNotEqual(missing.returncode, 0)
-        self.assertIn("Explicit PythonExe or SIMULATION_PYTHON_EXE is required", missing.stderr)
+        self.assertIn("PythonExe", missing.stderr)
         self.assertNotEqual(explicit.returncode, 0)
         self.assertNotIn("native_corridor_runtime_support", explicit.stderr)
         self.assertIn("absent", explicit.stderr)
+        source = RUNNER.read_text(encoding="utf-8-sig")
+        self.assertNotIn("SIMULATION_PYTHON_EXE", source)
+        self.assertNotIn("PYTHONPATH", source)
 
     def test_screening_runs_one_static_cohort_from_checkpointed_family(self) -> None:
         source = RUNNER.read_text(encoding="utf-8-sig")
@@ -276,7 +279,7 @@ class NativeCorridorBunchScreeningRunnerTest(unittest.TestCase):
             "$problem=@{geometry='geometry';mirror='mirror';stripe='stripe';trajectory_profile='center_screening';trajectory_step_scale=1;source_y_offset_mm=0};"
             "$nativeSystemRuntimeBundlePath='';$bankRun='';$capacitySession=@{};"
             "$sourceReceipt='source';$CohortParticleCount=13;$workpointContract='contract';"
-            "$voltages=@(-27,54,191,-190);$trajectoryStepScale=$null;$cohortRunId='cohort';$python='fixture';"
+            "$voltages=@(-27,54,191,-190);$trajectoryStepScale=$null;$cohortRunId='cohort';$python='fixture';$workspaceRoot='workspace';"
             "$staticFieldMode=$true;$FieldBindingPath='selected-actual-field';$providerReceipt='oa';$CompositionPlanPath='parent-plan';$LocalScopePath='';\n"
             "$configuration=@{inputs=@{accelerator_component_contract='selected-fixture-authority'}};$oaGeometryProfileId='selected-fixture-profile';$oaComponentContract='selected-fixture-authority';\n"
             + source[start:end]

@@ -995,8 +995,7 @@ if(($Bad-eq'bad')-ne$caught-or($Bad-eq'bad')-eq$vendorAllowed){throw 'Live ident
                     for name in ("source_runtime.lua", "source.fly2"):
                         (output/name).write_text("inert source fixture")
                     return dict(counts=dict(source=1, transferred=1, not_transferred=0))
-                with patch.object(module, "REPO", snapshot), \
-                        patch.object(module, "native_resource_path", side_effect=lambda name: scripts/name), \
+                with patch.object(module, "native_resource_path", side_effect=lambda name: scripts/name), \
                         patch.object(module, "verified_reference", side_effect=lambda run, relative, **kw: run/relative), \
                         patch.object(module, "verified_preparation_reference", side_effect=lambda run, relative, **kw: run/relative), \
                         patch("msplatform.backends.comsol.static_field_binding.load_binding", return_value=binding), \

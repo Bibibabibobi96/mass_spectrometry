@@ -58,6 +58,18 @@ def validate_design_profile_structures(
         raise ContractError("structural variant has no design profile")
 
 
+def rf_project_root(repo_root: Path) -> Path:
+    """Return the RF provider in an explicit source or installed package root."""
+    repo_root = Path(repo_root).resolve()
+    source = repo_root / "src/msplatform/components/rf_multipole"
+    if source.is_dir():
+        return source
+    installed = repo_root / "msplatform/components/rf_multipole"
+    if installed.is_dir():
+        return installed
+    raise ContractError(f"RF provider resources are missing beneath: {repo_root}")
+
+
 def resolve_design_profile(
     repo_root: Path,
     project_id: str,
@@ -65,22 +77,21 @@ def resolve_design_profile(
 ) -> dict[str, Any]:
     """Resolve and verify a profile without trusting a caller-supplied project root."""
     repo_root = Path(repo_root).resolve()
+    project_root = rf_project_root(repo_root)
     registry_path = repo_root / "config" / "project_registry.json"
-    registry = json.loads(registry_path.read_text(encoding="utf-8-sig"))
-    matches = [item for item in registry["projects"] if item["project_id"] == project_id]
-    if len(matches) != 1:
-        raise ContractError(f"project registry does not contain one project_id={project_id!r}")
-    registered = matches[0]
-    descriptor_path = (repo_root / registered.get(
-        "descriptor", "src/msplatform/components/rf_multipole/config/project.json"
-    )).resolve()
-    project_root = descriptor_path.parent.parent
-    if not descriptor_path.is_file():
-        project_root = repo_root / "src/msplatform/components/rf_multipole"
-        descriptor_path = project_root / "config" / "project.json"
+    registered = None
+    if registry_path.is_file():
+        registry = json.loads(registry_path.read_text(encoding="utf-8-sig"))
+        matches = [item for item in registry["projects"] if item["project_id"] == project_id]
+        if len(matches) != 1:
+            raise ContractError(f"project registry does not contain one project_id={project_id!r}")
+        registered = matches[0]
+    descriptor_path = project_root / "config" / "project.json"
     descriptor = json.loads(descriptor_path.read_text(encoding="utf-8-sig"))
     validate_schema(descriptor, "project.schema.json")
-    if descriptor["project_id"] != project_id or registered["family_id"] != descriptor["family_id"]:
+    if descriptor["project_id"] != project_id or (
+        registered is not None and registered["family_id"] != descriptor["family_id"]
+    ):
         raise ContractError("canonical project descriptor differs from project registry")
     profiles_relative = descriptor["contracts"]["design_profiles"]
     if not profiles_relative:
@@ -92,7 +103,7 @@ def resolve_design_profile(
         raise ContractError("design profile registry identity differs")
     validate_design_profile_structures(
         descriptor, profiles["profiles"],
-        family_contract_path=repo_root / "src/msplatform/components/rf_multipole/family_contract.json",
+        family_contract_path=project_root / "family_contract.json",
     )
     selected = [item for item in profiles["profiles"] if item["design_profile_id"] == design_profile_id]
     if len(selected) != 1:

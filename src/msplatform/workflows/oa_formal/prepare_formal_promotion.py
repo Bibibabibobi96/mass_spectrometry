@@ -10,16 +10,11 @@ from pathlib import Path
 from msplatform.contracts.machine_contracts import load_json, sha256
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2] / "components/single_reflection_oa_tof"
-REPO_ROOT = Path(__file__).resolve().parents[4]
-ARTIFACT_ROOT = REPO_ROOT.parent / "artifacts" / "projects" / "single_reflection_oa_tof_mass_analyzer"
-
-
 def prepare(
     candidate_model: Path,
     acceptance_path: Path,
     output_path: Path,
-    formal_root: Path = ARTIFACT_ROOT / "formal",
+    formal_root: Path,
 ) -> dict[str, object]:
     candidate_model = candidate_model.resolve()
     acceptance_path = acceptance_path.resolve()
@@ -70,8 +65,9 @@ def main() -> None:
     parser.add_argument("--candidate-model", type=Path, required=True)
     parser.add_argument("--acceptance", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--formal-root", type=Path, required=True)
     args = parser.parse_args()
-    transaction = prepare(args.candidate_model, args.acceptance, args.output)
+    transaction = prepare(args.candidate_model, args.acceptance, args.output, args.formal_root)
     print(f"FORMAL_PROMOTION_TRANSACTION=AUTHORIZED ID={transaction['authorization_id']}")
 
 

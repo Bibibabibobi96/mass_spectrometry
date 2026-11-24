@@ -48,12 +48,12 @@ def _verify_manifest(
 
 
 def campaign_status(
-    repo_root: Path, campaign_path: Path
+    repo_root: Path, campaign_path: Path, *, workspace_root: Path | None = None
 ) -> dict[str, Any]:
     """Resolve every row and report only verified terminal states as terminal."""
 
     repo_root = repo_root.resolve()
-    workspace_root = repo_root.parent
+    workspace_root = (workspace_root or repo_root.parent).resolve()
     campaign_path = resolve_campaign_path(repo_root, campaign_path)
     campaign = _load(campaign_path)
     rows: list[dict[str, Any]] = []
@@ -115,9 +115,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo-root", type=Path, required=True)
     parser.add_argument("--campaign", type=Path, required=True)
+    parser.add_argument("--workspace-root", type=Path)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
-    document = campaign_status(args.repo_root, args.campaign)
+    document = campaign_status(args.repo_root, args.campaign, workspace_root=args.workspace_root)
     serialized = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)

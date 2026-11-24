@@ -77,8 +77,8 @@
     },
     "three_zone_experiment": {
       "path": "src/msplatform/workflows/oa_tof_design/three_zone_theory_experiment.py",
-      "bytes": 34563,
-      "sha256": "5FA58EA7E3DCC23BADCB3C0C4D0783B44970A74ACDFD670F064A6615E2C930BC"
+      "bytes": 34327,
+      "sha256": "7FD828F17B114CEE49CE589BCF681651A4BC8A262D81BFD91D4B3793B328A78A"
     },
     "three_zone_cli": {
       "path": "src/msplatform/workflows/oa_tof_design/run_theory.py",

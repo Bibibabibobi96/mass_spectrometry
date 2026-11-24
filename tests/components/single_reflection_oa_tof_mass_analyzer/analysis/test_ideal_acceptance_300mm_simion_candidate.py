@@ -85,13 +85,9 @@ class IdealAcceptanceCandidateTests(unittest.TestCase):
         )
 
     def publication_code_root(self) -> tuple[Path, Path, Path]:
-        repo = compiler.REPOSITORY_ROOT
+        repo = Path(__file__).resolve().parents[4]
         source = Path(compiler.__file__)
-        code_root = self.workspace / "simulation_repo"
-        copied_source = code_root / source.relative_to(repo)
-        copied_source.parent.mkdir(parents=True, exist_ok=True)
-        copied_source.write_bytes(source.read_bytes())
-        return repo, code_root, copied_source
+        return repo, self.workspace / "simulation_repo", source
 
     def test_live_reference_change_does_not_change_frozen_source(self) -> None:
         first = self.compile()
@@ -188,29 +184,27 @@ class IdealAcceptanceCandidateTests(unittest.TestCase):
         command = [sys.executable, "-B", "-m", compiler.__name__,
                    "--configuration", str(self.configuration), "--run-manifest", str(self.manifest_path),
                    "--selected-result", str(self.selected), "--output", str(output)]
-        completed = subprocess.run(command, cwd=compiler.REPOSITORY_ROOT, capture_output=True,
+        completed = subprocess.run(command, cwd=Path(__file__).resolve().parents[4], capture_output=True,
                                    text=True, encoding="utf-8", timeout=60)
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertEqual(json.loads(output.read_text(encoding="utf-8")), self.compile())
         output.unlink()
         self.config["numerics"]["coefficient_tolerance_ns"] = 1.0
         _write_json(self.configuration, self.config)
-        rejected = subprocess.run(command, cwd=compiler.REPOSITORY_ROOT, capture_output=True,
+        rejected = subprocess.run(command, cwd=Path(__file__).resolve().parents[4], capture_output=True,
                                   text=True, encoding="utf-8", timeout=60)
         self.assertNotEqual(rejected.returncode, 0)
         self.assertFalse(output.exists())
 
     def test_publication_binds_frozen_reference_and_preserves_parent(self) -> None:
-        repo, code_root, copied_source = self.publication_code_root()
+        repo, _, _ = self.publication_code_root()
         schema_source = compiler.SCHEMA_DIR / compiler.OUTPUT_SCHEMA
         self.assertFalse(schema_source.resolve().is_relative_to(self.workspace.resolve()))
         run = (self.workspace / "artifacts/projects" / compiler.PROJECT_ID / "runs"
                / "20261029_080000__build__python__synthetic-300mm-candidate")
         before = {p: p.read_bytes() for p in self.parent.rglob("*") if p.is_file()}
         self.live_reference.unlink()
-        with (mock.patch.object(compiler, "__file__", str(copied_source)),
-              mock.patch.object(compiler, "REPOSITORY_ROOT", code_root),
-              mock.patch.dict(os.environ, {"PYTHONPATH": str(repo)})):
+        with mock.patch.dict(os.environ, {"PYTHONPATH": str(repo)}):
             summary = compiler.publish_ideal_acceptance_300mm_candidate(
                 self.configuration, self.manifest_path, self.selected, run,
                 workspace_root=self.workspace,
@@ -239,18 +233,12 @@ class IdealAcceptanceCandidateTests(unittest.TestCase):
         self.assertEqual(list(run.parent.glob(".*")), [])
 
     def test_publication_failure_cleans_staging_and_keeps_project_source_local(self) -> None:
-        _, code_root, copied_source = self.publication_code_root()
+        self.publication_code_root()
         run = (self.workspace / "artifacts/projects" / compiler.PROJECT_ID / "runs"
                / "20261102_190002__build__python__300mm-publication-failure")
         before = {path: path.read_bytes() for path in self.parent.rglob("*") if path.is_file()}
         arguments = dict(workspace_root=self.workspace)
-        with self.assertRaisesRegex(ValueError, "candidate_compiler_source must be inside"):
-            compiler.publish_ideal_acceptance_300mm_candidate(
-                self.configuration, self.manifest_path, self.selected, run, **arguments)
-        self.assertFalse(run.exists())
-        with (mock.patch.object(compiler, "__file__", str(copied_source)),
-              mock.patch.object(compiler, "REPOSITORY_ROOT", code_root),
-              mock.patch.object(compiler, "_publish_manifest", side_effect=RuntimeError("publication fault")),
+        with (mock.patch.object(compiler, "_publish_manifest", side_effect=RuntimeError("publication fault")),
               self.assertRaisesRegex(RuntimeError, "publication fault")):
             compiler.publish_ideal_acceptance_300mm_candidate(
                 self.configuration, self.manifest_path, self.selected, run, **arguments)

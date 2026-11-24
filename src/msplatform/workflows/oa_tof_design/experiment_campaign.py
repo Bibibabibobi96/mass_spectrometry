@@ -9,6 +9,7 @@ import math
 import os
 import shutil
 import sys
+from importlib.resources import files
 
 from msplatform.backends.simion.native_completion import retention_api
 from msplatform.execution.manifest_publication import publish_run_manifest
@@ -23,16 +24,8 @@ from msplatform.workflows.oa_candidate.compile_candidate_design import (
 )
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2] / "components/single_reflection_oa_tof"
-REPO_ROOT = Path(__file__).resolve().parents[4]
-WORKSPACE_ROOT = REPO_ROOT.parent
+PROJECT_ROOT = Path(str(files("msplatform.components.single_reflection_oa_tof"))).resolve()
 DEFAULT_CAMPAIGN = PROJECT_ROOT / "config" / "experiment_campaign.json"
-DEFAULT_ARTIFACT_ROOT = (
-    WORKSPACE_ROOT
-    / "artifacts"
-    / "projects"
-    / "single_reflection_oa_tof_mass_analyzer"
-)
 ENTRYPOINT = "src/msplatform/workflows/oa_candidate/run_candidate.py"
 PROJECT_ID = "single_reflection_oa_tof_mass_analyzer"
 
@@ -231,7 +224,7 @@ def _read_campaign(campaign_path: Path) -> dict[str, Any]:
 
 
 def validate_campaign(
-    campaign_path: Path = DEFAULT_CAMPAIGN,
+    campaign_path: Path,
     *,
     require_authorized: bool = False,
     _snapshot: dict[str, Any] | None = None,
@@ -353,9 +346,9 @@ def _experiment_status(
 
 
 def campaign_status(
-    campaign_path: Path = DEFAULT_CAMPAIGN,
+    campaign_path: Path,
     *,
-    artifact_root: Path = DEFAULT_ARTIFACT_ROOT,
+    artifact_root: Path,
 ) -> dict[str, Any]:
     snapshot = _read_campaign(campaign_path)
     document = snapshot["document"]
@@ -407,6 +400,8 @@ def _materialize_rows(
     resolved: dict[str, Any],
     root: Path,
     selected_ids: set[str],
+    *,
+    science_root: Path,
 ) -> list[dict[str, Any]]:
     document = resolved["document"]
     base_request = resolved["request"]
@@ -444,7 +439,7 @@ def _materialize_rows(
         }
         proposal_path = row_root / "candidate_proposal.json"
         _write_json(proposal_path, proposal)
-        _, diff, _ = compile_proposal(proposal_path, science_root=REPO_ROOT)
+        _, diff, _ = compile_proposal(proposal_path, science_root=science_root)
         proposed = {
             item["variable"]
             for item in diff["changed_variables"]
@@ -480,7 +475,8 @@ def preflight_campaign(
     *,
     experiment_id: str | None = None,
     run_all: bool = False,
-    artifact_root: Path = DEFAULT_ARTIFACT_ROOT,
+    artifact_root: Path,
+    science_root: Path,
 ) -> dict[str, Any]:
     if (experiment_id is None) == (not run_all):
         raise ValueError("select exactly one experiment_id or run_all")
@@ -511,7 +507,7 @@ def preflight_campaign(
     scratch = artifact_root / "scratch" / task_id
     if scratch.exists():
         raise FileExistsError(f"campaign preflight already exists: {scratch}")
-    all_rows = _materialize_rows(resolved, scratch / "rows", available)
+    all_rows = _materialize_rows(resolved, scratch / "rows", available, science_root=science_root)
     rows = [
         row
         for row in all_rows
@@ -573,7 +569,8 @@ def execute_campaign(
     *,
     experiment_id: str | None = None,
     run_all: bool = False,
-    artifact_root: Path = DEFAULT_ARTIFACT_ROOT,
+    artifact_root: Path,
+    science_root: Path,
     candidate_executor: Callable[..., tuple[Path, dict[str, Any]]],
 ) -> tuple[Path, dict[str, Any]]:
     """Preflight every selected row, then call the existing Candidate entry serially."""
@@ -583,6 +580,7 @@ def execute_campaign(
         experiment_id=experiment_id,
         run_all=run_all,
         artifact_root=artifact_root,
+        science_root=science_root,
     )
     resolved = prepared["resolved"]
     run_root = prepared["campaign_run_root"]
@@ -740,7 +738,7 @@ def execute_campaign(
 def read_campaign_receipt(
     campaign_run_id: str,
     *,
-    artifact_root: Path = DEFAULT_ARTIFACT_ROOT,
+    artifact_root: Path,
 ) -> dict[str, Any]:
     validate_run_id(campaign_run_id)
     root = artifact_root.resolve() / "runs" / campaign_run_id

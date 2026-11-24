@@ -4,15 +4,22 @@ param(
   [Parameter(Mandatory)][string]$GeometryContractPath,
   [Parameter(Mandatory)][string]$AcceleratorProviderReceiptPath,
   [string]$RunId='',
-  [string]$PythonExe=''
+  [Parameter(Mandatory)][string]$WorkspaceRoot,
+  [Parameter(Mandatory)][string]$ArtifactRoot,
+  [Parameter(Mandatory)][string]$PythonExe
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $projectId='parallel_mirror_dual_stripe_mr_tof'
-$repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
-$workspaceRoot=Split-Path -Parent $repoRoot
-$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
+$workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path
+$repoRoot=$workspaceRoot
+$artifactRoot=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)
+$python=[IO.Path]::GetFullPath($PythonExe)
+if(-not(Test-Path -LiteralPath $python -PathType Leaf)){throw "Python 3.11 environment is missing: $python"}
+$packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
+if($LASTEXITCODE-ne0){throw 'Installed msplatform package is unavailable.'}
+$packageRoot=(Resolve-Path -LiteralPath $packageRootText).Path
 $sourceDefinition=(Resolve-Path -LiteralPath $SourceDefinitionPath).Path
 $geometryContract=(Resolve-Path -LiteralPath $GeometryContractPath).Path
 $acceleratorProviderReceipt=(Resolve-Path -LiteralPath $AcceleratorProviderReceiptPath).Path
@@ -20,8 +27,8 @@ if([string]::IsNullOrWhiteSpace($RunId)){
   $RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__analysis__python__mrtof-bunch-source-n100'
 }
 
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
-$artifactProjectRoot=Join-Path $workspaceRoot "artifacts\projects\$projectId"
+. (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
+$artifactProjectRoot=Join-Path $artifactRoot "projects\$projectId"
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactProjectRoot `
   -RunId $RunId -Project $projectId -Mode 'deterministic_bunch_source_materialization' `
   -Software @('Python 3.11') -RetentionContractEnabled -RetentionClass compact `
@@ -36,7 +43,7 @@ $capacitySession=$null
 try{
   $failureStage='capacity_startup'
   $capacitySession=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
-    -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -RunDirectory $package.artifact_run_dir `
+    -ArtifactRoot ($artifactRoot) -RunDirectory $package.artifact_run_dir `
     -CommittedNewBytes 1048576 -ProtectedPaths @($package.artifact_run_dir,$sourceDefinition,$geometryContract,$acceleratorProviderReceipt) `
     -Owner "mrtof-publish-bunch-source:$RunId"
   $startupPath=Join-Path $resultDir 'artifact_capacity_gate_startup.json'
@@ -67,17 +74,14 @@ try{
   $fly2=Join-Path $resultDir 'bunch_source.fly2'
   $receipt=Join-Path $resultDir 'bunch_source_receipt.json'
   $log=Join-Path $logDir 'publish_bunch_source.log'
-  Push-Location -LiteralPath $repoRoot
-  $saved=$env:PYTHONPATH
+  Push-Location -LiteralPath $workspaceRoot
   try{
-    $env:PYTHONPATH=$repoRoot
-    & $python -m msplatform.backends.simion.mr_bunch_source `
+    & $python -I -B -m msplatform.backends.simion.mr_bunch_source `
       materialize-source --definition $frozenDefinition --geometry-contract $frozenGeometry `
       --accelerator-provider-receipt $frozenAcceleratorProviderReceipt `
       --state-table $stateTable --fly2 $fly2 --receipt $receipt 2>&1|Tee-Object -FilePath $log
     if($LASTEXITCODE-ne 0){throw 'Bunch source materialization failed.'}
   }finally{
-    $env:PYTHONPATH=$saved
     Pop-Location
   }
   $receiptData=Get-Content -LiteralPath $receipt -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable

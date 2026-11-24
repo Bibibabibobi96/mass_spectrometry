@@ -1,4 +1,7 @@
 param(
+  [Parameter(Mandatory = $true)][string]$WorkspaceRoot,
+  [Parameter(Mandatory = $true)][string]$ArtifactRootPath,
+  [Parameter(Mandatory = $true)][string]$ScienceRoot,
   [ValidateSet('Validate','Publish','Recover','Verify')][string]$Phase = 'Validate',
   [string]$CandidateRunRoot,
   [string]$PromotionRequest,
@@ -10,15 +13,17 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
-$projectRoot = Join-Path $repoRoot 'src/msplatform/components/single_reflection_oa_tof'
-$workspaceRoot = Split-Path -Parent $repoRoot
-$artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\single_reflection_oa_tof_mass_analyzer'
+$workspaceRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
+$repoRoot = $workspaceRoot
+$artifactRootPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRootPath)
+$artifactRoot = Join-Path $artifactRootPath 'projects\single_reflection_oa_tof_mass_analyzer'
+$projectRoot = (Resolve-Path -LiteralPath $ScienceRoot).Path
 $python = if ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) } else { throw 'Explicit SIMULATION_PYTHON_EXE is required' }
+$packageRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $runRecordComplete = $true
 $hostRole = 'SIMION'
-$executionResources = Join-Path $repoRoot 'src/msplatform/execution/resources'
-$hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path $workspaceRoot 'artifacts/common/host_resources.sqlite3' }
+$executionResources = Join-Path $packageRoot 'execution/resources'
+$hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path $artifactRootPath 'common/host_resources.sqlite3' }
 $hostContext = @{workspace=$workspaceRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 $hostExecutionLease = Enter-HostExecutionLease -Role $hostRole -Stage prepare
@@ -34,23 +39,23 @@ if ($Phase -in @('Publish','Recover')) {
     '--artifact-root',$artifactRoot
   )
   if ($Phase -eq 'Recover') { $publicationArgs += '--recover' }
-  & $python @publicationArgs
+  & $python -I -B @publicationArgs
   if ($LASTEXITCODE -ne 0) { throw "Formal release $($Phase.ToLowerInvariant()) failed." }
-  & $PSCommandPath -Phase Verify -SimionExe $SimionExe
+  & $PSCommandPath -Phase Verify -SimionExe $SimionExe -WorkspaceRoot $workspaceRoot -ArtifactRootPath $artifactRootPath -ScienceRoot $projectRoot
   if ($LASTEXITCODE -ne 0) { throw 'Published Formal release did not verify.' }
   return
 }
 if ($Phase -eq 'Verify') {
-  . (Join-Path $projectRoot 'oatof_lifecycle_preflight.ps1')
+  . (Join-Path $packageRoot 'workflows/resources/oatof_lifecycle_preflight.ps1')
   Assert-OaTofFormalAssetsReadable -ProjectRoot $projectRoot
-  & $python -m msplatform.execution.verify_artifact_layout `
-    (Join-Path $workspaceRoot 'artifacts\projects') --formal-only --verify-hashes `
+  & $python -I -B -m msplatform.execution.verify_artifact_layout `
+    (Join-Path $artifactRootPath 'projects') --formal-only --verify-hashes `
     --project single_reflection_oa_tof_mass_analyzer --repository-root $repoRoot
   if ($LASTEXITCODE -ne 0) { throw 'Formal asset-manifest structure gate failed.' }
-  & (Join-Path $repoRoot 'src/msplatform/workflows/resources/verify_geometry_contract.ps1') `
+  & (Join-Path $packageRoot 'workflows/resources/verify_geometry_contract.ps1') `
     -SimionExe $SimionExe -PythonExe $python
   if ($LASTEXITCODE -ne 0) { throw 'Formal geometry/runtime/CAD gate failed.' }
-  & (Join-Path $repoRoot 'src/msplatform/workflows/resources/verify_reference_analysis.ps1') -PythonExe $python
+  & (Join-Path $packageRoot 'workflows/resources/verify_reference_analysis.ps1') -PythonExe $python
   if ($LASTEXITCODE -ne 0) { throw 'Formal reference-analysis gate failed.' }
   'FORMAL_RELEASE_VERIFY=PASS'
   return
@@ -59,7 +64,7 @@ if ([string]::IsNullOrWhiteSpace($CandidateRunRoot)) {
   throw 'Formal Validate requires -CandidateRunRoot.'
 }
 $candidateRoot = (Resolve-Path -LiteralPath $CandidateRunRoot).Path
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
+. (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
 $runRecordComplete = $false
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project 'single_reflection_oa_tof_mass_analyzer' -Mode 'formal_vnext_zero_change_validation' `
@@ -93,7 +98,7 @@ foreach ($path in @(
   )) {
   if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Required input is absent: $path" }
 }
-& $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' `
+& $python -I -B -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' `
   $candidateManifestSource --require-status success --require-local-run-config `
   --require-project single_reflection_oa_tof_mass_analyzer --require-mode design_candidate
 if ($LASTEXITCODE -ne 0) { throw 'Candidate source manifest verification failed.' }
@@ -231,7 +236,7 @@ $simionStderr = Join-Path $logDir 'simion_stderr.log'
 $simionCsv = Join-Path $resultDir 'simion_particles.csv'
 $simionSummary = Join-Path $resultDir 'simion_summary.json'
 $ionCount = @(Get-Content -LiteralPath $ion | Where-Object { $_.Trim() }).Count
-& $python (Join-Path $repoRoot 'src\msplatform\contracts\particle_count_policy.py') --count $ionCount
+& $python -I -B (Join-Path $packageRoot 'contracts\particle_count_policy.py') --count $ionCount
 if ($LASTEXITCODE -ne 0 -or $ionCount -ne 1000) {
   throw "Shared particle table is not exact N=1000: $ionCount"
 }
@@ -284,10 +289,10 @@ try {
     Exit-HostExecutionLease -Lease $hostExecutionLease
     $hostExecutionLease = $null
   }
-  . (Join-Path (Split-Path -Parent ((Join-Path $repoRoot 'src\msplatform\backends\comsol\launcher\run_comsol_r2025b.ps1'))) 'resolve_comsol_64.ps1')
+  . (Join-Path (Split-Path -Parent ((Join-Path $packageRoot 'backends\comsol\launcher\run_comsol_r2025b.ps1'))) 'resolve_comsol_64.ps1')
   $comsolLauncherParameters=Get-ComsolLauncherParameters -HostContext $script:HostResourceExecutionContext -WorkingDirectory $script:HostResourceExecutionContext.workspace
-  & (Join-Path $repoRoot 'src\msplatform\backends\comsol\launcher\run_comsol_r2025b.ps1') @comsolLauncherParameters `
-    -TaskScript (Join-Path $repoRoot 'src\msplatform\backends\comsol\matlab\run_fixed_particle_retrace.m') `
+  & (Join-Path $packageRoot 'backends\comsol\launcher\run_comsol_r2025b.ps1') @comsolLauncherParameters `
+    -TaskScript (Join-Path $packageRoot 'backends\comsol\matlab\run_fixed_particle_retrace.m') `
     -ReportPath $comsolReport
   if ($null -eq $hostExecutionLease) {
     $hostExecutionLease = Enter-HostExecutionLease -Role $hostRole -Stage prepare
@@ -311,7 +316,7 @@ $process = Start-Process -FilePath $SimionExe -WorkingDirectory $candidateSimion
 if ($process.ExitCode -ne 0) { throw "Formal vNext SIMION fly failed: $simionStderr" }
 $hostExecutionLease = Update-HostResourceStage -Lease $hostExecutionLease -Stage postprocess `
   -Budget (Get-HostResourceBudget -Role $hostRole -Stage postprocess) -RetainedMemoryBytes 0
-$summary = & (Join-Path $repoRoot 'src/msplatform/backends/simion/resources/analyze_ideal_field_log.ps1') `
+$summary = & (Join-Path $packageRoot 'backends/simion/resources/analyze_ideal_field_log.ps1') `
   -Log $simionLog -IonFile $ion -Mode 'formal_vnext_candidate_assets' `
   -Distribution 'fixedN1000' -ParticleCsv $simionCsv
 $summary | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $simionSummary -Encoding UTF8
@@ -319,7 +324,7 @@ if ([int]$summary.Hit -ne 1000 -or [int]$summary.Emitted -ne 1000) {
   throw "Formal vNext SIMION hit count is $($summary.Hit)/$($summary.Emitted)"
 }
 
-& $python -m msplatform.workflows.oa_candidate.reference_analysis compare `
+& $python -I -B -m msplatform.workflows.oa_candidate.reference_analysis compare `
   $comsolCsv $simionCsv --mass 524 --output $resultDir --left-label COMSOL --right-label SIMION `
   --require-paired-particle-ids --bootstrap-resamples $BootstrapResamples --bootstrap-seed $BootstrapSeed
 if ($LASTEXITCODE -ne 0) { throw 'Formal vNext unified cross-solver analysis failed.' }
@@ -345,9 +350,9 @@ $manifestArgs = @('-c','from msplatform.execution.manifest_publication import ma
   '--run-config',$runConfig,'--manifest',(Join-Path $runDir 'run_manifest.json'),
   '--status','success','--software','COMSOL R2025b','--software','SIMION 2020')
 foreach ($output in $outputs) { $manifestArgs += @('--output',$output) }
-& $python @manifestArgs
+& $python -I -B @manifestArgs
 if ($LASTEXITCODE -ne 0) { throw 'Formal vNext manifest creation failed.' }
-& $python -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' `
+& $python -I -B -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' `
   (Join-Path $runDir 'run_manifest.json') --require-status success
 if ($LASTEXITCODE -ne 0) { throw 'Formal vNext manifest verification failed.' }
 $runRecordComplete = $true

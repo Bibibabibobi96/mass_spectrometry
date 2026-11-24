@@ -2,10 +2,12 @@ function [result,model,context,state] = oatof_build_saved_particle_solution(mass
 % Native geometry/field/particle construction, ending at the original raw save.
 % The body and save ordering are relocated from the full model core.
 result=[];model=[];context=struct();state=struct();
-projectRoot = fileparts(fileparts(mfilename('fullpath')));
-repositoryRoot = fileparts(fileparts(projectRoot));
-addpath(projectRoot, fullfile(repositoryRoot, 'common', 'comsol'), ...
-    fullfile(repositoryRoot, 'src', 'msplatform', 'backends', 'comsol', 'matlab'));
+matlabRoot = fileparts(mfilename('fullpath'));
+msplatformRoot = fileparts(fileparts(fileparts(matlabRoot)));
+projectRoot = fullfile(msplatformRoot, 'components', 'single_reflection_oa_tof');
+previousPath = path;
+pathRestore = onCleanup(@() path(previousPath)); %#ok<NASGU>
+addpath(matlabRoot);
 assert(~isempty(contract_path), 'oatof_build_model_core requires a resolved contract path.');
 contract = load_oatof_contract(contract_path);
 geometryMm = contract.geometry_mm;
@@ -178,7 +180,7 @@ fprintf('[d1 scan] d1=%gmm -> U1(V_mid)=%.4fV, E1=%.4fV/m, E2=%.4fV/m, V_mirror=
 % Named solid selections and planar allvertices selections prevent unrelated
 % intersecting walls from receiving an electrode's potential.
 t_total_start = tic;
-paths = oatof_paths(artifactRoot, fileparts(fileparts(mfilename('fullpath'))));
+paths = oatof_paths(artifactRoot, projectRoot);
 import com.comsol.model.*
 import com.comsol.model.util.*
 

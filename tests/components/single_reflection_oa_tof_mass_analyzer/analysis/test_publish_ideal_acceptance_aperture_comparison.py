@@ -14,6 +14,9 @@ from unittest.mock import patch
 from msplatform.workflows.oa_tof_design import publish_ideal_acceptance_aperture_comparison as publisher
 
 
+ROOT = Path(__file__).resolve().parents[4]
+
+
 def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest().upper()
 
@@ -73,14 +76,14 @@ class PublishIdealAcceptanceApertureComparisonTest(unittest.TestCase):
             ):
                 self.assertEqual(manifest["inputs"][name]["sha256"], _sha(snapshot / relative))
                 self.assertEqual((snapshot / relative).read_bytes(),
-                                 (publisher.REPOSITORY_ROOT / relative).read_bytes())
+                                 (ROOT / relative).read_bytes())
             # A real regular package later on sys.path must neither override the
             # frozen package nor fill a missing member. Editable-only environments
             # cannot expose that namespace-package fallback.
             installed = root / "installed-control"
             for relative in ("__init__.py", "analysis/__init__.py", "analysis/longitudinal_fit.py",
                              "io/__init__.py", "io/file_identity.py"):
-                source = publisher.REPOSITORY_ROOT / "src/msplatform" / relative
+                source = ROOT / "src/msplatform" / relative
                 target = installed / "msplatform" / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(source, target)
@@ -108,7 +111,7 @@ class PublishIdealAcceptanceApertureComparisonTest(unittest.TestCase):
                  "assert Path(fit.__file__).resolve() == Path(sys.argv[2]) / 'msplatform/analysis/longitudinal_fit.py'; "
                  "assert Path(file_sha256.__code__.co_filename).resolve() == Path(sys.argv[2]) / 'msplatform/io/file_identity.py'; "
                  "assert pre._sha256 is file_sha256 and full._sha256 is file_sha256; "
-                 "assert all(Path(module.__file__).resolve().is_relative_to(Path(sys.argv[2])) for name, module in sys.modules.items() if name == 'msplatform' or name.startswith('msplatform.')); "
+                 "assert all(Path(module.__file__).resolve().is_relative_to(Path(sys.argv[2])) for name, module in sys.modules.items() if (name == 'msplatform' or name.startswith('msplatform.')) and getattr(module, '__file__', None) is not None); "
                  "assert 'msplatform.execution' not in sys.modules; "
                  "assert abs(fit.fit_longitudinal_polynomial(np.arange(3.), np.arange(3.), 1).metrics['k_per_us'] - 1) < 1e-12",
                  str(snapshot), str(snapshot / "src"), str(installed), json.dumps(dependency_roots)]
@@ -157,7 +160,7 @@ class PublishIdealAcceptanceApertureComparisonTest(unittest.TestCase):
             campaign, runs = self._campaign_and_runs(root, "pre-pulse")
             installed = root / "installed/msplatform/analysis/longitudinal_fit.py"
             installed.parent.mkdir(parents=True)
-            installed.write_bytes((publisher.REPOSITORY_ROOT / "src/msplatform/analysis/longitudinal_fit.py").read_bytes())
+            installed.write_bytes((ROOT / "src/msplatform/analysis/longitudinal_fit.py").read_bytes())
             reader = lambda **_: self._reader_result(campaign, qualification="DETECTOR_BLIND_SOURCE_ONLY")
             run_dir = self._run_dir(root, "20260828_120050__analysis__python__aperture-installed")
             with (patch.object(publisher, "longitudinal_fit", SimpleNamespace(__file__=installed)),

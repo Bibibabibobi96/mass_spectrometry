@@ -13,7 +13,6 @@ from typing import Any, Callable
 
 from msplatform.backends.simion.native_stage_completion import append_native_stage_completion
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
 OWNER_RESOURCE_ID = "src/msplatform/workflows/resources/run_artifact_workflow.ps1"
 from msplatform.contracts.machine_contracts import load_json, sha256
 from msplatform.io.file_identity import FileIdentityGuard, guarded_file_identity
@@ -119,7 +118,7 @@ def _run_command(command: list[str], log_path: Path, environment: dict[str, str]
             persistent = persistent or current[0]
             execution = execution or current[1]
     process, _ = run_observed_process(
-        command, cwd=execution or REPO_ROOT,
+        command, cwd=execution or persistent or log_path.resolve().parent,
         stdout=log_path, stderr=log_path, environment_overrides=env, merge_stderr=True,
         warning_seconds=STAGE_PROCESS_WARNING_S,
     )
@@ -191,7 +190,7 @@ def _verify_frozen_cad_python(closure: dict[str, Any], log_path: Path) -> str:
     try:
         result, _ = run_observed_process(
             [str(python_executable), "-c", "import pythoncom; import win32com.client; print('PYWIN32=PASS')"],
-            cwd=REPO_ROOT, stdout=log_path, stderr=log_path, merge_stderr=True,
+            cwd=log_path.resolve().parent, stdout=log_path, stderr=log_path, merge_stderr=True,
             hard_deadline_seconds=CAD_PYTHON_PREFLIGHT_TIMEOUT_S,
             hard_deadline_action="terminate_process_tree",
         )
@@ -1383,7 +1382,8 @@ def _invoke_candidate_owner_request(request: dict, pa_handoff_output: Path | Non
                                      ["-RequestPath", str(request_path), "-ResultPath", str(result_path)]),
                          Path(directory) / "owner.log", run_directory=run_root,
                          execution_directory=(Path(request["execution_run_directory"])
-                             if Path(request["execution_run_directory"]).is_dir() else REPO_ROOT))
+                             if Path(request["execution_run_directory"]).is_dir()
+                             else run_root if run_root.is_dir() else run_root.parent))
         except BaseException as error:
             failure = error
         if not result_path.is_file():

@@ -9,19 +9,24 @@ param(
   [pscustomobject]$CapacityWorkflowSession = $null,
   [string]$ContractPath = '',
   [string]$RunId = '',
-  [string]$PythonExe = ''
+  [Parameter(Mandatory)][string]$WorkspaceRoot,
+  [Parameter(Mandatory)][string]$ArtifactRoot,
+  [Parameter(Mandatory)][string]$PythonExe
 )
 
 # Production analysis entry: reads five completed flights; never launches SIMION.
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
-$packageRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$workspaceRoot = Split-Path -Parent $repoRoot
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
+$workspaceRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
+$artifactWorkspaceRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)
+$repoRoot = $workspaceRoot
+$python = [IO.Path]::GetFullPath($PythonExe)
+$packageRootText = & $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$packageRootText)) { throw 'Installed msplatform package is unavailable.' }
+$packageRoot = (Resolve-Path -LiteralPath ([string]$packageRootText).Trim()).Path
+. (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
 $project = 'parallel_mirror_dual_stripe_mr_tof'
-$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
-$contract = if ($ContractPath) { $ContractPath } else { Join-Path $packageRoot 'components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json' }
+$contract = if ($ContractPath) { (Resolve-Path -LiteralPath $ContractPath).Path } else { Join-Path $packageRoot 'components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json' }
 $perturbationPaths = @($Stripe1PerturbationManifest, $Stripe2PerturbationManifest, $Prism1PerturbationManifest, $Prism2PerturbationManifest)
 $hasAllPerturbations = @($perturbationPaths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count -eq 4
 $hasAnyPerturbation = @($perturbationPaths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count -gt 0
@@ -31,7 +36,7 @@ if (($hasPrior -and $hasAnyPerturbation) -or (-not $hasPrior -and -not $hasAllPe
 }
 if (-not $RunId) { $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__analysis__python__mrtof-downstream-fixed-grid-workpoint' }
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot `
-  -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$project") `
+  -ArtifactRoot (Join-Path $artifactWorkspaceRoot "projects\$project") `
   -RunId $RunId -Project $project -Mode downstream_fixed_grid_workpoint `
   -Software @('Python 3.11', 'NumPy') -RetentionContractEnabled -RetentionClass compact `
   -CapacityLedgerLifecycleEnabled
@@ -48,7 +53,7 @@ try {
     ForEach-Object { Split-Path -Parent (Resolve-Path -LiteralPath $_).Path }
   if($ownsCapacitySession){
     $capacitySession = Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
-      -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -RunDirectory $package.artifact_run_dir `
+      -ArtifactRoot ($artifactWorkspaceRoot) -RunDirectory $package.artifact_run_dir `
       -CommittedNewBytes 1048576 -ProtectedPaths $protectedInputRuns `
       -Owner "mrtof-downstream-fixed-grid-workpoint:$RunId"
   }else{
@@ -97,7 +102,7 @@ try {
   )
   $sourceCopies = @{}
   foreach ($relative in $sourcePaths) {
-    $source = Join-Path $repoRoot $relative
+    $source = Join-Path $packageRoot $relative.Replace('src/msplatform/', '')
     $sourceCopies[$source] = Copy-VerifiedRunInput -Source $source `
       -Destination (Join-Path $package.input_dir ([IO.Path]::GetFileName($relative)))
   }
@@ -115,12 +120,10 @@ try {
   $proposalPath = Join-Path $package.result_dir 'downstream_fixed_grid_workpoint.json'
   $analysisLog = Join-Path $package.log_dir 'downstream_fixed_grid_workpoint.log'
   $lease = Enter-HostExecutionLease -Role GATE -Stage downstream_workpoint_audit -RunId $RunId
-  Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
-    & $python -m msplatform.workflows.prepared_joint.fixed_grid_workpoint `
-      --definition $definitionPath --output $proposalPath --freeze-input-dir (Join-Path $package.input_dir 'trials') `
-      2>&1 | Tee-Object -FilePath $analysisLog
-    if ($LASTEXITCODE -ne 0) { throw 'Downstream fixed-grid workpoint audit failed.' }
-  }
+  & $python -I -B -m msplatform.workflows.prepared_joint.fixed_grid_workpoint `
+    --definition $definitionPath --output $proposalPath --freeze-input-dir (Join-Path $package.input_dir 'trials') `
+    2>&1 | Tee-Object -FilePath $analysisLog
+  if ($LASTEXITCODE -ne 0) { throw 'Downstream fixed-grid workpoint audit failed.' }
   foreach ($pair in $sourceCopies.GetEnumerator()) {
     if (-not (Test-RunFilesIdentical -Left $pair.Key -Right $pair.Value)) { throw "Source changed during audit: $($pair.Key)" }
   }
