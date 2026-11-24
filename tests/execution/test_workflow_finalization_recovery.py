@@ -66,13 +66,13 @@ class AssemblyFinalizationRecoveryTests(unittest.TestCase):
                 cli.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(REPO / cli.relative_to(facade), cli)
                 run_id = "20261030_120000__test__python__assembly-finalization"
-                project = artifacts / "projects/instrument_assembly"
+                project = artifacts / "assemblies/instrument_assembly"
                 run = project / "runs" / run_id
                 result = project / "scratch/workflow_results" / run_id / "result.json"
                 env = {**os.environ, "SIMULATION_PYTHON_EXE": sys.executable,
                        "MASS_SPECTROMETRY_HOST_CONTEXT_JSON": json.dumps({
                            "workspace": str(facade.parent), "python_executable": sys.executable,
-                           "host_state_path": str(artifacts / "common/host_resources.sqlite3"),
+                           "host_state_path": str(artifacts / "platform/host_resources.sqlite3"),
                            "policy_path": str(facade / "src/msplatform/execution/resources/host_resource_policy.json")}),
                        "WF_REPO": str(facade), "WF_PYTHON": sys.executable,
                        "WF_ARTIFACTS": str(artifacts), "WF_PROJECT": str(project),
