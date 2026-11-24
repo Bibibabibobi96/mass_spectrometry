@@ -4628,7 +4628,7 @@ try:
             if 'session' not in rf_l1_seen:
                 raise
             rf_l1_error=error
-        session=rf_l1_seen['session'];project=rf_l1_workspace/'artifacts/projects/rf_multipole_ion_optics'
+        session=rf_l1_seen['session'];project=rf_l1_workspace/'artifacts/components/rf_multipole_ion_optics'
         def rf_l1_owned_path(path):
             path=pathlib.Path(path)
             assert path.is_absolute(),path
@@ -5572,7 +5572,7 @@ def main():
     api._invoke_worker=invoke_with_process_span
 
     def run_id(label):return '20261111_220000__test__python__installed-tof-'+case_root.name+'-'+label.replace('_','-')
-    def result_path(identity):return workspace/'artifacts/projects'/project/'scratch/workflow_results'/identity/'result.json'
+    def result_path(identity):return workspace/'artifacts/components'/project/'scratch/workflow_results'/identity/'result.json'
     def assert_owner(run,identity,*,success=True):
         result=json.loads(result_path(identity).read_text(encoding='utf-8'))
         assert result['status']==('success' if success else 'failed') and result['writers_confirmed'] is True
@@ -5623,7 +5623,7 @@ def main():
             except FileNotFoundError as error:
                 assert 'frozen_python_package.ps1' in str(error)
             else:raise AssertionError('missing selected frozen executor resource accepted')
-            run=workspace/'artifacts/projects'/project/'runs'/identity
+            run=workspace/'artifacts/components'/project/'runs'/identity
             retain_case(run,'missing-resource')
             result,completion=assert_owner(run,identity,success=False)
             assert completion['exception']['type']=='FileNotFoundError'
@@ -5642,7 +5642,7 @@ def main():
             with section_timing('tof_owner',name):
                 run=api.execute(config_paths[selected],**arguments)
             retain_case(run,name)  # Actual producer bytes before any consumer assertion.
-            assert run==workspace/'artifacts/projects'/project/'runs'/identity
+            assert run==workspace/'artifacts/components'/project/'runs'/identity
             result,owner_completion=assert_owner(run,identity)
             config=json.loads((run/'run_config.json').read_text(encoding='utf-8'))
             assert config['run_instance']['seed']==seed and config['formal_gate_passed'] is False
@@ -5719,7 +5719,7 @@ def main():
                 assert all(pathlib.Path(path).read_bytes()==body for path,body in parent_before.items())
             records.append(dict(case=name,run=str(run),operations=1,worker_pids=sorted({row['pid'] for row in worker_origins}),source_csv_files=case_rows))
         # Input-resolution refusals preserve the existing run set; no fake owner or fallback inputs.
-        before_runs={path.name for path in (workspace/'artifacts/projects'/project/'runs').iterdir()}
+        before_runs={path.name for path in (workspace/'artifacts/components'/project/'runs').iterdir()}
         try:api.execute(config_paths['basic'],context=context,seed=9,run_id=run_id('no-input-root'))
         except TypeError:pass
         else:raise AssertionError('required input_root silently defaulted')
@@ -5745,7 +5745,7 @@ def main():
             except ValueError:pass
             else:raise AssertionError('tampered scalar receipt accepted')
         finally:receipt.write_bytes(raw_receipt)
-        assert {path.name for path in (workspace/'artifacts/projects'/project/'runs').iterdir()}==before_runs
+        assert {path.name for path in (workspace/'artifacts/components'/project/'runs').iterdir()}==before_runs
         assert all(pathlib.Path(path).read_bytes()==body for path,body in input_before.items())
         assert capacity_resource.read_bytes()==capacity_original
         assert load_capacity_protection_leases(workspace/'artifacts')['audit']==[]

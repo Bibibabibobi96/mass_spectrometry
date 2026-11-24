@@ -201,13 +201,6 @@ def _validate_governed_freeze_scope(
     if not config_path.is_file() or config_path.name != "run_config.json":
         raise CandidateContractError("corridor freeze requires an owning run_config.json")
     run_directory = config_path.parent
-    if (
-        run_directory.parent.name != "runs"
-        or run_directory.parent.parent.name != PROJECT_ID
-        or run_directory.parent.parent.parent.name != "projects"
-        or run_directory.parent.parent.parent.parent.name != "artifacts"
-    ):
-        raise CandidateContractError("corridor freeze requires a governed MR-TOF artifact run")
     expected_output = (run_directory / FREEZE_RELATIVE_DIRECTORY).resolve()
     if output != expected_output:
         raise CandidateContractError(
@@ -224,9 +217,29 @@ def _validate_governed_freeze_scope(
         raise CandidateContractError(
             "corridor freeze requires a pre-registered response-bank run"
         ) from exc
+    owner = configuration.get("project")
+    if owner == PROJECT_ID:
+        owner_root = run_directory.parent.parent
+        valid_owner_root = (
+            owner_root.name == PROJECT_ID
+            and owner_root.parent.name == "components"
+            and owner_root.parent.parent.name == "artifacts"
+        )
+    elif owner == "instrument_assembly":
+        owner_root = run_directory.parent.parent
+        valid_owner_root = (
+            owner_root.name == owner
+            and owner_root.parent.name == "assemblies"
+            and owner_root.parent.parent.name == "artifacts"
+        )
+    else:
+        valid_owner_root = False
+    if run_directory.parent.name != "runs" or not valid_owner_root:
+        raise CandidateContractError(
+            "corridor freeze requires a governed component or Assembly artifact run"
+        )
     if (
         configuration.get("run_id") != run_directory.name
-        or configuration.get("project") != PROJECT_ID
         or configuration.get("mode") != RESPONSE_BANK_MODE
         or not isinstance(configuration.get("artifact_retention"), dict)
         or configuration.get("capacity_ledger_lifecycle", {}).get("enabled") is not True
@@ -234,7 +247,7 @@ def _validate_governed_freeze_scope(
         or manifest.get("role") != "simulation_run_manifest"
         or manifest.get("status") != "checkpoint"
         or manifest.get("run_id") != run_directory.name
-        or manifest.get("project") != PROJECT_ID
+        or manifest.get("project") != owner
         or manifest.get("mode") != RESPONSE_BANK_MODE
     ):
         raise CandidateContractError(

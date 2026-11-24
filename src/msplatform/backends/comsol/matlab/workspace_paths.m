@@ -6,6 +6,7 @@ function paths = workspace_paths(projectName,options)
     arguments
         projectName (1,1) string = ""
         options.ArtifactRoot (1,1) string = ""
+        options.OwnerKind (1,1) string {mustBeMember(options.OwnerKind,["component","assembly"])} = "component"
     end
 
     pathsDir = fileparts(mfilename('fullpath'));
@@ -32,5 +33,9 @@ function paths = workspace_paths(projectName,options)
         return;
     end
 
-    paths.projectArtifactRoot = fullfile(paths.artifactRoot, 'projects', projectName);
+    ownerDirectory = "components";
+    if options.OwnerKind == "assembly"
+        ownerDirectory = "assemblies";
+    end
+    paths.projectArtifactRoot = fullfile(paths.artifactRoot, ownerDirectory, projectName);
 end

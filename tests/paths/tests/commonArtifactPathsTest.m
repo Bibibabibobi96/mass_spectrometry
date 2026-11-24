@@ -26,7 +26,7 @@ classdef commonArtifactPathsTest < matlab.unittest.TestCase
             copyfile(fullfile(backendSource, 'workspace_paths.m'), backend);
             copyfile(fullfile(backendSource, 'resolve_path_identity.m'), backend);
             testCase.applyFixture(matlab.unittest.fixtures.PathFixture(backend));
-            testCase.ProjectRoot = fullfile(testCase.Workspace, 'artifacts', 'projects', 'example');
+            testCase.ProjectRoot = fullfile(testCase.Workspace, 'artifacts', 'components', 'example');
             mkdir(testCase.ProjectRoot);
         end
     end
@@ -84,7 +84,7 @@ classdef commonArtifactPathsTest < matlab.unittest.TestCase
 
         function explicitRootOverridesDeploymentEnvironment(testCase)
             root = fullfile(testCase.Workspace, 'short-payload');
-            context = fullfile(root, 'projects', 'example', 'runs', 'explicit');
+            context = fullfile(root, 'components', 'example', 'runs', 'explicit');
             mkdir(context);
             setenv('MASS_SPECTROMETRY_ARTIFACT_ROOT', fullfile(testCase.Workspace, 'other'));
             result = common_artifact_paths(context, ArtifactRoot=root);
@@ -95,7 +95,7 @@ classdef commonArtifactPathsTest < matlab.unittest.TestCase
 
         function deploymentRootReachesExistingConsumers(testCase)
             root = fullfile(testCase.Workspace, 'payload');
-            context = fullfile(root, 'projects', 'example', 'scratch', 'configured');
+            context = fullfile(root, 'components', 'example', 'scratch', 'configured');
             mkdir(context);
             setenv('MASS_SPECTROMETRY_ARTIFACT_ROOT', root);
             result = common_artifact_paths(context);
@@ -131,6 +131,16 @@ classdef commonArtifactPathsTest < matlab.unittest.TestCase
         function rejectsOutsideArtifacts(testCase)
             testCase.verifyError(@() common_artifact_paths(testCase.Workspace), ...
                 'common_artifact_paths:InvalidContext');
+        end
+
+        function rejectsLegacyProjectRootWithoutAddingOutputs(testCase)
+            context = fullfile(testCase.Workspace, 'artifacts', 'projects', ...
+                'example', 'runs', 'historical');
+            mkdir(context);
+            testCase.verifyError(@() common_artifact_paths(context), ...
+                'common_artifact_paths:InvalidContext');
+            testCase.verifyFalse(isfolder(fullfile(context, 'comsol')));
+            testCase.verifyFalse(isfolder(fullfile(context, 'results')));
         end
 
         function acceptsCheckpoint(testCase)

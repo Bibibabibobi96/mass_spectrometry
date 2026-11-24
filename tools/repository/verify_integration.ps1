@@ -28,7 +28,7 @@ try {
     if ($LASTEXITCODE -ne 0 -or $version -ne '3.11') {
         throw "Integration gate requires Python 3.11, found $version at $PythonExe"
     }
-    $hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path (Split-Path -Parent $repoRoot) 'artifacts/common/host_resources.sqlite3' }
+    $hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path (Split-Path -Parent $repoRoot) 'artifacts/platform/host_resources.sqlite3' }
     $hostContext = @{workspace=(Split-Path -Parent $repoRoot);python_executable=$PythonExe;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
     . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
     $lease = Enter-HostExecutionLease -Role GATE

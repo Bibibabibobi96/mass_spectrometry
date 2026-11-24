@@ -995,7 +995,7 @@ PA等昂贵阶段复用及中断恢复遵循[统一复用与恢复规则](../doc
 
 本机门禁与SIMION/COMSOL运行通过[`../tools/repository/host_execution_lease.ps1`](../tools/repository/host_execution_lease.ps1)
 进入同一[`主机调度器`](../src/msplatform/execution/host_resource_scheduler.py)。当前默认账本位于工作区同级产物根的
-`artifacts/common/host_resources.sqlite3`；同一父目录中的工作树共用该默认值，跨父目录不能假定自动共用。
+`artifacts/platform/host_resources.sqlite3`；同一父目录中的工作树共用该默认值，跨父目录不能假定自动共用。
 准入和status按显式绝对路径、`MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH`、默认路径的顺序选择；
 不同工作树必须显式部署到同一绝对账本，不能各建一份而重复分配资源。环境路径只用于受控部署或隔离测试，
 生产调用不得用它绕过正在运行的申请。切换部署路径前必须等待原账本的owner、后代和等待者全部结束，

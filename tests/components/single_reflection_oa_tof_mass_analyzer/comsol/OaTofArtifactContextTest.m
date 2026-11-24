@@ -21,7 +21,7 @@ classdef OaTofArtifactContextTest < matlab.unittest.TestCase
         function namedEntryAuthorizesFutureAliasButPreservesNativeSpelling(testCase)
             testCase.assumeTrue(ispc);
             [project,artifact,contract]=testCase.snapshot();
-            context=fullfile(artifact,'projects','single_reflection_oa_tof_mass_analyzer','runs','alias_case');
+            context=fullfile(artifact,'components','single_reflection_oa_tof_mass_analyzer','runs','alias_case');
             mkdir(context);
             alias=fullfile(testCase.folder,'execution_alias');
             makeFixtureJunction(alias,context);
@@ -40,7 +40,7 @@ classdef OaTofArtifactContextTest < matlab.unittest.TestCase
             [~,artifact,contract]=testCase.snapshot();
             outside=fullfile(testCase.folder,'outside');
             mkdir(outside);
-            alias=fullfile(artifact,'projects','single_reflection_oa_tof_mass_analyzer','runs','escape');
+            alias=fullfile(artifact,'components','single_reflection_oa_tof_mass_analyzer','runs','escape');
             mkdir(fileparts(alias));
             makeFixtureJunction(alias,outside);
             testCase.addTeardown(@() removeFixtureJunction(alias));
@@ -50,7 +50,7 @@ classdef OaTofArtifactContextTest < matlab.unittest.TestCase
         function namedEntryRejectsFormalJunction(testCase)
             testCase.assumeTrue(ispc);
             [~,artifact,contract]=testCase.snapshot();
-            formal=fullfile(artifact,'projects','single_reflection_oa_tof_mass_analyzer','formal','comsol');
+            formal=fullfile(artifact,'components','single_reflection_oa_tof_mass_analyzer','formal','comsol');
             mkdir(formal);
             alias=fullfile(testCase.folder,'formal_alias');
             makeFixtureJunction(alias,formal);
@@ -58,19 +58,36 @@ classdef OaTofArtifactContextTest < matlab.unittest.TestCase
             testCase.verifyError(@() run_oatof_model(ArtifactRoot=artifact,ContractPath=contract, ...
                 OutputModelPath=fullfile(alias,'future.mph')),'oatof:OutputModelPath');
         end
-        function ordinaryDefaultPathsAreUnchanged(testCase)
+        function ordinaryDefaultPathsUseComponentRoot(testCase)
             paths=oatof_paths();
             repo=testCase.repositoryRoot;
-            expected=fullfile(fileparts(repo),'artifacts','projects','single_reflection_oa_tof_mass_analyzer');
+            expected=fullfile(fileparts(repo),'artifacts','components','single_reflection_oa_tof_mass_analyzer');
             testCase.verifyEqual(paths.artifactRoot,expected);
             testCase.verifyEqual(paths.projectRoot,string(testCase.activeProject));
             testCase.verifyEqual(paths.runsRoot,fullfile(expected,'runs'));
             testCase.verifyEqual(paths.comsolFormalDir,fullfile(expected,'formal','comsol'));
         end
+        function assemblyInputUsesAssemblyArtifactRoot(testCase)
+            artifact=string(fullfile(testCase.folder,'artifacts'));
+            paths=workspace_paths('instrument_assembly',ArtifactRoot=artifact,OwnerKind="assembly");
+            expected=fullfile(artifact,'assemblies','instrument_assembly');
+            testCase.verifyEqual(paths.projectArtifactRoot,expected);
+            testCase.verifyNotEqual(paths.projectArtifactRoot, ...
+                fullfile(artifact,'components','instrument_assembly'));
+        end
+        function legacyProjectLocationIsNotACurrentFallback(testCase)
+            artifact=string(fullfile(testCase.folder,'artifacts'));
+            legacy=fullfile(artifact,'projects','single_reflection_oa_tof_mass_analyzer');
+            mkdir(fullfile(legacy,'runs','historical'));
+            paths=workspace_paths('single_reflection_oa_tof_mass_analyzer',ArtifactRoot=artifact);
+            testCase.verifyEqual(paths.projectArtifactRoot, ...
+                fullfile(artifact,'components','single_reflection_oa_tof_mass_analyzer'));
+            testCase.verifyTrue(isfolder(legacy));
+        end
         function frozenSourceUsesExplicitArtifactRoot(testCase)
             [project,artifact,~]=testCase.snapshot();
             paths=oatof_paths(artifact);
-            expected=char(fullfile(artifact,'projects','single_reflection_oa_tof_mass_analyzer'));
+            expected=char(fullfile(artifact,'components','single_reflection_oa_tof_mass_analyzer'));
             testCase.verifyEqual(paths.projectRoot,string(project));
             testCase.verifyEqual(paths.artifactRoot,expected);
             testCase.verifyEqual(paths.runsRoot,fullfile(expected,'runs'));
@@ -79,14 +96,14 @@ classdef OaTofArtifactContextTest < matlab.unittest.TestCase
         end
         function namedEntryAcceptsManagedScratchBeforeNativeBoundary(testCase)
             [~,artifact,contract]=testCase.snapshot();
-            output=fullfile(artifact,'projects','single_reflection_oa_tof_mass_analyzer','scratch','probe','model.mph');
+            output=fullfile(artifact,'components','single_reflection_oa_tof_mass_analyzer','scratch','probe','model.mph');
             testCase.verifyError(@() run_oatof_model(ArtifactRoot=artifact,ContractPath=contract, ...
                 OutputModelPath=output,AcceleratorGeometry=struct('invalid',1)), ...
                 'oatof:AcceleratorProjection');
         end
         function namedEntryPreservesExecutionOutputSpelling(testCase)
             [project,artifact,contract]=testCase.snapshot();
-            scratch=fullfile(artifact,'projects','single_reflection_oa_tof_mass_analyzer','scratch','probe');
+            scratch=fullfile(artifact,'components','single_reflection_oa_tof_mass_analyzer','scratch','probe');
             mkdir(fullfile(scratch,'nested'));
             output=fullfile(scratch,'nested','..','model.mph');
             writeCoreTransportFixture(fullfile(project,'..','..','backends','comsol','matlab','oatof_build_model_core.m'));
@@ -101,7 +118,7 @@ classdef OaTofArtifactContextTest < matlab.unittest.TestCase
         end
         function namedEntryRejectsFormalFromFrozenSource(testCase)
             [~,artifact,contract]=testCase.snapshot();
-            output=fullfile(artifact,'projects','single_reflection_oa_tof_mass_analyzer','formal','comsol','model.mph');
+            output=fullfile(artifact,'components','single_reflection_oa_tof_mass_analyzer','formal','comsol','model.mph');
             for geometryOnly=[false,true]
                 testCase.verifyError(@() run_oatof_model(ArtifactRoot=artifact,ContractPath=contract, ...
                     OutputModelPath=output,GeometryOnly=geometryOnly),'oatof:OutputModelPath');
@@ -117,7 +134,7 @@ classdef OaTofArtifactContextTest < matlab.unittest.TestCase
         end
         function geometryOnlyRequiresExplicitContract(testCase)
             [~,artifact,~]=testCase.snapshot();
-            output=fullfile(artifact,'projects','single_reflection_oa_tof_mass_analyzer','runs','geometry','model.mph');
+            output=fullfile(artifact,'components','single_reflection_oa_tof_mass_analyzer','runs','geometry','model.mph');
             testCase.verifyError(@() run_oatof_model(GeometryOnly=true,ArtifactRoot=artifact, ...
                 OutputModelPath=output),'oatof:GeometryOnlyPaths');
         end
@@ -128,7 +145,7 @@ classdef OaTofArtifactContextTest < matlab.unittest.TestCase
         end
         function geometryOnlyRejectsFieldAndSourceConfiguration(testCase)
             [~,artifact,contract]=testCase.snapshot();
-            output=fullfile(artifact,'projects','single_reflection_oa_tof_mass_analyzer','runs','geometry','model.mph');
+            output=fullfile(artifact,'components','single_reflection_oa_tof_mass_analyzer','runs','geometry','model.mph');
             for extra={{'FieldDesignOnly',true},{'FixedParticleTable',"unused.ion"}, ...
                     {'CartesianRelease',"unused.csv"}}
                 args=[{'GeometryOnly',true,'ArtifactRoot',artifact, ...
@@ -139,14 +156,14 @@ classdef OaTofArtifactContextTest < matlab.unittest.TestCase
         end
         function geometryOnlyAcceptsManagedOutputBeforeNativeBoundary(testCase)
             [~,artifact,contract]=testCase.snapshot();
-            output=fullfile(artifact,'projects','single_reflection_oa_tof_mass_analyzer','runs','geometry','model.mph');
+            output=fullfile(artifact,'components','single_reflection_oa_tof_mass_analyzer','runs','geometry','model.mph');
             testCase.verifyError(@() run_oatof_model(GeometryOnly=true,ArtifactRoot=artifact, ...
                 ContractPath=contract,OutputModelPath=output,AcceleratorGeometry=struct('invalid',1)), ...
                 'oatof:AcceleratorProjection');
         end
         function frozenExplicitContractUsesCanonicalResourcesAndRestoresContext(testCase)
             [project,artifact,contract]=testCase.snapshot();
-            output=fullfile(artifact,'projects','single_reflection_oa_tof_mass_analyzer','scratch','default','model.mph');
+            output=fullfile(artifact,'components','single_reflection_oa_tof_mass_analyzer','scratch','default','model.mph');
             writeCoreTransportFixture(fullfile(project,'..','..','backends','comsol','matlab','oatof_build_model_core.m'));
             clear run_oatof_model oatof_build_model_core load_oatof_contract
             originalPath=path;originalFolder=pwd;
@@ -163,7 +180,7 @@ classdef OaTofArtifactContextTest < matlab.unittest.TestCase
         end
         function omittedOrMissingContractIsRejectedBeforeNativeWithContextRestored(testCase)
             [~,artifact,~]=testCase.snapshot();
-            output=fullfile(artifact,'projects','single_reflection_oa_tof_mass_analyzer','scratch','missing','model.mph');
+            output=fullfile(artifact,'components','single_reflection_oa_tof_mass_analyzer','scratch','missing','model.mph');
             originalPath=path;originalFolder=pwd;
             for fieldDesignOnly=[false,true]
                 testCase.verifyError(@() run_oatof_model(ArtifactRoot=artifact, ...

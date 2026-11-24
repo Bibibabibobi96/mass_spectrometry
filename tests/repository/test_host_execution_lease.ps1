@@ -23,9 +23,16 @@ $lease = $null
 $retainTestRoot = $false
 try {
   New-Item -ItemType Directory -Path $testRoot | Out-Null
-  $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH = $statePath
   $env:SIMULATION_PYTHON_EXE = $PythonExe
   . $leaseSource
+  $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+  $defaultState = Join-Path (Split-Path -Parent $repoRoot) 'artifacts/platform/host_resources.sqlite3'
+  Assert-True ($script:HostResourceStatePath -eq [IO.Path]::GetFullPath($defaultState)) `
+    'Default host state must use the platform artifact root without opening its ledger.'
+  $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH = $statePath
+  . $leaseSource
+  Assert-True ($script:HostResourceStatePath -eq [IO.Path]::GetFullPath($statePath)) `
+    'Explicit environment host state must override the platform default.'
   . (Join-Path $PSScriptRoot '../../src/msplatform/execution/resources/run_artifact_support.ps1')
   $realTransaction=${function:Invoke-HostResourceTransaction}
   try {

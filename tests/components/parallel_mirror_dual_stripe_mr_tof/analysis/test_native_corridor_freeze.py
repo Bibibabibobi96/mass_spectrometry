@@ -14,6 +14,7 @@ from msplatform.backends.simion.native_corridor_plan import (
 )
 from msplatform.backends.simion.native_corridor_freeze import (
     FROZEN_NAMES,
+    MANIFEST_NAME,
     freeze_native_corridor_inputs,
 )
 from msplatform.backends.simion.native_corridor_geometry import (
@@ -82,12 +83,23 @@ class NativeCorridorFreezeTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
-    def _governed_output(self) -> tuple[Path, Path]:
+    def _governed_output(
+        self, owner_kind: str = "component", legacy: bool = False
+    ) -> tuple[Path, Path]:
+        if legacy:
+            collection = "projects"
+            owner = "parallel_mirror_dual_stripe_mr_tof"
+        elif owner_kind == "assembly":
+            collection = "assemblies"
+            owner = "instrument_assembly"
+        else:
+            collection = "components"
+            owner = "parallel_mirror_dual_stripe_mr_tof"
         run = (
             self.root
             / "artifacts"
-            / "projects"
-            / "parallel_mirror_dual_stripe_mr_tof"
+            / collection
+            / owner
             / "runs"
             / "20260923_120000__build__simion__mrtof-native-corridor-response-bank"
         )
@@ -96,7 +108,7 @@ class NativeCorridorFreezeTest(unittest.TestCase):
         config = {
             "schema_version": 2,
             "run_id": run.name,
-            "project": "parallel_mirror_dual_stripe_mr_tof",
+            "project": owner,
             "mode": "native_corridor_detached_response_bank",
             "inputs": {},
             "artifact_retention": {"policy_version": 1, "class": "compact", "reason": None},
@@ -108,7 +120,7 @@ class NativeCorridorFreezeTest(unittest.TestCase):
             "role": "simulation_run_manifest",
             "status": "checkpoint",
             "run_id": run.name,
-            "project": "parallel_mirror_dual_stripe_mr_tof",
+            "project": owner,
             "mode": "native_corridor_detached_response_bank",
         }
         (run / "run_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
@@ -285,7 +297,7 @@ class NativeCorridorFreezeTest(unittest.TestCase):
         run_config, output = self._governed_output()
         for target, message in (
             (self.root / "arbitrary", "pre-registered response-bank input range"),
-            (self.root / "artifacts" / "projects" / "parallel_mirror_dual_stripe_mr_tof" / "cache" / "native_corridor_frozen_inputs" / "new", "pre-registered response-bank input range"),
+            (self.root / "artifacts" / "components" / "parallel_mirror_dual_stripe_mr_tof" / "cache" / "native_corridor_frozen_inputs" / "new", "pre-registered response-bank input range"),
         ):
             with self.subTest(target=target):
                 with self.assertRaisesRegex(CandidateContractError, message):
@@ -295,6 +307,19 @@ class NativeCorridorFreezeTest(unittest.TestCase):
         config.pop("capacity_ledger_lifecycle")
         run_config.write_text(json.dumps(config), encoding="utf-8")
         with self.assertRaisesRegex(CandidateContractError, "owner, lifecycle, and checkpoint closure"):
+            self._freeze(output, run_config)
+        self.assertFalse(output.exists())
+
+    def test_assembly_owner_uses_explicit_assembly_root(self) -> None:
+        run_config, output = self._governed_output(owner_kind="assembly")
+        result = self._freeze(output, run_config)
+        self.assertEqual(result["disposition"], "published")
+        manifest = json.loads((output / MANIFEST_NAME).read_text(encoding="utf-8"))
+        self.assertEqual(manifest["owner_run"]["project"], "instrument_assembly")
+
+    def test_legacy_project_run_is_not_a_new_freeze_owner(self) -> None:
+        run_config, output = self._governed_output(legacy=True)
+        with self.assertRaisesRegex(CandidateContractError, "governed component or Assembly"):
             self._freeze(output, run_config)
         self.assertFalse(output.exists())
 

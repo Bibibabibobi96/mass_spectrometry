@@ -10,10 +10,10 @@ function paths = common_artifact_paths(runDir, options)
 
     addpath(fileparts(mfilename('fullpath')));
     workspace = workspace_paths(ArtifactRoot=options.ArtifactRoot);
-    projectsRoot = resolve_path_identity(fullfile(workspace.artifactRoot, 'projects'));
+    componentsRoot = resolve_path_identity(fullfile(workspace.artifactRoot, 'components'));
     executionRunDir = char(runDir);
     runDir = resolve_path_identity(runDir);
-    prefix = [projectsRoot filesep];
+    prefix = [componentsRoot filesep];
     if ~isfolder(runDir) || ~startsWith(runDir, prefix, 'IgnoreCase', ispc)
         error('common_artifact_paths:InvalidContext', ...
             'Provide an existing artifact project runs/run_id or scratch/task_id directory.');

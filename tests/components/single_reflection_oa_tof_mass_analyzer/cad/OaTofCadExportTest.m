@@ -3,12 +3,11 @@ classdef OaTofCadExportTest < matlab.unittest.TestCase
 
     methods (TestClassSetup)
         function addCommonFolderToPath(testCase)
-            testsFolder = fileparts(fileparts(mfilename('fullpath')));
-            componentRoot = fileparts(testsFolder);
-            testCase.applyFixture(matlab.unittest.fixtures.PathFixture(componentRoot));
-            paths = oatof_paths();
-            testCase.applyFixture(matlab.unittest.fixtures.PathFixture(paths.cadDir));
-            testCase.applyFixture(matlab.unittest.fixtures.PathFixture(paths.commonSolidWorksDir));
+            repositoryRoot = fileparts(fileparts(fileparts(fileparts(fileparts(mfilename('fullpath'))))));
+            backendRoot = fullfile(repositoryRoot,'src','msplatform','backends','comsol','matlab');
+            exporterRoot = fullfile(repositoryRoot,'src','msplatform','exporters','solidworks','resources');
+            testCase.applyFixture(matlab.unittest.fixtures.PathFixture(backendRoot));
+            testCase.applyFixture(matlab.unittest.fixtures.PathFixture(exporterRoot));
         end
     end
 
@@ -134,7 +133,7 @@ classdef OaTofCadExportTest < matlab.unittest.TestCase
         function [modelPath,artifactRoot,formalCad]=artifactContext(testCase)
             fixture=testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
             artifactRoot=string(fullfile(fixture.Folder,'artifacts'));
-            formalCad=string(fullfile(artifactRoot,'projects','single_reflection_oa_tof_mass_analyzer','formal','cad'));
+            formalCad=string(fullfile(artifactRoot,'components','single_reflection_oa_tof_mass_analyzer','formal','cad'));
             modelPath=string(fullfile(fixture.Folder,'unopened.mph'));
             fid=fopen(modelPath,'w');
             cleanup=onCleanup(@() fclose(fid));

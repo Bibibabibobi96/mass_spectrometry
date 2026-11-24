@@ -156,10 +156,13 @@ class ResolvedDesignConsumerContractTest(unittest.TestCase):
             "DesignProfileId",
             "msplatform.workflows.rf_design_profiles",
             "msplatform.components.rf_multipole.design_request_files",
+            "Resolve-RunArtifactRoot",
+            "--artifact-root $workspacePaths.artifact_root",
             "multipole_resolved_design",
             "parent_resolved_design_sha256",
         ):
             self.assertIn(token, runner)
+        self.assertNotIn("--artifact-projects-root", runner)
         for legacy in (
             "ProjectRoot",
             "resolve_family_operating_contract",

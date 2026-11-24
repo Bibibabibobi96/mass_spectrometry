@@ -15,7 +15,7 @@ $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } elseif ($env:SI
 $pathArguments = @{SourceRoot = $repoRoot; Python = $python}
 if ($ArtifactRootPath) {$pathArguments.ArtifactRoot = $ArtifactRootPath}
 $workspacePaths = Resolve-WorkspacePaths @pathArguments
-$artifactProjectsRoot = Join-Path $workspacePaths.artifact_root 'projects'
+$componentArtifactRoot = Resolve-RunArtifactRoot -ArtifactRoot $workspacePaths.artifact_root -OwnerKind component -OwnerId $ProjectId -Python $python
 if ($ProjectId -ne 'rf_multipole_ion_optics' -or $DesignProfileId -notin @('hexapole_no_acceleration_full_length','octupole_no_acceleration_full_length')) {
   throw 'L2 field screen only supports the registered hexapole/octupole no-acceleration baseline designs.'
 }
@@ -23,7 +23,7 @@ $registryPreflight = Get-Content -LiteralPath (Join-Path $repoRoot 'config\proje
 $projectMatches = @($registryPreflight.projects | Where-Object { [string]$_.project_id -eq $ProjectId })
 if ($projectMatches.Count -ne 1) { throw "ProjectId is not unique in the canonical project registry: $ProjectId" }
 & $python -I -B -m msplatform.execution.artifact_project `
-  --artifact-projects-root $artifactProjectsRoot --project-id $ProjectId
+  --artifact-root $workspacePaths.artifact_root --project-id $ProjectId
 if ($LASTEXITCODE -ne 0) { throw 'Multipole artifact project initialization failed.' }
 if ([string]::IsNullOrWhiteSpace($RunId)) {
   $taskLabel = $ProjectId.Replace('_','-') + '-' + $DesignProfileId + '-round-rod-screen'
@@ -32,7 +32,7 @@ if ([string]::IsNullOrWhiteSpace($RunId)) {
 & $python -m msplatform.execution.artifact_naming run $RunId
 if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
 
-$runDir = Join-Path $artifactProjectsRoot "$ProjectId\runs\$RunId"
+$runDir = Join-Path $componentArtifactRoot "runs\$RunId"
 if (Test-Path -LiteralPath $runDir) { throw "Run already exists: $runDir" }
 $inputDir = Join-Path $runDir 'inputs'
 $resultDir = Join-Path $runDir 'results'

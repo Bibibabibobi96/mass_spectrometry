@@ -1,11 +1,12 @@
 reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
-componentDir = fileparts(fileparts(mfilename('fullpath')));
-repositoryRoot = fileparts(fileparts(componentDir));
-addpath(componentDir, fullfile(repositoryRoot, 'src', 'msplatform', 'backends', 'comsol', 'matlab'));
-paths = oatof_paths('', fileparts(fileparts(mfilename('fullpath'))));
+matlabDir = fileparts(mfilename('fullpath'));
+msplatformRoot = fileparts(fileparts(fileparts(matlabDir)));
+componentRoot = fullfile(msplatformRoot, 'components', 'single_reflection_oa_tof');
+addpath(matlabDir);
+paths = oatof_paths('', componentRoot);
 contractPath = getenv('OATOF_CONTRACT_PATH');
 if isempty(contractPath)
-    contractPath = fullfile(componentDir, 'config', 'resolved_geometry.json');
+    contractPath = fullfile(componentRoot, 'config', 'resolved_geometry.json');
 end
 assert(isfile(contractPath), 'Resolved contract to verify is missing: %s', contractPath);
 contract = load_oatof_contract(contractPath);
