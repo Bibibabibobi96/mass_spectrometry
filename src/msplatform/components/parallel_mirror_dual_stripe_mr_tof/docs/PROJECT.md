@@ -9,6 +9,8 @@
 
 The coarse-raw, corridor-qualification and response-bank entrypoints resolve code and scientific defaults from the selected Python's installed `msplatform` package. Their `WorkspaceRoot`, `ArtifactRoot` and `PythonExe` are explicit and independent; response workers retain separate admission, split logs, stop-dispatch and natural-drain behavior. Focused software regression passed 48 MR tests and 49 public-gate tests. No native solver or complete outside-install acceptance follows from those tests.
 
+Cox--de Boor basis evaluation now shares local recursive subexpressions through a per-call dynamic calculation rather than global cached state. On the unchanged `simion_candidate_two_zone.json`, one local before/after pair took 3.702478/1.559438 seconds and produced the same 50,282-byte canonical resolved-geometry JSON, SHA-256 `05b1adb00d9f1dee678be0119d391f1e3caa11b9899bc2192c17dc543abfae6c` and geometry fingerprint `6b71d29c5af6f9aff5f5ceb644c8046afd1b16980a51f5f3c771476876e89f18`. This is a single controlled software measurement, not a full-gate timing, changed physics or native qualification.
+
 The native static-field PowerShell owner now resolves implementation resources
 from the installed package and obtains workspace, Python, ledger and policy from
 an explicit HostContext. Prepare, metadata binding and validation use isolated

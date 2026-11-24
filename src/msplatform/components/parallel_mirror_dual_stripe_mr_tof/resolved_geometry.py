@@ -194,16 +194,22 @@ def _number(value: Any, name: str) -> float:
     return result
 
 
-def _basis(index: int, degree: int, parameter: float, knots: tuple[float, ...]) -> float:
-    """Evaluate one Cox--de Boor B-spline basis function."""
-    if degree == 0:
+def _basis_weights(degree: int, parameter: float, knots: tuple[float, ...]) -> tuple[float, ...]:
+    """Evaluate Cox--de Boor bases while sharing each local subexpression."""
+    weights = []
+    for index in range(len(knots) - 1):
         is_final_knot = parameter == knots[-1] and knots[index + 1] == parameter
-        return 1.0 if knots[index] <= parameter < knots[index + 1] or is_final_knot else 0.0
-    left_denominator = knots[index + degree] - knots[index]
-    right_denominator = knots[index + degree + 1] - knots[index + 1]
-    left = 0.0 if left_denominator == 0.0 else (parameter - knots[index]) / left_denominator * _basis(index, degree - 1, parameter, knots)
-    right = 0.0 if right_denominator == 0.0 else (knots[index + degree + 1] - parameter) / right_denominator * _basis(index + 1, degree - 1, parameter, knots)
-    return left + right
+        weights.append(1.0 if knots[index] <= parameter < knots[index + 1] or is_final_knot else 0.0)
+    for current_degree in range(1, degree + 1):
+        previous = weights
+        weights = []
+        for index in range(len(knots) - current_degree - 1):
+            left_denominator = knots[index + current_degree] - knots[index]
+            right_denominator = knots[index + current_degree + 1] - knots[index + 1]
+            left = 0.0 if left_denominator == 0.0 else (parameter - knots[index]) / left_denominator * previous[index]
+            right = 0.0 if right_denominator == 0.0 else (knots[index + current_degree + 1] - parameter) / right_denominator * previous[index + 1]
+            weights.append(left + right)
+    return tuple(weights)
 
 
 def _bspline_edge(value: Any, name: str) -> tuple[tuple[float, ...], tuple[tuple[float, float], ...], int]:
@@ -230,7 +236,7 @@ def _evaluate_bspline(edge: tuple[tuple[float, ...], tuple[tuple[float, float], 
     lower, upper = knots[degree], knots[-order]
     if not lower <= parameter <= upper:
         raise CandidateContractError("B-spline parameter is outside its active knot domain")
-    weights = tuple(_basis(index, degree, parameter, knots) for index in range(len(controls)))
+    weights = _basis_weights(degree, parameter, knots)
     return tuple(sum(weight * point[axis] for weight, point in zip(weights, controls)) for axis in range(2))
 
 
