@@ -23,7 +23,9 @@ class PairedOwnerRecoveryTests(unittest.TestCase):
             (execution_resources / "host_execution_lease.ps1").write_text("param($HostContext)\n", encoding="utf-8")
             (execution_resources / "workspace_paths.ps1").write_text(
                 "function Resolve-WorkspacePaths { param($SourceRoot,$Python) "
-                "@{host_resource_state_path=(Join-Path $SourceRoot 'host.sqlite3');artifact_root=(Join-Path $SourceRoot 'artifacts')} }\n",
+                "@{host_resource_state_path=(Join-Path $SourceRoot 'host.sqlite3');artifact_root=(Join-Path $SourceRoot 'artifacts')} }\n"
+                "function Resolve-RunArtifactRoot { param($ArtifactRoot,$OwnerKind,$OwnerId,$Python) "
+                "Join-Path $ArtifactRoot (($OwnerKind+'s')+'/'+$OwnerId) }\n",
                 encoding="utf-8")
             (workflow_resources / "run_artifact_workflow.ps1").write_text(
                 "param($ResultPath,[switch]$ResumeFinalization)\n"
