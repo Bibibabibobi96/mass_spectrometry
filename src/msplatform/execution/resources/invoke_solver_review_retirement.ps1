@@ -31,6 +31,26 @@ $workspace = Split-Path -Parent $artifactRootPath
 $hostState = if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH) { $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH } else { Join-Path $artifactRootPath 'common/host_resources.sqlite3' }
 $hostContext = @{workspace=$workspace;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
+function Enter-RetirementHostLease {
+  param([Parameter(Mandatory)][string]$RunId)
+  $names=@('MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN','MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH',
+    'MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID','MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE')
+  $callerEnvironment=@{}
+  foreach($name in $names){
+    $callerEnvironment[$name]=[Environment]::GetEnvironmentVariable($name,'Process')
+    Remove-Item -LiteralPath ('Env:\'+$name) -ErrorAction SilentlyContinue
+  }
+  try{$lease=Enter-HostExecutionLease -Role GATE -Stage artifact_retirement -RunId $RunId 6>$null}
+  catch{
+    foreach($name in $names){
+      if($null-eq$callerEnvironment[$name]){Remove-Item -LiteralPath ('Env:\'+$name) -ErrorAction SilentlyContinue}
+      else{[Environment]::SetEnvironmentVariable($name,$callerEnvironment[$name],'Process')}
+    }
+    throw
+  }
+  $lease.previous_environment=$callerEnvironment
+  return $lease
+}
 $arguments = @('-I','-B','-m','msplatform.execution.solver_review_retirement','--artifact-root',$ArtifactRoot,
   '--repository-root',$RepositoryRoot,'--target-run',$TargetRun)
 if($RepairPreservedFile){
@@ -46,7 +66,7 @@ if($RepairPreservedFile){
   if(-not$Apply){& $python @arguments;exit $LASTEXITCODE}
   if(-not$PSCmdlet.ShouldProcess($TargetRun,'replace one preserved PA object with verified identical bytes; retain old object')){return}
   . (Join-Path $executionResources 'run_artifact_support.ps1')
-  $lease=Enter-HostExecutionLease -Role GATE -Stage artifact_retirement -RunId ([IO.Path]::GetFileName($RepairEvidenceRun)) 6>$null
+  $lease=Enter-RetirementHostLease -RunId ([IO.Path]::GetFileName($RepairEvidenceRun))
   $session=$null
   try{
     $raw=@(& $python @arguments)
@@ -104,7 +124,7 @@ if ($ApprovedStoppedConsumers.Count -gt 0) {
 }
 if (-not $Apply) { & $python @arguments; exit $LASTEXITCODE }
 if (-not $PSCmdlet.ShouldProcess($TargetRun, "retire governed solver_review heavy payload")) { return }
-$lease = Enter-HostExecutionLease -Role GATE -Stage artifact_retirement -RunId ([IO.Path]::GetFileName($TargetRun)) 6>$null
+$lease = Enter-RetirementHostLease -RunId ([IO.Path]::GetFileName($TargetRun))
 try {
   & $python @arguments --apply
   if ($LASTEXITCODE -ne 0) { throw "solver_review retirement failed with exit code $LASTEXITCODE" }

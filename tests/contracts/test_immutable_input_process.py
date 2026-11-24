@@ -92,7 +92,7 @@ function Write-ResourceUsage {
     def test_session_credential_requires_the_same_live_holder_and_run(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            context, _, result, kwargs = self._case(root)
+            context, source, result, kwargs = self._case(root)
             kwargs.pop('immutable_input_records')
             credential = dict(schema_version=1, role='run_immutable_input_session',
                 run_id=kwargs['run_id'], operation_id='forged-operation', lease_id='forged-lease',
@@ -114,7 +114,8 @@ function Write-ResourceUsage {
                 with self.assertRaisesRegex(ProcessExecutionError, 'lease is not active'):
                     run_observed_process(context, **kwargs,
                         immutable_input_session=dict(credential, lease_owner='wrong-owner'))
-                receipt = run_observed_process(context, **kwargs, immutable_input_session=credential)
+                receipt = run_observed_process(context, **kwargs, immutable_input_session=credential,
+                    immutable_input_records=[file_record(source, 'solver_native_binary')])
             finally:
                 delete_capacity_protection_lease(artifact_root, lease_id=credential['lease_id'])
             self.assertEqual(receipt['observation']['exit_code'], 0)

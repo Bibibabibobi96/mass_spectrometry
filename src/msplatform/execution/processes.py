@@ -117,8 +117,6 @@ def _prepare_process_request(
                "argument_line": subprocess.list2cmdline(list(arguments)), "role": role,
                "stage": stage, "run_id": run_id, "limits": None if limits is None else dict(limits),
                "environment": {} if environment is None else dict(environment), "window_style": window_style}
-    if immutable_input_records and immutable_input_session is not None:
-        raise ValueError("immutable records and a session credential are mutually exclusive")
     if immutable_input_session is not None:
         expected = {"schema_version", "role", "run_id", "operation_id", "lease_id",
                     "artifact_root", "lease_owner", "holder_pid", "holder_started_at_utc_ticks"}

@@ -178,6 +178,7 @@ def _finalize(session: RunSession, request: dict[str, Any], completion: dict[str
               completion_api: Callable[[], Any] | None) -> dict[str, Any]:
     _writer_completion(session)
     _require_capacity_accounted(session)
+    session.close_immutable_inputs(run_owned_only=True)
     _publish(session, request, completion, completion_api)
     selection = retention_policy.validate_retention(request["retention"])
     if selection.class_id == "compact":

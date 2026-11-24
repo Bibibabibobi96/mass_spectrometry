@@ -242,18 +242,21 @@ class RunSession:
                 artifact_root=str(self.artifact_root.resolve()), lease_owner=self.capacity_session["owner"],
                 holder_pid=os.getpid(), holder_started_at_utc_ticks=self._holder_start_ticks())}
 
-    def close_immutable_inputs(self) -> None:
-        """Release every session-owned OS guard, preserving all close failures."""
+    def close_immutable_inputs(self, *, run_owned_only: bool = False) -> None:
+        """Release selected OS guards while retaining external source protection."""
         with self._lock:
             failures = []
+            run_root = self.artifact_run_dir.resolve()
             for path, stack in reversed(list(self._immutable_guard_stacks.items())):
+                if run_owned_only and not Path(path).is_relative_to(run_root):
+                    continue
                 try:
                     stack.close()
                 except BaseException as failure:
                     failures.append(failure)
-            self._immutable_guard_stacks.clear()
-            self._immutable_guards.clear()
-            self._unbuffered_identities.clear()
+                self._immutable_guard_stacks.pop(path, None)
+                self._immutable_guards.pop(path, None)
+                self._unbuffered_identities.pop(path, None)
             if failures:
                 for failure in failures[1:]:
                     failures[0].add_note(f"Additional immutable input release failed: {failure!r}")
@@ -348,7 +351,11 @@ class RunSession:
                 working_directory=self.run_dir, run_directory=self.artifact_run_dir,
                 stdout_path=stdout, stderr_path=stderr, usage_path=usage,
                 role=role, stage=stage, run_id=self.run_id, limits=limits,
-                environment=actual_environment, window_style=window_style, **protected)
+                environment=actual_environment, window_style=window_style,
+                immutable_input_records=immutable_input_records, **protected)
+            if immutable_session:
+                receipt = dict(receipt)
+                receipt["guards"] = [str(Path(row["path"]).resolve()) for row in immutable_input_records]
             return receipt
         except BaseException as failure:
             primary = failure

@@ -85,6 +85,22 @@ class RunSessionInputBindingTests(unittest.TestCase):
             session.close_immutable_inputs()
             Path(record["path"]).unlink()
 
+    @unittest.skipUnless(os.name == "nt", "Windows immutable handles required")
+    def test_run_owned_guard_release_retains_external_source_until_final_close(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory);run_root = root/"run";run_root.mkdir()
+            session = self._session(run_root)
+            session.capacity_session = {"status": "active", "lease_id": "lease-fixture",
+                                        "owner": "run-artifact-workflow:fixture:input-binding-only"}
+            owned = self._record(run_root, "owned.bin")
+            external = self._record(root, "external.bin")
+            session._immutable_input_credential("operation", [owned, external])
+            session.close_immutable_inputs(run_owned_only=True)
+            Path(owned["path"]).unlink()
+            with self.assertRaises(PermissionError):Path(external["path"]).unlink()
+            session.close_immutable_inputs()
+            Path(external["path"]).unlink()
+
     def test_bulk_input_binding_commits_once_and_single_calls_keep_record_durability(self):
         from msplatform.execution import run_session
         with tempfile.TemporaryDirectory() as directory:
