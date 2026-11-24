@@ -4717,7 +4717,7 @@ try:
                 for row in receipt['environment']['frozen_modules']:
                     assert rf_l1_owned_path(row['origin']).is_relative_to(session.artifact_run_dir/'inputs'/'analysis_code')
         else:
-            assert rf_l1_error is not None and ('hash differs' if rf_l1_case=='changed' else 'missing') in str(rf_l1_error),str(rf_l1_error)
+            assert isinstance(rf_l1_error, PermissionError),str(rf_l1_error)
             assert result['status']=='failed' and [op['operation_id'] for op in session.operations]==['prepare']
             assert not ((session.artifact_run_dir/'results')/'simulation_execution.json').exists()
             failure=(session.artifact_run_dir/'results')/'failure_context.json';failure_before=failure.read_bytes()
