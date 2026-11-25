@@ -78,7 +78,8 @@ foreach ($expected in $expectedRoles.GetEnumerator()) {
   }
 }
 
-$formalRoot = Join-Path (Resolve-RunArtifactRoot -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -OwnerKind component -OwnerId single_reflection_oa_tof_mass_analyzer -Python $python) $stable.artifact_workspace_relative.Replace('/', '\')
+$artifactRoot = Resolve-RunArtifactRoot -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -OwnerKind component -OwnerId single_reflection_oa_tof_mass_analyzer -Python $python
+$formalRoot = Join-Path $artifactRoot $stable.artifact_workspace_relative.Replace('/', '\')
 $formalManifestPath = Assert-FileRecord $formalRoot `
   $entry.manifests.formal_asset_manifest 'Formal asset manifest binding' 'relative_path'
 $formalManifest = Get-Content -LiteralPath $formalManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -176,7 +177,7 @@ if (-not $SkipRuntime) {
   $runtimeTaskId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__simion__stable-entry-runtime'
   $runtimeRoot = Join-Path $artifactRoot "scratch\$runtimeTaskId"
   $runtimeRoot = New-OaTofFormalSimionRuntime -ProjectRoot $projectRoot `
-    -ArtifactRoot $artifactRoot -PythonExe (Join-Path $repoRoot '.venv\Scripts\python.exe') `
+    -ArtifactRoot $artifactRoot -PythonExe $python `
     -Destination $runtimeRoot -Receipt (Join-Path $runtimeRoot 'runtime_receipt.json')
   try {
     & $runtimeVerifier -IobPath (Join-Path $runtimeRoot (Split-Path -Leaf $iobPath)) `

@@ -157,6 +157,15 @@ class FormalReferenceWorkflowLayoutTests(unittest.TestCase):
             gate,
         )
 
+    def test_stable_runtime_uses_selected_python_and_component_artifact_root(self):
+        gate = (
+            PROJECT_ROOT.parents[1] / "workflows/resources" / "verify_stable_entry.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertIn("$artifactRoot = Resolve-RunArtifactRoot", gate)
+        self.assertIn("$formalRoot = Join-Path $artifactRoot", gate)
+        self.assertIn("-ArtifactRoot $artifactRoot -PythonExe $python", gate)
+        self.assertNotIn("Join-Path $repoRoot '.venv", gate)
+
     def test_formal_runtime_uses_immutable_simion_manifests_not_git_source_hashes(self):
         gate = (
             PROJECT_ROOT.parents[1] / "workflows/resources" / "verify_geometry_contract.ps1"

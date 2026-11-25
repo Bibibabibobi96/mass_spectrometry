@@ -165,6 +165,14 @@ geometry contracts and lease release; the adjacent layout/partition modules
 passed nine tests in 13.311 seconds. This closes that first software failure,
 not the blocked partitions, full Changed, native execution or P4 acceptance.
 
+The related stable-entry runtime also constructed its scratch path from an
+uninitialized component variable and replaced the already selected interpreter
+with a checkout `.venv`. It now resolves the canonical component root once,
+derives `formal/` and runtime scratch from that root, and passes the selected
+Python to the existing staging owner. Eleven adjacent layout/staging tests pass
+in 1.282 seconds, with PowerShell parsing and Ruff clean. No native Formal asset
+or runtime qualification was run for this wiring repair.
+
 The first current-source N100 COMSOL run saved its raw 985,127,714-byte MPH and
 100-particle context, then spent hours in postprocessing rather than CPT solving.
 Its 163,970 unique stored/query times required about 1,282 two-pass
