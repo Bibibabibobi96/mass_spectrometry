@@ -59,7 +59,7 @@ class NativeCorridorBunchScreeningRunnerTest(unittest.TestCase):
                      "-ArtifactRoot", str(REPO_ROOT.parent / "artifacts")]
         def invoke(label, *extra):
             try:
-                return subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", *map(str, arguments), *extra],
+                return subprocess.run([shutil.which("pwsh"), "-NoProfile", "-NonInteractive", "-File", *map(str, arguments), *extra],
                     cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
             except subprocess.TimeoutExpired as error:
                 error.add_note(f"{label} pwsh call exceeded its 30-second budget")
