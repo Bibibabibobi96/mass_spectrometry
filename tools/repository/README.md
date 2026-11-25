@@ -270,6 +270,7 @@ owner从live公共`Resolve-HostResourceStatePath`取得实际控制面路径（�
 漂移。实际路径只记在执行context，不添加到科学输入，也不因此创建或申请第二资源账本。
 
 公共Python prepared owner在实际启动前调用既有`Get-RunNativeExecutionContext`，将本run的argv、日志及cwd投影到执行表示；冻结`import_root`仍以持久路径进入`PYTHONPATH`，并继续核对实际模块与原entrypoint身份，不从cwd回退导入。CPython长文件路径能力与Windows进程cwd限制分别处理；只有实际run路径需要时才建alias。completion保留公共owner实际alias事实，writer确认后沿原收尾删除；ResumeFinalization不重启prepared worker或重建alias。实际准备的calls／elapsed_seconds／transport_bytes写入既有summary.native_path_preparation及小Result同字段，恢复直接读取原统计，不把源码导入计作载荷搬运。
+新completion以`required_output_records`冻结每个必需输出的路径、字节数和SHA-256；恢复时缺件或字节漂移均拒绝，恢复原字节后才继续既有收尾。只哈希这些必需记录，不给可选大型载荷增加重复全文读取。无此字段的历史completion保持原只读恢复边界，不在恢复时补造当前字节身份。
 
 `Invoke-IsolatedFrozenPythonModule` accepts an explicit absolute existing `-WorkingDirectory`;
 omission keeps the frozen code root. Package roots and inventory stay canonical, while the

@@ -722,6 +722,7 @@ function Invoke-RunArtifactWorkflow {
       $completionFields+=@('resource_usage_paths','resource_profile')
     }
     if($completion.Contains('execution_alias')){$completionFields+='execution_alias'}
+    if($completion.Contains('required_output_records')){$completionFields+='required_output_records'}
     Assert-WorkflowFields $completion $completionFields 'Workflow completion'
     if($null-ne$completion.exception){$result.exception=$completion.exception}
     if($completion.schema_version-ne1-or$completion.role-cne'run_artifact_workflow_completion'-or
@@ -730,6 +731,13 @@ function Invoke-RunArtifactWorkflow {
     Assert-WorkflowFileRecord $completion.execution_request $frozenRequest
     Assert-WorkflowFileRecord $completion.run_config $package.run_config
     Assert-WorkflowWriterCompletion $completion.writer_completion -PowerShellOwner:$powershellOwner
+    if($ResumeFinalization-and$completion.Contains('required_output_records')){
+      if($completion.required_output_records-isnot[Collections.IDictionary]){throw 'Workflow required output records must be an object.'}
+      foreach($path in $completion.required_output_paths){
+        if($path-isnot[string]-or-not$completion.required_output_records.Contains($path)){throw 'Workflow required output identity is incomplete.'}
+        Assert-WorkflowFileRecord $completion.required_output_records[$path] $path
+      }
+    }
     if($powershellOwner){
       if($inheritedCapacity){
         $existingManifest=Get-Content -LiteralPath (Join-Path $runRoot 'run_manifest.json') -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
@@ -798,6 +806,12 @@ function Invoke-RunArtifactWorkflow {
           throw 'Required predecessor evidence is outside the protected dependency scope.'
         }
       }
+    }
+    if(-not$ResumeFinalization){
+      $requiredOutputRecords=[ordered]@{}
+      foreach($path in $completion.required_output_paths){$requiredOutputRecords[$path]=New-WorkflowOwnerFileRecord $path}
+      $completion.required_output_records=$requiredOutputRecords
+      Write-RunJson -Atomic -Path $completionPath -Value $completion -Depth 64
     }
     $finalConfig=Get-Content -LiteralPath $package.run_config -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
     foreach($key in @('artifact_retention','capacity_ledger_lifecycle')){
