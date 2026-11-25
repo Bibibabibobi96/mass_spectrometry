@@ -121,8 +121,8 @@ if ($SelectedTestModules.Count) {
     # The quadrupole owner also consumes newly discovered, unregistered test
     # roots. Registered domain/other-variant owners retain their own suites.
     $unknownRoot = 'quadrupole' -in $selectedVariants -and
-      $module -notmatch '^tests\.projects\.rf_multipole_ion_optics\.(analysis|domain|hexapole|octupole)\.'
-    $module -notmatch '^tests\.projects\.rf_multipole_ion_optics\.[A-Za-z0-9_.]+$' -or
+      $module -notmatch '^tests\.components\.rf_multipole_ion_optics\.(analysis|domain|hexapole|octupole)\.'
+    $module -notmatch '^tests\.components\.rf_multipole_ion_optics\.[A-Za-z0-9_.]+$' -or
       -not ($knownVariant -or $unknownRoot)
   }).Count) { throw 'RF test partition has duplicate or foreign variant modules.' }
   Push-Location $repoRoot

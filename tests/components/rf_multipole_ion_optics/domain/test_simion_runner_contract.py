@@ -1674,6 +1674,7 @@ $CaseSet='primary_only';$StopStage='field_solve';$phaseTimings=@{{}};$runTimer=[
 $resolvedCellMmX=.4;$resolvedCellMmY=.5;$resolvedCellMmZ=.6
 $electrodesById=@{{1=@{{electrode_id=1;electrode_group=1}};2=@{{electrode_id=2;electrode_group=2}};3=@{{electrode_id=3;electrode_group=2}}}}
 $codeRoot=$env:RF_TEST_REPO;$workspaceRoot=$env:RF_FIELD_ROOT;$python=Join-Path $env:RF_FIELD_ROOT 'python.ps1';$simion=Join-Path $env:RF_FIELD_ROOT 'simion.exe'
+$workspacePaths=@{{host_resource_state_path=Join-Path $env:RF_FIELD_ROOT 'host_resources.sqlite3'}}
 Set-Content -LiteralPath $simion -Value 'fixture'
 $hostExecutionOutcome='';Invoke-FieldBranch
 @{{summary=$fieldSummary;request=(Get-Content -LiteralPath (Join-Path $inputDir 'stationary_simion_sampling_request.json') -Raw|ConvertFrom-Json);
