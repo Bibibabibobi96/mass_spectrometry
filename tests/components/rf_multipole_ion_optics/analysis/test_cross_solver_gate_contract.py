@@ -578,13 +578,9 @@ class CandidateGateParameterContractTests(unittest.TestCase):
             gate.parent.mkdir(parents=True)
             gate.write_bytes(PROJECT_GATE.read_bytes())
             quote = lambda value: "'" + str(value).replace("'", "''") + "'"
-            support = root / "common/host_execution_lease.ps1"
-            support.parent.mkdir()
             test_runner = root / "tools/repository/gate_unittest.py"
             test_runner.parent.mkdir(parents=True)
             shutil.copyfile(REPO_ROOT / "tools/repository/gate_unittest.py", test_runner)
-            support.write_text(". " + quote(REPO_ROOT / "tools/repository/host_execution_lease.ps1") + "\n",
-                               encoding="utf-8")
             resources = root / "src/msplatform/execution/resources"
             resources.mkdir(parents=True)
             for name in ("require_powershell7.ps1", "host_execution_lease.ps1", "host_resource_policy.json"):
@@ -593,11 +589,16 @@ class CandidateGateParameterContractTests(unittest.TestCase):
                 destination = root / "src/msplatform" / relative
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(REPO_ROOT / "src/msplatform" / relative, destination)
+            shutil.copytree(REPO_ROOT / "src/msplatform/execution", resources.parent, dirs_exist_ok=True)
             modules = {}
             for relative in ("analysis/test_root.py", "analysis/new_area/test_nested.py",
                              "hexapole/test_hex.py", "octupole/test_oct.py", "new_area/test_forwarded.py"):
                 path = root / "tests/components/rf_multipole_ion_optics" / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
+                package = path.parent
+                while package != root:
+                    (package / "__init__.py").touch()
+                    package = package.parent
                 module = path.relative_to(root).with_suffix("").as_posix().replace("/", ".")
                 modules[relative] = module
                 path.write_text(
@@ -685,7 +686,8 @@ class CandidateGateParameterContractTests(unittest.TestCase):
                 unittest_commands = [command for command in commands if command[:2] == ["-m", "tools.repository.gate_unittest"]]
                 selected = [observed["modules"]["new_area/test_forwarded.py"]] if changed else []
                 self.assertEqual(unittest_commands, [["-m", "tools.repository.gate_unittest", *selected]] if changed else [])
-                self.assertEqual(observed["executed"], selected)
+                self.assertEqual(observed["executed"], selected,
+                    msg=result.stdout + result.stderr + "\nRECORDED_COMMANDS=" + repr(commands))
                 if failure:
                     self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
                     self.assertIn("RF_GATE_TEST_FAILURE", result.stdout + result.stderr)

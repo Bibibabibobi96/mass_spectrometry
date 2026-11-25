@@ -296,12 +296,12 @@ $badStopped=Join-Path ROOT 'bad_stopped.json';'{}'|Set-Content $badStopped
 $badId='20261031_230050__analysis__python__invalid-source';$caught=$false
 $leaseDirectory=Join-Path $artifact 'platform/capacity_protection_leases'
 $leasesBefore=@(Get-ChildItem $leaseDirectory -File -ErrorAction SilentlyContinue|ForEach-Object Name)
-try{& ENTRY -AnalyzeOnly -ParentManifestPath (Join-Path $parent.artifact_run_dir 'run_manifest.json') -StoppedReceiptPath $badStopped -LimitsPath LIMITS -RunId $badId -ResultPath (Join-Path ROOT 'bad_result.json') -PythonExe $python}catch{if($_.Exception.Message-cne'checkpoint source stopped payload receipt differs'){throw};$caught=$true}
+try{& ENTRY -WorkspaceRoot $repo -ArtifactRootPath $artifact -AnalyzeOnly -ParentManifestPath (Join-Path $parent.artifact_run_dir 'run_manifest.json') -StoppedReceiptPath $badStopped -LimitsPath LIMITS -RunId $badId -ResultPath (Join-Path ROOT 'bad_result.json') -PythonExe $python}catch{if($_.Exception.Message-cne'checkpoint source stopped payload receipt differs'){throw};$caught=$true}
 $leasesAfter=@(Get-ChildItem $leaseDirectory -File -ErrorAction SilentlyContinue|ForEach-Object Name)
 if(($leasesBefore-join',')-cne($leasesAfter-join',')){throw 'invalid source leaked a new capacity lease'}
 if(-not$caught-or(Test-Path (Join-Path $artifact ('components/rf_multipole_ion_optics/runs/'+$badId)))){throw 'invalid checkpoint source was accepted or created a new run'}
 $result=Join-Path ROOT 'child_result.json';$childId='20261031_230100__analysis__python__interface'
-& ENTRY -AnalyzeOnly -ParentManifestPath (Join-Path $parent.artifact_run_dir 'run_manifest.json') -StoppedReceiptPath $stopped -LimitsPath LIMITS -RunId $childId -ResultPath $result -PythonExe $python
+& ENTRY -WorkspaceRoot $repo -ArtifactRootPath $artifact -AnalyzeOnly -ParentManifestPath (Join-Path $parent.artifact_run_dir 'run_manifest.json') -StoppedReceiptPath $stopped -LimitsPath LIMITS -RunId $childId -ResultPath $result -PythonExe $python
 $out=Get-Content $result -Raw|ConvertFrom-Json
 if($out.stage-ne'complete'-or$out.status-ne'success'-or-not$out.writers_confirmed){throw 'analysis child did not finalize'}
 $summary=Get-Content (Join-Path $out.run_directory 'summary.json') -Raw|ConvertFrom-Json
@@ -309,14 +309,14 @@ if($summary.gui_verified-or$summary.parent_request_completed-or$summary.new_solv
 $completion=Get-Content (Join-Path $out.run_directory 'results/execution_completion.json') -Raw|ConvertFrom-Json
 if($completion.writer_completion.operations.Count-ne1-or$completion.writer_completion.operations[0].observation.process_id-le0){throw 'actual analysis process fact missing'}
 $manifest=Join-Path $out.run_directory 'run_manifest.json';$manifestBefore=[Convert]::ToBase64String([IO.File]::ReadAllBytes($manifest))
-& ENTRY -ResumeFinalization -ResultPath $result -PythonExe $python
+& ENTRY -WorkspaceRoot $repo -ArtifactRootPath $artifact -ResumeFinalization -ResultPath $result -PythonExe $python
 if([Convert]::ToBase64String([IO.File]::ReadAllBytes($manifest))-cne$manifestBefore){throw 'resume rewrote sealed child manifest'}
 # A changed analysis fails in its own successor; immutable parent and previous
 # frozen analysis remain unchanged. This is a synthetic parser fault, not physics.
 $metrics=Join-Path $repo 'src/msplatform/analysis/analyze_comsol_particle_state_metrics.py'
 "raise RuntimeError('injected isolated analysis failure')"|Set-Content $metrics
 $failedResult=Join-Path ROOT 'failed_child_result.json';$caught=$false
-try{& ENTRY -AnalyzeOnly -ParentManifestPath (Join-Path $parent.artifact_run_dir 'run_manifest.json') -StoppedReceiptPath $stopped -LimitsPath LIMITS -RunId '20261031_230200__analysis__python__interface-fail' -ResultPath $failedResult -PythonExe $python}catch{if($_.Exception.Message-notlike'*Frozen postprocess failed with exit 1*'){throw};$caught=$true}
+try{& ENTRY -WorkspaceRoot $repo -ArtifactRootPath $artifact -AnalyzeOnly -ParentManifestPath (Join-Path $parent.artifact_run_dir 'run_manifest.json') -StoppedReceiptPath $stopped -LimitsPath LIMITS -RunId '20261031_230200__analysis__python__interface-fail' -ResultPath $failedResult -PythonExe $python}catch{if($_.Exception.Message-notlike'*Frozen postprocess failed with exit 1*'){throw};$caught=$true}
 if(-not$caught){throw 'analysis child swallowed actual parser failure'}
 $failed=Get-Content $failedResult -Raw|ConvertFrom-Json
 if($failed.status-cne'failed'-or$failed.stage-cne'complete'-or-not$failed.writers_confirmed-or-not$failed.lease_released){throw 'failed parser did not retain failure and safely close actual writer'}
@@ -325,7 +325,7 @@ if($failedSummary.failure_stage-cne'postprocess'-or$failedSummary.scientific_res
 $stderr=Get-Content (Join-Path $failed.run_directory 'logs/postprocess.stderr.log') -Raw
 if($stderr-notlike'*injected isolated analysis failure*'){throw 'actual Python primary error absent'}
 $failedManifest=Join-Path $failed.run_directory 'run_manifest.json';$failedBytes=[Convert]::ToBase64String([IO.File]::ReadAllBytes($failedManifest))
-$caught=$false;try{& ENTRY -ResumeFinalization -ResultPath $failedResult -PythonExe $python}catch{if($_.Exception.Message-notlike'*Original execution terminal status=failed*'){throw};$caught=$true}
+$caught=$false;try{& ENTRY -WorkspaceRoot $repo -ArtifactRootPath $artifact -ResumeFinalization -ResultPath $failedResult -PythonExe $python}catch{if($_.Exception.Message-notlike'*Original execution terminal status=failed*'){throw};$caught=$true}
 if(-not$caught-or[Convert]::ToBase64String([IO.File]::ReadAllBytes($failedManifest))-cne$failedBytes){throw 'failed terminal resume reran analysis or changed status'}
 Write-Output ('ACTUAL_POSTPROCESS_OPERATION='+($completion.writer_completion|ConvertTo-Json -Depth 12 -Compress))
 foreach($key in $before.Keys){if([Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $parent.artifact_run_dir $key)))-cne$before[$key]){throw 'analysis changed parent bytes'}}

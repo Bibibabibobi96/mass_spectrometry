@@ -230,7 +230,7 @@ function Invoke-ResourceBudgetedProcess {
                     self.assertIn("HOST_RESOURCE=ACQUIRED ROLE=COMSOL STAGE=prepare", outcome.stdout + outcome.stderr)
                     self.assertIn("P4_INERT_NATIVE_BOUNDARY_NO_PROCESS_STARTED", outcome.stdout + outcome.stderr)
                     self.assertFalse(json.loads(boundary.read_text(encoding="utf-8-sig"))["native_started"])
-                    run = artifacts / "projects/rf_multipole_ion_optics/runs" / run_id
+                    run = artifacts / "components/rf_multipole_ion_optics/runs" / run_id
                     config = json.loads((run / "run_config.json").read_text(encoding="utf-8-sig"))
                     self.assertEqual(Path(config["inputs"]["particle_source"]).read_bytes(), original_source.read_bytes())
                     self.assertEqual(Path(config["inputs"]["engineering_budget"]).read_bytes(), budget.read_bytes())

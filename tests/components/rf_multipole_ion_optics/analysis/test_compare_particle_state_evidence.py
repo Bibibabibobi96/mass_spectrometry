@@ -331,7 +331,7 @@ if($e.Count){{throw 'Actual cross-solver entry did not parse'}}
 $frozen=New-CrossSolverFrozenPathSet -InputDir {literal(self.root / 'frozen-inputs')} `
  -AnalyzerRelativePath 'src/msplatform/workflows/rf_transport_comparison.py' -ModeFilename 'mode.json'
 $selection=$ast.Find({{param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$frozenPackage'}},$true)
-$liveRoot=$repoRoot;$repoRoot=$selectedRoot
+$liveRoot=$repoRoot;$repoRoot=$selectedRoot;$sourceRoot=$selectedRoot
 Invoke-Expression $selection.Extent.Text
 if(Test-Path -LiteralPath (Join-Path $frozen.module_root 'common/contracts')){{throw 'Unselected common/contracts appeared in child snapshot'}}
 Assert-FrozenPythonPackage -Package $frozenPackage
