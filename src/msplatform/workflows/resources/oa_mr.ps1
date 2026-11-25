@@ -234,7 +234,7 @@ $executionResources=Join-Path $packageRoot 'execution/resources'
 $script:pythonRoot=$packageParent
 $workspaceRoot=if($researchRootExplicit){Split-Path -Parent $inputRoot}else{$inputRoot}
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
-$packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
+$packageRootText=& $python -I -B -c 'import sys;from pathlib import Path;sys.path.insert(0,sys.argv[1]);import msplatform;print(Path(msplatform.__file__).resolve().parent)' $packageParent
 if($LASTEXITCODE-ne0-or[string]::IsNullOrWhiteSpace([string]$packageRootText)){throw 'Installed msplatform package is unavailable.'}
 $selectedPackageRoot=(Resolve-Path -LiteralPath ([string]$packageRootText).Trim()).Path
 if(-not[string]::Equals($selectedPackageRoot,[IO.Path]::GetFullPath($packageRoot),[StringComparison]::OrdinalIgnoreCase)){throw 'Selected Python msplatform package differs from the entry package.'}
