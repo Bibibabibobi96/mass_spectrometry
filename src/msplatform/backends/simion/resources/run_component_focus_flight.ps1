@@ -6,9 +6,9 @@ $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION
 $packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
 if($LASTEXITCODE-ne0){throw 'Installed msplatform package is unavailable.'};$packageRoot=(Resolve-Path -LiteralPath $packageRootText).Path
 $executionResources=Join-Path $packageRoot 'execution/resources';$simionResources=Join-Path $packageRoot 'backends/simion/resources'
-. (Join-Path $executionResources 'workspace_paths.ps1');$componentArtifactRoot=Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind component -OwnerId orthogonal_accelerator -Python $python
 . (Join-Path $executionResources 'require_powershell7.ps1');. (Join-Path $executionResources 'run_artifact_support.ps1')
-$hostState=if($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH}else{Resolve-PlatformArtifactPath -ArtifactRoot $artifactRoot -RelativePath @('host_resources.sqlite3') -Python $python};$hostContext=@{workspace=$workspaceRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')};. (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
+$pathContext=Resolve-WorkspacePaths -SourceRoot $workspaceRoot -ArtifactRoot $artifactRoot -Python $python;$artifactRoot=[string]$pathContext.artifact_root;$componentArtifactRoot=Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind component -OwnerId orthogonal_accelerator -Python $python
+$hostContext=@{workspace=$workspaceRoot;python_executable=$python;host_state_path=[string]$pathContext.host_resource_state_path;policy_path=(Join-Path $executionResources 'host_resource_policy.json')};. (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 if(-not$SimionExe){$SimionExe=Join-Path $env:ProgramFiles 'SIMION-2020\simion.exe'};if(-not(Test-Path $SimionExe)){throw 'SIMION executable is missing'}
 
 . (Join-Path $simionResources 'focus_python.ps1')

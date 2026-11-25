@@ -174,6 +174,8 @@ foreach($case in $cases){
         self.assertIn("Join-Path $projectRoot 'simion_candidate_two_zone.json'", source)
         self.assertIn("WorkspaceRoot=$workspaceRoot", source)
         self.assertIn("ArtifactRoot=$artifactWorkspaceRoot", source)
+        self.assertIn("Resolve-WorkspacePaths -SourceRoot $workspaceRoot -ArtifactRoot $artifactWorkspaceRoot", source)
+        self.assertIn("host_state_path=[string]$pathContext.host_resource_state_path", source)
         for retired in ("SIMULATION_PYTHON_EXE", "PYTHONPATH", "Invoke-RunToolRootContext"):
             self.assertNotIn(retired, source)
 

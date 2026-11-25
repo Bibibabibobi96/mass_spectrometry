@@ -20,8 +20,6 @@ $ErrorActionPreference='Stop'
 $projectId='parallel_mirror_dual_stripe_mr_tof'
 $workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path
 $artifactRoot=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)
-$projectArtifactRoot=Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind component -OwnerId $projectId -Python $python
-$cacheRoot=Resolve-PlatformArtifactPath -ArtifactRoot $artifactRoot -RelativePath simion,pa_family_cache -Python $python
 $publishedPinReason='MR-TOF native adjustable analyzer PA family; rebuild only on frozen geometry identity change'
 $python=[IO.Path]::GetFullPath($PythonExe)
 $simion=if($SimionExe){[IO.Path]::GetFullPath($SimionExe)}else{Join-Path $env:ProgramFiles 'SIMION-2020\simion.exe'}
@@ -42,6 +40,13 @@ foreach($path in @($python,$identityPath,$planPath,$recipePath,$freezeManifestPa
 if(-not$RunId){$RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__build__simion__mrtof-native-corridor-qualification'}
 
 . (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
+$pathContext=Resolve-WorkspacePaths -SourceRoot $workspaceRoot -ArtifactRoot $artifactRoot -Python $python
+$artifactRoot=[string]$pathContext.artifact_root
+$projectArtifactRoot=Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind component -OwnerId $projectId -Python $python
+$cacheRoot=Resolve-PlatformArtifactPath -ArtifactRoot $artifactRoot -RelativePath simion,pa_family_cache -Python $python
+$executionResources=Join-Path $packageRoot 'execution/resources'
+$hostContext=@{workspace=$workspaceRoot;python_executable=$python;host_state_path=[string]$pathContext.host_resource_state_path;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
+. (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 . (Join-Path $packageRoot 'execution/resources/resource_process_support.ps1')
 
 function Invoke-ProjectPython {

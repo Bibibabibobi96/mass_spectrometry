@@ -75,8 +75,9 @@ $executionResources = Join-Path $packageRoot 'execution/resources'
 . (Join-Path $packageRoot 'backends/simion/resources/native_corridor_runtime_support.ps1')
 $project = 'parallel_mirror_dual_stripe_mr_tof'
 $projectRoot = Join-Path $packageRoot 'components/parallel_mirror_dual_stripe_mr_tof'
-$hostState = Resolve-PlatformArtifactPath -ArtifactRoot $artifactWorkspaceRoot -RelativePath host_resources.sqlite3 -Python $python
-$hostContext = @{workspace=$workspaceRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
+$pathContext = Resolve-WorkspacePaths -SourceRoot $workspaceRoot -ArtifactRoot $artifactWorkspaceRoot -Python $python
+$artifactWorkspaceRoot = [string]$pathContext.artifact_root
+$hostContext = @{workspace=$workspaceRoot;python_executable=$python;host_state_path=[string]$pathContext.host_resource_state_path;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 $contract = if ($ContractPath) { (Resolve-Path -LiteralPath $ContractPath).Path } else { Join-Path $projectRoot 'simion_candidate_two_zone.json' }
 $frozenPrismControllerPolicyPath=''

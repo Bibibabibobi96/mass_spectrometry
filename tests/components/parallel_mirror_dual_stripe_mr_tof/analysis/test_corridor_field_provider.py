@@ -45,6 +45,8 @@ class CandidateAuthorityTest(unittest.TestCase):
         self.assertIn("-WorkspaceRoot \"'+$repo+'\"", runner)
         self.assertIn("-ArtifactRoot \"'+$artifactWorkspaceRoot+'\"", runner)
         self.assertIn("-PythonExe \"'+$python+'\"", runner)
+        self.assertIn("Resolve-WorkspacePaths -SourceRoot $repo -ArtifactRoot $artifactWorkspaceRoot", runner)
+        self.assertIn("host_state_path=[string]$pathContext.host_resource_state_path", runner)
         for retired in ("SIMULATION_PYTHON_EXE", "PYTHONPATH", "Invoke-RunToolRootContext"):
             self.assertNotIn(retired, runner)
 

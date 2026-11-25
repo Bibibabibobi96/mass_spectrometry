@@ -99,6 +99,8 @@ class ComponentFocusEntrypointTests(unittest.TestCase):
                 self.assertIn("[string]$PythonExe=''", source)
                 self.assertIn("import msplatform;print(Path(msplatform.__file__).resolve().parent)", source)
                 self.assertIn("$executionResources=Join-Path $packageRoot 'execution/resources'", source)
+                self.assertIn("Resolve-WorkspacePaths -SourceRoot $workspaceRoot -ArtifactRoot $artifactRoot", source)
+                self.assertIn("host_state_path=[string]$pathContext.host_resource_state_path", source)
                 self.assertNotIn("Join-Path $PSScriptRoot '..\\..\\..\\..\\..'", source)
                 self.assertNotIn(".venv", source)
                 self.assertNotIn("PYTHONPATH", source)

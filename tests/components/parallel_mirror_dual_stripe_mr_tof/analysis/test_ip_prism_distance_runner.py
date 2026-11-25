@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -209,6 +211,85 @@ try {
         self.assertNotIn(')("build")',result["wrapper"])
         self.assertNotIn(')("fly")',result["wrapper"])
         self.assertLess(result["wrapper"].index("case_4/run_case.lua"),result["wrapper"].index("case_1/run_case.lua"))
+
+
+@unittest.skipUnless(shutil.which("pwsh"), "PowerShell Core 7 is required")
+class HostContextClosureTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.temporary = tempfile.TemporaryDirectory(prefix="ip_prism_host_context_")
+        cls.root = Path(cls.temporary.name)
+        cls.venv = cls.root / "venv"
+        subprocess.run(
+            [sys.executable, "-m", "venv", "--without-pip", str(cls.venv)],
+            cwd=cls.root, check=True, capture_output=True, text=True, timeout=60,
+        )
+        cls.python = cls.venv / "Scripts/python.exe"
+        cls.package = cls.venv / "Lib/site-packages/msplatform"
+        shutil.copytree(
+            RUNNER.parents[2], cls.package,
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+        )
+        cls.workspace = cls.root / "source"
+        cls.workspace.mkdir()
+        cls.contract = cls.root / "analysis-only.json"
+        cls.contract.write_text(json.dumps({"role": "ip_prism_recorded_aperture_comparison"}), encoding="utf-8")
+        cls.harness = cls.root / "capture-host-context.ps1"
+        cls.harness.write_text(r'''
+param($Runner,$ArgumentsPath,$Payload,$Python,$Workspace)
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+$arguments=Get-Content -LiteralPath $ArgumentsPath -Raw|ConvertFrom-Json -AsHashtable
+$arguments.WorkspaceRoot=$Workspace
+$arguments.ArtifactRoot=$Payload
+$arguments.PythonExe=$Python
+$failure=''
+try { & $Runner @arguments } catch { $failure=$_.Exception.Message }
+[pscustomobject]@{failure=$failure;context=($env:MASS_SPECTROMETRY_HOST_CONTEXT_JSON|ConvertFrom-Json -AsHashtable)}|ConvertTo-Json -Depth 10 -Compress
+''', encoding="utf-8", newline="\n")
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.temporary.cleanup()
+
+    def invoke(self, payload_name: str, host_override: Path | None = None) -> dict:
+        arguments = self.root / f"{payload_name}-arguments.json"
+        arguments.write_text(json.dumps({
+            "RunId": "20261125_000000__test__python__host-context",
+            "ContractPath": str(self.contract),
+        }), encoding="utf-8")
+        payload = self.root / payload_name
+        environment = dict(os.environ)
+        environment.pop("MASS_SPECTROMETRY_HOST_CONTEXT_JSON", None)
+        environment.pop("MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH", None)
+        if host_override is not None:
+            environment["MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH"] = str(host_override)
+        result = subprocess.run(
+            [shutil.which("pwsh") or "pwsh", "-NoProfile", "-NonInteractive", "-File",
+             str(self.harness), str(self.package / "workflows/resources/run_ip_prism_distance_study.ps1"),
+             str(arguments), str(payload), str(self.python), str(self.workspace)],
+            cwd=self.root, env=environment, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=30, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        observed = json.loads(result.stdout)
+        self.assertIn("analysis-only", observed["failure"])
+        self.assertFalse(payload.exists())
+        return observed
+
+    def test_two_payload_roots_share_one_default_host_state_without_creating_it(self) -> None:
+        first = self.invoke("payload-a")
+        second = self.invoke("payload-b")
+        expected = self.root / "artifacts/platform/host_resources.sqlite3"
+        self.assertEqual(Path(first["context"]["host_state_path"]), expected)
+        self.assertEqual(second["context"]["host_state_path"], first["context"]["host_state_path"])
+        self.assertFalse(expected.exists())
+
+    def test_explicit_host_state_environment_overrides_the_payload_root(self) -> None:
+        override = self.root / "explicit-host.sqlite3"
+        observed = self.invoke("payload-c", override)
+        self.assertEqual(Path(observed["context"]["host_state_path"]), override)
+        self.assertFalse(override.exists())
 
 
 if __name__ == "__main__":

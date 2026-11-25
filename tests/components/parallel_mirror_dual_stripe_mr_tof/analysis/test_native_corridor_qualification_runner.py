@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 from tempfile import TemporaryDirectory
 import unittest
 
@@ -30,6 +32,8 @@ class NativeCorridorQualificationRunnerTest(unittest.TestCase):
                 self.assertIn(f"[Parameter(Mandatory)][string]${parameter}", source)
             self.assertIn("import msplatform", source)
             self.assertIn("Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1'", source)
+            self.assertIn("Resolve-WorkspacePaths -SourceRoot $workspaceRoot -ArtifactRoot $artifactRoot", source)
+            self.assertIn("host_state_path=[string]$pathContext.host_resource_state_path", source)
             self.assertNotIn("parallel_gate_support.ps1", source)
             self.assertNotIn(".venv", source)
             self.assertNotIn("Split-Path -Parent $repoRoot", source)
@@ -339,6 +343,66 @@ class NativeCorridorQualificationRunnerTest(unittest.TestCase):
             "if($errors.Count){$errors|ForEach-Object{Write-Error $_};exit 1}"
         )
         subprocess.run([pwsh, "-NoProfile", "-Command", command], check=True, cwd=PROJECT, timeout=30)
+
+
+@unittest.skipUnless(shutil.which("pwsh"), "PowerShell Core 7 is required")
+class NativeStartupBoundaryTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.temporary = TemporaryDirectory(prefix="native_host_context_startup_")
+        cls.root = Path(cls.temporary.name)
+        cls.venv = cls.root / "venv"
+        subprocess.run(
+            [sys.executable, "-m", "venv", "--without-pip", str(cls.venv)],
+            cwd=cls.root, check=True, capture_output=True, text=True, timeout=60,
+        )
+        cls.python = cls.venv / "Scripts/python.exe"
+        cls.package = cls.venv / "Lib/site-packages/msplatform"
+        shutil.copytree(
+            PROJECT.parents[3] / "src/msplatform", cls.package,
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+        )
+        cls.workspace = cls.root / "source"
+        cls.workspace.mkdir()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.temporary.cleanup()
+
+    def test_native_entrypoints_initialize_python_and_public_support_before_path_resolution(self) -> None:
+        missing_simion = self.root / "missing-simion.exe"
+        missing_contract = self.root / "missing-oa.json"
+        missing_frozen = self.root / "missing-frozen"
+        cases = (
+            ("run_native_analyzer_coarse_raw.ps1", [
+                "-AcceleratorComponentContractPath", str(missing_contract),
+                "-AcceleratorGeometryProfileId", "fixture",
+                "-RunId", "20261125_000000__test__python__host-context-coarse",
+            ], "capacity ledger is missing, incomplete, or uncalibrated"),
+            ("run_native_corridor_response_bank.ps1", [], "Provide exactly one frozen input directory"),
+            ("run_native_corridor_qualification.ps1", [
+                "-FrozenInputDirectory", str(missing_frozen),
+            ], missing_frozen.name),
+        )
+        for name, arguments, expected_error in cases:
+            with self.subTest(entry=name):
+                host_state = self.root / f"{name}.sqlite3"
+                environment = dict(os.environ)
+                environment.pop("MASS_SPECTROMETRY_HOST_CONTEXT_JSON", None)
+                environment["MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH"] = str(host_state)
+                result = subprocess.run(
+                    [shutil.which("pwsh") or "pwsh", "-NoProfile", "-NonInteractive", "-File",
+                     str(self.package / "backends/simion/resources" / name),
+                     "-WorkspaceRoot", str(self.workspace), "-ArtifactRoot", str(self.root / f"{name}-payload"),
+                     "-PythonExe", str(self.python), "-SimionExe", str(missing_simion), *arguments],
+                    cwd=self.root, env=environment, capture_output=True, text=True,
+                    encoding="utf-8", errors="replace", timeout=30, check=False,
+                )
+                output = result.stdout + result.stderr
+                self.assertNotEqual(result.returncode, 0, output)
+                self.assertIn(expected_error, output)
+                self.assertNotIn("$python", output)
+                self.assertFalse(host_state.exists())
 
 
 if __name__ == "__main__":

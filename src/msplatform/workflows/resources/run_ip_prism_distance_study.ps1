@@ -18,8 +18,9 @@ $packageRoot=(Resolve-Path -LiteralPath ([string]$packageRootText).Trim()).Path
 $executionResources=Join-Path $packageRoot 'execution/resources'
 . (Join-Path $executionResources 'require_powershell7.ps1')
 . (Join-Path $executionResources 'run_artifact_support.ps1')
-$hostState=Resolve-PlatformArtifactPath -ArtifactRoot $artifactRoot -RelativePath host_resources.sqlite3 -Python $python
-$hostContext=@{workspace=$repoRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
+$pathContext=Resolve-WorkspacePaths -SourceRoot $repoRoot -ArtifactRoot $artifactRoot -Python $python
+$artifactRoot=[string]$pathContext.artifact_root
+$hostContext=@{workspace=$repoRoot;python_executable=$python;host_state_path=[string]$pathContext.host_resource_state_path;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 . (Join-Path $executionResources 'resource_process_support.ps1')
 . (Join-Path $executionResources 'simion_dispatch_support.ps1')

@@ -19,8 +19,9 @@ $packageRoot=(Resolve-Path -LiteralPath ([string]$packageRootText).Trim()).Path
 $executionResources=Join-Path $packageRoot 'execution/resources'
 . (Join-Path $executionResources 'require_powershell7.ps1')
 . (Join-Path $executionResources 'run_artifact_support.ps1')
-$hostState=Resolve-PlatformArtifactPath -ArtifactRoot $artifactWorkspaceRoot -RelativePath host_resources.sqlite3 -Python $python
-$hostContext=@{workspace=$repo;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
+$pathContext=Resolve-WorkspacePaths -SourceRoot $repo -ArtifactRoot $artifactWorkspaceRoot -Python $python
+$artifactWorkspaceRoot=[string]$pathContext.artifact_root
+$hostContext=@{workspace=$repo;python_executable=$python;host_state_path=[string]$pathContext.host_resource_state_path;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 if($RequestPath){$RequestPath=(Resolve-Path -LiteralPath $RequestPath).Path}
 $preparedConfig=Join-Path $RunDirectory 'run_config.json'

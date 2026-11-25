@@ -14,8 +14,6 @@ $ErrorActionPreference='Stop'
 $projectId='parallel_mirror_dual_stripe_mr_tof'
 $workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path
 $artifactRoot=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)
-$projectArtifactRoot=Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind component -OwnerId $projectId -Python $python
-$cacheRoot=Resolve-PlatformArtifactPath -ArtifactRoot $artifactRoot -RelativePath simion,pa_family_cache -Python $python
 $python=[IO.Path]::GetFullPath($PythonExe)
 $simion=if($SimionExe){[IO.Path]::GetFullPath($SimionExe)}else{Join-Path $env:ProgramFiles 'SIMION-2020\simion.exe'}
 $packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
@@ -25,6 +23,13 @@ $repoRoot=$workspaceRoot
 $contract=Join-Path $packageRoot 'components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json'
 if(-not$RunId){$RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__build__simion__mrtof-symmetric-coarse-raw'}
 . (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
+$pathContext=Resolve-WorkspacePaths -SourceRoot $workspaceRoot -ArtifactRoot $artifactRoot -Python $python
+$artifactRoot=[string]$pathContext.artifact_root
+$projectArtifactRoot=Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind component -OwnerId $projectId -Python $python
+$cacheRoot=Resolve-PlatformArtifactPath -ArtifactRoot $artifactRoot -RelativePath simion,pa_family_cache -Python $python
+$executionResources=Join-Path $packageRoot 'execution/resources'
+$hostContext=@{workspace=$workspaceRoot;python_executable=$python;host_state_path=[string]$pathContext.host_resource_state_path;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
+. (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 . (Join-Path $PSScriptRoot 'short_pa_path_support.ps1')
 
 function Invoke-RootPython([string[]]$Arguments){

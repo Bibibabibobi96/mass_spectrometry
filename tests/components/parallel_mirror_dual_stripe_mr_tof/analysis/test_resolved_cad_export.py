@@ -543,6 +543,8 @@ class CadPlanTests(unittest.TestCase):
             self.assertIn(f'[Parameter(Mandatory)][string]${parameter}', launcher)
         self.assertIn("$preflight=@('-I','-B','-m',$module", launcher)
         self.assertIn("$arguments=@('-I','-B','-m',$module", launcher)
+        self.assertIn("Resolve-WorkspacePaths -SourceRoot $repoRoot -ArtifactRoot $allArtifacts", launcher)
+        self.assertIn("host_state_path=[string]$pathContext.host_resource_state_path", launcher)
         for retired in ('SIMULATION_PYTHON_EXE', 'PYTHONPATH', 'Invoke-RunToolRootContext'):
             self.assertNotIn(retired, launcher)
 

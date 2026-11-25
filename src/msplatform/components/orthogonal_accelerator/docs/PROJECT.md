@@ -35,6 +35,12 @@ are unchanged. Together with the RF/SFI consumers below, the affected selection
 passed 103 parents with 150 successful records in 106.974 seconds; no commercial
 solver was launched.
 
+These three entries resolve HostContext through the canonical four-root workspace
+resolver. A custom payload root changes artifact placement only; it no longer
+selects a second host ledger, and the explicit host-state environment override
+remains authoritative. The shared real-process HostContext regressions create no
+host ledger and start no solver; native component Refine/Fly acceptance is unchanged.
+
 The project verifier now loads the installed execution lease resource with an explicit HostContext. Callers must select Python through `-PythonExe` or `SIMULATION_PYTHON_EXE`; the verifier no longer assumes a checkout `.venv`. Its existing PYTHONPATH selection, tests and scientific behavior are unchanged.
 
 ## Installed legacy closed-focus PA planning
