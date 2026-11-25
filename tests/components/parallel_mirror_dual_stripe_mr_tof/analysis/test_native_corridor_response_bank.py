@@ -229,6 +229,7 @@ if($fallbackCalls){throw 'Registered receipt was written outside the public owne
                 self.assertEqual(json.loads(transaction_path.read_text())['response_receipt'], legacy)
 
     def test_response_contract_identity_tracks_canonical_body(self) -> None:
+        from msplatform.backends.simion import native_corridor_response_bank as response_bank
         from msplatform.backends.simion.native_corridor_response_bank import (
             derive_response_bank_identity, FROZEN_NAMES,
         )
@@ -249,13 +250,14 @@ if($fallbackCalls){throw 'Registered receipt was written outside the public owne
                                                        "status": "frozen", "files": records}), encoding="utf-8")
             kwargs = {"simion_executable": Path(__file__), "simion_release": "identity-only inert fixture"}
             before = derive_response_bank_identity(root, **kwargs)
-            contract = PROJECT.parents[3] / "src/msplatform/backends/simion/standalone_pa_response_set.py"
+            contract = Path(response_bank.__file__).resolve().with_name("standalone_pa_response_set.py")
             self.assertEqual(before["builder_identity"]["response_set_contract_sha256"], file_sha256(contract).upper())
             def changed_contract(path):
                 return "A" * 64 if Path(path) == contract else file_sha256(path)
             with patch("msplatform.backends.simion.native_corridor_response_bank.file_sha256",
                        side_effect=changed_contract):
                 after = derive_response_bank_identity(root, **kwargs)
+            self.assertNotEqual(before["builder_identity"]["response_set_contract_sha256"], after["builder_identity"]["response_set_contract_sha256"])
             self.assertNotEqual(canonical_pa_family_cache_key(before), canonical_pa_family_cache_key(after))
             self.assertEqual(before["geometry"], after["geometry"])
 

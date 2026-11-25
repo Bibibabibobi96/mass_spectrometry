@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from msplatform.io.file_identity import file_sha256
 from msplatform.backends.simion.pa_family_cache import canonical_pa_family_cache_key
+from msplatform.backends.simion import standalone_pa_response_set
 
 from msplatform.backends.simion.oa_focus_plan import derive
 from msplatform.workflows.oa_focus_pa_cache import expected_files, identity
@@ -129,12 +130,13 @@ try{. $production}catch{$failure=$_.Exception.Message}
         builder=root.parents[3]/'src/msplatform/backends/simion/resources'/'build_component_focus_pa.lua'
         executable=Path(__file__) # identity only requires stable existing file for this static unit test
         value=identity(plan,builder,executable)
-        contract=root.parents[3]/'src/msplatform/backends/simion/standalone_pa_response_set.py'
+        contract=Path(standalone_pa_response_set.__file__).resolve()
         self.assertEqual(value['builder_identity']['response_set_contract_sha256'],file_sha256(contract))
         def changed_contract(path):
             return 'A'*64 if Path(path)==contract else file_sha256(path)
         with patch('msplatform.workflows.oa_focus_pa_cache.file_sha256',side_effect=changed_contract):
             changed=identity(plan,builder,executable)
+        self.assertNotEqual(value['builder_identity']['response_set_contract_sha256'],changed['builder_identity']['response_set_contract_sha256'])
         self.assertNotEqual(canonical_pa_family_cache_key(value),canonical_pa_family_cache_key(changed))
         self.assertEqual(expected_files(plan), tuple(sorted((
             'orthogonal_accelerator_focus.pa#',
