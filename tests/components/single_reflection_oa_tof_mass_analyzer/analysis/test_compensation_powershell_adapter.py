@@ -305,12 +305,12 @@ if(-not$script:validated-or$null-ne$script:lease-or$env:MASS_SPECTROMETRY_HOST_R
             root = Path(directory)
             fixture = RunArtifactWorkflowFixture("runTest")
             invoke = fixture.run_ps
-            def bind_compensation_mode(fixture_root, script):
+            def bind_compensation_mode(fixture_root, script, **kwargs):
                 request_path = fixture_root/"request.json"
                 request = json.loads(request_path.read_text(encoding="utf-8"))
                 request["package"]["mode"] = "reflectron_voltage_compensation"
                 request_path.write_text(json.dumps(request), encoding="utf-8")
-                return invoke(fixture_root, script)
+                return invoke(fixture_root, script, **kwargs)
             environment = dict(os.environ)
             for name in ("MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN", "MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID", "MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE"):
                 environment.pop(name, None)
