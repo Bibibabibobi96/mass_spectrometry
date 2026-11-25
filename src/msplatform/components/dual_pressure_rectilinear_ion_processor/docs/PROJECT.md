@@ -718,8 +718,12 @@ field or flight claim and does not retire the segmented producer.
 
 The installed IP launcher now initializes the explicit research project root before
 resolving its registry, runtime profile and configuration directory. A production-source
-regression checks this resolution before native admission, and the two affected IP
-modules passed 67 tests with one existing environment skip. Separately, the gate plan
+regression checks this resolution before native admission. Its extracted-source fixture now
+derives the required package root from the actual Runner path before evaluating the selected
+assignments, matching the launcher's existing initialization without changing production code.
+The exact regression passed in 0.722 seconds and the complete native-guard module passed all
+24 tests in 58.976 seconds. The two affected IP modules passed 67 tests with one existing
+environment skip. Separately, the gate plan
 transport fixtures copy the PowerShell 7 preflight from its installed execution-resource
 path instead of the retired common path; their complete module passed 49 parents and
 95 records in 360.003 seconds. These are source/software checks only, not a native

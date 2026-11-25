@@ -839,6 +839,7 @@ Invoke-Expression ('try {} finally '+$node.Finally.Extent.Text)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $source=Get-Content -LiteralPath $Runner -Raw
 $repoRoot=$Repo;$ConfigurationDirectory=''
+$packageRoot=Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $Runner))
 foreach($line in $source -split "\r?\n"){
  if($line-match'^\$(projectRoot|runtimeRegistry|profiles|profile|configurationRoot)='){Invoke-Expression $line}
 }
