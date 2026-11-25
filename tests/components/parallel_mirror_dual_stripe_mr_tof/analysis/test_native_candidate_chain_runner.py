@@ -51,6 +51,50 @@ class NativeCandidateChainRunnerTests(unittest.TestCase):
             self.assertFalse((root / "artifacts").exists())
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+    def test_host_context_uses_shared_ledger_independent_of_payload_and_preserves_override(self):
+        import os
+
+        source = RUNNER.read_text(encoding="utf-8-sig")
+        start = source.index("$executionResources=Join-Path $packageRoot 'execution/resources'")
+        block = source[start:source.index("\n$workpointRunner=", start)]
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            workspace = root / "repo"
+            workspace.mkdir()
+            support = REPO_ROOT / "src/msplatform/execution/resources/run_artifact_support.ps1"
+            quote = lambda value: "'" + str(value).replace("'", "''") + "'"
+            default_ledger = root / "artifacts/platform/host_resources.sqlite3"
+            for name, payload, override in (
+                ("payload-a", root / "payload-a", None),
+                ("payload-b", root / "payload-b", None),
+                ("override", root / "payload-c", root / "explicit/shared.sqlite3"),
+            ):
+                with self.subTest(name=name):
+                    script = (
+                        "Set-StrictMode -Version Latest;$ErrorActionPreference='Stop';"
+                        f". {quote(support)};$workspaceRoot={quote(workspace)};"
+                        f"$artifactWorkspaceRoot={quote(payload)};$python={quote(sys.executable)};"
+                        f"$packageRoot={quote(REPO_ROOT / 'src/msplatform')};"
+                        f"$executionResources={quote(support.parent)};\n"
+                        + block
+                        + "\n$hostContext|ConvertTo-Json -Compress"
+                    )
+                    environment = dict(os.environ)
+                    environment.pop("MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH", None)
+                    if override is not None:
+                        environment["MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH"] = str(override)
+                    completed = subprocess.run(
+                        [shutil.which("pwsh"), "-NoProfile", "-NonInteractive", "-Command", script],
+                        cwd=root, env=environment, capture_output=True, text=True,
+                        encoding="utf-8", errors="replace", timeout=30, check=False,
+                    )
+                    self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+                    context = json.loads(completed.stdout.splitlines()[-1])
+                    self.assertEqual(Path(context["host_state_path"]), (override or default_ledger).resolve())
+                    self.assertEqual(Path(context["workspace"]), workspace.resolve())
+                    self.assertEqual(Path(context["python_executable"]), Path(sys.executable).resolve())
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_actual_root_feedback_keeps_one_request_and_matching_best_identity(self):
         source = RUNNER.read_text(encoding="utf-8-sig")
         helpers = ""

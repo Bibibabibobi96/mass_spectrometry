@@ -76,8 +76,9 @@ if($completedRootScreeningRuns.Count-gt$MaximumTe1RootFlights){
 $artifactRoot=& $python -I -B -c 'import sys;from msplatform.execution.resources.workspace_paths import resolve_run_artifact_root;print(resolve_run_artifact_root(sys.argv[1],owner_kind="component",owner_id=sys.argv[2]))' $artifactWorkspaceRoot $project
 if($LASTEXITCODE-ne0){throw 'MR candidate run root resolution failed.'}
 $executionResources=Join-Path $packageRoot 'execution/resources'
-$hostState=Resolve-PlatformArtifactPath -ArtifactRoot $artifactWorkspaceRoot -RelativePath host_resources.sqlite3 -Python $python
-$hostContext=@{workspace=$workspaceRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
+$pathContext=Resolve-WorkspacePaths -SourceRoot $workspaceRoot -ArtifactRoot $artifactWorkspaceRoot -Python $python
+$artifactWorkspaceRoot=[string]$pathContext.artifact_root
+$hostContext=@{workspace=$workspaceRoot;python_executable=$python;host_state_path=[string]$pathContext.host_resource_state_path;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 $workpointRunner=Join-Path $workflowResources 'run_downstream_workpoint_iteration.ps1'
 $sourceRunner=Join-Path $workflowResources 'run_publish_bunch_source.ps1'
 $screeningRunner=Join-Path $workflowResources 'run_native_corridor_bunch_screening.ps1'
