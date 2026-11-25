@@ -16,6 +16,20 @@ seconds; the remaining detached planning/lease case then passed in 15.004 second
 after its frozen CLI was routed to the canonical lease API. This is software
 closure evidence; the same-candidate full gate and native acceptance remain open.
 
+Candidate `f875ca4e970a369892b5709e82fea9c25de0dde0` completed the fresh
+continuous RF–IP–MR N100 run `20261126_052900__sim__simion__track-4cf710618bd4`
+with three native calls, no Refine and 100 unique terminal 6D states. Replay
+`20261126_054425__sim__simion__track-019e8852d058` reused one complete unit with
+zero native/Refine calls; both REC files have SHA-256
+`FD6E1B02E0D31E9DF70C722FC9704C784AA258362F8AEE24AD4426ADAC213027`, and the
+parent manifest stayed unchanged. MR remains `not_recorded`, not zero arrival;
+unknown physical causes are not relabeled from contact evidence. The same SHA's
+ordinary Changed run 45703265952 passed 32/32 selected records in 513.591 seconds,
+including both installed arms in 483.821 seconds. Local serial-to-parallel
+installed acceptance changed from 1348.068 to 901.978 seconds without reducing
+negative coverage. Wide Changed and complete Repository remain pending; this is
+functional and scoped performance evidence, not scientific or P4 qualification.
+
 The Assembly dependency freezer and paired frontend process support now have their
 sole PowerShell owners under `msplatform.execution/resources` and
 `msplatform/workflows/resources`. The former `integrations/runtime` files and
