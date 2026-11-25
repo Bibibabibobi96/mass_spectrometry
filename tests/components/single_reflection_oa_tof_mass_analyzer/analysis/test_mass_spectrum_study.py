@@ -49,14 +49,11 @@ class MassSpectrumStudyTests(unittest.TestCase):
             text=True, timeout=30, cwd=environment_root).stdout.strip())
         (purelib / "candidate-selected-dependencies.pth").write_text(
             "\n".join(dependency_roots) + "\n", encoding="utf-8")
-        import sysconfig
-        build_root = sysconfig.get_path("purelib", vars={
-            "base": sys.base_prefix, "platbase": sys.base_prefix,
-            "installed_base": sys.base_prefix, "installed_platbase": sys.base_prefix})
-        build_environment = dict(os.environ, PYTHONNOUSERSITE="1",
-            PYTHONPATH=os.pathsep.join([*dependency_roots, build_root]))
+        build_environment = {key: value for key, value in os.environ.items()
+            if key.upper() not in {"PYTHONPATH", "PYTHONHOME"}}
+        build_environment["PYTHONNOUSERSITE"] = "1"
         installed = subprocess.run([str(cls.cli_python), "-m", "pip", "install", "--no-deps",
-            "--no-build-isolation", str(REPO)], check=False, capture_output=True, text=True,
+            str(REPO)], check=False, capture_output=True, text=True,
             timeout=120, cwd=environment_root, env=build_environment)
         if installed.returncode:
             raise RuntimeError("CLI environment package installation failed:\n" + installed.stdout + installed.stderr)
