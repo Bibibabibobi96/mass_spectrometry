@@ -691,6 +691,22 @@ if('{external}'-notin@($snapshot.protected_paths)){{throw 'latest source scope w
             self.assertEqual(science["run_execution_directory"], science["run_directory"])
 
 
+    def test_payload_root_does_not_select_a_new_host_scheduler(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="workflow-shared-host-") as directory:
+            root = Path(directory)
+            result, run, artifacts, output = self.invoke_fixture(
+                root, {}, request_host_context=False, transport_host_context=False, shared_path_probe=True,
+            )
+            self.assertEqual(output.returncode, 0, output.stdout + output.stderr)
+            expected = root / "resolved-host.sqlite3"
+            observed = json.loads((run / "results/science.json").read_text())["host_resource_state_path"]
+            self.assertEqual(Path(observed), expected)
+            self.assertEqual(result["execution_context"]["host_resource_state_path"], str(expected))
+            calls = [json.loads(line) for line in (root / "path_calls.jsonl").read_text().splitlines()]
+            self.assertTrue(calls)
+            self.assertTrue(all(Path(call["artifact_root"]) == artifacts for call in calls))
+            self.assertFalse((artifacts / "platform/host_resources.sqlite3").exists())
+
     def test_explicit_control_plane_path_reaches_prepared_without_new_database(self) -> None:
         with tempfile.TemporaryDirectory(prefix="workflow-context-") as directory:
             root = Path(directory)

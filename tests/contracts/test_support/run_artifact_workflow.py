@@ -183,25 +183,28 @@ class RunArtifactWorkflowFixture(unittest.TestCase):
         self.assertAlmostEqual(sum(result["timing"].values()), result["elapsed_seconds"], places=2)
 
     def run_ps(self, root: Path, script: str, *, owned_diagnostics: Path | None = None,
-               evidence_paths: tuple[Path, ...] = ()) -> subprocess.CompletedProcess[str]:
+               evidence_paths: tuple[Path, ...] = (), transport_host_context: bool = True) -> subprocess.CompletedProcess[str]:
         path = root / "invoke.ps1"
         script = "if([Console]::In.ReadLine()-cne'fixture-owned-start'){throw 'Fixture ownership ACK missing'}\n" + script
         path.write_text(script, encoding="utf-8")
         command = [PWSH, "-NoProfile", "-File", str(path)]
         from tests.contracts.test_support.fixture_process import run_fixture_process
 
+        environment = dict(os.environ, FIXTURE_PYTHON=sys.executable,
+                           FIXTURE_TEST_METHOD=self.id(), FIXTURE_TEST_SOURCE=__file__)
+        if transport_host_context:
+            environment["MASS_SPECTROMETRY_HOST_CONTEXT_JSON"] = json.dumps({
+                "workspace": str(root),
+                "python_executable": sys.executable,
+                "host_state_path": str(root / "host_resources.sqlite3"),
+                "policy_path": str(REPO / "src/msplatform/execution/resources/host_resource_policy.json"),
+            })
+        else:
+            environment.pop("MASS_SPECTROMETRY_HOST_CONTEXT_JSON", None)
         outcome = None
         primary = None
         try:
-            outcome = run_fixture_process(command, root=root, cwd=REPO,
-                                          environment=dict(os.environ, FIXTURE_PYTHON=sys.executable,
-                                                           MASS_SPECTROMETRY_HOST_CONTEXT_JSON=json.dumps({
-                                                               "workspace": str(root),
-                                                               "python_executable": sys.executable,
-                                                               "host_state_path": str(root / "host_resources.sqlite3"),
-                                                               "policy_path": str(REPO / "src/msplatform/execution/resources/host_resource_policy.json"),
-                                                           }),
-                                                           FIXTURE_TEST_METHOD=self.id(), FIXTURE_TEST_SOURCE=__file__),
+            outcome = run_fixture_process(command, root=root, cwd=REPO, environment=environment,
                                           mode="inherited-grant", timeout=90, diagnostics_root=owned_diagnostics)
             return outcome
         except BaseException as error:
@@ -230,7 +233,9 @@ class RunArtifactWorkflowFixture(unittest.TestCase):
     def invoke_fixture(self, root: Path, payload: dict, *, retention: str = "compact", host_state: str | None = None,
                        observation_failure: bool = False, failure_stage: str | None = None, project: str = PROJECT,
                        callback_text: str | None = None, source_references=None,
-                       capacity_trace: Path | None = None, native_input_paths=None, expected_execution_relative_paths=None) -> tuple[dict, Path, Path, subprocess.CompletedProcess[str]]:
+                       capacity_trace: Path | None = None, native_input_paths=None, expected_execution_relative_paths=None,
+                       request_host_context: bool = True, transport_host_context: bool = True,
+                       shared_path_probe: bool = False) -> tuple[dict, Path, Path, subprocess.CompletedProcess[str]]:
         artifacts = root / "artifacts"
         artifacts.mkdir()
         initialize_capacity_ledger(artifacts, objects=[])
@@ -261,6 +266,8 @@ class RunArtifactWorkflowFixture(unittest.TestCase):
             "prepared": {"module": "fixture_callback", "function": "execute_prepared_run", "import_root": str(root), "entrypoint": file_record(callback)},
             "payload": dict(payload, counter_path=str(root / "callback_count.txt")),
         }
+        if not request_host_context:
+            request.pop("host_context")
         if source_references is not None:
             request["capacity"]["source_references"] = source_references
         if native_input_paths is not None:
@@ -354,15 +361,29 @@ if(([regex]::Matches($body,[regex]::Escape($crudMarker))).Count-ne1){{throw 'Can
 $body=$body.Replace($crudMarker,($crudMarker+"`n"+$crudObserver))
 Set-Item Function:Invoke-CanonicalCapacitySession ([scriptblock]::Create($body))
 """
+        path_probe = ""
+        expected_context = "(Resolve-HostResourceStatePath)"
+        if shared_path_probe:
+            expected_context = f"'{root / 'resolved-host.sqlite3'}'"
+            path_probe = f"""
+function Resolve-PlatformArtifactPath {{ throw 'Payload-derived host scheduler is forbidden' }}
+function Resolve-WorkspacePaths {{
+ param($SourceRoot,$ArtifactRoot,$ExecutionRoot,$HostResourceStatePath,$FrozenContext,$Python)
+ $call=@{{source_root=$SourceRoot;artifact_root=$ArtifactRoot;host_resource_state_path=$HostResourceStatePath}}
+ [IO.File]::AppendAllText('{root / 'path_calls.jsonl'}',($call|ConvertTo-Json -Compress)+[Environment]::NewLine)
+ return @{{source_root=$SourceRoot;artifact_root=$ArtifactRoot;execution_root='{root / 'execution'}';host_resource_state_path='{root / 'resolved-host.sqlite3'}'}}
+}}
+"""
         outcome = self.run_ps(root, f""". '{OWNER}'
 {state_setup}
 {sampler}
-Write-RunJson -Path '{root / 'expected_context.json'}' -Value @{{host_resource_state_path=(Resolve-HostResourceStatePath)}}
+{path_probe}
+Write-RunJson -Path '{root / 'expected_context.json'}' -Value @{{host_resource_state_path={expected_context}}}
 function Invoke-ArtifactCapacityGate {{ return @{{satisfied=$true;fixture_admission=$true}} }}
 {hooks}
 try{{$null=Invoke-RunArtifactWorkflow -RequestPath '{request_path}' -ResultPath '{result_path}'}}
 catch{{Write-Output $_.Exception.Message;exit 7}}
-""")
+""", transport_host_context=transport_host_context)
         self.assertTrue(result_path.is_file(), outcome.stdout + outcome.stderr)
         return json.loads(result_path.read_text(encoding="utf-8-sig")), run, artifacts, outcome
 

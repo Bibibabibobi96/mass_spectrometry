@@ -570,8 +570,10 @@ function Invoke-RunArtifactWorkflow {
     if(-not(Get-Command Resolve-HostResourceStatePath -ErrorAction SilentlyContinue)){
       $hostContext=if($request.Contains('host_context')){$request.host_context}else{$null}
       if($hostContext-isnot[Collections.IDictionary]){
-        $hostState=if($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH}else{Resolve-PlatformArtifactPath -ArtifactRoot $artifactRoot -RelativePath host_resources.sqlite3 -Python $python}
-        $hostContext=@{workspace=(Split-Path -Parent $artifactRoot);python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $repo 'src/msplatform/execution/resources/host_resource_policy.json')}
+        $pathArguments=@{SourceRoot=$repo;ArtifactRoot=$artifactRoot;Python=$python}
+        if($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){$pathArguments.HostResourceStatePath=$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH}
+        $initialPaths=Resolve-WorkspacePaths @pathArguments
+        $hostContext=@{workspace=$repo;python_executable=$python;host_state_path=[string]$initialPaths.host_resource_state_path;policy_path=(Join-Path $PSScriptRoot '../../execution/resources/host_resource_policy.json')}
       }
       . (Join-Path $PSScriptRoot '../../execution/resources/host_execution_lease.ps1') -HostContext $hostContext
     }

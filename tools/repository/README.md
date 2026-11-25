@@ -241,7 +241,7 @@ RF finite COMSOL 的[正常无碰撞入口](../../src/msplatform/workflows/resou
 供OA径向压缩、候选设计及现有PowerShell生产owner共用。项目负责纯计划、预算来源、科学状态和源码闭包；公共owner只组合现有
 容量session、`New-RunPackage`、retention、manifest journal和容量收尾，不按科学mode分支，也不在
 整段prepared调用外持light主机token。各实际heavy操作继续使用原资源入口。
-公共owner故障矩阵由[test_run_artifact_workflow.py](../../tests/contracts/test_run_artifact_workflow.py)的完成／恢复22方法与
+公共owner故障矩阵由[test_run_artifact_workflow.py](../../tests/contracts/test_run_artifact_workflow.py)的完成／恢复25方法与
 [test_run_artifact_workflow_sources.py](../../tests/contracts/test_run_artifact_workflow_sources.py)的源／执行路径15方法共同覆盖，
 原37方法及故障断言保持；两者与下列实际CLI消费者仅共用[test_support fixture](../../tests/contracts/test_support/run_artifact_workflow.py)的准备及断言helper。原CLI恢复薄测由
 [RF项目](../../tests/components/rf_multipole_ion_optics/analysis/test_owner_finalization_recovery.py)与
@@ -265,9 +265,11 @@ Snapshot or handle-acquisition failures do not establish complete descendant
 draining; retained secondary diagnostics must not be reported as confirmed cleanup.
 超时保留原始输出与主异常，仅清理已确认归属的合成进程树；这不是生产求解器的终止策略。
 
-owner从live公共`Resolve-HostResourceStatePath`取得实际控制面路径（保留既有显式覆盖），通过
-`MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH`传给prepared及其冻结worker，避免默认路径随code_root
-漂移。实际路径只记在执行context，不添加到科学输入，也不因此创建或申请第二资源账本。
+request或进程已有HostContext时，owner直接使用其真实控制面路径；两者均缺席时，先由公共
+`Resolve-WorkspacePaths`按source root、本次artifact root及显式host-state环境覆盖解析四根，再初始化host lease。
+payload root只选择科学产物，不派生第二套调度账本。实际路径通过`MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH`
+传给prepared及其冻结worker，只记在执行context，不添加到科学输入。真实无HostContext反例禁止旧的
+`Resolve-PlatformArtifactPath` payload分支，并核对完整25项完成／恢复套件通过（448.399秒）。
 
 公共Python prepared owner在实际启动前调用既有`Get-RunNativeExecutionContext`，将本run的argv、日志及cwd投影到执行表示；冻结`import_root`仍以持久路径进入`PYTHONPATH`，并继续核对实际模块与原entrypoint身份，不从cwd回退导入。CPython长文件路径能力与Windows进程cwd限制分别处理；只有实际run路径需要时才建alias。completion保留公共owner实际alias事实，writer确认后沿原收尾删除；ResumeFinalization不重启prepared worker或重建alias。实际准备的calls／elapsed_seconds／transport_bytes写入既有summary.native_path_preparation及小Result同字段，恢复直接读取原统计，不把源码导入计作载荷搬运。
 新completion以`required_output_records`冻结每个必需输出的路径、字节数和SHA-256；恢复时缺件或字节漂移均拒绝，恢复原字节后才继续既有收尾。只哈希这些必需记录，不给可选大型载荷增加重复全文读取。无此字段的历史completion保持原只读恢复边界，不在恢复时补造当前字节身份。
