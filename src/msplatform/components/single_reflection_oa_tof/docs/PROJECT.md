@@ -154,6 +154,17 @@ managed-flight method passed all four cases in 16.520 seconds, and all three
 SFI entry methods passed in 7.772 seconds. These are software fixture results,
 not native solver or complete-gate acceptance.
 
+Remote Changed run `45512946727` at `94095504` exposed an initialization-order
+defect in the real static entry: the geometry verifier constructed Formal paths
+before resolving the component artifact root, so strict PowerShell stopped after
+the theory preflight and blocked all four SFI test partitions. The verifier now
+resolves its explicit Python and canonical component root before constructing
+those paths, and no longer falls back to a checkout `.venv`. The real public
+`-PreflightOnly` entry passed geometry derivation, generated-text synchronization,
+geometry contracts and lease release; the adjacent layout/partition modules
+passed nine tests in 13.311 seconds. This closes that first software failure,
+not the blocked partitions, full Changed, native execution or P4 acceptance.
+
 The first current-source N100 COMSOL run saved its raw 985,127,714-byte MPH and
 100-particle context, then spent hours in postprocessing rather than CPT solving.
 Its 163,970 unique stored/query times required about 1,282 two-pass

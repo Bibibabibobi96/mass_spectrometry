@@ -11,6 +11,16 @@ PROJECT_ROOT = Path(__file__).resolve().parents[4] / "src/msplatform/components/
 
 
 class FormalReferenceWorkflowLayoutTests(unittest.TestCase):
+    def test_geometry_gate_resolves_artifact_root_before_formal_paths(self):
+        gate = (
+            PROJECT_ROOT.parents[1] / "workflows/resources" / "verify_geometry_contract.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertLess(
+            gate.index("$artifactRoot = Resolve-RunArtifactRoot"),
+            gate.index("$formalReleaseManifestPath = Join-Path $artifactRoot"),
+        )
+        self.assertNotIn("Join-Path $repoRoot '.venv", gate)
+
     def test_managed_builder_source_gate_requires_deferred_stage_summary(self):
         gate = (PROJECT_ROOT.parents[1] / "workflows/resources" / "verify_geometry_contract.ps1").read_text(encoding="utf-8")
         builder = (PROJECT_ROOT.parents[1] / "backends/simion/resources" / "build_formal_delivery.ps1").read_text(encoding="utf-8")

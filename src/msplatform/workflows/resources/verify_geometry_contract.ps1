@@ -84,6 +84,9 @@ if ([string]$contract.coordinate_convention.frame_id -ne 'oatof_global') {
 $formalAssets = Get-Content -LiteralPath (Join-Path $componentDir 'config\formal_assets.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $formalValidationPath = Join-Path $componentDir 'config\formal_validation.json'
 $formalValidation = Get-Content -LiteralPath $formalValidationPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } elseif ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) } else { throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required' }
+if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 project runtime missing: $python" }
+$artifactRoot = Resolve-RunArtifactRoot -ArtifactRoot (Join-Path $projectRoot 'artifacts') -OwnerKind component -OwnerId single_reflection_oa_tof_mass_analyzer -Python $python
 $formalReleaseManifestPath = Join-Path $artifactRoot 'formal\asset_manifest.json'
 $formalMph = Join-Path $artifactRoot $formalAssets.comsol.artifact_relative_path.Replace('/','\')
 $formalCadAssembly = Join-Path $artifactRoot $formalAssets.solidworks.assembly_artifact_relative_path.Replace('/','\')
@@ -91,9 +94,6 @@ $formalCadReport = Join-Path $artifactRoot $formalAssets.solidworks.export_repor
 $formalResultsDir = Join-Path $artifactRoot $formalAssets.results.artifact_relative_path.Replace('/','\')
 $formalResultsManifest = Join-Path $artifactRoot $formalAssets.results.sha256_manifest_relative_path.Replace('/','\')
 $simionStablePath = Join-Path $componentDir "config\$($formalAssets.simion_manifest)"
-$python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
-if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 project runtime missing: $python" }
-$artifactRoot = Resolve-RunArtifactRoot -ArtifactRoot (Join-Path $projectRoot 'artifacts') -OwnerKind component -OwnerId single_reflection_oa_tof_mass_analyzer -Python $python
 $formalDir = Join-Path $artifactRoot 'formal\simion'
 $derivationOutput = & $python -m msplatform.workflows.oa_formal.verify_geometry_derivation $baselinePath
 if ($LASTEXITCODE -ne 0 -or $derivationOutput -notcontains 'GEOMETRY_DERIVATION_STATUS=PASS') {
