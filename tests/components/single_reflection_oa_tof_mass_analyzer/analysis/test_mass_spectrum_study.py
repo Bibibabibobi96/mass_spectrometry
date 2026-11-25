@@ -55,9 +55,11 @@ class MassSpectrumStudyTests(unittest.TestCase):
             "installed_base": sys.base_prefix, "installed_platbase": sys.base_prefix})
         build_environment = dict(os.environ, PYTHONNOUSERSITE="1",
             PYTHONPATH=os.pathsep.join([*dependency_roots, build_root]))
-        subprocess.run([str(cls.cli_python), "-m", "pip", "install", "--no-deps",
-            "--no-build-isolation", str(REPO)], check=True, capture_output=True, text=True,
+        installed = subprocess.run([str(cls.cli_python), "-m", "pip", "install", "--no-deps",
+            "--no-build-isolation", str(REPO)], check=False, capture_output=True, text=True,
             timeout=120, cwd=environment_root, env=build_environment)
+        if installed.returncode:
+            raise RuntimeError("CLI environment package installation failed:\n" + installed.stdout + installed.stderr)
         origin = subprocess.run([str(cls.cli_python), "-I", "-c",
             "from pathlib import Path;import msplatform.workflows.single_reflection_mass_spectrum_study as m;print(Path(m.__file__).resolve())"],
             check=True, capture_output=True, text=True, timeout=30, cwd=environment_root).stdout.strip()
