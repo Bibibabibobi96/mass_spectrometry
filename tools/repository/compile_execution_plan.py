@@ -15,6 +15,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+import msplatform
 from msplatform.execution.artifact_naming import validate_run_id
 from tools.repository.build_project_registry import query_capabilities, resolve_project_root, validate_runtime_binding
 from tools.repository.repository_root import REPO_ROOT
@@ -24,6 +25,22 @@ from msplatform.contracts.machine_contracts import load_json, sha256, validate_s
 class PreserveMissing(dict):
     def __missing__(self, key: str) -> str:
         return "{" + key + "}"
+
+
+def _msplatform_package_root() -> Path:
+    """Return the actual package selected by the compiler's Python environment."""
+    package_file = getattr(msplatform, "__file__", None)
+    if not package_file:
+        raise ValueError("Selected msplatform package has no file-backed origin")
+    return Path(package_file).resolve().parent
+
+
+def _resolve_step_entrypoint(relative: str, project_root: Path) -> Path:
+    """Resolve canonical package entrypoints without substituting the author checkout."""
+    prefix = "src/msplatform/"
+    if relative.startswith(prefix):
+        return (_msplatform_package_root() / relative[len(prefix):]).resolve()
+    return (project_root / relative).resolve()
 
 
 def _resolved_inputs(profile: dict[str, Any], project_root: Path,
@@ -97,6 +114,12 @@ def _resolve_runtime_binding(project: dict[str, Any], profile: dict[str, Any],
     )
     if entrypoint is None:
         return {}
+    declaration = profile["runtime_binding"]["entrypoint"]
+    package_prefix = "src/msplatform/" if declaration.startswith("src/msplatform/") else "msplatform/"
+    package_owned = declaration.startswith(("src/msplatform/", "msplatform/"))
+    if package_owned:
+        relative = declaration[len(package_prefix):]
+        entrypoint = (_msplatform_package_root() / relative).resolve()
     selection_keys = set(profile["runtime_binding"]["required_bindings"])
     if not selection_keys <= set(bindings):
         return {}
@@ -112,8 +135,11 @@ def _resolve_runtime_binding(project: dict[str, Any], profile: dict[str, Any],
     }
     if len(owners) > 1:
         raise ValueError("Execution capability must have at most one declared structural variant")
-    module_parts = entrypoint.relative_to(REPO_ROOT.resolve()).with_suffix("").parts
-    module_name = ".".join(module_parts[1:] if module_parts[0] == "src" else module_parts)
+    if package_owned:
+        module_name = "msplatform." + Path(relative).with_suffix("").as_posix().replace("/", ".")
+    else:
+        module_parts = entrypoint.relative_to(REPO_ROOT.resolve()).with_suffix("").parts
+        module_name = ".".join(module_parts[1:] if module_parts[0] == "src" else module_parts)
     try:
         module = importlib.import_module(module_name)
     except ImportError as error:
@@ -307,8 +333,7 @@ def compile_execution(
     commands = []
     for step in profile["steps"]:
         relative = step["entrypoint"]
-        entrypoint = (REPO_ROOT / relative if relative.startswith("src/")
-                      else project_root / relative).resolve()
+        entrypoint = _resolve_step_entrypoint(relative, project_root)
         arguments = [value.format_map(PreserveMissing(context)) for value in step["arguments"]]
         if not missing_bindings and any(re.search(r"\{[A-Za-z_]\w*\}", value) for value in arguments):
             raise ValueError(f"Unresolved execution argument placeholder in step: {step['step_id']}")
@@ -318,9 +343,10 @@ def compile_execution(
                 str(entrypoint), *arguments,
             ]
         else:
-            module_root = (REPO_ROOT / "src" if entrypoint.is_relative_to(REPO_ROOT / "src" / "msplatform")
-                           else REPO_ROOT)
-            module = entrypoint.relative_to(module_root).with_suffix("").as_posix().replace("/", ".")
+            if relative.startswith("src/msplatform/"):
+                module = Path(relative[4:]).with_suffix("").as_posix().replace("/", ".")
+            else:
+                module = entrypoint.relative_to(REPO_ROOT).with_suffix("").as_posix().replace("/", ".")
             argv = [context["python_exe"], "-m", module, *arguments]
         commands.append({
             "step_id": step["step_id"], "kind": step["kind"], "shell": step["shell"],
@@ -429,9 +455,9 @@ def compile_assembly_execution(owner: str, workflow_id: str, run_id: str,
             else:
                 authorities.append(dict(name=key, path=str(manifest.resolve()), bytes=manifest.stat().st_size, sha256=sha256(manifest)))
     status = "NEEDS_RUNTIME_INPUTS" if missing or unavailable else "NEEDS_SOURCE_FREEZE" if needs_freeze else "EXECUTION_READY"
-    entry = (REPO_ROOT/workflow["entrypoint"]).resolve()
-    if not entry.is_relative_to((REPO_ROOT / "src/msplatform").resolve()) or not entry.is_file():
-        raise ValueError("Assembly entrypoint is outside its owner or missing")
+    entry = _resolve_step_entrypoint(workflow["entrypoint"], REPO_ROOT)
+    if not entry.is_relative_to(_msplatform_package_root()) or not entry.is_file():
+        raise ValueError("Assembly entrypoint is outside its selected package owner or missing")
     run_identity = workflow.get('run_identity', 'caller_selected')
     declared_arguments = [*workflow['arguments'], *(item for values in optional.values() for item in values)]
     if run_identity == 'backend_generated' and any('{run_id' in item for item in declared_arguments):
@@ -534,9 +560,11 @@ def main() -> None:
         with tempfile.TemporaryDirectory(prefix="compiled_execution_") as temporary:
             frozen = Path(temporary)/"execution_plan.json"
             frozen.write_text(rendered, encoding="utf-8")
+            run_support = _msplatform_package_root() / "execution/resources/run_artifact_support.ps1"
             environment = dict(os.environ, MASS_SPECTROMETRY_COMPILED_PLAN=str(frozen),
-                               MASS_SPECTROMETRY_COMPILED_REPO=str(REPO_ROOT))
-            bootstrap = (". (Join-Path $env:MASS_SPECTROMETRY_COMPILED_REPO 'src/msplatform/execution/resources/run_artifact_support.ps1'); "
+                               MASS_SPECTROMETRY_COMPILED_REPO=str(REPO_ROOT),
+                               MASS_SPECTROMETRY_COMPILED_SUPPORT=str(run_support))
+            bootstrap = (". $env:MASS_SPECTROMETRY_COMPILED_SUPPORT; "
                          "Invoke-CompiledExecutionPlan -PlanPath $env:MASS_SPECTROMETRY_COMPILED_PLAN "
                          "-RepoRoot $env:MASS_SPECTROMETRY_COMPILED_REPO" +
                          (" -PrepareUnfrozenSources" if args.execute and result.get("can_prepare_sources") else ""))

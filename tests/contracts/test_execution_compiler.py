@@ -1,5 +1,7 @@
 import copy
+import hashlib
 import json
+import os
 import subprocess
 import shutil
 import sys
@@ -32,6 +34,11 @@ class ExecutionCompilerTests(unittest.TestCase):
         if not path.exists():
             path.write_text("{}", encoding="utf-8")
         return str(path)
+
+    def copy_execution_resources(self, root):
+        resources = root/"src/msplatform/execution/resources"
+        shutil.copytree(REPO_ROOT/"src/msplatform/execution/resources", resources, dirs_exist_ok=True)
+        return resources/"run_artifact_support.ps1"
 
     def compile_request(self, request, bindings=None, *, proposal=False, **options):
         with tempfile.TemporaryDirectory() as root:
@@ -421,7 +428,10 @@ foreach($record in $compiledInputs.files){
                     assemblies=[dict(assembly_id="instrument_assembly", workflows=[workflow])])), encoding="utf8")
             def compile_with(bindings):
                 return compile_assembly_execution("instrument_assembly", "fixture", self.run_id, bindings)
-            with patch("tools.repository.compile_execution_plan.REPO_ROOT", root):
+            with patch("tools.repository.compile_execution_plan.REPO_ROOT", root), patch(
+                "tools.repository.compile_execution_plan._msplatform_package_root",
+                return_value=root/"src/msplatform",
+            ):
                 write_registry()
                 absent = compile_with({"request": str(required)})
                 self.assertTrue(absent["safe_to_execute"])
@@ -481,7 +491,10 @@ foreach($record in $compiledInputs.files){
             registry.parent.mkdir(parents=True)
             registry.write_text(json.dumps(dict(schema_version=1, role="assembly_registry",
                 assemblies=[dict(assembly_id="instrument_assembly", workflows=[workflow])])), encoding="utf8")
-            with patch("tools.repository.compile_execution_plan.REPO_ROOT", root):
+            with patch("tools.repository.compile_execution_plan.REPO_ROOT", root), patch(
+                "tools.repository.compile_execution_plan._msplatform_package_root",
+                return_value=root/"src/msplatform",
+            ):
                 def plan(bindings):return compile_assembly_execution("instrument_assembly", "fixture", self.run_id, bindings)
                 plain=plan(dict(request=str(request), workspace=str(workspace)))
                 selected=plan(dict(request=str(request), workspace=str(workspace), scalar_field_basis=str(basis)))
@@ -505,7 +518,7 @@ foreach($record in $compiledInputs.files){
             def execute(value):
                 target.write_text(json.dumps(value), encoding="utf8")
                 return subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(harness),
-                    str(REPO_ROOT/"src/msplatform/execution/resources/run_artifact_support.ps1"), str(target), str(root)],
+                    str(self.copy_execution_resources(root)), str(target), str(root)],
                     cwd=REPO_ROOT,capture_output=True,text=True,encoding="utf8",errors="replace",timeout=30)
             for value in (plain, selected):
                 result=execute(value);self.assertEqual(result.returncode,0,result.stdout+result.stderr)
@@ -534,7 +547,10 @@ foreach($record in $compiledInputs.files){
                 registry.write_text(json.dumps(dict(schema_version=1, role='assembly_registry',
                     assemblies=[dict(assembly_id='instrument_assembly', workflows=[workflow])])), encoding='utf8')
 
-            with patch('tools.repository.compile_execution_plan.REPO_ROOT', root):
+            with patch('tools.repository.compile_execution_plan.REPO_ROOT', root), patch(
+                'tools.repository.compile_execution_plan._msplatform_package_root',
+                return_value=root/'src/msplatform',
+            ):
                 write_registry()
                 result = compile_assembly_execution('instrument_assembly', 'fixture', self.run_id, {})
                 command = result['commands'][0]
@@ -581,7 +597,10 @@ if($LASTEXITCODE-ne0){throw 'planned interpreter failed'}
             registry.parent.mkdir(parents=True)
             registry.write_text(json.dumps(dict(schema_version=1, role="assembly_registry",
                 assemblies=[dict(assembly_id="instrument_assembly", workflows=[workflow])])))
-            with patch("tools.repository.compile_execution_plan.REPO_ROOT", root):
+            with patch("tools.repository.compile_execution_plan.REPO_ROOT", root), patch(
+                "tools.repository.compile_execution_plan._msplatform_package_root",
+                return_value=root/"src/msplatform",
+            ):
                 result = compile_assembly_execution("instrument_assembly", "fixture", self.run_id,
                                                        dict(request=str(request), voltage="-123.5"))
             plan = root/"compiled.json"
@@ -593,13 +612,128 @@ $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
 """, encoding="utf-8")
             completed = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(harness),
-                str(REPO_ROOT/"src/msplatform/execution/resources/run_artifact_support.ps1"), str(plan), str(root)],
+                str(self.copy_execution_resources(root)), str(plan), str(root)],
                 cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
             self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr)
             actual = json.loads((entry.parent/"actual.json").read_text())
             self.assertEqual(actual, dict(source="frozen", voltage=-123.5, run_id=self.run_id,
                                           repository=str(root)))
             self.assertIn("ACTUAL_INTERPRETER=" + str(Path(sys.executable).resolve()), completed.stdout)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
+    def test_installed_package_copy_rejects_checkout_code_substitution(self):
+        from tools.repository.compile_execution_plan import compile_assembly_execution
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            checkout = root/"checkout"
+            package = root/"installed/msplatform"
+            caller = root/"unrelated-caller"
+            caller.mkdir()
+            entry = package/"workflows/resources/fixture.ps1"
+            entry.parent.mkdir(parents=True)
+            entry.write_text(r"""param($Request,$PythonExe)
+$ErrorActionPreference='Stop'
+$input=Get-Content $Request -Raw|ConvertFrom-Json
+& $PythonExe -I -B -c "import sys;print('ACTUAL_INTERPRETER='+sys.executable)"
+if($LASTEXITCODE-ne0){throw 'planned interpreter failed'}
+@{source=$input.source;entrypoint=$PSCommandPath}|ConvertTo-Json|Set-Content (Join-Path $PSScriptRoot 'actual.json')
+""", encoding="utf-8")
+            checkout_entry = checkout/"src/msplatform/workflows/resources/fixture.ps1"
+            checkout_entry.parent.mkdir(parents=True)
+            checkout_entry.write_text("Set-Content -LiteralPath (Join-Path $PSScriptRoot 'wrong-source.txt') -Value 'forbidden'\n",
+                                      encoding="utf-8")
+            self.assertNotEqual(entry.read_bytes(), checkout_entry.read_bytes())
+            request = root/"request.json"
+            request.write_text('{"source":"selected-package"}', encoding="utf-8")
+            workflow = dict(workflow_id="fixture", entrypoint="src/msplatform/workflows/resources/fixture.ps1",
+                required_bindings=["request"], binding_types={"request": "file"},
+                arguments=["-Request", "{request}", "-PythonExe", "{python_exe}"],
+                outputs=["receipt"], simulation_paths=["continuous_assembly"], recipes=[], limitations=[],
+                purpose="assembly_propagation", action="run", tools=["python"], model="installed package fixture")
+            registry = checkout/"src/msplatform/workflows/config/assembly_registry.json"
+            registry.parent.mkdir(parents=True)
+            registry.write_text(json.dumps(dict(schema_version=1, role="assembly_registry",
+                assemblies=[dict(assembly_id="instrument_assembly", workflows=[workflow])])), encoding="utf-8")
+            with patch("tools.repository.compile_execution_plan.REPO_ROOT", checkout), patch(
+                "tools.repository.compile_execution_plan._msplatform_package_root", return_value=package,
+            ):
+                result = compile_assembly_execution("instrument_assembly", "fixture", self.run_id,
+                                                    {"request": str(request)})
+            command = result["commands"][0]
+            self.assertEqual(Path(command["entrypoint"]), entry.resolve())
+            self.assertNotEqual(Path(command["entrypoint"]), checkout_entry.resolve())
+            shutil.copytree(REPO_ROOT/"src/msplatform/execution/resources", package/"execution/resources")
+            helper = package/"execution/resources/run_artifact_support.ps1"
+            harness = root/"execute.ps1"
+            harness.write_text("param($Helper,$Plan,$Repository)\n$ErrorActionPreference='Stop'\n"
+                               ". $Helper\nInvoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository\n",
+                               encoding="utf-8")
+            plan_path = root/"compiled.json"
+
+            def execute(value):
+                plan_path.write_text(json.dumps(value), encoding="utf-8")
+                environment = dict(os.environ)
+                environment["PYTHONPATH"] = str(checkout/"src")
+                environment["SIMULATION_PYTHON_EXE"] = str(root/"unavailable/python.exe")
+                return subprocess.run([shutil.which("pwsh"), "-NoProfile", "-NonInteractive", "-File",
+                                       str(harness), str(helper), str(plan_path), str(checkout)],
+                                      cwd=caller, env=environment, capture_output=True, text=True,
+                                      encoding="utf-8", errors="replace", timeout=30)
+
+            completed = execute(result)
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            actual = json.loads((entry.parent/"actual.json").read_text(encoding="utf-8-sig"))
+            self.assertEqual(actual, {"source": "selected-package", "entrypoint": str(entry)})
+            self.assertIn("ACTUAL_INTERPRETER=" + str(Path(sys.executable).resolve()), completed.stdout)
+            self.assertFalse((checkout_entry.parent/"wrong-source.txt").exists())
+
+            substituted = copy.deepcopy(result)
+            substituted["commands"][0]["entrypoint"] = str(checkout_entry.resolve())
+            refused = execute(substituted)
+            self.assertNotEqual(refused.returncode, 0)
+            self.assertIn("Compiled command differs from declared entrypoint", refused.stdout + refused.stderr)
+            self.assertFalse((checkout_entry.parent/"wrong-source.txt").exists())
+            (entry.parent/"actual.json").unlink()
+            entry.unlink()
+            missing = execute(result)
+            self.assertNotEqual(missing.returncode, 0)
+            self.assertFalse((entry.parent/"actual.json").exists())
+            self.assertFalse((checkout_entry.parent/"wrong-source.txt").exists())
+
+            (package/"__init__.py").write_text("", encoding="utf-8")
+            (package/"workflows/__init__.py").write_text("", encoding="utf-8")
+            python_entry = package/"workflows/fixture.py"
+            python_entry.write_text("from pathlib import Path\n"
+                                    "Path(__file__).with_name('python_actual.json').write_text('selected-package')\n"
+                                    "print('PYTHON_MODULE_SOURCE='+__file__)\n", encoding="utf-8")
+            checkout_python = checkout/"src/msplatform/workflows/fixture.py"
+            checkout_python.write_text("from pathlib import Path\n"
+                                       "Path(__file__).with_name('wrong-python-source.txt').write_text('forbidden')\n",
+                                       encoding="utf-8")
+            project = checkout/"src/msplatform/components/fixture"
+            (project/"config").mkdir(parents=True)
+            (checkout/"config").mkdir()
+            (checkout/"config/project_registry.json").write_text(json.dumps(dict(projects=[dict(
+                project_id="fixture", contracts=dict(execution="config/execution_profiles.json"))])), encoding="utf-8")
+            contract = project/"config/execution_profiles.json"
+            contract_document = {"profiles": [{"profile_id": "fixture", "steps": [dict(
+                step_id="python_run", shell="python",
+                entrypoint="src/msplatform/workflows/fixture.py", arguments=[])]}]}
+            contract.write_text(json.dumps(contract_document), encoding="utf-8")
+            python_plan = dict(role="execution_dry_run", status="EXECUTION_READY", safe_to_execute=True,
+                python_executable=str(Path(sys.executable).resolve()), project_id="fixture", profile_id="fixture",
+                execution_contract=dict(path=str(contract), sha256=hashlib.sha256(contract.read_bytes()).hexdigest().upper()),
+                planning_sources=[], binding_authorities=[], binding_sources=[], resolved_inputs=[], resolved_runtime=None,
+                commands=[dict(step_id="python_run", shell="python", entrypoint=str(python_entry.resolve()), arguments=[])])
+            python_result = execute(python_plan)
+            self.assertEqual(python_result.returncode, 0, python_result.stdout + python_result.stderr)
+            self.assertIn("PYTHON_MODULE_SOURCE=" + str(python_entry), python_result.stdout)
+            self.assertEqual((python_entry.parent/"python_actual.json").read_text(), "selected-package")
+            self.assertFalse((checkout_python.parent/"wrong-python-source.txt").exists())
+            python_plan["commands"][0]["entrypoint"] = str(checkout_python.resolve())
+            refused_python = execute(python_plan)
+            self.assertNotEqual(refused_python.returncode, 0)
+            self.assertFalse((checkout_python.parent/"wrong-python-source.txt").exists())
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_compiled_executor_uses_frozen_definition_and_rejects_drift_or_other_entrypoint(self):
@@ -649,7 +783,7 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
                     (project/"actual.json").unlink(missing_ok=True)
                     plan_path.write_text(json.dumps(actual))
                     completed = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(harness),
-                        str(REPO_ROOT/"src/msplatform/execution/resources/run_artifact_support.ps1"), str(plan_path), str(root)],
+                        str(self.copy_execution_resources(root)), str(plan_path), str(root)],
                         cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
                     if mode == "success":
                         self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr)

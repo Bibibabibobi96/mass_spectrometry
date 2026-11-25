@@ -25,10 +25,13 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $project='parallel_mirror_dual_stripe_mr_tof'
-$workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path;$artifactRoot=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot);$repoRoot=$workspaceRoot
+$workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path;$artifactRoot=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
 $packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
 if($LASTEXITCODE-ne0){throw 'Installed msplatform package is unavailable.'};$packageRoot=(Resolve-Path -LiteralPath $packageRootText).Path
+$entryPackageRoot=Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+if(-not[string]::Equals($packageRoot,[IO.Path]::GetFullPath($entryPackageRoot),[StringComparison]::OrdinalIgnoreCase)){throw 'Selected Python msplatform package differs from the entry package.'}
+$repoRoot=Split-Path -Parent $packageRoot
 $workflowResources=Join-Path $packageRoot 'workflows/resources';$simionResources=Join-Path $packageRoot 'backends/simion/resources'
 $conditionSource=(Resolve-Path -LiteralPath $ConditionPath).Path
 $contextSource=(Resolve-Path -LiteralPath $ContextPath).Path

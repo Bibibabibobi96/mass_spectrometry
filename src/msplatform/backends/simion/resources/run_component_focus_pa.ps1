@@ -1,10 +1,13 @@
 [CmdletBinding()]
 param([Parameter(Mandatory)][string]$RunId,[Parameter(Mandatory)][ValidateCount(3,3)][double[]]$MeshMmPerGu,[Parameter(Mandatory)][string]$WorkspaceRoot,[Parameter(Mandatory)][string]$ArtifactRoot,[string]$PythonExe='',[string]$CampaignPath='',[string]$RuntimeCheckpointPath='',[string]$SimionExe='')
 Set-StrictMode -Version Latest;$ErrorActionPreference='Stop'
-$workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path;$artifactRoot=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot);$repoRoot=$workspaceRoot
+$workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path;$artifactRoot=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
 $packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
 if($LASTEXITCODE-ne0){throw 'Installed msplatform package is unavailable.'};$packageRoot=(Resolve-Path -LiteralPath $packageRootText).Path
+$entryPackageRoot=Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
+if(-not[string]::Equals($packageRoot,[IO.Path]::GetFullPath($entryPackageRoot),[StringComparison]::OrdinalIgnoreCase)){throw 'Selected Python msplatform package differs from the entry package.'}
+$repoRoot=Split-Path -Parent $packageRoot
 $executionResources=Join-Path $packageRoot 'execution/resources';$simionResources=Join-Path $packageRoot 'backends/simion/resources'
 . (Join-Path $executionResources 'require_powershell7.ps1');. (Join-Path $executionResources 'run_artifact_support.ps1');. (Join-Path $simionResources 'native_fast_adjust_runtime_support.ps1')
 . (Join-Path $simionResources 'focus_python.ps1')

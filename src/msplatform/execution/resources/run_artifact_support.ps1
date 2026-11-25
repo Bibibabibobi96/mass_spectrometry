@@ -63,6 +63,7 @@ function Invoke-CompiledExecutionPlan {
   if($plan.role-ne'execution_dry_run'-or(-not$plan.safe_to_execute-and
       -not($PrepareUnfrozenSources-and$plan.status-eq'NEEDS_SOURCE_FREEZE'-and$plan.can_prepare_sources))){throw 'Compiled execution plan is not ready or its source is not frozen.'}
   $repository=[IO.Path]::GetFullPath($RepoRoot)
+  $packageRoot=Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
   $streams=[Collections.Generic.List[object]]::new()
   $directory=Join-Path ([IO.Path]::GetTempPath()) ('compiled_inputs_'+[guid]::NewGuid().ToString('N'))
   try{
@@ -155,10 +156,10 @@ function Invoke-CompiledExecutionPlan {
       $step=$steps[0]
       if($profiles[0].steps[$stepIndex].step_id-ne$command.step_id){throw 'Compiled execution changed owner step order.'}
       $stepIndex++
-      $entry=if(([string]$step.entrypoint).StartsWith('src/',[StringComparison]::Ordinal)){
-        [IO.Path]::GetFullPath((Join-Path $repository ([string]$step.entrypoint)))
+      $entry=if(([string]$step.entrypoint).StartsWith('src/msplatform/',[StringComparison]::Ordinal)){
+        [IO.Path]::GetFullPath((Join-Path $packageRoot ([string]$step.entrypoint).Substring(15)))
       }else{[IO.Path]::GetFullPath((Join-Path $entryRoot ([string]$step.entrypoint)))}
-      if($entry-ne[IO.Path]::GetFullPath([string]$command.entrypoint)-or$step.shell-ne$command.shell){throw 'Compiled command differs from declared entrypoint.'}
+      if($entry-cne[IO.Path]::GetFullPath([string]$command.entrypoint)-or$step.shell-cne$command.shell){throw 'Compiled command differs from declared entrypoint.'}
       if(@($step.arguments).Count-ne@($command.arguments).Count){throw 'Compiled arguments differ from the declared owner inputs.'}
       if($plan.ContainsKey('owner_kind')-and$plan.owner_kind-eq'assembly'-and$optional.Count){
         $values=@{};foreach($key in $selected.Keys){$values[$key]=[string]$selected[$key]}
@@ -212,13 +213,20 @@ function Invoke-CompiledExecutionPlan {
           & $entry @named
         }
         elseif($step.shell-eq'python'){
-          $module=[IO.Path]::GetRelativePath($repository,$entry).Replace('\','.').Replace('/','.').Substring(0,[IO.Path]::GetRelativePath($repository,$entry).Length-3)
+          $packageStep=([string]$step.entrypoint).StartsWith('src/msplatform/',[StringComparison]::Ordinal)
+          $module=if($packageStep){
+            ([string]$step.entrypoint).Substring(4).Replace('\','.').Replace('/','.')
+          }else{[IO.Path]::GetRelativePath($repository,$entry).Replace('\','.').Replace('/','.')}
+          $module=$module.Substring(0,$module.Length-3)
           if(-not$plan.ContainsKey('python_executable')-or$plan.python_executable-isnot[string]-or
              -not[IO.Path]::IsPathFullyQualified($plan.python_executable)-or
              -not(Test-Path -LiteralPath $plan.python_executable -PathType Leaf)){
             throw 'Compiled Python interpreter is missing or unavailable; recompile with the intended Python executable.'
           }
-          & $plan.python_executable -m $module @arguments
+          if($packageStep){
+            $bootstrap='import runpy,sys;root,module=sys.argv[1:3];sys.path.insert(0,root);sys.argv=[module,*sys.argv[3:]];runpy.run_module(module,run_name="__main__")'
+            & $plan.python_executable -I -B -c $bootstrap (Split-Path -Parent $packageRoot) $module @arguments
+          }else{& $plan.python_executable -m $module @arguments}
         }else{throw 'Unsupported declared execution shell.'}
         if(-not$?-or$LASTEXITCODE-ne0){throw "Compiled owner step failed: $($command.step_id) (exit $LASTEXITCODE)"}
       }finally{Pop-Location}

@@ -226,18 +226,19 @@ $providerProjectId='parallel_mirror_dual_stripe_mr_tof'
 $packageRoot=Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $packageParent=Split-Path -Parent $packageRoot
 $researchRootExplicit=[bool]$RepoRoot
-$sourceRoot=if($RepoRoot){(Resolve-Path -LiteralPath $RepoRoot).Path}else{(Get-Location).Path}
+$inputRoot=if($RepoRoot){(Resolve-Path -LiteralPath $RepoRoot).Path}else{(Get-Location).Path}
+$sourceRoot=$packageParent
 $executionResources=Join-Path $packageRoot 'execution/resources'
 . (Join-Path $executionResources 'require_powershell7.ps1')
 . (Join-Path $executionResources 'workspace_paths.ps1')
 $script:pythonRoot=$packageParent
-$workspaceRoot=if($researchRootExplicit){Split-Path -Parent $sourceRoot}else{$sourceRoot}
+$workspaceRoot=if($researchRootExplicit){Split-Path -Parent $inputRoot}else{$inputRoot}
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
 $packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
 if($LASTEXITCODE-ne0-or[string]::IsNullOrWhiteSpace([string]$packageRootText)){throw 'Installed msplatform package is unavailable.'}
 $selectedPackageRoot=(Resolve-Path -LiteralPath ([string]$packageRootText).Trim()).Path
-if(-not$researchRootExplicit-and-not[string]::Equals($selectedPackageRoot,[IO.Path]::GetFullPath($packageRoot),[StringComparison]::OrdinalIgnoreCase)){throw 'Selected Python msplatform package differs from the entry package.'}
-$pathContext=Resolve-WorkspacePaths -SourceRoot $sourceRoot -Python $python
+if(-not[string]::Equals($selectedPackageRoot,[IO.Path]::GetFullPath($packageRoot),[StringComparison]::OrdinalIgnoreCase)){throw 'Selected Python msplatform package differs from the entry package.'}
+$pathContext=Resolve-WorkspacePaths -SourceRoot $inputRoot -Python $python
 $artifactRoot=[string]$pathContext.artifact_root
 $projectArtifacts=Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind assembly -OwnerId $projectId -Python $python
 $hostState=[string]$pathContext.host_resource_state_path
@@ -441,7 +442,7 @@ if([string]::IsNullOrWhiteSpace($RunId)){$RunId=(Get-Date -Format 'yyyyMMdd_HHmm
 $package=New-RunPackage -Python $python -RepoRoot $sourceRoot -ArtifactRoot $projectArtifacts `
   -RunId $RunId -Project $projectId -Mode 'oa_mr' -Software @('SIMION 2020','Python 3.11') `
   -RetentionContractEnabled -RetentionClass $trajectoryRetentionClass -RetentionReason $trajectoryRetentionReason `
-  -CapacityLedgerLifecycleEnabled -AdditionalDirectories @('simion') -UseShortExecutionPath
+  -CapacityLedgerLifecycleEnabled -AdditionalDirectories @('simion') -UseShortExecutionPath -PathContext $pathContext
 $runDir=$package.run_dir;$resultDir=$package.result_dir;$logDir=$package.log_dir;$solverDir=Join-Path $runDir 'simion'
 $artifactSolverDir=Join-Path ([string]$package.artifact_run_dir) 'simion'
 $runConfig=$package.run_config;$summary=$package.summary

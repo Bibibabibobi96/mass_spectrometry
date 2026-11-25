@@ -195,20 +195,25 @@ function Add-IonProcessorFailedOperation {
    process_id=[int]$id;process_started_at_utc_ticks=[long]$started};resource_release_id='simion'})|Out-Null
  return $true
 }
-$repoRoot=$RepositoryRoot
-$projectRoot=Join-Path $repoRoot 'src/msplatform/components/dual_pressure_rectilinear_ion_processor'
-$workspaceRoot=Split-Path -Parent $repoRoot
+$workspaceRoot=Split-Path -Parent $RepositoryRoot
+$packageRoot=Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$repoRoot=Split-Path -Parent $packageRoot
+$projectRoot=Join-Path $packageRoot 'components/dual_pressure_rectilinear_ion_processor'
 . (Join-Path $PSScriptRoot '../../execution/resources/require_powershell7.ps1')
 . (Join-Path $PSScriptRoot '../../execution/resources/run_artifact_support.ps1')
 . (Join-Path $PSScriptRoot '../../backends/simion/resources/short_pa_path_support.ps1')
 $python=if($PythonExe){$PythonExe}elseif($env:SIMULATION_PYTHON_EXE){$env:SIMULATION_PYTHON_EXE}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
+$selectedPackageText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
+if($LASTEXITCODE-ne0){throw 'Installed msplatform package is unavailable.'}
+$selectedPackage=(Resolve-Path -LiteralPath ([string]$selectedPackageText).Trim()).Path
+if(-not[string]::Equals($selectedPackage,[IO.Path]::GetFullPath($packageRoot),[StringComparison]::OrdinalIgnoreCase)){throw 'Selected Python msplatform package differs from the entry package.'}
 $hostState=if($env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH){$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH}else{Resolve-PlatformArtifactPath -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -RelativePath host_resources.sqlite3 -Python $python}
 $script:HostResourceExecutionContext=@{workspace=$workspaceRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $PSScriptRoot '../../execution/resources/host_resource_policy.json')}
 . (Join-Path $PSScriptRoot '../../execution/resources/host_execution_lease.ps1') -HostContext $script:HostResourceExecutionContext
 . (Join-Path $PSScriptRoot '../../execution/resources/resource_process_support.ps1')
 . (Join-Path $PSScriptRoot '../../execution/resources/simion_dispatch_support.ps1')
 . (Join-Path $PSScriptRoot '../../execution/resources/workspace_paths.ps1')
-$pathContext=Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
+$pathContext=Resolve-WorkspacePaths -SourceRoot $RepositoryRoot -Python $python
 if($ResumeFinalization){
  $projectArtifacts=Resolve-RunArtifactRoot -ArtifactRoot ([string]$pathContext.artifact_root) -OwnerKind component -OwnerId dual_pressure_rectilinear_ion_processor -Python $python
  $recoveryRun=Join-Path $projectArtifacts ('runs/'+$RunId)
