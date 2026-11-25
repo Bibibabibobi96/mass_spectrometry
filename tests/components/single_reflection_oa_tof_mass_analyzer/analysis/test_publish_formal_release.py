@@ -381,8 +381,11 @@ class FormalReleasePublisherTests(unittest.TestCase):
             installed_package,
             ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
         )
+        import openpyxl
+        dependency_roots = dict.fromkeys((sysconfig.get_path("purelib"),
+            str(Path(openpyxl.__file__).resolve().parent.parent)))
         (installed_package.parent / "formal_test_dependencies.pth").write_text(
-            sysconfig.get_path("purelib") + "\n", encoding="utf-8"
+            "\n".join(dependency_roots) + "\n", encoding="utf-8"
         )
         (installed_package / "execution/verify_artifact_layout.py").write_text(
             "print('INSTALLED_LAYOUT_FIXTURE=PASS')\n", encoding="utf-8"

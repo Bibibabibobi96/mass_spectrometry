@@ -90,8 +90,8 @@ class PublishIdealAcceptanceApertureComparisonTest(unittest.TestCase):
             import numpy as np
 
             dependency_roots = list(dict.fromkeys(
-                str(Path(sysconfig.get_paths()[name]).resolve())
-                for name in ("purelib", "platlib")
+                [str(Path(np.__file__).resolve().parent.parent)]
+                + [str(Path(sysconfig.get_paths()[name]).resolve()) for name in ("purelib", "platlib")]
             ))
             self.assertTrue(any(Path(np.__file__).resolve().is_relative_to(Path(path))
                                 for path in dependency_roots))

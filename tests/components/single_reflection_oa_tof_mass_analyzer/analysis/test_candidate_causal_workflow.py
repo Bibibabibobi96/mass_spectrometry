@@ -347,7 +347,7 @@ class CandidateCausalPhaseTests(CandidateFixtures, unittest.TestCase):
             invoke=postprocess_public_entry(root,artifact)
             child_id='20261031_205001__analysis__python__normal-export-csv'
             result=invoke(['--postprocess-from',str(parent),'--run-id',child_id])
-            child=artifact/'projects'/"single_reflection_oa_tof_mass_analyzer"/'runs'/child_id
+            child=artifact/'components'/"single_reflection_oa_tof_mass_analyzer"/'runs'/child_id
             completion_path=child/'results/execution_completion.json'
             diagnostic=completion_path.read_text(encoding='utf-8') if completion_path.exists() else 'completion absent'
             self.assertEqual(result.returncode,0,result.stdout+result.stderr+diagnostic)
