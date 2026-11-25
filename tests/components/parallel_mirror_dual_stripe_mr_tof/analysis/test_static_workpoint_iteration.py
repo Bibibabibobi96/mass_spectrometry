@@ -370,7 +370,7 @@ $CenterSourceReceiptPath=$Producer;$FieldProviderRequestPath=$Producer
 $ResponseFieldBindingPath=''
 $GeometryReviewRunPath='geometry';$MirrorRunPath='mirror';$StripeRunPath='stripe'
 $TrajectoryStepScale=.25;$AcceleratorSourceYOffsetMm=0
-$python='python';$capacitySession=$null;$AcceleratorProviderReceiptPath='oa-receipt'
+$python='python';$repoRoot='unused';$capacitySession=$null;$AcceleratorProviderReceiptPath='oa-receipt'
 $script:oaComponentContractFrozen=$Producer;$AcceleratorGeometryProfileId='selected-fixture-profile'
 $CompositionPlanPath='composition-plan';$LocalScopePath=''
 $PulseAcceleratorUntilInitialExit=$false;$AcceleratorPulseSchedulePath=''
@@ -459,19 +459,20 @@ function Update-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Sessio
 function Invoke-RunToolRootContext {param($RepoRoot,$Operation) & $Operation}
 function Invoke-FixturePython {
     $supplied=@($args)
-    if($supplied[0]-eq'-m'){
-        if($supplied[1]-ne'msplatform.backends.comsol.corridor_field'-or
-           $supplied[2]-ne'--resolve-completed-request'-or$supplied[4]-ne'--completed-provider-manifest'){
+    if($supplied[2]-eq'-m'){
+        if($supplied[3]-ne'msplatform.backends.comsol.corridor_field'-or
+           $supplied[4]-ne'--resolve-completed-request'-or$supplied[6]-ne'--completed-provider-manifest'){
             throw 'unexpected completed-provider CLI boundary'
         }
-        if(-not(Test-Path -LiteralPath $supplied[3])-or$supplied[5]-ne$CompletedFieldProviderManifest){throw 'completed-provider input transport differs'}
+        if(-not(Test-Path -LiteralPath $supplied[5])-or$supplied[7]-ne$CompletedFieldProviderManifest){throw 'completed-provider input transport differs'}
         $global:LASTEXITCODE=if($Completed-eq'invalid'){1}else{0}
         @{binding=$(if($Completed-eq'match'){'completed-binding.json'}else{$null})}|ConvertTo-Json -Compress
         return
     }
-    & $PythonExe (Join-Path $Root 'authority_fixture.py') $supplied[1] $supplied[2]
+    & $PythonExe (Join-Path $Root 'authority_fixture.py') $supplied[3] $supplied[4]
 }
 $staticFieldMode=$Mode -eq 'static';$python='Invoke-FixturePython';$repoRoot='unused'
+$workspaceRoot=$Root;$artifactWorkspaceRoot=$Root
 $ResponseFieldBindingPath=''
 $capacitySession=@{status='active'};$package=@{input_dir=$Root};$artifactRoot=$Root
 $fieldProviderRequest=@{role='mrtof_same_mesh_field_provider_request';source_binding_path='source-binding.json';candidate_voltages_v=@{s1=-27;s2=54;p1=191;p2=-190}}
