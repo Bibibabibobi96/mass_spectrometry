@@ -112,7 +112,10 @@ def attach_terminal_evidence(result: dict, log_paths: Sequence[str | Path],
     terminals = {row['particle_id']: row for row in result['native_terminals']}
     if set(recorded) != set(terminals):
         raise ValueError('raw terminal evidence cohort differs')
+    outcomes = {row['particle_id']: row for row in result.get('census', {}).get(
+        'terminal_taxonomy', {}).get('particle_outcomes', [])}
     facts = []
+    classification_changed = False
     for pid, evidence in recorded.items():
         phases = {row['event']: row for row in evidence['records']}
         terminal = phases['terminate']
@@ -125,9 +128,34 @@ def attach_terminal_evidence(result: dict, log_paths: Sequence[str | Path],
             raise ValueError(f'particle {pid}: terminal wire/native instance differs')
         reconciliation = reconcile_terminal_evidence(terminal,
             phases.get('other_actions_before'), phases.get('other_actions_after'))
+        outcome = outcomes.get(pid)
+        if outcome is not None:
+            outcome['terminal_position_mm'] = {axis: terminal[axis + '_mm'] for axis in 'xyz'}
+            outcome['terminal_velocity_mm_per_us'] = {
+                axis: terminal['v' + axis + '_mm_per_us'] for axis in 'xyz'}
+            before = reconciliation['native_splat_before']
+            native_splat = (outcome['category'] == 'unknown_native_terminal'
+                and type(before) is int and before != 0
+                and before == reconciliation['native_splat_after']
+                and reconciliation['program_changed_stop'] is False)
+            if native_splat:
+                outcome.update(category='native_splat_observed',
+                    termination_reason='native_splat_before_program_action',
+                    native_splat_code=before,
+                    native_splat_code_source='retained_other_actions_pair',
+                    physical_cause='not_resolved_from_splat_code_alone')
+                if outcome.get('terminal_splat_availability') == 'not_read':
+                    outcome['terminal_splat_availability'] = 'not_readable_at_terminate'
+                classification_changed = True
         facts.append(dict(particle_id=pid, raw=evidence, reconciliation=reconciliation))
+    if outcomes:
+        counts = {}
+        for outcome in outcomes.values():
+            category = outcome['category']
+            counts[category] = counts.get(category, 0) + 1
+        result['census']['terminal_taxonomy']['category_counts'] = dict(sorted(counts.items()))
     result['terminal_evidence'] = dict(schema_version=1, status='recorded_v1', units=dict(UNITS),
-        particle_evidence=facts, classification_changed=False)
+        particle_evidence=facts, classification_changed=classification_changed)
     return result
 
 

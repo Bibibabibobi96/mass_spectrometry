@@ -231,6 +231,8 @@ IP距离研究同时绑定并核对源驱动及波形身份。run、worker及保
 这只决定声明日志能否保留以供恢复，不能替代完整母群、源、时钟或科学验收。
 通用收尾、收据及终态保护由[保留API](../tools/repository/README.md#运行终态保留)处理，不在PowerShell复制供应商文本解析。
 
+[`terminal_evidence.py`](../src/msplatform/backends/simion/terminal_evidence.py)把保留的`other_actions`前后状态与真实`terminate`状态分开。若原分类为`unknown_native_terminal`，且前后均记录同一非零`ion_splat`、本程序未改变停止标志，则发布为`native_splat_observed`，同时给出`native_splat_code`、终止时刻、位置和速度。`native_splat_code_source=retained_other_actions_pair`明确原因码来自回调前观测；不可读的terminate时splat仍保持空值。该分类证明原生停止事实，不把原因码猜成具体电极、碰撞或MR到达；具体物理原因未由现有证据解析时保持未解析。官方依据为SIMION的[粒子终止、原因码与位置记录说明](https://simion.com/info/particle_trajectory_calculation.html)，2026-11-25核对；具体电极归属需要另行的PA#证据，本记录器不推断。
+
 ## PA 缓存与工作点
 
 [`pa_family_cache.py`](../src/msplatform/backends/simion/pa_family_cache.py)提供完整静电PA-family的内容寻址复用：调用方必须给出完整的

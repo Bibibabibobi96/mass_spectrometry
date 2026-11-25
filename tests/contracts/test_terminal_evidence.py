@@ -122,6 +122,37 @@ class TerminalEvidenceTests(unittest.TestCase):
             legacy=attach_terminal_evidence(result,[path],[dict(expected_particle_ids=[7])])
             self.assertEqual(legacy['terminal_evidence']['status'],'legacy_absent')
 
+    def test_native_preaction_splat_supplies_reason_code_and_terminal_location(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/'native.log'
+            initial = row('initialize', 1, raw_step_us=None)
+            terminal = row(raw_step_us=None)
+            pre = row('other_actions_before', 2, splat=-3)
+            after = row('other_actions_after', 3, splat=-3)
+            path.write_text('\n'.join(wire(r) for r in (initial, pre, after, terminal)), encoding='utf8')
+            batch = dict(expected_particle_ids=[7], build_metadata=dict(
+                terminal_evidence=dict(schema_version=1, native_run='unit')))
+            outcome = dict(particle_id=7, category='unknown_native_terminal',
+                           terminal_splat=None, terminal_splat_availability='not_read')
+            result = dict(native_terminals=[terminal], census=dict(terminal_taxonomy=dict(
+                particle_outcomes=[outcome], classification_is_mutually_exclusive_and_exhaustive=True)))
+            actual = attach_terminal_evidence(result, [path], [batch])
+            outcome = actual['census']['terminal_taxonomy']['particle_outcomes'][0]
+            self.assertEqual(outcome['category'], 'native_splat_observed')
+            self.assertEqual(outcome['termination_reason'], 'native_splat_before_program_action')
+            self.assertEqual(outcome['native_splat_code'], -3)
+            self.assertEqual(outcome['native_splat_code_source'], 'retained_other_actions_pair')
+            self.assertIsNone(outcome['terminal_splat'])
+            self.assertEqual(outcome['terminal_splat_availability'], 'not_readable_at_terminate')
+            self.assertEqual(outcome['terminal_position_mm'], {'x': 1., 'y': 2., 'z': 3.})
+            self.assertEqual(outcome['terminal_velocity_mm_per_us'], {'x': 4., 'y': 5., 'z': 6.})
+            self.assertEqual(outcome['physical_cause'], 'not_resolved_from_splat_code_alone')
+            self.assertEqual(actual['census']['terminal_taxonomy']['category_counts'],
+                             {'native_splat_observed': 1})
+            self.assertTrue(actual['terminal_evidence']['classification_changed'])
+            reconciliation = actual['terminal_evidence']['particle_evidence'][0]['reconciliation']
+            self.assertEqual(reconciliation['physical_cause'], 'unknown')
+
     def test_batch_run_identity_raw_birth_and_partial_steps(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)/'native.log'
