@@ -107,9 +107,6 @@ assert environment.powershell_executable == root/'explicit-pwsh.exe'
 assert environment.workspace == root/'machine-study'
 assert not environment.workspace.exists()
 fixture = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))
-from msplatform.execution.file_lock import process_file_lock
-def shared_mutations():
-    return process_file_lock(pathlib.Path(fixture['shared_mutation_lock']), timeout_seconds=900)
 assert not root.is_relative_to(pathlib.Path(fixture['repo_root']))
 blocked_source_roots = [pathlib.Path(fixture['repo_root']).resolve(),
                        (root/'source-offline').resolve(), (root/'sdist-offline').resolve()]
@@ -141,7 +138,7 @@ static_field_probe = runpy.run_path(str(root / 'installed_static_field_probe.py'
 static_field_probe['run_static_field_probe'](fixture, root, blocked_source_roots, sys.argv[2], section_timing)
 # STATIC_FIELD_COMPARISON_INSTALLED_END
 # MR_MEASURED_SOURCE_INSTALLED_BEGIN
-with section_timing('mr_measured_source', sys.argv[2]), shared_mutations():
+with section_timing('mr_measured_source', sys.argv[2]):
     from msplatform.workflows.prepared_joint import source as mr_source_owner
     from msplatform.backends.simion.resources import native_resource_path as mr_resource_path
     from msplatform.contracts.particle_physics import kinetic_energy_ev as mr_kinetic_energy
@@ -1689,37 +1686,35 @@ try:
 finally: hidden_ip_resource.rename(missing_ip_resource)
 # Actual canonical manifest-CLI projection of explicit inert owner records.
 from msplatform.workflows.ion_processor import field_reference
-with shared_mutations():
-    ip_reference_child = root / ('ip-reference-child-' + sys.argv[2])
-    for directory in ('inputs', 'simion'):
-        (ip_reference_child/directory).mkdir(parents=True, exist_ok=True)
-    ip_reference_parent = pathlib.Path(ip['field_reference_parent'])
-    shutil.copyfile(ip_reference_parent/'simion/processor.gem', ip_reference_child/'simion/processor.gem')
-    ip_reference_model = copy.deepcopy(ip['field_reference_model'])
-    reference_result = field_reference.bind_native_field(ip_reference_child, ip_reference_model, ip_reference_parent)
-    assert reference_result['native_field_manifest'] == str(ip_reference_parent/'run_manifest.json')
-    reference_receipt = json.loads((ip_reference_child/'inputs/native_field_consumption.json').read_text())
-    assert len(reference_receipt['family_records']) == 18
-    assert reference_receipt['payload_validation'] == 'launcher_immutable_source_guard_required_before_native_use'
-    assert not list((ip_reference_child/'simion').glob('*.pa*'))
-    (ip_reference_child/'inputs/resolved_model.json').write_text(json.dumps(ip['field_reference_model']), encoding='utf-8')
-    (ip_reference_child/'run_config.json').write_text('{"inputs":{"existing":"keep"}}', encoding='utf-8')
-    field_reference.adopt_native_field(ip_reference_child, ip_reference_parent)
-    assert json.loads((ip_reference_child/'run_config.json').read_text())['inputs']['existing'] == 'keep'
+ip_reference_child = root / ('ip-reference-child-' + sys.argv[2])
+for directory in ('inputs', 'simion'):
+    (ip_reference_child/directory).mkdir(parents=True, exist_ok=True)
+ip_reference_parent = pathlib.Path(ip['field_reference_parent'])
+shutil.copyfile(ip_reference_parent/'simion/processor.gem', ip_reference_child/'simion/processor.gem')
+ip_reference_model = copy.deepcopy(ip['field_reference_model'])
+reference_result = field_reference.bind_native_field(ip_reference_child, ip_reference_model, ip_reference_parent)
+assert reference_result['native_field_manifest'] == str(ip_reference_parent/'run_manifest.json')
+reference_receipt = json.loads((ip_reference_child/'inputs/native_field_consumption.json').read_text())
+assert len(reference_receipt['family_records']) == 18
+assert reference_receipt['payload_validation'] == 'launcher_immutable_source_guard_required_before_native_use'
+assert not list((ip_reference_child/'simion').glob('*.pa*'))
+(ip_reference_child/'inputs/resolved_model.json').write_text(json.dumps(ip['field_reference_model']), encoding='utf-8')
+(ip_reference_child/'run_config.json').write_text('{"inputs":{"existing":"keep"}}', encoding='utf-8')
+field_reference.adopt_native_field(ip_reference_child, ip_reference_parent)
+assert json.loads((ip_reference_child/'run_config.json').read_text())['inputs']['existing'] == 'keep'
 # The actual installed canonical verifier also rejects an incomplete owner publication.
-with shared_mutations():
-    reference_journal = ip_reference_parent / '.run_terminal_publication.json'
-    reference_journal_before = reference_journal.read_bytes() if reference_journal.exists() else None
-    reference_journal.write_text('{}', encoding='utf-8')
-    try:
-        import subprocess
-        try: field_reference.bind_native_field(ip_reference_child, copy.deepcopy(ip['field_reference_model']), ip_reference_parent)
-        except ValueError as error:
-            assert str(error) == 'run terminal publication is incomplete; replay its journal'
-        else: raise AssertionError('incomplete owner publication was accepted')
-    finally:
-        if reference_journal_before is None: reference_journal.unlink()
-        else: reference_journal.write_bytes(reference_journal_before)
+reference_journal = ip_reference_parent / '.run_terminal_publication.json'
+reference_journal_before = reference_journal.read_bytes() if reference_journal.exists() else None
+reference_journal.write_text('{}', encoding='utf-8')
+try:
+    import subprocess
+    try: field_reference.bind_native_field(ip_reference_child, copy.deepcopy(ip['field_reference_model']), ip_reference_parent)
+    except ValueError as error:
+        assert str(error) == 'run terminal publication is incomplete; replay its journal'
+    else: raise AssertionError('incomplete owner publication was accepted')
+finally:
+    if reference_journal_before is None: reference_journal.unlink()
+    else: reference_journal.write_bytes(reference_journal_before)
 # Verify the actual typed verifier is installed and is the workflow's sole implementation.
 from msplatform.execution import manifest_verification
 assert field_reference.verify_run_manifest is manifest_verification.verify_run_manifest
@@ -1776,14 +1771,7 @@ guide = export_guide_contract(dict(ip['model'], native_projection=projection), i
 assert len(guide['rod_array']['rods']) == 8
 from msplatform.backends.comsol.paired_static_field import prepare as prepare_paired_field
 paired = fixture['paired_static']
-paired_actual = prepare_paired_field(root/'paired-request.json', root/'paired-installed')
-paired_expected = copy.deepcopy(paired['expected_plan'])
-for paired_key in ('gem_record', 'geometry_record'):
-    paired_record = paired_expected['native_geometry_compilation'][paired_key]
-    paired_record['path'] = str(root/'paired-installed'/pathlib.Path(paired_record['path']).name)
-paired_expected['sample_points']['path'] = str(root/'paired-installed'/pathlib.Path(
-    paired_expected['sample_points']['path']).name)
-assert paired_actual == paired_expected
+assert prepare_paired_field(root/'paired-request.json', root/'paired-installed') == paired['expected_plan']
 
 spec = fixture['source']
 states = generate_release_states(spec)
@@ -2848,35 +2836,33 @@ for case in fixture['prepared_joint_diagnostics']:
     output = root / ('installed-mr-' + case['kind'] + '-' + sys.argv[2])
     arguments = [sys.executable,'-I','-c',mr_child,json.dumps([str(value) for value in blocked_source_roots]),
         'analyze-joint','--preparation',case['preparation'],'--log',case['log'],'--output',str(output)]
-    with shared_mutations():
-        completed = subprocess.run(arguments,cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=60)
-        assert completed.returncode==0 and 'INSTALLED_MR_ANALYSIS=PASS' in completed.stdout, completed.stdout+completed.stderr
-        result=json.loads((output/'diagnostics_receipt.json').read_text(encoding='utf-8'))
-        assert result['counts']['mother_source']==3 and result['counts']['detected']==1
-        assert result['counts']['downstream_loss']==1 and result['counts']['upstream_not_transferred']==1
-        assert result['prism_statistics']['p2_fixed_plane']['outside_aperture_ids']==[7]
-        assert result['prism_statistics']['p2_fixed_plane']['missing_mother_particle_ids']==[9]
-        assert result['birth_clock_projection']['projected_particle_ids']==[7]
-        assert result['qualification']=='descriptive_diagnostics_only_no_whole_beam_acceptance_or_performance_pass'
-        assert len(list(output.glob('*.png')))==4 and len(list(output.glob('*.svg')))==4
-        with (output/'loss_acceptance.csv').open(newline='') as stream: rows=list(csv.DictReader(stream))
-        assert {int(row['particle_id']) for row in rows}=={1,7,9}
-        assert next(row for row in rows if row['particle_id']=='9')['source_position_x_mm']==''
-        assert all(hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()==digest for path,digest in case['input_sha256'].items())
-    with shared_mutations():
-        binding=pathlib.Path(case['binding']); backup=binding.with_suffix('.absent')
-        binding.rename(backup)
+    completed = subprocess.run(arguments,cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=60)
+    assert completed.returncode==0 and 'INSTALLED_MR_ANALYSIS=PASS' in completed.stdout, completed.stdout+completed.stderr
+    result=json.loads((output/'diagnostics_receipt.json').read_text(encoding='utf-8'))
+    assert result['counts']['mother_source']==3 and result['counts']['detected']==1
+    assert result['counts']['downstream_loss']==1 and result['counts']['upstream_not_transferred']==1
+    assert result['prism_statistics']['p2_fixed_plane']['outside_aperture_ids']==[7]
+    assert result['prism_statistics']['p2_fixed_plane']['missing_mother_particle_ids']==[9]
+    assert result['birth_clock_projection']['projected_particle_ids']==[7]
+    assert result['qualification']=='descriptive_diagnostics_only_no_whole_beam_acceptance_or_performance_pass'
+    assert len(list(output.glob('*.png')))==4 and len(list(output.glob('*.svg')))==4
+    with (output/'loss_acceptance.csv').open(newline='') as stream: rows=list(csv.DictReader(stream))
+    assert {int(row['particle_id']) for row in rows}=={1,7,9}
+    assert next(row for row in rows if row['particle_id']=='9')['source_position_x_mm']==''
+    assert all(hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()==digest for path,digest in case['input_sha256'].items())
+    binding=pathlib.Path(case['binding']); backup=binding.with_suffix('.absent')
+    binding.rename(backup)
+    try:
+        failed=subprocess.run(arguments[:-1]+[str(output)+'-missing-binding'],cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30)
+        assert failed.returncode!=0 and not pathlib.Path(str(output)+'-missing-binding').exists()
+    finally:backup.rename(binding)
+    if case['kind']=='declared_csv':
+        trajectory=pathlib.Path(case['trajectory']); backup=trajectory.with_suffix('.absent')
+        trajectory.rename(backup)
         try:
-            failed=subprocess.run(arguments[:-1]+[str(output)+'-missing-binding'],cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30)
-            assert failed.returncode!=0 and not pathlib.Path(str(output)+'-missing-binding').exists()
-        finally:backup.rename(binding)
-        if case['kind']=='declared_csv':
-            trajectory=pathlib.Path(case['trajectory']); backup=trajectory.with_suffix('.absent')
-            trajectory.rename(backup)
-            try:
-                failed=subprocess.run(arguments[:-1]+[str(output)+'-missing-trajectory'],cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30)
-                assert failed.returncode!=0 and not (pathlib.Path(str(output)+'-missing-trajectory')/'diagnostics_receipt.json').exists()
-            finally:backup.rename(trajectory)
+            failed=subprocess.run(arguments[:-1]+[str(output)+'-missing-trajectory'],cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30)
+            assert failed.returncode!=0 and not (pathlib.Path(str(output)+'-missing-trajectory')/'diagnostics_receipt.json').exists()
+        finally:backup.rename(trajectory)
 
 # Actual paired source generation and response readback from the installed owners.
 from msplatform.ion_release import paired_mass_scan as paired_scan
@@ -3772,8 +3758,7 @@ print('INSTALLED_COLLISION_OVERLAY=PASS fixture_stubbed_materialization actual_a
 """
 collision_args=[sys.executable,'-I','-B','-X','utf8','-c',collision_child,
     json.dumps([str(path) for path in blocked_source_roots]),str(collision_input)]
-with shared_mutations():
-    collision_result=subprocess.run(collision_args,cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+collision_result=subprocess.run(collision_args,cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
 assert collision_result.returncode==0 and 'INSTALLED_COLLISION_OVERLAY=PASS' in collision_result.stdout,collision_result.stdout+collision_result.stderr
 collision_held=collision_module.with_name(collision_module.name+'.missing')
 collision_bytes=collision_module.read_bytes()
@@ -3882,30 +3867,28 @@ def receipt_inventory():
         hashlib.sha256(path.read_bytes()).hexdigest())
         for path in receipt_fixture_root.rglob('*') if path.is_file() and path != receipt_output}
 
-with shared_mutations():
-    receipt_before=receipt_inventory()
-    assert not receipt_output.exists()
-    receipt_cli=subprocess.run(receipt_command,cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
-    assert receipt_cli.returncode==0 and 'ORTHOGONAL_ACCELERATOR_MRTOF_RUNTIME_RECEIPT=PASS' in receipt_cli.stdout,receipt_cli.stdout+receipt_cli.stderr
-    receipt_bytes=receipt_output.read_bytes()
-    assert json.loads(receipt_bytes)==receipt_fixture['expected']
-    receipt_repeat=subprocess.run(receipt_command,cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
-    assert receipt_repeat.returncode!=0 and 'already exists' in receipt_repeat.stdout+receipt_repeat.stderr
-    assert receipt_output.read_bytes()==receipt_bytes
-    receipt_output.unlink()
-with shared_mutations():
-    for receipt_label,receipt_path,receipt_reason in (
-        ('pa-result',pathlib.Path(receipt_fixture['pa_result_path']),'provider PA result'),
-        ('flight-manifest',receipt_fixture_root/'flight/run_manifest.json','selected provider flight manifest'),
-        ('flight-analysis',receipt_fixture_root/'flight/results/focus_analysis.json','selected provider flight analysis')):
-        receipt_original=receipt_path.read_bytes()
-        try:
-            receipt_path.write_bytes(receipt_original+b' ')
-            receipt_failed=subprocess.run(receipt_command,cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
-            assert receipt_failed.returncode!=0 and receipt_reason in receipt_failed.stdout+receipt_failed.stderr,(receipt_label,receipt_failed.stdout,receipt_failed.stderr)
-            assert not receipt_output.exists()
-        finally:
-            receipt_path.write_bytes(receipt_original)
+receipt_before=receipt_inventory()
+assert not receipt_output.exists()
+receipt_cli=subprocess.run(receipt_command,cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+assert receipt_cli.returncode==0 and 'ORTHOGONAL_ACCELERATOR_MRTOF_RUNTIME_RECEIPT=PASS' in receipt_cli.stdout,receipt_cli.stdout+receipt_cli.stderr
+receipt_bytes=receipt_output.read_bytes()
+assert json.loads(receipt_bytes)==receipt_fixture['expected']
+receipt_repeat=subprocess.run(receipt_command,cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+assert receipt_repeat.returncode!=0 and 'already exists' in receipt_repeat.stdout+receipt_repeat.stderr
+assert receipt_output.read_bytes()==receipt_bytes
+receipt_output.unlink()
+for receipt_label,receipt_path,receipt_reason in (
+    ('pa-result',pathlib.Path(receipt_fixture['pa_result_path']),'provider PA result'),
+    ('flight-manifest',receipt_fixture_root/'flight/run_manifest.json','selected provider flight manifest'),
+    ('flight-analysis',receipt_fixture_root/'flight/results/focus_analysis.json','selected provider flight analysis')):
+    receipt_original=receipt_path.read_bytes()
+    try:
+        receipt_path.write_bytes(receipt_original+b' ')
+        receipt_failed=subprocess.run(receipt_command,cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+        assert receipt_failed.returncode!=0 and receipt_reason in receipt_failed.stdout+receipt_failed.stderr,(receipt_label,receipt_failed.stdout,receipt_failed.stderr)
+        assert not receipt_output.exists()
+    finally:
+        receipt_path.write_bytes(receipt_original)
 receipt_held=receipt_module.with_name(receipt_module.name+'.missing')
 receipt_module_bytes=receipt_module.read_bytes()
 assert not receipt_held.exists()
@@ -3935,14 +3918,13 @@ runpy.run_module(module.__name__,run_name='__main__')
 receipt_pas=[str(path.resolve()) for directory in (pathlib.Path(receipt_fixture['generation']),receipt_fixture_root/'runtime')
     for path in directory.rglob('*') if path.is_file() and '.pa' in path.name.lower()]
 assert receipt_pas
-with shared_mutations():
-    receipt_guarded=subprocess.run([sys.executable,'-I','-B','-X','utf8','-c',receipt_guard,
-        json.dumps([str(path) for path in blocked_source_roots]),json.dumps(receipt_pas),*receipt_args],
-        cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
-    assert receipt_guarded.returncode==0 and 'ORTHOGONAL_ACCELERATOR_MRTOF_RUNTIME_RECEIPT=PASS' in receipt_guarded.stdout,receipt_guarded.stdout+receipt_guarded.stderr
-    assert receipt_output.read_bytes()==receipt_bytes
-    receipt_output.unlink()
-    assert receipt_inventory()==receipt_before
+receipt_guarded=subprocess.run([sys.executable,'-I','-B','-X','utf8','-c',receipt_guard,
+    json.dumps([str(path) for path in blocked_source_roots]),json.dumps(receipt_pas),*receipt_args],
+    cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+assert receipt_guarded.returncode==0 and 'ORTHOGONAL_ACCELERATOR_MRTOF_RUNTIME_RECEIPT=PASS' in receipt_guarded.stdout,receipt_guarded.stdout+receipt_guarded.stderr
+assert receipt_output.read_bytes()==receipt_bytes
+receipt_output.unlink()
+assert receipt_inventory()==receipt_before
 missing_rejected.append('oa_focus_mr_runtime_receipt')
 print('INSTALLED_OA_MR_RUNTIME_RECEIPT=PASS')
 
@@ -4279,36 +4261,34 @@ for rfconv_solver in ('SIMION','COMSOL'):
         '--contract',rfconv_data['contract'],'--comsol-numerics',rfconv_data['comsol_numerics'],
         '--simion-numerics',rfconv_data['simion_numerics'],'--particle-count-policy',rfconv_data['policy'],
         '--output',str(rfconv_out),'--census-output',str(rfconv_census)]
-    with shared_mutations():
-        rfconv_run=subprocess.run([sys.executable,'-I','-B','-c',rfconv_child],cwd=rfconv_run_root,
-            input=json.dumps(dict(args=rfconv_args,blocked=[str(p) for p in blocked_source_roots],manifest=rfconv_manifests[0],solver=rfconv_solver,policy=rfconv_data['policy'])),
-            capture_output=True,text=True,encoding='utf-8',timeout=60,check=False)
-        assert rfconv_run.returncode==0,rfconv_run.stdout+rfconv_run.stderr
-        rfconv_actual=json.loads(rfconv_out.read_text(encoding='utf-8'));rfconv_expected=copy.deepcopy(rfconv_probe['oracle']['results'][rfconv_solver]['json'])
-        for rfconv_idx,rfconv_key in enumerate(('baseline_manifest_sha256','refined_manifest_sha256')):
-            rfconv_hash=hashlib.sha256(pathlib.Path(rfconv_manifests[rfconv_idx]).read_bytes()).hexdigest().upper()
-            assert rfconv_actual['inputs'][rfconv_key]==rfconv_hash
-            rfconv_expected['inputs'][rfconv_key]=rfconv_hash
-        rfconv_expected['source_identity']['bundle_metadata_sha256']=rfconv_actual['source_identity']['bundle_metadata_sha256']
-        assert rfconv_actual==rfconv_expected
-        assert rfconv_census.read_bytes()==bytes.fromhex(rfconv_probe['oracle']['results'][rfconv_solver]['census_hex'])
-with shared_mutations():
-    rfconv_manifest=json.loads(pathlib.Path(rfconv_manifests[0]).read_text(encoding='utf-8-sig'))
-    rfconv_consumed=pathlib.Path(rfconv_manifest['inputs']['particle_table']['path']);rfconv_bytes=rfconv_consumed.read_bytes()
-    rfconv_alias_records={name:record for name,record in rfconv_manifest['inputs'].items()
-                          if pathlib.Path(record['path']).resolve()==rfconv_consumed.resolve()}
-    assert rfconv_alias_records and all(int(record['bytes'])==len(rfconv_bytes) for record in rfconv_alias_records.values())
-    rfconv_expected_integrity_errors={f"ValueError: manifest input {name} byte count changed: {rfconv_consumed.resolve()}"
-                                      for name in rfconv_alias_records}
-    try:
-        rfconv_consumed.write_bytes(rfconv_bytes+b'\n')
-        rfconv_bad=subprocess.run([sys.executable,'-I','-B','-c',rfconv_child],cwd=rfconv_run_root,
-            input=json.dumps(dict(args=rfconv_args,blocked=[str(p) for p in blocked_source_roots],manifest=rfconv_manifests[0],solver=rfconv_solver,policy=rfconv_data['policy'])),
-            capture_output=True,text=True,encoding='utf-8',timeout=60,check=False)
-        assert rfconv_bad.returncode!=0,rfconv_bad.stdout+rfconv_bad.stderr
-        assert rfconv_bad.stderr.rstrip().splitlines()[-1] in rfconv_expected_integrity_errors,rfconv_bad.stdout+rfconv_bad.stderr
-    finally:rfconv_consumed.write_bytes(rfconv_bytes)
-    assert rfconv_consumed.read_bytes()==rfconv_bytes
+    rfconv_run=subprocess.run([sys.executable,'-I','-B','-c',rfconv_child],cwd=rfconv_run_root,
+        input=json.dumps(dict(args=rfconv_args,blocked=[str(p) for p in blocked_source_roots],manifest=rfconv_manifests[0],solver=rfconv_solver,policy=rfconv_data['policy'])),
+        capture_output=True,text=True,encoding='utf-8',timeout=60,check=False)
+    assert rfconv_run.returncode==0,rfconv_run.stdout+rfconv_run.stderr
+    rfconv_actual=json.loads(rfconv_out.read_text(encoding='utf-8'));rfconv_expected=copy.deepcopy(rfconv_probe['oracle']['results'][rfconv_solver]['json'])
+    for rfconv_idx,rfconv_key in enumerate(('baseline_manifest_sha256','refined_manifest_sha256')):
+        rfconv_hash=hashlib.sha256(pathlib.Path(rfconv_manifests[rfconv_idx]).read_bytes()).hexdigest().upper()
+        assert rfconv_actual['inputs'][rfconv_key]==rfconv_hash
+        rfconv_expected['inputs'][rfconv_key]=rfconv_hash
+    rfconv_expected['source_identity']['bundle_metadata_sha256']=rfconv_actual['source_identity']['bundle_metadata_sha256']
+    assert rfconv_actual==rfconv_expected
+    assert rfconv_census.read_bytes()==bytes.fromhex(rfconv_probe['oracle']['results'][rfconv_solver]['census_hex'])
+rfconv_manifest=json.loads(pathlib.Path(rfconv_manifests[0]).read_text(encoding='utf-8-sig'))
+rfconv_consumed=pathlib.Path(rfconv_manifest['inputs']['particle_table']['path']);rfconv_bytes=rfconv_consumed.read_bytes()
+rfconv_alias_records={name:record for name,record in rfconv_manifest['inputs'].items()
+                      if pathlib.Path(record['path']).resolve()==rfconv_consumed.resolve()}
+assert rfconv_alias_records and all(int(record['bytes'])==len(rfconv_bytes) for record in rfconv_alias_records.values())
+rfconv_expected_integrity_errors={f"ValueError: manifest input {name} byte count changed: {rfconv_consumed.resolve()}"
+                                  for name in rfconv_alias_records}
+try:
+    rfconv_consumed.write_bytes(rfconv_bytes+b'\n')
+    rfconv_bad=subprocess.run([sys.executable,'-I','-B','-c',rfconv_child],cwd=rfconv_run_root,
+        input=json.dumps(dict(args=rfconv_args,blocked=[str(p) for p in blocked_source_roots],manifest=rfconv_manifests[0],solver=rfconv_solver,policy=rfconv_data['policy'])),
+        capture_output=True,text=True,encoding='utf-8',timeout=60,check=False)
+    assert rfconv_bad.returncode!=0,rfconv_bad.stdout+rfconv_bad.stderr
+    assert rfconv_bad.stderr.rstrip().splitlines()[-1] in rfconv_expected_integrity_errors,rfconv_bad.stdout+rfconv_bad.stderr
+finally:rfconv_consumed.write_bytes(rfconv_bytes)
+assert rfconv_consumed.read_bytes()==rfconv_bytes
 rfconv_module=pathlib.Path(sysconfig.get_path('purelib'))/'msplatform/workflows/rf_convergence_comparison.py'
 rfconv_module_bytes=rfconv_module.read_bytes();rfconv_held=rfconv_module.with_suffix('.rfconv-held')
 assert not rfconv_held.exists();rfconv_module.rename(rfconv_held)
@@ -7704,8 +7684,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               exported_axis_transport=self.exported_axis_transport_probe_fixture(),
                                               mr_cad_parts=self.mr_cad_parts_probe_fixture(),
                                               tof_kernel=self.tof_kernel_probe_fixture(),
-                                              additional_blocked_source_roots=json.loads(environment.get('MASS_SPECTROMETRY_INSTALLED_CORE_BLOCKED_SOURCE_ROOTS', '[]')) + [str(root/'source-offline'), str(root/'sdist-offline')],
-                                              shared_mutation_lock=str(root/'installed-shared-mutations.lock'),
+                                              additional_blocked_source_roots=json.loads(environment.get('MASS_SPECTROMETRY_INSTALLED_CORE_BLOCKED_SOURCE_ROOTS', '[]')),
                                               scalar_adapter=scalar_adapter,
                                               mr_prism_phase=self.prism_phase_probe_fixture(),
                                               mr_stripe=self.stripe_probe_fixture(),
@@ -7802,44 +7781,31 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             # the isolated probe also forbids reads from these and the live checkout.
             source.rename(root/'source-offline')
             (root/'sdist').rename(root/'sdist-offline')
-            def evaluate_installation_arm(index, candidate, consumer):
-                started = time.perf_counter()
-                work = root / f'installed-arm-{index}'
-                work.mkdir()
-                for helper in root.iterdir():
-                    if helper.is_file():
-                        shutil.copyfile(helper, work / helper.name)
+            for index, (candidate, consumer) in enumerate(zip((wheel, rebuilt_wheel), consumers, strict=True)):
                 consumer_python = str(consumer / python_name)
                 self.run_command([consumer_python, '-m', 'pip', 'install', '--no-index', '--find-links', str(wheelhouse),
                                   '-c', str(REPO_ROOT / 'requirements-lock.txt'), str(candidate)],
-                                 cwd=work, environment=environment, timeout=300)
+                                 cwd=root, environment=environment, timeout=300)
                 probe_environment = dict(environment, PATH=str(Path(consumer_python).parent))
                 # SOFTWARE client only: prior ~61 s client + original ~110 s negative
                 # parent + real three-stage owner/executor and shared-admission margin.
                 # This 900 s harness bound does not change the stage's 120 s warning.
-                result = self.run_command([consumer_python, '-I', str(work / probe_path.name), str(fixture), str(index)],
-                                          cwd=work, environment=probe_environment, timeout=900)
+                result = self.run_command([consumer_python, '-I', str(probe_path), str(fixture), str(index)],
+                                          cwd=root, environment=probe_environment, timeout=900)
                 self.assertIn('INSTALLED_RF_IP_CONTINUOUS_OWNER=PASS native=INERT ids=7,91', result)
                 self.assertIn('INSTALLED_IP_MR_PUBLIC_ADMISSION=PASS basis=17 priority=5 negatives=3 owner=planning_only',result)
                 self.assertIn('INSTALLED_GENERIC_REGISTERED_GEOMETRY=PASS instances=2 renamed=1 capability_rejected=1 pure_compile=1',result)
                 self.assertIn('INSTALLED_GENERIC_STATIC_PLANNING=PASS groups=2 births=2 outside_refused=1 native=none',result)
                 self.assertIn('INSTALLED_GENERIC_DYNAMIC=PASS model=rf_pulse basis=compiled lua=api_stub missing_resource=refused restored=1 native=none', result)
-                observation = self.run_command([consumer_python, '-I', '-B', str(work / 'installed_observation_probe.py'),
-                    str(work / 'installed_observation_fixture.json'),
-                    json.dumps([str(REPO_ROOT), str(root / 'source-offline'), str(root / 'sdist-offline')])],
-                    cwd=work, environment=probe_environment, timeout=120)
-                self.assertIn('INSTALLED_PUBLIC_OBSERVATION=PASS valid=1 default=1 invalid=4 eligible_units=1 missing_module=1 collection=1 missing_parser=1 static_render=1 static_collection=1', observation)
-                self.assertEqual((work / 'installed_observation_fixture.json').read_bytes(), observation_fixture_bytes)
-                return index, result, time.perf_counter() - started
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                arm_futures = [executor.submit(evaluate_installation_arm, index, candidate, consumer)
-                    for index, (candidate, consumer) in enumerate(zip((wheel, rebuilt_wheel), consumers, strict=True))]
-                arm_results = [future.result() for future in arm_futures]
-            for index, result, elapsed in arm_results:
-                print(f'INSTALLED_ARM_WALL_SECONDS={elapsed:.6f} INDEX={index}')
                 print('INSTALLED_CORE_EVIDENCE=' + result.strip())
-            self.assertTrue(all(path.read_bytes() == data for path, data in tof_spectrum_input_bytes.items()))
-            self.assertTrue(all(path.read_bytes() == data for path, data in mr_measured_inputs.items()))
+                observation = self.run_command([consumer_python, '-I', '-B', str(root / 'installed_observation_probe.py'),
+                    str(root / 'installed_observation_fixture.json'),
+                    json.dumps([str(REPO_ROOT), str(root / 'source-offline'), str(root / 'sdist-offline')])],
+                    cwd=root, environment=probe_environment, timeout=120)
+                self.assertIn('INSTALLED_PUBLIC_OBSERVATION=PASS valid=1 default=1 invalid=4 eligible_units=1 missing_module=1 collection=1 missing_parser=1 static_render=1 static_collection=1', observation)
+                self.assertEqual((root / 'installed_observation_fixture.json').read_bytes(), observation_fixture_bytes)
+                self.assertTrue(all(path.read_bytes() == data for path, data in tof_spectrum_input_bytes.items()))
+                self.assertTrue(all(path.read_bytes() == data for path, data in mr_measured_inputs.items()))
             if retained:
                 files = []
                 for label, artifact in (('wheel', wheel), ('sdist', sdist), ('sdist-rebuilt-wheel', rebuilt_wheel)):

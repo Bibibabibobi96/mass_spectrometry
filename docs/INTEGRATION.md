@@ -27,8 +27,13 @@ unknown physical causes are not relabeled from contact evidence. The same SHA's
 ordinary Changed run 45703265952 passed 32/32 selected records in 513.591 seconds,
 including both installed arms in 483.821 seconds. Local serial-to-parallel
 installed acceptance changed from 1348.068 to 901.978 seconds without reducing
-negative coverage. Wide Changed and complete Repository remain pending; this is
-functional and scoped performance evidence, not scientific or P4 qualification.
+negative coverage. Wide Changed 45703366196 nevertheless timed out arm 0 at its
+unchanged 900-second bound while three other machine-contract partitions were
+active; the outer stages, two arms and nested owner pools had no common CPU
+exclusion. The parallel-arm experiment is therefore rejected and its successor
+returns to sequential arms without relaxing any timeout. Complete acceptance and
+the original performance target remain open; this is functional evidence, not
+scientific or P4 qualification.
 
 The Assembly dependency freezer and paired frontend process support now have their
 sole PowerShell owners under `msplatform.execution/resources` and

@@ -745,12 +745,7 @@ ambient package for the configured scheduler. The controlled closed-stdin and
 bounded live-child fixtures retain the original IOException, exit code and stderr.
 Ordinary wheel/sdist acceptance keeps its isolated `python -I`, source-offline
 and installed-origin checks; this development binding does not qualify an
-installed package. The two installed consumers may run concurrently in separate
-workspaces while sharing read-only fixtures and the same host-resource ledger.
-The small fixture groups that mutate and restore shared inputs use the existing
-OS-owned process lock for both their readers and writers; final shared-byte
-checks run only after both consumers have finished. This changes test scheduling,
-not package inputs, resource limits or scientific assertions.
+installed package.
 
 公共 workflow 的纯软件 PowerShell 夹具统一使用已有 ACK／Job 归属入口：启动脚本取得归属后才执行，
 90 秒测试硬超时后清理本夹具子树并有限排空输出，保留原超时、原始输出与次要诊断错误。
