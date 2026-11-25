@@ -37,6 +37,8 @@ replace the final two-arm installation gate or native/scientific acceptance.
 
 The no-native postprocess author fixture retains all ten independently named PA0 placeholder slots but shares their verified identical bytes within each isolated author directory. This removes about 148 MiB of physical duplication per author without changing capacity thresholds, source identities or the production per-slot freeze. Three former full-Repository failure cases (normal failed export, public postprocess/finalization, and failed cold export followed by analysis-only recovery) passed in 178.083 seconds; a storage probe found ten slots, one physical file identity and an unchanged source SHA. The earlier CI minimum-free-capacity failures remain recorded; same-SHA full-gate and native acceptance are still pending.
 
+Candidate freezing now hashes the bytes actually read, checks the source once for drift and retains destination verification; phase AST projection still verifies the complete closure on every independent operation but decodes only its named Python consumer. Duplicate/unknown text selections fail closed, and unrelated tampering is still rejected. Three measured affected cases passed with wall times about 97.9→92.0, 91.2→90.8 and 81.2→80.7 seconds. This modest local I/O improvement is not a complete-gate speedup claim or a reason to remove the remaining lifecycle checks.
+
 The five current OA candidate modules now resolve installed science, native-text
 and workflow resources from their actual `msplatform` package root. Radial
 prepared calls use that package's import parent and selected interpreter, not a

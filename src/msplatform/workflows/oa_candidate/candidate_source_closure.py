@@ -212,8 +212,8 @@ def freeze_candidate_source_closure(
         selected[source_id] = analysis_resources.get(source_id) or _source_path(source_id, science_root)
     records: list[dict[str, Any]] = []
     for source_id, source in selected.items():
-        source_digest = sha256(source)
         payload = source.read_bytes()
+        source_digest = hashlib.sha256(payload).hexdigest().upper()
         if sha256(source) != source_digest:
             raise ValueError(f"candidate source changed while frozen: {source_id}")
 
@@ -224,7 +224,7 @@ def freeze_candidate_source_closure(
             {
                 "source_id": source_id,
                 "source_sha256": source_digest,
-                "sha256": hashlib.sha256(payload).hexdigest().upper(),
+                "sha256": source_digest,
                 "bytes": target.stat().st_size,
                 "transformations": [],
             }
@@ -518,7 +518,7 @@ def candidate_comsol_source_phases(closure: dict[str, Any]) -> dict[str, Any]:
                   "src/msplatform/backends/comsol/matlab/load_oatof_contract.m", "src/msplatform/backends/comsol/matlab/oatof_cpt_solver_policy.m")
     import ast
     identifier = "src/msplatform/workflows/oa_candidate/candidate_comsol_stage.py"
-    tree = ast.parse(candidate_frozen_source_text(closure)[identifier])
+    tree = ast.parse(candidate_frozen_source_text(closure, (identifier,))[identifier])
     return {"native": {"sources": records(native_names),
                         "implementation": project_comsol_native_implementation(closure),
                         "dispatch": _comsol_dispatch_from_tree(tree,"native"),
@@ -537,7 +537,7 @@ def project_comsol_dispatch(closure: dict[str, Any], phase: str) -> str:
     if phase not in {"native", "sync"}:
         raise ValueError("COMSOL dispatch needs native or sync")
     identifier = "src/msplatform/workflows/oa_candidate/candidate_comsol_stage.py"
-    source = candidate_frozen_source_text(closure)[identifier]
+    source = candidate_frozen_source_text(closure, (identifier,))[identifier]
     return _comsol_dispatch_from_tree(ast.parse(source), phase)
 
 
@@ -567,9 +567,20 @@ def project_comsol_build_invocation(closure: dict[str, Any]) -> str:
     return marker+source.split(marker,1)[1]
 
 
-def candidate_frozen_source_text(closure: dict[str, Any]) -> dict[str, str]:
-    """Read only the already verified small text members of this exact closure."""
+def candidate_frozen_source_text(closure: dict[str, Any],
+                                 source_ids: tuple[str, ...] | None = None) -> dict[str, str]:
+    """Verify the complete closure, then decode all or selected text members."""
     verify_candidate_source_closure(closure)
+    records = closure['sources']
+    if source_ids is not None:
+        if (not isinstance(source_ids, tuple)
+                or any(not isinstance(value, str) or not value for value in source_ids)
+                or len(set(source_ids)) != len(source_ids)):
+            raise ValueError('candidate text source IDs must be a distinct tuple')
+        missing = set(source_ids) - {record['source_id'] for record in records}
+        if missing:
+            raise ValueError(f'candidate text sources are not frozen: {sorted(missing)}')
+        records = [record for record in records if record['source_id'] in source_ids]
     root = Path(closure['code_root'])
     return {record['source_id']:(root/record['source_id']).read_bytes().decode('utf-8')
-            for record in closure['sources'] if Path(record['source_id']).suffix in {'.py','.m','.ps1','.txt'}}
+            for record in records if Path(record['source_id']).suffix in {'.py','.m','.ps1','.txt'}}

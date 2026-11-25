@@ -867,6 +867,14 @@ print('FROZEN_ION_CONSUMER_PASS')
                 second = source.candidate_comsol_source_phases(closure)
                 self.assertEqual(read.call_count, 2)
             self.assertEqual(first, second)
+            identifier = "src/msplatform/workflows/oa_candidate/candidate_comsol_stage.py"
+            self.assertEqual(read.call_args.args, (closure, (identifier,)))
+            selected = source.candidate_frozen_source_text(closure, (identifier,))
+            self.assertEqual(set(selected), {identifier})
+            with self.assertRaisesRegex(ValueError, "distinct tuple"):
+                source.candidate_frozen_source_text(closure, (identifier, identifier))
+            with self.assertRaisesRegex(ValueError, "not frozen"):
+                source.candidate_frozen_source_text(closure, ("src/msplatform/absent.py",))
             for phase in ("native", "sync"):
                 self.assertEqual(first[phase]["dispatch"], expected[phase])
             unrelated = Path(closure["code_root"])/"src/msplatform/__init__.py"
