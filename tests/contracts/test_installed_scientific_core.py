@@ -7298,6 +7298,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
     def test_wheel_and_sdist_install_and_compute_outside_worktree(self) -> None:
         self.assertEqual(sys.version_info[:2], (3, 11), 'Python 3.11 is required')
         config = tomllib.loads((REPO_ROOT / 'pyproject.toml').read_text(encoding='utf-8'))
+        scalar_adapter = self.scalar_adapter_probe_fixture()
         retained = os.environ.get('MASS_SPECTROMETRY_INSTALLED_CORE_ARTIFACT_DIR')
         if retained:
             retained = Path(retained)
@@ -7684,7 +7685,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                               mr_cad_parts=self.mr_cad_parts_probe_fixture(),
                                               tof_kernel=self.tof_kernel_probe_fixture(),
                                               additional_blocked_source_roots=json.loads(environment.get('MASS_SPECTROMETRY_INSTALLED_CORE_BLOCKED_SOURCE_ROOTS', '[]')),
-                                              scalar_adapter=self.scalar_adapter_probe_fixture(),
+                                              scalar_adapter=scalar_adapter,
                                               mr_prism_phase=self.prism_phase_probe_fixture(),
                                               mr_stripe=self.stripe_probe_fixture(),
                                               mr_operating_pa=self.operating_pa_probe_fixture(),
