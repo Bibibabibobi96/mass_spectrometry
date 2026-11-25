@@ -184,8 +184,10 @@ try{
         code = r"""param($Support,$Root,$Python)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $ast=[Management.Automation.Language.Parser]::ParseFile($Support,[ref]$null,[ref]$null)
-$node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Protect-MrtofContinuationEvidence'},$true)
-Invoke-Expression $node.Extent.Text
+foreach($name in @('Get-MrtofContinuationProtectionProjection','Protect-MrtofContinuationEvidence')){
+ $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$name},$true)
+ Invoke-Expression $node.Extent.Text
+}
 $one=Join-Path $Root one;$two=Join-Path $Root two
 New-Item -ItemType Directory -Path $one,$two|Out-Null
 $files=@();$manifests=@{}

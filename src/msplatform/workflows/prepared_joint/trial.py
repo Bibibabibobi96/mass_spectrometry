@@ -95,6 +95,46 @@ def _continuation_waveforms(predecessor_manifest: Path) -> tuple[Path, dict[str,
                                               "voltage_waveforms": waveform}
 
 
+def _protected_run_directories(prepared_run: Path, joint: dict[str, Any],
+                               binding: dict[str, Any]) -> list[str]:
+    paths = [str(prepared_run.resolve()), joint["field_run"], joint["source_run"]]
+    paths += sorted({str(Path(item["manifest"]).parent)
+                     for item in [binding, *binding["refinement_windows"], *binding["instances"]]})
+    return paths
+
+
+def prepare_protection_projection(prepared_run: Path, *,
+                                  field_binding_path: Path | None = None) -> dict[str, Any]:
+    """Project the exact source-run authorities without creating run outputs."""
+    prepared_run = prepared_run.resolve()
+    prepared_manifest = _read(prepared_run / "run_manifest.json")
+    receipt_path = verified_preparation_reference(
+        prepared_run, "results/accelerator_interface_preparation.json", manifest=prepared_manifest,
+    )
+    parent = _read(receipt_path)
+    if (parent.get("selected_provider") != ION_PROCESSOR
+            or parent.get("status") != "workbench_ready_no_joint_flight"):
+        raise ValueError("A completed measured joint workbench preparation is required")
+    joint = parent["joint_workbench_binding"]
+    if not joint["field_assembly_verified"] or not joint["measured_source_matches_workpoint"]:
+        raise ValueError("Joint source/field identity is unverified")
+    binding_path = verified_preparation_reference(
+        prepared_run, "results/joint_workbench/static_field_binding.json", manifest=prepared_manifest,
+    )
+    binding = load_binding(binding_path)
+    if binding.get("accelerator_provider") != ION_PROCESSOR:
+        raise ValueError("IP replacement field identity required")
+    if field_binding_path is not None:
+        candidate = load_binding(field_binding_path)
+        validate_candidate_binding(candidate, binding)
+        binding = candidate
+    return dict(
+        schema_version=1,
+        role="prepared_joint_protection_projection",
+        run_directories=_protected_run_directories(prepared_run, joint, binding),
+    )
+
+
 def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
                   reference_flight_run: Path | None = None, *,
                   field_binding_path: Path | None = None, source_mode: str = "measured_population",
@@ -290,7 +330,8 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
                   parent_preparation=file_record(receipt_path), field_binding=file_record(binding_path),
                   parent_composition_plan=assembly_records["composition_plan"],
                   assembly_request=assembly_records["accelerator_request"], assembly_scope=plan["scope"],
-                  guard_paths=sorted(set(guard_paths)), protected_paths=[str(prepared_run.resolve()), joint["field_run"], joint["source_run"]],
+                  guard_paths=sorted(set(guard_paths)),
+                  protected_paths=_protected_run_directories(prepared_run, joint, binding),
                   numerics=numerics, frozen_runtime_directory=str(frozen_runtime.resolve()), launcher=str(effective_launcher.resolve()),
                   native_path_projection=projection, source_mode=source_mode, mother_source_directory=str(mother_source_copy.resolve()),
                   candidate_iob_rebuild=field_binding_path is not None,
@@ -313,8 +354,6 @@ def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
         field_loading_policy_id=(f"native_static_pa__{topology}_read_only_collision_instances"
                                  + ("__memory_mirror_x_crop" if memory_crops else "")))
     result["trajectory_equivalence_reference"] = None
-    result["protected_paths"] += sorted({str(Path(item["manifest"]).parent)
-                                           for item in [binding, *binding["refinement_windows"], *binding["instances"]]})
     if reference_flight_run is not None:
         result["trajectory_equivalence_reference"] = freeze_equivalence_reference(
             reference_flight_run, result, inputs)
@@ -644,6 +683,9 @@ def main() -> None:
     prepare.add_argument("--field-binding", type=Path)
     prepare.add_argument("--source-mode", choices=("measured_population", "centroid_probe"), default="measured_population")
     prepare.add_argument("--continuation-predecessor-manifest", type=Path)
+    projection = sub.add_parser("protection-projection")
+    projection.add_argument("--prepared-run", type=Path, required=True)
+    projection.add_argument("--field-binding", type=Path)
     analyze = sub.add_parser("analyze-probe")
     analyze.add_argument("--preparation", type=Path, required=True)
     analyze.add_argument("--log", type=Path, required=True)
@@ -659,6 +701,10 @@ def main() -> None:
         prepare_trial(args.prepared_run,args.contract,args.run_directory,args.equivalence_reference_run,
                       field_binding_path=args.field_binding,source_mode=args.source_mode,
                       continuation_predecessor_manifest=args.continuation_predecessor_manifest)
+    elif args.command == "protection-projection":
+        print(json.dumps(prepare_protection_projection(
+            args.prepared_run, field_binding_path=args.field_binding,
+        )))
     else:
         analyze_centroid_probe(args.preparation,args.log,args.output,scientific_event_receipt=args.scientific_event_receipt)
 

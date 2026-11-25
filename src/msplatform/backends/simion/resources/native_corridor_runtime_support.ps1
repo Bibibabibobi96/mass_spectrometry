@@ -3,10 +3,9 @@ $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'short_pa_path_support.ps1')
 . (Join-Path $PSScriptRoot 'native_fast_adjust_runtime_support.ps1')
 
-function Protect-MrtofContinuationEvidence {
-  param([string]$Parent,$Session,[string]$Python,[string]$RepoRoot,$Guards)
-  function Get-MrtofContinuationProjection {
-    $code=@'
+function Get-MrtofContinuationProtectionProjection {
+  param([string]$Parent,[string]$Python,[string]$RepoRoot)
+  $code=@'
 import importlib.machinery,importlib.util,runpy,sys
 from pathlib import Path
 root=Path(sys.argv[1]).resolve()
@@ -35,16 +34,23 @@ finally:
                     raise RuntimeError(detail)
                 failure.add_note(detail)
 '@
-    Push-Location -LiteralPath $Parent
-    try {
-      $PSNativeCommandUseErrorActionPreference=$false
-      $output=& $Python -I -B -X utf8 -c $code $RepoRoot $Parent
-      $exitCode=$LASTEXITCODE
-      if($exitCode-ne0){throw "Continuation protection projection failed with exit code $exitCode."}
-      return (($output -join "`n")|ConvertFrom-Json -AsHashtable -Depth 100)
-    } finally {Pop-Location}
+  Push-Location -LiteralPath $Parent
+  try {
+    $PSNativeCommandUseErrorActionPreference=$false
+    $output=& $Python -I -B -X utf8 -c $code $RepoRoot $Parent
+    $exitCode=$LASTEXITCODE
+    if($exitCode-ne0){throw "Continuation protection projection failed with exit code $exitCode."}
+    return (($output -join "`n")|ConvertFrom-Json -AsHashtable -Depth 100)
+  } finally {Pop-Location}
+}
+
+function Protect-MrtofContinuationEvidence {
+  param([string]$Parent,$Session,[string]$Python,[string]$RepoRoot,$Guards,[hashtable]$ExpectedProjection=$null)
+  $before=Get-MrtofContinuationProtectionProjection -Parent $Parent -Python $Python -RepoRoot $RepoRoot
+  if($null-ne$ExpectedProjection-and
+     (ConvertTo-Json -InputObject $before -Depth 100 -Compress)-cne(ConvertTo-Json -InputObject $ExpectedProjection -Depth 100 -Compress)){
+    throw 'Continuation protection projection differs from initial admission.'
   }
-  $before=Get-MrtofContinuationProjection
   $sourceReferences=@()
   foreach($manifestPath in @($before.manifests.Keys|Sort-Object)){
     $authority=Split-Path -Parent ([string]$manifestPath)
@@ -61,7 +67,7 @@ finally:
   foreach($path in @($before.files|Select-Object -Unique)){
     $Guards.Add([IO.File]::Open([string]$path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read))
   }
-  $after=Get-MrtofContinuationProjection
+  $after=Get-MrtofContinuationProtectionProjection -Parent $Parent -Python $Python -RepoRoot $RepoRoot
   if((ConvertTo-Json -InputObject $before -Depth 100 -Compress)-cne(ConvertTo-Json -InputObject $after -Depth 100 -Compress)){
     throw 'Continuation protection projection changed after admission.'
   }

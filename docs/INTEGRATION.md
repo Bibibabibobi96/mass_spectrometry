@@ -2551,8 +2551,10 @@ evidence. No OA is synthesized to resolve this scope distinction.
 显式前驱恢复以固定完整批为单位，仅执行缺失批，来源和借用控制文件继续绑定原owner。
 全批复用不申请或释放不存在的SIMION重型租约；批次执行器异常且写入者未确认停止时保留保护，
 不做终态发布或retention。该项为软件行为回归，不代表新原生求解或物理资格。
-缺来源台账的bootstrap续期现按既有目录递归保护语义识别已覆盖的后代manifest，不再把其误判为扩约或重复登记；
-新sibling、祖先目录、越界路径和承诺变化仍失败关闭。真实容量函数正反例及两个完整容量模块125项通过，
+公开Prepared入口在首次容量准入前即由现有Python owner投影并登记准备、场、实测源及完整continuation祖先run，
+冻结实现后再核对同一投影，实际trial新增来源范围会被拒绝；随后才增加文件写锁，不会在缺来源台账时事后扩约。
+bootstrap续期也按既有目录递归语义识别已覆盖的后代manifest，
+不再误判扩约或重复登记；新sibling、祖先目录、越界路径和承诺变化仍失败关闭。真实容量函数正反例及两个完整容量模块125项通过，
 另有1项既有条件跳过；这只证明软件保护合同，不代替下方公开链的原生或恢复验收。
 
 [oa_mr入口](../src/msplatform/workflows/resources/oa_mr.ps1)要求冻结`-CompositionPlanPath`及可选`-LocalScopePath`；

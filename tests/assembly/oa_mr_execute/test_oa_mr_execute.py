@@ -157,8 +157,10 @@ $ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]
 if($errors.Count){throw ($errors|Out-String)}
 $runtime=Join-Path $Repo 'src/msplatform/backends/simion/resources/native_corridor_runtime_support.ps1'
 $ast=[Management.Automation.Language.Parser]::ParseFile($runtime,[ref]$null,[ref]$errors)
-$node=$ast.Find({param($a)$a-is[Management.Automation.Language.FunctionDefinitionAst]-and$a.Name-eq'Protect-MrtofContinuationEvidence'},$true)
-Invoke-Expression $node.Extent.Text
+foreach($name in @('Get-MrtofContinuationProtectionProjection','Protect-MrtofContinuationEvidence')){
+ $node=$ast.Find({param($a)$a-is[Management.Automation.Language.FunctionDefinitionAst]-and$a.Name-eq$name},$true)
+ Invoke-Expression $node.Extent.Text
+}
 function Update-ArtifactWorkflowCapacitySession {
  param($Python,$RepoRoot,$Session,$ProtectedPaths,$SourceReferences)
  if(@($ProtectedPaths).Count-ne0-or@($SourceReferences).Count-ne2){throw 'Explicit manifest authorities were not admitted'}
@@ -198,6 +200,11 @@ $guards=[Collections.Generic.List[IO.FileStream]]::new();$script:projectionCalls
 try{Protect-MrtofContinuationEvidence -Parent $Parent -Session @{status='active'} -Python pythonFixture -RepoRoot $Parent -Guards $guards|Out-Null}catch{$caught=$_.Exception.Message-match'no explicit projected run authority'}
 foreach($stream in $guards){$stream.Dispose()}
 if(-not$caught-or$script:admitted){throw 'Missing explicit authority reached admission'}
+$guards=[Collections.Generic.List[IO.FileStream]]::new();$script:projectionCalls=0;$script:omitAuthority=$false;$script:admitted=$false;$caught=$false
+$expected=@{run_directories=@($Parent);files=@();manifests=@{}}
+try{Protect-MrtofContinuationEvidence -Parent $Parent -Session @{status='active'} -Python pythonFixture -RepoRoot $Parent -Guards $guards -ExpectedProjection $expected|Out-Null}catch{$caught=$_.Exception.Message-match'differs from initial admission'}
+foreach($stream in $guards){$stream.Dispose()}
+if(-not$caught-or$script:admitted-or$script:projectionCalls-ne1){throw 'Changed frozen projection reached admission or locking'}
 
 ''', encoding="utf-8")
             result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(script), str(RUNNER), str(parent), str(borrowed), str(REPO)],

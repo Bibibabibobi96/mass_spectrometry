@@ -18,7 +18,7 @@ from msplatform.execution.inputs import freeze_file
 from msplatform.backends.simion.mrtof_batch_flight import merge_measured_event_logs
 from msplatform.workflows.prepared_joint.trial import (
     compare_trajectory_representation, materialize_batch,
-    analyze_centroid_probe, prepare_trial,
+    analyze_centroid_probe, prepare_trial, prepare_protection_projection,
 )
 from tests.components.parallel_mirror_dual_stripe_mr_tof.analysis import test_measured_component_source as source_fixtures
 
@@ -559,6 +559,8 @@ Write-Output 'PUBLIC_97_PREPARATION=PASS'
                     with patch.dict(os.environ, MASS_SPECTROMETRY_RUN_DIRECTORY=str(output),
                                     MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY=str(output)+'_early_alias' if name=='unchanged' else str(output)):
                         result = prepare_trial(prepared, path, output)
+                    projected = prepare_protection_projection(prepared)
+                    self.assertEqual(projected["run_directories"], result["protected_paths"])
                 published = json.loads((output / "results/prepared_joint_trial.json").read_text())
                 self.assertEqual(result, published)
                 from msplatform.workflows.prepared_joint import source as selected_source
@@ -786,6 +788,8 @@ Write-Output 'PUBLIC_97_PREPARATION=PASS'
              patch("msplatform.backends.simion.mr_prepared_field.load_binding",return_value=binding), \
              patch("msplatform.backends.simion.mr_prepared_field.native_response_operator",return_value={}):
             patched = prepare_trial(prepared,original_path,root/"five_role_prepared",field_binding_path=overlay_path)
+            projected = prepare_protection_projection(prepared,field_binding_path=overlay_path)
+        self.assertEqual(projected["run_directories"],patched["protected_paths"])
         self.assertIn("five_instances",patched["dispatch_request"]["workload_topology_id"])
         self.assertIn("fine_patch.pa",patched["guard_paths"])
         self.assertIn(str(root/"patch_owner"),patched["protected_paths"])

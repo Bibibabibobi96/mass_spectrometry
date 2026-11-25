@@ -146,10 +146,20 @@ function Invoke-PreparedJointTrial {
  $parentEnvironment=(Get-RunNativeExecutionContext -Package $package -Paths @()).environment
  foreach($key in $parentEnvironment.Keys){[Environment]::SetEnvironmentVariable([string]$key,[string]$parentEnvironment[$key],'Process')}
 
+    $projectionArguments=@('-m','msplatform.workflows.prepared_joint.trial','protection-projection','--prepared-run',$prepared)
+    if($FieldBindingPath){$projectionArguments+=@('--field-binding',(Resolve-Path -LiteralPath $FieldBindingPath).Path)}
+    $preparedProjection=(@(Invoke-ProjectPython -Arguments $projectionArguments)-join"`n")|ConvertFrom-Json
+    $continuationProjection=$null
+    $sourceRunDirectories=@($preparedProjection.run_directories)+@($parentRun,$TrajectoryEquivalenceReferenceRunPath)
+    if($parentRun){
+      . (Join-Path $packageRoot 'backends/simion/resources/native_corridor_runtime_support.ps1')
+      $continuationProjection=Get-MrtofContinuationProtectionProjection -Parent $parentRun -Python $python -RepoRoot $repoRoot
+      $sourceRunDirectories+=@($continuationProjection.run_directories)
+    }
     $capacity=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot `
       -ArtifactRoot ([string]$pathContext.artifact_root) -RunDirectory $runDir `
       -CommittedNewBytes ([int64]$recording.output_budget_bytes) -ProtectedPaths @($runDir) `
-      -SourceReferences @(Get-PreparedJointSourceReferences -RunDirectories @($prepared,$parentRun,$TrajectoryEquivalenceReferenceRunPath)) -Owner "run-artifact-workflow:${projectId}:$jointRunId"
+      -SourceReferences @(Get-PreparedJointSourceReferences -RunDirectories $sourceRunDirectories) -Owner "run-artifact-workflow:${projectId}:$jointRunId"
     Write-RunJson -Path (Join-Path $resultDir 'artifact_capacity_gate_startup.json') -Depth 14 -Value $capacity
     $stage='freeze_executable_dependencies'
     $dependencyPath=Join-Path $packageRoot 'workflows/config/runtime_dependencies.json'
@@ -158,8 +168,7 @@ function Invoke-PreparedJointTrial {
     $entryIdentity=@($frozen.identities|Where-Object{$_.source_repo_path-ceq'src/msplatform/workflows/resources/prepared_joint_execute.ps1'})
     $frozenEntryRecord=if($entryIdentity.Count-eq1){@{path=$entryIdentity[0].snapshot_path;exists=$true;bytes=[long](Get-Item -LiteralPath $entryIdentity[0].snapshot_path).Length;sha256=$entryIdentity[0].sha256}}else{$null}
     if($parentRun){
-      . (Join-Path $packageRoot 'backends/simion/resources/native_corridor_runtime_support.ps1')
-      $capacity=Protect-MrtofContinuationEvidence -Parent $parentRun -Session $capacity -Python $python -RepoRoot $script:pythonRoot -Guards $guards
+      $capacity=Protect-MrtofContinuationEvidence -Parent $parentRun -Session $capacity -Python $python -RepoRoot $script:pythonRoot -Guards $guards -ExpectedProjection $continuationProjection
     }
     $configuration=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable
     if($configuration.project-ne$projectId-or$configuration.mode-ne'prepared_joint'){throw 'Prepared joint run owner or mode differs.'}
@@ -175,6 +184,9 @@ function Invoke-PreparedJointTrial {
     Invoke-ProjectPython -Arguments $prepareArguments -FrozenPackage $frozen
     $preparationPath=Join-Path $resultDir 'prepared_joint_trial.json'
     $trial=Get-Content -LiteralPath $preparationPath -Raw|ConvertFrom-Json -Depth 60
+    $admittedSourceRunDirectories=@($sourceRunDirectories|Where-Object{$_}|ForEach-Object{[IO.Path]::GetFullPath([string]$_)}|Select-Object -Unique)
+    $unexpectedSourceRunDirectories=@($trial.protected_paths|Where-Object{[IO.Path]::GetFullPath([string]$_)-notin$admittedSourceRunDirectories})
+    if($unexpectedSourceRunDirectories.Count){throw 'Prepared trial source scope differs from initial capacity admission.'}
     $renewal=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacity `
       -ProtectedPaths @($runDir) -SourceReferences @(Get-PreparedJointSourceReferences -RunDirectories @($trial.protected_paths)) -RemainingCommittedNewBytes ([int64]$recording.output_budget_bytes)
     $capacity=$renewal.session
