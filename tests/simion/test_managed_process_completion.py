@@ -13,7 +13,7 @@ from unittest.mock import patch
 from msplatform.execution import host_resource_python as adapter
 
 
-SUPPORT = Path(__file__).resolve().parents[2] / "common/resource_budget_support.ps1"
+SUPPORT = Path(__file__).resolve().parents[2] / "tools/repository/resource_budget_support.ps1"
 
 
 @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh"), "Windows process identities required")
@@ -52,7 +52,7 @@ Write-Output 'COMPLETION={"passed":true}'
             script.write_text(source, encoding="utf-8")
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(script), str(SUPPORT), *map(str, arguments)],
-                cwd=SUPPORT.parent.parent, capture_output=True, text=True, encoding="utf-8", timeout=30,
+                cwd=SUPPORT.parent.parent, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
                 env={**os.environ, "SIMULATION_PYTHON_EXE": sys.executable},
             )
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)

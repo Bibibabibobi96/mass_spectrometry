@@ -1008,7 +1008,7 @@ print('FROZEN_ION_CONSUMER_PASS')
             root = Path(directory)
             wheelhouse = root / "wheelhouse"
             subprocess.run([
-                sys._base_executable, "-m", "pip", "wheel", "--no-deps", "--no-build-isolation",
+                sys._base_executable, "-m", "pip", "wheel", "--no-deps",
                 "--wheel-dir", str(wheelhouse), str(REPO_ROOT),
             ], cwd=root, check=True, capture_output=True, text=True, timeout=180)
             installed = root / "installed"

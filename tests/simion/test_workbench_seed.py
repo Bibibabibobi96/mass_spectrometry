@@ -14,10 +14,9 @@ class WorkbenchSeedTests(unittest.TestCase):
             repo = root/"source"
             source = repo/"src/msplatform/backends/simion/resources/iob_instance_seeds"
             source.mkdir(parents=True)
-            (repo/"src/msplatform/backends/simion/resources").mkdir(parents=True)
             (repo/"src/msplatform/backends/simion/resources/1_instance_seed.iob").write_bytes(b"INERT_SEED_NOT_NATIVE")
             (source/"iob_seed_placeholder_01.pa0").write_bytes(b"INERT_PLACEHOLDER_NOT_A_FIELD")
-            run = root/"artifacts/projects/example/runs/test"
+            run = root/"artifacts/components/workbench_seed_fixture/runs/test"
             first = freeze_workbench_seed(run, seed_path=repo/"src/msplatform/backends/simion/resources/1_instance_seed.iob", placeholder_path=source/"iob_seed_placeholder_01.pa0")
             before = {key: Path(record["frozen"]["path"]).read_bytes() for key, record in first.items()}
             second = freeze_workbench_seed(run, seed_path=repo/"src/msplatform/backends/simion/resources/1_instance_seed.iob", placeholder_path=source/"iob_seed_placeholder_01.pa0")
@@ -40,12 +39,11 @@ class WorkbenchSeedTests(unittest.TestCase):
             repo = root/"source"
             source = repo/"src/msplatform/backends/simion/resources/iob_instance_seeds"
             source.mkdir(parents=True)
-            (repo/"src/msplatform/backends/simion/resources").mkdir(parents=True)
             (repo/"src/msplatform/backends/simion/resources/1_instance_seed.iob").write_bytes(b"INERT_SEED_NOT_NATIVE")
             placeholder = source/"iob_seed_placeholder_01.pa0"
             placeholder.write_bytes(b"INERT_NOT_NATIVE!" * (1024 * 1024))
             self.assertEqual(classify_file(placeholder), "solver_native_binary")
-            run = root/"artifacts/projects/example/runs/test"
+            run = root/"artifacts/components/workbench_seed_fixture/runs/test"
             first = freeze_workbench_seed(run, seed_path=repo/"src/msplatform/backends/simion/resources/1_instance_seed.iob", placeholder_path=source/"iob_seed_placeholder_01.pa0")
             self.assertEqual(first, freeze_workbench_seed(run, seed_path=repo/"src/msplatform/backends/simion/resources/1_instance_seed.iob", placeholder_path=source/"iob_seed_placeholder_01.pa0"))
             frozen = Path(first["placeholder"]["frozen"]["path"])
