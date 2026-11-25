@@ -941,11 +941,12 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
         target = session.declare_file(target,retention_role)
         target.parent.mkdir(parents=True,exist_ok=True)
         if source_path is not None:
-            freeze_file(Path(source_path),target,retention_role=retention_role)
+            record = freeze_file(Path(source_path),target,retention_role=retention_role)
         else:
             payload = text if text is not None else json.dumps(value,ensure_ascii=False,allow_nan=False,indent=2)+'\n'
             with target.open('x',encoding='utf-8',newline='\n') as stream: stream.write(payload)
-        record = file_record(session.canonical_path(target),retention_role)
+            record = file_record(session.canonical_path(target),retention_role)
+        record.pop('source_path', None)
         session.add_input(name,record)
         records[name] = record
         return record

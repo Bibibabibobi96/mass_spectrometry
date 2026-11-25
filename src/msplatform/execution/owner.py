@@ -333,8 +333,8 @@ def run_managed_stage(context: ExecutionContext, *, descriptor: Mapping[str, Any
             source_action_path = Path(action_record["path"]).resolve()
             frozen_action = session.declare_file(run_root / "inputs" / "owner" / ("action" + source_action_path.suffix), "required_evidence")
             frozen_action.parent.mkdir(parents=True, exist_ok=True)
-            freeze_file(source_action_path, frozen_action)
-            frozen_action_record = file_record(frozen_action, "required_evidence")
+            frozen_action_record = freeze_file(source_action_path, frozen_action, retention_role="required_evidence")
+            frozen_action_record.pop("source_path", None)
             if any(frozen_action_record[key] != action_record[key] for key in ("bytes", "sha256")):
                 raise ValueError("Frozen action source differs from callable authority")
             verify_record("original action source after freeze", dict(action_record))

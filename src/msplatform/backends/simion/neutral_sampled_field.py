@@ -148,13 +148,15 @@ def execute_neutral_sampled_fields(session: RunSession, *, model_reference: Mapp
     modules=neutral_source_paths(plan['model'])
     guards=[]
     for module_name,path in modules.items():
-        original=file_record(path,'required_evidence');name=module_name.replace('.','_');target=owned(session.input_dir/'native_sources'/(name+'.py'),'required_evidence');freeze_file(path,target);copied=file_record(session.canonical_path(target),'required_evidence')
+        original=file_record(path,'required_evidence');name=module_name.replace('.','_');target=owned(session.input_dir/'native_sources'/(name+'.py'),'required_evidence');copied=freeze_file(path,target,retention_role='required_evidence')
+        copied.pop('source_path',None)
         if any(original[k]!=copied[k] for k in ('bytes','sha256')):raise ValueError('frozen neutral source differs: '+name)
         session.add_input('neutral_code_'+name,copied);guards.extend((original,copied))
     names=('raw_collision_pa.lua','create_numerical_background.lua','reopen_numerical_background.lua','build_geometry_iob.lua','iob_core.lua')
     resources={name:native_resource_path(name) for name in names};resources['native_run_path.lua']=resource_path('native_run_path.lua');frozen={}
     for name,path in resources.items():
-        original=file_record(path,'required_evidence');target=owned(session.input_dir/'native_sources'/name,'required_evidence');freeze_file(path,target);record=file_record(session.canonical_path(target),'required_evidence')
+        original=file_record(path,'required_evidence');target=owned(session.input_dir/'native_sources'/name,'required_evidence');record=freeze_file(path,target,retention_role='required_evidence')
+        record.pop('source_path',None)
         if any(original[k]!=record[k] for k in ('bytes','sha256')):raise ValueError('frozen native resource differs: '+name)
         session.add_input('neutral_resource_'+name,record);frozen[name]=record;guards.extend((original,record))
     def run(operation,args,marker,extra=()):

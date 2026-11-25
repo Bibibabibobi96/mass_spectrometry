@@ -428,6 +428,9 @@ Canonical SHA-256 helpers live in [`msplatform.io.file_identity`](../../src/mspl
 以源文件的原始字节记录核验副本，返回目的文件record及`source_path`；缺源、目的已存在或副本身份不符均失败。
 每次只读取一次源身份和一次目的身份；调用方负责输入选择、目的目录与命名。IP和MR准备入口直接消费此API，
 沿原有源码闭包冻结公共模块；PA／MPH等求解器载荷继续使用各自owner机制。
+公共managed Owner及tracking/neutral冻结消费者直接复用该已验证返回记录，不再立即重读目标生成第二份相同身份。
+调用方显式保留`retention_role`，并按既有机器合同决定是否保留运输用`source_path`；action后、输入绑定、发布后和终态manifest复核不因此省略。
+两个SFI/Neutral恢复用例在551.102秒通过，覆盖部分／完全恢复、原ID、来源和失败保护；该单机结果不证明完整Repository提速或15分钟达标。
 
 `msplatform.execution.inputs.enumerate_python_sources(source_root, package_roots=..., module_paths=..., provider_root=..., resource_suffixes=())`
 将显式声明的包目录或独立模块展开为排序的仓库相对 POSIX 路径；只枚举，不导入、复制或哈希。
