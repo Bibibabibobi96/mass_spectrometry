@@ -1438,6 +1438,7 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
                     self.assertFalse(actual_path.exists())
                     self.assertIn("recompile with the intended Python executable", result.stdout + result.stderr)
                 else:
+                    self.assertTrue(actual_path.exists(), result.stdout + result.stderr)
                     actual = json.loads(actual_path.read_text(encoding="utf-8"))
                     self.assertEqual(Path(actual["executable"]).resolve(), Path(interpreter))
                     self.assertEqual(Path(actual["cwd"]).resolve(), repo.resolve())

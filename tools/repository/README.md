@@ -1173,7 +1173,7 @@ profile明确实际purpose、action、tools、model、资格支持和输出。`-
 表达实际解析结果、科学条件与输入来源。公共层验证身份、所选能力的结构归属及运行身份；项目解释
 物种、几何、工作点与必要sidecar。接口查询不调用GEM渲染或商业求解器。
 
-Canonical `src/msplatform/...` step entrypoints compile to `msplatform.*` module names and resolve beneath the compiler's actual file-backed `msplatform` package. Runtime-binding selectors use that same origin. Project-relative Python modules retain their existing mapping. Package Python steps execute with an isolated, explicit selected-package import root rather than ambient `PYTHONPATH` or a same-named checkout module.
+Canonical `src/msplatform/...` step entrypoints compile to `msplatform.*` module names and resolve beneath the compiler's actual file-backed `msplatform` package. Runtime-binding selectors use that same origin. Package steps execute by module with the selected package's import root; project-relative Python entrypoints execute by their exact verified file path with the current repository-derived import root. Both use an isolated `-I -B` boundary rather than ambient `PYTHONPATH` or a same-named checkout module, and a missing receipt reports the actual child stderr before any result is read.
 
 Python owner执行使用编译计划记录的`python_executable`（编译器当前`sys.executable`），不依赖仓库`.venv`或执行时的环境默认值。PowerShell owner同样必须收到该字段；缺少或失效时在入口调用前拒绝。规范包入口在执行器实际加载的`run_artifact_support.ps1`之包根下解析，主CLI也从该包加载此helper；计划`command.entrypoint`与实际入口逐字一致。注册表、输出和科研workspace根不构成代码来源，缺失或不同字节的checkout同名入口不得替换包内入口。旧计划缺少解释器或解释器已不可用时，需用预期解释器重新编译；不静默换解释器。
 

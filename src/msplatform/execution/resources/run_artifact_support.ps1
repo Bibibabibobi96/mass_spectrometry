@@ -213,20 +213,23 @@ function Invoke-CompiledExecutionPlan {
           & $entry @named
         }
         elseif($step.shell-eq'python'){
+          $relativeEntry=[IO.Path]::GetRelativePath($repository,$entry).Replace('\','/')
           $packageStep=([string]$step.entrypoint).StartsWith('src/msplatform/',[StringComparison]::Ordinal)
-          $module=if($packageStep){
-            ([string]$step.entrypoint).Substring(4).Replace('\','.').Replace('/','.')
-          }else{[IO.Path]::GetRelativePath($repository,$entry).Replace('\','.').Replace('/','.')}
-          $module=$module.Substring(0,$module.Length-3)
           if(-not$plan.ContainsKey('python_executable')-or$plan.python_executable-isnot[string]-or
              -not[IO.Path]::IsPathFullyQualified($plan.python_executable)-or
              -not(Test-Path -LiteralPath $plan.python_executable -PathType Leaf)){
             throw 'Compiled Python interpreter is missing or unavailable; recompile with the intended Python executable.'
           }
+          $importRoot=if($packageStep){Split-Path -Parent $packageRoot}elseif($relativeEntry.StartsWith('src/',[StringComparison]::Ordinal)){Join-Path $repository 'src'}else{$repository}
           if($packageStep){
+            $module=([string]$step.entrypoint).Substring(4).Replace('\','.').Replace('/','.')
+            $module=$module.Substring(0,$module.Length-3)
             $bootstrap='import runpy,sys;root,module=sys.argv[1:3];sys.path.insert(0,root);sys.argv=[module,*sys.argv[3:]];runpy.run_module(module,run_name="__main__")'
-            & $plan.python_executable -I -B -c $bootstrap (Split-Path -Parent $packageRoot) $module @arguments
-          }else{& $plan.python_executable -m $module @arguments}
+            & $plan.python_executable -I -B -c $bootstrap $importRoot $module @arguments
+          }else{
+            $bootstrap='import runpy,sys;root,path=sys.argv[1:3];sys.path.insert(0,root);sys.argv=[path,*sys.argv[3:]];runpy.run_path(path,run_name="__main__")'
+            & $plan.python_executable -I -B -c $bootstrap $importRoot $entry @arguments
+          }
         }else{throw 'Unsupported declared execution shell.'}
         if(-not$?-or$LASTEXITCODE-ne0){throw "Compiled owner step failed: $($command.step_id) (exit $LASTEXITCODE)"}
       }finally{Pop-Location}
