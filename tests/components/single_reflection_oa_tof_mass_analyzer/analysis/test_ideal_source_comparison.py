@@ -207,28 +207,29 @@ class IdealSourceComparisonTests(unittest.TestCase):
         config["scope"] = "Pure Python legacy projection fixture; no solver or scientific qualification"
         config_path = root / "experiment.json"
         config_path.write_text(json.dumps(config), encoding="utf-8")
-        artifact_root = context.workspace / "artifacts/components" / project.name
+        artifact_root = context.workspace / "artifacts/components" / run_comparison.PROJECT_ID
         artifact_root.mkdir(parents=True)
         initialize_capacity_ledger(artifact_root.parents[1], objects=[])
         parent = artifact_root / "runs/20261031_150100__analysis__python__legacy-ideal"
         (parent / "inputs").mkdir(parents=True)
         (parent / "results").mkdir()
         inputs = run_comparison._source_files(config_path, input_root / "config/analysis_contract.json")
-        original_entrypoint = Path(__file__).with_name("test_support") / "legacy_ideal_source_producer.py"
+        witness_root = Path(__file__).with_name("test_support")
+        original_entrypoint = witness_root / "legacy_ideal_source_producer.py"
         self.assertEqual(file_sha256(original_entrypoint).lower(),
                          "007a1946b6fe7e7839e9df5445a4a415b0471bfcea60b387e8e310879d947e17")
         old_inputs = {name: path for name, path in inputs.items()
                       if name not in {"numerical_case", "particle_physics"}}
         old_inputs["entrypoint"] = original_entrypoint
-        # Exact old source witnesses are inspected only, never imported. These
-        # four pre-existing wrappers are provenance, not current implementations.
+        # Exact old source witnesses are inspected only, never imported. The
+        # original paths identify the frozen wrappers, not live source lookups.
         for name, relative, expected in (
-            ("oatof_oaaccelerator_coupling", "src/msplatform/components/single_reflection_oa_tof/oatof_oaaccelerator_coupling.py", "0D5D37C11D35A98E494DD2A76A152F2FA0AEDD36D9669978154676DD2F1395A2"),
-            ("reflectron_dual_stage_solver", "src/msplatform/components/single_reflection_oa_tof/reflectron_dual_stage_solver.py", "EE7D5D21F8E34A0601451FC79054A048452307CD304E67161978F7CD8F21591D"),
+            ("oatof_oaaccelerator_coupling", "projects/single_reflection_oa_tof_mass_analyzer/analysis/oatof_oaaccelerator_coupling.py", "0D5D37C11D35A98E494DD2A76A152F2FA0AEDD36D9669978154676DD2F1395A2"),
+            ("reflectron_dual_stage_solver", "projects/single_reflection_oa_tof_mass_analyzer/analysis/reflectron_dual_stage_solver.py", "EE7D5D21F8E34A0601451FC79054A048452307CD304E67161978F7CD8F21591D"),
             ("accelerator_time_focus", "projects/orthogonal_accelerator/analysis/accelerator_time_focus.py", "09888DE7F7929E074EF38C1B17E5AEE5CA7342FF647794E716B31EB5E95C31C7"),
             ("accelerator_two_zone_geometry", "projects/orthogonal_accelerator/analysis/two_zone_geometry.py", "C85505DF65FB9ACD0C19085EDE5CC802A6F5729C33181AE0C4A69947B1D93D3C"),
         ):
-            old_inputs[name] = REPO_ROOT / relative
+            old_inputs[name] = witness_root / "legacy_scientific_sources" / Path(relative).name
             self.assertEqual(file_sha256(old_inputs[name]).upper(), expected)
         current = Path(source_experiment.__file__).read_text(encoding="utf-8")
         modern = ('if not isinstance(config["analysis_contract"], str) or not config["analysis_contract"].strip():\n'
@@ -250,7 +251,7 @@ class IdealSourceComparisonTests(unittest.TestCase):
             frozen[name] = str(destination)
         identity = run_comparison._digest({"inputs": hashes, "seed": 73, "python": run_comparison.python_runtime_version(),
             "numpy": np.__version__, "scipy": run_comparison.scipy.__version__})
-        config_document = {"schema_version": 2, "run_id": parent.name, "project": project.name, "mode": "ideal_source_comparison",
+        config_document = {"schema_version": 2, "run_id": parent.name, "project": run_comparison.PROJECT_ID, "mode": "ideal_source_comparison",
             "inputs": frozen, "input_sha256": hashes, "numerical_identity": identity, "run_instance": {"seed": 73, "resume_from": None},
             "artifact_retention": {"policy_version": 1, "class": "compact", "reason": None}}
         (parent / "run_config.json").write_text(json.dumps(config_document), encoding="utf-8")
@@ -351,7 +352,7 @@ class IdealSourceComparisonTests(unittest.TestCase):
         for name, original, current in (
             ("oatof_oaaccelerator_coupling", "0D5D37C11D35A98E494DD2A76A152F2FA0AEDD36D9669978154676DD2F1395A2", "C63A4E996780C519A7F05B20F12B927EEAB8CE6B4832F49C5FF8E07B274C5178"),
             ("reflectron_dual_stage_solver", "EE7D5D21F8E34A0601451FC79054A048452307CD304E67161978F7CD8F21591D", "C73B0E452A2688FB05F4141ED6455F36C61824EE6C4EF125359DD1A419C620D2"),
-            ("accelerator_time_focus", "09888DE7F7929E074EF38C1B17E5AEE5CA7342FF647794E716B31EB5E95C31C7", "28FA9E54FF3E62292B92C07AC1DC736E5D8BC923D8024988406890C6AEF96F8D"),
+            ("accelerator_time_focus", "09888DE7F7929E074EF38C1B17E5AEE5CA7342FF647794E716B31EB5E95C31C7", "02E0A042FD2FF11946F8F959607435196E15AB97D86467B64086B79292886C1B"),
             ("ideal_source_experiment", "7E29AC168E92E2B04ED6E403A6D7BA35823B8C725D8B7298A4BE7D3304EE9ECB", "124774594D4A242B0A9307CF837784E3E5EA4371238338FD0CD0F651015F4CA8"),
         ):
             with self.subTest(source=name):

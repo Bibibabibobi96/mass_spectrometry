@@ -62,13 +62,13 @@ class IdealExperimentTests(unittest.TestCase):
                          "--input-root", "src/msplatform/components/single_reflection_oa_tof",
                          "--workspace", "{workspace}", "--environment", "{execution_environment}",
                          "--profile", "{environment_profile}"])
-        self.assertTrue((PROJECT_ROOT / step["entrypoint"]).is_file())
-        registered_module = (PROJECT_ROOT / step["entrypoint"]).resolve().relative_to(REPO_ROOT / "src")
+        self.assertTrue((REPO_ROOT / step["entrypoint"]).is_file())
+        registered_module = (REPO_ROOT / step["entrypoint"]).resolve().relative_to(REPO_ROOT / "src")
         self.assertEqual(runner.__name__, registered_module.with_suffix("").as_posix().replace("/", "."))
         # Ordinary installs select the same source through a different absolute root.
-        self.assertEqual((PROJECT_ROOT / step["entrypoint"]).read_text(encoding="utf-8"),
+        self.assertEqual((REPO_ROOT / step["entrypoint"]).read_text(encoding="utf-8"),
                          Path(runner.__file__).read_text(encoding="utf-8"))
-        self.assertEqual((PROJECT_ROOT / step["entrypoint"]).resolve().relative_to(REPO_ROOT / "src")
+        self.assertEqual((REPO_ROOT / step["entrypoint"]).resolve().relative_to(REPO_ROOT / "src")
                          .with_suffix("").as_posix().replace("/", "."),
                          "msplatform.workflows.oa_tof_design.source_comparison")
         self.assertEqual((REPO_ROOT / step["arguments"][1]).resolve(), PROJECT_ROOT / "config/experiments/ideal_source_comparison.json")
