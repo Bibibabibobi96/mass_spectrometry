@@ -351,6 +351,11 @@ class CandidateCausalPhaseTests(CandidateFixtures, unittest.TestCase):
             completion_path=child/'results/execution_completion.json'
             diagnostic=completion_path.read_text(encoding='utf-8') if completion_path.exists() else 'completion absent'
             self.assertEqual(result.returncode,0,result.stdout+result.stderr+diagnostic)
+            request=load_json(child/'inputs/execution_request.json')
+            self.assertEqual(request['repository_root'],str(root/'author'))
+            startup=load_json(child/'logs/capacity_session.json')['startup_gate']
+            self.assertEqual(startup['minimum_free_bytes'],0)
+            self.assertEqual(startup['required_free_bytes'],67108864)
             summary=load_json(child/'summary.json')
             self.assertEqual(summary['evidence']['native_launch_count'],0)
             self.assertFalse(list(child.rglob('*.mph')))

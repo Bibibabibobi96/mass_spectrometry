@@ -3059,7 +3059,7 @@ def postprocess_public_entry(root, artifact):
     host_path.write_text(env["MASS_SPECTROMETRY_HOST_CONTEXT_JSON"], encoding="utf-8")
     def invoke(arguments):
         if "--postprocess-from" in arguments:
-            arguments = [*arguments, "--host-context", str(host_path), "--science-root", str(REPO_ROOT)]
+            arguments = [*arguments, "--host-context", str(host_path), "--science-root", str(author)]
         return subprocess.run([sys.executable,"-I","-B","-c",bootstrap,str(author),"run_candidate.py",*arguments],
             cwd=author,env=env,capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=240)
     return invoke
