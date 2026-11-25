@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from concurrent.futures import ThreadPoolExecutor
 import json
 import hashlib
 import os
@@ -7334,8 +7335,12 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                 shutil.copyfile(REPO_ROOT / name, target)
             builder = root / 'builder'
             consumers = (root / 'consumer-wheel', root / 'consumer-sdist-rebuilt')
-            for location in (builder, *consumers):
-                self.run_command([sys.executable, '-m', 'venv', str(location)], cwd=root, environment=environment)
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                creations = [executor.submit(self.run_command,
+                    [sys.executable, '-m', 'venv', str(location)], cwd=root, environment=environment)
+                    for location in (builder, *consumers)]
+                for creation in creations:
+                    creation.result()
             python_name = Path('Scripts/python.exe') if os.name == 'nt' else Path('bin/python')
             build_python = str(builder / python_name)
             self.run_command([build_python, '-m', 'pip', 'install', '--no-index', '--find-links', str(wheelhouse),
