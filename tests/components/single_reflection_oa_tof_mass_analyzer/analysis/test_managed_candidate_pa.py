@@ -50,7 +50,7 @@ class ManagedCandidatePaTests(unittest.TestCase):
                     root = fixture.root
                     artifacts, cache = fixture._artifact_cache()
                     predecessor = fixture.producer_run_config.parent
-                    artifact_project = predecessor.parent.parent
+                    artifact_project = artifacts / "components" / "fixture"
                     project = REPO / "src/msplatform/components/single_reflection_oa_tof"
                     closure = freeze_candidate_source_closure(root / "code", artifact_project, science_root=REPO)
                     frozen_builder = frozen_source_path(closure, BUILDER.relative_to(REPO).as_posix())
@@ -452,7 +452,7 @@ write_json_atomic(run/'run_config.json',config)
             root = Path(directory)
             project = REPO / "src/msplatform/components/single_reflection_oa_tof"
             artifacts = root / "artifacts"
-            artifact_project = artifacts / "src/msplatform/components/single_reflection_oa_tof"
+            artifact_project = artifacts / "components" / "single_reflection_oa_tof_mass_analyzer"
             artifact_project.mkdir(parents=True)
             initialize_capacity_ledger(artifacts, objects=[])
             closure = freeze_candidate_source_closure(root / "code", artifact_project, science_root=REPO)
@@ -549,7 +549,7 @@ try{
             driver.write_text(r'''
 param($Repo,$Python,$Root,$Builder)
 $ErrorActionPreference='Stop'
-. (Join-Path $Repo 'common/resource_budget_support.ps1')
+. (Join-Path $Repo 'tools/repository/resource_budget_support.ps1')
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($Builder,[ref]$tokens,[ref]$errors)
 $node=@($ast.FindAll({param($node) $node-is[Management.Automation.Language.FunctionDefinitionAst]-and
@@ -729,7 +729,7 @@ foreach($path in @($global:MassSpectrometryImmutablePaSourceGuards.Keys)){Unprot
         with tempfile.TemporaryDirectory(prefix="candidate-pa-worker-") as directory:
             root = Path(directory)
             fixture_repo = root / "observer_failure_repo"
-            for relative in ("src/msplatform/execution/host_resource_python.py", "common/simion/__init__.py", "src/msplatform/execution/process_observation.py",
+            for relative in ("src/msplatform/execution/host_resource_python.py", "src/msplatform/execution/process_observation.py",
                              "src/msplatform/__init__.py", "src/msplatform/io/__init__.py",
                              "src/msplatform/io/file_identity.py"):
                 target = fixture_repo / relative
@@ -750,7 +750,7 @@ foreach($path in @($global:MassSpectrometryImmutablePaSourceGuards.Keys)){Unprot
             driver.write_text(r'''
 param($Repo,$Python,$Root,$Builder,$ObserverFailureRepo)
 $ErrorActionPreference='Stop'
-. (Join-Path $Repo 'common/resource_budget_support.ps1')
+. (Join-Path $Repo 'tools/repository/resource_budget_support.ps1')
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($Builder,[ref]$tokens,[ref]$errors)
 if($errors){throw $errors[0]}
