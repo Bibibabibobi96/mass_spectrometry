@@ -236,7 +236,7 @@ class ApertureDiagnosticsTests(unittest.TestCase):
         self.assertEqual(list((self.run/"inputs").iterdir()), [])
         self.contract["committed_new_bytes"] = 1_000_000
         self.author.write_text(json.dumps(self.contract))
-        def oversized_code(repo, inputs):
+        def oversized_code(inputs):
             (inputs/"synthetic_code_closure.py").write_bytes(b" "*1_000_001)
         with patch.object(study, "freeze_code", side_effect=oversized_code):
             with self.assertRaisesRegex(ValueError, "committed_new_bytes|commitment|capacity"):
