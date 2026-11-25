@@ -772,6 +772,10 @@ IP→MR 新场工作流在求场前验证设计绑定的真实 handoff、粒子�
 预检不代表求场或科学资格通过。
 OA→MR 和 prepared joint 共用 MR `Protect-MrtofContinuationEvidence`：沿显式 manifest 绑定投影多代来源，
 先追加容量保护，再对实际文件持 share-read 防写锁并复核投影，直至 writer 停止；仅直接前驱不能代表全部祖先。
+续跑投影接受当前`artifacts/assemblies/<owner>/runs`及历史`artifacts/projects/<owner>/runs`的只读身份，新run只写Assembly根。
+冻结代码位于导入首位，第三方依赖目录保持可用；所有已加载平台模块仍须来自选定闭包，另一份常规包或缺失父包标记不能成为回退。
+42项续跑／来源定向测试通过（2项显式原生环境跳过），公开Prepared Joint正常／恢复及包选择两个父测试在77.245秒通过；
+错误来源负例拒绝执行且父manifest/config字节不变。这是软件续跑证据，不代替离仓双臂、完整门禁或原生验收。
 固定原批区间续飞时，已知资源画像须覆盖最大缺批；否则实际观测最大缺批并以原分区单 lane 续跑。
 `run_native_corridor_response_bank.ps1`新建receipt recipe使用schema 2及显式`source_location=payload`；
 其声明库存同时保留raw、8个原生response、8个standalone和receipt。已有v1响应库按公共严格版本reader读取，

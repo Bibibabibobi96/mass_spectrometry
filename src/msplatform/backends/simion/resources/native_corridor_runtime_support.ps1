@@ -14,7 +14,7 @@ package_root=root/'src' if (root/'src').is_dir() else root
 entry=package_root/'msplatform/workflows/prepared_joint/continuation.py'
 if not entry.is_file():
     raise FileNotFoundError('Selected continuation implementation is missing: '+str(entry))
-sys.path=[str(package_root)]+[value for value in sys.path if value and not (Path(value)/'msplatform').exists()]
+sys.path=[str(package_root)]+[value for value in sys.path if value]
 sys.meta_path=[finder for finder in sys.meta_path if finder in (importlib.machinery.BuiltinImporter,importlib.machinery.FrozenImporter,importlib.machinery.PathFinder)]
 spec=importlib.util.find_spec('msplatform.workflows.prepared_joint.continuation')
 if spec is None or spec.origin is None or Path(spec.origin).resolve()!=entry:

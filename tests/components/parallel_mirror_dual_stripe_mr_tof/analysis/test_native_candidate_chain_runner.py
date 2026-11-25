@@ -1913,7 +1913,6 @@ if __name__ == "__main__":
 class ExplicitInstalledPythonTransportTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_actual_dispatch_helper_ignores_foreign_pythonpath_outside_checkout(self):
-        import msplatform
         import os
 
         source = RUNNER.read_text(encoding="utf-8-sig")
@@ -1937,5 +1936,10 @@ class ExplicitInstalledPythonTransportTests(unittest.TestCase):
                 text=True, encoding="utf-8", errors="replace", timeout=30, check=False,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            expected = Path(msplatform.__file__).resolve().parent / "components/parallel_mirror_dual_stripe_mr_tof/resolved_geometry.py"
+            expected_result = subprocess.run(
+                [sys.executable, "-I", "-c",
+                 "import msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry as m; print(m.__file__)"],
+                cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30, check=True,
+            )
+            expected = Path(expected_result.stdout.strip()).resolve()
             self.assertEqual(Path(result.stdout.strip()).resolve(), expected)

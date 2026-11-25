@@ -34,9 +34,9 @@ def continuation_protection_projection(predecessor_run_dir: Path) -> dict[str, A
     has acquired the returned guards and rechecked this projection.
     """
     predecessor = predecessor_run_dir.resolve(strict=True)
-    if predecessor.parent.name != "runs" or predecessor.parent.parent.parent.name != "projects":
-        raise ContractError("continuation predecessor is outside the artifact project runs")
-    projects_root = predecessor.parent.parent.parent
+    owner_root = predecessor.parent.parent.parent
+    if predecessor.parent.name != "runs" or owner_root.name not in {"assemblies", "projects"}:
+        raise ContractError("continuation predecessor is outside the supported artifact run roots")
     runs: set[Path] = set()
     files: set[Path] = set()
     loaded: dict[Path, dict[str, Any]] = {}
@@ -44,12 +44,12 @@ def continuation_protection_projection(predecessor_run_dir: Path) -> dict[str, A
 
     def run_for(path: Path) -> Path:
         try:
-            parts = path.resolve().relative_to(projects_root).parts
+            parts = path.resolve().relative_to(owner_root).parts
         except ValueError as exc:
-            raise ContractError("continuation evidence is outside artifact projects") from exc
+            raise ContractError("continuation evidence is outside the selected artifact run roots") from exc
         if len(parts) < 4 or parts[1] != "runs":
-            raise ContractError("continuation evidence is outside a project run")
-        return projects_root / parts[0] / "runs" / parts[2]
+            raise ContractError("continuation evidence is outside an owned artifact run")
+        return owner_root / parts[0] / "runs" / parts[2]
 
     def load_run(run: Path) -> dict[str, Any]:
         run = run.resolve(strict=True)

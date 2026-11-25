@@ -46,7 +46,7 @@ try {
 
     @staticmethod
     def continuation_run(workspace: Path, status: str = "success") -> Path:
-        run = workspace / "artifacts/projects/instrument_assembly/runs/fixture-run"
+        run = workspace / "artifacts/assemblies/instrument_assembly/runs/fixture-run"
         run.mkdir(parents=True)
         config = run / "run_config.json"
         config.write_text(json.dumps({"run_id": run.name, "project": "instrument_assembly",
@@ -167,6 +167,8 @@ try{
             selected = workspace / "installed"
             entry = selected / "msplatform/workflows/prepared_joint/continuation.py"
             entry.parent.mkdir(parents=True)
+            for package in (entry.parents[2], entry.parents[1], entry.parent):
+                (package/"__init__.py").write_text("", encoding="utf-8")
             entry.write_text("raise SystemExit(23)\n", encoding="utf-8")
             parent = workspace / "predecessor"
             parent.mkdir()
@@ -180,6 +182,8 @@ try{
             selected = workspace / "frozen"
             entry = selected / "src/msplatform/workflows/prepared_joint/continuation.py"
             entry.parent.mkdir(parents=True)
+            for package in (entry.parents[2], entry.parents[1], entry.parent):
+                (package/"__init__.py").write_text("", encoding="utf-8")
             entry.write_text(
                 "import json,sys\n"
                 "print('CHANGED_SELECTED_SOURCE',file=sys.stderr)\n"
@@ -191,6 +195,24 @@ try{
             result = self.invoke_continuation_protection(selected, parent, workspace)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual(result.stderr.count("CHANGED_SELECTED_SOURCE"), 2, result.stderr)
+
+    def test_continuation_projection_rejects_other_package_without_rewriting_parent(self) -> None:
+        with TemporaryDirectory(prefix="mrtof-continuation-wrong-source-") as temporary:
+            workspace = Path(temporary)
+            selected = workspace / "selected"
+            entry = selected / "msplatform/workflows/prepared_joint/continuation.py"
+            entry.parent.mkdir(parents=True)
+            # Omitting regular-package markers intentionally lets another ordinary
+            # installation win discovery; the origin guard must reject it.
+            entry.write_text("raise AssertionError('unselected code executed')\n", encoding="utf-8")
+            parent = self.continuation_run(workspace)
+            protected = [parent/"run_manifest.json", parent/"run_config.json"]
+            before = [path.read_bytes() for path in protected]
+            result = self.invoke_continuation_protection(selected, parent, workspace)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("escaped its selected code source", result.stdout + result.stderr)
+            self.assertNotIn("unselected code executed", result.stdout + result.stderr)
+            self.assertEqual([path.read_bytes() for path in protected], before)
 
     def test_continuation_projection_rejects_unknown_run_status(self) -> None:
         with TemporaryDirectory(prefix="mrtof-continuation-status-") as temporary:
