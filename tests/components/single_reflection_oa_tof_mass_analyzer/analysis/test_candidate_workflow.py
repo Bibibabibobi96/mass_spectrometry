@@ -3020,6 +3020,16 @@ def postprocess_public_entry(root, artifact):
     from tests.contracts.test_support.run_artifact_workflow import copy_scientific_core
 
     copy_scientific_core(REPO_ROOT, author)
+    # The no-native author fixture keeps every declared slot name, but does not
+    # need ten physical copies of the same immutable placeholder bytes.
+    resources = author/"src/msplatform/backends/simion/resources"
+    seeds = [resources/"iob_seed_placeholder_01.pa0"] + [
+        resources/"iob_instance_seeds"/f"iob_seed_placeholder_{index:02d}.pa0" for index in range(2, 11)]
+    if len({sha256(path) for path in seeds}) != 1:
+        raise AssertionError("Inert seed placeholders differ; physical deduplication is invalid")
+    for seed in seeds[1:]:
+        seed.unlink()
+        os.link(seeds[0], seed)
     copied_files = [path for path in author.rglob("*") if path.is_file()]
     copied_bytes = sum(path.stat().st_size for path in copied_files)
     print("POSTPROCESS_AUTHOR_FIXTURE="+json.dumps({"files":len(copied_files),"bytes":copied_bytes}), flush=True)

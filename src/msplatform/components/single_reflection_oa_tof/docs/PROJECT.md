@@ -35,6 +35,8 @@ installed outside the checkout passes the public dry-run first-Prepare using
 copied science data and a registered template. This focused wheel test does not
 replace the final two-arm installation gate or native/scientific acceptance.
 
+The no-native postprocess author fixture retains all ten independently named PA0 placeholder slots but shares their verified identical bytes within each isolated author directory. This removes about 148 MiB of physical duplication per author without changing capacity thresholds, source identities or the production per-slot freeze. Three former full-Repository failure cases (normal failed export, public postprocess/finalization, and failed cold export followed by analysis-only recovery) passed in 178.083 seconds; a storage probe found ten slots, one physical file identity and an unchanged source SHA. The earlier CI minimum-free-capacity failures remain recorded; same-SHA full-gate and native acceptance are still pending.
+
 The five current OA candidate modules now resolve installed science, native-text
 and workflow resources from their actual `msplatform` package root. Radial
 prepared calls use that package's import parent and selected interpreter, not a
