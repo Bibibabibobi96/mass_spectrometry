@@ -40,12 +40,14 @@
       "required_bindings": [
         "condition_path",
         "context_path",
-        "composition_plan_path"
+        "composition_plan_path",
+        "artifact_root"
       ],
       "binding_types": {
         "condition_path": "file",
         "context_path": "file",
-        "composition_plan_path": "file"
+        "composition_plan_path": "file",
+        "artifact_root": "directory"
       },
       "steps": [
         {
@@ -62,7 +64,13 @@
             "-ContextPath",
             "{context_path}",
             "-CompositionPlanPath",
-            "{composition_plan_path}"
+            "{composition_plan_path}",
+            "-WorkspaceRoot",
+            "{repository_root}",
+            "-ArtifactRoot",
+            "{artifact_root}",
+            "-PythonExe",
+            "{python_exe}"
           ]
         }
       ],

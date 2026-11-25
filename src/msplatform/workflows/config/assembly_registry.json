@@ -177,6 +177,8 @@
           "workflow_id": "oa_mr_flight",
           "entrypoint": "src/msplatform/workflows/resources/oa_mr.ps1",
           "required_bindings": [
+            "accelerator_component_contract_path",
+            "accelerator_geometry_profile_id",
             "geometry_review_run_path",
             "mirror_run_path",
             "stripe_run_path",
@@ -186,6 +188,10 @@
             "prism2_voltage_v"
           ],
           "arguments": [
+            "-AcceleratorComponentContractPath",
+            "{accelerator_component_contract_path}",
+            "-AcceleratorGeometryProfileId",
+            "{accelerator_geometry_profile_id}",
             "-GeometryReviewRunPath",
             "{geometry_review_run_path}",
             "-MirrorRunPath",
@@ -201,7 +207,11 @@
             "-Prism2VoltageV",
             "{prism2_voltage_v}",
             "-RunId",
-            "{run_id}"
+            "{run_id}",
+            "-RepoRoot",
+            "{repository_root}",
+            "-PythonExe",
+            "{python_exe}"
           ],
           "outputs": [
             "run_config",
@@ -219,6 +229,8 @@
             "Continuous only within the declared prepared-source propagation and supported field/interface domain."
           ],
           "binding_types": {
+            "accelerator_component_contract_path": "file",
+            "accelerator_geometry_profile_id": "string",
             "geometry_review_run_path": "run_directory",
             "mirror_run_path": "run_directory",
             "stripe_run_path": "run_directory",

@@ -41,6 +41,8 @@
             "{native_run_id}",
             "-RepositoryRoot",
             "{repository_root}",
+            "-PythonExe",
+            "{python_exe}",
             "-SourceProfile",
             "functional",
             "-ConfigurationDirectory",

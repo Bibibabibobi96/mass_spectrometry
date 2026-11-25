@@ -98,6 +98,8 @@ class ExecutionCompilerTests(unittest.TestCase):
                                                  K=4.0, accelerator_y=-55.0)), encoding="utf-8")
             small = root/"definition.json"
             small.write_text("{}", encoding="utf-8")
+            artifact = root/"artifacts"
+            artifact.mkdir()
             context = root/"context.json"
             body = dict(schema_version=2, role="mrtof_native_candidate_condition_context")
             for key in ("contract_path", "fixed_grid_mirror_run_manifest", "geometry_review_run_path",
@@ -113,10 +115,12 @@ class ExecutionCompilerTests(unittest.TestCase):
             for owner, family, function, mode, metric, variant, bindings in (
                 ("orthogonal_accelerator", "orthogonal_pulsed_accelerators", "orthogonal_acceleration",
                  "component_focus", "first_time_focus_distance", "two_zone",
-                 dict(component_request_path=str(source/"accelerator_component_request_n100.json"), release_spec_path=str(release))),
+                 dict(component_request_path=str(source/"accelerator_component_request_n100.json"), release_spec_path=str(release),
+                      artifact_root=str(artifact))),
                 ("parallel_mirror_dual_stripe_mr_tof", "tof_mass_analyzers", "mass_analysis",
                  "native_condition", "detection_fraction", None,
-                 dict(condition_path=str(condition), context_path=str(context), composition_plan_path=str(small))),
+                 dict(condition_path=str(condition), context_path=str(context), composition_plan_path=str(small),
+                      artifact_root=str(artifact))),
             ):
                 with self.subTest(owner=owner):
                     request = self.approved_functional_rf_request()
@@ -129,6 +133,17 @@ class ExecutionCompilerTests(unittest.TestCase):
                     request["operating_points"][0]["mass"]["value"] = 524
                     ready = self.compile_request(request, bindings)
                     self.assertEqual(ready["status"], "EXECUTION_READY", ready["blockers"])
+                    arguments = ready["commands"][0]["arguments"]
+                    for option, expected in (("-WorkspaceRoot", str(REPO_ROOT)),
+                                             ("-ArtifactRoot", str(artifact)),
+                                             ("-PythonExe", str(Path(sys.executable).resolve()))):
+                        self.assertEqual(arguments[arguments.index(option) + 1], expected)
+                    without_artifact = dict(bindings)
+                    without_artifact.pop("artifact_root")
+                    blocked = self.compile_request(request, without_artifact)
+                    self.assertEqual(blocked["status"], "NEEDS_RUNTIME_INPUTS")
+                    self.assertIn("artifact_root", " ".join(blocked["blockers"]))
+                    self.assertFalse(blocked["safe_to_execute"])
                     protected = {row["path"] for row in ready["binding_authorities"]}
                     self.assertIn(str(release.resolve()), protected)
                     if owner == "orthogonal_accelerator":
@@ -190,7 +205,8 @@ class ExecutionCompilerTests(unittest.TestCase):
         projects = {row["owner_id"]: row for row in view if row["owner_kind"] == "project"}
         self.assertEqual(len(projects), 8)
         self.assertEqual(projects["apertured_tube_electron_impact_ion_source"]["execution_support"], "no_registered_physical_entry")
-        self.assertEqual(projects["orthogonal_accelerator"]["profiles"][0]["required_bindings"], ["component_request_path", "release_spec_path"])
+        self.assertEqual(projects["orthogonal_accelerator"]["profiles"][0]["required_bindings"],
+                         ["component_request_path", "release_spec_path", "artifact_root"])
         self.assertEqual(projects["parallel_mirror_dual_stripe_mr_tof"]["profiles"][0]["profile_id"], "native_condition")
         assemblies = [row for row in view if row["owner_kind"] == "assembly"]
         self.assertEqual([row["owner_id"] for row in assemblies], ["instrument_assembly"])
@@ -200,6 +216,52 @@ class ExecutionCompilerTests(unittest.TestCase):
                           "multipole_ip_continuous", "rf_ip_mr_continuous"})
         with self.assertRaisesRegex(ValueError, "Unknown capability owner"):
             query_capabilities(load_json(self.registry), owner="missing")
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
+    def test_native_registrations_match_actual_mandatory_powershell_parameters(self):
+        registered = {}
+        for project, profile_id in (
+            ("parallel_mirror_dual_stripe_mr_tof", "native_condition"),
+            ("orthogonal_accelerator", "component_focus"),
+            ("dual_pressure_rectilinear_ion_processor", "native_functional"),
+        ):
+            document = load_json(resolve_project_root(project)/"config/execution_profiles.json")
+            profile = next(item for item in document["profiles"] if item["profile_id"] == profile_id)
+            step = profile["steps"][0]
+            registered[str(REPO_ROOT/step["entrypoint"])] = step["arguments"]
+        assemblies = load_json(REPO_ROOT/"src/msplatform/workflows/config/assembly_registry.json")
+        workflow = next(item for item in assemblies["assemblies"][0]["workflows"]
+                        if item["workflow_id"] == "oa_mr_flight")
+        registered[str(REPO_ROOT/workflow["entrypoint"])] = workflow["arguments"]
+        script = r"""
+$rows=@(foreach($path in $args){
+  $command=Get-Command -Name $path -ErrorAction Stop
+  $set=$command.DefaultParameterSet
+  $required=@($command.Parameters.GetEnumerator()|Where-Object{
+    @($_.Value.Attributes|Where-Object{
+      $_-is[Management.Automation.ParameterAttribute]-and$_.Mandatory-and
+      ($_.ParameterSetName-eq'__AllParameterSets'-or$_.ParameterSetName-eq$set)
+    }).Count-gt0
+  }|ForEach-Object{$_.Key})
+  [pscustomobject]@{path=$path;parameters=@($command.Parameters.Keys);required=$required}
+})
+ConvertTo-Json -InputObject $rows -Depth 4 -Compress
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            harness = Path(directory)/"inspect_parameters.ps1"
+            harness.write_text(script, encoding="utf-8")
+            completed = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-NonInteractive",
+                                        "-File", str(harness), *registered], cwd=REPO_ROOT,
+                                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        metadata = {row["path"]: row for row in json.loads(completed.stdout)}
+        self.assertEqual(set(metadata), set(registered))
+        for path, arguments in registered.items():
+            with self.subTest(entrypoint=path):
+                declared = {value[1:] for value in arguments if value.startswith("-")}
+                self.assertLessEqual(declared, set(metadata[path]["parameters"]))
+                self.assertLessEqual(set(metadata[path]["required"]), declared)
+                self.assertIn("PythonExe", declared)
 
     def test_assembly_plans_freeze_real_entry_arguments_and_report_each_missing_input(self):
         from tools.repository.compile_execution_plan import compile_assembly_execution
@@ -286,6 +348,53 @@ foreach($record in $compiledInputs.files){
                     cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
                 self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
                 self.assertIn("COMPILED_CONSUMER_FREEZE=PASS", result.stdout)
+
+    def test_oa_mr_requires_real_accelerator_authority_and_transports_plan_context(self):
+        from tools.repository.compile_execution_plan import compile_assembly_execution
+        contract = REPO_ROOT/"src/msplatform/components/orthogonal_accelerator/component_contract.json"
+        composition = REPO_ROOT/"src/msplatform/workflows/config/oa_mr_two_zone_gap30_plan.json"
+        bindings = {
+            "accelerator_component_contract_path": str(contract),
+            "accelerator_geometry_profile_id": "closed_two_zone_compact_mr_axial_r3_gap1_4mm",
+            "accelerator_provider_receipt_path": self.binding_file("provider.json"),
+            "composition_plan_path": str(composition),
+            "prism1_voltage_v": "-1.25",
+            "prism2_voltage_v": "2.5",
+        }
+        for key in ("geometry_review_run_path", "mirror_run_path", "stripe_run_path"):
+            directory = Path(self.binding_directory.name)/key
+            directory.mkdir()
+            (directory/"run_manifest.json").write_text("{}", encoding="utf-8")
+            bindings[key] = str(directory)
+        ready = compile_assembly_execution("instrument_assembly", "oa_mr_flight", self.run_id, bindings)
+        self.assertEqual(ready["status"], "EXECUTION_READY", ready["blockers"])
+        arguments = ready["commands"][0]["arguments"]
+        for option, expected in (
+            ("-AcceleratorComponentContractPath", str(contract)),
+            ("-AcceleratorGeometryProfileId", bindings["accelerator_geometry_profile_id"]),
+            ("-RepoRoot", str(REPO_ROOT)),
+            ("-PythonExe", str(Path(sys.executable).resolve())),
+        ):
+            self.assertEqual(arguments[arguments.index(option) + 1], expected)
+        self.assertIn(str(contract.resolve()),
+                      {record["path"] for record in ready["binding_authorities"]})
+        for key in ("accelerator_component_contract_path", "accelerator_geometry_profile_id"):
+            with self.subTest(missing=key):
+                incomplete = dict(bindings)
+                incomplete.pop(key)
+                result = compile_assembly_execution("instrument_assembly", "oa_mr_flight",
+                                                    self.run_id, incomplete)
+                self.assertEqual(result["status"], "NEEDS_RUNTIME_INPUTS")
+                self.assertIn(key, " ".join(result["blockers"]))
+                self.assertFalse(result["safe_to_execute"])
+        missing_source = dict(bindings)
+        missing_source["accelerator_component_contract_path"] = str(
+            Path(self.binding_directory.name)/"missing-contract.json")
+        result = compile_assembly_execution("instrument_assembly", "oa_mr_flight",
+                                            self.run_id, missing_source)
+        self.assertEqual(result["status"], "NEEDS_RUNTIME_INPUTS")
+        self.assertIn("accelerator_component_contract_path: file is missing",
+                      " ".join(result["blockers"]))
 
     def test_assembly_optional_bindings_use_existing_authority_and_owner(self):
         from tools.repository.compile_execution_plan import compile_assembly_execution, parse_bindings
@@ -455,14 +564,17 @@ foreach($record in $compiledInputs.files){
             entry.parent.mkdir(parents=True)
             request = root/"request.json"
             request.write_text('{"source":"frozen"}')
-            entry.write_text(r"""param($Request,[double]$PrismVoltage,$RunId)
+            entry.write_text(r"""param($Request,[double]$PrismVoltage,$RunId,$RepoRoot,$PythonExe)
 $ErrorActionPreference='Stop'
 $input=Get-Content $Request -Raw|ConvertFrom-Json
-@{source=$input.source;voltage=$PrismVoltage;run_id=$RunId}|ConvertTo-Json|Set-Content (Join-Path $PSScriptRoot 'actual.json')
+& $PythonExe -c "import sys;print('ACTUAL_INTERPRETER='+sys.executable)"
+if($LASTEXITCODE-ne0){throw 'planned interpreter failed'}
+@{source=$input.source;voltage=$PrismVoltage;run_id=$RunId;repository=$RepoRoot}|ConvertTo-Json|Set-Content (Join-Path $PSScriptRoot 'actual.json')
 """, encoding="utf-8")
             workflow = dict(workflow_id="fixture", entrypoint="src/msplatform/workflows/resources/fixture.ps1",
                 required_bindings=["request", "voltage"], binding_types=dict(request="file", voltage="number"),
-                arguments=["-Request", "{request}", "-PrismVoltage", "{voltage}", "-RunId", "{run_id}"],
+                arguments=["-Request", "{request}", "-PrismVoltage", "{voltage}", "-RunId", "{run_id}",
+                           "-RepoRoot", "{repository_root}", "-PythonExe", "{python_exe}"],
                 outputs=["receipt"], simulation_paths=["continuous_assembly"], recipes=[], limitations=[],
                 purpose="assembly_propagation", action="run", tools=["python"], model="inert fixture")
             registry = root / "src/msplatform/workflows/config/assembly_registry.json"
@@ -485,7 +597,9 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
                 cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
             self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr)
             actual = json.loads((entry.parent/"actual.json").read_text())
-            self.assertEqual(actual, dict(source="frozen", voltage=-123.5, run_id=self.run_id))
+            self.assertEqual(actual, dict(source="frozen", voltage=-123.5, run_id=self.run_id,
+                                          repository=str(root)))
+            self.assertIn("ACTUAL_INTERPRETER=" + str(Path(sys.executable).resolve()), completed.stdout)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_compiled_executor_uses_frozen_definition_and_rejects_drift_or_other_entrypoint(self):
@@ -510,8 +624,9 @@ $actual|ConvertTo-Json|Set-Content (Join-Path $PSScriptRoot 'actual.json')
             (root/"config/project_registry.json").write_text(json.dumps(dict(projects=[dict(project_id="fixture", contracts=dict(execution="config/execution_profiles.json"))])))
             contract = project/"config/execution_profiles.json"
             contract.write_text(json.dumps(dict(profiles=[dict(profile_id="fixture", fixed_inputs=dict(science="config/science.json"),
-                steps=[dict(step_id="run", entrypoint="run.ps1", shell="powershell", arguments=["-ResolvedInputsPath", "{resolved_inputs_path}"])])])))
+                steps=[dict(step_id="run", entrypoint="src/msplatform/components/fixture/run.ps1", shell="powershell", arguments=["-ResolvedInputsPath", "{resolved_inputs_path}"])])])))
             plan = dict(role="execution_dry_run", status="EXECUTION_READY", safe_to_execute=True,
+                python_executable=str(Path(sys.executable).resolve()),
                 project_id="fixture", profile_id="fixture", execution_contract=file_record(contract),
                 resolved_inputs=[dict(file_record(original), name="science", relative_path="config/science.json", content=original.read_text())],
                 planning_sources=[], binding_authorities=[], binding_sources=[], resolved_runtime=None,
@@ -523,12 +638,14 @@ $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 . $Helper
 Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
 """, encoding="utf-8")
-            for mode in ("success", "drift", "content", "entrypoint"):
+            for mode in ("success", "drift", "content", "entrypoint", "missing_python", "unavailable_python"):
                 with self.subTest(mode=mode):
                     actual = copy.deepcopy(plan)
                     original.write_text('{"value":3}' if mode == "drift" else '{"value":2}')
                     if mode == "content": actual["resolved_inputs"][0]["content"] = '{"value":9}'
                     if mode == "entrypoint": actual["commands"][0]["entrypoint"] = str(root/"other.ps1")
+                    if mode == "missing_python": del actual["python_executable"]
+                    if mode == "unavailable_python": actual["python_executable"] = str(root/"missing/python.exe")
                     (project/"actual.json").unlink(missing_ok=True)
                     plan_path.write_text(json.dumps(actual))
                     completed = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(harness),
@@ -540,6 +657,9 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
                     else:
                         self.assertNotEqual(completed.returncode, 0)
                         self.assertFalse((project/"actual.json").exists())
+                        if mode in ("missing_python", "unavailable_python"):
+                            self.assertIn("recompile with the intended Python executable",
+                                          completed.stdout + completed.stderr)
                     original.write_text('{"value":2}')  # release is observable after every branch
 
     def test_canonical_src_profile_compiles_to_installed_module_without_changing_project_mapping(self):
@@ -629,6 +749,7 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
         self.assertEqual(command["argv"][command["argv"].index("-RepositoryRoot") + 1], str(REPO_ROOT))
         self.assertEqual(command["argv"][command["argv"].index("-RunId") + 1], command["run_id"])
         self.assertEqual(command["argv"][command["argv"].index("-SourceProfile")+1], "functional")
+        self.assertEqual(command["argv"][command["argv"].index("-PythonExe") + 1], result["python_executable"])
         self.assertTrue(any("Prototype" in message for message in result["limitations"]))
 
     def test_ion_processor_profile_rejects_unregistered_physics_and_higher_qualification(self):

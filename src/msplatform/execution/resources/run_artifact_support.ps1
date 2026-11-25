@@ -155,7 +155,9 @@ function Invoke-CompiledExecutionPlan {
       $step=$steps[0]
       if($profiles[0].steps[$stepIndex].step_id-ne$command.step_id){throw 'Compiled execution changed owner step order.'}
       $stepIndex++
-      $entry=[IO.Path]::GetFullPath((Join-Path $entryRoot ([string]$step.entrypoint)))
+      $entry=if(([string]$step.entrypoint).StartsWith('src/',[StringComparison]::Ordinal)){
+        [IO.Path]::GetFullPath((Join-Path $repository ([string]$step.entrypoint)))
+      }else{[IO.Path]::GetFullPath((Join-Path $entryRoot ([string]$step.entrypoint)))}
       if($entry-ne[IO.Path]::GetFullPath([string]$command.entrypoint)-or$step.shell-ne$command.shell){throw 'Compiled command differs from declared entrypoint.'}
       if(@($step.arguments).Count-ne@($command.arguments).Count){throw 'Compiled arguments differ from the declared owner inputs.'}
       if($plan.ContainsKey('owner_kind')-and$plan.owner_kind-eq'assembly'-and$optional.Count){
@@ -188,6 +190,11 @@ function Invoke-CompiledExecutionPlan {
       try{
         $global:LASTEXITCODE=0
         if($step.shell-eq'powershell'){
+          if(-not$plan.ContainsKey('python_executable')-or$plan.python_executable-isnot[string]-or
+             -not[IO.Path]::IsPathFullyQualified($plan.python_executable)-or
+             -not(Test-Path -LiteralPath $plan.python_executable -PathType Leaf)){
+            throw 'Compiled Python interpreter is missing or unavailable; recompile with the intended Python executable.'
+          }
           $parameters=(Get-Command -Name $entry -ErrorAction Stop).Parameters
           $named=@{}
           for($index=0;$index-lt$arguments.Count;$index++){

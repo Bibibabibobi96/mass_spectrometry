@@ -436,7 +436,12 @@ def compile_assembly_execution(owner: str, workflow_id: str, run_id: str,
     declared_arguments = [*workflow['arguments'], *(item for values in optional.values() for item in values)]
     if run_identity == 'backend_generated' and any('{run_id' in item for item in declared_arguments):
         raise ValueError('Backend-generated run identity cannot bind the planning run ID')
-    context = PreserveMissing(run_id=run_id, **bindings)
+    context = PreserveMissing(
+        run_id=run_id,
+        repository_root=str(REPO_ROOT),
+        python_exe=str(Path(sys.executable).resolve()),
+        **bindings,
+    )
     arguments = [argument.format_map(context) for argument in workflow["arguments"]]
     for key, values in optional.items():
         if key in bindings:

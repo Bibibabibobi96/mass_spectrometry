@@ -1175,7 +1175,9 @@ profile明确实际purpose、action、tools、model、资格支持和输出。`-
 
 Python step entrypoints under the actual repository `src/msplatform` tree compile to installed `msplatform.*` module names; project Python module names and PowerShell file commands keep their existing mapping. `runtime_binding.entrypoint` also accepts an `msplatform/...` installed source path, resolving the selector from that owner instead of a project wrapper; project-relative bindings remain supported.
 
-Python owner执行使用编译计划记录的`python_executable`（编译器当前`sys.executable`），不依赖仓库`.venv`或执行时的环境默认值。旧计划缺少该字段或解释器已不可用时，需用预期解释器重新编译；不静默换解释器。
+Python owner执行使用编译计划记录的`python_executable`（编译器当前`sys.executable`），不依赖仓库`.venv`或执行时的环境默认值。PowerShell owner同样必须收到该字段；缺少或失效时在入口调用前拒绝。登记`src/msplatform/...`入口的项目计划从本次仓库根解析入口，不把该相对路径接到组件配置目录。旧计划缺少解释器或解释器已不可用时，需用预期解释器重新编译；不静默换解释器。
+
+MR `native_condition`与OA `component_focus`把本次仓库根、编译时Python和显式`artifact_root`目录分别运输到原原生入口；产物根缺失或不存在时保持`NEEDS_RUNTIME_INPUTS`。IP `native_functional`显式接收同一计划Python。Assembly `oa_mr_flight`还必须提供`accelerator_component_contract_path`文件和`accelerator_geometry_profile_id`字符串，并显式运输本次`RepoRoot`及`PythonExe`；不得以调用方当前目录、`SIMULATION_PYTHON_EXE`或旧checkout补齐这些输入。
 
 项目runtime resolver可用现有`tools`字段返回本次已解析动作的工具集合，编译器只接受profile声明集合内的非空、唯一工具列表，并在preview显示实际选择。未解析或未提供该投影时，显示profile支持集合；支持多个后端不表示一次请求必启动全部后端。后端选择与依赖仍归实际项目入口，不由公共编译器猜测。
 

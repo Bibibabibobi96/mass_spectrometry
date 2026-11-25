@@ -36,11 +36,13 @@
       ],
       "required_bindings": [
         "component_request_path",
-        "release_spec_path"
+        "release_spec_path",
+        "artifact_root"
       ],
       "binding_types": {
         "component_request_path": "file",
-        "release_spec_path": "file"
+        "release_spec_path": "file",
+        "artifact_root": "directory"
       },
       "steps": [
         {
@@ -55,7 +57,13 @@
             "-RequestPath",
             "{component_request_path}",
             "-ReleaseSpecPath",
-            "{release_spec_path}"
+            "{release_spec_path}",
+            "-WorkspaceRoot",
+            "{repository_root}",
+            "-ArtifactRoot",
+            "{artifact_root}",
+            "-PythonExe",
+            "{python_exe}"
           ]
         }
       ],
