@@ -57,11 +57,16 @@ class NativeCorridorBunchScreeningRunnerTest(unittest.TestCase):
         arguments = [RUNNER, "-WorkpointRunPath", "absent", "-BunchSourceReceiptPath", "absent",
                      "-CompositionPlanPath", "absent", "-WorkspaceRoot", str(REPO_ROOT),
                      "-ArtifactRoot", str(REPO_ROOT.parent / "artifacts")]
-        missing = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", *map(str, arguments)],
-            cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
-        explicit = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", *map(str, arguments),
-            "-PythonExe", sys.executable], cwd=REPO_ROOT, capture_output=True, text=True,
-            encoding="utf-8", errors="replace", timeout=30)
+        def invoke(label, *extra):
+            try:
+                return subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", *map(str, arguments), *extra],
+                    cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
+            except subprocess.TimeoutExpired as error:
+                error.add_note(f"{label} pwsh call exceeded its 30-second budget")
+                raise
+
+        missing = invoke("Missing-Python")
+        explicit = invoke("Explicit-Python", "-PythonExe", sys.executable)
         self.assertNotEqual(missing.returncode, 0)
         self.assertIn("PythonExe", missing.stderr)
         self.assertNotEqual(explicit.returncode, 0)
