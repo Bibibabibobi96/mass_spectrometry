@@ -8,6 +8,8 @@ native or scientific qualification.
 
 The project verifier now loads the installed execution lease resource with an explicit HostContext. Callers must select Python through `-PythonExe` or `SIMULATION_PYTHON_EXE`; the verifier no longer assumes a checkout `.venv`. Test discovery and scientific behavior are unchanged.
 
+The finalization-recovery fixture now selects the same current package as the public entry through an explicit temporary Python environment, rather than mixing the source entry with an unrelated installed copy. The package-mismatch guard remains unchanged. The original CLI recovery parent passed all publication/seal/unknown-writer cases in 69.873 seconds, including byte-stable repeated recovery and no new native execution. Full same-candidate acceptance remains separate.
+
 Functional and GUI-replay preparation call the installed SIMION seed-freezing owner with their
 explicitly selected IOB and common PA placeholder; the placeholder remains unchanged. Frozen
 preparation and functional software tests cover the moved source. This does not add IP native
