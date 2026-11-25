@@ -33,7 +33,7 @@ def _configure_original_cli(command, *args, **kwargs):
     fixture = owner.parents[4]
     artifacts = Path(env['MASS_SPECTROMETRY_ARTIFACT_ROOT'])
     root = artifacts.parent
-    formal = artifacts / f'projects/{"single_reflection_oa_tof_mass_analyzer"}/formal'
+    formal = artifacts / f'components/{"single_reflection_oa_tof_mass_analyzer"}/formal'
     if (formal / 'simion/oatof_ideal_grounded.iob').is_file():
         mph = formal / 'comsol/single_reflection_oa_tof_mass_analyzer__model.mph'
         assets_path = fixture / 'src/msplatform/components/single_reflection_oa_tof/config/formal_assets.json'
@@ -181,18 +181,21 @@ if os.environ.get('TEST_MASS_FINALIZATION_SENTINEL'):
         atexit.register(shutil.rmtree, isolated_root, ignore_errors=True)
     isolated_python = isolated_root/'fixture-python'
     if not isolated_python.exists():
-        _SUBPROCESS_RUN([sys.executable, '-B', '-m', 'venv', '--system-site-packages',
-                         str(isolated_python)], check=True, capture_output=True)
+        _SUBPROCESS_RUN([sys.executable, '-B', '-m', 'venv', str(isolated_python)],
+                        check=True, capture_output=True)
         selected = isolated_python/('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
         purelib = Path(_SUBPROCESS_RUN([str(selected), '-I', '-B', '-c',
             'import sysconfig;print(sysconfig.get_paths()["purelib"])'], check=True,
             capture_output=True, text=True).stdout.strip())
+        import importlib
         import sysconfig
-        selected_packages = Path(sysconfig.get_paths()['purelib'])
-        shutil.copytree(selected_packages, purelib, dirs_exist_ok=True,
-                        ignore=shutil.ignore_patterns('msplatform', '__pycache__', '*.pth'))
+        dependency_roots = {str(Path(sysconfig.get_paths()['purelib']).resolve())}
+        for name in ('numpy', 'scipy', 'pandas', 'matplotlib', 'openpyxl'):
+            module = importlib.import_module(name)
+            dependency_roots.add(str(Path(module.__file__).resolve().parent.parent))
         (purelib/'oa_test_fixture.pth').write_text(
-            os.linesep.join((str(fixture), str(fixture/'src')))+os.linesep, encoding='utf-8')
+            os.linesep.join((str(fixture), str(fixture/'src'), *sorted(dependency_roots)))+os.linesep,
+            encoding='utf-8')
     else:
         selected = isolated_python/('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
     deployment = json.loads(environment_path.read_text(encoding='utf-8'))
@@ -220,7 +223,7 @@ def sealed_mass_source(root):
     from msplatform.execution.manifest_publication import publish_run_manifest
 
     artifacts = root / 'artifacts'
-    source = artifacts / 'src/msplatform/components/single_reflection_oa_tof/runs/20261031_100000__sim__cross__mass-parent'
+    source = artifacts / 'components/single_reflection_oa_tof_mass_analyzer/runs/20261031_100000__sim__cross__mass-parent'
     for relative in ('inputs', 'results', 'logs', 'comsol'):
         (source / relative).mkdir(parents=True)
     mode = {'schema_version': 1, 'mode': 'mass_spectrum_candidate', 'role': 'oa_tof_candidate_mass_spectrum_mode', 'species': [

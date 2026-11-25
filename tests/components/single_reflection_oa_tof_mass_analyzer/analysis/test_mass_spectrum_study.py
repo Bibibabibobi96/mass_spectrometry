@@ -36,11 +36,28 @@ class MassSpectrumStudyTests(unittest.TestCase):
     def setUpClass(cls):
         cls.cli_environment = tempfile.TemporaryDirectory(prefix="oatof-spectrum-cli-python-")
         environment_root = Path(cls.cli_environment.name)
-        subprocess.run([sys.executable, "-m", "venv", "--system-site-packages", str(environment_root)],
+        subprocess.run([sys.executable, "-m", "venv", str(environment_root)],
             check=True, capture_output=True, text=True, timeout=120, cwd=environment_root)
         cls.cli_python = environment_root / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+        # A child venv does not inherit its parent's venv packages. Select the
+        # parent's actual dependency roots explicitly instead of host packages.
+        import importlib
+        dependency_roots = sorted({str(Path(importlib.import_module(name).__file__).resolve().parent.parent)
+            for name in ("numpy", "scipy", "pandas", "matplotlib")})
+        purelib = Path(subprocess.run([str(cls.cli_python), "-I", "-c",
+            "import sysconfig;print(sysconfig.get_path('purelib'))"], check=True, capture_output=True,
+            text=True, timeout=30, cwd=environment_root).stdout.strip())
+        (purelib / "candidate-selected-dependencies.pth").write_text(
+            "\n".join(dependency_roots) + "\n", encoding="utf-8")
+        import sysconfig
+        build_root = sysconfig.get_path("purelib", vars={
+            "base": sys.base_prefix, "platbase": sys.base_prefix,
+            "installed_base": sys.base_prefix, "installed_platbase": sys.base_prefix})
+        build_environment = dict(os.environ, PYTHONNOUSERSITE="1",
+            PYTHONPATH=os.pathsep.join([*dependency_roots, build_root]))
         subprocess.run([str(cls.cli_python), "-m", "pip", "install", "--no-deps",
-            "--no-build-isolation", str(REPO)], check=True, capture_output=True, text=True, timeout=120, cwd=environment_root)
+            "--no-build-isolation", str(REPO)], check=True, capture_output=True, text=True,
+            timeout=120, cwd=environment_root, env=build_environment)
         origin = subprocess.run([str(cls.cli_python), "-I", "-c",
             "from pathlib import Path;import msplatform.workflows.single_reflection_mass_spectrum_study as m;print(Path(m.__file__).resolve())"],
             check=True, capture_output=True, text=True, timeout=30, cwd=environment_root).stdout.strip()
@@ -251,7 +268,7 @@ for index,row in enumerate(rows,1):
             self.assertFalse(metrics["resolution_claim_allowed"])
             self.assertEqual(len(metrics["species"]), 10)
             formal_after = {str(path): file_record(path, "required_evidence")["sha256"]
-                for path in (root / "artifacts/src/msplatform/components/single_reflection_oa_tof/formal").rglob("*")
+                for path in (root / "artifacts/components/single_reflection_oa_tof_mass_analyzer/formal").rglob("*")
                 if path.is_file()}
             for path, sha in formal_before.items():
                 if "/formal/" in path.replace("\\", "/"):
