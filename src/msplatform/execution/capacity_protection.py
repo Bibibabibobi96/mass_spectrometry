@@ -365,10 +365,18 @@ def _renew_capacity_protection_lease_unlocked(
     )
     bootstrap_renewal = False
     if ledger_missing:
-        if not additional_keys.issubset(current_keys) or not additional_paths.issubset(current_paths):
+        uncovered_paths = {
+            candidate for candidate in additional_paths
+            if not any(
+                Path(candidate) == current or current in Path(candidate).parents
+                for current in map(Path, current_paths)
+            )
+        }
+        if not additional_keys.issubset(current_keys) or uncovered_paths:
             raise ValueError("bootstrap lease renewal cannot expand protection scope")
         if committed_new_bytes is not None and committed_new_bytes != current_commitment:
             raise ValueError("bootstrap lease renewal cannot change committed_new_bytes")
+        additional_paths.intersection_update(current_paths)
         bootstrap_renewal = True
     else:
         _assert_not_pending_disposal(

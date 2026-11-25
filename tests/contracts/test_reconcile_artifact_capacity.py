@@ -1813,6 +1813,38 @@ assert 'tools.repository.legacy_capacity_backfill' not in sys.modules
             self.assertEqual(renewed["renewal_mode"], "bootstrap_missing_capacity_ledger")
             self.assertFalse(renewed["scope_extended"])
 
+    def test_missing_ledger_bootstrap_renewal_accepts_descendant_and_rejects_ancestor(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            protected = root / "projects" / "p" / "runs" / "active"
+            protected.mkdir(parents=True)
+            manifest = protected / "run_manifest.json"
+            manifest.write_text("{}", encoding="utf-8")
+            started = datetime(2026, 1, 1, tzinfo=timezone.utc)
+            created = create_capacity_protection_lease(
+                root, lease_id="bootstrap-contained", owner="same-owner", ttl_seconds=120,
+                protected_paths=[protected], committed_new_bytes=100, now=started,
+            )
+            (root / "platform" / "capacity_ledger.json").unlink()
+
+            renewed = renew_capacity_protection_lease(
+                root, lease_id="bootstrap-contained", owner="same-owner", ttl_seconds=300,
+                protected_paths=[manifest], committed_new_bytes=100,
+                now=datetime(2026, 1, 1, 0, 1, tzinfo=timezone.utc),
+            )
+
+            self.assertTrue(renewed["bootstrap_renewal"])
+            self.assertFalse(renewed["scope_extended"])
+            self.assertEqual(renewed["protected_paths"], created["protected_paths"])
+            before = Path(renewed["path"]).read_bytes()
+            with self.assertRaisesRegex(ValueError, "cannot expand protection scope"):
+                renew_capacity_protection_lease(
+                    root, lease_id="bootstrap-contained", owner="same-owner", ttl_seconds=300,
+                    protected_paths=[protected.parent], committed_new_bytes=100,
+                    now=datetime(2026, 1, 1, 0, 2, tzinfo=timezone.utc),
+                )
+            self.assertEqual(Path(renewed["path"]).read_bytes(), before)
+
     def test_bootstrap_renewal_does_not_accept_a_damaged_ledger(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
