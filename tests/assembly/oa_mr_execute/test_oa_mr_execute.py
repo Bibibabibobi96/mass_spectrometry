@@ -871,11 +871,13 @@ try{
         command = r"""
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 $python='Check-Source';$sourceRoot='repo';$workspaceRoot='workspace';$artifactRoot='workspace/artifacts';$projectArtifacts=Join-Path $artifactRoot 'assemblies/instrument_assembly';$RunId='fixture'
+$pathContext=@{source_root=[IO.Path]::GetFullPath($sourceRoot);artifact_root=[IO.Path]::GetFullPath($artifactRoot);execution_root=[IO.Path]::GetFullPath((Join-Path $artifactRoot 'platform/execution_aliases'));host_resource_state_path=[IO.Path]::GetFullPath((Join-Path $artifactRoot 'platform/host_resources.sqlite3'))}
 $trajectoryRetentionClass='compact';$trajectoryRetentionReason='fixture'
 $bunchSourceManifest='source';$mirrorManifest='source';$stripeManifest='source';$manifest='source';$nativeBankManifest='source'
 function New-RunPackage {
- param($Python,$RepoRoot,$ArtifactRoot,$RunId,$Project,$Mode,$Software,[switch]$RetentionContractEnabled,$RetentionClass,$RetentionReason,[switch]$CapacityLedgerLifecycleEnabled,$AdditionalDirectories,[switch]$UseShortExecutionPath)
+ param($Python,$RepoRoot,$ArtifactRoot,$RunId,$Project,$Mode,$Software,[switch]$RetentionContractEnabled,$RetentionClass,$RetentionReason,[switch]$CapacityLedgerLifecycleEnabled,$AdditionalDirectories,[switch]$UseShortExecutionPath,$PathContext)
  if($Project-ne'instrument_assembly'-or$Mode-ne'oa_mr'-or$ArtifactRoot-notlike'*instrument_assembly'){throw 'Incorrect new run identity'}
+ if($null-eq$PathContext-or@($PathContext.Keys).Count-ne4-or$PathContext.source_root-ne[IO.Path]::GetFullPath($sourceRoot)-or$PathContext.artifact_root-ne[IO.Path]::GetFullPath((Join-Path $workspaceRoot 'artifacts'))){throw 'Incorrect frozen workspace context'}
  return @{project=$Project;mode=$Mode}
 }
 function Check-Source {

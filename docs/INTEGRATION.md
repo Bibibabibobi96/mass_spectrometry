@@ -41,6 +41,8 @@ the integration entry and provider duplicate are retired without forwarding. Sta
 resources, the default contract and frozen entry identity all use that package owner;
 explicit scientific inputs, complete-instance scope and native protections are unchanged.
 
+On the `9d5b565a` candidate, the owner-separation regression's extracted `New-RunPackage` block now receives the same four-root `pathContext` shape as the real `Resolve-WorkspacePaths` initialization, and the test double validates that context. Production initialization is unchanged. The formerly failing method passed in 0.649 seconds and the complete OA–MR execute module passed 52 tests in 159.622 seconds. New-run/source-owner separation, argument forwarding, identity checks and foreign-source refusal remain covered; no native solver was launched.
+
 The FullJoint, RF–IP continuous and SFI recorded-birth thin PowerShell entries now
 select Python only through their explicit argument or `SIMULATION_PYTHON_EXE`;
 none falls back to a checkout `.venv`. Missing-selection refusal passed for all
