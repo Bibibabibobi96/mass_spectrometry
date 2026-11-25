@@ -1,7 +1,10 @@
 """Ideal quadrupole Mathieu reference; original group-voltage conventions."""
 from __future__ import annotations
 import math
-from scipy.constants import atomic_mass, elementary_charge
+from msplatform.contracts.particle_physics import (
+    AMU_KG as atomic_mass,
+    ELEMENTARY_CHARGE_C as elementary_charge,
+)
 from scipy.optimize import brentq
 from scipy.special import mathieu_a, mathieu_b
 

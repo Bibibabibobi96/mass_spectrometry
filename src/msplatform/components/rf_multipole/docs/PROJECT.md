@@ -1377,6 +1377,7 @@ The explicit named L1 source projection, scan and response policy belong to `wor
 They retain original SciPy constants, positive singly charged scope, source RNG/phase order,
 hard-radius aperture and no-fringe ideal model. They differ from the high-order RK4 transport.
 Research JSON remains explicit; canonical APIs do not select project defaults.
+Mathieu mass/charge conversion and the finite-length kernel use the repository `particle_physics` `AMU_KG` and `ELEMENTARY_CHARGE_C` authorities rather than SciPy's version-dependent CODATA constants. This removes the observed source/install mismatch without changing the declared RF geometry, drive, source or acceptance policy; existing historical numerical evidence is not rewritten or requalified.
 
 The root `run_finite_length.py` now selects the named research inputs and an explicit
 saved execution environment/profile/workspace, then delegates to the installed

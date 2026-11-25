@@ -23,6 +23,7 @@ from msplatform.workflows.rf_mass_filter import (
 
 from msplatform.workflows.rf_mass_filter import finite_length as MODULE
 from msplatform.components.rf_multipole import finite_length_transport as KERNEL
+from msplatform.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4] / "src" / "msplatform" / "components" / "rf_multipole"
 
@@ -866,6 +867,9 @@ $r | ConvertTo-Json -Depth 20 -Compress
                 rejected('missing')
 
 
+
+    def test_finite_kernel_uses_common_particle_constants(self) -> None:
+        self.assertEqual((KERNEL.atomic_mass, KERNEL.elementary_charge), (AMU_KG, ELEMENTARY_CHARGE_C))
 
     def test_finite_length_screen_transmits_tuned_and_rejects_outer_masses(self) -> None:
         particles = MODULE._l1_particles_from_release(self.source, 64, 20260722)

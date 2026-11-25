@@ -3,7 +3,10 @@ from __future__ import annotations
 import math
 from typing import Any
 import numpy as np
-from scipy.constants import atomic_mass, elementary_charge
+from msplatform.contracts.particle_physics import (
+    AMU_KG as atomic_mass,
+    ELEMENTARY_CHARGE_C as elementary_charge,
+)
 
 def simulate_mass(
     mass_Th: float,

@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from msplatform.components.rf_multipole import mass_filter_theory as MODULE
+from msplatform.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
 from msplatform.workflows.rf_mass_filter import reference as REFERENCE
 
 
@@ -40,7 +41,8 @@ class QuadrupoleL0TheoryTests(unittest.TestCase):
         self.assertAlmostEqual(mass, 100.0, delta=2e-4)
 
     def test_mathieu_parameters_round_trip(self) -> None:
-        q = 0.7060233009794091
+        self.assertEqual((MODULE.atomic_mass, MODULE.elementary_charge), (AMU_KG, ELEMENTARY_CHARGE_C))
+        q = 0.7060233019658202
         mass = MODULE.mass_to_charge_th(q, 139.81792, 4.0, 1.1e6)
         parameters = MODULE.mathieu_parameters(mass, 0.0, 139.81792, 4.0, 1.1e6)
         self.assertAlmostEqual(mass, 100.0, delta=1e-12)
