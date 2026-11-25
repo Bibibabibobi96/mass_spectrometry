@@ -1829,7 +1829,7 @@ $project='parallel_mirror_dual_stripe_mr_tof'
 $runId='20261029_020000__test__python__provider-seal-fixture'
 $reason='Production ordinary-static C0 parent/local fields retained for downstream native trajectory consumption.'
 $software=@('Python 3.11','SIMION 2020')
-$pkg=New-RunPackage -Python $python -RepoRoot $repo -ArtifactRoot (Join-Path $artifacts ('projects/'+$project)) `
+$pkg=New-RunPackage -Python $python -RepoRoot $repo -ArtifactRoot (Join-Path $artifacts ('components/'+$project)) `
  -RunId $runId -Project $project -Mode native_static_field_provider -Software $software `
  -RetentionContractEnabled -RetentionClass solver_review -RetentionReason $reason `
  -CapacityLedgerLifecycleEnabled -CapacityLedgerArtifactRoot $artifacts -AdditionalDirectories @('simion')

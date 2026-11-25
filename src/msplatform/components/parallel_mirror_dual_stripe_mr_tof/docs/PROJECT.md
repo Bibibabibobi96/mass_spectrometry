@@ -22,7 +22,7 @@ installed Python calls, without checkout-root discovery or `PYTHONPATH` injectio
 Real payload-guard and closeout tests remain in force. The seal-failure fixture
 now publishes its intended successful parent through the actual public writer,
 then verifies two idempotent seals and unchanged manifest identity; it no longer
-leaves an initial `checkpoint` source. This is software recovery evidence only;
+leaves an initial `checkpoint` source. On the integrated `41dc1fd1` candidate, the fixture's synthetic new run was corrected from the retired `artifacts/projects/` root to `artifacts/components/parallel_mirror_dual_stripe_mr_tof/`; the public root validator is unchanged. The exact seal-failure method passed in 11.257 seconds and the complete module passed 64 tests with two existing external-evidence skips in 107.832 seconds, retaining the injected seal failure, zero native reentry, idempotence and original-byte assertions. This is software recovery evidence only;
 no native execution follows.
 
 The seven affected workflow resources now resolve the default MR candidate contract beside the
