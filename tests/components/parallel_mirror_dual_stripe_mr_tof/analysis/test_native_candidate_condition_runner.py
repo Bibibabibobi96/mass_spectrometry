@@ -196,6 +196,8 @@ class NativeCandidateConditionRunnerTests(unittest.TestCase):
             "InitialP1V",
             "InitialP2LowerV",
             "InitialP2UpperV",
+            "WorkspaceRoot",
+            "ArtifactRoot",
         ):
             self.assertIn(f"'{name}'", self.source)
 
@@ -249,6 +251,13 @@ class NativeCandidateConditionRunnerTests(unittest.TestCase):
         for name in ("stripeArgs", "safeExitArgs", "coverageArgs", "continuationArgs",
                      "workpointArgs", "candidateArgs"):
             self.assertIn(f"${name}.PythonExe=$python", self.source)
+        for name in ("stripeArgs", "coverageArgs", "continuationArgs", "workpointArgs", "candidateArgs"):
+            self.assertIn(f"${name}.WorkspaceRoot=$workspaceRoot", self.source)
+            self.assertIn(f"${name}.ArtifactRoot=$artifactRoot", self.source)
+        self.assertIn("RepoRoot=$workspaceRoot", self.source)
+        self.assertIn("CompositionPlanPath=$CompositionPlanPath;LocalScopePath=$LocalScopePath", self.source)
+        self.assertIn("OwnerId orthogonal_accelerator", self.source)
+        self.assertNotIn("projects\\orthogonal_accelerator", self.source)
         self.assertIn("Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind assembly", self.source)
         self.assertIn("& $python -I -B -m msplatform.workflows.oa_mr.native_system_runtime", self.source)
         self.assertNotIn(".venv", self.source)
@@ -306,7 +315,11 @@ function Complete-FailedRun {
                     encoding="utf-8",
                 )
                 (analysis / "run_dual_stripe_operating_seed.ps1").write_text(
-                    "param($FixedGridRunManifest,$ContractPath,$RunId,$PythonExe)\n"
+                    "param([Parameter(Mandatory)]$AcceleratorComponentContractPath,"
+                    "[Parameter(Mandatory)]$AcceleratorGeometryProfileId,"
+                    "[Parameter(Mandatory)]$FixedGridRunManifest,[Parameter(Mandatory)]$ContractPath,"
+                    "[Parameter(Mandatory)]$RunId,[Parameter(Mandatory)]$WorkspaceRoot,"
+                    "[Parameter(Mandatory)]$ArtifactRoot,[Parameter(Mandatory)]$PythonExe)\n"
                     "throw 'PREPARE_BOUNDARY_BEFORE_PHYSICS'\n",
                     encoding="utf-8",
                 )
@@ -383,6 +396,176 @@ function Complete-FailedRun {
                 frozen_contract = json.loads(Path(config["inputs"]["condition_contract"]).read_text(encoding="utf-8-sig"))
                 self.assertEqual(frozen_contract["nominal"]["target_drift_period_ratio"], 25.5)
                 self.assertEqual(frozen_contract["accelerator"]["focus_y_anchor"]["project_y_mm"], -55.0)
+
+    def test_new_oa_provider_is_read_only_from_the_component_artifact_root(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            repo = root / "repo"
+            resources = repo / "src/msplatform/workflows/resources"
+            provider_resources = repo / "src/msplatform/backends/simion/resources"
+            resources.mkdir(parents=True)
+            provider_resources.mkdir(parents=True)
+            condition_runner = resources / RUNNER.name
+            shutil.copyfile(RUNNER, condition_runner)
+            real_support = RUNNER.parents[4] / "src/msplatform/execution/resources/run_artifact_support.ps1"
+            support = repo / "src/msplatform/execution/resources" / real_support.name
+            support.parent.mkdir(parents=True)
+            support.write_text(
+                f". '{real_support.as_posix()}'\n" + r"""
+function Resolve-RunArtifactRoot {
+  param($ArtifactRoot,$OwnerKind,$OwnerId,$Python)
+  return Join-Path $ArtifactRoot (Join-Path $OwnerKind's' $OwnerId)
+}
+function New-RunPackage {
+  param($Python,$RepoRoot,$ArtifactRoot,$RunId,$Project,$Mode,$Software,
+    [switch]$RetentionContractEnabled,$RetentionClass,[switch]$CapacityLedgerLifecycleEnabled)
+  $run=Join-Path (Join-Path $ArtifactRoot 'runs') $RunId
+  $inputs=Join-Path $run 'inputs'
+  New-Item -ItemType Directory -Path $inputs -Force|Out-Null
+  $config=Join-Path $run 'run_config.json'
+  Write-RunJson -Path $config -Value @{run_id=$RunId;project=$Project;mode=$Mode}
+  return [pscustomobject]@{input_dir=$inputs;run_config=$config;summary=(Join-Path $run 'summary.json')}
+}
+function Complete-FailedRun {
+  param($Python,$RepoRoot,$RunConfig,$Summary,$SummaryRole,$Reason,$Software,$Status,$FailureStage)
+  Write-RunJson -Path $Summary -Value @{status=$Status;failure_stage=$FailureStage;reason=$Reason}
+}
+""",
+                encoding="utf-8",
+            )
+            (resources / "run_dual_stripe_operating_seed.ps1").write_text(r"""
+param([Parameter(Mandatory)]$AcceleratorComponentContractPath,[Parameter(Mandatory)]$AcceleratorGeometryProfileId,
+  [Parameter(Mandatory)]$FixedGridRunManifest,[Parameter(Mandatory)]$ContractPath,[Parameter(Mandatory)]$RunId,
+  [Parameter(Mandatory)]$WorkspaceRoot,[Parameter(Mandatory)]$ArtifactRoot,[Parameter(Mandatory)]$PythonExe)
+$run=Join-Path $ArtifactRoot "components/parallel_mirror_dual_stripe_mr_tof/runs/$RunId"
+New-Item -ItemType Directory -Path $run -Force|Out-Null
+@{run_id=$RunId}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $run 'run_manifest.json')
+@{selected_seed=@{selected_exact_K_slow_energy_per_charge_v=5.0}}|ConvertTo-Json -Depth 5|
+  Set-Content -LiteralPath (Join-Path $run 'summary.json')
+""", encoding="utf-8")
+            receipt = {
+                "role": "orthogonal_accelerator_mrtof_runtime_receipt",
+                "status": "published_standalone_response_bank",
+                "mrtof_projection": {
+                    "accepted_release": {
+                        "slow_energy_center_per_charge_v": 5.0,
+                        "slow_energy_full_width_per_charge_v": 0.2,
+                        "mass_th": 524.0,
+                        "charge_e": 1,
+                        "nominal_direction": [0.0, 1.0, 0.0],
+                        "angular_full_width_deg": 0.0,
+                        "geometry": {
+                            "shape": "cylinder", "axis": "y", "radius_mm": 0.5,
+                            "height_mm": 1.0, "center_mm": [0.0, 0.0, 0.0],
+                        },
+                    },
+                    "required_source_y_offset_from_accelerator_axis_mm": -1.0,
+                    "provider_exit_energy_acceptance": {
+                        "passed": True,
+                        "tolerances": {
+                            "maximum_exit_transverse_energy_error_per_charge_v": 0.0,
+                            "maximum_exit_transverse_velocity_bias_mm_per_us": 0.0,
+                        },
+                        "center_particle": {
+                            "transverse_energy_passed": True,
+                            "transverse_velocity_bias_passed": True,
+                        },
+                        "cohort": {
+                            "transverse_energy_passed": True,
+                            "transverse_velocity_bias_passed": True,
+                        },
+                    },
+                },
+            }
+            (provider_resources / "run_component_focus_workflow.ps1").write_text(
+                "param([Parameter(Mandatory)]$RunId,[Parameter(Mandatory)]$RequestPath,"
+                "[Parameter(Mandatory)]$ReleaseSpecPath,[Parameter(Mandatory)]$WorkspaceRoot,"
+                "[Parameter(Mandatory)]$ArtifactRoot,[Parameter(Mandatory)]$PythonExe)\n"
+                "$run=Join-Path $ArtifactRoot \"components/orthogonal_accelerator/runs/$RunId\"\n"
+                "New-Item -ItemType Directory -Path (Join-Path $run 'results') -Force|Out-Null\n"
+                "@{project='orthogonal_accelerator';mode='component_focus_workflow';status='success';run_id=$RunId}|"
+                "ConvertTo-Json|Set-Content -LiteralPath (Join-Path $run 'run_manifest.json')\n"
+                "$receipt=ConvertFrom-Json -AsHashtable @'\n" + json.dumps(receipt) + "\n'@\n"
+                "$receipt|ConvertTo-Json -Depth 20|Set-Content -LiteralPath (Join-Path $run 'results/mrtof_runtime_receipt.json')\n"
+                "@{workspace=$WorkspaceRoot;artifact=$ArtifactRoot;python=$PythonExe}|ConvertTo-Json|"
+                "Set-Content -LiteralPath (Join-Path $run 'transport.json')\n",
+                encoding="utf-8",
+            )
+            run_id = "20261125_000000__analysis__python__condition"
+            run_inputs = root / "artifacts/components/parallel_mirror_dual_stripe_mr_tof/runs" / run_id / "inputs"
+            selected_python = root / "selected_python.cmd"
+            selected_python.write_text(
+                "@echo off\r\n"
+                f"if exist \"{run_inputs}\" echo {{}}>\"{run_inputs / 'native_system_runtime_bundle.json'}\"\r\n"
+                f"echo {(repo / 'src/msplatform').as_posix()}\r\n",
+                encoding="utf-8",
+            )
+            contract = root / "contract.json"
+            contract.write_text(json.dumps({
+                "nominal": {"target_drift_period_ratio": 1},
+                "accelerator": {"focus_y_anchor": {"project_y_mm": 0}},
+            }), encoding="utf-8")
+            release = root / "release.json"
+            release.write_text(json.dumps({
+                "role": "repository_ion_release",
+                "species": {"charge_state": 1, "mass_amu": 524.0},
+                "sampling": {
+                    "kinetic_energy": {"center_ev": 1.0, "full_width_ev": 0.2},
+                    "nominal_direction": [0.0, 1.0, 0.0], "angular_full_width_deg": 0.0,
+                },
+                "geometry": {
+                    "shape": "cylinder", "axis": "y", "radius_mm": 0.5,
+                    "height_mm": 1.0, "center_mm": [0.0, 0.0, 0.0],
+                },
+            }), encoding="utf-8")
+            mirror = root / "mirror"
+            (mirror / "results").mkdir(parents=True)
+            (mirror / "run_manifest.json").write_text("{}", encoding="utf-8")
+            (mirror / "results/mirror_real_field_period_comparison.json").write_text("{}", encoding="utf-8")
+            context = root / "context.json"
+            context.write_text(json.dumps({
+                "schema_version": 2, "role": "mrtof_native_candidate_condition_context",
+                "accelerator_component_contract_path": str(contract),
+                "accelerator_geometry_profile_id": "closed_two_zone_compact_mr_axial_r3_gap1_4mm",
+                "contract_path": str(contract),
+                "fixed_grid_mirror_run_manifest": str(mirror / "run_manifest.json"),
+                "geometry_review_run_path": str(root), "native_corridor_bank_run_path": str(root),
+                "native_system_runtime_bundle_path": str(contract), "native_runtime_checkpoint_path": "",
+                "source_definition_path": str(contract), "oa_base_release_spec_path": str(release),
+                "oa_request_path": str(contract),
+            }), encoding="utf-8")
+            condition = root / "condition.json"
+            condition.write_text(json.dumps({
+                "schema_version": 1, "role": "mrtof_native_candidate_campaign_condition",
+                "K": 25.5, "accelerator_y": -55.0,
+            }), encoding="utf-8")
+            plan = root / "plan.json"
+            plan.write_text("{}", encoding="utf-8")
+            (root / "results").mkdir()
+            (root / "results/pa_family_cache_publication.json").write_text(json.dumps({
+                "cache_key": "fixture-cache", "generation_sha256": "fixture-generation",
+            }), encoding="utf-8")
+            result = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(condition_runner),
+                 "-ConditionPath", str(condition), "-ContextPath", str(context), "-RunId", run_id,
+                 "-WorkspaceRoot", str(repo), "-ArtifactRoot", str(root / "artifacts"),
+                 "-PythonExe", str(selected_python), "-CompositionPlanPath", str(plan)],
+                cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                timeout=60, check=False,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            summary = json.loads((
+                root / "artifacts/components/parallel_mirror_dual_stripe_mr_tof/runs" / run_id / "summary.json"
+            ).read_text(encoding="utf-8-sig"))
+            self.assertEqual(summary["failure_stage"], "accelerator_safe_exit")
+            self.assertTrue((run_inputs / "native_system_runtime_bundle.json").is_file())
+            provider_run = root / "artifacts/components/orthogonal_accelerator/runs/20261125_000000__sim__simion__mrtof-condition-oa-provider"
+            self.assertTrue((provider_run / "run_manifest.json").is_file())
+            transport = json.loads((provider_run / "transport.json").read_text(encoding="utf-8-sig"))
+            self.assertEqual(transport, {
+                "workspace": str(repo), "artifact": str(root / "artifacts"), "python": str(selected_python),
+            })
+            self.assertFalse((root / "artifacts/projects").exists())
 
 
 if __name__ == "__main__":

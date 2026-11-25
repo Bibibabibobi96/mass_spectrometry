@@ -26,7 +26,6 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $project='parallel_mirror_dual_stripe_mr_tof'
 $workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path;$artifactRoot=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot);$repoRoot=$workspaceRoot
-$oaArtifactRuns=Join-Path $artifactRoot 'projects\orthogonal_accelerator\runs'
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
 $packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'
 if($LASTEXITCODE-ne0){throw 'Installed msplatform package is unavailable.'};$packageRoot=(Resolve-Path -LiteralPath $packageRootText).Path
@@ -42,6 +41,7 @@ if($localScopeSource-and-not(Test-Path -LiteralPath $localScopeSource -PathType 
 . (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
 $artifactProject=Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind component -OwnerId $project -Python $python
 $artifactRuns=Join-Path $artifactProject 'runs'
+$oaArtifactRuns=Join-Path (Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind component -OwnerId orthogonal_accelerator -Python $python) 'runs'
 
 function Resolve-ContextPath {
   param([Parameter(Mandatory)][string]$Value)
@@ -339,7 +339,7 @@ try{
     $failureStage='fixed_grid_stripe_seed'
     $stripeId=$stamp+'__analysis__python__mrtof-condition-stripe'
     $stripeArgs=@{AcceleratorComponentContractPath=$frozenOaComponentContract;AcceleratorGeometryProfileId=$oaGeometryProfileId;FixedGridRunManifest=$fixedMirrorManifest;ContractPath=$conditionContract;RunId=$stripeId}
-    $stripeArgs.PythonExe=$python
+    $stripeArgs.WorkspaceRoot=$workspaceRoot;$stripeArgs.ArtifactRoot=$artifactRoot;$stripeArgs.PythonExe=$python
     & (Join-Path $workflowResources 'run_dual_stripe_operating_seed.ps1') @stripeArgs|Out-Host
     $stripeManifest=Get-RunManifest -ChildRunId $stripeId
   }
@@ -441,6 +441,7 @@ try{
       Prism2VoltageV=[double]$context.accelerator_safe_exit.prism_2_placeholder_v
       AcceleratorSafeExitOnly=$true;AcceleratorSourceYOffsetMm=$sourceYOffset
       AcceleratorYAnchorMm=$acceleratorY;ContractPath=$conditionContract;RunId=$safeExitId
+      RepoRoot=$workspaceRoot
     }
     if($nativeRuntimeCheckpoint){$safeExitArgs.NativeRuntimeCheckpoint=$nativeRuntimeCheckpoint}
     $safeExitArgs.PythonExe=$python;if($SimionExe){$safeExitArgs.SimionExe=$SimionExe}
@@ -451,13 +452,13 @@ try{
     $coverageId=$stamp+'__analysis__python__mrtof-condition-prism-coverage'
     $coverageArgs=Copy-ArgumentMap -Source $context.coverage_arguments -Forbidden @(
       'ExactKRunManifest','StripeSeedRunManifest','FixedMirrorStripeRunManifest','AcceleratorExitRunManifest',
-      'ContractPath','RunId','PythonExe')
+      'ContractPath','RunId','WorkspaceRoot','ArtifactRoot','PythonExe')
     $coverageArgs.AcceleratorComponentContractPath=$frozenOaComponentContract
     $coverageArgs.AcceleratorGeometryProfileId=$oaGeometryProfileId
     $coverageArgs.FixedMirrorStripeRunManifest=$stripeManifest
     $coverageArgs.AcceleratorExitRunManifest=$safeExitManifest
     $coverageArgs.ContractPath=$conditionContract;$coverageArgs.RunId=$coverageId
-    $coverageArgs.PythonExe=$python
+    $coverageArgs.WorkspaceRoot=$workspaceRoot;$coverageArgs.ArtifactRoot=$artifactRoot;$coverageArgs.PythonExe=$python
     & (Join-Path $workflowResources 'run_two_prism_segmented_coverage.ps1') @coverageArgs|Out-Host
     $coverageManifest=Get-RunManifest -ChildRunId $coverageId
 
@@ -465,9 +466,10 @@ try{
     $continuationId=$stamp+'__analysis__python__mrtof-condition-prism-continuation'
     $continuationArgs=Copy-ArgumentMap -Source $context.continuation_arguments -Forbidden @(
       'CoverageRunManifest','ExpectedTopologySignatureSha256','SolveMode','InitialP1V','InitialP2LowerV','InitialP2UpperV',
-      'P1MinimumV','P1MaximumV','P2MinimumV','P2MaximumV','RunId','PythonExe')
+      'P1MinimumV','P1MaximumV','P2MinimumV','P2MaximumV','RunId','WorkspaceRoot','ArtifactRoot','PythonExe')
     $continuationArgs.CoverageRunManifest=$coverageManifest
-    $continuationArgs.RunId=$continuationId;$continuationArgs.PythonExe=$python
+    $continuationArgs.RunId=$continuationId
+    $continuationArgs.WorkspaceRoot=$workspaceRoot;$continuationArgs.ArtifactRoot=$artifactRoot;$continuationArgs.PythonExe=$python
     & (Join-Path $workflowResources 'run_two_prism_segmented_continuation.ps1') @continuationArgs|Out-Host
     $continuationManifest=Get-RunManifest -ChildRunId $continuationId
   }
@@ -536,6 +538,7 @@ try{
       AcceleratorSourceYOffsetMm=$sourceYOffset;AcceleratorYAnchorMm=$acceleratorY
       RetainBaselineGuiWorkbench=$true;ContractPath=$conditionContract;RunId=$workpointId
       }
+      $workpointArgs.WorkspaceRoot=$workspaceRoot;$workpointArgs.ArtifactRoot=$artifactRoot
       if($workpointResumeArguments.Count-eq3){
       $workpointArgs.InitialWorkpointManifest=(Resolve-Path -LiteralPath $WorkpointResumeInitialManifest).Path
       $workpointArgs.ResumeParentCheckpoint=(Resolve-Path -LiteralPath $WorkpointResumeParentCheckpoint).Path
@@ -582,8 +585,10 @@ try{
       MirrorRunPath=$mirrorRun;StripeRunPath=$stripeRun;AcceleratorProviderReceiptPath=$acceleratorReceipt
       NativeCorridorBankRunPath=$nativeBank;NativeSystemRuntimeBundlePath=$nativeBundle
       SourceDefinitionPath=$conditionSourceDefinition;AcceleratorYAnchorMm=$acceleratorY
+      CompositionPlanPath=$CompositionPlanPath;LocalScopePath=$LocalScopePath
       ContractPath=$conditionContract;RunId=$candidateId
     }
+    $candidateArgs.WorkspaceRoot=$workspaceRoot;$candidateArgs.ArtifactRoot=$artifactRoot
     if($nativeRuntimeCheckpoint){$candidateArgs.NativeRuntimeCheckpoint=$nativeRuntimeCheckpoint}
     $candidateArgs.PythonExe=$python;if($SimionExe){$candidateArgs.SimionExe=$SimionExe}
     & (Join-Path $workflowResources 'run_native_candidate_chain.ps1') @candidateArgs|Out-Host

@@ -355,7 +355,12 @@ if($caught-notlike'*frozen numerical contract*'){throw 'Centre projection omitte
             digest = hashlib.sha256(report.read_bytes()).hexdigest()
             historical_runner = root / "historical.ps1"
             historical_runner.write_text(
-                "param($FlightRunPath,$RunId,$PythonExe) $global:diagnosticCalls++\n",
+                "param([Parameter(Mandatory)]$FlightRunPath,[Parameter(Mandatory)]$RunId,"
+                "[Parameter(Mandatory)]$PythonExe,[Parameter(Mandatory)]$WorkspaceRoot,"
+                "[Parameter(Mandatory)]$ArtifactRoot)\n"
+                "if($WorkspaceRoot-ne'fixture-workspace'-or$ArtifactRoot-ne'fixture-artifacts'-or"
+                "$PythonExe-ne'mock'){throw 'diagnostic execution context changed'}\n"
+                "$global:diagnosticCalls++\n",
                 encoding="utf-8",
             )
             for case in ("reuse", "historical", "bad_hash", "duplicate", "failed"):
@@ -378,6 +383,7 @@ if($caught-notlike'*frozen numerical contract*'){throw 'Centre projection omitte
                         + "$ast.FindAll({param($n) $n-is[System.Management.Automation.Language.FunctionDefinitionAst]-and"
                         + "$n.Name-in@('Get-ManifestOutputPath','Invoke-Diagnostic')},$true)|ForEach-Object {Invoke-Expression $_.Extent.Text};"
                         + "$project='parallel_mirror_dual_stripe_mr_tof';$python='mock';$global:diagnosticCalls=0;"
+                        + "$workspaceRoot='fixture-workspace';$artifactWorkspaceRoot='fixture-artifacts';"
                         + f"$artifactRoot={quote(root)};$diagnosticRunner={quote(historical_runner)};"
                         + "function New-StageRunId {param($Activity,$Scope,$Subject) 'historical-analysis'};"
                         + "function Assert-Manifest {param($RunPath,$Status,$Mode) 'verified historical analysis'};"
@@ -510,6 +516,47 @@ if($caught-notlike'*frozen numerical contract*'){throw 'Centre projection omitte
         self.assertIn("-Mode deterministic_bunch_source_materialization", source)
         self.assertIn("& $sourceRunner", source)
 
+    def test_every_actual_source_call_receives_current_execution_and_scientific_inputs(self):
+        shell = shutil.which("pwsh")
+        if shell is None:
+            self.skipTest("PowerShell 7 is required")
+        script = r'''
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$tokens=$null;$errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile($args[0],[ref]$tokens,[ref]$errors)
+$commands=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.CommandAst]-and$n.Extent.Text.Contains('$sourceRunner')},$true))
+if($commands.Count-ne3){throw "Expected three actual source calls, got $($commands.Count)"}
+$global:received=@()
+$sourceRunner={
+  param([Parameter(Mandatory)]$SourceDefinitionPath,[Parameter(Mandatory)]$GeometryContractPath,
+    [Parameter(Mandatory)]$AcceleratorProviderReceiptPath,[Parameter(Mandatory)]$RunId,
+    [Parameter(Mandatory)]$WorkspaceRoot,[Parameter(Mandatory)]$ArtifactRoot,[Parameter(Mandatory)]$PythonExe)
+  $global:received+=,@($SourceDefinitionPath,$GeometryContractPath,$AcceleratorProviderReceiptPath,$RunId,$WorkspaceRoot,$ArtifactRoot,$PythonExe)
+}
+$definitionPath='focus-definition';$diagnosticSourceDefinition='diagnostic-definition';$formalSourceDefinition='formal-definition'
+$GeometryContract='focus-contract';$workpointRun='workpoint';$AcceleratorProviderReceiptPath='provider-receipt'
+$sourceId='focus-source';$diagnosticSourceId='diagnostic-source';$formalSourceId='formal-source'
+$workspaceRoot='current-workspace';$artifactWorkspaceRoot='current-artifacts';$python='current-python'
+foreach($command in $commands){Invoke-Expression $command.Extent.Text}
+$received|ConvertTo-Json -Compress
+'''
+        script = script.replace("$args[0]", "'" + str(RUNNER).replace("'", "''") + "'")
+        completed = subprocess.run(
+            [shell, "-NoProfile", "-NonInteractive", "-Command", script],
+            cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=30, check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        received = json.loads(completed.stdout)
+        self.assertEqual([row[3] for row in received], ["focus-source", "diagnostic-source", "formal-source"])
+        self.assertEqual([row[0] for row in received], ["focus-definition", "diagnostic-definition", "formal-definition"])
+        for row in received:
+            expected_contract = "focus-contract" if row[3] == "focus-source" else "workpoint/inputs/contract.json"
+            self.assertEqual(Path(row[1]), Path(expected_contract))
+            self.assertEqual(row[2:], [
+                "provider-receipt", row[3], "current-workspace", "current-artifacts", "current-python",
+            ])
+
     def test_chain_owns_one_lightweight_capacity_lifecycle(self) -> None:
         source = RUNNER.read_text(encoding="utf-8-sig")
         self.assertIn("-CapacityLedgerLifecycleEnabled", source)
@@ -547,7 +594,8 @@ if($caught-notlike'*frozen numerical contract*'){throw 'Centre projection omitte
         self.assertIn("Read-ScreeningEvidence -RunPath $ReclosedRootScreeningRunPath -Scope envelope", source)
         self.assertIn("Read-ScreeningEvidence -RunPath $FinalScreeningRunPath -Scope formal", source)
         self.assertIn("& $screeningRunner @arguments|Out-Host", source)
-        self.assertIn("& $diagnosticRunner -FlightRunPath $flightRun -RunId $childId -PythonExe $python|Out-Host", source)
+        self.assertIn("& $diagnosticRunner -FlightRunPath $flightRun -RunId $childId -PythonExe $python", source)
+        self.assertIn("-WorkspaceRoot $workspaceRoot -ArtifactRoot $artifactWorkspaceRoot|Out-Host", source)
 
     def test_completed_first_reclosed_response_reuses_evidence_without_field_or_flight(self):
         shell = shutil.which("pwsh")
@@ -888,8 +936,9 @@ if($caught-notlike'*frozen numerical contract*'){throw 'Centre projection omitte
                 "$oaComponentContractFrozen='frozen-oa-contract.json';$AcceleratorGeometryProfileId='closed_two_zone_compact_mr_axial_r3_gap1_4mm'; "
                 "$NativeSystemRuntimeBundlePath=''; $AcceleratorYAnchorMm=-55; "
                 "$sourceYOffsetMm=-1; $python='python'; $SimionExe=''; "
-                "$FieldProviderRequestPath='request'; $CenterSourceReceiptPath='source';$PrismControllerPolicyPath=''\n"
-                + "$workpointRunner={param($TrajectoryProfileId,$TrajectoryStepScale,$SeedTrialManifest,$MirrorVoltageVariationPath,$GeometryReviewRunPath,$MirrorRunPath,$StripeRunPath,$AcceleratorProviderReceiptPath,$AcceleratorYAnchorMm,$AcceleratorSourceYOffsetMm,$ContractPath,$RunId,$PythonExe,$FieldProviderRequestPath,$CenterSourceReceiptPath,$PrismControllerPolicyPath,$AcceleratorComponentContractPath,$AcceleratorGeometryProfileId) "
+                "$FieldProviderRequestPath='request'; $CenterSourceReceiptPath='source';$PrismControllerPolicyPath='';"
+                "$compositionPlan='frozen-plan';$localScope=$null;$workspaceRoot='workspace';$artifactWorkspaceRoot='artifacts'\n"
+                + "$workpointRunner={param([Parameter(Mandatory)]$TrajectoryProfileId,[Parameter(Mandatory)]$TrajectoryStepScale,[Parameter(Mandatory)]$SeedTrialManifest,[Parameter(Mandatory)]$MirrorVoltageVariationPath,[Parameter(Mandatory)]$GeometryReviewRunPath,[Parameter(Mandatory)]$MirrorRunPath,[Parameter(Mandatory)]$StripeRunPath,[Parameter(Mandatory)]$AcceleratorProviderReceiptPath,[Parameter(Mandatory)]$AcceleratorYAnchorMm,[Parameter(Mandatory)]$AcceleratorSourceYOffsetMm,[Parameter(Mandatory)]$ContractPath,[Parameter(Mandatory)]$RunId,[Parameter(Mandatory)]$PythonExe,[Parameter(Mandatory)]$FieldProviderRequestPath,[Parameter(Mandatory)]$CenterSourceReceiptPath,$PrismControllerPolicyPath,[Parameter(Mandatory)]$AcceleratorComponentContractPath,[Parameter(Mandatory)]$AcceleratorGeometryProfileId,[Parameter(Mandatory)]$CompositionPlanPath,[Parameter(Mandatory)]$WorkspaceRoot,[Parameter(Mandatory)]$ArtifactRoot) "
                 "$captured=@{profile=$TrajectoryProfileId;scale=$TrajectoryStepScale};if($PSBoundParameters.ContainsKey('PrismControllerPolicyPath')){$captured.policy=$PrismControllerPolicyPath};$captured|ConvertTo-Json -Compress; "
                 "throw 'fixture_runner_reached'}\n"
                 + f"try {{ Invoke-Te1WorkpointReclosure -Attempt 1 -SeedManifest '{manifest}' "
@@ -900,7 +949,7 @@ if($caught-notlike'*frozen numerical contract*'){throw 'Centre projection omitte
             def invoke() -> subprocess.CompletedProcess[str]:
                 return subprocess.run(
                     [shell, "-NoProfile", "-NonInteractive", "-Command", script],
-                    cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8",
+                    cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace",
                     timeout=30, check=False,
                 )
 
@@ -993,6 +1042,10 @@ $config|ConvertTo-Json -Compress
             "if($NativeRuntimeCheckpoint){$arguments.NativeRuntimeCheckpoint=$NativeRuntimeCheckpoint}",
             n1,
         )
+        self.assertIn("CompositionPlanPath=$compositionPlan", n1)
+        self.assertIn("WorkspaceRoot=$workspaceRoot;ArtifactRoot=$artifactWorkspaceRoot", n1)
+        self.assertIn("RunId=$workpointId;PythonExe=$python", n1)
+        self.assertIn("if($null-ne$localScope){$arguments.LocalScopePath=$localScope}", n1)
 
     def test_te1_remeasures_focus_response_after_center_reclosure(self) -> None:
         source = RUNNER.read_text(encoding="utf-8-sig")
@@ -1090,7 +1143,7 @@ $config|ConvertTo-Json -Compress
 
 
 
-    def _run_field_dispatch(self, *, fail_provider=False, same_mirror=False, mismatched_handoff=False, native=False, step_override=None, same_numerics=True, basis=False, thin=False, reuse_full=False):
+    def _run_field_dispatch(self, *, fail_provider=False, same_mirror=False, mismatched_handoff=False, native=False, step_override=None, same_numerics=True, basis=False, thin=False, reuse_full=False, tamper_context=False):
         shell = shutil.which("pwsh")
         if shell is None:
             self.skipTest("PowerShell 7 is required for field-dispatch behavior fixtures")
@@ -1124,8 +1177,20 @@ $config|ConvertTo-Json -Compress
             handoff_path = root / "handoff.json"
             handoff_path.write_text(json.dumps(handoff), encoding="utf-8")
             provider = root / "provider.ps1"
+            provider_context = (
+                "param([Parameter(Mandatory)]$RequestPath,[Parameter(Mandatory)]$RunDirectory,"
+                "[Parameter(Mandatory)][switch]$Approved,[Parameter(Mandatory)]$PythonExe,"
+                "[Parameter(Mandatory)]$HostContextJson)\n"
+                "$context=$HostContextJson|ConvertFrom-Json;"
+                "if($PythonExe-ne'fixture'-or$context.workspace-ne$fixture){throw 'native host context changed'}\n"
+                if native else
+                "param([Parameter(Mandatory)]$RequestPath,[Parameter(Mandatory)]$RunDirectory,"
+                "[Parameter(Mandatory)][switch]$Approved,[Parameter(Mandatory)]$WorkspaceRoot,"
+                "[Parameter(Mandatory)]$ArtifactRoot,[Parameter(Mandatory)]$PythonExe)\n"
+                "if($WorkspaceRoot-ne$fixture-or$ArtifactRoot-ne$fixture-or$PythonExe-ne'fixture'){throw 'COMSOL execution roots changed'}\n"
+            )
             provider.write_text(
-                "param($RequestPath,$RunDirectory,[switch]$Approved)\n"
+                provider_context +
                 "$global:providerCalls++;$request=Get-Content $RequestPath -Raw|ConvertFrom-Json\n"
                 "if($request.mirror_reference_trial_manifest-ne$mirrorReferenceTrialManifest){throw 'reference changed'}\n"
                 "if($request.mirror_contract_path-ne(Join-Path $fixture 'inputs/contract.json')){throw 'contract changed'}\n"
@@ -1146,8 +1211,15 @@ $config|ConvertTo-Json -Compress
                 encoding="utf-8")
             screening = root / "screening.ps1"
             screening.write_text(
-                "param($WorkpointRunPath,$BunchSourceReceiptPath,$CohortParticleCount,$RunId,$PythonExe,"
-                "$MirrorVoltageVariationPath,$FieldBindingPath,$GeometryReviewRunPath,$TrajectoryStepScaleOverride)\n"
+                "param([Parameter(Mandatory)]$WorkpointRunPath,[Parameter(Mandatory)]$BunchSourceReceiptPath,"
+                "[Parameter(Mandatory)]$CohortParticleCount,[Parameter(Mandatory)]$RunId,"
+                "[Parameter(Mandatory)]$PythonExe,[Parameter(Mandatory)]$CompositionPlanPath,"
+                "[Parameter(Mandatory)]$WorkspaceRoot,[Parameter(Mandatory)]$ArtifactRoot,"
+                "$NativeCorridorBankRunPath,$MirrorVoltageVariationPath,$FieldBindingPath,$GeometryReviewRunPath,"
+                "$TrajectoryStepScaleOverride,$DiagnosticPurpose,$LocalScopePath,$InitialCohortRunPath,"
+                "[switch]$FocusDiagnosticOnly,$SimionExe)\n"
+                "if($CompositionPlanPath-ne'frozen-plan'-or$WorkspaceRoot-ne$fixture-or"
+                "$ArtifactRoot-ne$fixture-or$PythonExe-ne'fixture'){throw 'screening transport changed'}\n"
                 "if(-not$FieldBindingPath){throw 'field missing'}\n"
                 + ("if($GeometryReviewRunPath-ne'geometry-review'){throw 'geometry review missing'}\n" if native else "")
                 +
@@ -1175,6 +1247,8 @@ $config|ConvertTo-Json -Compress
                 + f"$staticFieldRepresentation='{mode}';$GeometryReviewRunPath='geometry-review';"
                 + "$NativeCorridorBankRunPath='';$python='fixture';$SimionExe='';"
                 + "$artifactRoot=$fixture;$repoRoot=$fixture;$package=@{input_dir=(Join-Path $fixture 'inputs')};"
+                + "$workspaceRoot=$fixture;$artifactWorkspaceRoot=$fixture;$compositionPlan='frozen-plan';$localScope=$null;"
+                + f"$hostContext=@{{workspace=$(if(${str(tamper_context).lower()}){{'other'}}else{{$fixture}});python_executable=$python}};"
                 + "$fieldProviderRequest=@{source_binding_path='original-source-binding';candidate_voltages_v=@{s1=0;s2=0;p1=0;p2=0}};"
                 + "$FieldProviderRequestPath='frozen-full-request';"
                 + ("$fieldProviderRequest.response_basis_paths=@{p1='p1';p2='p2';s1='s1';s2='s2'};" if basis else "")
@@ -1192,8 +1266,9 @@ $config|ConvertTo-Json -Compress
             )
             completed = subprocess.run(
                 [shell, "-NoProfile", "-NonInteractive", "-Command", script],
-                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
-            self.assertEqual(completed.returncode, 0, completed.stderr)
+                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                timeout=30, check=False)
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
             return json.loads(completed.stdout)
 
     def test_native_thin_center_never_flies_off_axis_and_matching_full_source_is_reused(self):
@@ -1308,12 +1383,13 @@ $config|ConvertTo-Json -Compress
                       f"$package=@{{input_dir='{root}'}};$staticFieldRepresentation='native_static_pa';"
                       "$TrajectoryStepScaleOverride=$null;$staticFieldMode=$true;$SimionExe='';$python='python';$sourceYOffsetMm=0;"
                       "$PrismControllerPolicyPath='';"
+                      "$compositionPlan='frozen-plan';$localScope=$null;$workspaceRoot='workspace';$artifactWorkspaceRoot='artifacts';"
                       "$NativeCorridorBankRunPath='';$NativeSystemRuntimeBundlePath='';"
                       "$GeometryReviewRunPath='geometry';$MirrorRunPath='mirror';$StripeRunPath='stripe';"
                       "$AcceleratorProviderReceiptPath='oa';$AcceleratorYAnchorMm=-55;"
                       "$oaComponentContractFrozen='frozen-oa-contract.json';$AcceleratorGeometryProfileId='closed_two_zone_compact_mr_axial_r3_gap1_4mm';"
                       f"$FieldProviderRequestPath='{request}';$CenterSourceReceiptPath='center-receipt';"
-                      "$workpointRunner={param($SeedTrialManifest,$MirrorVoltageVariationPath,$GeometryReviewRunPath,$MirrorRunPath,$StripeRunPath,$AcceleratorProviderReceiptPath,$AcceleratorYAnchorMm,$AcceleratorSourceYOffsetMm,$ContractPath,$RunId,$PythonExe,$FieldProviderRequestPath,$CenterSourceReceiptPath,$TrajectoryProfileId,$TrajectoryStepScale,$AcceleratorComponentContractPath,$AcceleratorGeometryProfileId) $global:received=$PSBoundParameters};"
+                      "$workpointRunner={param([Parameter(Mandatory)]$SeedTrialManifest,[Parameter(Mandatory)]$MirrorVoltageVariationPath,[Parameter(Mandatory)]$GeometryReviewRunPath,[Parameter(Mandatory)]$MirrorRunPath,[Parameter(Mandatory)]$StripeRunPath,[Parameter(Mandatory)]$AcceleratorProviderReceiptPath,[Parameter(Mandatory)]$AcceleratorYAnchorMm,[Parameter(Mandatory)]$AcceleratorSourceYOffsetMm,[Parameter(Mandatory)]$ContractPath,[Parameter(Mandatory)]$RunId,[Parameter(Mandatory)]$PythonExe,[Parameter(Mandatory)]$FieldProviderRequestPath,[Parameter(Mandatory)]$CenterSourceReceiptPath,[Parameter(Mandatory)]$TrajectoryProfileId,[Parameter(Mandatory)]$TrajectoryStepScale,[Parameter(Mandatory)]$AcceleratorComponentContractPath,[Parameter(Mandatory)]$AcceleratorGeometryProfileId,[Parameter(Mandatory)]$CompositionPlanPath,[Parameter(Mandatory)]$WorkspaceRoot,[Parameter(Mandatory)]$ArtifactRoot) $global:received=$PSBoundParameters};"
                       f"Invoke-Te1WorkpointReclosure -Attempt 1 -SeedManifest selected-actual-child -Variation absolute-target -CurrentContractPath '{contract}' -RuntimeCheckpoint ''|Out-Null;"
                       "$received|ConvertTo-Json -Compress")
             completed = subprocess.run([shell, "-NoProfile", "-NonInteractive", "-Command", script],
@@ -1334,6 +1410,9 @@ $config|ConvertTo-Json -Compress
             self.assertEqual(received["TrajectoryStepScale"], 0.25)
             self.assertEqual(received["AcceleratorComponentContractPath"], "frozen-oa-contract.json")
             self.assertEqual(received["AcceleratorGeometryProfileId"], "closed_two_zone_compact_mr_axial_r3_gap1_4mm")
+            self.assertEqual(received["CompositionPlanPath"], "frozen-plan")
+            self.assertEqual(received["WorkspaceRoot"], "workspace")
+            self.assertEqual(received["ArtifactRoot"], "artifacts")
             self.assertFalse(set(received) & {"NativeRuntimeCheckpoint", "InitialWorkpointManifest",
                                             "PriorPrismDecisionManifest", "StripeColumnTrialManifests"})
 
@@ -1341,6 +1420,11 @@ $config|ConvertTo-Json -Compress
         result = self._run_field_dispatch(native=True, fail_provider=True)
         self.assertEqual((result["provider"], result["flights"]), (1, 0))
         self.assertIn("flight blocked", result["caught"])
+
+    def test_native_provider_rejects_tampered_host_context_before_flight(self):
+        result = self._run_field_dispatch(native=True, tamper_context=True)
+        self.assertEqual((result["provider"], result["flights"]), (0, 0))
+        self.assertIn("native host context changed", result["caught"])
 
     def test_static_provider_role_selects_only_the_existing_runner(self):
         shell = shutil.which("pwsh")

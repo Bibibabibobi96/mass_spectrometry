@@ -75,6 +75,9 @@ if($completedRootScreeningRuns.Count-gt$MaximumTe1RootFlights){
 . (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
 $artifactRoot=& $python -I -B -c 'import sys;from msplatform.execution.resources.workspace_paths import resolve_run_artifact_root;print(resolve_run_artifact_root(sys.argv[1],owner_kind="component",owner_id=sys.argv[2]))' $artifactWorkspaceRoot $project
 if($LASTEXITCODE-ne0){throw 'MR candidate run root resolution failed.'}
+$executionResources=Join-Path $packageRoot 'execution/resources'
+$hostState=Resolve-PlatformArtifactPath -ArtifactRoot $artifactWorkspaceRoot -RelativePath host_resources.sqlite3 -Python $python
+$hostContext=@{workspace=$workspaceRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 $workpointRunner=Join-Path $workflowResources 'run_downstream_workpoint_iteration.ps1'
 $sourceRunner=Join-Path $workflowResources 'run_publish_bunch_source.ps1'
 $screeningRunner=Join-Path $workflowResources 'run_native_corridor_bunch_screening.ps1'
@@ -625,7 +628,13 @@ function Resolve-ScreeningFieldBinding {
   $requestPath=Join-Path $package.input_dir ($ProviderRunId+'_request.json')
   Write-RunJson -Path $requestPath -Depth 100 -Value $request
   $providerRun=Join-Path $artifactRoot "runs/$ProviderRunId"
-  & $fieldProviderRunner -RequestPath $requestPath -RunDirectory $providerRun -Approved|Out-Host
+  if($staticFieldRepresentation-eq'native_static_pa'){
+    & $fieldProviderRunner -RequestPath $requestPath -RunDirectory $providerRun -Approved `
+      -PythonExe $python -HostContextJson ($hostContext|ConvertTo-Json -Compress)|Out-Host
+  }else{
+    & $fieldProviderRunner -RequestPath $requestPath -RunDirectory $providerRun -Approved `
+      -WorkspaceRoot $workspaceRoot -ArtifactRoot $artifactWorkspaceRoot -PythonExe $python|Out-Host
+  }
   $summary=Get-Content -LiteralPath (Join-Path $providerRun 'summary.json') -Raw|ConvertFrom-Json -AsHashtable
   if($summary.status-ne'success'-or-not$summary.field_binding){throw 'TE1 field provider did not publish a usable field; flight blocked.'}
   if($offsetKey){
@@ -656,7 +665,9 @@ function Invoke-Screening {
   $arguments=@{
     WorkpointRunPath=$WorkpointRun;NativeCorridorBankRunPath=$NativeCorridorBankRunPath
     BunchSourceReceiptPath=$SourceReceipt;CohortParticleCount=$ParticleCount;RunId=$childId;PythonExe=$python
+    CompositionPlanPath=$compositionPlan;WorkspaceRoot=$workspaceRoot;ArtifactRoot=$artifactWorkspaceRoot
   }
+  if($null-ne$localScope){$arguments.LocalScopePath=$localScope}
   if($staticFieldMode){
     $arguments.Remove('NativeCorridorBankRunPath')
     if(-not$FieldBindingPath){$FieldBindingPath=Resolve-ScreeningFieldBinding -WorkpointRun $WorkpointRun -Variation $Variation -ProviderRunId ($childId+'-field') -Handoff $script:handoff}
@@ -692,7 +703,8 @@ function Get-FocusFallbackSourceReceipt {
   Write-RunJson -Path $definitionPath -Depth 30 -Value $definition
   $sourceId=New-StageRunId -Activity analysis -Scope python -Subject "mrtof-focus-source-p${HalfSpanPercent}"
   & $sourceRunner -SourceDefinitionPath $definitionPath -GeometryContractPath $GeometryContract `
-    -AcceleratorProviderReceiptPath $AcceleratorProviderReceiptPath -RunId $sourceId -PythonExe $python|Out-Host
+    -AcceleratorProviderReceiptPath $AcceleratorProviderReceiptPath -RunId $sourceId -PythonExe $python `
+    -WorkspaceRoot $workspaceRoot -ArtifactRoot $artifactWorkspaceRoot|Out-Host
   $sourceRun=Join-Path $artifactRoot "runs\$sourceId"
   $null=Assert-Manifest -RunPath $sourceRun -Status success -Mode deterministic_bunch_source_materialization
   $receipt=Join-Path $sourceRun 'results\bunch_source_receipt.json'
@@ -766,7 +778,8 @@ function Invoke-Diagnostic {
   # Historical completed flights without the standard output retain the
   # original governed post-analysis path; a corrupt bound output never retries.
   $childId=New-StageRunId -Activity analysis -Scope python -Subject "mrtof-$Stage-diagnostic"
-  & $diagnosticRunner -FlightRunPath $flightRun -RunId $childId -PythonExe $python|Out-Host
+  & $diagnosticRunner -FlightRunPath $flightRun -RunId $childId -PythonExe $python `
+    -WorkspaceRoot $workspaceRoot -ArtifactRoot $artifactWorkspaceRoot|Out-Host
   $childRun=Join-Path $artifactRoot "runs\$childId"
   $null=Assert-Manifest -RunPath $childRun -Status success -Mode source_z_energy_timing_diagnostic
   return Join-Path $childRun 'results\source_z_energy_timing_diagnostic.json'
@@ -901,8 +914,10 @@ function Invoke-Te1WorkpointReclosure {
     NativeSystemRuntimeBundlePath=$NativeSystemRuntimeBundlePath
     AcceleratorYAnchorMm=$AcceleratorYAnchorMm;AcceleratorSourceYOffsetMm=$sourceYOffsetMm
     ContractPath=$CurrentContractPath;RunId=$childId;PythonExe=$python
+    CompositionPlanPath=$compositionPlan;WorkspaceRoot=$workspaceRoot;ArtifactRoot=$artifactWorkspaceRoot
     NativeRuntimeCheckpoint=$RuntimeCheckpoint
   }
+  if($null-ne$localScope){$arguments.LocalScopePath=$localScope}
   if($SimionExe){$arguments.SimionExe=$SimionExe}
   if($PrismControllerPolicyPath){$arguments.PrismControllerPolicyPath=$PrismControllerPolicyPath}
   if($staticFieldMode){
@@ -1146,6 +1161,7 @@ try{
       AcceleratorYAnchorMm=$AcceleratorYAnchorMm;AcceleratorSourceYOffsetMm=$sourceYOffsetMm
       RetainBaselineGuiWorkbench=$true
       RunId=$workpointId;PythonExe=$python
+      WorkspaceRoot=$workspaceRoot;ArtifactRoot=$artifactWorkspaceRoot
     }
     if($null-ne$localScope){$arguments.LocalScopePath=$localScope}
     if($ContractPath){$arguments.ContractPath=$ContractPath}
@@ -1249,7 +1265,8 @@ try{
     $diagnosticSourceId=New-StageRunId -Activity analysis -Scope python -Subject 'mrtof-source-diagnostic'
     & $sourceRunner -SourceDefinitionPath $diagnosticSourceDefinition `
       -GeometryContractPath (Join-Path $workpointRun 'inputs\contract.json') `
-      -AcceleratorProviderReceiptPath $AcceleratorProviderReceiptPath -RunId $diagnosticSourceId -PythonExe $python
+      -AcceleratorProviderReceiptPath $AcceleratorProviderReceiptPath -RunId $diagnosticSourceId -PythonExe $python `
+      -WorkspaceRoot $workspaceRoot -ArtifactRoot $artifactWorkspaceRoot
     $diagnosticSourceRun=Join-Path $artifactRoot "runs\$diagnosticSourceId"
     $null=Assert-Manifest -RunPath $diagnosticSourceRun -Status success -Mode deterministic_bunch_source_materialization
     $diagnosticSourceReceipt=Join-Path $diagnosticSourceRun 'results\bunch_source_receipt.json'
@@ -1262,7 +1279,8 @@ try{
     $formalSourceId=New-StageRunId -Activity analysis -Scope python -Subject 'mrtof-source-formal-volume-n100'
     & $sourceRunner -SourceDefinitionPath $formalSourceDefinition `
       -GeometryContractPath (Join-Path $workpointRun 'inputs\contract.json') `
-      -AcceleratorProviderReceiptPath $AcceleratorProviderReceiptPath -RunId $formalSourceId -PythonExe $python
+      -AcceleratorProviderReceiptPath $AcceleratorProviderReceiptPath -RunId $formalSourceId -PythonExe $python `
+      -WorkspaceRoot $workspaceRoot -ArtifactRoot $artifactWorkspaceRoot
     $formalSourceRun=Join-Path $artifactRoot "runs\$formalSourceId"
     $null=Assert-Manifest -RunPath $formalSourceRun -Status success -Mode deterministic_bunch_source_materialization
     $formalSourceReceipt=Join-Path $formalSourceRun 'results\bunch_source_receipt.json'
