@@ -191,7 +191,7 @@ class CandidateFixtures:
 
 
     def native_workflow_plan(self, root_path, stamp, *, particle_source_seed=20260720):
-        artifact_root = root_path / "artifacts" / "projects" / "single_reflection_oa_tof_mass_analyzer"
+        artifact_root = root_path / "artifacts" / "components" / "single_reflection_oa_tof_mass_analyzer"
         artifact_root.mkdir(parents=True, exist_ok=True)
         (artifact_root / "00_README.txt").write_text(
             "test artifact root", encoding="utf-8"

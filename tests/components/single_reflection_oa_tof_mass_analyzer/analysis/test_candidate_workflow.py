@@ -122,7 +122,7 @@ class CandidateDesignTests(CandidateFixtures, unittest.TestCase):
             source.mkdir()
             self.candidate_run_inputs(source)
             artifact = root / "explicit-storage"
-            project = artifact / "projects" / "single_reflection_oa_tof_mass_analyzer"
+            project = artifact / "components" / "single_reflection_oa_tof_mass_analyzer"
             registration = self.registered_template_run(project)
             runtime = root / "runtime.json"
             runtime.write_text(json.dumps({"role": "oa_tof_candidate_runtime",
@@ -1032,7 +1032,7 @@ print('FROZEN_ION_CONSUMER_PASS')
                 else:
                     shutil.copyfile(source, target)
             artifacts = root / "artifacts"
-            registration = self.registered_template_run(artifacts / "projects" / "single_reflection_oa_tof_mass_analyzer")
+            registration = self.registered_template_run(artifacts / "components" / "single_reflection_oa_tof_mass_analyzer")
             runtime_path = science / "src/msplatform/components/single_reflection_oa_tof/config/candidate_runtime.json"
             runtime = load_json(runtime_path)
             runtime["simion_template_run_id"] = registration.name
@@ -1340,7 +1340,7 @@ print('FROZEN_ION_CONSUMER_PASS')
         source.mkdir()
         self.candidate_run_inputs(source)
         artifact = root / "artifacts"
-        project = artifact / "projects" / "single_reflection_oa_tof_mass_analyzer"
+        project = artifact / "components" / "single_reflection_oa_tof_mass_analyzer"
         registration = self.registered_template_run(project)
         runtime = root / "runtime.json"
         runtime.write_text(json.dumps({"role": "oa_tof_candidate_runtime",
@@ -2188,10 +2188,19 @@ print('FROZEN_ION_CONSUMER_PASS')
     def test_frozen_candidate_builder_receives_runtime_artifact_root(self):
         builder = (PROJECT_ROOT.parents[1] / "backends/simion/resources" / "build_formal_delivery.ps1").read_text(encoding="utf-8")
         self.assertIn("[string]$ArtifactProjectRoot = ''", builder)
-        self.assertIn("$artifactRoot = [IO.Path]::GetFullPath($ArtifactProjectRoot)", builder)
+        self.assertIn(
+            "$artifactRoot = if ([string]::IsNullOrWhiteSpace($ArtifactProjectRoot)) { '' } else { [IO.Path]::GetFullPath($ArtifactProjectRoot) }",
+            builder,
+        )
+        self.assertIn(
+            "if (-not $artifactRoot) {\n"
+            "  $artifactRoot = Resolve-RunArtifactRoot -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') "
+            "-OwnerKind component -OwnerId single_reflection_oa_tof_mass_analyzer -Python $python\n}",
+            builder,
+        )
         with tempfile.TemporaryDirectory() as root:
             root_path = Path(root)
-            artifact_root = root_path / "artifacts" / "projects" / "single_reflection_oa_tof_mass_analyzer"
+            artifact_root = root_path / "artifacts" / "components" / "single_reflection_oa_tof_mass_analyzer"
             artifact_root.mkdir(parents=True)
             template_run = self.registered_template_run(artifact_root)
             source = root_path / "candidate_inputs"
