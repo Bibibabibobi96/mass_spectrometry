@@ -443,7 +443,7 @@ class CandidatePostprocessTests(unittest.TestCase):
             child_id="20261031_122000__analysis__python__candidate-postprocess"
             first=invoke(["--postprocess-from",str(parent),"--run-id",child_id])
             self.assertEqual(first.returncode,0,first.stdout+first.stderr)
-            child=artifact/"projects"/"single_reflection_oa_tof_mass_analyzer"/"runs"/child_id
+            child=artifact/"components"/"single_reflection_oa_tof_mass_analyzer"/"runs"/child_id
             summary=load_json(child/"summary.json")
             self.assertEqual(summary["scope"],"comsol_postprocessing_only")
             self.assertEqual(summary["evidence"]["native_launch_count"],0)
@@ -581,7 +581,7 @@ class CandidatePostprocessTests(unittest.TestCase):
             failed_id="20261031_123500__analysis__comsol__cold-analysis-failure"
             failed=invoke(["--postprocess-from",str(parent),"--run-id",failed_id])
             self.assertNotEqual(failed.returncode,0,failed.stdout+failed.stderr)
-            failed_child=artifact/"projects"/"single_reflection_oa_tof_mass_analyzer"/"runs"/failed_id
+            failed_child=artifact/"components"/"single_reflection_oa_tof_mass_analyzer"/"runs"/failed_id
             failed_summary=load_json(failed_child/"summary.json")
             self.assertEqual(failed_summary["status"],"failed")
             self.assertIn("ANALYSIS_AFTER_COMPLETED_COLD_EXPORT",failed_summary["failure_reason"])
@@ -595,7 +595,7 @@ class CandidatePostprocessTests(unittest.TestCase):
             run_id="20261031_124000__analysis__python__postprocess-retry"
             first=invoke(["--postprocess-from",str(failed_child),"--run-id",run_id])
             self.assertEqual(first.returncode,0,first.stdout+first.stderr)
-            child=artifact/"projects"/"single_reflection_oa_tof_mass_analyzer"/"runs"/run_id
+            child=artifact/"components"/"single_reflection_oa_tof_mass_analyzer"/"runs"/run_id
             summary=load_json(child/"summary.json")
             self.assertEqual(summary["evidence"]["native_launch_count"],0)
             self.assertEqual(summary["native_particle_solve_count"],0)

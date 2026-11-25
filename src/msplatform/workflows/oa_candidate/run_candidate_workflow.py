@@ -1383,7 +1383,7 @@ def _invoke_candidate_owner_request(request: dict, pa_handoff_output: Path | Non
                          Path(directory) / "owner.log", run_directory=run_root,
                          execution_directory=(Path(request["execution_run_directory"])
                              if Path(request["execution_run_directory"]).is_dir()
-                             else run_root if run_root.is_dir() else run_root.parent))
+                             else run_root if run_root.is_dir() else Path(request["repository_root"])))
         except BaseException as error:
             failure = error
         if not result_path.is_file():
