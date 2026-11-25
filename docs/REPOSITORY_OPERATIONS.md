@@ -1018,6 +1018,9 @@ CIM不可用时，原生观测每轮只用一次
 其它reservation的身份、后代、预算和承诺原样保留，不执行foreign refresh，也不准入任何新grant；
 自己的活work子进程仍保留原阶段资源。request、poll、status、transition、register、inherit仍按完整观测失败关闭。
 这修复无关release的耦合，不代表已证明或修复所有退出采样竞态；缺失创建时间仍不等于进程已停止。
+当观测不新于账本时，释放也必须把已验证的精确完成证据从自己的unknown及活work子进程集合中扣除；
+原实现漏掉这一步，曾在[宽范围Changed](https://github.com/Bibibabibobi96/mass_spectrometry/actions/runs/45659566535)误拒PID 99。
+新增的确定性回归强制时间戳相等，验证释放自身、保留外来unknown且不新增准入；无完成证据、错误身份和存活后代仍失败关闭。
 
 阶段通过`Enter-HostResourceStage`申请CPU核数、内存字节、批量I/O槽位及具名独占资源，取得许可后
 才能启动工作；相同独占资源名不能同时授予两个活动阶段。预算是准入声明，不是操作系统强制限额，

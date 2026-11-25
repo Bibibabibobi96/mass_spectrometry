@@ -295,7 +295,7 @@ def _release_stale_snapshot(state: dict[str, Any], request: dict[str, Any], snap
     """Release only an owner proven child-free by both observations; never admit."""
     token = request.get("token")
     record = next((item for item in state["records"] if item["token"] == token), None)
-    _completed_work_identities(request, record, processes)
+    completed = _completed_work_identities(request, record, processes)
     if record is None:
         return {"status": "released", "token": token}
     owner = request.get("owner")
@@ -303,6 +303,7 @@ def _release_stale_snapshot(state: dict[str, Any], request: dict[str, Any], snap
         raise ValueError("stale release requires the reservation owner creation identity")
     unknown = set(snapshot.get("unknown_process_ids", [])) - _definitely_exited_process_ids(snapshot, processes)
     unavailable = unknown.intersection(process["pid"] for process in record["processes"])
+    unavailable.difference_update(pid for pid, _ in completed)
     if unavailable:
         raise ReservedIdentityUnavailable(
             "a reserved process creation identity is unavailable; reservations are unchanged; "
@@ -313,8 +314,10 @@ def _release_stale_snapshot(state: dict[str, Any], request: dict[str, Any], snap
         raise ValueError("stale release requires the live reservation owner creation identity")
     observed = copy.deepcopy(record)
     _refresh(observed, processes)
+    completed_pids = {pid for pid, _ in completed}
     for observation in (record, observed):
         children = set(observation["live_process_ids"]) - set(observation["console_host_process_ids"]) - {int(owner["pid"])}
+        children.difference_update(completed_pids)
         if children:
             raise StaleSnapshotError("a release observation retains live descendants; recollect before release")
     state["records"].remove(record)

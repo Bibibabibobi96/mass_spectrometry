@@ -779,6 +779,25 @@ class HostResourceSchedulerTests(unittest.TestCase):
         self.assertEqual(foreign["budget"]["cpu_cores"], 2)
         self.assertEqual(foreign["budget"]["memory_bytes"], GIB)
 
+    def test_stale_release_accepts_exact_completed_work_without_admitting_foreign_unknown(self) -> None:
+        before, completed = self.foreign_unknown_release_fixture()
+        stale = copy.deepcopy(self.snapshot)
+        stale["observed_at_ticks"] = self.stored_state()["observed_at_ticks"]
+        request = dict(
+            operation="release", token="1",
+            owner=dict(pid=1, started="0000000000000000001"),
+            completed_work_processes=[completed],
+        )
+
+        result = transact(self.path, request, stale, self.policy)
+
+        self.assertEqual(result, {"status": "released", "token": "1"})
+        after = self.stored_state()
+        self.assertEqual(after["records"], [r for r in before["records"] if r["token"] != "1"])
+        self.assertEqual(next(r for r in after["records"] if r["token"] == "3")["status"], "waiting")
+        foreign = next(r for r in after["records"] if r["token"] == "2")
+        self.assertIn({"pid": 98, "started": "0000000000000000003"}, foreign["processes"])
+
     def test_foreign_unknown_does_not_relax_own_unknown_or_owner_completion_identity(self) -> None:
         _, completed = self.foreign_unknown_release_fixture()
         original = self.path.read_bytes()
