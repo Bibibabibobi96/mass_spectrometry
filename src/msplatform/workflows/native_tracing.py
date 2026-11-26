@@ -26,6 +26,13 @@ def _write(path: Path, value: Any) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, allow_nan=False, indent=2), encoding="utf-8")
 
 
+def _executable_records(paths):
+    # Installed executables are implementation evidence, not owned PA/MPH
+    # payloads. Declare that role even above the shared large-file I/O tier.
+    return {name: {key: value for key, value in file_record(Path(path), "required_evidence").items()
+                   if key in {"bytes", "sha256"}} for name, path in paths.items()}
+
+
 def _assembly(recipe: dict):
     study = recipe["study"]["document"]
     resolved = {name: components.resolve_component(request) for name, request in study["component_requests"].items()}
@@ -250,8 +257,7 @@ def _execute(store, recipe, context, run_id, work, reservation, source_revision)
         "backend_sources": canonical_json_sha256({path.relative_to(backend).as_posix(): file_sha256(path)
             for path in sorted(backend.rglob("*")) if path.is_file() and path.suffix in {
                 ".py", ".m", ".lua", ".gem", ".json", ".ps1", ".iob", ".pa0", ".fly2"}}),
-        "native_executable": {name: {key: value for key, value in file_record(path).items()
-                                    if key in {"bytes", "sha256"}} for name, path in paths.items()}}
+        "native_executable": _executable_records(paths)}
     backend_identity = identity(backend_module, tool_paths)
     implementation = {"workflow": file_sha256(__file__), **backend_identity}
     if scalar:

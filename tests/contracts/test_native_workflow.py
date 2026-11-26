@@ -22,6 +22,16 @@ EXAMPLES = ROOT / "src/msplatform/examples"
 
 
 class NativeWorkflowTests(unittest.TestCase):
+    def test_large_executable_identity_has_an_explicit_evidence_role(self):
+        from msplatform.workflows.native_tracing import _executable_records
+        from msplatform.io.file_identity import file_sha256
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "inert.exe"
+            path.write_bytes(b"inert implementation bytes" * 400000)
+            self.assertGreater(path.stat().st_size, 8 * 1024 * 1024)
+            self.assertEqual(_executable_records({"simion": path}), {
+                "simion": {"bytes": path.stat().st_size, "sha256": file_sha256(path)}})
+
     def test_reference_cache_second_call_verifies_kind_and_avoids_producer(self):
         artifact = SimpleNamespace(kind="geometry_artifact", reference={"manifest": {"path": "inert"}, "product_id": "geometry"})
         opened = []

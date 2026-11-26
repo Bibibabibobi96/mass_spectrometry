@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from msplatform.backends.comsol.assembly_particle_tracing import _basis_mesh_limit, _native_exact_count, _rows, _validate_failed_basis_evidence, prepare_assembly_pulse
+from msplatform.backends.comsol.assembly_particle_tracing import _basis_mesh_limit, _freeze_particle_epoch, _native_exact_count, _rows, _validate_failed_basis_evidence, prepare_assembly_pulse
 from msplatform.backends.comsol.assembly_field_export import _validate_field_solution_source, validate_grid
 from msplatform.backends.comsol.particle_data import read_observations
 from msplatform.physics import CONSTANTS
@@ -19,6 +19,29 @@ COLUMNS = ('particle_id','native_particle_index','instrument_time_us','x_mm','y_
 
 
 class ComsolParticleTracingTests(unittest.TestCase):
+    def test_epoch_without_role_is_frozen_in_native_owner(self):
+        from msplatform.io.manifest_records import file_record
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); work = root / 'work'; work.mkdir()
+            native = root / 'native'; native.mkdir()
+            source = work / 'epoch.json'; source.write_bytes(b'{\"instrument_time_us\":0.0}')
+            original = file_record(source)
+            seen = {}
+            session = SimpleNamespace(input_dir=native,
+                declare_file=lambda path, role: path,
+                add_input=lambda name, record: seen.update({name: record}))
+            frozen = _freeze_particle_epoch(session, original)
+            self.assertEqual(frozen['retention_role'], 'required_evidence')
+            self.assertEqual(frozen['sha256'], original['sha256'])
+            self.assertEqual(seen['clock_epoch_source']['retention_role'], 'required_evidence')
+            self.assertEqual(seen['clock_epoch'], frozen)
+            self.assertTrue(Path(frozen['path']).is_relative_to(native))
+            source.unlink()
+            self.assertEqual(json.loads(Path(frozen['path']).read_text()), {'instrument_time_us': 0.0})
+            source.write_bytes(b'{\"instrument_time_us\":1.0}')
+            with self.assertRaises(AssertionError):
+                _freeze_particle_epoch(session, original)
+
     def test_failed_basis_recovery_requires_declared_stopped_source(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve(); (root / 'results').mkdir()

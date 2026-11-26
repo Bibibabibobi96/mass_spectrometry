@@ -1018,3 +1018,24 @@ native_workflow/scalar_workflow/scientific_core_boundaries/native_evidence联合
 首次25项中边界一项发现scalar具名workflow缺配方依赖声明，按现有具名workflow边界补齐并复验，未给所有workflow开放。
 外部安装venv已按requirements-lock完成普通依赖安装，尚未安装本主题wheel或实际运行native。
 下一步从提交快照构建发行，先COMSOL→COMSOL引用真实已发布basis跑CPT，再闭合SIMION及桥接真实小N。
+
+### B 安装后发现的两个执行前缺陷（cd1f2156候选）
+
+cd1f2156普通wheel已从git archive固定快照构建，独立venv按requirements-lock普通安装。
+仓外 `-I` 确认msplatform来自installed/Lib/site-packages，COMSOL和SIMION配置validate均PASS，
+但两条实际run均在原生追踪/Refine之前失败，不能称安装链通过。
+
+COMSOL首次Store位于外层mass_spectrometry Git worktree，既有安全边界在创建前拒绝；
+仅部署改为 `C:/Users/Liao/msplatform-artifacts/architecture-b-20261127/comsol-installed-store`。
+随后raw run `20261127_025248__sim__comsol__pulse-48595d495340` failed、writers_stopped=true、operations=[]：
+epoch record缺retention_role，且其product路径原本会引用稍后移动的Store work文件。
+修复为保留原epoch身份并冻结小JSON到native owner input，产品只引用该稳定副本，原输入和副本均受子进程guard；不复制MPH。
+
+SIMION安装版run和同一公共API诊断均报large unclassified record，traceback定位 `_execute` 的可执行文件身份记录：
+真实SIMION exe 10,106,136 B超过8MiB tier，需要明确evidence role。修复只显式声明可执行文件身份为required_evidence，
+不改原生载荷分类/阈值/预算。两次均未启动Refine/Fly。
+
+定向运行large executable回归+COMSOL particle/workflow，15 PASS（1.846s），Ruff PASS；
+epoch测试覆盖无role原记录、删原work后副本仍可读及源变化拒绝。下一候选重新普通安装后重跑受影响链。
+外部诊断位于 `batch_b_comsol_small_cli_20261127/installed-run*.log` 与
+本轮外部证据根 `simion-installed-study/installed-api-diagnostic.log`，原失败运行保留，不补造轨迹。

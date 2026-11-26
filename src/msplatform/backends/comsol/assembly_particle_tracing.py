@@ -343,7 +343,7 @@ def trace_assembly_pulse(assembly: Assembly, background: Mapping[str, Any], on: 
     require_supported_artifact(on)
     plan = prepare_assembly_pulse(assembly, background, on, pulse_groups=pulse_groups,
         drive=drive, source=source, numerics=numerics, observation_times_us=observation_times_us)
-    epoch = dict(epoch_record)
+    epoch = dict(epoch_record, retention_role='required_evidence')
     verify_record('instrument epoch', epoch)
     if epoch['sha256'].upper() != source['clock']['authority_sha256'].upper():
         raise ValueError('epoch bytes differ from the original source clock authority')
@@ -402,6 +402,23 @@ def _comsol_batch_completion_api():
     return Completion
 
 
+def _freeze_particle_epoch(session: Any, original: Mapping[str, Any]) -> dict:
+    """Bind and copy the small source epoch to stable native-owner storage."""
+    from msplatform.execution.inputs import freeze_file
+    from msplatform.io.manifest_records import file_record, verify_record
+    source = dict(original, retention_role='required_evidence')
+    verify_record('particle epoch source', source)
+    session.add_input('clock_epoch_source', source)
+    target = session.declare_file(session.input_dir / 'instrument_epoch.json', 'required_evidence')
+    freeze_file(Path(source['path']), target, retention_role='required_evidence')
+    frozen = file_record(target, 'required_evidence')
+    if any(frozen[key] != source[key] for key in ('bytes', 'sha256')):
+        raise ValueError('frozen particle epoch differs from original source')
+    verify_record('particle epoch source after freeze', source)
+    session.add_input('clock_epoch', frozen)
+    return frozen
+
+
 def _execute_particle_trace(session: Any, *, background: OpenedArtifact, plan: dict, epoch_record: dict,
                             epoch_us: float, position_atol_m: float, velocity_atol_m_s: float,
                             limits: dict) -> dict:
@@ -416,7 +433,7 @@ def _execute_particle_trace(session: Any, *, background: OpenedArtifact, plan: d
     launcher, code = freeze_native_sources(session, ('comsolstartup.m', 'trace_assembly_particles.m', 'oatof_cpt_solver_policy.m'))
     model = dict(background.data_records['model'], path=str(background.data_locations['model']))
     session.add_input('field_model', model)
-    session.add_input('clock_epoch', epoch_record)
+    frozen_epoch = _freeze_particle_epoch(session, epoch_record)
     plan_path = session.declare_file(session.input_dir / 'particle_plan.json', 'required_evidence')
     write_json_atomic(plan_path, plan)
     plan_record = file_record(plan_path, 'required_evidence')
@@ -452,7 +469,7 @@ def _execute_particle_trace(session: Any, *, background: OpenedArtifact, plan: d
             '-ComsolLauncherPath', str(session.context.tools['comsol_launcher']), '-MatlabRootPath',
             str(session.context.tools['matlab_root']), '-TaskScript', str(task), '-ReportPath', str(report),
             '-StartupAttempts', '1', '-RunId', session.run_id, '-RunDir', str(runtime), '-CompletionPath', str(completion)]
-    guards = [*code, model, epoch_record, plan_record, release_record, file_record(task, 'required_evidence')]
+    guards = [*code, model, epoch_record, frozen_epoch, plan_record, release_record, file_record(task, 'required_evidence')]
     primary = None
     try:
         session.run_process('trace_assembly_particles', executable=session.context.powershell_executable,
@@ -492,7 +509,7 @@ def _execute_particle_trace(session: Any, *, background: OpenedArtifact, plan: d
                                 'statistics': summarize_particle_data(canonical)})
     records = {'observations': file_record(output, 'required_evidence'), 'integrity': file_record(summary, 'required_evidence'),
                'native_facts': file_record(facts, 'required_evidence'),
-               'plan': plan_record, 'release': release_record, 'clock_epoch': epoch_record}
+               'plan': plan_record, 'release': release_record, 'clock_epoch': frozen_epoch}
     for name in ('initial_states.parquet', 'terminal_states.parquet', 'events.parquet', 'trajectories.h5', 'execution.json'):
         records['particle_data_' + name.replace('.', '_')] = file_record(session.result_dir / name, 'required_evidence')
     products = [str(output), str(summary), str(facts)] + [str(session.result_dir / name) for name in
