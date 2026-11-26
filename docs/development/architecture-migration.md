@@ -367,7 +367,7 @@ FILTER=extensions=.py,.m,.ps1,.lua,.gem,.fly2,.json,.toml,.yml,.yaml,.c,.h,.cc,.
 
 对照交付 `dad49d1c9049a5c3ba349003af4998d50ec9082e`；开工 HEAD 与此相同，分支
 `task/architecture-migration-20261126` 跟踪同名 origin 分支，无后续提交。
-原有未跟踪 `artifacts/` 保留；不改历史研究资产，不合并、不推送。本节是本轮接续入口，
+原有未跟踪 `artifacts/` 保留；开工时要求不改历史研究资产、不合并、不推送（后续推送授权见最终交付）。本节是本轮接续入口，
 上文 A/P4 的原始结果保持原义，不能把本轮定向复验外推成 Owner/P4 全门禁通过。
 
 ### 1. 计算写入者失联
@@ -432,3 +432,106 @@ export-only 及平铺来源漂移。原失败方法现通过，100 个原始状�
 原 Owner-02 失败报告保留，本轮定向通过不能改写为完整 Owner 门禁通过。
 剩余 P4 与旧消费者仍按原清单；B 前不再受该已复现 KeyError 阻塞。
 下一步仅在固定最终代码提交运行两发行离仓参考链，再登记结果与 CLOC。
+
+
+### 4. 最终代码与离仓交付
+
+最终代码提交 `991feedb805fc8278394fc5cc036983c162601cf`，此前两个独立修复提交为
+`c656c647`、`55144d39`。随后用户明确授权“从现在开始远端一直保持和本地一致”；
+三个修复提交已普通推送到同名 origin 任务分支，远端 SHA 与本地代码 SHA 相同。
+本节为后续纯证据文档提交，不改变通过验收的代码；完成后同样普通推送。
+未合并 master、未改写远端历史。开工与验收结束的已有未跟踪 `artifacts/` 保持不动。
+
+| 验证 | 结果 | 判据与范围 |
+|---|---|---|
+| Store | 17 PASS，3.735 s | 真实强杀、活进程、ready、控制释放、重复恢复、publishing 恢复 |
+| 配方/参考 workflow | 12 PASS，6.794 s | 单次外部读取、突变后当前/下次隔离、独立匀加速 oracle、原正反例 |
+| 历史 OA reader | 5 PASS，7.447 s | 新旧等价/拒绝、原 110745/235338 方法、saved model/export/flat provenance |
+| 最终两发行离仓参考验收 | PASS，346.964 s | 同一代码提交的直接 wheel、sdist 重建 wheel；普通安装，非 editable |
+| Ruff / staged 开发标准 / diff --check | PASS | 实际改动范围；不代替完整 Owner/P4 或科学资格 |
+
+直接 wheel run `bf126413427e49b096e094c68ed4b397`；sdist 重建 wheel run
+`f0855480c289496b80c020bcaac2b15e`。两臂均 N=1、detected=1、101 样本，succeeded + complete，
+公共 CLI 冷读统计一致、第二次运行场和批次实际复用，author/resolved/provenance 对账通过。
+共同作者 SHA-256 为 `D8CC1F3B06C0F394D04D110591AB806166176E6904953584406A010CEF97CD1F`。
+事件时间均 `9.185857056658535e-7 s`；独立匀加速解析解事件误差 `1.1540919197546408e-16 s`，
+轨迹最大位置误差 `8.673617379884035e-18 m`（既有判据分别 <5e-15 s、<1e-10 m，未放宽）。
+源树离线、已安装模块 origin、清除 PYTHONPATH/PYTHONHOME、隔离解释器均通过；
+HEAD/index/status 和 3206 文件清单不变，清单 SHA-256
+`d94593eec2bd34a7d60b4f7c0ba8daa33eb8b7d99bd6bfb5f23b0fbf6eec1003`。
+
+实际运行的复现入口（仓库根、锁定环境；安装验收内部在仓库外执行公共 CLI/API）：
+
+```powershell
+.venv/Scripts/python.exe -m unittest tests.contracts.test_artifact_store -q
+.venv/Scripts/python.exe -m unittest tests.contracts.test_reference_recipe tests.contracts.test_reference_workflow -v
+$readerTests = @(
+  'tests.workflows.paired_accelerator.test_paired_accelerator_static_field_execute.PairedStaticExecutionTests.test_versioned_oa_voltage_projection_rejects_ambiguous_inputs',
+  'tests.workflows.paired_accelerator.test_paired_accelerator_static_field_execute.PairedStaticExecutionTests.test_saved_solution_requires_bound_completion_bvp_and_backend',
+  'tests.workflows.paired_accelerator.test_paired_accelerator_pulse_preparation.PairedPulsePreparationTests.test_actual_110745_all_100_states_use_original_235338_common_field',
+  'tests.workflows.paired_accelerator.test_paired_accelerator_pulse_preparation.PairedPulsePreparationTests.test_export_only_source_flattens_original_model_and_binds_own_simion_plan',
+  'tests.workflows.paired_accelerator.test_paired_accelerator_pulse_preparation.PairedPulsePreparationTests.test_export_source_rejects_bvp_or_flat_origin_drift'
+)
+.venv/Scripts/python.exe -m unittest @readerTests -v
+.venv/Scripts/python.exe -m unittest tests.contracts.test_installed_scientific_core.InstalledScientificCoreTests.verify_reference_delivery -v
+```
+
+测试保留证据位于主机 Git 树外 `msplatform-artifacts/architecture-a-closeout-20261126/`：
+`991feedb-installed.log`、`991feedb-cloc.log`、`991feedb-verification.json` 和
+`991feedb-acceptance/acceptance.json`（含来源清单与三个发行文件摘要）。
+临时安装工作区 `installed-scientific-core-yxmty_pg` 已由测试正常清理，可由上述入口重建；
+释放字节数未测量。此前 A 独立交付环境及真实研究产物未清理。
+
+本轮第 1、2 项验收完成，第 3 项为**已修并复验**。未执行完整 Changed/Owner/Repository/P4，
+未重跑无关门禁、大型模拟、商业求解、GUI/CAD或 Formal 验证；原失败记录与其他 P4 残项保留。
+剩余旧消费者和 B/C 入口仍见上文“活动旧消费者与退役入口”，M06–M08 未开始。
+本轮三项没有未决实施选择；B 开工仍须另行授权，沿执行包既定默认方案和上述真实消费者清单推进。
+若 B 将引入 queued 重新派发或原生后代执行，须在那个边界先处理相应合同：
+当前 writer 登记后、mark_running 前被杀仍属 queued，旧 writer 行不会被本恢复入口清理并续用；
+没有 writer token 的历史 running 也不能据 PID/超时自动判死。原生消费者须各自持权，
+不能外推当前同步参考进程的锁保护。`recover_publications` 仍要求管理员确认 writer 停止并独占操作。
+
+### 本轮 CLOC 对账
+
+CLOC 2.10：`dad49d1c9049a5c3ba349003af4998d50ec9082e` →
+`991feedb805fc8278394fc5cc036983c162601cf`。证据文档提交只改 Markdown，代码计数不变。
+实际命令（LC_ALL/LC_CTYPE/LANG=C）：
+
+```powershell
+tools/repository/report_cloc_delta.ps1 -Base dad49d1c9049a5c3ba349003af4998d50ec9082e -Current 991feedb805fc8278394fc5cc036983c162601cf -ClocExe <workspace>/.tools/cloc/2.10/cloc.exe
+```
+
+原工具 CLOC_DELTA=PASS；未分类 0。每格为 baseline → result (delta)，数值直接格式化自原工具，不另行计行。
+
+| Scope | Language | Files | Blank | Comment | Code |
+|---|---|---:|---:|---:|---:|
+| total | JSON | 282 → 282 (0) | 0 → 0 (0) | 0 → 0 (0) | 126022 → 126022 (0) |
+| total | Lua | 119 → 119 (0) | 413 → 413 (0) | 828 → 828 (0) | 13219 → 13219 (0) |
+| total | MATLAB | 186 → 186 (0) | 1066 → 1066 (0) | 2053 → 2053 (0) | 19701 → 19701 (0) |
+| total | PowerShell | 150 → 150 (0) | 1100 → 1100 (0) | 1195 → 1195 (0) | 46113 → 46113 (0) |
+| total | Python | 1435 → 1435 (0) | 32905 → 32921 (16) | 42461 → 42493 (32) | 396011 → 396258 (247) |
+| total | SIMION GEM | 10 → 10 (0) | 26 → 26 (0) | 51 → 51 (0) | 214 → 214 (0) |
+| total | TOML | 5 → 5 (0) | 43 → 43 (0) | 2 → 2 (0) | 219 → 219 (0) |
+| total | YAML | 2 → 2 (0) | 8 → 8 (0) | 20 → 20 (0) | 506 → 506 (0) |
+| total | SUM | 2189 → 2189 (0) | 35561 → 35577 (16) | 46610 → 46642 (32) | 602005 → 602252 (247) |
+| production | JSON | 259 → 259 (0) | 0 → 0 (0) | 0 → 0 (0) | 42340 → 42340 (0) |
+| production | Lua | 99 → 99 (0) | 333 → 333 (0) | 703 → 703 (0) | 11141 → 11141 (0) |
+| production | MATLAB | 118 → 118 (0) | 526 → 526 (0) | 1462 → 1462 (0) | 12164 → 12164 (0) |
+| production | PowerShell | 138 → 138 (0) | 1037 → 1037 (0) | 1149 → 1149 (0) | 44012 → 44012 (0) |
+| production | Python | 685 → 685 (0) | 16796 → 16804 (8) | 11588 → 11609 (21) | 182893 → 182981 (88) |
+| production | SIMION GEM | 10 → 10 (0) | 26 → 26 (0) | 51 → 51 (0) | 214 → 214 (0) |
+| production | TOML | 5 → 5 (0) | 43 → 43 (0) | 2 → 2 (0) | 219 → 219 (0) |
+| production | YAML | 2 → 2 (0) | 8 → 8 (0) | 20 → 20 (0) | 506 → 506 (0) |
+| production | SUM | 1316 → 1316 (0) | 18769 → 18777 (8) | 14975 → 14996 (21) | 293489 → 293577 (88) |
+| tests | JSON | 23 → 23 (0) | 0 → 0 (0) | 0 → 0 (0) | 83682 → 83682 (0) |
+| tests | Lua | 20 → 20 (0) | 80 → 80 (0) | 125 → 125 (0) | 2078 → 2078 (0) |
+| tests | MATLAB | 68 → 68 (0) | 540 → 540 (0) | 591 → 591 (0) | 7537 → 7537 (0) |
+| tests | PowerShell | 12 → 12 (0) | 63 → 63 (0) | 46 → 46 (0) | 2101 → 2101 (0) |
+| tests | Python | 750 → 750 (0) | 16109 → 16117 (8) | 30873 → 30884 (11) | 213118 → 213277 (159) |
+| tests | SUM | 873 → 873 (0) | 16792 → 16800 (8) | 31635 → 31646 (11) | 308516 → 308675 (159) |
+
+完整过滤口径：
+
+```text
+FILTER=extensions=.py,.m,.ps1,.lua,.gem,.fly2,.json,.toml,.yml,.yaml,.c,.h,.cc,.cpp,.cxx,.hpp,.cs,.java,.js,.jsx,.ts,.tsx,.go,.rs,.rb,.php,.swift,.kt,.kts,.sh,.bash,.zsh,.bat,.cmd;excluded_components=.git,.venv,.tmp,artifacts,generated,vendor,vendors,third_party,third-party,thirdparty,run,runs;excluded_lifecycle_paths=any/docs/history/**|root/scratch/**|artifacts/projects/<project>/(archive|scratch)/**;language_overrides=.m:MATLAB|.fly2:Lua|.gem:SIMION_GEM;production=execution_profile_entrypoint|run_*.ps1|verify_*.ps1|tests/support(non-test-named);tests=fixture|test_support|testing_support_path|test_*.(py|ps1|m|lua)|*_test.py|tests_boundary/*_fixtures.py|tests/**/__init__.py|*Test.m|*.Tests.*;unclassified=other_code_below_test_or_tests_path;worktree_source=git_tracked_plus_nonignored_untracked
+```
