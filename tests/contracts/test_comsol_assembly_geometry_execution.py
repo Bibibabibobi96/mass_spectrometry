@@ -18,8 +18,13 @@ def real_assembly():
 
 class ComsolAssemblyGeometryExecutionTests(unittest.TestCase):
     def test_public_stage_freezes_complete_projection_and_uses_existing_owner(self):
-        instrument = real_assembly()
-        before = instrument.composition_plan
+        from msplatform.recipes import load_recipe
+
+        example = Path(__file__).resolve().parents[2] / 'src/msplatform/examples/rf_split_oatof_native_small_v1.toml'
+        study = load_recipe(example).to_dict()['study']['document']
+        parts = {key: components.resolve_component(value) for key, value in study['component_requests'].items()}
+        instrument = assembly.assemble(study['recipe'], parts)
+        before = copy.deepcopy(instrument.composition_plan)
         with TemporaryDirectory() as folder:
             root = Path(folder)
             launcher = root / 'comsol.exe'
@@ -39,7 +44,10 @@ class ComsolAssemblyGeometryExecutionTests(unittest.TestCase):
             self.assertEqual(call['payload']['geometry_validation'], {'position_mm': 1e-6, 'normal_abs': 1e-9})
             projection = call['payload']['projection']
             self.assertEqual(len(projection['members']), 77)
-            self.assertEqual(len(projection['electrode_groups']), 50)
+            self.assertEqual(len(projection['electrode_groups']), 51)
+            self.assertEqual({component['project_id'] for component in call['payload']['assembly']['composition_plan']['components'].values()},
+                             {'rf_multipole_ion_optics', 'orthogonal_accelerator', 'single_reflection_tof'})
+            self.assertEqual(call['payload']['assembly']['composition_plan'], before)
             reader.assert_called_once_with({'manifest': {'identity': 'manifest'}, 'product_id': 'geometry'},
                                            expected_kind='geometry_artifact')
 

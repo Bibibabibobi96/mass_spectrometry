@@ -11,7 +11,7 @@ class EmptySurfaceConversionTests(unittest.TestCase):
   resource=native_resource_path('raw_collision_pa.lua')
   code=HARNESS.replace("surf['1,1,1']={.25,.5,.75}","if scenario=='nonzero' then surf['1,1,1']={.25,.5,.75} end")
   code=code.replace("local g=assert(io.open(path:gsub('%.pa$','.pa-surf'),'wb'));g:write('INERT-SURFACE-DOUBLE');g:close();return nil end", "return nil end")
-  code=code.replace("arg={mode,source,output,path_resource}","arg={mode,source,output,path_resource,source:gsub('%.pa#$','.json')}")
+  code=code.replace("arg={mode,source,output,path_resource}","arg={mode,source,output,path_resource,(source:gsub('%.pa#$','.json'))}")
   code=code[:code.index("if scenario=='source_vacuum'")]+"local ok,err=call('build');if not ok then print('EXPECTED_ERROR '..tostring(err));return end;local ok2,err2=call('verify');if not ok2 then error(err2) end;print('EMPTY_PAIR=PASS')\n"
   for scenario in ('empty','nonzero','missingproof','wronggrid','unexpected_companion','missingpresent'):
    with self.subTest(scenario=scenario),tempfile.TemporaryDirectory() as tmp:

@@ -1,4 +1,5 @@
 """Owner's explicit stopped failure recovery never invokes a native action."""
+from contextlib import closing
 import json
 import sqlite3
 from pathlib import Path
@@ -22,7 +23,7 @@ class FailedRecoveryTests(unittest.TestCase):
         self.result_path = self.workspace / 'result.json'
         self.context = SimpleNamespace(workspace=self.workspace, host_state_path=self.workspace/'host.sqlite',
                                        execution_root=self.root.parent)
-        with sqlite3.connect(self.context.host_state_path) as db:
+        with closing(sqlite3.connect(self.context.host_state_path)) as db, db:
             db.execute('CREATE TABLE state (id INTEGER PRIMARY KEY, document TEXT)')
             db.execute('INSERT INTO state VALUES (1, ?)', (json.dumps({'schema_version': 1, 'records': []}),))
         self.action = self.root/'inputs/owner/action.py'
