@@ -1419,6 +1419,17 @@ SHA256 `66987517181E2187D6D7B543971D1B749BF06D6A40902664B3AB9BA715E840F4`；
 使用同一原始 `validate_probe.py` 独立检查实际6D、stop time与辅助标记，PASS：target1/other0/not_arrived0，容差仍1e-6。
 该结果只证明零力盒子的真实Wall Freeze+辅助标记机制，不替代仪器有限面归属、实际电场或探测效率资格。
 
+### B 当前接续检查点（3ae2a0bf 后，Goal 继续）
+
+- Agent 0 核对 HEAD `3ae2a0bfcfe4c4758f612fbf7e79185bc37d1bd0`，任务 tracking branch 已普通 push；保留已有工作与 artifacts，不回退审计提交。
+- 已安装 e95f6705 的 SIMION→SIMION 公共 CLI 成功：Store `52dde608d07245b99185f77da95c9a17`；原 owner ground `20261127_052420__sim__simion__ground-e80d5922d785`、track `20261127_052524__sim__simion__track-152081d324db`。真实 Fly，0 新 Refine/场 Compute；母群/终态/检测观测均 3，检测 0，unknown 3，分析不适用，不能解释成已归因物理损失。
+- 同安装版本的 `native-reuse-acceptance/acceptance.py` 已完成 first/repeat/k2/damage/repair/gc。K2 为同质量100 Da、电荷+1的3粒子权重1和+2的2粒子权重0.5，完整母群5、总权重4、0 hit。缺件只删专属Store中443 B `reference.json`，只重算原trace，场和另一物种trace保留。准入自动GC删除登记215153 B的合格候选；未持久化 released_bytes，不能声称独立测得物理释放量。完整事实/命令见外部 `C:/Users/Liao/msplatform-artifacts/architecture-b-20261127/native-reuse-acceptance/acceptance-summary.md`、config/state及各阶段log。
+- 补充实际公共库 API `run_recipe` 重放成功：`installed-standalone-b1/Scripts/python.exe -I ./api_repeat.py`（离仓工作目录为上述 acceptance 目录）；Store run `cc1fee3193224eb08caed33742482dc1`，ready/succeeded/complete。`api-repeat-before.json` 与 `api-repeat-after.json` 均32个原 owner目录且逐项相等，`stage_productions=[]`、无native控制记录，保留完整前后清单。原six-stage脚本repeat/gc仅有增量记录，不能回填为各自均独立保存清单。
+- COMSOL→COMSOL 固定 e95f6705 安装的 `20261127_054319__sim__comsol__pulse-cf4b85430700` 仍在真实CPT计算，原场复用；不修改其 b1安装环境，不把旧失败CPT当通过。
+- COMSOL→SIMION 首次已安装CLI实际失败于 `field solution borrowed model binding differs`，在export前退出，未新Compute。023910恢复产品是 captured_model/captured_compute_report 的共驻双解，不是旧borrowed_solution。Agent 1 在唯一现有 `assembly_field_export.resolve_model_source_manifests` 增补该明确恢复合同：恢复request、双产品模型/报告一致、冷重开、原失败producer completion的角色与writer退出/释放证据；保留 after-stop identity，未把MPH捏造成原producer输出，未重哈大型MPH。
+- 根复跑 `python -m unittest tests.contracts.test_comsol_world_scalar_contract tests.contracts.test_comsol_scalar_multigrid tests.contracts.test_assembly_scalar_owner_fill tests.contracts.test_simion_prepared_model -q`：35 tests，7.107s，PASS。Agent 1 的26 scalar tests/Ruff PASS；fixture补明确product_id，不放宽生产校验。真实023910 background/on只读解析通过，不等于export/Fly通过。
+- 下一步：独立复核、提交解析修复后建新的普通wheel和隔离env2继续CS；b1保持冻结。最终代码仍须普通wheel/sdist重建wheel离仓验收、实际Changed必要门禁、最终CLOC和BA逐项对账。本节不能作为整批B完成声明，不启动C。
+
 ### B 累计 CLOC（至 f216a7af，不含后续改动）
 
 基线 `a9d76aa4dcdbaf8099c9ce5aa0585d6fce18c3be` → 结果 `f216a7afd0a3b27be21402915209defa9964d78e`；CLOC 2.10；源日志 `C:/Users/Liao/msplatform-artifacts/architecture-b-20261127/f216a7af-cloc.log`。

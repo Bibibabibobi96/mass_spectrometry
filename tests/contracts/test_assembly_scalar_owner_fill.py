@@ -24,7 +24,7 @@ class ScalarOwnerFillTests(unittest.TestCase):
         for name,value in data.items():
             path=self.root/'original'/f'{name}.json';path.write_text(json.dumps(value),encoding='utf-8');paths[name]=path
         paths['model']=self.root/'original/model.mph';paths['model'].write_bytes(b'dummy model, never loaded')
-        self.source=SimpleNamespace(data_path=lambda n:paths[n],data_locations=paths,data_records={n:file_record(p,'solver_native_binary' if n=='model' else 'required_evidence') for n,p in paths.items()})
+        self.source=SimpleNamespace(product_id='field_solution',data_path=lambda n:paths[n],data_locations=paths,data_records={n:file_record(p,'solver_native_binary' if n=='model' else 'required_evidence') for n,p in paths.items()})
         self.context=SimpleNamespace(workspace=self.root,python_executable=self.root/'python',powershell_executable=self.root/'pwsh',host_state_path=self.root/'state',policy_path=self.root/'policy',tools={'comsol_launcher':self.root/'comsol','matlab_root':self.root})
         self.inputs={};self.calls=[];self.session=SimpleNamespace(expected_operation_ids=('export_world_scalar',),input_dir=self.root/'inputs',result_dir=self.root/'results',log_dir=self.root/'logs',run_dir=self.root,context=self.context,run_id='inert',declare_file=lambda p,r:p,add_input=lambda n,r:self.inputs.update({n:r}))
         self.mode='normal';self.session.run_process=self.simulate

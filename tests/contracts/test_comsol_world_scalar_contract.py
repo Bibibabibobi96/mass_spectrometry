@@ -132,6 +132,77 @@ class WorldScalarTests(unittest.TestCase):
 
 
 class SourceProtectionTests(unittest.TestCase):
+    def test_captured_co_resident_recovery_requires_exact_origin_and_model(self):
+        import copy
+        import json
+        import tempfile
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from msplatform.io.manifest_records import file_record
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory); origin_dir=root/'origin'; origin_dir.mkdir(); (origin_dir/'results').mkdir()
+            model=origin_dir/'basis.mph';model.write_bytes(b'captured')
+            report=origin_dir/'results/solve_pulse_basis.json';report.write_text('{}',encoding='utf8')
+            model_record=file_record(model,'solver_native_binary'); report_record=file_record(report,'required_evidence')
+            completion=origin_dir/'results/execution_completion.json'
+            def write(path,value):
+                path.write_text(json.dumps(value),encoding='utf8');return file_record(path,'required_evidence')
+            token='writer-token'
+            writer={'operations':[{'operation_id':'solve_pulse_basis','resource_release_id':'release',
+                    'observation':{'exit_confirmed':True,'returncode':0,'process_id':123,'process_started_at_utc_ticks':456}}],
+                    'resource_releases':[{'release_id':'release','completion_receipt':{'host_release':{
+                    'inherited':False,'token':token,'result':{'status':'released','token':token},'error':None}}}]}
+            completion_record=write(completion,{'status':'failed','run_id':'failed-run','writer_completion':writer,
+                'file_roles':{str(model):'solver_native_binary',str(report):'required_evidence'}})
+            origin=write(origin_dir/'run_manifest.json',{'role':'simulation_run_manifest','status':'failed',
+                'run_id':'failed-run','outputs':[completion_record]})
+            (root/'inputs').mkdir(); request_path=root/'inputs/execution_request.json';request=write(request_path,{'package':{'run_id':'recovery-run'},'payload':{'action':'recover_assembly_pulse_basis',
+                'identity_basis':'identity_captured_after_failed_python_validation','identity_captured_at_utc':'2026-11-27T00:00:00Z',
+                'failed_run_id':'failed-run'},'capacity':{'source_references':[{'manifest_record':origin}]}})
+            cold=write(root/'reopen.json',{'operation':'reopen'})
+            products={}
+            for name in ('background','on'):
+                metadata={'backend':'comsol','scope':'co_resident_stationary_workpoint','field_status':'solved',
+                    'native_reopen_verified':True,'co_resident_workpoint':name,
+                    'identity_basis':'identity_captured_after_failed_python_validation'}
+                products[name]={'kind':'field_solution','status':'complete','metadata':metadata,
+                    'data':{'model':model_record,'solve_pulse_basis':report_record,'reopen_pulse_basis':cold}}
+            base={'role':'simulation_run_manifest','status':'success','run_id':'recovery-run','mode':'pulse_basis_recovery',
+                'inputs':{'captured_model':model_record,'captured_compute_report':report_record,
+                          'execution_request':request,'failed_manifest':origin},'outputs':[cold],'products':products}
+            current=root/'recovery.json'
+            def source(doc):
+                record=write(current,doc)
+                return SimpleNamespace(reference={'manifest':record,'product_id':'background'},manifest_location=current,
+                    metadata=doc['products']['background']['metadata'],data_records={'model':model_record})
+            with patch.object(subject,'require_completed_terminal_publication'):
+                self.assertEqual(subject.resolve_model_source_manifests(source(base))[1],origin)
+                for kind in ('model','origin','ambiguous','scope','product'):
+                    changed=copy.deepcopy(base)
+                    if kind=='model': changed['inputs']['captured_model']['sha256']='0'*64
+                    elif kind=='origin': changed['inputs']['failed_manifest']=request
+                    elif kind=='ambiguous': changed['inputs']['borrowed_solution']=model_record
+                    elif kind=='scope': changed['products']['on']['metadata']['scope']='single_stationary_workpoint'
+                    else: changed['products']['on']['data']['model']['bytes']+=1
+                    with self.subTest(kind=kind),self.assertRaises((ValueError,AssertionError)):
+                        subject.resolve_model_source_manifests(source(changed))
+
+    def test_actual_co_resident_basis_readonly_resolution(self):
+        import json
+        from types import SimpleNamespace
+        from msplatform.io.manifest_records import file_record
+        path=Path(r'C:\Users\Liao\mass_spectrometry\artifacts\batch_b_comsol_split_small_20261127\artifacts\assemblies\instrument_assembly\runs\20261127_023910__analysis__comsol__basis-recovery-e7a42a44d31e\run_manifest.json')
+        if not path.is_file():
+            self.skipTest('local managed basis is not present')
+        document=json.loads(path.read_text(encoding='utf8'))
+        for name in ('background','on'):
+            product=document['products'][name]
+            source=SimpleNamespace(reference={'manifest':file_record(path,'required_evidence'),'product_id':name},
+                manifest_location=path,metadata=product['metadata'],data_records=product['data'])
+            current,origin=subject.resolve_model_source_manifests(source)
+            self.assertEqual(current['sha256'], 'E2F7AC36D7854589C72C0C5DD375D8F90323154688709F447463194066030CB2')
+            self.assertEqual(origin, document['inputs']['failed_manifest'])
+
     def test_owned_and_borrowed_model_source_references_and_failures(self):
         import json
         import tempfile

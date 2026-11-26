@@ -74,7 +74,11 @@ def resolve_model_source_manifests(source: Any) -> tuple[dict[str, Any], dict[st
         raise ValueError('field solution manifest inputs or outputs differ')
     count = sum(record == model for record in outputs)
     if count == 1:
+        if 'captured_model' in inputs or 'borrowed_solution' in inputs:
+            raise ValueError('field solution model ownership is ambiguous')
         return current, None
+    if count == 0 and 'captured_model' in inputs:
+        return current, _co_resident_recovery_origin(source, published, model)
     if count != 0 or inputs.get('borrowed_solution') != model:
         raise ValueError('field solution borrowed model binding differs')
     origin = validate_file_record(inputs.get('failed_manifest'), 'borrowed model producer manifest')
@@ -89,6 +93,93 @@ def resolve_model_source_manifests(source: Any) -> tuple[dict[str, Any], dict[st
             or sum(record == model for record in producer['outputs']) != 1):
         raise ValueError('borrowed model is not an exact failed producer output')
     return current, origin
+
+def _co_resident_recovery_origin(source: Any, published: Mapping[str, Any], model: Mapping[str, Any]) -> dict[str, Any]:
+    """Bind a stopped-writer capture to its failed producer and successful cold reopen.
+
+    The original failed manifest does not claim an output hash for the MPH;
+    the captured record belongs to the later guarded recovery boundary.
+    """
+    from msplatform.execution.owner import validate_writer_completion
+
+    inputs = published['inputs']
+    if ('borrowed_solution' in inputs or inputs.get('captured_model') != model
+            or model.get('retention_role') != 'solver_native_binary'
+            or published.get('role') != 'simulation_run_manifest' or published.get('status') != 'success'
+            or published.get('mode') != 'pulse_basis_recovery'):
+        raise ValueError('co-resident captured model binding differs')
+    products = published.get('products')
+    if not isinstance(products, Mapping) or set(products) != {'background', 'on'}:
+        raise ValueError('co-resident recovered products are ambiguous')
+    product_id = source.reference.get('product_id')
+    if product_id not in products:
+        raise ValueError('co-resident selected product differs')
+    for name in ('background', 'on'):
+        product = products[name]
+        metadata = product.get('metadata', {})
+        if (product.get('kind') != 'field_solution' or product.get('status') != 'complete'
+                or metadata.get('scope') != 'co_resident_stationary_workpoint'
+                or metadata.get('co_resident_workpoint') != name
+                or metadata.get('backend') != 'comsol' or metadata.get('field_status') != 'solved'
+                or metadata.get('native_reopen_verified') is not True
+                or metadata.get('identity_basis') != 'identity_captured_after_failed_python_validation'
+                or product.get('data', {}).get('model') != model
+                or product.get('data', {}).get('solve_pulse_basis') != inputs.get('captured_compute_report')):
+            raise ValueError('co-resident recovered product binding differs')
+    if products[product_id]['metadata'] != source.metadata or products[product_id]['data']['model'] != source.data_records['model']:
+        raise ValueError('selected recovered product identity differs')
+    request = validate_file_record(inputs.get('execution_request'), 'basis recovery request')
+    verify_record('basis recovery request', request)
+    request_doc = json.loads(Path(request['path']).read_text(encoding='utf-8-sig'))
+    if (Path(request['path']).parent.parent != Path(source.manifest_location).parent
+            or request_doc.get('package', {}).get('run_id') != published.get('run_id')):
+        raise ValueError('co-resident recovery request owner differs')
+    cold = products['background']['data'].get('reopen_pulse_basis')
+    if (cold != products['on']['data'].get('reopen_pulse_basis')
+            or sum(record == cold for record in published['outputs']) != 1):
+        raise ValueError('co-resident cold reopen output binding differs')
+    cold = validate_file_record(cold, 'co-resident cold reopen')
+    verify_record('co-resident cold reopen', cold)
+    payload = request_doc.get('payload', {})
+    origin = validate_file_record(inputs.get('failed_manifest'), 'borrowed model producer manifest')
+    path = Path(origin['path'])
+    if not path.is_absolute():
+        raise ValueError('borrowed model producer manifest must be absolute')
+    verify_record('borrowed model producer manifest', origin)
+    require_completed_terminal_publication(path)
+    producer = json.loads(path.read_text(encoding='utf-8-sig'))
+    refs = request_doc.get('capacity', {}).get('source_references', [])
+    if (payload.get('action') != 'recover_assembly_pulse_basis'
+            or payload.get('identity_basis') != 'identity_captured_after_failed_python_validation'
+            or not isinstance(payload.get('identity_captured_at_utc'), str)
+            or payload.get('failed_run_id') != producer.get('run_id')
+            or not isinstance(refs, list) or sum(ref.get('manifest_record') == origin for ref in refs) != 1
+            or producer.get('role') != 'simulation_run_manifest' or producer.get('status') != 'failed'
+            or not isinstance(producer.get('outputs'), list)):
+        raise ValueError('co-resident failed producer identity differs')
+    completion_records = [record for record in producer['outputs']
+                          if Path(record.get('path', '')).name == 'execution_completion.json']
+    if len(completion_records) != 1:
+        raise ValueError('co-resident failed producer completion is ambiguous')
+    completion_record = validate_file_record(completion_records[0], 'failed producer completion')
+    verify_record('failed producer completion', completion_record)
+    completion = json.loads(Path(completion_record['path']).read_text(encoding='utf-8-sig'))
+    report = validate_file_record(inputs.get('captured_compute_report'), 'captured compute report')
+    verify_record('captured compute report', report)
+    roles = completion.get('file_roles', {})
+    if (completion.get('status') != 'failed' or completion.get('run_id') != producer.get('run_id')
+            or roles.get(model['path']) != 'solver_native_binary'
+            or roles.get(report['path']) != 'required_evidence'
+            or Path(model['path']).parent != path.parent
+            or Path(report['path']).parent != path.parent / 'results'):
+        raise ValueError('co-resident failed producer file authority differs')
+    writer = completion.get('writer_completion', {})
+    observed = validate_writer_completion(writers_stopped=True, expected_operation_ids=('solve_pulse_basis',),
+        operations=writer.get('operations', []), resource_releases=writer.get('resource_releases', []))
+    if len(observed['operations']) != 1 or observed['operations'][0]['observation']['returncode'] != 0:
+        raise ValueError('co-resident failed producer native writer did not exit successfully')
+    return origin
+
 
 def _classification_grid_identity(grid: Mapping[str, Any]) -> dict[str, Any]:
     """Return only coordinates that determine a classified grid node."""
