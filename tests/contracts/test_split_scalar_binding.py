@@ -15,6 +15,7 @@ from msplatform.backends.simion.scalar_sample_binding import _co_resident_source
 from msplatform.execution.terminal_publication import publish_terminal_state
 from msplatform.io.manifest_records import file_record
 from msplatform.recipes import load_recipe
+from msplatform.results.artifacts import open_artifact
 from tests.contracts import test_sfi_scalar_binding as fixtures
 
 
@@ -58,6 +59,30 @@ class SplitScalarBindingTests(unittest.TestCase):
                     "field_solution_reference": {"manifest": {"bytes": 1, "sha256": "0"*64}}}
         with patch("msplatform.backends.simion.split_scalar_binding.verify_scalar_sample", side_effect=verify):
             return resolve_split_scalar_basis(model=self.model, geometry_artifact=self.geometry, samples=self.samples)
+
+    def test_active_support_policy_requires_equipotential_v2(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from msplatform.backends.simion import scalar_sample_binding as binding
+        self.helper.vectors=self.vectors
+        reference=self.helper.make_sample('off')
+        original = open_artifact(reference, expected_kind='scalar_field_samples')
+        records = original.data_records
+        authority = {'schema_version':1, 'role':'assembly_scalar_conductor_support',
+                     **{key:records[key] for key in ('grid','projection','request','field_solution_manifest')}}
+        support = self.helper.root/'support-v2.json'; support.write_text(json.dumps(authority),encoding='utf8')
+        records['conductor_support'] = file_record(support)
+        metadata = dict(original.metadata, conductor_support_policy='equipotential_dirichlet_solid_interiors_v2')
+        locations = dict(original.data_locations, conductor_support=support)
+        item = SimpleNamespace(metadata=metadata, producer=original.producer, reference=original.reference,
+            product_id=original.product_id, manifest_location=original.manifest_location, data_records=records,
+            data_locations=locations, data_path=lambda name:locations[name])
+        with patch.object(binding,'open_artifact',return_value=item):
+            result = binding.verify_scalar_sample({}, self.helper.projection, check_workpoint=lambda _:None)
+            self.assertEqual(result['records']['conductor_support']['sha256'],records['conductor_support']['sha256'])
+            metadata['conductor_support_policy']='unique_dirichlet_solid_interiors'
+            with self.assertRaisesRegex(ValueError,'unsupported conductor support policy'):
+                binding.verify_scalar_sample({}, self.helper.projection, check_workpoint=lambda _:None)
 
     def test_two_actual_workpoints_and_physical_geometry(self):
         result = self.resolve()

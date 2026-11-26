@@ -543,7 +543,7 @@ def execute_export(session: Any, *, source: Any, manifest_record: Mapping[str, A
                     scientific_qualification='not_granted', frame_id=grid['frame_id'], compute_calls_requested=0,
                     field_solution_product_id=source.product_id)
     if support_record is not None:
-        metadata['conductor_support_policy'] = 'unique_dirichlet_solid_interiors'
+        metadata['conductor_support_policy'] = 'equipotential_dirichlet_solid_interiors_v2'
     result_paths = [*outputs, *([*published_outputs, support_path] if support_record is not None else []), report]
     if support_record is not None and labels_path is not None: result_paths.append(labels_path)
     return dict(status='success', summary=metadata, output_paths=list(map(str, result_paths)),
@@ -714,7 +714,7 @@ def _execute_scalar_derivation(session: Any, *, source: Any, raw_names: tuple[st
     write_json_atomic(report_path, dict(schema_version=1, role='assembly_scalar_offline_derivation',
         source_samples=source.reference, native_operations=0, compute_calls=0, scientific_qualification='not_granted'))
     data['derivation_report'] = file_record(report_path, 'required_evidence')
-    metadata = dict(source.metadata, conductor_support_policy='unique_dirichlet_solid_interiors',
+    metadata = dict(source.metadata, conductor_support_policy='equipotential_dirichlet_solid_interiors_v2',
                     derivation='offline_from_published_raw_samples', original_samples_reference=original.reference,
                     native_operations_requested=0, compute_calls_requested=0)
     owned = [*filled, support_path, report_path, *([labels] if labels is not None else [])]

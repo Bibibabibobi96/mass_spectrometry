@@ -49,6 +49,7 @@ class ScalarOwnerFillTests(unittest.TestCase):
         self.assertEqual(Path(product['data']['field_v']['path']).name,'field_v.pa')
     def test_true_real_fill_and_finite_bits(self):
         product=self.action(True)['manifest_extra_fields']['products']['samples'];data=product['data'];self.assertEqual(len(self.calls),1)
+        self.assertEqual(product['metadata']['conductor_support_policy'],'equipotential_dirichlet_solid_interiors_v2')
         before=Path(data['sampled_field_v']['path']).read_bytes();after=Path(data['field_v']['path']).read_bytes()
         self.assertEqual(before[56:64],after[56:64]);self.assertEqual(after[56:64],struct.pack('<d',-0.))
         self.assertEqual(struct.unpack_from('<d',after,56+8*21)[0],-100.)

@@ -159,6 +159,7 @@ class OfflineScalarDerivationTests(unittest.TestCase):
         with patch.object(consumer.session,'run_process',side_effect=AssertionError('native forbidden')):
             derived=owner._execute_scalar_derivation(consumer.session,source=source,raw_names=('field_v','field_valid'),required=required,grid=grid,projection=projection,request=request,report=report,support_source=None,publish_prepared_support=True)
         product=derived['manifest_extra_fields']['products']['samples'];self.assertEqual(product['metadata']['native_operations_requested'],0)
+        self.assertEqual(product['metadata']['conductor_support_policy'],'equipotential_dirichlet_solid_interiors_v2')
         self.assertEqual(before,{k:source.data_path(k).read_bytes() for k in before})
         self.assertNotIn(str(source.data_path('field_v')),derived['output_paths'])
         self.assertEqual(product['data']['report']['sha256'],data['report']['sha256'])

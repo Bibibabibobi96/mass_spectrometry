@@ -251,7 +251,7 @@ def verify_scalar_sample(reference: Mapping[str, Any] | OpenedArtifact,
     records = {key: dict(item.data_records[key], path=str(paths[key] if key in paths else item.data_locations[key]))
                for key in ('field_v', 'field_valid', 'grid')}
     if meta.get('conductor_support_policy') is not None:
-        if meta['conductor_support_policy'] != 'unique_dirichlet_solid_interiors':
+        if meta['conductor_support_policy'] != 'equipotential_dirichlet_solid_interiors_v2':
             raise ValueError('unsupported conductor support policy')
         records['conductor_support'] = dict(item.data_records['conductor_support'], path=str(item.data_path('conductor_support')))
         support = _read(item.data_path('conductor_support'))
