@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from msplatform.backends.comsol.assembly_particle_tracing import _basis_mesh_limit, _comsol_version_label, _freeze_particle_epoch, _native_exact_count, _rows, _validate_failed_basis_evidence, _authored_detector_face, prepare_assembly_pulse
+from msplatform.backends.comsol.assembly_particle_tracing import _basis_mesh_limit, _comsol_version_label, _freeze_particle_epoch, _native_exact_count, _rows, _validate_failed_basis_evidence, _authored_detector_face, _declare_particle_outputs, prepare_assembly_pulse
 from msplatform.backends.comsol.assembly_field_export import _validate_field_solution_source, validate_grid
 from msplatform.backends.comsol.particle_data import read_observations
 from msplatform.physics import CONSTANTS
@@ -232,10 +232,28 @@ class ComsolParticleTracingTests(unittest.TestCase):
             self.assertEqual(hit.terminal_states[0]['physical_outcome'], 'detected')
             self.assertEqual(hit.events[0]['time_s'], 1e-6)
             self.assertEqual(hit.events[0]['position_m'], [0.0012, 0.002, 0.003])
-            write_particle_data(Path(directory), hit, metadata={'schema_version': 2,
+            from msplatform.execution.context import ExecutionContext
+            from msplatform.execution.run_session import RunSession
+            import sys
+            root = Path(directory); (root / 'results').mkdir(); (root / 'logs').mkdir()
+            context = ExecutionContext(workspace=root, python_executable=Path(sys.executable),
+                powershell_executable=root / 'unused-pwsh', tools={}, host_state_path=root / 'unused-state',
+                policy_path=root / 'unused-policy')
+            session = RunSession(context=context, artifact_root=root, run_id='detector-fixture',
+                project='fixture', mode='software', package={'run_dir': str(root), 'artifact_run_dir': str(root)},
+                capacity_session={}, execution_request=root / 'request.json', result_path=root / 'result.json')
+            with self.assertRaisesRegex(ValueError, 'undeclared file'):
+                session.classify_file(session.result_dir / 'initial_states.parquet')
+            declared = _declare_particle_outputs(session)
+            for target in declared.values():
+                self.assertEqual(session.classify_file(target), 'required_evidence')
+            write_particle_data(session.result_dir, hit, metadata={'schema_version': 2,
                 'initial_state_basis': 'native_birth_verified', 'frame_id': 'world',
                 'clock': {'basis': 'experiment_relative', 'unit': 's'}})
-            self.assertEqual(len(read_particle_data(Path(directory))['events']), 1)
+            self.assertEqual(len(read_particle_data(session.result_dir)['events']), 1)
+            for target in declared.values():
+                self.assertTrue(target.is_file())
+                self.assertEqual(session.classify_file(target), 'required_evidence')
             write(0)
             miss = read_observations(path, **kwargs)
             self.assertEqual(miss.data_integrity['detector_observation']['status'], 'complete')

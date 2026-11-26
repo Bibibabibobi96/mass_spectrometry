@@ -1195,6 +1195,24 @@ Study SHA256 `A7D75ED3EAB3E198D4196868B9CE1AA9A787554DC83CEA5088C545B81EACB9E6`�
 其余阶段按fail-fast阻塞或等待已启动阶段结束。不能报告完整Changed PASS；本轮定向38项的软件结果单独成立。
 最终安装仍按B交付的普通wheel及sdist重建wheel、仓外参考链与B资源准入执行，不把该环境失败冒充科学失败。
 
+### B4 实际CPT发布角色缺陷与修复（8a8f27d0 后）
+
+冻结c439安装的实际run `20261127_043646__sim__comsol__pulse-6a98fcb94ac5` 已完成native计算，
+真实native faces=[382,436]、flag全部0，三粒子Freeze停止于22.373134802670766、23.603974615275654、
+21.232021467610377us（均早于80.051373us首脉冲采样）。原CSV及SI重读为母群3/终态3、观测complete、0/3检测、
+3 unknown，无补猜实体；但owner在生成completion之前因未声明initial_states.parquet角色失败。
+五SCI文件虽已写出并重读，内存产品记录未持久化，`execution_completion.json`不存在，
+最终为failed/finalization/inspect_writer_completion，不是已发布成功或合格缓存。
+
+修复 `assembly_particle_tracing._declare_particle_outputs` 在write_particle_data之前预声明五SCI文件，
+后续FileRecord与product路径复用声明结果，原数值/source/pulse/场保持。
+实际RunSession classifier回归验证声明前拒绝、声明后真实写入/分类；
+COMSOL particle/workflow17 PASS（2.259s），Ruff PASS。未把离线完整统计补造成原success completion。
+原run由现有owner审计后以failed证据收尾；源和输出只能按停止后的新捕获注明，
+run_config.native输入持久化的是路径，不是当时的SHA，不能宣称原native seal。
+固定代码后另一次普通安装public CLI验证完整发布链是必要正确性验证，仍复用原场，0新增field Compute；
+不为节省这一轮追踪另造科学导入或平行缓存权威。
+
 ### B3/B4 独立ground载体及canonical IOB候选（6412f4e4 后）
 
 新增技术实施选择（不改写原评阅状态）：旧已发布flight_tube/detector PA0族不交供应商重开；

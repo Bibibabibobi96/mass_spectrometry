@@ -475,6 +475,16 @@ def _comsol_version_label(value: Any) -> str:
     return value if value.startswith('COMSOL ') else 'COMSOL ' + value
 
 
+_PARTICLE_DATA_FILES = ('initial_states.parquet', 'terminal_states.parquet', 'events.parquet',
+                        'trajectories.h5', 'execution.json')
+
+
+def _declare_particle_outputs(session: Any) -> dict[str, Path]:
+    """Declare the native owner's actual scientific files before they are written."""
+    return {name: session.declare_file(session.result_dir / name, 'required_evidence')
+            for name in _PARTICLE_DATA_FILES}
+
+
 def _execute_particle_trace(session: Any, *, background: OpenedArtifact, plan: dict, epoch_record: dict,
                             epoch_us: float, position_atol_m: float, velocity_atol_m_s: float,
                             limits: dict) -> dict:
@@ -573,6 +583,7 @@ def _execute_particle_trace(session: Any, *, background: OpenedArtifact, plan: d
             backend_version=_comsol_version_label(version), observation_times_us=plan['observation_times_us'],
             position_atol_m=position_atol_m, velocity_atol_m_s=velocity_atol_m_s,
             boundary_policy=native_facts['boundary_policy'], detector_contract=detector)
+        particle_paths = _declare_particle_outputs(session)
         write_particle_data(session.result_dir, result, metadata={'schema_version': 2,
             'initial_state_basis': 'native_birth_verified', 'frame_id': plan['background']['projection']['assembly_frame_id'],
             'clock': {'basis': 'experiment_relative', 'unit': 's', **plan['source']['clock']}})
@@ -583,10 +594,9 @@ def _execute_particle_trace(session: Any, *, background: OpenedArtifact, plan: d
         records = {'observations': file_record(output, 'required_evidence'), 'integrity': file_record(summary, 'required_evidence'),
                    'native_facts': file_record(facts, 'required_evidence'),
                    'plan': plan_record, 'release': release_record, 'clock_epoch': frozen_epoch}
-        for name in ('initial_states.parquet', 'terminal_states.parquet', 'events.parquet', 'trajectories.h5', 'execution.json'):
-            records['particle_data_' + name.replace('.', '_')] = file_record(session.result_dir / name, 'required_evidence')
-        products = [str(output), str(summary), str(facts), str(native_release)] + [str(session.result_dir / name) for name in
-            ('initial_states.parquet', 'terminal_states.parquet', 'events.parquet', 'trajectories.h5', 'execution.json')]
+        for name, particle_path in particle_paths.items():
+            records['particle_data_' + name.replace('.', '_')] = file_record(particle_path, 'required_evidence')
+        products = [str(output), str(summary), str(facts), str(native_release)] + [str(path) for path in particle_paths.values()]
         return {'status': 'success', 'summary': {'native_execution': 'succeeded', 'data_integrity': result.data_integrity},
                 'output_paths': products, 'required_output_paths': products,
                 'retention_preserve_paths': [], 'manifest_extra_fields': {'products': {'trajectory': {
