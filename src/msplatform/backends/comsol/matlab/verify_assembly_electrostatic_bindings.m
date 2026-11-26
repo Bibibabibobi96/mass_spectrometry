@@ -1,8 +1,17 @@
-function verify_assembly_electrostatic_bindings(model,selected,request,keys,values)
+function verify_assembly_electrostatic_bindings(model,selected,request,keys,values,mode)
 % VERIFY_ASSEMBLY_ELECTROSTATIC_BINDINGS Check actual electrostatic feature bindings.
 % Caller independently binds selected entities to the frozen geometry report.
 comp=model.component('comp1');es=comp.physics('es');mesh=comp.mesh('mesh1');
-assert(numel(comp.physics.tags)==1 && numel(model.study.tags)==1,'assembly:Scope','Unexpected physics or study');
+if nargin<6,mode='single';end
+assert(numel(comp.physics.tags)==1,'assembly:Scope','Unexpected physics');
+studies=sort(cellstr(string(cell(model.study.tags))));studies=studies(:);
+if strcmp(mode,'single')
+    assert(isequal(studies,{'std1'}),'assembly:Scope','Unexpected single-workpoint studies');
+elseif strcmp(mode,'co_resident')
+    assert(isequal(studies,sort({'std1';'std_assembly_on'})),'assembly:Scope','Unexpected co-resident studies');
+else
+    error('assembly:Scope','Unsupported study scope');
+end
 assert(same_entities(es.selection.entities(),selected.vacuum_domains),'assembly:Vacuum','Cold physics domain differs');
 assert(same_entities(comp.material('vacuum').selection.entities(),selected.vacuum_domains),'assembly:Material','Cold material domain differs');
 property=comp.material('vacuum').propertyGroup('def');kind=char(property.getValueType('relpermittivity'));

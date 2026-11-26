@@ -14,6 +14,7 @@ NATIVE_RESOURCES = frozenset({
     "validate_assembly_reference_selections.m", "classify_assembly_reference_faces.m",
     "assembly_electrostatic_model.m", "verify_assembly_electrostatic_bindings.m",
     "solve_assembly_stationary.m", "read_assembly_stationary_solution.m",
+    "solve_assembly_pulse_basis.m", "trace_assembly_particles.m",
     "export_comsol_stationary_field_samples.m", "read_rf_saved_stationary_solution.m",
     "export_assembly_world_scalar_field.m", "sample_scalar_grid_blocks.m",
     "build_and_solve_axisymmetric_gas_flow.m", "run_axisymmetric_gas_flow.m",

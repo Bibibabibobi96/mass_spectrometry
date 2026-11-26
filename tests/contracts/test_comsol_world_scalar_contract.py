@@ -66,7 +66,7 @@ class WorldScalarTests(unittest.TestCase):
                 for name in ('projection','request','geometry_validation','reopen_geometry','reopen_solution','model'):
                     path=root/'original'/(name+('.mph' if name=='model' else '.json'))
                     path.write_text('fixture',encoding='utf8');original[name]=path
-                source=SimpleNamespace(data_path=lambda name:original[name],data_locations=original,
+                source=SimpleNamespace(product_id='background',data_path=lambda name:original[name],data_locations=original,
                     data_records={name:file_record(path,'solver_native_binary' if name=='model' else 'required_evidence') for name,path in original.items()})
                 writer=root/'simion_pa_save.m';writer.write_text('synthetic',encoding='utf8');writer_record=file_record(writer,'required_evidence')
                 context=SimpleNamespace(workspace=root,python_executable=root/'python',powershell_executable=root/'pwsh',host_state_path=root/'state',policy_path=root/'policy',tools={'comsol_launcher':root/'comsol','matlab_root':root})
@@ -99,6 +99,7 @@ class WorldScalarTests(unittest.TestCase):
                         self.assertNotIn('retention_role', historical_writer)
                         product=result['manifest_extra_fields']['products']['samples']
                         self.assertEqual(product['kind'],'scalar_field_samples')
+                        self.assertEqual(product['metadata']['field_solution_product_id'], 'background')
                         self.assertEqual([call.args[0].name for call in checked.call_args_list], ['field_v.pa', 'field_valid.pa'])
                         self.assertEqual(product['metadata']['scientific_qualification'],'not_granted')
                         self.assertIn(str(original['model']),[record['path'] for record in calls[0][1]['immutable_input_records']])

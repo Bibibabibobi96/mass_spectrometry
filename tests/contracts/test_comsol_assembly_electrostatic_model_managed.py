@@ -34,6 +34,8 @@ def source_action(session):
     return dict(status='success', summary={'synthetic': True}, output_paths=paths, required_output_paths=paths, retention_preserve_paths=[], manifest_extra_fields={'products': {'geometry': {'schema_version': 1, 'kind': 'geometry_artifact', 'status': 'complete', 'metadata': {'backend': 'comsol', 'scope': 'geometry_only', 'native_reopen_verified': True}, 'data': records}}})
 
 class ManagedSyntheticModelTests(unittest.TestCase):
+    # This inert fixture isolates process transport; provenance is covered separately.
+    @patch('msplatform.backends.comsol.assembly_native_scope.require_supported_artifact', new=lambda _: None)
     @patch.dict(os.environ, {'MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN': ''})
     def test_managed_owner_and_failure_order(self):
         for case in ('success', 'source_tamper', 'model_tamper', 'process_failure'):

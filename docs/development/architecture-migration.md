@@ -950,3 +950,28 @@ main接线后，使用共享主机账本环境变量
 `.venv/Scripts/python.exe -m unittest tests.contracts.test_native_assets tests.contracts.test_native_asset_recipe tests.contracts.test_native_recipe -q`
 14 PASS（3.420s），相关Ruff PASS。真实公开解析集成覆盖首次读取后外部manifest变化、冻结验证不重读、
 路径/label不失效以及采样/碰撞内容变更失效。不是场解或原生追踪验收；桥接导出与实际Fly待下一主题。
+
+### B3 COMSOL 双解与原生追踪软件闭包
+
+`backends/comsol/assembly_particle_tracing.py` 与 MATLAB `solve_assembly_pulse_basis.m` 在同一模型保存
+两个独立stationary解，原静态场保留，OA按原pulse切换；`trace_assembly_particles.m` 实际CPT入口消费
+同一原birth、统一实验时间、显式积分控制与现有public物性。`particle_data.py` 输出schema2完整SI母群/终态/事件/轨迹；
+缺失或无法归属的原生状态保持不完整，不能补成成功。`workflows/comsol_tracing.py` 编译同一冻结Study，
+显式basis reference分支保护background/on并逐项比较实际projection与两组request，可跳过Compute直接追踪。
+目前该CPT和reference编排只通过软件测试，未运行真实粒子，不能认定BA06/07/08/12通过。
+
+`assembly_native_scope.py` 按真实manifest-bound run_config与geometry来源重建project身份，
+旧复合project的新geometry/model/solve/basis/CPT执行明确拒绝；历史read/export/0Compute恢复保留。
+不凭实例名猜物理角色。两项旧inert transport fixture不具备provenance，明确mock该独立scope检查，
+另有真实冻结链与错误/不一致projection正反例，不把mock当owner科学证明。
+
+设置共享host账本环境后，运行COMSOL scope/workflow/particle_tracing/world_scalar_contract/
+assembly_electrostatic_model_managed/stationary_managed_failure 六模块，23 PASS（98.623s），相关Ruff PASS。
+新增projection mismatch负例单独PASS。真实冷开脚本为外部workspace `recover_basis.py`，最终run
+`20261127_023910__analysis__comsol__basis-recovery-e7a42a44d31e` 已success、writers_stopped=true、host released、
+workspace workflow leases=0，background/on产品发布；manifest SHA256
+`E2F7AC36D7854589C72C0C5DD375D8F90323154688709F447463194066030CB2`。
+本次compute_calls=0，比较两solution/dataset、43组电压、mesh与真空均与真实Compute report一致。
+借用原MPH SHA256 `02179DB42E4A25922315A13B4AAF8347C8B18C3BD9C291EF952FB3A72FEFA031`，
+3,082,205,877 B、solver_native_binary；身份是Python失败之后新捕获。无新的Compute或收敛资格。
+下一步固定已安装代码，从离仓同一公共CLI引用此basis跑真实小N CPT；新场与追踪证据分开报告。

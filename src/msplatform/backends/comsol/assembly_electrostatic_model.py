@@ -63,6 +63,8 @@ def prepare_model(geometry: Any, *, request: Mapping[str, Any], context: Any) ->
     All scientific and numerical choices must be supplied explicitly by the caller.
     """
     source=open_artifact(geometry,expected_kind='geometry_artifact')
+    from msplatform.backends.comsol.assembly_native_scope import require_supported_artifact
+    require_supported_artifact(source)
     if source.metadata.get('backend')!='comsol' or source.metadata.get('scope')!='geometry_only' or source.metadata.get('native_reopen_verified') is not True:raise ContractError('verified COMSOL geometry-only source required')
     paths={name:source.data_path(name) for name in ('projection','geometry_validation','descriptor','build_geometry','reopen_geometry')}
     projection=json.loads(paths['projection'].read_text(encoding='utf-8-sig')); resolved=validate_request(projection,request)

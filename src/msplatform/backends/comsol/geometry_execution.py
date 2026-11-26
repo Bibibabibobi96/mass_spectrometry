@@ -64,6 +64,8 @@ def build_geometry(assembly: Assembly, *, outer_box_mm: Mapping[str, Sequence[fl
     Outer-box coordinates and position sanity are in mm; normal sanity is
     dimensionless. Sanity samples do not establish whole-face accuracy.
     """
+    from msplatform.backends.comsol.assembly_native_scope import require_supported_assembly
+    require_supported_assembly(assembly)
     request = resolve_geometry_request(assembly, outer_box_mm=outer_box_mm, geometry_validation=geometry_validation)
     snapshot, projection, validation = request['assembly'], request['projection'], request['validation']
     for name in ('comsol_launcher', 'matlab_root'):

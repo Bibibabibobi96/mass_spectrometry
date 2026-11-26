@@ -40,6 +40,8 @@ def source_action(session):
 
 
 class StationaryManagedFailureTests(unittest.TestCase):
+    # This inert fixture isolates process transport; provenance is covered separately.
+    @patch('msplatform.backends.comsol.assembly_native_scope.require_supported_artifact', new=lambda _: None)
     @patch.dict(os.environ, {'MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN': ''})
     def test_failed_compute_and_cold_reopen_preserve_actual_outputs(self):
         for case in ('compute_failure', 'reopen_failure'):

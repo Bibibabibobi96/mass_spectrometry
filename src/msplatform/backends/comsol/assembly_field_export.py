@@ -95,6 +95,54 @@ def _classification_grid_identity(grid: Mapping[str, Any]) -> dict[str, Any]:
     return {key: grid[key] for key in ('frame_id', 'origin_mm', 'pitch_mm', 'dimensions', 'point_count')}
 
 
+def _validate_field_solution_source(source: Any) -> Mapping[str, Any]:
+    """Validate an existing workpoint or one cold-reopened co-resident basis."""
+    metadata = source.metadata
+    if (metadata.get('backend') != 'comsol'
+            or metadata.get('scope') not in {'single_stationary_workpoint', 'co_resident_stationary_workpoint'}
+            or metadata.get('field_status') != 'solved' or metadata.get('native_reopen_verified') is not True):
+        raise ContractError('verified COMSOL stationary field_solution required')
+    observed = metadata.get('solution')
+    if not isinstance(observed, Mapping):
+        raise ValueError('saved solution readback required')
+    validate_solution_readback(observed, study_tag=observed.get('study_tag'),
+                               solution_tag=observed.get('solution_tag'), dataset_tag=observed.get('dataset_tag'))
+    if metadata['scope'] == 'co_resident_stationary_workpoint':
+        name = metadata.get('co_resident_workpoint')
+        if name not in {'background', 'on'}:
+            raise ValueError('co-resident workpoint selection must be explicit')
+        report = json.loads(source.data_path('reopen_pulse_basis').read_text(encoding='utf-8-sig'))
+        off, on = report.get('off_solution'), report.get('on_solution')
+        if not isinstance(off, Mapping) or not isinstance(on, Mapping):
+            raise ValueError('cold reopen must report both native solutions')
+        for item in (off, on):
+            validate_solution_readback(item, study_tag=item.get('study_tag'),
+                                       solution_tag=item.get('solution_tag'), dataset_tag=item.get('dataset_tag'))
+        if (report.get('operation') != 'reopen' or report.get('compute_calls') != 0
+                or not report.get('mesh_identity') or not report.get('vacuum_domains') or not report.get('group_keys')
+                or off['solution_tag'] == on['solution_tag'] or off['dataset_tag'] == on['dataset_tag']
+                or observed != (off if name == 'background' else on)):
+            raise ValueError('selected co-resident solution differs from cold reopen')
+        request = json.loads(source.data_path('request').read_text(encoding='utf-8-sig'))
+        rows = request.get('group_voltages')
+        if not isinstance(rows, list):
+            raise ValueError('co-resident workpoint group voltages are missing')
+        keys = [row['instance_id'] + '/' + row['electrode_group_id'] for row in rows]
+        values = [row['voltage_v'] for row in rows]
+        native_keys = report['group_keys']
+        native_values = report['off_voltages_v' if name == 'background' else 'on_voltages_v']
+        if isinstance(native_keys, str):
+            native_keys = [native_keys]
+        if type(native_values) in (int, float):
+            native_values = [native_values]
+        if keys != native_keys or values != native_values:
+            raise ValueError('selected co-resident voltages differ from cold reopen')
+        selected = json.loads(source.data_path('reopen_solution').read_text(encoding='utf-8-sig'))
+        if selected.get('co_resident_workpoint') != name or selected.get('solution') != observed:
+            raise ValueError('selected workpoint readback differs from the co-resident solution')
+    return observed
+
+
 def export_world_scalar(solution: Any, *, grid: Mapping[str, Any], context: Any,
                         fill_conductor_interiors: bool = False, publish_prepared_support: bool = False,
                         prepared_support: Any = None) -> Any:
@@ -147,15 +195,7 @@ def _export_world_scalar(solution: Any, *, grid: Mapping[str, Any], context: Any
         from msplatform.backends.simion.scalar_sample_binding import original_sample_source
         support_original = original_sample_source(support_source)
     source = open_artifact(solution, expected_kind='field_solution')
-    metadata = source.metadata
-    if (metadata.get('backend') != 'comsol' or metadata.get('scope') != 'single_stationary_workpoint'
-            or metadata.get('field_status') != 'solved' or metadata.get('native_reopen_verified') is not True):
-        raise ContractError('verified single-workpoint COMSOL field_solution required')
-    observed = metadata.get('solution')
-    if not isinstance(observed, Mapping):
-        raise ValueError('saved solution readback required')
-    validate_solution_readback(observed, study_tag=observed.get('study_tag'),
-                               solution_tag=observed.get('solution_tag'), dataset_tag=observed.get('dataset_tag'))
+    observed = _validate_field_solution_source(source)
     projection = json.loads(source.data_path('projection').read_text(encoding='utf-8-sig'))
     baseline = json.loads(source.data_path('reopen_geometry').read_text(encoding='utf-8-sig'))
     resolved = validate_grid(grid, projection, observed)
@@ -370,7 +410,8 @@ def execute_export(session: Any, *, source: Any, manifest_record: Mapping[str, A
                     reopen_geometry=frozen['reopen_geometry'], reopen_solution=frozen['reopen_solution'],
                     report=file_record(item['report'], 'required_evidence'))
                 metadata = dict(backend='comsol', scope='assembly_world_scalar_samples', field_status='sampled',
-                    scientific_qualification='not_granted', frame_id=item['grid']['frame_id'], compute_calls_requested=0)
+                    scientific_qualification='not_granted', frame_id=item['grid']['frame_id'], compute_calls_requested=0,
+                    field_solution_product_id=source.product_id)
                 products['samples_' + name] = dict(schema_version=1, kind='scalar_field_samples', status='complete', metadata=metadata, data=records)
                 result_paths.extend([*item['outputs'], item['report']])
             return dict(status='success', summary=dict(backend='comsol', scope='assembly_world_scalar_grid_batch',
@@ -408,7 +449,8 @@ def execute_export(session: Any, *, source: Any, manifest_record: Mapping[str, A
         if labels_path is not None:
             records['prepared_support_labels'] = file_record(labels_path, 'required_evidence')
     metadata = dict(backend='comsol', scope='assembly_world_scalar_samples', field_status='sampled',
-                    scientific_qualification='not_granted', frame_id=grid['frame_id'], compute_calls_requested=0)
+                    scientific_qualification='not_granted', frame_id=grid['frame_id'], compute_calls_requested=0,
+                    field_solution_product_id=source.product_id)
     if support_record is not None:
         metadata['conductor_support_policy'] = 'unique_dirichlet_solid_interiors'
     result_paths = [*outputs, *([*published_outputs, support_path] if support_record is not None else []), report]

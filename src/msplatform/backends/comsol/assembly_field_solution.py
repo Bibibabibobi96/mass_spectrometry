@@ -58,6 +58,8 @@ def solve_stationary(model: Mapping[str, Any] | OpenedArtifact, *, solver_numeri
         raise ValueError('explicit comsol_stationary_default solver numerics required')
     reuse = request is not None
     source = open_artifact(model, expected_kind='field_solution' if reuse else 'prepared_model')
+    from msplatform.backends.comsol.assembly_native_scope import require_supported_artifact
+    require_supported_artifact(source)
     metadata = source.metadata
     expected_scope = 'single_stationary_workpoint' if reuse else 'assembly_electrostatic_unsolved'
     expected_status = 'solved' if reuse else 'not_solved'
