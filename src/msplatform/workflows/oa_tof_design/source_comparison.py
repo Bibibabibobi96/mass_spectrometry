@@ -554,9 +554,11 @@ $execution|ConvertTo-Json -Depth 32|Set-Content -LiteralPath $request.outputs.en
 def _invoke_worker(session: Any, request_path: Path, guards: list[dict], stage: dict) -> dict:
     for index, record in enumerate(guards):
         verify_record(f"frozen TOF input {index}", record)
-    request = load_json(request_path)
-    package = load_json(Path(request["package_receipt"]["path"]))
-    package_paths = {Path(entry["path"]).resolve() for entry in package["files"]}
+    package_paths = set()
+    if guards:
+        request = load_json(request_path)
+        package = load_json(Path(request["package_receipt"]["path"]))
+        package_paths = {Path(entry["path"]).resolve() for entry in package["files"]}
     session.run_process("scientific_analysis", executable=session.context.powershell_executable,
         arguments=["-NoProfile", "-NonInteractive", "-Command", _FROZEN_WORKER_COMMAND],
         role="GATE", stage="oa_tof_design", limits=stage["limits"],
