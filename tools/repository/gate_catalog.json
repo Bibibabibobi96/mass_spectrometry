@@ -674,6 +674,10 @@
       "repository_gate_group": "regression",
       "matches": [
         {
+          "prefix": "recipes/reference/",
+          "reason": "reference_recipe_changed"
+        },
+        {
           "regex": "^src/msplatform/backends/comsol/matlab/(?:ms_stage1_ei_source|load_ei_source_contract|verify_ei_source_model|verify_ei_source_parameter_bindings|ei_source_unit_text|build_wehnelt_model|phase1_geometry_coil_transverse|phase2_electrostatics_coil_transverse|phase4_thermal_emission_coil_transverse|load_wehnelt_contract|apply_wehnelt_contract_parameters|wehnelt_contract_parameter_bindings|verify_wehnelt_contract_parameters|verify_wehnelt_model)\\.m$",
           "reason": "installed_build_only_model_resource_changed"
         },
@@ -1011,6 +1015,23 @@
           "tests/contracts/"
         ],
         "dependencies": [
+          {
+            "matches": [
+              {"prefix": "recipes/reference/", "reason": "reference_recipe_changed"},
+              {"regex": "^src/msplatform/(?:physics|recipes|fields|tracing|storage)/.*\\.py$", "reason": "reference_chain_changed"},
+              {"exact": "src/msplatform/results/particle_data.py", "reason": "reference_chain_changed"},
+              {"exact": "src/msplatform/workflows/reference_tracing.py", "reason": "reference_chain_changed"},
+              {"exact": "src/msplatform/cli.py", "reason": "reference_chain_changed"},
+              {"exact": "src/msplatform/__main__.py", "reason": "reference_chain_changed"}
+            ],
+            "modules": [
+              "tests/contracts/test_reference_recipe.py",
+              "tests/contracts/test_reference_tracing.py",
+              "tests/contracts/test_artifact_store.py",
+              "tests/contracts/test_reference_workflow.py"
+            ],
+            "dependency_profile": "locked"
+          },
           {
             "matches": [
               {

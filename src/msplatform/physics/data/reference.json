@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "dataset_id": "repository_reference_physics_v1",
+  "constants": {
+    "version": "repository_particle_physics_v1",
+    "atomic_mass_constant_kg": "1.66053906660e-27",
+    "elementary_charge_c": "1.602176634e-19",
+    "boltzmann_constant_j_k": "1.380649e-23"
+  },
+  "constants_source": "Frozen from msplatform.contracts.particle_physics; no constant-value upgrade in this migration.",
+  "gas": {
+    "vacuum": {"status": "vacuum", "pressure_pa": 0.0, "description": "Explicit zero-pressure reference environment; no gas species or temperature is inferred."}
+  },
+  "collision_models": {
+    "none": {"model": "none", "description": "Collision-free tracing in the explicit vacuum reference environment."}
+  }
+}

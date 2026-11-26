@@ -1,0 +1,47 @@
+schema_version = 1
+label = "Crossed electric and magnetic fields"
+frame_id = "laboratory"
+particle_tracer = "scipy_dop853"
+
+[assembly]
+component_ids = ["reference_cell"]
+
+[clock]
+basis = "experiment_relative"
+
+[gas_environment]
+status = "vacuum"
+
+[field_source]
+kind = "uniform"
+time_dependence = "static"
+electric_field_v_m = [2000.0, 0.0, 0.0]
+magnetic_field_t = [0.0, 0.0, 0.5]
+
+[[initial_states]]
+particle_id = 1
+species_id = "reference_ion"
+position_mm = [0.0, 0.0, 0.0]
+velocity_m_s = [10000.0, 0.0, 0.0]
+time_us = 0.0
+mass_u = 100.0
+charge_state = 1
+weight = 1.0
+
+[numerics]
+end_time_s = 0.000001
+rtol = 1e-10
+position_atol_m = 1e-10
+velocity_atol_m_s = 1e-5
+max_step_s = 1e-8
+sample_count = 101
+
+[[surfaces]]
+surface_id = "detector_plane"
+component_id = "reference_cell"
+axis = 0
+position_m = 0.01
+kind = "detector"
+
+[recording]
+trajectory = "sampled"

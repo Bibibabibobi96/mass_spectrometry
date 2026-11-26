@@ -25,6 +25,13 @@ COMPONENT_INFRASTRUCTURE = {"model", "catalog", "geometry_members", "shape_query
 DOMAIN_IMPORTS = {
     **{name: SCIENTIFIC_DOMAINS for name in SCIENTIFIC_DOMAINS},
     "gas": {"gas", "contracts", "io"},
+    "physics": {"physics", "contracts"},
+    "recipes": {"recipes", "physics", "io"},
+    "fields": {"fields"},
+    "tracing": {"tracing", "fields", "physics", "analysis"},
+    "storage": {"storage"},
+    "cli": {"cli", "recipes", "tracing", "workflows", "results", "storage"},
+    "__main__": {"cli"},
     "analysis": SCIENTIFIC_DOMAINS | {"gas"},
     "assembly": SCIENTIFIC_DOMAINS | {"components"},
     "components": SCIENTIFIC_DOMAINS | {"gas", "components"},
@@ -62,6 +69,8 @@ def _namespace_error(module: str) -> str | None:
     parts = module.split(".")
     if parts == ["msplatform"]:
         return None
+    if len(parts) > 2 and parts[1] in {"cli", "__main__"} and parts != ["msplatform", "cli", "main"]:
+        return f"undeclared installed entry point: {module}"
     if len(parts) < 2 or parts[0] != "msplatform" or parts[1] not in DOMAIN_IMPORTS:
         return f"undeclared installed domain: {module}"
     if (parts[1] == "components" and len(parts) > 2
@@ -93,7 +102,13 @@ def _target_error(target: str, dependencies: set[str], source_domain: str, sourc
         if (source_domain == "assembly" and len(parts) > 2 and parts[:2] == ["msplatform", "components"]
                 and parts[2] not in COMPONENT_INFRASTRUCTURE):
             return f"assembly imports provider-specific physics instead of neutral component data: {target}"
-        if len(parts) > 1 and parts[1] not in DOMAIN_IMPORTS.get(source_domain, set()):
+        if source_module == "msplatform.storage.store" and target in {
+                "msplatform.execution.file_lock", "msplatform.execution.file_lock.process_file_lock"}:
+            return None
+        allowed = DOMAIN_IMPORTS.get(source_domain, set())
+        if source_module == "msplatform.workflows.reference_tracing":
+            allowed = allowed | {"physics", "recipes", "fields", "tracing", "storage"}
+        if len(parts) > 1 and parts[1] not in allowed:
             return f"{source_domain} imports a reverse dependency: {target}"
         return None
     if parts[0] in {"common", "projects", "integrations"}:
@@ -216,7 +231,7 @@ def core_boundary_errors(source: str, module: str, *, is_package: bool = False,
                 if error := _target_error(name, dependencies, source_domain, module):
                     errors.append(f"{node.lineno}: {error}")
         if (source_domain != "execution" and (name in ENVIRONMENT_PROBES or name.startswith("platform."))
-                and not (name == "os.name" and module in {"msplatform.io.file_identity", "msplatform.io.manifest_records"})
+                and not (name == "os.name" and module in {"msplatform.io.file_identity", "msplatform.io.manifest_records", "msplatform.storage.store"})
                 and not (source_domain == "applications" and name == "os.environ")
                 and not (module in SOLIDWORKS_HOST_ADAPTERS and name == "os.environ")
                 and not (name == "os.environ" and _mr_numeric_thread_environment_access(node, module, parents))):
@@ -278,6 +293,36 @@ def component_dependency_errors(sources: dict[str, str], declarations: dict[str,
 
 
 class ScientificCoreBoundaryTests(unittest.TestCase):
+    def test_reference_domains_preserve_dependency_direction(self):
+        allowed = (
+            ("msplatform.physics.reference", "from msplatform.contracts.particle_physics import AMU_KG"),
+            ("msplatform.recipes.reference", "from msplatform.physics import CONSTANTS"),
+            ("msplatform.tracing", "from msplatform.fields import FieldProvider"),
+            ("msplatform.tracing", "from msplatform.physics import GasEnvironment"),
+            ("msplatform.results.particle_data", "from msplatform.analysis.particle_census import partition_cohort"),
+            ("msplatform.workflows.reference_tracing", "from msplatform.storage import ArtifactStore"),
+            ("msplatform.storage.store", "import os; windows = os.name == 'nt'"),
+            ("msplatform.storage.store", "from msplatform.execution.file_lock import process_file_lock"),
+            ("msplatform.__main__", "from msplatform.cli import main"),
+        )
+        rejected = (
+            ("msplatform.physics.reference", "from msplatform.storage import ArtifactStore"),
+            ("msplatform.fields", "from msplatform.tracing import ParticleTracer"),
+            ("msplatform.recipes.reference", "from msplatform.workflows import reference_tracing"),
+            ("msplatform.results.particle_data", "from msplatform.storage import ArtifactStore"),
+            ("msplatform.workflows.unrelated", "from msplatform.storage import ArtifactStore"),
+            ("msplatform.storage.other", "import os; windows = os.name == 'nt'"),
+            ("msplatform.storage.other", "from msplatform.execution.file_lock import process_file_lock"),
+            ("msplatform.storage.store", "from msplatform.execution import recovery"),
+            ("msplatform.cli.unreviewed", "import math"),
+        )
+        for module, source in allowed:
+            with self.subTest(module=module):
+                self.assertEqual(core_boundary_errors(source, module, dependencies=set()), [])
+        for module, source in rejected:
+            with self.subTest(module=module):
+                self.assertTrue(core_boundary_errors(source, module, dependencies=set()))
+
     def test_physical_member_dispatch_stays_in_components(self):
         source = "from msplatform.components.orthogonal_accelerator.geometry_members import iter_geometry_members"
         self.assertEqual(core_boundary_errors(source, "msplatform.components.geometry_members", dependencies=set()), [])

@@ -302,6 +302,10 @@ LiveLink、SIMION Lua/GEM、PowerShell及跨软件数据合同。仓库结构、
 
 ### Canonical instrument clock authority
 
+以下既有 `us` authority 适用于尚未迁移的原生消费者。新参考公开合同使用
+`experiment_relative` 的 SI `time_s`，墙钟另记，同一实验原点不在组件边界归零。
+旧 authority 不回写；原生 adapter 迁移时明确一次单位/时钟映射，不能并立两个权威。
+
 - 每条跨项目事件链必须由`src/msplatform/contracts/schemas/canonical_clock_authority.schema.json`声明唯一
   instrument epoch/time权威、显式`us`单位、time basis和权威文件SHA-256；machine contract只声明
   能力与contract identity，experiment只引用冻结birth authority与pulse-schedule身份，integration
@@ -316,7 +320,8 @@ LiveLink、SIMION Lua/GEM、PowerShell及跨软件数据合同。仓库结构、
 ### 单位与坐标
 
 - 系统边界的数值字段必须在字段名或Schema中显式单位，不得隐式混用mm/m、µs/s、eV/J或Da/kg。
-- 不强制把所有内部量转换为SI。选择能减少转换和数值错误的项目canonical单位，并在边界只转换一次。
+- 新公共科学合同采用 SI + float64；作者十进制单位在边界一次规范化。后端内部可以使用已声明的
+  原生单位或数值缩放，并同步转换分量容差。旧版本数据保持原义；单位迁移与常量数值升级分别验证。
 - 坐标合同必须给出frame身份、轴方向、原点、旋转和平移；位置应用旋转和平移，速度只应用旋转，
   时间和能量不得因空间变换静默改变。
 - 新跨模块机器合同必须定义`schema_version`、字段、类型、单位、空值、范围、枚举和兼容策略，并提供
@@ -452,8 +457,8 @@ LiveLink、SIMION Lua/GEM、PowerShell及跨软件数据合同。仓库结构、
   修改时间替代发布、消费所需的内容身份验证。
 - 批量处理粒子，禁止为每个粒子启动外部进程、解释器或跨语言会话。
 - 默认只保存分析所需字段；密集轨迹只在接口误差、碰撞、空间电荷、脉冲捕获或明确诊断需要时保存。
-- 大表按块读取和聚合。CSV继续用于可审阅的小中型合同；只有测量证明CSV成为主要瓶颈并建立版本化
-  Schema后，才引入Parquet或HDF5。
+- 大表按块读取和聚合。新公开结果合同使用 Parquet 表与 HDF5 分块数组，定义版本化字段与单位；
+  CSV 保留既有版本读写和小型交换用途，不为新主干维护第二套权威结果。
 - 并发受CPU、内存、I/O、许可证数和供应商条款限制；禁止嵌套并行造成超额占用。
 - 默认数值精度为`float64`；降低精度必须提供误差分析。O(N²)及更差算法必须说明预期N上限和扩展方案。
 - 性能测试与正确性测试分离，报告机器、软件版本、重复次数和统计量；共享机器优先使用中位数。
@@ -541,8 +546,9 @@ flowchart TB
 
 软件验证使用`tools/repository/verify.ps1`选择Changed、Owner或Repository范围，同轮每项职责只执行一次。普通研究运行在自己的
 prepare/run边界校验实际输入、单位、时钟、资源、资产与writer，不先执行整套软件回归；科学资格独立按
-模型、数值方法和声明范围验收。不要求项目实现数字级别或同名资格开关；Candidate/Formal只用于实际资产
-与模型用途的资格和发布，不支持能力在选择阶段立即拒绝。新增项目只增加其owner、依赖和必要行为，不复制公共故障矩阵或根编排。
+模型、数值方法和声明范围验收。新公开合同不使用 Candidate/Formal 总等级，验证报告、执行状态、
+保留政策与基线分开；旧消费者按迁移清单退出，历史证据保持原义。不支持能力在选择阶段立即拒绝。
+新增项目只增加其owner、依赖和必要行为，不复制公共故障矩阵或根编排。
 
 文件局部静态规则只检查现存改动源码；配置、未知路径、源码删除本身不触发全库局部扫描。检查器或
 规则变动才扩大此类检查；跨文件风险交给真实依赖测试。完整范围回归仍执行全部适用源码规则。

@@ -5,6 +5,8 @@
 
 ## 全仓规则与操作
 
+新的参考链按职责从[文档索引](index.md)进入：配方/tracing、ArtifactStore 与架构迁移验收分别维护。
+
 | 问题 | 唯一正文 |
 |---|---|
 | 项目、变体、实例和组装怎样划分，文件放哪里 | [仓库架构与知识权威](REPOSITORY_ARCHITECTURE.md) |

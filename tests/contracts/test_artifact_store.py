@@ -1,0 +1,253 @@
+"""Small, real filesystem and process checks for dedicated store ownership."""
+from __future__ import annotations
+
+from multiprocessing import get_context
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+import tempfile
+import os
+import subprocess
+from threading import Barrier
+import unittest
+from unittest.mock import patch
+
+from msplatform.storage import ArtifactStore
+
+
+def _claim_worker(root: str, identity: str, ready, release) -> None:
+    store = ArtifactStore(root)
+    with store.claim(identity):
+        ready.set()
+        if not release.wait(20):
+            raise RuntimeError("parent failed to release claim")
+
+
+def _crash_worker(root: str, identity: str, ready) -> None:
+    store = ArtifactStore(root)
+    with store.claim(identity), store.reserve(8):
+        ready.set()
+        os._exit(0)
+
+
+class ArtifactStoreTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.store = ArtifactStore(Path(self.temp.name) / "store")
+
+    def asset(self, key: str, content: bytes = b"abc") -> str:
+        work = self.store.new_work()
+        (work / "data").write_bytes(content)
+        return self.store.put_asset("field", key, work)
+
+    def test_shared_required_reference_and_claim_survive_collection(self) -> None:
+        identity = self.asset("same")
+        for _ in range(2):
+            work = self.store.new_work()
+            (work / "result").write_text("ok", encoding="utf-8")
+            run, _ = self.store.publish_run(work, required_assets=(identity,))
+            self.assertTrue(self.store.inspect_run(run).exists())
+        self.assertEqual(self.store.collect(100)["released_bytes"], 0)
+        self.assertEqual(self.store.find_asset("same")[0], identity)
+
+    def test_process_claim_competes_with_gc_without_sleep(self) -> None:
+        identity = self.asset("protected")
+        context = get_context("spawn")
+        ready, release = context.Event(), context.Event()
+        process = context.Process(target=_claim_worker, args=(str(self.store.root), identity, ready, release))
+        process.start()
+        try:
+            self.assertTrue(ready.wait(20))
+            self.assertEqual(self.store.collect(100)["released_bytes"], 0)
+        finally:
+            release.set()
+            process.join(20)
+        self.assertEqual(process.exitcode, 0)
+        self.assertEqual(self.store.collect(100)["released_bytes"], 3)
+        self.assertIsNone(self.store.find_asset("protected"))
+
+    def test_missing_member_is_miss_and_other_asset_remains(self) -> None:
+        first = self.asset("first")
+        second = self.asset("second", b"other")
+        path = self.store.find_asset("first")[1]
+        (path / "data").unlink()
+        self.assertIsNone(self.store.find_asset("first"))
+        self.assertEqual(self.store.find_asset("second")[0], second)
+        self.assertNotEqual(first, second)
+
+    def test_soft_pressure_and_physical_capacity(self) -> None:
+        self.store.high, self.store.low = 0, 0
+        self.asset("discard")
+        with self.store.reserve(0):
+            self.assertIsNone(self.store.find_asset("discard"))
+        with patch("msplatform.storage.store.shutil.disk_usage") as disk:
+            disk.return_value = type("Usage", (), {"free": 0})()
+            with self.assertRaises(OSError):
+                with self.store.reserve(1):
+                    pass
+
+    def test_resume_delete_pending_and_publish_after_interruption(self) -> None:
+        identity = self.asset("pending")
+        with self.store._transaction() as db:
+            db.execute("UPDATE assets SET state='delete_pending' WHERE id=?", (identity,))
+        with self.assertRaises(KeyError):
+            with self.store.claim(identity):
+                self.fail("a pending deletion must not gain a new claim")
+        with self.assertRaises(KeyError):
+            self.store.pin(identity)
+        self.assertEqual(self.store.collect()["released_bytes"], 3)
+        work = self.store.new_work()
+        (work / "payload").write_bytes(b"x")
+        from msplatform.storage.store import _records
+        import json
+        (work / "run_manifest.json").write_text(json.dumps({"schema_version": 1, "run_id": "interrupted", "files": _records(work)}), encoding="utf-8")
+        records = json.dumps(_records(work), sort_keys=True)
+        with self.store._transaction() as db:
+            db.execute("INSERT INTO runs VALUES(?,?,?,?,?)", ("interrupted", "runs/2026/11/interrupted", "publishing", records, work.name))
+        self.assertEqual(self.store.recover_publications(), ["interrupted"])
+        self.assertTrue((self.store.inspect_run("interrupted") / "payload").exists())
+
+    def test_failed_removal_is_not_credited_and_is_retried(self) -> None:
+        self.asset("locked")
+        with patch("msplatform.storage.store.shutil.rmtree", side_effect=PermissionError("locked")):
+            report = self.store.collect(3)
+        self.assertEqual(report["released_bytes"], 0)
+        self.assertEqual(len(report["failures"]), 1)
+        self.assertEqual(self.store.collect()["released_bytes"], 3)
+
+    def test_cache_claim_covers_validation_and_consumer_lifetime(self) -> None:
+        work = self.store.new_work()
+        (work / "data").write_bytes(b"abc")
+        with self.store.put_asset_claimed("field", "held", work) as (identity, path):
+            self.assertEqual((path / "data").read_bytes(), b"abc")
+            self.assertEqual(self.store.collect(100)["released_bytes"], 0)
+        with self.store.claim_key("held") as hit:
+            self.assertEqual(hit[0], identity)
+            self.assertEqual(self.store.collect(100)["released_bytes"], 0)
+        self.assertEqual(self.store.collect(100)["released_bytes"], 3)
+        with self.store.claim_key("held") as miss:
+            self.assertIsNone(miss)
+
+    def test_concurrent_same_key_publications_do_not_overwrite(self) -> None:
+        barrier = Barrier(2)
+
+        def publish(content: bytes):
+            work = self.store.new_work()
+            (work / "data").write_bytes(content)
+            barrier.wait(10)
+            with self.store.put_asset_claimed("field", "shared_key", work) as result:
+                identity, path = result
+                return identity, (path / "data").read_bytes(), path
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(publish, (b"first", b"second")))
+        self.assertNotEqual(results[0][0], results[1][0])
+        self.assertEqual({r[1] for r in results}, {b"first", b"second"})
+        self.assertTrue(all(path.exists() for _, _, path in results))
+
+    def test_lookup_losing_to_collection_returns_miss(self) -> None:
+        self.asset("race")
+        claim = self.store.claim
+
+        def collect_before_claim(identity):
+            self.store.collect(100)
+            return claim(identity)
+
+        with patch.object(self.store, "claim", side_effect=collect_before_claim):
+            with self.store.claim_key("race") as result:
+                self.assertIsNone(result)
+
+    def test_manifest_and_private_work_disposal(self) -> None:
+        import json
+        work = self.store.new_work()
+        (work / "payload").write_bytes(b"data")
+        run, path = self.store.publish_run(work)
+        manifest = json.loads((path / "run_manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["run_id"], run)
+        self.assertEqual(manifest["files"]["payload"]["bytes"], 4)
+        self.assertEqual(self.store.inspect_run(run), path)
+        other = ArtifactStore(self.store.root)
+        disposable = self.store.new_work()
+        (disposable / "temporary").write_bytes(b"123")
+        with self.assertRaises(ValueError):
+            other.discard_work(disposable)
+        self.assertEqual(self.store.discard_work(disposable), 3)
+        self.assertFalse(disposable.exists())
+
+    def test_execution_state_and_fixed_run_identity(self) -> None:
+        run, work = self.store.begin_run()
+        self.assertEqual(self.store.run_status(run)["execution_status"], "queued")
+        self.store.set_queued_reason(run, "capacity")
+        self.assertEqual(self.store.run_status(run)["reason"], "capacity")
+        self.store.mark_running(run)
+        self.assertEqual(self.store.run_status(run)["execution_status"], "running")
+        (work / "result").write_bytes(b"result")
+        published, _ = self.store.publish_run(work, run_id=run, execution_status="cancelled")
+        self.assertEqual(published, run)
+        self.assertEqual(self.store.run_status(run)["execution_status"], "cancelled")
+        self.assertEqual(self.store.run_status(run)["publication_status"], "ready")
+
+    def test_dead_controls_recover_while_live_claim_survives(self) -> None:
+        identity = self.asset("controls")
+        context = get_context("spawn")
+        ready, release, crashed = context.Event(), context.Event(), context.Event()
+        live = context.Process(target=_claim_worker, args=(str(self.store.root), identity, ready, release))
+        dead = context.Process(target=_crash_worker, args=(str(self.store.root), identity, crashed))
+        live.start()
+        dead.start()
+        try:
+            self.assertTrue(ready.wait(20))
+            self.assertTrue(crashed.wait(20))
+            dead.join(20)
+            self.assertEqual(dead.exitcode, 0)
+            self.assertEqual(len(self.store.recover_controls()), 2)
+            self.assertEqual(self.store.collect(100)["released_bytes"], 0)
+        finally:
+            release.set()
+            live.join(20)
+            dead.join(20)
+        self.assertEqual(live.exitcode, 0)
+        self.assertEqual(self.store.collect(100)["released_bytes"], 3)
+
+    def test_run_usage_triggers_soft_gc_without_deleting_run(self) -> None:
+        work = self.store.new_work()
+        (work / "result").write_bytes(b"x" * 100)
+        run, _ = self.store.publish_run(work)
+        self.asset("cold")
+        self.store.high, self.store.low = 50, 10
+        with self.store.reserve(0):
+            self.assertIsNone(self.store.find_asset("cold"))
+        self.assertTrue(self.store.inspect_run(run).exists())
+
+    def test_hard_link_rejected_without_changing_source(self) -> None:
+        work = self.store.new_work()
+        source = Path(self.temp.name) / "source"
+        source.write_bytes(b"original")
+        try:
+            os.link(source, work / "link")
+        except OSError as exc:
+            self.skipTest(f"hard links unavailable: {exc}")
+        with self.assertRaises(ValueError):
+            self.store.put_asset("field", "hardlink", work)
+        self.assertEqual(source.read_bytes(), b"original")
+
+    @unittest.skipUnless(os.name == "nt", "Windows junction test")
+    def test_junction_rejected_without_traversing_target(self) -> None:
+        work = self.store.new_work()
+        target = Path(self.temp.name) / "target"
+        target.mkdir()
+        (target / "evidence").write_bytes(b"keep")
+        result = subprocess.run(["cmd", "/c", "mklink", "/J", str(work / "junction"), str(target)],
+                                capture_output=True, cwd=self.temp.name, timeout=10)
+        if result.returncode:
+            self.skipTest("Windows junction creation unavailable")
+        with self.assertRaises(ValueError):
+            self.store.put_asset("field", "junction", work)
+        with self.assertRaises(ValueError):
+            self.store.discard_work(work)
+        self.assertEqual((target / "evidence").read_bytes(), b"keep")
+        os.rmdir(work / "junction")
+
+
+if __name__ == "__main__":
+    unittest.main()

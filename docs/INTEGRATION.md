@@ -1,5 +1,10 @@
 # 统一装配实施状态
 
+本页保留尚未迁移的真实仪器与原生后端状态。新批次 A 的公开配方/数值链操作已归
+[TRACING](TRACING.md)，生命周期实施归[ARTIFACT_STORE](ARTIFACT_STORE.md)，
+实际验收及 B/C 迁移清单归[架构迁移记录](development/architecture-migration.md)。
+这些参考链证据不提升下文旧仪器的资格，也不表示分段链已经退役。
+
 返回[集成入口](ASSEMBLY.md)。本页维护当前入口、有效证据、限制与开放动作，组件自身资格归各PROJECT。
 Current scope is P4 V8.7 (2026-11-12); historical evidence keeps its original version.
 原始输入和终态仍以各run的manifest为准。早期阶段见

@@ -819,6 +819,20 @@ foreach($scope in @('Owner','Repository')){
             self.assertEqual(len(selected), len(cases))
             return selected
 
+    def test_reference_chain_sources_and_recipe_select_contracts(self) -> None:
+        paths = ["recipes/reference/uniform_e.toml", "src/msplatform/physics/reference.py",
+                 "src/msplatform/recipes/reference.py", "src/msplatform/fields/__init__.py",
+                 "src/msplatform/tracing/__init__.py", "src/msplatform/storage/store.py",
+                 "src/msplatform/results/particle_data.py", "src/msplatform/workflows/reference_tracing.py",
+                 "src/msplatform/cli.py", "src/msplatform/__main__.py"]
+        expected = {f"tests/contracts/test_{name}.py" for name in
+                    ("reference_recipe", "reference_tracing", "artifact_store", "reference_workflow")}
+        cases = [dict(stage="machine_contracts", paths=[path]) for path in paths]
+        for path, result in zip(paths, self.selections(REPO_ROOT, cases, owner_filter=True), strict=True):
+            with self.subTest(path=path):
+                self.assertIsNotNone(result)
+                self.assertTrue(expected <= set(result["Modules"]))
+
     def test_sampled_ip_mr_field_changes_select_actual_consumers(self) -> None:
         paths = [
             "src/msplatform/backends/simion/" + name + ".py"

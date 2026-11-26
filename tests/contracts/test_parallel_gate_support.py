@@ -1325,8 +1325,8 @@ try {{
             ledger = Path(directory) / "isolated.sqlite3"
             completed = self.run_script(f"""
 $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH = {quote(ledger)}
-$env:SIMULATION_PYTHON_EXE = {quote(sys._base_executable)}
-$hostContext=@{{workspace={quote(ROOT)};python_executable={quote(sys._base_executable)};host_state_path={quote(ledger)};policy_path={quote(ROOT / 'src/msplatform/execution/resources/host_resource_policy.json')}}}
+$env:SIMULATION_PYTHON_EXE = {quote(sys.executable)}
+$hostContext=@{{workspace={quote(ROOT)};python_executable={quote(sys.executable)};host_state_path={quote(ledger)};policy_path={quote(ROOT / 'src/msplatform/execution/resources/host_resource_policy.json')}}}
 . {quote(ROOT / 'src/msplatform/execution/resources/host_execution_lease.ps1')} -HostContext $hostContext
 . {quote(SUPPORT)}
 # Deterministic resource observations; no claim about the host's actual load.

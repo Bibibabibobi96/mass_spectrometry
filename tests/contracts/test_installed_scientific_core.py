@@ -124,6 +124,63 @@ class RejectRepositoryImports(importlib.abc.MetaPathFinder):
         if fullname.split('.')[0] in {'common','projects','integrations'}:
             raise AssertionError('installed action imported a repository owner: ' + fullname)
 sys.meta_path.insert(0, RejectRepositoryImports())
+# REFERENCE_TRACING_INSTALLED_BEGIN
+with section_timing('reference_tracing', sys.argv[2]):
+    from msplatform.recipes import load_recipe as reference_load
+    from msplatform.results.particle_data import read_particle_data as reference_read
+    reference_recipe = root / 'installed_reference_uniform_e.toml'
+    reference_artifacts = root / ('reference-artifacts-' + sys.argv[2])
+    reference_console = pathlib.Path(sys.executable).parent / ('msplatform.exe' if os.name == 'nt' else 'msplatform')
+    assert reference_console.is_file(), reference_console
+    reference_env = {k: v for k, v in os.environ.items() if k.upper() not in {'PYTHONPATH', 'PYTHONHOME'}}
+    def reference_command(command):
+        result = subprocess.run(command, cwd=root, env=reference_env, capture_output=True,
+                                text=True, encoding='utf-8', timeout=60, check=False)
+        assert result.returncode == 0, (command, result.stdout, result.stderr)
+        return result.stdout
+    assert 'validate' in reference_command([str(reference_console), '--help'])
+    reference_resolved = json.loads(reference_command([str(reference_console), 'validate', str(reference_recipe)]))
+    reference_module = json.loads(reference_command([sys.executable, '-I', '-m', 'msplatform',
+                                                     'validate', str(reference_recipe)]))
+    assert reference_module == reference_resolved == reference_load(reference_recipe).to_dict()
+    reference_run_command = [str(reference_console), 'run', str(reference_recipe), '--artifact-root', str(reference_artifacts)]
+    reference_first = json.loads(reference_command(reference_run_command))
+    reference_second = json.loads(reference_command(reference_run_command))
+    assert reference_first['run_id'] != reference_second['run_id']
+    assert not reference_first['provenance']['field']['reused']
+    assert all(not row['reused'] for row in reference_first['provenance']['batches'])
+    assert reference_second['provenance']['field']['reused']
+    assert all(row['reused'] for row in reference_second['provenance']['batches'])
+    reference_inspected = json.loads(reference_command([str(reference_console), 'results', 'inspect',
+        reference_first['run_id'], '--artifact-root', str(reference_artifacts)]))
+    assert reference_inspected['summary'] == reference_first['summary']
+    assert reference_inspected['summary']['execution_status'] == 'succeeded'
+    assert reference_inspected['summary']['data_integrity']['status'] == 'complete'
+    assert reference_inspected['summary']['census']['mother_count'] == 1
+    assert reference_inspected['summary']['census']['counts']['detected'] == 1
+    reference_data = reference_read(pathlib.Path(reference_inspected['run_path']))
+    assert len(reference_data['initial_states']) == len(reference_data['terminal_states']) == len(reference_data['events']) == 1
+    reference_initial = reference_data['initial_states'][0]
+    reference_terminal = reference_data['terminal_states'][0]
+    reference_event = reference_data['events'][0]
+    reference_surface = reference_resolved['surfaces'][0]
+    assert reference_terminal['particle_id'] == reference_event['particle_id'] == reference_initial['particle_id']
+    assert reference_terminal['physical_outcome'] == 'detected'
+    assert reference_event['surface_id'] == reference_surface['surface_id']
+    reference_acceleration = reference_initial['charge_c'] * reference_resolved['field_source']['electric_field_v_m'][0] / reference_initial['mass_kg']
+    reference_distance = reference_surface['position_m'] - reference_initial['position_m'][0]
+    reference_velocity = reference_initial['velocity_m_s'][0]
+    reference_elapsed = 2 * reference_distance / (reference_velocity + math.sqrt(reference_velocity**2 + 2*reference_acceleration*reference_distance))
+    reference_expected_time = reference_initial['time_s'] + reference_elapsed
+    assert abs(reference_event['time_s'] - reference_expected_time) < 5e-15
+    assert abs(reference_terminal['position_m'][0] - reference_surface['position_m']) < 1e-10
+    reference_track = reference_data['trajectories']
+    reference_dt = reference_track['time_s'] - reference_initial['time_s']
+    reference_x = reference_initial['position_m'][0] + reference_velocity*reference_dt + .5*reference_acceleration*reference_dt**2
+    assert np.max(np.abs(reference_track['position_m'][:, 0] - reference_x)) < 1e-10
+    assert int(reference_track['particle_id'][0]) == reference_initial['particle_id']
+    print('INSTALLED_REFERENCE_TRACING=PASS real_dop853=1 independent_e_oracle=1 complete_readback=1 reuse=1', flush=True)
+# REFERENCE_TRACING_INSTALLED_END
 # STRICT_JSON_INSTALLED_BEGIN
 import runpy
 strict_json_probe = runpy.run_path(str(root / 'installed_strict_json_probe.py'))
@@ -7298,10 +7355,14 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
 
 
 
-    def test_wheel_and_sdist_install_and_compute_outside_worktree(self) -> None:
+    def verify_reference_delivery(self) -> None:
+        """Explicit two-distribution acceptance for the reference tracing chain."""
+        self.test_wheel_and_sdist_install_and_compute_outside_worktree(reference_only=True)
+
+    def test_wheel_and_sdist_install_and_compute_outside_worktree(self, reference_only: bool = False) -> None:
         self.assertEqual(sys.version_info[:2], (3, 11), 'Python 3.11 is required')
         config = tomllib.loads((REPO_ROOT / 'pyproject.toml').read_text(encoding='utf-8'))
-        scalar_adapter = self.scalar_adapter_probe_fixture()
+        scalar_adapter = None if reference_only else self.scalar_adapter_probe_fixture()
         retained = os.environ.get('MASS_SPECTROMETRY_INSTALLED_CORE_ARTIFACT_DIR')
         if retained:
             retained = Path(retained)
@@ -7337,6 +7398,17 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                 target = source / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(REPO_ROOT / name, target)
+            if reference_only:
+                def checkout_state():
+                    def git(*args):
+                        return subprocess.check_output(['git', *args], cwd=REPO_ROOT, timeout=30)
+                    return (git('rev-parse', 'HEAD'), git('status', '--porcelain=v1', '-z', '--untracked-files=all'),
+                            git('diff', '--cached', '--binary'))
+                checkout_before = checkout_state()
+                source_inventory = {name: hashlib.sha256((source / name).read_bytes()).hexdigest()
+                                    for name in filter(None, tracked) if (source / name).is_file()}
+                self.assertIn('recipes/reference/uniform_e.toml', source_inventory)
+                self.assertIn('src/msplatform/physics/data/reference.json', source_inventory)
             builder = root / 'builder'
             consumers = (root / 'consumer-wheel', root / 'consumer-sdist-rebuilt')
             with ThreadPoolExecutor(max_workers=3) as executor:
@@ -7365,6 +7437,80 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             sdist, = output.glob('*.tar.gz')
             expected_schemas = self.inspect_wheel(wheel)
             rebuilt_wheel = self.rebuild_sdist(sdist, wheel, root, build_python, environment)
+            if reference_only:
+                recipe_source = source / 'recipes/reference/uniform_e.toml'
+                recipe_bytes = recipe_source.read_bytes()
+                self.assertEqual(hashlib.sha256(recipe_bytes).hexdigest(), source_inventory['recipes/reference/uniform_e.toml'])
+                (root / 'installed_reference_uniform_e.toml').write_bytes(recipe_bytes)
+                section = INSTALLED_PROBE.split('# REFERENCE_TRACING_INSTALLED_BEGIN\n', 1)[1].split(
+                    '# REFERENCE_TRACING_INSTALLED_END', 1)[0]
+                prelude = r"""import json, math, os, pathlib, subprocess, sys, sysconfig, time
+from contextlib import contextmanager
+import numpy as np
+root = pathlib.Path.cwd()
+blocked = [pathlib.Path(value).resolve() for value in json.loads(sys.argv[1])]
+def deny_author(event, args):
+    if event == 'open' and args and isinstance(args[0], (str, bytes)):
+        path = pathlib.Path(os.fsdecode(args[0])).resolve()
+        if any(path.is_relative_to(item) for item in blocked):
+            raise AssertionError('installed action accessed an author tree: ' + str(path))
+sys.addaudithook(deny_author)
+@contextmanager
+def section_timing(section, case):
+    start = time.perf_counter_ns()
+    try:
+        yield
+    finally:
+        print('INSTALLED_SECTION_TIMING='+json.dumps(dict(section=section, case=case, elapsed_ns=time.perf_counter_ns()-start)), flush=True)
+"""
+                origins = r"""
+import msplatform.fields, msplatform.physics, msplatform.recipes, msplatform.results.particle_data
+import msplatform.storage, msplatform.tracing, msplatform.workflows.reference_tracing
+purelib = pathlib.Path(sysconfig.get_path('purelib')).resolve()
+for name in ('msplatform.fields', 'msplatform.physics', 'msplatform.recipes', 'msplatform.results.particle_data',
+             'msplatform.storage', 'msplatform.tracing', 'msplatform.workflows.reference_tracing'):
+    assert pathlib.Path(sys.modules[name].__file__).resolve().is_relative_to(purelib), name
+print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
+"""
+                probe = root / 'installed_reference_probe.py'
+                probe.write_text(prelude + section + origins, encoding='utf-8')
+                try:
+                    source.rename(root / 'source-offline')
+                    (root / 'sdist').rename(root / 'sdist-offline')
+                    blocked = json.dumps([str(REPO_ROOT), str(root / 'source-offline'), str(root / 'sdist-offline')])
+                    for index, (candidate, consumer) in enumerate(zip((wheel, rebuilt_wheel), consumers, strict=True)):
+                        consumer_python = str(consumer / python_name)
+                        self.run_command([consumer_python, '-m', 'pip', 'install', '--no-index', '--find-links', str(wheelhouse),
+                                          '-c', str(REPO_ROOT / 'requirements-lock.txt'), str(candidate)],
+                                         cwd=root, environment=environment, timeout=300)
+                        probe_environment = dict(environment, PATH=str(Path(consumer_python).parent))
+                        evidence = self.run_command([consumer_python, '-I', str(probe), blocked, str(index)],
+                                                    cwd=root, environment=probe_environment, timeout=180)
+                        self.assertIn('INSTALLED_REFERENCE_TRACING=PASS real_dop853=1 independent_e_oracle=1 complete_readback=1 reuse=1', evidence)
+                        self.assertIn('INSTALLED_REFERENCE_ORIGINS=PASS', evidence)
+                        self.assertEqual((root / 'installed_reference_uniform_e.toml').read_bytes(), recipe_bytes)
+                        print('INSTALLED_REFERENCE_EVIDENCE=' + evidence.strip(), flush=True)
+                    for name, digest in source_inventory.items():
+                        self.assertEqual(hashlib.sha256((root / 'source-offline' / name).read_bytes()).hexdigest(), digest, name)
+                        self.assertEqual(hashlib.sha256((REPO_ROOT / name).read_bytes()).hexdigest(), digest, name)
+                finally:
+                    if (root / 'source-offline').exists():
+                        (root / 'source-offline').rename(source)
+                    if (root / 'sdist-offline').exists():
+                        (root / 'sdist-offline').rename(root / 'sdist')
+                self.assertEqual(checkout_state(), checkout_before)
+                inventory_bytes = json.dumps(source_inventory, sort_keys=True).encode('utf-8')
+                print('INSTALLED_REFERENCE_SOURCE_INVENTORY=' + json.dumps(
+                    dict(count=len(source_inventory), sha256=hashlib.sha256(inventory_bytes).hexdigest())), flush=True)
+                if retained:
+                    report = dict(status='success', purpose='reference_delivery_acceptance',
+                                  source_inventory=source_inventory,
+                                  artifacts=[dict(kind=kind, bytes=path.stat().st_size,
+                                                  sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+                                             for kind, path in (('wheel', wheel), ('sdist', sdist),
+                                                                ('sdist-rebuilt-wheel', rebuilt_wheel))])
+                    (retained / 'acceptance.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
+                return
             recipe, components = direct_fixture()
             spec = halton_spec(7)
             from msplatform.ion_release.release import generate_release_states
@@ -7783,6 +7929,10 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                 if hasattr(observation_case, 'case'):
                     observation_case.case.doCleanups()
                 observation_case.doCleanups()
+            reference_source = source / 'recipes/reference/uniform_e.toml'
+            self.assertEqual(reference_source.read_bytes(), (REPO_ROOT / 'recipes/reference/uniform_e.toml').read_bytes())
+            reference_fixture_bytes = reference_source.read_bytes()
+            (root / 'installed_reference_uniform_e.toml').write_bytes(reference_fixture_bytes)
             # Remove both private author trees from their original locations;
             # the isolated probe also forbids reads from these and the live checkout.
             source.rename(root/'source-offline')
@@ -7798,6 +7948,8 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                 # This 900 s harness bound does not change the stage's 120 s warning.
                 result = self.run_command([consumer_python, '-I', str(probe_path), str(fixture), str(index)],
                                           cwd=root, environment=probe_environment, timeout=900)
+                self.assertIn('INSTALLED_REFERENCE_TRACING=PASS real_dop853=1 independent_e_oracle=1 complete_readback=1 reuse=1', result)
+                self.assertEqual((root / 'installed_reference_uniform_e.toml').read_bytes(), reference_fixture_bytes)
                 self.assertIn('INSTALLED_RF_IP_CONTINUOUS_OWNER=PASS native=INERT ids=7,91', result)
                 self.assertIn('INSTALLED_IP_MR_PUBLIC_ADMISSION=PASS basis=17 priority=5 negatives=3 owner=planning_only',result)
                 self.assertIn('INSTALLED_GENERIC_REGISTERED_GEOMETRY=PASS instances=2 renamed=1 capability_rejected=1 pure_compile=1',result)
@@ -7858,7 +8010,8 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                     'tests/components/dual_pressure_rectilinear_ion_processor/test_functional.py',
                     'tests/contracts/test_simion_tracking_execution.py',
                     'tests/workflows/single_reflection/test_single_reflection_program.py',
-                    'tests/contracts/test_installed_scientific_core.py'))
+                    'tests/contracts/test_installed_scientific_core.py',
+                    'recipes/reference/uniform_e.toml'))
                 source_files.extend(path for path in (actual_source / 'src').rglob('*') if path.is_file())
                 source_records = [dict(path=path.relative_to(actual_source).as_posix(), bytes=path.stat().st_size,
                     sha256=hashlib.sha256(path.read_bytes()).hexdigest()) for path in sorted(source_files)]

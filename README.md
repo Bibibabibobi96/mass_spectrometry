@@ -37,6 +37,9 @@ Mass Spectrometer Design and Simulation Platform
 
 ## 按问题查阅
 
+安装后的新参考运行入口见[粒子 tracing](docs/TRACING.md)，批次 A 的事实、验证与 B/C 入口见
+[架构迁移记录](docs/development/architecture-migration.md)。旧原生链的下列入口尚待逐链迁移。
+
 模拟入口分为[分段接续模拟](docs/ASSEMBLY.md#分段接续模拟)和
 [联合连续模拟](docs/ASSEMBLY.md#联合连续模拟)。选择表、完整命令及实际场范围只在组装入口维护。
 

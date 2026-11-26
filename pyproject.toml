@@ -16,7 +16,12 @@ dependencies = [
   "matplotlib>=3.9,<4",
   "Pillow>=12,<13",
   "openpyxl>=3.1,<4",
+  "pyarrow==26.0.1",
+  "h5py==3.16.0",
 ]
+
+[project.scripts]
+msplatform = "msplatform.cli:main"
 
 [project.optional-dependencies]
 cad = ["pywin32>=306; platform_system == 'Windows'"]
@@ -38,6 +43,7 @@ include = ["msplatform*"]
 namespaces = false
 
 [tool.setuptools.package-data]
+"msplatform.physics" = ["data/*.json"]
 "msplatform.components.rf_multipole" = ["family_contract.json", "config/**/*.json", "config/**/*.csv", "variants/**/*.json", "variants/**/*.csv", "variants/**/*.ion"]
 "msplatform.components.single_reflection_oa_tof" = ["config/**/*.json", "config/**/*.csv"]
 "msplatform.components.orthogonal_accelerator" = ["component_contract*.json", "config/*.json"]

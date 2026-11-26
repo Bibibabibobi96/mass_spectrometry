@@ -93,6 +93,21 @@
 
 ### 可安装科学核心与迁移边界
 
+新参考链采用模块化单体，领域端口与后端分开：`physics` 仅依赖公共常量合同；`recipes`
+编译作者配置并依赖 physics/中立身份 I/O；`fields` 提供静态场端口；`tracing` 消费 fields、physics 与既有母群分析；
+`results.particle_data` 只读科学表/数组及分析；`storage` 独立拥有文件/SQLite副作用；
+`workflows.reference_tracing` 组合这些域，根 `cli`/`__main__` 仅转调公共 API。
+有向依赖由 `tests/contracts/test_scientific_core_boundaries.py` 校验，不开放整个命名空间互相导入。
+
+命名的本轮目标：自有公开动作统一 tracing（ParticleTracer、particle_tracer、trace_particles），
+新合同只支持连续推进，无 transport_mode。组件目标为 single_reflection_tof（不含 OA）、
+multi_reflection_tof、ion_processor；双锥保持独立 dual_cone_tandem_quadrupole；
+不新增注册级 reflectron/drift_region，不给 MR/IP 造空 variant。SR-TOF/RF-MP/MR-TOF 仅显示。
+真实 provider 迁移归 B/C，不能把目标名称写成已经取得的后端能力。
+可读 Assembly 名按规范组件串接顺序自动生成（重复实例保留）；未支持图结构明确拒绝。
+物理 assembly_id 是规范内容指纹，recipe_id、run_id、执行 owner 和 label 分开；
+旧 instrument_assembly owner 含义保持，不注册 oa_tof 等友好解析 alias。
+
 可安装科学实现由`src/msplatform/`维护；迁移阶段、已取得证据及开放出口统一查
 [路线图](ROADMAP.md#科学核心与平台边界迁移)，本页只定义稳定职责与依赖边界。
 科学合同/变换、源与状态、装配、分析和中立身份I/O分别拥有窄职责；纯核心不导入

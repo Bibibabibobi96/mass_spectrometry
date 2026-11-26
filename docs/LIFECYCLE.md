@@ -4,6 +4,33 @@
 
 ## 产物与运行生命周期
 
+### 新参考链 ArtifactStore
+
+2026-11-26 起，`reference_tracing` 的新公开链使用独立受管根，必须在 Git 工作树外，
+且不接管既有 owner 根。一个根只有 `msplatform.storage.ArtifactStore` 负责登记、发布、使用、
+保留、预留与删除。下文旧目录/资格合同只约束尚未迁移的旧消费者；原产物不改身份或路径。
+
+新根布局是 `runs/YYYY/MM/<run_id>/`、`assets/<kind>/<hash_prefix>/<asset_id>/`、
+`work/<task_id>/`、`cache/` 和 `catalog.sqlite`。run_id 是短独立身份；创建月固定，UTC 完整时间入 manifest。
+资产不可变，task key 与文件摘要证明内容；同 key 并发生产可有不同发布身份，不相互覆盖。
+resolved/manifest 为 JSON，作者 TOML，科学表 Parquet，采样轨迹 HDF5。
+
+执行状态 `queued/running/succeeded/failed/cancelled`、数据完整性、科学结论、保留和基线各自表达；
+当前同步参考入口在准入前登记 queued、计算时 running，并发布后三种终态；无后台自动派发器。
+旧 Candidate/Formal 不进入新路径或合同。
+必要输入与科学证据保留；仅明确登记为 `cache` 且无使用保护、pin、必要成果引用的资产可自动回收。
+普通 provenance 不永久 pin。软高/低水位只触发回收，不作为物理容量足够时的硬门；
+准入使用实际 free >= safety + 活动任务未落盘预留 + 新峰值，落盘后减少剩余预留。
+无可回收空间且物理不足时拒绝启动并报告原因，不删保护对象、不减粒子、不降精度。
+
+SQLite 短事务协调发布和删除状态；payload I/O 在事务外。获取使用权、pin、必要引用与删除标记
+在同一事务边界竞争。一个 OS 锁保护唯一 GC 执行者；失败删除不虚记释放。
+中断发布通过同一 publishing 状态恢复，要求管理员确认 writer 已停止并独占操作；失联 claim/预留
+仅在取得原 token OS 锁后释放，未知记录保守保留。后续原生消费者须各自持权，
+不以心跳超时或父进程退出判定全部后代终止。控制表不能删除后继续让旧 writer 写入。
+缓存缺件只重算其完整批和实际依赖下游，不影响有效批；这不是原生 checkpoint 恢复。
+API 与当前限制见[存储说明](ARTIFACT_STORE.md)，迁移范围见[执行记录](development/architecture-migration.md)。
+
 ### 工作区顶层卫生
 
 源码默认位于`simulation_repo/`；新组件、组装与平台产物分别放入相邻`artifacts/components/`、`artifacts/assemblies/`或`artifacts/platform/`。既有`projects/common`产物保留原路径，只读追溯。
