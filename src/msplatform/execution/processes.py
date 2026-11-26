@@ -344,15 +344,13 @@ def _invoke_native_artifact_owner(context, request, scope, interpret, resource_n
     if group:
         from msplatform.execution.native_artifact_controls import reconcile_native_receipt
         reconcile_native_receipt(scope["store"], Path(paths["receipt"]))
-        for name in ("host", "ack", "worker", "worker-ack"):
-            Path(paths[name]).unlink(missing_ok=True)
+        Path(paths["worker-ack"]).unlink(missing_ok=True)
         if interpretation_failure is not None:
             raise interpretation_failure
         return receipt
     from msplatform.execution.native_artifact_controls import reconcile_native_receipt
     reconcile_native_receipt(scope["store"], Path(paths["receipt"]))
-    for name in ("host", "ack", "worker", "worker-ack"):
-        Path(paths[name]).unlink(missing_ok=True)
+    Path(paths["worker-ack"]).unlink(missing_ok=True)
     if interpretation_failure is not None:
         raise interpretation_failure
     return receipt

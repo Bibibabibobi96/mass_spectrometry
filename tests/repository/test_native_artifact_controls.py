@@ -368,7 +368,15 @@ class NativeArtifactControlsTests(unittest.TestCase):
                     self.assertEqual(receipt["observation"]["exit_code"], 0)
                     self.assertEqual(self.store.collect(100)["released_bytes"], 0)
                 self.assertEqual(len(list(work.glob("*.receipt.json"))), 1)
+                from msplatform.workflows.native_evidence import summarize_native_workers
+                evidence = summarize_native_workers(work)
+                self.assertEqual(evidence["status"], "available", evidence)
+                self.assertEqual(evidence["observed_completed_worker_count"], 1)
+                self.assertEqual([row["returncode"] for row in evidence["workers"]], [0])
             self.assertEqual(self.store.collect(100)["released_bytes"], 5)
+            _, published = self.store.publish_run(work, run_id=run)
+            self.assertEqual(self.store.inspect_run(run), published)
+            self.assertEqual(summarize_native_workers(published)["observed_completed_worker_count"], 1)
 
     @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh"), "Windows PowerShell required")
     def test_real_batch_owner_protects_complete_worker_set(self) -> None:
@@ -396,10 +404,18 @@ class NativeArtifactControlsTests(unittest.TestCase):
                             immutable_input_records=[file_record(data, "solver_native_binary")])
                     self.assertEqual(set(receipt["observations"]), {"healthy", "failure", "pending"})
                     self.assertEqual(receipt["not_started"], [])
+                    from msplatform.workflows.native_evidence import summarize_native_workers
+                    evidence = summarize_native_workers(work)
+                    self.assertEqual(evidence["status"], "available", evidence)
+                    self.assertEqual(evidence["observed_completed_worker_count"], 3)
+                    self.assertEqual([row["returncode"] for row in evidence["workers"]], [0, 0, 0])
                     with self.store._db() as db:
                         self.assertEqual(db.execute("SELECT COUNT(*) FROM native_group_workers WHERE worker_pid IS NOT NULL").fetchone()[0], 3)
                     self.assertEqual(self.store.collect(100)["released_bytes"], 0)
             self.assertEqual(self.store.collect(100)["released_bytes"], 5)
+            _, published = self.store.publish_run(work, run_id=run)
+            self.assertEqual(self.store.inspect_run(run), published)
+            self.assertEqual(summarize_native_workers(published)["observed_completed_worker_count"], 3)
 
     @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh"), "Windows PowerShell required")
     def test_single_quick_receipt_recovers_after_controller_death(self) -> None:

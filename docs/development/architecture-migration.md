@@ -1136,6 +1136,18 @@ COMSOL particle/workflow14 PASS，Ruff PASS；真正修后CPT尚未运行，不�
 SIMION c8479985实际几何IOB冷开4实例PASS（Fly/Refine均false），geometry与prepared model两owner success/writers_stopped，
 求场run `20261127_031207__sim__simion__fields-9cb9e717bba3` 正运行，尚无Refine/Fly成功声明。
 
+### B4 成功对账后保留真实worker证据
+
+只读验收设计发现原processes成功reconcile后会删host/ack/worker，
+而公共workflow在稍后汇总四文件，导致真实worker观察不可用。
+现只清理临时worker-ack，原host/ack/worker/receipt四份证据随Store work正常发布，不建第二回执权威。
+原nonce/进程创建身份/原owner drain/release校验与保权不变。
+
+真实短进程：single1个和group3个worker在发布前均available且真实returncode=0；发布后inspect_run及再次汇总通过，
+原controller强杀恢复仍通过。三项57.367s PASS，Ruff/diff-check PASS。
+正在运行的c8479985安装快照未包含此修复；其实际调用数必须用原owner运行清单/回执对账，不能声称其Store观察完整。
+最终发行应验证四文件发布及缓存/缺件链；本修复不代表Compute/Fly计数或科学native已成功。
+
 ### B 累计 CLOC（至 f216a7af，不含后续改动）
 
 基线 `a9d76aa4dcdbaf8099c9ce5aa0585d6fce18c3be` → 结果 `f216a7afd0a3b27be21402915209defa9964d78e`；CLOC 2.10；源日志 `C:/Users/Liao/msplatform-artifacts/architecture-b-20261127/f216a7af-cloc.log`。
