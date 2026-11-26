@@ -206,3 +206,158 @@ wheel/sdist 构建、inventory、sdist 重建和相同参考探针，在昂贵�
 普通全量测试默认行为保留。窄入口另核验 HEAD/index/status/冻结输入字节、两臂 offline 源树与模块 origin，
 子进程清除 PYTHONPATH 并使用隔离解释器。它不替代旧原生能力验收。
 最终候选的该窄安装与尚未执行的装配范围将在候选提交后运行；目前未记作 PASS。
+
+## 批次 A 最终验收
+
+科学代码提交：`8ba6a4e91c86df8b68913b2209e12dc552363c4a`，基线为 `b94e0818a4823102425b6ad77327106b07143250`。
+已将隔离候选快进接入本地 `task/architecture-migration-20261126`；原有未跟踪 artifacts 保持不动。
+本节替代上一节“尚待运行”的状态；上一节保留首轮事实，不回写失败为通过。
+最终文档提交仅补证据，不改变该科学代码与安装资源。
+
+### 实际安装运行与复现
+
+最终候选普通 wheel 和 sdist 重建 wheel 的显式窄验收 PASS：430.867 s（外层墙钟431.600 s），
+两臂均运行公共 console 与 `python -I -m msplatform`、API、独立 E 解析 oracle、冷读和真实复用。
+两棵源码树临时 offline，installed module origin PASS，冻结输入 3206 项，清单摘要
+`85e1b47ed06c4a66bfd380d80fea08797ebe917a40c6c0f2d46234b3e5628731`，HEAD/index/status 对照通过。
+命令为：
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest tests.contracts.test_installed_scientific_core.InstalledScientificCoreTests.verify_reference_delivery
+```
+
+另外用普通 wheel 在全新虚拟环境通过 pip 安装实际声明依赖（配套锁约束，无 editable、无源码路径注入），
+保留了用户可直接运行的交付目录：
+`C:\Users\Liao\msplatform-artifacts\architecture-a-delivery-8ba6a4e9`。
+其中 `distribution/` 有 wheel、sdist 与锁，`env/` 为已安装环境，`study/` 保存原 TOML 及实际命令 JSON，
+`store/` 为唯一 ArtifactStore 根。可复制运行：
+
+```powershell
+$delivery = 'C:\Users\Liao\msplatform-artifacts\architecture-a-delivery-8ba6a4e9'
+$cli = Join-Path $delivery 'env\Scripts\msplatform.exe'
+$recipe = Join-Path $delivery 'study\uniform_e.toml'
+$store = Join-Path $delivery 'store'
+& $cli --help
+& $cli validate $recipe
+& $cli run $recipe --artifact-root $store --source-revision 8ba6a4e91c86df8b68913b2209e12dc552363c4a
+& $cli results inspect c9f03dc2ac9d44379918f1c5dde92738 --artifact-root $store
+```
+
+| 实际对象/唯一变化 | 结果 |
+|---|---|
+| 首次普通安装运行 `c9f03dc2ac9d44379918f1c5dde92738` | succeeded；完整母群1、终态1、检测1、101个float64采样 |
+| 初态100 u/+e、vx=10000 m/s、E=(2000,0,0) V/m、B=0；x=0.01 m检测平面 | 事件时刻 `9.185857056658535e-7 s`；physical_outcome=detected、stop_reason=normal |
+| 对独立匀加速闭式解，使用同一物理采样时刻 | 最大位置分量误差 `8.673617379884035e-18 m`；检测时刻误差 `1.1540919197546408e-16 s` |
+| 同一输入第二个 run | field.reused=true；particle batch.reused=true |
+| 通过已安装 CLI 执行 GC | 实际释放39,490字节合格缓存；不删除run科学证据 |
+| GC 后运行 `9b5b03d63ce14fe8b4111bb2c120554a` | 场与批均MISS并真实重算成功；首次run再次冷读成功 |
+| 缺件局部重算（两个完整独立粒子批的行为fixture） | 缺一批终态缓存文件后仅该批重算，另一批及场HIT；label不失效，物理输入变更失效 |
+
+`study/first.json`、`reused.json`、`gc.json`、`rebuilt.json`、`retained.json` 是实际命令结果；
+run 内冻结 author/resolved/provenance/execution/summary/manifest、三张 Parquet 和 HDF5。
+GC 删除的是明确可回收的性能层，原结果自含科学证据；不是删除唯一载荷后补造结果。
+
+### AC01–AC14 对账（仅批次 A 声明范围）
+
+| AC | 证据与结论 |
+|---|---|
+| AC01 | 29意见表、唯一规范修订与B/C清单；原145/20/2及否决不改写，实施选择单列 |
+| AC02 | 新CLI/端口统一tracing；6配方/6tracing测试与已安装能力预检，未知科学字段和不支持组合拒绝 |
+| AC03 | assembly物理指纹、生成名、recipe_id、owner、label、run_id独立；重复运行新ID且科学缓存不受label影响 |
+| AC04 | Decimal单位边界、分量容差、非零实验初时刻、公共常量冻结；无常量数值升级 |
+| AC05 | 已安装physics/data资源实际加载；本轮真空/none/常量单源，六类旧消费者逐项列出 |
+| AC06 | 4种独立闭式oracle与实际DOP853、重复磁场穿面；安装后E链另有实测误差，未宣称时变/RF验证 |
+| AC07 | 发布后三表/HDF5冷读，母群闭合、权重独立、int64大ID大于2^53仍精确 |
+| AC08 | 0命中/截断可成功，取消/真实溢出/受控solver失败/缺记录分别表达，诊断经序列化保留 |
+| AC09 | 参考平面精确component/electrode/surface归属；未知native信息显式null/不可用，不从终点猜测 |
+| AC10 | 15项storage验证包含共享必要引用、原子获取/删除竞争、发布/删除中断恢复、真实短进程死亡控制恢复 |
+| AC11 | run占用也计软水位；软超限可继续，实际free不足先GC并保留queued原因，保护对象不删 |
+| AC12 | 首/次运行、相关输入变更、label、缺件单批重算、真实GC后重算均有行为证据 |
+| AC13 | 最终普通wheel/sdist窄验收与独立交付环境真实全链通过；软件门禁的旧基线失败另表保留，未冒充全仓PASS |
+| AC14 | A已实现/验证范围与下列旧链正确性欠项、未实现能力、耗时优化分开；B/C和M06–M08未开展 |
+
+### 软件门禁结果与旧链正确性欠项
+
+| 检查 | 实际结果 | 范围/限制 |
+|---|---|---|
+| 最终针对测试 | 49 PASS，26.665 s | 单位、数值、数据、存储、依赖边界及旧解释器夹具定向修复；开发树验证 |
+| 完整原普通安装验收 | PASS，2090.848 s | 首轮冻结源码；不冒充末次资源/字段修改后的证据 |
+| 最终候选参考安装 | PASS，430.867 s | 普通wheel和sdist重建；只关闭受影响参考链 |
+| 静态/文本字节/Ruff/文档 | PASS | staged标准、Owner前置和文档结构；不是商业或GUI资格 |
+| Changed首轮 | FAIL，约2149 s | 单个旧测试强选base Python；修正后同方法定向PASS，原FAIL保留 |
+| instrument_assembly Owner | FAIL，约697 s | 01/03/04分组PASS；02组193测试仅1个历史资产兼容ERROR |
+
+Owner 唯一失败为
+`tests.workflows.paired_accelerator.test_paired_accelerator_pulse_preparation.PairedPulsePreparationTests.test_actual_110745_all_100_states_use_original_235338_common_field`。
+原因是历史 schema2 plan 的 `grounded_shield_id`、其他角色键及环ID列表与当前消费者硬取 `common_ground`
+等键不兼容。这是实际旧链正确性缺陷，**不是性能项，也不是PASS**。
+用独立 b94 checkout 和同一235338 manifest/plan只读调用即可重现；相关消费者与基线字节完全一致，
+故不归因于A参考实现。按本轮不混入B的边界，保留为B的明确入口；不能修改旧manifest使其通过。
+
+可复制只读基线复现（运行后退出1并报告common_ground，无模拟/无产物写入）：
+
+```powershell
+$env:PYTHONPATH='C:\Users\Liao\mass_spectrometry\.tools\p4-composed-candidate-r1\src'
+Set-Location 'C:\Users\Liao\mass_spectrometry\.tools\p4-composed-candidate-r1'
+& 'C:\Users\Liao\mass_spectrometry\simulation_repo\.venv\Scripts\python.exe' -c "import json; from pathlib import Path; from msplatform.backends.comsol.paired_static_model import load_paired_static_model_source; p=Path(r'C:\Users\Liao\mass_spectrometry\artifacts\projects\instrument_assembly\runs\20261025_235338__sim__cross__paired-accelerator-static-field'); plan=json.loads((p/'inputs/bvp/paired_accelerator_static_field_plan.json').read_text(encoding='utf-8-sig')); print(__import__('msplatform.backends.comsol.paired_static_model',fromlist=['']).__file__); load_paired_static_model_source(p/'run_manifest.json',p/'run_manifest.json',expected_plan=plan)"
+```
+
+该历史 manifest SHA256=`10862ABF99C5D20A094E6FE40277D81D115059153F4FCE9D6E3DECAC1EAECE83`，
+plan=`26EDF6019898507E5A74C3792AF465FB3096816893F07AF1D70D2336E13EA49D`；
+`backends/comsol/paired_static_model.py` 文件SHA256=`078DA8AFE33EBD263101A5AB72D3B4E6A6DE55B707430069794EC6C94B70D9B4`，
+`workflows/paired_accelerator_pulse/prepare.py`=`80841BDBC0050964F670805E342BBF71F117D860D3955D2321C219036A9CCC12`，当前与b94一致。
+修复入口是明确版本/形状的只读映射、环列表及电压/几何语义校验和最小行为fixture，不重写原科学历史。
+
+未实现/未验证：真实仪器组件迁移、SIMION/COMSOL新端口、RF时变、自洽、真实birth/次级生成、
+native内部checkpoint、完整索引重建、后台自动派发、全3D/AMR/丰富可视化。它们不被本轮参考链证明。
+耗时优化：原完整安装约35分钟、窄参考安装约7分钟、Owner约12分钟，均未作为科学或软件PASS替代。
+未为追求理想时间重跑完整回归或大型模拟；只有实际受影响的安装范围和原先BLOCKED范围补验。
+
+提交后在原工作树对同一49项重新核验 PASS，23.256 s，使用当前已安装开发环境，无源码路径注入。
+该次绑定已接入的8ba代码，覆盖最终junction测试的明确cwd/timeout。它是小型针对性核验，不是全仓回归。
+
+临时隔离 checkout 已确认路径和干净状态后经 `git worktree remove` 删除，移除文件逻辑大小
+221,673,169字节（约211MiB），可从8ba提交完整重建。开工已有 artifacts、基线checkout及历史manifest未动。
+成功安装验收的临时环境由既有验收框架清理；两次失败门禁的诊断保留用于B旧链复核。
+独立交付环境、发行文件、真实run证据与早期小型开发诊断保留在Git树外；不删除必要科学结果。
+
+### CLOC 明细
+
+CLOC 2.10，基线 b94e0818a4823102425b6ad77327106b07143250 → 代码提交 8ba6a4e91c86df8b68913b2209e12dc552363c4a。最终证据文档不改变以下代码计数。
+
+命令：tools/repository/report_cloc_delta.ps1 -Base b94e0818a4823102425b6ad77327106b07143250 -Current 8ba6a4e91c86df8b68913b2209e12dc552363c4a -ClocExe <workspace>/.tools/cloc/2.10/cloc.exe。首次本机Perl locale不支持C.UTF-8，改用LC_ALL/LC_CTYPE/LANG=C后原工具通过，未替换计数口径。
+
+每格：baseline → result (delta)。未分类为0，无静默归类。
+
+| Scope | Language | Files | Blank | Comment | Code |
+|---|---|---:|---:|---:|---:|
+| total | JSON | 281 → 282 (1) | 0 → 0 (0) | 0 → 0 (0) | 125984 → 126022 (38) |
+| total | Lua | 119 → 119 (0) | 413 → 413 (0) | 828 → 828 (0) | 13219 → 13219 (0) |
+| total | MATLAB | 186 → 186 (0) | 1066 → 1066 (0) | 2053 → 2053 (0) | 19701 → 19701 (0) |
+| total | PowerShell | 150 → 150 (0) | 1100 → 1100 (0) | 1195 → 1195 (0) | 46113 → 46113 (0) |
+| total | Python | 1419 → 1435 (16) | 32657 → 32905 (248) | 42260 → 42461 (201) | 394041 → 396011 (1970) |
+| total | SIMION GEM | 10 → 10 (0) | 26 → 26 (0) | 51 → 51 (0) | 214 → 214 (0) |
+| total | TOML | 1 → 5 (4) | 10 → 43 (33) | 2 → 2 (0) | 58 → 219 (161) |
+| total | YAML | 2 → 2 (0) | 8 → 8 (0) | 20 → 20 (0) | 506 → 506 (0) |
+| total | SUM | 2168 → 2189 (21) | 35280 → 35561 (281) | 46409 → 46610 (201) | 599836 → 602005 (2169) |
+| production | JSON | 258 → 259 (1) | 0 → 0 (0) | 0 → 0 (0) | 42302 → 42340 (38) |
+| production | Lua | 99 → 99 (0) | 333 → 333 (0) | 703 → 703 (0) | 11141 → 11141 (0) |
+| production | MATLAB | 118 → 118 (0) | 526 → 526 (0) | 1462 → 1462 (0) | 12164 → 12164 (0) |
+| production | PowerShell | 138 → 138 (0) | 1037 → 1037 (0) | 1149 → 1149 (0) | 44012 → 44012 (0) |
+| production | Python | 673 → 685 (12) | 16622 → 16796 (174) | 11480 → 11588 (108) | 181604 → 182893 (1289) |
+| production | SIMION GEM | 10 → 10 (0) | 26 → 26 (0) | 51 → 51 (0) | 214 → 214 (0) |
+| production | TOML | 1 → 5 (4) | 10 → 43 (33) | 2 → 2 (0) | 58 → 219 (161) |
+| production | YAML | 2 → 2 (0) | 8 → 8 (0) | 20 → 20 (0) | 506 → 506 (0) |
+| production | SUM | 1299 → 1316 (17) | 18562 → 18769 (207) | 14867 → 14975 (108) | 292001 → 293489 (1488) |
+| tests | JSON | 23 → 23 (0) | 0 → 0 (0) | 0 → 0 (0) | 83682 → 83682 (0) |
+| tests | Lua | 20 → 20 (0) | 80 → 80 (0) | 125 → 125 (0) | 2078 → 2078 (0) |
+| tests | MATLAB | 68 → 68 (0) | 540 → 540 (0) | 591 → 591 (0) | 7537 → 7537 (0) |
+| tests | PowerShell | 12 → 12 (0) | 63 → 63 (0) | 46 → 46 (0) | 2101 → 2101 (0) |
+| tests | Python | 746 → 750 (4) | 16035 → 16109 (74) | 30780 → 30873 (93) | 212437 → 213118 (681) |
+| tests | SUM | 869 → 873 (4) | 16718 → 16792 (74) | 31542 → 31635 (93) | 307835 → 308516 (681) |
+
+完整过滤口径（由原工具报告，以下仅格式化其数值，未自行计行）：
+
+```text
+FILTER=extensions=.py,.m,.ps1,.lua,.gem,.fly2,.json,.toml,.yml,.yaml,.c,.h,.cc,.cpp,.cxx,.hpp,.cs,.java,.js,.jsx,.ts,.tsx,.go,.rs,.rb,.php,.swift,.kt,.kts,.sh,.bash,.zsh,.bat,.cmd;excluded_components=.git,.venv,.tmp,artifacts,generated,vendor,vendors,third_party,third-party,thirdparty,run,runs;excluded_lifecycle_paths=any/docs/history/**|root/scratch/**|artifacts/projects/<project>/(archive|scratch)/**;language_overrides=.m:MATLAB|.fly2:Lua|.gem:SIMION_GEM;production=execution_profile_entrypoint|run_*.ps1|verify_*.ps1|tests/support(non-test-named);tests=fixture|test_support|testing_support_path|test_*.(py|ps1|m|lua)|*_test.py|tests_boundary/*_fixtures.py|tests/**/__init__.py|*Test.m|*.Tests.*;unclassified=other_code_below_test_or_tests_path;worktree_source=git_tracked_plus_nonignored_untracked
+```
