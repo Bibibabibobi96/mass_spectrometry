@@ -16,24 +16,37 @@ seconds; the remaining detached planning/lease case then passed in 15.004 second
 after its frozen CLI was routed to the canonical lease API. This is software
 closure evidence; the same-candidate full gate and native acceptance remain open.
 
-Candidate `f875ca4e970a369892b5709e82fea9c25de0dde0` completed the fresh
-continuous RF–IP–MR N100 run `20261126_052900__sim__simion__track-4cf710618bd4`
+Candidate `8837fab01797ca374b30201a76637a191f93bbb2` completed the fresh
+continuous RF–IP–MR N100 run `20261126_072550__sim__simion__track-bb3bb94f365f`
 with three native calls, no Refine and 100 unique terminal 6D states. Replay
-`20261126_054425__sim__simion__track-019e8852d058` reused one complete unit with
+`20261126_074640__sim__simion__track-1722e584b4b8` reused one complete unit with
 zero native/Refine calls; both REC files have SHA-256
 `FD6E1B02E0D31E9DF70C722FC9704C784AA258362F8AEE24AD4426ADAC213027`, and the
 parent manifest stayed unchanged. MR remains `not_recorded`, not zero arrival;
 unknown physical causes are not relabeled from contact evidence. The same SHA's
-ordinary Changed run 45703265952 passed 32/32 selected records in 513.591 seconds,
-including both installed arms in 483.821 seconds. Local serial-to-parallel
-installed acceptance changed from 1348.068 to 901.978 seconds without reducing
-negative coverage. Wide Changed 45703366196 nevertheless timed out arm 0 at its
-unchanged 900-second bound while three other machine-contract partitions were
-active; the outer stages, two arms and nested owner pools had no common CPU
-exclusion. The parallel-arm experiment is therefore rejected and its successor
-returns to sequential arms without relaxing any timeout. Complete acceptance and
-the original performance target remain open; this is functional evidence, not
-scientific or P4 qualification.
+ordinary Changed run 45717113213 passed 32/32 selected records in 1072.276 seconds,
+including sequential direct-wheel and sdist-rebuilt-wheel acceptance in 1034.441
+seconds. Wide Changed 45717162904 passed 17,961 cases with 84 established skips in
+5858.440 seconds. These times do not meet the original 15-minute target.
+
+The earlier parallel installed-arm experiment was rejected: wide Changed
+45703366196 timed out one arm at its unchanged 900-second bound while three other
+machine-contract partitions were active, without common CPU exclusion across the
+outer stages, two arms and nested owner pools. The `8837fab0` successor restored
+sequential arms without relaxing a timeout. Complete Repository 45717169917 then
+ran 7002.915 seconds and failed only the RF quadrupole partition: its real
+postprocess waited more than 127 seconds for COMSOL CPU headroom and reached the
+unchanged 180-second test timeout. The same case passed wide Changed in 53.521
+seconds. The isolated fixture had copied and controlled one package, but the public
+`run_comsol.ps1` entry resolved another installed package through `importlib`, so
+the actual child did not consume that controlled scheduler copy. The successor adds
+an explicit `CorePackageRoot` selection and forwards it through initial analysis,
+failure and resume; default installed-package discovery is unchanged. The original
+case passed in 68.571 seconds and the three affected modules passed 13 tests and 21
+records in 148.174 seconds, retaining independent COMSOL acquisition/release,
+failure closure and immutable-manifest checks. Complete gates and native acceptance
+must still be rerun on that successor; this is functional evidence, not scientific
+or P4 qualification.
 
 The Assembly dependency freezer and paired frontend process support now have their
 sole PowerShell owners under `msplatform.execution/resources` and

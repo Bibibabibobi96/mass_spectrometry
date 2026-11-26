@@ -15,6 +15,7 @@ param(
     [string]$NumericalExperimentId = '',
     [Parameter(Mandatory = $true,ParameterSetName="Run")][string]$OperatingPoint,
     [string]$PythonExe = '',
+    [string]$CorePackageRoot = '',
     [switch]$ReleaseConstructionGate,
     [Parameter(Mandatory,ParameterSetName='Run')][Parameter(Mandatory,ParameterSetName='Analyze')][string]$LimitsPath,
     [Parameter(Mandatory,ParameterSetName='Analyze')][switch]$AnalyzeOnly,
@@ -37,13 +38,17 @@ $python = if ($PythonExe) {
 } else {
     throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'
 }
-$packageRootText = & $python -I -B -c 'from importlib.resources import files;print(files("msplatform"))'
-if ($LASTEXITCODE -ne 0) { throw 'Installed msplatform package is unavailable.' }
-$packageRoot = (Resolve-Path -LiteralPath $packageRootText).Path
+if ($CorePackageRoot) {
+    $packageRoot = (Resolve-Path -LiteralPath $CorePackageRoot).Path
+} else {
+    $packageRootText = & $python -I -B -c 'from importlib.resources import files;print(files("msplatform"))'
+    if ($LASTEXITCODE -ne 0) { throw 'Installed msplatform package is unavailable.' }
+    $packageRoot = (Resolve-Path -LiteralPath $packageRootText).Path
+}
 $projectRoot = Join-Path $packageRoot 'components/rf_multipole'
 . (Join-Path $packageRoot 'workflows/resources/run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
 if($ResumeFinalization){
-    $allowed=@('ResumeFinalization','RunId','ResultPath','PythonExe','WorkspaceRoot','ArtifactRootPath')
+    $allowed=@('ResumeFinalization','RunId','ResultPath','PythonExe','CorePackageRoot','WorkspaceRoot','ArtifactRootPath')
     $ignored=@($PSBoundParameters.Keys|Where-Object{$_-notin$allowed})
     if($ignored.Count){throw ('ResumeFinalization does not accept new execution options: '+($ignored-join', '))}
     if(-not$ResultPath){throw 'ResumeFinalization requires the original ResultPath.'}
@@ -437,7 +442,7 @@ runpy.run_module(modules[1],run_name='__main__')
 }
 
 if($AnalyzeOnly){
-    $allowed=@('AnalyzeOnly','ParentManifestPath','StoppedReceiptPath','LimitsPath','RunId','ResultPath','PythonExe','WorkspaceRoot','ArtifactRootPath')
+    $allowed=@('AnalyzeOnly','ParentManifestPath','StoppedReceiptPath','LimitsPath','RunId','ResultPath','PythonExe','CorePackageRoot','WorkspaceRoot','ArtifactRootPath')
     $ignored=@($PSBoundParameters.Keys|Where-Object{$_-notin$allowed})
     if($ignored.Count){throw ('AnalyzeOnly consumes parent frozen scientific inputs; new options are not accepted: '+($ignored-join', '))}
     Invoke-InterfacePostprocessChild
