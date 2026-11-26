@@ -4,6 +4,32 @@ import unittest
 from msplatform.backends.comsol.assembly_field_solution import _check_stationary_report, validate_solution_readback
 
 
+def _supported_field_source(root):
+    """Field double with real split-independent Assembly and bound geometry provenance."""
+    import json
+    from types import SimpleNamespace
+    from msplatform.io.manifest_records import file_record
+    from tests.contracts.test_comsol_assembly_electrostatic_model import _supported_geometry
+
+    geometry, original = _supported_geometry(root)
+    original['group_voltages'][0]['voltage_v'] = 0.0
+    original['mesh'] = {'global_automatic_level':9,'electrode_hmax_mm':5.0}
+    request_path=root/'request';request_path.write_text(json.dumps(original),encoding='utf8')
+    projection_path=geometry.data_path('projection')
+    prepared_path=root/'prepared_manifest'
+    geometry_record=geometry.reference['manifest']
+    product={'kind':'prepared_model','status':'complete','metadata':{'backend':'comsol'},
+             'data':{'geometry_manifest':geometry_record}}
+    prepared_path.write_text(json.dumps({'status':'success','inputs':{'geometry_manifest':geometry_record},
+                                         'outputs':[],'products':{'model':product}}),encoding='utf8')
+    prepared_record=file_record(prepared_path,'required_evidence')
+    paths={'projection':projection_path,'request':request_path,'prepared_manifest':prepared_path}
+    return SimpleNamespace(kind='field_solution',
+        metadata={'backend':'comsol','scope':'single_stationary_workpoint','field_status':'solved','native_reopen_verified':True},
+        data_path=lambda name:paths.get(name,root/name),data_records={'prepared_manifest':prepared_record},
+        reference={'manifest':{}},manifest_location=root/'source.json'),original
+
+
 class StationarySolutionReadbackTests(unittest.TestCase):
     def test_raw_checkpoint_precedes_readback_and_uses_a_distinct_destination(self):
         from pathlib import Path
@@ -40,24 +66,18 @@ class StationarySolutionReadbackTests(unittest.TestCase):
                 _check_mesh_identity(changed,first=first)
 
     def test_reuse_rejects_nonvoltage_and_incomplete_before_owner(self):
-        import json
         import tempfile
         from pathlib import Path
-        from types import SimpleNamespace
         from unittest.mock import patch
         from msplatform.backends.comsol.assembly_field_solution import solve_stationary
         from msplatform.results import artifacts
-        projection={'electrode_groups':[{'instance_id':'a','electrode_group_id':'g'}]}
-        original={'group_voltages':[{'instance_id':'a','electrode_group_id':'g','voltage_v':0.0}],'relative_permittivity':1.0,'exterior':{'kind':'potential','voltage_v':0.0},'mesh':{'global_automatic_level':9,'electrode_hmax_mm':5.0},'study':{'kind':'stationary'}}
         with tempfile.TemporaryDirectory() as temporary:
-            root=Path(temporary); (root/'request').write_text(json.dumps(original)); (root/'projection').write_text(json.dumps(projection))
-            source=SimpleNamespace(metadata={'backend':'comsol','scope':'single_stationary_workpoint','field_status':'solved','native_reopen_verified':True},data_path=lambda name:root/name)
+            root=Path(temporary); source,original=_supported_field_source(root)
             for new in (dict(original,group_voltages=[]),dict(original,relative_permittivity=2.0),dict(original,mesh={'global_automatic_level':8,'electrode_hmax_mm':5.0})):
                 with self.subTest(new=new),patch.object(artifacts,'open_artifact',return_value=source),self.assertRaises(ValueError):
                     solve_stationary({},solver_numerics={'kind':'comsol_stationary_default'},request=new,context=None)
 
     def test_explicit_changed_voltage_dispatches_existing_owner(self):
-        import json
         import tempfile
         from pathlib import Path
         from types import SimpleNamespace
@@ -65,12 +85,11 @@ class StationarySolutionReadbackTests(unittest.TestCase):
         from msplatform.backends.comsol.assembly_field_solution import solve_stationary
         from msplatform.execution import owner,stage_policy
         from msplatform.results import artifacts
-        projection={'electrode_groups':[{'instance_id':'a','electrode_group_id':'g'}]}
-        original={'group_voltages':[{'instance_id':'a','electrode_group_id':'g','voltage_v':0.0}],'relative_permittivity':1.0,'exterior':{'kind':'potential','voltage_v':0.0},'mesh':{'global_automatic_level':9,'electrode_hmax_mm':5.0},'study':{'kind':'stationary'}}
-        changed=dict(original,group_voltages=[dict(original['group_voltages'][0],voltage_v=1.0)])
         with tempfile.TemporaryDirectory() as temporary:
-            root=Path(temporary); (root/'request').write_text(json.dumps(original));(root/'projection').write_text(json.dumps(projection));(root/'comsol').touch();(root/'matlab').mkdir()
-            source=SimpleNamespace(metadata={'backend':'comsol','scope':'single_stationary_workpoint','field_status':'solved','native_reopen_verified':True},data_path=lambda name:root/name,data_records={'prepared_manifest':{'path':'../prepared_manifest','sha256':'a'*64,'bytes':1}},reference={'manifest':{}},manifest_location=root/'source.json')
+            root=Path(temporary); source,original=_supported_field_source(root)
+            changed=dict(original,group_voltages=[dict(row,voltage_v=1.0) if i==0 else dict(row)
+                                                   for i,row in enumerate(original['group_voltages'])])
+            (root/'comsol').touch();(root/'matlab').mkdir()
             context=SimpleNamespace(tools={'comsol_launcher':root/'comsol','matlab_root':root/'matlab'})
             stage={'limits':{'transient_run_directory_bytes':100},'artifact_retention':{}}
             with patch.object(artifacts,'open_artifact',side_effect=[source,'published']) as op,patch.object(stage_policy,'read_stage_policy',return_value=(stage,{})),patch.object(owner,'run_managed_stage',return_value={'manifest':{}}) as run:

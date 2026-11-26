@@ -7,16 +7,25 @@ $op=[IO.Path]::GetFileNameWithoutExtension($TaskScript)
 $root=Split-Path -Parent (Split-Path -Parent $TaskScript)
 $raw=Join-Path $root 'assembly-stationary-computed-raw.mph'
 $output=Join-Path $root 'assembly-stationary-field.mph'
+$projection=Get-Content -Raw -LiteralPath (Join-Path $root 'inputs/prepared_model/projection/projection.json') | ConvertFrom-Json -AsHashtable
+$baseline=Get-Content -Raw -LiteralPath (Join-Path $root 'inputs/prepared_model/reopen_geometry/reopen_geometry.json') | ConvertFrom-Json -AsHashtable
+$oldRequest=Get-Content -Raw -LiteralPath (Join-Path $root 'inputs/prepared_model/request/request.json') | ConvertFrom-Json -AsHashtable
+$keys=@($projection.electrode_groups | ForEach-Object { $_.instance_id + '/' + $_.electrode_group_id })
+if($keys.Count -ne 8 -or (($keys -join '|') -cne ($baseline.group_keys -join '|'))) { throw 'Frozen group provenance differs' }
+$oldVoltages=@($oldRequest.group_voltages | ForEach-Object { [double]$_.voltage_v })
+$newPath=Join-Path $root 'inputs/new-workpoint-request.json'
+$newRequest=if(Test-Path -LiteralPath $newPath) { Get-Content -Raw -LiteralPath $newPath | ConvertFrom-Json -AsHashtable } else { $oldRequest }
+$newVoltages=@($newRequest.group_voltages | ForEach-Object { [double]$_.voltage_v })
 if($op -eq 'solve_stationary') {
  [IO.File]::WriteAllBytes($raw,[Text.Encoding]::UTF8.GetBytes('INERT_RAW'))
  if($control.case -in @('reopen_failure','parent_success','reuse_reopen_failure','reuse_success')) {
   [IO.File]::WriteAllBytes($output,[Text.Encoding]::UTF8.GetBytes('INERT_FINAL'))
-  $report=@{operation='compute';scope='single_stationary_workpoint';model_path=$output;compute_calls=1;group_keys=@('rf/drive');group_faces=@(,@(2,3));vacuum_domains=@(1);outer_faces=@(4,5);solution=@{study_tag='std1';solution_tag='sol1';dataset_tag='assembly_field_solution';dataset_solution='sol1';solution_empty=$false;solution_count=1;stored_main_solutions=1;solution_dofs=4;solver_policy='comsol_stationary_default';solver_type='stationary';solver_sequence_type='Stationary';solver_features=@('s1');comsol_version='synthetic'}}
+  $report=@{operation='compute';scope='single_stationary_workpoint';model_path=$output;compute_calls=1;group_keys=$keys;group_faces=$baseline.group_faces;vacuum_domains=$baseline.vacuum_domains;outer_faces=$baseline.outer_faces;solution=@{study_tag='std1';solution_tag='sol1';dataset_tag='assembly_field_solution';dataset_solution='sol1';solution_empty=$false;solution_count=1;stored_main_solutions=1;solution_dofs=4;solver_policy='comsol_stationary_default';solver_type='stationary';solver_sequence_type='Stationary';solver_features=@('s1');comsol_version='synthetic'}}
   $taskText=Get-Content -Raw -LiteralPath $TaskScript
   $report.mph_save_optimization=if($taskText.Contains(",'size')")) {'size'} elseif($taskText.Contains(",'speed')")) {'speed'} else {throw 'Missing explicit save mode'}
   if($control.case -in @('reuse_reopen_failure','reuse_success')) {
    $mesh=@{schema_version=1;role='exact_mesh_identity';sha256=('a'*64);types=@('tet');vertex_shape='3x4'}
-   $report.mesh_before=$mesh;$report.mesh_identity=$mesh;$report.prior_group_voltages_v=@(17.0);$report.group_voltages_v=@(18.0)
+   $report.mesh_before=$mesh;$report.mesh_identity=$mesh;$report.prior_group_voltages_v=$oldVoltages;$report.group_voltages_v=$newVoltages
   }
   $report | ConvertTo-Json -Depth 20 -Compress | Set-Content -LiteralPath (Join-Path $root 'results/solve_stationary.json') -Encoding utf8NoBOM
  }
@@ -31,12 +40,13 @@ if($control.case -in @('recovery','reuse_recovery','reuse_recovery_bad_mesh','re
  if(-not (Get-Content -Raw -LiteralPath $TaskScript).Contains("'recover'")) { throw 'Task is not recovery mode' }
  $borrowed=[string]$control.borrowed_model
  if(-not (Test-Path -LiteralPath $borrowed -PathType Leaf)) { throw 'Borrowed source missing' }
- $report=@{operation='recover';scope='single_stationary_workpoint';model_path=$borrowed;compute_calls=0;group_keys=@('rf/drive');group_faces=@(,@(2,3));vacuum_domains=@(1);outer_faces=@(4,5);solution=@{study_tag='std1';solution_tag='sol1';dataset_tag='assembly_field_solution';dataset_solution='sol1';solution_empty=$false;solution_count=1;stored_main_solutions=1;solution_dofs=4;solver_policy='comsol_stationary_default';solver_type='stationary';solver_sequence_type='Stationary';solver_features=@('s1');comsol_version='synthetic'}}
+ $report=@{operation='recover';scope='single_stationary_workpoint';model_path=$borrowed;compute_calls=0;group_keys=$keys;group_faces=$baseline.group_faces;vacuum_domains=$baseline.vacuum_domains;outer_faces=$baseline.outer_faces;solution=@{study_tag='std1';solution_tag='sol1';dataset_tag='assembly_field_solution';dataset_solution='sol1';solution_empty=$false;solution_count=1;stored_main_solutions=1;solution_dofs=4;solver_policy='comsol_stationary_default';solver_type='stationary';solver_sequence_type='Stationary';solver_features=@('s1');comsol_version='synthetic'}}
  if($control.case -like 'reuse_recovery*') {
   $digest=if($control.case -eq 'reuse_recovery_bad_mesh') {'b'*64} else {'a'*64}
   $mesh=@{schema_version=1;role='exact_mesh_identity';sha256=$digest;types=@('tet');vertex_shape='3x4'}
-  $report.mesh_before=$mesh;$report.mesh_identity=$mesh;$report.prior_group_voltages_v=@(17.0)
-  $report.group_voltages_v=@($(if($control.case -eq 'reuse_recovery_bad_voltage'){19.0}else{18.0}))
+  $report.mesh_before=$mesh;$report.mesh_identity=$mesh;$report.prior_group_voltages_v=$oldVoltages
+  $report.group_voltages_v=@($newVoltages)
+  if($control.case -eq 'reuse_recovery_bad_voltage') { $report.group_voltages_v[0]=19.0 }
  }
  $report | ConvertTo-Json -Depth 20 -Compress | Set-Content -LiteralPath (Join-Path $root 'results/reopen_solution.json') -Encoding utf8NoBOM
 }

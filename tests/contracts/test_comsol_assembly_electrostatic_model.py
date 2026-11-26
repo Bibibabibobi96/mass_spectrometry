@@ -6,6 +6,46 @@ from unittest.mock import patch
 from msplatform.backends.comsol import assembly_electrostatic_model as mod
 HERE = Path(__file__).resolve().parent
 
+def _supported_geometry(root):
+    """Small explicit artifact double with real Assembly and bound geometry provenance."""
+    import copy
+    from types import SimpleNamespace
+    from msplatform import assembly, components, examples
+    from msplatform.backends.comsol.geometry_execution import resolve_geometry_request
+    from msplatform.io.manifest_records import file_record
+
+    example = examples.load_example('rf_oatof_functional_v1')
+    recipe = copy.deepcopy(example.recipe)
+    recipe['instances'] = recipe['instances'][:1]
+    recipe['connections'] = []
+    instrument = assembly.assemble(recipe, {'multipole': components.resolve_component(example.component_requests['multipole'])})
+    resolved = resolve_geometry_request(instrument, outer_box_mm={'min': [-1000, -1000, -1000], 'max': [1000, 1000, 2000]},
+                                        geometry_validation={'position_mm': 1e-6, 'normal_abs': 1e-6})
+    projection = root/'projection.json'
+    projection.write_text(json.dumps(resolved['projection']),encoding='utf8')
+    projection_record=file_record(projection,'required_evidence')
+    config=root/'run_config.json'
+    config.write_text(json.dumps({'parameters':{'action':'build_comsol_geometry','assembly':resolved['assembly'],
+                                               'projection':resolved['projection']}}),encoding='utf8')
+    manifest=root/'run_manifest.json'
+    metadata={'backend':'comsol','scope':'geometry_only','native_reopen_verified':True}
+    product={'schema_version':1,'kind':'geometry_artifact','status':'complete',
+             'metadata':metadata,'data':{'projection':projection_record}}
+    manifest.write_text(json.dumps({'schema_version':2,'role':'simulation_run_manifest','status':'success',
+                                    'run_config':file_record(config,'required_evidence'), 'inputs':{},
+                                    'outputs':[projection_record], 'products':{'geometry':product}}),encoding='utf8')
+    source=SimpleNamespace(kind='geometry_artifact', manifest_location=manifest,
+        metadata=metadata,
+        data_records={'projection':projection_record}, data_path=lambda name: projection,
+        reference={'manifest':file_record(manifest,'required_evidence')})
+    groups=resolved['projection']['electrode_groups']
+    request={'group_voltages':[{'instance_id':g['instance_id'],'electrode_group_id':g['electrode_group_id'],
+                                'voltage_v':17.0 if i==0 else 0.0} for i,g in enumerate(groups)],
+             'relative_permittivity':1, 'exterior':{'kind':'potential','voltage_v':0},
+             'mesh':{'global_automatic_level':5,'electrode_hmax_mm':4},'study':{'kind':'stationary'}}
+    return source,request
+
+
 class ExplicitRequestTests(unittest.TestCase):
     def setUp(self):
         self.projection = {'electrode_groups': [{'instance_id': 'a', 'electrode_group_id': 'one'}, {'instance_id': 'b', 'electrode_group_id': 'two'}]}
@@ -40,29 +80,31 @@ class ExplicitRequestTests(unittest.TestCase):
             bad=dict(row);bad[key]=1
             with self.subTest(key=key),self.assertRaises(ValueError): mod._check_report(bad,'build',self.projection,request,HERE/'model.mph')
     def test_invalid_groups_stop_before_managed_owner(self):
-        source = type('Source', (), {'metadata': {'backend':'comsol','scope':'geometry_only','native_reopen_verified':True}, 'data_path': lambda self, name: HERE/'projection-test.json'})()
-        with patch.object(mod,'open_artifact',return_value=source), patch.object(mod,'run_managed_stage') as owner, patch.object(Path,'read_text',return_value=json.dumps(self.projection)):
-            with self.assertRaises(ValueError): mod.prepare_model(None,request={},context=None)
-            owner.assert_not_called()
+        import tempfile
+        with tempfile.TemporaryDirectory() as temporary:
+            source, _ = _supported_geometry(Path(temporary))
+            with patch.object(mod,'open_artifact',return_value=source), patch.object(mod,'run_managed_stage') as owner:
+                with self.assertRaises(ValueError): mod.prepare_model(None,request={},context=None)
+                owner.assert_not_called()
 
     def test_valid_public_dispatch_uses_existing_managed_owner(self):
         import tempfile
         from types import SimpleNamespace
         with tempfile.TemporaryDirectory() as temporary:
-            root=Path(temporary); projection=root/'projection.json';projection.write_text(json.dumps(self.projection),encoding='utf8')
+            root=Path(temporary); source,request=_supported_geometry(root)
             executable=root/'comsol.exe';executable.touch();matlab=root/'matlab';matlab.mkdir()
-            source=SimpleNamespace(metadata={'backend':'comsol','scope':'geometry_only','native_reopen_verified':True},data_path=lambda name:projection,reference={'manifest':{'path':'source.json'}})
             context=SimpleNamespace(tools={'comsol_launcher':executable,'matlab_root':matlab})
             stage={'limits':{'transient_run_directory_bytes':123},'artifact_retention':{}}
             final=object()
             with patch.object(mod,'open_artifact',side_effect=[source,final]), patch.object(mod,'read_stage_policy',return_value=(stage,{})), patch.object(mod,'file_record',return_value={}), patch.object(mod,'run_managed_stage',return_value={'manifest':{'path':'result.json'}}) as owner:
-                result=mod.prepare_model({},request=self.request,context=context)
+                result=mod.prepare_model({},request=request,context=context)
             self.assertIs(result,final)
             args=owner.call_args.kwargs
             self.assertEqual(args['expected_operation_ids'],('build_model','reopen_model'))
             self.assertEqual(args['action'].func,mod.execute_model)
             self.assertEqual(args['source_references'],[{'manifest_record':source.reference['manifest']}])
             self.assertEqual(args['payload']['request']['study'],{'kind':'stationary'})
+            self.assertEqual(len(args['payload']['request']['group_voltages']),8)
             self.assertEqual(args['operation_dependencies'],{'reopen_model':['build_model']})
 
     def test_missing_required_native_resource_refuses_before_copy(self):

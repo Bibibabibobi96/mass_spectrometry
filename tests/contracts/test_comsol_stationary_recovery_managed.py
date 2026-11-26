@@ -1,4 +1,5 @@
 """Exercise recovery with real owner/receipts and an inert external launcher."""
+import copy
 import json
 import os
 import sys
@@ -9,7 +10,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 from tests.contracts import test_execution_runtime as execution_fixture
-from tests.contracts import test_comsol_stationary_managed_failure as failure_fixture
 from msplatform.backends.comsol import assembly_field_solution, native_execution
 from msplatform.execution.completion import no_particle_batch_completion_api
 from msplatform.execution.inputs import freeze_file
@@ -18,6 +18,72 @@ from msplatform.execution.processes import ProcessExecutionError
 from msplatform.execution.run_session import RunSession
 from msplatform.io.manifest_records import file_record, verify_record
 from msplatform.results.artifacts import open_artifact
+
+
+def _prepared_source(helper, root, context, retention):
+    """Publish an inert model bound to an actual supported Assembly projection."""
+    from msplatform import assembly, components, examples
+    from msplatform.backends.comsol.geometry_execution import resolve_geometry_request
+
+    example = examples.load_example('rf_oatof_functional_v1')
+    recipe = copy.deepcopy(example.recipe)
+    recipe['instances'] = recipe['instances'][:1]
+    recipe['connections'] = []
+    instrument = assembly.assemble(recipe, {'multipole': components.resolve_component(example.component_requests['multipole'])})
+    resolved = resolve_geometry_request(instrument, outer_box_mm={'min': [-1000, -1000, -1000], 'max': [1000, 1000, 2000]},
+                                        geometry_validation={'position_mm': 1e-6, 'normal_abs': 1e-6})
+    projection = resolved['projection']
+    groups = projection['electrode_groups']
+    assert len(groups) == 8
+    keys = [group['instance_id'] + '/' + group['electrode_group_id'] for group in groups]
+    baseline = {'group_keys': keys, 'group_faces': [[2 + i] for i in range(len(keys))],
+                'vacuum_domains': [1], 'outer_faces': [20, 21]}
+    request = {'group_voltages': [{'instance_id': group['instance_id'], 'electrode_group_id': group['electrode_group_id'],
+                                  'voltage_v': 17.0 if i == 0 else 0.0} for i, group in enumerate(groups)],
+               'relative_permittivity': 1.0, 'exterior': {'kind': 'potential', 'voltage_v': 0.0},
+               'mesh': {'global_automatic_level': 5, 'electrode_hmax_mm': 4.0}, 'study': {'kind': 'stationary'}}
+
+    def write_records(session, values):
+        records = {}
+        for name, value in values.items():
+            role = 'solver_native_binary' if name == 'model' else 'required_evidence'
+            path = session.declare_file(session.result_dir / (name + ('.mph' if name == 'model' else '.json')), role)
+            path.write_text(value if name == 'model' else json.dumps(value), encoding='utf8')
+            records[name] = file_record(path, role)
+        return records
+
+    def geometry_action(session):
+        records = write_records(session, {'projection': projection})
+        paths = [record['path'] for record in records.values()]
+        return dict(status='success', summary={'synthetic': True}, output_paths=paths, required_output_paths=paths,
+                    retention_preserve_paths=[], manifest_extra_fields={'products': {'geometry': dict(
+                        schema_version=1, kind='geometry_artifact', status='complete',
+                        metadata={'backend': 'comsol'}, data=records)}})
+
+    args = helper._arguments(root, geometry_action)
+    args.update(retention=retention, run_id='20261114_125900__build__python__geometry',
+                payload={'action': 'build_comsol_geometry', 'assembly': resolved['assembly'], 'projection': projection},
+                action_record=file_record(Path(__file__), 'required_evidence'), completion_api=no_particle_batch_completion_api)
+    geometry = run_managed_stage(context, **args)
+
+    def prepared_action(session):
+        session.add_input('geometry_manifest', geometry['manifest'])
+        values = dict(model='inert prepared model', request=request, projection=projection, descriptor={},
+                      geometry_validation=resolved['validation'], reopen_geometry=baseline, build_model={}, reopen_model={})
+        records = write_records(session, values)
+        paths = [record['path'] for record in records.values()]
+        records['geometry_manifest'] = geometry['manifest']
+        return dict(status='success', summary={'synthetic': True}, output_paths=paths, required_output_paths=paths,
+                    retention_preserve_paths=[], manifest_extra_fields={'products': {'model': dict(
+                        schema_version=1, kind='prepared_model', status='complete',
+                        metadata=dict(backend='comsol', scope='assembly_electrostatic_unsolved',
+                                      field_status='not_solved', native_reopen_verified=True), data=records)}})
+
+    args = helper._arguments(root, prepared_action)
+    args.update(retention=retention, run_id='20261114_130000__build__python__prepared-model',
+                action_record=file_record(Path(__file__), 'required_evidence'), completion_api=no_particle_batch_completion_api)
+    made = run_managed_stage(context, **args)
+    return open_artifact({'manifest': made['manifest'], 'product_id': 'model'}, expected_kind='prepared_model')
 
 
 class StationaryRecoveryManagedTests(unittest.TestCase):
@@ -41,11 +107,7 @@ class StationaryRecoveryManagedTests(unittest.TestCase):
             policy.write_text(json.dumps({'schema_version': 1, 'role': 'execution_stage_policy',
                 'stages': {'solve_assembly_stationary': stage, 'recover_assembly_stationary': stage}}), encoding='utf-8')
             context = replace(context, stage_policy_path=policy)
-            args = helper._arguments(root, failure_fixture.source_action)
-            args.update(retention=retention, run_id='20261114_130000__build__python__prepared-model',
-                action_record=file_record(Path(failure_fixture.__file__), 'required_evidence'), completion_api=no_particle_batch_completion_api)
-            made = run_managed_stage(context, **args)
-            source = open_artifact({'manifest': made['manifest'], 'product_id': 'model'}, expected_kind='prepared_model')
+            source = _prepared_source(helper, root, context, retention)
             source_bytes = {key: source.data_path(key).read_bytes() for key in source.data_records}
             control = context.workspace / 'inert-control.json'
             control.write_text(json.dumps({'case': 'reopen_failure'}), encoding='utf-8')
@@ -148,11 +210,7 @@ class StationaryRecoveryManagedTests(unittest.TestCase):
             policy.write_text(json.dumps({'schema_version': 1, 'role': 'execution_stage_policy',
                 'stages': {'solve_assembly_stationary': stage, 'recover_assembly_stationary': stage}}), encoding='utf-8')
             context = replace(context, stage_policy_path=policy)
-            args = helper._arguments(root, failure_fixture.source_action)
-            args.update(retention=retention, run_id='20261114_130000__build__python__prepared-model',
-                action_record=file_record(Path(failure_fixture.__file__), 'required_evidence'), completion_api=no_particle_batch_completion_api)
-            made = run_managed_stage(context, **args)
-            source = open_artifact({'manifest': made['manifest'], 'product_id': 'model'}, expected_kind='prepared_model')
+            source = _prepared_source(helper, root, context, retention)
             source_bytes = {key: source.data_path(key).read_bytes() for key in source.data_records}
             control = context.workspace / 'inert-control.json'
             control.write_text(json.dumps({'case': 'parent_success'}), encoding='utf-8')
