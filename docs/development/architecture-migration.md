@@ -743,3 +743,61 @@ RF N=3为原100母群前缀。小N与新组合是本轮技术选择，不是原�
 
 下一步B4：先补实际旧载荷跨阶段及原生后代防删保护，再启动SIMION公共链；原TTL/terminal读锁不能独自证明GC安全。
 B5 mass_scan纯原语已测试，公共多物种执行仍未接入；COMSOL三格新求场/飞行与普通安装仍未完成。
+
+
+### B 累计 CLOC（至SIMION软件闭包）
+CLOC 2.10：`a9d76aa4dcdbaf8099c9ce5aa0585d6fce18c3be` → `7091001768b8852f687af5b99b5d8fd4e358d3a6`，PASS，unclassified=0。
+实际命令：`tools/repository/report_cloc_delta.ps1 -Base a9d76aa4dcdbaf8099c9ce5aa0585d6fce18c3be -Current 70910017 -ClocExe C:/Users/Liao/mass_spectrometry/.tools/cloc/2.10/cloc.exe`；LC_ALL/LC_CTYPE/LANG=C。
+结果来自指定提交；执行时WORKTREE有并行未提交改动，未将其计入指定SHA。表格直接格式化工具输出。
+
+| Scope | Language | Files | Blank | Comment | Code |
+|---|---|---:|---:|---:|---:|
+| total | JSON | 282 → 288 (6) | 0 → 0 (0) | 0 → 0 (0) | 126022 → 129000 (2978) |
+| total | Lua | 119 → 119 (0) | 413 → 413 (0) | 828 → 828 (0) | 13219 → 13219 (0) |
+| total | MATLAB | 186 → 186 (0) | 1066 → 1066 (0) | 2053 → 2053 (0) | 19701 → 19701 (0) |
+| total | PowerShell | 150 → 150 (0) | 1100 → 1100 (0) | 1195 → 1195 (0) | 46113 → 46113 (0) |
+| total | Python | 1435 → 1456 (21) | 32921 → 33131 (210) | 42493 → 42597 (104) | 396258 → 398704 (2446) |
+| total | SIMION GEM | 10 → 10 (0) | 26 → 26 (0) | 51 → 51 (0) | 214 → 214 (0) |
+| total | TOML | 5 → 7 (2) | 43 → 45 (2) | 2 → 2 (0) | 219 → 251 (32) |
+| total | YAML | 2 → 2 (0) | 8 → 8 (0) | 20 → 20 (0) | 506 → 506 (0) |
+| total | SUM | 2189 → 2218 (29) | 35577 → 35789 (212) | 46642 → 46746 (104) | 602252 → 607708 (5456) |
+| production | JSON | 259 → 264 (5) | 0 → 0 (0) | 0 → 0 (0) | 42340 → 44385 (2045) |
+| production | Lua | 99 → 99 (0) | 333 → 333 (0) | 703 → 703 (0) | 11141 → 11141 (0) |
+| production | MATLAB | 118 → 118 (0) | 526 → 526 (0) | 1462 → 1462 (0) | 12164 → 12164 (0) |
+| production | PowerShell | 138 → 138 (0) | 1037 → 1037 (0) | 1149 → 1149 (0) | 44012 → 44012 (0) |
+| production | Python | 685 → 698 (13) | 16804 → 16929 (125) | 11609 → 11668 (59) | 182981 → 184350 (1369) |
+| production | SIMION GEM | 10 → 10 (0) | 26 → 26 (0) | 51 → 51 (0) | 214 → 214 (0) |
+| production | TOML | 5 → 7 (2) | 43 → 45 (2) | 2 → 2 (0) | 219 → 251 (32) |
+| production | YAML | 2 → 2 (0) | 8 → 8 (0) | 20 → 20 (0) | 506 → 506 (0) |
+| production | SUM | 1316 → 1336 (20) | 18777 → 18904 (127) | 14996 → 15055 (59) | 293577 → 297023 (3446) |
+| tests | JSON | 23 → 24 (1) | 0 → 0 (0) | 0 → 0 (0) | 83682 → 84615 (933) |
+| tests | Lua | 20 → 20 (0) | 80 → 80 (0) | 125 → 125 (0) | 2078 → 2078 (0) |
+| tests | MATLAB | 68 → 68 (0) | 540 → 540 (0) | 591 → 591 (0) | 7537 → 7537 (0) |
+| tests | PowerShell | 12 → 12 (0) | 63 → 63 (0) | 46 → 46 (0) | 2101 → 2101 (0) |
+| tests | Python | 750 → 758 (8) | 16117 → 16202 (85) | 30884 → 30929 (45) | 213277 → 214354 (1077) |
+| tests | SUM | 873 → 882 (9) | 16800 → 16885 (85) | 31646 → 31691 (45) | 308675 → 310685 (2010) |
+
+完整过滤口径：
+
+```text
+FILTER=extensions=.py,.m,.ps1,.lua,.gem,.fly2,.json,.toml,.yml,.yaml,.c,.h,.cc,.cpp,.cxx,.hpp,.cs,.java,.js,.jsx,.ts,.tsx,.go,.rs,.rb,.php,.swift,.kt,.kts,.sh,.bash,.zsh,.bat,.cmd;excluded_components=.git,.venv,.tmp,artifacts,generated,vendor,vendors,third_party,third-party,thirdparty,run,runs;excluded_lifecycle_paths=any/docs/history/**|root/scratch/**|artifacts/projects/<project>/(archive|scratch)/**;language_overrides=.m:MATLAB|.fly2:Lua|.gem:SIMION_GEM;production=execution_profile_entrypoint|run_*.ps1|verify_*.ps1|tests/support(non-test-named);tests=fixture|test_support|testing_support_path|test_*.(py|ps1|m|lua)|*_test.py|tests_boundary/*_fixtures.py|tests/**/__init__.py|*Test.m|*.Tests.*;unclassified=other_code_below_test_or_tests_path;worktree_source=git_tracked_plus_nonignored_untracked
+```
+classifier SHA256=d3abfc94e920066445561b696c76131b43eab9713a0cbcb9e2c1270ba7136952；language definition SHA256=985e60f06bd8981c36966a0895cccfccd182fd625c79eb6ae94b65a12c5508a6。
+日志存本轮外部证据根 `70910017-cloc.log`。后续native生命周期/公共运行/COMSOL主题尚未计入，最终交付按最终实际SHA再累计。
+
+
+### B4 跨阶段原生资产读取保护
+
+`execution/native_source_guard.py:guard_native_source` 按显式真实owner root和expected_kind，
+在既有terminal共享锁/容量decision锁的建立窗口冷读原manifest与owner，再对manifest/run_config/产品data逐文件
+使用既有guarded_file_identity，持防写/防删OS句柄至context退出；不引入第二GC/TTL租约，也不接管旧payload删除权。
+terminal共享锁本身不能挡旧GC：已真实子进程证明同时仍可取capacity decision锁；不能误称它是PA保护。
+正常跨阶段保护与native后代保护不同，后者仍需PS owner自行持有完整不可变输入句柄。
+既有source lease仍避免账本先标pending的管理争用，遇pending不猜测修账，失败关闭或按原owner重算。
+
+`.venv/Scripts/python.exe -m unittest tests.execution.test_native_source_guard -q` 两项PASS；
+真实Windows小fixture子进程对manifest/run_config/payload写入/删除，以及原remove_recorded_files删除均被拒绝，
+context退出后允许；错root/kind/散列拒绝。生产/测试Ruff PASS。
+加入公共workflow/mass_scan/reference定向联合18项PASS（11.248s），仍无商业工具调用。
+helper首次保护包含原reader与guard的两次大文件hash，尚未测性能，未为优化放松信任边界。
+下一步同一CLI运行将持此guard直到下游接管和SI结果复制完成；原native子进程持权接线由Agent3继续独立验证。
