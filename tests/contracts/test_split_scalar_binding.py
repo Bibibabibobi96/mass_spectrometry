@@ -121,8 +121,8 @@ class SplitScalarBindingTests(unittest.TestCase):
         off = dict(fixtures.SOLUTION)
         on = dict(fixtures.SOLUTION, study_tag="std2", solution_tag="sol2", dataset_tag="dset2", dataset_solution="sol2")
         keys = ["oa/repeller"]
-        report = dict(operation="reopen", compute_calls=0, mesh_identity="mesh1", mesh_element_count=10,
-                      maximum_mesh_elements=20, model_path=str(root / "model.json"), vacuum_domains=[1],
+        report = dict(operation="reopen", compute_calls=0, mesh_identity="mesh1", mesh_element_count=6.27792e6,
+                      maximum_mesh_elements=7.0e6, model_path=str(root / "model.json"), vacuum_domains=[1],
                       group_keys=keys, off_voltages_v=[0.], on_voltages_v=[2140.], off_solution=off, on_solution=on)
         records = {}
         def store(name, value):
@@ -147,6 +147,28 @@ class SplitScalarBindingTests(unittest.TestCase):
         publish_terminal_state(root, {"status": "success"}, manifest)
         record = file_record(root / "run_manifest.json")
         self.assertEqual(_co_resident_sources(record, "on")["metadata"]["solution"], on)
+        from msplatform.backends.simion import scalar_sample_binding as binding
+        original_read = binding._read
+        for bad in (True, float('nan'), float('inf'), 1.5, 2**53+1, 0, -1, 7000001):
+            with self.subTest(bad_count=bad):
+                def read_bad(path):
+                    if Path(path).name not in ('solve_pulse_basis.json', 'reopen_pulse_basis.json'):
+                        return original_read(path)
+                    row=dict(report, mesh_element_count=bad)
+                    if Path(path).name == 'solve_pulse_basis.json':
+                        row.update(operation='compute',compute_calls=2)
+                    return row
+                with patch.object(binding,'_read',side_effect=read_bad), self.assertRaises(ValueError):
+                    _co_resident_sources(record, 'background')
+        def read_mismatch(path):
+            if Path(path).name not in ('solve_pulse_basis.json', 'reopen_pulse_basis.json'):
+                return original_read(path)
+            row=dict(report)
+            if Path(path).name == 'solve_pulse_basis.json':
+                row.update(operation='compute',compute_calls=2,mesh_element_count=6277919.)
+            return row
+        with patch.object(binding,'_read',side_effect=read_mismatch), self.assertRaisesRegex(ValueError,'evidence differs'):
+            _co_resident_sources(record,'background')
         forged = copy.deepcopy(manifest)
         forged['products']['on']['metadata']['solution']['dataset_tag'] = 'dset1'
         other = self.helper.root / 'forged_co'

@@ -177,13 +177,13 @@ def _co_resident_sources(manifest_record, selected_id):
     base = Path(manifest_record['path']).parent
     computed = _read(record_path(a['data']['solve_pulse_basis'], base_dir=base))
     reopened = _read(record_path(a['data']['reopen_pulse_basis'], base_dir=base))
+    from msplatform.backends.comsol.assembly_particle_tracing import _native_exact_count
     fields = ('model_path', 'off_solution', 'on_solution', 'mesh_identity', 'mesh_element_count',
               'maximum_mesh_elements', 'group_keys', 'off_voltages_v', 'on_voltages_v', 'vacuum_domains')
     if (computed.get('operation') != 'compute' or computed.get('compute_calls') != 2
             or reopened.get('operation') != 'reopen' or reopened.get('compute_calls') != 0
             or any(key not in computed or key not in reopened or computed[key] != reopened[key] for key in fields)
-            or type(computed['mesh_element_count']) is not int or type(computed['maximum_mesh_elements']) is not int
-            or not 0 < computed['mesh_element_count'] <= computed['maximum_mesh_elements']
+            or not 0 < _native_exact_count(computed['mesh_element_count']) <= _native_exact_count(computed['maximum_mesh_elements'])
             or Path(computed['model_path']).resolve() != record_path(a['data']['model'], base_dir=base).resolve()):
         raise ValueError('co-resident computed and cold-reopened native evidence differs')
     return products[selected_id]
