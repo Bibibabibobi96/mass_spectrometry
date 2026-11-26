@@ -62,6 +62,7 @@ def run_species_retrace(
     immutable_input_records: tuple[Mapping[str, Any], ...],
 ) -> dict[str, Any]:
     """Run the documented R2025b launcher once for one single-species table."""
+    raise ValueError("Legacy OA–TOF composite retrace execution is retired; use msplatform run with a public Study recipe")
     host_context = session.environment["MASS_SPECTROMETRY_HOST_CONTEXT_JSON"]
     arguments = [
         "-NoProfile", "-NonInteractive", "-File", str(launcher),

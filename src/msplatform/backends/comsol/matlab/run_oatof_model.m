@@ -34,6 +34,11 @@ arguments
     options.GeometryOnly (1,1) logical = false
 end
 
+if ~options.GeometryOnly && ~options.FieldDesignOnly
+    error('oatof:RetiredCompositeFlight', ...
+        'Legacy OA-TOF composite particle flight is retired; use msplatform run with a public Study recipe.');
+end
+
 matlabRoot = fileparts(mfilename('fullpath'));
 msplatformRoot = fileparts(fileparts(fileparts(matlabRoot)));
 projectRoot = fullfile(msplatformRoot, 'components', 'single_reflection_oa_tof');

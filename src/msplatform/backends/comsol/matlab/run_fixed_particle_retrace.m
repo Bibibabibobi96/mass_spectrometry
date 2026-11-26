@@ -1,4 +1,6 @@
 % Test an in-memory fixed-particle candidate with a selected accelerator mesh.
+error('oatof:RetiredCompositeRetrace', ...
+    'Legacy OA-TOF composite retrace is retired; use msplatform run with a public Study recipe.');
 
 reportPath = getenv('COMSOL_BOOTSTRAP_REPORT');
 outputCsv = getenv('OATOF_COMSOL_OUTPUT_CSV');

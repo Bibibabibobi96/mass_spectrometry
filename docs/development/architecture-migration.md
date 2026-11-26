@@ -1093,3 +1093,108 @@ split_detector_budget/native_workflow/split_tof_simion 12 PASS（5.776s），相
 bootstrap在CPT边界集合互斥/完备断言失败（trace_assembly_particles.m:60），无粒子结果；
 owner已failed、writers_stopped=true、exit1、host released、无workflow lease。
 实际集合调查继续，不能宣称CPT通过，也不能删除严格物理校验来凑绿。
+
+### B6 旧执行对账与保留的C边界
+
+真实调用审查发现旧COMSOL完整composite的直接旁路：Formal Validate、oatof_retrace.run_species_retrace、
+安装资源run_fixed_particle_retrace，以及run_oatof_model/底层builder的默认particle-flight模式。
+新执行现明确拒绝并指向公共Study，不是因为segmented-output字样而删除COMSOL时间采样。
+geometry-only/field-design-only组件研究保留；历史Verify/Publish/Recover仍须原封存证据，不降低资格门槛。
+同一公共新链没有继承Candidate/Formal总等级。
+
+Python API与真实pwsh Validate无路径/无owner早拒绝两项PASS（0.777s），Ruff PASS。
+MATLAB guard仅完成静态审阅，未运行MATLAB正反例，不报native已验证；未保留镜像源代码字符串的脆弱单元测试。
+
+| 旧入口/消费者 | 本轮路径与owner | 处置/下一批 |
+|---|---|---|
+| 完整OA–TOF handoff/分段scope及旧复合执行 | public Study → native_tracing → SIMION operations/tracking_execution、COMSOL assembly_native_scope | 本轮明确拒绝，连续birth路径真实组合验收仍在进行 |
+| 旧mass-spectrum/COMSOL整机retrace/Formal Validate | public Study/mass_scan → 同一native owner | 旧新执行拒绝；历史读保留 |
+| plan6 RF recorded birth | schema12 preparation/recorded_birth → public simion.track | 软件迁移；真实recorded Fly未验证，OA-only recorded拒绝 |
+| registry ip_mr_chain / accelerator_interface FullJoint / prepared_joint_execute | IP provider、MR参考和manifest-bound producer身份检查 | IP–MR活跃旧链交C，本轮不删 |
+| accelerator_interface普通OA→MR接口准备 | prepare_interface，仅准备与验证接口 | 不是粒子传播，保留 |
+| assembly/handoff.py | 母群/时钟/坐标与原始源校验 | IP/MR等仍消费，保留中性职责 |
+| 历史manifest/record reader、COMSOL时间输出分段 | 只读证据与原数值采样语义 | 保留，不宣称全仓segmented清零 |
+
+当前COMSOL0Compute边界诊断已启动，SIMION新工程预算候选正在独立构建/安装；
+没有将本退休软件检查冒充BA06/08/10/11/12/15全部通过。
+
+### B 累计 CLOC（至 f216a7af，不含后续改动）
+
+基线 `a9d76aa4dcdbaf8099c9ce5aa0585d6fce18c3be` → 结果 `f216a7afd0a3b27be21402915209defa9964d78e`；CLOC 2.10；源日志 `C:/Users/Liao/msplatform-artifacts/architecture-b-20261127/f216a7af-cloc.log`。
+
+生成时间：`2026-11-26T19:00:42.8870293+00:00`；分类器 SHA-256 `d3abfc94e920066445561b696c76131b43eab9713a0cbcb9e2c1270ba7136952`；语言定义 SHA-256 `985e60f06bd8981c36966a0895cccfccd182fd625c79eb6ae94b65a12c5508a6`。
+
+以下每格为 基线 → 结果（变化），直接转录日志。
+
+#### Total
+
+| Language | Files | Blank | Comment | Code |
+|---|---:|---:|---:|---:|
+| JSON | 282 → 290 (+8) | 0 → 0 (+0) | 0 → 0 (+0) | 126022 → 129542 (+3520) |
+| Lua | 119 → 120 (+1) | 413 → 416 (+3) | 828 → 830 (+2) | 13219 → 13257 (+38) |
+| MATLAB | 186 → 188 (+2) | 1066 → 1066 (+0) | 2053 → 2065 (+12) | 19701 → 19951 (+250) |
+| PowerShell | 150 → 150 (+0) | 1100 → 1100 (+0) | 1195 → 1195 (+0) | 46113 → 46229 (+116) |
+| Python | 1435 → 1487 (+52) | 32921 → 33596 (+675) | 42493 → 42932 (+439) | 396258 → 405297 (+9039) |
+| SIMION GEM | 10 → 10 (+0) | 26 → 26 (+0) | 51 → 51 (+0) | 214 → 214 (+0) |
+| TOML | 5 → 8 (+3) | 43 → 45 (+2) | 2 → 2 (+0) | 219 → 267 (+48) |
+| YAML | 2 → 2 (+0) | 8 → 8 (+0) | 20 → 20 (+0) | 506 → 506 (+0) |
+| SUM | 2189 → 2255 (+66) | 35577 → 36257 (+680) | 46642 → 47095 (+453) | 602252 → 615263 (+13011) |
+
+#### Production
+
+| Language | Files | Blank | Comment | Code |
+|---|---:|---:|---:|---:|
+| JSON | 259 → 266 (+7) | 0 → 0 (+0) | 0 → 0 (+0) | 42340 → 44927 (+2587) |
+| Lua | 99 → 100 (+1) | 333 → 336 (+3) | 703 → 705 (+2) | 11141 → 11179 (+38) |
+| MATLAB | 118 → 120 (+2) | 526 → 526 (+0) | 1462 → 1474 (+12) | 12164 → 12414 (+250) |
+| PowerShell | 138 → 138 (+0) | 1037 → 1037 (+0) | 1149 → 1149 (+0) | 44012 → 44128 (+116) |
+| Python | 685 → 711 (+26) | 16804 → 17189 (+385) | 11609 → 11881 (+272) | 182981 → 188154 (+5173) |
+| SIMION GEM | 10 → 10 (+0) | 26 → 26 (+0) | 51 → 51 (+0) | 214 → 214 (+0) |
+| TOML | 5 → 8 (+3) | 43 → 45 (+2) | 2 → 2 (+0) | 219 → 267 (+48) |
+| YAML | 2 → 2 (+0) | 8 → 8 (+0) | 20 → 20 (+0) | 506 → 506 (+0) |
+| SUM | 1316 → 1355 (+39) | 18777 → 19167 (+390) | 14996 → 15282 (+286) | 293577 → 301789 (+8212) |
+
+#### Tests
+
+| Language | Files | Blank | Comment | Code |
+|---|---:|---:|---:|---:|
+| JSON | 23 → 24 (+1) | 0 → 0 (+0) | 0 → 0 (+0) | 83682 → 84615 (+933) |
+| Lua | 20 → 20 (+0) | 80 → 80 (+0) | 125 → 125 (+0) | 2078 → 2078 (+0) |
+| MATLAB | 68 → 68 (+0) | 540 → 540 (+0) | 591 → 591 (+0) | 7537 → 7537 (+0) |
+| PowerShell | 12 → 12 (+0) | 63 → 63 (+0) | 46 → 46 (+0) | 2101 → 2101 (+0) |
+| Python | 750 → 776 (+26) | 16117 → 16407 (+290) | 30884 → 31051 (+167) | 213277 → 217143 (+3866) |
+| SUM | 873 → 900 (+27) | 16800 → 17090 (+290) | 31646 → 31813 (+167) | 308675 → 313474 (+4799) |
+
+#### Unclassified
+
+| Language | Files | Blank | Comment | Code |
+|---|---:|---:|---:|---:|
+| SUM | 0 → 0 (+0) | 0 → 0 (+0) | 0 → 0 (+0) | 0 → 0 (+0) |
+
+#### 输入快照与分类统计
+
+```text
+WORKTREE_DIRTY=true
+WORKTREE_TRACKED_DIRTY_COUNT=10
+WORKTREE_UNTRACKED_COUNT=15
+INPUT_IDENTITY SNAPSHOT=baseline FILES=2234 SHA256=2e9c89b9e7a4ddd9d2d2e95a292cfbe15ca5b439965fa762bd82c4277fa07818
+INPUT_IDENTITY SNAPSHOT=result FILES=2300 SHA256=85dff72c8bee7d4bb94fee1bbcc63a8e92c582a1092dff0f2f8119e9698c63be
+CLASSIFICATION_DETAIL SNAPSHOT=baseline CATEGORY=production REASON=active_powershell_entrypoint FILES=53
+CLASSIFICATION_DETAIL SNAPSHOT=baseline CATEGORY=production REASON=execution_profile_entrypoint FILES=17
+CLASSIFICATION_DETAIL SNAPSHOT=baseline CATEGORY=production REASON=non_test_source FILES=1246
+CLASSIFICATION_DETAIL SNAPSHOT=baseline CATEGORY=tests REASON=test_filename FILES=842
+CLASSIFICATION_DETAIL SNAPSHOT=baseline CATEGORY=tests REASON=test_support_path FILES=76
+CLASSIFICATION_DETAIL SNAPSHOT=result CATEGORY=production REASON=active_powershell_entrypoint FILES=53
+CLASSIFICATION_DETAIL SNAPSHOT=result CATEGORY=production REASON=execution_profile_entrypoint FILES=17
+CLASSIFICATION_DETAIL SNAPSHOT=result CATEGORY=production REASON=non_test_source FILES=1285
+CLASSIFICATION_DETAIL SNAPSHOT=result CATEGORY=tests REASON=test_filename FILES=868
+CLASSIFICATION_DETAIL SNAPSHOT=result CATEGORY=tests REASON=test_support_path FILES=77
+```
+
+#### 过滤及分类口径
+
+```text
+extensions=.py,.m,.ps1,.lua,.gem,.fly2,.json,.toml,.yml,.yaml,.c,.h,.cc,.cpp,.cxx,.hpp,.cs,.java,.js,.jsx,.ts,.tsx,.go,.rs,.rb,.php,.swift,.kt,.kts,.sh,.bash,.zsh,.bat,.cmd;excluded_components=.git,.venv,.tmp,artifacts,generated,vendor,vendors,third_party,third-party,thirdparty,run,runs;excluded_lifecycle_paths=any/docs/history/**|root/scratch/**|artifacts/projects/<project>/(archive|scratch)/**;language_overrides=.m:MATLAB|.fly2:Lua|.gem:SIMION_GEM;production=execution_profile_entrypoint|run_*.ps1|verify_*.ps1|tests/support(non-test-named);tests=fixture|test_support|testing_support_path|test_*.(py|ps1|m|lua)|*_test.py|tests_boundary/*_fixtures.py|tests/**/__init__.py|*Test.m|*.Tests.*;unclassified=other_code_below_test_or_tests_path;worktree_source=git_tracked_plus_nonignored_untracked
+```
+
+源日志同时记录功能分类；本摘要仅转录指定两个提交快照，未重新运行 CLOC，WORKTREE 状态仅为日志运行时环境信息。

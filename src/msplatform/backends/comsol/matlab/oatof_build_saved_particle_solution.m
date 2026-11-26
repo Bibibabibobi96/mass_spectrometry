@@ -1,6 +1,10 @@
 function [result,model,context,state] = oatof_build_saved_particle_solution(mass_amu, label, solver_mode, field_mode, d1_mm, n_rings2, mesh_hmax_refl_mm, bore_r_mm, ring_thickness_mm, n_particles, n_rings1, accel_bore_half_mm, fixed_particle_table, fine_tstep_ns, mesh_hmax_accel_mm, drift_tstep_ns, output_model_path, contract_path, allow_particle_loss, acceleratorGeometry, acceleratorElectrical, sideOpening, fieldDesignOnly,cartesianRelease,artifactRoot,geometryOnly)
 % Native geometry/field/particle construction, ending at the original raw save.
 % The body and save ordering are relocated from the full model core.
+if (nargin < 23 || ~fieldDesignOnly) && (nargin < 26 || ~geometryOnly)
+    error('oatof:RetiredCompositeFlight', ...
+        'Legacy OA-TOF composite particle flight is retired; use msplatform run with a public Study recipe.');
+end
 result=[];model=[];context=struct();state=struct();
 matlabRoot = fileparts(mfilename('fullpath'));
 msplatformRoot = fileparts(fileparts(fileparts(matlabRoot)));

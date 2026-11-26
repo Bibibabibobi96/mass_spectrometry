@@ -11,6 +11,10 @@ param(
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe'
 )
 
+if ($Phase -eq 'Validate') {
+  throw 'Legacy OA–TOF composite validation execution is retired; use msplatform run with a public Study recipe.'
+}
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $workspaceRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path

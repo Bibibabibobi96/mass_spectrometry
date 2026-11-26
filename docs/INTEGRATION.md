@@ -3289,3 +3289,16 @@ Software fixtures and historical preparation tests pass; actual native execution
 of this recorded source remains unverified. Fresh recipe sources and the three
 native combination proofs are tracked separately in the
 [batch B migration record](development/architecture-migration.md).
+
+Batch B retires new particle execution through the former composite COMSOL
+retrace API/script and Formal `Validate`, plus the particle-flight mode of
+`run_oatof_model` and its builder. Geometry-only and field-design-only component
+research, historical evidence readers and the existing Verify/Publish/Recover
+evidence requirements remain. New OA/TOF trajectories use the public Study chain;
+the new chain does not inherit the former Candidate/Formal grade.
+
+The registry `ip_mr_chain`, `accelerator_interface -FullJoint` and prepared joint
+execution are authenticated IP–MR consumers retained for C. OA–MR interface
+preparation is not particle propagation. Shared handoff population/frame/clock
+validation remains needed by those consumers. This scoped retirement does not
+claim that all repository segmented execution is removed.
