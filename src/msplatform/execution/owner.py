@@ -367,7 +367,15 @@ def run_managed_stage(context: ExecutionContext, *, descriptor: Mapping[str, Any
                 or any(code != 0 for code in session._completed.values())):
             raise ValueError("Successful action did not complete all declared operations")
         _writer_completion(session)
-        verify_record("original action source after action", dict(action_record))
+        try:
+            verify_record("original action source after action", dict(action_record))
+        except (AssertionError, OSError, ValueError) as source_failure:
+            if primary is not None:
+                primary.add_note(f"Original action source changed after action: {source_failure!r}")
+            else:
+                primary = source_failure
+                result = dict(status="failed", summary=dict(failure_reason=str(source_failure)),
+                              output_paths=[], required_output_paths=[], retention_preserve_paths=[], manifest_extra_fields={})
         verify_record("current action authority after action", request["prepared"]["entrypoint"])
         if primary is not None:
             failure_outputs = getattr(primary, "failure_output_paths", ())
@@ -505,4 +513,144 @@ def resume_finalization(context: ExecutionContext, result_path: Path, *,
         return result
     if capacity["status"] == "active":
         renew_capacity_session(capacity)
+    return _finalize(session, request, completion, completion_api=completion_api)
+
+
+def recover_failed_finalization(context: ExecutionContext, result_path: Path, *,
+                                explicit_file_roles: Mapping[str, str], role_evidence: Mapping[str, Any],
+                                completion_api: Callable[[], Any] | None = None) -> dict[str, Any]:
+    """Recover the explicitly identified stopped legacy failure from original evidence.
+
+    This narrow migration does not run the action, infer output roles, or admit
+    another run. Unknown/missing evidence leaves its original owner protected.
+    """
+    from datetime import datetime, timezone
+    result_path = Path(result_path).resolve(strict=True)
+    result = _json(result_path)
+    if (result.get('role') != 'run_artifact_workflow_result' or result.get('status') != 'failed'
+            or result.get('stage') != 'finalization' or result.get('writers_confirmed') is not True
+            or result.get('resume_action') != 'inspect_writer_completion'):
+        raise ValueError('legacy recovery requires the exact stopped failed finalization state')
+    root = Path(result['run_directory']).resolve(strict=True)
+    if (root / 'results/execution_completion.json').exists():
+        raise ValueError('legacy recovery run identity or completion differs')
+    request_path, config_path = root / 'inputs/execution_request.json', root / 'run_config.json'
+    process_path, launcher_path = root / 'logs/operation_0001.process.json', root / 'logs/reopen_pulse_basis.launcher.json'
+    request, config = _json(request_path), _json(config_path)
+    if (request.get('role') != 'run_artifact_workflow_request'
+            or request['package']['run_id'] != root.name or config.get('run_id') != root.name
+            or request['payload'].get('action') != 'recover_assembly_pulse_basis'
+            or request.get('expected_operation_ids') != ['reopen_pulse_basis']
+            or request.get('operation_dependencies') != {}):
+        raise ValueError('legacy recovery request identity differs')
+    action = request['prepared']['entrypoint']
+    if (not isinstance(action.get('sha256'), str) or action.get('sha256') != request['prepared']['source_entrypoint'].get('sha256')
+            or action.get('bytes') != request['prepared']['source_entrypoint'].get('bytes')
+            or Path(action.get('path', '')).resolve() != root / 'inputs/owner/action.py'):
+        raise ValueError('legacy recovery frozen action identity differs')
+    verify_record('legacy frozen action', action)
+    paths = {'result': result_path, 'request': request_path, 'run_config': config_path,
+             'frozen_action': Path(action['path']), 'process': process_path, 'launcher': launcher_path}
+    if (not isinstance(role_evidence, Mapping) or set(role_evidence) != {*paths, 'role_authority'}
+            or role_evidence['role_authority'] != {'version': 1, 'frozen_action_sha256': action['sha256'],
+                                                    'basis': 'reviewed_frozen_action_declarations_and_run_config'}):
+        raise ValueError('legacy recovery requires the exact source evidence closure')
+    for name, path in paths.items():
+        record = role_evidence[name]
+        if not isinstance(record, Mapping) or Path(record.get('path', '')).resolve() != path.resolve():
+            raise ValueError('legacy recovery evidence path differs: ' + name)
+        verify_record('legacy recovery ' + name, dict(record))
+    if (result.get('execution_request') != str(request_path)
+            or request['paths']['artifact_root'] != str(context.workspace / 'artifacts')
+            or request['paths']['host_resource_state_path'] != str(context.host_state_path)
+            or request['paths']['execution_root'] != str(context.execution_root)):
+        raise ValueError('legacy recovery execution context differs')
+    capacity = _json(root / 'logs/capacity_session.json')
+    if (capacity.get('status') != 'active' or capacity.get('owner') != 'run-artifact-workflow:instrument_assembly:' + root.name
+            or capacity.get('artifact_root') != request['paths']['artifact_root']
+            or any(result.get('capacity_session', {}).get(k) != capacity.get(k) for k in ('owner', 'artifact_root', 'lease_id'))):
+        raise ValueError('legacy recovery original capacity authority differs')
+    failure = result.get('exception')
+    if (not isinstance(failure, dict) or failure.get('type') != 'ProcessExecutionError'
+            or not isinstance(failure.get('message'), str)
+            or not any('original action source after action' in note for note in failure.get('notes', []))):
+        raise ValueError('legacy recovery requires recorded native failure and source-change diagnostic')
+    live = request['prepared']['source_entrypoint']
+    try:
+        verify_record('original action source after action', live)
+    except (AssertionError, OSError, ValueError):
+        pass
+    else:
+        raise ValueError('legacy recovery source-change condition is not present')
+    receipt, launcher = _json(process_path), _json(launcher_path)
+    observation, release = receipt.get('observation'), receipt.get('host_release')
+    launcher_ops = launcher.get('operations')
+    if (not isinstance(observation, dict) or observation.get('exit_code') != 1 or receipt.get('error') is not None
+            or not isinstance(release, dict) or launcher.get('run_id') != root.name
+            or launcher.get('role') != 'comsol_launcher_completion'
+            or launcher.get('host_release', {}).get('inherited') is not True
+            or launcher['host_release'].get('token') != release.get('token')
+            or launcher['host_release'].get('error') is not None or launcher['host_release'].get('result') is not None
+            or not isinstance(launcher_ops, list) or len(launcher_ops) != 1
+            or launcher_ops[0].get('operation_id') != 'launcher-attempt-1'
+            or launcher_ops[0].get('observation', {}).get('exit_confirmed') is not True
+            or type(launcher_ops[0].get('observation', {}).get('process_id')) is not int
+            or launcher_ops[0]['observation']['process_id'] <= 0
+            or type(launcher_ops[0]['observation'].get('process_started_at_utc_ticks')) is not int
+            or launcher_ops[0]['observation']['process_started_at_utc_ticks'] <= 0
+            or type(launcher_ops[0]['observation'].get('returncode')) is not int):
+        raise ValueError('legacy recovery process or inherited launcher release differs')
+    operations = [dict(operation_id='reopen_pulse_basis', resource_release_id='host-resource-1',
+        observation=dict(exit_confirmed=True, returncode=observation['exit_code'], process_id=observation['root_process_id'],
+                         process_started_at_utc_ticks=observation['root_process_started_at_utc_ticks']))]
+    releases = [dict(release_id='host-resource-1', completion_receipt={'host_release': release})]
+    writer = validate_writer_completion(writers_stopped=True, expected_operation_ids=('reopen_pulse_basis',),
+                                        operations=operations, resource_releases=releases)
+    from contextlib import closing
+    import sqlite3
+    if not context.host_state_path.is_file():
+        raise ValueError('legacy recovery requires the original host ledger')
+    with closing(sqlite3.connect(context.host_state_path.resolve().as_uri() + '?mode=ro', uri=True)) as db:
+        state_row = db.execute('SELECT document FROM state WHERE id=1').fetchone()
+    host = json.loads(state_row[0]) if state_row else None
+    if (not isinstance(host, dict) or host.get('schema_version') != 1 or not isinstance(host.get('records'), list)
+            or any(row.get('token') == release['token'] for row in host['records'])):
+        raise ValueError('legacy recovery host token remains active or host state is unavailable')
+    if not isinstance(explicit_file_roles, Mapping) or any(role != 'required_evidence' for role in explicit_file_roles.values()):
+        raise ValueError('legacy recovery requires explicitly evidenced required-evidence roles')
+    roles = {str(Path(path).resolve()): role for path, role in explicit_file_roles.items()}
+    if len(roles) != len(explicit_file_roles):
+        raise ValueError('legacy recovery file roles are duplicated')
+    actual = {str(path.resolve()) for path in root.rglob('*') if path.is_file()}
+    if any(path.is_symlink() for path in root.rglob('*')):
+        raise ValueError('legacy recovery does not accept symbolic links')
+    required = {str(Path(path).resolve()) for path in config['inputs'].values()}
+    if set(roles) != actual | required:
+        raise ValueError('legacy recovery file roles must cover the exact evidenced file set')
+    for index, authority in enumerate([action, *request['capacity']['commitment_inputs']]):
+        verify_record(f'legacy recovery authority {index}', authority)
+    runtime = Path(launcher.get('runtime_storage', {}).get('run_directory', ''))
+    if runtime.name != 'reopen_pulse_basis' or runtime.parent.name != 'comsol_runtime':
+        raise ValueError('legacy recovery launcher execution directory differs')
+    alias = runtime.parent.parent
+    if not alias.is_absolute() or alias.parent.resolve() != context.execution_root.resolve() or alias.resolve(strict=True) != root:
+        raise ValueError('legacy recovery execution alias differs from its original run')
+    package = dict(artifact_run_dir=str(root), run_dir=str(alias), execution_alias=str(alias))
+    session = RunSession(context, Path(capacity['artifact_root']), root.name, request['package']['project'],
+        request['package']['mode'], package, capacity, request_path, result_path,
+        ('reopen_pulse_basis',), {}, file_roles=roles, operations=operations, resource_releases=releases)
+    _require_capacity_accounted(session)
+    evidence_path = session.declare_file(root / 'results/failed_finalization_recovery.json', 'required_evidence')
+    completion_path = session.declare_file(root / 'results/execution_completion.json', 'required_evidence')
+    write_json_atomic(evidence_path, dict(schema_version=1, role='failed_finalization_recovery_evidence',
+        recovered_at_utc=datetime.now(timezone.utc).isoformat(), sources=copy.deepcopy(dict(role_evidence)),
+        role_source='frozen_action_declarations_and_bound_run_config', file_roles=roles))
+    completion = dict(schema_version=1, role='run_artifact_workflow_completion', run_id=root.name,
+        project=request['package']['project'], execution_request=file_record(request_path, 'required_evidence'),
+        run_config=file_record(config_path, 'required_evidence'), writer_completion=writer, status='failed',
+        summary=dict(status='failed', run_id=root.name, failure_reason=failure['message']), exception=copy.deepcopy(failure),
+        output_paths=[str(evidence_path)], required_output_paths=[str(evidence_path)], retention_preserve_paths=[],
+        manifest_extra_fields={}, file_roles=session.file_roles, package=package)
+    write_json_atomic(completion_path, completion)
+    _result(session, status='pending', stage='completion', writers_confirmed=True, resume_action='resume_finalization')
     return _finalize(session, request, completion, completion_api=completion_api)

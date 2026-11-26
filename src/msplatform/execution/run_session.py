@@ -129,6 +129,11 @@ class RunSession:
             previous = self.file_roles.setdefault(str(target), retention_role)
             if previous != retention_role:
                 raise ValueError("Declared file retention role changed")
+            journal = self.artifact_run_dir / "logs/file_roles.json"
+            if journal.parent.is_dir():
+                self.file_roles[str(journal)] = "required_evidence"
+                write_json_atomic(journal, dict(schema_version=1, role="run_session_file_roles",
+                                                run_id=self.run_id, file_roles=dict(self.file_roles)))
         return target
 
     def add_input(self, name: str, record: Mapping[str, Any]) -> None:

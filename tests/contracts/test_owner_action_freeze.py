@@ -13,17 +13,18 @@ from msplatform.execution import owner
 from msplatform.io.manifest_records import file_record
 
 
-def make_action(root, mutate=False):
+def make_action(root, mutate=False, fail=False):
     path = root / 'original_action.py'
     path.write_text("""from pathlib import Path
 calls = []
 def action(session):
     calls.append(session.run_id)
     MUTATION
+    FAILURE
     output = session.declare_file(session.result_dir / 'value.txt', 'required_evidence')
     output.write_text('result', encoding='utf-8')
     return dict(status='success', summary={}, output_paths=[str(output)], required_output_paths=[str(output)], retention_preserve_paths=[], manifest_extra_fields={})
-""".replace('MUTATION', "Path(__file__).write_text('changed', encoding='utf-8')" if mutate else 'pass'), encoding='utf-8')
+""".replace('MUTATION', "Path(__file__).write_text('changed', encoding='utf-8')" if mutate else 'pass').replace('FAILURE', "raise RuntimeError('PRIMARY_NATIVE_FAILURE')" if fail else 'pass'), encoding='utf-8')
     spec = importlib.util.spec_from_file_location('owned_test_action', path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -59,14 +60,31 @@ class OwnerActionFreezeTests(unittest.TestCase):
         self.assertEqual(Path(frozen['path']).read_bytes(), source.read_bytes())
         manifest = json.loads((run / 'run_manifest.json').read_text(encoding='utf-8'))
         self.assertEqual(manifest['inputs']['owner_authority_0'], frozen)
+        roles = json.loads((run / 'logs/file_roles.json').read_text(encoding='utf-8'))
+        self.assertEqual(roles['file_roles'][str(run / 'logs/file_roles.json')], 'required_evidence')
+        self.assertEqual(roles['file_roles'][str(run / 'results/value.txt')], 'required_evidence')
         self.assertEqual(module.calls, [args['run_id']])
 
-    def test_original_mutation_during_action_refuses_completion(self):
+    def test_original_mutation_during_action_publishes_failure(self):
         _, module, args = self.prepared(mutate=True)
         with self.assertRaisesRegex(AssertionError, 'original action source after action'):
             owner.run_managed_stage(self.context, **args)
         self.assertEqual(module.calls, [args['run_id']])
-        self.assertFalse(list((self.context.workspace / 'artifacts').rglob('execution_completion.json')))
+        completion = json.loads(next((self.context.workspace / 'artifacts').rglob('execution_completion.json')).read_text(encoding='utf-8'))
+        self.assertEqual(completion['status'], 'failed')
+        self.assertEqual(completion['manifest_extra_fields'], {})
+        self.assertEqual(completion['output_paths'], [])
+
+    def test_primary_failure_survives_source_mutation(self):
+        source, module = make_action(self.root, mutate=True, fail=True)
+        args = self.helper._arguments(self.root, module.action)
+        args['action_record'] = file_record(source, 'required_evidence')
+        with self.assertRaisesRegex(RuntimeError, 'PRIMARY_NATIVE_FAILURE'):
+            owner.run_managed_stage(self.context, **args)
+        completion = json.loads(next((self.context.workspace / 'artifacts').rglob('execution_completion.json')).read_text(encoding='utf-8'))
+        self.assertEqual(completion['status'], 'failed')
+        self.assertEqual(completion['exception']['message'], 'PRIMARY_NATIVE_FAILURE')
+        self.assertTrue(any('Original action source changed' in note for note in completion['exception']['notes']))
 
     def test_resume_after_original_removed_and_copy_tamper_or_missing_refuses(self):
         for defect in ('none', 'tamper', 'missing'):
@@ -115,9 +133,8 @@ class OwnerActionFreezeTests(unittest.TestCase):
         _, module, args = self.prepared()
         args['completion_api'] = no_particle_batch_completion_api
         with patch('msplatform.execution.inputs.freeze_file', side_effect=OSError('ACTION_COPY_FAILURE')):
-            with self.assertRaisesRegex(OSError, 'ACTION_COPY_FAILURE') as caught:
+            with self.assertRaisesRegex(OSError, 'ACTION_COPY_FAILURE'):
                 owner.run_managed_stage(self.context, **args)
-        print('COPY_ERROR_NOTES', getattr(caught.exception, '__notes__', []))
         self.assertEqual(module.calls, [])
         result_path = next((self.context.workspace / 'artifacts').rglob('result.json'))
         result = json.loads(result_path.read_text(encoding='utf-8'))
@@ -139,9 +156,8 @@ class OwnerActionFreezeTests(unittest.TestCase):
                 raise OSError('ACTION_REQUEST_UPDATE_FAILURE')
             return write(path, value)
         with patch.object(owner, 'write_json_atomic', side_effect=fail_update):
-            with self.assertRaisesRegex(OSError, 'ACTION_REQUEST_UPDATE_FAILURE') as caught:
+            with self.assertRaisesRegex(OSError, 'ACTION_REQUEST_UPDATE_FAILURE'):
                 owner.run_managed_stage(self.context, **args)
-        print('REQUEST_ERROR_NOTES', getattr(caught.exception, '__notes__', []))
         self.assertEqual(module.calls, [])
         result_path = next((self.context.workspace / 'artifacts').rglob('result.json'))
         result = json.loads(result_path.read_text(encoding='utf-8'))

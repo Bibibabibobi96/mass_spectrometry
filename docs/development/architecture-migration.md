@@ -888,3 +888,32 @@ PS即便接到Python immutable session，也自行用原Protect-ImmutablePaSourc
 
 限制：本提交只单worker和原生文件生命周期，scope下group明确未实现，副本保留外层.tools待下一主题；
 不是BA09全部闭合。SIMION真实Refine/Fly、COMSOL真field/CPT、wheel/sdist新链离仓仍待完成。
+
+### B 原生求场事实与失败收尾修复（80f0164d → 本主题提交）
+
+纠正性 run `20261127_015508__sim__comsol__pulse-basis-fd136b758ffa` 的 OFF/ON 两次原生
+Compute 均实际完成：6,277,920 mesh elements、各9,363,200 DOF，共存 MPH 3,082,205,877 B。
+Python 后验拒绝 MATLAB JSON 的精确整数浮点表示 `6.27792E+6`；这不是原生求解失败，原失败 manifest 不改写。
+后续恢复只捕获现存输出身份并冷开校验，捕获时点显式记为失败 Python 校验之后；不能倒称旧输出已经发布封存。
+工程 BVP 为有限外箱0 V、真空εr=1、mesh auto5/electrode_hmax5 mm，是新增 probe 技术选择，
+不是 SIMION Neumann 同边值问题或数值收敛资格。owned_scope_unknown 的观测限制仍保留。
+
+一次恢复因旧 verifier 只接受单 study 而原生退出1；期间 Agent1修改原 action 源，导致最终化又受阻。
+这两项诊断均保留。新 owner 修复：确认真实 writer 停止后，源改变成为明确失败事实而不掩盖原异常；
+`RunSession.declare_file` 原子保存明确角色日志。`owner.recover_failed_finalization` 只接受该既存
+reopen_pulse_basis 失败状态、冻结 action/完整文件角色/配置/真实 process 与 launcher/原 host release 证据，
+仍走原 `_finalize`，不运行 action、不启动原生、不产生科学成功产品。缺证据保持保护。
+实际35个 run 文件与35个配置输入（20外部）逐项核对后，原 hold 已收尾 failed/complete，
+capacity lease 已释放，3.08 GB 源 MPH 未复制或改写；失败终态 manifest SHA256
+`2B31B84B149073F0753E277D8D4B96936A822B73C9BE3B83B20EBD4F47E49F38`。
+
+本主题命令：`.venv/Scripts/python.exe -m unittest tests.contracts.test_owner_action_freeze tests.contracts.test_owner_failed_recovery -q`，
+11 PASS（9.908 s）；相关 Ruff PASS。覆盖真实动作源改变后的失败关闭和缺件/角色/身份/release 反例，
+不将 inert fixture 当成原生求场验证。下一次冷开 run
+`20261127_023910__analysis__comsol__basis-recovery-e7a42a44d31e` 正执行0 Compute校验，
+整个 action/native/owner 闭包保持冻结直到最终化返回；尚未宣称该次成功或 basis 合格。
+
+当前 HEAD 在本主题前为80f0164d，任务跟踪分支普通推送同步；原有 artifacts 与所有其他并行改动保留。
+剩余旧消费者：旧复合新执行入口退役、plan6 recorded-birth 读取与准备仍在定向迁移；
+SIMION Refine/Fly、COMSOL CPT、桥接实际采样/Fly、普通安装及 BA01–BA15 最终对账尚未完成。
+后续主题包括group生命周期与公共三组合调度；当前不代表批次B完成，不启动C。
