@@ -52,6 +52,25 @@ def oracle(p, times, electric, magnetic):
 
 
 class ReferenceTracingTests(unittest.TestCase):
+    def test_competing_planes_rejected_and_coincident_observation_retained(self):
+        detector = {"surface_id": "detector", "component_id": "cell", "electrode_id": None,
+                    "axis": 0, "position_m": .02, "kind": "detector"}
+        electrode = {"surface_id": "plate", "component_id": "cell", "electrode_id": "plate",
+                     "axis": 0, "position_m": .02, "kind": "electrode"}
+        observation = {"surface_id": "observation", "component_id": "cell", "electrode_id": None,
+                       "axis": 0, "position_m": .02, "kind": "observation"}
+        for order in ([detector, electrode], [electrode, detector]):
+            r = recipe([0, 0, 0], [0, 0, 0])
+            r["surfaces"] = order
+            with self.subTest(order=order[0]["kind"]), self.assertRaisesRegex(ValueError, "coincident terminal"):
+                trace_particles(r)
+        for order in ([detector, observation], [observation, detector]):
+            r = recipe([0, 0, 0], [0, 0, 0])
+            r["surfaces"] = order
+            result = trace_particles(r)
+            self.assertEqual(result.terminal_states[0]["physical_outcome"], "detected")
+            self.assertEqual({event["surface_id"] for event in result.events}, {"detector", "observation"})
+
     def test_analytic_oracles_same_experiment_times(self):
         for e, b, z in [([0, 0, 0], [0, 0, 0], 1), ([2000, 0, 0], [0, 0, 0], 1),
                         ([0, 0, 0], [0, 0, .5], 1), ([2000, 0, 0], [0, 0, .5], -1)]:

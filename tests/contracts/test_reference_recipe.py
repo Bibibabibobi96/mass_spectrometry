@@ -8,12 +8,33 @@ from pathlib import Path
 from msplatform.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C, BOLTZMANN_CONSTANT_J_K
 from msplatform.physics import CONSTANTS, GasEnvironment
 from msplatform.recipes import assembly_name, load_recipe, validate_recipe
+from msplatform.tracing import trace_particles
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "recipes/reference/uniform_e.toml"
 
 
 class ReferenceRecipeTests(unittest.TestCase):
+    def test_equivalent_signed_charge_declarations_normalize_across_boundaries(self):
+        text = SOURCE.read_text(encoding="utf-8")
+        for z in (1, -1, 3, -3):
+            with self.subTest(charge_state=z):
+                charge = Decimal(z) * Decimal('1.602176634e-19')
+                derived_text = text.replace('charge_state = 1', f'charge_state = {z}')
+                explicit_text = derived_text.replace(f'charge_state = {z}', f'charge_state = {z}\ncharge_c = {charge}')
+                derived, explicit = self.load_text(derived_text), self.load_text(explicit_text)
+                self.assertEqual(derived, explicit)
+                canonical = z * ELEMENTARY_CHARGE_C
+                self.assertEqual(explicit['initial_states'][0]['charge_c'], canonical)
+                alternate = copy.deepcopy(derived)
+                alternate['initial_states'][0]['charge_c'] = float(charge)
+                self.assertEqual(validate_recipe(alternate), derived)
+                result = trace_particles(alternate)
+                self.assertEqual(result.initial_states[0]['charge_c'], canonical)
+                self.assertEqual(result.terminal_states, trace_particles(derived).terminal_states)
+                with self.assertRaises(ValueError):
+                    self.load_text(explicit_text.replace(f'charge_c = {charge}', 'charge_c = 1e-18'))
+
     def load_text(self, text):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "recipe.toml"

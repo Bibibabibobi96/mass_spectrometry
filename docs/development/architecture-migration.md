@@ -579,3 +579,24 @@ free是受控观测（0→6 B，准入需求5 B），不是对真实卷释放量
 
 剩余：B0-01/02/04正在独立实施；之后立即进入B1公共合同、B2拆分/B3场源、B4原生链、B5 mass_scan、
 B6旧执行退役/交付。当前旧消费者清单仍见上文，不声称B或BA01完成。CLOC将在该主题提交后按实际SHA核对。
+
+
+### B0-01/02：电荷精确表示归一和共面竞争
+
+已复核 `physics.normalize_charge_c`：保留既有binary64整数×e规范值和科学身份，精确接受该表示或
+同一冻结十进制常量精确相乘后一次舍入的表示，不采用通用ULP窗口/相对容差。
+±3的作者辅助charge_c=±4.806529902e-19 C归一到旧规范值±4.806529901999999e-19 C；
+常量数值未升级，真实矛盾拒绝。author/resolved/tracer使用同一函数，实际输出初态采用规范值。
+
+`tracing.preflight` 拒绝相同axis/精确位置的竞争终止面，与声明顺序无关；共面observation合法。
+求解前将非终止observation排在terminal前，确保同根处的合法观测不会被终止截掉，两种作者顺序均验证。
+不扩展为任意三维角点/切触算法改写；CLI validate/run均在昂贵执行前走同一预检。
+
+`.venv/Scripts/python.exe -m unittest tests.contracts.test_reference_recipe tests.contracts.test_reference_tracing tests.contracts.test_reference_workflow -v`：
+20 PASS；±1/±3的author/resolved/tracer/output，真实矛盾、竞争两顺序、合法观测两顺序及原参考闭环均通过。
+Ruff与diff --check PASS。初版测试曾误认为terminal具有charge_c而得到4个KeyError，已按实际合同
+核对initial电荷与终态一致性后通过，初版错误不作为生产失败或PASS。旧审计探针只作观察，不代替回归。
+tracer实现摘要改变已进入现有批缓存键；物理规范值和版本化常量保持不变。
+
+B0-03已提交/推送 `0873971a`；B0-04干净构建正在验证独立backend进程的可靠命令，尚未计通过。
+下一步立即推进B1的既有Study/Assembly接线；B2只读闭包已确认OA本来只复用一次，不能重写第三套OA。

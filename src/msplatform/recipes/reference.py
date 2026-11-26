@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from msplatform.io.file_identity import canonical_json_sha256
-from msplatform.physics import CONSTANTS, GasEnvironment
+from msplatform.physics import CONSTANTS, GasEnvironment, normalize_charge_c
 
 
 def _keys(value: Any, required: set[str], optional: set[str] = frozenset()) -> None:
@@ -95,15 +95,16 @@ def _particle(row: dict) -> dict:
     charge = row["charge_state"]
     if type(charge) is not int or charge == 0 or not -(2**63) <= charge < 2**63:
         raise ValueError("charge_state must be a nonzero signed int64")
-    if "charge_c" in row and _number(row["charge_c"], "charge_c") != charge * CONSTANTS["elementary_charge_c"]:
-        raise ValueError("charge_c disagrees with charge_state and constants")
+    charge_c = charge * CONSTANTS["elementary_charge_c"]
+    if "charge_c" in row:
+        charge_c = normalize_charge_c(charge, row["charge_c"])
     result = {"particle_id": row["particle_id"], "species_id": _identity(row["species_id"], "species_id"),
               "parent_particle_id": None, "lineage_status": "unavailable_initial_snapshot",
               "position_m": _quantity(row, {"position_m": "1", "position_mm": "0.001"}, "position", True),
               "velocity_m_s": _vector(row["velocity_m_s"], "velocity_m_s"),
               "time_s": _quantity(row, {"time_s": "1", "time_us": "0.000001"}, "time"),
               "mass_kg": _quantity(row, {"mass_kg": "1", "mass_u": str(CONSTANTS["atomic_mass_constant_kg"])}, "mass"),
-              "charge_state": charge, "charge_c": charge * CONSTANTS["elementary_charge_c"],
+              "charge_state": charge, "charge_c": charge_c,
               "weight": _number(row["weight"], "weight")}
     if result["mass_kg"] <= 0 or result["weight"] <= 0 or result["time_s"] < 0:
         raise ValueError("mass and weight must be positive; relative time must be nonnegative")
@@ -213,8 +214,7 @@ def validate_recipe(resolved: Mapping[str, Any]) -> dict:
         p = dict(particle)
         if p.pop("parent_particle_id") is not None or p.pop("lineage_status") != "unavailable_initial_snapshot":
             raise ValueError("initial snapshot lineage is unavailable")
-        if p.pop("charge_c") != p["charge_state"] * CONSTANTS["elementary_charge_c"]:
-            raise ValueError("charge_c disagrees with charge_state and constants")
+        particle["charge_c"] = normalize_charge_c(p["charge_state"], p.pop("charge_c"))
         raw["initial_states"].append(p)
     expected = _resolve(raw)
     if data != expected:

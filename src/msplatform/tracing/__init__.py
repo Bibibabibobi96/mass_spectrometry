@@ -17,7 +17,7 @@ from scipy.integrate import solve_ivp
 
 from msplatform.analysis.particle_census import partition_cohort
 from msplatform.fields import FieldProvider, UniformField
-from msplatform.physics import CONSTANTS, GasEnvironment
+from msplatform.physics import CONSTANTS, GasEnvironment, normalize_charge_c
 
 
 @dataclass
@@ -125,18 +125,12 @@ def preflight(recipe: Mapping[str, Any]) -> UniformField:
             raise ValueError("end_time_s must follow every initial time")
         _number(p["mass_kg"], "mass_kg", positive=True)
         _number(p["weight"], "weight", positive=True)
-        if type(p["charge_state"]) is not int or p["charge_state"] == 0:
-            raise ValueError("charge_state must be an integer")
-        charge = _number(p["charge_c"], "charge_c")
-        constants = recipe["constants"]
-        if "elementary_charge_c" not in constants:
-            raise ValueError("elementary_charge_c must be in constants")
-        if charge != p["charge_state"] * _number(constants["elementary_charge_c"], "elementary_charge_c", positive=True):
-            raise ValueError("charge_c contradicts charge_state and constants")
+        normalize_charge_c(p["charge_state"], p["charge_c"])
     surfaces = recipe["surfaces"]
     if not isinstance(surfaces, list):
         raise ValueError("surfaces must be a list")
     names = set()
+    terminal_planes = set()
     for s in surfaces:
         _required(s, {"surface_id", "component_id", "electrode_id", "axis", "position_m", "kind"}, "surface")
         if not all(isinstance(s[k], str) and s[k] for k in ("surface_id", "component_id")) or s["surface_id"] in names:
@@ -148,7 +142,12 @@ def preflight(recipe: Mapping[str, Any]) -> UniformField:
             raise ValueError("electrode identity must be a nonempty string or null")
         if type(s["axis"]) is not int or s["axis"] not in (0, 1, 2) or s["kind"] not in ("detector", "electrode", "observation"):
             raise ValueError("unsupported plane axis or kind")
-        _number(s["position_m"], "surface position_m")
+        coordinate = _number(s["position_m"], "surface position_m")
+        if s["kind"] != "observation":
+            plane = (s["axis"], coordinate)
+            if plane in terminal_planes:
+                raise ValueError("coincident terminal planes have undefined competing outcomes")
+            terminal_planes.add(plane)
     return UniformField(_vector(field["electric_field_v_m"], "electric_field_v_m"),
                         _vector(field["magnetic_field_t"], "magnetic_field_t"))
 
@@ -188,7 +187,7 @@ def _solve_particle(particle: Mapping[str, Any], field: FieldProvider, recipe: M
     num = recipe["numerics"]
     initial = np.r_[particle["position_m"], particle["velocity_m_s"]].astype(np.float64)
     start = float(particle["time_s"])
-    surfaces = recipe["surfaces"]
+    surfaces = sorted(recipe["surfaces"], key=lambda surface: surface["kind"] != "observation")
     events = [_surface_event(surface) for surface in surfaces]
     def rhs(time: float, state: np.ndarray) -> np.ndarray:
         if cancelled is not None and cancelled():
@@ -250,6 +249,8 @@ class ScipyParticleTracer:
         """Integrate each original particle, preserving clock and complete cohort identities."""
         field = preflight(recipe)
         initial = [dict(particle) for particle in recipe["initial_states"]]
+        for particle in initial:
+            particle["charge_c"] = normalize_charge_c(particle["charge_state"], particle["charge_c"])
         terminals, event_rows, samples = [], [], []
         stopped = False
         for particle in initial:
