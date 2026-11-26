@@ -1195,6 +1195,27 @@ Study SHA256 `A7D75ED3EAB3E198D4196868B9CE1AA9A787554DC83CEA5088C545B81EACB9E6`�
 其余阶段按fail-fast阻塞或等待已启动阶段结束。不能报告完整Changed PASS；本轮定向38项的软件结果单独成立。
 最终安装仍按B交付的普通wheel及sdist重建wheel、仓外参考链与B资源准入执行，不把该环境失败冒充科学失败。
 
+### B4 无completion的CPT失败证据收尾（e95f6705 后）
+
+现有 `execution.owner.recover_failed_finalization` 增加受限trace分支，原basis分支保留。
+仅接受明确trace action/退出回执、原journal完整角色和恰五个新增SCI证据，借用MPH仍是原solver_native_binary，
+不改其删除owner。无原成功completion时只生成failed completion，无products，不补造科学成功。
+五输出、冻结/installed action及native源的Windows禁写句柄覆盖最终发布；源/输出均注明停止后新捕获，
+不把run_config中的路径称为原native SHA seal。原result/journal完整字节与身份快照保留。
+
+`.venv/Scripts/python.exe -m unittest tests.contracts.test_owner_trace_recovery tests.contracts.test_owner_additional_evidence -q`
+11 PASS（2.950s），Ruff PASS。新fixture实际经过_finalize/_publish/retention/terminal publication，
+仅capacity和test run ID检查替身；原角色、五输出与原字节快照均检查。Agent1独立审查未发现实际阻断。
+真实原run043646收尾实际PASS（失败语义保留）：failed/complete/writers_confirmed=true/resume_action=null，
+manifest SHA256 `53E1B213FF192579D395B322328DC4843AB454BB0D98C948D8260E2B1A71F810`，无products；
+五输出实际摘要逐一匹配，原ValueError保留，borrowed model记录与原basis两产品精确相等。
+capacity released/source_protection_leases=[]、原lease文件不存在、host无原活动token。
+总收尾7.942s，含既有公共publication/file_record必要输入SHA核验；没有复制模型或建立哈希旁路。
+可审原输入/结果/实际handler源码快照位于
+`C:/Users/Liao/msplatform-artifacts/architecture-b-20261127/evidence/c439-trace-role-recovery-input.json`、
+`c439-trace-role-recovery-result.json`、`c439-recovery-owner.py`。
+此收尾不关闭CC原生成功交付项；固定代码后公共CLI复验仍待执行。
+
 ### B3 实际ground派生的借用记录绑定修复（6c59b402 后）
 
 普通8a8f wheel=5,867,925字节，SHA256 `CFDFD556C7164F93104E674E6E25DE57CA49B82CCB5D310B90E2F1A3D898504B`，

@@ -516,7 +516,7 @@ def resume_finalization(context: ExecutionContext, result_path: Path, *,
     return _finalize(session, request, completion, completion_api=completion_api)
 
 
-def recover_failed_finalization(context: ExecutionContext, result_path: Path, *,
+def _recover_failed_basis_finalization(context: ExecutionContext, result_path: Path, *,
                                 explicit_file_roles: Mapping[str, str], role_evidence: Mapping[str, Any],
                                 completion_api: Callable[[], Any] | None = None) -> dict[str, Any]:
     """Recover the explicitly identified stopped legacy failure from original evidence.
@@ -901,3 +901,215 @@ def resume_failed_evidence_finalization(context: ExecutionContext, result_path: 
                                                        expected_sha256=record.get('sha256')))
         return _resume_failed_evidence_finalization_guarded(context, result_path, evidence=evidence,
                                                             completion_api=completion_api)
+
+_TRACE_RECOVERY_OUTPUTS = ('initial_states.parquet', 'terminal_states.parquet', 'events.parquet',
+                           'trajectories.h5', 'execution.json')
+
+
+def _recover_failed_trace_finalization(context: ExecutionContext, result_path: Path, *,
+                                       explicit_file_roles: Mapping[str, str], role_evidence: Mapping[str, Any],
+                                       completion_api: Callable[[], Any] | None = None) -> dict[str, Any]:
+    """Recover only a stopped trace whose five canonical outputs lacked roles."""
+    if completion_api is None:
+        raise ValueError('trace recovery requires the original COMSOL completion policy')
+    from contextlib import ExitStack, closing
+    from datetime import datetime, timezone
+    import base64
+    import sqlite3
+    from msplatform.io.file_identity import guarded_file_identity
+
+    result_path = Path(result_path).resolve(strict=True)
+    result = _json(result_path)
+    if (result.get('role') != 'run_artifact_workflow_result' or result.get('status') != 'failed'
+            or result.get('stage') != 'finalization' or result.get('writers_confirmed') is not True
+            or result.get('resume_action') != 'inspect_writer_completion'):
+        raise ValueError('trace recovery requires stopped failed finalization')
+    root = Path(result['run_directory']).resolve(strict=True)
+    request_path, config_path = root / 'inputs/execution_request.json', root / 'run_config.json'
+    journal_path = root / 'logs/file_roles.json'
+    process_path, launcher_path = root / 'logs/operation_0001.process.json', root / 'logs/particle.launcher.json'
+    if (root / 'results/execution_completion.json').exists():
+        raise ValueError('trace recovery does not replace a completion')
+    request, config, journal = _json(request_path), _json(config_path), _json(journal_path)
+    if (request.get('role') != 'run_artifact_workflow_request' or request['package']['run_id'] != root.name
+            or config.get('run_id') != root.name or request['package']['project'] != 'instrument_assembly'
+            or request['payload'].get('action') != 'trace_assembly_particles'
+            or request.get('expected_operation_ids') != ['trace_assembly_particles']
+            or request.get('operation_dependencies') != {} or journal.get('role') != 'run_session_file_roles'
+            or journal.get('run_id') != root.name):
+        raise ValueError('trace recovery identity differs')
+    outputs = {name: root / 'results' / name for name in _TRACE_RECOVERY_OUTPUTS}
+    failure = result.get('exception', {})
+    if (failure.get('type') != 'ValueError' or failure.get('message') not in
+            {'Run contains an undeclared file: ' + str(path) for path in outputs.values()}):
+        raise ValueError('trace recovery requires the exact undeclared output failure')
+    action = request['prepared']['entrypoint']; live = request['prepared']['source_entrypoint']
+    if (Path(action.get('path', '')).resolve() != root / 'inputs/owner/action.py'
+            or action.get('sha256') != live.get('sha256') or action.get('bytes') != live.get('bytes')):
+        raise ValueError('trace recovery action identity differs')
+    verify_record('trace frozen action', action); verify_record('trace installed action', live)
+    base_paths = {'result': result_path, 'request': request_path, 'run_config': config_path,
+                  'frozen_action': Path(action['path']), 'process': process_path, 'launcher': launcher_path,
+                  'journal': journal_path}
+    if (not isinstance(role_evidence, Mapping) or set(role_evidence) != {*base_paths, 'role_authority', 'outputs', 'sources'}
+            or role_evidence['role_authority'] != {'version': 1, 'frozen_action_sha256': action['sha256'],
+                                                   'basis': 'trace_after_stop_output_and_source_capture'}
+            or not isinstance(role_evidence['outputs'], Mapping) or set(role_evidence['outputs']) != set(outputs)):
+        raise ValueError('trace recovery evidence closure differs')
+    for name, path in base_paths.items():
+        record = role_evidence[name]
+        if (not isinstance(record, Mapping) or record.get('retention_role') != 'required_evidence'
+                or Path(record.get('path', '')).resolve() != path.resolve()):
+            raise ValueError('trace recovery evidence path differs: ' + name)
+        verify_record('trace recovery ' + name, dict(record))
+    receipt, launcher = _json(process_path), _json(launcher_path)
+    observation, release, launch_ops = receipt.get('observation', {}), receipt.get('host_release', {}), launcher.get('operations')
+    if (receipt.get('error') is not None or observation.get('exit_code') != 0
+            or launcher.get('role') != 'comsol_launcher_completion' or launcher.get('run_id') != root.name
+            or launcher.get('host_release', {}).get('inherited') is not True
+            or launcher['host_release'].get('token') != release.get('token')
+            or launcher['host_release'].get('error') is not None or launcher['host_release'].get('result') is not None
+            or not isinstance(launch_ops, list) or len(launch_ops) != 1
+            or launch_ops[0].get('operation_id') != 'launcher-attempt-1'
+            or launch_ops[0].get('observation', {}).get('exit_confirmed') is not True
+            or launch_ops[0]['observation'].get('returncode') != 0
+            or type(launch_ops[0]['observation'].get('process_id')) is not int
+            or launch_ops[0]['observation']['process_id'] <= 0
+            or type(launch_ops[0]['observation'].get('process_started_at_utc_ticks')) is not int
+            or launch_ops[0]['observation']['process_started_at_utc_ticks'] <= 0):
+        raise ValueError('trace recovery writer or inherited release differs')
+    operations = [dict(operation_id='trace_assembly_particles', resource_release_id='host-resource-1',
+        observation=dict(exit_confirmed=True, returncode=observation['exit_code'], process_id=observation['root_process_id'],
+                         process_started_at_utc_ticks=observation['root_process_started_at_utc_ticks']))]
+    releases = [dict(release_id='host-resource-1', completion_receipt={'host_release': release})]
+    writer = validate_writer_completion(writers_stopped=True, expected_operation_ids=('trace_assembly_particles',),
+                                        operations=operations, resource_releases=releases)
+    with closing(sqlite3.connect(context.host_state_path.resolve().as_uri() + '?mode=ro', uri=True)) as db:
+        row = db.execute('SELECT document FROM state WHERE id=1').fetchone()
+    host = json.loads(row[0]) if row else None
+    if (not isinstance(host, dict) or host.get('schema_version') != 1 or not isinstance(host.get('records'), list)
+            or any(item.get('token') == release['token'] for item in host['records'])):
+        raise ValueError('trace recovery host token active or unavailable')
+    if (result.get('execution_request') != str(request_path)
+            or request['paths']['artifact_root'] != str(context.workspace / 'artifacts')
+            or request['paths']['host_resource_state_path'] != str(context.host_state_path)
+            or request['paths']['execution_root'] != str(context.execution_root)):
+        raise ValueError('trace recovery context differs')
+    capacity = _json(root / 'logs/capacity_session.json')
+    if (capacity.get('status') != 'active' or capacity.get('owner') != 'run-artifact-workflow:instrument_assembly:' + root.name
+            or capacity.get('artifact_root') != request['paths']['artifact_root']
+            or any(result.get('capacity_session', {}).get(k) != capacity.get(k) for k in ('owner', 'artifact_root', 'lease_id'))):
+        raise ValueError('trace recovery capacity identity differs')
+    original_roles = journal['file_roles']
+    if not isinstance(explicit_file_roles, Mapping):
+        raise ValueError('trace recovery requires explicit roles')
+    roles = {str(Path(path).resolve()): role for path, role in explicit_file_roles.items()}
+    original = {str(Path(path).resolve()): role for path, role in original_roles.items()}
+    if (len(roles) != len(explicit_file_roles) or len(original) != len(original_roles)
+            or roles != {**original, **{str(path.resolve()): 'required_evidence' for path in outputs.values()}}
+            or any(str(path.resolve()) in original for path in outputs.values())):
+        raise ValueError('trace recovery must retain original roles and add only the five outputs')
+    actual = {str(path.resolve()) for path in root.rglob('*') if path.is_file()}
+    if any(path.is_symlink() for path in root.rglob('*')):
+        raise ValueError('trace recovery does not accept symbolic links')
+    if actual - set(original) != {str(path.resolve()) for path in outputs.values()}:
+        raise ValueError('trace recovery actual undeclared files differ')
+    if not {str(Path(path).resolve()) for path in config['inputs'].values()} <= set(original):
+        raise ValueError('trace recovery original input role missing')
+    model = request['payload']['plan']['background']['model']
+    if original.get(str(Path(model['path']).resolve())) != 'solver_native_binary':
+        raise ValueError('trace recovery borrowed model role differs')
+    source_refs = request['capacity']['source_references']
+    if not isinstance(source_refs, list) or not source_refs:
+        raise ValueError('trace recovery requires original field references')
+    for ref in source_refs:
+        verify_record('trace recovery original field manifest', ref['manifest_record'])
+    for state in ('background', 'on'):
+        source = request['payload']['plan'][state]
+        manifest_record = source['reference']['manifest']
+        if not any(ref['manifest_record'] == manifest_record for ref in source_refs):
+            raise ValueError('trace recovery field reference was not protected')
+        document = _json(Path(manifest_record['path']))
+        product = document.get('products', {}).get(source['reference']['product_id'], {})
+        if (document.get('status') != 'success' or product.get('kind') != 'field_solution'
+                or product.get('status') != 'complete' or product.get('data', {}).get('model') != source['model']
+                or source['model'] != model):
+            raise ValueError('trace recovery borrowed model producer identity differs')
+    model_path = Path(model['path'])
+    if not model_path.is_file() or model_path.stat().st_size != model['bytes']:
+        raise ValueError('trace recovery borrowed model unavailable')
+    native_root = root / 'inputs/native_sources/msplatform'
+    native_paths = {str(Path(path).resolve()) for name, path in config['inputs'].items() if name.startswith('native_')}
+    source_records = role_evidence['sources']
+    if (not isinstance(source_records, Mapping) or set(source_records) != native_paths
+            or native_paths != {str(Path(p).resolve()) for p in receipt.get('guards', [])
+                                if Path(p).resolve().is_relative_to(native_root)}):
+        raise ValueError('trace recovery native source closure differs')
+    installed_root = Path(live['path']).resolve().parents[2]
+    runtime = Path(launcher.get('runtime_storage', {}).get('run_directory', ''))
+    alias = runtime.parent.parent
+    if (runtime.name != 'trace_assembly_particles' or runtime.parent.name != 'comsol_runtime'
+            or not alias.is_absolute() or alias.parent.resolve() != context.execution_root.resolve()
+            or alias.resolve(strict=True) != root):
+        raise ValueError('trace recovery execution alias differs')
+    for index, authority in enumerate([action, *request['capacity']['commitment_inputs']]):
+        verify_record(f'trace recovery authority {index}', authority)
+    with ExitStack() as guards:
+        for action_record in (action, live):
+            guards.enter_context(guarded_file_identity(
+                Path(action_record['path']), expected_bytes=action_record['bytes'],
+                expected_sha256=action_record['sha256']))
+        for name, path in outputs.items():
+            record = role_evidence['outputs'][name]
+            if (not isinstance(record, Mapping) or record.get('retention_role') != 'required_evidence'
+                    or Path(record.get('path', '')).resolve() != path.resolve()
+                    or type(record.get('bytes')) is not int or not isinstance(record.get('sha256'), str)):
+                raise ValueError('trace recovery output record differs: ' + name)
+            guards.enter_context(guarded_file_identity(path, expected_bytes=record['bytes'], expected_sha256=record['sha256']))
+        for key, record in source_records.items():
+            path = Path(key)
+            if (not isinstance(record, Mapping) or Path(record.get('path', '')).resolve() != path
+                    or record.get('retention_role') != 'required_evidence'
+                    or type(record.get('bytes')) is not int or not isinstance(record.get('sha256'), str)):
+                raise ValueError('trace recovery native source record differs')
+            guards.enter_context(guarded_file_identity(path, expected_bytes=record['bytes'], expected_sha256=record['sha256']))
+            installed = installed_root / path.relative_to(native_root)
+            guards.enter_context(guarded_file_identity(installed, expected_bytes=record['bytes'], expected_sha256=record['sha256']))
+        package = dict(artifact_run_dir=str(root), run_dir=str(alias), execution_alias=str(alias))
+        session = RunSession(context, Path(capacity['artifact_root']), root.name, request['package']['project'],
+            request['package']['mode'], package, capacity, request_path, result_path,
+            ('trace_assembly_particles',), {}, file_roles=roles, operations=operations, resource_releases=releases)
+        _require_capacity_accounted(session)
+        original_result = result_path.read_bytes()
+        original_journal = journal_path.read_bytes()
+        evidence_path = session.declare_file(root / 'results/failed_finalization_recovery.json', 'required_evidence')
+        completion_path = session.declare_file(root / 'results/execution_completion.json', 'required_evidence')
+        write_json_atomic(evidence_path, dict(schema_version=1, role='failed_finalization_recovery_evidence',
+            recovered_at_utc=datetime.now(timezone.utc).isoformat(), sources=copy.deepcopy(dict(role_evidence)),
+            role_source='original_journal_plus_explicit_five_outputs', file_roles=roles,
+            original_result_bytes_base64=base64.b64encode(original_result).decode('ascii'),
+            original_journal_bytes_base64=base64.b64encode(original_journal).decode('ascii'),
+            identity_capture_basis='after_confirmed_writer_stop_not_original_native_seal', scientific_qualification='not_granted'))
+        completion = dict(schema_version=1, role='run_artifact_workflow_completion', run_id=root.name,
+            project=request['package']['project'], execution_request=file_record(request_path, 'required_evidence'),
+            run_config=file_record(config_path, 'required_evidence'), writer_completion=writer, status='failed',
+            summary=dict(status='failed', run_id=root.name, failure_reason=failure['message']), exception=copy.deepcopy(failure),
+            output_paths=[str(evidence_path), *(str(path) for path in outputs.values())],
+            required_output_paths=[str(evidence_path), *(str(path) for path in outputs.values())],
+            retention_preserve_paths=[], manifest_extra_fields={}, file_roles=session.file_roles, package=package)
+        write_json_atomic(completion_path, completion)
+        _result(session, status='pending', stage='completion', writers_confirmed=True, resume_action='resume_finalization')
+        return _finalize(session, request, completion, completion_api=completion_api)
+
+
+def recover_failed_finalization(context: ExecutionContext, result_path: Path, *,
+                                explicit_file_roles: Mapping[str, str], role_evidence: Mapping[str, Any],
+                                completion_api: Callable[[], Any] | None = None) -> dict[str, Any]:
+    """Dispatch only the original basis failure or explicit stopped trace failure."""
+    result = _json(Path(result_path))
+    root = Path(result['run_directory'])
+    request = _json(root / 'inputs/execution_request.json')
+    implementation = (_recover_failed_trace_finalization if request.get('payload', {}).get('action') == 'trace_assembly_particles'
+                      else _recover_failed_basis_finalization)
+    return implementation(context, result_path, explicit_file_roles=explicit_file_roles,
+                          role_evidence=role_evidence, completion_api=completion_api)
