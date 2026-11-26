@@ -1074,3 +1074,22 @@ native_evidence与科学依赖边界联合21 PASS（10.349s），无新科学sol
 
 本单元补的是同一生命周期真实attempt证明，不声明整个BA09已通过；商业原生跨阶段/合格缓存自动回收、
 缺批局部重算仍需实际链对账。当前运行中的398ba7b0安装快照未被修改，之后最终发行需包含本修复。
+
+### B SIMION 实际几何失败后的工程限额修正
+
+398ba7b0已安装CLI真实run `20261127_025726__build__simion__geometry-23e1b95e6a77` 在operation3退出1：
+`build_detector_variant.lua` 原公式 nx×ny×nz×8×3.25/1024² 给165×165×126探测器PA集合估算85.057354MiB，
+而两份示例Study显式detector.max_mib=64。不是host工程监测强停，resource_budget_exceeded=false，
+owner已failed/writers_stopped=true/host released；未Refine/Fly。
+
+新增工程选择采用既有oaTOF参考builder的128MiB限额；两示例只改此max_mib与TOML Study SHA，
+测试按原字节替回64可还原原Study SHA，证明网格、几何、source、N、pulse、时钟和精度未改变。
+`downstream.compile_downstream_specs` 对split的已推导真实网格提前执行同一Lua估算，
+不放宽Lua校验、不改宿主准入。64与估算相邻更小值在纯预检拒绝，恰好估算/128通过。
+split_detector_budget/native_workflow/split_tof_simion 12 PASS（5.776s），相关Ruff PASS。
+此选择为本轮新增工程修正，不是原评阅同意或物理变更；下一安装候选须真实重跑。
+
+并行COMSOL rawrun `20261127_025800__sim__comsol__pulse-363a967be681` 已原生启动，
+bootstrap在CPT边界集合互斥/完备断言失败（trace_assembly_particles.m:60），无粒子结果；
+owner已failed、writers_stopped=true、exit1、host released、无workflow lease。
+实际集合调查继续，不能宣称CPT通过，也不能删除严格物理校验来凑绿。

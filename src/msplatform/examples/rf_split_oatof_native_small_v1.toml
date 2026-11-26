@@ -6,7 +6,7 @@ field_assembly_strategy = "native_domain_composition"
 particle_field_coupling = "external_given_field"
 [study]
 path = "rf_split_oatof_native_small_v1.json"
-sha256 = "b060fb4454fc5cccffc463e8d8a014e4839b7950c7a6b1199b5394d3154626fb"
+sha256 = "6a47659e2fd87db1359f168cbd5795e34b72720e9736bb541c8dfdafb20b59d1"
 [field_source]
 kind = "simion_native"
 [recording]

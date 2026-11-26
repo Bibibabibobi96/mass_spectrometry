@@ -66,6 +66,11 @@ def compile_downstream_specs(resolved: dict, *, split: bool = False) -> tuple[di
     detector_body = physical["simion"]["detector_body"]
     domains = derive_simion_instances(geometry=g, coordinate=resolved["coordinate_convention"], build=b, marker=m, physical_detector=detector_body, include_accelerator=not split)
     by_role = {("flight_tube" if d["role"]=="flight_tube_shield" else d["role"]):d for d in domains}
+    # Match build_detector_variant.lua:52-59 on the already derived native grid.
+    detector = by_role['detector']
+    estimated_mib = detector['nx'] * detector['ny'] * detector['nz'] * 8 * 3.25 / 1024**2
+    if split and estimated_mib > b['detector']['max_mib']:
+        raise ValueError(f"estimated detector PA set {estimated_mib:.6f} MiB exceeds declared max_mib {b['detector']['max_mib']:.6f}")
     specs = []
     for role in ("flight_tube", "reflectron", "detector"):
         mesh = b[role]

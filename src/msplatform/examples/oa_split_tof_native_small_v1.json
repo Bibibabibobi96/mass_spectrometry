@@ -228,7 +228,7 @@
         },
         "detector": {
           "margin_xy_mm": 1.0,
-          "max_mib": 64.0
+          "max_mib": 128.0
         }
       },
       "detector_marker": {

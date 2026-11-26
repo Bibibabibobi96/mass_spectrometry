@@ -76,6 +76,10 @@ class SplitTofSimionTests(unittest.TestCase):
                       "components_resolved": {"oa": oa.resolved_design, "tof": tof.resolved_design}}
             # Original frozen coordinates differ at the upper face by one ULP.
             original_numerics = examples.load_example("rf_oatof_functional_v1")._document["numerics"]["geometry"]
+            # The existing detector grid forecasts 85.057 MiB; admit the same
+            # geometry under an explicit 128 MiB engineering budget.
+            original_numerics['geometry_build']['detector']['max_mib'] = 128.
+            numerics['geometry_build']['detector']['max_mib'] = 128.
             original_result = compile_geometry(inputs, numerics=original_numerics)
             self.assertEqual(original_result.frontend_geometry["numerical_domains"]["parent"]["dimensions"],
                              {"nx": 118, "ny": 76, "nz": 3201})
