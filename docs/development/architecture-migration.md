@@ -824,3 +824,67 @@ mass_scan定向5项及Ruff PASS，含单物种、不等N、同mass +1/+2、权�
 COMSOL后续工程probe（WORKTREE源）固定几何/5mm mesh实际6,277,920元素；已知5m工程守卫在求场前拒绝，
 run `20261127_013605__sim__comsol__pulse-basis-baa1c658928b`，peak快照约4,927,029,248 B，
 owned_scope_unknown限制仍保留。没有OFF/ON解，没有CPT；mesh元素不是节点或DOF，不拿默认二阶推断冒实测。
+
+
+### B4 当前接线与原生运行恢复入口（继续Goal）
+
+当前已提交/推送到 `7b48a0fe`，前一读取保护提交为 `d0c7cbbf`，未合并主线。
+原有artifacts保留。以下是进行中事实，不作为批次完成：
+
+- Agent3单worker真实host prelaunch ACK/worker登记/持久completion已冻结；父controller被杀仍保护，
+  正常/非零退出/登记前死亡/nonce错拒绝均实际小进程测试；新增public recover_controls自动重读原私有work回执，
+  recover_interrupted_runs可收尾，坏回执原因可查询且保护保留。Store19 PASS；native首次8/9的唯一错误文案断言已修，
+  对该真实10.600s用例单独重验PASS，另一登记前死亡用例PASS，不重复无关完整suite。
+  PS现在即便有Python immutable_input_session仍自行持原source防删句柄；真实父死后源PA不能unlink，worker结束后可删。
+  sourceguard/前端field精确读输入已补，working/refine私有写目标不误加immutable。
+  原生group尚失败关闭，未验group副本留工作区外.tools/native-group-wip-20261127，不能把单worker外推group。
+- Agent2/5双基场适配现使用两个真实OFF/ON解，Eoff+gate*(Eon−Eoff)保留常开反射场；共享reader验证同MPH的两个
+  独立solution/dataset/request/coldread/mesh/vacuum/真实producer product，18项软件合同PASS。
+  五槽世界background PA未闭合，public scalar admission仍拒绝，不让PA联集之外静默零场；Agent4正在复用原neutral机制。
+  split模型native_drive_rows的JSON顺序漂移已规范排序并重编译精确等值，尚待独立提交。
+- 新native_tracing同一CLI/run_recipe的schema2公共执行仍WORKTREE，单次作者bytes/冻结Study/clock、分阶段Store小引用缓存、
+  原owner exact product文件guard、全母群schema2重读、多物种批及分析准入已接，18项workflow/mass/reference/sourceguard联合PASS。
+  增强preflight实际走tracking planner，拒绝无RF装配中的RF专属数值；新增cache kind必填/完整性/clock资源/原生资源字节身份。
+  新CLI还没有真实完成run，COMSOL helper已新增且正在整合；不宣称BA02/06/09/12/15全通过。
+- COMSOL独立几何与未求解模型真实冷开PASS；100万/500万工程mesh上限两次均在Compute前停止，第二次实测6,277,920元素。
+  固定5mm网格、阶次/BVP不变的7m上限新run `20261127_014602__sim__comsol__pulse-basis-82a20bcf1fb3` 已通过mesh守卫，
+  mesh_facts独立事实文件先关闭保存，仍在求场。最新单点COMSOL14.24GiB/MATLAB1.26GiB/系统可用8.16GiB，接近16GiB树预算，
+  原owner保留守卫；曾出现owned_scope_unknown，未证明全程资源观测完备，不扩大预算或伪称求场成功。
+  若明确越限且owner未行动，须沿受管取消/drain保留失败；不得裸杀Python后声称native已停。
+
+恢复后先核对上述7m native实际状态/证据与当前Git差异，接Agent3冻结单元、COMSOL公共helper，补完整世界carrier再跑SIMION。
+不重新做全仓P4，不重复已完成A/B0，不自动启动C/M06–M08。后续CLOC按实际提交累计（上一完整表至70910017）。
+
+
+### 预算语义纠正与单worker原生生命周期单元
+
+Agent0此前将16GiB工程工作集观测预算误认为硬停止条件，指示过早结束7m run。
+已重新完整核对 DEVELOPMENT_STANDARDS 6节与 REPOSITORY_OPERATIONS 资源观察：预算越限只告警，
+健康原生进程应自然完成，只有中央策略确认持续物理危险才可危险停止。原资源代码和期望测试没有改成硬停。
+`20261127_014602__sim__comsol__pulse-basis-82a20bcf1fb3` 实际由Agent人为中断，
+owner随后确认writers_stopped/正式host release；17,417,613,312B峰值是同时观测值，
+但该越工程预算不构成模型/solver失败或发布禁令。旧记录原样保留，不能改写为物理失败或PASS。
+本次没有合格field，无CPT；未确认recovery不用于伪checkpoint。纠正性同网格/BVP/阶次/精度新run
+`20261127_015508__sim__comsol__pulse-basis-fd136b758ffa` 已启动，不因预算告警/unknown杀健康solver。
+
+本单元实现入口：storage/store.py 的claim_token/bind_native_controls/record_native_worker/complete_native_controls，
+execution/native_artifact_controls.py 的scope与真实持久receipt验证，原processes/process_owner/resources以及
+RunSession的明确operation_id接线。native启动前原host grant+nonce ACK、启动后登记确切creation identity并ACK；
+controller死亡不放行未启动工作，已启动工作保护延续至原owner/drain/非inherited release正式证明。
+原work中留host/ACK/worker/receipt事实；public recover_controls/interrupted_runs自动只查已登记私有work并幂等对账，
+坏回执不释放、native_recovery_issues可查询。complete不删活holder跨stage控制，holder最终退出/OS token才释放。
+没有超时/裸PID失联判死，没有新调度器/daemon/第二资产owner。
+
+PS即便接到Python immutable session，也自行用原Protect-ImmutablePaSource持精确输入防写/防删句柄，
+到native后代drain结束才释放；field_worker与field workbench补全既有owner的真实source输入清单。
+原始raw/parent保护，工作私有PA保持可写。controller正常跨阶段由已提交guard_native_source补足。
+
+验证：Store19 PASS（5.366s）；native单worker9项首次8 PASS，仅坏nonce文案断言过严失败，
+修正后对应真实controller强杀/自动恢复10.600s用例PASS；另一登记前死亡自动恢复已PASS。
+此前单worker/Store/原process联合29 PASS（48.538s）、非零exit3真实例13.482s PASS；
+最新field输入+session父死源防删+future geometry四项12.235s PASS；相关Ruff PASS。
+独立静态审查未发现被guard源PA同阶段原生写回，未把静态审查当Refine/Fly证据。
+此前直接field suite无enclosing GATE且文件编辑中得到1 ERROR，不作为当前验收；必要GATE后续相称补跑。
+
+限制：本提交只单worker和原生文件生命周期，scope下group明确未实现，副本保留外层.tools待下一主题；
+不是BA09全部闭合。SIMION真实Refine/Fly、COMSOL真field/CPT、wheel/sdist新链离仓仍待完成。

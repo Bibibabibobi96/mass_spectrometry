@@ -328,11 +328,29 @@ def execute_fields(session, *, model_reference: Mapping, numerics: dict, limits:
     for path in plan.declared_outputs:
         session.declare_file(path, 'required_evidence' if Path(path).suffix == '.fly2' else 'solver_native_binary')
         Path(path).parent.mkdir(parents=True, exist_ok=True)
+    # The workbench consumes complete carrier families, not just PA0. Freeze
+    # their existing identities so the process owner can retain delete guards
+    # independently of this Python controller's lifetime.
+    workbench_inputs = [*carriers.values(), *owned_responses]
+    for asset in downstream['assets']:
+        workbench_inputs.extend([asset['carrier_record'], *asset['family_records']])
+        if asset.get('response_records') is not None:
+            workbench_inputs.extend(row['record'] for row in asset['response_records'])
+    workbench_inputs.extend(record for name, record in records.items() if name.startswith(
+        ('field_structural_seed_', 'field_spec_', 'resource_build_field_iob.lua',
+         'resource_iob_core.lua', 'resource_native_run_path.lua')))
+    unique_inputs = {}
+    for record in workbench_inputs:
+        key = str(Path(record['path']).resolve())
+        if key in unique_inputs and any(unique_inputs[key][name] != record[name] for name in ('bytes', 'sha256')):
+            raise ValueError('field workbench input has conflicting frozen identities: ' + key)
+        unique_inputs[key] = record
     for operation in plan.operations:
         arguments = [str(frozen/Path(value).name) if Path(value).name in FIELD_RESOURCES else value for value in operation['arguments']]
         argv = apply_native_io_mode([str(executable),*arguments], allow_asynchronous_io=allow_asynchronous_io)
         session.run_process(operation['operation_id'], executable=executable, arguments=argv[1:],
-            role=operation['role'], stage=operation['stage'], limits=limits)
+            role=operation['role'], stage=operation['stage'], limits=limits,
+            immutable_input_records=list(unique_inputs.values()))
         ordinal = session.expected_operation_ids.index(operation['operation_id'])+1
         if operation['success_marker'].encode() not in (session.log_dir/f'operation_{ordinal:04d}.stdout.log').read_bytes():
             raise ValueError('field workbench actual completion marker is absent')

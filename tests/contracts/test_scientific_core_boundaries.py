@@ -104,7 +104,12 @@ def _target_error(target: str, dependencies: set[str], source_domain: str, sourc
                 and parts[2] not in COMPONENT_INFRASTRUCTURE):
             return f"assembly imports provider-specific physics instead of neutral component data: {target}"
         if source_module == "msplatform.storage.store" and target in {
-                "msplatform.execution.file_lock", "msplatform.execution.file_lock.process_file_lock"}:
+                "msplatform.execution.file_lock", "msplatform.execution.file_lock.process_file_lock",
+                "msplatform.execution.native_artifact_controls",
+                "msplatform.execution.native_artifact_controls.validate_host_binding",
+                "msplatform.execution.native_artifact_controls.validate_host_worker",
+                "msplatform.execution.native_artifact_controls.validate_native_completion",
+                "msplatform.execution.native_artifact_controls.reconcile_native_receipt"}:
             return None
         allowed = DOMAIN_IMPORTS.get(source_domain, set())
         if source_module == "msplatform.workflows.reference_tracing":

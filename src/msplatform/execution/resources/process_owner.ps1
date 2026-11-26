@@ -9,9 +9,34 @@ if($windowStyle-isnot[string]-or@('Hidden','Normal')-cnotcontains$windowStyle){t
 . (Join-Path $PSScriptRoot 'host_execution_lease.ps1') -HostContext $request.context
 . (Join-Path $PSScriptRoot 'resource_process_support.ps1')
 $lease=$null;$failure=$null;$observation=$null;$release=$null
+$native=$null;$bindingId=$null;$parentStarted=$null
+function Write-NativeControlJson($Path,$Value){
+  $temporary="$Path.tmp"
+  [IO.File]::WriteAllText($temporary,($Value|ConvertTo-Json -Depth 30 -Compress),[Text.UTF8Encoding]::new($false))
+  Move-Item -LiteralPath $temporary -Destination $Path -Force
+}
+function Test-NativeParentAlive {
+  try{$p=Get-Process -Id ([int]$native.parent_pid) -ErrorAction Stop
+    return $p.StartTime.ToUniversalTime().Ticks-eq$parentStarted
+  }catch{return $false}
+}
 $guards=[Collections.Generic.List[string]]::new()
 try{
   $lease=Enter-HostExecutionLease -Role $request.role -Stage $request.stage -RunId $request.run_id
+  if($request.ContainsKey('native_artifact')){
+    $native=$request.native_artifact
+    if($lease.inherited){throw 'Protected native operation requires its own non-inherited host owner.'}
+    if($native.nonce-cnotmatch'^[a-f0-9]{32}$'){throw 'Invalid native control nonce.'}
+    $parentStarted=(Get-Process -Id ([int]$native.parent_pid) -ErrorAction Stop).StartTime.ToUniversalTime().Ticks
+    Write-NativeControlJson $native.host @{nonce=$native.nonce;token=$lease.token;inherited=$false}
+    while(-not(Test-Path -LiteralPath $native.ack -PathType Leaf)){
+      if(-not(Test-NativeParentAlive)){throw 'Native controller exited before launch authorization.'}
+      Start-Sleep -Milliseconds 30
+    }
+    $ack=Get-Content -LiteralPath $native.ack -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+    if($ack.nonce-cne$native.nonce-or-not$ack.binding_id){throw 'Native launch authorization differs.'}
+    $bindingId=[string]$ack.binding_id
+  }
   $sessionProtected=$request.ContainsKey('immutable_input_session')
   $protected=($request.ContainsKey('immutable_input_records')-and@($request.immutable_input_records).Count-gt0)-or$sessionProtected
   if($sessionProtected){
@@ -32,7 +57,8 @@ try{
     }
     $leaseState=& $request.context.python_executable -I -B -c 'import sys;from pathlib import Path;sys.path.insert(0,str(Path(sys.argv[4]).parents[2]));from msplatform.execution.capacity_protection import load_capacity_protection_leases;view=load_capacity_protection_leases(Path(sys.argv[1]));matches=[row for row in view["audit"] if row.get("lease_id")==sys.argv[2] and row.get("status")=="active" and row.get("owner")==sys.argv[3]];print("ACTIVE" if len(matches)==1 else "INVALID")' $credential.artifact_root $credential.lease_id $credential.lease_owner $PSScriptRoot
     if($LASTEXITCODE-ne0-or$leaseState-cne'ACTIVE'){throw 'Immutable input session capacity lease is not active.'}
-  }elseif($protected){
+  }
+  if($request.ContainsKey('immutable_input_records')-and@($request.immutable_input_records).Count-gt0){
     . (Join-Path $PSScriptRoot 'payload_file_support.ps1') -UnbufferedIdentityReader {
       param([string]$Source,[int64]$Length)
       $digest=& $request.context.python_executable -I -B -c 'from msplatform.io.file_identity import file_sha256_unbuffered;import sys;print(file_sha256_unbuffered(sys.argv[1]))' $Source
@@ -48,11 +74,28 @@ try{
     }
   }
   $limits=if($null-eq$request.limits){$null}else{[pscustomobject]$request.limits}
+  $onStarted=$null
+  if($null-ne$native){
+    $onStarted={param($Process,$Started)
+      $null=Register-HostResourceProcess -Lease $lease -ProcessId $Process.Id
+      $registered=[int64]$lease.registered_work_processes[[string]$Process.Id]
+      Write-NativeControlJson $native.worker @{nonce=$native.nonce;binding_id=$bindingId;
+        process_id=[int]$Process.Id;started_at_utc_ticks=$registered}
+      while(-not(Test-Path -LiteralPath $native.'worker-ack' -PathType Leaf)){
+        if(-not(Test-NativeParentAlive)){break}
+        Start-Sleep -Milliseconds 30
+      }
+      if(Test-Path -LiteralPath $native.'worker-ack' -PathType Leaf){
+        $workerAck=Get-Content -LiteralPath $native.'worker-ack' -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+        if($workerAck.nonce-cne$native.nonce-or$workerAck.binding_id-cne$bindingId){throw 'Native worker acknowledgement differs.'}
+      }
+    }
+  }
   $observation=Invoke-ResourceBudgetedProcess -Limits $limits -RunDir $request.run_directory `
     -UsagePath $request.usage_path -FilePath $request.executable -ArgumentList @($request.argument_line) `
     -WorkingDirectory $request.working_directory -RedirectStandardOutput $request.stdout_path `
-    -RedirectStandardError $request.stderr_path -Environment $request.environment -WindowStyle $windowStyle -RequireImmutableInputDrain:$protected `
-    -ProcessObservationMetadata @{run_id=$request.run_id;role=$request.role;stage=$request.stage}
+    -RedirectStandardError $request.stderr_path -Environment $request.environment -WindowStyle $windowStyle -RequireImmutableInputDrain:($protected-or$null-ne$native) `
+    -ProcessObservationMetadata @{run_id=$request.run_id;role=$request.role;stage=$request.stage} -OnStarted $onStarted
 }catch{
   $failure=@{type=$_.Exception.GetType().FullName;message=$_.Exception.Message;data=@{}}
   foreach($key in $_.Exception.Data.Keys){$failure.data[[string]$key]=$_.Exception.Data[$key]}
@@ -70,6 +113,9 @@ try{
   }
 }
 $envelope=@{observation=$observation;error=$failure;host_release=$release}
+if($null-ne$native-and$bindingId){
+  Write-NativeControlJson $native.receipt @{nonce=$native.nonce;binding_id=$bindingId;receipt=$envelope}
+}
 [Console]::Out.WriteLine('EXECUTION_PROCESS_RESULT='+($envelope|ConvertTo-Json -Depth 24 -Compress))
 if($null-ne$failure-or$null-eq$release-or$release.error-or
   (-not$release.inherited-and($null-eq$release.result-or$release.result.status-ne'released'))){exit 1}

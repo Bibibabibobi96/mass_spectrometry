@@ -5,6 +5,9 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import threading
+import time
+from uuid import uuid4
 from typing import Any, Mapping, Sequence
 
 from msplatform.execution.context import ExecutionContext
@@ -159,6 +162,7 @@ def run_observed_process(
     immutable_input_records: Sequence[Mapping[str, Any]] = (),
     immutable_input_session: Mapping[str, Any] | None = None,
     window_style: str = "Hidden",
+    operation_id: str | None = None,
 ) -> dict[str, Any]:
     """Execute one explicit process under the unchanged owner, without a timeout.
 
@@ -171,11 +175,23 @@ def run_observed_process(
         stderr_path=stderr_path, usage_path=usage_path, role=role, stage=stage, run_id=run_id,
         limits=limits, environment=environment, immutable_input_records=immutable_input_records,
         immutable_input_session=immutable_input_session, window_style=window_style)
+    from msplatform.execution.native_artifact_controls import current_native_artifact_scope
+    scope = current_native_artifact_scope()
+    if scope is not None:
+        if not operation_id:
+            raise ValueError("native artifact protection requires an explicit operation ID")
+        request["native_artifact_operation_id"] = operation_id
     return _invoke_process_owner(context, request, 'process_owner.ps1', _interpret_process_result)
 
 
 def _invoke_process_owner(context, request, resource_name, interpret):
     """Use the same healthy-owner transport/drain for single and group calls."""
+    from msplatform.execution.native_artifact_controls import current_native_artifact_scope
+    scope = current_native_artifact_scope()
+    if scope is not None:
+        if resource_name != "process_owner.ps1":
+            raise ValueError("native artifact protection for process groups is not implemented")
+        return _invoke_native_artifact_owner(context, request, scope, interpret, resource_name)
     command = [str(context.powershell_executable), "-NoLogo", "-NoProfile", "-NonInteractive",
                "-File", str(resource_path(resource_name))]
     child_environment = dict(os.environ)
@@ -215,6 +231,96 @@ def _invoke_process_owner(context, request, resource_name, interpret):
         for error in close_errors[1:]:
             failure.add_note(f"Execution bridge stream close secondary: {error}")
         raise failure
+    return receipt
+
+
+def _invoke_native_artifact_owner(context, request, scope, interpret, resource_name):
+    """Handshake with the existing process owner before permitting native launch."""
+    from msplatform.execution.native_artifact_controls import acquired_host_owner
+    work = Path(scope["work_directory"])
+    if not work.is_absolute() or not work.is_dir():
+        raise ValueError("native control work directory must be an existing absolute directory")
+    nonce = uuid4().hex
+    prefix = work / ("native-control-" + nonce)
+    paths = {name: str(prefix.with_suffix("." + name + ".json")) for name in ("host", "ack", "worker", "worker-ack", "receipt")}
+    def publish(name, data):
+        path = Path(paths[name])
+        temporary = path.with_suffix(path.suffix + ".tmp")
+        temporary.write_text(json.dumps(data), encoding="utf-8")
+        os.replace(temporary, path)
+    request = dict(request, native_artifact={"nonce": nonce, "parent_pid": os.getpid(), **paths})
+    command = [str(context.powershell_executable), "-NoLogo", "-NoProfile", "-NonInteractive",
+               "-File", str(resource_path(resource_name))]
+    environment = dict(os.environ, MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(context.host_state_path),
+                       SIMULATION_PYTHON_EXE=str(context.python_executable))
+    process = subprocess.Popen(command, cwd=resource_path(resource_name).parent, env=environment,
+                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    outcome = {}
+    def communicate():
+        try:
+            outcome["result"] = process.communicate(json.dumps(request, ensure_ascii=False, allow_nan=False).encode("utf-8"))
+        except BaseException as error:
+            outcome["error"] = error
+    thread = threading.Thread(target=communicate, daemon=True)
+    thread.start()
+    binding_id = None
+    worker_recorded = False
+    failure = None
+    try:
+        while thread.is_alive():
+            if binding_id is None and Path(paths["host"]).is_file():
+                host = json.loads(Path(paths["host"]).read_text(encoding="utf-8"))
+                if host.get("nonce") != nonce or host.get("inherited") is not False:
+                    raise ValueError("native host handshake identity differs or is inherited")
+                owner = acquired_host_owner(context.host_state_path, host["token"])
+                binding_id = scope["store"].bind_native_controls(scope["run_id"], host_state_path=context.host_state_path,
+                    host_token=host["token"], host_owner=owner, operation_id=request["native_artifact_operation_id"],
+                    claim_ids=scope["claim_ids"], reservation_ids=scope["reservation_ids"])
+                publish("ack", {"nonce": nonce, "binding_id": binding_id})
+            if binding_id and not worker_recorded and Path(paths["worker"]).is_file():
+                worker = json.loads(Path(paths["worker"]).read_text(encoding="utf-8"))
+                if worker.get("nonce") != nonce or worker.get("binding_id") != binding_id:
+                    raise ValueError("native worker handshake identity differs")
+                scope["store"].record_native_worker(binding_id, process_id=worker["process_id"],
+                    started_at_utc_ticks=worker["started_at_utc_ticks"])
+                worker_recorded = True
+                publish("worker-ack", {"nonce": nonce, "binding_id": binding_id})
+            time.sleep(0.02)
+    except BaseException as error:
+        failure = error
+    if failure is not None:
+        # Failure before launch denies the ACK; failure after launch leaves the
+        # binding active. The owner drains the native process before returning.
+        if binding_id is None:
+            publish("ack", {"nonce": nonce, "error": str(failure)})
+        publish("worker-ack", {"nonce": nonce, "error": str(failure)})
+    thread.join()
+    if failure is not None:
+        raise failure
+    if "error" in outcome:
+        raise outcome["error"]
+    output, errors = outcome["result"]
+    interpretation_failure = None
+    try:
+        receipt = interpret(output, errors, process.returncode)
+    except ProcessExecutionError as error:
+        interpretation_failure = error
+        receipt = error.receipt
+    if binding_id is None or not worker_recorded:
+        raise ValueError("native owner did not complete the protected handshake")
+    durable = json.loads(Path(paths["receipt"]).read_text(encoding="utf-8"))
+    if durable.get("nonce") != nonce or durable.get("binding_id") != binding_id or durable.get("receipt") != receipt:
+        raise ValueError("native durable receipt does not match the owner response")
+    observation = receipt["observation"]
+    completion = {"writers_stopped": True, "operations": [{"operation_id": request["native_artifact_operation_id"],
+        "resource_release_id": "host", "observation": {"exit_confirmed": True, "returncode": observation["exit_code"],
+        "process_id": observation["root_process_id"], "process_started_at_utc_ticks": observation["root_process_started_at_utc_ticks"]}}],
+        "resource_releases": [{"release_id": "host", "completion_receipt": {"host_release": receipt["host_release"]}}]}
+    scope["store"].complete_native_controls(binding_id, completion=completion)
+    for name in ("host", "ack", "worker", "worker-ack"):
+        Path(paths[name]).unlink(missing_ok=True)
+    if interpretation_failure is not None:
+        raise interpretation_failure
     return receipt
 
 

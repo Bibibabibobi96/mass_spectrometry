@@ -95,6 +95,7 @@ class ArtifactStore:
         self.safety = safety_bytes
         self._owned_work: set[Path] = set()
         self._active_run_writers: set[str] = set()
+        self._active_control_ids: set[str] = set()
         with self._db() as db:
             db.executescript("""
             CREATE TABLE IF NOT EXISTS assets(id TEXT PRIMARY KEY, key TEXT NOT NULL,
@@ -112,6 +113,15 @@ class ArtifactStore:
             CREATE TABLE IF NOT EXISTS run_execution(id TEXT PRIMARY KEY, path TEXT NOT NULL, work TEXT NOT NULL,
               status TEXT NOT NULL, reason TEXT);
             CREATE TABLE IF NOT EXISTS run_writers(run_id TEXT PRIMARY KEY, token TEXT NOT NULL UNIQUE);
+            CREATE TABLE IF NOT EXISTS native_bindings(id TEXT PRIMARY KEY, run_id TEXT NOT NULL,
+              host_token TEXT NOT NULL, host_state_path TEXT NOT NULL, host_owner TEXT NOT NULL,
+              host_file_id TEXT NOT NULL,
+              operation_id TEXT NOT NULL, worker_pid INTEGER,
+              worker_started INTEGER, state TEXT NOT NULL, completion TEXT);
+            CREATE TABLE IF NOT EXISTS native_binding_controls(binding_id TEXT NOT NULL,
+              control_id TEXT NOT NULL, kind TEXT NOT NULL, PRIMARY KEY(binding_id,control_id));
+            CREATE TABLE IF NOT EXISTS native_recovery_issues(binding_id TEXT NOT NULL,
+              receipt_path TEXT NOT NULL, reason TEXT NOT NULL, PRIMARY KEY(binding_id,receipt_path));
             CREATE TABLE IF NOT EXISTS gc_lock(id INTEGER PRIMARY KEY CHECK(id=1));
             """)
 
@@ -206,9 +216,11 @@ class ArtifactStore:
         claim_id = uuid4().hex
         with self._control_lock(claim_id):
             identity, path = self._put_asset(kind, key, source_dir, retention=retention, claim_id=claim_id)
+            self._active_control_ids.add(claim_id)
             try:
                 yield identity, path
             finally:
+                self._active_control_ids.discard(claim_id)
                 self._release_claim(claim_id)
 
     def find_asset(self, key: str) -> tuple[str, Path] | None:
@@ -243,8 +255,11 @@ class ArtifactStore:
 
     def _release_claim(self, claim_id: str) -> None:
         with self._transaction() as db:
-            db.execute("DELETE FROM claims WHERE id=?", (claim_id,))
-            db.execute("DELETE FROM controls WHERE id=?", (claim_id,))
+            bound = db.execute("""SELECT 1 FROM native_binding_controls c JOIN native_bindings b
+                ON b.id=c.binding_id WHERE c.control_id=? AND b.state='active'""", (claim_id,)).fetchone()
+            if not bound:
+                db.execute("DELETE FROM claims WHERE id=?", (claim_id,))
+                db.execute("DELETE FROM controls WHERE id=?", (claim_id,))
 
     def _control_lock(self, identity: str):
         return process_file_lock(self.root / "control" / (identity + ".lock"), timeout_seconds=0)
@@ -252,6 +267,12 @@ class ArtifactStore:
     @contextmanager
     def claim(self, asset_id: str) -> Iterator[Path]:
         """Protect a ready asset from GC until explicitly released, with no TTL expiry."""
+        with self.claim_token(asset_id) as (_, path):
+            yield path
+
+    @contextmanager
+    def claim_token(self, asset_id: str) -> Iterator[tuple[str, Path]]:
+        """Hold an asset claim and expose its identity for native binding."""
         claim_id = uuid4().hex
         with self._control_lock(claim_id):
             with self._transaction() as db:
@@ -260,9 +281,11 @@ class ArtifactStore:
                     raise KeyError(asset_id)
                 db.execute("INSERT INTO claims VALUES(?,?)", (claim_id, asset_id))
                 db.execute("INSERT INTO controls VALUES(?,?,?)", (claim_id, "claim", os.getpid()))
+            self._active_control_ids.add(claim_id)
             try:
-                yield self.root / row[0]
+                yield claim_id, self.root / row[0]
             finally:
+                self._active_control_ids.discard(claim_id)
                 self._release_claim(claim_id)
 
     def pin(self, asset_id: str, pinned: bool = True) -> None:
@@ -270,6 +293,83 @@ class ArtifactStore:
             changed = db.execute("UPDATE assets SET pinned=? WHERE id=? AND state='ready'", (int(pinned), asset_id)).rowcount
             if not changed:
                 raise KeyError(asset_id)
+
+    def bind_native_controls(self, run_id: str, *, host_state_path: Path, host_token: str,
+                             host_owner: dict, operation_id: str, claim_ids: tuple[str, ...],
+                             reservation_ids: tuple[str, ...]) -> str:
+        """Bind held controls to an acquired host grant before permitting native launch."""
+        from msplatform.execution.native_artifact_controls import validate_host_binding
+        host = validate_host_binding(host_state_path, host_token, host_owner)
+        ids = [*claim_ids, *reservation_ids]
+        if (not isinstance(operation_id, str) or not operation_id or not claim_ids or not reservation_ids
+                or len(ids) != len(set(ids)) or not set(ids).issubset(self._active_control_ids)
+                or run_id not in self._active_run_writers):
+            raise ValueError("native binding requires this instance's active writer, claims and reservations")
+        binding_id = uuid4().hex
+        with self._transaction() as db:
+            writer = db.execute("""SELECT 1 FROM run_writers w JOIN run_execution e ON e.id=w.run_id
+                WHERE w.run_id=? AND e.status='running'""", (run_id,)).fetchone()
+            if not writer:
+                raise ValueError("native binding requires a running writer")
+            for identity, kind in [(value, "claim") for value in claim_ids] + [(value, "reservation") for value in reservation_ids]:
+                row = db.execute("SELECT kind,owner_pid FROM controls WHERE id=?", (identity,)).fetchone()
+                already = db.execute("""SELECT 1 FROM native_binding_controls c JOIN native_bindings b
+                    ON b.id=c.binding_id WHERE c.control_id=? AND b.state='active'""", (identity,)).fetchone()
+                if row != (kind, os.getpid()) or already:
+                    raise ValueError("native control identity is missing, foreign or already bound")
+            db.execute("INSERT INTO native_bindings VALUES(?,?,?,?,?,?,?,?,?,?,NULL)",
+                (binding_id, run_id, host_token, host["host_state_path"], json.dumps(host["host_owner"], sort_keys=True),
+                 json.dumps(host["host_file_id"]), operation_id, None, None, "active"))
+            db.executemany("INSERT INTO native_binding_controls VALUES(?,?,?)",
+                [(binding_id, value, "claim") for value in claim_ids]
+                + [(binding_id, value, "reservation") for value in reservation_ids])
+        return binding_id
+
+    def record_native_worker(self, binding_id: str, *, process_id: int, started_at_utc_ticks: int) -> None:
+        """Record the process owner's observed exact worker creation identity."""
+        from msplatform.execution.native_artifact_controls import validate_host_worker
+        if any(type(value) is not int or value <= 0 for value in (process_id, started_at_utc_ticks)):
+            raise ValueError("worker requires positive process and creation identities")
+        with self._db() as db:
+            row = db.execute("""SELECT host_state_path,host_token,host_owner FROM native_bindings
+                WHERE id=? AND state='active' AND worker_pid IS NULL""", (binding_id,)).fetchone()
+        if row is None:
+            raise ValueError("unknown, completed or already bound native worker")
+        validate_host_worker(Path(row[0]), row[1], json.loads(row[2]), process_id, started_at_utc_ticks)
+        with self._transaction() as db:
+            changed = db.execute("""UPDATE native_bindings SET worker_pid=?,worker_started=?
+                WHERE id=? AND state='active' AND worker_pid IS NULL""",
+                (process_id, started_at_utc_ticks, binding_id)).rowcount
+            if not changed:
+                raise ValueError("unknown, completed or already bound native worker")
+
+    def complete_native_controls(self, binding_id: str, *, completion: dict) -> bool:
+        """Release bound controls after exact existing owner completion, idempotently."""
+        from msplatform.execution.native_artifact_controls import validate_native_completion
+        with self._db() as db:
+            row = db.execute("""SELECT host_token,operation_id,worker_pid,worker_started,state,host_state_path,host_file_id
+                FROM native_bindings WHERE id=?""", (binding_id,)).fetchone()
+        if row is None:
+            raise KeyError(binding_id)
+        if row[4] == "complete":
+            return False
+        binding = dict(zip(("host_token", "operation_id", "worker_pid", "worker_started"), row[:4]))
+        binding.update(host_state_path=row[5], host_file_id=json.loads(row[6]))
+        validate_native_completion(binding, completion)
+        with self._transaction() as db:
+            current = db.execute("SELECT state FROM native_bindings WHERE id=?", (binding_id,)).fetchone()
+            if current is None:
+                raise KeyError(binding_id)
+            if current[0] == "complete":
+                return False
+            bound_ids = tuple(row[0] for row in db.execute(
+                "SELECT control_id FROM native_binding_controls WHERE binding_id=?", (binding_id,)))
+            db.execute("UPDATE native_bindings SET state='complete',completion=? WHERE id=? AND state='active'",
+                       (json.dumps(completion, sort_keys=True), binding_id))
+        # Existing holders still own their controls across later stages. Dead
+        # holders are released only by the normal per-token OS-lock recovery.
+        self._recover_controls(bound_ids)
+        return True
 
     def begin_run(self) -> tuple[str, Path]:
         """Register a queued run and its private workspace before admission."""
@@ -313,8 +413,9 @@ class ArtifactStore:
                 self._active_run_writers.discard(run_id)
                 with self._transaction() as db:
                     db.execute("""DELETE FROM run_writers WHERE run_id=? AND token=?
-                        AND EXISTS(SELECT 1 FROM run_execution WHERE id=? AND status!='running')""",
-                               (run_id, token, run_id))
+                        AND EXISTS(SELECT 1 FROM run_execution WHERE id=? AND status!='running')
+                        AND NOT EXISTS(SELECT 1 FROM native_bindings WHERE run_id=? AND state='active')""",
+                               (run_id, token, run_id, run_id))
 
     def recover_interrupted_runs(self) -> list[str]:
         """Mark unlocked pre-publication running writers failed, retaining their work.
@@ -325,7 +426,8 @@ class ArtifactStore:
         self.recover_controls()
         with self._db() as db:
             rows = db.execute("""SELECT w.run_id,w.token FROM run_writers w
-                JOIN run_execution e ON e.id=w.run_id WHERE e.status='running'""").fetchall()
+                JOIN run_execution e ON e.id=w.run_id WHERE e.status='running'
+                AND NOT EXISTS(SELECT 1 FROM native_bindings b WHERE b.run_id=w.run_id AND b.state='active')""").fetchall()
         recovered = []
         for run_id, token in rows:
             if not (self.root / "control" / (token + ".lock")).is_file():
@@ -335,8 +437,9 @@ class ArtifactStore:
                     changed = db.execute("""UPDATE run_execution SET status='failed',reason=?
                         WHERE id=? AND status='running' AND NOT EXISTS
                         (SELECT 1 FROM runs WHERE id=?) AND EXISTS
-                        (SELECT 1 FROM run_writers WHERE run_id=? AND token=?)""",
-                        ("writer interrupted before publication", run_id, run_id, run_id, token)).rowcount
+                        (SELECT 1 FROM run_writers WHERE run_id=? AND token=?) AND NOT EXISTS
+                        (SELECT 1 FROM native_bindings WHERE run_id=? AND state='active')""",
+                        ("writer interrupted before publication", run_id, run_id, run_id, token, run_id)).rowcount
                     if changed:
                         recovered.append(run_id)
             except TimeoutError:
@@ -507,12 +610,17 @@ class ArtifactStore:
                     raise OSError("insufficient physical capacity after cache collection")
                 db.execute("INSERT INTO reservations VALUES(?,?)", (reservation, peak_bytes))
                 db.execute("INSERT INTO controls VALUES(?,?,?)", (reservation, "reservation", os.getpid()))
+            self._active_control_ids.add(reservation)
             try:
                 yield reservation
             finally:
+                self._active_control_ids.discard(reservation)
                 with self._transaction() as db:
-                    db.execute("DELETE FROM reservations WHERE id=?", (reservation,))
-                    db.execute("DELETE FROM controls WHERE id=?", (reservation,))
+                    bound = db.execute("""SELECT 1 FROM native_binding_controls c JOIN native_bindings b
+                        ON b.id=c.binding_id WHERE c.control_id=? AND b.state='active'""", (reservation,)).fetchone()
+                    if not bound:
+                        db.execute("DELETE FROM reservations WHERE id=?", (reservation,))
+                        db.execute("DELETE FROM controls WHERE id=?", (reservation,))
 
     def recover_controls(self) -> list[str]:
         """Release dead token holders; every external consumer must hold its own claim.
@@ -520,16 +628,67 @@ class ArtifactStore:
         No TTL or process ancestry inference is used. Rows without a matching
         control token remain protected for manual investigation.
         """
+        self._reconcile_native_receipts()
+        return self._recover_controls(None)
+
+    def native_recovery_issues(self) -> list[dict[str, str]]:
+        """Return exact native receipt failures retained during automatic recovery."""
+        with self._db() as db:
+            rows = db.execute("SELECT binding_id,receipt_path,reason FROM native_recovery_issues ORDER BY binding_id,receipt_path").fetchall()
+        return [dict(binding_id=row[0], receipt_path=row[1], reason=row[2]) for row in rows]
+
+    def _reconcile_native_receipts(self) -> None:
+        """Inspect only each active binding's registered private work directory."""
+        from msplatform.execution.native_artifact_controls import reconcile_native_receipt
+        with self._db() as db:
+            rows = db.execute("""SELECT b.id,e.work FROM native_bindings b
+                JOIN run_execution e ON e.id=b.run_id WHERE b.state='active'""").fetchall()
+        for binding_id, work_name in rows:
+            directory = self.root / "work" / work_name
+            if directory.parent != self.root / "work":
+                continue
+            try:
+                _check_entry(directory)
+                receipts = sorted(directory.glob("native-control-*.receipt.json"))
+            except (OSError, ValueError):
+                continue
+            for receipt in receipts:
+                try:
+                    _check_entry(receipt)
+                    content = json.loads(receipt.read_text(encoding="utf-8"))
+                    if not isinstance(content, dict) or not isinstance(content.get("binding_id"), str):
+                        raise ValueError("native receipt lacks its binding identity")
+                    if content.get("binding_id") != binding_id:
+                        continue
+                    reconcile_native_receipt(self, receipt)
+                except (OSError, ValueError, KeyError, TypeError, sqlite3.Error) as error:
+                    with self._transaction() as db:
+                        if db.execute("SELECT 1 FROM native_bindings WHERE id=? AND state='active'", (binding_id,)).fetchone():
+                            db.execute("""INSERT INTO native_recovery_issues VALUES(?,?,?)
+                                ON CONFLICT(binding_id,receipt_path) DO UPDATE SET reason=excluded.reason""",
+                                (binding_id, str(receipt.relative_to(self.root)), str(error)))
+                    continue
+                with self._transaction() as db:
+                    db.execute("DELETE FROM native_recovery_issues WHERE binding_id=? AND receipt_path=?",
+                               (binding_id, str(receipt.relative_to(self.root))))
+
+    def _recover_controls(self, selected: tuple[str, ...] | None) -> list[str]:
         with self._db() as db:
             controls = db.execute("SELECT id,kind FROM controls").fetchall()
         recovered = []
         for identity, kind in controls:
+            if selected is not None and identity not in selected:
+                continue
             token = self.root / "control" / (identity + ".lock")
             if not token.is_file() or kind not in {"claim", "reservation"}:
                 continue
             try:
                 with self._control_lock(identity):
                     with self._transaction() as db:
+                        bound = db.execute("""SELECT 1 FROM native_binding_controls c JOIN native_bindings b
+                            ON b.id=c.binding_id WHERE c.control_id=? AND b.state='active'""", (identity,)).fetchone()
+                        if bound:
+                            continue
                         if kind == "claim":
                             db.execute("DELETE FROM claims WHERE id=?", (identity,))
                         else:

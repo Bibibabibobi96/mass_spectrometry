@@ -352,7 +352,7 @@ class RunSession:
                 stdout_path=stdout, stderr_path=stderr, usage_path=usage,
                 role=role, stage=stage, run_id=self.run_id, limits=limits,
                 environment=actual_environment, window_style=window_style,
-                immutable_input_records=immutable_input_records, **protected)
+                immutable_input_records=immutable_input_records, operation_id=operation_id, **protected)
             if immutable_session:
                 receipt = dict(receipt)
                 receipt["guards"] = [str(Path(row["path"]).resolve()) for row in immutable_input_records]

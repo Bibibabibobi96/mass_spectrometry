@@ -175,7 +175,8 @@ def _materialize_member_geometry(context, *, gem_record, raw_path, domain_id, ru
             outputs=[str(raw_path)], success_marker=""), executable=context.tools["simion"],
             run_directory=run_directory, directory=raw_path.parent, logs=logs, limits=limits,
             observations=observations, allow_asynchronous_io=allow_asynchronous_io,
-            native_path_projection=native_path_projection)
+            native_path_projection=native_path_projection,
+            immutable_input_records=[file_record(private_gem, "required_evidence")])
     actual = file_record(raw_path, "solver_native_binary")
     if actual.get("exists") is not True or actual.get("bytes", 0) <= 0:
         raise ValueError("GEM2PA did not produce actual nonempty raw geometry")
@@ -208,7 +209,8 @@ def _native_operation(context: ExecutionContext, operation: dict, *, executable:
                       run_directory: Path, directory: Path, logs: Path,
                       limits: Mapping[str, Any], observations: list[dict],
                       allow_asynchronous_io: bool | None = None,
-                      native_path_projection: dict | None = None) -> None:
+                      native_path_projection: dict | None = None,
+                      immutable_input_records: tuple | list = ()) -> None:
     name = operation["operation_id"]
     stdout, stderr, usage = (logs / (name + suffix) for suffix in (".stdout.log", ".stderr.log", ".usage.json"))
     receipt = None
@@ -228,7 +230,8 @@ def _native_operation(context: ExecutionContext, operation: dict, *, executable:
                 allow_asynchronous_io=allow_asynchronous_io)[1:],
             working_directory=directory, run_directory=run_directory,
             stdout_path=stdout, stderr_path=stderr, usage_path=usage, role="SIMION",
-            stage=operation["stage"], run_id=run_directory.name, limits=limits,
+            stage=operation["stage"], run_id=run_directory.name, limits=limits, operation_id=name,
+            immutable_input_records=immutable_input_records,
             **({"environment": environment} if environment is not None else {}))
         release = receipt["host_release"]
         if release["inherited"] is not True or release["token"] != inherited_host_token(context, required=True):
@@ -453,7 +456,8 @@ def execute_member(context: ExecutionContext, *, field_plan: dict, domain_id: st
                 report["raw_geometry_record"] = raw_geometry_record
             scratch.mkdir(parents=True, exist_ok=True)
             with ExitStack() as guards:
-                for record in [raw_geometry_record, *([published_parent["record"]] if published_parent else [])]:
+                native_inputs = [raw_geometry_record, *([published_parent["record"]] if published_parent else [])]
+                for record in native_inputs:
                     guards.enter_context(guarded_file_identity(record["path"],
                         expected_bytes=record["bytes"], expected_sha256=record["sha256"]))
                 for path, text in plan.materializations.items():
@@ -461,7 +465,8 @@ def execute_member(context: ExecutionContext, *, field_plan: dict, domain_id: st
                 if transaction is not None and transaction.action_required == "build":
                     _native_operation(context, plan.operations[0], executable=executable, run_directory=run_directory,
                         directory=scratch, logs=logs, limits=limits, observations=observations,
-                        allow_asynchronous_io=allow_asynchronous_io, native_path_projection=native_path_projection)
+                        allow_asynchronous_io=allow_asynchronous_io, native_path_projection=native_path_projection,
+                        immutable_input_records=native_inputs)
                     # Only a closed successful export may become a transaction
                     # payload member. Failed partial bytes stay in build scratch.
                     export = copy.deepcopy(plan.operations[1])
@@ -473,7 +478,8 @@ def execute_member(context: ExecutionContext, *, field_plan: dict, domain_id: st
                     export["outputs"] = [str(exported)]
                     _native_operation(context, export, executable=executable, run_directory=run_directory,
                         directory=scratch, logs=logs, limits=limits, observations=observations,
-                        allow_asynchronous_io=allow_asynchronous_io, native_path_projection=native_path_projection)
+                        allow_asynchronous_io=allow_asynchronous_io, native_path_projection=native_path_projection,
+                        immutable_input_records=[file_record(Path(plan.operations[0]["outputs"][0]).resolve(), "solver_native_binary")])
                     exported.replace(destination)
                     transaction = cache.advance_pa_family_cache_transaction(cache_root, identity, [filename], **arguments)
                 if generation:
@@ -483,7 +489,8 @@ def execute_member(context: ExecutionContext, *, field_plan: dict, domain_id: st
                 _native_operation(context, plan.operations[2], executable=executable, run_directory=run_directory,
                     directory=scratch, logs=logs, limits=limits, observations=observations,
                     allow_asynchronous_io=allow_asynchronous_io,
-                    native_path_projection=native_path_projection)
+                    native_path_projection=native_path_projection, immutable_input_records=[
+                        *native_inputs, file_record(Path(plan.operations[1]["outputs"][0]).resolve(), "solver_native_binary")])
             audit_path = Path(plan.operations[2]["outputs"][0])
             audit = json.loads(audit_path.read_text(encoding="utf-8-sig"))
             if audit.get("status") != "pass":
@@ -583,11 +590,26 @@ def run_member(session, *, operation_id: str, parameters: Mapping[str, Any],
     write_json_atomic(request_path, dict(schema_version=1, context=context, parameters=parameters))
     request_record = file_record(session.canonical_path(request_path), "required_evidence")
     session.add_input(operation_id + "_request", request_record)
+    source_records = [request_record]
+    for name in ("raw_geometry_record", "source_audit_record"):
+        if parameters.get(name) is not None:
+            source_records.append(parameters[name])
+    for name in ("published_parent", "frozen_field_source"):
+        if parameters.get(name) is not None:
+            source_records.append(parameters[name]["record"])
+    source_records.extend(file_record(Path(path), "required_evidence") for path in parameters["resources"].values())
+    protected = {}
+    for record in source_records:
+        key = str(Path(record["path"]).resolve())
+        if key in protected and any(protected[key][field] != record[field] for field in ("bytes", "sha256")):
+            raise ValueError("field member source has conflicting identities: " + key)
+        protected[key] = record
     primary = None
     try:
         session.run_process(operation_id, executable=session.context.python_executable,
             arguments=["-I", "-B", "-X", "utf8", "-m", __name__, str(request_path)],
-            role="SIMION", stage="pa_refine", limits=limits)
+            role="SIMION", stage="pa_refine", limits=limits,
+            immutable_input_records=list(protected.values()))
     except BaseException as failure:
         primary = failure
         raise

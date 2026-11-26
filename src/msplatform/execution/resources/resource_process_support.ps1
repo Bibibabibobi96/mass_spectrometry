@@ -831,7 +831,7 @@ function Invoke-ResourceBudgetedProcess {
     [string]$RedirectStandardOutput='',[string]$RedirectStandardError='',[hashtable]$Environment=@{},
     [switch]$RequireImmutableInputDrain,
     [string]$WindowStyle='Hidden',
-    $ProcessObservationMetadata=$null
+    $ProcessObservationMetadata=$null,[scriptblock]$OnStarted=$null
   )
   Assert-RepositoryProcessObservationMetadata -Metadata $ProcessObservationMetadata -UsagePath $UsagePath
   if(@('Hidden','Normal')-cnotcontains$WindowStyle){throw 'window_style requires exactly Hidden or Normal'}
@@ -871,6 +871,7 @@ function Invoke-ResourceBudgetedProcess {
       -RootProcessStartedAtUtcTicks $rootProcessStartedAtUtcTicks -FilePath $FilePath -WindowStyle $WindowStyle -Metadata $ProcessObservationMetadata
     $trackedProcessIds=@([int]$process.Id)
     $trackedProcessStartedAtUtcTicks=@{([string]$process.Id)=$rootProcessStartedAtUtcTicks}
+    if($null-ne$OnStarted){& $OnStarted $process $rootProcessStartedAtUtcTicks}
     $processSpecification=[pscustomobject]@{file_path=$FilePath}
     $danger=$false;$managedActive=$true
     while($managedActive){
