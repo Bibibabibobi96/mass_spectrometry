@@ -1148,6 +1148,19 @@ SIMION c8479985实际几何IOB冷开4实例PASS（Fly/Refine均false），geomet
 正在运行的c8479985安装快照未包含此修复；其实际调用数必须用原owner运行清单/回执对账，不能声称其Store观察完整。
 最终发行应验证四文件发布及缓存/缺件链；本修复不代表Compute/Fly计数或科学native已成功。
 
+### B15 既有安装验收增加B配方片段
+
+仅扩展既有 `test_installed_scientific_core.py` 的INSTALLED_PROBE与source inventory，
+同一wheel/sdist重建wheel两安装臂及原reference_only窄验收都走B片段，不另建安装framework。
+从installed purelib读取两组split schema2 TOML/JSON，与本次source快照SHA核对；
+public CLI、`-I -m msplatform`和API实际preflight一致，旧复合compile/旧mass Fly在native前拒绝。
+implemented/host条件与native_verified=false明确区分，不mock commercial运行。
+
+c8479985普通已安装venv的仓外只读抽取片段实际PASS：
+`INSTALLED_B_NATIVE_PREFLIGHT=PASS schema2=1 split_oa_tof=1 rf_split=1 retired_execution=1 native_run=0`。
+首次抽取调用参数不足IndexError，纠正后PASS，未改live安装环境。现有shared-import与author-tree guard两项
+最终定向PASS（1.504s），AST/Ruff PASS。完整最终两发行安装尚未执行，native证据仍分别绑定实际候选SHA。
+
 ### B 累计 CLOC（至 f216a7af，不含后续改动）
 
 基线 `a9d76aa4dcdbaf8099c9ce5aa0585d6fce18c3be` → 结果 `f216a7afd0a3b27be21402915209defa9964d78e`；CLOC 2.10；源日志 `C:/Users/Liao/msplatform-artifacts/architecture-b-20261127/f216a7af-cloc.log`。

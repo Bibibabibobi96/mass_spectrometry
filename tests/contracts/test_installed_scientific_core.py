@@ -192,6 +192,57 @@ with section_timing('reference_tracing', sys.argv[2]):
         'event_error_s': abs(reference_event['time_s'] - reference_expected_time),
         'max_position_error_m': float(np.max(np.abs(reference_track['position_m'][:, 0] - reference_x)))}), flush=True)
 # REFERENCE_TRACING_INSTALLED_END
+# B_NATIVE_PREFLIGHT_INSTALLED_BEGIN
+with section_timing('b_native_preflight', sys.argv[2]):
+    from importlib.resources import files as installed_files
+    from msplatform import assembly as installed_assembly, components as installed_components, examples as installed_examples
+    from msplatform.backends import simion as installed_simion
+    from msplatform.backends.simion.mass_spectrum import run_mixed_species_fly as installed_retired_fly
+    from msplatform.contracts.machine_contracts import ContractError as InstalledContractError
+    from msplatform.recipes import load_recipe as installed_load_recipe
+    from msplatform.workflows.native_tracing import preflight_native as installed_preflight
+    installed_expected = json.loads((root / 'installed_b_resource_hashes.json').read_text(encoding='utf-8'))
+    installed_package = installed_files('msplatform.examples')
+    installed_purelib = pathlib.Path(sysconfig.get_path('purelib')).resolve()
+    for installed_name in ('oa_split_tof_native_small_v1', 'rf_split_oatof_native_small_v1'):
+        for installed_ext in ('toml', 'json'):
+            installed_resource = installed_package.joinpath(installed_name + '.' + installed_ext)
+            assert pathlib.Path(str(installed_resource)).resolve().is_relative_to(installed_purelib)
+            assert hashlib.sha256(installed_resource.read_bytes()).hexdigest() == installed_expected[installed_name + '.' + installed_ext]
+        installed_path = pathlib.Path(str(installed_package.joinpath(installed_name + '.toml')))
+        installed_recipe = installed_load_recipe(installed_path).to_dict()
+        assert installed_recipe['schema_version'] == 2
+        installed_capability = installed_preflight(installed_recipe)
+        assert installed_capability['implemented'] is True and installed_capability['native_verified'] is False
+        installed_cli = json.loads(reference_command([str(reference_console), 'validate', str(installed_path)]))
+        installed_module = json.loads(reference_command([sys.executable, '-I', '-m', 'msplatform', 'validate', str(installed_path)]))
+        assert installed_cli == installed_module == {'resolved': installed_recipe, 'capabilities': installed_capability}
+        installed_study = installed_recipe['study']['document']
+        installed_projects = {item['project_id'] for item in installed_study['recipe']['instances']}
+        assert {'orthogonal_accelerator', 'single_reflection_tof'} <= installed_projects
+        assert 'single_reflection_oa_tof_mass_analyzer' not in installed_projects
+    installed_old = installed_examples.load_example('rf_oatof_functional_v1')
+    installed_parts = {name: installed_components.resolve_component(value) for name, value in installed_old.component_requests.items()}
+    installed_old_assembly = installed_assembly.assemble(installed_old.recipe, installed_parts)
+    try:
+        installed_simion.compile_geometry(installed_old_assembly, numerics=installed_old.geometry_numerics)
+    except InstalledContractError as error:
+        assert 'historical read-only' in str(error)
+    else:
+        raise AssertionError('legacy composite accepted for new native execution')
+    try:
+        installed_retired_fly(None, operation_id='', simion_executable=pathlib.Path('x'), artifact_project_root=pathlib.Path('x'),
+            project_id='', combined_ion=pathlib.Path('x'), total_particles=1, max_tof_us=1., output_csv=pathlib.Path('x'),
+            summary_path=pathlib.Path('x'), runtime_receipt=pathlib.Path('x'), limits={}, immutable_input_records=[])
+    except ValueError as error:
+        assert 'mass_scan' in str(error)
+    else:
+        raise AssertionError('retired legacy mass-spectrum Fly accepted')
+    for installed_name in ('msplatform.workflows.native_tracing','msplatform.backends.simion.operations',
+                           'msplatform.backends.simion.mass_spectrum'):
+        assert pathlib.Path(sys.modules[installed_name].__file__).resolve().is_relative_to(installed_purelib), installed_name
+    print('INSTALLED_B_NATIVE_PREFLIGHT=PASS schema2=1 split_oa_tof=1 rf_split=1 retired_execution=1 native_run=0', flush=True)
+# B_NATIVE_PREFLIGHT_INSTALLED_END
 # STRICT_JSON_INSTALLED_BEGIN
 import runpy
 strict_json_probe = runpy.run_path(str(root / 'installed_strict_json_probe.py'))
@@ -7409,6 +7460,11 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                 target = source / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(REPO_ROOT / name, target)
+            b_resources = [stem + '.' + extension for stem in ('oa_split_tof_native_small_v1', 'rf_split_oatof_native_small_v1')
+                           for extension in ('json', 'toml')]
+            b_hashes = {name: hashlib.sha256((source / 'src/msplatform/examples' / name).read_bytes()).hexdigest()
+                        for name in b_resources}
+            (root / 'installed_b_resource_hashes.json').write_text(json.dumps(b_hashes, sort_keys=True), encoding='utf8')
             if reference_only:
                 def checkout_state():
                     def git(*args):
@@ -7420,6 +7476,8 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                     for name in filter(None, tracked) if (source / name).is_file()}
                 self.assertIn('recipes/reference/uniform_e.toml', source_inventory)
                 self.assertIn('src/msplatform/physics/data/reference.json', source_inventory)
+                for name in b_resources:
+                    self.assertEqual(source_inventory['src/msplatform/examples/' + name], b_hashes[name])
             builder = root / 'builder'
             consumers = (root / 'consumer-wheel', root / 'consumer-sdist-rebuilt')
             with ThreadPoolExecutor(max_workers=3) as executor:
@@ -7455,6 +7513,8 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                 (root / 'installed_reference_uniform_e.toml').write_bytes(recipe_bytes)
                 section = INSTALLED_PROBE.split('# REFERENCE_TRACING_INSTALLED_BEGIN\n', 1)[1].split(
                     '# REFERENCE_TRACING_INSTALLED_END', 1)[0]
+                section += INSTALLED_PROBE.split('# B_NATIVE_PREFLIGHT_INSTALLED_BEGIN\n', 1)[1].split(
+                    '# B_NATIVE_PREFLIGHT_INSTALLED_END', 1)[0]
                 prelude = r"""import hashlib, json, math, os, pathlib, subprocess, sys, sysconfig, time
 from contextlib import contextmanager
 import numpy as np
@@ -7499,6 +7559,7 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
                                                     cwd=root, environment=probe_environment, timeout=180)
                         self.assertIn('INSTALLED_REFERENCE_TRACING=PASS real_dop853=1 independent_e_oracle=1 complete_readback=1 reuse=1', evidence)
                         self.assertIn('INSTALLED_REFERENCE_ORIGINS=PASS', evidence)
+                        self.assertIn('INSTALLED_B_NATIVE_PREFLIGHT=PASS schema2=1 split_oa_tof=1 rf_split=1 retired_execution=1 native_run=0', evidence)
                         self.assertEqual((root / 'installed_reference_uniform_e.toml').read_bytes(), recipe_bytes)
                         print('INSTALLED_REFERENCE_EVIDENCE=' + evidence.strip(), flush=True)
                     for name, digest in source_inventory.items():
@@ -7960,6 +8021,7 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
                 result = self.run_command([consumer_python, '-I', str(probe_path), str(fixture), str(index)],
                                           cwd=root, environment=probe_environment, timeout=900)
                 self.assertIn('INSTALLED_REFERENCE_TRACING=PASS real_dop853=1 independent_e_oracle=1 complete_readback=1 reuse=1', result)
+                self.assertIn('INSTALLED_B_NATIVE_PREFLIGHT=PASS schema2=1 split_oa_tof=1 rf_split=1 retired_execution=1 native_run=0', result)
                 self.assertEqual((root / 'installed_reference_uniform_e.toml').read_bytes(), reference_fixture_bytes)
                 self.assertIn('INSTALLED_RF_IP_CONTINUOUS_OWNER=PASS native=INERT ids=7,91', result)
                 self.assertIn('INSTALLED_IP_MR_PUBLIC_ADMISSION=PASS basis=17 priority=5 negatives=3 owner=planning_only',result)
