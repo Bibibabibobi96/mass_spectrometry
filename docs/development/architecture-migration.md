@@ -1195,6 +1195,24 @@ Study SHA256 `A7D75ED3EAB3E198D4196868B9CE1AA9A787554DC83CEA5088C545B81EACB9E6`�
 其余阶段按fail-fast阻塞或等待已启动阶段结束。不能报告完整Changed PASS；本轮定向38项的软件结果单独成立。
 最终安装仍按B交付的普通wheel及sdist重建wheel、仓外参考链与B资源准入执行，不把该环境失败冒充科学失败。
 
+### B3 实际ground派生的借用记录绑定修复（6c59b402 后）
+
+普通8a8f wheel=5,867,925字节，SHA256 `CFDFD556C7164F93104E674E6E25DE57CA49B82CCB5D310B90E2F1A3D898504B`，
+安装于仓外 `installed-standalone-b1`；沿同一public CLI、原显式field source和新工程profile执行
+`20261127_051111__sim__simion__ground-a365aeb095c1`。
+六原生操作实际全部PASS：flight_tube 239,343节点/11,132金属/11个FSS节点；
+detector 3,430,350节点/2,028,181金属/54,035个FSS节点，build和独立verify一致、Refine0/Fly0。
+原owner为success/complete、capacity released、source_protection_leases=[]，但product随后被open_artifact拒绝：
+`artifact data member is not bound by the run manifest: resource_build_flight_tube_variant.lua`。
+这是发布合同失败，不能当可消费场或已Fly；公共Store此次为failed，无活动native binding或reservation。
+旧manifest/载荷保持原样，不补改历史manifest。
+
+修复 `grounded_runtime._bind_retained_field_inputs` 把保留的原FieldBundle data records逐项登记为本run借用输入，
+原path/retention_role/owner均不变，不复制大PA；source-free条件显式保持。
+真实 `publish_terminal_state`→`open_artifact` 小文件合同验证登记后可重读、未绑定对照被拒；
+analytic_ground_tracking/split_scalar_world16 PASS（6.921s），Ruff PASS。
+下一安装候选只需重做6个几何/零势步骤，不重Refine；尚未把该修复标为真实完整追踪通过。
+
 ### B4 实际CPT发布角色缺陷与修复（8a8f27d0 后）
 
 冻结c439安装的实际run `20261127_043646__sim__comsol__pulse-6a98fcb94ac5` 已完成native计算，

@@ -36,6 +36,43 @@ class AnalyticGroundTrackingTests(unittest.TestCase):
             _resolve_downstream_static_assets(contract, roles)
 
 
+    def test_borrowed_product_members_are_real_manifest_inputs(self):
+        from msplatform.backends.simion.grounded_runtime import _bind_retained_field_inputs
+        from msplatform.execution.terminal_publication import publish_terminal_state
+        from msplatform.io.manifest_records import file_record
+        from msplatform.results.artifacts import open_artifact
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root/'original'; source.mkdir()
+            derived = root/'derived'; derived.mkdir()
+            pa = source/'frontend.pa'; pa.write_bytes(b'original immutable PA')
+            script = source/'build.lua'; script.write_bytes(b'original frozen builder')
+            data = {'frontend':file_record(pa, 'solver_native_binary'),
+                    'resource_build_flight_tube_variant.lua':file_record(script, 'required_evidence')}
+            class Session:
+                def __init__(self): self.inputs = {}
+                def add_inputs(self, entries): self.inputs.update(entries)
+            session = Session()
+            _bind_retained_field_inputs(session, data)
+            self.assertEqual(list(session.inputs.values()), list(data.values()))
+            product = dict(schema_version=1,kind='field_bundle',status='complete',metadata={},data=data)
+            manifest = dict(schema_version=2,role='simulation_run_manifest',run_id=derived.name,
+                project='instrument_assembly',mode='fields_only',status='success',
+                inputs=session.inputs,outputs=[],products={'fields':product})
+            publish_terminal_state(derived, {'status':'success'}, manifest)
+            result = open_artifact({'manifest':file_record(derived/'run_manifest.json'),
+                                    'product_id':'fields'}, expected_kind='field_bundle')
+            self.assertEqual(result.data_path('frontend'), pa)
+            self.assertEqual(result.data_path('resource_build_flight_tube_variant.lua'), script)
+            self.assertEqual(result.data_records['frontend']['retention_role'], 'solver_native_binary')
+            broken = dict(manifest,inputs={})
+            other = root/'unbound'; other.mkdir(); broken['run_id']=other.name
+            publish_terminal_state(other, {'status':'success'}, broken)
+            with self.assertRaisesRegex(ValueError, 'not bound'):
+                open_artifact({'manifest':file_record(other/'run_manifest.json'),
+                               'product_id':'fields'}, expected_kind='field_bundle')
+
     def test_original_borrowed_field_identity_is_required(self):
         from msplatform.backends.simion.grounded_runtime import verified_ground_origin
         shared = dict(model_identity_sha256='m', downstream_identity={'operator':'x'}, clock={'epoch':'e'})

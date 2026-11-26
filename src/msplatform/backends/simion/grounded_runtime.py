@@ -33,7 +33,8 @@ _REVIEWED_BUILDERS = {
 def _admit(reference):
     source = open_artifact(reference, expected_kind='field_bundle')
     meta = source.metadata
-    if meta.get('backend') != 'simion' or meta.get('field_status') != 'available':
+    if (meta.get('backend') != 'simion' or meta.get('field_status') != 'available'
+            or meta.get('source_status') != 'not_requested'):
         raise ValueError('analytic ground requires a sealed SIMION field bundle')
     model = CompiledPreparedModel(source.data_path('compiled_model').read_text(encoding='utf-8-sig'))
     document = require_prepared_model(model)
@@ -133,6 +134,12 @@ def prepare_grounded_runtime_fields(fields, *, context):
         return open_artifact({'manifest':result['manifest'],'product_id':'fields'},expected_kind='field_bundle')
 
 
+def _bind_retained_field_inputs(session, data):
+    """Bind the exact borrowed product records to the new owner manifest."""
+    session.add_inputs(('borrowed_field_'+str(index), record)
+                       for index, record in enumerate(data.values(), 1))
+
+
 def execute_grounded_runtime_fields(session, *, fields_reference, limits, allow_asynchronous_io=None):
     """Regenerate private geometry and cold-reopen analytically zero carriers."""
     from msplatform.execution.resources import resource_path
@@ -183,6 +190,11 @@ def execute_grounded_runtime_fields(session, *, fields_reference, limits, allow_
     for role in ('flight_tube','detector'):
         keys = meta['native_assets'][role]
         for key in [keys['carrier'],*keys['family']]: data.pop(key,None)
+    # Every retained borrowed product member must be bound by this run's
+    # manifest inputs. Keep the original record, role, path and source owner.
+    _bind_retained_field_inputs(session, data)
+    for role in ('flight_tube','detector'):
+        keys = meta['native_assets'][role]
         pa = session.canonical_path(root/'simion/ground_carriers'/(role+'.pa'))
         surf = pa.with_suffix('.pa-surf')
         carrier_key,surface_key = role+'_analytic_carrier',role+'_analytic_surface'
