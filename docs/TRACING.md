@@ -27,6 +27,9 @@ C:\msplatform-env\Scripts\msplatform.exe results inspect <run_id> --artifact-roo
 `python -m msplatform` 使用相同入口。Python API 为 `msplatform.recipes.load_recipe`、
 `msplatform.tracing.trace_particles`、`msplatform.workflows.reference_tracing.run_recipe/inspect_results`。
 直接 tracer 消费已解析的 SI 科学数据；作者输入与身份由 load_recipe/validate_recipe 检查。
+`load_recipe(path)` 单次读取外部 TOML，返回对象的 `source_bytes` 保留该次不可变字节快照；
+run 使用同一快照解析、归档 `author.toml` 并计算 provenance 的 `author_sha256`。
+外部文件随后改变只影响下一次运行；来源字节哈希与排除 label 的科学缓存身份分别记录。
 可用 `--source-revision <完整SHA>` 显式记录构建来源；未提供时标记来源 SHA 不可用，
 不从研究目录猜测源码来源。该记录不决定物理缓存命中。
 

@@ -183,11 +183,17 @@ def _resolve(raw: dict) -> dict:
 
 @dataclass(frozen=True, init=False)
 class SimulationRecipe:
-    """Validated immutable-by-view resolved recipe; ``to_dict`` returns a copy."""
-    _document: dict
+    """Validated resolved recipe and optional immutable author byte snapshot.
 
-    def __init__(self, resolved: Mapping[str, Any]):
+    ``load_recipe`` supplies source_bytes from its single external read. Source
+    bytes are provenance, separate from the resolved scientific identity.
+    """
+    _document: dict
+    source_bytes: bytes | None
+
+    def __init__(self, resolved: Mapping[str, Any], *, source_bytes: bytes | None = None):
         object.__setattr__(self, "_document", validate_recipe(resolved))
+        object.__setattr__(self, "source_bytes", source_bytes)
 
     def to_dict(self) -> dict:
         return copy.deepcopy(self._document)
@@ -217,7 +223,7 @@ def validate_recipe(resolved: Mapping[str, Any]) -> dict:
 
 
 def load_recipe(path: str | Path) -> SimulationRecipe:
-    """Read TOML with exact decimal literals and compile to SI float64 values."""
-    with Path(path).open("rb") as stream:
-        raw = tomllib.load(stream, parse_float=Decimal)
-    return SimulationRecipe(_resolve(raw))
+    """Snapshot TOML once, parse exact decimals and compile to SI float64 values."""
+    source = Path(path).read_bytes()
+    raw = tomllib.loads(source.decode("utf-8"), parse_float=Decimal)
+    return SimulationRecipe(_resolve(raw), source_bytes=source)

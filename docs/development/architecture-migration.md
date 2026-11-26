@@ -388,3 +388,21 @@ Store 两个改动文件 Ruff PASS。测试临时根自动清理；未触碰真�
 
 剩余旧消费者仍为上文旧 owner/原生链清单，本轮只接入 reference_tracing；
 下一步处理同一次运行的 TOML 单次读取，再处理有证据支持的旧资产读取边界。
+
+
+### 2. 作者配方单次读取
+
+第 1 项代码/证据已提交 `c656c647`。本单元在现有 `recipes.reference.load_recipe(path)` 中单次
+`read_bytes`，用该快照解析十进制 TOML，返回 SimulationRecipe.source_bytes；resolved-only 构造没有来源快照。
+`reference_tracing.run_recipe` 用该份字节归档，provenance 哈希来自这份冻结文件，不再重读外部作者路径。
+科学身份仍来自原 resolved 投影，来源字节不进入 task key；label-only 仍命中科学缓存。
+
+`.venv/Scripts/python.exe -m unittest tests.contracts.test_reference_recipe tests.contracts.test_reference_workflow -v`：
+12 项 PASS（6.794 s），其中可控 read_bytes hook 在首次外部读取后将 E 从 2000 改为 4000 V/m，
+确认首次只读一次且计算/归档/来源 SHA 全为旧值；下一次运行才使用新值。
+两次轨迹事件均由独立匀加速公式核对（位置误差 <1e-10 m），后次实际更早到达，场缓存正确失效。
+Ruff 四个改动 Python 文件 PASS，diff --check PASS。
+已增强原安装验收的参考片段，核对 installed CLI 的 author/resolved/provenance 与来源字节，
+并输出数值误差；直接 wheel 和 sdist 重建 wheel 的离仓验收留到第 3 项之后、同一最终代码提交运行。
+
+剩余旧消费者与上文清单相同；下一步只做已取证的历史 common_ground 读取边界修复，不启动 B。

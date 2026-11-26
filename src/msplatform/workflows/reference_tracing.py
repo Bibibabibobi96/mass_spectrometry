@@ -100,7 +100,8 @@ def run_recipe(recipe_path: str | Path, *, artifact_root: str | Path,
 The deployment supplies disk watermarks and an optional additional peak budget.
 Numerical failures and cancellation publish explicit incomplete evidence.
 """
-    recipe = load_recipe(recipe_path).to_dict()
+    loaded = load_recipe(recipe_path)
+    recipe = loaded.to_dict()
     validate_recipe(recipe)
     preflight(recipe)
     if source_revision is not None and not re.fullmatch(r"[0-9a-fA-F]{40}", source_revision):
@@ -111,7 +112,7 @@ Numerical failures and cancellation publish explicit incomplete evidence.
                           low_water_bytes=low_water_bytes, safety_bytes=safety_bytes)
     run_id, run_work = store.begin_run()
     _write_json(run_work / "resolved.json", recipe)
-    (run_work / "author.toml").write_bytes(Path(recipe_path).read_bytes())
+    (run_work / "author.toml").write_bytes(loaded.source_bytes)
     # Dense samples require 64 bytes/row. Reserve for cache and run copies plus
     # conservative table/container metadata; deployments can increase the peak.
     estimated = len(recipe["initial_states"]) * (128 * recipe["numerics"]["sample_count"] + 1048576)

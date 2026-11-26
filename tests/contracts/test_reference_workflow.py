@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -21,6 +22,46 @@ SOURCE = ROOT / "recipes/reference/uniform_e.toml"
 
 
 class ReferenceWorkflowTests(unittest.TestCase):
+    def test_author_snapshot_is_read_once_and_matches_computation_archive_and_hash(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            source = base / "author.toml"
+            original = SOURCE.read_bytes()
+            changed = original.replace(b"2000.0", b"4000.0")
+            self.assertNotEqual(original, changed)
+            source.write_bytes(original)
+            read_bytes = Path.read_bytes
+            reads = []
+
+            def mutate_after_read(path):
+                data = read_bytes(path)
+                if path == source:
+                    reads.append(data)
+                    source.write_bytes(changed)
+                return data
+
+            with patch.object(Path, "read_bytes", mutate_after_read):
+                first = run_recipe(source, artifact_root=base / "store")
+            self.assertEqual(reads, [original])
+            second = run_recipe(source, artifact_root=base / "store")
+            times = []
+            for run, snapshot, field in ((first, original, 2000.0), (second, changed, 4000.0)):
+                work = Path(run["run_path"])
+                self.assertEqual((work / "author.toml").read_bytes(), snapshot)
+                self.assertEqual(run["provenance"]["author_sha256"], hashlib.sha256(snapshot).hexdigest().upper())
+                resolved = json.loads((work / "resolved.json").read_text(encoding="utf-8"))
+                self.assertEqual(resolved, load_recipe(work / "author.toml").to_dict())
+                self.assertEqual(resolved["field_source"]["electric_field_v_m"][0], field)
+                data = read_particle_data(work)
+                initial, event = data["initial_states"][0], data["events"][0]
+                acceleration = initial["charge_c"] * field / initial["mass_kg"]
+                elapsed = event["time_s"] - initial["time_s"]
+                expected = initial["position_m"][0] + initial["velocity_m_s"][0] * elapsed + 0.5 * acceleration * elapsed**2
+                self.assertAlmostEqual(expected, resolved["surfaces"][0]["position_m"], delta=1e-10)
+                times.append(elapsed)
+            self.assertLess(times[1], times[0])
+            self.assertFalse(second["provenance"]["field"]["reused"])
+
     def test_real_publication_reuse_local_recompute_and_gc(self):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)

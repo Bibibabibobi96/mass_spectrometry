@@ -158,6 +158,12 @@ with section_timing('reference_tracing', sys.argv[2]):
     assert reference_inspected['summary']['data_integrity']['status'] == 'complete'
     assert reference_inspected['summary']['census']['mother_count'] == 1
     assert reference_inspected['summary']['census']['counts']['detected'] == 1
+    reference_run_path = pathlib.Path(reference_inspected['run_path'])
+    reference_author = reference_recipe.read_bytes()
+    assert (reference_run_path / 'author.toml').read_bytes() == reference_author
+    assert reference_inspected['provenance']['author_sha256'] == hashlib.sha256(reference_author).hexdigest().upper()
+    assert json.loads((reference_run_path / 'resolved.json').read_text(encoding='utf-8')) == reference_resolved
+    assert reference_load(reference_run_path / 'author.toml').to_dict() == reference_resolved
     reference_data = reference_read(pathlib.Path(reference_inspected['run_path']))
     assert len(reference_data['initial_states']) == len(reference_data['terminal_states']) == len(reference_data['events']) == 1
     reference_initial = reference_data['initial_states'][0]
@@ -179,7 +185,12 @@ with section_timing('reference_tracing', sys.argv[2]):
     reference_x = reference_initial['position_m'][0] + reference_velocity*reference_dt + .5*reference_acceleration*reference_dt**2
     assert np.max(np.abs(reference_track['position_m'][:, 0] - reference_x)) < 1e-10
     assert int(reference_track['particle_id'][0]) == reference_initial['particle_id']
-    print('INSTALLED_REFERENCE_TRACING=PASS real_dop853=1 independent_e_oracle=1 complete_readback=1 reuse=1', flush=True)
+    print('INSTALLED_REFERENCE_TRACING=PASS real_dop853=1 independent_e_oracle=1 complete_readback=1 reuse=1 author_snapshot=1', flush=True)
+    print('REFERENCE_RESULT=' + json.dumps({'run_id': reference_first['run_id'],
+        'author_sha256': reference_inspected['provenance']['author_sha256'],
+        'event_time_s': reference_event['time_s'], 'samples': len(reference_track['time_s']),
+        'event_error_s': abs(reference_event['time_s'] - reference_expected_time),
+        'max_position_error_m': float(np.max(np.abs(reference_track['position_m'][:, 0] - reference_x)))}), flush=True)
 # REFERENCE_TRACING_INSTALLED_END
 # STRICT_JSON_INSTALLED_BEGIN
 import runpy
