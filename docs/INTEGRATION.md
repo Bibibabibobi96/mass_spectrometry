@@ -58,6 +58,15 @@ versus 1517.507 seconds under the immediately preceding measured worktree. This
 3.187-second (0.21%) change is not a 15-minute acceptance result. No test, timeout,
 scientific input or native coverage was reduced.
 
+The mass-spectrum owner now reuses each verified package member's frozen SHA when
+registering session inputs, instead of rereading every member for that registration.
+Source/destination verification, the subsequent `_frozen_guards` pass and per-process
+identity guards remain unchanged. The measured authenticated recovery case changed
+from 150.999 to 145.135 seconds (5.864 seconds, 3.88%). That case, all five Study
+tests, the other three native-lifecycle tests and two input-admission tests passed.
+The OA `tests_02` partition alone took 1492.400 seconds in ordinary Changed
+45776013377, so this local improvement does not meet or replace the 15-minute target.
+
 The Assembly dependency freezer and paired frontend process support now have their
 sole PowerShell owners under `msplatform.execution/resources` and
 `msplatform/workflows/resources`. The former `integrations/runtime` files and

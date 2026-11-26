@@ -158,7 +158,9 @@ def _freeze_code(session: RunSession, task_script: Path | None, resolved: Path) 
     def code_inputs():
         for index, entry in enumerate(package["files"]):
             path = session.declare_file(Path(entry["path"]), "required_evidence")
-            yield f"study_code_{index:04d}", file_record(path, "required_evidence")
+            yield f"study_code_{index:04d}", dict(
+                path=str(path), exists=True, bytes=path.stat().st_size,
+                sha256=str(entry["sha256"]).upper(), retention_role="required_evidence")
     session.add_inputs(code_inputs())
     task_target = None
     if task_script is not None:
