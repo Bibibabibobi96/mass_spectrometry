@@ -31,7 +31,8 @@ class SimionParticleDataTests(unittest.TestCase):
             identity = {key: record[key] for key in ('bytes', 'sha256')}
             session = SimpleNamespace(result_dir=root, context=SimpleNamespace(tools={'simion': str(executable)}),
                 declare_file=lambda path, role: path, canonical_path=lambda path: path)
-            plan = dict(rows=list(source.values()), flight=dict(detector_instance=4), observations=dict(
+            plan = dict(expected_operation_ids=['track_fly'], rows=list(source.values()),
+                flight=dict(detector_instance=4), observations=dict(
                 observation_times_us=[1.5], plane_observations=[dict(observation_id='d',
                 source_instance_id='tof', surface_id='detector')]))
             records = {}
@@ -39,11 +40,19 @@ class SimionParticleDataTests(unittest.TestCase):
                 result, version = _publish_split_particle_data(session, plan, collection, dict(native_frame_id='world'),
                     dict(drive=dict(clock=dict(clock_epoch_id='epoch', authority_sha256='a'*64,
                                                phase_reference_instrument_time_us=12.))), identity, records)
+                with self.assertRaisesRegex(ValueError, 'does not match the tracked native binary'):
+                    _publish_split_particle_data(session, plan, collection, dict(native_frame_id='world'),
+                        dict(drive=dict(clock=dict(clock_epoch_id='epoch', authority_sha256='a'*64,
+                                                   phase_reference_instrument_time_us=12.))),
+                        dict(identity, bytes=identity['bytes']+1), {})
             self.assertEqual(version, 'fixture-version')
             self.assertEqual(result.data_integrity['status'], 'complete')
             self.assertEqual(len(records), 5)
             data = read_particle_data(root / 'particle_data')
             self.assertEqual(data['events'][0]['surface_id'], 'detector')
+            self.assertEqual([row['particle_id'] for row in data['initial_states']], [91, 7, 103])
+            self.assertEqual(len(data['terminal_states']), 3)
+            self.assertEqual(data['trajectories']['particle_id'].tolist(), [91, 7, 103])
             self.assertEqual(data['metadata']['clock'], dict(basis='experiment_relative', unit='s',
                 clock_epoch_id='epoch', authority_sha256='a'*64))
 
