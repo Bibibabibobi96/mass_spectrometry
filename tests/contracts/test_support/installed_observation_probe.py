@@ -41,14 +41,15 @@ with tempfile.TemporaryDirectory() as directory:
  artifact=OpenedArtifact(kind='field_bundle',product_id='fields',reference={'manifest':{'path':str(root/'inert-manifest.json'),'bytes':123,'sha256':'D'*64}},metadata=meta,records=records,paths={k:Path(v['path']) for k,v in records.items()},producer={})
  context=SimpleNamespace(tools={'simion':Path(sys.executable)})
  common=dict(particles=packet,clock_records=clocks,propagation=f['policy'],numerics=f['numerics'])
- observed=plan_tracking_execution(model,observations=obs,unit_size=50,**common); plain=plan_tracking_execution(model,observations={'plane_observations':[]},unit_size=50,**common)
+ plain_obs={'plane_observations':copy.deepcopy(obs['plane_observations'])}
+ observed=plan_tracking_execution(model,observations=obs,unit_size=50,**common); plain=plan_tracking_execution(model,observations=plain_obs,unit_size=50,**common)
  assert observed['observations']==obs and tracking_applicability(observed)!=tracking_applicability(plain)
  before=copy.deepcopy((packet,obs))
  with patch('msplatform.execution.stage_policy.read_stage_policy',return_value=({'limits':{'transient_run_directory_bytes':1},'artifact_retention':{}},{})),patch('msplatform.execution.owner.run_managed_stage',return_value={'manifest':{}}) as owner,patch('msplatform.results.artifacts.open_artifact',return_value='published'):
   assert operations.track(artifact,packet,propagation=f['policy'],observations=obs,numerics=f['numerics'],context=context)=='published'
   assert owner.call_args.kwargs['payload']['observations']==obs and owner.call_args.kwargs['action'].keywords['observations']==obs
-  operations.track(artifact,packet,propagation=f['policy'],observations={'plane_observations':[]},numerics=f['numerics'],context=context)
-  assert owner.call_args.kwargs['payload']['observations']=={'plane_observations':[]}
+  operations.track(artifact,packet,propagation=f['policy'],observations=plain_obs,numerics=f['numerics'],context=context)
+  assert owner.call_args.kwargs['payload']['observations']==plain_obs
  assert (packet,obs)==before
  for k,v in [('clock_epoch_id','wrong'),('source_instance_id','wrong'),('eligible_batch_anchor_particle_id',999999),('max_rows',17)]:
   bad=copy.deepcopy(obs);bad['native_field_observation'][k]=v

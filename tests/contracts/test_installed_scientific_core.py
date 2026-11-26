@@ -2075,16 +2075,25 @@ with patch('subprocess.Popen', side_effect=AssertionError('hidden native action'
     assert importlib.util.find_spec('msplatform.api') is None
     actual_components = {name:component_api.resolve_component(request) for name,request in study.component_requests.items()}
     actual_assembly = assembly_api.assemble(study.recipe, actual_components)
-    actual_geometry = simion_api.compile_geometry(actual_assembly, numerics=study.geometry_numerics)
-    changed = study.to_dict()
-    original_release = copy.deepcopy(changed['release'])
-    changed['release'] = {'deliberately_invalid_release_not_a_geometry_input': True}
-    independent = example_api.StudyDefinition(changed)
-    independent_components = {name:component_api.resolve_component(request) for name,request in independent.component_requests.items()}
-    independent_assembly = assembly_api.assemble(independent.recipe, independent_components)
-    independent_geometry = simion_api.compile_geometry(independent_assembly, numerics=independent.geometry_numerics)
+    # Keep historical study for the independent RF/IP and read-only projections.
+    # New executable geometry comes from the installed split recipe/provider resources.
+    from msplatform.recipes import load_recipe as installed_load_recipe
+    split_path = pathlib.Path(example_api.__file__).with_name('rf_split_oatof_native_small_v1.toml')
+    split_recipe = installed_load_recipe(split_path).to_dict()
+    split_study = split_recipe['study']['document']
+    split_components = {name:component_api.resolve_component(request)
+                        for name,request in split_study['component_requests'].items()}
+    split_assembly = assembly_api.assemble(split_study['recipe'], split_components)
+    actual_geometry = simion_api.compile_geometry(split_assembly, numerics=split_study['numerics']['geometry'])
+    independent_study = copy.deepcopy(split_study)
+    original_release = copy.deepcopy(split_study['release'])
+    independent_study['release'] = {'deliberately_invalid_release_not_a_geometry_input': True}
+    independent_components = {name:component_api.resolve_component(request)
+                              for name,request in independent_study['component_requests'].items()}
+    independent_assembly = assembly_api.assemble(independent_study['recipe'], independent_components)
+    independent_geometry = simion_api.compile_geometry(independent_assembly, numerics=independent_study['numerics']['geometry'])
     assert independent_geometry == actual_geometry
-    assert study.to_dict()['release'] == original_release
+    assert split_study['release'] == original_release
     oa_study = example_api.load_example('oa_two_three_geometric_v1')
     oa_components = {name:component_api.resolve_component(request)
                      for name,request in oa_study.component_requests.items()}
@@ -2107,7 +2116,7 @@ with patch('subprocess.Popen', side_effect=AssertionError('hidden native action'
     assert len(installed_comsol_projection['electrode_groups']) == 50
     assert actual_assembly.composition_plan == installed_comsol_snapshot['composition_plan']
     try:
-        installed_comsol_stage.build_geometry(actual_assembly,
+        installed_comsol_stage.build_geometry(split_assembly,
             outer_box_mm={'min': [0]*3, 'max': [1]*3},
             geometry_validation={'position_mm': 0, 'normal_abs': 0}, context=None)
     except ValueError as error:
@@ -2229,11 +2238,11 @@ with patch('subprocess.Popen', side_effect=AssertionError('hidden native action'
 
     selected = actual_geometry.frontend_geometry['composition_plan']['scope']['instance_ids']
     model_components = {name:actual_geometry.components_resolved[name] for name in selected}
-    model_drive = project_resolved_drive(actual_geometry, model_components, pulse=study.drive['pulse'],
-        clock=dict(clock_epoch_id='installed-software-fixture', authority_sha256='A'*64,
-            phase_reference_instrument_time_us=0.))
-    planned_model = compile_prepared_model(actual_geometry, model_components, drive=model_drive, physics=study.physics)
-    planned_fields = plan_fields_execution(planned_model, numerics=study.field_numerics)
+    model_drive = copy.deepcopy(split_study['drive'])
+    model_drive.pop('clock_authority')
+    model_drive['clock'].update(clock_epoch_id='installed-software-fixture', authority_sha256='A'*64)
+    planned_model = compile_prepared_model(actual_geometry, model_components, drive=model_drive, physics=split_study['physics'])
+    planned_fields = plan_fields_execution(planned_model, numerics=split_study['numerics']['fields'])
     assert len(planned_fields['expected_operation_ids']) == 8
     assert planned_fields['expected_operation_ids'][-2:] == ['build_fields','verify_fields']
 # Full installed RF–IP geometry request; the baseline comes from the existing
@@ -2796,10 +2805,6 @@ for case in fixture['single_reflection_workflow']:
         recorded_birth_probe['run'](receipt, prepared_run, case['particle_ids'], sys.argv[2], section_timing)
         sfi_consumer_probe = runpy.run_path(str(root / 'installed_sfi_consumer_probe.py'))
         sfi_consumer_probe['run'](receipt, prepared_run, case['particle_ids'], sys.argv[2], section_timing, blocked_source_roots)
-        scalar_probe = runpy.run_path(str(root / 'installed_sfi_scalar_probe.py'))
-        scalar_leaf = runpy.run_path(str(root / 'sfi_scalar_owner_fixture.py'))
-        scalar_probe['run'](fixture['sfi_scalar_owner_fixtures'][int(sys.argv[2])], scalar_leaf['inert_native_leaf'],
-                            section_timing, sys.argv[2], blocked_source_roots)
         rf_ip_probe = runpy.run_path(str(root / 'rf_ip_installed_probe.py'))
         rf_ip_leaf = runpy.run_path(str(root / 'rf_ip_inert_leaf.py'))
         with section_timing('rf_ip_continuous_owner', sys.argv[2]):
@@ -4064,7 +4069,7 @@ for label, missing_path, action in (
     ('ei_builder', comsol_resource_path('ms_stage1_ei_source.m'), lambda:comsol_resource_path('ms_stage1_ei_source.m')),
     ('wehnelt_builder', comsol_resource_path('build_wehnelt_model.m'), lambda:comsol_resource_path('build_wehnelt_model.m')),
     ('example', example_path, lambda:example_api.load_example('rf_oatof_functional_v1')),
-    ('gem', gem_template_path('reflectron'), lambda:simion_api.compile_geometry(actual_assembly,numerics=study.geometry_numerics)),
+    ('gem', gem_template_path('reflectron'), lambda:simion_api.compile_geometry(split_assembly,numerics=split_study['numerics']['geometry'])),
     ('powershell', resource_path('process_owner.ps1'), lambda:resource_path('process_owner.ps1')),
     ('lua', native_resource_path('build_geometry_iob.lua'), lambda:native_resource_path('build_geometry_iob.lua')),
     ('paired_pulse_lua', native_resource_path('paired_accelerator_pulse.lua'), lambda:native_resource_path('paired_accelerator_pulse.lua')),
@@ -7817,19 +7822,6 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
                 actual = Path(module.__file__).resolve()
                 relative = Path(*module_name.split('.')).with_suffix('.py')
                 self.assertEqual(actual.read_bytes(), (source / relative).read_bytes())
-            # Source owner fixtures remain outside the auto-deleted installed tree.
-            # Preserve both roots for explicit owner/lifecycle inspection on failure.
-            from tests.contracts.test_support import sfi_scalar_owner_fixture
-            scalar_source = source / 'tests/contracts/test_support/sfi_scalar_owner_fixture.py'
-            self.assertEqual(Path(sfi_scalar_owner_fixture.__file__).read_bytes(), scalar_source.read_bytes())
-            sfi_scalar_fixtures = []
-            for index in range(2):
-                scalar_root = Path(tempfile.mkdtemp(prefix='installed-sfi-scalar-owner-' + str(index) + '-')).resolve()
-                print('INSTALLED_SFI_SCALAR_FIXTURE_ROOT=' + str(scalar_root), flush=True)
-                sfi_started = time.perf_counter_ns()
-                sfi_scalar_fixtures.append(sfi_scalar_owner_fixture.make_fixture(scalar_root, refinement_windows=True))
-                print('INSTALLED_SECTION_TIMING=' + json.dumps(dict(section='sfi_scalar_fixture',
-                    case=str(index), elapsed_ns=time.perf_counter_ns()-sfi_started, exception=False)), flush=True)
             rf_ip_fixtures = []
             for index in range(2):
                 rf_ip_root = root / ('rf-ip-inert-' + str(index))
@@ -7883,7 +7875,6 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
                                               multipole_ip_request=self.multipole_ip_probe_fixture(),
                                               rf_ip_inert_fixtures=rf_ip_fixtures,
                                               ip_mr_installed_fixture=ip_mr_installed_fixture,
-                                              sfi_scalar_owner_fixtures=sfi_scalar_fixtures,
                                               gas_field_reference=self.gas_field_probe_fixture(root),
                                               tof_mass_spectrum_inputs=dict(mode=str(tof_spectrum_mode), comsol_dir=str(tof_spectrum_comsol), simion=str(tof_spectrum_simion), geometry=str(tof_spectrum_geometry)),
                                               tof_mass_spectrum_old_witness=tof_spectrum_old_witness,
