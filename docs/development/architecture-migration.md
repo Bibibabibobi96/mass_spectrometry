@@ -1118,6 +1118,24 @@ MATLAB guard仅完成静态审阅，未运行MATLAB正反例，不报native已�
 当前COMSOL0Compute边界诊断已启动，SIMION新工程预算候选正在独立构建/安装；
 没有将本退休软件检查冒充BA06/08/10/11/12/15全部通过。
 
+### B COMSOL 面集合失败的实际根因与最小修复
+
+两次新managed只读诊断均0 Compute、不保存原MPH、源闭包冻结至owner终态。
+第一run `20261127_030559__analysis__comsol__boundary-546ef21fcef2` manifest SHA256
+`D187E68A8B80D6890642561A46486250647FE344995C24CACFBEFA78D04EFACD`；
+第二run `20261127_030937__analysis__comsol__boundary-b5413d7f1527` manifest SHA256
+`7EB344C7824AE449811013926C1741A7A2AF5CC5DCCDCEB2B9F251A4CCC1AFED`。
+`results/boundary_sets.json` 逐45member记录真实面ID与每项布尔，不采纳先前同组metal/sheet重叠猜测。
+
+实际vacuum427、metal416、sheet5、outer6，三种交集均空，uncovered/extra均空。
+CPT内存创建前后均相同；vacuum size=[1,427]，metal=[416,1]，sheet=[1,5]、outer=[1,6]，assigned=[427,1]。
+原isequal(sort(assigned),sort(vacuum))=false，但双方(:)后=true；错误是数组方向，不是物理集合。
+生产MATLAB只在最终完整覆盖isequal两侧各加(:)，保留三个互斥和逐member非空及全部面ID检查。
+COMSOL particle/workflow14 PASS，Ruff PASS；真正修后CPT尚未运行，不用诊断替代轨迹证据。
+
+SIMION c8479985实际几何IOB冷开4实例PASS（Fly/Refine均false），geometry与prepared model两owner success/writers_stopped，
+求场run `20261127_031207__sim__simion__fields-9cb9e717bba3` 正运行，尚无Refine/Fly成功声明。
+
 ### B 累计 CLOC（至 f216a7af，不含后续改动）
 
 基线 `a9d76aa4dcdbaf8099c9ce5aa0585d6fce18c3be` → 结果 `f216a7afd0a3b27be21402915209defa9964d78e`；CLOC 2.10；源日志 `C:/Users/Liao/msplatform-artifacts/architecture-b-20261127/f216a7af-cloc.log`。
