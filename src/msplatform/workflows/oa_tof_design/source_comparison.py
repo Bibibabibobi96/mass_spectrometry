@@ -554,6 +554,9 @@ $execution|ConvertTo-Json -Depth 32|Set-Content -LiteralPath $request.outputs.en
 def _invoke_worker(session: Any, request_path: Path, guards: list[dict], stage: dict) -> dict:
     for index, record in enumerate(guards):
         verify_record(f"frozen TOF input {index}", record)
+    request = load_json(request_path)
+    package = load_json(Path(request["package_receipt"]["path"]))
+    package_paths = {Path(entry["path"]).resolve() for entry in package["files"]}
     session.run_process("scientific_analysis", executable=session.context.powershell_executable,
         arguments=["-NoProfile", "-NonInteractive", "-Command", _FROZEN_WORKER_COMMAND],
         role="GATE", stage="oa_tof_design", limits=stage["limits"],
@@ -564,7 +567,8 @@ def _invoke_worker(session: Any, request_path: Path, guards: list[dict], stage: 
             or completion.get("request_sha256") != file_sha256(request_path)):
         raise ValueError("scientific worker completion differs from its bound request")
     for index, record in enumerate(guards):
-        verify_record(f"completed TOF input {index}", record)
+        if Path(record["path"]).resolve() not in package_paths:
+            verify_record(f"completed TOF input {index}", record)
     session.renew_capacity()
     return completion
 

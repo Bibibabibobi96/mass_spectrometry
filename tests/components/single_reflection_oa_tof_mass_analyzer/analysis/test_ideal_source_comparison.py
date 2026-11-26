@@ -467,7 +467,7 @@ $r | ConvertTo-Json -Depth 20 -Compress
             provider = run_comparison._source_package_root()
             command = [powershell, "-NoProfile", "-NonInteractive", "-File", str(driver),
                        str(executor), str(package_path), sys.executable, str(provider.parent)]
-            positive = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=60)
+            positive = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
             self.assertEqual(positive.returncode, 0, positive.stderr)
             observation = json.loads(positive.stdout)
             origins = {row["name"]: Path(row["origin"]).resolve() for row in observation["frozen_modules"]}
@@ -492,12 +492,12 @@ $r | ConvertTo-Json -Depth 20 -Compress
             # isolated module-origin probe to refuse an ambient installation too.
             target = Path(selected[module]["path"])
             target.unlink()
-            missing = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=60)
+            missing = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
             self.assertNotEqual(missing.returncode, 0)
             self.assertIn("Frozen Python dependency is missing", missing.stderr)
             package["files"] = [row for row in package["files"] if row["relative_path"] != module]
             package_path.write_text(json.dumps(package), encoding="utf-8")
-            no_fallback = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=60)
+            no_fallback = subprocess.run(command, cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
             self.assertNotEqual(no_fallback.returncode, 0)
             self.assertIn("required frozen module has no file origin", no_fallback.stderr)
             self.assertNotIn('"modules":', no_fallback.stdout)

@@ -145,13 +145,18 @@ class PythonPackageSelectionTests(unittest.TestCase):
             module.parent.mkdir(parents=True)
             module.write_text(
                 'import json,os,pathlib,sys\n'
+                'if os.environ.get("FROZEN_TEST_TAMPER"):\n'
+                '    pathlib.Path(__file__).with_name("companion.py").write_text("tampered",encoding="utf-8")\n'
                 'pathlib.Path(sys.argv[1]).write_text("executed",encoding="utf-8")\n'
                 'print(json.dumps({"arguments":sys.argv[1:],"cwd":os.getcwd(),'
                 '"origin":str(pathlib.Path(__file__).resolve()),'
                 '"isolated":sys.flags.isolated,"utf8":sys.flags.utf8_mode},ensure_ascii=False))\n',
                 encoding='utf-8')
+            companion = author / 'fixturepkg/companion.py'
+            companion.write_text('ORIGINAL = True\n', encoding='utf-8')
             original = module.read_bytes()
-            package = freeze_python_package(author, frozen, relative_paths=['fixturepkg/entry.py'])
+            package = freeze_python_package(author, frozen,
+                relative_paths=['fixturepkg/entry.py', 'fixturepkg/companion.py'])
             marker = root / 'executed marker.txt'
             arguments = [str(marker), 'Unicode 测试', 'two spaces and \"quotes\"', 'trailing space ']
             config = root / 'request.json'
@@ -169,9 +174,11 @@ if($Mode -eq 'probe') { $options.ProbeOnly=$true }
 Invoke-IsolatedFrozenPythonModule @options | ConvertTo-Json -Depth 30 -Compress
 """, encoding='utf-8')
             environment = {**os.environ, 'FROZEN_TEST_PYTHON': sys.executable, 'PYTHONPATH': str(author)}
-            def invoke(mode):
+            def invoke(mode, extra_environment=None):
+                selected_environment = environment if extra_environment is None else {
+                    **environment, **extra_environment}
                 completed = subprocess.run([pwsh, '-NoProfile', '-File', str(script), str(helper), str(config), mode],
-                    cwd=root, env=environment, timeout=30, capture_output=True)
+                    cwd=root, env=selected_environment, timeout=30, capture_output=True)
                 def decode(stream):
                     if stream is None:
                         return None
@@ -221,6 +228,22 @@ Invoke-IsolatedFrozenPythonModule @options | ConvertTo-Json -Depth 30 -Compress
             self.assertNotEqual(rejected.returncode, 0)
             self.assertIn('Frozen Python dependency hash differs', rejected.stderr)
             self.assertEqual(module.read_bytes(), original)
+            frozen_module.write_bytes(original)
+            frozen_companion = frozen / 'fixturepkg/companion.py'
+            original_companion = companion.read_bytes()
+            self.assertEqual(frozen_companion.read_bytes(), original_companion)
+            tampered = invoke('normal', {'FROZEN_TEST_TAMPER': '1'})
+            self.assertNotEqual(tampered.returncode, 0, tampered.stdout + tampered.stderr)
+            self.assertIn('Frozen Python dependency hash differs', tampered.stderr)
+            self.assertIn('companion.py', tampered.stderr)
+            self.assertEqual(module.read_bytes(), original)
+            frozen_companion.write_bytes(original_companion)
+            extra = frozen / 'fixturepkg/untracked_duplicate.py'
+            extra.write_bytes(original_companion)
+            rejected_extra = invoke('assert')
+            self.assertNotEqual(rejected_extra.returncode, 0)
+            self.assertIn('untracked file', rejected_extra.stderr)
+            extra.unlink()
 
     def test_import_root_bootstrap_does_not_import_scientific_or_lifecycle_packages(self):
         root = Path(__file__).resolve().parents[2]

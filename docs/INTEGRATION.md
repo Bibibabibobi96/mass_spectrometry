@@ -48,6 +48,16 @@ failure closure and immutable-manifest checks. Complete gates and native accepta
 must still be rerun on that successor; this is functional evidence, not scientific
 or P4 qualification.
 
+For the TOF performance follow-up, the managed owner no longer rechecks package
+members after the real frozen executor has already verified them after module
+success. Pre-launch guards, executor pre/post verification and final manifest
+identities remain intact. The actual executor rejects both a member tampered during
+execution and a same-byte extra path. Both complete frozen-input/TOF modules passed
+43 tests in 115.651 seconds; the full two-arm acceptance passed in 1514.320 seconds,
+versus 1517.507 seconds under the immediately preceding measured worktree. This
+3.187-second (0.21%) change is not a 15-minute acceptance result. No test, timeout,
+scientific input or native coverage was reduced.
+
 The Assembly dependency freezer and paired frontend process support now have their
 sole PowerShell owners under `msplatform.execution/resources` and
 `msplatform/workflows/resources`. The former `integrations/runtime` files and
