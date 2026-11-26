@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import math
 from .resources import gem_template_text
-from .tof_geometry import resolve_physical_geometry, derive_simion_instances
+from .tof_geometry import resolve_physical_geometry, resolve_split_physical_geometry, derive_simion_instances
 
 def _validate_provider_inputs(g: dict, b: dict, m: dict, rings: dict, v: dict) -> None:
     """Apply the three provider builders' numeric preconditions before staging."""
@@ -51,20 +51,20 @@ def _validate_provider_inputs(g: dict, b: dict, m: dict, rings: dict, v: dict) -
         raise ValueError("downstream detector margin_xy_mm must span at least one xy cell")
 
 
-def compile_downstream_specs(resolved: dict) -> tuple[dict, ...]:
+def compile_downstream_specs(resolved: dict, *, split: bool = False) -> tuple[dict, ...]:
     """Bind the three original templates to complete provider/numerical inputs.
 
     Templates use SIMION's documented Lua preprocessing context ``_G.var``.
     No Refine/Fly or scientific source is required to compile these specs.
     """
     g, b, m = (resolved[k] for k in ("geometry_mm", "simion_geometry_build", "simion_detector_marker"))
-    _validate_provider_inputs(g, b, m, resolved["rings"], resolved["electrodes_V"])
-    physical = resolve_physical_geometry(resolved)
+    _validate_provider_inputs(g, b, m, resolved["rings"], resolved["electrodes_v" if split else "electrodes_V"])
+    physical = resolve_split_physical_geometry(resolved) if split else resolve_physical_geometry(resolved)
     face = physical["detector_active_face"]
     if m["active_plane_z_mm"] != face["center_mm"][2] or m["active_radius_mm"] != face["radius_mm"]:
         raise ValueError("numerical detector marker differs from the physical detector active face")
     detector_body = physical["simion"]["detector_body"]
-    domains = derive_simion_instances(geometry=g, coordinate=resolved["coordinate_convention"], build=b, marker=m, physical_detector=detector_body)
+    domains = derive_simion_instances(geometry=g, coordinate=resolved["coordinate_convention"], build=b, marker=m, physical_detector=detector_body, include_accelerator=not split)
     by_role = {("flight_tube" if d["role"]=="flight_tube_shield" else d["role"]):d for d in domains}
     specs = []
     for role in ("flight_tube", "reflectron", "detector"):
@@ -83,3 +83,17 @@ def compile_downstream_specs(resolved: dict) -> tuple[dict, ...]:
             spec["physical_detector"] = copy.deepcopy(detector_body)
         specs.append(spec)
     return tuple(specs)
+
+
+def split_downstream_targets(resolved: dict) -> dict[str, list[dict]]:
+    """Map independent TOF scientific groups to their actual local PA labels."""
+    physical = resolve_split_physical_geometry(resolved)
+    roles = {row["component_electrode_id"]: row["role"] for row in physical["electrodes"]}
+    targets = {}
+    for domain in ("flight_tube", "reflectron"):
+        for row in physical["simion"][domain]["electrodes"]:
+            role = roles[row["component_electrode_id"]]
+            group = "common_ground" if role in {"flight_tube_shield", "reflectron_entry_grid"} else role
+            targets.setdefault(group, []).append(dict(domain=domain, electrode_id=row["local_electrode_id"]))
+    targets["common_ground"].append(dict(domain="detector", electrode_id=1))
+    return targets

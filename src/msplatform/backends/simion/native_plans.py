@@ -483,6 +483,20 @@ def plan_solve_fields(model, components_resolved=None, *, drive=None, numerics: 
         raise ValueError('model field planning rejects a competing provider/drive')
     document = require_prepared_model(model)
     geometry = model_geometry(model)
+    if geometry.frontend_geometry.get("role") == "simion_split_oa_tof_geometry":
+        from .fields import prepare_split_field_design
+        from .frontend import split_frontend_instances
+        multipoles, _, _ = split_frontend_instances(geometry.frontend_geometry["composition_plan"])
+        expected = {"frontend_domains", "rf_reference_voltage_v"} if multipoles else {"frontend_domains"}
+        if set(numerics) != expected:
+            raise ValueError("split model field numerics fields differ")
+        design = prepare_split_field_design(document["components_resolved"], geometry.frontend_geometry,
+            physics=document["physics"], frontend_domains=numerics["frontend_domains"],
+            electrical_projection=document["electrical_projection"], pulse=document["drive"]["pulse"],
+            rf_reference_voltage_v=numerics.get("rf_reference_voltage_v"))
+        result = _field_plan(model_geometry(model, downstream_drive=True), design)
+        result["model_identity_sha256"] = document["model_identity_sha256"]
+        return result
     from .frontend import native_frontend_instances
     multipoles, tof = native_frontend_instances(geometry.frontend_geometry['composition_plan'])
     expected = {'frontend_domains', 'rf_reference_voltage_v'} if multipoles else {'frontend_domains'}
@@ -692,7 +706,8 @@ def _plan_downstream_solve_with_assets(compiled: CompiledSimionGeometry, *, raw_
             operations.append(_operation("export_reflectron","prepare",
                 ["lua",str(exporter),str(raw.with_suffix(".pa0")),str(operating)],
                 [str(operating)],"STANDALONE_PA_EXPORT=PASS"))
-            g,v=contract["geometry_mm"],contract["electrodes_V"]
+            voltage_key = "electrodes_v" if compiled.frontend_geometry.get("role") == "simion_split_oa_tof_geometry" else "electrodes_V"
+            g,v=contract["geometry_mm"],contract[voltage_key]
             asset.update(carrier_path=str(operating),family_paths=[],response_paths=family[2:],
                 endpoint_samples=[dict(x=0,voltage=0),
                 dict(x=round(g["L_stage1"]/cells[0]),voltage=v["midgrid"]),
@@ -751,7 +766,10 @@ def plan_field_workbench(compiled: CompiledSimionGeometry, *, field_design: dict
         if row['grid'] != grid:
             raise ValueError('field response grid differs from solved design')
         row['path'] = str(_native_ascii(Path(row['path'])))
-    _, tof = native_frontend_instances(geometry['composition_plan'])
+    if geometry.get('role') == 'simion_split_oa_tof_geometry':
+        tof = geometry['tof_instance_id']
+    else:
+        _, tof = native_frontend_instances(geometry['composition_plan'])
     probes = native_priority_occupancy_probes(geometry, field_design)
     interfaces = interface_field_probes(geometry, components_resolved[tof])
     original_path = root/'inputs/geometry_iob.lua'

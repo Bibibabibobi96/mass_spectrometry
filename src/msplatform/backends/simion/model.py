@@ -462,9 +462,86 @@ def _finish_static_world_model(compiled, components, *, drive, physics):
     return CompiledPreparedModel(json.dumps(document, sort_keys=True, separators=(',', ':'), ensure_ascii=False))
 
 
+
+def _compile_split_model(compiled, components, *, drive, physics):
+    """Authenticate split geometry and retain distinct scientific drive groups."""
+    from .split_compiler import compile_split_geometry
+    from .tof_geometry import resolve_split_physical_geometry
+    geometry = compiled.frontend_geometry
+    oa, tof = geometry["oa_instance_id"], geometry["tof_instance_id"]
+    domain = geometry["numerical_domains"]["parent"]
+    build = geometry["downstream_build_contract"]
+    canonical = compile_split_geometry({"composition_plan": geometry["composition_plan"],
+        "components_resolved": components}, numerics={"frontend_domains": {"parent": {
+            "cell_mm_xyz": domain["cell_mm_xyz"], "pa_bounds_mm": domain["bounds_mm"]}},
+        "geometry_build": build["simion_geometry_build"], "detector_marker": build["simion_detector_marker"],
+        "electrode_group_native_ids": geometry["electrode_bindings"]})
+    if asdict(canonical) != asdict(compiled):
+        raise ValueError("split geometry differs from its authenticated scientific sources")
+    if not isinstance(physics, Mapping) or dict(physics) != PHYSICS:
+        raise ValueError("split model physics/boundary policy is unsupported")
+    _exact(drive, {"groups", "pulse", "clock"}, "split model drive")
+    rf = set(geometry["electrode_bindings"]) - {oa}
+    _exact(drive["groups"], {oa, tof, *rf}, "split scientific instances")
+    _validate_oa_drive({"groups": {oa: drive["groups"][oa]}, "pulse": drive["pulse"],
+                        "clock": drive["clock"]}, {oa: geometry["electrode_bindings"][oa]})
+    if any((row["kind"] == "pulse" and row["off_voltage_v"] != 0.) or
+           (row["kind"] == "static" and row["voltage_v"] != 0.) for row in drive["groups"][oa].values()):
+        raise ValueError("selected OA policy requires all-zero OFF voltage")
+    targets = geometry["downstream_targets"]
+    _exact(drive["groups"][tof], set(targets), "split TOF scientific groups")
+    for group, row in drive["groups"][tof].items():
+        _exact(row, {"kind", "voltage_v"}, f"{tof}.{group} drive")
+        if row["kind"] != "static":
+            raise ValueError("split downstream groups require static drives")
+        voltage = _finite(row["voltage_v"], f"{tof}.{group} voltage")
+        if group == "common_ground" and voltage != 0.:
+            raise ValueError("split TOF common ground must remain zero")
+    oa_targets = {group: [dict(domain="parent", electrode_id=label)]
+                  for group, label in geometry["electrode_bindings"][oa].items()}
+    all_targets = {oa: oa_targets, tof: targets}
+    carrier, rf_groups = {}, {}
+    for instance in rf:
+        expected = scientific_multipole_drive(components[instance], geometry["electrode_bindings"][instance])
+        _validate_groups({instance: drive["groups"][instance]}, {instance: expected})
+        all_targets[instance] = {group: [dict(domain="parent", electrode_id=label)]
+                                 for group, label in geometry["electrode_bindings"][instance].items()}
+        rf_groups[instance] = {}
+        for group, row in drive["groups"][instance].items():
+            label = geometry["electrode_bindings"][instance][group]
+            carrier[label] = row["voltage_v"] if row["kind"] == "static" else row["common_mode_v"] + row["dc_v"]
+            if row["kind"] == "rf":
+                rf_groups[instance][label] = 1 if row["polarity"] == 1 else 2
+    rows = [dict(instance_id=instance, electrode_group_id=group, native_targets=all_targets[instance][group], **value)
+            for instance, groups in drive["groups"].items() for group, value in groups.items()]
+    on = {label: (drive["groups"][oa][group]["on_voltage_v"] if drive["groups"][oa][group]["kind"] == "pulse"
+                  else drive["groups"][oa][group]["voltage_v"]) for group, label in geometry["electrode_bindings"][oa].items()}
+    downstream = copy.deepcopy(compiled)
+    physical = resolve_split_physical_geometry(build)
+    roles = {row["component_electrode_id"]: row["role"] for row in physical["electrodes"]}
+    for spec in downstream.downstream_specs:
+        if spec["role"] == "detector":
+            continue
+        for row in spec["template_variables"]["component"]["electrodes"]:
+            role = roles[row["component_electrode_id"]]
+            group = "common_ground" if role in {"flight_tube_shield", "reflectron_entry_grid"} else role
+            row["voltage_v"] = drive["groups"][tof][group]["voltage_v"]
+    contract = downstream.frontend_geometry["downstream_build_contract"]
+    contract["electrodes_v"]["midgrid"] = drive["groups"][tof]["reflectron_midgrid"]["voltage_v"]
+    contract["electrodes_v"]["backplate"] = drive["groups"][tof]["reflectron_backplate"]["voltage_v"]
+    document = dict(schema_version=1, role="compiled_prepared_simion_model", field_status="not_solved",
+        source_status="not_requested", geometry=asdict(compiled), components_resolved=copy.deepcopy(dict(components)),
+        drive=copy.deepcopy(dict(drive)), physics=copy.deepcopy(dict(physics)), native_drive_rows=rows,
+        electrical_projection=dict(carrier=carrier, rf_groups=rf_groups, accelerator_on=on), downstream_geometry=asdict(downstream))
+    document = json.loads(json.dumps(document, sort_keys=True, allow_nan=False))
+    document["model_identity_sha256"] = _content_sha256(document)
+    return CompiledPreparedModel(json.dumps(document, sort_keys=True, separators=(",", ":"), allow_nan=False))
+
 def compile_prepared_model(compiled: CompiledSimionGeometry, components_resolved: Mapping[str, dict], *,
                            drive: Mapping[str, Any], physics: Mapping[str, Any]) -> CompiledPreparedModel:
     """Return a complete physical-drive snapshot, not a solved/published artifact."""
+    if compiled.frontend_geometry.get("role") == "simion_split_oa_tof_geometry":
+        return _compile_split_model(compiled, components_resolved, drive=drive, physics=physics)
     if compiled.frontend_geometry.get('role') == 'simion_neutral_multi_domain_collision_geometry':
         from .generic_geometry import compile_generic_multi_domain_geometry, _multi_numerics
         from types import SimpleNamespace

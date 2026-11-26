@@ -48,7 +48,10 @@ def plan_fields_execution(model, *, numerics: dict, reuse_fields_reference=None)
     from .field_validation import interface_field_probes, native_priority_occupancy_probes
     from .frontend import native_frontend_instances
     geometry = model_geometry(model).frontend_geometry
-    _, tof = native_frontend_instances(geometry['composition_plan'])
+    if geometry.get('role') == 'simion_split_oa_tof_geometry':
+        tof = geometry['tof_instance_id']
+    else:
+        _, tof = native_frontend_instances(geometry['composition_plan'])
     native_priority_occupancy_probes(geometry, field_plan['field_design'])
     interface_field_probes(geometry, require_prepared_model(model)['components_resolved'][tof])
     roles = {'flight_tube','reflectron','detector'}

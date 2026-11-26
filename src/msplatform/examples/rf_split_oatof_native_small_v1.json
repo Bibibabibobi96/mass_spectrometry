@@ -1,0 +1,754 @@
+{
+  "schema_version": 1,
+  "name": "rf_split_oatof_native_small_v1",
+  "component_requests": {
+    "multipole": {
+      "provider_id": "rf_multipole",
+      "design": {
+        "schema_version": 4,
+        "role": "multipole_design_request",
+        "request_id": "octupole_bare_mechanical_base",
+        "identity": {
+          "project_id": "rf_multipole_ion_optics",
+          "family_id": "rf_multipole_ion_optics",
+          "radial_order_n": 4,
+          "electrode_count": 8
+        },
+        "units": {
+          "length": "mm",
+          "voltage": "V",
+          "frequency": "Hz",
+          "phase": "rad",
+          "energy": "eV"
+        },
+        "coordinate": {
+          "coordinate_id": "multipole.cartesian.z_axis.v1",
+          "axial_axis": "+z",
+          "orientation_rad": 0.0
+        },
+        "geometry_mm": {
+          "inscribed_radius_r0": 4.0,
+          "rod_radius_ratio": 0.5,
+          "rod_z_min": 0.0,
+          "rod_z_max": 79.6,
+          "numerical_domain": {
+            "radius_mm": 21.0,
+            "z_min_mm": -2.5,
+            "z_max_mm": 82.1,
+            "working_region_radius_mm": 3.6
+          },
+          "observations": {
+            "release_plane_z_mm": -1.5,
+            "handoff_plane_z_mm": 80.6,
+            "census_plane_z_mm": 81.1,
+            "acceptance_radius_mm": 3.6
+          }
+        },
+        "drive": {
+          "waveform": "cosine",
+          "rf_amplitude_V_zero_to_peak_per_group": 139.81792,
+          "dc_amplitude_V_per_group": 0.0,
+          "common_mode_offset_V": 0.0,
+          "frequency_Hz": 1100000.0,
+          "phase_rad": 0.0
+        },
+        "axial_drive": {
+          "topology": "none"
+        },
+        "static_electrodes_V": {
+          "role": "bare_multipole_static_electrodes"
+        },
+        "particle_source": {
+          "energy_model": {
+            "kind": "monoenergetic",
+            "kinetic_energy_eV": 2.0
+          },
+          "charge_state": 1
+        },
+        "segmentation": {
+          "strategy": "uniform",
+          "segment_count": 4,
+          "intersegment_gap_mm": 0.4,
+          "entrance_common_mode_V": 0.0,
+          "exit_common_mode_V": 0.0,
+          "output_reference_V": 0.0
+        }
+      }
+    },
+    "oa": {
+      "provider_id": "orthogonal_accelerator",
+      "design": {
+        "instrument_geometry": {
+          "schema_version": 1,
+          "role": "oatof_validated_sectioned_accelerator_geometry",
+          "producer": "single_reflection_oa_tof_mass_analyzer",
+          "frame_id": "oatof_global",
+          "geometry": {
+            "numerical_port_width_mm": 3.0,
+            "electrode_width_mm": 130.0,
+            "negative_x_face_mm": -88.01362184380704,
+            "intermediate2_z_mm": 41.170813196588995,
+            "shield_inner_width_mm": 140.0,
+            "ring_count": 20,
+            "port_center_y_mm": 0.0,
+            "grid1_z_mm": -14.929186803411028,
+            "shield_back_z_mm": -31.929186803411028,
+            "repeller_front_z_mm": -21.929186803411028,
+            "numerical_port_height_mm": 2.8,
+            "axis_y_mm": 0.0,
+            "bore_width_mm": 120.0,
+            "shield_center_z_mm": 123.070813196589,
+            "ring_thickness_mm": 1.0,
+            "ring_z_mm": [
+              -3.709186803411024,
+              7.51081319658898,
+              18.730813196588983,
+              29.95081319658899,
+              55.106107314236056,
+              69.04140143188312,
+              82.97669554953018,
+              96.91198966717724,
+              110.8472837848243,
+              124.78257790247136,
+              138.71787202011842,
+              152.65316613776548,
+              166.58846025541254,
+              180.5237543730596,
+              194.45904849070666,
+              208.39434260835372,
+              222.32963672600079,
+              236.26493084364785,
+              250.2002249612949,
+              264.13551907894197
+            ],
+            "shield_span_z_mm": 310.00000000000006,
+            "cross_section": "square",
+            "axis_x_mm": -14.013621843807044,
+            "repeller_thickness_mm": 1.0,
+            "grid2_z_mm": 278.07081319658903,
+            "port_center_z_mm": -18.429186803411028,
+            "shield_wall_mm": 4.0,
+            "shield_outer_width_mm": 148.0
+          }
+        }
+      }
+    },
+    "tof": {
+      "provider_id": "single_reflection_tof",
+      "design": {
+        "schema_version": 1,
+        "role": "single_reflection_tof_design",
+        "local_frame_id": "single_reflection_tof_cartesian",
+        "geometry_mm": {
+          "detector_radius": 40.0,
+          "L_stage2": 96.1563,
+          "flight_tube_wall": 10.0,
+          "shield_outer_z_min": -61.92918680341103,
+          "shield_endcap_thickness": 10.0,
+          "bore_r": 250.0,
+          "L_reflectron": 216.1563,
+          "L_stage1": 120.0,
+          "ring_outer_r": 300.0,
+          "flight_tube_r": 350.0,
+          "L_flight": 600.0,
+          "ring_thickness": 5.0,
+          "shield_axial_gap": 50.0,
+          "detector_thickness": 1.0,
+          "detector_z": 0.0
+        },
+        "coordinate_convention": {
+          "reflectron_axis": [
+            0,
+            0
+          ],
+          "detector_x": 69.01362184380704
+        },
+        "rings": {
+          "stage1_count": 10,
+          "stage2_count": 5
+        },
+        "electrodes_v": {
+          "entgrid": 0.0,
+          "midgrid": 1714.19374978549,
+          "backplate": 2552.0810422351415
+        }
+      }
+    }
+  },
+  "recipe": {
+    "schema_version": 2,
+    "role": "assembly_recipe",
+    "integration_id": "instrument_assembly",
+    "recipe_id": "rf_split_oatof_native_small_v1",
+    "assembly_frame_id": "oatof_global",
+    "position_tolerance_mm": 1e-08,
+    "angular_tolerance_rad": 1e-10,
+    "instances": [
+      {
+        "instance_id": "multipole",
+        "project_id": "rf_multipole_ion_optics",
+        "transform": {
+          "schema_version": 1,
+          "role": "rigid_transform",
+          "from_frame_id": "multipole.cartesian.z_axis.v1",
+          "to_frame_id": "oatof_global",
+          "rotation": [
+            [
+              0,
+              0,
+              1
+            ],
+            [
+              1,
+              0,
+              0
+            ],
+            [
+              0,
+              1,
+              0
+            ]
+          ],
+          "translation_mm": [
+            -168.61362184380704,
+            0,
+            -18.429186803411028
+          ]
+        }
+      },
+      {
+        "instance_id": "oa",
+        "project_id": "orthogonal_accelerator",
+        "transform": {
+          "schema_version": 1,
+          "role": "rigid_transform",
+          "from_frame_id": "sectioned_accelerator_cartesian",
+          "to_frame_id": "oatof_global",
+          "rotation": [
+            [
+              1,
+              0,
+              0
+            ],
+            [
+              0,
+              1,
+              0
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "translation_mm": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "instance_id": "tof",
+        "project_id": "single_reflection_tof",
+        "transform": {
+          "schema_version": 1,
+          "role": "rigid_transform",
+          "from_frame_id": "single_reflection_tof_cartesian",
+          "to_frame_id": "oatof_global",
+          "rotation": [
+            [
+              1,
+              0,
+              0
+            ],
+            [
+              0,
+              1,
+              0
+            ],
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "translation_mm": [
+            0,
+            0,
+            0
+          ]
+        }
+      }
+    ],
+    "connections": [
+      {
+        "connection_id": "multipole_oatof",
+        "upstream": {
+          "instance_id": "multipole",
+          "port_id": "mechanical_exit"
+        },
+        "downstream": {
+          "instance_id": "oa",
+          "port_id": "side_entry"
+        },
+        "gap_mm": 1.0,
+        "coupling_mode": "monolithic_joint_solve"
+      }
+    ],
+    "containments": [
+      {
+        "relation_id": "oa_in_flight_tube",
+        "contained_instance_id": "oa",
+        "container_instance_id": "tof",
+        "domain_id": "flight_tube_cavity",
+        "coupling_mode": "monolithic_joint_solve"
+      }
+    ]
+  },
+  "numerics": {
+    "geometry": {
+      "frontend_domains": {
+        "parent": {
+          "cell_mm_xyz": {
+            "x": 2.0,
+            "y": 2.0,
+            "z": 0.1
+          },
+          "pa_bounds_mm": {
+            "x_min": -172.01362184380704,
+            "x_max": 61.986378156192956,
+            "y_min": -75.0,
+            "y_max": 75.0,
+            "z_min": -41.92918680341103,
+            "z_max": 278.070813196589
+          }
+        }
+      },
+      "geometry_build": {
+        "accelerator": {
+          "cell_xy_mm": 0.25,
+          "cell_z_mm": 0.05,
+          "vacuum_margin_mm": 0.0,
+          "back_domain_margin_mm": 0.0,
+          "front_domain_margin_mm": 0.0,
+          "grid_phase_z_mm": 0.0,
+          "max_gib": 3.5
+        },
+        "reflectron": {
+          "cell_axial_mm": 0.25,
+          "cell_radial_mm": 1.0,
+          "max_gib": 0.5
+        },
+        "flight_tube": {
+          "cell_axial_mm": 1.0,
+          "cell_radial_mm": 1.0,
+          "max_gib": 0.1
+        },
+        "detector": {
+          "margin_xy_mm": 1.0,
+          "max_mib": 64.0
+        }
+      },
+      "detector_marker": {
+        "role": "GUI-visible numerical absorber marking the detector active plane; not the mechanical detector body",
+        "active_plane_z_mm": 0.0,
+        "active_radius_mm": 40.0,
+        "absorber_thickness_mm": 0.1,
+        "front_margin_z_mm": 0.2,
+        "back_margin_z_mm": 0.05,
+        "cell_xy_mm": 0.5,
+        "cell_z_mm": 0.01,
+        "crossing_step_control_enabled": true,
+        "capture_arm_distance_mm": 100.0,
+        "capture_depth_mm": 0.02
+      }
+    },
+    "fields": {
+      "rf_reference_voltage_v": 139.81792,
+      "downstream_convergence_v": {
+        "flight_tube": 1e-05,
+        "reflectron": 1e-05,
+        "detector": 1e-05
+      },
+      "frontend_domains": {
+        "parent": {
+          "refine_convergence_v": {
+            "carrier_off": 1e-05,
+            "rf_reference": 1e-05,
+            "pulse_delta": 1e-05
+          }
+        }
+      }
+    },
+    "tracing": {
+      "end_policy": {
+        "maximum_particle_age_us": 100.0
+      },
+      "simion": {
+        "maximum_step_us": 0.01,
+        "trajectory_quality": 0,
+        "rf_steps_per_period": 32
+      }
+    }
+  },
+  "cad_export": {
+    "representation": "physical_solids",
+    "write_pcurves": true,
+    "precision_mode": 0
+  },
+  "claim_limit": "Technical small-N author input; no native execution, clearance, field accuracy, statistical or qualification claim.",
+  "drive": {
+    "pulse": {
+      "mode": "timed",
+      "time_us": 80.0513730009902,
+      "width_us": 7.2727272727272725
+    },
+    "clock": {
+      "phase_reference_instrument_time_us": 0.0
+    },
+    "clock_authority": {
+      "example_resource": "instrument_clock_authority_v1.json"
+    },
+    "groups": {
+      "multipole": {
+        "segment_0001_rf_group_1": {
+          "kind": "rf",
+          "common_mode_v": 0.0,
+          "dc_v": 0.0,
+          "polarity": 1,
+          "waveform": "cosine",
+          "frequency_hz": 1100000.0,
+          "phase_rad": 0.0,
+          "rf_amplitude_v": 139.81792
+        },
+        "segment_0001_rf_group_2": {
+          "kind": "rf",
+          "common_mode_v": 0.0,
+          "dc_v": -0.0,
+          "polarity": -1,
+          "waveform": "cosine",
+          "frequency_hz": 1100000.0,
+          "phase_rad": 0.0,
+          "rf_amplitude_v": 139.81792
+        },
+        "segment_0002_rf_group_1": {
+          "kind": "rf",
+          "common_mode_v": 0.0,
+          "dc_v": 0.0,
+          "polarity": 1,
+          "waveform": "cosine",
+          "frequency_hz": 1100000.0,
+          "phase_rad": 0.0,
+          "rf_amplitude_v": 139.81792
+        },
+        "segment_0002_rf_group_2": {
+          "kind": "rf",
+          "common_mode_v": 0.0,
+          "dc_v": -0.0,
+          "polarity": -1,
+          "waveform": "cosine",
+          "frequency_hz": 1100000.0,
+          "phase_rad": 0.0,
+          "rf_amplitude_v": 139.81792
+        },
+        "segment_0003_rf_group_1": {
+          "kind": "rf",
+          "common_mode_v": 0.0,
+          "dc_v": 0.0,
+          "polarity": 1,
+          "waveform": "cosine",
+          "frequency_hz": 1100000.0,
+          "phase_rad": 0.0,
+          "rf_amplitude_v": 139.81792
+        },
+        "segment_0003_rf_group_2": {
+          "kind": "rf",
+          "common_mode_v": 0.0,
+          "dc_v": -0.0,
+          "polarity": -1,
+          "waveform": "cosine",
+          "frequency_hz": 1100000.0,
+          "phase_rad": 0.0,
+          "rf_amplitude_v": 139.81792
+        },
+        "segment_0004_rf_group_1": {
+          "kind": "rf",
+          "common_mode_v": 0.0,
+          "dc_v": 0.0,
+          "polarity": 1,
+          "waveform": "cosine",
+          "frequency_hz": 1100000.0,
+          "phase_rad": 0.0,
+          "rf_amplitude_v": 139.81792
+        },
+        "segment_0004_rf_group_2": {
+          "kind": "rf",
+          "common_mode_v": 0.0,
+          "dc_v": -0.0,
+          "polarity": -1,
+          "waveform": "cosine",
+          "frequency_hz": 1100000.0,
+          "phase_rad": 0.0,
+          "rf_amplitude_v": 139.81792
+        }
+      },
+      "oa": {
+        "grounded_shield": {
+          "kind": "static",
+          "voltage_v": 0.0
+        },
+        "repeller": {
+          "kind": "pulse",
+          "off_voltage_v": 0.0,
+          "on_voltage_v": 2140.0
+        },
+        "intermediate_grid_1": {
+          "kind": "pulse",
+          "off_voltage_v": 0.0,
+          "on_voltage_v": 1860.0
+        },
+        "intermediate_grid_2": {
+          "kind": "pulse",
+          "off_voltage_v": 0.0,
+          "on_voltage_v": 372.96685170832035
+        },
+        "exit_grid": {
+          "kind": "pulse",
+          "off_voltage_v": 0.0,
+          "on_voltage_v": 0.0
+        },
+        "ring_0001": {
+          "kind": "pulse",
+          "off_voltage_v": 0.0,
+          "on_voltage_v": 1562.593370341664
+        },
+        "ring_0002": {
+          "kind": "pulse",
+          "off_voltage_v": 0.0,
+          "on_voltage_v": 1265.186740683328
+        },
+        "ring_0003": {
+          "kind": "pulse",
+          "off_voltage_v": 0.0,
+          "on_voltage_v": 967.7801110249923
+        },
+        "ring_0004": {
+          "kind": "pulse",
+          "off_voltage_v": 0.0,
+          "on_voltage_v": 670.3734813666563
+        },
+        "ring_0005": {
+          "kind": "pulse",
+          "off_voltage_v": 0.0,
+          "on_voltage_v": 351.0276251372427
+        },
+        "ring_0006": {
+          "kind": "pulse",
+          "off_voltage_v": 0.0,
+          "on_voltage_v": 329.088398566165
+        },
+        "ring_0007": {
+          "kind": "pulse",
+          "off_voltage_v": 0.0,
+          "on_voltage_v": 307.14917199508733
+        },
+        "ring_0008": {
+          "kind": "pulse",
+          "off_voltage_v": 0.0,
+          "on_voltage_v": 285.2099454240097
+        },
+        "ring_0009": {
+          "kind": "pulse",
+          "off_voltage_v": 0.0,
+          "on_voltage_v": 263.270718852932
+        },
+        "ring_0010": {
+          "kind": "pulse",
+          "off_voltage_v": 0.0,
+          "on_voltage_v": 241.33149228185434
+        },
+        "ring_0011": {
+          "kind": "pulse",
+          "off_voltage_v": 0.0,
+          "on_voltage_v": 219.39226571077668
+        },
+        "ring_0012": {
+          "kind": "pulse",
+          "off_voltage_v": 0.0,
+          "on_voltage_v": 197.453039139699
+        },
+        "ring_0013": {
+          "kind": "pulse",
+          "off_voltage_v": 0.0,
+          "on_voltage_v": 175.51381256862135
+        },
+        "ring_0014": {
+          "kind": "pulse",
+          "off_voltage_v": 0.0,
+          "on_voltage_v": 153.57458599754366
+        },
+        "ring_0015": {
+          "kind": "pulse",
+          "off_voltage_v": 0.0,
+          "on_voltage_v": 131.635359426466
+        },
+        "ring_0016": {
+          "kind": "pulse",
+          "off_voltage_v": 0.0,
+          "on_voltage_v": 109.69613285538833
+        },
+        "ring_0017": {
+          "kind": "pulse",
+          "off_voltage_v": 0.0,
+          "on_voltage_v": 87.75690628431067
+        },
+        "ring_0018": {
+          "kind": "pulse",
+          "off_voltage_v": 0.0,
+          "on_voltage_v": 65.81767971323302
+        },
+        "ring_0019": {
+          "kind": "pulse",
+          "off_voltage_v": 0.0,
+          "on_voltage_v": 43.878453142155365
+        },
+        "ring_0020": {
+          "kind": "pulse",
+          "off_voltage_v": 0.0,
+          "on_voltage_v": 21.939226571077654
+        }
+      },
+      "tof": {
+        "common_ground": {
+          "kind": "static",
+          "voltage_v": 0
+        },
+        "reflectron_stage1_ring_1": {
+          "kind": "static",
+          "voltage_v": 155.83579543504453
+        },
+        "reflectron_stage1_ring_2": {
+          "kind": "static",
+          "voltage_v": 311.67159087008906
+        },
+        "reflectron_stage1_ring_3": {
+          "kind": "static",
+          "voltage_v": 467.50738630513365
+        },
+        "reflectron_stage1_ring_4": {
+          "kind": "static",
+          "voltage_v": 623.3431817401781
+        },
+        "reflectron_stage1_ring_5": {
+          "kind": "static",
+          "voltage_v": 779.1789771752227
+        },
+        "reflectron_stage1_ring_6": {
+          "kind": "static",
+          "voltage_v": 935.0147726102673
+        },
+        "reflectron_stage1_ring_7": {
+          "kind": "static",
+          "voltage_v": 1090.8505680453118
+        },
+        "reflectron_stage1_ring_8": {
+          "kind": "static",
+          "voltage_v": 1246.6863634803562
+        },
+        "reflectron_stage1_ring_9": {
+          "kind": "static",
+          "voltage_v": 1402.522158915401
+        },
+        "reflectron_stage1_ring_10": {
+          "kind": "static",
+          "voltage_v": 1558.3579543504454
+        },
+        "reflectron_midgrid": {
+          "kind": "static",
+          "voltage_v": 1714.19374978549
+        },
+        "reflectron_stage2_ring_1": {
+          "kind": "static",
+          "voltage_v": 1853.8416318604318
+        },
+        "reflectron_stage2_ring_2": {
+          "kind": "static",
+          "voltage_v": 1993.4895139353737
+        },
+        "reflectron_stage2_ring_3": {
+          "kind": "static",
+          "voltage_v": 2133.1373960103156
+        },
+        "reflectron_stage2_ring_4": {
+          "kind": "static",
+          "voltage_v": 2272.7852780852577
+        },
+        "reflectron_stage2_ring_5": {
+          "kind": "static",
+          "voltage_v": 2412.4331601602
+        },
+        "reflectron_backplate": {
+          "kind": "static",
+          "voltage_v": 2552.0810422351415
+        }
+      }
+    }
+  },
+  "physics": {
+    "field_model": "external_electrostatic_linear",
+    "boundary_policy": "native_zero_neumann",
+    "pulse_voltage_policy_id": "all_accelerator_electrodes_zero_before_pulse_v1"
+  },
+  "model_input_sources": {
+    "clock_epoch": "Versioned 32-byte zero epoch; unchanged bytes from 20261025 single-reflection-recovery-preflight; authority path reauthored for this package example.",
+    "pulse": "Explicit timing retained from 20261103 phase02-v6-map-a request10; not an accuracy or optimization claim.",
+    "release": "Physical MT19937 disk/cone/RF specification unchanged from RF octupole family_complete_mother_n100.json; this new birth realization explicitly authors sparse IDs. Historical P2 rows and IDs are not renamed. This technical example selects the first 3 of the same 100-particle mother specification; it is a new small-N choice, not a historical approved or statistical study.",
+    "field_numerics": "Frontend stopping settings and RF reference retained from phase02-v6-map-a request SHA256 aa6f33a05f9d3470ac12102f49506c74757181aceab0a558e67cc897d58b1393; grid comes only from geometry numerics. Downstream convergence is a new explicit 1e-5 V fixed-field functional policy; historical native defaults are not claimed equal. No field-grid or trajectory accuracy qualification.",
+    "split_geometry": "Split projections and OA electrical record derived from rf_oatof_functional_v1.json without changing physical values. The detector/OA shield overlap is retained; containment does not imply collision-free geometry. OA ON values derive from resolve_accelerator_electrical_design of that source; OFF policy and instance groups explicit."
+  },
+  "release": {
+    "schema_version": 1,
+    "role": "canonical_birth_source_request",
+    "release_spec": {
+      "schema_version": 1,
+      "role": "repository_ion_release",
+      "frame_id": "multipole.cartesian.z_axis.v1",
+      "particle_count": 3,
+      "mother_particle_count": 100,
+      "geometry": {
+        "shape": "disk",
+        "center_mm": [
+          0.0,
+          0.0,
+          -1.5
+        ],
+        "radius_mm": 0.5
+      },
+      "species": {
+        "mass_amu": 100.0,
+        "charge_state": 1
+      },
+      "sampling": {
+        "strategy": "mt19937_uniform_disk_filled_cone_rf_phase_v1",
+        "seed": 2026072801,
+        "rf_frequency_hz": 1100000.0,
+        "kinetic_energy_ev": 2.0,
+        "cone_half_angle_deg": 5.0
+      }
+    },
+    "clock": {
+      "clock_epoch_id": "instrument_clock_epoch_v1",
+      "authority_sha256": "6A035131B2BDBA6F7F20CBF6B6FD20EDAA5DCB3D7EC8EB7349F74F7AC35238A0"
+    },
+    "instrument_origin_us": 0.0,
+    "species_id": "ion_100amu_charge_plus_1",
+    "source_component_id": "multipole",
+    "relative_weights": null,
+    "particle_ids": [
+      1000003,
+      1000020,
+      1000037
+    ]
+  }
+}

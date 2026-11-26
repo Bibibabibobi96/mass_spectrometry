@@ -6,7 +6,7 @@ clock once using observed births and validates the terminal partition.
 """
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 import math
 import re
@@ -224,11 +224,21 @@ def _terminal_taxonomy(
 
 
 def read_native_events(
-    log_paths: Sequence[Path], mass_amu: float, ordered_particle_ids: Sequence[int],
-    batch_particle_counts: Sequence[int] | None = None,
+    log_paths: Sequence[Path], mass_amu: float | Mapping[int, float], ordered_particle_ids: Sequence[int],
+    batch_particle_counts: Sequence[int] | None = None, *, detector_instance: int = 4,
 ) -> dict:
     """Read native TRACE rows, terminal records and observed pulse times."""
+    if type(detector_instance) is not int or detector_instance < 1:
+        raise ValueError('detector instance must be an explicitly bound positive native instance')
     launched = len(ordered_particle_ids)
+    if isinstance(mass_amu, Mapping):
+        if set(mass_amu) != set(ordered_particle_ids):
+            raise ValueError("mass mapping must cover exactly the frozen cohort")
+        masses = dict(mass_amu)
+    else:
+        masses = {pid: mass_amu for pid in ordered_particle_ids}
+    if any(type(value) not in (int, float) or not math.isfinite(value) or value <= 0 for value in masses.values()):
+        raise ValueError("each original particle requires a positive finite mass")
     if batch_particle_counts is None:
         batch_particle_counts = [launched]
     if (
@@ -286,7 +296,7 @@ def read_native_events(
             vy = float(match["vy"])
             vz = float(match["vz"])
             recomputed_energy = kinetic_energy_ev(
-                mass_amu, 1000.0 * vx, 1000.0 * vy, 1000.0 * vz
+                masses[global_id], 1000.0 * vx, 1000.0 * vy, 1000.0 * vz
             )
             logged_energy = (
                 float(match["energy"]) if match["energy"] is not None else None
@@ -336,7 +346,7 @@ def read_native_events(
                 "particle_id": key[0],
                 "category": "detector_crossing",
                 "terminal_event": "detector_crossing",
-                "instance_id": 4,
+                "instance_id": detector_instance,
                 "terminal_instrument_time_us": None,
                 "x_mm": float(match["x"]),
                 "y_mm": float(match["y"]),
@@ -611,6 +621,7 @@ def read_plane_observations(log_paths, ordered_particle_ids, batch_counts, defin
     A declared record cap is a retained incomplete fact, never a loss or PASS.
     """
     allowed = {row["observation_id"] for row in definitions}
+    definitions_by_id = {row['observation_id']: row for row in definitions}
     if len(allowed) != len(definitions) or not allowed:
         raise ValueError("plane observation definitions must be unique and nonempty")
     if len(log_paths) != len(batch_counts) or sum(batch_counts) != len(ordered_particle_ids):
@@ -674,6 +685,43 @@ def read_plane_observations(log_paths, ordered_particle_ids, batch_counts, defin
                     row = {key: float(fields[key]) for key in numeric}
                     if not all(math.isfinite(value) for value in row.values()):
                         raise ValueError("nonfinite plane observation")
+                    if not projected and definitions_by_id[fields['observation_id']].get('schema_version') == 2:
+                        authority = (plane_authority or {}).get(fields['observation_id'])
+                        if (not isinstance(authority, dict) or set(authority) != {'frame_id', 'center_mm', 'normal', 'radius_mm'}
+                                or authority['frame_id'] != native_frame_id):
+                            raise ValueError('detector observation lacks its frozen native surface authority')
+                        center, normal, radius = authority['center_mm'], authority['normal'], authority['radius_mm']
+                        if (not isinstance(center, list) or not isinstance(normal, list) or len(center) != 3 or len(normal) != 3
+                                or any(type(x) not in (int, float) or not math.isfinite(x) for x in [*center, *normal, radius])
+                                or radius <= 0 or not binary64_serialization_close(sum(n*n for n in normal), 1.)):
+                            raise ValueError('invalid detector surface authority')
+                        for boundary, measured in (('start', row['signed_distance_before_mm']),
+                                                   ('end', row['signed_distance_after_mm'])):
+                            distance = sum((row[f'step_{boundary}_{axis}_mm'] - c)*n
+                                           for axis, c, n in zip('xyz', center, normal, strict=True))
+                            if not binary64_serialization_close(distance, measured):
+                                raise ValueError('detector step bracket differs from frozen surface')
+                        a, b = row['signed_distance_before_mm'], row['signed_distance_after_mm']
+                        if a == b:
+                            raise ValueError('detector step bracket does not cross the surface')
+                        fraction = -a / (b - a)
+                        expected_time = (row['step_start_instrument_time_us'] + fraction *
+                                         (row['step_end_instrument_time_us'] - row['step_start_instrument_time_us']))
+                        if not binary64_serialization_close(row['instrument_time_us'], expected_time):
+                            raise ValueError('detector observation time differs from accepted-step interpolation')
+                        for axis in 'xyz':
+                            for prefix, suffix in (('', '_mm'), ('v', '_mm_per_us')):
+                                name = prefix + axis + suffix
+                                start, end = row['step_start_' + name], row['step_end_' + name]
+                                if not binary64_serialization_close(row[name], start + fraction*(end-start)):
+                                    raise ValueError('detector 6D observation differs from accepted-step interpolation')
+                        offset_vector = [row[axis + '_mm'] - c for axis, c in zip('xyz', center, strict=True)]
+                        axial = sum(x*n for x, n in zip(offset_vector, normal, strict=True))
+                        if not binary64_serialization_close(axial, 0.):
+                            raise ValueError('detector observation does not lie on the frozen surface')
+                        radial2 = sum(x*x for x in offset_vector) - axial*axial
+                        if radial2 > radius*radius and not binary64_serialization_close(radial2, radius*radius):
+                            raise ValueError('detector observation lies outside the frozen active disk')
                     a, b = row["signed_distance_before_mm"], row["signed_distance_after_mm"]
                     if (not row["step_start_instrument_time_us"] <= row["instrument_time_us"] <= row["step_end_instrument_time_us"]
                             or row["step_start_instrument_time_us"] >= row["step_end_instrument_time_us"]
@@ -925,7 +973,8 @@ def _collect_tracking_logs(log_paths, *, source_rows: dict, source_provenance: d
         raise ValueError('batch logs duplicate or omit execution cohort IDs')
     log = logs[0]
     masses = {float(row['mass_amu']) for row in source.values()}
-    if len(masses) != 1 or min(masses) <= 0:
+    split = flight.get('tracking_kind') == 'split_oa_tof'
+    if (not split and len(masses) != 1) or min(masses) <= 0:
         raise ValueError('existing single-flight analyzer requires one positive ion mass')
     observation_incomplete=[]
     seen_incomplete=set()
@@ -948,8 +997,6 @@ def _collect_tracking_logs(log_paths, *, source_rows: dict, source_provenance: d
     if any(value != plane_definitions[0] for value in plane_definitions):
         raise ValueError('batch plane observation definitions differ')
     consumed = [event for case in cases for event in case.get('build_metadata', {}).get('consumed_plane_events', [])]
-    plane_observation = (read_plane_observations(logs, list(source), counts, plane_definitions[0], consumed_plane_events=consumed)
-                         if plane_definitions[0] is not None else None)
     policies = [case.get('build_metadata', {}).get('propagation_stop') for case in cases]
     if any(value != policies[0] for value in policies):
         raise ValueError('batch propagation stop policies differ')
@@ -960,11 +1007,17 @@ def _collect_tracking_logs(log_paths, *, source_rows: dict, source_provenance: d
     authorities=[case.get('build_metadata',{}).get('plane_observation_authority') for case in cases]
     if any(value != authorities[0] for value in authorities):
         raise ValueError('batch plane frame authorities differ')
+    plane_observation = (read_plane_observations(logs, list(source), counts, plane_definitions[0],
+                                consumed_plane_events=consumed, plane_authority=authorities[0],
+                                native_frame_id=provenance.get('target_frame_id'))
+                         if plane_definitions[0] is not None else None)
     projected_observation = (read_plane_observations(logs, list(source), counts, plane_definitions[0], projected=True,
                                 plane_authority=authorities[0],native_frame_id=provenance.get('target_frame_id'))
                              if plane_definitions[0] is not None else None)
     cut_stops = read_cut_stop_events(logs, list(source), counts, stop_policy, plane_observation, terminals, projected_observation)
-    evidence = read_native_events(logs, masses.pop(), list(source), counts)
+    mass_input = {pid: float(row['mass_amu']) for pid, row in source.items()} if split else masses.pop()
+    detector_instance = flight['detector_instance'] if split else 4
+    evidence = read_native_events(logs, mass_input, list(source), counts, detector_instance=detector_instance)
     for pid, outcome in evidence['terminal_outcomes'].items():
         if outcome['category'] not in ('programmatic_age_stop','unknown_termination'):
             continue

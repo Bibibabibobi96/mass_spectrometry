@@ -701,3 +701,45 @@ COMSOL数值采用其真实CPT控制maximum_step_us/relative_tolerance/absolute_
 
 旧消费者：原复合OA–TOF公开native入口的跨组件HandoffResult/state_relaunch/segmented_upstream仍需合并本轮守卫；
 IP–MR及其他C链的合法续传和历史reader不全局禁用。下一步合并独立编译、实际birth源示例及同一CLI执行。
+
+
+### B2/B3/B4 SIMION 软件消费者闭包与原始出生
+
+配方冻结主题已提交/推送 `1d12e480`。分体模型现在由 `backends/simion/split_compiler.py` 编译，
+`operations.build_geometry/prepare_model/solve_fields` 复用既有owner，`fields/native_plans/field_execution`
+按真实独立OA/RF/TOF实例准备carrier_off、可选rf_reference和pulse_delta；同一parent域中的真实电极见证、
+下游3PA优先级/电压/探测器面保持。原parent域z_max的5.7e-14 mm舍入差采用既有32ULP边界规则，
+原118×76×3201网格不变，实际缩域0.1mm仍拒绝。包络及准备通过不是joint场/无碰撞资格。
+
+`tracking_execution/program/collection` 消费独立组件与实际首个RF（无RF时OA）的原birth和真实位姿；
+保留全局实验时间，不在OA重新释放。旧复合与新split真实OA–TOF scope均拒绝HandoffResult（空也拒）、
+state_relaunch及segmented_upstream；独立RF和C的IP–MR合法续传不变。统一结果适配在实际collection后，
+从initialize/terminate/有限圆面观测核验原始ID/6D/记录；未证明detector面交叉不冒充detected，缺件明确incomplete。
+trajectory product声明5个schema2科学数据文件，版本证据取实际Windows executable固定资源并核对文件身份。
+
+官方依据：SIMION [global segment](https://simion.com/info/workbench_program_extensions.html#sim-segment-global)、
+[time](https://simion.com/info/time.html)、[roadmap](https://simion.com/info/roadmap.html)，2026-11-27查阅，
+本机8.2.0.11；ion_time_of_flight包含TOB，age另减birth，不能再次加birth；segment_global适用8.2。
+此次仍未执行SIMION Refine/Fly，Lua/合成日志只证明声明的软件边界。
+
+`ion_release/dotnet_box.py` 注册box策略并直接复用旧唯一 .NET RNG/ION11 generator；保留.8E实际输入精度，
+原generator文件未改。显式选择public u/e转换为canonical速度，尚未证明与SIMION initialize速度等值；
+旧OA兼容u和旧COMSOL舍入e没有偷偷替换为新值。两/三组件作者例已冻结原几何、域/网格、V(t)、clock；
+OA N=3是原算法N1000的确定前缀，原ION11三行CRLF SHA256 47dead2ebc4d21dfd87244bbc3c24baa1ea22ecdd0e63f16d620594c5cb5a757；
+RF N=3为原100母群前缀。小N与新组合是本轮技术选择，不是原评阅批准或旧native资格。
+
+本单元联合 `.venv/Scripts/python.exe -m unittest tests.contracts.test_split_tof_simion
+ tests.contracts.test_split_tof_tracking tests.contracts.test_simion_particle_data
+ tests.contracts.test_split_native_example tests.contracts.test_native_workflow -q`：20 PASS（6.291s）；
+其中native_workflow公共入口尚为独立未提交整合，其他17项验证本主题的软件入口与负例。
+对应生产/测试Ruff PASS；旧ION11四项PASS，原SIMION compiler/native-plan兼容15项曾PASS。
+未启动商业软件，不把上述结果计为BA06/08/09整体验收。
+
+实际COMSOL独立几何候选已由正式6.4/R2025b launcher完成build+冷开+owner发布：run_id
+`20261127_012417__build__comsol__geometry-b9b8d5258ade`，manifest SHA256
+50948D07CCD42623117A05AAB9CBD6D51EAB7D4A457B7E39B0F17413224FE4A5；来自冻结的WORKTREE源，
+不伪称HEAD已验证。45 member/43电压group/5理想片；未求场、未CPT，owned_scope_unknown资源观测警告保留。
+源记录位于本轮原生owner run。后续提交冻结后需按实际影响复验。
+
+下一步B4：先补实际旧载荷跨阶段及原生后代防删保护，再启动SIMION公共链；原TTL/terminal读锁不能独自证明GC安全。
+B5 mass_scan纯原语已测试，公共多物种执行仍未接入；COMSOL三格新求场/飞行与普通安装仍未完成。

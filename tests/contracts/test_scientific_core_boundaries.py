@@ -36,7 +36,7 @@ DOMAIN_IMPORTS = {
     "analysis": SCIENTIFIC_DOMAINS | {"gas"},
     "assembly": SCIENTIFIC_DOMAINS | {"components"},
     "components": SCIENTIFIC_DOMAINS | {"gas", "components"},
-    "backends": SCIENTIFIC_DOMAINS | {"gas", "components", "backends", "execution", "results"},
+    "backends": SCIENTIFIC_DOMAINS | {"gas", "physics", "components", "backends", "execution", "results"},
     "execution": SCIENTIFIC_DOMAINS | {"execution", "results"},
     "results": SCIENTIFIC_DOMAINS | {"results"},
     "workflows": SCIENTIFIC_DOMAINS | {"gas", "workflows", "components", "backends", "execution", "results"},

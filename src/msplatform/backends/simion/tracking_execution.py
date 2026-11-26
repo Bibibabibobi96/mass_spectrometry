@@ -10,6 +10,7 @@ from typing import Mapping
 
 from msplatform.assembly.handoff import HandoffMother, HandoffResult
 from msplatform.contracts.clock import ClockIdentity, require_same_clock
+from msplatform.execution.executable_identity import windows_binary_version
 from msplatform.contracts.particle_physics import kinetic_energy_ev
 from msplatform.contracts.particle_state import validate_component_particle_state_rows
 from msplatform.contracts.rigid_transform import PhaseSpaceState, RigidTransform, relative_transform
@@ -155,6 +156,47 @@ def _resolve_scalar_basis(source, model, plan, selection):
                                     refinement_windows=selection.get('refinement_windows'))
 
 
+def _split_tracking_contract(geometry: Mapping, propagation: Mapping, observations: Mapping) -> int:
+    """Require continuous original-birth split tracking and its actual detector disk."""
+    if (not isinstance(propagation, Mapping) or propagation.get('scope') != 'continuous_assembly'
+            or propagation.get('stop') is not None or propagation.get('consumed_plane_events') != []):
+        raise ValueError('split OA–TOF requires one original-birth continuous flight without relaunch')
+    face = geometry['detector_active_face']
+    definitions = observations.get('plane_observations') if isinstance(observations, Mapping) else None
+    selected = [item for item in definitions or [] if isinstance(item, Mapping) and item.get('schema_version') == 2
+                and item.get('source_instance_id') == face['instance_id'] and item.get('surface_id') == face['surface_id']]
+    if len(selected) != 1 or len(definitions) != 1:
+        raise ValueError('split OA–TOF requires exactly one observation of its actual detector active face')
+    detector = [row for row in geometry['downstream_pa_instances'] if row.get('role') == 'detector']
+    if len(detector) != 1 or type(detector[0].get('workbench_index')) is not int or detector[0]['workbench_index'] < 1:
+        raise ValueError('split OA–TOF requires one explicit detector native workbench instance')
+    return detector[0]['workbench_index']
+
+
+def _validate_split_birth_instance(geometry, rows):
+    from .frontend import split_frontend_instances
+    rf_instances, oa_instance, _ = split_frontend_instances(geometry['composition_plan'])
+    selected = set(rf_instances) | {oa_instance}
+    downstream = {edge['downstream']['instance_id'] for edge in geometry['composition_plan']['recipe']['connections']
+                  if edge['upstream']['instance_id'] in selected and edge['downstream']['instance_id'] in selected}
+    first = selected - downstream
+    if len(first) != 1 or any(row['source_component_id'] not in first for row in rows):
+        raise ValueError('split births must originate in the declared first component')
+
+
+def _guard_complete_tof_flight(geometry, particles, propagation):
+    """Keep complete TOF instruments on one original-birth continuous flight."""
+    plan = geometry.get('composition_plan', {})
+    components = plan.get('components', {})
+    scope = plan.get('scope', {}).get('instance_ids', ())
+    complete_tof = geometry.get('role') == 'simion_split_oa_tof_geometry' or any(
+        components[instance].get('project_id') == 'single_reflection_oa_tof_mass_analyzer'
+        for instance in scope)
+    if complete_tof and (isinstance(particles, HandoffResult) or not isinstance(propagation, Mapping)
+                         or propagation.get('scope') != 'continuous_assembly'):
+        raise ValueError('complete OA–TOF requires original births and continuous assembly propagation')
+
+
 def plan_tracking_execution(model, *, particles, clock_records: Mapping, propagation: Mapping,
                             observations: Mapping, numerics: Mapping, unit_size=None,
                             reused_unit_keys=(), field_manifest_record=None, birth_source_authority=None, hs1_request=None, ip_mr_field_reference=None, neutral_sampled_field_reference=None) -> dict:
@@ -165,6 +207,9 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
     """
     document = require_prepared_model(model)
     raw_geometry = model_geometry(model).frontend_geometry
+    _guard_complete_tof_flight(raw_geometry, particles, propagation)
+    split = raw_geometry.get('role') == 'simion_split_oa_tof_geometry'
+    detector_instance = _split_tracking_contract(raw_geometry, propagation, observations) if split else None
     ip_mr = raw_geometry.get('role') == 'simion_ip_mr_complete_geometry'
     joint_ip = raw_geometry.get('role') == 'simion_rf_ip_geometry'
     static_world = raw_geometry.get('role') in {'simion_neutral_world_collision_geometry', 'simion_neutral_multi_domain_collision_geometry'}
@@ -251,6 +296,8 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
         if propagation['scope']=='state_relaunch':
             raise ValueError('state_relaunch requires an actual canonical handoff result')
         rows,mother,source_clock = _birth_states(particles,geometry)
+        if split:
+            _validate_split_birth_instance(raw_geometry, rows)
         if static_world:
             if raw_geometry.get('role') == 'simion_neutral_multi_domain_collision_geometry':
                 grid = neutral_admission['basis']['grid']
@@ -308,12 +355,17 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
         if ip_mr: flight['tracking_kind']='ip_mr'
     else:
         flight = validate_native_flight(flight_input,requires_rf=rf)
+        if split:
+            flight.update(tracking_kind='split_oa_tof', detector_instance=detector_instance)
     if 'native_field_observation' in observations:
         if independent_component or isinstance(particles,HandoffResult) or not rows:
             raise ValueError('native field observation requires a nonempty original-birth assembly flight')
-        from .frontend import native_frontend_instances
+        from .frontend import native_frontend_instances, split_frontend_instances
         from .tracking_program import validate_native_field_observation
-        rf_instances,_ = native_frontend_instances(geometry['composition_plan'])
+        if split:
+            rf_instances, _, _ = split_frontend_instances(geometry['composition_plan'])
+        else:
+            rf_instances, _ = native_frontend_instances(geometry['composition_plan'])
         spec = validate_native_field_observation(observations['native_field_observation'],
             particle_ids=provenance['mother_particle_ids'],source_instances=rf_instances,
             domain_ids=[*geometry['numerical_domains'],'flight_tube','reflectron','detector'],clock_epoch_id=clock.clock_epoch_id,flight=flight)
@@ -442,7 +494,7 @@ def _render_tracking_controls(model, plan: dict, *, field_design: dict, stored_b
         return render_rf_controls(model,plan,assets=frontend_records,native_sources=native_sources)
     from .field_bank import field_bank
     from .field_identity import working_point_member_id
-    from .frontend import native_frontend_instances
+    from .frontend import native_frontend_instances, split_frontend_instances
     from .tracking_program import build_successor_program, DOWNSTREAM_STATIC_ASSET_ROLE, DOWNSTREAM_STATIC_ASSET_REPRESENTATION
 
     if not plan['rows']:
@@ -489,7 +541,10 @@ def _render_tracking_controls(model, plan: dict, *, field_design: dict, stored_b
     static = dict(schema_version=1,role=DOWNSTREAM_STATIC_ASSET_ROLE,
         runtime_representation=DOWNSTREAM_STATIC_ASSET_REPRESENTATION,
         receipt={key:downstream_receipt[key] for key in ('path','bytes','sha256')},static_roles=static_rows)
-    multipoles,tof = native_frontend_instances(geometry['composition_plan'])
+    if geometry.get('role') == 'simion_split_oa_tof_geometry':
+        multipoles, _, tof = split_frontend_instances(geometry['composition_plan'])
+    else:
+        multipoles,tof = native_frontend_instances(geometry['composition_plan'])
     ids = [row['particle_id'] for row in plan['rows']]
     metadata = {}
     observation = plan['observations'].get('native_field_observation')
@@ -923,6 +978,34 @@ def execute_tracking(session, *, fields_reference, particles, propagation, obser
         scalar_field_basis=scalar_field_basis,expected_scalar_basis=expected_scalar_basis)
 
 
+def _publish_split_particle_data(session, plan, collection, geometry, document, executable_identity, records):
+    from msplatform.io.manifest_records import file_record
+    from msplatform.physics import CONSTANTS
+    from msplatform.results.particle_data import read_particle_data, write_particle_data
+    from .particle_data import adapt_native_results
+    version = windows_binary_version(session.context.tools.get('simion'))
+    binary = file_record(Path(session.context.tools['simion']), 'solver_native_binary')
+    if executable_identity != {key: binary[key] for key in ('bytes', 'sha256')}:
+        raise ValueError('SIMION version evidence does not match the tracked native binary')
+    definitions = plan['observations']['plane_observations']
+    bindings = {row['observation_id']: dict(component_id=row['source_instance_id'],
+                surface_id=row['surface_id'], electrode_id=None, kind='detector') for row in definitions}
+    result = adapt_native_results({row['particle_id']: row for row in plan['rows']}, collection,
+        backend_version=version, observation_bindings=bindings,
+        observation_times_us=plan['observations'].get('observation_times_us', []), constants=CONSTANTS,
+        detector_instance=plan['flight']['detector_instance'])
+    directory = session.result_dir/'particle_data'
+    directory.mkdir(parents=True, exist_ok=True)
+    names = ('initial_states.parquet', 'terminal_states.parquet', 'events.parquet', 'trajectories.h5', 'execution.json')
+    declared = {name: session.declare_file(directory/name, 'required_evidence') for name in names}
+    write_particle_data(directory, result, metadata=dict(schema_version=2, initial_state_basis='native_birth_verified',
+                        frame_id=geometry['native_frame_id'], clock=document['drive']['clock']))
+    read_particle_data(directory)
+    for name, path in declared.items():
+        records['particle_data_'+name.replace('.', '_')] = file_record(session.canonical_path(path), 'required_evidence')
+    return result, version
+
+
 def _execute_tracking_bound_source(session,*,source,model,document,compiled,geometry,design,stored_bank,
         frontend,downstream,field_workbench,borrowed,original_clock,relative_epoch,particles,propagation,observations,
         numerics,limits,source_reference,allow_asynchronous_io,unit_size,recovery_reference,dispatch_profiles,birth_source_authority=None,hs1_request=None,expected_tracking_applicability=None,
@@ -1155,6 +1238,8 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
             verification='actual_native_stdout_readback_only_not_inferred_from_request',
             phase='before_fly_command_not_after_iob_load',
             stdout_data_keys=[key for key in records if key=='native_stdout' or key.startswith('native_stdout__')]))
+    if plan['flight'].get('tracking_kind') == 'split_oa_tof':
+        result, version = _publish_split_particle_data(session, plan, collection, geometry, document, executable_identity, records)
     if collection.get('terminal_evidence',{}).get('status') == 'recorded_v1':
         from .terminal_evidence import render_terminal_6d_rec
         terminal_rec = session.declare_file(session.result_dir/'terminal-6d.rec','required_evidence')
@@ -1172,6 +1257,9 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
         native_calls=collection['native_calls'],refine_calls=0,field_recomputed=False,scientific_qualification='not_granted',
         shared_dispatcher_migration='installed',unit_count=len(plan['units']),unit_size=unit_size,
         reused_unit_count=len(recovery['reused_unit_keys']) if recovery else 0)
+    if plan['flight'].get('tracking_kind') == 'split_oa_tof':
+        metadata.update(particle_data_schema_version=2, particle_data_integrity=result.data_integrity,
+                        backend_version=version, frame_id=geometry['native_frame_id'])
     if plan['flight'].get('tracking_kind')=='independent_oa':
         metadata.update(component_kind='orthogonal_accelerator',tracking_kind='independent_oa',field_domain_coupling='independent_component_domains',native_state_wire_format='legacy_shared_RF_NATIVE_STATE_V1')
     if plan['flight'].get('tracking_kind')=='rf_ip':

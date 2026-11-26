@@ -148,6 +148,66 @@ def prepare_field_design(multipoles: dict[str, dict], oatof: dict, geometry: dic
     return result
 
 
+
+def prepare_split_field_design(components: dict, geometry: dict, *, physics: dict, frontend_domains: dict,
+                               electrical_projection: dict, pulse: dict, rf_reference_voltage_v=None) -> dict:
+    """Prepare independent OA/TOF science in the real shared frontend PA."""
+    from msplatform.components.orthogonal_accelerator.geometry_members import iter_geometry_members
+    from .frontend import split_frontend_instances
+    rf, oa, _ = split_frontend_instances(geometry["composition_plan"])
+    if (physics.get("pulse_voltage_policy_id") != POLICY or physics.get("boundary_policy") != "native_zero_neumann"):
+        raise ValueError("split field design requires declared native boundary and all-zero OA OFF")
+    if set(frontend_domains) != {"parent"} or set(geometry["numerical_domains"]) != {"parent"}:
+        raise ValueError("split field design requires the compiled parent domain")
+    multipole_ids, ids = frontend_electrode_maps(geometry)
+    on = {int(key): value for key, value in electrical_projection["accelerator_on"].items()}
+    carrier_rf = {int(key): value for key, value in electrical_projection["carrier"].items()}
+    rf_groups = {instance: {int(key): value for key, value in groups.items()}
+                 for instance, groups in electrical_projection["rf_groups"].items()}
+    if set(on) != set(geometry["electrode_bindings"][oa].values()) or on[ids["grounded_shield_id"]] != 0.:
+        raise ValueError("split OA electrical projection differs from its grounded actual groups")
+    if set(carrier_rf) != {label for mapping in multipole_ids.values() for label in mapping.values()} or set(rf_groups) != set(rf):
+        raise ValueError("split RF electrical projection differs from its actual groups")
+    if rf and (type(rf_reference_voltage_v) not in (int, float) or not math.isfinite(rf_reference_voltage_v) or rf_reference_voltage_v <= 0):
+        raise ValueError("split RF reference voltage must be finite and positive")
+    if not rf and rf_reference_voltage_v is not None:
+        raise ValueError("OA-only split field design has no RF reference")
+    pulse_required = pulse.get("mode") != "held_off"
+    kinds = ["carrier_off", *(["rf_reference"] if rf else []), *(["pulse_delta"] if pulse_required else [])]
+    convergence = frontend_domains["parent"]["refine_convergence_v"]
+    if (not isinstance(convergence, dict) or not set(kinds) <= set(convergence)
+            or set(convergence) - set(kinds) - ({"pulse_delta"} if not pulse_required else set())
+            or any(type(value) not in (int, float) or not math.isfinite(value) or value <= 0 for value in convergence.values())):
+        raise ValueError("split parent convergence must cover the actual working fields")
+    carrier = {label: 0. for label in on}
+    carrier.update(carrier_rf)
+    points = [dict(kind="carrier_off", electrode_voltages_v={str(k): v for k, v in sorted(carrier.items())})]
+    if rf:
+        values = {label: 0. for label in carrier}
+        for label, polarity in rf_groups[rf[0]].items():
+            values[label] = rf_reference_voltage_v if polarity == 1 else -rf_reference_voltage_v
+        points.append(dict(kind="rf_reference", electrode_voltages_v={str(k): v for k, v in sorted(values.items())}))
+    if pulse_required:
+        points.append(dict(kind="pulse_delta", electrode_voltages_v={str(k): on.get(k, 0.) for k in sorted(carrier)}))
+    kinds_by_member = {row["member_id"]: ("ideal_sheet" if row["representation_role"] == "ideal_surface" else "physical_solid")
+                       for row in iter_geometry_members(components[oa])}
+    samples = []
+    for row in geometry["raw_physical_samples"]["parent"]:
+        if "electrode_id" not in row:
+            continue
+        kind = "physical_solid" if ":" in row["label"] else kinds_by_member[row["label"]]
+        samples.append(dict(label=row["label"], kind=kind, electrode_id=row["electrode_id"], gu=row["gu"]))
+    domain = dict(domain_id="parent", **geometry["numerical_domains"]["parent"], boundary_policy="native_zero_neumann",
+                  physical_samples=samples, refine_convergence_v={kind: convergence[kind] for kind in kinds})
+    result = dict(schema_version=3, role="frontend_native_field_design",
+        scope="coupled_multipole_accelerator_domain_only" if rf else "accelerator_domain_only",
+        domains=[domain], surface="none", working_points=points,
+        accelerator_voltage_states=dict(pulse_voltage_policy_id=POLICY,
+            off_voltages_v={label: 0. for label in on}, operating_voltages_v=on))
+    if rf:
+        result["rf_reference_voltage_v"] = rf_reference_voltage_v
+    return result
+
 def _physical_samples(multipoles: dict[str, dict], geometry: dict, domain: dict,
                       multipole_ids: dict[str, dict[int | str, int]], ids: dict, *, entrance: bool) -> list[dict]:
     """Sample each declared physical group directly from its resolved provider."""

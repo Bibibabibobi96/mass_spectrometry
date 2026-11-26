@@ -18,6 +18,27 @@ def native_frontend_instances(plan: dict) -> tuple[tuple[str, ...], str]:
     return tuple(multipoles), analyzers[0]
 
 
+
+def split_frontend_instances(plan: dict) -> tuple[tuple[str, ...], str, str]:
+    """Select distinct RF, OA and downstream providers from a plan6 scope."""
+    if type(plan.get("schema_version")) is not int or plan["schema_version"] != 6:
+        raise ValueError("split native frontend requires composition plan6")
+    multipoles, accelerators, analyzers = [], [], []
+    for instance in plan["scope"]["instance_ids"]:
+        project = plan["components"][instance]["project_id"]
+        if project == "rf_multipole_ion_optics":
+            multipoles.append(instance)
+        elif project == "orthogonal_accelerator":
+            accelerators.append(instance)
+        elif project == "single_reflection_tof":
+            analyzers.append(instance)
+        else:
+            raise ValueError(f"{instance}: unsupported split native component {project}")
+    if len(accelerators) != 1 or len(analyzers) != 1:
+        raise ValueError("split native frontend requires exactly one OA and one independent TOF")
+    return tuple(multipoles), accelerators[0], analyzers[0]
+
+
 def _electrodes(mapping: dict, ring_count: int, three_zone: bool,
                 multipole_bindings: dict[str, dict[int | str, int]]) -> None:
     required = {"grounded_shield_id", "accelerator_repeller_id", "accelerator_grid1_id",
@@ -40,6 +61,22 @@ def frontend_electrode_maps(geometry: dict) -> tuple[dict[str, dict[int | str, i
     These mappings apply to the shared body in every numerical domain. They
     neither select a physical scope nor assign voltages or component poses.
     """
+    if geometry.get("role") == "simion_split_oa_tof_geometry":
+        multipoles, oa, _ = split_frontend_instances(geometry["composition_plan"])
+        bindings = geometry["electrode_bindings"]
+        if set(bindings) != {oa, *multipoles}:
+            raise ValueError("split frontend bindings differ from selected physical instances")
+        groups = bindings[oa]
+        rings = sorted(group for group in groups if group.startswith("ring_"))
+        required = {"grounded_shield", "repeller", "intermediate_grid_1", "intermediate_grid_2", "exit_grid", *rings}
+        if set(groups) != required:
+            raise ValueError("split OA groups differ from physical renderer")
+        ids = {"grounded_shield_id": groups["grounded_shield"], "accelerator_repeller_id": groups["repeller"],
+            "accelerator_grid1_id": groups["intermediate_grid_1"], "accelerator_intermediate2_id": groups["intermediate_grid_2"],
+            "accelerator_grid2_id": groups["exit_grid"], "accelerator_ring_ids": [groups[group] for group in rings]}
+        rf_maps = {instance: dict(bindings[instance]) for instance in multipoles}
+        _electrodes(ids, geometry["accelerator_projection"]["ring_count"], True, rf_maps)
+        return rf_maps, ids
     plan = geometry['composition_plan']
     version = plan.get('schema_version')
     if type(version) is not int or version not in (3, 4, 5):

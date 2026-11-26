@@ -984,11 +984,17 @@ def _canonical_bare_runtime_projection(
 def _native_field_analyzer_config(multipoles: dict[str, dict], design: dict, geometry: dict, oatof: dict, *, model_document=None) -> tuple[dict, dict]:
     """Project the actual four-instance field design without legacy geometry."""
     from msplatform.backends.simion.frontend import (
-        frontend_electrode_maps, native_frontend_instances, frontend_accelerator_operating_voltages,
+        frontend_electrode_maps, native_frontend_instances, split_frontend_instances, frontend_accelerator_operating_voltages,
     )
 
     plan = geometry["composition_plan"]
-    upstream_ids, downstream_id = native_frontend_instances(plan)
+    split = geometry.get('role') == 'simion_split_oa_tof_geometry'
+    if split:
+        upstream_ids, _, downstream_id = split_frontend_instances(plan)
+        if model_document is None:
+            raise ValueError('split native Program requires its authenticated prepared model')
+    else:
+        upstream_ids, downstream_id = native_frontend_instances(plan)
     local_oatof = not upstream_ids
     if set(multipoles) != set(upstream_ids):
         raise ValueError("native Program providers differ from its selected instances")
@@ -1133,8 +1139,14 @@ def _native_field_analyzer_config(multipoles: dict[str, dict], design: dict, geo
         detector_radius_mm=marker["active_radius_mm"],detector_marker_front_margin_z_mm=marker["front_margin_z_mm"],
         detector_marker_back_margin_z_mm=marker["back_margin_z_mm"],
         detector_marker_absorber_thickness_mm=marker["absorber_thickness_mm"],diagnostic_return_plane_z_mm=_DIAGNOSTIC_RETURN_PLANE_Z_MM,
-        flight_tube_near_outer_z_mm=physical["shield_outer_z_min"],flight_tube_far_outer_z_mm=physical["shield_outer_z_max"])
+        flight_tube_near_outer_z_mm=physical["shield_outer_z_min"],
+        flight_tube_far_outer_z_mm=(physical["L_flight"] + physical["L_reflectron"] + physical["ring_thickness"]
+            + physical["shield_axial_gap"] + physical["shield_endcap_thickness"] if split
+            else physical["shield_outer_z_max"]))
     detector_body = downstream["detector"].get("physical_detector")
+    if split:
+        from msplatform.backends.simion.tof_geometry import resolve_split_physical_geometry
+        detector_body = resolve_split_physical_geometry(geometry['downstream_build_contract'])['simion']['detector_body']
     if detector_body is None:
         raise ValueError("canonical physical detector body is required")
     analyzer_geometry["detector_physical_thickness_mm"] = detector_body["height_mm"]
@@ -1148,7 +1160,7 @@ def _native_field_analyzer_config(multipoles: dict[str, dict], design: dict, geo
         field_modes={key:False for key in ("ideal_accelerator","ideal_accelerator_axial","ideal_drift_axial",
             "ideal_reflectron_stage1","ideal_reflectron_stage1_axial","ideal_reflectron_stage2","ideal_reflectron_stage2_axial")},
         voltages=dict(repeller_v=voltage["repeller"],grid1_v=voltage["grid1"],intermediate2_v=voltage["intermediate2"],
-            exit_v=voltage["grid2"],mid_v=(geometry["downstream_build_contract"] if model_document is not None else oatof)["electrodes_V"]["midgrid"],backplate_v=(geometry["downstream_build_contract"] if model_document is not None else oatof)["electrodes_V"]["backplate"]),
+            exit_v=voltage["grid2"],mid_v=(geometry["downstream_build_contract"] if model_document is not None else oatof)['electrodes_v' if split else 'electrodes_V']["midgrid"],backplate_v=(geometry["downstream_build_contract"] if model_document is not None else oatof)['electrodes_v' if split else 'electrodes_V']["backplate"]),
         accelerator_ring_count=len(g["ring_z_mm"]),
         electrode_ids=dict(repeller=electrodes["accelerator_repeller_id"],grid1=electrodes["accelerator_grid1_id"],
             intermediate2=electrodes["accelerator_intermediate2_id"],grid2=electrodes["accelerator_grid2_id"],
@@ -1223,8 +1235,8 @@ def _bound_tracking_model(prepared_model, multipoles, oatof, geometry, design, f
     """Verify the sole model compiler's complete geometry/mapping/drive snapshot."""
     import hashlib
     from .model import require_prepared_model, model_geometry, compile_prepared_model
-    from .frontend import native_frontend_instances
-    from .fields import prepare_field_design
+    from .frontend import native_frontend_instances, split_frontend_instances
+    from .fields import prepare_field_design, prepare_split_field_design
     from copy import deepcopy
 
     document = require_prepared_model(prepared_model)
@@ -1246,19 +1258,29 @@ def _bound_tracking_model(prepared_model, multipoles, oatof, geometry, design, f
     if semantic_projection(expected.document) != semantic_projection(document):
         raise ValueError('tracking model derived drive or mapping is not compiler-bound')
     actual_geometry = model_geometry(prepared_model, downstream_drive=True)
-    upstream, tof = native_frontend_instances(geometry['composition_plan'])
+    split = geometry.get('role') == 'simion_split_oa_tof_geometry'
+    if split:
+        upstream, _, tof = split_frontend_instances(geometry['composition_plan'])
+    else:
+        upstream, tof = native_frontend_instances(geometry['composition_plan'])
     if (geometry != actual_geometry.frontend_geometry or oatof != document['components_resolved'][tof]
             or multipoles != {key:document['components_resolved'][key] for key in upstream}):
         raise ValueError('tracking providers or compiled geometry differ from bound model')
     if dict(flight['pulse']) != document['drive']['pulse']:
         raise ValueError('tracking pulse differs from bound model drive')
     numerics = {row['domain_id']:{'refine_convergence_v':row['refine_convergence_v']} for row in design['domains']}
-    expected_design = prepare_field_design(multipoles,oatof,geometry,
-        variant_id=geometry['composition_plan']['components'][tof]['variant_id'],
-        pulse_voltage_policy_id=document['physics']['pulse_voltage_policy_id'],
-        boundary_policy=document['physics']['boundary_policy'], frontend_domains=numerics,
-        rf_reference_voltage_v=design.get('rf_reference_voltage_v'), flight=flight,
-        electrical_projection=document['electrical_projection'])
+    if split:
+        expected_design = prepare_split_field_design(document['components_resolved'], geometry,
+            physics=document['physics'], frontend_domains=numerics,
+            electrical_projection=document['electrical_projection'], pulse=flight['pulse'],
+            rf_reference_voltage_v=design.get('rf_reference_voltage_v'))
+    else:
+        expected_design = prepare_field_design(multipoles,oatof,geometry,
+            variant_id=geometry['composition_plan']['components'][tof]['variant_id'],
+            pulse_voltage_policy_id=document['physics']['pulse_voltage_policy_id'],
+            boundary_policy=document['physics']['boundary_policy'], frontend_domains=numerics,
+            rf_reference_voltage_v=design.get('rf_reference_voltage_v'), flight=flight,
+            electrical_projection=document['electrical_projection'])
     checked = deepcopy(design)
     for domain in checked['domains']:
         digest = domain.pop('gem_sha256', None)
@@ -1312,6 +1334,10 @@ def build_successor_program(
         raise ValueError("single-flight Program requires a native frontend field design")
     native_design = frontend
     native_local_oatof = not any(point['kind'] == 'rf_reference' for point in native_design['working_points'])
+    if isinstance(flight, Mapping) and flight.get('tracking_kind') == 'split_oa_tof':
+        if flight.get('detector_instance') != 4:
+            raise ValueError('this native Program renderer currently requires detector workbench instance 4')
+        flight = {key: value for key, value in flight.items() if key not in {'tracking_kind', 'detector_instance'}}
     flight = validate_native_flight(flight, requires_rf=not native_local_oatof)
     pulse_response_required = any(point['kind'] == 'pulse_delta' for point in native_design['working_points'])
     if flight['pulse']['mode'] != 'held_off' and not pulse_response_required:
@@ -2256,10 +2282,13 @@ def _instrument_plane_observations(program: str, definitions: list[dict], geomet
         raise ValueError("plane observations require a nonempty explicit definition list")
     plan = geometry["composition_plan"]
     poses = {row["instance_id"]: RigidTransform.from_contract(row["transform"]) for row in plan["recipe"]["instances"]}
-    declarations, ids, planes = [], set(), {}
+    declarations, ids, planes, radii = [], set(), {}, {}
     for spec in definitions:
-        if (not isinstance(spec, dict) or set(spec) != {"schema_version", "observation_id", "source_instance_id", "port_id", "max_records"}
-                or type(spec["schema_version"]) is not int or spec["schema_version"] != 1
+        if (not isinstance(spec, dict) or type(spec.get("schema_version")) is not int
+                or spec["schema_version"] not in (1, 2)
+                or set(spec) != ({"schema_version", "observation_id", "source_instance_id", "port_id", "max_records"}
+                                 if spec["schema_version"] == 1 else
+                                 {"schema_version", "observation_id", "source_instance_id", "surface_id", "max_records"})
                 or not isinstance(spec["observation_id"], str)
                 or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_.:-]*", spec["observation_id"])
                 or spec["observation_id"] in ids or type(spec["max_records"]) is not int or spec["max_records"] <= 0):
@@ -2268,21 +2297,38 @@ def _instrument_plane_observations(program: str, definitions: list[dict], geomet
         if instance not in plan["scope"]["instance_ids"] or instance not in poses:
             raise ValueError("plane observation source is outside the selected assembly")
         component = plan["components"][instance]
-        port = component["ports"].get(spec["port_id"])
-        if not isinstance(port, dict):
-            raise ValueError("plane observation requires an actual provider port")
-        pose = poses[instance]
-        plane = pose.transform_plane(PlaneSurface(component["local_frame_id"], tuple(port["center_mm"]), tuple(port["outward_normal"])))
+        radius = None
+        if spec["schema_version"] == 1:
+            port = component["ports"].get(spec["port_id"])
+            if not isinstance(port, dict):
+                raise ValueError("plane observation requires an actual provider port")
+            pose = poses[instance]
+            plane = pose.transform_plane(PlaneSurface(component["local_frame_id"], tuple(port["center_mm"]), tuple(port["outward_normal"])))
+        else:
+            face = geometry.get('detector_active_face')
+            if (geometry.get('role') != 'simion_split_oa_tof_geometry' or not isinstance(face, dict)
+                    or face.get('instance_id') != instance or face.get('surface_id') != spec['surface_id']
+                    or face.get('native_frame_id') != geometry['native_frame_id']):
+                raise ValueError('detector observation requires its actual split geometry surface binding')
+            native = face['native']
+            radius = native['radius_mm']
+            if type(radius) not in (int, float) or not math.isfinite(radius) or radius <= 0:
+                raise ValueError('detector active face requires a positive finite radius')
+            plane = PlaneSurface(face['native_frame_id'], tuple(native['center_mm']), tuple(native['normal']))
         if plane.frame_id != geometry["native_frame_id"]:
             raise ValueError("plane observation requires the actual native world frame")
         ids.add(spec["observation_id"])
         planes[spec["observation_id"]] = plane
+        if radius is not None:
+            radii[spec["observation_id"]] = radius
         declarations.append(dict(observation_id=spec["observation_id"], center=list(plane.center_mm),
-                                 normal=list(plane.normal), max_records=spec["max_records"]))
+                                 normal=list(plane.normal), max_records=spec["max_records"],
+                                 **({'radius_mm': radius} if radius is not None else {})))
     if build_metadata is not None:
         build_metadata['plane_observation_authority'] = {
             key: dict(frame_id=plane.frame_id, center_mm=list(plane.center_mm),
-                      normal=list(plane.normal)) for key, plane in planes.items()}
+                      normal=list(plane.normal), **({'radius_mm': radii[key]} if key in radii else {}))
+            for key, plane in planes.items()}
     validate_propagation_stop(propagation_stop, definitions)
     consumed = consumed_plane_events or []
     if not isinstance(consumed, list):
@@ -2345,6 +2391,14 @@ end
       local direction=nil
       if d0<0 and d1>=0 and vn>0 then direction='outward'
       elseif d0>0 and d1<=0 and vn<0 then direction='inward' end
+      if direction and plane.radius_mm then
+        local f=-d0/(d1-d0)
+        local x=p.x+f*(ion_px_mm-p.x)-c[1]
+        local y=p.y+f*(ion_py_mm-p.y)-c[2]
+        local z=p.z+f*(ion_pz_mm-p.z)-c[3]
+        local along=x*n[1]+y*n[2]+z*n[3]
+        if x*x+y*y+z*z-along*along>plane.radius_mm*plane.radius_mm then direction=nil end
+      end
       local pending_key=plane.observation_id..':'..ion_number
       local pending=single_flight_plane_pending[pending_key]
       if pending then

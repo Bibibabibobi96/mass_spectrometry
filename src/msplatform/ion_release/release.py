@@ -32,6 +32,10 @@ from msplatform.ion_release.continuous_axial_volume import (
     validate_continuous_axial_volume_spec,
     validate_materialized_continuous_axial_volume_release,
 )
+from msplatform.ion_release.dotnet_box import (
+    STRATEGY as DOTNET_BOX_STRATEGY, generate_dotnet_box_states, validate_dotnet_box_spec,
+    materialize_dotnet_box, validate_materialized_dotnet_box,
+)
 from msplatform.ion_release.mt19937_disk_cone_rf_phase import (
     IDEAL_TRANSPORT_STRATEGY,
     STRATEGY as MT19937_DISK_CONE_RF_PHASE_STRATEGY,
@@ -68,6 +72,10 @@ def _materialize_cylinder(spec: Mapping[str, Any], state_table: Path, receipt: P
 # This is deliberately data, not plugin discovery: unknown code cannot become
 # executable just by appearing on sys.path or in a project configuration.
 RELEASE_HANDLER_REGISTRY: dict[tuple[str, str], ReleaseHandler] = {
+    ("box", DOTNET_BOX_STRATEGY): ReleaseHandler(
+        validate_dotnet_box_spec, generate_dotnet_box_states,
+        materialize_dotnet_box, validate_materialized_dotnet_box,
+    ),
     ("cylinder", HALTON_STRATEGY): ReleaseHandler(
         validate_cylinder_release_spec, generate_cylinder_release_states,
         _materialize_cylinder, validate_materialized_cylinder_release,

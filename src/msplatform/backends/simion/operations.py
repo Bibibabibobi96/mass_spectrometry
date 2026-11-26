@@ -139,8 +139,9 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
     static_world = compiled.frontend_geometry.get("role") in {"simion_neutral_world_collision_geometry", "simion_neutral_multi_domain_collision_geometry"}
     independent_rf = compiled.frontend_geometry.get("role") == "simion_independent_rf_geometry"
     independent_oa = compiled.frontend_geometry.get("role") == "simion_independent_oa_geometry"
+    split_oa_tof = compiled.frontend_geometry.get("role") == "simion_split_oa_tof_geometry"
     independent_component = independent_rf or independent_oa or joint_ip or joint_oa_mr or joint_ip_mr or static_world
-    required = {"clock", "clock_authority"} | ({"oa_groups", "mr_authority", "pulse"} if joint_oa_mr else set()) | ({"groups"} if independent_oa or joint_ip or ip_mr_has_rf or static_world else set()) | ({"ip_schedule"} if joint_ip or joint_ip_mr else set()) | ({"mr_authority"} if joint_ip_mr else set()) | (set() if independent_component else {"pulse"})
+    required = {"clock", "clock_authority"} | ({"oa_groups", "mr_authority", "pulse"} if joint_oa_mr else set()) | ({"groups"} if independent_oa or split_oa_tof or joint_ip or ip_mr_has_rf or static_world else set()) | ({"ip_schedule"} if joint_ip or joint_ip_mr else set()) | ({"mr_authority"} if joint_ip_mr else set()) | (set() if independent_component else {"pulse"})
     if (not required <= drive.keys() or set(drive) - required - (set() if joint_oa_mr or joint_ip_mr else {"groups"}) - ({"pulse", "ip_schedule", "ip_schedules"} if static_world else {"pulse"} if independent_oa else set())
             or not isinstance(drive["clock"], Mapping)
             or set(drive["clock"]) != {"phase_reference_instrument_time_us"}):
@@ -184,6 +185,8 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
     elif joint_ip:
         expanded = dict(groups=copy.deepcopy(drive["groups"]), clock=clock,
             ip_schedule=copy.deepcopy(drive["ip_schedule"]))
+    elif split_oa_tof:
+        expanded = dict(groups=copy.deepcopy(drive["groups"]), pulse=copy.deepcopy(drive["pulse"]), clock=clock)
     elif independent_oa or static_world:
         expanded = dict(groups=copy.deepcopy(drive["groups"]), clock=clock,
             **({"pulse": copy.deepcopy(drive["pulse"])} if "pulse" in drive else {}),
@@ -504,6 +507,16 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
     document = require_prepared_model(model)
     if meta.get("model_identity_sha256") != document["model_identity_sha256"] or meta.get("clock") != document["drive"]["clock"]:
         raise ContractError("tracking field model/clock identity differs")
+    tracking_geometry = document["geometry"]["frontend_geometry"]
+    tracking_plan = tracking_geometry.get("composition_plan", {})
+    selected = tracking_plan.get("scope", {}).get("instance_ids", [])
+    interfaces = tracking_plan.get("components", {})
+    legacy_oa_tof = any(interfaces.get(name, {}).get("project_id") == "single_reflection_oa_tof_mass_analyzer"
+                        for name in selected)
+    if (tracking_geometry.get("role") == "simion_split_oa_tof_geometry" or legacy_oa_tof) and (
+            isinstance(particles, HandoffResult) or
+            (isinstance(propagation, Mapping) and propagation.get("scope") in {"segmented_upstream", "state_relaunch"})):
+        raise ContractError("OA–TOF requires original births and continuous_assembly; cross-component relaunch is retired")
     sampled_neutral = meta.get('field_representation') in {'neutral_sampled_basis_with_collision_geometry','neutral_multi_sampled_basis_with_collision_geometry'}
     neutral_admission = None
     if sampled_neutral:

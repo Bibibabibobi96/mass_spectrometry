@@ -49,6 +49,9 @@ def compile_geometry(assembly: Mapping[str, Any], *, numerics: Mapping[str, Any]
     backend override; otherwise stable sequential native slots are allocated.
     No source, path, receipt, workspace, process or execution context is used.
     """
+    if isinstance(assembly, Mapping) and isinstance(assembly.get("composition_plan"), Mapping) and assembly["composition_plan"].get("schema_version") == 6:
+        from .split_compiler import compile_split_geometry
+        return compile_split_geometry(assembly, numerics=numerics)
     if not isinstance(assembly, Mapping) or set(assembly) != {"composition_plan", "components_resolved"}:
         raise ValueError("SIMION geometry requires a scientific assembly plan and resolved component content only")
     required = {"frontend_domains", "geometry_build", "detector_marker"}
