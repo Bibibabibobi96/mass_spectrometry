@@ -171,94 +171,43 @@ assert(math.abs(ion_dvoltsx_gu-1)<1e-12 and math.abs(ion_dvoltsy_gu-2)<1e-12 and
         counts = {item['bucket_id']:0 for item in specification['buckets']}
         _validate_field_observation_row(rows[0],specification,parser_context,{'record_seq':0,'callback_seq':0},counts)
 
-    def test_public_track_admits_basis_and_binds_owner_arguments(self):
+    def test_split_rf_rejects_historical_scalar_basis_before_owner(self):
         from tests.contracts import test_simion_tracking_execution as tracking_fixture
         from msplatform.backends.simion import operations
-        case = tracking_fixture.TrackingExecutionPlanTests(methodName='runTest')
-        case.setUp()
+        case = tracking_fixture.TrackingExecutionPlanTests(methodName='runTest');case.setUp()
         self.addCleanup(case.doCleanups)
-        public_root = self.basis_case.root/'public'
-        public_root.mkdir()
-        source, session_type, _ = tracking_fixture.tracking_action_fixture(case, public_root)
-        session = session_type()
-        selection = dict(geometry_artifact=self.basis_case.geometry_ref, samples=self.basis_case.sample_refs)
-        stage = {'limits': {'transient_run_directory_bytes':1}, 'artifact_retention':{}}
-        with patch('msplatform.execution.stage_policy.read_stage_policy', return_value=(stage, {})), \
-             patch('msplatform.execution.owner.run_managed_stage', return_value={'manifest':{}}) as owner, \
-             patch('msplatform.results.artifacts.open_artifact', return_value='published'):
-            result = operations.track(source, case.packet, propagation=case.policy,
-                observations={'plane_observations':[]}, numerics=case.numerics, context=session.context,
-                scalar_field_basis=selection)
-        self.assertEqual(result,'published')
-        args = owner.call_args.kwargs
-        selected = args['payload']['scalar_field_basis']
-        self.assertEqual(set(selected['bases']), {'carrier','rf_reference','pulse_delta'})
-        self.assertEqual(args['action'].keywords['expected_scalar_basis'], selected)
-        self.assertEqual(len(args['source_references']), 8)
+        public_root=self.basis_case.root/'public';public_root.mkdir()
+        source, session_type, _ = tracking_fixture.tracking_action_fixture(case,public_root)
+        selection=dict(geometry_artifact=self.basis_case.geometry_ref,samples=self.basis_case.sample_refs)
+        with patch('msplatform.execution.owner.run_managed_stage') as owner:
+            with self.assertRaisesRegex(ValueError,'only OA and TOF without RF'):
+                operations.track(source,case.packet,propagation=case.policy,observations=case.observations,
+                    numerics=case.numerics,context=session_type().context,scalar_field_basis=selection)
+            owner.assert_not_called()
 
-    def test_real_recorded_birth_owner_guards_scalar_records_and_recovery(self):
-        import os
-        import shutil
-        import sys
-        from msplatform.execution import run_session
-        from msplatform.execution.context import ExecutionContext
-        from msplatform.execution.resources import resource_path
-        from msplatform.results.artifacts import open_artifact
+    def test_historical_recorded_birth_scalar_rejects_before_owner(self):
+        from tests.contracts.test_sfi_recorded_birth_entry import historical_fixture
         from msplatform.workflows.single_reflection_flight.recorded_birth import track_recorded_birth
-        from tests.contracts.test_support.sfi_scalar_owner_fixture import make_fixture, inert_native_leaf, retained_owner_directory
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            selected,receipt,model_path=historical_fixture(Path(directory))
+            selected['scalar_field_basis']=dict(geometry_artifact=self.basis_case.geometry_ref,
+                                               samples=self.basis_case.sample_refs)
+            with patch('msplatform.execution.owner.run_managed_stage') as owner:
+                for recovery in (None,{'path':str(Path(directory)/'unused-recovery.json')}):
+                    with self.assertRaisesRegex(ValueError,'legacy composite.*read-only'):
+                        track_recorded_birth(**selected,recovery_reference=recovery)
+                    owner.assert_not_called()
+                for path in (Path(receipt['input_records']['particle_source']['path']),model_path):
+                    original=path.read_bytes()
+                    try:
+                        path.write_bytes(original+b'\n')
+                        with self.assertRaisesRegex(AssertionError,'byte count changed'):
+                            track_recorded_birth(**selected)
+                        owner.assert_not_called()
+                    finally:path.write_bytes(original)
 
-        with retained_owner_directory() as directory:
-            selected = make_fixture(Path(directory))
-            values = selected['context']
-            context = ExecutionContext(workspace=Path(values['workspace']), python_executable=Path(sys.executable),
-                powershell_executable=Path(values['powershell_executable']),tools={'simion':Path(sys.executable)},
-                host_state_path=Path(os.environ['MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH']),
-                policy_path=resource_path('host_resource_policy.json'),
-                capacity_policy_path=Path(values['capacity_policy_path']),stage_policy_path=Path(values['stage_policy_path']))
-            observed = []
-            leaf = inert_native_leaf(run_session.run_observed_process, observed)
-            args = dict(preparation_manifest=selected['preparation_manifest'],fields=selected['fields'],
-                species_id=selected['species_id'],expected_particle_ids=selected['expected_particle_ids'],
-                observations={'plane_observations':[]},context=context,scalar_field_basis=selected['scalar_field_basis'])
-            inherited = dict(MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN='',MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID='',
-                             MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE='')
-            with patch.dict(os.environ,inherited),patch.object(run_session,'run_observed_process',side_effect=leaf):
-                result = track_recorded_birth(**args)
-                self.assertEqual(len(observed),3)
-                basis = selected['scalar_field_basis']['samples']
-                expected = set()
-                for reference in basis.values():
-                    sample = open_artifact(reference,expected_kind='scalar_field_samples')
-                    expected.update(sample.data_path(key).resolve() for key in ('field_v','field_valid'))
-                for operation in observed:
-                    actual = {Path(row['path']).resolve() for row in operation['immutable_input_records']}
-                    self.assertTrue(expected <= actual)
-                reused = track_recorded_birth(**args,recovery_reference=result.reference['manifest'])
-                self.assertEqual(len(observed),3)
-                self.assertEqual(reused.metadata['reused_unit_count'],1)
-                from msplatform.backends.simion import resources as simion_resources
-                package = Path(simion_resources.files('msplatform.backends.simion'))
-                isolated = Path(directory)/'missing-composer-package'
-                shutil.copytree(package/'resources',isolated/'resources',
-                                ignore=shutil.ignore_patterns('sfi_scalar_field.lua'))
-                with patch.object(simion_resources,'files',return_value=isolated):
-                    with self.assertRaisesRegex(FileNotFoundError,'installed SIMION native resource is missing: sfi_scalar_field.lua'):
-                        track_recorded_birth(**args)
-                self.assertEqual(len(observed),3)
-                sample = open_artifact(basis['carrier'],expected_kind='scalar_field_samples')
-                path = sample.data_path('field_v')
-                before = path.read_bytes()
-                try:
-                    path.write_bytes(bytes([before[0]^1])+before[1:])
-                    with self.assertRaises((AssertionError,ValueError)):
-                        track_recorded_birth(**args)
-                    self.assertEqual(len(observed),3)
-                finally:
-                    path.write_bytes(before)
-            collection = json.loads(result.data_path('collection').read_text(encoding='utf-8'))
-            self.assertEqual(collection['original_mother']['mother_particle_ids'],selected['expected_particle_ids'])
-
-    def test_public_track_leases_verified_original_samples(self):
+    def test_split_rf_rejects_derived_historical_basis_before_owner(self):
         from tests.contracts import test_simion_tracking_execution as tracking_fixture
         from msplatform.backends.simion import operations
         from msplatform.execution.terminal_publication import publish_terminal_state
@@ -282,16 +231,13 @@ assert(math.abs(ion_dvoltsx_gu-1)<1e-12 and math.abs(ion_dvoltsy_gu-2)<1e-12 and
         case=tracking_fixture.TrackingExecutionPlanTests(methodName='runTest');case.setUp();self.addCleanup(case.doCleanups)
         public_root=self.basis_case.root/'lease_public';public_root.mkdir()
         source,session_type,_=tracking_fixture.tracking_action_fixture(case,public_root);session=session_type()
-        stage={'limits':{'transient_run_directory_bytes':1},'artifact_retention':{}}
-        with patch('msplatform.execution.stage_policy.read_stage_policy',return_value=(stage,{})), \
-             patch('msplatform.execution.owner.run_managed_stage',return_value={'manifest':{}}) as owner, \
-             patch('msplatform.results.artifacts.open_artifact',return_value='published'):
-            operations.track(source,case.packet,propagation=case.policy,observations={'plane_observations':[]},
-                numerics=case.numerics,context=session.context,scalar_field_basis=dict(geometry_artifact=self.basis_case.geometry_ref,samples=samples))
-        selected=owner.call_args.kwargs['payload']['scalar_field_basis']['bases']['carrier']
-        self.assertEqual(selected['original_samples_reference'],raw.reference)
-        references=owner.call_args.kwargs['source_references']
-        paths=[Path(row['manifest_record']['path']).resolve() for row in references]
-        self.assertIn(raw.manifest_location.resolve(),paths)
-        self.assertIn((root/'run_manifest.json').resolve(),paths)
-        self.assertIn(Path(selected['field_solution_reference']['manifest']['path']).resolve(),paths)
+        # The current split RF chain explicitly rejects the historical three-basis
+        # SFI selection before owner; its raw and derived records remain readable.
+        selected_derived=open_artifact(derived,expected_kind='scalar_field_samples')
+        self.assertEqual(selected_derived.metadata['original_samples_reference'],raw.reference)
+        with patch('msplatform.execution.owner.run_managed_stage') as owner:
+            with self.assertRaisesRegex(ValueError,'only OA and TOF without RF'):
+                operations.track(source,case.packet,propagation=case.policy,observations=case.observations,
+                    numerics=case.numerics,context=session.context,
+                    scalar_field_basis=dict(geometry_artifact=self.basis_case.geometry_ref,samples=samples))
+            owner.assert_not_called()

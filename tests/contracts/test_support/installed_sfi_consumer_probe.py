@@ -1,4 +1,4 @@
-"""Installed SFI source-to-public-track wiring, with an inert field and owner."""
+"""Installed historical SFI reader and retired-execution guard; no native flight."""
 import json
 from pathlib import Path
 import sys
@@ -8,14 +8,14 @@ from unittest.mock import patch
 
 
 def run(preparation, run_directory, expected_ids, arm, timer, blocked_roots):
-    """Exercise actual installed binding and public planning without native actions."""
+    """Verify historical inputs and that the public execution guard rejects before owner."""
     from msplatform.backends.simion.compiler import compile_geometry
     from msplatform.backends.simion.model import PHYSICS, compile_prepared_model, project_resolved_drive
     from msplatform.execution.terminal_publication import publish_terminal_state
     from msplatform.io.manifest_records import file_record
     from msplatform.workflows.single_reflection_flight import recorded_birth
 
-    with timer('sfi_saved_field_consumer', str(arm)):
+    with timer('sfi_historical_reader_retirement_guard', str(arm)):
         purelib = Path(sysconfig.get_paths()['purelib']).resolve()
         assert Path(recorded_birth.__file__).resolve() == purelib/'msplatform/workflows/single_reflection_flight/recorded_birth.py'
         run = Path(run_directory)
@@ -160,19 +160,18 @@ else:
         publish_terminal_state(field_run, {'status':'success'}, field_manifest)
         field_ref = {'manifest':file_record(field_run/'run_manifest.json'), 'product_id':'fields'}
         context = SimpleNamespace(tools={'simion':Path(sys.executable)})
-        stage = {'limits':{'transient_run_directory_bytes':1}, 'artifact_retention':{}}
-        with patch('msplatform.execution.stage_policy.read_stage_policy', return_value=(stage, {})), \
-             patch('msplatform.execution.owner.run_managed_stage', return_value={'manifest':{}}) as owner, \
-             patch('msplatform.results.artifacts.open_artifact', return_value='installed-public-track'):
-            result = recorded_birth.track_recorded_birth(preparation_manifest=producer, fields=field_ref,
-                species_id='installed_fixture_species', expected_particle_ids=[int(value) for value in expected_ids],
-                observations={'plane_observations':[]}, context=context)
-        assert result == 'installed-public-track'
-        call = owner.call_args.kwargs
-        assert call['payload']['propagation']['scope'] == 'continuous_assembly'
-        assert len(call['payload']['particles']['mother']['records']) == len(expected_ids)
-        assert {'manifest_record':producer} in call['source_references']
-        assert 'source_provenance' in call['payload']['birth_source_authority']['records']
+        # Historical preparation remains readable; its composite execution is retired.
+        # This is the real public consumer/track guard, before a managed owner.
+        with patch('msplatform.execution.owner.run_managed_stage') as owner:
+            try:
+                recorded_birth.track_recorded_birth(preparation_manifest=producer, fields=field_ref,
+                    species_id='installed_fixture_species', expected_particle_ids=[int(value) for value in expected_ids],
+                    observations={'plane_observations':[]}, context=context)
+            except ValueError as error:
+                assert 'legacy composite' in str(error) and 'read-only' in str(error), str(error)
+            else:
+                raise AssertionError('retired composite recorded-birth execution accepted')
+            owner.assert_not_called()
         # Both corruptions are applied only to this private fixture and always restored.
         source_path = Path(preparation['input_records']['particle_source']['path'])
         with patch('msplatform.execution.owner.run_managed_stage') as negative_owner:

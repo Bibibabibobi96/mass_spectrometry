@@ -6,7 +6,6 @@ from tests.contracts import test_sfi_scalar_binding as admission
 from msplatform.backends.simion.sfi_scalar_binding import resolve_sfi_scalar_basis
 from msplatform.backends.simion.standalone_pa_composition import PaHeader
 from msplatform.results.artifacts import open_artifact
-from msplatform.io.manifest_records import record_path, verify_record
 from tests.contracts.test_simion_prepared_model import LUA
 from msplatform.backends.simion.resources import native_resource_path
 from msplatform.backends.simion.tracking_program import _lua_value
@@ -79,75 +78,37 @@ bad=true; local ok,err=pcall(sample,.25,.25,.25); assert(not ok and string.find(
             self.resolve_windows(bad)
 
 class RefinementOwnerTests(unittest.TestCase):
-    def test_registered_owner_guards_windows_and_recovery(self):
-        import os, sys
-        from msplatform.execution import run_session
-        from msplatform.execution.context import ExecutionContext
-        from msplatform.execution.resources import resource_path
-        from msplatform.backends.simion import model_execution
+    def test_historical_window_basis_rejects_tracking_before_owner(self):
+        import tempfile
+        from tests.contracts.test_sfi_recorded_birth_entry import historical_fixture
         from msplatform.workflows.single_reflection_flight.recorded_birth import track_recorded_birth
-        from tests.contracts.test_support.sfi_scalar_owner_fixture import make_fixture, inert_native_leaf, retained_owner_directory
-        with retained_owner_directory() as directory:
-            selected=make_fixture(Path(directory),refinement_windows=True); values=selected['context']
-            context=ExecutionContext(workspace=Path(values['workspace']),python_executable=Path(sys.executable),
-                powershell_executable=Path(values['powershell_executable']),tools={'simion':Path(sys.executable)},
-                host_state_path=Path(os.environ['MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH']),
-                policy_path=resource_path('host_resource_policy.json'),capacity_policy_path=Path(values['capacity_policy_path']),
-                stage_policy_path=Path(values['stage_policy_path']))
-            selection=selected['scalar_field_basis']
-            windows=selection['refinement_windows']
-            self.assertEqual(windows[0]['samples'],windows[2]['samples'])
-            self.assertNotEqual(windows[0]['samples'],windows[1]['samples'])
-            window_samples=[ref for window in windows[:2] for ref in window['samples'].values()]
-            args=dict(preparation_manifest=selected['preparation_manifest'],fields=selected['fields'],
-                species_id=selected['species_id'],expected_particle_ids=selected['expected_particle_ids'],
-                observations={'plane_observations':[]},context=context,scalar_field_basis=selection)
-            observed=[]; leaf=inert_native_leaf(run_session.run_observed_process,observed)
-            protected=[]; original_protect=model_execution._protected_source
-            def record_protection(session, manifest, *, required_paths=()):
-                protected.append((Path(manifest['path']).resolve(), {Path(path).resolve() for path in required_paths}))
-                return original_protect(session,manifest,required_paths=required_paths)
-            inherited=dict(MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN='',MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID='',
-                           MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE='')
-            with patch.dict(os.environ,inherited),patch.object(run_session,'run_observed_process',side_effect=leaf), \
-                    patch.object(model_execution,'_protected_source',side_effect=record_protection):
-                result=track_recorded_birth(**args)
-                self.assertEqual(len(observed),3)
-                paths={open_artifact(ref,expected_kind='scalar_field_samples').data_path(key).resolve()
-                       for ref in window_samples for key in ('field_v','field_valid','grid')}
-                base_paths={open_artifact(ref,expected_kind='scalar_field_samples').data_path(key).resolve()
-                            for ref in selection['samples'].values() for key in ('field_v','field_valid','grid')}
-                self.assertTrue(paths.isdisjoint(base_paths))
-                self.assertEqual(len(paths),18)
-                for operation in observed:
-                    records=operation['immutable_input_records']; actual=[Path(r['path']).resolve() for r in records]
-                    self.assertTrue(paths <= set(actual)); self.assertEqual(len(actual),len(set(actual)))
-                run=result.manifest_location.parent
-                program_path=run/'simion/tracking/instrument.lua'
-                manifest=json.loads(result.manifest_location.read_text(encoding='utf8'))
-                records=[r for r in manifest['outputs'] if record_path(r,base_dir=run)==program_path]
-                self.assertEqual(len(records),1)
-                verify_record('published tracking program',records[0],base_dir=run)
-                program=program_path.read_text(encoding='utf8')
-                self.assertIn('refinement_windows',program)
-                self.assertLess(program.index('name='+_lua_value('first')),program.index('name='+_lua_value('second')))
-                self.assertLess(program.index('name='+_lua_value('second')),program.index('name='+_lua_value('repeat_first')))
-                for ref in window_samples:
-                    item=open_artifact(ref,expected_kind='scalar_field_samples')
-                    for key in ('field_v','field_valid'):
-                        self.assertIn(_lua_value(str(item.data_path(key))),program)
-                for ref in window_samples:
-                    item=open_artifact(ref,expected_kind='scalar_field_samples')
-                    required={item.data_path(key).resolve() for key in ('field_v','field_valid','grid')}
-                    self.assertTrue(any(path==item.manifest_location.resolve() and required <= members for path,members in protected))
-                    source=Path(item.data_records['field_solution_manifest']['path']).resolve()
-                    self.assertTrue(any(path==source for path,_ in protected))
-                reused=track_recorded_birth(**args,recovery_reference=result.reference['manifest'])
-                self.assertEqual(reused.metadata['reused_unit_count'],1); self.assertEqual(len(observed),3)
-                path=Path(selected['tamper_scalar_window_pa'])
-                before=path.read_bytes()
+        case=RefinementBindingTests(methodName='runTest');case.setUp();self.addCleanup(case.doCleanups)
+        levels={name:case.sample_level('retired-window-'+name,ref) for name,ref in case.sample_refs.items()}
+        windows=[dict(name='first',active_box_mm=[[0.,.5]]*3,samples=levels),
+                 dict(name='repeat_first',active_box_mm=[[0.,.5]]*3,samples=copy.deepcopy(levels))]
+        admitted=case.resolve_windows(windows)
+        for basis in admitted['bases'].values():
+            self.assertEqual([row['name'] for row in basis['refinement_windows']],['first','repeat_first'])
+        with tempfile.TemporaryDirectory() as directory:
+            selected,receipt,_=historical_fixture(Path(directory))
+            selected['scalar_field_basis']=dict(geometry_artifact=case.geometry_ref,samples=case.sample_refs,
+                                                refinement_windows=windows)
+            with patch('msplatform.execution.owner.run_managed_stage') as owner:
+                for recovery in (None,{'path':str(Path(directory)/'unused-recovery.json')}):
+                    with self.assertRaisesRegex(ValueError,'legacy composite.*read-only'):
+                        track_recorded_birth(**selected,recovery_reference=recovery)
+                    owner.assert_not_called()
+                source=Path(receipt['input_records']['particle_source']['path']);original=source.read_bytes()
                 try:
-                    path.write_bytes(bytes([before[0]^1])+before[1:])
-                    with self.assertRaises((AssertionError,ValueError)): track_recorded_birth(**args)
-                    self.assertEqual(len(observed),3)
-                finally: path.write_bytes(before)
+                    source.write_bytes(original+b'\n')
+                    with self.assertRaisesRegex(AssertionError,'byte count changed'):
+                        track_recorded_birth(**selected)
+                    owner.assert_not_called()
+                finally:source.write_bytes(original)
+        item=open_artifact(levels['carrier'],expected_kind='scalar_field_samples')
+        path=item.data_path('field_v');original=path.read_bytes()
+        try:
+            path.write_bytes(original+b'\x00')
+            with self.assertRaises((AssertionError,ValueError)):
+                case.resolve_windows(windows)
+        finally:path.write_bytes(original)

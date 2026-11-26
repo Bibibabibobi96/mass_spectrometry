@@ -7,7 +7,6 @@ from pathlib import Path
 
 from msplatform import assembly as assembly_api, components as component_api, examples as example_api
 from msplatform import ion_release as ion_release_api
-from msplatform.backends import simion as simion_api
 from msplatform.backends.comsol.assembly_geometry import project_assembly_geometry
 from msplatform.backends.comsol.assembly_electrostatic_model import validate_request
 from msplatform.backends.simion.model import PHYSICS, compile_prepared_model, project_resolved_drive
@@ -28,7 +27,12 @@ class SfiScalarAdmissionTests(unittest.TestCase):
         parts={key:component_api.resolve_component(value) for key,value in case.component_requests.items()}
         assembly=assembly_api.assemble(case.recipe,parts)
         self.snapshot=dict(composition_plan=assembly.composition_plan,components_resolved=assembly.components_resolved,components_source=assembly.components_source)
-        compiled=simion_api.compile_geometry(assembly,numerics=case.geometry_numerics)
+        # Historical read-only oracle: no retired public execution is started.
+        from msplatform.backends.simion.compiler import compile_geometry
+        geometry_numerics=copy.deepcopy(case.geometry_numerics)
+        geometry_numerics['geometry_build']['detector']['max_mib']=128.
+        compiled=compile_geometry(dict(composition_plan=assembly.composition_plan,
+            components_resolved=assembly.components_resolved),numerics=geometry_numerics)
         packet=ion_release_api.sample_release(case.release).to_dict()
         pulse=dict(mode='timed',time_us=10.,width_us=2.)
         drive=project_resolved_drive(compiled,compiled.components_resolved,pulse=pulse,clock=dict(packet['clock'],phase_reference_instrument_time_us=0.))
