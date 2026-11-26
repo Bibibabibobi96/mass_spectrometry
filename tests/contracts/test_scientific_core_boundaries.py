@@ -27,7 +27,7 @@ DOMAIN_IMPORTS = {
     **{name: SCIENTIFIC_DOMAINS for name in SCIENTIFIC_DOMAINS},
     "gas": {"gas", "contracts", "io"},
     "physics": {"physics", "contracts"},
-    "recipes": {"recipes", "physics", "io"},
+    "recipes": {"recipes", "physics", "io", "assembly", "components", "contracts", "ion_release"},
     "fields": {"fields"},
     "tracing": {"tracing", "fields", "physics", "analysis", "results"},
     "storage": {"storage"},

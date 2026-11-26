@@ -202,6 +202,9 @@ class SimulationRecipe:
 
 def validate_recipe(resolved: Mapping[str, Any]) -> dict:
     """Validate an SI resolved document, its identities and capability claims."""
+    if isinstance(resolved, Mapping) and resolved.get("schema_version") == 2:
+        from .native import validate_native
+        return validate_native(resolved)
     data = copy.deepcopy(dict(resolved))
     _keys(data, {"schema_version", "label", "assembly", "recipe_id", "frame_id", "clock", "constants", "gas_environment", "field_source", "particle_tracer", "initial_states", "numerics", "surfaces", "recording"})
     if data["constants"] != CONSTANTS or data["gas_environment"] != GasEnvironment("vacuum").to_dict() or data["clock"] != {"basis": "experiment_relative", "unit": "s"}:
@@ -226,4 +229,7 @@ def load_recipe(path: str | Path) -> SimulationRecipe:
     """Snapshot TOML once, parse exact decimals and compile to SI float64 values."""
     source = Path(path).read_bytes()
     raw = tomllib.loads(source.decode("utf-8"), parse_float=Decimal)
+    if raw.get("schema_version") == 2:
+        from .native import resolve_native
+        return SimulationRecipe(resolve_native(raw, Path(path)), source_bytes=source)
     return SimulationRecipe(_resolve(raw), source_bytes=source)

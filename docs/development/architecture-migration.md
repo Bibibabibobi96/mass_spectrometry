@@ -683,3 +683,21 @@ B3/4三格原生仍未执行，不把格式往返计为BA08。下一步接实际
 Agent3已修复尚未提交的native完成回执过早删除活holder控制问题，继续真实process-owner prelaunch绑定。
 其临时测试目录 `C:/Users/Liao/AppData/Local/Temp/tmphou0uqsj` 清理同样被自动批准审查拒绝，仅有blocked
 by policy，已停止重试；未声称释放容量。保留已知窗口的保守保护，不用裸PID/超时自动释放。
+
+
+### B1 配方冻结单元
+
+结果格式主题已提交/推送 `19c2d0ce`。`recipes/reference.py:load_recipe` 同一入口新增schema2 native作者配置，
+`recipes/native.py` 只读一次显式path+SHA绑定的完整Study JSON；resolved内嵌原字节和来源哈希，并冻结小型clock/epoch资源。
+validate仅从冻结bytes重编译现有components.resolve_component/assembly.assemble，不重读可变科学源。
+assembly可读名由同一assembly_name生成器生成，名称、内容assembly_id和recipe_id分别表达；作者label/来源路径不入科学身份。
+常量版本与vacuum在作者输入显式选择，resolved冻结public constants/gas dataset；不支持旧常量隐式升级、碰撞或自洽。
+COMSOL数值采用其真实CPT控制maximum_step_us/relative_tolerance/absolute_tolerance，非把采样输出间隔冒作积分步长。
+
+定向 `.venv/Scripts/python.exe -m unittest tests.contracts.test_native_recipe tests.contracts.test_reference_recipe -q`，
+以及对应Ruff通过；此前结果/配方/reference联合27项PASS（10.717s），加入公共入口声明后boundary等27项PASS（18.904s）。
+测试覆盖外部Study一次读取/变更后本run不变、SHA/冻结内容篡改拒绝、label/path身份稳定、缺显式数值/clock/源拒绝。
+这里只交付解析冻结，不把parse成功当native支持；公共capability报告、真正运行、三组合新证据仍在整合。
+
+旧消费者：原复合OA–TOF公开native入口的跨组件HandoffResult/state_relaunch/segmented_upstream仍需合并本轮守卫；
+IP–MR及其他C链的合法续传和历史reader不全局禁用。下一步合并独立编译、实际birth源示例及同一CLI执行。
