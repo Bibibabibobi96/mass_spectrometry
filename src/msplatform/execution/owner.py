@@ -172,7 +172,7 @@ def _publish(session: RunSession, request: Mapping[str, Any], completion: Mappin
     observed_logs = [Path(name) for name in session.file_roles
                      if Path(name).parent == root / "logs" and Path(name).is_file()]
     return publish_workflow_terminal(completion_path, root / "logs/capacity_session.json", None,
-        retention_api=lambda: _retention_api(session, completion_api), additional_output_paths=observed_logs)
+        retention_api=lambda: _retention_api(session, completion_api), additional_output_paths=[*observed_logs, *getattr(session, "_additional_failed_evidence", ())])
 
 
 def _finalize(session: RunSession, request: dict[str, Any], completion: dict[str, Any], *,
@@ -654,3 +654,250 @@ def recover_failed_finalization(context: ExecutionContext, result_path: Path, *,
     write_json_atomic(completion_path, completion)
     _result(session, status='pending', stage='completion', writers_confirmed=True, resume_action='resume_finalization')
     return _finalize(session, request, completion, completion_api=completion_api)
+
+_CPT_RECOVERY_RUN = '20261127_032027__sim__comsol__pulse-8cca4fee9218'
+_CPT_RECOVERY_ACTION_SHA = '848AFA6AEE25620C177B9397C009AC58A30E357212B029A89CEB2CE91C3CF5ED'
+_CPT_RECOVERY_MATLAB_SHA = '10A7435322F8A7963F92808E186225CB3DAF9C527F03C700A1DCC21B99547747'
+_CPT_RECOVERY_TASK_SHA = '1A95BC260564988257965F7DA8229528A1A23F55B6B1DB69026F2A3E0BFEDB5F'
+_CPT_RECOVERY_COMPLETION_SHA = 'BA43206EABDED23C9E316F433AB07F22B016C1AB85D8E1BB92BBF819B6E54D5B'
+
+
+def _resume_failed_evidence_finalization_guarded(context: ExecutionContext, result_path: Path, *,
+                                                 evidence: Mapping[str, Mapping[str, Any]],
+                                                 completion_api: Callable[[], Any] | None = None) -> dict[str, Any]:
+    """Finish one reviewed stopped CPT failure, retaining its original completion.
+
+    Evidence is an explicit caller-frozen closure. This is not a role inference
+    rule or a trajectory publication. Any unexpected file keeps the hold.
+    """
+    from contextlib import closing
+    from datetime import datetime, timezone
+    import base64
+    import sqlite3
+
+    result_path = Path(result_path).resolve(strict=True)
+    result = _json(result_path)
+    if (result.get('role') != 'run_artifact_workflow_result' or result.get('status') != 'failed'
+            or result.get('stage') != 'finalization' or result.get('writers_confirmed') is not True
+            or result.get('resume_action') != 'resume_finalization'):
+        raise ValueError('CPT recovery requires the original stopped failed finalization')
+    root = Path(result['run_directory']).resolve(strict=True)
+    if root.name != _CPT_RECOVERY_RUN:
+        raise ValueError('CPT recovery run identity differs')
+    recovery_path = root / 'logs/failed_evidence_recovery.json'
+    previous_recovery = _json(recovery_path) if recovery_path.is_file() else None
+    paths = {
+        'result': result_path, 'request': root / 'inputs/execution_request.json',
+        'config': root / 'run_config.json', 'completion': root / 'results/execution_completion.json',
+        'action': root / 'inputs/owner/action.py',
+        'matlab': root / 'inputs/native_sources/msplatform/backends/comsol/matlab/trace_assembly_particles.m',
+        'task': root / 'inputs/particle_task.m', 'process': root / 'logs/operation_0001.process.json',
+        'launcher': root / 'logs/particle.launcher.json', 'capacity': root / 'logs/capacity_session.json',
+        'journal': root / 'logs/file_roles.json', 'release': root / 'results/assembly_release.txt',
+        'facts': root / 'results/assembly_particle_facts.json', 'csv': root / 'results/assembly_particles.csv',
+    }
+    if not isinstance(evidence, Mapping) or set(evidence) != set(paths):
+        raise ValueError('CPT recovery requires the exact evidence closure')
+    for name, path in paths.items():
+        record = evidence[name]
+        if (not isinstance(record, Mapping) or record.get('retention_role') != 'required_evidence'
+                or Path(record.get('path', '')).resolve() != path.resolve()):
+            raise ValueError('CPT recovery evidence path or role differs: ' + name)
+        if name != 'journal' or previous_recovery is None:
+            verify_record('CPT recovery ' + name, dict(record))
+    for name, expected in (('completion', _CPT_RECOVERY_COMPLETION_SHA),
+                           ('action', _CPT_RECOVERY_ACTION_SHA), ('matlab', _CPT_RECOVERY_MATLAB_SHA),
+                           ('task', _CPT_RECOVERY_TASK_SHA)):
+        if evidence[name]['sha256'] != expected:
+            raise ValueError('CPT recovery reviewed source identity differs: ' + name)
+    if previous_recovery is not None:
+        import hashlib
+        try:
+            original_result_bytes = base64.b64decode(previous_recovery['original_result_bytes_base64'], validate=True)
+            original_journal_bytes = base64.b64decode(previous_recovery['original_journal_bytes_base64'], validate=True)
+        except (KeyError, ValueError, TypeError) as error:
+            raise ValueError('CPT recovery original snapshots are malformed') from error
+        for name, data in (('result', original_result_bytes), ('journal', original_journal_bytes)):
+            if (len(data) != evidence[name]['bytes']
+                    or hashlib.sha256(data).hexdigest().upper() != evidence[name]['sha256']):
+                raise ValueError('CPT recovery original snapshot differs: ' + name)
+        if (previous_recovery.get('schema_version') != 1
+                or previous_recovery.get('role') != 'failed_evidence_finalization_recovery'
+                or previous_recovery.get('sources') != dict(evidence)
+                or previous_recovery.get('role_source') != 'reviewed_frozen_action_task_and_matlab_explicit_output'
+                or previous_recovery.get('added_roles') != {str(paths['release']): 'required_evidence'}
+                or previous_recovery.get('identity_capture_basis') != 'after_confirmed_native_writer_stop_not_original_native_seal'
+                or previous_recovery.get('scientific_qualification') != 'not_granted'
+                or json.loads(original_result_bytes.decode('utf-8-sig')) != result):
+            raise ValueError('CPT recovery persisted evidence closure differs')
+    request, completion, config = _json(paths['request']), _json(paths['completion']), _json(paths['config'])
+    if (request.get('role') != 'run_artifact_workflow_request' or request['package']['run_id'] != root.name
+            or request['package']['project'] != 'instrument_assembly' or config.get('run_id') != root.name
+            or request['payload'].get('action') != 'trace_assembly_particles'
+            or request.get('expected_operation_ids') != ['trace_assembly_particles']
+            or request.get('operation_dependencies') != {} or completion.get('run_id') != root.name
+            or completion.get('project') != 'instrument_assembly' or completion.get('status') != 'failed'
+            or completion.get('output_paths') != [] or completion.get('required_output_paths') != []
+            or completion.get('retention_preserve_paths') != [] or completion.get('manifest_extra_fields') != {}):
+        raise ValueError('CPT recovery request or failed completion differs')
+    for name in ('execution_request', 'run_config'):
+        verify_record('CPT completion ' + name, completion[name])
+    if (Path(completion['execution_request']['path']).resolve() != paths['request']
+            or Path(completion['run_config']['path']).resolve() != paths['config']
+            or request['prepared']['entrypoint']['sha256'] != _CPT_RECOVERY_ACTION_SHA
+            or request['prepared']['source_entrypoint']['sha256'] != _CPT_RECOVERY_ACTION_SHA
+            or Path(request['prepared']['entrypoint']['path']).resolve() != paths['action']):
+        raise ValueError('CPT recovery frozen action or completion binding differs')
+    verify_record('CPT frozen entrypoint', request['prepared']['entrypoint'])
+    failure = completion.get('exception', {})
+    prior = result.get('exception', {})
+    if previous_recovery is not None and previous_recovery.get('original_result_exception') != prior:
+        raise ValueError('CPT recovery prior failure diagnostic differs')
+    if (failure.get('type') != 'ValueError'
+            or failure.get('message') != 'COMSOL native facts differ from the frozen plan or supported version'
+            or prior.get('type') != failure.get('type') or prior.get('message') != failure.get('message')
+            or not any('Run contains an undeclared file:' in note and 'assembly_release.txt' in note
+                       for note in prior.get('notes', []))):
+        raise ValueError('CPT recovery original failure facts differ')
+    facts = _json(paths['facts'])
+    plan = request['payload']['plan']
+    if (facts.get('comsol_version') != 'COMSOL Multiphysics 6.4 (Build: 293)'
+            or facts.get('study_completed') is not True
+            or facts.get('particle_count') != len(plan['source']['rows'])
+            or facts.get('stored_times_us') != plan['observation_times_us']
+            or facts.get('boundary_policy') != 'metal_and_outer_freeze_ideal_pass'):
+        raise ValueError('CPT recovery native facts differ from reviewed version and plan')
+    if (result.get('execution_request') != str(paths['request'])
+            or request['paths']['artifact_root'] != str(context.workspace / 'artifacts')
+            or request['paths']['host_resource_state_path'] != str(context.host_state_path)
+            or request['paths']['execution_root'] != str(context.execution_root)):
+        raise ValueError('CPT recovery execution context differs')
+    capacity = _json(paths['capacity'])
+    if (capacity.get('status') != 'active' or capacity.get('owner') != 'run-artifact-workflow:instrument_assembly:' + root.name
+            or capacity.get('artifact_root') != request['paths']['artifact_root']
+            or any(result.get('capacity_session', {}).get(k) != capacity.get(k) for k in ('owner', 'artifact_root', 'lease_id'))):
+        raise ValueError('CPT recovery original capacity authority differs')
+    writer = completion['writer_completion']
+    checked = validate_writer_completion(writers_stopped=True, expected_operation_ids=('trace_assembly_particles',),
+        operations=writer['operations'], resource_releases=writer['resource_releases'])
+    if len(checked['operations']) != 1 or len(checked['resource_releases']) != 1:
+        raise ValueError('CPT recovery requires one operation and host release')
+    op = checked['operations'][0]['observation']
+    host_release = checked['resource_releases'][0]['completion_receipt']['host_release']
+    process, launcher = _json(paths['process']), _json(paths['launcher'])
+    observed, launched = process.get('observation', {}), launcher.get('operations', [])
+    if (op['returncode'] != 0 or process.get('error') is not None or observed.get('exit_code') != 0
+            or observed.get('root_process_id') != op['process_id']
+            or observed.get('root_process_started_at_utc_ticks') != op['process_started_at_utc_ticks']
+            or process.get('host_release') != host_release or launcher.get('role') != 'comsol_launcher_completion'
+            or launcher.get('run_id') != root.name or len(launched) != 1
+            or launched[0].get('operation_id') != 'launcher-attempt-1'
+            or launched[0].get('observation', {}).get('exit_confirmed') is not True
+            or launched[0]['observation'].get('returncode') != 0
+            or type(launched[0]['observation'].get('process_id')) is not int
+            or launched[0]['observation']['process_id'] <= 0
+            or type(launched[0]['observation'].get('process_started_at_utc_ticks')) is not int
+            or launched[0]['observation']['process_started_at_utc_ticks'] <= 0
+            or launcher.get('host_release', {}).get('inherited') is not True
+            or launcher['host_release'].get('token') != host_release['token']
+            or launcher['host_release'].get('error') is not None or launcher['host_release'].get('result') is not None):
+        raise ValueError('CPT recovery writer or host evidence differs')
+    if not context.host_state_path.is_file():
+        raise ValueError('CPT recovery host ledger unavailable')
+    with closing(sqlite3.connect(context.host_state_path.resolve().as_uri() + '?mode=ro', uri=True)) as db:
+        row = db.execute('SELECT document FROM state WHERE id=1').fetchone()
+    host = json.loads(row[0]) if row else None
+    if (not isinstance(host, dict) or host.get('schema_version') != 1 or not isinstance(host.get('records'), list)
+            or any(item.get('token') == host_release['token'] for item in host['records'])):
+        raise ValueError('CPT recovery host token is active or host state unavailable')
+    roles = completion['file_roles']
+    journal = _json(paths['journal'])
+    if previous_recovery is not None:
+        original_journal = json.loads(original_journal_bytes.decode('utf-8-sig'))
+        expected_journal = copy.deepcopy(original_journal)
+        expected_journal['file_roles'][str(paths['release'])] = 'required_evidence'
+        expected_journal['file_roles'][str(recovery_path)] = 'required_evidence'
+        for key, value in journal.get('file_roles', {}).items():
+            if key not in expected_journal['file_roles'] and key in {
+                    str(root / 'retention_actions.json'), str(root / TERMINAL_LOCK_NAME),
+                    str(root / TERMINAL_JOURNAL_NAME)} and value == 'required_evidence':
+                expected_journal['file_roles'][key] = value
+        if journal != expected_journal:
+            raise ValueError('CPT recovery changed journal differs from recorded continuation')
+    if (journal.get('role') != 'run_session_file_roles' or journal.get('run_id') != root.name
+            or any(journal.get('file_roles', {}).get(k) != v for k, v in roles.items())):
+        raise ValueError('CPT recovery role journal conflicts with completion')
+    allowed_journal = {str(root / name) for name in ('retention_actions.json', TERMINAL_LOCK_NAME, TERMINAL_JOURNAL_NAME)}
+    if previous_recovery is not None:
+        allowed_journal.update((str(paths['release']), str(recovery_path)))
+    if any(key not in roles and (key not in allowed_journal or value != 'required_evidence')
+           for key, value in journal['file_roles'].items()):
+        raise ValueError('CPT recovery unexpected journal role')
+    actual = {str(p.resolve()) for p in root.rglob('*') if p.is_file()}
+    if any(p.is_symlink() for p in root.rglob('*')):
+        raise ValueError('CPT recovery does not accept symbolic links')
+    declared = {str(Path(p).resolve()) for p in roles}
+    expected_extra = {str(paths['release'].resolve())}
+    if previous_recovery is not None:
+        expected_extra.add(str(recovery_path.resolve()))
+    if actual - declared != expected_extra:
+        raise ValueError('CPT recovery requires exactly the reviewed undeclared release file')
+    for name in ('facts', 'csv'):
+        if roles.get(str(paths[name])) != 'required_evidence':
+            raise ValueError('CPT recovery evidence was not originally declared: ' + name)
+    evidence_path = recovery_path
+    session = RunSession(context, Path(capacity['artifact_root']), root.name, 'instrument_assembly',
+        request['package']['mode'], completion['package'], capacity, paths['request'], result_path,
+        ('trace_assembly_particles',), {}, file_roles=dict(roles), operations=checked['operations'],
+        resource_releases=checked['resource_releases'])
+    _require_capacity_accounted(session)
+    if previous_recovery is None:
+        original_result_bytes = paths['result'].read_bytes()
+        original_journal_bytes = paths['journal'].read_bytes()
+    session.declare_file(paths['release'], 'required_evidence')
+    session.declare_file(evidence_path, 'required_evidence')
+    if previous_recovery is None:
+        write_json_atomic(evidence_path, dict(schema_version=1, role='failed_evidence_finalization_recovery',
+            recovered_at_utc=datetime.now(timezone.utc).isoformat(), sources=copy.deepcopy(dict(evidence)),
+            role_source='reviewed_frozen_action_task_and_matlab_explicit_output',
+            added_roles={str(paths['release']): 'required_evidence'}, original_result_exception=copy.deepcopy(prior),
+            original_result_bytes_base64=base64.b64encode(original_result_bytes).decode('ascii'),
+            original_journal_bytes_base64=base64.b64encode(original_journal_bytes).decode('ascii'),
+            identity_capture_basis='after_confirmed_native_writer_stop_not_original_native_seal',
+            scientific_qualification='not_granted'))
+    session._additional_failed_evidence = [paths['release'], paths['facts'], paths['csv']]
+    return _finalize(session, request, completion, completion_api=completion_api)
+
+
+def resume_failed_evidence_finalization(context: ExecutionContext, result_path: Path, *,
+                                        evidence: Mapping[str, Mapping[str, Any]],
+                                        completion_api: Callable[[], Any] | None = None) -> dict[str, Any]:
+    """Guard newly observed native files against writes through final publication."""
+    from contextlib import ExitStack
+    from msplatform.io.file_identity import guarded_file_identity
+
+    result_path = Path(result_path).resolve(strict=True)
+    result = _json(result_path)
+    root = Path(result['run_directory']).resolve(strict=True)
+    if root.name != _CPT_RECOVERY_RUN:
+        raise ValueError('CPT recovery run identity differs')
+    names = {'release': 'assembly_release.txt', 'facts': 'assembly_particle_facts.json',
+             'csv': 'assembly_particles.csv'}
+    with ExitStack() as guards:
+        recovery_path = root / 'logs/failed_evidence_recovery.json'
+        if recovery_path.is_file():
+            recovery_record = file_record(recovery_path, 'required_evidence')
+            guards.enter_context(guarded_file_identity(recovery_path, expected_bytes=recovery_record['bytes'],
+                                                       expected_sha256=recovery_record['sha256']))
+        for name, filename in names.items():
+            record = evidence.get(name) if isinstance(evidence, Mapping) else None
+            path = root / 'results' / filename
+            if (not isinstance(record, Mapping) or record.get('retention_role') != 'required_evidence'
+                    or type(record.get('bytes')) is not int or record['bytes'] < 0
+                    or not isinstance(record.get('sha256'), str)
+                    or Path(record.get('path', '')).resolve() != path):
+                raise ValueError('CPT guarded evidence path or role differs: ' + name)
+            guards.enter_context(guarded_file_identity(path, expected_bytes=record.get('bytes'),
+                                                       expected_sha256=record.get('sha256')))
+        return _resume_failed_evidence_finalization_guarded(context, result_path, evidence=evidence,
+                                                            completion_api=completion_api)

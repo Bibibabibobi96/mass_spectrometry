@@ -1195,6 +1195,29 @@ Study SHA256 `A7D75ED3EAB3E198D4196868B9CE1AA9A787554DC83CEA5088C545B81EACB9E6`�
 其余阶段按fail-fast阻塞或等待已启动阶段结束。不能报告完整Changed PASS；本轮定向38项的软件结果单独成立。
 最终安装仍按B交付的普通wheel及sdist重建wheel、仓外参考链与B资源准入执行，不把该环境失败冒充科学失败。
 
+### B4 真实CPT失败证据收尾（7761a3a4 后，提交见 Git）
+
+入口 `execution/owner.py::resume_failed_evidence_finalization` 限定已审阅的
+`20261127_032027__sim__comsol__pulse-8cca4fee9218` 及冻结action/MATLAB/task/completion身份；
+不会从文件后缀推测角色，也不会升级科学结果。三份native输出的Windows禁写/禁删句柄覆盖身份核验至最终发布。
+恢复证据保存原result/journal字节及摘要，注明停止后捕获而非原始native seal；原completion不改写。
+
+首次真实调用因未显式传原生保留completion policy在写审计证据后停止；未删除或回滚证据。
+新增受限partial接续验证原始外部evidence及精确journal差异，使用原
+`backends.comsol.assembly_particle_tracing._comsol_batch_completion_api` 完成同一终态收尾。
+实际 `evidence/cpt-failed-evidence-recovery-input.json`、`...-result.json` 位于
+`C:/Users/Liao/msplatform-artifacts/architecture-b-20261127`，可重现原审阅身份。
+最终 `status=failed, stage=complete, writers_confirmed=true, resume_action=null`，
+manifest SHA256 `D4CD9B619465668BE590A2CA7E83FC0507417E4D447BED58909AC91038F65ECC`；无products。
+release/facts/CSV/recovery各一条required_evidence输出，实际摘要独立重算匹配；
+completion仍为 `BA43206EABDED23C9E316F433AB07F22B016C1AB85D8E1BB92BBF819B6E54D5B`。
+capacity released、source_protection_leases=[]、原lease文件不存在、共享host DB无原token活动记录。
+
+`.venv/Scripts/python.exe -B -m unittest tests.contracts.test_owner_additional_evidence -q`
+6 PASS（1.783s）及Ruff PASS；测试实际调用_finalize/_publish/retention并复现缺policy后接续，
+终端发布与capacity在该软件测试使用替身，完整账本证据来自上述真实收尾，二者不混淆。
+尚未把失败CPT归为合格缓存；下一步用新实现与新运行身份执行native检测器链。
+
 ### B3 原生解析探针与负结果（不等于仪器精度资格）
 
 真实 SIMION 8.2.0.11 受管分析 run `20261127_040451__analysis__simion__split-linear-358b84377f9f`
