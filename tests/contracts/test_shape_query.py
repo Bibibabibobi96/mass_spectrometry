@@ -36,6 +36,11 @@ class ShapeQueryTests(unittest.TestCase):
         q=query.prepare_member_query([member,other],frame_id='world')
         with self.assertRaisesRegex(ValueError,'different electrode groups'):
             q((1000000.,-2000000.,3.))
+        opted=query.prepare_member_query([member,other],frame_id='world',report_overlaps=True)
+        self.assertEqual(opted((1000000.,-2000000.,3.)),{'status':'overlap','groups':[('i','g'),('i','other')]})
+        unknown_overlap=query.prepare_member_query([member,other,unknown],frame_id='world',report_overlaps=True)
+        self.assertEqual(unknown_overlap((1000000.,-2000000.,3.))['status'],'unsupported')
+        self.assertEqual(opted((1000000.,-1999998.,3.))['status'],'boundary')
 
     def test_prepared_box_culling_skips_both_recursions_only_after_pose_error(self):
         pose={'schema_version':1,'role':'rigid_transform','from_frame_id':'local','to_frame_id':'world',

@@ -22,10 +22,42 @@ class PreparedSupportTests(unittest.TestCase):
             self.assertEqual(a['filled_conductor_count'],b['filled_conductor_count'])
             self.assertEqual((root/'b.pa').read_bytes()[56:72],p.read_bytes()[56:72])
             self.assertEqual(struct.unpack_from('<d',(root/'b.pa').read_bytes(),56+8*21)[0],-77)
-            for number,text in enumerate(('index,group_ordinal\n22,0\n21,0\n','index,group_ordinal\n1,0\n','index,group_ordinal\n22,999\n')):
+            for number,text in enumerate(('index,group_ordinals_v2\n22,0\n21,0\n','index,group_ordinals_v2\n1,0\n','index,group_ordinals_v2\n22,999\n')):
                 bad=root/f'bad{number}.csv';bad.write_text(text,encoding='utf-8')
                 with self.assertRaises(ValueError):
                     fill_invalid_scalar_pa(p,mask,root/f'bad{number}.pa',root/f'badmask{number}.pa',projection=projection,request=request,grid=grid,chunk_nodes=7,read_labels_path=bad)
+
+    def test_overlap_labels_preserve_groups_and_recheck_workpoint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);projection,request,grid=fixture()
+            other=copy.deepcopy(projection['members'][0])
+            other.update(instance_id='tof',member_id='detector',electrode_group_id='ground')
+            projection['members'].append(other)
+            projection['electrode_groups'].append({'instance_id':'tof','electrode_group_id':'ground','member_ids':['detector']})
+            request['group_voltages'].append({'instance_id':'tof','electrode_group_id':'ground','voltage_v':-100})
+            h=PaHeader(-2,1,200.,5,3,3,1<<28,1.,1.,1.)
+            hm=PaHeader(-2,1,1.,5,3,3,1<<28,1.,1.,1.)
+            p=root/'v.pa';mask=root/'m.pa';labels=root/'labels.csv'
+            p.write_bytes(h.pack()+struct.pack('<45d',*([0.]*45)))
+            mask.write_bytes(hm.pack()+struct.pack('<45d',*([0.]*45)))
+            fill_invalid_scalar_pa(p,mask,root/'a.pa',root/'am.pa',projection=projection,request=request,
+                                   grid=grid,chunk_nodes=7,write_labels_path=labels)
+            lines=labels.read_text(encoding='utf8').splitlines()
+            self.assertEqual(lines[0],'index,group_ordinals_v2')
+            self.assertTrue(any(';' in line for line in lines[1:]))
+            fill_invalid_scalar_pa(p,mask,root/'b.pa',root/'bm.pa',projection=projection,request=request,
+                                   grid=grid,chunk_nodes=7,read_labels_path=labels)
+            unequal=copy.deepcopy(request);unequal['group_voltages'][-1]['voltage_v']=-99
+            with self.assertRaisesRegex(ValueError,'different voltages'):
+                fill_invalid_scalar_pa(p,mask,root/'c.pa',root/'cm.pa',projection=projection,request=unequal,
+                                       grid=grid,chunk_nodes=7,read_labels_path=labels)
+            index=next(i for i,line in enumerate(lines) if ';' in line)
+            for case,altered in enumerate((lines[index].split(';')[0],lines[index]+';2')):
+                bad=list(lines);bad[index]=altered;path=root/f'tampered{case}.csv'
+                path.write_text('\n'.join(bad)+'\n',encoding='utf8')
+                with self.subTest(case=case),self.assertRaises(ValueError):
+                    fill_invalid_scalar_pa(p,mask,root/f'd{case}.pa',root/f'dm{case}.pa',projection=projection,
+                                           request=request,grid=grid,chunk_nodes=7,read_labels_path=path)
 
 class PreparedSupportOwnerTests(unittest.TestCase):
     def test_owner_reuses_bound_support_and_refuses_changed_mask(self):
@@ -65,7 +97,7 @@ class PreparedSupportOwnerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'identity differs') as caught: call(c,support_source=source)
         self.assertTrue(any(str(p).endswith('field_valid.pa') for p in caught.exception.failure_output_paths))
         descriptor=json.loads(Path(first['conductor_support']['path']).read_text(encoding='utf-8'))
-        for number,key in enumerate(('projection_sha256','raw_mask_sha256','grid','support_code_sha256','groups')):
+        for number,key in enumerate(('projection_sha256','raw_mask_sha256','grid','support_code_sha256','label_schema','query_mode','groups')):
             with self.subTest(key=key):
                 d=fixtures.ScalarOwnerFillTests('test_false_keeps_raw_export');d.setUp();self.addCleanup(d.doCleanups)
                 altered=copy.deepcopy(descriptor);altered['prepared_identity'][key]='mismatch'
@@ -76,9 +108,16 @@ class PreparedSupportOwnerTests(unittest.TestCase):
         d=fixtures.ScalarOwnerFillTests('test_false_keeps_raw_export');d.setUp();self.addCleanup(d.doCleanups)
         tampered=d.root/'labels.csv';tampered.write_bytes(Path(first['prepared_support_labels']['path']).read_bytes())
         records=dict(first);records['prepared_support_labels']=file_record(tampered,'required_evidence')
-        tampered.write_text('index,group_ordinal\n',encoding='utf-8')
+        tampered.write_text('index,group_ordinals_v2\n',encoding='utf-8')
         badsource=SimpleNamespace(reference=source.reference,data_records=records,data_locations={k:Path(v['path']) for k,v in records.items()},data_path=lambda name:Path(records[name]['path']))
         with self.assertRaisesRegex(AssertionError, "changed"):call(d,support_source=badsource)
+        d=fixtures.ScalarOwnerFillTests('test_false_keeps_raw_export');d.setUp();self.addCleanup(d.doCleanups)
+        missing=d.root/'missing-label.csv'
+        label_lines=Path(first['prepared_support_labels']['path']).read_text(encoding='utf8').splitlines()
+        missing.write_text('\n'.join(label_lines[:-1])+'\n',encoding='utf8')
+        records=dict(first);records['prepared_support_labels']=file_record(missing,'required_evidence')
+        badmissing=SimpleNamespace(reference=source.reference,data_records=records,data_locations={k:Path(v['path']) for k,v in records.items()},data_path=lambda name:Path(records[name]['path']))
+        with self.assertRaisesRegex(ValueError,'classification accounting differs'):call(d,support_source=badmissing)
         d=fixtures.ScalarOwnerFillTests('test_false_keeps_raw_export');d.setUp();self.addCleanup(d.doCleanups)
         corrupt=copy.deepcopy(descriptor);corrupt['result']['classifications']['interior']+=1
         altered=d.root/'bad-counts.json';altered.write_text(json.dumps(corrupt),encoding='utf-8')

@@ -19,7 +19,10 @@ def _sheet_is_zero_thickness(shape: Mapping[str, Any]) -> bool:
 
 
 class InvalidNodeClassifier:
-    """Stream explicit invalid nodes; supply voltage only for a unique solid interior.
+    """Stream invalid nodes and fill strict interiors with one common voltage.
+
+    Overlapping strict interiors retain every participating group; all of their
+    voltages must be exactly equal at the workpoint being consumed.
 
     ``projection`` and ``request`` must be independently verified frozen input
     documents. This helper does not own records, launch processes or mutate them.
@@ -81,7 +84,7 @@ class InvalidNodeClassifier:
                 raise ValueError('ideal surface is not represented as zero thickness')
         if actual_members != declared_members:
             raise ValueError('scientific group member coverage differs')
-        self._query = prepare_member_query(members, frame_id=frame); self._voltages = values; self._frame = frame
+        self._query = prepare_member_query(members, frame_id=frame, report_overlaps=True); self._voltages = values; self._frame = frame
         self._dimensions = tuple(dimensions); self._origin = tuple(origin); self._pitch = tuple(pitch)
         self._count = grid['point_count']; self.counts: Counter[str] = Counter()
 
@@ -105,11 +108,17 @@ class InvalidNodeClassifier:
                 raise ValueError('invalid node coordinate differs from its grid index')
             previous = index
             decision = self._query(world)
-            status = decision['status']; self.counts[status] += 1
-            if status == 'interior':
-                yield {'index': index, 'classification': status, 'group': decision['group'],
-                       'voltage_v': self._voltages[decision['group']]}
+            status = decision['status']
+            if status in ('interior', 'overlap'):
+                groups = [decision['group']] if status == 'interior' else decision['groups']
+                voltages = [self._voltages[group] for group in groups]
+                if any(value != voltages[0] for value in voltages[1:]):
+                    raise ValueError('overlapping electrode groups have different voltages')
+                self.counts['interior'] += 1
+                yield {'index': index, 'classification': 'interior', 'groups': groups,
+                       'voltage_v': voltages[0]}
             else:
+                self.counts[status] += 1
                 yield {'index': index, 'classification': status}
 
 
@@ -120,6 +129,8 @@ def fill_invalid_scalar_pa(potential_path: str | Path, mask_path: str | Path,
                            write_labels_path: str | Path | None = None,
                            read_labels_path: str | Path | None = None) -> dict[str, Any]:
     """Fill strict conductor interiors into two new scalar PAs; caller guards inputs.
+
+    An overlap is fillable only when every participating group has the same voltage.
 
     Grid positions/pitches are in mm and group potentials in volts; chunk size is
     an engineering memory bound. Inputs are immutable verified samples.
@@ -179,23 +190,27 @@ def fill_invalid_scalar_pa(potential_path: str | Path, mask_path: str | Path,
         if write_labels_path is not None:
             label_file = stack.enter_context(Path(write_labels_path).open('x', encoding='utf-8', newline=''))
             label_writer = csv.writer(label_file, lineterminator='\n')
-            label_writer.writerow(('index', 'group_ordinal'))
+            label_writer.writerow(('index', 'group_ordinals_v2'))
         if read_labels_path is not None:
             label_file = stack.enter_context(Path(read_labels_path).open('r', encoding='utf-8', newline=''))
             label_reader = csv.reader(label_file)
-            if next(label_reader, None) != ['index', 'group_ordinal']:
+            if next(label_reader, None) != ['index', 'group_ordinals_v2']:
                 raise ValueError('prepared support CSV header differs')
             def read_label():
                 nonlocal previous_label
                 row = next(label_reader, None)
                 if row is None: return None
-                if (len(row) != 2 or any(not x.isascii() or not x.isdecimal() or str(int(x)) != x for x in row)):
+                if len(row) != 2:
                     raise ValueError('invalid prepared support label')
-                index, ordinal = map(int, row)
-                if not previous_label < index <= hp.node_count or not 0 <= ordinal < len(group_keys):
+                numbers = [row[0], *row[1].split(';')]
+                if any(not x.isascii() or not x.isdecimal() or str(int(x)) != x for x in numbers):
+                    raise ValueError('invalid prepared support label')
+                index = int(numbers[0]); ordinals = [int(x) for x in numbers[1:]]
+                if (not previous_label < index <= hp.node_count or not ordinals
+                        or ordinals != sorted(set(ordinals)) or any(n >= len(group_keys) for n in ordinals)):
                     raise ValueError('prepared support labels must be ordered and in range')
                 previous_label = index
-                return index, ordinal
+                return index, ordinals
             next_label = read_label()
         source_p, source_m = [stack.enter_context(p.open('rb')) for p in paths[:2]]
         dest_p, dest_m = [stack.enter_context(p.open('xb')) for p in paths[2:]]
@@ -223,12 +238,17 @@ def fill_invalid_scalar_pa(potential_path: str | Path, mask_path: str | Path,
                 def prepared_decisions():
                     nonlocal next_label
                     while next_label is not None and next_label[0] <= offset + count:
-                        index, ordinal = next_label
+                        index, ordinals = next_label
                         local = index - offset - 1
                         if local < 0 or mask[local] != 0:
                             raise ValueError('prepared label points to a valid or earlier node')
-                        yield {'index': index, 'classification': 'interior',
-                               'group': group_keys[ordinal], 'voltage_v': classifier._voltages[group_keys[ordinal]]}
+                        n = index-1; ijk = (n%nx, (n//nx)%ny, n//(nx*ny))
+                        world = [origin[a]+pitch[a]*ijk[a] for a in range(3)]
+                        decision = next(classifier.classify([{'index':index, 'world_mm':world}]))
+                        groups = [group_keys[ordinal] for ordinal in ordinals]
+                        if decision['classification'] != 'interior' or decision['groups'] != groups:
+                            raise ValueError('prepared support group set differs from geometry')
+                        yield decision
                         next_label = read_label()
                 decisions = prepared_decisions()
             for row in decisions:
@@ -238,7 +258,7 @@ def fill_invalid_scalar_pa(potential_path: str | Path, mask_path: str | Path,
                     if not math.isfinite(2*maximum):raise ValueError('filled voltage encoding range overflows')
                     values[j]=row['voltage_v'];mask[j]=1.;filled+=1
                     if label_writer is not None:
-                        label_writer.writerow((row['index'], group_ordinals[row['group']]))
+                        label_writer.writerow((row['index'], ';'.join(str(group_ordinals[group]) for group in row['groups'])))
             values.astype('<f8',copy=False).tofile(dest_p)
             mask.astype('<f8',copy=False).tofile(dest_m)
             offset+=count

@@ -731,7 +731,11 @@ def _postprocess_scalar(session: Any, *, outputs: list[Path], output_dir: Path, 
                         fill_conductor_interiors: bool, publish_prepared_support: bool,
                         raw_mask_record: Mapping[str, Any] | None = None, owned_raw: bool = True,
                         failure_report: Path | None = None):
-    """Apply one shared strict-interior postprocess to owned or borrowed raw samples."""
+    """Fill strict interiors only when every participating group has the same voltage.
+
+    Reused support binds the query and label versions and validates group sets
+    and voltages again for the workpoint being consumed.
+    """
     published_outputs = list(outputs)
     support_record = None
     labels_path = None
@@ -755,6 +759,7 @@ def _postprocess_scalar(session: Any, *, outputs: list[Path], output_dir: Path, 
                 current = dict(projection_sha256=frozen['projection']['sha256'], grid=_classification_grid_identity(grid),
                                raw_mask_sha256=raw_mask_record['sha256'],
                                support_code_sha256=[r['sha256'] for r in support_code[::2]],
+                               label_schema='group_ordinals_v2', query_mode='all_strict_interiors_v2',
                                groups=sorted([list((r['instance_id'], r['electrode_group_id'])) for r in projection['electrode_groups']]))
                 if expected != current:
                     raise ValueError('prepared support geometry/grid/mask/query identity differs')
@@ -793,6 +798,7 @@ def _postprocess_scalar(session: Any, *, outputs: list[Path], output_dir: Path, 
                 prepared_identity = dict(projection_sha256=frozen['projection']['sha256'], grid=_classification_grid_identity(grid),
                     raw_mask_sha256=raw_mask_record['sha256'],
                     support_code_sha256=[r['sha256'] for r in support_code[::2]],
+                    label_schema='group_ordinals_v2', query_mode='all_strict_interiors_v2',
                     groups=sorted([list((r['instance_id'], r['electrode_group_id'])) for r in projection['electrode_groups']]))
             write_json_atomic(support_path, dict(schema_version=1, role='assembly_scalar_conductor_support',
                 grid=grid_record, projection=frozen['projection'], request=frozen['request'],

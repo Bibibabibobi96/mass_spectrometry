@@ -43,10 +43,24 @@ class ScalarInteriorTests(unittest.TestCase):
     def test_overlap_refuses_and_unsupported_never_fills(self):
         projection,request,grid=fixture();other=copy.deepcopy(projection['members'][0]);other.update(member_id='other',electrode_group_id='other')
         projection['members'].append(other);projection['electrode_groups'].append({'instance_id':'oa','electrode_group_id':'other','member_ids':['other']});request['group_voltages'].append({'instance_id':'oa','electrode_group_id':'other','voltage_v':1})
-        with self.assertRaisesRegex(ValueError,'different electrode groups'):list(InvalidNodeClassifier(projection,request,grid).classify([{'index':22,'world_mm':[-1,0,0]}]))
+        with self.assertRaisesRegex(ValueError,'different voltages'):list(InvalidNodeClassifier(projection,request,grid).classify([{'index':22,'world_mm':[-1,0,0]}]))
         other['shape']={'kind':'unknown'}
         row=list(InvalidNodeClassifier(projection,request,grid).classify([{'index':22,'world_mm':[-1,0,0]}]))[0]
         self.assertEqual(row,{'index':22,'classification':'unsupported'})
+    def test_equal_voltage_overlap_retains_all_groups(self):
+        projection,request,grid=fixture();other=copy.deepcopy(projection['members'][0])
+        other.update(instance_id='tof',member_id='detector',electrode_group_id='ground')
+        projection['members'].append(other)
+        projection['electrode_groups'].append({'instance_id':'tof','electrode_group_id':'ground','member_ids':['detector']})
+        request['group_voltages'].append({'instance_id':'tof','electrode_group_id':'ground','voltage_v':-100})
+        node=[{'index':22,'world_mm':[-1,0,0]}]
+        row=list(InvalidNodeClassifier(projection,request,grid).classify(node))[0]
+        self.assertEqual(row['groups'],[('oa','metal'),('tof','ground')])
+        self.assertEqual(row['voltage_v'],-100)
+        request['group_voltages'][-1]['voltage_v']=-99
+        with self.assertRaisesRegex(ValueError,'different voltages'):
+            list(InvalidNodeClassifier(projection,request,grid).classify(node))
+
     def test_near_boundary_never_fills(self):
         projection,request,grid=fixture();grid.update(origin_mm=[1.25,0,0],pitch_mm=[1,1,1],dimensions=[2,2,2],point_count=8)
         for x in (math.nextafter(1.25,-math.inf),1.25,math.nextafter(1.25,math.inf)):

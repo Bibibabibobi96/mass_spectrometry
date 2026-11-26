@@ -266,7 +266,7 @@ def _outside_surface_bounds(bounds, point, error):
     return False
 
 
-def _query_members(members: Sequence[Mapping], point: Sequence[float], *, frame_id: str, _prepared_shapes=None, _poses=None, _surface_bounds=None) -> dict:
+def _query_members(members: Sequence[Mapping], point: Sequence[float], *, frame_id: str, _prepared_shapes=None, _poses=None, _surface_bounds=None, _report_overlaps=False) -> dict:
     """Classify canonical members in their supplied assembly frame and pose.
 
     An unsupported shape is not treated as empty. Distinct simultaneously
@@ -336,17 +336,23 @@ def _query_members(members: Sequence[Mapping], point: Sequence[float], *, frame_
         if relation == 'interior': inside.add(key)
         elif relation == 'boundary': boundary.add(key)
         elif relation == 'unsupported': unsupported.append(member['member_id'])
-    if len(inside) > 1: raise ValueError('point lies inside different electrode groups')
+    if len(inside) > 1 and not _report_overlaps: raise ValueError('point lies inside different electrode groups')
     if unsupported: return {'status':'unsupported','members':sorted(unsupported)}
     if boundary: return {'status':'boundary','groups':sorted(inside | boundary)}
+    if len(inside) > 1: return {'status':'overlap','groups':sorted(inside)}
     if inside: return {'status':'interior','group':next(iter(inside))}
     return {'status':'outside'}
 
 
-def prepare_member_query(members: Sequence[Mapping], *, frame_id: str):
-    """Snapshot members and validate fixed shapes once for repeated queries."""
+def prepare_member_query(members: Sequence[Mapping], *, frame_id: str, report_overlaps: bool = False):
+    """Prepare repeated queries; default rejects overlap, opt-in reports all groups.
+
+    Reporting an overlap does not assign a unique physical owner.
+    """
     if not isinstance(frame_id, str) or not frame_id:
         raise ValueError('explicit assembly frame is required')
+    if type(report_overlaps) is not bool:
+        raise ValueError('report_overlaps must be boolean')
     frozen = copy.deepcopy(members)
     prepared_shapes = {}
     poses = {}
@@ -405,7 +411,7 @@ def prepare_member_query(members: Sequence[Mapping], *, frame_id: str):
             unique_poses[key] = (key, transform, transform.inverse(), defect + 64*math.ulp(1.))
         poses[id(member)] = unique_poses[key]
     def query(point):
-        return _query_members(frozen, point, frame_id=frame_id, _prepared_shapes=prepared_shapes, _poses=poses, _surface_bounds=surface_bounds)
+        return _query_members(frozen, point, frame_id=frame_id, _prepared_shapes=prepared_shapes, _poses=poses, _surface_bounds=surface_bounds, _report_overlaps=report_overlaps)
     return query
 
 
