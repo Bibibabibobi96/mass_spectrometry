@@ -21,6 +21,8 @@ class RfIpProgramTests(unittest.TestCase):
         fixture=joint_ip_fixture.JointIpModelTests(methodName='runTest');fixture.setUp()
         model=compile_prepared_model(fixture.compiled,fixture.compiled.components_resolved,drive=fixture.drive,physics=RF_IP_PHYSICS)
         source=tracking_fixture.TrackingExecutionPlanTests(methodName='runTest');source.setUp();plan=source.plan()
+        # RF-IP has no downstream TOF detector; retain its original observation scope.
+        plan['observations']={'plane_observations':[]}
         plan['flight']['tracking_kind']='rf_ip';plan['flight']['grouped']=0
         names=('rf_drive.lua','single_flight_pulse_hook.lua','voltage_waveforms.lua','model_drive.lua','native_drive.lua',
                'rf_tracking.lua','rf_ip_gas_selection.lua','collision_hs1_gas.lua','rf_ip_tracking_hs1.lua')

@@ -97,30 +97,24 @@ class PreparedModelTests(unittest.TestCase):
             drive=static, physics=RF_PHYSICS).document['drive'])
 
     def test_real_public_example_keeps_backend_numerics_out_of_provider_model_inputs(self):
-        from msplatform import assembly as assembly_api, components as component_api, examples as example_api
-        from msplatform.backends import simion as simion_api
-
-        case = example_api.load_example('rf_oatof_functional_v1')
-        parts = {name: component_api.resolve_component(request) for name, request in case.component_requests.items()}
-        assembly = assembly_api.assemble(case.recipe, parts)
-        compiled = simion_api.compile_geometry(assembly, numerics=case.geometry_numerics)
+        from tests.contracts.test_support.split_rf_fixture import split_case
+        case, _, compiled, model = split_case(
+            dict(clock_epoch_id='pure-public-example-fixture', authority_sha256='A'*64,
+                 phase_reference_instrument_time_us=0.), dict(mode='held_off'))
         original = copy.deepcopy(compiled)
-        components = {name: compiled.components_resolved[name]
-                      for name in compiled.frontend_geometry['composition_plan']['scope']['instance_ids']}
-        self.assertNotIn('simion_detector_marker', components['oatof'])
-        self.assertNotIn('simion_geometry_build', components['oatof'])
-        drive = project_resolved_drive(compiled, components, pulse=dict(mode='held_off'),
-            clock=dict(clock_epoch_id='pure-public-example-fixture', authority_sha256='A'*64,
-                       phase_reference_instrument_time_us=0.))
-        model = compile_prepared_model(compiled, components, drive=drive, physics=PHYSICS)
+        components = compiled.components_resolved
+        for instance in ('oa', 'tof'):
+            self.assertNotIn('simion_detector_marker', components[instance])
+            self.assertNotIn('simion_geometry_build', components[instance])
         document = require_prepared_model(model)
         self.assertIn(document['model_identity_sha256'], render_model_configuration(model))
         self.assertEqual(compiled, original)
-        self.assertNotIn('simion_detector_marker', model.document['components_resolved']['oatof'])
-        self.assertNotIn('simion_detector_marker', model.document['geometry']['components_resolved']['oatof'])
+        for instance in ('oa', 'tof'):
+            self.assertNotIn('simion_detector_marker', model.document['components_resolved'][instance])
+            self.assertNotIn('simion_detector_marker', model.document['geometry']['components_resolved'][instance])
         self.assertTrue(any(row['electrode_group_id']=='reflectron_midgrid'
                             for row in model.document['native_drive_rows']))
-        expected = {str(key) for key in compiled.frontend_geometry['electrode_bindings']['oatof'].values()}
+        expected = {str(key) for key in compiled.frontend_geometry['electrode_bindings']['oa'].values()}
         self.assertEqual(set(document['electrical_projection']['accelerator_on']), expected)
 
     def test_default_model_matches_existing_field_contract_and_native_permutation(self):

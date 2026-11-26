@@ -9,8 +9,7 @@ from unittest.mock import patch
 
 from msplatform import assembly as assembly_api, capabilities as capability_api, components as component_api, examples as example_api
 from msplatform import ion_release as ion_release_api
-from msplatform.backends import simion as simion_api
-from msplatform.backends.simion.model import compile_prepared_model, project_resolved_drive, PHYSICS
+from msplatform.backends.simion.model import compile_prepared_model, PHYSICS
 
 
 class OaPreparedModelCapabilitiesTests(unittest.TestCase):
@@ -161,23 +160,32 @@ class ComsolGeometryCapabilitiesTests(unittest.TestCase):
 
 class PlatformCapabilitiesTests(unittest.TestCase):
     def setUp(self):
-        self.case = example_api.load_example("rf_oatof_functional_v1")
-        self.components = {name: component_api.resolve_component(request) for name, request in self.case.component_requests.items()}
-        self.assembly = assembly_api.assemble(self.case.recipe, self.components)
-        self.compiled = simion_api.compile_geometry(self.assembly, numerics=self.case.geometry_numerics)
-        self.drive = project_resolved_drive(self.compiled, self.compiled.components_resolved,
-            pulse=dict(mode="timed", time_us=10., width_us=2.),
-            clock=dict(clock_epoch_id="epoch", authority_sha256="A" * 64, phase_reference_instrument_time_us=0.))
-        self.model = compile_prepared_model(self.compiled, self.compiled.components_resolved,
-                                          drive=self.drive, physics=PHYSICS)
+        from tests.contracts.test_support.split_rf_fixture import split_case
+        from msplatform.components.single_reflection_oa_tof.accelerator_geometry import (
+            resolve_accelerator_geometry, apply_side_opening, resolve_oa_provider)
+        from msplatform.components.single_reflection_tof.legacy_projection import project_legacy_downstream
+        clock = dict(clock_epoch_id="epoch", authority_sha256="A" * 64, phase_reference_instrument_time_us=0.)
+        self.case, self.recipe, self.compiled, self.model = split_case(clock, dict(mode="timed", time_us=10., width_us=2.))
+        old = component_api.resolve_component(self.case.component_requests['oatof']).resolved_design
+        projection = apply_side_opening(resolve_accelerator_geometry(old,variant_id='three_zone_square'),
+                                        side_opening=old['mechanical_side_opening'])
+        source = resolve_oa_provider(old,projection=projection,geometry_profile_id=None)['source']
+        self.components = {'multipole':component_api.resolve_component(self.case.component_requests['multipole']),
+            'oa':component_api.resolve_component({'provider_id':'orthogonal_accelerator','design':{'instrument_geometry':source}}),
+            'tof':component_api.resolve_component({'provider_id':'single_reflection_tof','design':project_legacy_downstream(old)})}
+        self.assembly = assembly_api.assemble(self.recipe,self.components)
+        self.geometry_numerics = copy.deepcopy(self.case.geometry_numerics)
+        # Explicit capacity for the unchanged 85.057 MiB detector; grids stay identical.
+        self.geometry_numerics['geometry_build']['detector']['max_mib']=128.
+        self.drive = copy.deepcopy(self.model.document['drive'])
 
     def query(self, operation, arguments, **kwargs):
         return capability_api.capabilities(dict(schema_version=1, operation=operation, arguments=arguments), **kwargs)
 
     def test_actual_provider_assembly_and_geometry_compile_without_native_claim(self):
         cases = [("resolve_component", dict(request=next(iter(self.case.component_requests.values())))),
-                 ("compile_assembly", dict(recipe=self.case.recipe, components=self.components)),
-                 ("compile_geometry", dict(assembly=self.assembly, numerics=self.case.geometry_numerics))]
+                 ("compile_assembly", dict(recipe=self.recipe, components=self.components)),
+                 ("compile_geometry", dict(assembly=self.assembly, numerics=self.geometry_numerics))]
         for operation, arguments in cases:
             with self.subTest(operation=operation):
                 before = copy.deepcopy(arguments)
@@ -204,8 +212,8 @@ class PlatformCapabilitiesTests(unittest.TestCase):
             for key in ("clock_authority", "instrument_epoch")}
         # These are caller declarations for the pure planner only, not actual
         # authority files; the result must never say ready to execute.
-        drive = project_resolved_drive(self.compiled,self.compiled.components_resolved,
-            pulse=dict(mode="timed",time_us=10.,width_us=2.),clock=dict(clock,phase_reference_instrument_time_us=0.))
+        drive = copy.deepcopy(self.drive)
+        drive["clock"] = dict(clock,phase_reference_instrument_time_us=0.)
         model = compile_prepared_model(self.compiled,self.compiled.components_resolved,drive=drive,physics=PHYSICS)
         cases = [("prepare_model", dict(compiled=self.compiled, components_resolved=self.compiled.components_resolved,
                                        drive=drive, physics=PHYSICS)),
@@ -213,7 +221,8 @@ class PlatformCapabilitiesTests(unittest.TestCase):
                  ("track", dict(model=model, particles=packet, clock_records=clocks,
                     propagation=dict(schema_version=1,scope="continuous_assembly",end_policy=dict(maximum_particle_age_us=200.),
                                      consumed_plane_events=[],stop=None),
-                    observations=dict(plane_observations=[]),
+                    observations=dict(plane_observations=[dict(schema_version=2,observation_id="detector",
+                        source_instance_id="tof",surface_id="detector_active_face",max_records=1000)]),
                     numerics=dict(maximum_step_us=.001,trajectory_quality=17,rf_steps_per_period=80)))]
         for operation, arguments in cases:
             with self.subTest(operation=operation):
@@ -262,7 +271,7 @@ class PlatformCapabilitiesTests(unittest.TestCase):
         owner.assert_not_called()
 
     def test_explicit_environment_is_separate_and_no_discovery_or_writes(self):
-        args = dict(assembly=self.assembly,numerics=self.case.geometry_numerics)
+        args = dict(assembly=self.assembly,numerics=self.geometry_numerics)
         environment = dict(schema_version=1,tools=dict(simion=dict(available=False,release="SIMION 2020")))
         with patch("subprocess.Popen",side_effect=AssertionError("tool")), \
              patch("shutil.which",side_effect=AssertionError("host discovery")), \
@@ -290,7 +299,7 @@ class PlatformCapabilitiesTests(unittest.TestCase):
         rejected = self.query("resolve_component",dict(request=dict(provider_id="unknown_provider",design={})))
         self.assertEqual(rejected["contract_status"], "rejected")
         self.assertIn("unsupported component provider", rejected["reason"]["message"])
-        rejected = self.query("compile_geometry",dict(assembly=None,numerics=self.case.geometry_numerics))
+        rejected = self.query("compile_geometry",dict(assembly=None,numerics=self.geometry_numerics))
         self.assertEqual(rejected["contract_status"], "rejected")
         self.assertIn("explicitly assembled design", rejected["reason"]["message"])
         with self.assertRaises(ValueError):
