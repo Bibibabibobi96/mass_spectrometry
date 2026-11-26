@@ -1,8 +1,18 @@
 # 架构迁移执行记录
 
-本页是架构迁移的唯一进度入口；最新接续见文末“批次 B”。批次 A 完成不等于全仓迁移。输入为用户提供的
+本页是架构迁移的唯一进度入口；最新接续见[当前批次 B 检查点](#当前批次-b-检查点)。批次 A 完成不等于全仓迁移。输入为用户提供的
 `ms_agent_execution_20261126` 执行包（start_agent、review_resolutions、implementation_plan、review_decisions）。
 原评阅 145 同意、20 修改、2 不同意、29 处具体意见保持原意；技术实施选择不回写为原表批准。
+
+## 当前批次 B 检查点
+
+批次B同一Goal仍active，不启动C/M06–M08。主任务分支已普通push至`1868fc2c`，保留既有无关工作与artifacts。
+
+- SSA真实安装闭环、N3/N2复用／缺件局部重算／自动合格GC及API重放已验证；CC真实安装闭环已验证。两者0 hit、unknown归属保留，未授仪器精度／优化资格。
+- CS仍未完成：计数和同电位重叠修复已完成；b4在world启动前发现缺少直接原owner保护并正常failed收尾。修复`de88e5c9`的普通wheel已在确认idle后安全安装，公共CLI重试正在运行（`scalar-installed-study/native-run-de88e5c9.log`），等待实际world/Fly/SCI证据。
+- 真实N1合成ON脉冲回调解析基准通过。首次publication中断亦已保全原success completion、经私有一次性维护封存并释放lease；未加公共恢复能力、未新增科学产品。
+- 原广Changed实际FAIL（7 PASS/4 FAIL/23 BLOCKED），日志保留。对应失效正例、真实来源fixture、Lua多返回、SQLite连接关闭逐项定向修正；最终冻结后的必要增量Changed尚未启动，包含普通wheel/sdist两臂，不另重复整轮发行。
+- 下一步：真实CS闭环、最终增量目录门禁与双发行、完整CLOC、BA01–BA15和C剩余入口对账；成功后同步任务分支，不合并主线。
 
 ## 开工事实与边界
 
@@ -1490,6 +1500,10 @@ Agent 1在隔离worktree交付六文件：shape_query、assembly_scalar_fill、a
 `split_scalar_workbench._basis_original_owner_refs` 仅提取成功field_solution中真实manifest-bound的prepared_manifest；明确依赖才保护，无依赖不扩权。已审captured共驻源继续经原resolver及原recovery request核对failed/prepared双来源，不把顶层保护当传递。原manifest禁写句柄持续到native owner结束，两个原owner显式进入source_references；worker `_protected_source` 原样保留，不复制MPH、不改删除归属。
 
 根在整合后的主工作树运行 `python -m unittest tests.contracts.test_split_scalar_world tests.contracts.test_split_scalar_binding -q`：24 tests，11.147s PASS；真实惰性capacity lease验证消费时受保护、正常/异常结束释放，缺/篡改/未绑定原manifest拒绝，普通明确prepared依赖可用、无依赖不扩权；Ruff PASS。该单元尚待公共已安装b4重试，预期COMSOL原采样/support按真实key复用，必须以实际阶段与worker记录证明；不预先称0native或整链通过。
+
+### B 用户入口合同同步（1868fc2c 后）
+
+`docs/TRACING.md`与`docs/COMSOL_BACKEND.md`已同步等电位多组支持/v2标签、保守未知边界、逐工作点重核及不授物理owner/精度；`docs/tools/COMSOL_API.md`记录实际MATLAB JSON精确网格计数的格式与唯一验证helper。参考初态snapshot的version1/lineage与已验证原生birth的version2/primary_birth在用户入口明确分开。下游provider README补仓库README导航。此单元只维护当前合同与导航；实际native/gate通过范围仍由本页对应证据记录，不因文档更新提升资格。
 
 ### B 累计 CLOC（至 f216a7af，不含后续改动）
 

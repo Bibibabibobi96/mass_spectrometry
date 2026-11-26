@@ -589,3 +589,12 @@ COMSOL6.4官方[mphparticle](https://doc.comsol.com/6.4/doc/com.comsol.help.llma
 2026-10-31的`20261031_121732__test__comsol__rf-gui-observations`以原090000保存模型／冻结N100源完成1次launcher、std1／std2各1次Compute和原H67接受条件。既有提取record在比较前分别写成26885573／26885713B的MAT(v7)，public owner以solver_review完成封存与alias清理，父小记录／MPH stat不变；未用SIMION专用RetentionPreservePaths例外。707591个共有有限状态的最大分量差为9.385230370639874e-10mm／4.3199906940571964e-7m/s，只是诊断；数值／科学仍NOT_EVALUATED，原native精确birth echo两侧均不可用，源配置回读不等于native初态echo。
 
 已保存MAT与同run冻结的compare_rf_gui_observations可支持后续标准load后的纯比较，无COMSOL／Compute；两参数模式不重建项目物理接受条件。当前实测覆盖写入、真实GUI原接受条件、公共收尾及持久文件保留，尚未额外执行该资产的MAT-only冷读／新方法分析。本轮与112402旧FAIL各自保留，阶段／资源口径及结果链接见[RF项目状态](../../src/msplatform/components/rf_multipole/docs/PROJECT.md#121732-gui观测与公共收尾实测)。
+
+### MATLAB JSON 中的原生网格计数
+
+本机 COMSOL 6.4／R2025b 的已保存双解报告把网格元素数与上限写成
+`6.27792E+6`／`7.0E+6`；Python JSON 解析得到float，而数值仍是精确正整数。
+这种来源的网格计数应经现有 `assembly_particle_tracing._native_exact_count` 校验：
+拒绝bool、非有限、非整、非正及超过2^53的值，然后转为int；原mesh上限和两次报告逐字段相等校验继续保留。
+这不是对任意浮点物理量取整，也不改变作者工程策略中的整数类型合同。
+跨求解器scalar reader复用同一来源验证，证据和正反例见[迁移记录](../development/architecture-migration.md)。

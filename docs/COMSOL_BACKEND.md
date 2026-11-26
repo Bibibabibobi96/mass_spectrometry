@@ -203,9 +203,13 @@ products and retains completed grid payloads and reports as failure evidence.
 
 The default remains a masked vacuum export. Explicit
 `fill_conductor_interiors=True` additionally fills only invalid nodes strictly
-inside one canonical solid conductor with its frozen Dirichlet voltage. Existing
-valid samples remain byte-for-byte unchanged. Vacuum, boundaries, ideal surfaces
-and unsupported shapes stay invalid; conflicting conductor groups fail. The
+inside canonical solid conductors with their frozen Dirichlet voltage. The explicit
+scalar query retains the complete sorted set of overlapping groups and fills only
+when every participating voltage is exactly equal at the selected workpoint. It
+never chooses a unique physical owner; the default geometry query still rejects
+multiple groups. Existing valid samples remain byte-for-byte unchanged. Vacuum,
+boundaries, ideal surfaces and unsupported shapes stay invalid; unequal voltages fail.
+The active policy identity is `equipotential_dirichlet_solid_interiors_v2`. The
 output header voltage bound increases only when an actual fill requires it.
 This is analytic conductor support, not an additional FEM observation.
 
@@ -238,12 +242,15 @@ model/solution/grid validators and missing-sampler refusal from site-packages.
 The optional support path has focused source and managed inert-child coverage;
 its resource/validator probe also passed both ordinary installation arms, as
 recorded in the [integration evidence](INTEGRATION.md#依赖冻结与门禁).
-Complete installed native-stage execution and continuous flight remain separate,
-open requirements.
+Native-stage execution and continuous flight remain separate from these software
+probes; current per-combination evidence is in the [migration record](development/architecture-migration.md).
 
 For explicit classification reuse, `export_world_scalar` accepts
 `publish_prepared_support=True` when filling. It publishes ordered conductor-node
-labels alongside their geometry, physical grid, raw-mask and query-code identities.
+labels (`index,group_ordinals_v2`) alongside their geometry, physical grid, raw-mask,
+query-code and label-version identities. Each node retains all sorted unique group
+ordinals. Reuse rechecks its full geometric group set and every current workpoint
+voltage. Superseded active labels are refused; historical files remain unchanged.
 A subsequent filled export can select that samples ArtifactRef through
 `prepared_support=...`. It still samples its own solution and validates its complete
 finite voltage vector; mismatched masks or identities fail without fallback.

@@ -83,6 +83,11 @@ native_verified=false不代表原生求解已验证。实际逐组合证据查[�
 桥接必须声明原SIMION source-free FieldBundle作为碰撞载体及world/windows采样，
 当前要求原生资产位于同一个显式workspace owner root、OA与assembly坐标为identity pose，不推断或伪造缺失场。
 COMSOL有限外箱电位与SIMION Neumann不是同一边值问题，不能以同几何直接宣称结果精度等价。
+桥接的显式导体支持采用 `equipotential_dirichlet_solid_interiors_v2`：只填严格实体内部，
+重叠时保存完整电极组集合，并要求每个工作点全部电位精确相等。边界和未知节点保持无效，
+不据此指定唯一物理owner。活动prepared支持标签须为v2并重新核对几何组与当前电位；
+历史标签保持只读。此填值不增加FEM观测或精度资格，细节见[后端合同](COMSOL_BACKEND.md#saved-assembly-scalar-export)。
+
 原生ID目前受SIMION Lua日志32-bit ABI限制，超过2^31−1在执行前拒绝。
 
 Store只拥有小原生引用缓存与完整科学结果；PA/MPH继续由原执行owner管理，原始源使用防写/防删句柄保护。
@@ -110,8 +115,9 @@ split原生SIMION运行由同一workflow将旧静态ground PA族转换为独立�
 以及 initial_states.parquet、terminal_states.parquet、events.parquet 和 trajectories.h5。
 frame 为显式实验坐标（参考 laboratory，x/y/z右手轴、原点由作者初态声明），时钟为实验相对秒。
 粒子 ID 为正 int64，物种、质量、电荷态、派生电荷与权重各自保存。未保存的任意时刻完整回放不作承诺。
-初态 parent_particle_id 为空且谱系标记为 unavailable_initial_snapshot，不把快照冒充真实出生记录；
-本轮没有次级生成能力。事件序号按粒子递增，并保存平面轴法向穿越方向，重复穿面分别记录。
+参考初态快照使用version1和 `unavailable_initial_snapshot`；原生已验证出生使用version2、
+`initial_state_basis=native_birth_verified` 与 `primary_birth`，两者的 parent_particle_id 均为空。
+原生出生、原生观测初态和普通快照各自保留来源，不相互冒充；本轮没有次级生成能力。事件序号按粒子递增，并保存平面轴法向穿越方向，重复穿面分别记录。
 终态独立表达 physical_outcome 与 stop_reason；无法归属的 component/electrode/surface 是 null，
 attribution_status/method 显式不可用；原生码、实体ID和诊断不丢弃。取消未启动粒子没有捏造的物理终点。
 0 命中和时间截断可执行成功，统计分母保持完整母群；缺记录标记 incomplete，不补 lost。
