@@ -61,7 +61,7 @@ def _positive(value: Any, name: str) -> None:
 
 
 def _tracing_numerics(value: dict, tracer: str) -> None:
-    _keys(value, {"end_policy", tracer}, "tracing numerics")
+    _keys(value, {"end_policy", tracer} | ({"birth_validation"} if tracer == "comsol" else set()), "tracing numerics")
     policy = value["end_policy"]
     if not isinstance(policy, dict) or set(policy) not in ({"maximum_particle_age_us"}, {"absolute_instrument_end_us"}):
         raise ValueError("tracing end_policy must select one explicit time horizon")
@@ -82,6 +82,9 @@ def _tracing_numerics(value: dict, tracer: str) -> None:
             _positive(item, key)
         if native["relative_tolerance"] >= 1:
             raise ValueError("COMSOL relative_tolerance must be less than one")
+        _keys(value["birth_validation"], {"position_atol_m", "velocity_atol_m_s"}, "native birth validation")
+        for key, item in value["birth_validation"].items():
+            _positive(item, key)
 
 
 def _study(data: dict, tracer: str) -> None:
@@ -115,7 +118,32 @@ def _study(data: dict, tracer: str) -> None:
         raise ValueError("study physics policies must be explicit strings")
     if not {"representation", "write_pcurves", "precision_mode"} <= data["cad_export"].keys():
         raise ValueError("study CAD export settings are incomplete")
-    release = data["release"]
+    requests = release_requests(data["release"])
+    for release in requests:
+        _validate_birth_request(release)
+    species = [release["species_id"] for release in requests]
+    if len(species) != len(set(species)):
+        raise ValueError("mass scan species IDs must be unique")
+    explicit = [pid for release in requests for pid in (release.get("particle_ids") or [])]
+    if len(explicit) != len(set(explicit)):
+        raise ValueError("mass scan explicit particle IDs must be globally unique")
+    canonical_json_sha256(data)
+
+
+def release_requests(release: dict) -> list[dict]:
+    """Read the one canonical source or its explicit species collection."""
+    if release.get("role") == "canonical_mass_scan_request":
+        _keys(release, {"schema_version", "role", "species_requests"}, "mass scan")
+        if type(release["schema_version"]) is not int or release["schema_version"] != 1:
+            raise ValueError("unsupported mass scan version")
+        requests = release["species_requests"]
+        if not isinstance(requests, list) or not requests or any(not isinstance(row, dict) for row in requests):
+            raise ValueError("mass scan needs nonempty species requests")
+        return requests
+    return [release]
+
+
+def _validate_birth_request(release: dict) -> None:
     required = {"schema_version", "role", "release_spec", "clock", "instrument_origin_us", "species_id", "source_component_id", "relative_weights"}
     if (not required <= release.keys() or release.keys() - required - {"particle_ids"}
             or type(release["schema_version"]) is not int or release["schema_version"] != 1
@@ -137,7 +165,6 @@ def _study(data: dict, tracer: str) -> None:
                                 or set(weights) != {str(pid) for pid in (ids if ids is not None else range(1, count + 1))}
                                 or any(type(w) not in (int, float) or not math.isfinite(w) or w <= 0 for w in weights.values())):
         raise ValueError("study weights must cover explicit particle IDs with positive values")
-    canonical_json_sha256(data)
 
 
 def _resource_snapshots(study: dict) -> dict:
@@ -160,8 +187,9 @@ def _validate_resources(study: dict, resources: dict) -> None:
     if (authority.get("role") != "canonical_clock_authority" or identity.get("path") != "instrument_epoch_v1.json"
             or identity.get("sha256") != resources["instrument_epoch_v1.json"]["sha256"]
             or identity.get("field") != "instrument_time_us" or "instrument_time_us" not in epoch
-            or study["release"].get("clock", {}).get("authority_sha256") != identity.get("sha256")
-            or study["release"].get("clock", {}).get("clock_epoch_id") != authority.get("clock_epoch_id")):
+            or any(release.get("clock", {}).get("authority_sha256") != identity.get("sha256")
+                   or release.get("clock", {}).get("clock_epoch_id") != authority.get("clock_epoch_id")
+                   for release in release_requests(study["release"]))):
         raise ValueError("study clock and frozen authority/epoch do not agree")
 
 

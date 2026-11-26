@@ -17,6 +17,32 @@ STUDY = ROOT / 'src/msplatform/examples/rf_oatof_functional_v1.json'
 
 
 class NativeRecipeTests(unittest.TestCase):
+    def test_comsol_requires_explicit_solver_and_si_birth_validation_controls(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.write_recipe(root)
+            document = json.loads((root / 'study.json').read_text())
+            document['numerics']['tracing'] = {
+                'end_policy': {'absolute_instrument_end_us': 100.0},
+                'comsol': {'maximum_step_us': 0.01, 'relative_tolerance': 1e-4, 'absolute_tolerance': 1e-6},
+                'birth_validation': {'position_atol_m': 1e-10, 'velocity_atol_m_s': 1e-6},
+            }
+            def write(value):
+                path = self.write_recipe(root, study_bytes=json.dumps(value).encode())
+                text = path.read_text().replace('particle_tracer = "simion"', 'particle_tracer = "comsol"')
+                path.write_text(text.replace('simion_native', 'comsol_native').replace('native_domain_composition', 'joint_solve'))
+                return path
+            self.assertEqual(load_recipe(write(document)).to_dict()['particle_tracer'], 'comsol')
+            for key in ('comsol', 'birth_validation'):
+                broken = copy.deepcopy(document)
+                del broken['numerics']['tracing'][key]
+                with self.subTest(key=key), self.assertRaises(ValueError):
+                    load_recipe(write(broken))
+            broken = copy.deepcopy(document)
+            broken['numerics']['tracing']['comsol']['relative_tolerance'] = 1.0
+            with self.assertRaisesRegex(ValueError, 'less than one'):
+                load_recipe(write(broken))
+
     def write_recipe(self, root, *, study_bytes=None, label='native study', fields=''):
         study = root / 'study.json'
         if study_bytes is None:

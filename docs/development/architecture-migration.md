@@ -801,3 +801,26 @@ context退出后允许；错root/kind/散列拒绝。生产/测试Ruff PASS。
 加入公共workflow/mass_scan/reference定向联合18项PASS（11.248s），仍无商业工具调用。
 helper首次保护包含原reader与guard的两次大文件hash，尚未测性能，未为优化放松信任边界。
 下一步同一CLI运行将持此guard直到下游接管和SI结果复制完成；原native子进程持权接线由Agent3继续独立验证。
+
+
+### B5 物种母群与归并单元（公共原生执行仍在整合）
+
+`workflows/mass_scan.py` 复用唯一sample_release：canonical_mass_scan_request仅组合非空species_requests，
+质量/电荷/N/分布仍来自各原release_spec，不复制第二套物种权威。物种唯一，同epoch，显式粒子ID全局唯一；
+缺省/None ID按物种顺序避开所有显式ID确定分配，权重局部映射冻结为全局映射，样本N与物理权重分开。
+`recipes/native.py` 同Study release入口接受该版本化集合，每个源/clock/显式控制分别校验；
+COMSOL原生出生比较的SI容差必须作者显式声明，不用输出采样间隔替代积分控制。
+
+merge_mass_scan只归并已成功完整批、保留真实ID与各6D/事件/轨迹，拒绝缺终态/外来身份/重复/混合谱系；
+analyze_mass_scan独立报告各species原始和加权检测率，0-hit和1-hit可作为完整科学负结果，
+峰统计/标定不足给not_applicable，不将分析准入倒灌成追踪失败，也未假称实际拟合已执行。
+实际失败/缺件不能用零命中掩盖。各批frame/clock由运行owner在归并前验证，TraceResult本身没有伪造元数据。
+
+mass_scan定向5项及Ruff PASS，含单物种、不等N、同mass +1/+2、权重、null/显式ID、混合clock、
+0/1-hit、缺件/重复与schema2冷读；native_recipe+native_workflow联合16项PASS（5.622s）。
+其中nativeworkflow新公共调度仍未提交，本主题软件原语不代表真实+1/+2原生完成或BA12全通过。
+下步同一run_recipe按物种完整批运行，共享实际场依赖、缺批局部重算，之后以真实小N+1/+2闭合。
+
+COMSOL后续工程probe（WORKTREE源）固定几何/5mm mesh实际6,277,920元素；已知5m工程守卫在求场前拒绝，
+run `20261127_013605__sim__comsol__pulse-basis-baa1c658928b`，peak快照约4,927,029,248 B，
+owned_scope_unknown限制仍保留。没有OFF/ON解，没有CPT；mesh元素不是节点或DOF，不拿默认二阶推断冒实测。
