@@ -6,13 +6,42 @@
 
 ## 安装与运行
 
-在源码目录构建普通发行；两份锁与 wheel 一起提供给使用者：
+从仓库根目录在独立临时目录构建普通 wheel 和 sdist，使用 `pyproject.toml` 中固定的
+setuptools 与 wheel 版本，不需要 `build` frontend。`git archive HEAD` 只使用当前已提交快照；
+未提交的修改不会进入发行，需先提交或另行明确准备要构建的源码。下面的 `$taskBuild` 是新建目录，
+构建产物位于其中的 `dist`，不会覆盖已有交付文件：
 
 ```powershell
-.\.venv\Scripts\python.exe -m build --no-isolation
+$taskBuild = Join-Path $env:TEMP ("msplatform-build-" + [guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Path $taskBuild | Out-Null
+New-Item -ItemType Directory -Path (Join-Path $taskBuild "source"), (Join-Path $taskBuild "dist") | Out-Null
+git archive --format=tar -o (Join-Path $taskBuild "source.tar") HEAD
+if ($LASTEXITCODE -ne 0) { throw "source archive failed" }
+tar -xf (Join-Path $taskBuild "source.tar") -C (Join-Path $taskBuild "source")
+if ($LASTEXITCODE -ne 0) { throw "source extraction failed" }
+py -3.11 -m venv (Join-Path $taskBuild "builder")
+if ($LASTEXITCODE -ne 0) { throw "builder environment creation failed" }
+$builderPython = Join-Path $taskBuild "builder\Scripts\python.exe"
+& $builderPython -m pip install "setuptools==65.5.0" "wheel==0.38.4"
+if ($LASTEXITCODE -ne 0) { throw "build tool installation failed" }
+Push-Location (Join-Path $taskBuild "source")
+try {
+    & $builderPython -c 'from setuptools.build_meta import build_wheel; import sys; build_wheel(sys.argv[1])' (Join-Path $taskBuild "dist")
+    if ($LASTEXITCODE -ne 0) { throw "wheel build failed" }
+    & $builderPython -c 'from setuptools.build_meta import build_sdist; import sys; build_sdist(sys.argv[1])' (Join-Path $taskBuild "dist")
+    if ($LASTEXITCODE -ne 0) { throw "sdist build failed" }
+} finally { Pop-Location }
+Get-ChildItem (Join-Path $taskBuild "dist")
+```
+
+wheel 和 sdist 分别在独立 Python 进程构建，避免构建 backend 状态影响输出位置。
+构建工具版本须与当前 `pyproject.toml` 的 `[build-system].requires` 一致。使用者需要同一发行的
+`requirements-lock.txt` 和 wheel；下面从仓库根目录创建独立运行环境（替换目标路径）：
+
+```powershell
 py -3.11 -m venv C:\msplatform-env
 C:\msplatform-env\Scripts\python.exe -m pip install -r requirements-lock.txt
-C:\msplatform-env\Scripts\python.exe -m pip install dist\mass_spectrometry_analysis-0.4.0-py3-none-any.whl
+C:\msplatform-env\Scripts\python.exe -m pip install (Join-Path $taskBuild "dist\mass_spectrometry_analysis-0.4.0-py3-none-any.whl")
 ```
 
 将唯一作者 TOML 复制到研究目录，切到源码树外后运行（替换部署路径）：

@@ -600,3 +600,27 @@ tracer实现摘要改变已进入现有批缓存键；物理规范值和版本�
 
 B0-03已提交/推送 `0873971a`；B0-04干净构建正在验证独立backend进程的可靠命令，尚未计通过。
 下一步立即推进B1的既有Study/Assembly接线；B2只读闭包已确认OA本来只复用一次，不能重写第三套OA。
+
+
+### B0-04：干净构建说明已验证；B0退出
+
+`docs/TRACING.md` 改为固定已提交快照的git archive、干净Python3.11 venv、pyproject声明的
+setuptools65.5.0/wheel0.38.4，并分别在两个独立Python backend进程构建wheel和sdist。
+不再假定锁文件安装了build frontend。固定源 `a9d76aa4` 干净构建PASS：wheel5706249 B、
+sdist4851908 B；主机小证据 `.tools/b0-04-build-evidence-20261127/build-evidence.json` 含来源/版本/摘要。
+初次同进程连续调用退出0却将sdist写入source/bdist_wheel，已纠正文档并用全新快照重验；
+初次部分构建不作为PASS。此项仅构建可复制性验证，不冒充本轮最终安装/native验收。
+
+自动批准审查拒绝递归清理本次临时目录 `msplatform-b0-04-997974f7bbbc433abe14f3264bc55430`，
+仅报告blocked by policy，无更具体原因；没有重试或换方式绕过。约1081448135 B逻辑文件仍保留，
+未声称释放；都是本次可重建源码/venv/发行产物，不涉及既有研究数据。清理限制不是B原生资格PASS。
+
+B0-01/02已提交/推送 `f0febc9e`；四项B0现在闭合，BA01只声明其实际验收范围。
+B1共同合同沿现有StudyDefinition(component_requests/recipe/drive/physics/release/numerics)、
+components.resolve_component和assembly.assemble，不另造第二Study/Assembly或CLI。
+同一load_recipe将以版本化native作者配置绑定完整自包含Study JSON的path+SHA，单次读字节、冻结/归档依赖；
+运行时不重读可变科学源。预检区分实现/主机/证据，不以parse成功代替native支持。
+
+B2取证已确认实际仪器OA开口与standalone第一隙约束不同，必须由OA owner表达受验证的仪器机械输入；
+OA↔下游连接须由真实端面/开口和位姿推导验证，不能伪造port、空连接或按同电位合并ground身份。
+剩余旧消费者与原清单一致，B1–B6/BA02–BA15均在推进、尚未验收；下一步公共配方和独立组件合同。
