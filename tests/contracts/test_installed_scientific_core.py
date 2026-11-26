@@ -7455,7 +7455,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                 (root / 'installed_reference_uniform_e.toml').write_bytes(recipe_bytes)
                 section = INSTALLED_PROBE.split('# REFERENCE_TRACING_INSTALLED_BEGIN\n', 1)[1].split(
                     '# REFERENCE_TRACING_INSTALLED_END', 1)[0]
-                prelude = r"""import json, math, os, pathlib, subprocess, sys, sysconfig, time
+                prelude = r"""import hashlib, json, math, os, pathlib, subprocess, sys, sysconfig, time
 from contextlib import contextmanager
 import numpy as np
 root = pathlib.Path.cwd()

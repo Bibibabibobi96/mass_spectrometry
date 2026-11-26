@@ -42,6 +42,44 @@ def selected_python(root, package_root):
 
 
 class PairedStaticExecutionTests(unittest.TestCase):
+    def test_versioned_oa_voltage_projection_rejects_ambiguous_inputs(self):
+        canonical = {'common_ground': 1, 'accelerator_repeller': 2,
+                     'accelerator_intermediate_grid_1': 3, 'accelerator_intermediate_grid_2': 4,
+                     'accelerator_exit_grid': 5, 'accelerator_ring_0001': 6, 'accelerator_ring_0002': 7}
+        legacy = {'grounded_shield_id': 1, 'accelerator_repeller_id': 2, 'accelerator_grid1_id': 3,
+                  'accelerator_intermediate2_id': 4, 'accelerator_grid2_id': 5, 'accelerator_ring_ids': [6, 7]}
+        def plan(version, binding):
+            return {'composition_plan': {'schema_version': version}, 'accelerator_variant': 'three_zone_square',
+                    'oatof_instance_id': 'oa', 'native_geometry_compilation': {'electrode_bindings': {'oa': binding}},
+                    'static_on_electrode_voltages_v': dict(zip(map(str, range(1, 8)), [0, 10, 8, 4, 0, 7, 6])),
+                    'accelerator_electrical': {'operating_voltages_v': dict(shield=0, repeller=10, grid1=8,
+                        intermediate2=4, grid2=0, rings=[7, 6])}}
+        modern = plan(5, canonical)
+        old = plan(3, legacy)
+        expected = paired_accelerator_model._role_voltages(modern)
+        self.assertEqual(paired_accelerator_model._role_voltages(old), expected)
+        mutations = [lambda p: p['native_geometry_compilation']['electrode_bindings']['oa'].pop('grounded_shield_id'),
+                     lambda p: p['native_geometry_compilation']['electrode_bindings']['oa'].update(common_ground=1),
+                     lambda p: p['native_geometry_compilation']['electrode_bindings']['oa'].update(accelerator_ring_ids=[7, 6]),
+                     lambda p: p['native_geometry_compilation']['electrode_bindings']['oa'].update(accelerator_ring_ids=[6, 6]),
+                     lambda p: p['native_geometry_compilation']['electrode_bindings']['oa'].update(accelerator_ring_ids=[6]),
+                     lambda p: p['native_geometry_compilation']['electrode_bindings']['oa'].update(accelerator_grid1_id=2),
+                     lambda p: p['static_on_electrode_voltages_v'].update({'1': 1}),
+                     lambda p: p['static_on_electrode_voltages_v'].pop('7'),
+                     lambda p: p['composition_plan'].update(schema_version=5),
+                     lambda p: p['composition_plan'].update(schema_version=4)]
+        for mutate in mutations:
+            changed = copy.deepcopy(old)
+            mutate(changed)
+            with self.subTest(mutate=mutate), self.assertRaises(ValueError):
+                paired_accelerator_model._role_voltages(changed)
+        for mutate in (lambda p: p['native_geometry_compilation']['electrode_bindings']['oa'].pop('common_ground'),
+                       lambda p: p['native_geometry_compilation']['electrode_bindings']['oa'].update(grounded_shield_id=1)):
+            changed = copy.deepcopy(modern)
+            mutate(changed)
+            with self.subTest(modern_mutate=mutate), self.assertRaises(ValueError):
+                paired_accelerator_model._role_voltages(changed)
+
     def test_default_root_uses_selected_installed_package_not_package_ancestors(self):
         source = (WORKFLOW/'paired_accelerator_static_field.ps1').read_text(encoding='utf-8')
         self.assertIn("[string]$RepoRoot=''", source)
@@ -798,6 +836,8 @@ dofile('{Path(tasks['lua']).as_posix()}')
                     changed=runtime.read(source_plan);changed['static_on_electrode_voltages_v']['1']+=1
                     runtime.write(source_plan,changed);publish(fact)
                     with self.assertRaisesRegex(ValueError,'BVP differs'):runtime.comsol_reuse(run,manifest_path)
+                    with self.assertRaisesRegex(ValueError,'BVP differs'):
+                        paired_accelerator_model.load_paired_static_model_source(manifest_path,snapshot)
                     runtime.write(source_plan,plan);publish(fact)
                     target=run/'inputs/runtime_snapshot'/backend;original=target.read_bytes()
                     target.write_bytes(original+b'\n% Current export consumer comment only\n')

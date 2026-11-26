@@ -1,5 +1,13 @@
 # 单次反射正交加速飞行时间质量分析器当前状态
 
+2026-11-26: The paired static-model reader recognizes the authenticated historical
+three-zone OA-only composition-plan 3 electrode layout alongside the current
+plan 5 layout. It compares ordered physical voltages and rejects incomplete,
+ambiguous or conflicting mappings; frozen manifests and native payloads remain
+unchanged. The 110745 source / 235338 static-field metadata preparation and the
+saved-model BVP reuse regression passed without running COMSOL or SIMION. This
+does not qualify a native solve or migrate other historical plan versions.
+
 The retired top-level project tree has no active implementations. Scientific contracts and current documentation belong to the installed component; `oa_candidate`, `oa_tof_design`, and the distinct `oa_formal` package own their respective workflows; COMSOL, SIMION, and SolidWorks resources belong to their installed backends/exporters. Tests and frozen witnesses live under `tests/components/single_reflection_oa_tof_mass_analyzer` and the workflow/assembly owners that actually exercise them. Scientific project IDs, historical artifact identities, v1 authority bytes, and Formal controls remain unchanged. New OA MATLAB runs, Formal paths, and scratch paths resolve under `artifacts/components/single_reflection_oa_tof_mass_analyzer`; explicit Assembly inputs use `artifacts/assemblies/<assembly_id>`. Historical manifests may still name their original `artifacts/projects/...` locations for read-only traceability, but current path resolution never falls back to that root. The active v2 authority record is refreshed only through `render_campaign_authorities`.
 
 The OA MATLAB builders and candidate task now resolve only their installed/frozen backend and component roots; they no longer add retired `common`/`projects` directories. The SolidWorks MATLAB bridge passes its selected module root explicitly to an isolated Python process instead of modifying `PYTHONPATH`. R2025b previously passed all 16 artifact-context tests and all 19 path tests without starting COMSOL or SolidWorks; the isolated Python SolidWorks `--help` boundary also passed. These are path/software results, not native model, CAD or scientific qualification. For the current component/assembly artifact-root migration, R2025b passed all 18 artifact-context and seven CAD unit tests with zero failures or incomplete tests; development-standard and documentation-structure checks also passed. No model study, STEP export, or SolidWorks import was run.

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
 from msplatform.io.manifest_records import record_path
@@ -10,9 +11,65 @@ from msplatform.execution.retention import file_record
 from msplatform.io.manifest_records import require_completed_terminal_publication
 from msplatform.results.single_reflection_source import published_producer_input
 
+# Read-only plan3 renderer projection. The source correspondence is the
+# versioned frontend protocol in simion/tof_electrode_mapping.py; this is
+# limited to its three-zone OA field domain, not the entire ground assembly.
+_LEGACY_OA_ROLES = {
+    'common_ground': 'grounded_shield_id',
+    'accelerator_repeller': 'accelerator_repeller_id',
+    'accelerator_intermediate_grid_1': 'accelerator_grid1_id',
+    'accelerator_intermediate_grid_2': 'accelerator_intermediate2_id',
+    'accelerator_exit_grid': 'accelerator_grid2_id',
+}
+
 
 def read(path: Path) -> dict:
     return json.loads(path.read_text(encoding='utf-8-sig'))
+
+
+def _role_voltages(plan: dict) -> dict:
+    """Project a versioned OA-only frontend binding to ordered physical voltages."""
+    try:
+        composition = plan['composition_plan']['schema_version']
+        if type(composition) is not int or composition not in (3, 5):
+            raise ValueError('unsupported composition version')
+        if plan['accelerator_variant'] != 'three_zone_square':
+            raise ValueError('unsupported accelerator variant')
+        bindings = plan['native_geometry_compilation']['electrode_bindings'][plan['oatof_instance_id']]
+        if not isinstance(bindings, dict):
+            raise ValueError('electrode bindings must be a mapping')
+        if composition == 3:
+            if set(bindings) != set(_LEGACY_OA_ROLES.values()) | {'accelerator_ring_ids'}:
+                raise ValueError('legacy electrode binding shape differs')
+            rings = bindings['accelerator_ring_ids']
+            if not isinstance(rings, list):
+                raise ValueError('legacy ring IDs must be ordered')
+            fixed = {role: bindings[key] for role, key in _LEGACY_OA_ROLES.items()}
+        else:
+            fixed = {role: bindings[role] for role in _LEGACY_OA_ROLES}
+            ring_names = sorted(set(bindings) - set(fixed))
+            if ring_names != [f'accelerator_ring_{index:04d}' for index in range(1, len(ring_names) + 1)]:
+                raise ValueError('canonical ring identities must be consecutive')
+            rings = [bindings[name] for name in ring_names]
+        identifiers = [*fixed.values(), *rings]
+        if not rings or any(type(value) is not int or value <= 0 for value in identifiers) or len(set(identifiers)) != len(identifiers):
+            raise ValueError('electrode IDs must be distinct positive integers')
+        table = plan['static_on_electrode_voltages_v']
+        if not isinstance(table, dict) or set(table) != {str(value) for value in identifiers}:
+            raise ValueError('voltage table must cover exactly the OA electrodes')
+        values = [table[str(value)] for value in identifiers]
+        if any(type(value) not in (int, float) or not math.isfinite(value) for value in values):
+            raise ValueError('electrode voltages must be finite')
+        if table[str(fixed['common_ground'])] != 0:
+            raise ValueError('OA shield must be grounded')
+        electrical = plan['accelerator_electrical']['operating_voltages_v']
+        expected = [electrical[key] for key in ('shield', 'repeller', 'grid1', 'intermediate2', 'grid2')]
+        if not isinstance(electrical['rings'], list) or values != expected + electrical['rings']:
+            raise ValueError('electrode voltages conflict with the frozen electrical design')
+        return {**{role: table[str(identifier)] for role, identifier in fixed.items()},
+                'accelerator_rings': [table[str(identifier)] for identifier in rings]}
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(f'saved COMSOL field common BVP differs: {exc}') from exc
 
 
 def load_paired_static_model_source(
@@ -43,11 +100,6 @@ def load_paired_static_model_source(
         # SIMION pitch/raster and numeric electrode IDs are not COMSOL inputs.
         instance = plan['oatof_instance_id']
         port = plan['composition_plan']['components'][instance]['ports']['side_entry']
-        bindings = plan['native_geometry_compilation']['electrode_bindings'][instance]
-        voltages = plan['static_on_electrode_voltages_v']
-        roles = ('common_ground', 'accelerator_repeller', 'accelerator_intermediate_grid_1',
-                 'accelerator_intermediate_grid_2', 'accelerator_exit_grid')
-        rings = sorted(key for key in bindings if key.startswith('accelerator_ring_'))
         return dict(
             **{name: plan[name] for name in ('schema_version', 'accelerator_variant', 'oatof_instance_id',
                                            'coordinate_frame', 'accelerator_electrical')},
@@ -56,13 +108,13 @@ def load_paired_static_model_source(
                 'numerical_port_width_mm', 'numerical_port_height_mm', 'accelerator_port_aperture_discretization')},
             side_opening=dict(center_mm=port['center_mm'], **{key: port['cross_section'][key] for key in (
                 'shape', 'width_mm', 'height_mm')}),
-            role_voltages={**{role: voltages[str(bindings[role])] for role in roles},
-                           'accelerator_rings': [voltages[str(bindings[role])] for role in rings]})
+            role_voltages=_role_voltages(plan))
     borrowed = None
     if not any(record_path(row, base_dir=base) == (base/'comsol/comsol_field_solution.json').resolve() for row in records):
         # An export consumer declares its source explicitly. Follow its flat
         # model provenance directly, never an inferred ancestor/history chain.
         consumer_plan = read(record_path(bound(base/'inputs/bvp/paired_accelerator_static_field_plan.json')))
+        _role_voltages(consumer_plan)
         if (consumer_plan.get('schema_version') != 2 or expected_plan is not None and (
                 expected_plan.get('schema_version') != 2 or comsol_inputs(consumer_plan) != comsol_inputs(expected_plan))):
             raise ValueError('saved COMSOL field common BVP differs')
@@ -125,6 +177,7 @@ def load_paired_static_model_source(
     plan_record = bound(base/'inputs/bvp/paired_accelerator_static_field_plan.json')
     source_plan = record_path(plan_record, base_dir=base)
     previous = read(source_plan)
+    _role_voltages(previous)
     if previous.get('schema_version') != 2 or (expected_plan is not None and (
             expected_plan.get('schema_version') != 2 or comsol_inputs(previous) != comsol_inputs(expected_plan))):
         raise ValueError('saved COMSOL field common BVP differs')

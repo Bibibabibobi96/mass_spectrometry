@@ -406,3 +406,29 @@ Ruff 四个改动 Python 文件 PASS，diff --check PASS。
 并输出数值误差；直接 wheel 和 sdist 重建 wheel 的离仓验收留到第 3 项之后、同一最终代码提交运行。
 
 剩余旧消费者与上文清单相同；下一步只做已取证的历史 common_ground 读取边界修复，不启动 B。
+
+
+### 3. 历史 common_ground：已修并复验
+
+第 2 项代码/证据提交 `55144d39`。旧基线的 KeyError 仍是原始失败事实；本轮新增的技术选择是：
+仅在 `backends/comsol/paired_static_model.py` 的旧资产读取边界，按嵌套 composition plan 3
+解释六键 renderer 绑定，现行 plan 5 保持规范角色；外层 plan 2 本身不能区分格式。
+映射依据为现有 `backends/simion/tof_electrode_mapping.py` 的版本化前端协议与冻结 electrical ON 表，
+grid2 明确为 exit grid，不是第二中间网格。仅适用 three_zone_square 的 OA-only 域，
+不宣称整个装配 ground 等价，不支持无证据的 plan 4。
+
+源 plan 和 export consumer plan 即使无 expected_plan 也校验：五角色、接地、环 ID 顺序/长度、
+唯一正整数、完整有限电压与冻结 electrical 严格一致。缺字段、新旧混合、角色冲突、环列表不匹配、
+未知版本均拒绝。新 writer 未增加旧格式，不改历史 manifest，不放宽物理校验，不恢复旧生产框架。
+
+5 项定向测试 PASS（7.447 s）：新旧等价/拒绝夹具、原 saved-model BVP 测试、
+`PairedPulsePreparationTests.test_actual_110745_all_100_states_use_original_235338_common_field`、
+export-only 及平铺来源漂移。原失败方法现通过，100 个原始状态完整绑定原 235338 公共场；
+测试禁止读取 MPH/PA，未运行 COMSOL/SIMION。改动文件 Ruff 和 diff --check PASS。
+历史小证据复验 SHA-256 未变：235338 manifest
+`10862ABF99C5D20A094E6FE40277D81D115059153F4FCE9D6E3DECAC1EAECE83`，plan
+`26EDF6019898507E5A74C3792AF465FB3096816893F07AF1D70D2336E13EA49D`。
+
+原 Owner-02 失败报告保留，本轮定向通过不能改写为完整 Owner 门禁通过。
+剩余 P4 与旧消费者仍按原清单；B 前不再受该已复现 KeyError 阻塞。
+下一步仅在固定最终代码提交运行两发行离仓参考链，再登记结果与 CLOC。
