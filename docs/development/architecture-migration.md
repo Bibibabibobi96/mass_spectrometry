@@ -664,3 +664,22 @@ PASS，实际MATLAB R2025b探测True；SolidWorks文件基线检查、COM运行�
 OA-only gate不可套整仪器关掉常开反射场。新路径必须同模型保存OFF/ON两解，再组合背景+OA脉冲差场；
 不能把独立MPH的withsol引用误当共同解，也不能用reader fixture冒充原生完成。B4实际host与Store prelaunch
 接线、B5 mass_scan、B6旧执行退役继续，不停止Goal。
+
+
+### B4 结果格式单元：原生出生与旧初态快照分开
+
+`results/model.py:TraceResult` 成为同一 solver-neutral 结果对象；`tracing.TraceResult` 保持同一公开对象。
+`results/particle_data.py` 增加显式 schema2/native_birth_verified，初态 primary_birth 与 schema1 的
+unavailable_initial_snapshot 分离；没有把旧快照升级成出生证据。Parquet/HDF5/execution 的版本、frame、
+clock、出生依据交叉核验；次级谱系仍明确不支持。真实出生须由各 native adapter 从实际初始化记录核验，
+reader fixture 的显式标记不是原生资格。
+
+定向命令 `.venv/Scripts/python.exe -m unittest tests.contracts.test_native_particle_data
+ tests.contracts.test_reference_workflow tests.contracts.test_reference_tracing tests.contracts.test_native_recipe
+ tests.contracts.test_reference_recipe -q`：27 PASS（10.717 s），包括合成schema2读写/篡改负例及原参考链。
+本次结果主题只提交结果对象/格式、原公开重导出和相应边界声明；配方/后端/保护桥继续独立实施。
+B3/4三格原生仍未执行，不把格式往返计为BA08。下一步接实际源/终态与同一公共CLI。
+
+Agent3已修复尚未提交的native完成回执过早删除活holder控制问题，继续真实process-owner prelaunch绑定。
+其临时测试目录 `C:/Users/Liao/AppData/Local/Temp/tmphou0uqsj` 清理同样被自动批准审查拒绝，仅有blocked
+by policy，已停止重试；未声称释放容量。保留已知窗口的保守保护，不用裸PID/超时自动释放。

@@ -1,4 +1,4 @@
-"""Version 1 SI particle tables and sampled trajectories, independent of solvers.
+"""Versioned SI particle tables and sampled trajectories, independent of solvers.
 
 Parquet IDs are int64 and scientific scalars are binary64. HDF5 stores columnar
 samples, with explicit frame/clock metadata; no pickle or backend runtime is used.
@@ -18,6 +18,15 @@ import pyarrow.parquet as pq
 from msplatform.analysis.particle_census import partition_cohort, subset_efficiency
 
 
+def _data_version(metadata: Mapping[str, Any]) -> int:
+    version = metadata.get("schema_version", 1)
+    if type(version) is not int or version not in (1, 2):
+        raise ValueError("unsupported particle data version")
+    if version == 2 and metadata.get("initial_state_basis") != "native_birth_verified":
+        raise ValueError("version2 requires explicit verified native birth provenance")
+    return version
+
+
 def _schema(kind: str, metadata: Mapping[str, Any]) -> pa.Schema:
     vector = pa.list_(pa.field("element", pa.float64()), 3)
     fields = [("particle_id", pa.int64()), ("species_id", pa.string()),
@@ -35,12 +44,13 @@ def _schema(kind: str, metadata: Mapping[str, Any]) -> pa.Schema:
                    ("native_entity_id", pa.string()), ("detail", pa.string())]
         if kind == "events":
             fields += [("event_kind", pa.string()), ("event_sequence", pa.int64()), ("crossing_direction", pa.int64())]
-    info = {"schema_version": 1, "kind": kind, "unit_system": "SI", **metadata}
+    info = {**metadata, "schema_version": _data_version(metadata), "kind": kind, "unit_system": "SI"}
     return pa.schema(fields, metadata={b"msplatform": json.dumps(info, sort_keys=True).encode()})
 
 
 def write_particle_data(directory: Path, result: Any, *, metadata: Mapping[str, Any]) -> None:
     """Write four distinct data products into an existing private work directory."""
+    version = _data_version(metadata)
     for kind in ("initial_states", "terminal_states", "events"):
         rows = getattr(result, kind)
         schema = _schema(kind, metadata)
@@ -49,12 +59,12 @@ def write_particle_data(directory: Path, result: Any, *, metadata: Mapping[str, 
         # The explicit schema also preserves typed columns for a valid zero-hit table.
         pq.write_table(pa.Table.from_pylist(rows, schema=schema), directory / f"{kind}.parquet")
     with h5py.File(directory / "trajectories.h5", "x") as stream:
-        stream.attrs["msplatform"] = json.dumps({"schema_version": 1, "unit_system": "SI", **metadata})
+        stream.attrs["msplatform"] = json.dumps({**metadata, "schema_version": version, "unit_system": "SI"})
         for name in ("particle_id", "time_s", "position_m", "velocity_m_s"):
             values = np.asarray(result.trajectories[name], dtype="int64" if name == "particle_id" else "float64")
             stream.create_dataset(name, data=values, chunks=True)
     (directory / "execution.json").write_text(json.dumps({
-        "schema_version": 1, "execution_status": result.execution_status,
+        "schema_version": version, "execution_status": result.execution_status,
         "data_integrity": result.data_integrity,
     }, allow_nan=False, indent=2), encoding="utf-8")
 
@@ -63,22 +73,27 @@ def read_particle_data(directory: Path) -> dict[str, Any]:
     """Read and validate typed published products; raise for malformed products."""
     data: dict[str, Any] = {}
     common = None
+    version = None
     for kind in ("initial_states", "terminal_states", "events"):
         table = pq.read_table(directory / f"{kind}.parquet")
         metadata = json.loads((table.schema.metadata or {}).get(b"msplatform", b"{}"))
-        if metadata.get("schema_version") != 1 or metadata.get("kind") != kind or metadata.get("unit_system") != "SI":
+        actual_version = _data_version(metadata)
+        if (version is not None and version != actual_version) or metadata.get("kind") != kind or metadata.get("unit_system") != "SI":
             raise ValueError(f"invalid {kind} schema metadata")
-        expected = _schema(kind, {k: v for k, v in metadata.items() if k not in {"schema_version", "kind", "unit_system"}})
+        version = actual_version
+        expected = _schema(kind, {k: v for k, v in metadata.items() if k not in {"kind", "unit_system"}})
         if not table.schema.equals(expected, check_metadata=True):
             raise ValueError(f"invalid {kind} column types")
         identity = {k: metadata[k] for k in ("frame_id", "clock")}
+        if version == 2:
+            identity["initial_state_basis"] = metadata["initial_state_basis"]
         if common is not None and common != identity:
             raise ValueError("particle products disagree on frame/clock")
         common = identity
         data[kind] = table.to_pylist()
     with h5py.File(directory / "trajectories.h5", "r") as stream:
         metadata = json.loads(stream.attrs["msplatform"])
-        if metadata.get("schema_version") != 1 or any(metadata.get(k) != common[k] for k in common):
+        if metadata.get("schema_version") != version or any(metadata.get(k) != common[k] for k in common):
             raise ValueError("trajectory schema/frame/clock mismatch")
         data["trajectories"] = {name: stream[name][:] for name in ("particle_id", "time_s", "position_m", "velocity_m_s")}
     trajectory = data["trajectories"]
@@ -89,6 +104,8 @@ def read_particle_data(directory: Path) -> dict[str, Any]:
         if values.shape != shape or values.dtype != dtype or not np.all(np.isfinite(values)):
             raise ValueError(f"invalid trajectory {name}")
     data.update(json.loads((directory / "execution.json").read_text(encoding="utf-8")))
+    if data.get("schema_version") != version:
+        raise ValueError("execution and scientific data versions disagree")
     data["metadata"] = common
     _validate_records(data)
     return data
@@ -96,7 +113,7 @@ def read_particle_data(directory: Path) -> dict[str, Any]:
 
 def _validate_records(data: Mapping[str, Any]) -> None:
     """Validate scientific values in addition to the file format's column types."""
-    if data.get("schema_version") != 1 or data["execution_status"] not in {"succeeded", "failed", "cancelled"}:
+    if data.get("schema_version") not in (1, 2) or data["execution_status"] not in {"succeeded", "failed", "cancelled"}:
         raise ValueError("unsupported execution contract")
     for kind in ("initial_states", "terminal_states", "events"):
         seen = set()
@@ -119,8 +136,9 @@ def _validate_records(data: Mapping[str, Any]) -> None:
             if kind == "initial_states":
                 if any(not math.isfinite(row[k]) or row[k] <= 0 for k in ("mass_kg", "weight")):
                     raise ValueError("mass and statistical weight must be positive finite")
-                if row["parent_particle_id"] is not None or row["lineage_status"] != "unavailable_initial_snapshot":
-                    raise ValueError("reference initial snapshots cannot assert unverified lineage")
+                expected_lineage = "primary_birth" if data["schema_version"] == 2 else "unavailable_initial_snapshot"
+                if row["parent_particle_id"] is not None or row["lineage_status"] != expected_lineage:
+                    raise ValueError("initial-state lineage contradicts the versioned birth/snapshot contract")
             elif row["physical_outcome"] not in {"detected", "surface_hit", "escaped", "unknown"} or row["stop_reason"] not in {
                     "normal", "time_limit", "cancelled", "numerical_failure"}:
                 raise ValueError("unsupported physical outcome/stop reason")

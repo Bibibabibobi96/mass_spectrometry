@@ -29,7 +29,7 @@ DOMAIN_IMPORTS = {
     "physics": {"physics", "contracts"},
     "recipes": {"recipes", "physics", "io"},
     "fields": {"fields"},
-    "tracing": {"tracing", "fields", "physics", "analysis"},
+    "tracing": {"tracing", "fields", "physics", "analysis", "results"},
     "storage": {"storage"},
     "cli": {"cli", "recipes", "tracing", "workflows", "results", "storage"},
     "__main__": {"cli"},

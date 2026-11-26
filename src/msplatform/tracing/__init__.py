@@ -7,7 +7,6 @@ for their geometry and dynamics, and tangencies are not detected reliably.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
 import math
 from typing import Any, Protocol
 
@@ -18,17 +17,7 @@ from scipy.integrate import solve_ivp
 from msplatform.analysis.particle_census import partition_cohort
 from msplatform.fields import FieldProvider, UniformField
 from msplatform.physics import CONSTANTS, GasEnvironment, normalize_charge_c
-
-
-@dataclass
-class TraceResult:
-    """Separate scientific records, sampled SI trajectories, execution and integrity."""
-    initial_states: list[dict[str, Any]]
-    terminal_states: list[dict[str, Any]]
-    events: list[dict[str, Any]]
-    trajectories: dict[str, np.ndarray]
-    execution_status: str
-    data_integrity: dict[str, Any]
+from msplatform.results.model import TraceResult as TraceResult
 
 
 class ParticleTracer(Protocol):
