@@ -938,3 +938,15 @@ main接线后，使用共享主机账本环境变量
 不改预算/调度策略或强制单worker；不能把本基线称为BA09全通过。
 测试临时目录 `C:/Users/Liao/AppData/Local/Temp/tmpft8zbwq3` 已确认无活进程，精确清理被自动策略拒绝，
 保留原目录且未换路径/命令绕过。未清理任何真实研究产物。
+
+### B3 显式原生资产的唯一配方快照
+
+`recipes/native_assets.py` 扩展同一load_recipe：可显式冻结COMSOL共存OFF/ON manifest；桥接时同时冻结
+原SIMION source-free FieldBundle作为碰撞载体，并要求作者显式world/windows采样。只读各小manifest一次，
+不复制或在配方解析时读取PA/MPH；实际owner/几何/物理/采样覆盖由消费者另行验证。
+`recipes/native.py` 冻结验证只读snapshot；科学身份纳入manifest内容身份与采样，不纳入路径或label。
+错product/kind/未绑定产品/递归world碰撞源/非有限或下溢采样/错误策略均拒绝。
+
+`.venv/Scripts/python.exe -m unittest tests.contracts.test_native_assets tests.contracts.test_native_asset_recipe tests.contracts.test_native_recipe -q`
+14 PASS（3.420s），相关Ruff PASS。真实公开解析集成覆盖首次读取后外部manifest变化、冻结验证不重读、
+路径/label不失效以及采样/碰撞内容变更失效。不是场解或原生追踪验收；桥接导出与实际Fly待下一主题。

@@ -235,7 +235,7 @@ def _assembly(study: dict) -> dict:
             "components_resolved": assembled.components_resolved, "components_source": assembled.components_source}
 
 
-def _options(raw: dict) -> None:
+def _options(raw: dict, *, resolved: bool = False) -> None:
     if type(raw["schema_version"]) is not int or raw["schema_version"] != 2:
         raise ValueError("unsupported native recipe version")
     if not isinstance(raw["label"], str) or not raw["label"].strip():
@@ -244,7 +244,28 @@ def _options(raw: dict) -> None:
         raise ValueError("native constants must explicitly select the supported frozen dataset")
     if raw["gas_environment"] != {"status": "vacuum"}:
         raise ValueError("native tracing currently requires explicit collision-free vacuum")
-    _keys(raw["field_source"], {"kind"}, "field_source")
+    source = raw["field_source"]
+    if not isinstance(source, dict) or set(source) not in ({"kind"}, {"kind", "reference"},
+            {"kind", "reference", "collision_reference", "sampling"}):
+        raise ValueError("field_source requires kind and an optional explicit field reference")
+    if "reference" in source:
+        if source["kind"] != "comsol_native":
+            raise ValueError("field references are supported only for COMSOL native fields")
+        if resolved:
+            from .native_assets import validate_field_reference
+            validate_field_reference(source["reference"])
+        else:
+            _keys(source["reference"], {"path", "sha256", "product_id"}, "field reference")
+    if "collision_reference" in source:
+        if raw["particle_tracer"] != "simion" or raw["field_assembly_strategy"] != "sampled_joint_field":
+            raise ValueError("collision reference requires the COMSOL-to-SIMION sampled strategy")
+        if resolved:
+            from .native_assets import validate_collision_reference, normalize_sampling
+            validate_collision_reference(source["collision_reference"])
+            if normalize_sampling(source["sampling"]) != source["sampling"]:
+                raise ValueError("resolved sampling differs from its normalized declaration")
+        else:
+            _keys(source["collision_reference"], {"path", "sha256", "product_id"}, "collision reference")
     if raw["field_source"]["kind"] not in {"simion_native", "comsol_native"}:
         raise ValueError("unsupported native field source declaration")
     if raw["particle_tracer"] not in {"simion", "comsol"}:
@@ -261,7 +282,7 @@ def _options(raw: dict) -> None:
 
 
 def _build(raw: dict, study_snapshot: dict, resources: dict) -> dict:
-    _options(raw)
+    _options(raw, resolved=True)
     document = _json(_decode(study_snapshot))
     _study(document, raw["particle_tracer"])
     _validate_resources(document, resources)
@@ -273,6 +294,15 @@ def _build(raw: dict, study_snapshot: dict, resources: dict) -> dict:
     result.update(study={"document": document, "snapshot": copy.deepcopy(study_snapshot)},
                   resource_snapshots=copy.deepcopy(resources), assembly=compiled)
     identity = {key: value for key, value in result.items() if key not in {"label", "study", "resource_snapshots"}}
+    if "reference" in result["field_source"]:
+        from .native_assets import field_reference_identity
+        identity["field_source"] = {"kind": result["field_source"]["kind"],
+                                    "reference": field_reference_identity(result["field_source"]["reference"])}
+        if "collision_reference" in result["field_source"]:
+            from .native_assets import collision_reference_identity
+            identity["field_source"].update(
+                collision_reference=collision_reference_identity(result["field_source"]["collision_reference"]),
+                sampling=copy.deepcopy(result["field_source"]["sampling"]))
     identity["study_document"] = document
     identity["resources"] = {name: record["sha256"] for name, record in resources.items()}
     result["recipe_id"] = canonical_json_sha256(identity)
@@ -294,7 +324,10 @@ def resolve_native(raw: dict, author_path: Path) -> dict:
         raise ValueError("study SHA-256 mismatch")
     document = _json(_decode(snapshot))
     _study(document, raw["particle_tracer"])
-    return _build(raw, snapshot, _resource_snapshots(document))
+    from .native_assets import freeze_field_source
+    frozen = copy.deepcopy(raw)
+    frozen["field_source"] = freeze_field_source(raw["field_source"], author_path)
+    return _build(frozen, snapshot, _resource_snapshots(document))
 
 
 def validate_native(resolved: Mapping[str, Any]) -> dict:
