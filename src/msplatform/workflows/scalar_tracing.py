@@ -297,6 +297,6 @@ def run_scalar_stages(recipe: dict, instrument: Any, particles: Any, *, context:
         "epoch_sha256":epoch_record["sha256"], "implementation":implementation["simion"]})
     trajectory, receipt = stage_cache("scalar_trace", trace_key, "trajectory_result",
         lambda: invoke(lambda: simion.track(world, particles, propagation=propagation, observations=observations,
-                                            numerics=numerics, context=context)))
+                                            numerics=numerics, context=context, scalar_field_basis=selection)))
     receipts["scalar_trace"] = receipt
     return trajectory, receipts

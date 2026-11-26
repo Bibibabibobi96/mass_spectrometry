@@ -106,17 +106,22 @@ class ScalarWorkflowTests(unittest.TestCase):
         admitted = self.compile()
         captured = []
         calls = []
+        exported_objects = []
         def artifact(name, manifest=None):
             record = {"path":str(self.helper.root / (name + ".json")),"sha256":hashlib.sha256((manifest or name).encode()).hexdigest().upper(),"bytes":1}
             return SimpleNamespace(reference={"manifest":record,"product_id":name},metadata={})
         def exported(solution, *, grids, context):
             calls.append(("export", solution.reference["product_id"], copy.deepcopy(grids)))
-            return {name:artifact("samples_"+name, "export-"+solution.reference["product_id"]) for name in grids}
+            products = {name:artifact("samples_"+name, "export-"+solution.reference["product_id"]) for name in grids}
+            for product in products.values():
+                product.reference["manifest"] = copy.deepcopy(products["world"].reference["manifest"])
+            exported_objects.extend(products.values())
+            return products
         def derive(raw, *, context):
             calls.append(("support",raw.reference["product_id"]))
             return artifact("support-"+raw.reference["manifest"]["sha256"][:8]+raw.reference["product_id"])
         def world(field, *, scalar_field_basis, context):
-            calls.append(("world",field.reference))
+            calls.append(("world",field.reference,copy.deepcopy(scalar_field_basis)))
             result=artifact("world")
             result.metadata={"field_representation":"split_scalar_world_with_collision_geometry","field_source":"comsol_off_on_scalar_samples","collision_source_reference":field.reference}
             return result
@@ -130,7 +135,7 @@ class ScalarWorkflowTests(unittest.TestCase):
             particle=SimpleNamespace(rows=[{"species_id":species}],to_dict=lambda:{"rows":[{"species_id":species}]})
             with patch("msplatform.workflows.scalar_tracing.compile_scalar_inputs",return_value=admitted), \
                  patch("msplatform.ion_release.sample_release",side_effect=lambda request:particle), \
-                 patch("msplatform.workflows.scalar_tracing.open_artifact",side_effect=lambda ref,**kw: next(x for x in (admitted["background"],admitted["on"],admitted["prepared"],admitted["geometry"],admitted["collision"]) if x.reference == ref)), \
+                 patch("msplatform.workflows.scalar_tracing.open_artifact",side_effect=lambda ref,**kw: next(x for x in (admitted["background"],admitted["on"],admitted["prepared"],admitted["geometry"],admitted["collision"],*exported_objects) if x.reference == ref)), \
                  patch.object(assembly_field_export,"export_world_scalar_grids",side_effect=exported), \
                  patch.object(assembly_field_export,"derive_world_scalar_support",side_effect=derive), \
                  patch.object(simion,"prepare_split_scalar_world",side_effect=world), \
@@ -154,6 +159,21 @@ class ScalarWorkflowTests(unittest.TestCase):
         self.assertEqual(calls[0][2]["world"]["solution_tag"],"sol1")
         self.assertEqual(calls[2][2]["world"]["solution_tag"],"sol2")
         self.assertEqual(calls[-1][2]["propagation"]["scope"],"continuous_assembly")
+        self.assertEqual(calls[-1][2]["scalar_field_basis"],calls[-2][2])
+        self.assertEqual(set(calls[-2][2]["samples"]),{"off","on"})
+        self.assertEqual(calls[-2][2]["geometry_artifact"],admitted["geometry"].reference)
+        calls.clear();captured.clear();exported_objects.clear()
+        admitted['windows']=[{'name':'near','active_box_mm':{'min':[0,0,0],'max':[1,1,1]}},
+                             {'name':'far','active_box_mm':{'min':[2,2,2],'max':[3,3,3]}}]
+        admitted['grids']['near']=copy.deepcopy(admitted['grids']['world'])
+        admitted['grids']['far']=copy.deepcopy(admitted['grids']['world'])
+        run('species-a')
+        world_selection=next(row[2] for row in calls if row[0]=='world')
+        track_selection=next(row[2]['scalar_field_basis'] for row in calls if row[0]=='track')
+        self.assertEqual(track_selection,world_selection)
+        self.assertEqual([row['name'] for row in track_selection['refinement_windows']],['near','far'])
+        for row in track_selection['refinement_windows']:
+            self.assertEqual(set(row['samples']),{'off','on'})
 
     def test_birth_must_match_frozen_source_and_mass_scan_allocated_ids(self):
         from msplatform.workflows.scalar_tracing import run_scalar_stages

@@ -1505,6 +1505,12 @@ Agent 1在隔离worktree交付六文件：shape_query、assembly_scalar_fill、a
 
 `docs/TRACING.md`与`docs/COMSOL_BACKEND.md`已同步等电位多组支持/v2标签、保守未知边界、逐工作点重核及不授物理owner/精度；`docs/tools/COMSOL_API.md`记录实际MATLAB JSON精确网格计数的格式与唯一验证helper。参考初态snapshot的version1/lineage与已验证原生birth的version2/primary_birth在用户入口明确分开。下游provider README补仓库README导航。此单元只维护当前合同与导航；实际native/gate通过范围仍由本页对应证据记录，不因文档更新提升资格。
 
+### B3 world成功后的显式selection接线（3e2c52f1 后）
+
+de88重试重新采样OFF/ON（原场0 Compute），其world `20261127_072142__sim__simion__world-cfea186ecb50` 四项实际exit0、summary/manifest/completion success、writer stopped；27个显式source refs已含原015508与012811，证明保护修复越过原失败。track `20261127_072417__sim__simion__track-fda5a79a70e5` 在启动native前失败，原因为workflow未传现有scalar_field_basis参数；0 operations且正常failed/已释放，未补造SCI或Fly。
+
+`workflows.scalar_tracing.run_scalar_stages` 现将用于world的同一selection显式传入simion.track，不从metadata另建authority、不取消guard。spy回归核对完整geometry、OFF/ON及两个有序窗口一致。根执行scalar_workflow/split_scalar_binding/split_tof_tracking共17项，7.315s PASS；Ruff/LF PASS。该接线仍须用新安装版本真实Fly验证。bridge_source整体身份会保守使已完成采样/world阶段失效，实际重算须据回执报告，不声称代码升级零重算；不因此扩大缓存重构。
+
 ### B 累计 CLOC（至 f216a7af，不含后续改动）
 
 基线 `a9d76aa4dcdbaf8099c9ce5aa0585d6fce18c3be` → 结果 `f216a7afd0a3b27be21402915209defa9964d78e`；CLOC 2.10；源日志 `C:/Users/Liao/msplatform-artifacts/architecture-b-20261127/f216a7af-cloc.log`。
