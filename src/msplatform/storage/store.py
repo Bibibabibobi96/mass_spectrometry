@@ -437,20 +437,26 @@ class ArtifactStore:
         released = 0
         failures = []
         with self._gc_guard():
-            while True:
-                with self._transaction() as db:
-                    row = db.execute("SELECT id,path,size FROM assets WHERE state='delete_pending' ORDER BY created LIMIT 1").fetchone()
-                    if row is None and released < target_bytes:
-                        row = db.execute("""SELECT a.id,a.path,a.size FROM assets a
-                            WHERE a.state='ready' AND a.retention='cache' AND a.pinned=0
-                            AND NOT EXISTS(SELECT 1 FROM claims c WHERE c.asset_id=a.id)
-                            AND NOT EXISTS(SELECT 1 FROM refs r WHERE r.asset_id=a.id AND r.required=1)
-                            ORDER BY a.created LIMIT 1""").fetchone()
-                        if row:
-                            db.execute("UPDATE assets SET state='delete_pending' WHERE id=?", (row[0],))
-                if row is None:
+            # Freeze candidate identities for this pass: a failed pending delete
+            # is reported once, while other eligible objects can still be tried.
+            with self._db() as db:
+                candidates = db.execute("""SELECT id,state FROM assets
+                    WHERE state IN ('delete_pending','ready')
+                    ORDER BY CASE state WHEN 'delete_pending' THEN 0 ELSE 1 END,created,id""").fetchall()
+            for asset_id, initial_state in candidates:
+                if initial_state == "ready" and released >= target_bytes:
                     break
-                asset_id, relative, _size = row
+                with self._transaction() as db:
+                    if initial_state == "ready":
+                        db.execute("""UPDATE assets SET state='delete_pending' WHERE id=?
+                            AND state='ready' AND retention='cache' AND pinned=0
+                            AND NOT EXISTS(SELECT 1 FROM claims c WHERE c.asset_id=assets.id)
+                            AND NOT EXISTS(SELECT 1 FROM refs r WHERE r.asset_id=assets.id AND r.required=1)""",
+                            (asset_id,))
+                    row = db.execute("SELECT path FROM assets WHERE id=? AND state='delete_pending'", (asset_id,)).fetchone()
+                if row is None:
+                    continue
+                relative = row[0]
                 path = self.root / relative
                 try:
                     removed_bytes = 0
@@ -471,7 +477,6 @@ class ArtifactStore:
                     with self._transaction() as db:
                         db.execute("UPDATE assets SET failure=? WHERE id=?", (str(exc), asset_id))
                     failures.append({"asset_id": asset_id, "reason": str(exc)})
-                    break
         return {"released_bytes": released, "failures": failures}
 
     @contextmanager

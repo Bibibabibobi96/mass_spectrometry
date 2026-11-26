@@ -1,6 +1,6 @@
 # 架构迁移执行记录
 
-本页是 2026-11-26 批次 A 的接续入口；首轮完成不等于全仓迁移。输入为用户提供的
+本页是架构迁移的唯一进度入口；最新接续见文末“批次 B”。批次 A 完成不等于全仓迁移。输入为用户提供的
 `ms_agent_execution_20261126` 执行包（start_agent、review_resolutions、implementation_plan、review_decisions）。
 原评阅 145 同意、20 修改、2 不同意、29 处具体意见保持原意；技术实施选择不回写为原表批准。
 
@@ -535,3 +535,47 @@ tools/repository/report_cloc_delta.ps1 -Base dad49d1c9049a5c3ba349003af4998d50ec
 ```text
 FILTER=extensions=.py,.m,.ps1,.lua,.gem,.fly2,.json,.toml,.yml,.yaml,.c,.h,.cc,.cpp,.cxx,.hpp,.cs,.java,.js,.jsx,.ts,.tsx,.go,.rs,.rb,.php,.swift,.kt,.kts,.sh,.bash,.zsh,.bat,.cmd;excluded_components=.git,.venv,.tmp,artifacts,generated,vendor,vendors,third_party,third-party,thirdparty,run,runs;excluded_lifecycle_paths=any/docs/history/**|root/scratch/**|artifacts/projects/<project>/(archive|scratch)/**;language_overrides=.m:MATLAB|.fly2:Lua|.gem:SIMION_GEM;production=execution_profile_entrypoint|run_*.ps1|verify_*.ps1|tests/support(non-test-named);tests=fixture|test_support|testing_support_path|test_*.(py|ps1|m|lua)|*_test.py|tests_boundary/*_fixtures.py|tests/**/__init__.py|*Test.m|*.Tests.*;unclassified=other_code_below_test_or_tests_path;worktree_source=git_tracked_plus_nonignored_untracked
 ```
+
+
+## 批次 B（2026-11-27）：B0–B6 同一 Goal 连续实施
+
+### 开工与输入
+
+用户明确启动批次 B。开工 HEAD `a9d76aa4dcdbaf8099c9ce5aa0585d6fce18c3be` 与 B 执行包审计一致，
+无相关后续增量；任务分支 `task/architecture-migration-20261126` 跟踪同名 origin，远端同步授权继续。
+只有原有未跟踪 `artifacts/`，保留不动。禁止 reset、主线合并和历史改写。
+
+已按顺序读取外部 `ms_phase_b_execution_20261126/start_agent_B.md`、acceptance_report_A.md、
+implementation_plan_B.md、verification_evidence.json，再读 goal_prompt_B.md；证据索引全部文件大小/哈希核对通过。
+只创建一个 active Goal：完整 goal_prompt_B 原文加完整计划路径绑定；工具目标字段最多4000字符，
+15181字符的完整计划不能直接拼入目标字段，已全文读取且 B0–B6/BA01–BA15 全范围适用，不削减任务。
+Goal与执行提示词是同一项工作；不只完成B0就结束，不自动加入C/M06–M08。
+
+| 外部输入 | SHA-256 |
+|---|---|
+| start_agent_B.md | 6dff4ab3eea14aa574dc8372178ea47401ddc7e72fa3ce7f4df187bdeabc3664 |
+| goal_prompt_B.md | 19a71f5ddbecc040f3da92fc6067f0e2ad7370db77818607a715b175b8235733 |
+| implementation_plan_B.md | 102488c5782cde85e0068b0851e76ed77c4072185d3693565085519bffc6ddb7 |
+| acceptance_report_A.md | 62d592da32ed98fbc9885125ffdf129d04555ef32235f35ac62e49c24f579fb8 |
+| verification_evidence.json | d16c619816445cea65e2b8a6d03e73451abcf762a250a2de05c0f065732ba62b |
+
+A独立审计的37 unittest/36 PASS/1 Linux junction SKIP及四个B0反例是输入事实，不能当本轮修复PASS。
+原三项A收尾已经解决，不重新立项；原评阅状态与本轮技术选择分别保留。
+
+Agent 0：Goal、公共合同/CLI/workflow整合、迁移记录、Git串行与最终验收；
+Agent 1：B0电荷/共面终止面；Agent 2：B0干净构建说明；Agent 3：B0存储；
+Agent 4：只读B2/原生移植闭包。共同文件均明确唯一写入者；原生资源执行统一协调。
+
+### B0-03：失败 GC 候选不阻塞后续准入
+
+已实现 `storage/store.py:collect` 单次pass冻结候选身份，每个候选最多尝试一次；pending优先，
+ready转pending仍在短事务复核pin/claim/必要引用。失败保留delete_pending与原因、不虚计释放、继续其他候选。
+`reserve` 继续在回收后重读实际free决定准入；没有新GC或账本。
+
+`.venv/Scripts/python.exe -m unittest tests.contracts.test_artifact_store -q`：19 PASS（4.584 s）。
+新增可控 A删除失败/B足量成功后准入、pin/claim保护、全部失败每轮只尝试一次且零释放。
+free是受控观测（0→6 B，准入需求5 B），不是对真实卷释放量的测量。原writer/publishing恢复仍通过。
+对应两文件Ruff PASS。临时夹具自动清理，没有删除真实研究数据。
+
+剩余：B0-01/02/04正在独立实施；之后立即进入B1公共合同、B2拆分/B3场源、B4原生链、B5 mass_scan、
+B6旧执行退役/交付。当前旧消费者清单仍见上文，不声称B或BA01完成。CLOC将在该主题提交后按实际SHA核对。

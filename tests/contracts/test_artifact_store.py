@@ -130,6 +130,52 @@ class ArtifactStoreTests(unittest.TestCase):
         self.assertEqual(len(report["failures"]), 1)
         self.assertEqual(self.store.collect()["released_bytes"], 3)
 
+    def test_reserve_continues_after_locked_cache_and_preserves_protected(self) -> None:
+        locked = self.asset("locked", b"aaa")
+        removable = self.asset("removable", b"123456")
+        pinned = self.asset("pinned", b"p")
+        claimed = self.asset("claimed", b"c")
+        self.store.pin(pinned)
+        locked_path = self.store.find_asset("locked")[1]
+        removable_path = self.store.find_asset("removable")[1]
+        from shutil import rmtree
+
+        def remove(path):
+            if path == locked_path:
+                raise PermissionError("locked")
+            rmtree(path)
+
+        def disk_usage(_path):
+            return type("Usage", (), {"free": 0 if removable_path.exists() else 6})()
+
+        with self.store.claim(claimed), patch("msplatform.storage.store.shutil.rmtree", side_effect=remove), \
+                patch("msplatform.storage.store.shutil.disk_usage", side_effect=disk_usage):
+            with self.store.reserve(5):
+                self.assertFalse(removable_path.exists())
+                self.assertIsNotNone(self.store.find_asset("pinned"))
+                self.assertIsNotNone(self.store.find_asset("claimed"))
+        with self.store._db() as db:
+            states = dict(db.execute("SELECT id,state FROM assets"))
+            failure = db.execute("SELECT failure FROM assets WHERE id=?", (locked,)).fetchone()[0]
+        self.assertEqual(states[locked], "delete_pending")
+        self.assertEqual(states[removable], "deleted")
+        self.assertEqual(states[pinned], "ready")
+        self.assertEqual(states[claimed], "ready")
+        self.assertIn("locked", failure)
+
+    def test_failed_candidates_are_attempted_once_per_pass(self) -> None:
+        first = self.asset("first")
+        second = self.asset("second")
+        with patch("msplatform.storage.store.shutil.rmtree", side_effect=PermissionError("locked")) as remove:
+            result = self.store.collect(100)
+            self.assertEqual(remove.call_count, 2)
+            self.assertEqual(result["released_bytes"], 0)
+            self.assertEqual({f["asset_id"] for f in result["failures"]}, {first, second})
+            again = self.store.collect(100)
+            self.assertEqual(remove.call_count, 4)
+            self.assertEqual(again["released_bytes"], 0)
+            self.assertEqual(len(again["failures"]), 2)
+
     def test_cache_claim_covers_validation_and_consumer_lifetime(self) -> None:
         work = self.store.new_work()
         (work / "data").write_bytes(b"abc")
