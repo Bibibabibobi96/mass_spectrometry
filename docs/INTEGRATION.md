@@ -3277,3 +3277,15 @@ The shared RF/OA/TOF checkpoint adapter remains in
 recorded data without launching a solver; this is not native qualification.
 
 The installed single-reflection recorded-birth consumer accepts an explicit, complete saved FieldBundle and its prepared original-source manifest. It verifies the selected geometry, timed pulse and clock against the compiled model before public tracking; it records and freezes the producer authority for recovery. This software binding does not establish native flight or field qualification. The retained SFI component-level research scope is distinct from the withdrawn local frontend product.
+
+Batch B adds explicit schema12 preparation for independent RF/OA/downstream TOF
+plan6 fields. It freezes original CSV, RF metadata, ordered mother IDs, clock
+authority and the published model identity. The author supplies finite
+`instrument_origin_us`; birth seconds map to microseconds using that origin,
+without adding the epoch again. The recorded-birth reader passes the same original
+mother to continuous public tracking and rejects another model, clock or ID set.
+RF source metadata is currently supported; OA-only recorded metadata fails closed.
+Software fixtures and historical preparation tests pass; actual native execution
+of this recorded source remains unverified. Fresh recipe sources and the three
+native combination proofs are tracked separately in the
+[batch B migration record](development/architecture-migration.md).

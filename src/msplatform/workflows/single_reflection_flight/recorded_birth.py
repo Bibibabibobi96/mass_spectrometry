@@ -57,6 +57,48 @@ def track_recorded_birth(*, preparation_manifest: Mapping[str, Any], fields: Ope
     request = read(frozen('request', 'request.json'))
     provenance = read(frozen('source_provenance', 'source_provenance.json'))
     source = request.get('source', {})
+    if request.get('schema_version') == 12:
+        from msplatform.backends.simion.model import require_prepared_model
+        from .prepare import validate_preparation_request
+        validate_preparation_request(request)
+        if (provenance.get('role') != 'split_recorded_birth_preparation'
+                or provenance.get('population_policy') != 'complete_original_source_no_selection_no_resampling'
+                or provenance.get('source_time_mapping') != dict(instrument_origin_us=source['instrument_origin_us'],
+                    native_origin_us=0., source_time_unit='s', instrument_time_unit='us')
+                or species_id != source['species_id'] or list(expected_particle_ids) != source['particle_ids']):
+            raise ValueError('recorded birth request differs from the frozen original mother')
+        raw = frozen('particle_source', 'particle_source.csv')
+        frozen('metadata', 'particle_source_metadata.json')
+        frozen('instrument_epoch', 'instrument_epoch.json')
+        frozen('clock_authority', 'clock_authority.json')
+        for name in ('request', 'particle_source', 'metadata', 'instrument_epoch', 'clock_authority'):
+            original, actual = provenance['input_records'][name], records[name]
+            if any(original.get(key) != actual.get(key) for key in ('path', 'bytes', 'sha256')):
+                raise ValueError('recorded birth source authority differs: '+name)
+        selected = open_artifact(fields, expected_kind='field_bundle')
+        bound = provenance['fields_reference']
+        if (selected.reference['product_id'] != bound['product_id']
+                or any(str(selected.reference['manifest'][key]).upper() != str(bound['manifest'][key]).upper()
+                       for key in ('bytes', 'sha256'))):
+            raise ValueError('recorded birth FieldBundle differs from preparation')
+        model = CompiledPreparedModel(selected.data_path('compiled_model').read_text(encoding='utf8'))
+        document = require_prepared_model(model)
+        if (document['model_identity_sha256'] != provenance['model_identity_sha256']
+                or document['geometry']['frontend_geometry'].get('role') != 'simion_split_oa_tof_geometry'):
+            raise ValueError('recorded birth model differs from the frozen split model')
+        clock = document['drive']['clock']
+        if (clock['clock_epoch_id'] != provenance['clock_epoch_id']
+                or clock['authority_sha256'].upper() != records['instrument_epoch']['sha256'].upper()):
+            raise ValueError('recorded birth clock differs from the frozen split model')
+        packet = load_recorded_release(raw, clock=ClockIdentity(clock['clock_epoch_id'], clock['authority_sha256']),
+            frame_id=source['frame_id'], source_component_id=source['instance_id'], species_id=species_id,
+            relative_weights=None, instrument_origin_us=source['instrument_origin_us'], expected_particle_ids=expected_particle_ids)
+        if len(packet['rows']) != provenance['particle_count']:
+            raise ValueError('recorded birth population differs from preparation')
+        return simion.track(selected, packet, propagation=request['propagation'], observations=observations,
+            numerics=request['numerics'], context=context, unit_size=unit_size, recovery_reference=recovery_reference,
+            dispatch_profiles=dispatch_profiles, birth_source_authority={'manifest': manifest_record, 'records': records},
+            **({'scalar_field_basis': scalar_field_basis} if scalar_field_basis is not None else {}))
     if source.get('kind') != 'recorded_birth' or provenance.get('source_kind') != 'recorded_birth':
         raise ValueError('only original recorded births are supported by this consumer')
     if ('local_scope' in request or 'continuation' in request or 'validation_contract' in request

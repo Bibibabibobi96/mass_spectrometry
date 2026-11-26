@@ -113,6 +113,12 @@ component 3输入生成composition plan 5；显式旧component 1／2输入分别
 The SFI entry consumes an explicit published FieldBundle and original births.
 Fresh sources use `canonical_birth_source_request`; the historical recorded-birth
 path requires a successful preparation manifest, species and complete original IDs.
+New split RF/OA/TOF recorded sources use preparation schema12, binding the actual
+published plan6 FieldBundle, original CSV/metadata and explicit instrument time
+origin. Its current metadata validator supports RF births; OA-only recorded
+metadata is rejected. Historical preparation remains readable; legacy composite
+new execution is retired. This binding has software tests, with native acceptance
+tracked in the migration record.
 The public tracking owner generates the actual run identity returned in `OWNER_RETURNED`.
 The former `-Request -ExecutionBudgetPath` entry and duplicate execution body are retired.
 Historical preparation readers and analysis remain; native and installed acceptance

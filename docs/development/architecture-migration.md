@@ -1039,3 +1039,19 @@ SIMION安装版run和同一公共API诊断均报large unclassified record，trac
 epoch测试覆盖无role原记录、删原work后副本仍可读及源变化拒绝。下一候选重新普通安装后重跑受影响链。
 外部诊断位于 `batch_b_comsol_small_cli_20261127/installed-run*.log` 与
 本轮外部证据根 `simion-installed-study/installed-api-diagnostic.log`，原失败运行保留，不补造轨迹。
+
+### B2 plan6 recorded-birth 消费者迁移
+
+`single_reflection_flight/prepare.py` 新request_v12.schema.json分支只接已发布plan6 FieldBundle，
+冻结原CSV/RF metadata/完整顺序ID/clock authority/epoch并对真实model及drive身份；实际tracking planner验证源frame/pose。
+`recorded_birth.py` 对同一preparation manifest与FieldBundle重读核对，再交原母群给公共连续track。
+没有选粒、重编号或跨组件重新释放。旧schema保持历史读取，不为旧复合重新开执行入口。
+
+审查发现新CSV不能继承旧preparation的零时间偏移假设；schema12现要求作者显式有限instrument_origin_us，
+prepare/reader同值，source_time_mapping入provenance，不重复加epoch。非零7.5us正例和缺值/bool/NaN/Inf拒绝已测试。
+当前真实metadata验证器只支持RF源，OA-only recorded明确拒绝；不猜等值或放宽源校验。
+
+schema12与历史preparation联合46 PASS（72.066s）；该次后新增原点字段仅影响schema12，
+对应最终单项复验PASS（3.106s），Ruff PASS。原生owner在fixture中mock，尚无recorded-source实际Fly，
+不把软件迁移视为三格native或完整仪器资格。下一步真实已发布FieldBundle可按同一新合同验收；
+当前并行的安装链为fresh source，不能冒称它验证了本recorded路径。
