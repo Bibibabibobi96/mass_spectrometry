@@ -28,6 +28,8 @@ SQLite 短事务协调发布和删除状态；payload I/O 在事务外。获取�
 中断发布通过同一 publishing 状态恢复，要求管理员确认 writer 已停止并独占操作；失联 claim/预留
 仅在取得原 token OS 锁后释放，未知记录保守保留。后续原生消费者须各自持权，
 不以心跳超时或父进程退出判定全部后代终止。控制表不能删除后继续让旧 writer 写入。
+计算期同样由 writer token OS 锁保护；确认原锁已释放后，只收尾尚未发布的失联 running 为 failed，
+保留冻结输入和部分证据，不补造终态或成功缓存。publishing 仍走发布恢复，ready 不回退。
 缓存缺件只重算其完整批和实际依赖下游，不影响有效批；这不是原生 checkpoint 恢复。
 API 与当前限制见[存储说明](ARTIFACT_STORE.md)，迁移范围见[执行记录](development/architecture-migration.md)。
 

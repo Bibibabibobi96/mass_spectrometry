@@ -361,3 +361,30 @@ CLOC 2.10，基线 b94e0818a4823102425b6ad77327106b07143250 → 代码提交 8ba
 ```text
 FILTER=extensions=.py,.m,.ps1,.lua,.gem,.fly2,.json,.toml,.yml,.yaml,.c,.h,.cc,.cpp,.cxx,.hpp,.cs,.java,.js,.jsx,.ts,.tsx,.go,.rs,.rb,.php,.swift,.kt,.kts,.sh,.bash,.zsh,.bat,.cmd;excluded_components=.git,.venv,.tmp,artifacts,generated,vendor,vendors,third_party,third-party,thirdparty,run,runs;excluded_lifecycle_paths=any/docs/history/**|root/scratch/**|artifacts/projects/<project>/(archive|scratch)/**;language_overrides=.m:MATLAB|.fly2:Lua|.gem:SIMION_GEM;production=execution_profile_entrypoint|run_*.ps1|verify_*.ps1|tests/support(non-test-named);tests=fixture|test_support|testing_support_path|test_*.(py|ps1|m|lua)|*_test.py|tests_boundary/*_fixtures.py|tests/**/__init__.py|*Test.m|*.Tests.*;unclassified=other_code_below_test_or_tests_path;worktree_source=git_tracked_plus_nonignored_untracked
 ```
+
+
+## B 前收尾（2026-11-26，本轮不启动 B）
+
+对照交付 `dad49d1c9049a5c3ba349003af4998d50ec9082e`；开工 HEAD 与此相同，分支
+`task/architecture-migration-20261126` 跟踪同名 origin 分支，无后续提交。
+原有未跟踪 `artifacts/` 保留；不改历史研究资产，不合并、不推送。本节是本轮接续入口，
+上文 A/P4 的原始结果保持原义，不能把本轮定向复验外推成 Owner/P4 全门禁通过。
+
+### 1. 计算写入者失联
+
+已完成：`storage/store.py:run_writer/recover_interrupted_runs` 使用原 OS 文件锁机制，
+`reference_tracing.run_recipe` 从 running 前到发布/异常收尾持锁。只有取得原随机 token 锁且
+尚无 publishing/ready 记录的 running 才变为 failed，原因明确为 writer interrupted before publication。
+原 ID、冻结输入、部分 work 字节保留，`run_status.work_path` 可查询；不生成终态、不发布成功缓存。
+无 token 的旧 running 保守保留待调查。claim/预留经原 recover_controls 释放；活 writer、已发布结果不变。
+已校验的 publishing 恢复可消除此前发布 I/O 异常留下的 failed 状态，以 manifest 的真实状态收尾。
+
+验证：`.venv/Scripts/python.exe -m unittest tests.contracts.test_artifact_store -q`，17 项 PASS（3.735 s）；
+真实 spawn 短子进程在写入后/发布前被 terminate，死/活 writer 对照、清单及 SHA-256 不变、无捏造终态、
+精确控制释放、再次 reserve、ready 不回退、二次恢复无变化及原 publishing 恢复均通过。
+`.venv/Scripts/python.exe -m unittest tests.contracts.test_reference_workflow -v`，5 项 PASS（5.657 s）；
+正常发布/失败/取消、queued 准入失败、复用、GC、缺件局部重算接线仍通过。
+Store 两个改动文件 Ruff PASS。测试临时根自动清理；未触碰真实研究产物。
+
+剩余旧消费者仍为上文旧 owner/原生链清单，本轮只接入 reference_tracing；
+下一步处理同一次运行的 TOML 单次读取，再处理有证据支持的旧资产读取边界。

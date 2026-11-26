@@ -14,6 +14,8 @@
 `reference_tracing` 的 run 自含证据，因此其性能缓存用 provenance 引用。
 `begin_run/mark_running/finish_run/run_status` 提供运行前身份和独立的执行/发布状态；
 未准入的 queued 输入和原因可查询，当前没有后台自动派发器。
+调用 `mark_running` 前须进入 `with store.run_writer(run_id):`，持锁覆盖计算、异常收尾及发布；
+`run_status` 的 `work_path` 可定位尚未发布的冻结输入和部分证据。
 
 `reserve(peak_bytes)` 与 `reservation_written(token, remaining_bytes)` 表达未落盘增长，
 高低水位由部署提供；参考链以每样本64字节、发布双副本及每粒子1MiB容器开销保守估算，
@@ -28,6 +30,10 @@
 OS 锁随 GC 进程退出释放。句柄/权限失败留下失败原因，不宣称已释放。
 claim 和预留持有独立 token 的现有 OS 文件锁；`recover_controls()` 仅在取得原 token 锁后释放
 精确控制记录，活进程持有的保护保持。未知旧控制记录保守留存，无 TTL。
+`recover_interrupted_runs()` 先恢复失联控制，再逐个尝试取得原 writer token 的 OS 锁；
+只将尚未进入发布的失联 running 标为 failed，并记录 `writer interrupted before publication`。
+原 run ID、私有 work 和已有字节保留；不生成终态数据或成功缓存。活 writer、publishing、ready
+均不受影响；重复恢复不再修改。没有 writer token 的历史 running 不猜测退出状态，须人工调查。
 当前参考求解没有原生子进程；后续独立/native 消费者须各自持权，不能只凭父进程退出释放后代使用。
 后台自动调度及完整索引重建/其余旧 owner 接管属剩余 M03/C。数据库控制状态不能当缓存删除。
 这里的恢复是资产发布/完整批重算，未实现求解器内部 checkpoint。

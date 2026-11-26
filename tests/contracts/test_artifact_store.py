@@ -5,6 +5,7 @@ from multiprocessing import get_context
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import tempfile
+import hashlib
 import os
 import subprocess
 from threading import Barrier
@@ -27,6 +28,20 @@ def _crash_worker(root: str, identity: str, ready) -> None:
     with store.claim(identity), store.reserve(8):
         ready.set()
         os._exit(0)
+
+
+def _running_worker(root: str, identity: str, ready, release, result) -> None:
+    store = ArtifactStore(root)
+    run, work = store.begin_run()
+    (work / "resolved.json").write_text('{"input": 1}', encoding="utf-8")
+    (work / "evidence.txt").write_text("partial", encoding="utf-8")
+    with store.run_writer(run):
+        store.mark_running(run)
+        with store.claim(identity), store.reserve(8):
+            result.send((run, str(work)))
+            ready.set()
+            release.wait(30)
+            store.finish_run(run, "cancelled", reason="test complete")
 
 
 class ArtifactStoreTests(unittest.TestCase):
@@ -179,13 +194,84 @@ class ArtifactStoreTests(unittest.TestCase):
         self.assertEqual(self.store.run_status(run)["execution_status"], "queued")
         self.store.set_queued_reason(run, "capacity")
         self.assertEqual(self.store.run_status(run)["reason"], "capacity")
-        self.store.mark_running(run)
-        self.assertEqual(self.store.run_status(run)["execution_status"], "running")
-        (work / "result").write_bytes(b"result")
-        published, _ = self.store.publish_run(work, run_id=run, execution_status="cancelled")
+        with self.store.run_writer(run):
+            self.store.mark_running(run)
+            self.assertEqual(self.store.run_status(run)["execution_status"], "running")
+            (work / "result").write_bytes(b"result")
+            published, _ = self.store.publish_run(work, run_id=run, execution_status="cancelled")
         self.assertEqual(published, run)
         self.assertEqual(self.store.run_status(run)["execution_status"], "cancelled")
         self.assertEqual(self.store.run_status(run)["publication_status"], "ready")
+
+    def test_terminated_running_writer_recovers_once_without_touching_live_or_ready(self) -> None:
+        identity = self.asset("running-control")
+        published_work = self.store.new_work()
+        (published_work / "result").write_bytes(b"complete")
+        completed, completed_path = self.store.publish_run(published_work)
+        context = get_context("spawn")
+        workers = []
+        for _ in range(2):
+            ready, release = context.Event(), context.Event()
+            receive, send = context.Pipe(duplex=False)
+            process = context.Process(target=_running_worker, args=(str(self.store.root), identity, ready, release, send))
+            process.start()
+            workers.append((process, ready, release, receive))
+        try:
+            for process, ready, _, _ in workers:
+                self.assertTrue(ready.wait(20), f"writer {process.pid} did not start")
+            dead_run, work_name = workers[0][3].recv()
+            live_run, _ = workers[1][3].recv()
+            work = Path(work_name)
+            before = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in work.iterdir()}
+            self.assertEqual(self.store.recover_interrupted_runs(), [])
+            workers[0][0].terminate()
+            workers[0][0].join(20)
+            self.assertFalse(workers[0][0].is_alive())
+            self.assertEqual(self.store.recover_interrupted_runs(), [dead_run])
+            self.assertEqual(self.store.recover_interrupted_runs(), [])
+            status = self.store.run_status(dead_run)
+            self.assertEqual(status["execution_status"], "failed")
+            self.assertEqual(status["publication_status"], "unpublished")
+            self.assertIn("interrupted", status["reason"])
+            after = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in work.iterdir()}
+            self.assertEqual(after, before)
+            self.assertEqual((work / "resolved.json").read_text(encoding="utf-8"), '{"input": 1}')
+            self.assertEqual((work / "evidence.txt").read_text(encoding="utf-8"), "partial")
+            self.assertFalse((work / "terminal_states.parquet").exists())
+            self.assertEqual(self.store.run_status(live_run)["execution_status"], "running")
+            self.assertEqual(self.store.run_status(completed)["execution_status"], "succeeded")
+            self.assertEqual(self.store.inspect_run(completed), completed_path)
+            with self.store._db() as db:
+                self.assertEqual(db.execute("SELECT COUNT(*) FROM claims").fetchone()[0], 1)
+                self.assertEqual(db.execute("SELECT COUNT(*) FROM reservations").fetchone()[0], 1)
+                self.assertEqual(db.execute("SELECT COUNT(*) FROM assets WHERE state='ready'").fetchone()[0], 1)
+            with self.store.reserve(8):
+                pass
+        finally:
+            for process, _, release, _ in workers:
+                if process.is_alive():
+                    release.set()
+                    process.join(20)
+                    if process.is_alive():
+                        process.terminate()
+                        process.join(20)
+
+    def test_publication_interruption_recovers_after_failure_recorded(self) -> None:
+        run, work = self.store.begin_run()
+        (work / "result").write_bytes(b"complete")
+        with self.store.run_writer(run):
+            self.store.mark_running(run)
+            with patch("msplatform.storage.store.os.replace", side_effect=OSError("publication interrupted")):
+                with self.assertRaises(OSError):
+                    self.store.publish_run(work, run_id=run)
+        self.assertEqual(self.store.run_status(run)["publication_status"], "publishing")
+        self.assertEqual(self.store.recover_interrupted_runs(), [])
+        self.assertEqual(self.store.run_status(run)["execution_status"], "running")
+        self.store.finish_run(run, "failed", reason="publication interrupted")
+        self.assertEqual(self.store.recover_publications(), [run])
+        self.assertEqual(self.store.run_status(run)["execution_status"], "succeeded")
+        self.assertEqual(self.store.inspect_run(run).joinpath("result").read_bytes(), b"complete")
+        self.assertEqual(self.store.recover_publications(), [])
 
     def test_dead_controls_recover_while_live_claim_survives(self) -> None:
         identity = self.asset("controls")

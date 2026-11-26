@@ -94,6 +94,7 @@ class ArtifactStore:
         self.low = low_water_bytes
         self.safety = safety_bytes
         self._owned_work: set[Path] = set()
+        self._active_run_writers: set[str] = set()
         with self._db() as db:
             db.executescript("""
             CREATE TABLE IF NOT EXISTS assets(id TEXT PRIMARY KEY, key TEXT NOT NULL,
@@ -110,6 +111,7 @@ class ArtifactStore:
             CREATE TABLE IF NOT EXISTS controls(id TEXT PRIMARY KEY, kind TEXT NOT NULL, owner_pid INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS run_execution(id TEXT PRIMARY KEY, path TEXT NOT NULL, work TEXT NOT NULL,
               status TEXT NOT NULL, reason TEXT);
+            CREATE TABLE IF NOT EXISTS run_writers(run_id TEXT PRIMARY KEY, token TEXT NOT NULL UNIQUE);
             CREATE TABLE IF NOT EXISTS gc_lock(id INTEGER PRIMARY KEY CHECK(id=1));
             """)
 
@@ -286,7 +288,60 @@ class ArtifactStore:
             db.execute("UPDATE run_execution SET status=?,reason=? WHERE id=?", (status, reason, run_id))
 
     def mark_running(self, run_id: str) -> None:
+        if run_id not in self._active_run_writers:
+            raise ValueError("mark_running requires an active run_writer")
         self._change_status(run_id, "running", None, ("queued",))
+
+    @contextmanager
+    def run_writer(self, run_id: str) -> Iterator[None]:
+        """Hold the run's OS writer lock from before running until publication ends.
+
+        The context only protects its holder. External/native consumers must
+        hold their own claims and may not rely on this process's lifetime.
+        """
+        token = uuid4().hex
+        with self._control_lock(token):
+            with self._transaction() as db:
+                row = db.execute("SELECT status FROM run_execution WHERE id=?", (run_id,)).fetchone()
+                if row is None or row[0] != "queued":
+                    raise ValueError("writer requires a queued run")
+                db.execute("INSERT INTO run_writers VALUES(?,?)", (run_id, token))
+            self._active_run_writers.add(run_id)
+            try:
+                yield
+            finally:
+                self._active_run_writers.discard(run_id)
+                with self._transaction() as db:
+                    db.execute("""DELETE FROM run_writers WHERE run_id=? AND token=?
+                        AND EXISTS(SELECT 1 FROM run_execution WHERE id=? AND status!='running')""",
+                               (run_id, token, run_id))
+
+    def recover_interrupted_runs(self) -> list[str]:
+        """Mark unlocked pre-publication running writers failed, retaining their work.
+
+        Running records without a writer token and all publishing records are
+        preserved for explicit investigation or publication recovery.
+        """
+        self.recover_controls()
+        with self._db() as db:
+            rows = db.execute("""SELECT w.run_id,w.token FROM run_writers w
+                JOIN run_execution e ON e.id=w.run_id WHERE e.status='running'""").fetchall()
+        recovered = []
+        for run_id, token in rows:
+            if not (self.root / "control" / (token + ".lock")).is_file():
+                continue
+            try:
+                with self._control_lock(token), self._transaction() as db:
+                    changed = db.execute("""UPDATE run_execution SET status='failed',reason=?
+                        WHERE id=? AND status='running' AND NOT EXISTS
+                        (SELECT 1 FROM runs WHERE id=?) AND EXISTS
+                        (SELECT 1 FROM run_writers WHERE run_id=? AND token=?)""",
+                        ("writer interrupted before publication", run_id, run_id, run_id, token)).rowcount
+                    if changed:
+                        recovered.append(run_id)
+            except TimeoutError:
+                continue
+        return recovered
 
     def set_queued_reason(self, run_id: str, reason: str) -> None:
         self._change_status(run_id, "queued", reason, ("queued",))
@@ -298,10 +353,11 @@ class ArtifactStore:
 
     def run_status(self, run_id: str) -> dict[str, object]:
         with self._db() as db:
-            row = db.execute("SELECT e.status,e.reason,e.path,r.state FROM run_execution e LEFT JOIN runs r ON r.id=e.id WHERE e.id=?", (run_id,)).fetchone()
+            row = db.execute("SELECT e.status,e.reason,e.path,r.state,e.work FROM run_execution e LEFT JOIN runs r ON r.id=e.id WHERE e.id=?", (run_id,)).fetchone()
         if row is None:
             raise KeyError(run_id)
-        return {"execution_status": row[0], "reason": row[1], "run_path": row[2], "publication_status": row[3] or "unpublished"}
+        return {"execution_status": row[0], "reason": row[1], "run_path": row[2],
+                "publication_status": row[3] or "unpublished", "work_path": f"work/{row[4]}"}
 
     def publish_run(self, work_dir: str | Path, *, required_assets: tuple[str, ...] = (),
                     provenance_assets: tuple[str, ...] = (), run_id: str | None = None,
@@ -517,8 +573,8 @@ class ArtifactStore:
                         manifest = json.loads((destination / "run_manifest.json").read_text(encoding="utf-8"))
                         status = manifest.get("execution_status")
                     with self._transaction() as db:
-                        db.execute(f"UPDATE {table} SET state='ready' WHERE id=? AND state='publishing'", (identity,))
-                        if status in {"succeeded", "failed", "cancelled"}:
-                            db.execute("UPDATE run_execution SET status=? WHERE id=? AND status='running'", (status, identity))
+                        changed = db.execute(f"UPDATE {table} SET state='ready' WHERE id=? AND state='publishing'", (identity,)).rowcount
+                        if changed and status in {"succeeded", "failed", "cancelled"}:
+                            db.execute("UPDATE run_execution SET status=?,reason=NULL WHERE id=?", (status, identity))
                     recovered.append(identity)
         return recovered

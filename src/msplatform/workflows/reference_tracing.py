@@ -116,23 +116,24 @@ Numerical failures and cancellation publish explicit incomplete evidence.
     # conservative table/container metadata; deployments can increase the peak.
     estimated = len(recipe["initial_states"]) * (128 * recipe["numerics"]["sample_count"] + 1048576)
     budget = max(reserve_bytes, estimated)
-    try:
-        with store.reserve(budget) as reservation:
-            store.mark_running(run_id)
-            _execute_recipe(store, recipe, run_work, run_id, reservation, budget, source_revision, cancelled)
-    except OSError as error:
-        state = store.run_status(run_id)
-        if state["execution_status"] == "queued":
-            store.set_queued_reason(run_id, str(error))
-        else:
+    with store.run_writer(run_id):
+        try:
+            with store.reserve(budget) as reservation:
+                store.mark_running(run_id)
+                _execute_recipe(store, recipe, run_work, run_id, reservation, budget, source_revision, cancelled)
+        except OSError as error:
+            state = store.run_status(run_id)
+            if state["execution_status"] == "queued":
+                store.set_queued_reason(run_id, str(error))
+            else:
+                store.finish_run(run_id, "failed", reason=str(error))
+            raise OSError(f"run {run_id}: {error}") from error
+        except KeyboardInterrupt:
+            store.finish_run(run_id, "cancelled", reason="keyboard_interrupt")
+            raise
+        except Exception as error:
             store.finish_run(run_id, "failed", reason=str(error))
-        raise OSError(f"run {run_id}: {error}") from error
-    except KeyboardInterrupt:
-        store.finish_run(run_id, "cancelled", reason="keyboard_interrupt")
-        raise
-    except Exception as error:
-        store.finish_run(run_id, "failed", reason=str(error))
-        raise
+            raise
     inspected = inspect_results(run_id, artifact_root=artifact_root)
     return {"run_id": run_id, "artifact_root": str(Path(artifact_root).resolve()), **inspected}
 
