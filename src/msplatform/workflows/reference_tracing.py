@@ -94,7 +94,8 @@ def run_recipe(recipe_path: str | Path, *, artifact_root: str | Path,
                high_water_bytes: int | None = None, low_water_bytes: int | None = None,
                safety_bytes: int = 0, reserve_bytes: int = 0,
                source_revision: str | None = None,
-               cancelled: Callable[[], bool] | None = None) -> dict[str, Any]:
+               cancelled: Callable[[], bool] | None = None,
+               context=None) -> dict[str, Any]:
     """Run an author TOML through the public pipeline and return independently reread statistics.
 
 The deployment supplies disk watermarks and an optional additional peak budget.
@@ -102,6 +103,13 @@ Numerical failures and cancellation publish explicit incomplete evidence.
 """
     loaded = load_recipe(recipe_path)
     recipe = loaded.to_dict()
+    if recipe["schema_version"] == 2:
+        from .native_tracing import run_loaded_recipe
+        return run_loaded_recipe(loaded, context=context, artifact_root=artifact_root,
+            high_water_bytes=high_water_bytes, low_water_bytes=low_water_bytes, safety_bytes=safety_bytes,
+            reserve_bytes=reserve_bytes, source_revision=source_revision, cancelled=cancelled)
+    if context is not None:
+        raise ValueError("reference tracing does not consume a native execution context")
     validate_recipe(recipe)
     preflight(recipe)
     if source_revision is not None and not re.fullmatch(r"[0-9a-fA-F]{40}", source_revision):

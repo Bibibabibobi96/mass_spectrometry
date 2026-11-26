@@ -20,6 +20,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         run.add_argument("--" + name, type=int)
     run.add_argument("--safety-bytes", type=int, default=0)
     run.add_argument("--reserve-bytes", type=int, default=0)
+    for command in (validate, run):
+        command.add_argument("--execution-environment", help="explicit native machine deployment JSON")
+        command.add_argument("--profile", help="named native engineering profile")
+        command.add_argument("--workspace", help="existing native execution owner's workspace")
     results = commands.add_parser("results").add_subparsers(dest="results_command", required=True)
     inspect = results.add_parser("inspect", help="verify and recompute statistics from published data")
     inspect.add_argument("run_id")
@@ -29,17 +33,31 @@ def main(argv: Sequence[str] | None = None) -> int:
     gc.add_argument("--target-bytes", type=int, default=0)
     args = parser.parse_args(argv)
     try:
+        context = None
+        if args.command in {"validate", "run"}:
+            selected = (args.execution_environment, args.profile, args.workspace)
+            if any(selected):
+                if not all(selected):
+                    raise ValueError("native deployment requires execution-environment, profile and workspace together")
+                from msplatform.execution.context import load_environment
+                context = load_environment(args.execution_environment, workspace=args.workspace, profile=args.profile)
         if args.command == "validate":
             from msplatform.recipes import load_recipe
             from msplatform.tracing import preflight
             output = load_recipe(args.recipe).to_dict()
-            preflight(output)
+            if output["schema_version"] == 2:
+                from msplatform.workflows.native_tracing import preflight_native
+                output = {"resolved": output, "capabilities": preflight_native(output, context=context)}
+            else:
+                if context is not None:
+                    raise ValueError("reference validation does not consume a native deployment")
+                preflight(output)
         elif args.command == "run":
             from msplatform.workflows.reference_tracing import run_recipe
             output = run_recipe(args.recipe, artifact_root=args.artifact_root,
                                 high_water_bytes=args.high_water_bytes, low_water_bytes=args.low_water_bytes,
                                 safety_bytes=args.safety_bytes, reserve_bytes=args.reserve_bytes,
-                                source_revision=args.source_revision)
+                                source_revision=args.source_revision, context=context)
         elif args.command == "results":
             from msplatform.workflows.reference_tracing import inspect_results
             output = inspect_results(args.run_id, artifact_root=args.artifact_root)

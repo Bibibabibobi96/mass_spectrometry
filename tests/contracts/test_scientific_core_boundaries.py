@@ -31,7 +31,7 @@ DOMAIN_IMPORTS = {
     "fields": {"fields"},
     "tracing": {"tracing", "fields", "physics", "analysis", "results"},
     "storage": {"storage"},
-    "cli": {"cli", "recipes", "tracing", "workflows", "results", "storage"},
+    "cli": {"cli", "recipes", "tracing", "workflows", "results", "storage", "execution"},
     "__main__": {"cli"},
     "analysis": SCIENTIFIC_DOMAINS | {"gas"},
     "assembly": SCIENTIFIC_DOMAINS | {"components"},
@@ -112,7 +112,8 @@ def _target_error(target: str, dependencies: set[str], source_domain: str, sourc
                 "msplatform.execution.native_artifact_controls.reconcile_native_receipt"}:
             return None
         allowed = DOMAIN_IMPORTS.get(source_domain, set())
-        if source_module == "msplatform.workflows.reference_tracing":
+        if source_module in {"msplatform.workflows.reference_tracing", "msplatform.workflows.native_tracing",
+                             "msplatform.workflows.comsol_tracing", "msplatform.workflows.scalar_tracing"}:
             allowed = allowed | {"physics", "recipes", "fields", "tracing", "storage"}
         if len(parts) > 1 and parts[1] not in allowed:
             return f"{source_domain} imports a reverse dependency: {target}"

@@ -1,0 +1,16 @@
+schema_version = 2
+constants_version = "repository_particle_physics_v1"
+label = "OA TOF COMSOL technical small N"
+particle_tracer = "comsol"
+field_assembly_strategy = "joint_solve"
+particle_field_coupling = "external_given_field"
+[study]
+path = "oa_split_tof_comsol_small_v1.json"
+sha256 = "7097de0ef97556b85b6c1954e4b97644e117617ec59d9dfeb1730b13bf18e13a"
+[field_source]
+kind = "comsol_native"
+[recording]
+mode = "observation_times"
+observation_times_us = [0.0, 80.0513730009902, 90.0, 100.0]
+[gas_environment]
+status = "vacuum"

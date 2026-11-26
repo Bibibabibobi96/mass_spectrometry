@@ -1,8 +1,8 @@
-# 参考粒子 tracing
+# 公共粒子 tracing
 
 新公开链数值积分非相对论 Lorentz 方程，支持明确真空中静态均匀 E+B 和具名轴对齐平面。
 四份作者配置在[参考配方](../recipes/reference/uniform_e.toml)及其同目录；参考单元不是完整仪器。
-时变场、碰撞、自洽、非参考几何由能力预检拒绝。选择 max_step 时须避免一步多次穿面；切触未保证检测。
+参考 tracer 的时变场、碰撞、自洽、非参考几何由能力预检拒绝。选择 max_step 时须避免一步多次穿面；切触未保证检测。
 
 ## 安装与运行
 
@@ -61,6 +61,30 @@ run 使用同一快照解析、归档 `author.toml` 并计算 provenance 的 `au
 外部文件随后改变只影响下一次运行；来源字节哈希与排除 label 的科学缓存身份分别记录。
 可用 `--source-revision <完整SHA>` 显式记录构建来源；未提供时标记来源 SHA 不可用，
 不从研究目录猜测源码来源。该记录不决定物理缓存命中。
+
+## 原生配方与当前验证边界
+
+同一 `validate`/`run` 和 `run_recipe` 接受schema2原生配方，作者输入仍只读取一次。
+安装包 `msplatform.examples` 中的 `oa_split_tof_native_small_v1.toml`、
+`rf_split_oatof_native_small_v1.toml` 与 `oa_split_tof_comsol_small_v1.toml` 给出明确Study引用；
+复制时保留对应JSON，不能只复制TOML。独立OA和下游TOF连续追踪，原birth与pulse/epoch保留。
+
+原生运行必须同时提供 `--execution-environment <部署JSON> --profile <工程profile> --workspace <原生owner工作区>`，
+另指定与原生 `workspace/artifacts` 分离的 `--artifact-root` 和正整数 `--reserve-bytes`。
+部署使用既有ExecutionContext/阶段策略/共享host调度；科学值来自唯一冻结Study。
+`validate` 返回 resolved与capabilities：implemented只说明编译路径，host_available只说明工具可用，
+native_verified=false不代表原生求解已验证。实际逐组合证据查[迁移记录](development/architecture-migration.md)。
+
+软件路径包括SIMION→SIMION、COMSOL→COMSOL，以及显式COMSOL OFF/ON资产采样到SIMION。
+桥接必须声明原SIMION source-free FieldBundle作为碰撞载体及world/windows采样，
+当前要求原生资产位于同一个显式workspace owner root、OA与assembly坐标为identity pose，不推断或伪造缺失场。
+COMSOL有限外箱电位与SIMION Neumann不是同一边值问题，不能以同几何直接宣称结果精度等价。
+原生ID目前受SIMION Lua日志32-bit ABI限制，超过2^31−1在执行前拒绝。
+
+Store只拥有小原生引用缓存与完整科学结果；PA/MPH继续由原执行owner管理，原始源使用防写/防删句柄保护。
+`native_stages.json` 记录每阶段实际引用与复用，provenance的stage_productions是生产回调记录，
+`native_worker_evidence.json` 是真实worker退出观察，均不冒充Compute/Fly次数。
+无回执或回执缺件时观察数明确不可用，不能从缓存标志推断原生调用数。
 
 ## 结果与复用
 

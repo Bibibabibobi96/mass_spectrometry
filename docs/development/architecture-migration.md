@@ -999,3 +999,22 @@ split_tof_simion、platform_api、legacy_composite_retirement 八模块，64 PAS
 首次联合失败为legacy负例错误消息已被更早退休guard改变，精确区分legacy/split后通过；
 另一次新测试在patch时首次导入造成mock污染，修复测试导入顺序，不放宽生产校验。
 上述均不是实际Refine/Fly证据，三个原生组合及已安装链仍须运行。
+
+### B2/B5 同一公共CLI调度、分阶段复用与worker证据
+
+`workflows/reference_tracing.run_recipe` 单次load后把同一source_bytes交`native_tracing.run_loaded_recipe`，
+CLI沿同一validate/run接显式ExecutionContext。原生输入、分阶段小引用、每物种完整独立批和发布均走既有Store；
+PA/MPH仍由原owner删除，不移交给第二GC。`scalar_tracing` 仅显式导出既存OFF/ON和支持域、world、连续原birth追踪，
+无Compute/Refine回退；源geometry/prepared/field与collision的每个真实manifest受同一owner root防写删保护。
+跨workspace源明确预检拒绝；不复制manifest或扩root伪装保护。
+
+只读审查修复scalar tracer帧选择、共享/跨backend实现缓存身份及same-run命中即时落盘。
+场缓存不纳入workflow/label/粒子N，追踪缓存纳入原母群与数值；桥接摘要包括真实双backend/shared代码。
+`native_evidence.summarize_native_workers` 冷读四份owner回执，记录每个原PID+creation及整数退出码；
+缺件/未知为unavailable，不以stage_productions推断真实solver调用。发布证据路径改为run内相对路径。
+实际Compute/Fly次数仍须按真实原生报告及新owner运行列表另行对账。
+
+native_workflow/scalar_workflow/scientific_core_boundaries/native_evidence联合29 PASS（15.301s），Ruff PASS；
+首次25项中边界一项发现scalar具名workflow缺配方依赖声明，按现有具名workflow边界补齐并复验，未给所有workflow开放。
+外部安装venv已按requirements-lock完成普通依赖安装，尚未安装本主题wheel或实际运行native。
+下一步从提交快照构建发行，先COMSOL→COMSOL引用真实已发布basis跑CPT，再闭合SIMION及桥接真实小N。
