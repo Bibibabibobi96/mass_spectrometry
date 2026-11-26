@@ -1195,6 +1195,37 @@ Study SHA256 `A7D75ED3EAB3E198D4196868B9CE1AA9A787554DC83CEA5088C545B81EACB9E6`�
 其余阶段按fail-fast阻塞或等待已启动阶段结束。不能报告完整Changed PASS；本轮定向38项的软件结果单独成立。
 最终安装仍按B交付的普通wheel及sdist重建wheel、仓外参考链与B资源准入执行，不把该环境失败冒充科学失败。
 
+### B 执行检查点（c4398e9c 后）
+
+已普通提交并推送：检测覆盖 `7761a3a4`；真实失败证据收尾 `8e4020b4`；
+显式SIMION场引用 `ffc819cb`；COMSOL detector候选 `c4398e9c`。
+原有未跟踪artifacts及无文本差异的工作区状态保留，不reset、不合并主线、不改写远端。
+
+冻结 `c4398e9c` 用git archive建立独立仓外source，普通PEP517隔离构建wheel，
+wheel=5,860,818字节、SHA256 `6A98178E4AD4DE6CA22CBEE79AB8E7B81DB806A96F9AEC0FBA8A61BC74FE1D89`，
+安装在 `C:/Users/Liao/msplatform-artifacts/architecture-b-20261127/installed-c4398e9c`。
+最初no-build-isolation尝试因本地缺bdist_wheel失败，随后使用声明的隔离build依赖成功；未改pyproject或共享venv。
+实际仓外已安装 `python -I -m msplatform run` 沿原COMSOL作者/场启动
+`20261127_043646__sim__comsol__pulse-6a98fcb94ac5`；本记录时仍运行，不把启动或preflight当PASS。
+完整命令、部署和日志位于 `.../comsol-installed-c4398e9c/environment.json`、`native-run.log`，
+输入仍是原 `batch_b_comsol_small_cli_20261127/oa_split_tof_comsol_small_reused_v1.toml`。
+最终同代码双发行离仓验收尚未执行；当前安装只用于该候选的真实CPT，不冒称BA15完成。
+
+### B3 生产理想pulse与线性PA组合原生探针
+
+普通c847已安装Python `-I split-linear-pulse-probe/run_probe.py --environment <simion-installed-c8479985/environment.json> --workspace <原共享workspace> --profile small_native --execute`
+运行 `20261127_042546__analysis__simion__split-pulse-490bd1400a1d` 成功，manifest
+SHA256 `4C0BE663B1ABEC67B7AA722AA7F9E900248398DBDD719CFEEDFD9A91F5EB5D39`；
+真实generate_pa/probe两操作，Compute0/Refine0/Fly0；新建9³合成线性PA，未改原仪器源/场。
+production pulse hook、model_drive/waveforms、adapter/composer均来自该固定安装，SHA绑定于
+`C:/Users/Liao/msplatform-artifacts/architecture-b-20261127/split-linear-pulse-probe/frozen.json`
+（SHA256 `E60916B233AC4EE747FBBF4AAED48DE7877C08F22D69789FC396D00F5F5CCE7A`）。
+原Study pulse start80.0513730009902us、width7.2727272727272725us、epoch0us保持。
+独立 `validate_probe.py <owner>/results/pulse-cases.tsv study.json epoch.json` 再次PASS5点：
+start−ε关、start开、中点开、end关、end+ε关，原OA全部static/pulse组电压与合成PA梯度匹配。
+这是实际生产理想gate/模型电压及两标量基底选择机制，epoch+elapsed由探针显式映射；
+不是仪器E/V精度、真实particle flight、solver运行时clock callback或非理想波形资格。
+
 ### B4 COMSOL检测器生产候选（ffc819cb 后，待真实CPT）
 
 `backends/comsol/assembly_particle_tracing.py` 从同一Assembly冻结作者有效面/变换/组件身份，
@@ -1370,3 +1401,76 @@ extensions=.py,.m,.ps1,.lua,.gem,.fly2,.json,.toml,.yml,.yaml,.c,.h,.cc,.cpp,.cx
 ```
 
 源日志同时记录功能分类；本摘要仅转录指定两个提交快照，未重新运行 CLOC，WORKTREE 状态仅为日志运行时环境信息。
+
+### B 累计 CLOC（至 c4398e9c，后续未提交改动不计）
+
+基线 `a9d76aa4dcdbaf8099c9ce5aa0585d6fce18c3be` → 结果 `c4398e9c4aeb2b4449cbb99a3338606ae743e6aa`；CLOC 2.10；原日志 `C:/Users/Liao/msplatform-artifacts/architecture-b-20261127/c4398e9c-cloc.log`。
+生成时间 `2026-11-26T20:40:03.0906419+00:00`；classifier SHA256 `d3abfc94e920066445561b696c76131b43eab9713a0cbcb9e2c1270ba7136952`；语言定义 SHA256 `985e60f06bd8981c36966a0895cccfccd182fd625c79eb6ae94b65a12c5508a6`。
+以下每格为 基线 → 结果（delta），直接由规范工具输出转录；不以工作区增量冒充提交快照。
+
+#### total
+
+| Language | Files | Blank | Comment | Code |
+|---|---:|---:|---:|---:|
+| JSON | 282 → 291 (+9) | 0 → 0 (+0) | 0 → 0 (+0) | 126022 → 130154 (+4132) |
+| Lua | 119 → 120 (+1) | 413 → 416 (+3) | 828 → 830 (+2) | 13219 → 13257 (+38) |
+| MATLAB | 186 → 188 (+2) | 1066 → 1068 (+2) | 2053 → 2067 (+14) | 19701 → 20023 (+322) |
+| PowerShell | 150 → 150 (+0) | 1100 → 1101 (+1) | 1195 → 1195 (+0) | 46113 → 46232 (+119) |
+| Python | 1435 → 1494 (+59) | 32921 → 33677 (+756) | 42493 → 43025 (+532) | 396258 → 406641 (+10383) |
+| SIMION GEM | 10 → 10 (+0) | 26 → 26 (+0) | 51 → 51 (+0) | 214 → 214 (+0) |
+| TOML | 5 → 9 (+4) | 43 → 46 (+3) | 2 → 2 (+0) | 219 → 283 (+64) |
+| YAML | 2 → 2 (+0) | 8 → 8 (+0) | 20 → 20 (+0) | 506 → 506 (+0) |
+| SUM | 2189 → 2264 (+75) | 35577 → 36342 (+765) | 46642 → 47190 (+548) | 602252 → 617310 (+15058) |
+
+#### production
+
+| Language | Files | Blank | Comment | Code |
+|---|---:|---:|---:|---:|
+| JSON | 259 → 267 (+8) | 0 → 0 (+0) | 0 → 0 (+0) | 42340 → 45539 (+3199) |
+| Lua | 99 → 100 (+1) | 333 → 336 (+3) | 703 → 705 (+2) | 11141 → 11179 (+38) |
+| MATLAB | 118 → 120 (+2) | 526 → 528 (+2) | 1462 → 1476 (+14) | 12164 → 12486 (+322) |
+| PowerShell | 138 → 138 (+0) | 1037 → 1038 (+1) | 1149 → 1149 (+0) | 44012 → 44131 (+119) |
+| Python | 685 → 713 (+28) | 16804 → 17218 (+414) | 11609 → 11904 (+295) | 182981 → 188785 (+5804) |
+| SIMION GEM | 10 → 10 (+0) | 26 → 26 (+0) | 51 → 51 (+0) | 214 → 214 (+0) |
+| TOML | 5 → 9 (+4) | 43 → 46 (+3) | 2 → 2 (+0) | 219 → 283 (+64) |
+| YAML | 2 → 2 (+0) | 8 → 8 (+0) | 20 → 20 (+0) | 506 → 506 (+0) |
+| SUM | 1316 → 1359 (+43) | 18777 → 19200 (+423) | 14996 → 15307 (+311) | 293577 → 303123 (+9546) |
+
+#### tests
+
+| Language | Files | Blank | Comment | Code |
+|---|---:|---:|---:|---:|
+| JSON | 23 → 24 (+1) | 0 → 0 (+0) | 0 → 0 (+0) | 83682 → 84615 (+933) |
+| Lua | 20 → 20 (+0) | 80 → 80 (+0) | 125 → 125 (+0) | 2078 → 2078 (+0) |
+| MATLAB | 68 → 68 (+0) | 540 → 540 (+0) | 591 → 591 (+0) | 7537 → 7537 (+0) |
+| PowerShell | 12 → 12 (+0) | 63 → 63 (+0) | 46 → 46 (+0) | 2101 → 2101 (+0) |
+| Python | 750 → 781 (+31) | 16117 → 16459 (+342) | 30884 → 31121 (+237) | 213277 → 217856 (+4579) |
+| SUM | 873 → 905 (+32) | 16800 → 17142 (+342) | 31646 → 31883 (+237) | 308675 → 314187 (+5512) |
+
+#### unclassified
+
+| Language | Files | Blank | Comment | Code |
+|---|---:|---:|---:|---:|
+| SUM | 0 → 0 (+0) | 0 → 0 (+0) | 0 → 0 (+0) | 0 → 0 (+0) |
+
+#### 输入快照、分类与过滤
+
+```text
+WORKTREE_DIRTY=true
+WORKTREE_TRACKED_DIRTY_COUNT=39
+WORKTREE_UNTRACKED_COUNT=19
+INPUT_IDENTITY SNAPSHOT=baseline FILES=2234 SHA256=2e9c89b9e7a4ddd9d2d2e95a292cfbe15ca5b439965fa762bd82c4277fa07818
+INPUT_IDENTITY SNAPSHOT=result FILES=2309 SHA256=856d824220941b383f47236321c85877e28bf65d46503503ef69b1443621db3b
+FILTER=extensions=.py,.m,.ps1,.lua,.gem,.fly2,.json,.toml,.yml,.yaml,.c,.h,.cc,.cpp,.cxx,.hpp,.cs,.java,.js,.jsx,.ts,.tsx,.go,.rs,.rb,.php,.swift,.kt,.kts,.sh,.bash,.zsh,.bat,.cmd;excluded_components=.git,.venv,.tmp,artifacts,generated,vendor,vendors,third_party,third-party,thirdparty,run,runs;excluded_lifecycle_paths=any/docs/history/**|root/scratch/**|artifacts/projects/<project>/(archive|scratch)/**;language_overrides=.m:MATLAB|.fly2:Lua|.gem:SIMION_GEM;production=execution_profile_entrypoint|run_*.ps1|verify_*.ps1|tests/support(non-test-named);tests=fixture|test_support|testing_support_path|test_*.(py|ps1|m|lua)|*_test.py|tests_boundary/*_fixtures.py|tests/**/__init__.py|*Test.m|*.Tests.*;unclassified=other_code_below_test_or_tests_path;worktree_source=git_tracked_plus_nonignored_untracked
+CLASSIFICATION_DETAIL SNAPSHOT=baseline CATEGORY=production REASON=active_powershell_entrypoint FILES=53
+CLASSIFICATION_DETAIL SNAPSHOT=baseline CATEGORY=production REASON=execution_profile_entrypoint FILES=17
+CLASSIFICATION_DETAIL SNAPSHOT=baseline CATEGORY=production REASON=non_test_source FILES=1246
+CLASSIFICATION_DETAIL SNAPSHOT=baseline CATEGORY=tests REASON=test_filename FILES=842
+CLASSIFICATION_DETAIL SNAPSHOT=baseline CATEGORY=tests REASON=test_support_path FILES=76
+CLASSIFICATION_DETAIL SNAPSHOT=result CATEGORY=production REASON=active_powershell_entrypoint FILES=53
+CLASSIFICATION_DETAIL SNAPSHOT=result CATEGORY=production REASON=execution_profile_entrypoint FILES=17
+CLASSIFICATION_DETAIL SNAPSHOT=result CATEGORY=production REASON=non_test_source FILES=1289
+CLASSIFICATION_DETAIL SNAPSHOT=result CATEGORY=tests REASON=test_filename FILES=873
+CLASSIFICATION_DETAIL SNAPSHOT=result CATEGORY=tests REASON=test_support_path FILES=77
+```
+规范工具分别统计total/production/tests，unclassified=0；完整功能分类保留在原日志。
