@@ -39,11 +39,12 @@ def _workpoint(artifact: OpenedArtifact) -> dict:
     projection = json.loads(artifact.data_path('projection').read_text(encoding='utf-8-sig'))
     descriptor = json.loads(artifact.data_path('descriptor').read_text(encoding='utf-8-sig'))
     request = json.loads(artifact.data_path('request').read_text(encoding='utf-8-sig'))
+    geometry_validation = json.loads(artifact.data_path('geometry_validation').read_text(encoding='utf-8-sig'))
     solution = meta.get('solution')
     if not isinstance(solution, dict) or not isinstance(solution.get('solution_tag'), str):
         raise ValueError('native solution tag readback is required')
     return {'model': model, 'projection': projection, 'descriptor': descriptor, 'request': request,
-            'solution_tag': solution['solution_tag'], 'reference': artifact.reference}
+            'solution_tag': solution['solution_tag'], 'reference': artifact.reference, 'geometry_validation': geometry_validation}
 
 
 def _rows(request: dict) -> dict[tuple[str, str], float]:
@@ -62,6 +63,51 @@ def _require_tools(context: Any) -> None:
         path = context.tools.get(name)
         if path is None or not (path.is_dir() if name == 'matlab_root' else path.is_file()):
             raise ValueError('explicit available COMSOL execution tool required: ' + name)
+
+
+def _authored_detector_face(assembly: Assembly, projection: Mapping[str, Any], geometry_validation: Any) -> dict | None:
+    """Freeze the detector face from the same validated Assembly as the field geometry.
+
+    This identifies the authored surface; native boundary membership remains
+    unqualified until the complete geometry/mesh verification has succeeded.
+    """
+    from msplatform.components.single_reflection_tof.geometry import resolve_downstream_geometry
+    from msplatform.contracts.rigid_transform import FramedPosition, FramedVector, RigidTransform
+    from msplatform.io.file_identity import canonical_json_sha256
+
+    layout = assembly.composition_plan
+    selected = layout['scope']['instance_ids']
+    names = [name for name in selected if layout['components'][name]['project_id'] == 'single_reflection_tof']
+    if not names:
+        return None
+    if len(names) != 1:
+        raise ValueError('COMSOL detector observation requires exactly one selected TOF component')
+    if (not isinstance(geometry_validation, Mapping) or set(geometry_validation) != {'position_mm', 'normal_abs'}
+            or geometry_validation['position_mm'] != 1e-6):
+        raise ValueError('detector observation requires frozen 1e-6 mm geometry validation')
+    name = names[0]
+    design = assembly.components_resolved[name]
+    face = resolve_downstream_geometry(design['geometry_mm'], design['coordinate_convention'],
+                                       design['rings'], design['electrodes_v'])['detector_active_face']
+    instances = [row for row in layout['recipe']['instances'] if row['instance_id'] == name]
+    members = [row for row in projection['members'] if row['instance_id'] == name and row['member_id'] == 'detector']
+    if len(instances) != 1 or len(members) != 1 or members[0]['representation_role'] != 'physical_solid':
+        raise ValueError('authored detector requires one projected physical detector member')
+    transform = instances[0]['transform']
+    if members[0]['transform'] != transform:
+        raise ValueError('detector geometry transform differs from the frozen Assembly')
+    pose = RigidTransform.from_contract(transform)
+    frame = layout['components'][name]['local_frame_id']
+    if pose.from_frame_id != frame or pose.to_frame_id != projection['assembly_frame_id']:
+        raise ValueError('detector frame does not match the field projection')
+    center = pose.transform_position(FramedPosition(frame, tuple(face['center_mm']))).coordinates_mm
+    normal = pose.transform_vector(FramedVector(frame, tuple(face['normal']))).components
+    return {'surface_id': 'detector_active_face', 'instance_id': name, 'member_id': 'detector',
+            'frame_id': pose.to_frame_id, 'center_mm': list(center), 'normal': list(normal),
+            'radius_mm': face['radius_mm'], 'geometry_validation': dict(geometry_validation),
+            'component_resolved_sha256': canonical_json_sha256(design),
+            'component_interface_sha256': canonical_json_sha256(layout['components'][name]),
+            'qualification': 'authored_surface_native_boundary_unverified'}
 
 
 def prepare_assembly_pulse(assembly: Assembly, background: OpenedArtifact, on: OpenedArtifact, *,
@@ -98,6 +144,8 @@ def prepare_assembly_pulse(assembly: Assembly, background: OpenedArtifact, on: O
                 'components_source': assembly.components_source}
     if project_assembly_geometry(snapshot, outer_box_mm=off['projection']['outer_box_mm']) != off['projection']:
         raise ValueError('field basis does not match the selected Assembly')
+    if off.get('geometry_validation') != active.get('geometry_validation'):
+        raise ValueError('field bases have different geometry validation')
     r0, r1 = off['request'], active['request']
     if any(r0[key] != r1[key] for key in ('relative_permittivity', 'exterior', 'mesh', 'study')):
         raise ValueError('field workpoints differ beyond electrode voltages')
@@ -150,6 +198,7 @@ def prepare_assembly_pulse(assembly: Assembly, background: OpenedArtifact, on: O
     return {'schema_version': 1, 'role': 'comsol_assembly_pulse_plan', 'field_status': 'prepared_not_executed',
             'background': off, 'on': active, 'pulse_groups': pulse_groups, 'drive': dict(drive),
             'source': source_plan, 'numerics': dict(numerics), 'observation_times_us': list(times),
+            'detector_active_face': _authored_detector_face(assembly, off['projection'], off.get('geometry_validation')),
             'native': {'background_solution_tag': off['solution_tag'], 'on_solution_tag': active['solution_tag'],
                        'vacuum_selection': 'assembly_reference_vacuum', 'members': members}}
 
@@ -419,6 +468,13 @@ def _freeze_particle_epoch(session: Any, original: Mapping[str, Any]) -> dict:
     return frozen
 
 
+def _comsol_version_label(value: Any) -> str:
+    """Accept only COMSOL 6.4 version strings, preserving actual build text."""
+    if not isinstance(value, str) or not re.fullmatch(r'(?:COMSOL Multiphysics )?6\.4(?: \(Build: [0-9]+\))?', value):
+        raise ValueError('unsupported COMSOL native version')
+    return value if value.startswith('COMSOL ') else 'COMSOL ' + value
+
+
 def _execute_particle_trace(session: Any, *, background: OpenedArtifact, plan: dict, epoch_record: dict,
                             epoch_us: float, position_atol_m: float, velocity_atol_m_s: float,
                             limits: dict) -> dict:
@@ -461,6 +517,7 @@ def _execute_particle_trace(session: Any, *, background: OpenedArtifact, plan: d
     task = session.declare_file(session.input_dir / 'particle_task.m', 'required_evidence')
     output = session.declare_file(session.result_dir / 'assembly_particles.csv', 'required_evidence')
     facts = session.declare_file(session.result_dir / 'assembly_particle_facts.json', 'required_evidence')
+    native_release = session.declare_file(session.result_dir / 'assembly_release.txt', 'required_evidence')
     call = 'trace_assembly_particles(' + ','.join(map(matlab_text, (plan_path, model['path'], release, session.result_dir))) + ')'
     task.write_text('addpath(' + matlab_text(launcher.parent.parent / 'matlab') + ');\n' + call + ';\n', encoding='utf-8', newline='\n')
     host = json.dumps({name: str(getattr(session.context, name)) for name in
@@ -476,6 +533,8 @@ def _execute_particle_trace(session: Any, *, background: OpenedArtifact, plan: d
                             arguments=args, role='COMSOL', stage='solver', limits=limits, immutable_input_records=guards)
     except BaseException as error:
         primary = error
+        error.failure_output_paths = [*getattr(error, 'failure_output_paths', ()),
+            *(path for path in (output, facts, native_release) if path.is_file())]
         raise
     finally:
         try:
@@ -484,41 +543,59 @@ def _execute_particle_trace(session: Any, *, background: OpenedArtifact, plan: d
             if primary is None:
                 raise
             primary.add_note('COMSOL diagnostic preservation failed: ' + repr(error))
-    for record in guards:
-        verify_record('COMSOL particle immutable input', record)
-    require_launcher_completion(completion, session.run_id)
-    if 'STATUS=PASS' not in report.read_text(encoding='utf-8-sig'):
-        raise ValueError('COMSOL particle launcher failed')
-    native_facts = json.loads(facts.read_text(encoding='utf-8-sig'))
-    version = native_facts.get('comsol_version')
-    if (not isinstance(version, str) or not version.startswith('6.4') or native_facts.get('study_completed') is not True
-            or native_facts.get('particle_count') != len(initial)
-            or native_facts.get('stored_times_us') != plan['observation_times_us']
-            or native_facts.get('boundary_policy') != 'metal_and_outer_freeze_ideal_pass'):
-        raise ValueError('COMSOL native facts differ from the frozen plan or supported version')
-    result = read_observations(output, initial_states=initial, epoch_us=epoch_us,
-        backend_version='COMSOL ' + version, observation_times_us=plan['observation_times_us'],
-        position_atol_m=position_atol_m, velocity_atol_m_s=velocity_atol_m_s,
-        boundary_policy=native_facts['boundary_policy'])
-    write_particle_data(session.result_dir, result, metadata={'schema_version': 2,
-        'initial_state_basis': 'native_birth_verified', 'frame_id': plan['background']['projection']['assembly_frame_id'],
-        'clock': {'basis': 'experiment_relative', 'unit': 's', **plan['source']['clock']}})
-    canonical = read_particle_data(session.result_dir)
-    summary = session.declare_file(session.result_dir / 'particle_integrity.json', 'required_evidence')
-    write_json_atomic(summary, {'execution_status': result.execution_status, 'data_integrity': result.data_integrity,
-                                'statistics': summarize_particle_data(canonical)})
-    records = {'observations': file_record(output, 'required_evidence'), 'integrity': file_record(summary, 'required_evidence'),
-               'native_facts': file_record(facts, 'required_evidence'),
-               'plan': plan_record, 'release': release_record, 'clock_epoch': frozen_epoch}
-    for name in ('initial_states.parquet', 'terminal_states.parquet', 'events.parquet', 'trajectories.h5', 'execution.json'):
-        records['particle_data_' + name.replace('.', '_')] = file_record(session.result_dir / name, 'required_evidence')
-    products = [str(output), str(summary), str(facts)] + [str(session.result_dir / name) for name in
-        ('initial_states.parquet', 'terminal_states.parquet', 'events.parquet', 'trajectories.h5', 'execution.json')]
-    return {'status': 'success', 'summary': {'native_execution': 'succeeded', 'data_integrity': result.data_integrity},
-            'output_paths': products, 'required_output_paths': products,
-            'retention_preserve_paths': [], 'manifest_extra_fields': {'products': {'trajectory': {
-                'schema_version': 1, 'kind': 'trajectory_result', 'status': 'complete',
-                'metadata': {'backend': 'comsol', 'data_integrity': result.data_integrity}, 'data': records}}}}
+    try:
+        for record in guards:
+            verify_record('COMSOL particle immutable input', record)
+        require_launcher_completion(completion, session.run_id)
+        if 'STATUS=PASS' not in report.read_text(encoding='utf-8-sig'):
+            raise ValueError('COMSOL particle launcher failed')
+        native_facts = json.loads(facts.read_text(encoding='utf-8-sig'))
+        version = native_facts.get('comsol_version')
+        if (not isinstance(version, str) or not re.fullmatch(r'(?:COMSOL Multiphysics )?6\.4(?: \(Build: [0-9]+\))?', version) or native_facts.get('study_completed') is not True
+                or native_facts.get('particle_count') != len(initial)
+                or native_facts.get('stored_times_us') != plan['observation_times_us']
+                or native_facts.get('boundary_policy') != 'metal_and_outer_freeze_ideal_pass'):
+            raise ValueError('COMSOL native facts differ from the frozen plan or supported version')
+        detector = plan.get('detector_active_face')
+        detector_faces = native_facts.get('detector_faces')
+        if detector is not None:
+            if (native_facts.get('detector_observation_native') is not True or
+                    not isinstance(detector_faces, (int, list)) or isinstance(detector_faces, bool)):
+                raise ValueError('native detector boundary evidence is missing')
+            if isinstance(detector_faces, int):
+                detector_faces = [detector_faces]
+            if (not detector_faces or any(type(face) is not int or face <= 0 for face in detector_faces)
+                    or len(set(detector_faces)) != len(detector_faces)):
+                raise ValueError('native detector boundary evidence is invalid')
+        elif native_facts.get('detector_observation_native') not in (None, False):
+            raise ValueError('native detector evidence has no frozen authored surface')
+        result = read_observations(output, initial_states=initial, epoch_us=epoch_us,
+            backend_version=_comsol_version_label(version), observation_times_us=plan['observation_times_us'],
+            position_atol_m=position_atol_m, velocity_atol_m_s=velocity_atol_m_s,
+            boundary_policy=native_facts['boundary_policy'], detector_contract=detector)
+        write_particle_data(session.result_dir, result, metadata={'schema_version': 2,
+            'initial_state_basis': 'native_birth_verified', 'frame_id': plan['background']['projection']['assembly_frame_id'],
+            'clock': {'basis': 'experiment_relative', 'unit': 's', **plan['source']['clock']}})
+        canonical = read_particle_data(session.result_dir)
+        summary = session.declare_file(session.result_dir / 'particle_integrity.json', 'required_evidence')
+        write_json_atomic(summary, {'execution_status': result.execution_status, 'data_integrity': result.data_integrity,
+                                    'statistics': summarize_particle_data(canonical)})
+        records = {'observations': file_record(output, 'required_evidence'), 'integrity': file_record(summary, 'required_evidence'),
+                   'native_facts': file_record(facts, 'required_evidence'),
+                   'plan': plan_record, 'release': release_record, 'clock_epoch': frozen_epoch}
+        for name in ('initial_states.parquet', 'terminal_states.parquet', 'events.parquet', 'trajectories.h5', 'execution.json'):
+            records['particle_data_' + name.replace('.', '_')] = file_record(session.result_dir / name, 'required_evidence')
+        products = [str(output), str(summary), str(facts), str(native_release)] + [str(session.result_dir / name) for name in
+            ('initial_states.parquet', 'terminal_states.parquet', 'events.parquet', 'trajectories.h5', 'execution.json')]
+        return {'status': 'success', 'summary': {'native_execution': 'succeeded', 'data_integrity': result.data_integrity},
+                'output_paths': products, 'required_output_paths': products,
+                'retention_preserve_paths': [], 'manifest_extra_fields': {'products': {'trajectory': {
+                    'schema_version': 1, 'kind': 'trajectory_result', 'status': 'complete',
+                    'metadata': {'backend': 'comsol', 'data_integrity': result.data_integrity}, 'data': records}}}}
+    except BaseException as error:
+        error.failure_output_paths = [*getattr(error, 'failure_output_paths', ()),
+            *(path for path in (output, facts, native_release) if path.is_file())]
+        raise
 
 
 def _validate_failed_basis_evidence(manifest: Mapping[str, Any], summary: Mapping[str, Any],

@@ -472,6 +472,12 @@ pd = mphparticle(model, 'dataset', 'pdset1');
 
 - 显式指定目标时间或事件，不用`outersolnum='end'`假定只取最后时间步。
 - NaN按粒子终止语义单独统计，不能简单删除后宣称全部通过。
+- 6.4 的 Wall `Freeze` 可保留碰撞位置和速度；`cpt.fs`、`cpt.st` 在返回的各采样行中可能已是最终状态，
+  不能将其当成该行时刻的状态。以显式停止时间和保留6D构造终态，不由稀疏采样插值猜碰撞。
+  `AuxiliaryField` (`fieldVariableName`、`R=0`、`Integrate=WithRespectToTime`) 可由指定 Wall 的
+  `caux_<aux-tag>` / `daux_<aux-tag>` 在接触时置位。2026-11-27独立三粒子零力盒实测结合原解析解验证通过，
+  只证明此机制；实际仪器仍须校验作者观察面与原生面归属。自动求解前必须确认实际mesh绑定；
+  `geom1, nomesh` 的两次实验虽返回粒子ID，坐标和标记却为空，不能以owner正常退出冒充求解成功。
 - 用粒子ID配对，不依赖返回顺序。
 - `mphparticle` 的 `evaluate` 不能当作任意粒子 ID 列表。本机 6.4 小模型中，正整数表示抽取数量，
   `evaluate=1` 返回的并非 ID 1，向量 `[59 1]` 被拒；先回读 `cpt.pidx` 和初值再判断身份。

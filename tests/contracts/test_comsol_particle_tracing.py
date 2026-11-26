@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from msplatform.backends.comsol.assembly_particle_tracing import _basis_mesh_limit, _freeze_particle_epoch, _native_exact_count, _rows, _validate_failed_basis_evidence, prepare_assembly_pulse
+from msplatform.backends.comsol.assembly_particle_tracing import _basis_mesh_limit, _comsol_version_label, _freeze_particle_epoch, _native_exact_count, _rows, _validate_failed_basis_evidence, _authored_detector_face, prepare_assembly_pulse
 from msplatform.backends.comsol.assembly_field_export import _validate_field_solution_source, validate_grid
 from msplatform.backends.comsol.particle_data import read_observations
 from msplatform.physics import CONSTANTS
@@ -19,6 +19,14 @@ COLUMNS = ('particle_id','native_particle_index','instrument_time_us','x_mm','y_
 
 
 class ComsolParticleTracingTests(unittest.TestCase):
+    def test_actual_comsol_version_label_is_accepted_without_widening(self):
+        self.assertEqual(_comsol_version_label('COMSOL Multiphysics 6.4 (Build: 293)'),
+                         'COMSOL Multiphysics 6.4 (Build: 293)')
+        self.assertEqual(_comsol_version_label('6.4'), 'COMSOL 6.4')
+        for value in ('6.40', '6.3', 'COMSOL Multiphysics 6.4.1', 'prefix 6.4', True):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                _comsol_version_label(value)
+
     def test_epoch_without_role_is_frozen_in_native_owner(self):
         from msplatform.io.manifest_records import file_record
         with tempfile.TemporaryDirectory() as directory:
@@ -153,7 +161,8 @@ class ComsolParticleTracingTests(unittest.TestCase):
                       observation_times_us=[0.0, 1.0, 2.0, 3.0])
         with patch('msplatform.backends.comsol.assembly_particle_tracing.Assembly', SimpleNamespace), \
              patch('msplatform.backends.comsol.assembly_particle_tracing.project_assembly_geometry', return_value=projection), \
-             patch('msplatform.backends.comsol.assembly_particle_tracing.validate_component_particle_state_rows', return_value=SimpleNamespace(rows=[row])):
+             patch('msplatform.backends.comsol.assembly_particle_tracing.validate_component_particle_state_rows', return_value=SimpleNamespace(rows=[row])), \
+             patch('msplatform.backends.comsol.assembly_particle_tracing._authored_detector_face', return_value=None):
             with patch('msplatform.backends.comsol.assembly_particle_tracing._workpoint', side_effect=[off, on]):
                 plan = prepare_assembly_pulse(assembly, None, None, **kwargs)
             self.assertEqual(plan['background']['request']['group_voltages'][1]['voltage_v'], 200)
@@ -167,12 +176,86 @@ class ComsolParticleTracingTests(unittest.TestCase):
             with patch('msplatform.backends.comsol.assembly_particle_tracing._workpoint', side_effect=[off, changed]), self.assertRaisesRegex(ValueError, 'independent MPH'):
                 prepare_assembly_pulse(assembly, None, None, **kwargs)
 
+    def test_authored_detector_frozen_from_validated_assembly(self):
+        from msplatform import assembly, components
+        from msplatform.backends.comsol.assembly_geometry import project_assembly_geometry
+        path = Path(__file__).resolve().parents[2] / 'src/msplatform/examples/oa_split_tof_native_small_v1.json'
+        study = json.loads(path.read_text(encoding='utf8'))
+        instrument = assembly.assemble(study['recipe'], {k: components.resolve_component(v)
+                                        for k, v in study['component_requests'].items()})
+        snapshot = {'composition_plan': instrument.composition_plan,
+                    'components_resolved': instrument.components_resolved,
+                    'components_source': instrument.components_source}
+        box = {'min': [-400, -400, -100], 'max': [400, 400, 920]}
+        projection = project_assembly_geometry(snapshot, outer_box_mm=box)
+        validation = {'position_mm': 1e-6, 'normal_abs': 1e-6}
+        face = _authored_detector_face(instrument, projection, validation)
+        self.assertEqual(face['surface_id'], 'detector_active_face')
+        self.assertEqual(face['center_mm'], [69.01362184380704, 0, 0])
+        self.assertEqual(face['normal'], [0, 0, 1])
+        self.assertEqual(face['radius_mm'], 40)
+        self.assertEqual(face['qualification'], 'authored_surface_native_boundary_unverified')
+        changed = copy.deepcopy(projection)
+        member = next(m for m in changed['members'] if m['instance_id'] == 'tof' and m['member_id'] == 'detector')
+        member['transform']['translation_mm'][0] += 1
+        with self.assertRaisesRegex(ValueError, 'transform'):
+            _authored_detector_face(instrument, changed, validation)
+        with self.assertRaisesRegex(ValueError, 'geometry validation'):
+            _authored_detector_face(instrument, projection, {'position_mm': 1e-5, 'normal_abs': 1e-6})
+
     def test_basis_voltage_rows_reject_duplicate_or_nonfinite(self):
         row = {'instance_id': 'oa', 'electrode_group_id': 'plate', 'voltage_v': 10.0}
         self.assertEqual(_rows({'group_voltages': [row]}), {('oa', 'plate'): 10.0})
         for rows in ([row, row], [{**row, 'voltage_v': float('nan')}]):
             with self.assertRaises(ValueError):
                 _rows({'group_voltages': rows})
+
+    def test_native_detector_flag_hit_zero_and_missing(self):
+        source = [{'particle_id': 9, 'species_id': 'ion', 'time_s': 0.0,
+                   'position_m': [0.001, 0.002, 0.003], 'velocity_m_s': [1.0, 2.0, 3.0],
+                   'mass_kg': 1e-25, 'charge_state': 1, 'charge_c': 1.602176634e-19,
+                   'weight': 1.0, 'parent_particle_id': None, 'lineage_status': 'primary_birth'}]
+        detector = {'surface_id': 'detector_active_face', 'instance_id': 'tof', 'member_id': 'detector', 'normal': [0, 0, 1]}
+        kwargs = dict(initial_states=source, epoch_us=10, backend_version='COMSOL 6.4',
+                      observation_times_us=[10, 12], position_atol_m=1e-12, velocity_atol_m_s=1e-9,
+                      boundary_policy='metal_and_outer_freeze_ideal_pass', detector_contract=detector)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'native.csv'
+            def write(flag, status=2):
+                with path.open('w', newline='', encoding='utf8') as stream:
+                    writer = csv.writer(stream); writer.writerow((*COLUMNS, 'detector_flag'))
+                    writer.writerow([9, 1, 10, 1, 2, 3, 1, 2, 3, 1, status, 11, 0])
+                    writer.writerow([9, 1, 12, 1.2, 2, 3, 1, 2, 3, 1, status, 11, flag])
+            write(1)
+            hit = read_observations(path, **kwargs)
+            self.assertEqual(hit.data_integrity['detector_observation']['status'], 'complete')
+            self.assertEqual(hit.terminal_states[0]['physical_outcome'], 'detected')
+            self.assertEqual(hit.events[0]['time_s'], 1e-6)
+            self.assertEqual(hit.events[0]['position_m'], [0.0012, 0.002, 0.003])
+            write_particle_data(Path(directory), hit, metadata={'schema_version': 2,
+                'initial_state_basis': 'native_birth_verified', 'frame_id': 'world',
+                'clock': {'basis': 'experiment_relative', 'unit': 's'}})
+            self.assertEqual(len(read_particle_data(Path(directory))['events']), 1)
+            write(0)
+            miss = read_observations(path, **kwargs)
+            self.assertEqual(miss.data_integrity['detector_observation']['status'], 'complete')
+            self.assertEqual(miss.events, [])
+            self.assertEqual(miss.terminal_states[0]['physical_outcome'], 'unknown')
+            miss_dir = Path(directory) / 'miss'; miss_dir.mkdir()
+            write_particle_data(miss_dir, miss, metadata={'schema_version': 2,
+                'initial_state_basis': 'native_birth_verified', 'frame_id': 'world',
+                'clock': {'basis': 'experiment_relative', 'unit': 's'}})
+            self.assertEqual(summarize_particle_data(read_particle_data(miss_dir))['detection_efficiency']['numerator_count'], 0)
+            write('nan')
+            missing = read_observations(path, **kwargs)
+            self.assertEqual(missing.data_integrity['detector_observation']['status'], 'incomplete')
+            self.assertEqual(missing.data_integrity['detector_observation']['missing_particle_ids'], [9])
+            write(1, status=1)
+            with self.assertRaisesRegex(ValueError, 'contradicts'):
+                read_observations(path, **kwargs)
+            write(1)
+            with self.assertRaisesRegex(ValueError, 'verified detector contract'):
+                read_observations(path, **{**kwargs, 'detector_contract': None})
 
     def test_realistic_observations_preserve_missing_terminal_and_initial_binding(self):
         source = [{'particle_id': 9, 'species_id': 'ion', 'time_s': 0.0,
@@ -193,6 +276,9 @@ class ComsolParticleTracingTests(unittest.TestCase):
             write(1)
             active = read_observations(path, **kwargs)
             self.assertEqual(active.data_integrity['status'], 'complete')
+            self.assertEqual(active.data_integrity['detector_observation'], {
+                'schema_version': 1, 'status': 'unavailable', 'cohort_particle_ids': [9],
+                'missing_particle_ids': [], 'reason': 'detector_observation_unsupported'})
             self.assertEqual(active.terminal_states[0]['stop_reason'], 'time_limit')
             self.assertEqual(active.terminal_states[0]['attribution_status'], 'unavailable')
             self.assertAlmostEqual(active.trajectories['position_m'][1, 0], .0012)

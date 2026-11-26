@@ -21,7 +21,7 @@ _COLUMNS = ('particle_id', 'native_particle_index', 'instrument_time_us', 'x_mm'
 
 def read_observations(path: Path, *, initial_states: list[dict], epoch_us: float, backend_version: str,
                       observation_times_us: list[float], position_atol_m: float, velocity_atol_m_s: float,
-                      boundary_policy: str) -> TraceResult:
+                      boundary_policy: str, detector_contract: dict | None = None) -> TraceResult:
     """Read published native rows with exact IDs and classify missing facts explicitly.
 
     A verified Freeze wall preserves impact 6D; missing or other stopped states
@@ -44,8 +44,16 @@ def read_observations(path: Path, *, initial_states: list[dict], epoch_us: float
         raise ValueError('source particle IDs must be unique positive integers')
     with Path(path).open(encoding='utf-8-sig', newline='') as stream:
         reader = csv.DictReader(stream)
-        if tuple(reader.fieldnames or ()) != _COLUMNS:
+        columns = tuple(reader.fieldnames or ())
+        monitored = columns == (*_COLUMNS, 'detector_flag')
+        if columns != _COLUMNS and not monitored:
             raise ValueError('COMSOL particle columns differ from the native contract')
+        if monitored != (detector_contract is not None):
+            raise ValueError('native detector flags require their verified detector contract')
+        if monitored and (not isinstance(detector_contract, dict) or
+                detector_contract.get('surface_id') != 'detector_active_face' or
+                not detector_contract.get('instance_id') or not detector_contract.get('member_id')):
+            raise ValueError('verified detector contract is invalid')
         rows = list(reader)
     grouped: dict[int, list[dict[str, Any]]] = {pid: [] for pid in source}
     indices = {}
@@ -55,6 +63,7 @@ def read_observations(path: Path, *, initial_states: list[dict], epoch_us: float
             time = float(raw['instrument_time_us'])
             stop = float(raw['solver_stop_time_us'])
             state = [float(raw[k]) for k in _COLUMNS[3:9]]
+            detector_flag = float(raw['detector_flag']) if monitored else None
         except (ValueError, TypeError, KeyError) as error:
             raise ValueError('invalid native particle observation') from error
         if (pid not in source or idx < 1 or present not in (0, 1) or status not in range(5)
@@ -64,8 +73,9 @@ def read_observations(path: Path, *, initial_states: list[dict], epoch_us: float
             raise ValueError('native particle index mapping changed or duplicated')
         indices[pid] = idx
         grouped[pid].append({'time_s': (time - epoch_us) * 1e-6, 'state': state, 'present': bool(present),
-                             'status': status, 'stop_s': (stop - epoch_us) * 1e-6 if math.isfinite(stop) else None})
-    terminals, samples, missing = [], [], []
+                             'status': status, 'stop_s': (stop - epoch_us) * 1e-6 if math.isfinite(stop) else None,
+                             'detector_flag': detector_flag})
+    terminals, samples, missing, detector_missing, events = [], [], [], [], []
     for pid, initial in source.items():
         entries = grouped[pid]
         if any(a['time_s'] >= b['time_s'] for a, b in zip(entries, entries[1:])):
@@ -91,7 +101,20 @@ def read_observations(path: Path, *, initial_states: list[dict], epoch_us: float
         complete = active or frozen
         if not complete:
             missing.append(pid)
+            if monitored:
+                detector_missing.append(pid)
             continue
+        if monitored:
+            flags = [entry['detector_flag'] for entry in entries]
+            if any(flag not in (0.0, 1.0) for flag in flags) or any(a > b for a, b in zip(flags, flags[1:])):
+                detector_missing.append(pid)
+                detected = False
+            else:
+                detected = flags[-1] == 1.0
+                if detected and not frozen:
+                    raise ValueError('native detector flag contradicts terminal Freeze status')
+        else:
+            detected = False
         state = final['state'] if complete else None
         terminals.append({'particle_id': pid, 'species_id': initial['species_id'],
                           'position_m': None if state is None else [v * 1e-3 for v in state[:3]],
@@ -102,13 +125,26 @@ def read_observations(path: Path, *, initial_states: list[dict], epoch_us: float
                           'attribution_method': 'unavailable', 'attribution_status': 'unavailable',
                           'backend_version': backend_version, 'native_termination_code': None if final is None else str(final['status']),
                           'native_entity_id': None, 'detail': None if final is None else f"native_stop_time_s={final['stop_s']}"})
+        if detected:
+            terminal = terminals[-1]
+            terminal.update(physical_outcome='detected', component_id=detector_contract['instance_id'],
+                            electrode_id=detector_contract['member_id'], surface_id=detector_contract['surface_id'],
+                            attribution_method='native_detector_wall_auxiliary', attribution_status='known')
+            normal_velocity = sum(a * b for a, b in zip(terminal['velocity_m_s'], detector_contract['normal'], strict=True))
+            direction = (normal_velocity > 0) - (normal_velocity < 0)
+            event = dict(terminal, event_kind='detector', event_sequence=1, crossing_direction=direction)
+            events.append(event)
     arrays = {'particle_id': np.array([s[0] for s in samples], dtype=np.int64),
               'time_s': np.array([s[1] for s in samples], dtype=np.float64),
               'position_m': np.array([s[2] for s in samples], dtype=np.float64).reshape(-1, 3),
               'velocity_m_s': np.array([s[3] for s in samples], dtype=np.float64).reshape(-1, 3)}
-    return TraceResult(list(source.values()), terminals, [], arrays, 'succeeded',
-                       {'status': 'incomplete' if missing else 'complete', 'mother_count': len(source),
+    from msplatform.results.detector_observation import detector_observation
+    detector_status = ('unavailable' if not monitored else 'incomplete' if detector_missing else 'complete')
+    detector_reason = ('detector_observation_unsupported' if not monitored else
+                       'detector_observation_incomplete' if detector_missing else None)
+    return TraceResult(list(source.values()), terminals, events, arrays, 'succeeded',
+                       {'status': 'incomplete' if missing or detector_missing else 'complete', 'mother_count': len(source),
                         'terminal_record_count': len(terminals), 'missing_terminal_particle_ids': missing,
-                        'detector_observation': {'schema_version': 1, 'status': 'unavailable',
-                            'cohort_particle_ids': sorted(source), 'missing_particle_ids': [],
-                            'reason': 'detector_observation_unsupported'}})
+                        'missing_detector_observation_particle_ids': detector_missing,
+                        'detector_observation': detector_observation(detector_status, sorted(source),
+                            missing_particle_ids=detector_missing, reason=detector_reason)})

@@ -1195,6 +1195,33 @@ Study SHA256 `A7D75ED3EAB3E198D4196868B9CE1AA9A787554DC83CEA5088C545B81EACB9E6`�
 其余阶段按fail-fast阻塞或等待已启动阶段结束。不能报告完整Changed PASS；本轮定向38项的软件结果单独成立。
 最终安装仍按B交付的普通wheel及sdist重建wheel、仓外参考链与B资源准入执行，不把该环境失败冒充科学失败。
 
+### B4 COMSOL检测器生产候选（ffc819cb 后，待真实CPT）
+
+`backends/comsol/assembly_particle_tracing.py` 从同一Assembly冻结作者有效面/变换/组件身份，
+原OFF/ON几何投影和geometry_validation必须一致，不从其他solver或粒子坐标猜观察面。
+`matlab/trace_assembly_particles.m` 在实际守护模型上检查propagated detector∩vacuum的完整三角面网格，
+使用原冻结1e-6mm/normal_abs阈值判定平面、有限半径和法向；所选面Wall Freeze+辅助标记，
+其余metal/outer/ideal原互斥全覆盖合同不变，原source/pulse/field/mesh不变。
+`backends/comsol/particle_data.py` 仅在新合同及标记存在时提供检测观测，使用原生stop-time/Freeze6D生成事件；
+旧CSV仍unavailable，缺标记为incomplete，不能补猜。
+实测官方完整版本串 `COMSOL Multiphysics 6.4 (Build: 293)` 现被严格接受，release预声明并保留失败输出。
+
+`.venv/Scripts/python.exe -m unittest tests.contracts.test_comsol_particle_tracing tests.contracts.test_comsol_workflow -q`
+17 PASS（2.086s），Ruff PASS；含已监测0-hit、命中事件Parquet重读、缺标记/无合同拒绝及旧CSV。
+同一public `msplatform validate` 对原仓外COMSOL作者和已恢复OFF/ON场预检通过，留存
+`evidence/comsol-detector-candidate-preflight.json`；native_verified=false仍明确保留。
+
+完整面网格0Compute只读run `20261127_042330__analysis__comsol__boundary-e6dbd2af84c3` owner成功，
+manifest SHA256 `CD89FA7095715AF07565897FB1456F837CCACFD2E1909ECBA6B15E8C34116AFA`，未保存原模型。
+候选382/436分别181/375三角、112/215顶点，平面误差0、最大半径40.000000000000014mm、无退化；
+其余8候选平面偏差1mm被拒。旧Cylinder采样只选382，不足以全覆盖，因此生产从现场网格求集合而非硬编码ID。
+独立盒子v3的32,438网格元素及真实mesh1绑定、三粒子6D/stop/flag解析结果已独立复核。
+这些均不冒充仪器CPT新代码已通过；下一步从本主题冻结安装候选，使用原作者/场和新运行身份实际复验。
+
+Changed汇总现已结束：FAIL（357.728s），5阶段通过、3失败、15阻断。
+除1个缺Lua安装测试外，22个field worker/transport/tracking软件fixture仍使用已退役composite，
+在进入测试主体前被guard拒绝；其后行为未验证。Agent2正按split公共输入迁移fixture，不放宽退役守卫。
+
 ### B2 显式SIMION场引用与只读科学准入（8e4020b4 后，提交见 Git）
 
 `recipes/native_assets.py` 复用已有source-free FieldBundle机器合同冻结小manifest；
