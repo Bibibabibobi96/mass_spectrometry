@@ -90,6 +90,13 @@ Store只拥有小原生引用缓存与完整科学结果；PA/MPH继续由原执
 `native_worker_evidence.json` 是真实worker退出观察，均不冒充Compute/Fly次数。
 无回执或回执缺件时观察数明确不可用，不能从缓存标志推断原生调用数。
 
+SIMION原生配方可在 `[field_source.reference]` 显式选择已发布的 `fields`：
+`path` 为相对于作者TOML的manifest路径，`sha256` 为该manifest摘要，`product_id = "fields"`。
+预检从同一冻结Study重建模型，核对drive/clock、几何、数值配置、场设计与全部工作点成员；
+执行全程持有原owner保护并跳过几何构建、模型准备和求场。缺件或不匹配时明确拒绝，不回退求场。
+来源producer与当前tracer实现分别记入provenance；路径本身不决定科学身份。
+这项科学场准入不代表任意历史PA文件均可直接交供应商重开，运行载体仍须符合公共原生输入隔离合同。
+
 ## 结果与复用
 
 每个运行独立保留 resolved.json、provenance.json、execution.json、summary.json、run_manifest.json，

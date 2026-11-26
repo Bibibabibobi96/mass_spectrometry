@@ -228,15 +228,17 @@ def normalize_sampling(value: Any) -> dict:
 
 
 def freeze_field_source(source: Mapping[str, Any], author_path: Path) -> dict:
-    """Freeze an optional COMSOL reference; reject ignored references for SIMION."""
+    """Freeze an explicit source manifest without copying its native payload."""
     if (not isinstance(source, Mapping) or set(source) not in ({'kind'}, {'kind', 'reference'},
                                                                 {'kind', 'reference', 'collision_reference', 'sampling'})
             or source.get('kind') not in {'simion_native', 'comsol_native'}):
         raise ValueError('unsupported native field source')
     if 'reference' not in source:
         return {'kind': source['kind']}
-    if source['kind'] != 'comsol_native':
-        raise ValueError('field reference is supported only for COMSOL native fields')
+    if source['kind'] == 'simion_native':
+        if set(source) != {'kind', 'reference'}:
+            raise ValueError('SIMION field reference cannot contain a second source')
+        return {'kind': source['kind'], 'reference': freeze_collision_reference(source['reference'], author_path)}
     result = {'kind': source['kind'], 'reference': freeze_field_reference(source['reference'], author_path)}
     if 'collision_reference' in source:
         result.update(collision_reference=freeze_collision_reference(source['collision_reference'], author_path),

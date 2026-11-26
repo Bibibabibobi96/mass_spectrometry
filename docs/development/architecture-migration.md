@@ -1195,6 +1195,26 @@ Study SHA256 `A7D75ED3EAB3E198D4196868B9CE1AA9A787554DC83CEA5088C545B81EACB9E6`�
 其余阶段按fail-fast阻塞或等待已启动阶段结束。不能报告完整Changed PASS；本轮定向38项的软件结果单独成立。
 最终安装仍按B交付的普通wheel及sdist重建wheel、仓外参考链与B资源准入执行，不把该环境失败冒充科学失败。
 
+### B2 显式SIMION场引用与只读科学准入（8e4020b4 后，提交见 Git）
+
+`recipes/native_assets.py` 复用已有source-free FieldBundle机器合同冻结小manifest；
+`workflows/simion_field_reference.py::admit_simion_field_reference` 从冻结Study独立重编完整模型，
+校验field numerics/design/bank、成员载荷、downstream空间身份、clock与owner，不另建配方权威。
+`native_tracing.py` 接入预检与全生命周期原生source guard；选择引用时跳过geometry/model/solve，
+缺件无回退。原field producer与当前trace实现分别记账，路径不进入科学身份。
+
+实际命令 `.venv/Scripts/python.exe -m unittest tests.contracts.test_simion_field_reference tests.contracts.test_native_workflow tests.contracts.test_native_asset_recipe -q`
+14 PASS（12.187s），Ruff与diff-check PASS。执行图夹具断言track期间guard仍持有且三个构建入口均不调用；
+该夹具不是真实native轨迹。
+真实发布场 `20261127_031207__sim__simion__fields-9cb9e717bba3` 的manifest SHA256
+`FEEE0346CDED73BFE8E950FE191AB1C9401915D51D3EFFBD1BDE18F9D4CDBA80`，
+60项实际数据与完整科学合同只读准入PASS；原生操作0，不改原manifest/载荷。
+留存的可复制命令 `.venv/Scripts/python.exe C:/Users/Liao/msplatform-artifacts/architecture-b-20261127/explicit-simion-source-study/verify_readonly.py`，
+同目录保留作者TOML、原Study/clock字节及 `readonly-admission.json`。
+首次外部作者误用绝对manifest path被现有公开规则拒绝；改成作者相对路径后通过，未放宽解析规则。
+此准入仅证明科学源可复用，旧flight_tube/detector PA0 family不可直接供应商重开；
+下一步使用原owner受管派生新的standalone零势载体，保留原PA族及其原删除owner，不重复昂贵Refine。
+
 ### B4 真实CPT失败证据收尾（7761a3a4 后，提交见 Git）
 
 入口 `execution/owner.py::resume_failed_evidence_finalization` 限定已审阅的

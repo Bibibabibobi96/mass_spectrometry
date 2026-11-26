@@ -249,11 +249,12 @@ def _options(raw: dict, *, resolved: bool = False) -> None:
             {"kind", "reference", "collision_reference", "sampling"}):
         raise ValueError("field_source requires kind and an optional explicit field reference")
     if "reference" in source:
-        if source["kind"] != "comsol_native":
-            raise ValueError("field references are supported only for COMSOL native fields")
+        if source["kind"] == "simion_native" and (raw['particle_tracer'] != 'simion'
+                or raw['field_assembly_strategy'] != 'native_domain_composition'):
+            raise ValueError('SIMION field references require the SIMION native composition')
         if resolved:
-            from .native_assets import validate_field_reference
-            validate_field_reference(source["reference"])
+            from .native_assets import validate_collision_reference, validate_field_reference
+            (validate_collision_reference if source['kind'] == 'simion_native' else validate_field_reference)(source["reference"])
         else:
             _keys(source["reference"], {"path", "sha256", "product_id"}, "field reference")
     if "collision_reference" in source:
@@ -295,9 +296,10 @@ def _build(raw: dict, study_snapshot: dict, resources: dict) -> dict:
                   resource_snapshots=copy.deepcopy(resources), assembly=compiled)
     identity = {key: value for key, value in result.items() if key not in {"label", "study", "resource_snapshots"}}
     if "reference" in result["field_source"]:
-        from .native_assets import field_reference_identity
+        from .native_assets import collision_reference_identity, field_reference_identity
         identity["field_source"] = {"kind": result["field_source"]["kind"],
-                                    "reference": field_reference_identity(result["field_source"]["reference"])}
+                                    "reference": (collision_reference_identity if result['field_source']['kind'] == 'simion_native'
+                                                  else field_reference_identity)(result["field_source"]["reference"])}
         if "collision_reference" in result["field_source"]:
             from .native_assets import collision_reference_identity
             identity["field_source"].update(

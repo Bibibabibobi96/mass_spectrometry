@@ -115,6 +115,14 @@ def preflight_native(recipe: dict, *, context=None) -> dict:
     # Pure field validation uses the same planner as real execution; it creates
     # no run, native file or resource grant.
     plan_fields_execution(model, numerics=study["numerics"]["fields"])
+    if 'reference' in recipe['field_source']:
+        if context is None:
+            raise ValueError('explicit SIMION field reference requires an execution workspace for owner validation')
+        from msplatform.execution.native_source_guard import guard_native_source
+        from .simion_field_reference import admit_simion_field_reference
+        with guard_native_source(recipe['field_source']['reference']['reference'], expected_kind='field_bundle',
+                                 expected_artifact_root=context.workspace/'artifacts') as artifact:
+            admit_simion_field_reference(recipe, expected_model=model, field_numerics=study['numerics']['fields'], artifact=artifact)
     from msplatform.backends.simion.tracking_execution import plan_tracking_execution
     # Materialize only the already-frozen small clock inputs for the existing
     # planner's file-record contract; no native process or run is created.
@@ -286,7 +294,27 @@ def _execute(store, recipe, context, run_id, work, reservation, source_revision)
                 return action()
 
         field_implementation = {key: value for key, value in implementation.items() if key != "workflow"}
-        if not comsol:
+        if not comsol and 'reference' in recipe['field_source']:
+            from msplatform.backends.simion.model import compile_prepared_model
+            from msplatform.execution.native_source_guard import guard_native_source
+            from .simion_field_reference import admit_simion_field_reference
+            frozen = recipe['field_source']['reference']
+            field = stack.enter_context(guard_native_source(frozen['reference'], expected_kind='field_bundle',
+                                                           expected_artifact_root=context.workspace/'artifacts'))
+            scientific_drive = copy.deepcopy(study['drive'])
+            scientific_drive.pop('clock_authority')
+            authority = json.loads(base64.b64decode(recipe['resource_snapshots']['instrument_clock_authority_v1.json']['bytes_base64']))
+            scientific_drive['clock'].update(clock_epoch_id=authority['clock_epoch_id'], authority_sha256=authority['authority']['sha256'])
+            requested_model = compile_prepared_model(compiled, instrument.components_resolved, drive=scientific_drive, physics=study['physics'])
+            field = admit_simion_field_reference(recipe, expected_model=requested_model,
+                                                 field_numerics=study['numerics']['fields'], artifact=field)
+            field_key = canonical_json_sha256(dict(stage='explicit_simion_field_reference',
+                manifest_sha256=frozen['snapshot']['sha256'], product_id=frozen['reference']['product_id'],
+                model_identity_sha256=requested_model.document['model_identity_sha256'], field_numerics=study['numerics']['fields']))
+            receipts['field'] = dict(asset_id=None, task_key=field_key, reused=True, reuse_scope='explicit_field_reference',
+                                     reference=field.reference, producer=field.producer)
+            _write(work / 'native_stages.json', receipts)
+        elif not comsol:
             geometry_key = canonical_json_sha256({"stage": "geometry", "compiled": compiled.__dict__, "implementation": field_implementation})
             geometry, receipts["geometry"] = _native_reference(store, stack, geometry_key,
                 lambda: invoke(lambda: simion.build_geometry(compiled, context=context)), kind="geometry_artifact", raw_root=context.workspace / "artifacts", claims=control_ids, calls=calls)
