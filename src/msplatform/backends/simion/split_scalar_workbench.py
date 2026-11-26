@@ -142,6 +142,59 @@ def _basis_references(binding):
     return list(unique.values())
 
 
+def _basis_original_owner_refs(source):
+    """Protect only declared prepared owners and the captured-basis failed owner."""
+    from msplatform.backends.comsol.assembly_field_export import resolve_model_source_manifests
+    from msplatform.io.manifest_records import (validate_file_record, verify_record,
+                                                require_completed_terminal_publication)
+    import json
+
+    metadata = source.metadata
+    captured = (metadata.get('scope') == 'co_resident_stationary_workpoint'
+                and metadata.get('identity_basis') == 'identity_captured_after_failed_python_validation')
+    declared = source.data_records.get('prepared_manifest')
+    if declared is None:
+        if captured:
+            raise ValueError('captured co-resident basis requires its prepared owner')
+        return []
+    prepared = validate_file_record(declared, 'prepared owner')
+    current = dict(source.reference['manifest'], path=str(source.manifest_location))
+    verify_record('field solution manifest', current)
+    require_completed_terminal_publication(Path(current['path']))
+    published = json.loads(Path(current['path']).read_text(encoding='utf-8-sig'))
+    selected = published.get('products', {}).get(source.reference['product_id'], {})
+    if (published.get('role') != 'simulation_run_manifest' or published.get('status') != 'success'
+            or selected.get('kind') != 'field_solution' or selected.get('status') != 'complete'
+            or selected.get('metadata') != metadata or selected.get('data', {}).get('prepared_manifest') != prepared
+            or prepared not in [*published.get('inputs', {}).values(), *published.get('outputs', [])]):
+        raise ValueError('field solution prepared owner binding differs')
+    verify_record('prepared owner', prepared)
+    path = Path(prepared['path'])
+    if not path.is_absolute():
+        raise ValueError('prepared owner manifest must be absolute')
+    require_completed_terminal_publication(path)
+    document = json.loads(path.read_text(encoding='utf-8-sig'))
+    product = document.get('products', {}).get('model', {})
+    if (document.get('role') != 'simulation_run_manifest' or document.get('status') != 'success'
+            or product.get('kind') != 'prepared_model' or product.get('status') != 'complete'
+            or product.get('metadata', {}).get('backend') != 'comsol'):
+        raise ValueError('prepared owner product differs')
+    if not captured:
+        return [prepared]
+    current, failed = resolve_model_source_manifests(source)
+    if failed is None:
+        raise ValueError('captured co-resident basis requires its failed original owner')
+    recovered = json.loads(Path(current['path']).read_text(encoding='utf-8-sig'))
+    request = recovered['inputs']['execution_request']
+    verify_record('captured recovery request', request)
+    request_doc = json.loads(Path(request['path']).read_text(encoding='utf-8-sig'))
+    references = request_doc.get('capacity', {}).get('source_references', [])
+    if (not isinstance(references, list)
+            or sum(item.get('manifest_record') == prepared for item in references) != 1):
+        raise ValueError('captured recovery does not bind its prepared owner')
+    return [failed, prepared]
+
+
 def prepare_split_scalar_world(fields, *, scalar_field_basis, context):
     """Publish a verified five-slot collision workbench without Refine or Fly."""
     from contextlib import ExitStack
@@ -185,8 +238,18 @@ def prepare_split_scalar_world(fields, *, scalar_field_basis, context):
         stack.enter_context(guarded_file_identity(request["path"], expected_bytes=request["bytes"],
                                                    expected_sha256=request["sha256"]))
         refs = _basis_references(binding)
+        original_owners = {}
         for ref, kind in refs:
-            stack.enter_context(guard_native_source(ref, expected_kind=kind, expected_artifact_root=root))
+            guarded_ref = stack.enter_context(guard_native_source(ref, expected_kind=kind, expected_artifact_root=root))
+            if kind == 'field_solution':
+                for record in _basis_original_owner_refs(guarded_ref):
+                    path = str(Path(record['path']).resolve())
+                    if path in original_owners and original_owners[path] != record:
+                        raise ValueError('conflicting captured original owner identity')
+                    if path not in original_owners:
+                        stack.enter_context(guarded_file_identity(path, expected_bytes=record['bytes'],
+                                                               expected_sha256=record['sha256']))
+                        original_owners[path] = record
         source, model, binding, carriers = _admit_world(reference, scalar_field_basis)
         planning = context.execution_root / "split-scalar-world-plan"
         projection = project_split_scalar_world(model, binding, carriers=carriers,
@@ -195,7 +258,9 @@ def prepare_split_scalar_world(fields, *, scalar_field_basis, context):
         plan = plan_split_scalar_world_build(projection, run_directory=planning, seed_record=seed,
             native_path_resource=planning / "inputs/native_sources/native_run_path.lua")
         ids = tuple(row["operation_id"] for row in plan.operations)
-        sources = [dict(manifest_record=reference["manifest"]), dict(manifest_record=origin_reference["manifest"])] + [dict(manifest_record=ref["manifest"]) for ref, _ in refs]
+        sources = ([dict(manifest_record=reference["manifest"]), dict(manifest_record=origin_reference["manifest"])]
+                   + [dict(manifest_record=ref["manifest"]) for ref, _ in refs]
+                   + [dict(manifest_record=record) for record in original_owners.values()])
         action_record = file_record(Path(execute_split_scalar_world.__code__.co_filename).resolve(), "required_evidence")
         result = run_managed_stage(context, descriptor=dict(project="instrument_assembly", mode="fields_only", software=["SIMION"]),
             run_id=datetime.now().strftime("%Y%m%d_%H%M%S") + "__sim__simion__world-" + uuid4().hex[:12],

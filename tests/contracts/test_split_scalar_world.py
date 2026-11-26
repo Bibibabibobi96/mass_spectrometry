@@ -190,7 +190,7 @@ class SplitScalarWorldTests(SplitScalarBindingTests):
         carriers = {role: {"path": str(self.helper.root / (role + ".pa")), "bytes": 10, "sha256": "0" * 64}
                     for role in ("flight_tube", "reflectron", "accelerator", "detector")}
         origin = reference("origin")
-        source = SimpleNamespace(reference=field, metadata={"ground_representation": "analytic_zero_on_native_geometry",
+        source = SimpleNamespace(reference=field, data_records={}, metadata={"ground_representation": "analytic_zero_on_native_geometry",
                                                             "ground_source_reference": origin})
         stage = {"limits": {"transient_run_directory_bytes": 1}, "artifact_retention": {}}
         context = SimpleNamespace(tools={"simion": __import__("pathlib").Path(sys.executable)},
@@ -206,6 +206,159 @@ class SplitScalarWorldTests(SplitScalarBindingTests):
         self.assertEqual(call["expected_operation_ids"], ("background_build", "background_verify", "collision_iob_build", "collision_iob_verify"))
         self.assertEqual(len(call["source_references"]), 7)
         self.assertIn(origin["manifest"], [row["manifest_record"] for row in call["source_references"]])
+
+    def test_captured_basis_original_owners_protected_until_success_or_failure(self):
+        from contextlib import nullcontext
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        import sys
+        from pathlib import Path
+        from msplatform.backends import simion
+        from msplatform.backends.simion.model_execution import _protected_source
+        from msplatform.io.manifest_records import file_record
+        binding = self.resolve()
+        def ref(name):
+            return {'manifest':{'path':str(self.helper.root/(name+'.json')),'bytes':1,'sha256':'0'*64}, 'product_id':name}
+        field, origin, geometry = ref('field'), ref('origin'), ref('geometry')
+        binding['geometry_reference']=geometry
+        for name in ('off','on'):
+            binding['bases'][name]['reference']=ref(name)
+            binding['bases'][name]['field_solution_reference']=ref(name+'_solution')
+        carriers={role:{'path':str(self.helper.root/(role+'.pa')),'bytes':10,'sha256':'0'*64}
+                  for role in ('flight_tube','reflectron','accelerator','detector')}
+        source=SimpleNamespace(reference=field,metadata={'ground_representation':'analytic_zero_on_native_geometry',
+                                                         'ground_source_reference':origin})
+        roots=[];records=[]
+        for name in ('original_failed','original_prepared'):
+            root=self.helper.root/name;root.mkdir();path=root/'run_manifest.json';path.write_text(name,encoding='utf8')
+            (root/'member.dat').write_text('protected',encoding='utf8')
+            roots.append(root);records.append(file_record(path,'required_evidence'))
+        context=SimpleNamespace(tools={'simion':Path(sys.executable)},workspace=self.helper.root,
+                                execution_root=self.helper.root/'exec')
+        selection={'geometry_artifact':geometry,'samples':{'off':ref('off'),'on':ref('on')}}
+        stage={'limits':{'transient_run_directory_bytes':1},'artifact_retention':{}}
+        session=SimpleNamespace(artifact_root=self.helper.root,capacity_session={'status':'active',
+            'protected_paths':[str(path) for path in roots],'source_protection_leases':[]})
+        def consumed(manifest,**kwargs):
+            return {'run_directory':str(Path(manifest['path']).parent)}
+        should_fail=[True]
+        def run_owner(*args,**kwargs):
+            authorities=[value['manifest_record'] for value in kwargs['source_references']]
+            for record,root in zip(records,roots,strict=True):
+                self.assertIn(record,authorities)
+                _protected_source(session,record,required_paths=[root/'member.dat'])
+                with self.assertRaises(PermissionError):Path(record['path']).write_text('mutate')
+            if should_fail[0]: raise RuntimeError('inert owner failure')
+            return {'manifest':{'path':'inert'}}
+        with patch('msplatform.execution.stage_policy.read_stage_policy',return_value=(stage,{})), \
+             patch('msplatform.execution.native_source_guard.guard_native_source',side_effect=lambda *a,**k:nullcontext(source)), \
+             patch('msplatform.backends.simion.split_scalar_workbench._admit_world',return_value=(source,self.model,binding,carriers)), \
+             patch('msplatform.backends.simion.split_scalar_workbench._basis_original_owner_refs',return_value=records), \
+             patch('msplatform.backends.simion.model_execution.resolve_consumed_run_capacity_owner',side_effect=consumed), \
+             patch('msplatform.execution.owner.run_managed_stage',side_effect=run_owner), \
+             patch('msplatform.results.artifacts.open_artifact',return_value='inert published'):
+            with self.assertRaisesRegex(RuntimeError,'inert owner failure'):
+                simion.prepare_split_scalar_world(field,scalar_field_basis=selection,context=context)
+            for record in records:
+                with Path(record['path']).open('ab'): pass
+            should_fail[0]=False
+            self.assertEqual(simion.prepare_split_scalar_world(field,scalar_field_basis=selection,context=context),
+                             'inert published')
+        for record in records:
+            with Path(record['path']).open('ab'): pass
+        with patch('msplatform.backends.simion.model_execution.resolve_consumed_run_capacity_owner',side_effect=consumed):
+            session.capacity_session['protected_paths']=[]
+            with self.assertRaisesRegex(ValueError,'no active owner protection'):
+                _protected_source(session,records[0],required_paths=[roots[0]/'member.dat'])
+
+    def test_real_capacity_owner_protects_and_releases_both_source_roots(self):
+        import tempfile
+        from pathlib import Path
+        from types import SimpleNamespace
+        from msplatform.execution.capacity_ledger import initialize_capacity_ledger
+        from msplatform.execution.capacity_protection import load_capacity_protection_leases
+        from msplatform.execution.capacity_session import create_capacity_session, exit_capacity_session
+        from msplatform.backends.simion.model_execution import _protected_source
+        from tests.contracts.test_cross_root_protection import CrossRootProtectionTests
+        with tempfile.TemporaryDirectory() as directory:
+            base=Path(directory);factory=CrossRootProtectionTests()
+            run1,ref1=factory.source(base/'failed-original')
+            run2,ref2=factory.source(base/'prepared-original')
+            target=base/'consumer';target.mkdir();initialize_capacity_ledger(target,objects=[])
+            run=target/'world';run.mkdir()
+            for fail in (False,True):
+                session=create_capacity_session(target,run,owner='inert-world',committed_new_bytes=0,
+                                                source_references=[ref1,ref2])
+                context=SimpleNamespace(artifact_root=target,capacity_session=session)
+                try:
+                    for origin,ref in ((run1,ref1),(run2,ref2)):
+                        _protected_source(context,ref['manifest_record'],required_paths=[origin/'run_config.json'])
+                        view=load_capacity_protection_leases(origin.parents[3])
+                        self.assertTrue(view['audit'])
+                    if fail: raise RuntimeError('inert failure')
+                except RuntimeError:
+                    self.assertTrue(fail)
+                finally:
+                    exit_capacity_session(session)
+                for root in (base/'failed-original',base/'prepared-original'):
+                    leases=load_capacity_protection_leases(root)
+                    self.assertEqual(leases['audit'],[])
+
+    def test_normal_solution_declared_prepared_owner_and_forgery_rejection(self):
+        from types import SimpleNamespace
+        from msplatform.backends.simion.split_scalar_workbench import _basis_original_owner_refs
+        from msplatform.execution.terminal_publication import publish_terminal_state
+        from msplatform.io.manifest_records import file_record
+        root=self.helper.root;prepared_root=root/'prepared-owner';prepared_root.mkdir()
+        prepared_doc={'role':'simulation_run_manifest','status':'success','products':{'model':{
+            'kind':'prepared_model','status':'complete','metadata':{'backend':'comsol'}}},'inputs':{},'outputs':[]}
+        publish_terminal_state(prepared_root,{'status':'success'},prepared_doc)
+        prepared=file_record(prepared_root/'run_manifest.json','required_evidence')
+        meta={'scope':'single_stationary_workpoint'}
+        def make_source(bound=True):
+            solution_root=root/('single-solution' if bound else 'unbound-solution');solution_root.mkdir()
+            manifest={'role':'simulation_run_manifest','status':'success','inputs':{'prepared':prepared} if bound else {},
+                'outputs':[],'products':{'solution':{'kind':'field_solution','status':'complete',
+                'metadata':meta,'data':{'prepared_manifest':prepared}}}}
+            publish_terminal_state(solution_root,{'status':'success'},manifest)
+            path=solution_root/'run_manifest.json'
+            return SimpleNamespace(metadata=meta,data_records={'prepared_manifest':prepared},manifest_location=path,
+                reference={'manifest':file_record(path,'required_evidence'),'product_id':'solution'})
+        source=make_source()
+        self.assertEqual(_basis_original_owner_refs(source),[prepared])
+        bad=copy.deepcopy(source.data_records);bad['prepared_manifest']['sha256']='0'*64
+        altered=SimpleNamespace(metadata=meta,data_records=bad,manifest_location=source.manifest_location,reference=source.reference)
+        with self.assertRaisesRegex(ValueError,'binding differs'):_basis_original_owner_refs(altered)
+        prepared_bytes=(prepared_root/'run_manifest.json').read_bytes()
+        (prepared_root/'run_manifest.json').write_text('{}',encoding='utf8')
+        with self.assertRaises(AssertionError):_basis_original_owner_refs(source)
+        (prepared_root/'run_manifest.json').write_bytes(prepared_bytes)
+        with self.assertRaisesRegex(ValueError,'binding differs'):_basis_original_owner_refs(make_source(bound=False))
+        self.assertEqual(_basis_original_owner_refs(SimpleNamespace(metadata=meta,data_records={})),[])
+
+    def test_captured_owner_chain_reads_real_records_and_refuses_tamper(self):
+        import json
+        from pathlib import Path
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from msplatform.backends.simion.split_scalar_workbench import _basis_original_owner_refs
+        from msplatform.io.manifest_records import file_record
+        path=Path(r'C:\Users\Liao\mass_spectrometry\artifacts\batch_b_comsol_split_small_20261127\artifacts\assemblies\instrument_assembly\runs\20261127_023910__analysis__comsol__basis-recovery-e7a42a44d31e\run_manifest.json')
+        if not path.is_file(): self.skipTest('local recovered basis absent')
+        doc=json.loads(path.read_text(encoding='utf8'));product=doc['products']['background']
+        source=SimpleNamespace(metadata=product['metadata'],data_records=product['data'],manifest_location=path,
+            reference={'manifest':file_record(path,'required_evidence'),'product_id':'background'})
+        owners=_basis_original_owner_refs(source)
+        self.assertEqual([Path(value['path']).parent.name for value in owners],
+            ['20261127_015508__sim__comsol__pulse-basis-fd136b758ffa',
+             '20261127_012811__build__comsol__assembly-model-1339a08c0e14'])
+        with patch('msplatform.backends.comsol.assembly_field_export.resolve_model_source_manifests',return_value=(source.reference['manifest'],None)):
+            with self.assertRaisesRegex(ValueError,'failed original owner'):_basis_original_owner_refs(source)
+        other=SimpleNamespace(metadata={'scope':'single_stationary_workpoint'},data_records={})
+        self.assertEqual(_basis_original_owner_refs(other),[])
+        bad=copy.deepcopy(product['data']);bad['prepared_manifest']['sha256']='0'*64
+        altered=SimpleNamespace(metadata=source.metadata,data_records=bad,manifest_location=path,reference=source.reference)
+        with self.assertRaises((AssertionError,ValueError)):_basis_original_owner_refs(altered)
 
     def test_worker_publishes_borrowed_lineage_with_inert_owner(self):
         from pathlib import Path

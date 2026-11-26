@@ -1430,6 +1430,67 @@ SHA256 `66987517181E2187D6D7B543971D1B749BF06D6A40902664B3AB9BA715E840F4`；
 - 根复跑 `python -m unittest tests.contracts.test_comsol_world_scalar_contract tests.contracts.test_comsol_scalar_multigrid tests.contracts.test_assembly_scalar_owner_fill tests.contracts.test_simion_prepared_model -q`：35 tests，7.107s，PASS。Agent 1 的26 scalar tests/Ruff PASS；fixture补明确product_id，不放宽生产校验。真实023910 background/on只读解析通过，不等于export/Fly通过。
 - 下一步：独立复核、提交解析修复后建新的普通wheel和隔离env2继续CS；b1保持冻结。最终代码仍须普通wheel/sdist重建wheel离仓验收、实际Changed必要门禁、最终CLOC和BA逐项对账。本节不能作为整批B完成声明，不启动C。
 
+### B6 旧资格入口的精确边界（ad385834 后只读对账）
+
+Agent 4 沿真实入口复核，BA14 的结论是**新链不继承 Candidate/Formal 总等级**，不能写成全仓旧 Candidate 已全部退役。一次性调用栈证据在 `C:/Users/Liao/msplatform-artifacts/architecture-b-20261127/evidence/b-retirement-final.md`。
+
+| 旧入口 | 本轮状态／剩余入口 |
+|---|---|
+| SIMION `tracking_execution` segmented_upstream/state_relaunch、operations HandoffResult、OA–TOF相关registry/schema | 本轮新执行拒绝跨组件出口再释放；原始母群/坐标/clock与合法分批保留。公共连续入口为`msplatform run`、native_tracing、simion.track。 |
+| 固定五质量single_reflection_mass_spectrum_study / simion.mass_spectrum | 旧新运行及续跑拒绝，历史结果只读；新mass_scan以显式物种/母群运行。 |
+| COMSOL旧composite粒子求解、Formal Validate/retrace/旧MATLAB粒子builder | 对应新求解拒绝；geometry-only/field-only及历史Verify/Publish/Recover按原证据门槛保留；未做MATLAB guard原生正反例，不能宣称这一层真实通过。 |
+| oa_candidate.run_candidate → candidate_simion_stage → run_n100_transport.ps1 | **仍可达的C旧实验**：当前源码以生成N100 ion为本地显式初态做一次整体Fly，未发现消费上游跨组件出口再释放的依据。不能说已全部退役，也不能将旧OATOF_CANDIDATE=PASS作为新链等级。默认COMSOL粒子模式被旧composite guard阻断，完整旧Candidate当前可用性不宣称通过。 |
+| oa_candidate.run_compensation / execute_oatof_compensation.ps1 | 原source.ion三臂独立实验，保留C旧owner；未发现跨组件出口重释依据，不因名称一刀切删除。 |
+| IP–MR registry、accelerator_interface -FullJoint、prepared_joint/trial、assembly/handoff readers | 未迁C活跃链／历史母群、坐标和时钟读取；本轮不能声称全仓segmented清零。普通OA→MR prepare_interface只准备接口。 |
+| RF schema12 recorded-birth | 编译/源/clock/完整母群合同已迁，真实RF recorded Fly未验证。BA06三组合的SSA小N使用原OA源，不等于RF整机native验证；本轮不新增RF研究。 |
+
+门禁事实继续保留：ad385834首轮repository_text_bytes失败于未显示为语义diff的一处CRLF，机械LF后通过；第二轮documentation发现下游新provider README缺根README导航，已补实际链接。第三轮实际完整installed测试仍构造schema11/SFI旧composite正例，被退役guard拒绝。Agent 2仅更新这段验收为owner/native前明确拒绝，保留独立历史reader和RF-IP/IP-MR/offline_scalar，不能为绿灯更改三基场物理或恢复旧框架。该轮gate尚非PASS，最终证据待后续记录。
+
+解析修复提交已为 `ad385834ec8aefb0266c5636b17007ca3806bfd8` 并普通push；其普通wheel已从git archive构建，SHA256 `908f124ec150b757e68ea98b580e8f2c9acd199caeb4c156c016904a995ad2a5`，独立b2安装成功。CS公共CLI新raw `20261127_060451__analysis__comsol__assembly-scalar-c873ceeda982` 已越过旧失败，五网格输入冻结；账本证实因CPT `heavy_stage_active`等待COMSOL重阶段，不能以已创建运行当导出成功。b1 CPT环境未更动。
+
+### B 原生CC通过、CS仍待修复（ad385834 后最新接续）
+
+- **COMSOL→COMSOL已实际通过声明的小N闭环**。固定e95f6705/b1公共CLI运行 `20261127_054319__sim__comsol__pulse-cf4b85430700`；Store `28234aa32d4e45bdb3da93a4883a0167` 为 succeeded/ready。Agent 3用安装后的公开 read_particle_data/summarize_particle_data/analyze_mass_scan 重读，20个发布文件的manifest/SHA闭合，3母群/3初态/3终态/12轨迹样本完整。3个冻结birth的SI位置、速度、质量、电荷、权重与原算法重新采样逐项一致。原OFF/ON场explicit-reference复用，仅生产1个trace，未新求场。
+- 原生worker PID9988/creation与Store观测相同，exit0，host released；仅核对CC自身3 claims、reservation、binding/writer、workflow容量lease均已结束，不要求正使用同源的CS释放其合法保护。usage最后running/1649.538s是陈旧快照，不作当前活性或最终耗时依据。3.08GB MPH只对原record/manifest身份，不重新读取或哈希。
+- 检测面382/436，观测complete，0 hit，总权重3；native status2的三个终态为unknown，停止时刻22.373134803、23.603974615、21.232021468 us。原pulse开始80.051373 us，**全部早于ON停止**；每粒子的0、80.051、90、100 us采样中，停止后的坐标/速度为Freeze保留状态，不能当仍在飞行或据此授予ON响应验证。峰形/校准not_applicable；不改birth来制造命中。证据 `C:/Users/Liao/msplatform-artifacts/architecture-b-20261127/evidence/cc-installed-acceptance.json` / `.md`。
+- **CS仍未通过**。ad385834/b2新raw `20261127_060451__analysis__comsol__assembly-scalar-c873ceeda982` 已成功原生导出OFF五grids，0 Compute；CLI随后在本地support分类失败：grid1索引195007，world `[56,-37,-0.929186803411028]` mm同时属于 `oa/grounded_shield` 和 `tof/common_ground` 实体内部，原FEM mask0。原shape_query严格拒绝不同group interior，不能选一个owner绕过。world/birth已形成support，grid1失败，尚无ON导出/Fly，不能以raw成功代替整链成功。
+- Agent 1确认上述两组OFF/ON均精确0 V；原COMSOL真空由outer扣全部solid（keepsubtract/propagatesel），两组外露边界20/35面、交集为空。新技术选择仅为**多组同电位导体内部填值**：保留完整group集合，每一工作点全部电位严格相等才填；不同或未知继续拒绝；boundary/unsupported不晋升；默认唯一owner查询保持拒绝。prepared CSV labels升级版本2并绑定identity，每次ON复用重新校验全部组电位，不用OFF相等偷偷合并owner。这不改几何/BVP/原电压，不等于原评阅额外批准。
+- 为保护仍在自然收尾的失败Changed gate，在 `C:/Users/Liao/msplatform-artifacts/architecture-b-20261127/overlap-worktree`（detached ad385834）隔离实现；主repo生产与b1/b2安装保持冻结。Agent 1负责3个fill/query/export生产文件及相应v2测试；Agent 5仅负责两个COMSOL recovery fixture（真实8组RF Assembly/provenance与inert launcher），不改生产guard。Agent 2修旧SFI正例为明确拒绝，保留历史pure oracle、reader和IP/MR合法消费者；最终普通双发行验收等新candidate整合后再运行，避免已知非最终版本重复安装。所有未通过门禁保留原log/summary，不能称仅环境问题。
+- 当前矩阵：SSA真实通过、CC真实通过、CS正确性失败待以上最小修复/再验；Goal继续。最终BA01–BA15、必要门禁、普通wheel/sdist重建wheel、完整CLOC、提交和远端同步尚待收尾。不启动C或额外RF研究。
+
+### B3 同电位重叠支持实现验证（隔离候选，待native）
+
+Agent 1在隔离worktree交付六文件：shape_query、assembly_scalar_fill、assembly_field_export及shape_query/scalar_fill/prepared_support测试。Agent 0独立运行shape/scalar/support/owner_fill/multigrid共50项，8.676s PASS；新增world_scalar_contract 8项由Agent 1运行PASS，Ruff/LF PASS。Agent 3独立只读复核未发现阻断正确性缺口。真实point OFF/ON完整双组0V、改变一组拒绝的脚本/结果在 `C:/Users/Liao/msplatform-artifacts/architecture-b-20261127/overlap-point-evidence/check_point.py` 与 `result.json`；不读/哈希MPH。
+
+默认查询继续拒绝多组，显式prepared-query选项只报告完整集合，不授权单一owner。strict interior全参与组电位每工作点精确相等才填；boundary/unsupported保守不填。CSV `index,group_ordinals_v2`严格排序/唯一完整组序号，复用时重查各节点完整几何组和当前电位；support identity绑定v2标签与查询版本，拒绝活动v1复用。保留历史v1原文件只读，不回写。
+
+现有COMSOL实现身份同时进入raw export和support的cache key；本次代码升级将保守使原raw stage miss，需要再次冷导出但仍0场Compute，不为省这次重导出新增作者权威或缓存框架。既有同版本SSA缺件局部/0native复用事实不因此改写。隔离候选先冻结六文件做b3真实CS，主repo仍供原失败gate健康分片自然收尾；等该轮结束后安全快进整合并普通push，不在活跃源闭包下热改。此处软件PASS不能代替CS native PASS。
+
+### B 原生脉冲解析基准与最新CS阻断（0a4b7651 / 9d1556d4）
+
+- 原instrument N3不改birth。另用synthetic N1做受管真实Fly，冻结原pulse起止、0.001us最大步长、100 Da/+1e、10 V/m线性ON场及独立SI分段常加速度解；五个开前／中／关后采样PASS，最大位置误差1.6791164e-8 mm、速度误差3.130741e-6 m/s，均在事先固定的0.0002 mm/0.02 m/s与time 1e-7 us内。0 Refine、0 COMSOL Compute，SIMION8.2.0.11。完整成功run `20261127_062747__analysis__simion__pulse-fly-30ed2c9dc75e`，manifest SHA `419AA7BEDC71B7D02EB9D8512AF40B1946A58D7DB49A2F4703D39162B9C5C3B6`，writers_confirmed、stage complete；原公共canonical IOB/production scalar/pulse回调，无新PA路径。外部 `C:/Users/Liao/msplatform-artifacts/architecture-b-20261127/split-linear-fly-probe/README.md`、run_fly.py、validate.py及authority.json载明精确命令/参数/来源。这只是ON回调机制和数值基准，不是仪器场准确度、命中或Formal资格。
+- 首个微型run `20261127_062623__analysis__simion__pulse-fly-4227fdd7e6ca` native与解析也完成，但漏声明私有IOB seed，retention失败。后续只读核查明确：**已有原success completion**、四worker exit/release，result failed/finalization、manifest checkpoint，容量lease仍active；不得当作无completion失联、覆盖原completion或私改ledger释放。seed由冻结build_iob.lua创建3×3×3，不是复制16MB安装placeholder；与第二run的同生成器/388B seed事后字节完全相等，仅说明after-stop身份，不能称v1原native封存。Agent3在外部recovery-v1做严格只读评估，是否可用原正常_finalize恢复原publication尚待完整审查；目前没有执行维护，没有将v1算合格。v2独立成功保持原记录。
+- overlap实现冻结提交 `0a4b7651986facd1956cf9aaa2c17d811bc7c63f`（六文件），CLOC2.10实际PASS日志 `C:/Users/Liao/msplatform-artifacts/architecture-b-20261127/0a4b7651-cloc.log`。隔离b3普通wheel安装成功，CLI实际已完成OFF/ON五网格原生导出与全部支持派生，原grid1重叠点在两工作点均成功通过；派生requested native_operations=0。
+- b3随后**未进入Fly**，失败 `co-resident computed and cold-reopened native evidence differs`。Agent1逐项核对10个字段及路径均相等；真实MATLAB JSON用 `6.27792E+6`/`7.0E+6`，解析成精确整数值的float6277920/7000000，SIMION COMSOL-source reader仍额外要求Python int，拒绝了合法表示。已限定复用COMSOL现有_native_exact_count的严格正整数、有限、<=2^53检查；不改报告、mesh限额、字段相等性或源manifest，不放宽科学校验。修复候选尚待验证，b4暂不盲跑已知同错。
+- 同时发现0a输出policy字串仍旧unique语义；独立候选 `9d1556d4607c56678d954f167e29e03c27fa36b5` 已统一两producer和active consumer为 `equipotential_dirichlet_solid_interiors_v2`，历史artifact读不变、旧活动policy拒绝。根独立26 tests 10.828s PASS，Ruff PASS；b3环境不热改。仅metadata候选还缺上述native整数表示修复，不能称最终CS通过。
+- 主任务分支仍为ad385834且与origin同步，保持正在自然收尾的旧Changed源闭包；上述两个隔离候选待该轮结束后安全快进整合/普通push。Agent2已修旧entry拒绝/纯历史fixture、7个capabilities split正例，Agent5已修真实8组RF几何provenance recovery与public dispatch fixtures，各自定向PASS，尚待最终代码双发行和相称门禁。当前SSA/CC声明范围真实通过，CS仍正确性失败；Goal未完成。
+
+### B 接续：来源保护与最终软件复验准备（2026-11-27 07时）
+
+- 旧广Changed已自然完整结束，正式结果仍FAIL：PASS7、FAIL4、BLOCKED23、NOT_APPLICABLE19；四machine_contracts分片失败，不把blocked当通过。原 `evidence/final-changed-ad385834-docs.log` 与 `-summary.json`保留。源读取冻结已释放，主分支已安全快进隔离候选链至 `3398c72d7ac49a17668e4be3ae9a036994a00fba` 并普通push，原本地WIP不覆盖。
+- 新source计数修复为 `57152517cacea2e6784fa93eda09a417df9121f5`，根26 tests 10.182s PASS。其普通wheel SHA `80d9d08a19d72df54286dd4b6520d8c3c374947eb04c71451e6d963c0354efdd`，安装b4后实际越过计数检查：OFF raw `20261127_064653__analysis__comsol__assembly-scalar-a79a821798e1`、ON raw `20261127_065051__analysis__comsol__assembly-scalar-37d391b62445` 与十个v2 supports完成。COMSOL源场依旧复用，未新Compute。
+- b4尚未Fly：`20261127_065525__sim__simion__world-8450b7246601` 在进程启动前正确拒绝 `model geometry member has no active owner protection`。两个缺失直接owner为原015508 pulse-basis与012811 prepared-model；顶层恢复product保护不传递。该run summary/manifest/completion均failed、operations/releases为空，实际lease已释放、ledger ready、无b4活动进程；capacity_session日志的active是旧快照。Agent1隔离修复显式核验原来源再加入source_references，原保护guard不动；首轮23个world/binding tests根独立11.550s PASS，随后补审正常来源显式prepared依赖，尚待最终交付/原生重试。
+- 旧gate失败对应fixture已分项处理：COMSOL geometry/prepared/field Source改真实8组RF或真实split Assembly/manifest provenance；recovery两项166.729s PASS、electrostatic8项/root2.175s PASS、stationary11项PASS、geometry7项PASS。publisher补真实非空expected ops与身份负例，5项PASS；Lua empty-surface六场景为末位gsub多返回参数污染，括号取单值后原全部正反例PASS，生产参数未改。SQLite owner-failure fixture明确事务后close，模块2项PASS且本次Temp cleanup成功；原gate唯一持有者未证明，未归因生产子进程或删除残留。
+- Agent2保持历史pure reader/basis/窗口/renderer/oracle，旧schema11/SFI真实复飞及recovery正例改明确guard+owner0；entry3、tracking8（17.993s）、refinement3（13.810s）定向PASS。真正RF-IP场景清除借用split fixture的TOF观察污染，原Lua/HS1/输入反例保留；capabilities7项5.225s PASS。installed probe迁当前split执行、旧路径明确拒绝，并保留RF/IP/MR及历史读；完整发行尚未运行，不以开发树抽取片段冒充installed PASS。
+- 微型v1 benchmark已按原success completion完成一次性私有维护，原completion SHA `E99575C91BBC472D481AA33C7B2BB4874F14A6A29808B1932885D9AB688CB7E5`及字节不变，无产品、physical_qualification仍not_granted。新增seed/audit均入manifest，retention removed=[]，ledger ready/pin/310659 B、原lease消失、result complete/released、公共resume再执行无副作用。原result/journal/completion字节在外部及run audit保全；seed身份仍after-stop对比。不是新增公共恢复能力，不改写首次retention失败历史，不启动vendor、不删文件。外部 `split-linear-fly-probe/recovery-v1/maintenance.py` 与记录保留。
+- 最终验证决定：完成来源保护并冻结最终candidate后，仅运行一次公共实际增量Changed（`ad385834 → final_sha`非空路径），执行目录所选完整适用阶段，内含普通wheel/sdist重建wheel两臂；不另重复full installed、不跑Owner/Repository或大型研究。旧PASS可以作为各自原代码证据，不能拼成官方Changed PASS。最终CLOC/BA对账/实际CS成功仍待完成，Goal保持active。
+
+### B4 显式原owner保护补齐（556303d5 后）
+
+`split_scalar_workbench._basis_original_owner_refs` 仅提取成功field_solution中真实manifest-bound的prepared_manifest；明确依赖才保护，无依赖不扩权。已审captured共驻源继续经原resolver及原recovery request核对failed/prepared双来源，不把顶层保护当传递。原manifest禁写句柄持续到native owner结束，两个原owner显式进入source_references；worker `_protected_source` 原样保留，不复制MPH、不改删除归属。
+
+根在整合后的主工作树运行 `python -m unittest tests.contracts.test_split_scalar_world tests.contracts.test_split_scalar_binding -q`：24 tests，11.147s PASS；真实惰性capacity lease验证消费时受保护、正常/异常结束释放，缺/篡改/未绑定原manifest拒绝，普通明确prepared依赖可用、无依赖不扩权；Ruff PASS。该单元尚待公共已安装b4重试，预期COMSOL原采样/support按真实key复用，必须以实际阶段与worker记录证明；不预先称0native或整链通过。
+
 ### B 累计 CLOC（至 f216a7af，不含后续改动）
 
 基线 `a9d76aa4dcdbaf8099c9ce5aa0585d6fce18c3be` → 结果 `f216a7afd0a3b27be21402915209defa9964d78e`；CLOC 2.10；源日志 `C:/Users/Liao/msplatform-artifacts/architecture-b-20261127/f216a7af-cloc.log`。
