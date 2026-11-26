@@ -57,6 +57,88 @@ def _native_ascii(path: Path) -> Path:
     return path
 
 
+
+def plan_split_scalar_world_build(projection: Mapping[str, Any], *, run_directory: Path,
+                                  seed_record: Mapping[str, Any], native_path_resource: Path) -> NativeStagePlan:
+    """Plan existing native background build/reopen and five-slot world IOB."""
+    root = _native_ascii(run_directory)
+    path_resource = _native_ascii(native_path_resource)
+    if projection.get("role") != "split_scalar_world_projection":
+        raise ValueError("authenticated split scalar world projection required")
+    if (seed_record.get("bytes"), str(seed_record.get("sha256", "")).lower()) != STRUCTURAL_SEEDS[5]:
+        raise ValueError("split scalar world requires the reviewed five-slot seed")
+    _absolute(Path(seed_record["path"]))
+    background = root / "simion/world/background.pa"
+    slots = copy.deepcopy(projection["slots"])
+    if slots[0]["path"] != str(background):
+        raise ValueError("world projection background differs from owned destination")
+    grid = projection["grid"]
+    args = [str(background), *map(str, grid["dimensions"]),
+            *(format(value, ".17g") for value in grid["pitch_mm"]), str(path_resource)]
+    seed = root / "inputs/world_seed/5_instance_seed.iob"
+    control = root / "inputs/world_empty.fly2"
+    iob = root / "simion/world/world.iob"
+    spec = root / "inputs/world_iob.lua"
+    materializations = {str(control): render_restart_fly2([]), str(spec): "return " + lua_value(dict(
+        schema_version=1, role="split_scalar_world_iob_build", instances=slots,
+        background_probes=projection["background_probes"], seed_iob=str(seed), output_iob=str(iob),
+        empty_particle_control=str(control),
+        bootstrap_paths=[str(seed.parent / f"iob_seed_placeholder_{index:02d}.pa0") for index in range(1,6)])) + "\n"}
+    operations = (
+        _operation("background_build", "prepare", ["lua",str(native_resource_path("create_numerical_background.lua")),*args],
+                   [str(background)], "NUMERICAL_CARRIER_REOPEN=PASS"),
+        _operation("background_verify", "prepare", ["lua",str(native_resource_path("reopen_numerical_background.lua")),*args],
+                   [], "NUMERICAL_CARRIER_COLD_REOPEN=PASS"),
+        _operation("collision_iob_build", "prepare", ["lua",str(native_resource_path("build_geometry_iob.lua")),str(spec),"build_geometry",str(path_resource)],
+                   [str(iob),str(iob.with_suffix(".fly2"))], "SINGLE_REFLECTION_GEOMETRY_IOB=PASS"),
+        _operation("collision_iob_verify", "prepare", ["lua",str(native_resource_path("build_geometry_iob.lua")),str(spec),"verify_geometry",str(path_resource)],
+                   [], "SPLIT_SCALAR_WORLD_PRIORITY=PASS"),
+    )
+    return NativeStagePlan(materializations,(dict(source_record=dict(seed_record),destination=str(seed)),),operations,
+        tuple(path for row in operations for path in row["outputs"]))
+
+
+def plan_split_scalar_world_tracking(projection: Mapping[str, Any], *, world_iob_record: Mapping[str, Any],
+                                     program: str, native_source_rows: list[dict], run_directory: Path,
+                                     native_path_resource: Path) -> NativeStagePlan:
+    """Plan a source-bearing copy of the verified five-slot world workbench."""
+    root = _native_ascii(run_directory)
+    path_resource = _native_ascii(native_path_resource)
+    if projection.get("role") != "split_scalar_world_projection":
+        raise ValueError("verified split scalar world projection required")
+    from .split_scalar_workbench import WORLD_SLOTS
+    if projection.get("role_slots") != WORLD_SLOTS or [row.get("role") for row in projection["slots"]] != list(WORLD_SLOTS):
+        raise ValueError("split scalar world slot roles differ")
+    for index, row in enumerate(projection["slots"], 1):
+        if row.get("instance_index") != index or row.get("priority_number") != index:
+            raise ValueError("split scalar world slot priority differs")
+        _native_ascii(Path(row["path"]))
+    seed = _native_ascii(Path(world_iob_record["path"]))
+    if (seed.suffix.lower() != ".iob" or type(world_iob_record.get("bytes")) is not int or world_iob_record["bytes"] <= 0):
+        raise ValueError("verified source-free world IOB record required")
+    _require_sha256(world_iob_record.get("sha256"), "world workbench")
+    if not isinstance(program, str) or not program or not isinstance(native_source_rows, list) or not native_source_rows:
+        raise ValueError("world tracking requires an explicit program and original birth rows")
+    from .resources import structural_seed_path
+    seed_source = structural_seed_path(5)
+    seed_size, seed_digest = STRUCTURAL_SEEDS[5]
+    structural_seed = root / "inputs/world_tracking_seed/5_instance_seed.iob"
+    output = root / "simion/tracking/instrument.iob"
+    spec = root / "inputs/tracking_world_iob.lua"
+    materializations = {str(spec): "return " + lua_value(dict(schema_version=1,
+        role="split_scalar_world_tracking_iob", instances=copy.deepcopy(projection["slots"]),
+        background_probes=copy.deepcopy(projection["background_probes"]), seed_iob=str(structural_seed), output_iob=str(output),
+        world_source_iob=dict(world_iob_record),
+        bootstrap_paths=[str(structural_seed.parent / f"iob_seed_placeholder_{index:02d}.pa0") for index in range(1,6)])) + "\n",
+        str(output.with_suffix(".lua")): program, str(output.with_suffix(".fly2")): render_restart_fly2(native_source_rows)}
+    wrapper = native_resource_path("build_tracking_iob.lua")
+    operations = tuple(_operation(name, "prepare", ["lua",str(wrapper),str(spec),mode,str(path_resource)],
+        [str(output)] if mode == "build" else [], marker)
+        for name, mode, marker in (("build_tracking_iob", "build", "SPLIT_SCALAR_WORLD_TRACKING=PASS"),
+                                  ("verify_tracking_iob", "verify", "SPLIT_SCALAR_WORLD_TRACKING_REOPEN=PASS")))
+    copies = (dict(source_record=dict(path=str(seed_source), bytes=seed_size, sha256=seed_digest), destination=str(structural_seed)),)
+    return NativeStagePlan(materializations, copies, operations, (str(output),))
+
 def plan_geometry_build(compiled: CompiledSimionGeometry, *, run_directory: Path,
                         seed_record: Mapping[str, Any], native_path_resource: Path) -> NativeStagePlan:
     """Plan actual raw builds and source-free IOB save/reopen, without writing.

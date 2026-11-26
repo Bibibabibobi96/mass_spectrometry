@@ -512,8 +512,9 @@ def _compile_split_model(compiled, components, *, drive, physics):
             carrier[label] = row["voltage_v"] if row["kind"] == "static" else row["common_mode_v"] + row["dc_v"]
             if row["kind"] == "rf":
                 rf_groups[instance][label] = 1 if row["polarity"] == 1 else 2
-    rows = [dict(instance_id=instance, electrode_group_id=group, native_targets=all_targets[instance][group], **value)
-            for instance, groups in drive["groups"].items() for group, value in groups.items()]
+    rows = [dict(instance_id=instance, electrode_group_id=group, native_targets=all_targets[instance][group],
+                 **drive["groups"][instance][group])
+            for instance in sorted(drive["groups"]) for group in sorted(drive["groups"][instance])]
     on = {label: (drive["groups"][oa][group]["on_voltage_v"] if drive["groups"][oa][group]["kind"] == "pulse"
                   else drive["groups"][oa][group]["voltage_v"]) for group, label in geometry["electrode_bindings"][oa].items()}
     downstream = copy.deepcopy(compiled)

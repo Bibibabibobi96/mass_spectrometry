@@ -7,3 +7,5 @@ from .operations import prepare_model as prepare_model
 from .operations import solve_fields as solve_fields
 from .operations import track as track
 from .trajectory_analysis import analyze as analyze
+
+from .split_scalar_workbench import prepare_split_scalar_world as prepare_split_scalar_world

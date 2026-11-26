@@ -29,7 +29,8 @@ def run_mixed_species_fly(
     limits: Mapping[str, Any],
     immutable_input_records: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
-    """Stage, fly, census, and remove only this run's verified private copy."""
+    """Retired legacy Fly; historical output readers remain available."""
+    raise ValueError('legacy mass-spectrum Fly is retired; use msplatform run with a mass_scan recipe')
     runtime = session.run_dir / "formal_simion_runtime"
     receipt, staged = stage_verified_simion_runtime(
         artifact_project_root=artifact_project_root, destination=runtime,

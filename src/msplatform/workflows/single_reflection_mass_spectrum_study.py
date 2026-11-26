@@ -364,6 +364,7 @@ def _analysis_outputs(session: RunSession, mode_path: Path, geometry_path: Path,
 
 def _run_action(session: RunSession, *, requested: dict[str, Path], original: dict[str, Any],
                 stage: dict[str, Any], partial_parent: dict[str, Any] | None) -> dict[str, Any]:
+    raise ValueError('legacy mass-spectrum execution is retired; use msplatform run with a mass_scan recipe')
     from msplatform.backends.comsol import oatof_retrace
     from msplatform.backends.simion.mass_spectrum import run_mixed_species_fly
     from msplatform.execution.inputs import freeze_file
@@ -546,7 +547,8 @@ def run(context: ExecutionContext, *, run_id: str, mode_config: Path, resolved_g
         simion_executable: Path, artifact_project_root: Path,
         project_config: Path, formal_assets: Path, baseline: Path, formal_mode: Path,
         solver_numerics: Path, partial_parent: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Run a new normal or authenticated partial-successor mass-spectrum study."""
+    """Retired execution entry; historical analysis remains separately available."""
+    raise ValueError('legacy mass-spectrum run/resume is retired; use msplatform run with a mass_scan recipe')
     from functools import partial
     requested = _requested_paths(mode_config, resolved_geometry, particle_count_policy,
         formal_mph, formal_asset_manifest, simion_executable, artifact_project_root,
@@ -714,6 +716,8 @@ def main() -> None:
     parser.add_argument("--analysis-new-bytes", type=int)
     parser.add_argument("--result-path", type=Path)
     args = parser.parse_args()
+    if args.action in {'run', 'resume'}:
+        parser.error('legacy mass-spectrum run/resume is retired; use msplatform run with a mass_scan recipe')
     context = _context(args)
     if args.action == "resume-finalization":
         result = resume_finalization(context, run_id=args.run_id, result_path=args.result_path)

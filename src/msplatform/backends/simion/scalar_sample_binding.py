@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 from msplatform.backends.simion.collision_overlay import COLLISION_NOTREFINABLE_FLAG, collision_pa_header
 from msplatform.backends.comsol.assembly_electrostatic_model import validate_request
-from msplatform.backends.comsol.assembly_field_export import _check_report
+from msplatform.backends.comsol.assembly_field_export import _check_report, _validate_field_solution_source
 from msplatform.backends.comsol.assembly_field_solution import validate_solution_readback
 from msplatform.backends.comsol.assembly_geometry import _world_bounds
 from msplatform.components.shape_query import shape_relation
@@ -146,6 +146,49 @@ def original_sample_source(item: OpenedArtifact) -> OpenedArtifact | None:
     return original
 
 
+def _co_resident_sources(manifest_record, selected_id):
+    """Verify both separately named workpoints against the same cold native report."""
+    if selected_id not in {'background', 'on'}:
+        raise ValueError('co-resident sample must identify its exact workpoint product')
+    names = ('request', 'projection', 'descriptor', 'geometry_validation', 'reopen_geometry',
+             'reopen_solution', 'solve_pulse_basis', 'reopen_pulse_basis')
+    products = {}
+    for product_id in ('background', 'on'):
+        owner, product, manifest = _small_product({'manifest': manifest_record, 'product_id': product_id},
+                                                   'field_solution', names)
+        class Source:
+            metadata = product['metadata']
+            def data_path(self, name):
+                record = product['data'][name]
+                verify_record(name, record, base_dir=manifest.parent)
+                return record_path(record, base_dir=manifest.parent)
+        if product['metadata'].get('scope') != 'co_resident_stationary_workpoint':
+            raise ValueError('co-resident source scope differs')
+        _validate_field_solution_source(Source())
+        if product['metadata'].get('co_resident_workpoint') != product_id:
+            raise ValueError('co-resident product identity differs')
+        if product['data']['model'] not in [*owner['inputs'].values(), *owner['outputs']]:
+            raise ValueError('co-resident model is not bound by its owner')
+        products[product_id] = product
+    a, b = products['background'], products['on']
+    for key in ('model', 'projection', 'descriptor', 'geometry_validation', 'reopen_geometry', 'solve_pulse_basis', 'reopen_pulse_basis'):
+        if a['data'][key] != b['data'][key]:
+            raise ValueError('co-resident workpoints do not share the same ' + key)
+    base = Path(manifest_record['path']).parent
+    computed = _read(record_path(a['data']['solve_pulse_basis'], base_dir=base))
+    reopened = _read(record_path(a['data']['reopen_pulse_basis'], base_dir=base))
+    fields = ('model_path', 'off_solution', 'on_solution', 'mesh_identity', 'mesh_element_count',
+              'maximum_mesh_elements', 'group_keys', 'off_voltages_v', 'on_voltages_v', 'vacuum_domains')
+    if (computed.get('operation') != 'compute' or computed.get('compute_calls') != 2
+            or reopened.get('operation') != 'reopen' or reopened.get('compute_calls') != 0
+            or any(key not in computed or key not in reopened or computed[key] != reopened[key] for key in fields)
+            or type(computed['mesh_element_count']) is not int or type(computed['maximum_mesh_elements']) is not int
+            or not 0 < computed['mesh_element_count'] <= computed['maximum_mesh_elements']
+            or Path(computed['model_path']).resolve() != record_path(a['data']['model'], base_dir=base).resolve()):
+        raise ValueError('co-resident computed and cold-reopened native evidence differs')
+    return products[selected_id]
+
+
 def verify_scalar_sample(reference: Mapping[str, Any] | OpenedArtifact,
                          projection: Mapping[str, Any], *,
                          check_workpoint: Callable[[dict[str, Any]], None],
@@ -164,13 +207,20 @@ def verify_scalar_sample(reference: Mapping[str, Any] | OpenedArtifact,
     if validate_request(projection, request) != request:
         raise ValueError('scalar request differs')
     source_record = item.data_records['field_solution_manifest']
-    source_ref = {'manifest': dict(source_record, path=str(item.data_path('field_solution_manifest'))), 'product_id': 'solution'}
+    selected_id = meta.get('field_solution_product_id', 'solution')
+    source_ref = {'manifest': dict(source_record, path=str(item.data_path('field_solution_manifest'))), 'product_id': selected_id}
     owner, source, source_path = _small_product(source_ref, 'field_solution',
         ('request', 'projection', 'geometry_validation', 'reopen_geometry', 'reopen_solution'))
     smeta = source['metadata']
-    if (smeta.get('backend') != 'comsol' or smeta.get('scope') != 'single_stationary_workpoint'
+    if (smeta.get('backend') != 'comsol' or smeta.get('scope') not in {'single_stationary_workpoint', 'co_resident_stationary_workpoint'}
             or smeta.get('field_status') != 'solved' or smeta.get('native_reopen_verified') is not True):
         raise ValueError('solved reopened source workpoint required')
+    if smeta['scope'] == 'single_stationary_workpoint':
+        if selected_id != 'solution':
+            raise ValueError('single stationary sample must select solution product')
+    else:
+        if _co_resident_sources(source_ref['manifest'], selected_id) != source:
+            raise ValueError('co-resident selected solution differs')
     for key in ('request', 'projection', 'geometry_validation', 'reopen_geometry', 'reopen_solution'):
         if any(item.data_records[key][k] != source['data'][key][k] for k in ('bytes', 'sha256')):
             raise ValueError('scalar source workpoint copy differs: ' + key)

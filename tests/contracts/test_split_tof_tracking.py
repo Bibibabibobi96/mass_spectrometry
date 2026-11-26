@@ -27,6 +27,23 @@ def native_particle(index, pid):
 
 
 class SplitTofTrackingTests(unittest.TestCase):
+    def test_planner_rejects_id_above_lua_log_abi_before_field_work(self):
+        from msplatform.backends.simion.tracking_execution import plan_tracking_execution
+        from types import SimpleNamespace
+        with patch('msplatform.backends.simion.tracking_execution.require_prepared_model', return_value={}), \
+             patch('msplatform.backends.simion.tracking_execution.model_geometry', return_value=SimpleNamespace(frontend_geometry={})):
+            with self.assertRaisesRegex(ValueError, '2147483647'):
+                plan_tracking_execution(None, particles={'rows':[{'particle_id':2**31}]}, clock_records={},
+                    propagation={}, observations={}, numerics={})
+
+    @unittest.skipUnless(Path('C:/Program Files/SIMION-2020/lua.exe').is_file(), 'standalone Lua unavailable')
+    def test_actual_lua_integer_log_boundary(self):
+        result = subprocess.run(['C:/Program Files/SIMION-2020/lua.exe', '-e',
+            "print(string.format('%d',2147483647));print(string.format('%d',2147483648))"],
+            cwd=Path(__file__).parent, timeout=15, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines(), ['2147483647', '-2147483648'])
+
     def test_complete_tof_guard_is_limited_to_actual_instrument(self):
         from msplatform.assembly.handoff import HandoffResult
         from msplatform.backends.simion.tracking_execution import _guard_complete_tof_flight
@@ -88,6 +105,45 @@ class SplitTofTrackingTests(unittest.TestCase):
         _, config = _native_field_analyzer_config({}, design, geometry, doc['components_resolved']['tof'], model_document=doc)
         self.assertEqual(config['instance_roles']['detector'], 4)
         self.assertEqual(config['geometry']['detector_z_mm'], geometry['detector_active_face']['native']['center_mm'][2])
+
+        # Render the real compiled model with synthetic owned records; no Fly.
+        from msplatform.backends.simion.field_bank import field_bank
+        from msplatform.backends.simion.field_identity import working_point_member_id
+        from msplatform.backends.simion.resources import native_resource_path
+        from msplatform.execution.resources import resource_path
+        from msplatform.backends.simion.tracking_execution import _render_tracking_controls
+        from tests.contracts.test_split_scalar_tracking import basis
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            record = lambda name: dict(path=str(root/name), exists=True, bytes=123, sha256='a'*64)
+            domains = [row['domain_id'] for row in design['domains']]
+            frontend = {domain:{working_point_member_id(point):record('frontend.'+working_point_member_id(point)+'.pa')
+                        for point in design['working_points']} for domain in domains}
+            downstream = {}
+            for role in ('flight_tube','reflectron','detector'):
+                family = [record(role+s) for s in ('.pa#','.pa0','.pa1','.pa-surf')] if role != 'reflectron' else []
+                downstream[role] = dict(carrier_record=family[1] if family else record(role+'.pa'), family_records=family)
+            sources = {key:native_resource_path(name).read_text(encoding='utf8') for key,name in dict(
+                analyzer_component_source='oatof_analyzer_component.lua',pulse_hook_source='single_flight_pulse_hook.lua',
+                frontend_hook_source='single_flight_frontend_hook.lua',rf_drive_kernel_source='rf_drive.lua',
+                voltage_waveforms_source='voltage_waveforms.lua',scalar_adapter_source='scalar_field_adapter.lua',
+                scalar_composer_source='split_scalar_field.lua').items()}
+            sources['native_path_source'] = resource_path('native_run_path.lua').read_text(encoding='utf8')
+            scalar = basis()
+            scalar['world_projection'] = dict(role_slots=dict(background=1,flight_tube=2,reflectron=3,accelerator=4,detector=5),
+                                              slots=[dict(path=str(root/'background.pa'))])
+            row = dict(particle_id=1, instrument_time_us=0., particle_birth_time_us=0.,
+                       velocity_x_m_s=0., velocity_y_m_s=0., velocity_z_m_s=1000.)
+            plan = dict(rows=[row], flight=dict(flight, tracking_kind='split_oa_tof', detector_instance=5),
+                        absolute_deadlines_us_by_particle_id={1:10.}, scalar_field_basis=scalar,
+                        observations=dict(plane_observations=[]),
+                        propagation=dict(consumed_plane_events=[], stop=None))
+            rendered = _render_tracking_controls(model, plan, field_design=design, stored_bank=field_bank(design,domains),
+                frontend_records=frontend, downstream_assets=downstream, downstream_receipt=record('audit.json'), native_sources=sources)
+            self.assertEqual(rendered['build_metadata']['instance_roles'],
+                dict(background=1,flight_tube=2,reflectron=3,accelerator=4,detector=5))
+            self.assertIn('local single_flight_accelerator_instance_index=4', rendered['program'])
+            self.assertIn('local single_flight_detector_instance_index=5', rendered['program'])
 
     def test_split_plan_requires_actual_detector_and_rejects_relaunch(self):
         from msplatform.assembly.handoff import HandoffResult

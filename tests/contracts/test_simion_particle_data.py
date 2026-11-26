@@ -37,11 +37,15 @@ class SimionParticleDataTests(unittest.TestCase):
             records = {}
             with patch('msplatform.backends.simion.tracking_execution.windows_binary_version', return_value='fixture-version'):
                 result, version = _publish_split_particle_data(session, plan, collection, dict(native_frame_id='world'),
-                    dict(drive=dict(clock=dict(basis='experiment_relative', unit='s'))), identity, records)
+                    dict(drive=dict(clock=dict(clock_epoch_id='epoch', authority_sha256='a'*64,
+                                               phase_reference_instrument_time_us=12.))), identity, records)
             self.assertEqual(version, 'fixture-version')
             self.assertEqual(result.data_integrity['status'], 'complete')
             self.assertEqual(len(records), 5)
-            self.assertEqual(read_particle_data(root / 'particle_data')['events'][0]['surface_id'], 'detector')
+            data = read_particle_data(root / 'particle_data')
+            self.assertEqual(data['events'][0]['surface_id'], 'detector')
+            self.assertEqual(data['metadata']['clock'], dict(basis='experiment_relative', unit='s',
+                clock_epoch_id='epoch', authority_sha256='a'*64))
 
     @staticmethod
     def collected_fixture():

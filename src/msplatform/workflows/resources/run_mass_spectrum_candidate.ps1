@@ -16,6 +16,9 @@ param(
   [string]$ExecutionEnvironment='',
   [string]$EngineeringProfile=''
 )
+if ($PSCmdlet.ParameterSetName -eq 'Run') {
+  throw 'Legacy mass-spectrum run/resume is retired; use msplatform run with a mass_scan recipe.'
+}
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $Workspace=(Resolve-Path -LiteralPath $Workspace).Path

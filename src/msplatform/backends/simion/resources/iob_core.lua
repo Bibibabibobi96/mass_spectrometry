@@ -10,6 +10,9 @@ local fields_only=mode=='build_fields' or mode=='verify_fields'
 local model_only=mode=='build_model' or mode=='verify_model'
 local geometry_only=mode=='build_geometry' or mode=='verify_geometry' or model_only
 local source_free=geometry_only or fields_only
+local split_scalar_tracking=spec.role=='split_scalar_world_tracking_iob'
+local split_scalar_world=spec.role=='split_scalar_world_iob_build' or split_scalar_tracking
+assert(not split_scalar_tracking or mode=='build' or mode=='verify','split scalar tracking requires tracking mode')
 local dual_cone=spec.role=='dual_cone_tracking_iob' or spec.role=='dual_cone_geometry_iob'
 local joint_ip_tracking=spec.role=='rf_ip_tracking_iob'
 local neutral_multi_sampled=spec.role=='neutral_multi_sampled_collision_iob_build' or spec.role=='neutral_multi_sampled_tracking_iob'
@@ -46,7 +49,7 @@ assert(not generic_model or #spec.instances==1,'neutral model requires one world
 local independent_marker=generic_multi and 'NEUTRAL_MULTI_GEOMETRY_IOB' or generic_collision and 'NEUTRAL_WORLD_GEOMETRY_IOB' or generic_sampled and 'NEUTRAL_SAMPLED_COLLISION_IOB' or collision_iob and 'IP_MR_COLLISION_IOB' or joint_rf_oa and 'RF_OA_GEOMETRY_IOB' or joint_rf_ip and 'RF_IP_GEOMETRY_IOB' or joint_oa_mr and 'OA_MR_GEOMETRY_IOB' or joint_ip_mr and 'IP_MR_GEOMETRY_IOB' or dual_cone and 'DUAL_CONE_GEOMETRY_IOB' or independent_oa and 'INDEPENDENT_OA_GEOMETRY_IOB' or 'INDEPENDENT_RF_GEOMETRY_IOB'
 assert(not independent_component or mode=='build_geometry' or mode=='verify_geometry'
   or model_only or (tracking_role and (mode=='build' or mode=='verify')),'independent geometry/model mode is unsupported')
-assert(spec.schema_version==1 and (spec.role=='single_reflection_iob_build' or independent_component),
+assert(spec.schema_version==1 and (spec.role=='single_reflection_iob_build' or independent_component or split_scalar_world),
   'unsupported single-reflection IOB build specification')
 local count=#spec.instances
 assert(not generic_collision or count==1,'neutral collision requires exactly one world slot')
@@ -86,7 +89,8 @@ assert(not dual_cone or count==1,'dual-cone monolithic geometry requires exactly
 assert(not static_tracking or count==1,'static world tracking requires one world slot')
 assert(not joint_ip_tracking or count==1,'RF-IP tracking requires one parent PA instance')
 assert((independent_component and count>=1 and count<=10) or (not independent_component and (count==4 or count==5)), 'unsupported physical PA instance count')
-local roles={'flight_tube','reflectron','accelerator','detector','entrance_refinement'}
+local roles=split_scalar_world and {'background','flight_tube','reflectron','accelerator','detector'} or {'flight_tube','reflectron','accelerator','detector','entrance_refinement'}
+assert(not split_scalar_world or count==5,'split scalar world requires exactly five native slots')
 if independent_component then
  roles={}
  local unique={}
@@ -332,7 +336,7 @@ end
 
 if mode=='verify' or mode=='verify_geometry' or mode=='verify_model' or mode=='verify_fields' then
   local interfaces
-  if not geometry_only and not tracking_role then
+  if not geometry_only and not tracking_role and not split_scalar_tracking then
   assert(type(spec.response_fields)=='table','prepared response field paths are required')
   interfaces=assert(spec.interface_field_probes,'resolved interface field probes are required')
   assert(#interfaces==2,'OA exit and reflectron entry interface probes are required')
@@ -400,7 +404,7 @@ if mode=='verify' or mode=='verify_geometry' or mode=='verify_model' or mode=='v
   end
   -- Check the actual canonical sidecar paths independently, before loading
   -- the carrier slots. Only one response PA is resident at a time.
-  if not geometry_only and not component_tracking then
+  if not geometry_only and not component_tracking and not split_scalar_tracking then
   for _,row in ipairs(spec.response_fields) do
     local response=assert(simion.pas:open(row.path),'response path did not load: '..row.path)
     local okay,message=pcall(function()
@@ -487,6 +491,19 @@ if mode=='verify' or mode=='verify_geometry' or mode=='verify_model' or mode=='v
     local actual=input:read('*a');input:close()
     assert(actual==data,'workbench reopening changed a prepared companion: '..path)
   end
+  if split_scalar_world and (geometry_only or split_scalar_tracking) then
+    assert(type(spec.background_probes)=='table' and #spec.background_probes>0,'split scalar world requires background priority probes')
+    local selected=0
+    for _,point in ipairs(spec.background_probes) do
+      assert(type(point)=='table' and #point==3,'invalid split world probe')
+      local electrode,electric=simion.wb:find_at(point[1],point[2],point[3])
+      if electric==1 and electrode==false then selected=selected+1 end
+      print(string.format('SPLIT_SCALAR_WORLD_POINT x_mm=%.17g y_mm=%.17g z_mm=%.17g electrode=%s instance=%s',point[1],point[2],point[3],tostring(electrode),tostring(electric)))
+    end
+    assert(selected>0,'world background has no verified exposed vacuum probe')
+    print('SPLIT_SCALAR_WORLD_PRIORITY=PASS BACKGROUND_POINTS='..selected..' SCOPE=declared_points_only')
+  end
+  if split_scalar_tracking then print('SPLIT_SCALAR_WORLD_TRACKING_REOPEN=PASS INSTANCES=5 FLY=False REFINE=False');return end
   if geometry_only then
     print((independent_component and independent_marker..'_REOPEN=PASS INSTANCES=' or 'SINGLE_REFLECTION_GEOMETRY_IOB_REOPEN=PASS INSTANCES=')..count..' FLY=False SOURCE=False REFINE=False')
     return

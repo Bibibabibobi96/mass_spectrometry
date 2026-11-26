@@ -77,14 +77,19 @@ def tracking_applicability(plan):
     if plan['flight'].get('has_ip_schedule'): names += ('native_drive.lua',)
     if plan['flight'].get('has_hs1'): names += ('collision_hs1_gas.lua','rf_ip_gas_selection.lua','rf_ip_tracking_hs1.lua')
     if plan.get('scalar_field_basis') is not None:
-        names += ('scalar_field_adapter.lua', 'generic_scalar_field.lua' if plan['flight'].get('tracking_kind') in {'ip_mr', 'neutral_sampled'} else 'sfi_scalar_field.lua')
+        composer = ('split_scalar_field.lua' if plan['scalar_field_basis'].get('role') == 'split_off_on_scalar_binding'
+                    else 'generic_scalar_field.lua' if plan['flight'].get('tracking_kind') in {'ip_mr', 'neutral_sampled'} else 'sfi_scalar_field.lua')
+        names += ('scalar_field_adapter.lua', composer)
     names += ('native_terminal_recording.lua',)
     resources = {name:hashlib.sha256(native_resource_path(name).read_bytes()).hexdigest() for name in names}
     resources['terminal_evidence.py'] = hashlib.sha256(Path(__file__).with_name('terminal_evidence.py').read_bytes()).hexdigest()
     resources['native_run_path.lua'] = hashlib.sha256(resource_path('native_run_path.lua').read_bytes()).hexdigest()
     resources['tracking_program.py'] = hashlib.sha256(Path(tracking_program.__file__).read_bytes()).hexdigest()
     if plan.get('scalar_field_basis') is not None:
-        scalar_modules = ('ip_mr_tracking_admission.py', 'ip_mr_scalar_binding.py', 'scalar_sample_binding.py', 'ip_mr_collision_priority.py') if plan['flight'].get('tracking_kind') == 'ip_mr' else ('generic_scalar_binding.py', 'scalar_sample_binding.py', 'neutral_sampled_field.py', 'ip_mr_collision_lineage.py') if plan['flight'].get('tracking_kind') == 'neutral_sampled' else ('sfi_scalar_binding.py', 'tracking_field_observation.py')
+        scalar_modules = (('split_scalar_binding.py', 'scalar_sample_binding.py', 'split_scalar_workbench.py', 'native_plans.py') if plan['scalar_field_basis'].get('role') == 'split_off_on_scalar_binding'
+            else ('ip_mr_tracking_admission.py', 'ip_mr_scalar_binding.py', 'scalar_sample_binding.py', 'ip_mr_collision_priority.py') if plan['flight'].get('tracking_kind') == 'ip_mr'
+            else ('generic_scalar_binding.py', 'scalar_sample_binding.py', 'neutral_sampled_field.py', 'ip_mr_collision_lineage.py') if plan['flight'].get('tracking_kind') == 'neutral_sampled'
+            else ('sfi_scalar_binding.py', 'tracking_field_observation.py'))
         for name in scalar_modules:
             resources[name] = hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
     resources['tracking_execution.py'] = hashlib.sha256(Path(__file__).with_name('tracking_execution.py').read_bytes()).hexdigest()

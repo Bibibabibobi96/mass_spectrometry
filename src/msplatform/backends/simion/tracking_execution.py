@@ -144,12 +144,42 @@ def _birth_states(packet, geometry):
 def _resolve_scalar_basis(source, model, plan, selection):
     """Admit selected scalar products against the actual source-free SFI model."""
     import json
-    from .sfi_scalar_binding import resolve_sfi_scalar_basis
     if not isinstance(selection, Mapping) or not {'geometry_artifact', 'samples'} <= set(selection) or set(selection) - {'geometry_artifact', 'samples', 'refinement_windows'}:
         raise ValueError('scalar basis requires explicit geometry_artifact and samples')
     if plan['propagation']['scope'] != 'continuous_assembly' or not plan['rows']:
         raise ValueError('scalar basis requires a nonempty continuous original-birth flight')
     geometry = model_geometry(model, downstream_drive=True).frontend_geometry
+    if geometry.get('role') == 'simion_split_oa_tof_geometry':
+        from .frontend import split_frontend_instances
+        from .split_scalar_binding import resolve_split_scalar_basis
+        rf_instances, _, _ = split_frontend_instances(geometry['composition_plan'])
+        if rf_instances:
+            raise ValueError('split scalar field currently supports only OA and TOF without RF')
+        if 'native_field_observation' in plan['observations']:
+            raise ValueError('split scalar field observations are not yet supported')
+        binding = resolve_split_scalar_basis(model=model, geometry_artifact=selection['geometry_artifact'],
+                                             samples=selection['samples'], refinement_windows=selection.get('refinement_windows'))
+        from .split_scalar_workbench import WORLD_REPRESENTATION, WORLD_SLOTS, _admit_world, project_split_scalar_world
+        metadata = source.metadata
+        if (metadata.get('field_representation') != WORLD_REPRESENTATION or metadata.get('world_slots') != WORLD_SLOTS
+                or metadata.get('background_native_cold_reopen') is not True or metadata.get('background_priority_observed') is not True):
+            raise ValueError('split scalar tracking requires a verified world background PA and workbench binding')
+        original, bound_model, checked, carriers = _admit_world(metadata['collision_source_reference'], selection)
+        if require_prepared_model(bound_model) != require_prepared_model(model) or checked != binding:
+            raise ValueError('world collision source or scalar binding differs from tracking')
+        projection = json.loads(source.data_path('world_binding').read_text(encoding='utf-8-sig'))
+        background = source.data_path('background')
+        if Path(projection['slots'][0]['path']).resolve() != background.resolve():
+            raise ValueError('world background binding differs from its published file')
+        expected = project_split_scalar_world(model, binding, carriers=carriers, background_path=Path(projection['slots'][0]['path']))
+        expected['collision_source_reference'] = original.reference
+        if projection != expected or metadata.get('world_background_grid') != projection['grid']:
+            raise ValueError('world workbench binding differs from its verified source inputs')
+        source.data_path('workbench')
+        source.data_path('zero_particle_format_control')
+        plan['flight']['detector_instance'] = WORLD_SLOTS['detector']
+        return dict(binding, world_projection=projection, collision_source_reference=original.reference)
+    from .sfi_scalar_binding import resolve_sfi_scalar_basis
     design = json.loads(source.data_path('field_design').read_text(encoding='utf-8-sig'))
     return resolve_sfi_scalar_basis(model=model, geometry=geometry, field_design=design, flight=plan['flight'],
                                     geometry_artifact=selection['geometry_artifact'], samples=selection['samples'],
@@ -208,6 +238,9 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
     document = require_prepared_model(model)
     raw_geometry = model_geometry(model).frontend_geometry
     _guard_complete_tof_flight(raw_geometry, particles, propagation)
+    source_rows = particles.rows if isinstance(particles, HandoffResult) else particles.get('rows', []) if isinstance(particles, Mapping) else []
+    if any(type(row.get('particle_id')) is not int or not 0 < row['particle_id'] <= 2**31 - 1 for row in source_rows):
+        raise ValueError('SIMION Lua numeric log ABI requires particle IDs in 1..2147483647')
     split = raw_geometry.get('role') == 'simion_split_oa_tof_geometry'
     detector_instance = _split_tracking_contract(raw_geometry, propagation, observations) if split else None
     ip_mr = raw_geometry.get('role') == 'simion_ip_mr_complete_geometry'
@@ -405,12 +438,17 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
 
 def plan_tracking_workbench(compiled, *, field_design, components_resolved, carriers,
                              response_fields, field_workbench_record, run_directory,
-                             program, native_source_rows, native_path_resource, ip_mr_admission=None, neutral_admission=None, program_metadata=None) -> NativeStagePlan:
+                             program, native_source_rows, native_path_resource, ip_mr_admission=None, neutral_admission=None, program_metadata=None, world_projection=None) -> NativeStagePlan:
     """Reuse the sole full solved-slot projection, changing only control transport.
 
     The verified structural seed supplies private bootstrap slots; published
     field records remain protected inputs and supply every solved carrier.
     """
+    if world_projection is not None:
+        from .native_plans import plan_split_scalar_world_tracking
+        return plan_split_scalar_world_tracking(world_projection, world_iob_record=field_workbench_record,
+            program=program, native_source_rows=native_source_rows, run_directory=run_directory,
+            native_path_resource=native_path_resource)
     if neutral_admission is not None:
         from .rf_tracking_execution import plan_neutral_sampled_tracking_workbench
         return plan_neutral_sampled_tracking_workbench(compiled, admission=neutral_admission, run_directory=run_directory, program=program, native_source_rows=native_source_rows, native_path_resource=native_path_resource)
@@ -509,10 +547,11 @@ def _render_tracking_controls(model, plan: dict, *, field_design: dict, stored_b
     if set(frontend_records) != set(domains) or any(set(rows) != set(expected_members) for rows in frontend_records.values()):
         raise ValueError('published owned response records do not cover the actual bank')
     bank = copy.deepcopy(stored_bank)
+    world = plan.get('scalar_field_basis', {}).get('role') == 'split_off_on_scalar_binding'
     paths,carriers,responses,guards = {},{},[],[]
     for domain,row in zip(domains,bank['dynamic_roles'],strict=True):
         role = 'accelerator_main' if domain=='parent' else domain
-        row.update(role=role,instance_index=3 if domain=='parent' else 5)
+        row.update(role=role,instance_index=(4 if world else 3) if domain=='parent' else 5)
         records = frontend_records[domain]
         for member,record in records.items():
             if Path(record['path']).name != ('frontend' if domain=='parent' else 'frontend_entrance_refinement')+'.'+member+'.pa':
@@ -529,7 +568,8 @@ def _render_tracking_controls(model, plan: dict, *, field_design: dict, stored_b
     static_rows = []
     if set(downstream_assets) != {'flight_tube','reflectron','detector'}:
         raise ValueError('tracking needs all actual downstream field roles')
-    for role,index in [('flight_tube',1),('reflectron',2),('detector',4)]:
+    for role,index in ([('flight_tube',2),('reflectron',3),('detector',5)] if world
+                       else [('flight_tube',1),('reflectron',2),('detector',4)]):
         asset = downstream_assets[role]
         record = asset['carrier_record']
         carriers[role] = record
@@ -758,7 +798,8 @@ def _execute_tracking_units(session, *, model, plan, design, stored_bank, fronte
             carriers=controls['carriers'],response_fields=controls['response_fields'],field_workbench_record=field_workbench,
             run_directory=root,program=controls['program'],native_source_rows=subset['native_source_rows'],
             native_path_resource=session.input_dir/'native_sources/native_run_path.lua',
-            ip_mr_admission=ip_mr_admission, neutral_admission=neutral_admission, program_metadata=controls['build_metadata'])
+            ip_mr_admission=ip_mr_admission, neutral_admission=neutral_admission, program_metadata=controls['build_metadata'],
+            world_projection=plan.get('scalar_field_basis', {}).get('world_projection'))
         control_records = {}
         for number,(path,text) in enumerate(native_plan.materializations.items(),1):
             name = 'tracking_control_'+str(number) if plan['unit_size'] is None else 'tracking_control__'+key+'_'+str(number)
@@ -771,7 +812,9 @@ def _execute_tracking_units(session, *, model, plan, design, stored_bank, fronte
         iob = session.declare_file(native_plan.declared_outputs[0],'solver_native_binary')
         for generated in native_plan.declared_outputs[1:]:
             session.declare_file(generated,'solver_native_binary')
-        control_guards = [control_records[str(root/'inputs/tracking_iob.lua')]]
+        spec_name = ('tracking_world_iob.lua' if plan.get('scalar_field_basis', {}).get('role') == 'split_off_on_scalar_binding'
+                     else 'tracking_iob.lua')
+        control_guards = [control_records[str(root/'inputs'/spec_name)]]
         if plan['flight'].get('tracking_kind') in {'ip_mr', 'neutral_sampled'}:
             control_guards.append(control_records[str(root/'inputs/sampled_basis.json')])
         immutable = _unique_inputs([*borrowed,*controls['immutable_input_records'],*seed_records,*frozen.values(),native_path,*control_guards])
@@ -968,6 +1011,12 @@ def execute_tracking(session, *, fields_reference, particles, propagation, obser
         if Path(str(stem)+suffix).exists():
             raise ValueError('field workbench has an undeclared automatic source/Program companion')
     borrowed.extend((field_workbench,zero_control))
+    if meta.get('field_representation') == 'split_scalar_world_with_collision_geometry':
+        if scalar_field_basis is None:
+            raise ValueError('split scalar world tracking requires its explicit OFF/ON scalar selection')
+        _protected_source(session, meta['collision_source_reference']['manifest'],
+                          required_paths=[row['path'] for row in borrowed if row not in (field_workbench, zero_control)])
+        borrowed.extend((_artifact_record(source, 'background'), _artifact_record(source, 'world_binding')))
     _protected_source(session,source.reference['manifest'],required_paths=[row['path'] for row in borrowed])
     return _execute_tracking_bound_source(session,source=source,model=model,document=document,compiled=compiled,
         geometry=geometry,design=design,stored_bank=stored_bank,frontend=frontend,downstream=downstream,
@@ -998,8 +1047,11 @@ def _publish_split_particle_data(session, plan, collection, geometry, document, 
     directory.mkdir(parents=True, exist_ok=True)
     names = ('initial_states.parquet', 'terminal_states.parquet', 'events.parquet', 'trajectories.h5', 'execution.json')
     declared = {name: session.declare_file(directory/name, 'required_evidence') for name in names}
+    drive_clock = document['drive']['clock']
+    scientific_clock = dict(basis='experiment_relative', unit='s', clock_epoch_id=drive_clock['clock_epoch_id'],
+                            authority_sha256=drive_clock['authority_sha256'])
     write_particle_data(directory, result, metadata=dict(schema_version=2, initial_state_basis='native_birth_verified',
-                        frame_id=geometry['native_frame_id'], clock=document['drive']['clock']))
+                        frame_id=geometry['native_frame_id'], clock=scientific_clock))
     read_particle_data(directory)
     for name, path in declared.items():
         records['particle_data_'+name.replace('.', '_')] = file_record(session.canonical_path(path), 'required_evidence')
@@ -1199,7 +1251,9 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
             if plan['flight'].get('has_ip_schedule'):resource_names+=('native_drive.lua',)
             if plan['flight'].get('has_hs1'):resource_names+=('collision_hs1_gas.lua','rf_ip_gas_selection.lua','rf_ip_tracking_hs1.lua')
         if plan.get('scalar_field_basis') is not None:
-            resource_names += ('scalar_field_adapter.lua', 'generic_scalar_field.lua' if plan['flight'].get('tracking_kind') in {'ip_mr', 'neutral_sampled'} else 'sfi_scalar_field.lua')
+            scalar_composer = ('split_scalar_field.lua' if plan['scalar_field_basis'].get('role') == 'split_off_on_scalar_binding'
+                else 'generic_scalar_field.lua' if plan['flight'].get('tracking_kind') in {'ip_mr', 'neutral_sampled'} else 'sfi_scalar_field.lua')
+            resource_names += ('scalar_field_adapter.lua', scalar_composer)
         resource_names += ('native_terminal_recording.lua',)
         frozen = {}
         for name in resource_names:
@@ -1214,7 +1268,7 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
             sources = {key:Path(frozen[value]['path']).read_text(encoding='utf-8-sig') for key,value in names.items()}
         if plan.get('scalar_field_basis') is not None and plan['flight'].get('tracking_kind') not in {'ip_mr', 'neutral_sampled'}:
             sources['scalar_adapter_source'] = Path(frozen['scalar_field_adapter.lua']['path']).read_text(encoding='utf-8-sig')
-            sources['scalar_composer_source'] = Path(frozen['sfi_scalar_field.lua']['path']).read_text(encoding='utf-8-sig')
+            sources['scalar_composer_source'] = Path(frozen[scalar_composer]['path']).read_text(encoding='utf-8-sig')
         sources['native_path_source'] = Path(native_path['path']).read_text(encoding='utf-8-sig')
         collection,native_calls = _execute_tracking_units(session,model=model,plan=plan,design=design,
             stored_bank=stored_bank,frontend=frontend,downstream=downstream,source=source,

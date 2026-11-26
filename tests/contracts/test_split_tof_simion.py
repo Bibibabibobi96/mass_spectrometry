@@ -133,6 +133,12 @@ class SplitTofSimionTests(unittest.TestCase):
                 triple_result.frontend_geometry["electrode_bindings"]["multipole"])
             triple_model = compile_prepared_model(triple_result, triple_inputs["components_resolved"], drive=drive, physics=PHYSICS)
             self.assertTrue(triple_model.document["electrical_projection"]["rf_groups"]["multipole"])
+            from msplatform.backends.simion.model import model_geometry
+            roundtrip = triple_model.document
+            rebuilt = compile_prepared_model(model_geometry(triple_model), roundtrip["components_resolved"],
+                                              drive=roundtrip["drive"], physics=roundtrip["physics"])
+            self.assertEqual(rebuilt.document, roundtrip)
+            self.assertEqual(rebuilt.document["model_identity_sha256"], roundtrip["model_identity_sha256"])
             import json, sys
             from dataclasses import asdict
             from types import SimpleNamespace
@@ -187,7 +193,7 @@ class SplitTofSimionTests(unittest.TestCase):
                     with self.subTest(model=label, scope=scope), \
                          patch("msplatform.backends.simion.operations.artifact_reader.open_artifact", return_value=field_source), \
                          patch("msplatform.execution.owner.run_managed_stage") as tracking_owner, \
-                         self.assertRaisesRegex(ContractError, "continuous_assembly"):
+                         self.assertRaisesRegex(ContractError, "historical read-only" if label == "legacy" else "continuous_assembly"):
                         simion.track({}, particle, propagation={"scope": scope}, observations={}, numerics={}, context=context)
                     tracking_owner.assert_not_called()
 

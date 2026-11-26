@@ -117,10 +117,56 @@ def validate_native_field_observation(spec: dict, *, particle_ids: list[int],
     return json.loads(json.dumps(spec,allow_nan=False))
 
 
+def _instrument_split_scalar(program: str, basis: dict, adapter: str, composer: str, observed: bool) -> str:
+    """Bind verified OFF/ON total scalar fields to the existing native flight."""
+    if observed:
+        raise ValueError('split scalar field observations are not yet supported')
+    bindings = {}
+    for name in ('off', 'on'):
+        item = basis['bases'][name]
+        grid, records = item['grid'], item['records']
+        bindings[name] = dict(mode='comsol_static_scalar_v', scalar_pa=records['field_v']['path'],
+            valid_pa=records['field_valid']['path'], origin_mm=grid['origin_mm'], pitch_mm=grid['pitch_mm'],
+            dimensions=grid['dimensions'], ideal_sheet_projection=item['ideal_sheet_projection'],
+            mask_identity=dict(sha256=records['field_valid']['sha256'], bytes=records['field_valid']['bytes'],
+                               frame_id=grid['frame_id']))
+        if item.get('refinement_windows'):
+            bindings[name]['refinement_windows'] = [dict(name=level['name'], active_box_mm=level['active_box_mm'],
+                mode='comsol_static_scalar_v', scalar_pa=level['records']['field_v']['path'],
+                valid_pa=level['records']['field_valid']['path'], origin_mm=level['grid']['origin_mm'],
+                pitch_mm=level['grid']['pitch_mm'], dimensions=level['grid']['dimensions'],
+                ideal_sheet_projection=level['ideal_sheet_projection'], mask_identity=dict(
+                    sha256=level['records']['field_valid']['sha256'], bytes=level['records']['field_valid']['bytes'],
+                    frame_id=level['grid']['frame_id'])) for level in item['refinement_windows']]
+    declarations = ('local single_flight_scalar_adapter=(function()\n' + adapter + '\nend)()\n'
+                    + 'local single_flight_scalar_module=(function()\n' + composer + '\nend)()\n'
+                    + 'local single_flight_scalar=nil\n')
+    anchor = 'local single_flight_trace_path='
+    if program.count(anchor) != 1:
+        raise ValueError('scalar declarations boundary differs')
+    program = program.replace(anchor, declarations + anchor, 1)
+    anchor = '    single_flight_frontend=single_flight_frontend_component.new'
+    if program.count(anchor) != 1:
+        raise ValueError('scalar initialization boundary differs')
+    program = program.replace(anchor, '    single_flight_scalar=single_flight_scalar_module.new('
+        'single_flight_scalar_adapter,single_flight_pulse,' + _lua_value(bindings) + ')\n' + anchor, 1)
+    missing = '  if instance==nil then return end\n'
+    if program.count(missing) != 1:
+        raise ValueError('scalar selected-instance boundary differs')
+    program = program.replace(missing, "  assert(instance~=nil,'selected instance required')\n", 1)
+    anchor = '  end\nend\nfunction segment.instance_adjust()'
+    if program.count(anchor) != 1:
+        raise ValueError('scalar callback boundary differs')
+    sample = '  ion_dvoltsx_gu,ion_dvoltsy_gu,ion_dvoltsz_gu=single_flight_scalar(instance,ion_px_mm,ion_py_mm,ion_pz_mm,time)\n'
+    return program.replace(anchor, '  end\n' + sample + 'end\nfunction segment.instance_adjust()', 1)
+
+
 def _instrument_common_scalar(program: str, basis: dict, adapter: str, composer: str, observed: bool) -> str:
     """Install the admitted world-scalar composition after existing region effects."""
     if not isinstance(adapter, str) or not isinstance(composer, str):
         raise ValueError('frozen scalar runtime sources required')
+    if basis.get('role') == 'split_off_on_scalar_binding':
+        return _instrument_split_scalar(program, basis, adapter, composer, observed)
     def mask_identity(grid, record):
         if not all(key in record for key in ('sha256', 'bytes')) or not grid.get('frame_id'):
             return {}
@@ -1334,9 +1380,10 @@ def build_successor_program(
         raise ValueError("single-flight Program requires a native frontend field design")
     native_design = frontend
     native_local_oatof = not any(point['kind'] == 'rf_reference' for point in native_design['working_points'])
+    world = scalar_field_basis is not None and scalar_field_basis.get('role') == 'split_off_on_scalar_binding'
     if isinstance(flight, Mapping) and flight.get('tracking_kind') == 'split_oa_tof':
-        if flight.get('detector_instance') != 4:
-            raise ValueError('this native Program renderer currently requires detector workbench instance 4')
+        if flight.get('detector_instance') != (5 if world else 4):
+            raise ValueError('detector workbench instance differs from authenticated field representation')
         flight = {key: value for key, value in flight.items() if key not in {'tracking_kind', 'detector_instance'}}
     flight = validate_native_flight(flight, requires_rf=not native_local_oatof)
     pulse_response_required = any(point['kind'] == 'pulse_delta' for point in native_design['working_points'])
@@ -1360,6 +1407,8 @@ def build_successor_program(
     if particle_ids is None:
         particle_ids = list(range(1, len(birth_times_us) + 1))
     validate_native_particle_ids(particle_ids)
+    if any(pid > 2**31 - 1 for pid in particle_ids):
+        raise ValueError('SIMION Lua numeric log ABI requires particle IDs in 1..2147483647')
     if (
         len(particle_ids) != len(birth_times_us)
         or any(item <= 0 for item in particle_ids)
@@ -1430,10 +1479,17 @@ def build_successor_program(
             rf_sources=[dict(instance_id=instance,drive=(model_document['drive']['groups'][instance] if model_document is not None else multipoles_by_instance[instance]['drive']),
                 electrode_group_native_ids=frontend_geometry['electrode_bindings'][instance]) for instance in rf_instances])
     analyzer_config = native_analyzer_config
+    if world:
+        from .split_scalar_workbench import WORLD_SLOTS
+        if scalar_field_basis.get('world_projection', {}).get('role_slots') != WORLD_SLOTS or not native_local_oatof:
+            raise ValueError('split scalar Program requires authenticated five-slot world without RF')
+        analyzer_config['instance_roles'] = {key: WORLD_SLOTS[key] for key in ('flight_tube','reflectron','accelerator','detector')}
     analyzer_config["diagnostics"]["post_pulse_observation_window_us"] = False
     analyzer_config["domain_split"] = False
     overlay_specs: list[dict[str, Any]] = []
     if "entrance_refinement" in frontend_geometry["numerical_domains"]:
+        if world:
+            raise ValueError('split scalar world does not support entrance refinement PA')
         fine = frontend_geometry["numerical_domains"]["entrance_refinement"]
         overlay_specs.append(dict(role="entrance_refinement", instance_index=5,
             filename="frontend_entrance_refinement.carrier_off.pa",
@@ -1443,7 +1499,7 @@ def build_successor_program(
         str(item["role"]): int(item["instance_index"])
         for item in overlay_specs
     }
-    expected_role_indices = {"accelerator_main":3, **overlay_roles}
+    expected_role_indices = {"accelerator_main":4 if world else 3, **overlay_roles}
     standalone_dynamic_specs = _resolve_standalone_dynamic_field_bank(
         standalone_dynamic_field_bank, expected_role_indices, requires_rf=not native_local_oatof,
     )
@@ -1496,12 +1552,14 @@ def build_successor_program(
         domain_accelerator_filename
     )
     formal_iob_config = {
-        "instance_roles": {"flight_tube": 1, "reflectron": 2, "accelerator": 3, "detector": 4, **overlay_roles},
+        "instance_roles": {**analyzer_config['instance_roles'], **overlay_roles,
+                           **({'background': 1} if world else {})},
         "instance_filenames": {
             "flight_tube": downstream_static_carriers["flight_tube"],
             "reflectron": downstream_static_carriers["reflectron"],
             "accelerator": domain_accelerator_filename,
             "detector": downstream_static_carriers["detector"],
+            **({'background': Path(scalar_field_basis['world_projection']['slots'][0]['path']).name} if world else {}),
             **overlay_filenames,
         },
         "accelerator_overlays": [
@@ -1576,9 +1634,9 @@ def build_successor_program(
         else ""
     )
     electrodes = frontend["electrodes"]
-    accelerator_instance_index = 3
+    accelerator_instance_index = 4 if world else 3
     active_field_instance_indices = (
-        ([3, *[int(item["instance_index"]) for item in overlay_specs]])
+        ([accelerator_instance_index, *[int(item["instance_index"]) for item in overlay_specs]])
     )
     native_overlay_check_lua = ("""      assert(oi.x==overlay.origin_mm.x and oi.y==overlay.origin_mm.y and oi.z==overlay.origin_mm.z and
         oi.az==0 and oi.el==0 and oi.rt==0 and oi.scale==1,'native refinement placement differs')
@@ -1807,10 +1865,18 @@ end
 """
     actual = frontend["accelerator_local_region"]
     incident_planes = ([] if native_local_oatof else [
-        {"event":"single_flight_handoff", "x_mm":frontend["source_exit_center_mm"]["x"]}]) + [
-        {"event":"accelerator_sidewall_inner_forward", "x_mm":actual["accelerator_port_aperture_discretization"]["flange_max_mm"]},
-        {"event":"accelerator_axis_forward", "x_mm":actual["axis_x_mm"]},
-    ]
+        {"event":"single_flight_handoff", "x_mm":frontend["source_exit_center_mm"]["x"]}])
+    aperture = actual.get('accelerator_port_aperture_discretization')
+    if aperture is not None:
+        incident_planes.append({"event":"accelerator_sidewall_inner_forward", "x_mm":aperture["flange_max_mm"]})
+    incident_planes.append({"event":"accelerator_axis_forward", "x_mm":actual["axis_x_mm"]})
+    focus = oatof.get('geometry_derivation', {}).get('accelerator', {}).get('focus_drift_after_grid2_mm')
+    focus_observation_lua = '' if focus is None else f'''  local focus_z=accelerator_grid2_z_mm+{_lua_number(focus)}
+  _,tc,xc,yc,vxc,vyc,vzc=crossing(focus_z,1)
+  if tc and not reported.focus then reported.focus=true
+    if trajectory_log_enable~=0 then print(string.format('TRACE: accelerator_focus_forward ion=%d instrument_time_us={state_precision} x_mm={state_precision} y_mm={state_precision} z_mm={state_precision} vx_mm_per_us={state_precision} vy_mm_per_us={state_precision} vz_mm_per_us={state_precision}',ion_number,tc,xc,yc,focus_z,vxc,vyc,vzc)) end
+  end
+'''
     incident_x_observations_lua = f"""  -- Passive native accepted-step brackets; states are interpolation estimates,
   -- not exact solver landings or aperture/transmission acceptance claims.
   if p and time>p.t then
@@ -2139,11 +2205,7 @@ function segment.other_actions()
   if tc and not reported.local_exit then reported.local_exit=true
     if trajectory_log_enable~=0 then print(string.format('TRACE: local_accelerator_exit ion=%d instrument_time_us={state_precision} x_mm={state_precision} y_mm={state_precision} z_mm={state_precision} vx_mm_per_us={state_precision} vy_mm_per_us={state_precision} vz_mm_per_us={state_precision}',ion_number,tc,xc,yc,accelerator_grid2_z_mm,vxc,vyc,vzc)) end
 {exit_stop_action_lua}  end
-  local focus_z=accelerator_grid2_z_mm+{_lua_number(oatof['geometry_derivation']['accelerator']['focus_drift_after_grid2_mm'])}
-  _,tc,xc,yc,vxc,vyc,vzc=crossing(focus_z,1)
-  if tc and not reported.focus then reported.focus=true
-    if trajectory_log_enable~=0 then print(string.format('TRACE: accelerator_focus_forward ion=%d instrument_time_us={state_precision} x_mm={state_precision} y_mm={state_precision} z_mm={state_precision} vx_mm_per_us={state_precision} vy_mm_per_us={state_precision} vz_mm_per_us={state_precision}',ion_number,tc,xc,yc,focus_z,vxc,vyc,vzc)) end
-  end
+{focus_observation_lua}
   _,tc,xc,yc,vxc,vyc,vzc=crossing(reflectron_entgrid_z_mm,1)
   if tc and not reported.reflectron_entrance then reported.reflectron_entrance=true
     single_flight_trace_checkpoint('reflectron_entrance_forward',tc,xc,yc,reflectron_entgrid_z_mm,vxc,vyc,vzc)

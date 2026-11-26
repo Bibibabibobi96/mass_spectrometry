@@ -22,6 +22,18 @@ if TYPE_CHECKING:
     from msplatform.ion_release.authoring import ReleaseRealization
 
 
+def _reject_legacy_composite_execution(geometry: Mapping[str, Any]) -> None:
+    """Retain historical model readers while retiring this public execution type."""
+    plan = geometry.get('composition_plan')
+    if plan is None:
+        plan = geometry.get('source_snapshot', {}).get('composition_plan', {})
+    selected = plan.get('scope', {}).get('instance_ids', [])
+    interfaces = plan.get('components', {})
+    if any(interfaces.get(name, {}).get('project_id') == 'single_reflection_oa_tof_mass_analyzer'
+           for name in selected):
+        raise ContractError('legacy composite OA–TOF is historical read-only; use independent OA + single_reflection_tof')
+
+
 def build_geometry(compiled: CompiledSimionGeometry, *, context: ExecutionContext) -> OpenedArtifact:
     """Materialize actual unsolved geometry through the one public execution owner.
 
@@ -42,6 +54,7 @@ def build_geometry(compiled: CompiledSimionGeometry, *, context: ExecutionContex
 
     if not isinstance(compiled, CompiledSimionGeometry):
         raise ContractError("build_geometry requires compiled SIMION geometry")
+    _reject_legacy_composite_execution(compiled.frontend_geometry)
     if context is None or "simion" not in context.tools or not context.tools["simion"].is_file():
         raise ContractError("build_geometry requires an explicit available SIMION executable")
     stage, authority = read_stage_policy(context, "build_geometry", required_roles=("solver_native_binary",))
@@ -128,6 +141,7 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
     values = json.loads(source.data_path("compiled_geometry").read_text(encoding="utf-8-sig"))
     values["downstream_specs"] = tuple(values["downstream_specs"])
     compiled = CompiledSimionGeometry(**values)
+    _reject_legacy_composite_execution(compiled.frontend_geometry)
     if compiled.frontend_geometry.get("role") == "simion_rf_oa_geometry":
         raise ContractError("joint geometry has no supported prepared model yet")
     joint_oa_mr = compiled.frontend_geometry.get("role") == "simion_oa_mr_complete_geometry"
@@ -280,6 +294,7 @@ def solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mapping
         from msplatform.backends.simion.model import require_prepared_model
         candidate = model if isinstance(model, OpenedArtifact) else artifact_reader.open_artifact(model, expected_kind='prepared_model')
         candidate_model = CompiledPreparedModel(candidate.data_path('compiled_model').read_text(encoding='utf8'))
+        _reject_legacy_composite_execution(require_prepared_model(candidate_model)['geometry']['frontend_geometry'])
         if require_prepared_model(candidate_model)['geometry']['frontend_geometry'].get('role') in {'simion_neutral_world_collision_geometry','simion_neutral_multi_domain_collision_geometry'}:
             from msplatform.backends.simion.neutral_sampled_field import prepare_neutral_sampled_inputs, execute_neutral_sampled_fields
             if reuse_fields is not None or reuse_collision_geometry is not None or numerics: raise ContractError('neutral sampled fields require explicit samples and empty field numerics')
@@ -417,6 +432,7 @@ def solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mapping
             use_short_execution_path=True,completion_api=lambda: native_completion)
         return artifact_reader.open_artifact({'manifest':result['manifest'],'product_id':'fields'},expected_kind='field_bundle')
     source = load_field_model(model.reference if isinstance(model, OpenedArtifact) else model)
+    _reject_legacy_composite_execution(source.model.document['geometry']['frontend_geometry'])
     if source.model.document['geometry']['frontend_geometry'].get('role') == 'simion_neutral_multi_domain_collision_geometry':
         raise ContractError('multi-domain fields require their explicit sampled scalar basis')
     selected_numerics = copy.deepcopy(dict(numerics))
@@ -505,6 +521,7 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
         raise ContractError("track requires a published source-independent SIMION FieldBundle")
     model = CompiledPreparedModel(source.data_path("compiled_model").read_text(encoding="utf-8-sig"))
     document = require_prepared_model(model)
+    _reject_legacy_composite_execution(document['geometry']['frontend_geometry'])
     if meta.get("model_identity_sha256") != document["model_identity_sha256"] or meta.get("clock") != document["drive"]["clock"]:
         raise ContractError("tracking field model/clock identity differs")
     tracking_geometry = document["geometry"]["frontend_geometry"]
@@ -607,6 +624,13 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
     if meta.get('field_representation') == 'producer_owned_static_world_standalone_operating_pa':
         original = meta.get('operating_producer_reference', source.reference)
         references.append({'manifest_record': original['manifest']})
+    if meta.get('field_representation') == 'split_scalar_world_with_collision_geometry':
+        collision = artifact_reader.open_artifact(meta['collision_source_reference'], expected_kind='field_bundle')
+        if (collision.metadata.get('backend') != 'simion'
+                or collision.metadata.get('field_representation') == 'split_scalar_world_with_collision_geometry'
+                or collision.metadata.get('model_identity_sha256') != meta.get('model_identity_sha256')):
+            raise ContractError('world scalar collision source differs from its original native model')
+        references.append({'manifest_record': collision.reference['manifest']})
     if recovery is not None:
         references.append({"manifest_record": recovery})
     if isinstance(packet, HandoffResult):
@@ -659,6 +683,7 @@ def compile_geometry(assembly: Assembly, *, numerics: Mapping[str, Any]) -> Comp
     """Compile native geometry specifications only; no source, writes, solve or Fly."""
     if not isinstance(assembly, Assembly):
         raise ContractError("SIMION geometry compilation requires an explicitly assembled design")
+    _reject_legacy_composite_execution({'composition_plan': assembly.composition_plan})
     if isinstance(numerics, Mapping) and numerics.get("representation") == "neutral_multi_domain_collision":
         from .generic_geometry import compile_generic_multi_domain_geometry
         return compile_generic_multi_domain_geometry(assembly, numerics=numerics)

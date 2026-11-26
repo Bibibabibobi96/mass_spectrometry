@@ -975,3 +975,27 @@ workspace workflow leases=0，background/on产品发布；manifest SHA256
 借用原MPH SHA256 `02179DB42E4A25922315A13B4AAF8347C8B18C3BD9C291EF952FB3A72FEFA031`，
 3,082,205,877 B、solver_native_binary；身份是Python失败之后新捕获。无新的Compute或收敛资格。
 下一步固定已安装代码，从离仓同一公共CLI引用此basis跑真实小N CPT；新场与追踪证据分开报告。
+
+### B2/B3 SIMION 连续追踪与显式双解世界载体（软件闭包）
+
+`split_scalar_binding.py`/`scalar_sample_binding.py` 绑定真实同模型OFF/ON与独立solution/dataset、冷读和物理request，
+Lua `split_scalar_field.lua` 使用 Eoff+gate*(Eon−Eoff)，常开反射场不丢失；两域支持均须有效，无静默零场。
+`split_scalar_workbench.py`、native_plans和iob_core复用原managed owner生成五槽world，
+background为最低优先级槽1，原四个碰撞载体为2..5；不调用Refine或Fly，不复制大PA。
+world IOB仅在该owner run内冷开验证；后续track必须从已评阅五槽seed重建，不能引用已释放短路径别名。
+当前仅支持OA原生坐标与assembly坐标identity pose；其他pose明确拒绝，未宣称通用旋转world。
+
+`tracking_execution/program/units` 使用实际8.2.0.11可执行文件身份与原生出生/6D/母群/有限检测面事件，
+保留源birth和实验epoch，drive phase不替代实验时间；无跨组件重新释放。Lua `%d` 已实际证明32-bit边界，
+当前SIMION adapter在实际planner拒绝particle ID >2^31−1，公共存储仍int64，不隐式截断。
+split模型native_drive_rows按(instance,group)规范排序，JSON往返后重编身份一致。
+
+公开SIMION compile/build/prepare/solve/track 及旧mass-spectrum新执行入口拒绝旧复合OA/TOF，
+历史纯compiler和analysis读取保留；新的owner正例全部迁真实plan6 RF/OA/TOF，原预算/clock/分批/拒绝断言保留。
+范围不是IP/MR/C的全仓退役。plan6 recorded-birth preparation/reader作为独立下一单元，仍在软件验收。
+
+同一main代码联合运行 split_scalar_binding/world/tracking、split_tof_tracking、simion_particle_data、
+split_tof_simion、platform_api、legacy_composite_retirement 八模块，64 PASS（23.318s），SIMION相关Ruff PASS。
+首次联合失败为legacy负例错误消息已被更早退休guard改变，精确区分legacy/split后通过；
+另一次新测试在patch时首次导入造成mock污染，修复测试导入顺序，不放宽生产校验。
+上述均不是实际Refine/Fly证据，三个原生组合及已安装链仍须运行。

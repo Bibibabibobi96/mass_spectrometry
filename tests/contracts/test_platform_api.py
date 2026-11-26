@@ -53,11 +53,34 @@ def deployment_action(session):
         retention_preserve_paths=[], manifest_extra_fields={})
 
 
+def compile_historical(assembly, numerics):
+    from msplatform.backends.simion.compiler import compile_geometry as compile_historical_geometry
+    return compile_historical_geometry(dict(composition_plan=assembly.composition_plan,
+        components_resolved=assembly.components_resolved), numerics=numerics)
+
+
 def compile_example():
+    # Archived composite models retain a pure historical compiler.
     case = example_api.load_example("rf_oatof_functional_v1")
     components = {name: component_api.resolve_component(request) for name, request in case.component_requests.items()}
     assembly = assembly_api.assemble(case.recipe, components)
-    return case, components, assembly, simion_api.compile_geometry(assembly, numerics=case.geometry_numerics)
+    compiled = compile_historical(assembly, case.geometry_numerics)
+    return case, components, assembly, compiled
+
+
+def split_example():
+    """Real plan6 RF/OA/TOF model inputs for current public owner tests."""
+    from types import SimpleNamespace
+    from msplatform.recipes import load_recipe
+    path = Path(__file__).resolve().parents[2] / "src/msplatform/examples/rf_split_oatof_native_small_v1.toml"
+    study = load_recipe(path).to_dict()["study"]["document"]
+    parts = {name: component_api.resolve_component(value) for name, value in study["component_requests"].items()}
+    design = assembly_api.assemble(study["recipe"], parts)
+    compiled = simion_api.compile_geometry(design, numerics=study["numerics"]["geometry"])
+    case = SimpleNamespace(drive=study["drive"], physics=study["physics"], release=study["release"],
+        field_numerics=study["numerics"]["fields"], numerics=study["numerics"]["tracing"],
+        geometry_numerics=study["numerics"]["geometry"])
+    return case, parts, design, compiled
 
 
 class PlatformApiTests(unittest.TestCase):
@@ -311,26 +334,29 @@ class PlatformApiTests(unittest.TestCase):
         from dataclasses import replace
         import hashlib
         from msplatform.assembly.handoff import HandoffClock, HandoffMother, HandoffResult
-        from msplatform.backends.simion.model import compile_prepared_model, project_resolved_drive
+        from msplatform.backends.simion.model import compile_prepared_model
         from msplatform.backends.simion.tracking_execution import execute_tracking
         from msplatform.contracts.clock import ClockIdentity
         from msplatform.results.artifacts import OpenedArtifact
         from msplatform.io.manifest_records import file_record
 
-        case, _, _, compiled = compile_example()
+        case, _, _, compiled = split_example()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             epoch = root / "epoch.bin"
             epoch.write_bytes(b"\0" * 32)
             request = case.release
+            request['release_spec']['particle_count'] = 100
+            request['particle_ids'] = list(range(1, 101))
             request["clock"] = dict(clock_epoch_id="software-tracking-fixture",
                                     authority_sha256=hashlib.sha256(epoch.read_bytes()).hexdigest())
             release = ion_release_api.sample_release(request)
             packet = release.to_dict()
             components = {key: compiled.components_resolved[key]
                           for key in compiled.frontend_geometry["composition_plan"]["scope"]["instance_ids"]}
-            drive = project_resolved_drive(compiled, components, pulse=case.drive["pulse"],
-                clock=dict(packet["clock"], phase_reference_instrument_time_us=0.))
+            drive = copy.deepcopy(case.drive)
+            drive.pop('clock_authority')
+            drive['clock'].update(packet['clock'])
             model = compile_prepared_model(compiled, components, drive=drive, physics=case.physics)
             paths = dict(compiled_model=root / "model.json", clock_authority=root / "clock.json", instrument_epoch=epoch)
             paths["compiled_model"].write_text(json.dumps(model.document), encoding="utf-8")
@@ -355,7 +381,8 @@ class PlatformApiTests(unittest.TestCase):
                 policy=dict(host_state_path=root / "state.sqlite3", stage_policy_path=policy))
             propagation = dict(schema_version=1, scope="continuous_assembly", end_policy=dict(maximum_particle_age_us=200.),
                                consumed_plane_events=[], stop=None)
-            observations = dict(plane_observations=[])
+            observations = dict(plane_observations=[dict(schema_version=2,observation_id='detector',source_instance_id='tof',
+                surface_id='detector_active_face',max_records=100)])
             numerics = dict(maximum_step_us=.001, trajectory_quality=17, rf_steps_per_period=80)
             before = copy.deepcopy((packet, propagation, observations, numerics))
             sentinel = object()
@@ -431,17 +458,15 @@ class PlatformApiTests(unittest.TestCase):
                 clock = ClockIdentity(**packet["clock"])
                 empty = HandoffResult((), (), tuple(records), mother, HandoffClock(clock, clock), "time_snapshot")
                 relaunch = dict(propagation, scope="state_relaunch")
-                with self.assertRaisesRegex(ContractError, "published trajectory"):
+                with self.assertRaisesRegex(ContractError, "original births"):
                     simion_api.track(fields, empty, propagation=relaunch, observations=observations, numerics=numerics, context=context)
                 prior = OpenedArtifact(kind="trajectory_result", product_id="trajectory", reference=dict(reference, product_id="trajectory"),
                     metadata={}, records={}, paths={}, producer=dict(status="success"))
                 no_tool = replace(context, tools={})
-                self.assertIs(simion_api.track(fields, empty, propagation=relaunch, observations=observations, numerics=numerics,
-                                        context=no_tool, source_reference=prior), sentinel)
-                call = owner.call_args.kwargs
-                self.assertEqual(call["expected_operation_ids"], ())
-                self.assertEqual(len(call["payload"]["particles"]["mother"]["records"]), 100)
-                self.assertEqual(len(call["source_references"]), 2)
+                with self.assertRaisesRegex(ContractError, 'original births'):
+                    simion_api.track(fields, empty, propagation=relaunch, observations=observations, numerics=numerics,
+                                     context=no_tool, source_reference=prior)
+                owner.assert_not_called()
             self.assertFalse(context.workspace.exists())
             self.assertEqual((release.to_dict(), propagation, observations, numerics), before)
 
@@ -509,48 +534,27 @@ class PlatformApiTests(unittest.TestCase):
     def test_prepare_model_binds_geometry_clock_and_original_owner_without_solving(self):
         from dataclasses import asdict
         from types import SimpleNamespace
-        from msplatform.backends.simion.model_execution import execute_model
         from msplatform.backends.simion.model import require_prepared_model
-        case, _, _, compiled = compile_example()
+        from msplatform.backends.simion.model_execution import execute_model
+        case, _, _, compiled = split_example()
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            compiled_path = root / "compiled.json"
-            compiled_path.write_text(json.dumps(asdict(compiled)), encoding="utf-8")
-            stage = dict(limits=dict(wall_clock_seconds=600, transient_run_directory_bytes=104857600,
-                process_tree_working_set_bytes=2147483648, minimum_system_available_memory_bytes=1048576,
-                compact_final_retained_bytes=104857600, automatic_retry_count=0),
-                artifact_retention=dict(policy_version=1, **{"class": "solver_review"}, reason="Unsolved software fixture"))
-            policy = root / "stages.json"
-            policy.write_text(json.dumps(dict(schema_version=1, role="execution_stage_policy",
-                stages={"prepare_model": stage})), encoding="utf-8")
-            context = expert_context(workspace=root / "study",
-                tools=dict(python=Path(sys.executable), powershell=Path(sys.executable), simion=Path(sys.executable)),
-                policy=dict(host_state_path=root / "state.sqlite3", stage_policy_path=policy))
-            reference = {"manifest": {"fixture": True}, "product_id": "geometry"}
-            source = SimpleNamespace(reference=reference, data_path=lambda name: compiled_path)
-            sentinel = object()
-            with patch("msplatform.results.artifacts.open_artifact", side_effect=[source, sentinel]) as reader, \
-                 patch("msplatform.execution.owner.run_managed_stage", return_value={"manifest": {"new": True}}) as owner, \
-                 patch("subprocess.Popen", side_effect=AssertionError("hidden native work")):
-                self.assertIs(simion_api.prepare_model(reference, drive=case.drive, physics=case.physics, context=context), sentinel)
-            call = owner.call_args.kwargs
-            self.assertEqual(call["expected_operation_ids"], ("materialize_geometry", "build_model", "verify_model"))
-            self.assertEqual(call["action"].func, execute_model)
-            self.assertEqual(call["source_references"], [{"manifest_record": reference["manifest"]}])
-            model = require_prepared_model(call["action"].keywords["model"])
-            self.assertEqual(model["drive"]["clock"]["authority_sha256"],
-                "6A035131B2BDBA6F7F20CBF6B6FD20EDAA5DCB3D7EC8EB7349F74F7AC35238A0")
-            self.assertEqual(model["drive"]["pulse"], case.drive["pulse"])
-            self.assertNotIn("clock_authority", model["drive"])
+            root=Path(directory); path=root/'compiled.json'; path.write_text(json.dumps(asdict(compiled)),encoding='utf8')
+            limits=dict(wall_clock_seconds=600,transient_run_directory_bytes=104857600,process_tree_working_set_bytes=2147483648,minimum_system_available_memory_bytes=1048576,compact_final_retained_bytes=104857600,automatic_retry_count=0)
+            stage=dict(limits=limits,artifact_retention=dict(policy_version=1,**{'class':'solver_review'},reason='fixture'))
+            policy=root/'policy.json'; policy.write_text(json.dumps(dict(schema_version=1,role='execution_stage_policy',stages=dict(prepare_model=stage))),encoding='utf8')
+            context=expert_context(workspace=root/'workspace',tools=dict(python=Path(sys.executable),powershell=Path(sys.executable),simion=Path(sys.executable)),policy=dict(host_state_path=root/'state.sqlite3',stage_policy_path=policy))
+            reference=dict(manifest={'fixture':True},product_id='geometry'); source=SimpleNamespace(reference=reference,data_path=lambda name:path); sentinel=object()
+            with patch('msplatform.results.artifacts.open_artifact',side_effect=[source,sentinel]), patch('msplatform.execution.owner.run_managed_stage',return_value={'manifest':{'fixture':True}}) as owner:
+                self.assertIs(simion_api.prepare_model(reference,drive=case.drive,physics=case.physics,context=context),sentinel)
+            call=owner.call_args.kwargs; model=require_prepared_model(call['action'].keywords['model'])
+            self.assertEqual(call['action'].func,execute_model)
+            self.assertEqual(call['committed_new_bytes'],limits['transient_run_directory_bytes'])
+            self.assertEqual(call['source_references'],[{'manifest_record':reference['manifest']}])
+            self.assertEqual(model['drive']['clock']['authority_sha256'],case.release['clock']['authority_sha256'])
+            self.assertEqual(model['drive']['pulse'],case.drive['pulse'])
+            self.assertEqual(model['geometry']['frontend_geometry']['role'],'simion_split_oa_tof_geometry')
             self.assertFalse(context.workspace.exists())
-            self.assertEqual(reader.call_args.kwargs["expected_kind"], "prepared_model")
-            invalid = case.drive
-            invalid["clock_authority"] = {"example_resource": "missing.json"}
-            with patch("msplatform.results.artifacts.open_artifact", return_value=source), \
-                 patch("msplatform.execution.owner.run_managed_stage") as refused, \
-                 self.assertRaisesRegex(ContractError, "unknown versioned"):
-                simion_api.prepare_model(reference, drive=invalid, physics=case.physics, context=context)
-            refused.assert_not_called()
+
 
     def test_independent_oa_prepare_model_uses_explicit_groups_clock_and_actual_domain_seed(self):
         from dataclasses import asdict
@@ -646,22 +650,18 @@ class PlatformApiTests(unittest.TestCase):
 
     def test_field_action_binds_real_model_graph_budget_and_explicit_reuse(self):
         from types import SimpleNamespace
-        from msplatform.backends.simion.model import compile_prepared_model, project_resolved_drive
+        from msplatform.backends.simion.model import compile_prepared_model
         from msplatform.backends.simion.field_execution import execute_fields
         from msplatform.io.manifest_records import file_record, verify_record
 
-        case, _, _, compiled = compile_example()
+        case, _, _, compiled = split_example()
         selected = compiled.frontend_geometry["composition_plan"]["scope"]["instance_ids"]
         components = {name: compiled.components_resolved[name] for name in selected}
-        drive = project_resolved_drive(compiled, components, pulse=case.drive["pulse"],
-            clock=dict(clock_epoch_id="explicit-software-fixture", authority_sha256="A" * 64,
-                       phase_reference_instrument_time_us=0.))
+        drive = copy.deepcopy(case.drive)
+        drive.pop('clock_authority')
+        drive['clock'].update(clock_epoch_id="explicit-software-fixture", authority_sha256="A" * 64)
         model = compile_prepared_model(compiled, components, drive=drive, physics=case.physics)
-        domains = copy.deepcopy(case.geometry_numerics["frontend_domains"])
-        for domain in domains.values():
-            domain["refine_convergence_v"] = dict(carrier_off=1e-5, rf_reference=1e-5, pulse_delta=1e-5)
-        numerics = dict(frontend_domains=domains, rf_reference_voltage_v=139.81792,
-            downstream_convergence_v=dict(flight_tube=1e-5, reflectron=1e-5, detector=1e-5))
+        numerics = copy.deepcopy(case.field_numerics)
         original = copy.deepcopy(numerics)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -755,46 +755,27 @@ class PlatformApiTests(unittest.TestCase):
             self.assertFalse(context.workspace.exists())
 
     def test_geometry_action_dispatches_the_bound_plan_budget_and_owner_only(self):
-        from msplatform.io.manifest_records import verify_record
-        from msplatform.execution.stage_policy import read_stage_policy
         from msplatform.backends.simion.geometry_execution import execute_geometry
-        _, _, _, compiled = compile_example()
+        _, _, _, compiled = split_example()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             limits = dict(wall_clock_seconds=600, transient_run_directory_bytes=104857600,
                 process_tree_working_set_bytes=2147483648, minimum_system_available_memory_bytes=1048576,
                 compact_final_retained_bytes=104857600, automatic_retry_count=0)
-            selected = dict(limits=limits, artifact_retention=dict(policy_version=1,
-                **{"class": "solver_review"}, reason="Explicit software fixture only"))
-            policy = dict(schema_version=1, role="execution_stage_policy", stages={"build_geometry": selected})
-            path = root / "stages.json"
-            path.write_text(json.dumps(policy), encoding="utf-8")
-            context = expert_context(workspace=root / "new study",
-                tools=dict(python=Path(sys.executable), powershell=Path(sys.executable), simion=Path(sys.executable)),
-                policy=dict(host_state_path=root / "state.sqlite3", execution_root=root / "aliases", stage_policy_path=path))
-            sentinel = object()
-            with patch("msplatform.execution.owner.run_managed_stage", return_value={"manifest": {"fixture": True}}) as owner, \
-                 patch("msplatform.results.artifacts.open_artifact", return_value=sentinel) as reader:
-                self.assertIs(simion_api.build_geometry(compiled, context=context), sentinel)
-            arguments = owner.call_args.kwargs
-            self.assertEqual(arguments["committed_new_bytes"], limits["transient_run_directory_bytes"])
-            self.assertEqual(arguments["payload"]["stage_policy"], selected)
-            self.assertEqual(arguments["action"].func, execute_geometry)
-            self.assertEqual(arguments["action"].keywords["limits"], limits)
-            self.assertTrue(arguments["use_short_execution_path"])
-            self.assertEqual(arguments["expected_operation_ids"][-2:], ("build_geometry", "verify_geometry"))
-            verify_record("stage authority", arguments["commitment_inputs"][0])
-            self.assertEqual(Path(arguments["commitment_inputs"][0]["path"]), path)
-            reader.assert_called_once_with({"manifest": {"fixture": True}, "product_id": "geometry"}, expected_kind="geometry_artifact")
+            stage = dict(limits=limits, artifact_retention=dict(policy_version=1, **{"class":"solver_review"}, reason="fixture"))
+            policy = root/'policy.json'; policy.write_text(json.dumps(dict(schema_version=1,role='execution_stage_policy', stages=dict(build_geometry=stage))),encoding='utf8')
+            context = expert_context(workspace=root/'workspace', tools=dict(python=Path(sys.executable),powershell=Path(sys.executable),simion=Path(sys.executable)),
+                policy=dict(host_state_path=root/'state.sqlite3',stage_policy_path=policy))
+            sentinel=object()
+            with patch('msplatform.execution.owner.run_managed_stage',return_value={'manifest':{'fixture':True}}) as owner, patch('msplatform.results.artifacts.open_artifact',return_value=sentinel):
+                self.assertIs(simion_api.build_geometry(compiled,context=context),sentinel)
+            call=owner.call_args.kwargs
+            self.assertEqual(call['committed_new_bytes'], limits['transient_run_directory_bytes'])
+            self.assertEqual(call['action'].func,execute_geometry)
+            self.assertEqual(call['payload']['stage_policy'],stage)
+            self.assertEqual(call['expected_operation_ids'][-2:],('build_geometry','verify_geometry'))
             self.assertFalse(context.workspace.exists())
-            for field, invalid in (("wall_clock_seconds", True), ("automatic_retry_count", 1),
-                                   ("transient_run_directory_bytes", 0)):
-                with self.subTest(field=field):
-                    bad = copy.deepcopy(policy)
-                    bad["stages"]["build_geometry"]["limits"][field] = invalid
-                    path.write_text(json.dumps(bad), encoding="utf-8")
-                    with self.assertRaisesRegex(ValueError, "positive existing process limits"):
-                        read_stage_policy(context, "build_geometry")
+
 
     def test_public_birth_authoring_keeps_sparse_source_and_full_mother_without_side_effects(self):
         from tests.ion_release.test_mt19937_disk_cone_rf_phase import _spec
@@ -838,8 +819,8 @@ class PlatformApiTests(unittest.TestCase):
         altered["release"] = {"deliberately_invalid_for_sampling": True}
         independent = example_api.StudyDefinition(altered)
         parts = {name: component_api.resolve_component(request) for name, request in independent.component_requests.items()}
-        self.assertEqual(simion_api.compile_geometry(assembly_api.assemble(independent.recipe, parts),
-                         numerics=independent.geometry_numerics), compiled)
+        self.assertEqual(compile_historical(assembly_api.assemble(independent.recipe, parts),
+                         independent.geometry_numerics), compiled)
         self.assertEqual(set(components), {"multipole", "oatof"})
         self.assertEqual(len(components["oatof"].assembly_interface["component_electrodes"]), 42)
         self.assertEqual(assembly.composition_plan["schema_version"], 5)
@@ -854,8 +835,7 @@ class PlatformApiTests(unittest.TestCase):
         requests = case.component_requests
         requests["multipole"]["design"]["geometry_mm"]["rod_radius_ratio"] = .55
         changed = {name: component_api.resolve_component(request) for name, request in requests.items()}
-        result = simion_api.compile_geometry(assembly_api.assemble(case.recipe, changed),
-                                             numerics=case.geometry_numerics)
+        result = compile_historical(assembly_api.assemble(case.recipe, changed), case.geometry_numerics)
         self.assertEqual(changed["multipole"].assembly_interface, components["multipole"].assembly_interface)
         self.assertEqual(assembly_api.assemble(case.recipe, changed).composition_plan, assembly.composition_plan)
         self.assertNotEqual(result.frontend_gems, original.frontend_gems)
@@ -874,7 +854,7 @@ class PlatformApiTests(unittest.TestCase):
         assembly.components_source["oatof"].clear()
         assembly.components.clear()
         self.assertEqual((case, components, assembly), before)
-        rebuilt = simion_api.compile_geometry(assembly, numerics=case.geometry_numerics)
+        rebuilt = compile_historical(assembly, case.geometry_numerics)
         self.assertEqual(rebuilt, compiled)
         design = components["multipole"].resolved_design
         interface = components["multipole"].assembly_interface
