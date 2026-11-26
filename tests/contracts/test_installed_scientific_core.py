@@ -5770,6 +5770,9 @@ if tof_workflow_retained:
     (tof_workflow_diagnostics/'stderr.log').write_bytes(tof_workflow_child.stderr)
 tof_workflow_child.stdout=tof_workflow_child.stdout.decode('utf-8')
 tof_workflow_child.stderr=tof_workflow_child.stderr.decode('utf-8')
+for line in tof_workflow_child.stdout.splitlines():
+    if line.startswith('INSTALLED_SECTION_TIMING='):
+        print(line,flush=True)
 assert tof_workflow_child.returncode==0,tof_workflow_child.stdout+tof_workflow_child.stderr
 tof_workflow_reports=[line.removeprefix('TOF_WORKFLOW_REPORT=') for line in tof_workflow_child.stdout.splitlines() if line.startswith('TOF_WORKFLOW_REPORT=')]
 assert len(tof_workflow_reports)==1,tof_workflow_child.stdout
@@ -7592,7 +7595,10 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             for index in range(2):
                 scalar_root = Path(tempfile.mkdtemp(prefix='installed-sfi-scalar-owner-' + str(index) + '-')).resolve()
                 print('INSTALLED_SFI_SCALAR_FIXTURE_ROOT=' + str(scalar_root), flush=True)
+                sfi_started = time.perf_counter_ns()
                 sfi_scalar_fixtures.append(sfi_scalar_owner_fixture.make_fixture(scalar_root, refinement_windows=True))
+                print('INSTALLED_SECTION_TIMING=' + json.dumps(dict(section='sfi_scalar_fixture',
+                    case=str(index), elapsed_ns=time.perf_counter_ns()-sfi_started, exception=False)), flush=True)
             rf_ip_fixtures = []
             for index in range(2):
                 rf_ip_root = root / ('rf-ip-inert-' + str(index))
