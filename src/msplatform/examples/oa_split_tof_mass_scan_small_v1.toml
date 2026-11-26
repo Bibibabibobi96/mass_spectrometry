@@ -1,0 +1,17 @@
+schema_version = 2
+constants_version = "repository_particle_physics_v1"
+label = "OA TOF split mass_scan small N"
+particle_tracer = "simion"
+field_assembly_strategy = "native_domain_composition"
+particle_field_coupling = "external_given_field"
+[study]
+path = "oa_split_tof_mass_scan_small_v1.json"
+sha256 = "a7d75ed3eab3e198d4196868b9ce1aa9a787554dc83cea5088c545b81eacb9e6"
+[field_source]
+kind = "simion_native"
+[recording]
+mode = "observation_times"
+observation_times_us = [0.0, 80.0, 100.0]
+
+[gas_environment]
+status = "vacuum"

@@ -1161,6 +1161,19 @@ c8479985普通已安装venv的仓外只读抽取片段实际PASS：
 首次抽取调用参数不足IndexError，纠正后PASS，未改live安装环境。现有shared-import与author-tree guard两项
 最终定向PASS（1.504s），AST/Ruff PASS。完整最终两发行安装尚未执行，native证据仍分别绑定实际候选SHA。
 
+### B5 可复制双物种作者小例（尚待native）
+
+`examples/oa_split_tof_mass_scan_small_v1.json/.toml` 是同一public recipe的最小mass_scan：
+第一species完整保留原N3请求；第二同mass100、charge_state2、N2、稳定species_id=m100_charge2、IDs4/5、权重各0.5。
+Study除release外和原单物种逐字段相同，TOML只变label与Study路径/hash。
+几何/场/drive/pulse/source分布与seed/clock/numerics/recording均未调优。
+Study SHA256 `A7D75ED3EAB3E198D4196868B9CE1AA9A787554DC83CEA5088C545B81EACB9E6`。
+
+公开load与实际planner检查完整5母群、3/2不等N、同mass双电荷、独立权重；
+新例两项与installed shared-import/author-tree guard联合4 PASS（5.536s），Ruff/diff-check PASS。
+既有两发行安装probe/inventory同步加入该第三组资源，但当前活跃c847安装不含新例，未冒称通过新例安装或native。
+下一步复制这两作者文件到仓外并用现有public CLI，共用已求场依赖，验证原批复用与新增+2批、同输入零native增量和缺批局部重算。
+
 ### B 累计 CLOC（至 f216a7af，不含后续改动）
 
 基线 `a9d76aa4dcdbaf8099c9ce5aa0585d6fce18c3be` → 结果 `f216a7afd0a3b27be21402915209defa9964d78e`；CLOC 2.10；源日志 `C:/Users/Liao/msplatform-artifacts/architecture-b-20261127/f216a7af-cloc.log`。

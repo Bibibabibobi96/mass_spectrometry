@@ -69,6 +69,10 @@ run 使用同一快照解析、归档 `author.toml` 并计算 provenance 的 `au
 `rf_split_oatof_native_small_v1.toml` 与 `oa_split_tof_comsol_small_v1.toml` 给出明确Study引用；
 复制时保留对应JSON，不能只复制TOML。独立OA和下游TOF连续追踪，原birth与pulse/epoch保留。
 
+`oa_split_tof_mass_scan_small_v1.toml` 给出同质量+1/+2、N=3/2的非空物种集合。
+第一物种保留单物种例的全部原始请求，第二物种使用独立ID4/5和每粒子0.5权重；
+样本数与丰度分开。以相同 `run` 命令执行，无需手动拼接批次；真实小N结果与复用资格仍查迁移记录。
+
 原生运行必须同时提供 `--execution-environment <部署JSON> --profile <工程profile> --workspace <原生owner工作区>`，
 另指定与原生 `workspace/artifacts` 分离的 `--artifact-root` 和正整数 `--reserve-bytes`。
 部署使用既有ExecutionContext/阶段策略/共享host调度；科学值来自唯一冻结Study。

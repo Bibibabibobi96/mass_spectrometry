@@ -200,11 +200,13 @@ with section_timing('b_native_preflight', sys.argv[2]):
     from msplatform.backends.simion.mass_spectrum import run_mixed_species_fly as installed_retired_fly
     from msplatform.contracts.machine_contracts import ContractError as InstalledContractError
     from msplatform.recipes import load_recipe as installed_load_recipe
+    from msplatform.workflows.mass_scan import prepare_mass_scan as installed_prepare_mass_scan
     from msplatform.workflows.native_tracing import preflight_native as installed_preflight
     installed_expected = json.loads((root / 'installed_b_resource_hashes.json').read_text(encoding='utf-8'))
     installed_package = installed_files('msplatform.examples')
     installed_purelib = pathlib.Path(sysconfig.get_path('purelib')).resolve()
-    for installed_name in ('oa_split_tof_native_small_v1', 'rf_split_oatof_native_small_v1'):
+    for installed_name in ('oa_split_tof_native_small_v1', 'rf_split_oatof_native_small_v1',
+                           'oa_split_tof_mass_scan_small_v1'):
         for installed_ext in ('toml', 'json'):
             installed_resource = installed_package.joinpath(installed_name + '.' + installed_ext)
             assert pathlib.Path(str(installed_resource)).resolve().is_relative_to(installed_purelib)
@@ -221,6 +223,15 @@ with section_timing('b_native_preflight', sys.argv[2]):
         installed_projects = {item['project_id'] for item in installed_study['recipe']['instances']}
         assert {'orthogonal_accelerator', 'single_reflection_tof'} <= installed_projects
         assert 'single_reflection_oa_tof_mass_analyzer' not in installed_projects
+        if installed_name == 'oa_split_tof_mass_scan_small_v1':
+            installed_batches = installed_prepare_mass_scan(installed_study['release'])
+            assert [len(batch.rows) for batch in installed_batches] == [3, 2]
+            installed_rows = [row for batch in installed_batches for row in batch.rows]
+            assert [row['particle_id'] for row in installed_rows] == [1, 2, 3, 4, 5]
+            assert [row['charge_state'] for row in installed_rows] == [1, 1, 1, 2, 2]
+            assert [row['particle_weight'] for row in installed_rows] == [1., 1., 1., .5, .5]
+            assert {row['mass_amu'] for row in installed_rows} == {100.}
+            print('INSTALLED_B_MASS_SCAN=PASS source_batches=3,2 ids=1,2,3,4,5 charges=1,2 native_run=0', flush=True)
     installed_old = installed_examples.load_example('rf_oatof_functional_v1')
     installed_parts = {name: installed_components.resolve_component(value) for name, value in installed_old.component_requests.items()}
     installed_old_assembly = installed_assembly.assemble(installed_old.recipe, installed_parts)
@@ -238,7 +249,7 @@ with section_timing('b_native_preflight', sys.argv[2]):
         assert 'mass_scan' in str(error)
     else:
         raise AssertionError('retired legacy mass-spectrum Fly accepted')
-    for installed_name in ('msplatform.workflows.native_tracing','msplatform.backends.simion.operations',
+    for installed_name in ('msplatform.workflows.native_tracing','msplatform.workflows.mass_scan','msplatform.backends.simion.operations',
                            'msplatform.backends.simion.mass_spectrum'):
         assert pathlib.Path(sys.modules[installed_name].__file__).resolve().is_relative_to(installed_purelib), installed_name
     print('INSTALLED_B_NATIVE_PREFLIGHT=PASS schema2=1 split_oa_tof=1 rf_split=1 retired_execution=1 native_run=0', flush=True)
@@ -7460,7 +7471,8 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                 target = source / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(REPO_ROOT / name, target)
-            b_resources = [stem + '.' + extension for stem in ('oa_split_tof_native_small_v1', 'rf_split_oatof_native_small_v1')
+            b_resources = [stem + '.' + extension for stem in ('oa_split_tof_native_small_v1', 'rf_split_oatof_native_small_v1',
+                                                               'oa_split_tof_mass_scan_small_v1')
                            for extension in ('json', 'toml')]
             b_hashes = {name: hashlib.sha256((source / 'src/msplatform/examples' / name).read_bytes()).hexdigest()
                         for name in b_resources}
@@ -7560,6 +7572,7 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
                         self.assertIn('INSTALLED_REFERENCE_TRACING=PASS real_dop853=1 independent_e_oracle=1 complete_readback=1 reuse=1', evidence)
                         self.assertIn('INSTALLED_REFERENCE_ORIGINS=PASS', evidence)
                         self.assertIn('INSTALLED_B_NATIVE_PREFLIGHT=PASS schema2=1 split_oa_tof=1 rf_split=1 retired_execution=1 native_run=0', evidence)
+                        self.assertIn('INSTALLED_B_MASS_SCAN=PASS source_batches=3,2 ids=1,2,3,4,5 charges=1,2 native_run=0', evidence)
                         self.assertEqual((root / 'installed_reference_uniform_e.toml').read_bytes(), recipe_bytes)
                         print('INSTALLED_REFERENCE_EVIDENCE=' + evidence.strip(), flush=True)
                     for name, digest in source_inventory.items():
@@ -8022,6 +8035,7 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
                                           cwd=root, environment=probe_environment, timeout=900)
                 self.assertIn('INSTALLED_REFERENCE_TRACING=PASS real_dop853=1 independent_e_oracle=1 complete_readback=1 reuse=1', result)
                 self.assertIn('INSTALLED_B_NATIVE_PREFLIGHT=PASS schema2=1 split_oa_tof=1 rf_split=1 retired_execution=1 native_run=0', result)
+                self.assertIn('INSTALLED_B_MASS_SCAN=PASS source_batches=3,2 ids=1,2,3,4,5 charges=1,2 native_run=0', result)
                 self.assertEqual((root / 'installed_reference_uniform_e.toml').read_bytes(), reference_fixture_bytes)
                 self.assertIn('INSTALLED_RF_IP_CONTINUOUS_OWNER=PASS native=INERT ids=7,91', result)
                 self.assertIn('INSTALLED_IP_MR_PUBLIC_ADMISSION=PASS basis=17 priority=5 negatives=3 owner=planning_only',result)
