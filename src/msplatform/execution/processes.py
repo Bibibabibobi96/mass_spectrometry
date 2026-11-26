@@ -296,13 +296,14 @@ def _invoke_native_artifact_owner(context, request, scope, interpret, resource_n
                 updated = not worker_recorded
                 if group:
                     for item in worker["workers"]:
-                        if item["operation_id"] not in group_recorded:
+                        identity = (item["operation_id"], item["attempt"], item["process_id"], item["started_at_utc_ticks"])
+                        if identity not in group_recorded:
                             if item.get("registration") == "registered":
                                 scope["store"].record_native_group_worker(binding_id, item["operation_id"],
-                                    process_id=item["process_id"], started_at_utc_ticks=item["started_at_utc_ticks"])
+                                    process_id=item["process_id"], started_at_utc_ticks=item["started_at_utc_ticks"], attempt=item["attempt"])
                             elif item.get("registration") != "quick_exit":
                                 raise ValueError("native group registration status differs")
-                            group_recorded.add(item["operation_id"])
+                            group_recorded.add(identity)
                             updated = True
                 else:
                     if worker.get("registration") == "registered":
@@ -312,7 +313,8 @@ def _invoke_native_artifact_owner(context, request, scope, interpret, resource_n
                         raise ValueError("native registration status differs")
                 worker_recorded = True
                 if updated:
-                    publish("worker-ack", {"nonce": nonce, "binding_id": binding_id, "operations": sorted(group_recorded)})
+                    publish("worker-ack", {"nonce": nonce, "binding_id": binding_id, "attempts": [dict(operation_id=name, attempt=attempt, process_id=pid, started_at_utc_ticks=birth)
+                                 for name, attempt, pid, birth in sorted(group_recorded)]})
             time.sleep(0.02)
     except BaseException as error:
         failure = error

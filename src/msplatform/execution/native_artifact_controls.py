@@ -175,42 +175,84 @@ def reconcile_native_receipt(store, receipt_path: Path) -> bool:
 
 
 def _reconcile_group(store, binding_id: str, row, worker: dict, native: dict) -> bool:
-    """Reconcile a complete group against its persisted registrations and release."""
-    registrations, observations, pending = worker.get("workers"), native.get("observations"), native.get("not_started")
-    if not isinstance(registrations, list) or not isinstance(observations, dict) or not isinstance(pending, list):
-        raise ValueError("native group receipt lacks its exact worker set")
-    registrations_by_id = {item["operation_id"]: item for item in registrations}
-    if len(registrations_by_id) != len(registrations) or set(registrations_by_id) != set(observations):
-        raise ValueError(f"native group registrations differ from completed observations: "
-                         f"registered={list(registrations_by_id)} observed={list(observations)} error={native.get('error')}")
+    """Reconcile each original process attempt against its drained owner receipt."""
+    registrations, observations, pending, attempts = (worker.get("workers"), native.get("observations"),
+                                                       native.get("not_started"), native.get("attempts"))
+    if not isinstance(registrations, list) or not isinstance(observations, dict) or not isinstance(pending, list) or not isinstance(attempts, list):
+        raise ValueError("native group receipt lacks its exact attempt set")
+    # A pre-attempt receipt can prove only one registered execution per operation.
+    legacy = all("attempt" not in item for item in registrations + attempts)
+    if legacy:
+        if len({item.get("operation_id") for item in registrations}) != len(registrations):
+            raise ValueError("legacy group receipt cannot prove repeated attempts")
+        registrations = [dict(item, attempt=1) for item in registrations]
+        attempts = [dict(item, attempt=1) for item in attempts]
+    def registration_key(item):
+        name, ordinal, pid, birth = (item.get(key) for key in
+                                     ("operation_id", "attempt", "process_id", "started_at_utc_ticks"))
+        if not isinstance(name, str) or not name or any(type(value) is not int or value <= 0 for value in (ordinal, pid, birth)):
+            raise ValueError("native group attempt identity differs")
+        if item.get("registration") not in {"registered", "quick_exit"}:
+            raise ValueError("native group registration status differs")
+        return name, ordinal, pid, birth
+    registered = [registration_key(item) for item in registrations]
+    if len(registered) != len(set(registered)) or len({(r[0], r[1]) for r in registered}) != len(registered):
+        raise ValueError("native group attempt registrations are duplicated")
+    for name in {item[0] for item in registered}:
+        ordinals = sorted(item[1] for item in registered if item[0] == name)
+        if ordinals != list(range(1, len(ordinals) + 1)):
+            raise ValueError("native group attempt sequence is incomplete")
     with store._db() as db:
         members = db.execute("SELECT operation_id,worker_pid,worker_started FROM native_group_workers WHERE binding_id=?",
                              (binding_id,)).fetchall()
-    if set(observations) | set(pending) != {item[0] for item in members} or set(observations) & set(pending):
-        raise ValueError("native group receipt does not cover its declared operations")
+        recorded = db.execute("SELECT operation_id,attempt,worker_pid,worker_started FROM native_group_attempts WHERE binding_id=?",
+                              (binding_id,)).fetchall()
+    declared = {item[0] for item in members}
+    for name, pid, birth in members:
+        if pid is not None:
+            first = [item for item in registered if item[:2] == (name, 1)]
+            if len(first) != 1 or first[0][2] != pid or not _same_creation_time(str(first[0][3]), str(birth)):
+                raise ValueError("native group first attempt differs from Store")
+    if (set(observations) | set(pending) != declared or set(observations) & set(pending)
+            or {item[0] for item in registered} != set(observations)
+            or not set(recorded).issubset(set(registered))):
+        raise ValueError("native group receipt does not cover its declared operations and recorded attempts")
     release = [{"release_id": "host", "completion_receipt": {"host_release": native["host_release"]}}]
-    operations = []
-    for name, observation in observations.items():
-        registration = registrations_by_id[name]
-        if registration.get("registration") not in {"registered", "quick_exit"}:
-            raise ValueError("native group registration status differs")
-        binding = {"host_token": row[1], "operation_id": name, "worker_pid": registration["process_id"],
-                   "worker_started": registration["started_at_utc_ticks"], "host_state_path": row[5],
-                   "host_file_id": json.loads(row[6])}
-        operation = {"operation_id": name, "resource_release_id": "host", "observation": {
+    operations, drained = [], []
+    for item in attempts:
+        observation = item["observation"]
+        name, ordinal = item["operation_id"], item["attempt"]
+        matches = [identity for identity in registered if identity[:2] == (name, ordinal)]
+        if len(matches) != 1:
+            raise ValueError("drained native group attempt is not registered")
+        identity = matches[0]
+        binding = {"host_token": row[1], "operation_id": name, "worker_pid": identity[2],
+                   "worker_started": identity[3], "host_state_path": row[5], "host_file_id": json.loads(row[6])}
+        operation = {"operation_id": name, "attempt": ordinal, "resource_release_id": "host", "observation": {
             "exit_confirmed": True, "returncode": observation["exit_code"],
-            "process_id": observation["root_process_id"], "process_started_at_utc_ticks": observation["root_process_started_at_utc_ticks"]}}
+            "process_id": observation["root_process_id"],
+            "process_started_at_utc_ticks": observation["root_process_started_at_utc_ticks"]}}
         validate_native_completion(binding, {"writers_stopped": True, "operations": [operation], "resource_releases": release})
         operations.append(operation)
+        drained.append(identity)
+    if len(drained) != len(set(drained)) or set(drained) != set(registered):
+        raise ValueError("native group attempt drain set differs")
+    for name, observation in observations.items():
+        if not any(item["operation_id"] == name and item["observation"]["process_id"] == observation["root_process_id"] and
+                   item["observation"]["returncode"] == observation["exit_code"] and
+                   _same_creation_time(str(item["observation"]["process_started_at_utc_ticks"]),
+                                       str(observation["root_process_started_at_utc_ticks"]))
+                   for item in operations):
+            raise ValueError("native final group observation is not a drained attempt")
     with store._transaction() as db:
-        for member, pid, birth in members:
-            if member in registrations_by_id:
-                registration = registrations_by_id[member]
-                identity = (registration["process_id"], registration["started_at_utc_ticks"])
-                if (pid, birth) == (None, None):
-                    db.execute("UPDATE native_group_workers SET worker_pid=?,worker_started=? WHERE binding_id=? AND operation_id=?",
-                               (*identity, binding_id, member))
-                elif (pid, birth) != identity:
-                    raise ValueError("native group registration differs from Store")
+        for name, ordinal, pid, birth in registered:
+            existing = db.execute("SELECT worker_pid,worker_started FROM native_group_attempts WHERE binding_id=? AND operation_id=? AND attempt=?",
+                                  (binding_id, name, ordinal)).fetchone()
+            if existing is None:
+                db.execute("INSERT INTO native_group_attempts VALUES(?,?,?,?,?)", (binding_id, name, ordinal, pid, birth))
+            elif existing != (pid, birth):
+                raise ValueError("native group registration differs from Store")
+            db.execute("UPDATE native_group_workers SET worker_pid=?,worker_started=? WHERE binding_id=? AND operation_id=? AND worker_pid IS NULL",
+                       (pid, birth, binding_id, name))
     return store.complete_native_group_controls(binding_id, completion={"writers_stopped": True,
         "operations": operations, "not_started": pending, "resource_releases": release})

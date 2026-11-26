@@ -61,6 +61,8 @@ try{
   $onStarted={param($record)
     $started.Add($record)
     if($null-ne$native){
+      $attempt=1+@($registrations|Where-Object{$_.operation_id-ceq[string]$record.name}).Count
+      $record|Add-Member -NotePropertyName native_attempt -NotePropertyValue $attempt -Force
       $registration='registered'
       try{
         $null=Register-HostResourceProcess -Lease $lease -ProcessId ([int]$record.root_process_id)
@@ -71,13 +73,13 @@ try{
         if(-not$confirmedExited){throw $registrationFailure}
         $registration='quick_exit';$birth=[int64]$record.root_process_started_at_utc_ticks
       }
-      $registrations.Add(@{operation_id=[string]$record.name;process_id=[int]$record.root_process_id;started_at_utc_ticks=$birth;registration=$registration})
+      $registrations.Add(@{operation_id=[string]$record.name;process_id=[int]$record.root_process_id;started_at_utc_ticks=$birth;registration=$registration;attempt=$attempt})
       Write-NativeControlJson $native.worker @{nonce=$native.nonce;binding_id=$bindingId;workers=$registrations.ToArray()}
       while($registration-eq'registered'-and(Test-NativeParentAlive)){
         if(Test-Path -LiteralPath $native.'worker-ack' -PathType Leaf){
           $workerAck=Get-Content -LiteralPath $native.'worker-ack' -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
           if($workerAck.nonce-cne$native.nonce-or$workerAck.binding_id-cne$bindingId){throw 'Native group acknowledgement differs.'}
-          if(@($workerAck.operations)-ccontains[string]$record.name){break}
+          if(@($workerAck.attempts|Where-Object{$_.operation_id-ceq[string]$record.name-and[int]$_.attempt-eq$attempt-and[int]$_.process_id-eq[int]$record.root_process_id-and[int64]$_.started_at_utc_ticks-eq$birth}).Count-eq1){break}
         }
         Start-Sleep -Milliseconds 30
       }
@@ -87,7 +89,7 @@ try{
   $onCompleted={param($record)
     $observation=& $convertObservation $record
     $observations[[string]$record.name]=$observation
-    $attempts.Add(@{operation_id=[string]$record.name;observation=$observation;pressure_terminated=[bool]$record.pressure_terminated})
+    $attempts.Add(@{operation_id=[string]$record.name;attempt=$(if($null-ne$native){[int]$record.native_attempt}else{1});observation=$observation;pressure_terminated=[bool]$record.pressure_terminated})
     $payload=@{operation_id=[string]$record.name;observation=$observation;host_release=$null}
     $payload|ConvertTo-Json -Depth 12 -Compress|& $request.context.python_executable -I -B -c 'import json,sys;from pathlib import Path;from msplatform.execution.recorded_file_removal import write_json_atomic;write_json_atomic(Path(sys.argv[1]),json.load(sys.stdin))' $record.specification.receipt_path
     if($LASTEXITCODE-ne0){throw 'Batch process completion evidence could not be preserved.'}
@@ -147,7 +149,7 @@ try{
     }
     if(-not@($attempts|Where-Object{$_.observation.root_process_id-eq$record.root_process_id-and
       $_.observation.root_process_started_at_utc_ticks-eq$drain.root_started_at_utc_ticks}).Count){
-      $attempts.Add(@{operation_id=[string]$record.name;pressure_terminated=[bool]$record.pressure_terminated;
+      $attempts.Add(@{operation_id=[string]$record.name;attempt=$(if($record.PSObject.Properties.Name-contains'native_attempt'){[int]$record.native_attempt}else{1});pressure_terminated=[bool]$record.pressure_terminated;
         observation=@{exit_code=$drain.root_returncode;root_process_id=$record.root_process_id;
           root_process_started_at_utc_ticks=$drain.root_started_at_utc_ticks}})
     }

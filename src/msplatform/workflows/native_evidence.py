@@ -57,14 +57,52 @@ def _control(documents):
             raise ValueError('native group worker completion unavailable')
         if any(not isinstance(row, dict) or not isinstance(row.get('operation_id'), str) or not row['operation_id'] for row in registrations):
             raise ValueError('native group operation identity unavailable')
-        by_name = {row['operation_id']: row for row in registrations}
-        if (len(by_name) != len(registrations) or set(by_name) != set(observations)
+        attempts = native.get('attempts')
+        if attempts is None:
+            # Older receipts contain only one final observation per operation.
+            if any('attempt' in row for row in registrations) or len({row['operation_id'] for row in registrations}) != len(registrations):
+                raise ValueError('legacy native group cannot prove repeated attempts')
+            attempts = [{'operation_id': name, 'attempt': 1, 'observation': obs}
+                        for name, obs in observations.items()]
+            registrations = [dict(row, attempt=1) for row in registrations]
+        elif not isinstance(attempts, list):
+            raise ValueError('native group attempts unavailable')
+        elif all(isinstance(row, dict) and 'attempt' not in row for row in registrations + attempts):
+            if len({row['operation_id'] for row in registrations}) != len(registrations):
+                raise ValueError('legacy native group cannot prove repeated attempts')
+            registrations = [dict(row, attempt=1) for row in registrations]
+            attempts = [dict(row, attempt=1) for row in attempts]
+        if any(not isinstance(row, dict) or not isinstance(row.get('operation_id'), str)
+               or not row['operation_id'] or type(row.get('attempt')) is not int or row['attempt'] <= 0
+               for row in registrations + attempts):
+            raise ValueError('native group attempt identity differs')
+        by_attempt = {(row['operation_id'], row['attempt']): row for row in registrations}
+        completed = {(row['operation_id'], row['attempt']): row for row in attempts}
+        names = {name for name, _ in by_attempt}
+        if (len(by_attempt) != len(registrations) or len(completed) != len(attempts)
+                or set(by_attempt) != set(completed) or names != set(observations)
                 or any(not isinstance(name, str) or not name for name in pending)
-                or len(set(pending)) != len(pending) or set(pending) & set(by_name)):
+                or len(set(pending)) != len(pending) or set(pending) & names):
             raise ValueError('native group registrations and completions differ')
-        for name in sorted(by_name):
-            pid, started, code = _identity(by_name[name], observations[name])
-            result.append(dict(operation_id=name, process_id=pid, started_at_utc_ticks=started, returncode=code))
+        for name in names:
+            ordinals = sorted(ordinal for operation, ordinal in by_attempt if operation == name)
+            if ordinals != list(range(1, len(ordinals)+1)):
+                raise ValueError('native group attempt sequence is incomplete')
+        for name, ordinal in sorted(by_attempt):
+            item = completed[(name, ordinal)]
+            pressure = item.get('pressure_terminated')
+            if pressure is not None and type(pressure) is not bool:
+                raise ValueError('native group pressure termination fact differs')
+            pid, started, code = _identity(by_attempt[(name, ordinal)], item.get('observation'))
+            result.append(dict(operation_id=name, attempt=ordinal, process_id=pid,
+                               started_at_utc_ticks=started, returncode=code, pressure_terminated=pressure))
+        for name, observation in observations.items():
+            if not isinstance(observation, dict) or not any(row['operation_id'] == name and row['returncode'] == observation.get('exit_code')
+                       and row['process_id'] == observation.get('root_process_id')
+                       and type(observation.get('root_process_started_at_utc_ticks')) is int
+                       and _same_creation_time(str(row['started_at_utc_ticks']), str(observation['root_process_started_at_utc_ticks']))
+                       for row in result):
+                raise ValueError('native final group observation is not a completed attempt')
     else:
         pid, started, code = _identity(worker, native.get('observation'))
         result.append(dict(operation_id=None, process_id=pid, started_at_utc_ticks=started, returncode=code))

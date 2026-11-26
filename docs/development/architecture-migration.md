@@ -1055,3 +1055,22 @@ schema12与历史preparation联合46 PASS（72.066s）；该次后新增原点�
 对应最终单项复验PASS（3.106s），Ruff PASS。原生owner在fixture中mock，尚无recorded-source实际Fly，
 不把软件迁移视为三格native或完整仪器资格。下一步真实已发布FieldBundle可按同一新合同验收；
 当前并行的安装链为fresh source，不能冒称它验证了本recorded路径。
+
+### B4 中央危险停止后的多attempt保护闭合
+
+既有scheduler可在确认持续物理危险后停止一个worker并重新排同一operation。
+`native_group_attempts` 在同一Store记录每次真实(operation,attempt,PID,creation)，
+PS worker登记和ACK都含完整attempt身份，不复用上一次operation ACK。
+最终receipt逐一保留原Process句柄drain的真实整数退出码（危险停止的null观察不能转成0），
+正式host release后对账所有已启动attempt及明确未启动集合，才能解除原claim/预留。
+不覆盖旧身份，不改scheduler/预算，不强制单worker；缺/错/重复证据保权，恢复两次幂等。
+旧单次group读取仅在原证据确有一次attempt时解释，旧版单独兼容回归未运行，不外推已验证。
+
+真实短子进程、测试owner内可控中央危险采样（无商业软件）：原受管危险停止→保留sibling→稳定后重启
+PASS（22.493s）；第二次ACK前/后父死及旧/新attempt分别篡改拒绝、回执修复后恢复两次PASS（2项49.549s）；
+quick成功/非零、mixed failure/未启动集合PASS（31.503s）。Store19 PASS（5.434s）、Ruff/diff-check PASS。
+worker证据汇总同步按attempt保留pressure victim与后续成功，不拿最终成功覆盖早前停止。
+native_evidence与科学依赖边界联合21 PASS（10.349s），无新科学solver证据。
+
+本单元补的是同一生命周期真实attempt证明，不声明整个BA09已通过；商业原生跨阶段/合格缓存自动回收、
+缺批局部重算仍需实际链对账。当前运行中的398ba7b0安装快照未被修改，之后最终发行需包含本修复。

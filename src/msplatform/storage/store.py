@@ -122,6 +122,9 @@ class ArtifactStore:
               control_id TEXT NOT NULL, kind TEXT NOT NULL, PRIMARY KEY(binding_id,control_id));
             CREATE TABLE IF NOT EXISTS native_group_workers(binding_id TEXT NOT NULL, operation_id TEXT NOT NULL,
               worker_pid INTEGER, worker_started INTEGER, PRIMARY KEY(binding_id,operation_id));
+            CREATE TABLE IF NOT EXISTS native_group_attempts(binding_id TEXT NOT NULL, operation_id TEXT NOT NULL,
+              attempt INTEGER NOT NULL, worker_pid INTEGER NOT NULL, worker_started INTEGER NOT NULL,
+              PRIMARY KEY(binding_id,operation_id,attempt));
             CREATE TABLE IF NOT EXISTS native_recovery_issues(binding_id TEXT NOT NULL,
               receipt_path TEXT NOT NULL, reason TEXT NOT NULL, PRIMARY KEY(binding_id,receipt_path));
             CREATE TABLE IF NOT EXISTS gc_lock(id INTEGER PRIMARY KEY CHECK(id=1));
@@ -360,11 +363,11 @@ class ArtifactStore:
         return binding
 
     def record_native_group_worker(self, binding_id: str, operation_id: str, *, process_id: int,
-                                   started_at_utc_ticks: int) -> None:
-        """Bind one declared group operation to a registered host work root."""
+                                   started_at_utc_ticks: int, attempt: int = 1) -> None:
+        """Bind an exact declared group attempt to a registered host work root."""
         from msplatform.execution.native_artifact_controls import validate_host_worker
-        if any(type(value) is not int or value <= 0 for value in (process_id, started_at_utc_ticks)):
-            raise ValueError("worker requires positive process and creation identities")
+        if any(type(value) is not int or value <= 0 for value in (process_id, started_at_utc_ticks, attempt)):
+            raise ValueError("worker requires positive process, creation and attempt identities")
         with self._db() as db:
             row = db.execute("SELECT host_state_path,host_token,host_owner FROM native_bindings WHERE id=? AND state='active'",
                              (binding_id,)).fetchone()
@@ -372,11 +375,14 @@ class ArtifactStore:
             raise ValueError("unknown or completed native group")
         validate_host_worker(Path(row[0]), row[1], json.loads(row[2]), process_id, started_at_utc_ticks)
         with self._transaction() as db:
-            changed = db.execute("""UPDATE native_group_workers SET worker_pid=?,worker_started=?
-                WHERE binding_id=? AND operation_id=? AND worker_pid IS NULL""",
-                (process_id, started_at_utc_ticks, binding_id, operation_id)).rowcount
-            if not changed:
-                raise ValueError("group worker is undeclared or already recorded")
+            member = db.execute("SELECT 1 FROM native_group_workers WHERE binding_id=? AND operation_id=?",
+                                (binding_id, operation_id)).fetchone()
+            if not member:
+                raise ValueError("group worker is undeclared")
+            db.execute("INSERT INTO native_group_attempts VALUES(?,?,?,?,?)",
+                       (binding_id, operation_id, attempt, process_id, started_at_utc_ticks))
+            db.execute("UPDATE native_group_workers SET worker_pid=?,worker_started=? WHERE binding_id=? AND operation_id=? AND worker_pid IS NULL",
+                       (process_id, started_at_utc_ticks, binding_id, operation_id))
 
     def complete_native_controls(self, binding_id: str, *, completion: dict) -> bool:
         """Release bound controls after exact existing owner completion, idempotently."""
@@ -422,20 +428,25 @@ class ArtifactStore:
                                               ("operations", "not_started", "resource_releases"))
         if not isinstance(operations, list) or not operations or not isinstance(not_started, list) or not isinstance(releases, list):
             raise ValueError("group completion requires actual started operations and release")
-        ids = [item.get("operation_id") for item in operations]
+        with self._db() as db:
+            attempts = db.execute("SELECT operation_id,attempt,worker_pid,worker_started FROM native_group_attempts WHERE binding_id=?",
+                                  (binding_id,)).fetchall()
+        by_attempt = {(name, attempt): (pid, birth) for name, attempt, pid, birth in attempts}
         expected = {item[0] for item in members}
-        if (len(ids) != len(set(ids)) or len(not_started) != len(set(not_started))
-                or set(ids) & set(not_started) or set(ids) | set(not_started) != expected):
-            raise ValueError("group completion does not cover its exact declared operations")
-        by_id = {item[0]: item[1:] for item in members}
+        keys = [(item.get("operation_id"), item.get("attempt")) for item in operations]
+        started = {item[0] for item in keys}
+        if (len(keys) != len(set(keys)) or set(keys) != set(by_attempt)
+                or len(not_started) != len(set(not_started)) or started & set(not_started)
+                or started | set(not_started) != expected):
+            raise ValueError("group completion does not cover its exact declared attempts")
         for operation in operations:
-            worker = by_id[operation["operation_id"]]
+            worker = by_attempt[(operation["operation_id"], operation["attempt"])]
             binding = {"host_token": row[0], "operation_id": operation["operation_id"],
                        "worker_pid": worker[0], "worker_started": worker[1],
                        "host_state_path": row[2], "host_file_id": json.loads(row[3])}
             validate_native_completion(binding, {"writers_stopped": completion.get("writers_stopped"),
                 "operations": [operation], "resource_releases": releases})
-        if any(by_id[name] != (None, None) for name in not_started):
+        if any(item[0] in not_started and item[1:] != (None, None) for item in members):
             raise ValueError("registered group worker cannot be declared not started")
         with self._transaction() as db:
             changed = db.execute("UPDATE native_bindings SET state='complete',completion=? WHERE id=? AND state='active'",

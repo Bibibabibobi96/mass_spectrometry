@@ -111,7 +111,7 @@ def _real_controller(root: str, asset: str, started, block_binding=None, block_w
                     limits=None, operation_id="worker", **protected)
 
 
-def _real_group_controller(root: str, asset: str, started, quick=False) -> None:
+def _real_group_controller(root: str, asset: str, started, quick=False, pressure=False, block_attempt=None) -> None:
     from unittest.mock import patch
     from msplatform.execution.native_artifact_controls import protect_native_controls
     from msplatform.execution.processes import run_observed_process_group
@@ -120,8 +120,36 @@ def _real_group_controller(root: str, asset: str, started, quick=False) -> None:
     from tests.contracts.test_batch_processes import BatchProcessTests
     base = Path(root)
     store = ArtifactStore(base / "store")
+    if block_attempt is not None:
+        original_record = store.record_native_group_worker
+        def wait_second(*args, **kwargs):
+            if kwargs.get("attempt") == 2:
+                block_attempt.set()
+                get_context("spawn").Event().wait(60)
+            return original_record(*args, **kwargs)
+        store.record_native_group_worker = wait_second
     context, data, folder, _, plan, specs = BatchProcessTests().fixture(base)
+    if pressure:
+        plan["limits"].update(memory_critical_seconds=1, memory_recovery_stable_seconds=1,
+                              launch_stagger_seconds=1, memory_policy="normal", memory_admission_reserve_bytes=plan["limits"]["memory_critical_reserve_bytes"] + 1)
+        owner = folder / "batch_process_owner.ps1"
+        text = owner.read_text(encoding="utf-8")
+        marker = "function Get-SystemCpuPercent {return 0}"
+        injection = """
+$script:originalStop=${function:Stop-ManagedSolverProcesses}
+function Get-RepositoryAvailableMemoryBytes {
+ if((Test-Path -LiteralPath 'HEALTHY')-and(Test-Path -LiteralPath 'FAILURE')-and-not(Test-Path -LiteralPath 'STOPPED')){return [int64]1}
+ return [int64](64GB)
+}
+function Stop-ManagedSolverProcesses {param([int[]]$ProcessIds,[hashtable]$ExpectedStartedAtUtcTicks=@{})
+ & $script:originalStop -ProcessIds $ProcessIds -ExpectedStartedAtUtcTicks $ExpectedStartedAtUtcTicks
+ [IO.File]::WriteAllText('STOPPED','stopped')
+}
+""".replace("HEALTHY", str(base / "healthy.started")).replace("FAILURE", str(base / "failure.started")).replace("STOPPED", str(base / "pressure-stopped"))
+        owner.write_text(text.replace(marker, marker + injection), encoding="utf-8", newline="\n")
     code = "import pathlib,time,sys;root=pathlib.Path(sys.argv[1]);(root/(sys.argv[2]+'.started')).touch();\nwhile not (root/'release-group').exists(): time.sleep(.05)"
+    if pressure:
+        code = code.replace("while not (root/'release-group').exists():", "while not (root/'release-group').exists() and not (sys.argv[2]=='healthy' and (root/'release-healthy').exists()):")
     for spec in specs:
         if not quick or spec["operation_id"] == "healthy":
             spec["arguments"] = ["-I", "-c", code, str(base), spec["operation_id"]]
@@ -598,6 +626,144 @@ class NativeArtifactControlsTests(unittest.TestCase):
             self.assertIsNotNone(registration)
             with self.store._db() as db:
                 run_id = db.execute("SELECT run_id FROM native_bindings WHERE id=?", (registration["binding_id"],)).fetchone()[0]
+            controller.terminate()
+            controller.join(20)
+            self.assertEqual(self.store.recover_interrupted_runs(), [])
+            self.assertEqual(self.store.collect(100)["released_bytes"], 0)
+            (self.root / "release-group").touch()
+            deadline = time.monotonic() + 60
+            while time.monotonic() < deadline and not list((self.store.root / "work").glob("*/native-control-*.receipt.json")):
+                time.sleep(.05)
+            self.assertEqual(self.store.recover_interrupted_runs(), [run_id], self.store.native_recovery_issues())
+            self.assertEqual(self.store.recover_interrupted_runs(), [])
+            self.assertEqual(self.store.collect(100)["released_bytes"], 5)
+        finally:
+            (self.root / "release-group").touch()
+            if controller.is_alive():
+                controller.terminate()
+                controller.join(20)
+
+    @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh"), "Windows PowerShell required")
+    def test_real_pressure_relaunch_preserves_every_attempt(self) -> None:
+        context = get_context("spawn")
+        started = context.Event()
+        controller = context.Process(target=_real_group_controller, args=(str(self.root), self.asset, started, False, True))
+        controller.start()
+        try:
+            self.assertTrue(started.wait(20))
+            deadline = time.monotonic() + 80
+            attempts = []
+            while time.monotonic() < deadline:
+                with self.store._db() as db:
+                    attempts = db.execute("SELECT operation_id,attempt,worker_pid,worker_started FROM native_group_attempts ORDER BY operation_id,attempt").fetchall()
+                if (self.root / "pressure-stopped").exists():
+                    (self.root / "release-healthy").touch()
+                if any(item[1] == 2 for item in attempts):
+                    break
+                if not controller.is_alive():
+                    self.fail("controller exited before pressure relaunch")
+                time.sleep(.05)
+            self.assertTrue((self.root / "pressure-stopped").exists())
+            retry = next(item for item in attempts if item[1] == 2)
+            original = next(item for item in attempts if item[0] == retry[0] and item[1] == 1)
+            self.assertNotEqual(original[2:], retry[2:])
+            self.assertEqual(self.store.collect(100)["released_bytes"], 0)
+            with self.assertRaises(PermissionError):
+                (self.root / "immutable.bin").unlink()
+            (self.root / "release-group").touch()
+            controller.join(60)
+            self.assertFalse(controller.is_alive())
+            self.assertEqual(controller.exitcode, 0)
+            with self.store._db() as db:
+                self.assertEqual(db.execute("SELECT state FROM native_bindings").fetchone()[0], "complete")
+                completion = json.loads(db.execute("SELECT completion FROM native_bindings").fetchone()[0])
+                final_count = db.execute("SELECT COUNT(*) FROM native_group_attempts").fetchone()[0]
+            self.assertEqual(len(completion["operations"]), final_count)
+            self.assertEqual(self.store.collect(100)["released_bytes"], 5)
+        finally:
+            (self.root / "release-group").touch()
+            if controller.is_alive():
+                controller.terminate()
+                controller.join(20)
+
+    @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh"), "Windows PowerShell required")
+    def test_pressure_relaunch_controller_dies_before_ack_and_reconciles(self) -> None:
+        context = get_context("spawn")
+        started, blocked = context.Event(), context.Event()
+        controller = context.Process(target=_real_group_controller,
+                                     args=(str(self.root), self.asset, started, False, True, blocked))
+        controller.start()
+        try:
+            self.assertTrue(started.wait(20))
+            deadline = time.monotonic() + 80
+            while time.monotonic() < deadline and not blocked.is_set():
+                if (self.root / "pressure-stopped").exists():
+                    (self.root / "release-healthy").touch()
+                if not controller.is_alive():
+                    self.fail("controller exited before retry registration")
+                time.sleep(.05)
+            self.assertTrue(blocked.is_set())
+            worker_path = next((self.store.root / "work").glob("*/native-control-*.worker.json"))
+            registration = json.loads(worker_path.read_text(encoding="utf-8"))
+            with self.store._db() as db:
+                run_id = db.execute("SELECT run_id FROM native_bindings WHERE id=?", (registration["binding_id"],)).fetchone()[0]
+            controller.terminate()
+            controller.join(20)
+            self.assertEqual(self.store.recover_interrupted_runs(), [])
+            self.assertEqual(self.store.collect(100)["released_bytes"], 0)
+            (self.root / "release-group").touch()
+            receipt = Path(str(worker_path).replace(".worker.json", ".receipt.json"))
+            deadline = time.monotonic() + 60
+            while time.monotonic() < deadline and not receipt.exists():
+                time.sleep(.05)
+            self.assertTrue(receipt.is_file())
+            original = worker_path.read_bytes()
+            records = json.loads(original)["workers"]
+            retry_name = next(item["operation_id"] for item in records if item["attempt"] == 2)
+            for ordinal in (1, 2):
+                invalid = json.loads(original)
+                item = next(item for item in invalid["workers"] if item["operation_id"] == retry_name and item["attempt"] == ordinal)
+                item["process_id"] += 1
+                worker_path.write_text(json.dumps(invalid), encoding="utf-8")
+                self.assertEqual(self.store.recover_interrupted_runs(), [])
+                self.assertTrue(self.store.native_recovery_issues())
+                self.assertEqual(self.store.collect(100)["released_bytes"], 0)
+            worker_path.write_bytes(original)
+            self.assertEqual(self.store.recover_interrupted_runs(), [run_id], self.store.native_recovery_issues())
+            self.assertEqual(self.store.recover_interrupted_runs(), [])
+            self.assertEqual(self.store.collect(100)["released_bytes"], 5)
+        finally:
+            (self.root / "release-group").touch()
+            if controller.is_alive():
+                controller.terminate()
+                controller.join(20)
+
+    @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh"), "Windows PowerShell required")
+    def test_pressure_relaunch_controller_dies_after_ack_and_reconciles(self) -> None:
+        context = get_context("spawn")
+        started = context.Event()
+        controller = context.Process(target=_real_group_controller,
+                                     args=(str(self.root), self.asset, started, False, True))
+        controller.start()
+        try:
+            self.assertTrue(started.wait(20))
+            deadline = time.monotonic() + 80
+            acknowledged = None
+            while time.monotonic() < deadline:
+                if (self.root / "pressure-stopped").exists():
+                    (self.root / "release-healthy").touch()
+                paths = list((self.store.root / "work").glob("*/native-control-*.worker-ack.json"))
+                if paths:
+                    ack = json.loads(paths[0].read_text(encoding="utf-8"))
+                    if any(item["attempt"] == 2 for item in ack.get("attempts", [])):
+                        acknowledged = ack
+                        break
+                if not controller.is_alive():
+                    self.fail("controller exited before retry acknowledgement")
+                time.sleep(.05)
+            self.assertIsNotNone(acknowledged)
+            with self.store._db() as db:
+                run_id = db.execute("SELECT run_id FROM native_bindings WHERE id=?", (acknowledged["binding_id"],)).fetchone()[0]
             controller.terminate()
             controller.join(20)
             self.assertEqual(self.store.recover_interrupted_runs(), [])

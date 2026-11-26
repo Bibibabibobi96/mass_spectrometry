@@ -82,6 +82,30 @@ class NativeEvidenceTests(unittest.TestCase):
         self.write(data)
         self.assertEqual(summarize_native_workers(self.root)['status'], 'available')
 
+    def test_group_pressure_relaunch_preserves_both_actual_exit_codes(self):
+        data = control('a'*32, grouped=True)
+        worker = data['worker']
+        worker['workers'] = [dict(worker['workers'][0], attempt=1),
+                             dict(worker['workers'][0], attempt=2, process_id=125, started_at_utc_ticks=458)]
+        victim = {'root_process_id': 123, 'root_process_started_at_utc_ticks': 456, 'exit_code': -9}
+        last = {'root_process_id': 125, 'root_process_started_at_utc_ticks': 458, 'exit_code': 0}
+        data['receipt']['receipt'].update(observations={'first': last}, not_started=[], attempts=[
+            {'operation_id': 'first', 'attempt': 1, 'pressure_terminated': True, 'observation': victim},
+            {'operation_id': 'first', 'attempt': 2, 'pressure_terminated': False, 'observation': last}])
+        self.write(data)
+        result = summarize_native_workers(self.root)
+        self.assertEqual(result['observed_completed_worker_count'], 2)
+        self.assertEqual([(r['attempt'], r['returncode'], r['pressure_terminated']) for r in result['workers']],
+                         [(1, -9, True), (2, 0, False)])
+        for mutate in (lambda d: d['receipt']['receipt']['attempts'].pop(0),
+                       lambda d: d['worker']['workers'].append(copy.deepcopy(d['worker']['workers'][0])),
+                       lambda d: d['receipt']['receipt']['attempts'][0].__setitem__('attempt', 3),
+                       lambda d: d['receipt']['receipt']['observations'].__setitem__('first', {'root_process_id': 125,
+                           'root_process_started_at_utc_ticks': 458, 'exit_code': 99})):
+            broken = copy.deepcopy(data); mutate(broken); self.write(broken)
+            with self.subTest(mutate=mutate):
+                self.assertIsNone(summarize_native_workers(self.root)['observed_completed_worker_count'])
+
 
 if __name__ == '__main__':
     unittest.main()
