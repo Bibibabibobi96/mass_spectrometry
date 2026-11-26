@@ -917,3 +917,24 @@ capacity lease 已释放，3.08 GB 源 MPH 未复制或改写；失败终态 man
 剩余旧消费者：旧复合新执行入口退役、plan6 recorded-birth 读取与准备仍在定向迁移；
 SIMION Refine/Fly、COMSOL CPT、桥接实际采样/Fly、普通安装及 BA01–BA15 最终对账尚未完成。
 后续主题包括group生命周期与公共三组合调度；当前不代表批次B完成，不启动C。
+
+### B4 group 原生控制基线（7082d495 → 本主题提交）
+
+冻结group operation集合，原PS owner登记每个实际worker的PID+creation identity并取得精确ACK，
+在原句柄逐一drain和非继承host正式释放后才对账Store；未启动集合必须明确证明，缺件/nonce错/身份冲突保留保护。
+quick-exit直接读取原Process句柄退出事实，不伪造host live登记；坏live登记不能回退为quick-exit。
+实现为既有 store/native_artifact_controls/processes 及两个PS owner，不新增调度器或TTL。
+
+隔离代码树实际16项原生短子进程测试PASS（188.200s），Store19及Ruff PASS。
+main接线后，使用共享主机账本环境变量
+`MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=C:/Users/Liao/mass_spectrometry/artifacts/platform/host_resources.sqlite3`，
+运行 `tests.repository.test_native_artifact_controls` 的
+`test_single_quick_exit_receipt_covers_success_and_failure` 与
+`test_group_controller_death_preserves_all_workers_and_automatically_recovers`，2 PASS（36.344s）；
+边界16 PASS（8.639s）。首次main尝试漏该必需环境变量而在worker启动前失败，修正后复验，不记为通过。
+
+限制：中央持续物理危险可能停止并重新调度同一operation；当前operation→单身份不能自动闭合多attempt，
+仍保守留权。Agent3已按真实scheduler路径只读确认，下一主题保留冻结operation集合，为每次实际启动增加身份与ACK，
+不改预算/调度策略或强制单worker；不能把本基线称为BA09全通过。
+测试临时目录 `C:/Users/Liao/AppData/Local/Temp/tmpft8zbwq3` 已确认无活进程，精确清理被自动策略拒绝，
+保留原目录且未换路径/命令绕过。未清理任何真实研究产物。

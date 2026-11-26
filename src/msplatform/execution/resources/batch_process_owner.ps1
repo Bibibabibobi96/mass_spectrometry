@@ -7,6 +7,20 @@ $request=[Console]::In.ReadToEnd()|ConvertFrom-Json -AsHashtable
 . (Join-Path $PSScriptRoot 'host_execution_lease.ps1') -HostContext $request.context
 . (Join-Path $PSScriptRoot 'simion_dispatch_support.ps1')
 $lease=$null;$failure=$null;$release=$null;$wave=$null
+$native=$null;$bindingId=$null;$parentStarted=$null
+function Write-NativeControlJson($Path,$Value){
+  $temporary="$Path.tmp"
+  [IO.File]::WriteAllText($temporary,($Value|ConvertTo-Json -Depth 30 -Compress),[Text.UTF8Encoding]::new($false))
+  for($attempt=0;$attempt-lt100;$attempt++){
+    try{Move-Item -LiteralPath $temporary -Destination $Path -Force;return}
+    catch [IO.IOException]{if($attempt-eq99){throw};Start-Sleep -Milliseconds 20}
+  }
+}
+function Test-NativeParentAlive {
+  try{$p=Get-Process -Id ([int]$native.parent_pid) -ErrorAction Stop
+    return $p.StartTime.ToUniversalTime().Ticks-eq$parentStarted
+  }catch{return $false}
+}
 $guards=[Collections.Generic.List[string]]::new()
 $started=[Collections.Generic.List[object]]::new();$observations=@{};$attempts=[Collections.Generic.List[object]]::new()
 function ConvertTo-BatchObservation($record){
@@ -15,6 +29,20 @@ function ConvertTo-BatchObservation($record){
 }
 try{
   $lease=Enter-HostExecutionLease -Role $request.role -Stage $request.stage -RunId $request.run_id
+  if($request.ContainsKey('native_artifact')){
+    $native=$request.native_artifact
+    if($lease.inherited){throw 'Protected native group requires its own non-inherited host owner.'}
+    if($native.nonce-cnotmatch'^[a-f0-9]{32}$'){throw 'Invalid native control nonce.'}
+    $parentStarted=(Get-Process -Id ([int]$native.parent_pid) -ErrorAction Stop).StartTime.ToUniversalTime().Ticks
+    Write-NativeControlJson $native.host @{nonce=$native.nonce;token=$lease.token;inherited=$false}
+    while(-not(Test-Path -LiteralPath $native.ack -PathType Leaf)){
+      if(-not(Test-NativeParentAlive)){throw 'Native controller exited before launch authorization.'}
+      Start-Sleep -Milliseconds 30
+    }
+    $ack=Get-Content -LiteralPath $native.ack -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+    if($ack.nonce-cne$native.nonce-or-not$ack.binding_id){throw 'Native launch authorization differs.'}
+    $bindingId=[string]$ack.binding_id
+  }
   if(@($request.immutable_input_records).Count){
     . (Join-Path $PSScriptRoot 'payload_file_support.ps1') -UnbufferedIdentityReader {
       param([string]$Source,[int64]$Length)
@@ -29,7 +57,32 @@ try{
       if(-not$guard.already_protected){$guards.Add([string]$guard.path)}
     }
   }
-  $onStarted={param($record) $started.Add($record)}.GetNewClosure()
+  $registrations=[Collections.Generic.List[object]]::new()
+  $onStarted={param($record)
+    $started.Add($record)
+    if($null-ne$native){
+      $registration='registered'
+      try{
+        $null=Register-HostResourceProcess -Lease $lease -ProcessId ([int]$record.root_process_id)
+        $birth=[int64]$lease.registered_work_processes[[string]$record.root_process_id]
+      }catch{
+        $registrationFailure=$_
+        try{$record.process.Refresh();$confirmedExited=[bool]$record.process.HasExited}catch{$confirmedExited=$false}
+        if(-not$confirmedExited){throw $registrationFailure}
+        $registration='quick_exit';$birth=[int64]$record.root_process_started_at_utc_ticks
+      }
+      $registrations.Add(@{operation_id=[string]$record.name;process_id=[int]$record.root_process_id;started_at_utc_ticks=$birth;registration=$registration})
+      Write-NativeControlJson $native.worker @{nonce=$native.nonce;binding_id=$bindingId;workers=$registrations.ToArray()}
+      while($registration-eq'registered'-and(Test-NativeParentAlive)){
+        if(Test-Path -LiteralPath $native.'worker-ack' -PathType Leaf){
+          $workerAck=Get-Content -LiteralPath $native.'worker-ack' -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+          if($workerAck.nonce-cne$native.nonce-or$workerAck.binding_id-cne$bindingId){throw 'Native group acknowledgement differs.'}
+          if(@($workerAck.operations)-ccontains[string]$record.name){break}
+        }
+        Start-Sleep -Milliseconds 30
+      }
+    }
+  }.GetNewClosure()
   $convertObservation=${function:ConvertTo-BatchObservation}
   $onCompleted={param($record)
     $observation=& $convertObservation $record
@@ -118,6 +171,9 @@ if($null-ne$failure){
 }
 $notStarted=@($request.specifications|Where-Object{-not$observations.ContainsKey([string]$_.operation_id)}|ForEach-Object{$_.operation_id})
 $envelope=@{observations=$observations;attempts=$attempts.ToArray();not_started=$notStarted;error=$errorRecord;host_release=$release}
+if($null-ne$native-and$bindingId){
+  Write-NativeControlJson $native.receipt @{nonce=$native.nonce;binding_id=$bindingId;receipt=$envelope}
+}
 [Console]::Out.WriteLine('EXECUTION_BATCH_RESULT='+($envelope|ConvertTo-Json -Depth 24 -Compress))
 if($null-ne$failure-or$null-eq$release-or$release.error-or
   (-not$release.inherited-and($null-eq$release.result-or$release.result.status-ne'released'))){exit 1}

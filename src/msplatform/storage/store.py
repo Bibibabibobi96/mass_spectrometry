@@ -120,6 +120,8 @@ class ArtifactStore:
               worker_started INTEGER, state TEXT NOT NULL, completion TEXT);
             CREATE TABLE IF NOT EXISTS native_binding_controls(binding_id TEXT NOT NULL,
               control_id TEXT NOT NULL, kind TEXT NOT NULL, PRIMARY KEY(binding_id,control_id));
+            CREATE TABLE IF NOT EXISTS native_group_workers(binding_id TEXT NOT NULL, operation_id TEXT NOT NULL,
+              worker_pid INTEGER, worker_started INTEGER, PRIMARY KEY(binding_id,operation_id));
             CREATE TABLE IF NOT EXISTS native_recovery_issues(binding_id TEXT NOT NULL,
               receipt_path TEXT NOT NULL, reason TEXT NOT NULL, PRIMARY KEY(binding_id,receipt_path));
             CREATE TABLE IF NOT EXISTS gc_lock(id INTEGER PRIMARY KEY CHECK(id=1));
@@ -343,6 +345,39 @@ class ArtifactStore:
             if not changed:
                 raise ValueError("unknown, completed or already bound native worker")
 
+    def bind_native_group_controls(self, run_id: str, *, host_state_path: Path, host_token: str,
+                                   host_owner: dict, operation_ids: tuple[str, ...], claim_ids: tuple[str, ...],
+                                   reservation_ids: tuple[str, ...]) -> str:
+        """Bind one shared control set to an explicit complete native operation set."""
+        if not operation_ids or len(set(operation_ids)) != len(operation_ids) or any(
+                not isinstance(item, str) or not item for item in operation_ids):
+            raise ValueError("native group operation identities must be unique and nonempty")
+        binding = self.bind_native_controls(run_id, host_state_path=host_state_path, host_token=host_token,
+            host_owner=host_owner, operation_id="group", claim_ids=claim_ids, reservation_ids=reservation_ids)
+        with self._transaction() as db:
+            db.executemany("INSERT INTO native_group_workers VALUES(?,?,NULL,NULL)",
+                           [(binding, operation_id) for operation_id in operation_ids])
+        return binding
+
+    def record_native_group_worker(self, binding_id: str, operation_id: str, *, process_id: int,
+                                   started_at_utc_ticks: int) -> None:
+        """Bind one declared group operation to a registered host work root."""
+        from msplatform.execution.native_artifact_controls import validate_host_worker
+        if any(type(value) is not int or value <= 0 for value in (process_id, started_at_utc_ticks)):
+            raise ValueError("worker requires positive process and creation identities")
+        with self._db() as db:
+            row = db.execute("SELECT host_state_path,host_token,host_owner FROM native_bindings WHERE id=? AND state='active'",
+                             (binding_id,)).fetchone()
+        if row is None:
+            raise ValueError("unknown or completed native group")
+        validate_host_worker(Path(row[0]), row[1], json.loads(row[2]), process_id, started_at_utc_ticks)
+        with self._transaction() as db:
+            changed = db.execute("""UPDATE native_group_workers SET worker_pid=?,worker_started=?
+                WHERE binding_id=? AND operation_id=? AND worker_pid IS NULL""",
+                (process_id, started_at_utc_ticks, binding_id, operation_id)).rowcount
+            if not changed:
+                raise ValueError("group worker is undeclared or already recorded")
+
     def complete_native_controls(self, binding_id: str, *, completion: dict) -> bool:
         """Release bound controls after exact existing owner completion, idempotently."""
         from msplatform.execution.native_artifact_controls import validate_native_completion
@@ -370,6 +405,46 @@ class ArtifactStore:
         # holders are released only by the normal per-token OS-lock recovery.
         self._recover_controls(bound_ids)
         return True
+
+    def complete_native_group_controls(self, binding_id: str, *, completion: dict) -> bool:
+        """Release only after every declared started worker and host release is proven."""
+        from msplatform.execution.native_artifact_controls import validate_native_completion
+        with self._db() as db:
+            row = db.execute("""SELECT host_token,state,host_state_path,host_file_id FROM native_bindings
+                WHERE id=? AND operation_id='group'""", (binding_id,)).fetchone()
+            members = db.execute("SELECT operation_id,worker_pid,worker_started FROM native_group_workers WHERE binding_id=?",
+                                 (binding_id,)).fetchall()
+        if row is None:
+            raise KeyError(binding_id)
+        if row[1] == "complete":
+            return False
+        operations, not_started, releases = (completion.get(name) for name in
+                                              ("operations", "not_started", "resource_releases"))
+        if not isinstance(operations, list) or not operations or not isinstance(not_started, list) or not isinstance(releases, list):
+            raise ValueError("group completion requires actual started operations and release")
+        ids = [item.get("operation_id") for item in operations]
+        expected = {item[0] for item in members}
+        if (len(ids) != len(set(ids)) or len(not_started) != len(set(not_started))
+                or set(ids) & set(not_started) or set(ids) | set(not_started) != expected):
+            raise ValueError("group completion does not cover its exact declared operations")
+        by_id = {item[0]: item[1:] for item in members}
+        for operation in operations:
+            worker = by_id[operation["operation_id"]]
+            binding = {"host_token": row[0], "operation_id": operation["operation_id"],
+                       "worker_pid": worker[0], "worker_started": worker[1],
+                       "host_state_path": row[2], "host_file_id": json.loads(row[3])}
+            validate_native_completion(binding, {"writers_stopped": completion.get("writers_stopped"),
+                "operations": [operation], "resource_releases": releases})
+        if any(by_id[name] != (None, None) for name in not_started):
+            raise ValueError("registered group worker cannot be declared not started")
+        with self._transaction() as db:
+            changed = db.execute("UPDATE native_bindings SET state='complete',completion=? WHERE id=? AND state='active'",
+                                 (json.dumps(completion, sort_keys=True), binding_id)).rowcount
+            bound_ids = tuple(item[0] for item in db.execute(
+                "SELECT control_id FROM native_binding_controls WHERE binding_id=?", (binding_id,)))
+        if changed:
+            self._recover_controls(bound_ids)
+        return bool(changed)
 
     def begin_run(self) -> tuple[str, Path]:
         """Register a queued run and its private workspace before admission."""

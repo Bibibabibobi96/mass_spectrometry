@@ -101,7 +101,9 @@ def validate_native_completion(binding: Mapping[str, Any], completion: Mapping[s
     if (operations[0]["operation_id"] != operation_id or release["token"] != binding["host_token"]
             or observation["process_id"] != binding["worker_pid"]
             or not _same_creation_time(str(observation["process_started_at_utc_ticks"]), str(binding["worker_started"]))):
-        raise ValueError("native completion does not match the bound operation, token and worker")
+        raise ValueError(f"native completion does not match the bound operation, token and worker: "
+                         f"operation={operation_id} expected=({binding['worker_pid']},{binding['worker_started']}) "
+                         f"observed=({observation['process_id']},{observation['process_started_at_utc_ticks']})")
     path = Path(binding["host_state_path"])
     if not path.is_file():
         raise ValueError("host state is unavailable; completion cannot be reconciled")
@@ -141,6 +143,11 @@ def reconcile_native_receipt(store, receipt_path: Path) -> bool:
     native = receipt.get("receipt")
     if not isinstance(native, dict):
         raise ValueError("native owner completion is unavailable")
+    with store._db() as db:
+        is_group = db.execute("SELECT 1 FROM native_group_workers WHERE binding_id=? LIMIT 1",
+                              (binding_id,)).fetchone() is not None
+    if is_group:
+        return _reconcile_group(store, binding_id, row, worker, native)
     if native.get("error") is not None or not isinstance(native.get("observation"), dict):
         raise ValueError("native owner completion is unavailable")
     observation = native["observation"]
@@ -149,6 +156,8 @@ def reconcile_native_receipt(store, receipt_path: Path) -> bool:
                         "process_id": observation["root_process_id"],
                         "process_started_at_utc_ticks": observation["root_process_started_at_utc_ticks"]}}],
         "resource_releases": [{"release_id": "host", "completion_receipt": {"host_release": native["host_release"]}}]}
+    if worker.get("registration") not in {"registered", "quick_exit"}:
+        raise ValueError("native registration status differs")
     process_id, started = worker.get("process_id"), worker.get("started_at_utc_ticks")
     binding = {"host_token": row[1], "operation_id": row[2], "worker_pid": process_id,
                "worker_started": started, "host_state_path": row[5], "host_file_id": json.loads(row[6])}
@@ -163,3 +172,45 @@ def reconcile_native_receipt(store, receipt_path: Path) -> bool:
         elif current[:2] != (process_id, started):
             raise ValueError("native registration identity differs from Store")
     return store.complete_native_controls(binding_id, completion=completion)
+
+
+def _reconcile_group(store, binding_id: str, row, worker: dict, native: dict) -> bool:
+    """Reconcile a complete group against its persisted registrations and release."""
+    registrations, observations, pending = worker.get("workers"), native.get("observations"), native.get("not_started")
+    if not isinstance(registrations, list) or not isinstance(observations, dict) or not isinstance(pending, list):
+        raise ValueError("native group receipt lacks its exact worker set")
+    registrations_by_id = {item["operation_id"]: item for item in registrations}
+    if len(registrations_by_id) != len(registrations) or set(registrations_by_id) != set(observations):
+        raise ValueError(f"native group registrations differ from completed observations: "
+                         f"registered={list(registrations_by_id)} observed={list(observations)} error={native.get('error')}")
+    with store._db() as db:
+        members = db.execute("SELECT operation_id,worker_pid,worker_started FROM native_group_workers WHERE binding_id=?",
+                             (binding_id,)).fetchall()
+    if set(observations) | set(pending) != {item[0] for item in members} or set(observations) & set(pending):
+        raise ValueError("native group receipt does not cover its declared operations")
+    release = [{"release_id": "host", "completion_receipt": {"host_release": native["host_release"]}}]
+    operations = []
+    for name, observation in observations.items():
+        registration = registrations_by_id[name]
+        if registration.get("registration") not in {"registered", "quick_exit"}:
+            raise ValueError("native group registration status differs")
+        binding = {"host_token": row[1], "operation_id": name, "worker_pid": registration["process_id"],
+                   "worker_started": registration["started_at_utc_ticks"], "host_state_path": row[5],
+                   "host_file_id": json.loads(row[6])}
+        operation = {"operation_id": name, "resource_release_id": "host", "observation": {
+            "exit_confirmed": True, "returncode": observation["exit_code"],
+            "process_id": observation["root_process_id"], "process_started_at_utc_ticks": observation["root_process_started_at_utc_ticks"]}}
+        validate_native_completion(binding, {"writers_stopped": True, "operations": [operation], "resource_releases": release})
+        operations.append(operation)
+    with store._transaction() as db:
+        for member, pid, birth in members:
+            if member in registrations_by_id:
+                registration = registrations_by_id[member]
+                identity = (registration["process_id"], registration["started_at_utc_ticks"])
+                if (pid, birth) == (None, None):
+                    db.execute("UPDATE native_group_workers SET worker_pid=?,worker_started=? WHERE binding_id=? AND operation_id=?",
+                               (*identity, binding_id, member))
+                elif (pid, birth) != identity:
+                    raise ValueError("native group registration differs from Store")
+    return store.complete_native_group_controls(binding_id, completion={"writers_stopped": True,
+        "operations": operations, "not_started": pending, "resource_releases": release})

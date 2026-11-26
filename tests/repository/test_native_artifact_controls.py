@@ -111,6 +111,76 @@ def _real_controller(root: str, asset: str, started, block_binding=None, block_w
                     limits=None, operation_id="worker", **protected)
 
 
+def _real_group_controller(root: str, asset: str, started, quick=False) -> None:
+    from unittest.mock import patch
+    from msplatform.execution.native_artifact_controls import protect_native_controls
+    from msplatform.execution.processes import run_observed_process_group
+    from msplatform.execution.resources import resource_path
+    from msplatform.io.manifest_records import file_record
+    from tests.contracts.test_batch_processes import BatchProcessTests
+    base = Path(root)
+    store = ArtifactStore(base / "store")
+    context, data, folder, _, plan, specs = BatchProcessTests().fixture(base)
+    code = "import pathlib,time,sys;root=pathlib.Path(sys.argv[1]);(root/(sys.argv[2]+'.started')).touch();\nwhile not (root/'release-group').exists(): time.sleep(.05)"
+    for spec in specs:
+        if not quick or spec["operation_id"] == "healthy":
+            spec["arguments"] = ["-I", "-c", code, str(base), spec["operation_id"]]
+    run, work = store.begin_run()
+    (work / "input").write_bytes(b"frozen")
+    with store.run_writer(run):
+        store.mark_running(run)
+        with store.claim_token(asset) as (claim, _), store.reserve(9) as reservation:
+            with protect_native_controls(store, run_id=run, claim_ids=(claim,),
+                                         reservation_ids=(reservation,), work_directory=work):
+                started.set()
+                with patch("msplatform.execution.processes.resource_path", side_effect=
+                           lambda name: folder / name if name == "batch_process_owner.ps1" else resource_path(name)):
+                    run_observed_process_group(context, specifications=specs, dispatch_plan=plan,
+                        run_directory=base, usage_path=base / "group.json", role="GATE", stage="unclassified",
+                        run_id="protected-group", immutable_input_records=[file_record(data, "solver_native_binary")])
+
+
+def _single_fault_controller(root: str, asset: str, started, mode: str) -> None:
+    from unittest.mock import patch
+    from msplatform.execution.context import ExecutionContext
+    from msplatform.execution.native_artifact_controls import protect_native_controls
+    from msplatform.execution.processes import run_observed_process
+    from msplatform.execution.resources import resource_path
+    base = Path(root)
+    folder = base / "single-owner"
+    folder.mkdir()
+    for name in ("process_owner.ps1", "host_execution_lease.ps1", "resource_process_support.ps1", "payload_file_support.ps1"):
+        text = resource_path(name).read_text(encoding="utf-8")
+        if name == "process_owner.ps1":
+            if mode == "quick":
+                needle = "      while($registration-eq'registered'-and-not(Test-Path"
+                injection = "      if($registration-eq'quick_exit'){while(-not(Test-Path -LiteralPath '" + str(base / "release-single") + "')){Start-Sleep -Milliseconds 30}}\n"
+                text = text.replace(needle, injection + needle)
+            else:
+                text = text.replace("  $onStarted=$null", "  function Register-HostResourceProcess {throw 'INJECTED_REGISTRATION_FAILURE'}\n  $onStarted=$null")
+        (folder / name).write_text(text, encoding="utf-8", newline="\n")
+    context = ExecutionContext(workspace=base, python_executable=Path(sys.executable),
+        powershell_executable=Path(shutil.which("pwsh")), tools={},
+        host_state_path=Path(os.environ["MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH"]),
+        policy_path=resource_path("host_resource_policy.json"))
+    store = ArtifactStore(base / "store")
+    run, work = store.begin_run()
+    code = ("import time;time.sleep(.2)" if mode == "quick" else
+            "import pathlib,time,sys;p=pathlib.Path(sys.argv[1]);p.with_name('single-started').touch();\nwhile not p.exists():time.sleep(.05)")
+    with store.run_writer(run):
+        store.mark_running(run)
+        with store.claim_token(asset) as (claim, _), store.reserve(9) as reservation:
+            with protect_native_controls(store, run_id=run, claim_ids=(claim,), reservation_ids=(reservation,), work_directory=work):
+                started.set()
+                with patch("msplatform.execution.processes.resource_path", side_effect=
+                           lambda name: folder / name if name == "process_owner.ps1" else resource_path(name)):
+                    run_observed_process(context, executable=Path(sys.executable),
+                        arguments=["-c", code, str(base / "release-single")], working_directory=base,
+                        run_directory=base, stdout_path=base/"single.out", stderr_path=base/"single.err",
+                        usage_path=base/"single.json", role="GATE", stage="unclassified", run_id="single-fault",
+                        limits=None, operation_id="single")
+
+
 class NativeArtifactControlsTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
@@ -271,6 +341,279 @@ class NativeArtifactControlsTests(unittest.TestCase):
                     self.assertEqual(self.store.collect(100)["released_bytes"], 0)
                 self.assertEqual(len(list(work.glob("*.receipt.json"))), 1)
             self.assertEqual(self.store.collect(100)["released_bytes"], 5)
+
+    @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh"), "Windows PowerShell required")
+    def test_real_batch_owner_protects_complete_worker_set(self) -> None:
+        from unittest.mock import patch
+        from msplatform.execution.native_artifact_controls import protect_native_controls
+        from msplatform.execution.processes import run_observed_process_group
+        from msplatform.execution.resources import resource_path
+        from msplatform.io.manifest_records import file_record
+        from tests.contracts.test_batch_processes import BatchProcessTests
+        fixture = BatchProcessTests()
+        context, data, folder, _, plan, specs = fixture.fixture(self.root)
+        for spec in specs:
+            spec["arguments"][5] = "6"
+        run, work = self.store.begin_run()
+        with self.store.run_writer(run):
+            self.store.mark_running(run)
+            with self.store.claim_token(self.asset) as (claim, _), self.store.reserve(9) as reservation:
+                with protect_native_controls(self.store, run_id=run, claim_ids=(claim,),
+                                             reservation_ids=(reservation,), work_directory=work):
+                    with patch("msplatform.execution.processes.resource_path", side_effect=
+                               lambda name: folder / name if name == "batch_process_owner.ps1" else resource_path(name)):
+                        receipt = run_observed_process_group(context, specifications=specs, dispatch_plan=plan,
+                            run_directory=self.root, usage_path=self.root / "group.json", role="GATE",
+                            stage="unclassified", run_id="protected-group",
+                            immutable_input_records=[file_record(data, "solver_native_binary")])
+                    self.assertEqual(set(receipt["observations"]), {"healthy", "failure", "pending"})
+                    self.assertEqual(receipt["not_started"], [])
+                    with self.store._db() as db:
+                        self.assertEqual(db.execute("SELECT COUNT(*) FROM native_group_workers WHERE worker_pid IS NOT NULL").fetchone()[0], 3)
+                    self.assertEqual(self.store.collect(100)["released_bytes"], 0)
+            self.assertEqual(self.store.collect(100)["released_bytes"], 5)
+
+    @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh"), "Windows PowerShell required")
+    def test_single_quick_receipt_recovers_after_controller_death(self) -> None:
+        context = get_context("spawn")
+        started = context.Event()
+        controller = context.Process(target=_single_fault_controller, args=(str(self.root), self.asset, started, "quick"))
+        controller.start()
+        try:
+            self.assertTrue(started.wait(20))
+            deadline = time.monotonic() + 45
+            registration = None
+            while time.monotonic() < deadline:
+                paths = list((self.store.root / "work").glob("*/native-control-*.worker.json"))
+                if paths:
+                    registration = json.loads(paths[0].read_text(encoding="utf-8"))
+                    break
+                if not controller.is_alive():
+                    self.fail("controller exited before quick receipt")
+                time.sleep(.05)
+            self.assertEqual(registration["registration"], "quick_exit")
+            with self.store._db() as db:
+                run_id = db.execute("SELECT run_id FROM native_bindings WHERE id=?", (registration["binding_id"],)).fetchone()[0]
+            controller.terminate()
+            controller.join(20)
+            self.assertEqual(self.store.recover_interrupted_runs(), [])
+            self.assertEqual(self.store.collect(100)["released_bytes"], 0)
+            (self.root / "release-single").touch()
+            deadline = time.monotonic() + 45
+            while time.monotonic() < deadline and not list((self.store.root / "work").glob("*/native-control-*.receipt.json")):
+                time.sleep(.05)
+            self.assertEqual(self.store.recover_interrupted_runs(), [run_id], self.store.native_recovery_issues())
+            self.assertEqual(self.store.recover_interrupted_runs(), [])
+            self.assertEqual(self.store.collect(100)["released_bytes"], 5)
+        finally:
+            (self.root / "release-single").touch()
+            if controller.is_alive():
+                controller.terminate()
+                controller.join(20)
+
+    @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh"), "Windows PowerShell required")
+    def test_live_worker_registration_failure_never_becomes_quick_exit(self) -> None:
+        context = get_context("spawn")
+        started = context.Event()
+        controller = context.Process(target=_single_fault_controller, args=(str(self.root), self.asset, started, "live"))
+        controller.start()
+        try:
+            self.assertTrue(started.wait(20))
+            deadline = time.monotonic() + 45
+            while time.monotonic() < deadline and not (self.root / "single-started").exists():
+                time.sleep(.05)
+            self.assertTrue((self.root / "single-started").is_file())
+            self.assertEqual(self.store.recover_interrupted_runs(), [])
+            self.assertEqual(self.store.collect(100)["released_bytes"], 0)
+            self.assertEqual(list((self.store.root / "work").glob("*/native-control-*.worker.json")), [])
+            (self.root / "release-single").touch()
+            controller.join(45)
+            self.assertFalse(controller.is_alive())
+            self.assertNotEqual(controller.exitcode, 0)
+            self.assertEqual(self.store.recover_interrupted_runs(), [])
+            self.assertEqual(self.store.collect(100)["released_bytes"], 0)
+        finally:
+            (self.root / "release-single").touch()
+            if controller.is_alive():
+                controller.terminate()
+                controller.join(20)
+
+    @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh"), "Windows PowerShell required")
+    def test_single_quick_exit_receipt_covers_success_and_failure(self) -> None:
+        from unittest.mock import patch
+        from msplatform.execution import native_artifact_controls as controls
+        from msplatform.execution.context import ExecutionContext
+        from msplatform.execution.native_artifact_controls import protect_native_controls
+        from msplatform.execution.processes import ProcessExecutionError, run_observed_process
+        from msplatform.execution.resources import resource_path
+        for returncode in (0, 7):
+            with self.subTest(returncode=returncode):
+                context = ExecutionContext(workspace=self.root, python_executable=Path(sys.executable),
+                    powershell_executable=Path(shutil.which("pwsh")), tools={},
+                    host_state_path=Path(os.environ["MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH"]),
+                    policy_path=resource_path("host_resource_policy.json"))
+                run, work = self.store.begin_run()
+                observed = []
+                original = controls.reconcile_native_receipt
+                def reconcile(instance, receipt):
+                    worker = Path(str(receipt).replace(".receipt.json", ".worker.json"))
+                    observed.append(json.loads(worker.read_text(encoding="utf-8")))
+                    return original(instance, receipt)
+                with self.store.run_writer(run):
+                    self.store.mark_running(run)
+                    with self.store.claim_token(self.asset) as (claim, _), self.store.reserve(9) as reservation:
+                        with protect_native_controls(self.store, run_id=run, claim_ids=(claim,),
+                                                     reservation_ids=(reservation,), work_directory=work):
+                            with patch.object(controls, "reconcile_native_receipt", side_effect=reconcile):
+                                call = dict(context=context, executable=Path(sys.executable),
+                                    arguments=["-c", f"import time,sys;time.sleep(.2);sys.exit({returncode})"],
+                                    working_directory=self.root, run_directory=self.root,
+                                    stdout_path=work/"out", stderr_path=work/"err", usage_path=work/"usage.json",
+                                    role="GATE", stage="unclassified", run_id="single-quick", limits=None, operation_id="quick")
+                                if returncode:
+                                    with self.assertRaises(ProcessExecutionError):
+                                        run_observed_process(**call)
+                                else:
+                                    run_observed_process(**call)
+                            self.assertEqual(observed[0]["registration"], "quick_exit")
+                            self.assertEqual(self.store.collect(100)["released_bytes"], 0)
+
+    @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh"), "Windows PowerShell required")
+    def test_group_quick_exit_and_mixed_failure_remain_proven(self) -> None:
+        from unittest.mock import patch
+        from msplatform.execution import native_artifact_controls as controls
+        from msplatform.execution.native_artifact_controls import protect_native_controls
+        from msplatform.execution.processes import ProcessExecutionError, run_observed_process_group
+        from msplatform.execution.resources import resource_path
+        from msplatform.io.manifest_records import file_record
+        from tests.contracts.test_batch_processes import BatchProcessTests
+        for fault in (None, "exit7"):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as directory:
+                base = Path(directory)
+                context, data, folder, _, plan, specs = BatchProcessTests().fixture(base, fault=fault)
+                store = ArtifactStore(base / "store")
+                source = store.new_work()
+                (source / "data").write_bytes(b"asset")
+                asset = store.put_asset("fixture", "quick", source, retention="cache")
+                run, work = store.begin_run()
+                observed = []
+                original = controls.reconcile_native_receipt
+                def reconcile(instance, receipt):
+                    worker = Path(str(receipt).replace(".receipt.json", ".worker.json"))
+                    observed.extend(json.loads(worker.read_text(encoding="utf-8"))["workers"])
+                    return original(instance, receipt)
+                with store.run_writer(run):
+                    store.mark_running(run)
+                    with store.claim_token(asset) as (claim, _), store.reserve(9) as reservation:
+                        with protect_native_controls(store, run_id=run, claim_ids=(claim,),
+                                                     reservation_ids=(reservation,), work_directory=work):
+                            with patch("msplatform.execution.processes.resource_path", side_effect=
+                                       lambda name: folder / name if name == "batch_process_owner.ps1" else resource_path(name)), \
+                                 patch.object(controls, "reconcile_native_receipt", side_effect=reconcile):
+                                call = dict(context=context, specifications=specs, dispatch_plan=plan,
+                                    run_directory=base, usage_path=base / "group.json", role="GATE", stage="unclassified",
+                                    run_id="protected-quick", immutable_input_records=[file_record(data, "solver_native_binary")])
+                                if fault:
+                                    with self.assertRaises(ProcessExecutionError) as caught:
+                                        run_observed_process_group(**call)
+                                    self.assertEqual(caught.exception.receipt["observations"]["failure"]["exit_code"], 7)
+                                    self.assertIn("pending", caught.exception.receipt["not_started"])
+                                else:
+                                    run_observed_process_group(**call)
+                            self.assertTrue(any(item["registration"] == "quick_exit" for item in observed), observed)
+                            with store._db() as db:
+                                self.assertEqual(db.execute("SELECT state FROM native_bindings").fetchone()[0], "complete")
+                        self.assertEqual(store.collect(100)["released_bytes"], 0)
+                self.assertEqual(store.collect(100)["released_bytes"], 5)
+
+    @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh"), "Windows PowerShell required")
+    def test_group_controller_death_preserves_all_workers_and_automatically_recovers(self) -> None:
+        context = get_context("spawn")
+        started = context.Event()
+        controller = context.Process(target=_real_group_controller, args=(str(self.root), self.asset, started))
+        controller.start()
+        try:
+            self.assertTrue(started.wait(20))
+            deadline = time.monotonic() + 60
+            while time.monotonic() < deadline:
+                with self.store._db() as db:
+                    count = db.execute("SELECT COUNT(*) FROM native_group_workers WHERE worker_pid IS NOT NULL").fetchone()[0]
+                if count >= 2:
+                    break
+                if not controller.is_alive():
+                    self.fail("controller exited before both workers registered")
+                time.sleep(.05)
+            self.assertEqual(count, 2)
+            with self.store._db() as db:
+                run_id = db.execute("SELECT run_id FROM native_bindings WHERE operation_id='group'").fetchone()[0]
+            controller.terminate()
+            controller.join(20)
+            self.assertFalse(controller.is_alive())
+            self.assertEqual(self.store.recover_interrupted_runs(), [])
+            self.assertEqual(self.store.collect(100)["released_bytes"], 0)
+            with self.assertRaises(PermissionError):
+                (self.root / "immutable.bin").unlink()
+            (self.root / "release-group").touch()
+            deadline = time.monotonic() + 60
+            receipt = None
+            while time.monotonic() < deadline:
+                receipts = list((self.store.root / "work").glob("*/native-control-*.receipt.json"))
+                if receipts:
+                    receipt = receipts[0]
+                    break
+                time.sleep(.05)
+            self.assertIsNotNone(receipt)
+            result = self.store.recover_interrupted_runs()
+            self.assertEqual(result, [run_id], self.store.native_recovery_issues())
+            self.assertEqual(self.store.recover_interrupted_runs(), [])
+            self.assertEqual(self.store.collect(100)["released_bytes"], 5)
+            (self.root / "immutable.bin").unlink()
+        finally:
+            (self.root / "release-group").touch()
+            if controller.is_alive():
+                controller.terminate()
+                controller.join(20)
+
+    @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh"), "Windows PowerShell required")
+    def test_quick_group_registration_survives_controller_death(self) -> None:
+        context = get_context("spawn")
+        started = context.Event()
+        controller = context.Process(target=_real_group_controller, args=(str(self.root), self.asset, started, True))
+        controller.start()
+        try:
+            self.assertTrue(started.wait(20))
+            deadline = time.monotonic() + 60
+            registration = None
+            while time.monotonic() < deadline:
+                for path in (self.store.root / "work").glob("*/native-control-*.worker.json"):
+                    record = json.loads(path.read_text(encoding="utf-8"))
+                    if any(item["registration"] == "quick_exit" for item in record["workers"]):
+                        registration = record
+                        break
+                if registration:
+                    break
+                if not controller.is_alive():
+                    self.fail("controller exited before quick registration")
+                time.sleep(.05)
+            self.assertIsNotNone(registration)
+            with self.store._db() as db:
+                run_id = db.execute("SELECT run_id FROM native_bindings WHERE id=?", (registration["binding_id"],)).fetchone()[0]
+            controller.terminate()
+            controller.join(20)
+            self.assertEqual(self.store.recover_interrupted_runs(), [])
+            self.assertEqual(self.store.collect(100)["released_bytes"], 0)
+            (self.root / "release-group").touch()
+            deadline = time.monotonic() + 60
+            while time.monotonic() < deadline and not list((self.store.root / "work").glob("*/native-control-*.receipt.json")):
+                time.sleep(.05)
+            self.assertEqual(self.store.recover_interrupted_runs(), [run_id], self.store.native_recovery_issues())
+            self.assertEqual(self.store.recover_interrupted_runs(), [])
+            self.assertEqual(self.store.collect(100)["released_bytes"], 5)
+        finally:
+            (self.root / "release-group").touch()
+            if controller.is_alive():
+                controller.terminate()
+                controller.join(20)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell required")
     def test_real_worker_failure_releases_binding_only_after_observed_exit(self) -> None:

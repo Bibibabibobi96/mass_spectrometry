@@ -189,8 +189,6 @@ def _invoke_process_owner(context, request, resource_name, interpret):
     from msplatform.execution.native_artifact_controls import current_native_artifact_scope
     scope = current_native_artifact_scope()
     if scope is not None:
-        if resource_name != "process_owner.ps1":
-            raise ValueError("native artifact protection for process groups is not implemented")
         return _invoke_native_artifact_owner(context, request, scope, interpret, resource_name)
     command = [str(context.powershell_executable), "-NoLogo", "-NoProfile", "-NonInteractive",
                "-File", str(resource_path(resource_name))]
@@ -247,7 +245,14 @@ def _invoke_native_artifact_owner(context, request, scope, interpret, resource_n
         path = Path(paths[name])
         temporary = path.with_suffix(path.suffix + ".tmp")
         temporary.write_text(json.dumps(data), encoding="utf-8")
-        os.replace(temporary, path)
+        for attempt in range(100):
+            try:
+                os.replace(temporary, path)
+                break
+            except PermissionError:
+                if attempt == 99:
+                    raise
+                time.sleep(0.02)
     request = dict(request, native_artifact={"nonce": nonce, "parent_pid": os.getpid(), **paths})
     command = [str(context.powershell_executable), "-NoLogo", "-NoProfile", "-NonInteractive",
                "-File", str(resource_path(resource_name))]
@@ -265,6 +270,8 @@ def _invoke_native_artifact_owner(context, request, scope, interpret, resource_n
     thread.start()
     binding_id = None
     worker_recorded = False
+    group = resource_name == "batch_process_owner.ps1"
+    group_recorded = set()
     failure = None
     try:
         while thread.is_alive():
@@ -273,18 +280,39 @@ def _invoke_native_artifact_owner(context, request, scope, interpret, resource_n
                 if host.get("nonce") != nonce or host.get("inherited") is not False:
                     raise ValueError("native host handshake identity differs or is inherited")
                 owner = acquired_host_owner(context.host_state_path, host["token"])
-                binding_id = scope["store"].bind_native_controls(scope["run_id"], host_state_path=context.host_state_path,
-                    host_token=host["token"], host_owner=owner, operation_id=request["native_artifact_operation_id"],
-                    claim_ids=scope["claim_ids"], reservation_ids=scope["reservation_ids"])
+                common = dict(host_state_path=context.host_state_path, host_token=host["token"], host_owner=owner,
+                              claim_ids=scope["claim_ids"], reservation_ids=scope["reservation_ids"])
+                if group:
+                    binding_id = scope["store"].bind_native_group_controls(scope["run_id"],
+                        operation_ids=tuple(row["operation_id"] for row in request["specifications"]), **common)
+                else:
+                    binding_id = scope["store"].bind_native_controls(scope["run_id"],
+                        operation_id=request["native_artifact_operation_id"], **common)
                 publish("ack", {"nonce": nonce, "binding_id": binding_id})
-            if binding_id and not worker_recorded and Path(paths["worker"]).is_file():
+            if binding_id and Path(paths["worker"]).is_file() and (group or not worker_recorded):
                 worker = json.loads(Path(paths["worker"]).read_text(encoding="utf-8"))
                 if worker.get("nonce") != nonce or worker.get("binding_id") != binding_id:
                     raise ValueError("native worker handshake identity differs")
-                scope["store"].record_native_worker(binding_id, process_id=worker["process_id"],
-                    started_at_utc_ticks=worker["started_at_utc_ticks"])
+                updated = not worker_recorded
+                if group:
+                    for item in worker["workers"]:
+                        if item["operation_id"] not in group_recorded:
+                            if item.get("registration") == "registered":
+                                scope["store"].record_native_group_worker(binding_id, item["operation_id"],
+                                    process_id=item["process_id"], started_at_utc_ticks=item["started_at_utc_ticks"])
+                            elif item.get("registration") != "quick_exit":
+                                raise ValueError("native group registration status differs")
+                            group_recorded.add(item["operation_id"])
+                            updated = True
+                else:
+                    if worker.get("registration") == "registered":
+                        scope["store"].record_native_worker(binding_id, process_id=worker["process_id"],
+                            started_at_utc_ticks=worker["started_at_utc_ticks"])
+                    elif worker.get("registration") != "quick_exit":
+                        raise ValueError("native registration status differs")
                 worker_recorded = True
-                publish("worker-ack", {"nonce": nonce, "binding_id": binding_id})
+                if updated:
+                    publish("worker-ack", {"nonce": nonce, "binding_id": binding_id, "operations": sorted(group_recorded)})
             time.sleep(0.02)
     except BaseException as error:
         failure = error
@@ -311,12 +339,16 @@ def _invoke_native_artifact_owner(context, request, scope, interpret, resource_n
     durable = json.loads(Path(paths["receipt"]).read_text(encoding="utf-8"))
     if durable.get("nonce") != nonce or durable.get("binding_id") != binding_id or durable.get("receipt") != receipt:
         raise ValueError("native durable receipt does not match the owner response")
-    observation = receipt["observation"]
-    completion = {"writers_stopped": True, "operations": [{"operation_id": request["native_artifact_operation_id"],
-        "resource_release_id": "host", "observation": {"exit_confirmed": True, "returncode": observation["exit_code"],
-        "process_id": observation["root_process_id"], "process_started_at_utc_ticks": observation["root_process_started_at_utc_ticks"]}}],
-        "resource_releases": [{"release_id": "host", "completion_receipt": {"host_release": receipt["host_release"]}}]}
-    scope["store"].complete_native_controls(binding_id, completion=completion)
+    if group:
+        from msplatform.execution.native_artifact_controls import reconcile_native_receipt
+        reconcile_native_receipt(scope["store"], Path(paths["receipt"]))
+        for name in ("host", "ack", "worker", "worker-ack"):
+            Path(paths[name]).unlink(missing_ok=True)
+        if interpretation_failure is not None:
+            raise interpretation_failure
+        return receipt
+    from msplatform.execution.native_artifact_controls import reconcile_native_receipt
+    reconcile_native_receipt(scope["store"], Path(paths["receipt"]))
     for name in ("host", "ack", "worker", "worker-ack"):
         Path(paths[name]).unlink(missing_ok=True)
     if interpretation_failure is not None:

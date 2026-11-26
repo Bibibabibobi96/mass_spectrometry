@@ -77,15 +77,23 @@ try{
   $onStarted=$null
   if($null-ne$native){
     $onStarted={param($Process,$Started)
-      $null=Register-HostResourceProcess -Lease $lease -ProcessId $Process.Id
-      $registered=[int64]$lease.registered_work_processes[[string]$Process.Id]
+      $registration='registered'
+      try{
+        $null=Register-HostResourceProcess -Lease $lease -ProcessId $Process.Id
+        $registered=[int64]$lease.registered_work_processes[[string]$Process.Id]
+      }catch{
+        $registrationFailure=$_
+        try{$Process.Refresh();$confirmedExited=[bool]$Process.HasExited}catch{$confirmedExited=$false}
+        if(-not$confirmedExited){throw $registrationFailure}
+        $registration='quick_exit';$registered=[int64]$Started
+      }
       Write-NativeControlJson $native.worker @{nonce=$native.nonce;binding_id=$bindingId;
-        process_id=[int]$Process.Id;started_at_utc_ticks=$registered}
-      while(-not(Test-Path -LiteralPath $native.'worker-ack' -PathType Leaf)){
+        process_id=[int]$Process.Id;started_at_utc_ticks=$registered;registration=$registration}
+      while($registration-eq'registered'-and-not(Test-Path -LiteralPath $native.'worker-ack' -PathType Leaf)){
         if(-not(Test-NativeParentAlive)){break}
         Start-Sleep -Milliseconds 30
       }
-      if(Test-Path -LiteralPath $native.'worker-ack' -PathType Leaf){
+      if($registration-eq'registered'-and(Test-Path -LiteralPath $native.'worker-ack' -PathType Leaf)){
         $workerAck=Get-Content -LiteralPath $native.'worker-ack' -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
         if($workerAck.nonce-cne$native.nonce-or$workerAck.binding_id-cne$bindingId){throw 'Native worker acknowledgement differs.'}
       }
