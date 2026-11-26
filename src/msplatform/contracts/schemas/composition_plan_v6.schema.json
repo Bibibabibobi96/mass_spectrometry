@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/composition_plan_v6.schema.json",
+  "title": "Frozen layout including real enclosure containment, without implied field qualification",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "role",
+    "integration_id",
+    "recipe_id",
+    "stage",
+    "assembly_frame_id",
+    "recipe",
+    "components",
+    "connection_checks",
+    "scope",
+    "containment_checks"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 6
+    },
+    "role": {
+      "$ref": "https://mass-spectrometry.local/schemas/composition_plan.schema.json#/oneOf/1/properties/role"
+    },
+    "integration_id": {
+      "$ref": "https://mass-spectrometry.local/schemas/composition_plan.schema.json#/oneOf/1/properties/integration_id"
+    },
+    "recipe_id": {
+      "$ref": "https://mass-spectrometry.local/schemas/composition_plan.schema.json#/oneOf/1/properties/recipe_id"
+    },
+    "stage": {
+      "$ref": "https://mass-spectrometry.local/schemas/composition_plan.schema.json#/oneOf/1/properties/stage"
+    },
+    "assembly_frame_id": {
+      "$ref": "https://mass-spectrometry.local/schemas/composition_plan.schema.json#/oneOf/1/properties/assembly_frame_id"
+    },
+    "recipe": {
+      "$ref": "https://mass-spectrometry.local/schemas/assembly_recipe_v2.schema.json"
+    },
+    "components": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+      },
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "$ref": "https://mass-spectrometry.local/schemas/component_geometry_interface_v3.schema.json"
+          },
+          {
+            "$ref": "https://mass-spectrometry.local/schemas/component_geometry_interface_v4.schema.json"
+          }
+        ]
+      }
+    },
+    "connection_checks": {
+      "$ref": "https://mass-spectrometry.local/schemas/composition_plan.schema.json#/oneOf/1/properties/connection_checks"
+    },
+    "input_files": {
+      "$ref": "https://mass-spectrometry.local/schemas/composition_plan.schema.json#/oneOf/1/properties/input_files"
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "instance_ids",
+        "connection_ids",
+        "boundary_connection_ids",
+        "containment_ids",
+        "boundary_containment_ids"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "full",
+            "local"
+          ]
+        },
+        "instance_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+          },
+          "minItems": 1
+        },
+        "connection_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+          }
+        },
+        "boundary_connection_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+          }
+        },
+        "containment_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+          }
+        },
+        "boundary_containment_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+          }
+        }
+      }
+    },
+    "local_scope": {
+      "$ref": "https://mass-spectrometry.local/schemas/composition_plan.schema.json#/oneOf/1/properties/local_scope"
+    },
+    "containment_checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "relation_id",
+          "status",
+          "contained_corners_in_container_mm"
+        ],
+        "properties": {
+          "relation_id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+          },
+          "status": {
+            "const": "contained_in_envelope"
+          },
+          "contained_corners_in_container_mm": {
+            "type": "array",
+            "minItems": 8,
+            "maxItems": 8,
+            "items": {
+              "type": "array",
+              "minItems": 3,
+              "maxItems": 3,
+              "items": {
+                "type": "number"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "connection_checks": {
+            "minItems": 1
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "recipe": {
+            "properties": {
+              "connections": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

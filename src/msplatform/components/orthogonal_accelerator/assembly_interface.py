@@ -44,7 +44,8 @@ def build_assembly_interface(resolved: Mapping[str, Any], *, geometry_profile_id
     if not isinstance(resolved, Mapping):
         raise ValueError("resolved OA geometry must be a mapping")
     variant = resolved.get("variant_id")
-    if variant is None and resolved.get("role") == "orthogonal_accelerator_sectioned_three_zone_geometry":
+    if variant is None and resolved.get("role") in {"orthogonal_accelerator_sectioned_three_zone_geometry",
+                                                     "instrument_sectioned_accelerator_mechanics_projection"}:
         variant = "three_zone"
     if variant == "two_zone":
         if resolved.get("role") != "orthogonal_accelerator_two_zone_geometry":
@@ -85,9 +86,11 @@ def build_assembly_interface(resolved: Mapping[str, Any], *, geometry_profile_id
                 "rings": [{"component_electrode_id": item["id"]} for item in resolved["rings"]],
             })
     elif variant == "three_zone":
-        if resolved.get("role") != "orthogonal_accelerator_sectioned_three_zone_geometry":
+        if resolved.get("role") not in {"orthogonal_accelerator_sectioned_three_zone_geometry",
+                                        "instrument_sectioned_accelerator_mechanics_projection"}:
             raise ValueError("three-zone interface requires standalone resolved geometry")
-        validate_standalone_first_gap_port(resolved)
+        if resolved["role"] == "orthogonal_accelerator_sectioned_three_zone_geometry":
+            validate_standalone_first_gap_port(resolved)
         port = resolved["port"]
         frame = resolved["coordinate_frame"]
         center = list(port["center_mm"])

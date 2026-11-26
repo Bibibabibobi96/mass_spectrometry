@@ -19,4 +19,4 @@ def members(resolved, interface):
     from msplatform.components.single_reflection_oa_tof.geometry_members import iter_geometry_members
     return iter_geometry_members(resolved)
 
-DESCRIPTOR = ProviderDescriptor('single_reflection_oa_tof', 'single_reflection_oa_tof_mass_analyzer', resolve, validate, members, ('msplatform.components.single_reflection_oa_tof', 'msplatform.components.orthogonal_accelerator', 'msplatform.components.rf_multipole'))
+DESCRIPTOR = ProviderDescriptor('single_reflection_oa_tof', 'single_reflection_oa_tof_mass_analyzer', resolve, validate, members, ('msplatform.components.single_reflection_oa_tof', 'msplatform.components.orthogonal_accelerator', 'msplatform.components.rf_multipole', 'msplatform.components.single_reflection_tof'))

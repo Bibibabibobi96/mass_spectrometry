@@ -11,6 +11,7 @@ from typing import Any
 
 from msplatform.contracts.machine_contracts import ContractError, validate_schema
 from msplatform.contracts.rigid_transform import FramedPosition, FramedVector, RigidTransform
+from .containment import check_containments, validate_envelopes, validate_layout_connectivity
 
 
 def _finite(value: Any) -> None:
@@ -30,11 +31,14 @@ def validate_component_geometry_interface(interface: dict) -> int:
         raise ContractError("component interface requires an explicit integer schema version")
     version = interface["schema_version"]
     schemas = {1: "component_geometry_interface.schema.json", 2: "component_geometry_interface_v2.schema.json",
-               3: "component_geometry_interface_v3.schema.json"}
+               3: "component_geometry_interface_v3.schema.json", 4: "component_geometry_interface_v4.schema.json"}
     if version not in schemas:
         raise ContractError("unsupported component interface version")
     validate_schema(interface, schemas[version])
-    key = "electrode_group_id" if version == 3 else "component_electrode_id"
+    _finite(interface)
+    if version == 4:
+        validate_envelopes(interface)
+    key = "electrode_group_id" if version >= 3 else "component_electrode_id"
     ids = [row[key] for row in interface["component_electrodes"]]
     if len(ids) != len(set(ids)):
         raise ContractError("component physical electrode identities are not unique")
@@ -46,9 +50,10 @@ def validate_composition_plan_contract(plan: dict) -> None:
     if not isinstance(plan, dict) or type(plan.get("schema_version")) is not int:
         raise ContractError("composition plan requires an explicit integer schema version")
     version = plan["schema_version"]
-    if version not in (1, 3, 4, 5):
+    if version not in (1, 3, 4, 5, 6):
         raise ContractError("unsupported composition plan version")
-    schema = {4: "composition_plan_v4.schema.json", 5: "composition_plan_v5.schema.json"}.get(
+    schema = {4: "composition_plan_v4.schema.json", 5: "composition_plan_v5.schema.json",
+              6: "composition_plan_v6.schema.json"}.get(
         version, "composition_plan.schema.json")
     validate_schema(plan, schema)
 
@@ -118,7 +123,8 @@ def compile_assembly_layout(
     Components are provider-owned geometry interfaces. This pure stage does not
     publish particle handoffs, voltages, clocks, fields or physical qualification.
     """
-    validate_schema(recipe, "assembly_recipe.schema.json")
+    enclosure_layout = type(recipe.get("schema_version")) is int and recipe["schema_version"] == 2
+    validate_schema(recipe, "assembly_recipe_v2.schema.json" if enclosure_layout else "assembly_recipe.schema.json")
     _finite(recipe)
     _finite(components)
     instances = {item["instance_id"]: item for item in recipe["instances"]}
@@ -132,7 +138,10 @@ def compile_assembly_layout(
         )
     poses = {}
     versions = {validate_component_geometry_interface(interface) for interface in components.values()}
-    if len(versions) != 1 or next(iter(versions)) not in (1, 2, 3):
+    if enclosure_layout:
+        if not versions <= {3, 4}:
+            raise ContractError("enclosure layout requires group-identity interfaces version3/4")
+    elif len(versions) != 1 or next(iter(versions)) not in (1, 2, 3):
         raise ContractError("assembly requires one explicit supported component interface version")
     component_version = next(iter(versions))
     for instance_id, item in instances.items():
@@ -156,6 +165,9 @@ def compile_assembly_layout(
             raise ContractError("duplicate assembly connection_id")
         seen.add(edge["connection_id"])
         checks.append(_check_connection(edge, components, poses, recipe))
+    containment_checks = check_containments(recipe, components, poses) if enclosure_layout else []
+    if enclosure_layout:
+        validate_layout_connectivity(recipe)
     selected = list(instances)
     if local_scope is not None:
         if (not isinstance(local_scope, dict)
@@ -179,7 +191,7 @@ def compile_assembly_layout(
         elif included == 1:
             boundary.append(edge["connection_id"])
     plan = {
-        "schema_version": {1: 3, 2: 4, 3: 5}[component_version],
+        "schema_version": 6 if enclosure_layout else {1: 3, 2: 4, 3: 5}[component_version],
         "role": "integration_composition_plan_do_not_edit",
         "integration_id": recipe["integration_id"],
         "recipe_id": recipe["recipe_id"],
@@ -192,6 +204,15 @@ def compile_assembly_layout(
                   "instance_ids": selected, "connection_ids": internal,
                   "boundary_connection_ids": boundary},
     }
+    if enclosure_layout:
+        plan["containment_checks"] = containment_checks
+        plan["scope"]["containment_ids"] = []
+        plan["scope"]["boundary_containment_ids"] = []
+        for relation in sorted(recipe["containments"], key=lambda row: row["relation_id"]):
+            included = sum(relation[key] in selected_ids for key in ("container_instance_id", "contained_instance_id"))
+            if included:
+                key = "containment_ids" if included == 2 else "boundary_containment_ids"
+                plan["scope"][key].append(relation["relation_id"])
     if local_scope is not None:
         plan["local_scope"] = copy.deepcopy(local_scope)
     validate_composition_plan_contract(plan)

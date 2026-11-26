@@ -624,3 +624,43 @@ components.resolve_component和assembly.assemble，不另造第二Study/Assembly
 B2取证已确认实际仪器OA开口与standalone第一隙约束不同，必须由OA owner表达受验证的仪器机械输入；
 OA↔下游连接须由真实端面/开口和位姿推导验证，不能伪造port、空连接或按同电位合并ground身份。
 剩余旧消费者与原清单一致，B1–B6/BA02–BA15均在推进、尚未验收；下一步公共配方和独立组件合同。
+
+
+### B1/B2 首个实体单元：版本化包含关系与真正下游 provider
+
+已实现 `assembly/containment.py`、recipe2/plan6和interface4；旧recipe1/plan3–5、interface1–3原义保留。
+ports为空只用于没有实际机械对接面的新接口；显式containment把实际成员AABB经刚体变换核验到
+provider派生圆柱包络内，检查关系唯一/无环/连通和scope边界，不伪造端口/接触面。
+`assembly/electrode_binding.py` 已允许group身份相同的interface3/4，仍以instance+group为唯一科学键，
+OA ground与下游ground不合并。包络只证明包含，不表示无障碍、joint field正确或native资格。
+
+独立 `components/single_reflection_tof` 只拥有飞管、双级reflectron与detector的真实下游输入；
+下游公式从旧geometry_contract真实提取，旧复合reader委托同一owner，未复制第二套活跃物理公式。
+OA仪器机械输入复用已存在的受版本/producer/壁开口校验的instrument投影，原standalone第一隙校验未放宽。
+source→resolved→interface独立重算，伪造bounds拒绝。registry/依赖图/source_closure已同步。
+
+独立oracle来自 `d55198ff7b4387ba54807906a23b96cd2c5bcb88` 的原geometry_contract源码，
+源SHA256 `0b28054be43cd0b98feacfa01efd3c7b136873654a89bb641975c7d553c091c6`，
+冻结于 `tests/contracts/fixtures/split_tof_legacy_projection.json`，非新实现自比。
+45条电极完整属性/电压、detector面及局部范围逐值相等。原已有detector/OA屏蔽重叠
+在点 `[58,0,-0.5] mm` 精确查询均interior；保持原几何，限制已写新组件PROJECT，未宣称无碰撞。
+
+最终本单元命令：`.venv/Scripts/python.exe -m unittest tests.contracts.test_split_tof_provider
+ tests.assembly.test_containment_layout tests.contracts.test_geometry_members
+ tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_installed_geometry_provider
+ tests.components.orthogonal_accelerator.analysis.test_bare_three_zone_component -q`：30 PASS（4.405 s）。
+原assembly22项先前PASS；独立5项containment含变换/负例/版本隔离/电极scope。
+对应生产/测试Ruff PASS。Agent5只读复核发现的v4电极绑定缺口和原同实现自比夹具均已修复。
+B1配方/结果/native保护桥仍为未提交的独立单元，不把它们夹进本主题；真正compiler/source/drive/native
+消费者闭包和BA03/04整体验收尚未结束。
+
+主机工具预检：首次未提供Python选择而启动拒绝（不是工具/物理失败）；随后
+`$env:SIMULATION_PYTHON_EXE=(Resolve-Path .venv/Scripts/python.exe).Path;
+ pwsh -NoProfile -File tools/repository/verify_toolchain.ps1 -SkipSolidWorksProbe`
+PASS，实际MATLAB R2025b探测True；SolidWorks文件基线检查、COM运行探测SKIPPED，未做CAD/GUI资格。
+后续COMSOL仍须正式6.4/R2025b launcher与实际资源准入。
+
+剩余：SIMION完整frontend/prepared/track正在迁移，三格native均未验证；COMSOL既有全仪器CPT为static ON，
+OA-only gate不可套整仪器关掉常开反射场。新路径必须同模型保存OFF/ON两解，再组合背景+OA脉冲差场；
+不能把独立MPH的withsol引用误当共同解，也不能用reader fixture冒充原生完成。B4实际host与Store prelaunch
+接线、B5 mass_scan、B6旧执行退役继续，不停止Goal。

@@ -5,12 +5,28 @@ from collections.abc import Mapping
 from typing import Any
 
 from .assembly_interface import build_assembly_interface
-from .sectioned_geometry import resolve_bare_three_zone_component
+from .sectioned_geometry import resolve_bare_three_zone_component, project_instrument_sectioned_mechanics
 from .two_zone_geometry import resolve_closed_two_zone_geometry
 
 
 def resolve_component(design: Mapping[str, Any], *, geometry_profile_id: str | None = None) -> dict[str, Any]:
     """Resolve explicit OA requirements and physical profile content, with no native action."""
+    if isinstance(design, Mapping) and set(design) == {"instrument_geometry"}:
+        if geometry_profile_id is not None:
+            raise ValueError("instrument geometry uses its explicit physical opening")
+        source = design["instrument_geometry"]
+        if not isinstance(source, Mapping) or source.get("producer") != "single_reflection_oa_tof_mass_analyzer":
+            raise ValueError("instrument geometry requires the supported source authority")
+        resolved = project_instrument_sectioned_mechanics(dict(source))
+        interface = build_assembly_interface(resolved, geometry_profile_id=None)
+        geometry = resolved["geometry"]
+        x, y = geometry["axis_x_mm"], geometry["axis_y_mm"]
+        radius = geometry["shield_outer_width_mm"] / 2
+        interface.update(schema_version=4, vacuum_domains=[], material_bounds_mm={
+            "min": [x-radius, y-radius, geometry["shield_back_z_mm"]],
+            "max": [x+radius, y+radius, geometry["grid2_z_mm"]],
+        })
+        return dict(resolved_design=resolved, assembly_interface=interface)
     if not isinstance(design, Mapping) or set(design) - {"requirements", "geometry_profile"} or "requirements" not in design:
         raise ValueError("OA design requires requirements and optional geometry_profile content")
     requirements = design["requirements"]

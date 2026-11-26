@@ -4,6 +4,7 @@ import json
 import math
 from typing import Any
 from msplatform.components.rf_multipole.grounded_shield import require_grounded_potential
+from msplatform.components.single_reflection_tof.geometry import DOWNSTREAM_GEOMETRY_KEYS
 
 def _close(label: str, actual: float, expected: float, tolerance: float = 1e-10) -> None:
     if not math.isclose(actual, expected, rel_tol=0.0, abs_tol=tolerance):
@@ -76,55 +77,17 @@ def resolve_electrode_geometry(
     for index, volts in enumerate(electrical["operating_voltages_v"]["rings"], 1):
         electrode("accelerator_ring_" + str(index),
                   {"provider_region": "ring", "ring_index": index}, volts=volts)
-    outer_radius = g["flight_tube_r"] + g["flight_tube_wall"]
+    from msplatform.components.single_reflection_tof.geometry import resolve_downstream_geometry
+    downstream = resolve_downstream_geometry(
+        {key: g[key] for key in DOWNSTREAM_GEOMETRY_KEYS},
+        {key: coordinate[key] for key in ("reflectron_axis", "detector_x")},
+        {key: rings[key] for key in ("stage1_count", "stage2_count")},
+        {key: voltage[key] for key in ("entgrid", "midgrid", "backplate")})
+    objects.extend(downstream["electrodes"])
     near = g["shield_outer_z_min"]
     interface = g["L_flight"]
-    local_bore_end = g["L_reflectron"] + g["ring_thickness"] + g["shield_axial_gap"]
-    local_outer_end = local_bore_end + g["shield_endcap_thickness"]
-    bore_end, outer_end = interface + local_bore_end, interface + local_outer_end
-    shield_parts = [
-        dict(axial_mm=[near, near + g["shield_endcap_thickness"]], radius_mm=[0, outer_radius]),
-        dict(axial_mm=[near + g["shield_endcap_thickness"], bore_end], radius_mm=[g["flight_tube_r"], outer_radius]),
-        dict(axial_mm=[bore_end, outer_end], radius_mm=[0, outer_radius]),
-    ]
-    shield = electrode("flight_tube_shield", dict(primitive="cylindrical_union",
-        axis_xy_mm=list(coordinate["reflectron_axis"]), parts=shield_parts), grounded=True)
-    shield["flight_tube_local_regions"] = [
-        dict(axial_mm=[0, g["shield_endcap_thickness"]], radius_mm=[0, outer_radius]),
-        dict(axial_mm=[g["shield_endcap_thickness"], interface-near], radius_mm=[g["flight_tube_r"], outer_radius])]
-    def reflector_electrode(role: str, z0: float, z1: float, r0: float, r1: float,
-                            volts: float, *, grounded: bool = False) -> None:
-        body = electrode(role, dict(primitive="cylindrical_region",
-            axis_xy_mm=list(coordinate["reflectron_axis"]), axial_mm=[interface+z0, interface+z1],
-            radius_mm=[r0, r1]), volts=volts, grounded=grounded)
-        body["reflectron_local_regions"] = [dict(axial_mm=[z0, z1], radius_mm=[r0, r1])]
-
-    reflector_electrode("reflectron_entry_grid", 0, 0, 0, g["flight_tube_r"],
-        require_grounded_potential(voltage["entgrid"], "oaTOF reflectron entrance grid"), grounded=True)
-    counts = [rings["stage1_count"], rings["stage2_count"]]
-    if any(type(count) is not int or count < 1 for count in counts):
-        raise ValueError("reflectron ring counts must be positive integers")
-    for stage, count, start, length, v0, v1 in (
-        (1, counts[0], 0, g["L_stage1"], 0, voltage["midgrid"]),
-        (2, counts[1], g["L_stage1"], g["L_stage2"], voltage["midgrid"], voltage["backplate"]),
-    ):
-        for index in range(1, count+1):
-            center = start + index * (length / (count+1))
-            volts = v0 + (v1-v0) * index / (count+1)
-            reflector_electrode(f"reflectron_stage{stage}_ring_{index}",
-                center-g["ring_thickness"]/2, center+g["ring_thickness"]/2,
-                g["bore_r"], g["ring_outer_r"], volts)
-        if stage == 1:
-            reflector_electrode("reflectron_midgrid", g["L_stage1"], g["L_stage1"],
-                0, g["ring_outer_r"], voltage["midgrid"])
-    reflector_electrode("reflectron_backplate", g["L_reflectron"], g["L_reflectron"]+g["ring_thickness"],
-        0, g["ring_outer_r"], voltage["backplate"])
-    shield["reflectron_local_regions"] = [
-        dict(axial_mm=[0, local_bore_end], radius_mm=[g["flight_tube_r"], outer_radius]),
-        dict(axial_mm=[local_bore_end, local_outer_end], radius_mm=[0, outer_radius])]
-    electrode("detector", dict(primitive="cylinder", radius_mm=g["detector_radius"],
-        base_center_mm=[coordinate["detector_x"], 0, g["detector_z"]-g["detector_thickness"]],
-        height_mm=g["detector_thickness"], axis=[0, 0, 1]), grounded=True)
+    local_outer_end = g["L_reflectron"] + g["ring_thickness"] + g["shield_axial_gap"] + g["shield_endcap_thickness"]
+    outer_radius = g["flight_tube_r"] + g["flight_tube_wall"]
     values = [*g.values(), *[item["operating_voltage_v"] for item in objects]]
     if any(isinstance(value, (int, float)) and not math.isfinite(value) for value in values):
         raise ValueError("physical geometry and electrode voltages must be finite")

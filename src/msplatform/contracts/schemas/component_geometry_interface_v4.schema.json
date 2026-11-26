@@ -1,0 +1,318 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/component_geometry_interface_v4.schema.json",
+  "title": "Physical interfaces with explicit enclosure envelopes; containment is not mechanical mating",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "role",
+    "project_id",
+    "variant_id",
+    "geometry_profile_id",
+    "local_frame_id",
+    "length_unit",
+    "ports",
+    "component_electrodes",
+    "material_bounds_mm",
+    "vacuum_domains"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 4
+    },
+    "role": {
+      "$ref": "https://mass-spectrometry.local/schemas/component_geometry_interface.schema.json#/properties/role"
+    },
+    "project_id": {
+      "$ref": "https://mass-spectrometry.local/schemas/component_geometry_interface.schema.json#/properties/project_id"
+    },
+    "variant_id": {
+      "$ref": "https://mass-spectrometry.local/schemas/component_geometry_interface.schema.json#/properties/variant_id"
+    },
+    "geometry_profile_id": {
+      "$ref": "https://mass-spectrometry.local/schemas/component_geometry_interface.schema.json#/properties/geometry_profile_id"
+    },
+    "local_frame_id": {
+      "$ref": "https://mass-spectrometry.local/schemas/component_geometry_interface.schema.json#/properties/local_frame_id"
+    },
+    "length_unit": {
+      "$ref": "https://mass-spectrometry.local/schemas/component_geometry_interface.schema.json#/properties/length_unit"
+    },
+    "ports": {
+      "type": "object",
+      "minProperties": 0,
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "surface_kind",
+          "center_mm",
+          "outward_normal",
+          "cross_section",
+          "wall_thickness_mm"
+        ],
+        "properties": {
+          "surface_kind": {
+            "enum": [
+              "aperture_outer_face",
+              "open_rod_exit",
+              "open_rod_entrance"
+            ]
+          },
+          "center_mm": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 3,
+            "items": {
+              "type": "number"
+            }
+          },
+          "outward_normal": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 3,
+            "items": {
+              "type": "number"
+            }
+          },
+          "cross_section": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "shape",
+                  "width_mm",
+                  "height_mm",
+                  "width_axis",
+                  "height_axis"
+                ],
+                "properties": {
+                  "shape": {
+                    "const": "rectangle"
+                  },
+                  "width_mm": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "height_mm": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "width_axis": {
+                    "type": "array",
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "items": {
+                      "type": "number"
+                    }
+                  },
+                  "height_axis": {
+                    "type": "array",
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "items": {
+                      "type": "number"
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "shape",
+                  "inscribed_radius_mm"
+                ],
+                "properties": {
+                  "shape": {
+                    "const": "open_rod_envelope"
+                  },
+                  "inscribed_radius_mm": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "shape",
+                  "radius_mm"
+                ],
+                "properties": {
+                  "shape": {
+                    "const": "circle"
+                  },
+                  "radius_mm": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
+                }
+              }
+            ]
+          },
+          "wall_thickness_mm": {
+            "description": "Uniform material wall thickness at this face, when defined; null for open rods or a continuous frame without one uniform wall.",
+            "oneOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "surface_kind": {
+                  "enum": [
+                    "open_rod_exit",
+                    "open_rod_entrance"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "cross_section": {
+                  "properties": {
+                    "shape": {
+                      "const": "open_rod_envelope"
+                    }
+                  }
+                },
+                "wall_thickness_mm": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "cross_section": {
+                  "properties": {
+                    "shape": {
+                      "enum": [
+                        "rectangle",
+                        "circle"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "component_electrodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "electrode_group_id",
+          "role"
+        ],
+        "properties": {
+          "electrode_group_id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$",
+            "description": "Provider-owned electrical boundary group identity; native relabeling cannot change it. Multiple physical members may share the group."
+          },
+          "role": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$",
+            "description": "Physical classification from the declared provider API/variant, not a second identity."
+          }
+        }
+      }
+    },
+    "material_bounds_mm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "min",
+        "max"
+      ],
+      "properties": {
+        "min": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "type": "number"
+          }
+        },
+        "max": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "type": "number"
+          }
+        }
+      },
+      "description": "Conservative AABB of actual members in local_frame_id, mm; derived and verified by the provider."
+    },
+    "vacuum_domains": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "domain_id",
+          "shape",
+          "axis",
+          "center_xy_mm",
+          "z_min_mm",
+          "z_max_mm",
+          "radius_mm"
+        ],
+        "properties": {
+          "domain_id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+          },
+          "shape": {
+            "const": "cylinder"
+          },
+          "axis": {
+            "const": "z"
+          },
+          "center_xy_mm": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {
+              "type": "number"
+            }
+          },
+          "z_min_mm": {
+            "type": "number"
+          },
+          "z_max_mm": {
+            "type": "number"
+          },
+          "radius_mm": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          }
+        }
+      },
+      "description": "Enclosure interior envelopes, not a claim of obstacle-free vacuum or validated fields."
+    }
+  },
+  "description": "Electrode group identities are dimensionless and unique within this frozen provider design/topology revision. Port positions are mm in local_frame_id; roles classify boundaries and are not unique IDs."
+}

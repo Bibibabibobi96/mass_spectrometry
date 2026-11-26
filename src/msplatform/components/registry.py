@@ -59,6 +59,11 @@ def _tof() -> ProviderDescriptor:
     return DESCRIPTOR
 
 
+def _downstream_tof() -> ProviderDescriptor:
+    from msplatform.components.single_reflection_tof.registration import DESCRIPTOR
+    return DESCRIPTOR
+
+
 def _ip() -> ProviderDescriptor:
     from msplatform.components.dual_pressure_rectilinear_ion_processor.registration import DESCRIPTOR
     return DESCRIPTOR
@@ -79,6 +84,7 @@ _BUILTINS = MappingProxyType({
     'rf_multipole': ('rf_multipole_ion_optics', _rf),
     'orthogonal_accelerator': ('orthogonal_accelerator', _oa),
     'single_reflection_oa_tof': ('single_reflection_oa_tof_mass_analyzer', _tof),
+    'single_reflection_tof': ('single_reflection_tof', _downstream_tof),
     'dual_pressure_rectilinear_ion_processor': ('dual_pressure_rectilinear_ion_processor', _ip),
     'parallel_mirror_dual_stripe_mr_tof': ('parallel_mirror_dual_stripe_mr_tof', _mr),
     'dual_cone_tandem_quadrupole': ('dual_cone_tandem_quadrupole_ion_interface', _cone),

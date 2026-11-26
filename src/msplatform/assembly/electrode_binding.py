@@ -56,7 +56,7 @@ def validate_electrode_bindings(
             raise ContractError("electrode group scope must cover exactly the selected instances")
         if bindings["electrode_group_scope"] != electrode_group_scope:
             raise ContractError("electrode group scope differs from the caller's provider projection")
-    component_version = 3 if current else 2
+    supported_versions = (3, 4) if current else (2,)
     group_field = "electrode_group_id" if current else "scientific_id"
     interface_field = "electrode_group_id" if current else "component_electrode_id"
     if bindings["field_domain_id"] != field_domain_id:
@@ -69,7 +69,8 @@ def validate_electrode_bindings(
     for instance_id, interface in interfaces.items():
         if not isinstance(instance_id, str) or not instance_id:
             raise ContractError("electrode instance identity must be a nonempty string")
-        if interface.get("schema_version") != component_version:
+        component_version = interface.get("schema_version")
+        if type(component_version) is not int or component_version not in supported_versions:
             raise ContractError("backend binding and component interface versions differ")
         validate_schema(dict(interface), f"component_geometry_interface_v{component_version}.schema.json")
         local = [row[interface_field] for row in interface["component_electrodes"]]

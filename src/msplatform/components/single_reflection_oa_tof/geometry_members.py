@@ -22,22 +22,6 @@ def iter_geometry_members(resolved):
         row['electrode_group_id']='common_ground' if row['electrode_group_id']=='grounded_shield' else 'accelerator_'+row['electrode_group_id']
         result.append(row)
     physical=resolve_electrode_geometry(resolved,accelerator_projection=projection)
-    for index,body in enumerate(physical['electrodes']):
-        role=body['role']
-        if role.startswith('accelerator_'): continue
-        g=body['geometry'];primitive=g['primitive'];kind='physical_solid'
-        def cylindrical(region):
-            return dict(kind='annulus',center_xy_mm=list(g['axis_xy_mm']),z_min_mm=region['axial_mm'][0],z_max_mm=region['axial_mm'][1],
-                        inner_radius_mm=region['radius_mm'][0],outer_radius_mm=region['radius_mm'][1])
-        if primitive=='cylindrical_union': shape=dict(kind='union',parts=[cylindrical(part) for part in g['parts']])
-        elif primitive=='cylindrical_region':
-            shape=cylindrical(g)
-            if g['axial_mm'][0]==g['axial_mm'][1]: kind='ideal_surface'
-        elif primitive=='cylinder':
-            if g['axis']!=[0,0,1]: raise ValueError('unsupported detector physical axis')
-            shape=dict(kind='cylinder',center_mm=[*g['base_center_mm'][:2],g['base_center_mm'][2]+g['height_mm']/2],radius_mm=g['radius_mm'],height_mm=g['height_mm'])
-        else: raise ValueError('unknown TOF physical primitive')
-        result.append(dict(member_id=role,electrode_group_id='common_ground' if body['grounded'] else role,
-            shape=shape,representation_role=kind,local_frame_id='oatof_global',length_unit='mm',
-            source_refs=['/geometry_mm','/coordinate_convention','/rings']))
+    from msplatform.components.single_reflection_tof.geometry_members import iter_downstream_members
+    result.extend(iter_downstream_members(physical, frame='oatof_global'))
     return tuple(result)
