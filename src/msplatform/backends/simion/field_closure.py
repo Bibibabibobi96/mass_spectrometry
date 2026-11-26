@@ -119,6 +119,13 @@ def require_downstream_reuse(reference: Mapping, expected_identity: Mapping) -> 
         if role == 'reflectron':
             if family or not carrier['path'].lower().endswith('.pa'):
                 raise ValueError('reflectron reuse requires only a detached operating PA')
+        elif metadata.get('ground_representation') == 'analytic_zero_on_native_geometry':
+            if (metadata.get('ground_boundary_condition') != 'ground_dirichlet_zero_outer_homogeneous_neumann'
+                    or metadata.get('ground_refine_calls') != 0 or metadata.get('ground_fly_calls') != 0
+                    or not isinstance(metadata.get('ground_source_reference'), Mapping)
+                    or len(family) != 1 or not carrier['path'].lower().endswith('.pa')
+                    or Path(family[0]['path']) != Path(carrier['path']).with_suffix('.pa-surf')):
+                raise ValueError('analytic ground requires its detached carrier and same-stem surface')
         else:
             if (len(family) != 4 or len({row['path'] for row in family}) != 4
                     or carrier not in family or any(Path(row['path']).parent != Path(carrier['path']).parent for row in family)

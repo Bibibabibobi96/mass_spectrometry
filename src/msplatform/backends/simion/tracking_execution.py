@@ -438,7 +438,7 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
 
 def plan_tracking_workbench(compiled, *, field_design, components_resolved, carriers,
                              response_fields, field_workbench_record, run_directory,
-                             program, native_source_rows, native_path_resource, ip_mr_admission=None, neutral_admission=None, program_metadata=None, world_projection=None) -> NativeStagePlan:
+                             program, native_source_rows, native_path_resource, ip_mr_admission=None, neutral_admission=None, program_metadata=None, world_projection=None, canonical_run_directory=None) -> NativeStagePlan:
     """Reuse the sole full solved-slot projection, changing only control transport.
 
     The verified structural seed supplies private bootstrap slots; published
@@ -448,7 +448,7 @@ def plan_tracking_workbench(compiled, *, field_design, components_resolved, carr
         from .native_plans import plan_split_scalar_world_tracking
         return plan_split_scalar_world_tracking(world_projection, world_iob_record=field_workbench_record,
             program=program, native_source_rows=native_source_rows, run_directory=run_directory,
-            native_path_resource=native_path_resource)
+            native_path_resource=native_path_resource, canonical_run_directory=canonical_run_directory)
     if neutral_admission is not None:
         from .rf_tracking_execution import plan_neutral_sampled_tracking_workbench
         return plan_neutral_sampled_tracking_workbench(compiled, admission=neutral_admission, run_directory=run_directory, program=program, native_source_rows=native_source_rows, native_path_resource=native_path_resource)
@@ -486,10 +486,12 @@ def plan_tracking_workbench(compiled, *, field_design, components_resolved, carr
     if not seed.is_absolute() or not str(seed).isascii() or seed.suffix.lower() != '.iob':
         raise ValueError('field workbench needs an explicit supported native input path')
     original = projection.materializations[str(root/'inputs/field_iob.lua')]
-    output = root/'simion/tracking/instrument.iob'
+    canonical_output = canonical_run_directory is not None and compiled.frontend_geometry.get('role') == 'simion_split_oa_tof_geometry'
+    output = (Path(canonical_run_directory) if canonical_output else root)/'simion/tracking/instrument.iob'
     spec = root/'inputs/tracking_iob.lua'
     text = ('local spec=(function()\n'+original+'\nend)()\n'
-            +'spec.output_iob='+lua_value(str(output))+'\nreturn spec\n')
+            +'spec.output_iob='+lua_value(str(output))+'\n'
+            +('spec.preserve_canonical_output=true\n' if canonical_output else '')+'return spec\n')
     materializations = {str(spec):text,str(output.with_suffix('.lua')):program,
                         str(output.with_suffix('.fly2')):render_restart_fly2(native_source_rows)}
     wrapper = native_resource_path('build_tracking_iob.lua')
@@ -573,10 +575,14 @@ def _render_tracking_controls(model, plan: dict, *, field_design: dict, stored_b
         asset = downstream_assets[role]
         record = asset['carrier_record']
         carriers[role] = record
-        guards.extend(asset['family_records'] or [record])
+        guards.extend(asset['family_records'])
+        if record not in asset['family_records']:
+            guards.append(record)
+        representation = ('standalone_voltageized_static_pa' if role == 'reflectron'
+                          else 'run_private_native_static_family' if record['path'].lower().endswith('.pa0')
+                          else 'analytic_zero_ground_standalone')
         static_rows.append(dict(role=role,instance_index=index,
-            representation='standalone_voltageized_static_pa' if role=='reflectron' else 'run_private_native_static_family',
-            carrier_pa_basename=Path(record['path']).name,
+            representation=representation, carrier_pa_basename=Path(record['path']).name,
             **({} if role=='reflectron' else {'family_members':[Path(value['path']).name for value in asset['family_records']]})))
     static = dict(schema_version=1,role=DOWNSTREAM_STATIC_ASSET_ROLE,
         runtime_representation=DOWNSTREAM_STATIC_ASSET_REPRESENTATION,
@@ -799,7 +805,8 @@ def _execute_tracking_units(session, *, model, plan, design, stored_bank, fronte
             run_directory=root,program=controls['program'],native_source_rows=subset['native_source_rows'],
             native_path_resource=session.input_dir/'native_sources/native_run_path.lua',
             ip_mr_admission=ip_mr_admission, neutral_admission=neutral_admission, program_metadata=controls['build_metadata'],
-            world_projection=plan.get('scalar_field_basis', {}).get('world_projection'))
+            world_projection=plan.get('scalar_field_basis', {}).get('world_projection'),
+            canonical_run_directory=session.canonical_path(root))
         control_records = {}
         for number,(path,text) in enumerate(native_plan.materializations.items(),1):
             name = 'tracking_control_'+str(number) if plan['unit_size'] is None else 'tracking_control__'+key+'_'+str(number)
@@ -980,6 +987,8 @@ def execute_tracking(session, *, fields_reference, particles, propagation, obser
     compiled = model_geometry(model,downstream_drive=True)
     geometry = compiled.frontend_geometry
     _,downstream = require_downstream_reuse(source,meta['downstream_identity'])
+    if meta.get('ground_representation') != 'analytic_zero_on_native_geometry':
+        raise ValueError('OA–TOF tracking requires a derived analytic ground FieldBundle; published PA families cannot be reopened')
     design = json.loads(source.data_path('field_design').read_text(encoding='utf-8-sig'))
     stored_bank = json.loads(source.data_path('field_bank').read_text(encoding='utf-8-sig'))
     expected = {row['domain_id'] for row in design['domains']}
@@ -1027,15 +1036,26 @@ def execute_tracking(session, *, fields_reference, particles, propagation, obser
         scalar_field_basis=scalar_field_basis,expected_scalar_basis=expected_scalar_basis)
 
 
-def _publish_split_particle_data(session, plan, collection, geometry, document, executable_identity, records):
+def _publish_split_particle_data(session, plan, collection, geometry, document, executable_identity, records, *, recovery=None):
     from msplatform.io.manifest_records import file_record
     from msplatform.physics import CONSTANTS
     from msplatform.results.particle_data import read_particle_data, write_particle_data
     from .particle_data import adapt_native_results
-    version = windows_binary_version(session.context.tools.get('simion'))
-    binary = file_record(Path(session.context.tools['simion']), 'solver_native_binary')
-    if executable_identity != {key: binary[key] for key in ('bytes', 'sha256')}:
-        raise ValueError('SIMION version evidence does not match the tracked native binary')
+    if plan['expected_operation_ids']:
+        version = windows_binary_version(session.context.tools.get('simion'))
+        binary = file_record(Path(session.context.tools['simion']), 'solver_native_binary')
+        if executable_identity != {key: binary[key] for key in ('bytes', 'sha256')}:
+            raise ValueError('SIMION version evidence does not match the tracked native binary')
+    else:
+        # Whole-unit recovery authenticates the predecessor manifest and index.
+        # An interrupted predecessor may have no completed product/version.
+        product = recovery.get('manifest', {}).get('products', {}).get('trajectory', {}) if recovery else {}
+        candidate = product.get('metadata', {}).get('backend_version') if product.get('status') == 'complete' else None
+        previous = recovery.get('index', {}).get('native_executable_identity') if recovery else None
+        if (previous is None or previous != executable_identity or not isinstance(candidate, str)
+                or not candidate.strip() or candidate.strip().lower() == 'unavailable'):
+            raise ValueError('complete tracking reuse requires authenticated predecessor SIMION version and binary identity')
+        version = candidate
     definitions = plan['observations']['plane_observations']
     bindings = {row['observation_id']: dict(component_id=row['source_instance_id'],
                 surface_id=row['surface_id'], electrode_id=None, kind='detector') for row in definitions}
@@ -1293,7 +1313,7 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
             phase='before_fly_command_not_after_iob_load',
             stdout_data_keys=[key for key in records if key=='native_stdout' or key.startswith('native_stdout__')]))
     if plan['flight'].get('tracking_kind') == 'split_oa_tof':
-        result, version = _publish_split_particle_data(session, plan, collection, geometry, document, executable_identity, records)
+        result, version = _publish_split_particle_data(session, plan, collection, geometry, document, executable_identity, records, recovery=recovery)
     if collection.get('terminal_evidence',{}).get('status') == 'recorded_v1':
         from .terminal_evidence import render_terminal_6d_rec
         terminal_rec = session.declare_file(session.result_dir/'terminal-6d.rec','required_evidence')
@@ -1313,7 +1333,8 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
         reused_unit_count=len(recovery['reused_unit_keys']) if recovery else 0)
     if plan['flight'].get('tracking_kind') == 'split_oa_tof':
         metadata.update(particle_data_schema_version=2, particle_data_integrity=result.data_integrity,
-                        backend_version=version, frame_id=geometry['native_frame_id'])
+                        backend_version=version, backend_version_evidence='producer_verified',
+                        frame_id=geometry['native_frame_id'])
     if plan['flight'].get('tracking_kind')=='independent_oa':
         metadata.update(component_kind='orthogonal_accelerator',tracking_kind='independent_oa',field_domain_coupling='independent_component_domains',native_state_wire_format='legacy_shared_RF_NATIVE_STATE_V1')
     if plan['flight'].get('tracking_kind')=='rf_ip':

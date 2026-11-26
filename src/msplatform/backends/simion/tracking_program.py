@@ -596,20 +596,23 @@ def _resolve_downstream_static_assets(contract: dict[str, Any], expected_role_in
                 raise ValueError("reflectron requires its standalone voltageized static PA")
             _ordinary_standalone_pa_basename(row["carrier_pa_basename"], "reflectron carrier")
         else:
-            if (set(row) != {"role", "instance_index", "representation", "carrier_pa_basename", "family_members"}
-                    or row["representation"] != "run_private_native_static_family"):
-                raise ValueError("surface asset requires a fresh run-private native static family")
-            carrier = row["carrier_pa_basename"]
-            if not isinstance(carrier, str) or re.fullmatch(r"[^/\\]+\.pa0", carrier) is None:
-                raise ValueError("native static carrier must be a .pa0 basename")
-            stem = carrier[:-1]
-            members = row["family_members"]
-            # These actual providers each have one grounded electrode, so the
-            # complete family is PA#, PA0, PA1 and fractional-surface metadata.
-            if (not isinstance(members, list) or len(members) != 4
-                    or any(not isinstance(name, str) for name in members)
-                    or set(members) != {stem+"#", stem+"0", stem+"1", stem+"-surf"}):
-                raise ValueError("native static family requires its complete same-stem PA and surface members")
+            if set(row) != {"role", "instance_index", "representation", "carrier_pa_basename", "family_members"}:
+                raise ValueError("surface asset fields differ")
+            carrier, members = row["carrier_pa_basename"], row["family_members"]
+            if row["representation"] == "analytic_zero_ground_standalone":
+                _ordinary_standalone_pa_basename(carrier, "analytic ground carrier")
+                if members != [carrier[:-3] + ".pa-surf"]:
+                    raise ValueError("analytic ground requires its same-stem fractional surface")
+            elif row["representation"] == "run_private_native_static_family":
+                if not isinstance(carrier, str) or re.fullmatch(r"[^/\\]+\.pa0", carrier) is None:
+                    raise ValueError("native static carrier must be a .pa0 basename")
+                stem = carrier[:-1]
+                if (not isinstance(members, list) or len(members) != 4
+                        or any(not isinstance(name, str) for name in members)
+                        or set(members) != {stem+"#", stem+"0", stem+"1", stem+"-surf"}):
+                    raise ValueError("native static family requires its complete same-stem PA and surface members")
+            else:
+                raise ValueError("unknown surface asset representation")
         normalized.append(dict(row))
         seen.add(role)
     if seen != _DOWNSTREAM_STATIC_ROLES:
@@ -1036,7 +1039,7 @@ def _native_field_analyzer_config(multipoles: dict[str, dict], design: dict, geo
     plan = geometry["composition_plan"]
     split = geometry.get('role') == 'simion_split_oa_tof_geometry'
     if split:
-        upstream_ids, _, downstream_id = split_frontend_instances(plan)
+        upstream_ids, accelerator_id, downstream_id = split_frontend_instances(plan)
         if model_document is None:
             raise ValueError('split native Program requires its authenticated prepared model')
     else:
@@ -1139,7 +1142,7 @@ def _native_field_analyzer_config(multipoles: dict[str, dict], design: dict, geo
     if not local_oatof:
         edge = next(edge for edge in plan["recipe"]["connections"]
                     if edge["upstream"]["instance_id"] in upstream_ids
-                    and edge["downstream"]["instance_id"] == downstream_id)
+                    and edge["downstream"]["instance_id"] == (accelerator_id if split else downstream_id))
         poses = {row['instance_id']: RigidTransform.from_contract(row['transform'])
                  for row in plan['recipe']['instances']}
         upstream_id = edge['upstream']['instance_id']
@@ -1460,9 +1463,12 @@ def build_successor_program(
             rf_scale=1., rf_steps_per_period=rf_steps_per_period))
     observation_context = None
     if field_observation is not None:
-        if (set(field_observation) != {'specification','evidence_context'}
-                or frontend_geometry['composition_plan']['schema_version'] != 5):
-            raise ValueError('native field observation requires plan5 and its explicit evidence context')
+        plan5 = frontend_geometry['composition_plan']['schema_version'] == 5
+        split_rf = (frontend_geometry['composition_plan']['schema_version'] == 6
+                    and frontend_geometry.get('role') == 'simion_split_oa_tof_geometry'
+                    and bool(rf_instances) and not world)
+        if set(field_observation) != {'specification','evidence_context'} or not (plan5 or split_rf):
+            raise ValueError('native field observation requires supported RF layout and explicit evidence context')
         evidence = field_observation['evidence_context']
         spec = validate_native_field_observation(field_observation['specification'],
             particle_ids=evidence['mother_particle_ids'],source_instances=tuple(rf_instances),
@@ -1576,7 +1582,7 @@ def build_successor_program(
         build_metadata["physical_frontend_topology_id"] = native_analyzer_config["accelerator_topology_id"]
         build_metadata["provider_placements"] = analyzer_config["provider_placements"]
         pieces = (scientific_multipole_rod_pieces if frontend_geometry['composition_plan']['schema_version'] == 5
-                  else multipole_rod_pieces)
+                  or frontend_geometry.get('role') == 'simion_split_oa_tof_geometry' else multipole_rod_pieces)
         build_metadata["physical_rod_piece_count"] = sum(len(pieces(provider)) for provider in multipoles_by_instance.values())
         build_metadata["rf_instance_order"] = rf_instances
         build_metadata["runtime_representation"] = STANDALONE_DYNAMIC_FIELD_RUNTIME_REPRESENTATION

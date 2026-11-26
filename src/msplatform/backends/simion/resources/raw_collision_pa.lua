@@ -5,6 +5,13 @@
 local mode=assert(arg[1],'mode required')
 assert(mode=='build' or mode=='verify','collision mode must be build or verify')
 local native_path=assert(loadfile(assert(arg[4],'native path resource required')))()
+local authority_path=arg[6]
+local ground=authority_path~=nil
+if ground then
+ local authority=assert(loadfile(native_path(authority_path),'ground authority required'))()
+ assert(type(authority)=='table' and authority.schema_version==1 and authority.role=='analytic_zero_ground' and authority.electrode_id==1 and authority.voltage_v==0 and authority.boundary_condition=='ground_dirichlet_zero_outer_homogeneous_neumann', 'invalid frozen ground authority')
+ for key in pairs(authority) do assert(key=='schema_version' or key=='role' or key=='electrode_id' or key=='voltage_v' or key=='boundary_condition','unknown ground authority field') end
+end
 local source=native_path(assert(arg[2],'raw PA# required'))
 local output=native_path(assert(arg[3],'new collision PA required'))
 local source_base=assert(source:match('^(.*)%.[pP][aA]#$'),'raw .pa# source required')
@@ -19,6 +26,7 @@ end
 nonempty(source)
 local empty=false
 local state_path=arg[5]
+if state_path=='' or state_path=='-' then state_path=nil end
 local state_grid=nil
 if state_path then
  local state=assert(io.open(native_path(state_path),'rb'),'surface state missing');local text=state:read('*a');state:close()
@@ -47,10 +55,10 @@ else
 end
 simion.pas:close()
 local src=assert(simion.pas:open(source),'cannot open raw geometry PA')
-assert(src.symmetry=='3dplanar' and src.potential_type=='electric','raw geometry must be 3D planar electric')
+assert((src.symmetry=='3dplanar' or (ground and src.symmetry=='2dcylindrical')) and src.potential_type=='electric','unsupported raw electric geometry')
 local dimensions={src.nx,src.ny,src.nz};local pitch={src.dx_mm,src.dy_mm,src.dz_mm}
 if state_grid then for i=1,3 do assert(dimensions[i]==state_grid[i] and pitch[i]==state_grid[i+3],'surface state/grid differs') end end
-for i=1,3 do assert(type(dimensions[i])=='number' and dimensions[i]>=3 and dimensions[i]==math.floor(dimensions[i]),'invalid dimensions');assert(type(pitch[i])=='number' and pitch[i]>0 and pitch[i]<math.huge,'invalid pitch') end
+for i=1,3 do assert(type(dimensions[i])=='number' and dimensions[i]>=((ground and src.symmetry=='2dcylindrical' and i==3) and 1 or 3) and dimensions[i]==math.floor(dimensions[i]),'invalid dimensions');assert(type(pitch[i])=='number' and pitch[i]>0 and pitch[i]<math.huge,'invalid pitch') end
 local count,metal_count,surface_count=0,0,0
 local function finite(x)return type(x)=='number' and x==x and math.abs(x)<math.huge end
 local out
@@ -68,14 +76,16 @@ for x,y,z in src:points() do
  local value,metal=src:point(x,y,z)
  assert(finite(value) and type(metal)=='boolean','invalid raw node')
  assert(metal or value==0,'raw vacuum must be zero; collision output does not create a field')
+ if ground and metal then assert(value==1,'ground geometry contains a non-ground electrode ID') end
+ local expected=ground and 0 or value
  local sx,sy,sz=src:surface_info(x,y,z)
  if sx~=nil or sy~=nil or sz~=nil then surface_count=surface_count+1 end
  if mode=='build' then
-  out:point(x,y,z,value,metal)
+  out:point(x,y,z,expected,metal)
   if sx~=nil or sy~=nil or sz~=nil then out:surface_info(x,y,z,sx,sy,sz) end
  else
   local actual,actual_metal=out:point(x,y,z)
-  assert(actual==value and actual_metal==metal,'collision node value or electrode flag differs')
+  assert(actual==expected and actual_metal==metal,'collision node value or electrode flag differs')
   local ax,ay,az=out:surface_info(x,y,z)
   assert(ax==sx and ay==sy and az==sz,'collision fractional surface offset differs')
  end
@@ -86,5 +96,9 @@ assert(metal_count>0 and (empty and surface_count==0 or not empty and surface_co
 if mode=='build' then out:save(output) end
 out:close();src:close()
 nonempty(output);if empty then assert(not exists(output_base..'.pa-surf'),'empty output has unexpected companion') else nonempty(output_base..'.pa-surf') end
-print(string.format('RAW_COLLISION_%s=PASS nodes=%d metal_nodes=%d surface_nodes=%d FIELD_STATUS=not_solved REFINE=False FLY=False',mode:upper(),count,metal_count,surface_count))
+if ground then
+ print(string.format('ANALYTIC_ZERO_GROUND_%s=PASS nodes=%d metal_nodes=%d surface_nodes=%d REPRESENTATION=analytic_zero_on_native_geometry REFINE=False FLY=False',mode:upper(),count,metal_count,surface_count))
+else
+ print(string.format('RAW_COLLISION_%s=PASS nodes=%d metal_nodes=%d surface_nodes=%d FIELD_STATUS=not_solved REFINE=False FLY=False',mode:upper(),count,metal_count,surface_count))
+end
 io.stdout:flush()

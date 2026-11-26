@@ -1,37 +1,21 @@
 """Real public example field identity across the worker's persisted JSON boundary."""
 import copy
-from importlib.resources import files
 import json
-from pathlib import Path
 import unittest
 
-from msplatform import assembly as assembly_api, components as component_api, examples as example_api
-from msplatform.backends import simion as simion_api
-from msplatform.backends.simion.model import compile_prepared_model, project_resolved_drive, require_prepared_model
+from msplatform.backends.simion.model import require_prepared_model
 from msplatform.backends.simion.native_plans import plan_solve_fields, operating_member_identity
 from msplatform.backends.simion.pa_family_cache import canonical_pa_family_cache_key
-from msplatform.execution.clock_authority import validate_clock_authority
 
 
 class FieldTransportTests(unittest.TestCase):
     def test_public_example_native_labels_keep_exact_cache_key_after_worker_json_roundtrip(self):
-        case = example_api.load_example("rf_oatof_functional_v1")
-        components = {name:component_api.resolve_component(request) for name,request in case.component_requests.items()}
-        assembly = assembly_api.assemble(case.recipe, components)
-        compiled = simion_api.compile_geometry(assembly, numerics=case.geometry_numerics)
-        selected = {name:compiled.components_resolved[name]
-                    for name in compiled.frontend_geometry["composition_plan"]["scope"]["instance_ids"]}
-        root = Path(str(files("msplatform.examples")))
-        authority = validate_clock_authority(root/"instrument_clock_authority_v1.json", root)
-        clock = dict(clock_epoch_id=authority["clock_epoch_id"], authority_sha256=authority["authority_sha256"],
-                     **case.drive["clock"])
-        drive = project_resolved_drive(compiled, selected, pulse=case.drive["pulse"], clock=clock)
-        model = compile_prepared_model(compiled, selected, drive=drive, physics=case.physics)
+        from tests.contracts.test_simion_field_action import public_case
+        model, numerical, _, _ = public_case()
         require_prepared_model(model)
-        domains = copy.deepcopy(case.geometry_numerics["frontend_domains"])
-        for domain in domains.values():
-            domain["refine_convergence_v"] = dict(carrier_off=.001, rf_reference=.001, pulse_delta=.001)
-        plan = plan_solve_fields(model, numerics=dict(frontend_domains=domains, rf_reference_voltage_v=10000.))
+        numerical = copy.deepcopy(numerical)
+        numerical.pop('downstream_convergence_v')
+        plan = plan_solve_fields(model, numerics=numerical)
         transported = json.loads(json.dumps(plan))
         tool = dict(simion_identity=dict(release="SIMION 2020", executable_bytes=1, executable_sha256="A"*64),
                     builder_identity=dict(operating_builder="B"*64, exporter="C"*64))

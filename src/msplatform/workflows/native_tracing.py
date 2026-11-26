@@ -329,6 +329,20 @@ def _execute(store, recipe, context, run_id, work, reservation, source_revision)
             field, receipts["field"] = _native_reference(store, stack, field_key,
                 lambda: invoke(lambda: simion.solve_fields(model, numerics=study["numerics"]["fields"], context=context)), kind="field_bundle", raw_root=context.workspace / "artifacts", claims=control_ids, calls=calls)
             _write(work / "native_stages.json", receipts)
+        if not comsol and field.metadata.get('ground_representation') != 'analytic_zero_on_native_geometry':
+            from msplatform.backends.simion import grounded_runtime, native_plans
+            from msplatform.backends.simion.resources import native_resource_path
+            source_field = field
+            runtime_key = canonical_json_sha256({
+                'stage': 'standalone_ground_carriers', 'field': field_key,
+                'owner': file_sha256(grounded_runtime.__file__), 'plan': file_sha256(native_plans.__file__),
+                'converter': file_sha256(native_resource_path('raw_collision_pa.lua')),
+                'native_executable': backend_identity['native_executable']})
+            field, receipts['runtime_field'] = _native_reference(store, stack, runtime_key,
+                lambda: invoke(lambda: grounded_runtime.prepare_grounded_runtime_fields(source_field, context=context)),
+                kind='field_bundle', raw_root=context.workspace/'artifacts', claims=control_ids, calls=calls)
+            field_key = runtime_key
+            _write(work / 'native_stages.json', receipts)
         from .mass_scan import merge_mass_scan, analyze_mass_scan
         batches, common, stage_memo = [], None, {}
         for ordinal, particles in enumerate(_realizations(study["release"])):

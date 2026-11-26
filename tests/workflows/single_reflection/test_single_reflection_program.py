@@ -641,21 +641,19 @@ ion_px_mm=tonumber(arg[5]);ion_instance=5;segment.instance_adjust();assert(ion_i
             self.build(frontend_geometry=geometry)
 
     def test_prepared_model_real_public_example_is_the_only_tracking_drive(self):
-        from msplatform import assembly as assembly_api, components as component_api, examples as example_api
-        from msplatform.backends import simion as simion_api
-        from msplatform.backends.simion.model import PHYSICS, compile_prepared_model, project_resolved_drive, model_geometry
+        from msplatform.backends.simion.model import PHYSICS, compile_prepared_model, model_geometry
         from msplatform.backends.simion.native_plans import plan_solve_fields
         from msplatform.backends.simion.tracking_program import build_successor_program as canonical_build
         from msplatform.backends.simion.artifacts import CompiledPreparedModel
         from msplatform.backends.simion.compiler import _content_sha256
 
-        case = example_api.load_example('rf_oatof_functional_v1')
-        parts = {key:component_api.resolve_component(value) for key,value in case.component_requests.items()}
-        assembly = assembly_api.assemble(case.recipe,parts)
-        compiled = simion_api.compile_geometry(assembly,numerics=case.geometry_numerics)
-        components = {key:compiled.components_resolved[key] for key in compiled.frontend_geometry['composition_plan']['scope']['instance_ids']}
-        drive = project_resolved_drive(compiled,components,pulse=self.flight['pulse'],
-            clock=dict(clock_epoch_id='tracking_model_test',authority_sha256='A'*64,phase_reference_instrument_time_us=0.))
+        from tests.contracts.test_support.split_rf_fixture import split_case
+        from msplatform.backends.simion.frontend import split_frontend_instances
+        case, _, compiled, projected = split_case(
+            dict(clock_epoch_id='tracking_model_test',authority_sha256='A'*64,phase_reference_instrument_time_us=0.),
+            self.flight['pulse'])
+        components = compiled.components_resolved
+        drive = copy.deepcopy(projected.document['drive'])
         for groups in drive['groups'].values():
             for row in groups.values():
                 if row['kind']=='rf':
@@ -667,10 +665,10 @@ ion_px_mm=tonumber(arg[5]);ion_instance=5;segment.instance_adjust();assert(ion_i
         domains = copy.deepcopy(case.geometry_numerics['frontend_domains'])
         for domain in domains.values(): domain['refine_convergence_v']=dict(carrier_off=.001,rf_reference=.001,pulse_delta=.001)
         design = plan_solve_fields(model,numerics=dict(frontend_domains=domains,rf_reference_voltage_v=10000.))['field_design']
-        rf_ids,tof = native_frontend_instances(actual.frontend_geometry['composition_plan'])
+        rf_ids,oa,tof = split_frontend_instances(actual.frontend_geometry['composition_plan'])
         providers = {key:components[key] for key in rf_ids}
-        self.assertIn('particle_source',components[tof])  # Real design envelope, not a sampled source.
-        self.assertNotIn('simion_geometry_build',components[tof])
+        self.assertEqual(actual.frontend_geometry['composition_plan']['components'][oa]['project_id'], 'orthogonal_accelerator')
+        self.assertEqual(actual.frontend_geometry['composition_plan']['components'][tof]['project_id'], 'single_reflection_tof')
         metadata = {}
         kwargs = dict(frontend_geometry=actual.frontend_geometry,flight=self.flight,
             birth_times_us=[.25,2.5],particle_ids=[11,77],initial_velocities_mm_per_us=[[0.,0.,1.],[0.,0.,1.]],

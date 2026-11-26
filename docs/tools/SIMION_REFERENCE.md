@@ -106,6 +106,12 @@ Candidate 或 Formal 资格。本结论不扩展为所有求解器的通用短�
 [公共实现说明](../SIMION_BACKEND.md#长路径输入-api与证据)维护 API、回归命令、官方依据及完整
 失败／复验链。后续直接复用并按改动范围验证，不重新建立替代机制。
 
+IOB保存路径与运行目录alias也须分别处理。2026-11-27真实SDK小例表明：同一canonical保存的IOB经
+execution alias重开时，SIMION会按alias拼写解释其相对PA依赖，Windows `Test-Path` 成功不足以证明SDK可加载。
+split OA–TOF四槽及scalar world五槽的保存、冷开验证与Fly现统一传canonical IOB，工作目录仍走原公共alias；
+自有PA依赖必须保存为生命周期覆盖使用期的canonical路径。五槽生产几何wrapper的小PA冷开已验证，
+实际仪器Fly资格另查迁移记录。此修复不放宽上表PA输入隔离、不建立私有短路径机制，也不授权重开已发布PA族。
+
 ## GUI 对等
 
 正式基线应让用户在 GUI 中检查 PA 实例、位置、旋转、缩放、Fast Adjust 电压、Fly2 粒子和

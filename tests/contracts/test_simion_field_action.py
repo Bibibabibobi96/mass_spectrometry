@@ -16,11 +16,9 @@ from unittest.mock import patch
 
 from tests.contracts.test_simion_field_worker import INERT_WORKER
 from tests.contracts.test_simion_fields_execution import inert_downstream_source
-from msplatform import assembly as assembly_api, components as component_api, examples as example_api
-from msplatform.backends import simion as simion_api
+from msplatform import examples as example_api
 from msplatform.backends.simion.field_execution import execute_fields, plan_fields_execution
 from msplatform.backends.simion.field_closure import load_field_model, load_reflectron_response_records
-from msplatform.backends.simion.model import compile_prepared_model, project_resolved_drive
 from msplatform.backends.simion.resources import structural_seed_path
 from msplatform.execution import owner
 from msplatform.results.artifacts import open_artifact
@@ -58,17 +56,13 @@ def measured_boundary(phase, boundary, *, operation_id=None):
 
 
 def public_case():
-    case = example_api.load_example('rf_oatof_functional_v1')
-    components = {name:component_api.resolve_component(value) for name,value in case.component_requests.items()}
-    assembly = assembly_api.assemble(case.recipe, components)
-    geometry = simion_api.compile_geometry(assembly, numerics=case.geometry_numerics)
+    from tests.contracts.test_support.split_rf_fixture import split_case
     root = Path(str(files('msplatform.examples')))
     contract = root/'instrument_clock_authority_v1.json'
     authority = validate_clock_authority(contract, root)
+    case = example_api.load_example('rf_oatof_functional_v1')
     clock = dict(clock_epoch_id=authority['clock_epoch_id'], authority_sha256=authority['authority_sha256'], **case.drive['clock'])
-    selected = {name:geometry.components_resolved[name] for name in geometry.frontend_geometry['composition_plan']['scope']['instance_ids']}
-    drive = project_resolved_drive(geometry, selected, pulse=case.drive['pulse'], clock=clock)
-    model = compile_prepared_model(geometry, selected, drive=drive, physics=case.physics)
+    case, _, geometry, model = split_case(clock, case.drive['pulse'])
     numerics = dict(frontend_domains=case.geometry_numerics['frontend_domains'], rf_reference_voltage_v=10000.,
         downstream_convergence_v=dict(flight_tube=.001, detector=.001, reflectron=.001))
     for domain in numerics['frontend_domains'].values():

@@ -446,7 +446,7 @@ if mode=='verify' or mode=='verify_geometry' or mode=='verify_model' or mode=='v
   -- do not change a slot or introduce another PA transport mechanism.
   local path_reference=simion.pas:open()
   local function path_key(path)
-    local projected=native_path(path)
+    local projected=spec.preserve_canonical_instances and path or native_path(path)
     local input=assert(projected):gsub('\\','/')
     assert(not input:match('^%a:[^/]') and not input:match('^//[?.]/'),
       'unsupported absolute PA path')
@@ -707,7 +707,7 @@ do
   local reference=assert(simion.pas:open())
   for index,row in ipairs(spec.instances) do
     local item=simion.wb.instances[index]
-    reference.path=native_path(row.path)
+    reference.path=spec.preserve_canonical_instances and row.path or native_path(row.path)
     assert(item.pa.path:lower()==reference.path:lower(),'geometry slot path differs before publication')
     for _,key in ipairs({'nx','ny','nz','dx_mm','dy_mm','dz_mm'}) do
       assert(item.pa[key]==row.grid[key],'geometry slot grid differs before publication')

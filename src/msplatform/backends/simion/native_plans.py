@@ -15,6 +15,58 @@ from .resources import native_resource_path, STRUCTURAL_SEEDS
 from .source import lua_value, render_restart_fly2
 
 
+def plan_analytic_ground_carriers(model, *, boundary_conditions: Mapping, run_directory: Path, native_path_resource: Path) -> NativeStagePlan:
+    """Plan private geometry regeneration and independently verified zero-ground PAs."""
+    from .model import model_geometry, require_prepared_model
+
+    document = require_prepared_model(model)
+    if boundary_conditions != {'flight_tube': 'ground_dirichlet_zero_outer_homogeneous_neumann', 'detector': 'ground_dirichlet_zero_outer_homogeneous_neumann'}:
+        raise ValueError('analytic ground requires explicit grounded-electrode and homogeneous-Neumann boundary conditions for both domains')
+    geometry = model_geometry(model, downstream_drive=True)
+    if geometry.frontend_geometry.get('role') != 'simion_split_oa_tof_geometry':
+        raise ValueError('analytic ground requires the explicit split OA–TOF model')
+    tof = geometry.frontend_geometry['tof_instance_id']
+    rows = [row for row in document['native_drive_rows']
+            if row.get('instance_id') == tof and any(
+                target.get('domain') in {'flight_tube', 'detector'}
+                for target in row.get('native_targets', []))]
+    if (len(rows) != 1 or rows[0].get('kind') != 'static' or isinstance(rows[0].get('voltage_v'), bool)
+            or rows[0].get('voltage_v') != 0):
+        raise ValueError('analytic ground requires a unique static zero boundary')
+    for role in ('flight_tube', 'detector'):
+        targets = [target for target in rows[0]['native_targets'] if target.get('domain') == role]
+        if targets != [dict(domain=role, electrode_id=1)]:
+            raise ValueError('analytic ground requires the exact sole grounded electrode')
+    root, path_resource = _native_ascii(run_directory), _native_ascii(native_path_resource)
+    contract = geometry.frontend_geometry['downstream_build_contract']
+    specs = {row['role']: row for row in geometry.downstream_specs}
+    physical = dict(simion={role: copy.deepcopy(specs[role]['template_variables']['component'])
+                            for role in ('flight_tube', 'reflectron')})
+    physical['simion']['detector_body'] = copy.deepcopy(specs['detector']['physical_detector'])
+    physical['simion']['detector_marker'] = copy.deepcopy(contract['simion_detector_marker'])
+    projection, authority = root/'inputs/ground_projection.lua', root/'inputs/ground_authority.lua'
+    materializations = {
+        str(projection): 'return ' + lua_value(dict(contract, physical_geometry=physical)) + '\n',
+        str(authority): 'return ' + lua_value(dict(schema_version=1, role='analytic_zero_ground',
+            electrode_id=1, voltage_v=0, boundary_condition='ground_dirichlet_zero_outer_homogeneous_neumann')) + '\n',
+    }
+    operations, outputs = [], []
+    for role in ('flight_tube', 'detector'):
+        gem, raw = root/'inputs'/(role+'.gem'), root/'simion/ground_raw'/(role+'.pa#')
+        output = root/'simion/ground_carriers'/(role+'.pa')
+        materializations[str(gem)] = specs[role]['template_text']
+        operations.append(_operation('ground_geometry_'+role, 'prepare', ['lua',
+            str(native_resource_path('build_'+role+'_variant.lua')), str(gem), str(raw), str(projection),
+            'geometry-only'], [str(raw), str(raw.with_suffix('.pa-surf'))], 'BUILD_GEOMETRY=PASS ROLE='+role))
+        for mode in ('build', 'verify'):
+            operations.append(_operation('ground_'+mode+'_'+role, 'prepare', ['lua',
+                str(native_resource_path('raw_collision_pa.lua')), mode, str(raw), str(output),
+                str(path_resource), '-', str(authority)], [str(output), str(output.with_suffix('.pa-surf'))]
+                if mode == 'build' else [], 'ANALYTIC_ZERO_GROUND_'+mode.upper()+'=PASS'))
+        outputs.extend((str(output), str(output.with_suffix('.pa-surf'))))
+    return NativeStagePlan(materializations, (), tuple(operations), tuple(outputs))
+
+
 def rigid_iob_placement(transform, *, origin_mm=(0., 0., 0.)):
     """Project the existing proper-rotation convention to official IOB controls.
 
@@ -59,7 +111,7 @@ def _native_ascii(path: Path) -> Path:
 
 
 def plan_split_scalar_world_build(projection: Mapping[str, Any], *, run_directory: Path,
-                                  seed_record: Mapping[str, Any], native_path_resource: Path) -> NativeStagePlan:
+                                  seed_record: Mapping[str, Any], native_path_resource: Path, canonical_run_directory: Path | None = None) -> NativeStagePlan:
     """Plan existing native background build/reopen and five-slot world IOB."""
     root = _native_ascii(run_directory)
     path_resource = _native_ascii(native_path_resource)
@@ -72,16 +124,20 @@ def plan_split_scalar_world_build(projection: Mapping[str, Any], *, run_director
     slots = copy.deepcopy(projection["slots"])
     if slots[0]["path"] != str(background):
         raise ValueError("world projection background differs from owned destination")
+    if canonical_run_directory is not None:
+        slots[0]["path"] = str(_native_ascii(canonical_run_directory) / "simion/world/background.pa")
     grid = projection["grid"]
     args = [str(background), *map(str, grid["dimensions"]),
             *(format(value, ".17g") for value in grid["pitch_mm"]), str(path_resource)]
     seed = root / "inputs/world_seed/5_instance_seed.iob"
     control = root / "inputs/world_empty.fly2"
-    iob = root / "simion/world/world.iob"
+    iob = (_native_ascii(canonical_run_directory) if canonical_run_directory is not None else root) / "simion/world/world.iob"
     spec = root / "inputs/world_iob.lua"
     materializations = {str(control): render_restart_fly2([]), str(spec): "return " + lua_value(dict(
         schema_version=1, role="split_scalar_world_iob_build", instances=slots,
         background_probes=projection["background_probes"], seed_iob=str(seed), output_iob=str(iob),
+        preserve_canonical_output=canonical_run_directory is not None,
+        preserve_canonical_instances=canonical_run_directory is not None,
         empty_particle_control=str(control),
         bootstrap_paths=[str(seed.parent / f"iob_seed_placeholder_{index:02d}.pa0") for index in range(1,6)])) + "\n"}
     operations = (
@@ -100,7 +156,7 @@ def plan_split_scalar_world_build(projection: Mapping[str, Any], *, run_director
 
 def plan_split_scalar_world_tracking(projection: Mapping[str, Any], *, world_iob_record: Mapping[str, Any],
                                      program: str, native_source_rows: list[dict], run_directory: Path,
-                                     native_path_resource: Path) -> NativeStagePlan:
+                                     native_path_resource: Path, canonical_run_directory: Path | None = None) -> NativeStagePlan:
     """Plan a source-bearing copy of the verified five-slot world workbench."""
     root = _native_ascii(run_directory)
     path_resource = _native_ascii(native_path_resource)
@@ -123,10 +179,12 @@ def plan_split_scalar_world_tracking(projection: Mapping[str, Any], *, world_iob
     seed_source = structural_seed_path(5)
     seed_size, seed_digest = STRUCTURAL_SEEDS[5]
     structural_seed = root / "inputs/world_tracking_seed/5_instance_seed.iob"
-    output = root / "simion/tracking/instrument.iob"
+    output = (_native_ascii(canonical_run_directory) if canonical_run_directory is not None else root) / "simion/tracking/instrument.iob"
     spec = root / "inputs/tracking_world_iob.lua"
     materializations = {str(spec): "return " + lua_value(dict(schema_version=1,
         role="split_scalar_world_tracking_iob", instances=copy.deepcopy(projection["slots"]),
+        preserve_canonical_output=canonical_run_directory is not None,
+        preserve_canonical_instances=canonical_run_directory is not None,
         background_probes=copy.deepcopy(projection["background_probes"]), seed_iob=str(structural_seed), output_iob=str(output),
         world_source_iob=dict(world_iob_record),
         bootstrap_paths=[str(structural_seed.parent / f"iob_seed_placeholder_{index:02d}.pa0") for index in range(1,6)])) + "\n",

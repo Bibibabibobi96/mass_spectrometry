@@ -6,6 +6,99 @@ from tests.contracts.test_split_scalar_binding import SplitScalarBindingTests
 
 
 class SplitScalarWorldTests(SplitScalarBindingTests):
+    def _owner_field_fixture(self):
+        """Build tiny sealed test-only producers; no bytes are native solver evidence."""
+        import json
+        from msplatform.backends.simion.field_bank import field_bank
+        from msplatform.backends.simion.resources import native_resource_path
+        from msplatform.execution.terminal_publication import publish_terminal_state
+        from msplatform.io.manifest_records import file_record
+        base = self.helper.root
+        original = base / 'ground-original'
+        derived = base / 'ground-derived'
+        original.mkdir(); derived.mkdir()
+        records = {}
+        def put(name, data):
+            path = original / name
+            path.write_bytes(data)
+            return file_record(path)
+        def encoded(value): return json.dumps(value, allow_nan=False).encode('utf-8')
+        records['compiled_model'] = put('model.json', encoded(self.model.document))
+        design = {'domains': [{'domain_id': 'parent'}], 'working_points': []}
+        records['field_design'] = put('field-design.json', encoded(design))
+        records['field_bank'] = put('field-bank.json', encoded(field_bank(design, ['parent'])))
+        records['parent'] = put('parent.pa', b'test-only')
+        for role in ('flight_tube', 'detector'):
+            for suffix in ('pa#', 'pa0', 'pa1', 'pa-surf'):
+                records[role+'_'+suffix] = put(role+'.'+suffix, b'test-only '+suffix.encode())
+        records['reflectron'] = put('reflectron.pa', b'test-only')
+        builders = {}
+        for name in ('build_flight_tube_variant.lua', 'build_detector_variant.lua', 'gem2pa_geometry.lua'):
+            data = native_resource_path(name).read_bytes()
+            record = put(name, data)
+            records['resource_'+name] = record
+            builders[name] = record['sha256']
+        native_assets = {role: {'carrier': role+'_pa0', 'family': [role+'_'+suffix for suffix in ('pa#','pa0','pa1','pa-surf')]}
+                         for role in ('flight_tube', 'detector')}
+        native_assets['reflectron'] = {'carrier': 'reflectron', 'family': []}
+        metadata = {'backend':'simion', 'field_status':'available', 'source_status':'not_requested',
+            'model_identity_sha256': self.model.document['model_identity_sha256'], 'clock':self.model.document['drive']['clock'],
+            'downstream_identity': {'builder_identities': builders}, 'native_assets':native_assets,
+            'frontend_members': {'parent': {'carrier_off': {'data_key':'parent'}}}}
+        def publish(root, meta, data, inputs, outputs, mode='test_only'):
+            manifest = {'schema_version':2,'role':'simulation_run_manifest','run_id':root.name,
+                'project':'instrument_assembly','mode':mode,'status':'success','inputs':inputs,'outputs':outputs,
+                'products':{'fields':{'schema_version':1,'kind':'field_bundle','status':'complete','metadata':meta,'data':data}}}
+            publish_terminal_state(root, {'status':'success'}, manifest)
+            return {'manifest': file_record(root/'run_manifest.json'), 'product_id':'fields'}
+        origin = publish(original, metadata, records, {}, list(records.values()))
+        ground = copy.deepcopy(metadata)
+        ground.update(ground_representation='analytic_zero_on_native_geometry',ground_source_reference=origin,
+                      ground_boundary_condition='ground_dirichlet_zero_outer_homogeneous_neumann',
+                      ground_refine_calls=0,ground_fly_calls=0)
+        data = dict(records)
+        for role in ('flight_tube','detector'):
+            for suffix in ('pa','pa-surf'):
+                path=derived/(role+'.'+suffix);path.write_bytes(b'test-only grounded carrier')
+                data[role+'_analytic_'+suffix]=file_record(path)
+            ground['native_assets'][role]={'carrier':role+'_analytic_pa','family':[role+'_analytic_pa-surf']}
+        request_dir=derived/'inputs';request_dir.mkdir(exist_ok=True)
+        (request_dir/'execution_request.json').write_text(json.dumps({'payload': {'action':'prepare_grounded_runtime_fields','fields':origin}}),encoding='utf8')
+        for role in ('flight_tube','detector'):
+            for operation in ('build','verify'):
+                key='analytic_ground_'+operation+'_'+role+'_log'
+                path=derived/(key+'.txt');path.write_text('ANALYTIC_ZERO_GROUND_'+operation.upper()+'=PASS',encoding='utf8')
+                data[key]=file_record(path)
+        owned=[data[key] for key in data if '_analytic_' in key or key.startswith('analytic_ground_')]
+        borrowed={key:record for key,record in records.items() if key not in {
+            role+'_'+suffix for role in ('flight_tube','detector') for suffix in ('pa#','pa0','pa1','pa-surf')}}
+        data={**borrowed,**{key:data[key] for key in data if '_analytic_' in key or key.startswith('analytic_ground_')}}
+        source=publish(derived,ground,data,{**borrowed, 'ground_source_manifest':origin['manifest'],
+            'execution_request':file_record(request_dir/'execution_request.json')},owned,mode='fields_only')
+        return source, origin
+
+    def test_admission_authenticates_ground_origin_and_rejects_old_family_or_tamper(self):
+        from unittest.mock import patch
+        from msplatform.backends.simion.split_scalar_workbench import _admit_world
+        source, origin = self._owner_field_fixture()
+        selection = {'geometry_artifact': self.geometry, 'samples': self.samples}
+        binding = self.resolve()
+        with patch('msplatform.backends.simion.split_scalar_binding.resolve_split_scalar_basis', return_value=binding):
+            opened, _, _, carriers = _admit_world(source, selection)
+            self.assertEqual(opened.metadata['ground_source_reference'], origin)
+            self.assertTrue(carriers['flight_tube']['path'].endswith('flight_tube.pa'))
+            with self.assertRaisesRegex(ValueError, 'derived analytic ground'):
+                _admit_world(origin, selection)
+            manifest = __import__('pathlib').Path(origin['manifest']['path'])
+            saved = manifest.read_bytes()
+            manifest.write_bytes(saved + b' ')
+            with self.assertRaises((AssertionError, ValueError, OSError)):
+                _admit_world(source, selection)
+            manifest.write_bytes(saved)
+            manifest.unlink()
+            with self.assertRaises((AssertionError, ValueError, OSError)):
+                _admit_world(source, selection)
+
     def test_real_model_world_projection_and_rejections(self):
         binding = self.resolve()
         carriers = {role: {"path": str(self.helper.root / (role + ".pa")), "bytes": 10, "sha256": "0" * 64}
@@ -24,6 +117,14 @@ class SplitScalarWorldTests(SplitScalarBindingTests):
         stage = plan_split_scalar_world_build(planned, run_directory=run,
             seed_record={"path": str(structural_seed_path(5)), "bytes": size, "sha256": digest},
             native_path_resource=resource_path("native_run_path.lua"))
+        canonical = self.helper.root / "canonical-world"
+        canonical_stage = plan_split_scalar_world_build(planned, run_directory=run,
+            seed_record={"path": str(structural_seed_path(5)), "bytes": size, "sha256": digest},
+            native_path_resource=resource_path("native_run_path.lua"), canonical_run_directory=canonical)
+        canonical_spec = canonical_stage.materializations[str(run / "inputs/world_iob.lua")]
+        self.assertIn("preserve_canonical_output=true", canonical_spec)
+        self.assertIn("preserve_canonical_instances=true", canonical_spec)
+        self.assertIn(str(canonical / "simion/world/world.iob").replace("\\", "\\\\"), canonical_spec)
         self.assertEqual([row["operation_id"] for row in stage.operations],
                          ["background_build", "background_verify", "collision_iob_build", "collision_iob_verify"])
         self.assertTrue(all(row["stage"] == "prepare" for row in stage.operations))
@@ -38,6 +139,14 @@ class SplitScalarWorldTests(SplitScalarBindingTests):
             native_path_resource=resource_path("native_run_path.lua"))
         self.assertEqual([row["operation_id"] for row in tracking.operations], ["build_tracking_iob", "verify_tracking_iob"])
         self.assertEqual(len(tracking.input_copies), 1)
+        canonical_tracking = plan_split_scalar_world_tracking(planned,
+            world_iob_record={"path": str(run / "simion/world/world.iob"), "bytes": 1, "sha256": "0" * 64},
+            program="return {}", native_source_rows=[source_row], run_directory=run / "flight",
+            native_path_resource=resource_path("native_run_path.lua"), canonical_run_directory=canonical)
+        tracking_spec = canonical_tracking.materializations[str(run / "flight/inputs/tracking_world_iob.lua")]
+        self.assertIn("preserve_canonical_output=true", tracking_spec)
+        self.assertIn("preserve_canonical_instances=true", tracking_spec)
+        self.assertEqual(canonical_tracking.input_copies[0]["source_record"]["sha256"], digest)
         self.assertEqual(tracking.input_copies[0]["source_record"]["bytes"], size)
         self.assertIn("split_scalar_world_tracking_iob", tracking.materializations[str(run / "flight/inputs/tracking_world_iob.lua")])
         invalid_slots = copy.deepcopy(planned)
@@ -80,20 +189,23 @@ class SplitScalarWorldTests(SplitScalarBindingTests):
             binding["bases"][name]["field_solution_reference"] = reference(name + "_solution")
         carriers = {role: {"path": str(self.helper.root / (role + ".pa")), "bytes": 10, "sha256": "0" * 64}
                     for role in ("flight_tube", "reflectron", "accelerator", "detector")}
-        source = SimpleNamespace(reference=field)
+        origin = reference("origin")
+        source = SimpleNamespace(reference=field, metadata={"ground_representation": "analytic_zero_on_native_geometry",
+                                                            "ground_source_reference": origin})
         stage = {"limits": {"transient_run_directory_bytes": 1}, "artifact_retention": {}}
         context = SimpleNamespace(tools={"simion": __import__("pathlib").Path(sys.executable)},
                                   workspace=self.helper.root, execution_root=self.helper.root / "exec")
         selection = {"geometry_artifact": geometry, "samples": {"off": reference("off"), "on": reference("on")}}
         with patch("msplatform.execution.stage_policy.read_stage_policy", return_value=(stage, {})), \
-             patch("msplatform.execution.native_source_guard.guard_native_source", side_effect=lambda *a, **k: nullcontext()), \
+             patch("msplatform.execution.native_source_guard.guard_native_source", side_effect=lambda *a, **k: nullcontext(source)), \
              patch("msplatform.backends.simion.split_scalar_workbench._admit_world", return_value=(source,self.model,binding,carriers)), \
              patch("msplatform.execution.owner.run_managed_stage", side_effect=RuntimeError("INERT_WORLD_OWNER")) as owner:
             with self.assertRaisesRegex(RuntimeError, "INERT_WORLD_OWNER"):
                 simion.prepare_split_scalar_world(field, scalar_field_basis=selection, context=context)
         call = owner.call_args.kwargs
         self.assertEqual(call["expected_operation_ids"], ("background_build", "background_verify", "collision_iob_build", "collision_iob_verify"))
-        self.assertEqual(len(call["source_references"]), 6)
+        self.assertEqual(len(call["source_references"]), 7)
+        self.assertIn(origin["manifest"], [row["manifest_record"] for row in call["source_references"]])
 
     def test_worker_publishes_borrowed_lineage_with_inert_owner(self):
         from pathlib import Path
@@ -114,7 +226,7 @@ class SplitScalarWorldTests(SplitScalarBindingTests):
         data = base / "inert-data.json"
         data.write_text("inert", encoding="utf-8")
         record = file_record(data)
-        source = SimpleNamespace(reference=reference, manifest_location=manifest, metadata={"backend": "simion"},
+        source = SimpleNamespace(reference=reference, manifest_location=manifest, metadata={"backend": "simion", "ground_source_reference": reference},
                                  data_records={"compiled_model": record}, data_locations={"compiled_model": data})
         carriers = {}
         for role in ("flight_tube", "reflectron", "accelerator", "detector"):

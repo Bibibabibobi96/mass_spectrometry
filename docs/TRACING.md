@@ -97,6 +97,13 @@ SIMION原生配方可在 `[field_source.reference]` 显式选择已发布的 `fi
 来源producer与当前tracer实现分别记入provenance；路径本身不决定科学身份。
 这项科学场准入不代表任意历史PA文件均可直接交供应商重开，运行载体仍须符合公共原生输入隔离合同。
 
+split原生SIMION运行由同一workflow将旧静态ground PA族转换为独立运行载体：
+`grounded_runtime.prepare_grounded_runtime_fields` 在新owner内按冻结几何重新生成私有PA#，
+对已证明的零电极Dirichlet与齐次外边界Neumann条件构造全新零势PA，保留电极及FSS并独立冷开核验；
+不重开原已发布PA族，不执行Refine，不改原source/drive。派生与原producer均保护到Fly结束。
+部署stage policy须显式声明 `prepare_grounded_runtime_fields` 的预算与保留类别，科学配方不保存这些工程设置。
+该派生的小引用缓存由ArtifactStore管理，原始及派生PA分别由其既有原生owner管理删除。
+
 ## 结果与复用
 
 每个运行独立保留 resolved.json、provenance.json、execution.json、summary.json、run_manifest.json，

@@ -95,11 +95,13 @@ def _admit_world(fields, selection):
     import json
     from msplatform.results.artifacts import open_artifact
     from .field_closure import data_record, require_downstream_reuse
+    from .grounded_runtime import verified_ground_origin
     from .split_scalar_binding import resolve_split_scalar_basis
     source = open_artifact(fields, expected_kind="field_bundle")
     meta = source.metadata
     if meta.get("backend") != "simion" or meta.get("field_status") != "available" or meta.get("source_status") != "not_requested":
         raise ValueError("split scalar world requires a published source-independent SIMION field bundle")
+    verified_ground_origin(source)
     model = CompiledPreparedModel(source.data_path("compiled_model").read_text(encoding="utf-8-sig"))
     document = require_prepared_model(model)
     if meta.get("model_identity_sha256") != document["model_identity_sha256"] or meta.get("clock") != document["drive"]["clock"]:
@@ -164,7 +166,13 @@ def prepare_split_scalar_world(fields, *, scalar_field_basis, context):
     reference = fields.reference if isinstance(fields, OpenedArtifact) else copy.deepcopy(fields)
     root = context.workspace / "artifacts"
     with ExitStack() as stack:
-        stack.enter_context(guard_native_source(reference, expected_kind="field_bundle", expected_artifact_root=root))
+        guarded = stack.enter_context(guard_native_source(reference, expected_kind="field_bundle", expected_artifact_root=root))
+        if guarded.metadata.get("ground_representation") != "analytic_zero_on_native_geometry":
+            raise ValueError("split scalar world requires derived analytic ground")
+        origin_reference = guarded.metadata.get("ground_source_reference")
+        if not isinstance(origin_reference, Mapping):
+            raise ValueError("split scalar world requires its original ground producer")
+        stack.enter_context(guard_native_source(origin_reference, expected_kind="field_bundle", expected_artifact_root=root))
         # Scalar product and geometry guards precede scalar admission.  Their
         # own referenced solutions are acquired and rechecked immediately after.
         initial = [(scalar_field_basis["geometry_artifact"], "geometry_artifact")]
@@ -187,7 +195,7 @@ def prepare_split_scalar_world(fields, *, scalar_field_basis, context):
         plan = plan_split_scalar_world_build(projection, run_directory=planning, seed_record=seed,
             native_path_resource=planning / "inputs/native_sources/native_run_path.lua")
         ids = tuple(row["operation_id"] for row in plan.operations)
-        sources = [dict(manifest_record=reference["manifest"])] + [dict(manifest_record=ref["manifest"]) for ref, _ in refs]
+        sources = [dict(manifest_record=reference["manifest"]), dict(manifest_record=origin_reference["manifest"])] + [dict(manifest_record=ref["manifest"]) for ref, _ in refs]
         action_record = file_record(Path(execute_split_scalar_world.__code__.co_filename).resolve(), "required_evidence")
         result = run_managed_stage(context, descriptor=dict(project="instrument_assembly", mode="fields_only", software=["SIMION"]),
             run_id=datetime.now().strftime("%Y%m%d_%H%M%S") + "__sim__simion__world-" + uuid4().hex[:12],
@@ -217,7 +225,8 @@ def execute_split_scalar_world(session, *, fields_reference, scalar_field_basis,
     from .resources import native_resource_path, structural_seed_path
 
     source, model, binding, carriers = _admit_world(fields_reference, scalar_field_basis)
-    references = [(source.reference, "field_bundle"), *_basis_references(binding)]
+    references = [(source.reference, "field_bundle"),
+                  (source.metadata["ground_source_reference"], "field_bundle"), *_basis_references(binding)]
     immutable = {}
     for reference, kind in references:
         artifact = open_artifact(reference, expected_kind=kind)
@@ -231,6 +240,8 @@ def execute_split_scalar_world(session, *, fields_reference, scalar_field_basis,
             immutable[key] = row
     geometry_request = dict(binding["geometry_execution_request"])
     _protected_source(session, binding["geometry_reference"]["manifest"], required_paths=[geometry_request["path"]])
+    # All source owner protections are active; repeat the same authoritative admission.
+    source, model, binding, carriers = _admit_world(fields_reference, scalar_field_basis)
     request_key = str(Path(geometry_request["path"]).resolve())
     if request_key in immutable and any(str(immutable[request_key][k]).upper() != str(geometry_request[k]).upper() for k in ("bytes", "sha256")):
         raise ValueError("split world geometry request identity conflicts")
@@ -243,7 +254,8 @@ def execute_split_scalar_world(session, *, fields_reference, scalar_field_basis,
     frozen = session.input_dir / "native_sources"
     native_path = frozen / "native_run_path.lua"
     plan = plan_split_scalar_world_build(projection, run_directory=root, seed_record=seed_source,
-                                         native_path_resource=native_path)
+                                         native_path_resource=native_path,
+                                         canonical_run_directory=session.artifact_run_dir)
     if tuple(row["operation_id"] for row in plan.operations) != session.expected_operation_ids:
         raise ValueError("split world operation graph differs")
     def owned(path, role):

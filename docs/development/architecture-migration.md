@@ -1195,6 +1195,47 @@ Study SHA256 `A7D75ED3EAB3E198D4196868B9CE1AA9A787554DC83CEA5088C545B81EACB9E6`�
 其余阶段按fail-fast阻塞或等待已启动阶段结束。不能报告完整Changed PASS；本轮定向38项的软件结果单独成立。
 最终安装仍按B交付的普通wheel及sdist重建wheel、仓外参考链与B资源准入执行，不把该环境失败冒充科学失败。
 
+### B3/B4 独立ground载体及canonical IOB候选（6412f4e4 后）
+
+新增技术实施选择（不改写原评阅状态）：旧已发布flight_tube/detector PA0族不交供应商重开；
+新 `backends/simion/grounded_runtime.py` 复用现有owner、调度、公共source guard及 `raw_collision_pa.lua`，
+验证冻结原builder/tool/model/零电极与齐次Neumann边界，在新私有generation只重建两几何，
+构造全新普通零势PA并逐节点/电极/FSS独立冷开，6个原生操作、Refine0/Fly0。
+原frontend/reflectron借用原owner，derived metadata明确analytic而非原求解器生产；
+`verified_ground_origin`认证请求、原来源、实际build/verify日志及借用记录，两个owner在实际Fly全程受保护。
+原source字段中旧PA族仅作为科学/重建证据保留；低层原生track拒绝未转换的split源，不恢复旧生产框架。
+
+`native_tracing.py` 对同一public CLI/API自动安排该运行载体阶段，cache key绑定源field identity、
+实际converter/plan/owner与exe身份；无须作者另写科学配方或重Refine。COMSOL→SIMION world同样认证derived及原producer。
+部署新工程profile `C:/Users/Liao/msplatform-artifacts/architecture-b-20261127/simion-engineering-standalone/stages.json`
+显式新增prepare_grounded_runtime_fields预算（沿原build_geometry、async_io=false），旧profile不修改。
+
+真实小IOB已证明canonical保存后经alias重开会按alias拼写解释相对PA，从而missing；
+不是Windows文件不存在。四槽/五槽现都使用canonical IOB保存、verify、Fly，原公共alias仍作working directory，
+五槽自有background也保持canonical。seed使用受审空structural seed，不先打开旧field IOB再覆盖其PA。
+旧PA长路径输入的公共防写/独立短副本规则保持，未另造运输/哈希协议。
+
+软件验证：ground/scalar/world/真实RF渲染25 PASS（root复跑16.337s）；public explicit-field workflow14 PASS（13.963s），
+Ruff PASS。真实SIMION小native测试在公共host lease下验证3D/cylindrical零势+FSS、非零BC拒绝、
+canonical冷开与alias负例、五槽production build_geometry_iob/iob_core priority读回；临时小PA按测试生命周期清理，
+没有持久化科学run证据，不拿它代替实际仪器链。
+原fixture迁移另25 PASS；共享准入3例中large-exe failure与canonical Fly协议PASS，4-unit replay例仍被旧空observation拒绝；
+该fixture已改用同一split planner的真实detector面，正定向重验，其后行为不提前标PASS。
+迁移同时发现并修复实际RF→OA连接查找和杆件计数旧字段缺陷；既有RF field observer仅迁到同槽布局的plan6，未扩world/noRF。
+
+后续重验到all-reused分支又发现真实SI publisher仍读取本机SIMION版本，导致无工具完整复用失败。
+现完整复用从已认证直接父complete trajectory metadata继承版本，并核对其单元index的原exe bytes/SHA；
+缺失、unknown或冲突拒绝新SI发布，新/部分重算仍核验实际选中exe。没有拿Python版本冒充SIMION。
+最后在共享host ledger下运行
+`test_simion_tracking_units.TrackingUnitPlanTests.test_reused_version_comes_only_from_completed_matching_parent`
+与 `TrackingUnitOwnerTests.test_original_owner_four_units_out_of_order_partial_replay_then_zero_calls`
+2 PASS（239.523s）；含5个版本正反子例、完整100母群/4单元、乱序、部分重放6调用、完整重放0调用。
+该测试明确 `native_qualification=false`，版本seam为 `inert_fixture_not_simion`；是真owner/子进程/保护协议的软件验证，
+不能当SIMION仪器Fly。先前2个large-exe failure/canonical Fly协议正例已通过，故原3个共享准入待验项均已定向处理。
+
+尚待：新普通安装后真实原fields受管派生、tracking wrapper/Fly、COMSOL→SIMION完整域、复用/GC/缺批及最终门禁。
+本条是可审阅候选与相称验证事实，BA06等真实链未完成，B Goal继续active。
+
 ### B 执行检查点（c4398e9c 后）
 
 已普通提交并推送：检测覆盖 `7761a3a4`；真实失败证据收尾 `8e4020b4`；

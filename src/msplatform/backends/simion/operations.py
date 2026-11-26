@@ -624,6 +624,11 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
     if meta.get('field_representation') == 'producer_owned_static_world_standalone_operating_pa':
         original = meta.get('operating_producer_reference', source.reference)
         references.append({'manifest_record': original['manifest']})
+    if (meta.get('ground_representation') == 'analytic_zero_on_native_geometry'
+            and meta.get('field_representation') != 'split_scalar_world_with_collision_geometry'):
+        from .grounded_runtime import verified_ground_origin
+        original_ground = verified_ground_origin(source)
+        references.append({'manifest_record': original_ground.reference['manifest']})
     if meta.get('field_representation') == 'split_scalar_world_with_collision_geometry':
         collision = artifact_reader.open_artifact(meta['collision_source_reference'], expected_kind='field_bundle')
         if (collision.metadata.get('backend') != 'simion'
@@ -631,6 +636,10 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
                 or collision.metadata.get('model_identity_sha256') != meta.get('model_identity_sha256')):
             raise ContractError('world scalar collision source differs from its original native model')
         references.append({'manifest_record': collision.reference['manifest']})
+        if collision.metadata.get('ground_representation') == 'analytic_zero_on_native_geometry':
+            from .grounded_runtime import verified_ground_origin
+            original_ground = verified_ground_origin(collision)
+            references.append({'manifest_record': original_ground.reference['manifest']})
     if recovery is not None:
         references.append({"manifest_record": recovery})
     if isinstance(packet, HandoffResult):

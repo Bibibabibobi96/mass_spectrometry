@@ -139,6 +139,42 @@ class TrackingUnitPlanTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'selected native executable'):
                 require_tracking_executable_identity(plan,recovery,None)
 
+    def test_reused_version_comes_only_from_completed_matching_parent(self):
+        # Software-only adapter seam; no binary or native output is claimed.
+        from msplatform.backends.simion.tracking_execution import _publish_split_particle_data
+        identity={'bytes':123,'sha256':'A'*64}
+        plan={'expected_operation_ids':[],'observations':{'plane_observations':[]},'rows':[],
+              'flight':{'detector_instance':4}}
+        geometry={'native_frame_id':'fixture'}
+        document={'drive':{'clock':{'clock_epoch_id':'fixture','authority_sha256':'A'*64}}}
+        class Session:
+            context=SimpleNamespace(tools={})
+            def __init__(self,root):self.result_dir=root
+            def declare_file(self,path,role):return path
+            def canonical_path(self,path):return path
+        def write_fixture(directory,result,*,metadata):
+            for name in ('initial_states.parquet','terminal_states.parquet','events.parquet','trajectories.h5','execution.json'):
+                (directory/name).write_bytes(b'inert-result-fixture')
+        for status, parent_version, previous, expected in (
+            ('complete','inert_fixture_not_simion',identity,'inert_fixture_not_simion'),
+            ('complete',None,identity,None),('failed','inert_fixture_not_simion',identity,None),
+            ('complete','unavailable',identity,None),
+            ('complete','inert_fixture_not_simion',{'bytes':124,'sha256':'B'*64},None)):
+            with self.subTest(status=status,parent_version=parent_version,previous=previous), tempfile.TemporaryDirectory() as directory:
+                recovery={'manifest':{'products':{'trajectory':{'status':status,'metadata':{'backend_version':parent_version}}}},
+                          'index':{'native_executable_identity':previous}}
+                with patch('msplatform.backends.simion.tracking_execution.windows_binary_version') as lookup, \
+                     patch('msplatform.backends.simion.particle_data.adapt_native_results',return_value='inert'), \
+                     patch('msplatform.results.particle_data.write_particle_data',side_effect=write_fixture), \
+                     patch('msplatform.results.particle_data.read_particle_data'):
+                    if expected is None:
+                        with self.assertRaisesRegex(ValueError,'authenticated predecessor SIMION version'):
+                            _publish_split_particle_data(Session(Path(directory)),plan,{},geometry,document,identity,{},recovery=recovery)
+                    else:
+                        _, version=_publish_split_particle_data(Session(Path(directory)),plan,{},geometry,document,identity,{},recovery=recovery)
+                        self.assertEqual(version,expected)
+                lookup.assert_not_called()
+
     def test_complete_reuse_preserves_recorded_or_unknown_identity_without_tools(self):
         prior={'bytes':17,'sha256':'A'*64}
         with patch('msplatform.backends.simion.tracking_units.file_record',side_effect=AssertionError('no tool read')):
@@ -234,7 +270,7 @@ class TrackingUnitOwnerTests(unittest.TestCase):
                     graph=case.plan(unit_size=25,reused_unit_keys=inspected['reused_unit_keys'],field_manifest_record=artifact.reference['manifest'])
                 run_id='20261104_120000__test__python__tracking-'+label
                 action=partial(execute_tracking,fields_reference=artifact,particles=case.packet,propagation=case.policy,
-                    observations={'plane_observations':[]},numerics=case.numerics,limits={},unit_size=25,recovery_reference=recovery)
+                    observations=copy.deepcopy(case.observations),numerics=case.numerics,limits={},unit_size=25,recovery_reference=recovery)
                 if after_error:action=partial(fail_after_reuse,execute_action=action)
                 from dataclasses import replace
                 active_context=replace(context,tools={}) if label=='all-reused' or after_error else context
@@ -248,7 +284,9 @@ class TrackingUnitOwnerTests(unittest.TestCase):
             private=dict(MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN='',MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID='',MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE='')
             policy=dict(_capacity_policy(),target_gib=1,minimum_free_gib=0)
             real_resource=resource_path
-            with patch.dict(os.environ,private),patch(
+            # Inert Python is not SIMION: this explicit fixture label is not vendor evidence.
+            with patch('msplatform.backends.simion.tracking_execution.windows_binary_version',
+                    return_value='inert_fixture_not_simion') as version_lookup,patch.dict(os.environ,private),patch(
                     'msplatform.execution.capacity_admission._capacity_policy',return_value=policy),patch(
                     'msplatform.backends.simion.model_execution._protected_source'),patch.object(RunSession,'run_process',new=single),patch.object(
                     RunSession,'run_process_group',new=group),patch('msplatform.backends.simion.tracking_execution.plan_tracking_execution',wraps=plan_tracking_execution),patch(
@@ -306,7 +344,13 @@ class TrackingUnitOwnerTests(unittest.TestCase):
                 self.assertEqual(collection['native_calls'],6)
                 self.assertEqual(len(collection['native_terminals']),100)
                 self.assertEqual(collection['original_mother']['mother_particle_ids'],case.case.release['particle_ids'])
+                version_calls_before_reuse=version_lookup.call_count
                 all_reused=run('all-reused',file_record(child/'run_manifest.json','required_evidence'))
+                self.assertEqual(version_lookup.call_count,version_calls_before_reuse)
+                recovered_manifest=json.loads((Path(all_reused['run_directory'])/'run_manifest.json').read_text())
+                recovered_meta=recovered_manifest['products']['trajectory']['metadata']
+                self.assertEqual(recovered_meta['backend_version'],'inert_fixture_not_simion')
+                self.assertEqual(recovered_meta['backend_version_evidence'],'producer_verified')
                 self.assertEqual(len([x for rid,x in calls if rid.endswith('all-reused')]),0)
                 self.assertEqual(json.loads((Path(all_reused['run_directory'])/'results/collection.json').read_text())['native_calls'],0)
                 self.assertEqual([row['particle_weight'] for row in collection['original_mother']['mother_records']],

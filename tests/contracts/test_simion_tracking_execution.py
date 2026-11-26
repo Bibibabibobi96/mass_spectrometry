@@ -2,13 +2,12 @@
 import copy
 import unittest
 
-from msplatform import assembly as assembly_api, components as component_api, examples as example_api
+from msplatform import examples as example_api
 from msplatform import ion_release as ion_release_api
 from msplatform.backends import simion as simion_api
 from msplatform.assembly.handoff import HandoffMother,HandoffClock,HandoffResult,prepare_handoff_states,HandoffSelection
 from msplatform.contracts.rigid_transform import RigidTransform
 from msplatform.contracts.clock import ClockIdentity
-from msplatform.backends.simion.model import compile_prepared_model,project_resolved_drive,PHYSICS
 from msplatform.backends.simion.tracking_execution import plan_tracking_execution
 
 
@@ -49,6 +48,10 @@ def tracking_action_fixture(self, root):
             member=working_point_member_id(point);key=domain+'_'+member
             put(key,('frontend' if domain=='parent' else 'frontend_entrance_refinement')+'.'+member+'.pa',raw=b'INERT_NOT_PA')
             bindings[domain][member]={'data_key':key,'cache_key':'provenance_only','generation_directory':'FORBIDDEN_RUNTIME_LOOKUP'}
+    # Two inert, owner-bound products exercise provenance authentication only.
+    # Their bytes are deliberately not SIMION PA files and prove no native result.
+    from msplatform.execution.terminal_publication import publish_terminal_state
+    from msplatform.backends.simion.resources import native_resource_path
     assets={}
     for role in ('flight_tube','reflectron','detector'):
         family=[]
@@ -56,10 +59,30 @@ def tracking_action_fixture(self, root):
             key=role+suffix;put(key,role+suffix,raw=b'INERT_NOT_PA')
             if role!='reflectron':family.append(key)
         assets[role]=dict(carrier=role+('.pa' if role=='reflectron' else '.pa0'),family=family)
-    metadata=dict(backend='simion',field_status='available',source_status='not_requested',
+    builders={}
+    for name in ('build_flight_tube_variant.lua','build_detector_variant.lua','gem2pa_geometry.lua'):
+        record=file_record(native_resource_path(name),'required_evidence')
+        records['resource_'+name]=record
+        builders[name]=record['sha256']
+    identity={'builder_identities':builders}
+    origin_meta=dict(backend='simion',field_status='available',source_status='not_requested',
         model_identity_sha256=self.model.document['model_identity_sha256'],clock=self.model.document['drive']['clock'],
-        frontend_members=bindings,native_assets=assets,downstream_identity={'fixture':'INERT_SPATIAL_IDENTITY'})
-    artifact=OpenedArtifact(kind='field_bundle',product_id='fields',reference={'manifest':{'path':str(producer/'run_manifest.json'),'bytes':123,'sha256':'D'*64}},
+        frontend_members=bindings,native_assets=copy.deepcopy(assets),downstream_identity=identity)
+    origin_records=copy.deepcopy(records)
+    origin_manifest=dict(schema_version=1,role='simulation_run_manifest',run_id='inert-field-origin',
+        project='instrument_assembly',mode='inert',status='success',inputs=origin_records,outputs=[],
+        products={'fields':dict(schema_version=1,kind='field_bundle',status='complete',metadata=origin_meta,data=origin_records)})
+    publish_terminal_state(producer,{'status':'success'},origin_manifest)
+    origin_ref={'manifest':file_record(producer/'run_manifest.json'),'product_id':'fields'}
+    for role in ('flight_tube','detector'):
+        carrier='analytic_'+role;surface=carrier+'_surface'
+        put(carrier,'analytic_'+role+'.pa',raw=b'INERT_NOT_PA')
+        put(surface,'analytic_'+role+'.pa-surf',raw=b'INERT_NOT_PA')
+        assets[role]=dict(carrier=carrier,family=[surface])
+    metadata=dict(origin_meta,ground_representation='analytic_zero_on_native_geometry',
+        ground_boundary_condition='ground_dirichlet_zero_outer_homogeneous_neumann',
+        ground_refine_calls=0,ground_fly_calls=0,ground_source_reference=origin_ref,native_assets=assets)
+    artifact=OpenedArtifact(kind='field_bundle',product_id='fields',reference={'manifest':{'path':str(producer/'derived_manifest.json'),'bytes':123,'sha256':'D'*64}},
         metadata=metadata,records=records,paths={key:Path(row['path']) for key,row in records.items()},producer={})
     class Session:
         run_dir=root/'run'
@@ -124,6 +147,7 @@ class TrackingExecutionPlanTests(unittest.TestCase):
         import tempfile
         from unittest.mock import patch
         from msplatform.execution.terminal_publication import publish_terminal_state
+        from msplatform.results.artifacts import open_artifact as actual_open_artifact
         from msplatform.io.manifest_records import file_record
         from msplatform.ion_release.authoring import load_recorded_release
         from msplatform.ion_release.cylinder import CANONICAL_COLUMNS
@@ -154,11 +178,14 @@ class TrackingExecutionPlanTests(unittest.TestCase):
             session = Session()
             limits = {'transient_run_directory_bytes': 1}
             stage = {'limits': limits, 'artifact_retention': {}}
-            with patch('msplatform.execution.stage_policy.read_stage_policy', return_value=(stage, {})), \
+            # Inert routing fixture: native managed-ground authentication is covered separately.
+            inert_origin=actual_open_artifact(fields.metadata['ground_source_reference'],expected_kind='field_bundle')
+            with patch('msplatform.backends.simion.grounded_runtime.verified_ground_origin',return_value=inert_origin), \
+                 patch('msplatform.execution.stage_policy.read_stage_policy', return_value=(stage, {})), \
                  patch('msplatform.execution.owner.run_managed_stage', return_value={'manifest': {}}) as owner, \
                  patch('msplatform.results.artifacts.open_artifact', return_value='published'):
                 self.assertEqual(simion_api.track(fields, packet, propagation=self.policy,
-                    observations={'plane_observations': []}, numerics=self.numerics, context=session.context,
+                    observations=self.observations, numerics=self.numerics, context=session.context,
                     birth_source_authority=authority), 'published')
                 call = owner.call_args.kwargs
                 self.assertIn({'manifest_record': authority['manifest']}, call['source_references'])
@@ -166,7 +193,7 @@ class TrackingExecutionPlanTests(unittest.TestCase):
                 self.assertEqual(call['action'].keywords['birth_source_authority'], authority)
             evidence.write_text('tampered', encoding='utf-8')
             with patch('msplatform.execution.owner.run_managed_stage') as owner, self.assertRaises(AssertionError):
-                simion_api.track(fields, packet, propagation=self.policy, observations={'plane_observations': []},
+                simion_api.track(fields, packet, propagation=self.policy, observations=self.observations,
                     numerics=self.numerics, context=session.context, birth_source_authority=authority)
             owner.assert_not_called()
 
@@ -220,7 +247,7 @@ class TrackingExecutionPlanTests(unittest.TestCase):
                      patch('msplatform.execution.inputs.freeze_file', side_effect=mutate_at_copy), \
                      self.assertRaisesRegex(ValueError, 'frozen birth authority manifest differs'):
                     execute_tracking(changing, fields_reference=artifact, particles=packet, propagation=self.policy,
-                        observations={'plane_observations': []}, numerics=self.numerics, limits={},
+                        observations=self.observations, numerics=self.numerics, limits={},
                         birth_source_authority=authority)
             finally:
                 manifest_path.write_bytes(manifest_bytes)
@@ -239,13 +266,13 @@ class TrackingExecutionPlanTests(unittest.TestCase):
                  patch('msplatform.backends.simion.tracking_units.prepare_tracking_recovery', side_effect=stop_at_recovery), \
                  self.assertRaisesRegex(RuntimeError, 'recovery boundary reached'):
                 execute_tracking(session, fields_reference=artifact, particles=packet, propagation=self.policy,
-                    observations={'plane_observations': []}, numerics=self.numerics, limits={},
+                    observations=self.observations, numerics=self.numerics, limits={},
                     recovery_reference={'path': 'explicit-fixture'}, birth_source_authority=authority)
             self.assertEqual(session.calls, [])
             successful = Session(root/'successful')
             with patch('msplatform.backends.simion.model_execution._protected_source'):
                 result = execute_tracking(successful, fields_reference=artifact, particles=packet, propagation=self.policy,
-                    observations={'plane_observations': []}, numerics=self.numerics, limits={},
+                    observations=self.observations, numerics=self.numerics, limits={},
                     birth_source_authority=authority)
             data = result['manifest_extra_fields']['products']['trajectory']['data']
             self.assertEqual(Path(data['recorded_birth_source']['path']).read_bytes(), source.read_bytes())
@@ -255,20 +282,19 @@ class TrackingExecutionPlanTests(unittest.TestCase):
             rejected = Session(root/'rejected')
             with patch('msplatform.backends.simion.model_execution._protected_source'), self.assertRaises(AssertionError):
                 execute_tracking(rejected, fields_reference=artifact, particles=packet, propagation=self.policy,
-                    observations={'plane_observations': []}, numerics=self.numerics, limits={},
+                    observations=self.observations, numerics=self.numerics, limits={},
                     birth_source_authority=authority)
             self.assertEqual(rejected.calls, [])
 
     def setUp(self):
+        from tests.contracts.test_support.split_rf_fixture import split_case
         self.case=example_api.load_example('rf_oatof_functional_v1')
-        parts={key:component_api.resolve_component(value) for key,value in self.case.component_requests.items()}
-        assembly=assembly_api.assemble(self.case.recipe,parts)
-        self.compiled=simion_api.compile_geometry(assembly,numerics=self.case.geometry_numerics)
         self.packet=ion_release_api.sample_release(self.case.release).to_dict()
-        components={key:self.compiled.components_resolved[key] for key in self.compiled.frontend_geometry['composition_plan']['scope']['instance_ids']}
-        self.drive=project_resolved_drive(self.compiled,components,pulse=dict(mode='timed',time_us=10.,width_us=2.),
-            clock=dict(self.packet['clock'],phase_reference_instrument_time_us=0.))
-        self.model=compile_prepared_model(self.compiled,components,drive=self.drive,physics=PHYSICS)
+        _, self.split_recipe, self.compiled, self.model=split_case(
+            dict(self.packet['clock'],phase_reference_instrument_time_us=0.),
+            dict(mode='timed',time_us=10.,width_us=2.))
+        self.drive=self.model.document['drive']
+        self.observations=dict(plane_observations=[dict(schema_version=2, observation_id='detector', source_instance_id='tof', surface_id='detector_active_face', max_records=1000)])
         # Explicit metadata doubles only: action must verify the real files.
         self.clocks={key:dict(path='C:/pure-test/'+key+'.json',exists=True,bytes=32,
             sha256=self.packet['clock']['authority_sha256'] if key=='instrument_epoch' else 'A'*64)
@@ -277,7 +303,7 @@ class TrackingExecutionPlanTests(unittest.TestCase):
         self.numerics=dict(maximum_step_us=.001,trajectory_quality=17,rf_steps_per_period=80)
     def plan(self,**kwargs):
         return plan_tracking_execution(self.model,particles=kwargs.pop('particles',self.packet),clock_records=self.clocks,
-            propagation=kwargs.pop('propagation',self.policy),observations=dict(plane_observations=[]),
+            propagation=kwargs.pop('propagation',self.policy),observations=self.observations,
             numerics=kwargs.pop('numerics',self.numerics),**kwargs)
     def test_real_sparse_births_fullmother_clock_and_independent_cyclic_pose_oracle(self):
         before=copy.deepcopy(self.packet)
@@ -286,11 +312,11 @@ class TrackingExecutionPlanTests(unittest.TestCase):
         self.assertEqual(len(plan['rows']),100)
         self.assertEqual([row['particle_id'] for row in plan['rows']],self.case.release['particle_ids'])
         self.assertEqual(plan['source_provenance']['mother_particle_ids'],self.case.release['particle_ids'])
-        poses={row['instance_id']:row['transform'] for row in self.case.recipe['instances']}
+        poses={row['instance_id']:row['transform'] for row in self.split_recipe['instances']}
         self.assertEqual(poses['multipole']['rotation'],[[0,0,1],[1,0,0],[0,1,0]])
         translation=poses['multipole']['translation_mm']
-        self.assertEqual(poses['oatof']['rotation'],[[1,0,0],[0,1,0],[0,0,1]])
-        self.assertEqual(poses['oatof']['translation_mm'],[0,0,0])
+        self.assertEqual(poses['oa']['rotation'],[[1,0,0],[0,1,0],[0,0,1]])
+        self.assertEqual(poses['oa']['translation_mm'],[0,0,0])
         for original,row,native in zip(self.packet['rows'],plan['rows'],plan['native_source_rows'],strict=True):
             expected=[original['position_z_mm']+translation[0],original['position_x_mm']+translation[1],original['position_y_mm']+translation[2]]
             self.assertEqual([row['position_'+a+'_mm'] for a in 'xyz'],expected)
@@ -309,19 +335,15 @@ class TrackingExecutionPlanTests(unittest.TestCase):
         state=copy.deepcopy(birth['rows'][0]);start=5.
         state.update(instrument_time_us=start,lineage_age_us=start-state['lineage_birth_time_us'],
             particle_age_us=start-state['particle_birth_time_us'],last_component_elapsed_time_us=start-state['particle_birth_time_us'],state_event='snapshot')
-        identity=RigidTransform('oatof_global','oatof_global',((1,0,0),(0,1,0),(0,0,1)),(0,0,0))
+        identity=RigidTransform(state['frame_id'],state['frame_id'],((1,0,0),(0,1,0),(0,0,1)),(0,0,0))
         handoff=prepare_handoff_states([state],transform=identity,clock=HandoffClock(clock,clock),
             selection=HandoffSelection('time_snapshot',(state['particle_id'],),start),mother=mother)
         policy=dict(self.policy,scope='state_relaunch')
-        result=self.plan(particles=handoff,propagation=policy)
-        self.assertEqual(result['rows'][0]['instrument_time_us'],start)
-        self.assertEqual(result['absolute_deadlines_us_by_particle_id'],birth['absolute_deadlines_us_by_particle_id'])
-        self.assertEqual(result['rows'][0]['particle_birth_time_us'],state['particle_birth_time_us'])
+        with self.assertRaisesRegex(ValueError, 'continuous assembly'):
+            self.plan(particles=handoff,propagation=policy)
         empty=HandoffResult((),(),tuple(records),mother,HandoffClock(clock,clock),'time_snapshot')
-        result=self.plan(particles=empty,propagation=policy)
-        self.assertEqual(result['expected_operation_ids'],[])
-        self.assertFalse(result['native_requested'])
-        self.assertEqual(len(result['source_provenance']['mother_records']),100)
+        with self.assertRaisesRegex(ValueError, 'continuous assembly'):
+            self.plan(particles=empty,propagation=policy)
     def test_workbench_transport_uses_structural_seed_and_solved_projection_without_refine(self):
         from tests.contracts.test_simion_field_workbench import case
         from tests.contracts.test_simion_native_plans import NATIVE_PATH
@@ -458,23 +480,25 @@ class TrackingExecutionPlanTests(unittest.TestCase):
                     class AliasSession(Session):
                         def declare_file(inner,path,role):return inner.canonical_path(path)
                         def run_process(inner,operation_id,*,immutable_input_records,**kwargs):
+                            native_iob=canonical/'simion/tracking/instrument.iob'
+                            alias_iob=alias/'simion/tracking/instrument.iob'
+                            if operation_id in ('build_tracking_iob','verify_tracking_iob','track_fly'):
+                                build_spec=(alias/'inputs/tracking_iob.lua').read_text()
+                                from msplatform.backends.simion.source import lua_value
+                                self.assertIn('spec.output_iob='+lua_value(str(native_iob)),build_spec)
+                                self.assertTrue(os.path.samefile(alias_iob.parent,native_iob.parent))
                             if operation_id=='track_fly':
-                                native_iob=alias/'simion/tracking/instrument.iob'
                                 self.assertEqual(kwargs['arguments'][-1],str(native_iob))
                                 self.assertEqual(kwargs['arguments'][2],'--lua')
                                 self.assertIn('d.allow_asynchronous_io=false',kwargs['arguments'][3])
                                 self.assertEqual(kwargs['arguments'][-4:],['fly','--retain-trajectories','0',str(native_iob)])
-                                self.assertNotEqual(str(native_iob),str(native_iob.resolve()))
-                                self.assertTrue(os.path.samefile(native_iob,native_iob.resolve()))
-                                build_spec=(alias/'inputs/tracking_iob.lua').read_text()
-                                from msplatform.backends.simion.source import lua_value
-                                self.assertIn('spec.output_iob='+lua_value(str(native_iob)),build_spec)
+                                self.assertTrue(os.path.samefile(alias_iob,native_iob))
                             return super().run_process(operation_id,immutable_input_records=immutable_input_records,**kwargs)
                     session=AliasSession(alias,fault)
                     try:
                         with patch('msplatform.backends.simion.model_execution._protected_source'):
                             arguments=dict(fields_reference=artifact,particles=self.packet,propagation=self.policy,
-                                observations={'plane_observations':[]},numerics=self.numerics,limits={},allow_asynchronous_io=False)
+                                observations=self.observations,numerics=self.numerics,limits={},allow_asynchronous_io=False)
                             if fault:
                                 with self.assertRaisesRegex(ValueError,'completion'):execute_tracking(session,**arguments)
                                 self.assertFalse((canonical/'results/collection.json').exists())
@@ -513,7 +537,7 @@ class TrackingExecutionPlanTests(unittest.TestCase):
             session=Session()
             with patch('msplatform.backends.simion.model_execution._protected_source') as protection:
                 result=execute_tracking(session,fields_reference=artifact,particles=self.packet,propagation=self.policy,
-                    observations={'plane_observations':[]},numerics=self.numerics,limits={})
+                    observations=self.observations,numerics=self.numerics,limits={})
             self.assertEqual(protection.call_count,1)
             self.assertEqual([row['id'] for row in session.calls],list(session.expected_operation_ids))
             from msplatform.backends.simion.resources import structural_seed_path
@@ -534,7 +558,7 @@ class TrackingExecutionPlanTests(unittest.TestCase):
                         patch('msplatform.backends.simion.model_execution._protected_source'), \
                         self.subTest(fault=fault), self.assertRaises((AssertionError, FileNotFoundError, ValueError)):
                     execute_tracking(failed, fields_reference=artifact, particles=self.packet, propagation=self.policy,
-                        observations={'plane_observations':[]}, numerics=self.numerics, limits={})
+                        observations=self.observations, numerics=self.numerics, limits={})
                 self.assertEqual(failed.calls, [])
             self.assertEqual(seed_path.read_bytes(), original_seed)
             product=result['manifest_extra_fields']['products']['trajectory']
@@ -553,23 +577,13 @@ class TrackingExecutionPlanTests(unittest.TestCase):
             parent=OpenedArtifact(kind='trajectory_result',product_id='trajectory',reference={'manifest':{'path':str(session.run_dir/'manifest.json')}},
                 metadata=product['metadata'],records=product['data'],paths={key:Path(row['path']) for key,row in product['data'].items()},producer={})
             zero=Session(root/'zero');zero.expected_operation_ids=();zero.operation_dependencies={}
-            with patch('msplatform.backends.simion.model_execution._protected_source'),patch(
-                    'msplatform.results.artifacts.open_artifact',return_value=parent):
-                zero_result=execute_tracking(zero,fields_reference=artifact,particles=empty,
-                    propagation=dict(self.policy,scope='state_relaunch'),observations={'plane_observations':[]},
+            with patch('msplatform.backends.simion.model_execution._protected_source'), \
+                 patch('msplatform.results.artifacts.open_artifact',return_value=parent), \
+                 self.assertRaisesRegex(ValueError,'continuous assembly'):
+                execute_tracking(zero,fields_reference=artifact,particles=empty,
+                    propagation=dict(self.policy,scope='state_relaunch'),observations=self.observations,
                     numerics=self.numerics,limits={},source_reference=parent.reference)
             self.assertEqual(zero.calls,[])
-            zero_collection=json.loads(Path(zero_result['manifest_extra_fields']['products']['trajectory']['data']['collection']['path']).read_text())
-            self.assertIsNone(zero_collection['native_complete'])
-            self.assertEqual(zero_collection['native_calls'],0)
-            for key in ('mother_particle_ids','mother_records','mother_fates','clock_authority_sha256'):
-                self.assertEqual(zero_collection['original_mother'][key],collection['original_mother'][key])
-            for key in ('clock_authority','instrument_epoch'):
-                previous=collection['original_mother']['clock_records'][key]
-                current=zero_collection['original_mother']['clock_records'][key]
-                self.assertEqual((current['bytes'],current['sha256']),(previous['bytes'],previous['sha256']))
-                self.assertNotEqual(current['path'],previous['path'])  # freshly frozen owner transport
-            self.assertFalse((zero.run_dir/'simion').exists())
             wrong=OpenedArtifact(kind='prepared_model',product_id='model',reference=artifact.reference,metadata=metadata,
                 records=records,paths={key:Path(row['path']) for key,row in records.items()},producer={})
             from msplatform.backends.simion.field_closure import require_downstream_reuse
@@ -578,14 +592,14 @@ class TrackingExecutionPlanTests(unittest.TestCase):
                 failed=Session(root/fault,fault)
                 with patch('msplatform.backends.simion.model_execution._protected_source'),self.subTest(fault=fault),self.assertRaisesRegex(ValueError,message):
                     execute_tracking(failed,fields_reference=artifact,particles=self.packet,propagation=self.policy,
-                        observations={'plane_observations':[]},numerics=self.numerics,limits={})
+                        observations=self.observations,numerics=self.numerics,limits={})
                 self.assertEqual(len(failed.calls),count)
                 self.assertFalse((failed.result_dir/'collection.json').exists())
             (producer/'fields.lua').write_text('error("UNDECLARED_HOOK")',encoding='utf-8')
             rejected=Session(root/'ambient_hook')
             with self.assertRaisesRegex(ValueError,'undeclared automatic'):
                 execute_tracking(rejected,fields_reference=artifact,particles=self.packet,propagation=self.policy,
-                    observations={'plane_observations':[]},numerics=self.numerics,limits={})
+                    observations=self.observations,numerics=self.numerics,limits={})
             self.assertEqual(rejected.calls,[])
 
 
@@ -599,7 +613,7 @@ class PublicObservationTests(unittest.TestCase):
         end_before, end_after = self.spec['buckets'][6:8]
         end_before.update(time_min_us=11., time_max_us=12., target_time_us=12.)
         end_after.update(time_min_us=12., time_max_us=13., target_time_us=12.)
-        self.observations = dict(plane_observations=[], native_field_observation=self.spec)
+        self.observations = dict(plane_observations=copy.deepcopy(self.case.observations['plane_observations']), native_field_observation=self.spec)
 
     def plan(self, observations):
         return plan_tracking_execution(self.case.model, particles=self.case.packet,
@@ -611,12 +625,16 @@ class PublicObservationTests(unittest.TestCase):
         import tempfile
         from unittest.mock import patch
         from msplatform.backends.simion import operations
+        from msplatform.results.artifacts import open_artifact as actual_open_artifact
         before = copy.deepcopy((self.case.packet, self.observations))
         with tempfile.TemporaryDirectory() as directory:
             fields, Session, _ = tracking_action_fixture(self.case, Path(directory))
             session = Session()
             stage = {'limits': {'transient_run_directory_bytes': 1}, 'artifact_retention': {}}
-            with patch('msplatform.execution.stage_policy.read_stage_policy', return_value=(stage, {})), \
+            # Inert routing fixture: native managed-ground authentication is covered separately.
+            inert_origin=actual_open_artifact(fields.metadata['ground_source_reference'],expected_kind='field_bundle')
+            with patch('msplatform.backends.simion.grounded_runtime.verified_ground_origin',return_value=inert_origin), \
+                 patch('msplatform.execution.stage_policy.read_stage_policy', return_value=(stage, {})), \
                  patch('msplatform.execution.owner.run_managed_stage', return_value={'manifest': {}}) as owner, \
                  patch('msplatform.results.artifacts.open_artifact', return_value='published'):
                 result = operations.track(fields, self.case.packet, propagation=self.case.policy,
@@ -625,7 +643,7 @@ class PublicObservationTests(unittest.TestCase):
                 actual = owner.call_args.kwargs
                 self.assertEqual(actual['payload']['observations'], self.observations)
                 self.assertEqual(actual['action'].keywords['observations'], self.observations)
-                plain = dict(plane_observations=[])
+                plain = copy.deepcopy(self.case.observations)
                 operations.track(fields, self.case.packet, propagation=self.case.policy,
                     observations=plain, numerics=self.case.numerics, context=session.context)
                 self.assertEqual(owner.call_args.kwargs['payload']['observations'], plain)
@@ -750,7 +768,7 @@ class PublicObservationTests(unittest.TestCase):
 
     def test_observation_affects_recovery_identity(self):
         from msplatform.backends.simion.tracking_units import tracking_applicability
-        plain = self.plan(dict(plane_observations=[]))
+        plain = self.plan(copy.deepcopy(self.case.observations))
         observed = self.plan(self.observations)
         self.assertNotEqual(tracking_applicability(plain), tracking_applicability(observed))
         self.assertEqual(observed['observations'], self.observations)

@@ -5,9 +5,10 @@ local native_path=assert(loadfile(assert(arg[3],'native path resource required')
 local spec=dofile(native_path(assert(arg[1],'tracking IOB specification required')))
 local mode=assert(arg[2],'tracking operation required')
 assert(mode=='build' or mode=='verify','unsupported tracking workbench operation')
-for _,key in ipairs({'seed_iob','output_iob'}) do spec[key]=native_path(spec[key]) end
+spec.seed_iob=native_path(spec.seed_iob)
+if not spec.preserve_canonical_output then spec.output_iob=native_path(spec.output_iob) end
 for index,path in ipairs(spec.bootstrap_paths or {}) do spec.bootstrap_paths[index]=native_path(path) end
-for _,row in ipairs(spec.instances) do row.path=native_path(row.path) end
+for _,row in ipairs(spec.instances) do if not spec.preserve_canonical_instances then row.path=native_path(row.path) end end
 for _,row in ipairs(spec.response_fields or {}) do row.path=native_path(row.path) end
 if spec.scalar_binding then spec.scalar_binding=native_path(spec.scalar_binding) end
 assert(loadfile(directory..'/iob_core.lua'))()(spec,mode,native_path)

@@ -154,7 +154,7 @@ class SimionFieldReferenceTests(unittest.TestCase):
             @contextmanager
             def protect(*args,**kwargs): yield
             def reference(store,stack,key,produce,*,kind,raw_root,claims,calls):
-                self.assertEqual(kind,'trajectory_result');calls.append(key)
+                self.assertIn(kind,('field_bundle','trajectory_result'));calls.append(key)
                 return produce(),dict(asset_id=None,task_key=key,reused=False)
             def track(*args,**kwargs):
                 self.assertTrue(active,'field owner guard must outlive track')
@@ -163,12 +163,15 @@ class SimionFieldReferenceTests(unittest.TestCase):
             with patch('msplatform.execution.native_source_guard.guard_native_source',guard), \
                  patch('msplatform.execution.native_artifact_controls.protect_native_controls',protect), \
                  patch('msplatform.workflows.native_tracing._native_reference',side_effect=reference), \
+                 patch('msplatform.backends.simion.grounded_runtime.prepare_grounded_runtime_fields',return_value=selected) as ground, \
                  patch('msplatform.backends.simion.track',side_effect=track) as fly, \
                  patch('msplatform.backends.simion.build_geometry') as build, \
                  patch('msplatform.backends.simion.prepare_model') as prepare, \
                  patch('msplatform.backends.simion.solve_fields') as solve:
                 _execute(store,recipe,context,'run',work,'reservation',None)
             fly.assert_called_once();build.assert_not_called();prepare.assert_not_called();solve.assert_not_called()
+            # This conversion seam tests orchestration only, not native ground certification.
+            ground.assert_called_once_with(selected,context=context)
             provenance=json.loads((work/'provenance.json').read_text(encoding='utf8'))
             self.assertEqual(provenance['stages']['field']['reuse_scope'],'explicit_field_reference')
             self.assertEqual(provenance['stages']['field']['reference'],selected.reference)
