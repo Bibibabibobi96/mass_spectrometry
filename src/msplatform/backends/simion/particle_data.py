@@ -86,6 +86,8 @@ def adapt_native_results(source_rows: Mapping[int, Mapping[str, Any]], collectio
     requested = list(observation_times_us)
     if any(type(t) not in (int, float) or not math.isfinite(t) for t in requested) or requested != sorted(set(requested)):
         raise ValueError('selected experiment times must be unique, finite and sorted')
+    detector_requested = any(binding['kind'] == 'detector' for binding in observation_bindings.values())
+    detector_records_present = 'plane_observations' in collection and 'canonical_events' in collection
     planes = collection.get('plane_observations', {'status': 'complete', 'rows': []})
     if planes.get('status') != 'complete':
         raise ValueError('plane observations are incomplete')
@@ -176,7 +178,14 @@ def adapt_native_results(source_rows: Mapping[int, Mapping[str, Any]], collectio
                     'time_s': np.array([r[3] for r in sample_rows], dtype=np.float64),
                     'position_m': np.array([r[1] for r in sample_rows], dtype=np.float64).reshape(-1, 3),
                     'velocity_m_s': np.array([r[2] for r in sample_rows], dtype=np.float64).reshape(-1, 3)}
+    from msplatform.results.detector_observation import detector_observation
+    detector_missing = sorted(set(missing_detector) | (set(ids) if detector_requested and not detector_records_present else set()))
+    detector_status = ('not_requested' if not detector_requested else 'incomplete' if detector_missing else 'complete')
+    detector_reason = ('detector_not_requested' if detector_status == 'not_requested' else
+                       'detector_observation_incomplete' if detector_status == 'incomplete' else None)
     return TraceResult(initial_rows, terminal_rows, event_rows, trajectories, 'succeeded',
-                       {'status': 'incomplete' if missing_detector else 'complete', 'mother_count': len(ids),
+                       {'status': 'incomplete' if detector_missing else 'complete', 'mother_count': len(ids),
                         'terminal_record_count': len(ids), 'missing_terminal_particle_ids': [],
-                        'missing_detector_observation_particle_ids': missing_detector})
+                        'missing_detector_observation_particle_ids': detector_missing,
+                        'detector_observation': detector_observation(detector_status, ids,
+                            missing_particle_ids=detector_missing, reason=detector_reason)})

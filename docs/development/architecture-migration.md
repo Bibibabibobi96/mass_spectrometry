@@ -1174,6 +1174,52 @@ Study SHA256 `A7D75ED3EAB3E198D4196868B9CE1AA9A787554DC83CEA5088C545B81EACB9E6`�
 既有两发行安装probe/inventory同步加入该第三组资源，但当前活跃c847安装不含新例，未冒称通过新例安装或native。
 下一步复制这两作者文件到仓外并用现有public CLI，共用已求场依赖，验证原批复用与新增+2批、同输入零native增量和缺批局部重算。
 
+### B4 检测观测覆盖与未知结果统计（c7801608 后，提交见 Git）
+
+已实现独立于轨迹完整性的版本1 `data_integrity.detector_observation` 合同，入口
+`results/detector_observation.py`、`results/particle_data.py`、`workflows/mass_scan.py`。
+四种状态绑定原母群ID；参考 tracer、SIMION reader 显式声明能力，当前 COMSOL reader 明确 unavailable，
+不再将空事件表与 unknown 终态当成检测效率0。多物种保留每批覆盖，完整观测的真实零命中仍可统计；
+旧结果先核验原摘要，再返回 legacy_unqualified 与原 stored_summary，不重写历史。
+执行失败、缺终态、整体 incomplete 在 species 统计前即拒绝；新公共 native 检测请求的轨迹缓存只准入完整检测观测。
+
+实际命令 `.venv/Scripts/python.exe -m unittest tests.contracts.test_mass_scan tests.contracts.test_simion_particle_data tests.contracts.test_reference_workflow tests.contracts.test_comsol_particle_tracing tests.contracts.test_native_workflow -q`
+本轮38 PASS（11.022s）；软件夹具含 COMSOL CSV→Parquet/HDF重读、混合物种、真实零命中语义、legacy ready重读和native缓存准入。
+这些软件测试不替代原生检测器证据。当前 COMSOL CPT 三粒子已有真实6D，但未采集可归属的探测事件；
+后续 native 辅助变量与有限面验证仍是 BA06/BA08 未关闭项，旧 COMSOL reader 仍是剩余消费者。
+
+本主题实际 Changed 入口调用7个显式生产路径（见 `evidence/obs-gate-plan.json`），并非空Changed或全仓P4重验。
+首次执行 repository_text_bytes 因26个本轮路径的CRLF工作区字节失败；仅机械转为其声明的LF，不改语义。
+纠正后 `obs-gate-lf.log` 已越过字节检查，但已有完整安装测试
+`test_wheel_and_sdist_install_and_compute_outside_worktree` 因未配置 `SIMION_LUA_EXE`/PATH Lua失败，
+其余阶段按fail-fast阻塞或等待已启动阶段结束。不能报告完整Changed PASS；本轮定向38项的软件结果单独成立。
+最终安装仍按B交付的普通wheel及sdist重建wheel、仓外参考链与B资源准入执行，不把该环境失败冒充科学失败。
+
+### B3 原生解析探针与负结果（不等于仪器精度资格）
+
+真实 SIMION 8.2.0.11 受管分析 run `20261127_040451__analysis__simion__split-linear-358b84377f9f`
+成功发布，manifest SHA256 `FE0EF84C142724BACF69FAB689474EE1C2C8488904D2189D26FEA646899246A1`。
+脚本位于 `C:/Users/Liao/msplatform-artifacts/architecture-b-20261127/split-linear-probe`；
+实际 `generate_pa` 与 `probe` 两操作，21项包括非零原点、非等距网格、两线性电势独立解析梯度、窗口边界、
+超支持域与坏mask拒绝。预置机器舍入容差 V=1.0800249583553523e-11 V，E=2.1600499167107046e-11 V/mm。
+composer 的时间门在此探针中是局部测试函数 `[1,2)`，因此只证明原生SDK采样和两基底组合运算，
+不将其冒称为原仪器 V(t) pulse/epoch 的验证，也不是 COMSOL→SIMION 插值精度资格。
+
+COMSOL 零力辅助变量探针 run `20261127_040750__analysis__comsol__detector-aux-5e61e6437d3c`
+owner成功发布，manifest SHA256 `9ED5CBEF63E2400A658EC86A3AC3ADFA1EAFE0D5E64D975F5DFD138FE6711D80`；
+但实际 `validate_probe.py <run>/results/probe_results.json` 失败：三粒子坐标、速度、hitflag为null、fs=0，
+独立直线解析检查不通过，不能据owner成功报告物理或检测能力通过。
+外部探针位于 `C:/Users/Liao/mass_spectrometry/artifacts/batch_b_comsol_detector_probe_20261127`，
+保留原输入和失败证据，下一步排查释放设置并用新身份验证；原仪器source/pulse保持原义。
+独立零Compute几何面检查已按共享调度启动，结果待核；不据其启动宣称有限面归属已完成。
+
+v2 (`041926__analysis__comsol__detector-aux-039d2f62ddc1`) 显式激活cpt/求解序列后仍有相同null结果；
+实际study绑定 `geom1, nomesh`。新v3仅为独立合成盒显式建立小网格并检查绑定，未改仪器网格或原输入。
+真实run `20261127_042239__analysis__comsol__detector-aux-28a1f7c0a5fb` owner成功，manifest
+SHA256 `66987517181E2187D6D7B543971D1B749BF06D6A40902664B3AB9BA715E840F4`；
+使用同一原始 `validate_probe.py` 独立检查实际6D、stop time与辅助标记，PASS：target1/other0/not_arrived0，容差仍1e-6。
+该结果只证明零力盒子的真实Wall Freeze+辅助标记机制，不替代仪器有限面归属、实际电场或探测效率资格。
+
 ### B 累计 CLOC（至 f216a7af，不含后续改动）
 
 基线 `a9d76aa4dcdbaf8099c9ce5aa0585d6fce18c3be` → 结果 `f216a7afd0a3b27be21402915209defa9964d78e`；CLOC 2.10；源日志 `C:/Users/Liao/msplatform-artifacts/architecture-b-20261127/f216a7af-cloc.log`。

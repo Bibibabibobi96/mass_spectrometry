@@ -102,6 +102,12 @@ frame 为显式实验坐标（参考 laboratory，x/y/z右手轴、原点由作�
 attribution_status/method 显式不可用；原生码、实体ID和诊断不丢弃。取消未启动粒子没有捏造的物理终点。
 0 命中和时间截断可执行成功，统计分母保持完整母群；缺记录标记 incomplete，不补 lost。
 
+检测观测覆盖另由 `data_integrity.detector_observation` 的版本1合同记录：
+`complete`、`unavailable`、`not_requested` 或 `incomplete`，绑定完整原始粒子ID集合。
+只有执行成功、数据完整且检测观测完整时才计算检测效率；观测不可用时效率为 null、到达及谱峰分析为 unavailable，
+不能将空事件表解释为零命中。多物种分别检查各批覆盖；完整监测的真实零命中仍返回零。
+旧结果重读先按原合同核验已存摘要，再返回 `legacy_unqualified` 的当前检测解释及原 `stored_summary`，不改写历史文件。
+
 相同科学输入复用场和完整独立粒子批；label 无关，场或粒子/数值输入改变只失效对应依赖。
 缓存缺件重算完整受影响批；run 自含科学数据，所以合格缓存回收后仍可重读历史统计。
 `provenance.field.reused` 和 `provenance.batches[].reused` 报告实际命中，不能只看路径存在。

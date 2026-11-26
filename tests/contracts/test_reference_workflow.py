@@ -139,6 +139,32 @@ class ReferenceWorkflowTests(unittest.TestCase):
             self.assertEqual(overflow["summary"]["stop_reasons"], {"numerical_failure": 1})
             self.assertIn("overflow", read_particle_data(Path(overflow["run_path"]))["terminal_states"][0]["detail"])
 
+    def test_legacy_summary_is_verified_but_detector_is_unqualified(self):
+        from msplatform.results.particle_data import _summarize_particle_data
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "store"
+            store = ArtifactStore(root)
+            run, work = store.begin_run()
+            result = trace_particles(load_recipe(SOURCE).to_dict())
+            recipe = load_recipe(SOURCE).to_dict()
+            write_particle_data(work, result, metadata={"frame_id": recipe["frame_id"], "clock": recipe["clock"]})
+            execution_path = work / "execution.json"
+            old_execution = json.loads(execution_path.read_text(encoding="utf-8"))
+            del old_execution["data_integrity"]["detector_observation"]
+            execution_path.write_text(json.dumps(old_execution), encoding="utf-8")
+            data = read_particle_data(work)
+            stored = _summarize_particle_data(data, legacy=True)
+            (work / "summary.json").write_text(json.dumps(stored), encoding="utf-8")
+            (work / "provenance.json").write_text("{}", encoding="utf-8")
+            with store.run_writer(run):
+                store.mark_running(run)
+                store.publish_run(work, run_id=run)
+            reread = inspect_results(run, artifact_root=root)
+            self.assertEqual(reread["stored_summary"], stored)
+            self.assertEqual(reread["summary"]["detector_observation"]["status"], "legacy_unqualified")
+            self.assertIsNone(reread["summary"]["detection_efficiency"])
+            self.assertEqual(json.loads((Path(reread["run_path"]) / "summary.json").read_text()), stored)
+
     def test_unknown_result_fields_and_modified_evidence_fail_closed(self):
         recipe = load_recipe(SOURCE).to_dict()
         result = trace_particles(recipe)

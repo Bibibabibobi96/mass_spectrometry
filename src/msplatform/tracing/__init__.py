@@ -270,6 +270,13 @@ class ScipyParticleTracer:
         integrity = {"status": "incomplete" if missing else "complete", "missing_terminal_particle_ids": missing,
                      "mother_count": len(initial), "terminal_record_count": len(terminals),
                      "counts_by_stop_reason": partition["counts"]}
+        from msplatform.results.detector_observation import detector_observation
+        detector_requested = any(surface["kind"] == "detector" for surface in recipe["surfaces"])
+        detector_status = "incomplete" if detector_requested and status != "succeeded" else "complete" if detector_requested else "not_requested"
+        detector_missing = [row["particle_id"] for row in terminals if row["stop_reason"] in {"cancelled", "numerical_failure"}]
+        integrity["detector_observation"] = detector_observation(detector_status,
+            [row["particle_id"] for row in initial], missing_particle_ids=detector_missing if detector_status == "incomplete" else [],
+            reason="detector_observation_incomplete" if detector_status == "incomplete" else "detector_not_requested" if not detector_requested else None)
         return TraceResult(initial, terminals, event_rows, arrays, status, integrity)
 
 

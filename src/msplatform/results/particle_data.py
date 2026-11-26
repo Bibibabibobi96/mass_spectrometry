@@ -51,6 +51,12 @@ def _schema(kind: str, metadata: Mapping[str, Any]) -> pa.Schema:
 def write_particle_data(directory: Path, result: Any, *, metadata: Mapping[str, Any]) -> None:
     """Write four distinct data products into an existing private work directory."""
     version = _data_version(metadata)
+    from .detector_observation import validate_detector_observation
+    validate_detector_observation(result.data_integrity.get("detector_observation"),
+                                  [row["particle_id"] for row in result.initial_states])
+    if (result.data_integrity["detector_observation"]["status"] == "incomplete"
+            and result.data_integrity.get("status") != "incomplete"):
+        raise ValueError("incomplete detector observations require incomplete data integrity")
     for kind in ("initial_states", "terminal_states", "events"):
         rows = getattr(result, kind)
         schema = _schema(kind, metadata)
@@ -143,6 +149,12 @@ def _validate_records(data: Mapping[str, Any]) -> None:
                     "normal", "time_limit", "cancelled", "numerical_failure"}:
                 raise ValueError("unsupported physical outcome/stop reason")
     mother = {r["particle_id"]: r for r in data["initial_states"]}
+    coverage = data.get("data_integrity", {}).get("detector_observation")
+    if coverage is not None:
+        from .detector_observation import validate_detector_observation
+        validate_detector_observation(coverage, mother)
+        if coverage["status"] == "incomplete" and data["data_integrity"].get("status") != "incomplete":
+            raise ValueError("incomplete detector observations require incomplete data integrity")
     for row in data["terminal_states"] + data["events"]:
         if row["particle_id"] not in mother or row["species_id"] != mother[row["particle_id"]]["species_id"]:
             raise ValueError("result identity disagrees with initial cohort")
@@ -165,7 +177,12 @@ def _validate_records(data: Mapping[str, Any]) -> None:
 
 
 def summarize_particle_data(data: Mapping[str, Any]) -> dict[str, Any]:
-    """Count outcomes against the complete initial mother cohort, including missing records."""
+    """Count outcomes and report detection only when observation coverage is proven."""
+    return _summarize_particle_data(data, legacy=False)
+
+
+def _summarize_particle_data(data: Mapping[str, Any], *, legacy: bool) -> dict[str, Any]:
+    """The legacy mode verifies historical stored summaries without rewriting them."""
     initial = data["initial_states"]
     mother = [row["particle_id"] for row in initial]
     weights = {row["particle_id"]: row["weight"] for row in initial}
@@ -189,10 +206,24 @@ def summarize_particle_data(data: Mapping[str, Any]) -> dict[str, Any]:
     integrity = dict(data["data_integrity"])
     if missing:
         integrity["status"] = "incomplete"
-    return {"schema_version": 1, "execution_status": data["execution_status"],
+    record = integrity.get("detector_observation")
+    if record is not None:
+        from .detector_observation import validate_detector_observation
+        validate_detector_observation(record, mother)
+        if record["status"] == "incomplete" and integrity.get("status") != "incomplete":
+            raise ValueError("incomplete detector observations require incomplete data integrity")
+    observation_status = record["status"] if record is not None else "legacy_unqualified"
+    eligible = legacy or (observation_status == "complete" and integrity.get("status") == "complete"
+                          and data["execution_status"] == "succeeded" and not missing)
+    result = {"schema_version": 1, "execution_status": data["execution_status"],
             "data_integrity": integrity,
-            "missing_terminal_ids": missing, "census": census, "detection_efficiency": efficiency,
-            "arrival_analysis": {"status": "applicable" if detected else "not_applicable",
-                                 "reason": None if detected else "zero_detected_particles"},
+            "missing_terminal_ids": missing, "census": census, "detection_efficiency": efficiency if eligible else None,
+            "arrival_analysis": ({"status": "applicable" if detected else "not_applicable",
+                                 "reason": None if detected else "zero_detected_particles"} if eligible else
+                                 {"status": "unavailable", "reason": "detector_observation_" + observation_status}),
             "stop_reasons": {reason: sum(row["stop_reason"] == reason for row in terminal.values())
                              for reason in sorted({row["stop_reason"] for row in terminal.values()})}}
+    if not legacy:
+        result["detector_observation"] = {"status": observation_status,
+                                          "reason": record["reason"] if record is not None else "legacy_unqualified"}
+    return result

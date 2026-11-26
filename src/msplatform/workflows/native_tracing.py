@@ -143,7 +143,8 @@ def _complete_trajectory(artifact) -> bool:
     if artifact.kind != "trajectory_result":
         return True
     data = read_particle_data(artifact.data_path("particle_data_execution_json").parent)
-    return data["execution_status"] == "succeeded" and data["data_integrity"].get("status") == "complete"
+    return (data["execution_status"] == "succeeded" and data["data_integrity"].get("status") == "complete"
+            and data["data_integrity"].get("detector_observation", {}).get("status") == "complete")
 
 
 def _native_reference(store, stack, key, produce, *, kind, raw_root, claims, calls):

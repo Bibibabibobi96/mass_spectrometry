@@ -108,4 +108,7 @@ def read_observations(path: Path, *, initial_states: list[dict], epoch_us: float
               'velocity_m_s': np.array([s[3] for s in samples], dtype=np.float64).reshape(-1, 3)}
     return TraceResult(list(source.values()), terminals, [], arrays, 'succeeded',
                        {'status': 'incomplete' if missing else 'complete', 'mother_count': len(source),
-                        'terminal_record_count': len(terminals), 'missing_terminal_particle_ids': missing})
+                        'terminal_record_count': len(terminals), 'missing_terminal_particle_ids': missing,
+                        'detector_observation': {'schema_version': 1, 'status': 'unavailable',
+                            'cohort_particle_ids': sorted(source), 'missing_particle_ids': [],
+                            'reason': 'detector_observation_unsupported'}})

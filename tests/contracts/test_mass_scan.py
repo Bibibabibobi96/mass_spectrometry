@@ -42,6 +42,110 @@ class MassScanTests(unittest.TestCase):
         self.assertTrue(all(row['peak_analysis']['status'] == 'not_applicable' for row in analysis['species']))
         self.assertEqual(analysis['calibration_analysis']['status'], 'not_applicable')
 
+    def test_mixed_detector_capabilities_are_per_species_and_survive_roundtrip(self):
+        from msplatform.results.detector_observation import detector_observation
+        source, collection, bindings = particle_fixture.SimionParticleDataTests.collected_fixture()
+        batch = adapt_native_results(source, collection, backend_version='fixture', observation_bindings=bindings,
+            observation_times_us=[1.5], constants=CONSTANTS, detector_instance=4)
+        results = []
+        for index, row in enumerate(batch.initial_states):
+            ids = {row['particle_id']}
+            part = copy.deepcopy(batch)
+            part.initial_states = [row]
+            part.terminal_states = [item for item in batch.terminal_states if item['particle_id'] in ids]
+            part.events = [item for item in batch.events if item['particle_id'] in ids]
+            mask = np.isin(batch.trajectories['particle_id'], list(ids))
+            part.trajectories = {key: value[mask] for key, value in batch.trajectories.items()}
+            part.data_integrity['detector_observation'] = detector_observation(
+                'complete' if index == 0 else 'unavailable', list(ids),
+                reason=None if index == 0 else 'detector_observation_unsupported')
+            results.append(part)
+        merged = merge_mass_scan(results)
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            write_particle_data(root, merged, metadata=dict(schema_version=2, initial_state_basis='native_birth_verified',
+                frame_id='world', clock=dict(clock_epoch_id='epoch', authority_sha256='a'*64)))
+            data = read_particle_data(root)
+            analysis = analyze_mass_scan(data)
+        self.assertEqual(analysis['summary']['detector_observation']['status'], 'unavailable')
+        self.assertIsNone(analysis['summary']['detection_efficiency'])
+        self.assertEqual(analysis['species'][0]['detected_count'], 1)
+        self.assertIsNone(analysis['species'][1]['detection_fraction'])
+        self.assertEqual(analysis['species'][1]['peak_analysis']['status'], 'unavailable')
+        self.assertEqual(analysis['calibration_analysis']['status'], 'unavailable')
+
+    def test_unknown_terminals_without_detector_capability_are_not_zero_hits(self):
+        from msplatform.results.detector_observation import detector_observation
+        source, collection, bindings = particle_fixture.SimionParticleDataTests.collected_fixture()
+        batch = adapt_native_results(source, collection, backend_version='fixture', observation_bindings=bindings,
+            observation_times_us=[1.5], constants=CONSTANTS, detector_instance=4)
+        for row in batch.terminal_states:
+            row['physical_outcome'] = 'unknown'
+            row['stop_reason'] = 'time_limit'
+        batch.events = []
+        batch.data_integrity['detector_observation'] = detector_observation('unavailable',
+            [row['particle_id'] for row in batch.initial_states], reason='detector_observation_unsupported')
+        result = merge_mass_scan([batch])
+        data = dict(initial_states=result.initial_states, terminal_states=result.terminal_states, events=result.events,
+                    trajectories=result.trajectories, execution_status=result.execution_status, data_integrity=result.data_integrity)
+        analysis = analyze_mass_scan(data)
+        self.assertIsNone(analysis['summary']['detection_efficiency'])
+        self.assertEqual(analysis['summary']['arrival_analysis']['status'], 'unavailable')
+        self.assertTrue(all(item['detection_fraction'] is None for item in analysis['species']))
+        self.assertTrue(all(item['peak_analysis']['status'] == 'unavailable' for item in analysis['species']))
+        self.assertEqual(analysis['calibration_analysis']['status'], 'unavailable')
+
+    def test_comsol_unknown_detector_is_unavailable_after_publication(self):
+        import csv
+        from msplatform.backends.comsol.particle_data import read_observations
+        from tests.contracts.test_comsol_particle_tracing import COLUMNS
+        source = [{'particle_id': 9, 'species_id': 'ion', 'time_s': 0.0,
+                   'position_m': [.001, .002, .003], 'velocity_m_s': [1., 2., 3.],
+                   'mass_kg': 1e-25, 'charge_state': 1, 'charge_c': 1.602176634e-19,
+                   'weight': 1., 'parent_particle_id': None, 'lineage_status': 'primary_birth'}]
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            path = root / 'native.csv'
+            with path.open('w', newline='', encoding='utf-8') as stream:
+                writer = csv.writer(stream)
+                writer.writerow(COLUMNS)
+                writer.writerow([9, 1, 10, 1, 2, 3, 1, 2, 3, 1, 1, 'nan'])
+                writer.writerow([9, 1, 12, 1.2, 2, 3, 1, 2, 3, 1, 1, 11])
+            result = read_observations(path, initial_states=source, epoch_us=10, backend_version='COMSOL 6.4',
+                observation_times_us=[10, 12], position_atol_m=1e-12, velocity_atol_m_s=1e-9,
+                boundary_policy='metal_and_outer_freeze_ideal_pass')
+            merged = merge_mass_scan([result])
+            write_particle_data(root, merged, metadata=dict(schema_version=2, initial_state_basis='native_birth_verified',
+                frame_id='world', clock=dict(clock_epoch_id='epoch', authority_sha256='a'*64)))
+            analysis = analyze_mass_scan(read_particle_data(root))
+        self.assertEqual(analysis['summary']['census']['counts']['unknown'], 1)
+        self.assertIsNone(analysis['summary']['detection_efficiency'])
+        self.assertIsNone(analysis['species'][0]['detection_fraction'])
+        self.assertEqual(analysis['calibration_analysis']['status'], 'unavailable')
+
+    def test_native_success_cache_requires_complete_detector_observation(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from msplatform.workflows.native_tracing import _complete_trajectory
+        artifact = SimpleNamespace(kind='trajectory_result', data_path=lambda name: Path('execution.json'))
+        with patch('msplatform.workflows.native_tracing.read_particle_data') as read:
+            for status in ('unavailable', 'not_requested', 'incomplete', None):
+                read.return_value = {'execution_status': 'succeeded', 'data_integrity': {
+                    'status': 'complete', 'detector_observation': {'status': status}}}
+                self.assertFalse(_complete_trajectory(artifact))
+            read.return_value['data_integrity']['detector_observation']['status'] = 'complete'
+            self.assertTrue(_complete_trajectory(artifact))
+
+    def test_missing_requested_detector_records_are_incomplete(self):
+        source, collection, bindings = particle_fixture.SimionParticleDataTests.collected_fixture()
+        del collection['plane_observations']
+        batch = adapt_native_results(source, collection, backend_version='fixture', observation_bindings=bindings,
+            observation_times_us=[1.5], constants=CONSTANTS, detector_instance=4)
+        self.assertEqual(batch.data_integrity['status'], 'incomplete')
+        self.assertEqual(batch.data_integrity['detector_observation']['status'], 'incomplete')
+        with self.assertRaises(ValueError):
+            merge_mass_scan([batch])
+
     def test_canonical_sampler_preserves_species_counts_charge_weights_and_ids(self):
         one = prepare_mass_scan(scan(request('one', 1)))
         self.assertEqual(len(one[0].rows), 1)
@@ -99,6 +203,7 @@ class MassScanTests(unittest.TestCase):
             part = copy.deepcopy(batch)
             part.initial_states = [r for r in part.initial_states if r['particle_id'] in ids]
             part.terminal_states = [r for r in part.terminal_states if r['particle_id'] in ids]
+            part.data_integrity['detector_observation']['cohort_particle_ids'] = [r['particle_id'] for r in part.initial_states]
             mask = np.isin(part.trajectories['particle_id'], list(ids))
             part.trajectories = {k: v[mask] for k, v in part.trajectories.items()}
             partitions.append(part)

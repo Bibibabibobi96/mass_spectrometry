@@ -111,8 +111,13 @@ def merge_mass_scan(results: Sequence[TraceResult]) -> TraceResult:
         events.extend(copy.deepcopy(result.events))
         arrays.append(trajectory)
     merged = {key: np.concatenate([np.asarray(a[key]) for a in arrays], axis=0) for key in arrays[0]}
+    from msplatform.results.detector_observation import merge_detector_observations
+    batch_integrity = [result.data_integrity for result in results]
+    coverage = merge_detector_observations([(result.initial_states, result.data_integrity) for result in results])
     return TraceResult(initial, terminal, events, merged, 'succeeded',
-                       dict(status='complete', mother_count=len(initial), terminal_record_count=len(terminal), missing_terminal_particle_ids=[]))
+                       dict(status='complete', mother_count=len(initial), terminal_record_count=len(terminal),
+                            missing_terminal_particle_ids=[], batch_integrity=batch_integrity,
+                            detector_observation=coverage))
 
 
 def analyze_mass_scan(data: Mapping[str, Any]) -> dict[str, Any]:
@@ -132,6 +137,28 @@ def analyze_mass_scan(data: Mapping[str, Any]) -> dict[str, Any]:
     detected = {row['particle_id'] for row in data['terminal_states'] if row['physical_outcome'] == 'detected'}
     rows = []
     eligible_mz = set()
+    unavailable_species = False
+    batches = data['data_integrity'].get('batch_integrity')
+    def detector_complete(cohort):
+        expected = {row['particle_id'] for row in cohort}
+        records = ([item.get('detector_observation') for item in batches] if isinstance(batches, list)
+                   else [data['data_integrity'].get('detector_observation')])
+        covered = set()
+        seen = set()
+        from msplatform.results.detector_observation import validate_detector_observation
+        mother = set(by_id)
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            validate_detector_observation(record, record.get('cohort_particle_ids', []))
+            record_ids = set(record['cohort_particle_ids'])
+            if not record_ids <= mother or seen.intersection(record_ids):
+                raise ValueError('detector batch coverage overlaps or exceeds the mother cohort')
+            seen.update(record_ids)
+            overlap = expected.intersection(record.get('cohort_particle_ids', []))
+            if overlap and record.get('status') == 'complete':
+                covered.update(overlap)
+        return covered == expected
     for sid in species:
         cohort = [row for row in initial if row['species_id'] == sid]
         identities = {(row['mass_kg'], row['charge_state']) for row in cohort}
@@ -141,14 +168,23 @@ def analyze_mass_scan(data: Mapping[str, Any]) -> dict[str, Any]:
         if type(charge) is not int or charge == 0:
             raise ValueError('species charge must be nonzero integer')
         hits = sum(row['particle_id'] in detected for row in cohort)
-        if hits >= 3:
+        available = detector_complete(cohort)
+        unavailable_species |= not available
+        if available and hits >= 3:
             eligible_mz.add(mass / abs(charge))
-        rows.append(dict(species_id=sid, particle_count=len(cohort), detected_count=hits,
-                         detection_fraction=hits / len(cohort),
-                         weighted_detection_fraction=math.fsum(row['weight'] for row in cohort if row['particle_id'] in detected)
-                         / math.fsum(row['weight'] for row in cohort),
-                         peak_analysis=dict(status='applicable' if hits >= 3 else 'not_applicable',
-                                            reason=None if hits >= 3 else 'insufficient_detected_particles')))
+        row = dict(species_id=sid, particle_count=len(cohort), detected_count=hits if available else None,
+                   detection_fraction=hits / len(cohort) if available else None,
+                   weighted_detection_fraction=(math.fsum(item['weight'] for item in cohort if item['particle_id'] in detected)
+                       / math.fsum(item['weight'] for item in cohort)) if available else None,
+                   peak_analysis=dict(status=('applicable' if hits >= 3 else 'not_applicable') if available else 'unavailable',
+                       reason=(None if hits >= 3 else 'insufficient_detected_particles') if available else 'detector_observation_unavailable'))
+        if not available:
+            row['observed_detected_count'] = hits
+        rows.append(row)
+    calibration_status = ('applicable' if len(eligible_mz) >= 3 else
+                          'unavailable' if unavailable_species else 'not_applicable')
     return dict(summary=summary, species=rows,
-                calibration_analysis=dict(status='applicable' if len(eligible_mz) >= 3 else 'not_applicable',
-                                          reason=None if len(eligible_mz) >= 3 else 'insufficient_distinct_species_with_detected_particles'))
+                calibration_analysis=dict(status=calibration_status,
+                    reason=None if calibration_status == 'applicable' else
+                           'detector_observation_unavailable' if calibration_status == 'unavailable' else
+                           'insufficient_distinct_species_with_detected_particles'))

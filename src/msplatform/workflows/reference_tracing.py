@@ -46,6 +46,8 @@ def _merged(results: list[dict[str, Any]]) -> TraceResult:
         status = "failed"
     elif any(row["execution_status"] == "cancelled" for row in results):
         status = "cancelled"
+    from msplatform.results.detector_observation import merge_detector_observations
+    coverage = merge_detector_observations([(row["initial_states"], row["data_integrity"]) for row in results])
     return TraceResult(
         initial_states=[p for r in results for p in r["initial_states"]],
         terminal_states=[p for r in results for p in r["terminal_states"]],
@@ -54,7 +56,8 @@ def _merged(results: list[dict[str, Any]]) -> TraceResult:
                       for name in ("particle_id", "time_s", "position_m", "velocity_m_s")},
         execution_status=status,
         data_integrity={"status": "complete" if all(r["data_integrity"].get("status") == "complete" for r in results)
-                        else "incomplete", "batch_integrity": [r["data_integrity"] for r in results]},
+                        else "incomplete", "batch_integrity": [r["data_integrity"] for r in results],
+                        "detector_observation": coverage},
     )
 
 
@@ -210,7 +213,16 @@ def inspect_results(run_id: str, *, artifact_root: str | Path) -> dict[str, Any]
     data = read_particle_data(path)
     summary = summarize_particle_data(data)
     recorded = json.loads((path / "summary.json").read_text(encoding="utf-8"))
-    if summary != recorded:
+    legacy = "detector_observation" not in data["data_integrity"]
+    if legacy:
+        from msplatform.results.particle_data import _summarize_particle_data
+        expected = _summarize_particle_data(data, legacy=True)
+    else:
+        expected = summary
+    if expected != recorded:
         raise ValueError("recorded statistics differ from published particle data")
-    return {"run_path": str(path), "run_state": state, "summary": summary,
-            "provenance": json.loads((path / "provenance.json").read_text(encoding="utf-8"))}
+    result = {"run_path": str(path), "run_state": state, "summary": summary,
+              "provenance": json.loads((path / "provenance.json").read_text(encoding="utf-8"))}
+    if legacy:
+        result["stored_summary"] = recorded
+    return result
