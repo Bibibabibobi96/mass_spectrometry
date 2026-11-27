@@ -51,24 +51,11 @@ class LegacyCompositeRetirementTests(unittest.TestCase):
                     simion.track({}, {}, propagation={}, observations={}, numerics={}, context=context)
                 owner.assert_not_called()
 
-    def test_mass_scan_legacy_execution_rejected_before_any_native_io(self):
-        from msplatform.backends.simion.mass_spectrum import run_mixed_species_fly
-        from msplatform.workflows.single_reflection_mass_spectrum_study import run, _run_action
-        from unittest.mock import Mock
-        session = Mock()
-        with self.assertRaisesRegex(ValueError, 'mass_scan'):
-            run_mixed_species_fly(session, operation_id='', simion_executable=Path('x'), artifact_project_root=Path('x'),
-                project_id='', combined_ion=Path('x'), total_particles=1, max_tof_us=1., output_csv=Path('x'),
-                summary_path=Path('x'), runtime_receipt=Path('x'), limits={}, immutable_input_records=[])
-        with self.assertRaisesRegex(ValueError, 'mass_scan'):
-            _run_action(session, requested={}, original={}, stage={}, partial_parent=None)
-        with self.assertRaisesRegex(ValueError, 'mass_scan'):
-            run(None, run_id='', mode_config=Path('x'), resolved_geometry=Path('x'), particle_count_policy=Path('x'),
-                formal_mph=Path('x'), formal_asset_manifest=Path('x'), simion_executable=Path('x'),
-                artifact_project_root=Path('x'), project_config=Path('x'), formal_assets=Path('x'), baseline=Path('x'),
-                formal_mode=Path('x'), solver_numerics=Path('x'))
-        session.assert_not_called()
-        session.run_process.assert_not_called()
+    def test_legacy_mass_producers_are_absent(self):
+        import importlib.util
+        for name in ("msplatform.backends.simion.mass_spectrum",
+                     "msplatform.workflows.single_reflection_mass_spectrum_study"):
+            self.assertIsNone(importlib.util.find_spec(name))
 
 
 if __name__ == '__main__': unittest.main()

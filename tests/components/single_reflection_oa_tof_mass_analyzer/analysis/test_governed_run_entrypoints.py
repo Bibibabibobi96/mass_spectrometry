@@ -21,7 +21,6 @@ def entry_source(relative: str) -> Path:
 class GovernedRunEntrypointTests(unittest.TestCase):
     def test_governed_oa_artifact_entrypoints_use_registered_run_packages(self):
         entries = {
-            "workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1": "solver_review",
             "workflows/formal_reference/run_formal_validation.ps1": "qualification",
             "workflows/cross_solver_diagnostics/run_cross_solver_diagnostics.ps1": "solver_review",
             "simion/workbench/run_ideal_field_diagnostic.ps1": "solver_review",
@@ -30,12 +29,6 @@ class GovernedRunEntrypointTests(unittest.TestCase):
         for relative, retention_class in entries.items():
             with self.subTest(entry=relative):
                 source = entry_source(relative).read_text(encoding="utf-8")
-                if relative == "workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1":
-                    self.assertIn("msplatform.workflows.single_reflection_mass_spectrum_study", source)
-                    self.assertIn("resume-finalization", source)
-                    self.assertNotIn("New-RunPackage", source)
-                    self.assertNotIn("Initialize-RunRecord", source)
-                    continue
                 self.assertIn("New-RunPackage", source)
                 self.assertIn("-RetentionContractEnabled", source)
                 self.assertIn("-CapacityLedgerLifecycleEnabled", source)
@@ -65,12 +58,6 @@ class GovernedRunEntrypointTests(unittest.TestCase):
                 self.assertIn("$packageRoot", source)
                 for fallback in (".venv", "PYTHONPATH", "Join-Path $repoRoot 'src"):
                     self.assertNotIn(fallback, source)
-        mass = entry_source("workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1").read_text(encoding="utf-8")
-        self.assertIn("$Workspace", mass)
-        self.assertIn("$ArtifactRootPath", mass)
-        self.assertIn("$ScienceRoot", mass)
-        self.assertNotIn("MASS_SPECTRUM_WORKSPACE", mass)
-        self.assertNotIn("PYTHONPATH", mass)
         transport = entry_source("simion/workbench/run_n100_transport.ps1").read_text(encoding="utf-8")
         self.assertIn("$packageRoot", transport)
         self.assertIn("inputs/code", transport)

@@ -7,15 +7,17 @@ import json
 from pathlib import Path
 import sys
 
-from msplatform.workflows.single_reflection_mass_spectrum import analyze_mass_spectrum
-from msplatform.workflows.single_reflection_mass_spectrum_study import OUTPUT_NAMES
+from msplatform.execution.context import python_runtime_version
+from msplatform.results.historical_mass_spectrum import OUTPUT_NAMES
+from msplatform.analysis.mass_spectrum import analyze_mass_spectrum
 
 
 def _verify_required_sources(root: Path, selection: dict) -> None:
     inventory = json.loads((root.parent / "code_inventory.json").read_text(encoding="utf-8-sig"))
     required = (
-        "msplatform/workflows/single_reflection_mass_spectrum_worker.py",
-        "msplatform/workflows/single_reflection_mass_spectrum.py",
+        "msplatform/execution/historical_mass_spectrum_worker.py",
+        "msplatform/results/historical_mass_spectrum.py",
+        "msplatform/analysis/mass_spectrum.py",
         "msplatform/results/single_reflection_particle_table.py",
         "src/msplatform/components/single_reflection_oa_tof/config/resolved_geometry.json",
     )
@@ -47,6 +49,7 @@ def run_frozen_analysis(*, selection_path: Path, output: Path, code_root: Path) 
         Path(selection["frozen_mode"]), Path(selection["source_directory"]) / "comsol",
         Path(selection["exports"]["simion_csv"]["path"]), output,
         Path(selection["frozen_geometry"]),
+        python_version=python_runtime_version(),
     )
     expected = {"mode_config": selection["inputs"]["mode_config"]["sha256"],
                 "simion_csv": selection["exports"]["simion_csv"]["sha256"]}

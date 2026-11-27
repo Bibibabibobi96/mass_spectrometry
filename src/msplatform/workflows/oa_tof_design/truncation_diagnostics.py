@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from msplatform.workflows.single_reflection_mass_spectrum import load_mode
+from msplatform.results.historical_mass_spectrum import load_mode
 from msplatform.analysis.peak_metrics import (
     AnalysisSettings,
     bootstrap_resolution_distribution,

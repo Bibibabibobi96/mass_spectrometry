@@ -31,12 +31,11 @@ from msplatform.workflows.oa_candidate.reference_analysis import (
     audit_simion_recording,
     read_particle_table,
 )
-from msplatform.workflows.single_reflection_mass_spectrum import (
+from msplatform.results.historical_mass_spectrum import (
     _normalized_simion_rows as canonical_simion_rows,
-    analyze_mass_spectrum as canonical_mass_spectrum,
-    fit_calibration,
     load_mode,
 )
+from msplatform.analysis.mass_spectrum import fit_calibration, analyze_mass_spectrum as canonical_mass_spectrum
 from msplatform.workflows.oa_tof_design.truncation_diagnostics import _common_intersection_masks
 
 
@@ -46,7 +45,7 @@ def _normalized_simion_rows(path):
 
 def analyze_mass_spectrum(mode, comsol, simion, output):
     return canonical_mass_spectrum(mode, comsol, simion, output,
-        ANALYSIS_DIR.parent / "config/resolved_geometry.json")
+        ANALYSIS_DIR.parent / "config/resolved_geometry.json", python_version=platform.python_version())
 
 
 class PeakMetricsTest(unittest.TestCase):
@@ -639,10 +638,10 @@ class SourceMappingAndBootstrapTest(unittest.TestCase):
                     frame = pd.concat([frame, pd.DataFrame([extra])])
                 frame.to_csv(simion, index=False)
                 result = subprocess.run([
-                    sys.executable, "-B", "-m", "msplatform.workflows.single_reflection_mass_spectrum",
-                    "--mode-config", str(mode), "--comsol-dir", str(comsol),
-                    "--simion-csv", str(simion), "--output", str(root / "output"),
-                    "--geometry", str(ANALYSIS_DIR.parent / "config/resolved_geometry.json"),
+                    sys.executable, "-B", "-c",
+                    "import sys;from pathlib import Path;from msplatform.analysis.mass_spectrum import analyze_mass_spectrum;analyze_mass_spectrum(*map(Path,sys.argv[1:]),python_version='test')",
+                    str(mode), str(comsol), str(simion), str(root / "output"),
+                    str(ANALYSIS_DIR.parent / "config/resolved_geometry.json"),
                 ], cwd=ANALYSIS_DIR.parents[2], capture_output=True, text=True, timeout=60)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertNotIn("MASS_SPECTRUM_ANALYSIS=PASS", result.stdout)
@@ -657,7 +656,7 @@ class SourceMappingAndBootstrapTest(unittest.TestCase):
             geometry["coordinate_convention"]["detector_x"] = DEFAULT_DETECTOR_CENTER_X_MM + 10.0
             selected = root / "selected.json"
             selected.write_text(json.dumps(geometry), encoding="utf-8")
-            result = canonical_mass_spectrum(mode, comsol, simion, root / "selected", selected)
+            result = canonical_mass_spectrum(mode, comsol, simion, root / "selected", selected, python_version="test")
             import hashlib
             self.assertEqual(result["inputs"]["resolved_geometry"], hashlib.sha256(selected.read_bytes()).hexdigest().upper())
             particles = pd.read_csv(root / "selected/mass_spectrum_particles.csv")
@@ -675,7 +674,7 @@ class SourceMappingAndBootstrapTest(unittest.TestCase):
             np.testing.assert_array_equal(normalized["detector_x_mm"], [1., 2., 3.])
             np.testing.assert_array_equal(normalized["detector_y_mm"], [4., 5., 6.])
             with self.assertRaises(FileNotFoundError):
-                canonical_mass_spectrum(mode, comsol, simion, root / "missing", root / "missing.json")
+                canonical_mass_spectrum(mode, comsol, simion, root / "missing", root / "missing.json", python_version="test")
             self.assertFalse((root / "missing").exists())
 
     def test_wide_mass_spectrum_analysis_writes_candidate_outputs(self) -> None:

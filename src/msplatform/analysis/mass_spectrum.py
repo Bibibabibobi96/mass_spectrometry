@@ -1,21 +1,11 @@
-"""Wide-range oa-TOF candidate mass-spectrum analysis.
-
-This workflow reports calibration centroids, transmission and diagnostic local
-peak overlays.  It does not promote those overlays to precision FWHM claims or
-replace the dedicated 524 Da formal resolution baseline.
-Each solver's unweighted sqrt(m/z)=a*t+b fit uses the same sample centroids
-that it reports; its fitted time offset does not establish a pulse epoch.
-"""
-
+"""Solver-neutral calibration and display for recorded mass spectra."""
 from __future__ import annotations
 
-import argparse
 import json
 from pathlib import Path
 from typing import Any
 
 import matplotlib
-
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
@@ -23,36 +13,8 @@ import numpy as np
 import pandas as pd
 
 from msplatform.analysis.peak_metrics import AnalysisSettings, compare_peak_shapes, compute_detector_metrics
-from msplatform.execution.context import python_runtime_version
 from msplatform.io.file_identity import file_sha256
-from msplatform.results import single_reflection_particle_table as particle_table
-from msplatform.backends.simion import ion_table as simion_ion_table
-
-
-def load_mode(path: Path) -> dict[str, Any]:
-    """Read and validate a candidate mass-spectrum mode and its species."""
-    mode = json.loads(path.read_text(encoding="utf-8-sig"))
-    if mode.get("role") != "oa_tof_candidate_mass_spectrum_mode":
-        raise ValueError("Not an oa-TOF candidate mass-spectrum mode")
-    species = mode.get("species", [])
-    if len(species) < 3:
-        raise ValueError("A calibration spectrum requires at least three species")
-    ids = [str(item["species_id"]) for item in species]
-    if len(ids) != len(set(ids)):
-        raise ValueError("species_id values must be unique")
-    for item in species:
-        mass = float(item["mass_amu"])
-        charge = simion_ion_table._validated_charge_state(item["charge_state"])
-        mz = float(item["mz"])
-        if not np.isfinite(mass) or mass <= 0 or not np.isfinite(mz) or mz <= 0:
-            raise ValueError(f"Invalid species definition: {item}")
-        if not np.isclose(mass / abs(charge), mz, rtol=0, atol=1e-12):
-            raise ValueError(f"m/z is inconsistent for {item['species_id']}")
-        item["charge_state"] = charge
-        count = item["particle_count"]
-        if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
-            raise ValueError("particle_count must be a positive integer")
-    return mode
+from msplatform.results.historical_mass_spectrum import load_mode, _normalized_simion_rows, _normalized_comsol_rows
 
 
 def fit_calibration(mean_tof_us: np.ndarray, mz: np.ndarray) -> dict[str, Any]:
@@ -98,56 +60,6 @@ def fit_calibration(mean_tof_us: np.ndarray, mz: np.ndarray) -> dict[str, Any]:
         "residual_rms_mz": residual_rms_mz,
         "residual_max_abs_mz": float(np.max(np.abs(residual))),
     }
-
-
-def _normalized_simion_rows(path: Path, detector_x: float, detector_y: float) -> pd.DataFrame:
-    # Keep integer fields lexical until validation; float inference can round them.
-    raw = pd.read_csv(path, dtype={"Ion": "string", "ChargeState": "string"})
-    required = {
-        "Ion", "MassAmu", "ChargeState", "TofUs", "XMm", "YMm", "Hit"
-    }
-    missing = required.difference(raw.columns)
-    if missing:
-        raise ValueError(f"SIMION mixed-species CSV lacks columns: {sorted(missing)}")
-    hit = raw["Hit"].astype(str).str.lower().isin({"true", "1", "yes"})
-    result = pd.DataFrame(
-        {
-            "particle_id": particle_table.validated_particle_ids(raw["Ion"], "SIMION"),
-            "mass_amu": pd.to_numeric(raw["MassAmu"], errors="raise"),
-            "charge_state": raw["ChargeState"].map(simion_ion_table._validated_charge_state),
-            "tof_us": pd.to_numeric(raw["TofUs"], errors="coerce"),
-            "detector_x_mm": (
-                pd.to_numeric(raw["XMm"], errors="coerce")
-                - detector_x
-            ),
-            "detector_y_mm": (
-                pd.to_numeric(raw["YMm"], errors="coerce")
-                - detector_y
-            ),
-            "hit": hit,
-        }
-    )
-    for source, target in (
-        ("X0Mm", "initial_x_mm"),
-        ("Y0Mm", "initial_y_mm"),
-        ("Z0Mm", "initial_z_mm"),
-        ("EnergyEv", "initial_energy_eV"),
-    ):
-        if source in raw:
-            result[target] = pd.to_numeric(raw[source], errors="coerce")
-    return result
-
-
-def _normalized_comsol_rows(path: Path, emitted: int, detector_x: float, detector_y: float) -> pd.DataFrame:
-    source, source_format = particle_table.read_source_table(path)
-    id_column = particle_table.find_column(source, particle_table.PARTICLE_ID_ALIASES, True)
-    ids = particle_table.validated_particle_ids(source[id_column], "COMSOL")
-    if len(ids) > emitted:
-        raise ValueError("COMSOL has more particle rows than emitted particles")
-    if (ids > emitted).any():
-        raise ValueError("COMSOL particle ID exceeds its species mother population")
-    result, _ = particle_table.normalize_particle_table(source, source_format, detector_x, detector_y)
-    return result
 
 
 def _plot_mass_detector_landings(
@@ -254,12 +166,16 @@ def analyze_mass_spectrum(
     simion_csv: Path,
     output_dir: Path,
     geometry_path: Path,
+    *,
+    python_version: str,
 ) -> dict[str, Any]:
     """Analyze recorded solver hits using the explicitly selected detector geometry.
 
     Write six candidate diagnostics and return their metrics with input hashes,
     including the selected geometry; no scientific qualification is implied.
     """
+    if not isinstance(python_version, str) or not python_version:
+        raise ValueError("python_version must be an explicit nonempty provenance value")
     geometry = json.loads(geometry_path.read_text(encoding="utf-8"))
     detector_x = float(geometry["coordinate_convention"]["detector_x"])
     detector_y = 0.0
@@ -551,7 +467,7 @@ def analyze_mass_spectrum(
                 "census_bound": "all_supplied_rows_per_species_at_most_emitted; transmission_denominator_is_declared_emitted",
             },
         },
-        "python": python_runtime_version(),
+        "python": python_version,
         "inputs": input_hashes,
         "calibration": calibrations,
         "peak_shape_comparisons": peak_shapes.to_dict(orient="records"),
@@ -561,25 +477,3 @@ def analyze_mass_spectrum(
         json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )
     return result
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--mode-config", required=True, type=Path)
-    parser.add_argument("--comsol-dir", required=True, type=Path)
-    parser.add_argument("--simion-csv", required=True, type=Path)
-    parser.add_argument("--output", required=True, type=Path)
-    parser.add_argument("--geometry", required=True, type=Path)
-    args = parser.parse_args()
-    result = analyze_mass_spectrum(
-        args.mode_config.resolve(), args.comsol_dir.resolve(),
-        args.simion_csv.resolve(), args.output.resolve(), args.geometry.resolve()
-    )
-    print(
-        "MASS_SPECTRUM_ANALYSIS=PASS "
-        f"SPECIES={len(result['species']) // 2} OUTPUT={args.output.resolve()}"
-    )
-
-
-if __name__ == "__main__":
-    main()

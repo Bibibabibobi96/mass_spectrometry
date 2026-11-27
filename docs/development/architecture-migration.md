@@ -107,6 +107,14 @@ Agent0核对剩余`oa_formal`两叶职责：`verify_geometry_derivation`的实�
 
 新组件3项正反例PASS（0.025s）：当前baseline通过且输入不变、几何/电压/能量metadata冲突拒绝、两旧叶模块缺席；既有candidate_design剩余22项PASS（5.984s），Ruff与PS parser PASS，无求解器。`oa_formal`其余staging/publisher删除与当前reader/materialization仍在其它待整合单元，暂未将整个包标已退役；最终发行还需断言两旧模块缺席及新科学入口确实来自安装包。
 
+本单元最终代码`6a597017`已普通push；独立暂存树`ff859b6f3264c6f8cee55a5b0a044f33a569e2e8`离仓源码25项PASS（5.821s），不依赖在途新schema/新producer。迁移后的PS调用保持既有入口，无另建CLI。Agent1继续同步最近OA正文，完整最终发行与跨链验收仍待共同冻结。
+
+### 历史质量谱职责接管（WORKTREE）
+
+历史v1源选择、completion/原母群/ID/原geometry认证归`results.historical_mass_spectrum`；校准、峰形/传输统计与绘图完整归已有`analysis.mass_spectrum`，不在reader中隐藏分析执行体。`execution.historical_mass_spectrum_worker`只执行已冻结分析源码/geometry、核输入与原始source哈希和实际Python版本；`workflows.historical_mass_analysis.analyze_recorded_mass_spectrum`通过现有RunSession/Store/OS source guard编排。没有retrace/Fly或旧容量owner调用，原大型MPH/PA与历史bytes不改。signed integer charge词法解析实移中性`contracts.particle_identity`，旧ION文件reader直接复用同一实现，不因历史ion字段推断electron。
+
+Agent0发现reader仍有分析/绘图主体后按上述实际职责再次拆分；未改公式/容差。定向11项PASS（7.105s），覆盖独立解析校准、原polyfit结果、退化/非法输入、完整分析输出、显式geometry、超母群/未知物种、源缺件/篡改/失败/非终态、冻结源码/geometry身份和failed parent不发布成功；Ruff PASS。原112.742s深路径结果早于worker relocation等后续变化，只作历史定位；最终两发行节点须实际重验当前深路径，不能沿用旧结果标最终PASS。
+
 ### C 活跃消费者对账（开工定位，未闭合）
 
 | 实际入口 → workflow/API | component/schema与科学输入 | 资产/进程owner与结果消费者 | C新路径/当前状态 |

@@ -48,7 +48,7 @@ NATIVE_RESOURCES = frozenset({
     "run_paired_accelerator_pulse.m", "oatof_read_cartesian_release.m", "oatof_cpt_solver_policy.m",
     "load_oatof_contract.m", "oatof_paths.m", "configure_oatof_segmented_output.m",
     "oatof_extract_detector_arrivals.m", "oatof_detector_arrival_reducer.m",
-    "run_fixed_particle_retrace.m", "workspace_paths.m", "resolve_path_identity.m",
+    "workspace_paths.m", "resolve_path_identity.m",
 })
 
 LAUNCHER_RESOURCES = frozenset({

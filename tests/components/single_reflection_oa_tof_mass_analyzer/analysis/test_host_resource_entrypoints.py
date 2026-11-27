@@ -190,12 +190,6 @@ foreach($name in @('Save-RunEnvironment','Restore-RunEnvironment')){
         self.assertEqual(output.count("TEST_LEASE_EXIT=SIMION"), 1, output)
 
     def test_retired_and_active_flight_entrypoints_preserve_lease_boundaries(self) -> None:
-        mass_output = self.run_failure(
-            "workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1", [],
-            expect_lease_release=False,
-        )
-        self.assertIn("Legacy mass-spectrum run/resume is retired", mass_output)
-        self.assertNotIn("TEST_LEASE_", mass_output)
         formal_output = self.run_failure(
             "workflows/formal_reference/run_formal_validation.ps1", [],
             expect_lease_release=False,
@@ -391,10 +385,6 @@ foreach($nested in @($false,$true)) {
                 self.assertLess(source.index("Update-HostResourceStage -Lease $hostExecutionLease -Stage flight"), flight)
                 self.assertGreater(source.index("Update-HostResourceStage -Lease $hostExecutionLease -Stage postprocess"), flight)
                 self.assertNotIn("Enter-HostExecutionLease -Role $hostRole -Stage pa_prepare", source)
-        from msplatform.backends.simion import mass_spectrum
-        mass_source = (PROJECT.parents[1] / mass_spectrum.__file__).read_text(encoding="utf-8")
-        self.assertIn("session.run_process", mass_source)
-        self.assertIn('role="SIMION", stage="flight"', mass_source)
         builder = (PROJECT.parents[1] / "backends/simion/resources" / "build_formal_delivery.ps1").read_text(encoding="utf-8")
         for name in ("build_two_zone_pa.lua", "build_reflectron_variant.lua",
                      "build_flight_tube_variant.lua", "build_detector_variant.lua"):
