@@ -399,8 +399,8 @@ The earlier local Changed attempt recorded 10 PASS, one FAIL and 14 blocked stag
 (1524.752 command seconds); its normal-host installed successor does not turn it or the
 full Repository green. CI run `43258894135` subsequently completed Changed successfully after rerunning its two originally failed test IDs; Repository was skipped. The Windows process-query denial still needs diagnosis.
 Existing independent sources, historical state readers, neutral transforms and genuine recovery
-remain. Keep the existing segmented MP-to-IP production path until its verified continuous
-replacement can retire it in the same slice. A new public gas-property database is deferred
+remain. The segmented MP-to-IP producer has since been retired; current continuous tracking uses
+original births through the public SimulationRecipe. A new public gas-property database is deferred
 beyond P4; existing IP/HS1 and dual-cone/SDS migration and correctness remain P4 obligations.
 Formal reusable implementations and necessary scientific strategies belong to
 `src/msplatform`; research inputs, history, tests and development tools remain outside that
@@ -426,9 +426,9 @@ software continuous HS1 consumer using the existing tracking owner, explicit gas
 coverage and original identity/clock. Its final affected checks passed 39 parents /
 81 records; the preceding broad run retained one selector-test transport mismatch.
 Exact unique-test identity comparison preserved all 98 identities while removing
-accidental fixture collection. Inert field/process fixtures do not establish native
-HS1, final installation/Repository or retirement of the still-needed segmented producer.
-Other named complete continuous consumers and remaining native acceptance stay open.
+accidental fixture collection. Inert field/process fixtures did not establish native
+HS1 or final installation/Repository acceptance at that checkpoint. The segmented producer
+has since been retired; other named complete continuous consumers and native acceptance stay open.
 The scalar field adapter's rotated-anisotropic conversion error was reproduced
 in a controlled N=1 native calibration and corrected by rotating world E into PA
 axes before pitch/scale multiplication. The actual MR Program uses the explicit
@@ -583,8 +583,9 @@ both completed Changed successfully, with Repository integration skipped. The or
 bare-frontend selector test and full ordinary installed-core method actually passed in
 the former log; the installation method took 1,559.382 seconds on that remote machine.
 This closes that selected CI failure, not the historical full-Repository or performance debt.
-The new segmented MP producer-verification extraction was withheld under V8.7;
-the existing MP-to-IP production path remains until its continuous replacement is verified.
+The new segmented MP producer-verification extraction was withheld under V8.7.
+That producer has since been retired; current MP-to-IP execution uses original births
+through the public continuous Recipe, with native qualification still reported separately.
 At committed `569a017f`, GitHub run `43152720040` completed with Changed successful
 and Repository skipped. This was independently checked from run/jobs metadata, not a
 downloaded test artifact; it does not close the historical Repository failures.
@@ -689,7 +690,7 @@ integrator. Detailed domain evidence remains in the linked project and integrati
 | B01 | SFI replacement; after B00 | Real SFI request through existing public stages, then retire replaced execution bodies |
 | B02 | Generic static-field comparison; after B00 | OA and a real non-OA static-field consumer; preserve separate pulse and sampling responsibilities |
 | B03 | Unique complete geometry and continuous-field boundaries; after B00 | Canonical OA/RF physical families across standalone/TOF/MR; real member/port/parameter and instance tests, justified connected field coverage |
-| B04 | Complete IP and continuous MP-to-IP; after B00/B03 | Complete guide/HP/LP/exit and HS1, original source through both full components; install/native evidence before retiring segmented production |
+| B04 | Complete IP and continuous MP-to-IP; after B00/B03 | Complete guide/HP/LP/exit and HS1, original source through both full components; segmented production is retired, while install/native acceptance remains separately required |
 | B05 | Complete MR combinations and fixed-design numerics; after B00/B03 | Inherit the delivered catalog provider; avoid duplicate internal OA, separate physical gap2 from representation and close renderer/field/continuous tracking |
 | B06 | RF/OA/TOF capabilities and scientific strategies; after B01 | Real native and ideal paths remain separately identified; unique methods and consumers retained |
 | B07 | Dual-cone/EI/Wehnelt; after B00 | Existing staged and build-only operations, resources, cold reopen and applicable native checks |
@@ -723,7 +724,7 @@ status table or a promise to preserve each historical workflow as a permanent pa
 | Named SFI preparation/pulse/field planning/downstream/runtime/collection/continuation | `workflows.single_reflection_flight`; canonical source/results/backend consumers, actual PS CLI and freezer selections | Root Python bodies retired; scoped consumers, missing-resource and cache/reuse checks delivered. Installed four/five-slot seed materialization no longer consumes legacy large PA inputs. Remaining PS orchestration and broader native seed/reopen qualification stay OPEN; the selected four-slot unsolved build and reopen are recorded above. |
 | Withdrawn local frontend and cooled products; retained shared source support | Exclusive product code, recipes and policies were withdrawn; independently used shared resources, initial-state reader and SFI/IP functionality remain | Withdrawal is a scope decision, not scientific acceptance. Legacy shared-resource labels and the distinct MR IP/prism study are not the retired product; preserve historical records and verify installed/frozen closure separately. |
 | Manifest and retention policy | `io.manifest_records`, execution verification/retention and explicit native policy; actual Python/PS publishers and freezers | Root production facades retired after policy closure, including candidate failure/finalization paths. Existing writer, capacity and historical evidence protections remain. |
-| MP-to-IP preparation and continuous tracking | `workflows.multipole_ip.prepare` remains the temporary segmented producer; `workflows.multipole_ip.continuous` and its thin PowerShell/typed-HS1 adapter consume original births and a selected complete field. The named FullJoint continuous branch delegates to that same consumer for a complete RF–IP–MR FieldBundle. | Ordinary-install preparation and real-owner software checks delivered; eight continuous/CLI parents passed with 19 records. FullJoint branch forwarding is software evidence only. Segmented retirement, ordinary continuous CLI installation, native coupled-field/HS1 and remaining interface workflows stay OPEN |
+| MP-to-IP preparation and continuous tracking | The MP-to-IP segmented state-handoff producer is retired; continuous original-birth tracking uses the public SimulationRecipe, explicit field source and one gas environment. | RF–IP Store recovery and RF–IP–MR preflight have software evidence with inert native leaves. Installed and native coupled-field/HS1 qualification remain OPEN. |
 | MR native static-field provider | `backends.simion.native_static_field_provider` and `native_corridor_plan`; project launcher and downstream workpoint consumers | Former analysis copies retired with native compilation, GEM/binding and grid planning unchanged; ordinary-install and applicable native acceptance remain OPEN |
 | Dual-cone SIMION input preparation | `backends.simion.dual_cone_transport` and canonical source serializers; Program resource/callers migrated, old preparation/source/Program copies retired | Ordinary installation and explicit observation cadence delivered; actual seven-electrode field/ion-flight integration stays OPEN |
 | 环境、恢复与原生查看 | `execution`／`applications`；运行owner与故障矩阵 | 一次部署、单一owner；历史action仅作数据语义读取 |

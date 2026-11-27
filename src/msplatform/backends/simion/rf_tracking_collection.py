@@ -9,10 +9,10 @@ from .native_completion import require_one_fly_completion
 
 
 
-def collect_rf_tracking_logs(log_paths,*,source_rows,source_provenance,flight,batches):
+def collect_rf_tracking_logs(log_paths,*,source_rows,source_provenance,flight,batches,cohort_scope='complete'):
     from .tracking_collection import read_plane_observations,read_cut_stop_events
     if len(log_paths)!=len(batches) or not batches:raise ValueError('RF log/unit binding differs')
-    ordered=list(source_rows);seen=[];births={};terminals={};shared=[];events=[];ends={};contacts={};incomplete={};counts=[];logs=[];deadlines={};dynamics=[]
+    ordered=list(source_rows);seen=[];births={};terminals={};shared=[];events=[];ends={};contacts={};incomplete={};counts=[];logs=[];deadlines={};dynamics=[];focus_stops={}
     definitions=batches[0]['build_metadata'].get('plane_observations')
     policy=batches[0]['build_metadata'].get('propagation_stop')
     consumed=[]
@@ -20,14 +20,26 @@ def collect_rf_tracking_logs(log_paths,*,source_rows,source_provenance,flight,ba
         'vx_mm_per_us','vy_mm_per_us','vz_mm_per_us','mass_amu','charge_state','instance'}
     mothers={r['particle_id']:r for r in source_provenance['mother_records']}
     ip_mr=flight.get('tracking_kind')=='ip_mr'
-    if ip_mr:
+    focus = flight.get('tracking_kind') == 'independent_oa' and flight.get('original_birth_si') is True
+    strict_birth_and_observations = (ip_mr or focus or flight.get('tracking_kind') == 'neutral_sampled'
+        or (flight.get('tracking_kind') == 'rf_ip' and flight.get('original_birth_si') is True))
+    if strict_birth_and_observations:
         mother_ids=source_provenance.get('mother_particle_ids')
         records=source_provenance.get('mother_records')
+        if cohort_scope not in {'complete','partition'}:
+            raise ValueError('RF tracking cohort scope must be explicit')
         if (source_provenance.get('state_kind')!='source_birth' or
-                source_provenance.get('execution_particle_ids')!=ordered or mother_ids!=ordered or
-                not isinstance(records,list) or [row.get('particle_id') for row in records]!=ordered or
-                len(set(ordered))!=len(ordered) or policy is not None):
+                not isinstance(mother_ids,list) or source_provenance.get('execution_particle_ids')!=mother_ids or
+                not isinstance(records,list) or [row.get('particle_id') for row in records]!=mother_ids or
+                len(set(mother_ids))!=len(mother_ids) or len(set(ordered))!=len(ordered) or policy is not None):
             raise ValueError('IP–MR continuous tracking requires its complete original birth cohort')
+        if cohort_scope=='complete':
+            valid_order=ordered==mother_ids
+        else:
+            start=mother_ids.index(ordered[0]) if ordered and ordered[0] in mother_ids else -1
+            valid_order=start>=0 and mother_ids[start:start+len(ordered)]==ordered
+        if not valid_order:
+            raise ValueError('IP–MR continuous tracking requires its complete original birth cohort or a verified ordinal partition')
         if any(source_rows[pid]['instrument_time_us']!=mothers[pid]['particle_birth_time_us'] for pid in ordered):
             raise ValueError('IP–MR actual source differs from original particle birth')
     for file,case in zip(log_paths,batches,strict=True):
@@ -40,7 +52,7 @@ def collect_rf_tracking_logs(log_paths,*,source_rows,source_provenance,flight,ba
         if birth_values!=[mothers[pid]['particle_birth_time_us'] for pid in ids] or len(deadline_values)!=len(ids):
             raise ValueError('RF unit lost its original births/deadlines')
         deadlines.update(zip(ids,deadline_values,strict=True));consumed.extend(metadata.get('consumed_plane_events',[]))
-        if ip_mr and metadata.get('consumed_plane_events'):
+        if strict_birth_and_observations and metadata.get('consumed_plane_events'):
             raise ValueError('IP–MR continuous tracking cannot consume a prior plane state')
         seen.extend(ids);path=Path(file).resolve(strict=True);logs.append(path);counts.append(len(ids))
         with path.open(encoding='utf-8-sig') as stream:require_one_fly_completion(stream)
@@ -48,6 +60,17 @@ def collect_rf_tracking_logs(log_paths,*,source_rows,source_provenance,flight,ba
             raise ValueError('IP–MR MR observations are not supported by this terminal-only consumer')
         controls=[]
         for number,line in enumerate(path.read_text(encoding='utf-8-sig').splitlines(),1):
+            if focus and 'OA_FOCUS_INCOMPLETE_V1:' in line:
+                raise ValueError('OA focus callback history or terminal endpoint is incomplete')
+            if focus and 'OA_FOCUS_STOP_V1:' in line:
+                import re
+                match=re.fullmatch(r'\s*ion=(\d+) particle_id=(\d+) endpoint_time_us=([^\s]+) terminal_mode=(action_endpoint|plane_reconciled)\s*',line.split('OA_FOCUS_STOP_V1:',1)[1])
+                if not match:
+                    raise ValueError('OA focus stop marker differs')
+                native,pid=int(match[1]),int(match[2]);time=float(match[3])
+                if not 1<=native<=len(ids) or ids[native-1]!=pid or pid in focus_stops or not math.isfinite(time):
+                    raise ValueError('OA focus stop identity differs')
+                focus_stops[pid]=dict(time=time,mode=match[4])
             if 'RF_DYNAMICS_V1:' in line:
                 control=json.loads(line.split('RF_DYNAMICS_V1:',1)[1])
                 if (set(control)!={'grouped','repulsion','relativity','segment_global'} or type(control['grouped'])is not int
@@ -57,7 +80,7 @@ def collect_rf_tracking_logs(log_paths,*,source_rows,source_provenance,flight,ba
                         or 'grouped' in flight and control['grouped']!=flight['grouped']):
                     raise ValueError('RF native dynamics differ from explicit collision-free policy')
                 controls.append(control)
-            if ip_mr and 'RF_OBSERVATION_INCOMPLETE_V1:' in line:
+            if strict_birth_and_observations and 'RF_OBSERVATION_INCOMPLETE_V1:' in line:
                 import re
                 marker_pairs=re.findall(r'(\w+)=([^\s]+)',line.split('RF_OBSERVATION_INCOMPLETE_V1:',1)[1]);fields_in=dict(marker_pairs)
                 if len(marker_pairs)!=len(fields_in) or set(fields_in)!={'ion','particle_id','reason'} or fields_in['reason'] not in {'callback_before_pending','equal_time_conflict','terminal_before_retained_history'}:
@@ -93,7 +116,7 @@ def collect_rf_tracking_logs(log_paths,*,source_rows,source_provenance,flight,ba
                 if row['instrument_time_us']not in flight.get('observation_times_us',[]):raise ValueError('RF shared time is undeclared')
                 if any(r['particle_id']==pid and r['instrument_time_us']==row['instrument_time_us'] for r in shared):raise ValueError('RF shared state duplicated')
                 shared.append(row)
-            elif event=='preaction_contact' and ip_mr:
+            elif event=='preaction_contact' and strict_birth_and_observations:
                 if pid in contacts or row['reason']!='native_splat_minus_one':raise ValueError('IP–MR contact provenance differs')
                 contacts[pid]=row
             elif event=='deadline_endpoint':
@@ -105,9 +128,54 @@ def collect_rf_tracking_logs(log_paths,*,source_rows,source_provenance,flight,ba
         dynamics.append(controls[0])
     if seen!=ordered or len(set(seen))!=len(seen) or set(births)!=set(ordered) or set(terminals)!=set(ordered):
         raise ValueError('RF logs omit/duplicate source cohort actual births or native terminals')
-    observation=(read_plane_observations(logs,ordered,counts,definitions,consumed_plane_events=consumed) if definitions else None)
+    observation=(read_plane_observations(logs,ordered,counts,definitions,consumed_plane_events=consumed,allow_focus_boundary=focus) if definitions else None)
+    if focus:
+        if observation is None or observation['status'] != 'complete':
+            raise ValueError('OA focus requires complete plane evidence')
+        planes_by_id={row['observation_id']:row for row in flight['oa_focus_runtime']['planes']}
+        if set(planes_by_id)!={'oa_focus_exit','oa_focus_plane'}:
+            raise ValueError('OA focus requires its exact two derived planes')
+        for row in observation['rows']:
+            plane=planes_by_id[row['observation_id']]
+            if row['direction']!='outward' or any(sum(row['step_'+endpoint+'_v'+axis+'_mm_per_us']*normal for axis,normal in zip('xyz',plane['normal'],strict=True))<=0 for endpoint in ('start','end')):
+                raise ValueError('OA focus crossing must move in its declared negative-z direction')
+            for label,field in (('start','signed_distance_before_mm'),('end','signed_distance_after_mm')):
+                distance=sum((row['step_'+label+'_'+axis+'_mm']-center)*normal for axis,center,normal in zip('xyz',plane['center_mm'],plane['normal'],strict=True))
+                if not binary64_serialization_close(distance,row[field]):
+                    raise ValueError('OA focus bracket differs from its authored plane')
+            a,b=row['signed_distance_before_mm'],row['signed_distance_after_mm']
+            fraction=-a/(b-a)
+            if not binary64_serialization_close(row['instrument_time_us'],row['step_start_instrument_time_us']+fraction*(row['step_end_instrument_time_us']-row['step_start_instrument_time_us'])):
+                raise ValueError('OA focus time differs from its actual bracket')
+            for axis in 'xyz':
+                for prefix,suffix in (('', '_mm'),('v','_mm_per_us')):
+                    key=prefix+axis+suffix
+                    if not binary64_serialization_close(row[key],row['step_start_'+key]+fraction*(row['step_end_'+key]-row['step_start_'+key])):
+                        raise ValueError('OA focus 6D differs from its actual bracket')
+        if any(row['observation_id']=='oa_focus_plane' and row['particle_id'] not in focus_stops for row in observation['rows']):
+            raise ValueError('OA focus plane evidence lacks its actual focus stop')
+        for pid,stop in focus_stops.items():
+            rows=[row for row in observation['rows'] if row['particle_id']==pid]
+            by_id={row['observation_id']:row for row in rows}
+            if (len(rows)!=2 or set(by_id)!={'oa_focus_exit','oa_focus_plane'} or
+                    by_id['oa_focus_exit']['instrument_time_us']>by_id['oa_focus_plane']['instrument_time_us'] or
+                    not binary64_serialization_close(stop['time'],terminals[pid]['instrument_time_us'])):
+                raise ValueError('OA focus stop lacks its complete ordered native plane evidence')
+            final=by_id['oa_focus_plane']
+            planes=flight['oa_focus_runtime']['planes']
+            if planes[0]['center_mm']==planes[1]['center_mm'] and planes[0]['normal']==planes[1]['normal']:
+                for key in ('instrument_time_us','x_mm','y_mm','z_mm','vx_mm_per_us','vy_mm_per_us','vz_mm_per_us'):
+                    if not binary64_serialization_close(by_id['oa_focus_exit'][key],final[key]):
+                        raise ValueError('coincident OA focus observations differ')
+            if stop['mode']=='plane_reconciled' and not binary64_serialization_close(final['instrument_time_us'],stop['time']):
+                raise ValueError('OA focus reconciled terminal time differs from plane interpolation')
+            for axis in 'xyz':
+                prefix='step_end_' if stop['mode']=='action_endpoint' else ''
+                if (not binary64_serialization_close(final[prefix+axis+'_mm'],terminals[pid][axis+'_mm']) or
+                        not binary64_serialization_close(final[prefix+'v'+axis+'_mm_per_us'],terminals[pid]['v'+axis+'_mm_per_us'])):
+                    raise ValueError('OA focus native terminal differs from the crossing endpoint')
     cuts=read_cut_stop_events(logs,ordered,counts,policy,observation,terminals)
-    if ip_mr:
+    if strict_birth_and_observations:
         diagnostic_shared=[row for row in shared if row['particle_id'] in incomplete]
         shared=[row for row in shared if row['particle_id'] not in incomplete]
         events=[row for row in events if not (row['event']=='shared' and row['particle_id'] in incomplete)]
@@ -118,21 +186,33 @@ def collect_rf_tracking_logs(log_paths,*,source_rows,source_provenance,flight,ba
             if incomplete:observation['status']='incomplete'
         for row in shared:
             pid=row['particle_id']
-            if row['reason']!='accepted_step_linear_interpolation' or not births[pid]['instrument_time_us']<=row['instrument_time_us']<=terminals[pid]['instrument_time_us']:
+            if not births[pid]['instrument_time_us']<=row['instrument_time_us']<=terminals[pid]['instrument_time_us']:
+                raise ValueError('IP–MR shared observation exceeds native lifetime or method')
+            if row['reason']=='actual_birth':
+                keys=('instrument_time_us','x_mm','y_mm','z_mm','vx_mm_per_us','vy_mm_per_us','vz_mm_per_us','instance')
+                if any(row[key] != births[pid][key] for key in keys):
+                    raise ValueError('actual birth observation differs from native initialize state')
+            elif row['reason']!='accepted_step_linear_interpolation':
                 raise ValueError('IP–MR shared observation exceeds native lifetime or method')
         if observation is not None:
             for row in observation['rows']:
                 pid=row['particle_id']
+                reconciled=(focus and pid in focus_stops and focus_stops[pid]['mode']=='plane_reconciled'
+                            and (row['instrument_time_us']<=terminals[pid]['instrument_time_us'] or binary64_serialization_close(row['instrument_time_us'],terminals[pid]['instrument_time_us'])))
                 if (row['step_start_instrument_time_us']<births[pid]['instrument_time_us'] or
-                        row['step_end_instrument_time_us']>terminals[pid]['instrument_time_us']):
+                        (row['step_end_instrument_time_us']>terminals[pid]['instrument_time_us'] and not reconciled)):
                     raise ValueError('IP–MR plane observation exceeds native lifetime')
     outcomes=[]
     for pid in ordered:
         terminal=terminals[pid]
         if terminal['instrument_time_us']<births[pid]['instrument_time_us']:raise ValueError('RF terminal precedes actual start')
-        if terminal['reason']=='deadline':
+        if pid in focus_stops:
+            if terminal['reason']!='unknown' or pid in cuts or pid in ends:
+                raise ValueError('OA focus stop conflicts with native terminal reason')
+            category='programmatic_focus_stop'
+        elif terminal['reason']=='deadline':
             if pid not in ends or ends[pid]['instrument_time_us']<deadlines[pid]:raise ValueError('RF deadline stop lacks request boundary evidence')
-            category='unknown_native_terminal' if ip_mr and pid in contacts else 'programmatic_deadline_stop'
+            category='unknown_native_terminal' if strict_birth_and_observations and pid in contacts else 'programmatic_deadline_stop'
         elif terminal['reason']=='accepted_cut':
             if pid not in cuts:raise ValueError('RF cut terminal lacks actual accepted-step plane evidence')
             if cuts[pid]['event_instrument_time_us']>deadlines[pid]:raise ValueError('RF accepted cut exceeds original deadline')
@@ -142,6 +222,10 @@ def collect_rf_tracking_logs(log_paths,*,source_rows,source_provenance,flight,ba
             category='unknown_native_terminal'
         outcome=dict(particle_id=pid,category=category,instance_id=terminal['instance'],
             terminal_instrument_time_us=terminal['instrument_time_us'])
+        if pid in focus_stops:
+            plane=next(row for row in observation['rows'] if row['particle_id']==pid and row['observation_id']=='oa_focus_plane')
+            outcome['focus_terminal_mode']=focus_stops[pid]['mode']
+            outcome['focus_action_endpoint']={key:plane['step_end_'+key] for key in ('instrument_time_us','x_mm','y_mm','z_mm','vx_mm_per_us','vy_mm_per_us','vz_mm_per_us')}
         if terminal['reason']=='deadline':outcome['request_boundary']=copy.deepcopy(ends[pid])
         else:outcome['accepted_endpoint']=copy.deepcopy(cuts.get(pid))
         outcomes.append(outcome)
@@ -152,6 +236,9 @@ def collect_rf_tracking_logs(log_paths,*,source_rows,source_provenance,flight,ba
                 classification_is_mutually_exclusive_and_exhaustive=True),unknown_is_loss=False),
         original_mother={key:copy.deepcopy(source_provenance[key]) for key in
             ('mother_particle_ids','mother_records','mother_fates','clock_authority_sha256','clock_records')})
+    if strict_birth_and_observations and cohort_scope=='partition':
+        result['native_complete']=False
+        result['evidence_scope']='ordinal_partition_of_original_mother'
     if flight.get('tracking_kind')=='independent_oa':
         result.update(component_kind='orthogonal_accelerator',native_state_wire_format='legacy_shared_RF_NATIVE_STATE_V1',native_pulse_state_recording='not_requested')
         result['census']['role']='oa_full_mother_census'
@@ -160,8 +247,9 @@ def collect_rf_tracking_logs(log_paths,*,source_rows,source_provenance,flight,ba
         result.update(tracking_kind='rf_ip',native_state_wire_format='legacy_shared_RF_NATIVE_STATE_V1')
         result['census']['role']='rf_ip_full_mother_census'
         result['census']['terminal_taxonomy']['role']='rf_ip_raw_terminal_taxonomy'
-    if ip_mr:
+    if strict_birth_and_observations:
         result.update(observation_complete=not incomplete and (observation is None or observation['status']=='complete'),observation_incomplete=incomplete,uncommitted_observations=dict(shared=diagnostic_shared,planes=diagnostic_planes))
+    if ip_mr:
         result.update(tracking_kind='ip_mr',native_state_wire_format='legacy_shared_RF_NATIVE_STATE_V1',
                       propagation_scope='original_birth_to_native_terminal',
                       mr_observations=dict(status='not_recorded',events=[]))

@@ -6,7 +6,7 @@ field_assembly_strategy = "joint_solve"
 particle_field_coupling = "external_given_field"
 [study]
 path = "oa_split_tof_comsol_small_v1.json"
-sha256 = "7097de0ef97556b85b6c1954e4b97644e117617ec59d9dfeb1730b13bf18e13a"
+sha256 = "e478f67a42bba3b0b8d67283e593a54df186dcb294bd77b07c7af79df79bd408"
 [field_source]
 kind = "comsol_native"
 [recording]

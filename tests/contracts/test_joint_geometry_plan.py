@@ -7,7 +7,7 @@ import tempfile
 from types import SimpleNamespace
 from pathlib import Path
 
-from tests.workflows.multipole_ip import test_ip_compiler as ip_fixture
+from tests.assembly.rf_ip import test_ip_compiler as ip_fixture
 from msplatform.backends.simion import operations
 from msplatform.backends.simion.native_plans import plan_geometry_build
 from msplatform.backends.simion.resources import STRUCTURAL_SEEDS
@@ -46,14 +46,18 @@ class JointGeometryPlanTests(unittest.TestCase):
 
     def test_public_build_uses_existing_one_slot_owner(self):
         from unittest.mock import patch
+        from msplatform.storage import ArtifactStore
         with tempfile.TemporaryDirectory() as directory:
-            context = SimpleNamespace(tools={"simion": Path(__file__).resolve()}, execution_root=Path(directory))
+            root = Path(directory)
+            context = SimpleNamespace(tools={"simion": Path(__file__).resolve()}, execution_root=root)
+            store = ArtifactStore(root / "store")
             stage = dict(limits={"transient_run_directory_bytes":1}, artifact_retention={})
             with patch("msplatform.execution.stage_policy.read_stage_policy",return_value=(stage,{})), \
                  patch("msplatform.execution.owner.run_managed_stage",return_value={"manifest":{}}) as owner, \
                  patch("msplatform.results.artifacts.open_artifact",return_value="OPENED"):
-                self.assertEqual(operations.build_geometry(self.compiled,context=context),"OPENED")
+                self.assertEqual(operations.build_geometry(self.compiled,context=context,artifact_store=store),"OPENED")
             request = owner.call_args.kwargs
+            self.assertIs(request["artifact_store"],store)
             self.assertEqual(request["expected_operation_ids"],("geometry_parent","build_geometry","verify_geometry"))
             self.assertEqual(Path(request["action"].keywords["seed_record"]["path"]).name,"1_instance_seed.iob")
             self.assertEqual(request["payload"]["compiled_geometry"]["frontend_geometry"]["role"],"simion_rf_ip_geometry")

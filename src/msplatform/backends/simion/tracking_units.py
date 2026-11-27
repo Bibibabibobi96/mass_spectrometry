@@ -75,6 +75,7 @@ def tracking_applicability(plan):
             names+=('single_flight_pulse_hook.lua','voltage_waveforms.lua','native_drive.lua',
                     'collision_hs1_gas.lua','rf_ip_gas_selection.lua','rf_ip_tracking_hs1.lua')
     if plan['flight'].get('has_ip_schedule'): names += ('native_drive.lua',)
+    if plan['flight'].get('oa_focus_runtime') is not None: names += ('oa_focus_observer.lua',)
     if plan['flight'].get('has_hs1'): names += ('collision_hs1_gas.lua','rf_ip_gas_selection.lua','rf_ip_tracking_hs1.lua')
     if plan.get('scalar_field_basis') is not None:
         composer = ('split_scalar_field.lua' if plan['scalar_field_basis'].get('role') == 'split_off_on_scalar_binding'
@@ -101,6 +102,17 @@ def tracking_applicability(plan):
     fields = ('source_realization','field_manifest_identity','model_identity_sha256','rows','native_source_rows','source_provenance',
               'absolute_deadlines_us_by_particle_id','flight','propagation','observations','numerics')
     value = {key:copy.deepcopy(plan[key]) for key in fields}
+    if 'focus_testplane_identity' in plan:
+        value['focus_testplane_identity'] = copy.deepcopy(plan['focus_testplane_identity'])
+        for name in ('oa_focus_model_projection.py','oa_focus_plan.py'):
+            resources[name] = hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
+        for name in ('campaign','component_contract'):
+            value['observations']['oa_focus_authority'][name].pop('path',None)
+    if plan['observations'].get('pulse_discovery') is not None:
+        selector = Path(__file__).resolve().parents[2] / 'analysis' / 'pulse_selection.py'
+        resources['pulse_selection.py'] = hashlib.sha256(selector.read_bytes()).hexdigest()
+        if 'discovery_field_product_id' in plan:
+            value['discovery_field_product_id'] = plan['discovery_field_product_id']
     if plan['flight'].get('tracking_kind') in {'rf_ip','ip_mr'} or plan['flight'].get('has_hs1'):
         value['hs1_identity'] = copy.deepcopy(plan['hs1_identity'])
     if plan['flight'].get('tracking_kind') == 'ip_mr':
@@ -164,8 +176,12 @@ def _validate_completed_unit(row, plan, unit):
     subset = slice_tracking_plan(plan,unit)
     batch = dict(source_row_range=[1,len(subset['rows'])],expected_particle_ids=unit['expected_particle_ids'],
                  build_metadata=row['build_metadata'])
+    strict = (plan['flight'].get('tracking_kind') in {'ip_mr','neutral_sampled'}
+              or plan['flight'].get('oa_focus_runtime') is not None
+              or (plan['flight'].get('tracking_kind') == 'rf_ip' and plan['flight'].get('original_birth_si') is True))
     return collect_tracking_logs([stdout],source_rows={item['particle_id']:item for item in subset['rows']},
-        source_provenance=plan['source_provenance'],flight=plan['flight'],batches=[batch])
+        source_provenance=plan['source_provenance'],flight=plan['flight'],batches=[batch],
+        cohort_scope='partition' if strict else 'complete')
 
 
 def inspect_tracking_recovery(plan, recovery_reference):

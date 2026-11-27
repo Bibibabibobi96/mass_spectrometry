@@ -694,7 +694,7 @@
           "reason": "assembly_scalar_sampler_changed"
         },
         {
-          "exact": "tests/workflows/multipole_ip/test_ip_compiler.py",
+          "exact": "tests/assembly/rf_ip/test_ip_compiler.py",
           "reason": "joint_geometry_fixture_changed"
         },
         {
@@ -1044,7 +1044,7 @@
           {
             "matches": [
               {
-                "exact": "tests/workflows/multipole_ip/test_ip_compiler.py",
+                "exact": "tests/assembly/rf_ip/test_ip_compiler.py",
                 "reason": "joint_geometry_fixture_changed"
               }
             ],
@@ -1484,16 +1484,30 @@
             "matches": [
               {
                 "exact": "src/msplatform/workflows/multipole_ip/continuous.py",
-                "reason": "rf_ip_continuous_consumer_changed"
+                "reason": "retired_rf_ip_entry_deleted"
               },
               {
                 "exact": "src/msplatform/backends/simion/tracking_execution.py",
                 "reason": "birth_admission_changed"
+              },
+              {
+                "regex": "^src/msplatform/(?:workflows/native_tracing|recipes/native|backends/simion/rf_tracking_execution)\\.py$",
+                "reason": "public_rf_ip_dispatch_changed"
+              },
+              {
+                "regex": "^tests/contracts/test_support/(?:rf_ip_native_recipe|rf_ip_inert_field)\\.py$",
+                "reason": "public_rf_ip_fixture_changed"
               }
             ],
             "modules": [
               "tests/contracts/test_simion_birth_admission.py",
-              "tests/contracts/test_rf_ip_composed.py"
+              "tests/contracts/test_public_rf_ip.py",
+              "tests/contracts/test_public_rf_ip_recipe.py",
+              "tests/contracts/test_public_rf_ip_field_reference.py",
+              "tests/contracts/test_public_rf_ip_store.py",
+              "tests/contracts/test_public_hs1_authority.py",
+              "tests/contracts/test_tracking_execution_controls.py",
+              "tests/contracts/test_tracking_recovery_protection.py"
             ],
             "dependency_profile": "locked"
           },
@@ -2202,7 +2216,11 @@
             "matches": [
               {
                 "exact": "src/msplatform/workflows/multipole_ip/continuous.py",
-                "reason": "sampled_continuous_consumer_changed"
+                "reason": "retired_rf_ip_entry_deleted"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/operations.py",
+                "reason": "continuous_tracking_public_operation_changed"
               }
             ],
             "modules": [
@@ -3418,7 +3436,6 @@
           "test_engineering_budget": 2.125866,
           "test_frontend_flight_continuation": 8.58285,
           "test_frontend_native_completion": 0.906806,
-          "test_multipole_ip_prepare": 8.83113,
           "test_native_path_consumers": 28.415431,
           "test_oa_mr_execute": 86.047613,
           "test_paired_accelerator_owner_recovery": 8.215737,
@@ -3512,9 +3529,8 @@
               }
             ],
             "modules": [
-              "tests/workflows/multipole_ip/test_ip_compiler.py",
-              "tests/workflows/multipole_ip/test_multipole_ip_prepare.py",
-              "tests/workflows/multipole_ip/test_selected_ip_provider.py"
+              "tests/assembly/rf_ip/test_ip_compiler.py",
+              "tests/assembly/rf_ip/test_selected_ip_provider.py"
             ],
             "dependency_profile": "locked"
           },
@@ -3540,7 +3556,7 @@
               }
             ],
             "modules": [
-              "tests/workflows/multipole_ip/test_multipole_ip_prepare.py"
+              "tests/components/rf_multipole_ion_optics/analysis/test_rf_event_original_witness.py"
             ],
             "dependency_profile": "locked"
           },
@@ -3778,7 +3794,7 @@
               }
             ],
             "modules": [
-              "tests/workflows/multipole_ip/test_multipole_ip_prepare.py",
+              "tests/components/ion_processor/test_upstream_admission.py",
               "tests/assembly/accelerator_interface/test_accelerator_interface.py",
               "tests/execution/test_dependencies.py"
             ],
@@ -5051,7 +5067,6 @@
               }
             ],
             "modules": [
-              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_mass_spectrum_input_admission.py",
               "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_workflow.py",
               "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_causal_workflow.py",
               "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_postprocess_workflow.py"
@@ -5071,23 +5086,9 @@
             ],
             "modules": [
               "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_peak_metrics.py",
-              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_mass_spectrum_input_admission.py",
               "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_workflow.py",
               "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_causal_workflow.py",
               "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_postprocess_workflow.py"
-            ],
-            "dependency_profile": "locked"
-          },
-          {
-            "matches": [
-              {
-                "exact": "src/msplatform/backends/simion/resources/export_axis_basis.lua",
-                "reason": "rf_event_or_axis_actual_consumer_changed"
-              }
-            ],
-            "modules": [
-              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_reflectron_voltage_compensation.py",
-              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_compensation_powershell_adapter.py"
             ],
             "dependency_profile": "locked"
           },
@@ -5248,7 +5249,6 @@
           "test_ideal_source_experiment": 3.166204,
           "test_longitudinal_prediction_validation": 0.001398,
           "test_managed_candidate_pa": 162.321971,
-          "test_mass_spectrum_input_admission": 170.355615,
           "test_native_stage_completion": 0.006496,
           "test_oatof_longitudinal_independent": 0.102646,
           "test_oatof_longitudinal_theory": 0.025805,

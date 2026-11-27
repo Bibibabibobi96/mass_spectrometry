@@ -3,7 +3,7 @@ import copy
 import unittest
 
 from msplatform import examples as example_api
-from msplatform import ion_release as ion_release_api
+from msplatform import particle_release as particle_release_api
 from msplatform.backends import simion as simion_api
 from msplatform.assembly.handoff import HandoffMother,HandoffClock,HandoffResult,prepare_handoff_states,HandoffSelection
 from msplatform.contracts.rigid_transform import RigidTransform
@@ -149,8 +149,8 @@ class TrackingExecutionPlanTests(unittest.TestCase):
         from msplatform.execution.terminal_publication import publish_terminal_state
         from msplatform.results.artifacts import open_artifact as actual_open_artifact
         from msplatform.io.manifest_records import file_record
-        from msplatform.ion_release.authoring import load_recorded_release
-        from msplatform.ion_release.cylinder import CANONICAL_COLUMNS
+        from msplatform.particle_release.authoring import load_recorded_release
+        from msplatform.particle_release.cylinder import CANONICAL_COLUMNS
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -205,8 +205,8 @@ class TrackingExecutionPlanTests(unittest.TestCase):
         from msplatform.backends.simion.tracking_execution import execute_tracking
         from msplatform.io.manifest_records import file_record
         from msplatform.execution.terminal_publication import publish_terminal_state
-        from msplatform.ion_release.authoring import load_recorded_release
-        from msplatform.ion_release.cylinder import CANONICAL_COLUMNS
+        from msplatform.particle_release.authoring import load_recorded_release
+        from msplatform.particle_release.cylinder import CANONICAL_COLUMNS
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -289,7 +289,7 @@ class TrackingExecutionPlanTests(unittest.TestCase):
     def setUp(self):
         from tests.contracts.test_support.split_rf_fixture import split_case
         self.case=example_api.load_example('rf_oatof_functional_v1')
-        self.packet=ion_release_api.sample_release(self.case.release).to_dict()
+        self.packet=particle_release_api.sample_release(self.case.release).to_dict()
         _, self.split_recipe, self.compiled, self.model=split_case(
             dict(self.packet['clock'],phase_reference_instrument_time_us=0.),
             dict(mode='timed',time_us=10.,width_us=2.))
@@ -305,6 +305,34 @@ class TrackingExecutionPlanTests(unittest.TestCase):
         return plan_tracking_execution(self.model,particles=kwargs.pop('particles',self.packet),clock_records=self.clocks,
             propagation=kwargs.pop('propagation',self.policy),observations=self.observations,
             numerics=kwargs.pop('numerics',self.numerics),**kwargs)
+    def test_discovery_pilot_binds_author_and_preserves_complete_births(self):
+        from pathlib import Path
+        from msplatform.backends.simion.tracking_units import tracking_applicability
+        normal = self.plan()
+        self.observations['pulse_discovery'] = dict(phase='discovery', author=dict(
+            mode='discover', width_us=2., candidate_times_us=[10., 11.]))
+        self.observations['observation_times_us'] = [10., 11.]
+        pilot = self.plan()
+        self.assertEqual(pilot['flight']['pulse'], {'mode': 'held_off'})
+        self.assertEqual(pilot['source_provenance'], normal['source_provenance'])
+        self.assertEqual(pilot['native_source_rows'], normal['native_source_rows'])
+        self.assertNotEqual(tracking_applicability(pilot), tracking_applicability(normal))
+        before_selector_change = tracking_applicability(pilot)
+        normal_key = tracking_applicability(normal)
+        original = Path.read_bytes
+        def changed_selector(path):
+            data = original(path)
+            return data + b'\n# changed selector\n' if path.name == 'pulse_selection.py' else data
+        with patch.object(Path, 'read_bytes', new=changed_selector):
+            self.assertNotEqual(tracking_applicability(pilot), before_selector_change)
+            self.assertEqual(tracking_applicability(normal), normal_key)
+        self.observations['observation_times_us'] = [10.]
+        with self.assertRaises(ValueError):
+            self.plan()
+        self.observations['observation_times_us'] = [10., 11.]
+        self.observations['pulse_discovery']['phase'] = 'selected'
+        with self.assertRaises(ValueError):
+            self.plan()
     def test_real_sparse_births_fullmother_clock_and_independent_cyclic_pose_oracle(self):
         before=copy.deepcopy(self.packet)
         plan=self.plan()
@@ -425,6 +453,22 @@ class TrackingExecutionPlanTests(unittest.TestCase):
                 downstream_assets=downstream,downstream_receipt=record('audit.json'),native_sources=sources)
             result=_render_tracking_controls(self.model,self.plan(),**kwargs)
             self.assertIn('simion.workbench_program()',result['program'])
+            from msplatform.backends.simion.tracking_units import tracking_applicability
+            baseline = self.plan()
+            for selector, enabled in (("ideal:accel.ez", "ideal_accelerator_axial"),
+                    ("ideal:drift.ez", "ideal_drift_axial"),
+                    ("ideal:stage1.ez", "ideal_reflectron_stage1_axial"),
+                    ("ideal:stage2.ez", "ideal_reflectron_stage2_axial")):
+                self.observations['field_intervention'] = {'id': 'case', 'selector': selector}
+                plan = self.plan()
+                changed_result = _render_tracking_controls(self.model, plan, **kwargs)
+                self.assertNotEqual(tracking_applicability(plan), tracking_applicability(baseline))
+                self.assertEqual(changed_result['build_metadata']['field_intervention']['selector'], selector)
+                self.assertIn(enabled + '=true', changed_result['program'])
+            self.observations['field_intervention'] = {'id': 'bad', 'selector': 'ideal:accel.ex'}
+            with self.assertRaisesRegex(ValueError, 'Ez only'):
+                self.plan()
+            del self.observations['field_intervention']
             self.assertEqual(len(result['immutable_input_records']),sum(map(len,frontend.values()))+9)
             self.assertEqual(result['build_metadata']['source_clock']['original_birth_times_us'],
                 [row['particle_birth_time_us'] for row in self.packet['rows']])

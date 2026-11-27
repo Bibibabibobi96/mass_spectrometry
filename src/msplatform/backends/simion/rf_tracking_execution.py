@@ -1,12 +1,13 @@
 """Independent RF/OA field/source binding and structural IOB projection; no independent run owner."""
 from pathlib import Path
+import json
 from collections.abc import Mapping
 from typing import Any
-from msplatform.contracts.gas import BoxDomain, GasFieldSpec
+from msplatform.contracts.gas import BoxDomain
 from msplatform.contracts.rigid_transform import RigidTransform
 from .artifacts import NativeStagePlan, CompiledPreparedModel
 from .model import model_geometry, resolve_ip_schedule_authorities
-from .model_execution import _protected_source,_clock_reference
+from .model_execution import _clock_reference
 from .native_plans import plan_geometry_build
 from .resources import structural_seed_path,native_resource_path
 from .source import lua_value,render_restart_fly2
@@ -32,9 +33,10 @@ def execute_rf_tracking(session,*,source,model,document,**options):
         borrowed=[record for row in assets.values() for record in [row['carrier_record'],row['witness_record'], *([row['surface_record']] if 'surface_record' in row else []), *([row['state_record']] if 'state_record' in row else [])]]
     else:
         selected,producer,assets=require_rf_reuse(source.reference,identity=source.metadata['spatial_identity'],geometry=geometry)
-        borrowed=[record for row in assets.values() for record in [*row['family_records'],row['witness_record']]]
+        borrowed=[record for row in assets.values() for record in [*row['family_records'],row['witness_record'], *([row['state_record']] if 'state_record' in row else [])]]
+    from .rf_field_execution import _protect_field_source
     for artifact in [selected,producer]:
-        _protected_source(session,artifact.reference['manifest'],required_paths=[row['path'] for row in borrowed])
+        _protect_field_source(session,artifact,required_paths=[row['path'] for row in borrowed])
     clocks=dict(contract=_artifact_record(source,'clock_authority'),authority=_artifact_record(source,'instrument_epoch'))
     clocks['data_root']=str(Path(clocks['contract']['path']).parent)
     relative=_clock_reference(document,clocks)
@@ -123,9 +125,9 @@ def execute_neutral_sampled_tracking(session: Any, *, source: Any, model: Compil
     admission = admit_neutral_sampled_tracking_fields(source.reference)
     if admission['model'].document != model.document:
         raise ValueError('neutral sampled field model changed after admission')
-    for record in admission['source_manifests']:
-        _protected_source(session, record)
-    _protected_source(session, source.reference['manifest'])
+    from .neutral_sampled_field import protect_neutral_records
+    protect_neutral_records(session, [source.reference, *admission['plan']['protected_products']],
+                            admission['immutable_input_records'])
     for index, record in enumerate(admission['immutable_input_records']):
         session.add_input('neutral_sampled_field_input_'+str(index), record)
     clocks = dict(contract=_artifact_record(source, 'clock_authority'), authority=_artifact_record(source, 'instrument_epoch'))
@@ -200,6 +202,8 @@ def plan_rf_tracking_workbench(compiled,*,carriers,run_directory,program,native_
     root=Path(run_directory)
     joint=compiled.frontend_geometry.get('role')=='simion_rf_ip_geometry'
     static_world=compiled.frontend_geometry.get('role')=='simion_neutral_world_collision_geometry'
+    from .rf_field_execution import _mirror_oa
+    mirror_oa = _mirror_oa(compiled.frontend_geometry)
     names=['world'] if static_world else ['parent'] if joint else compiled.frontend_geometry['composition_plan']['scope']['instance_ids']
     if not native_source_rows or set(carriers)!=set(names):
         raise ValueError('RF tracking workbench needs its nonempty source and exact field domains')
@@ -238,12 +242,22 @@ def plan_rf_tracking_workbench(compiled,*,carriers,run_directory,program,native_
                            or not math.isfinite(row['voltage_v']) for row in values)):
                 raise ValueError('static operating voltage map differs from native electrodes')
             text+='spec.instances['+str(index)+'].operating_voltages='+lua_value(values)+'\n'
+        elif mirror_oa:
+            from .rf_field_execution import _static_surface_mode, _field_domains
+            domain = _field_domains(compiled.frontend_geometry)[name]
+            grid = dict(domain['dimensions'], **{'d'+axis+'_mm':domain['cell_mm_xyz'][axis] for axis in 'xyz'})
+            if _static_surface_mode(asset.get('state_record'), None, grid) != 'empty':
+                raise ValueError('mirror OA tracking requires verified empty surface')
+            carrier = Path(asset['carrier_record']['path'])
+            surface = None
+            if carrier.with_suffix('.pa-surf').exists():
+                raise ValueError('mirror OA forbids a fractional surface companion')
         else:
             surface=next(row for row in asset['family_records'] if row['path'].endswith('.pa-surf'))
         text+='spec.instances['+str(index)+'].path='+lua_value(asset['carrier_record']['path'])+'\n'
-        surface_path = str(carrier.with_suffix('.pa-surf')) if static_world and surface is None else surface['path']
+        surface_path = str(carrier.with_suffix('.pa-surf')) if (static_world or mirror_oa) and surface is None else surface['path']
         text+='spec.instances['+str(index)+'].fractional_surface='+lua_value(surface_path)+'\n'
-        if static_world:
+        if static_world or mirror_oa:
             text+='spec.instances['+str(index)+'].surface_state='+lua_value(asset['state_record']['path'] if 'state_record' in asset else None)+'\n'
         text+='spec.instances['+str(index)+'].surface_witnesses='+lua_value(asset['witness_record']['path'])+'\n'
         mappings=compiled.frontend_geometry.get('electrode_bindings', {})
@@ -266,17 +280,19 @@ def plan_rf_tracking_workbench(compiled,*,carriers,run_directory,program,native_
 
 
 
-def compile_continuous_hs1_gas(baseline: dict, *, bath_domain: BoxDomain,
-                               outer: GasFieldSpec, placement: RigidTransform,
+def compile_continuous_hs1_gas(baseline: dict, *, environment_author: dict, bath_domain: BoxDomain,
+                               outer_domain: BoxDomain, placement: RigidTransform,
                                parent_domain: BoxDomain) -> tuple[str, str]:
     """Compile explicit IP bath and outer fields in the selected native frame."""
     from msplatform.backends.simion.gas_runtime import compile_gas_runtime
     from msplatform.components.ion_processor.gas_regions import (
-        build_gas_field_spec, validate_continuous_hs1_gas, validate_continuous_parent_coverage)
+        resolve_ip_continuous_environment, validate_continuous_hs1_gas, validate_continuous_parent_coverage)
     from msplatform.gas.field import prepare_gas_field
 
-    bath = build_gas_field_spec(baseline, domain=bath_domain)
-    validate_continuous_hs1_gas(bath, outer, gas_mass_amu=baseline['gas']['mass_amu'])
+    environment = resolve_ip_continuous_environment(environment_author, baseline, bath_domain=bath_domain,
+                                                     outer_domain=outer_domain)
+    bath, outer = environment.fields
+    validate_continuous_hs1_gas(bath, outer, gas_mass_amu=bath.composition[0].mass_amu)
     validate_continuous_parent_coverage(outer, placement=placement, parent_domain=parent_domain)
     return (compile_gas_runtime(prepare_gas_field(bath), placement=placement),
             compile_gas_runtime(prepare_gas_field(outer), placement=placement))
@@ -290,13 +306,11 @@ def _prepare_ip_hs1(model: CompiledPreparedModel, request: Mapping[str, Any], *,
     from msplatform.io.manifest_records import validate_file_record, verify_record
     from .model import require_prepared_model
 
-    if not isinstance(request, Mapping) or set(request) != {'bath_domain', 'outer', 'vendor_record', 'numerics'}:
-        raise ValueError('RF-IP HS1 requires explicit bath, outer, vendor record and numerics')
-    bath_domain, outer, vendor, numerics = (request[k] for k in ('bath_domain', 'outer', 'vendor_record', 'numerics'))
-    if not isinstance(bath_domain, BoxDomain) or not isinstance(outer, GasFieldSpec):
-        raise ValueError('RF-IP HS1 gas inputs require explicit typed field contracts')
-    if outer.source.reference is not None:
-        raise ValueError('RF-IP HS1 referenced outer gas needs its published-source owner')
+    if not isinstance(request, Mapping) or set(request) != {'bath_domain', 'outer_domain', 'vendor_record', 'numerics', 'environment_record', 'environment_instance_id'}:
+        raise ValueError('RF-IP HS1 requires explicit bath and outer domains, vendor, numerics and bound environment')
+    bath_domain, outer_domain, vendor, numerics = (request[k] for k in ('bath_domain', 'outer_domain', 'vendor_record', 'numerics'))
+    if not isinstance(bath_domain, BoxDomain) or not isinstance(outer_domain, BoxDomain):
+        raise ValueError('RF-IP HS1 gas inputs require explicit typed domains')
     if (not isinstance(numerics, Mapping) or set(numerics) != {'seed', 'hs1_steps_per_mfp'}
             or type(numerics['seed']) is not int or not 1 <= numerics['seed'] <= 2147483646
             or type(numerics['hs1_steps_per_mfp']) is not int or numerics['hs1_steps_per_mfp'] < 1):
@@ -323,8 +337,18 @@ def _prepare_ip_hs1(model: CompiledPreparedModel, request: Mapping[str, Any], *,
              if len(ids) == 1 and row['instance_id'] == ids[0]]
     if len(poses) != 1:
         raise ValueError('RF-IP HS1 requires one selected IP placement')
+    if request['environment_instance_id'] != ids[0]:
+        raise ValueError('IP gas environment is bound to a different instance')
+    environment_record = validate_file_record(request['environment_record'], 'IP gas environment author')
+    if not Path(str(environment_record['path'])).is_absolute():
+        raise ValueError('IP gas environment author requires an absolute path')
+    environment_bytes = Path(environment_record['path']).read_bytes()
+    if (len(environment_bytes) != environment_record['bytes']
+            or hashlib.sha256(environment_bytes).hexdigest().lower() != environment_record['sha256'].lower()):
+        raise ValueError('IP gas environment author identity differs')
+    environment_author = json.loads(environment_bytes)
     pose = RigidTransform.from_contract(poses[0])
-    if pose.from_frame_id != outer.frame_id or pose.to_frame_id != document['native_frame_id']:
+    if pose.to_frame_id != document['native_frame_id']:
         raise ValueError('RF-IP HS1 gas frame differs from selected placement')
     if role == 'simion_rf_ip_geometry':
         bounds = geometry['numerical_domains']['parent']['bounds_mm']
@@ -337,11 +361,22 @@ def _prepare_ip_hs1(model: CompiledPreparedModel, request: Mapping[str, Any], *,
             raise ValueError('IP-MR common world box frame differs from model')
         parent = common_world_domain
     baseline = resolve_ip_schedule_authorities(document['drive'], set(ids))[ids[0]]['baseline']
-    bath, outside = compile_continuous_hs1_gas(baseline, bath_domain=bath_domain, outer=outer,
+    if pose.from_frame_id != baseline['clock']['frame_id']:
+        raise ValueError('RF-IP HS1 gas frame differs from selected placement')
+    bath, outside = compile_continuous_hs1_gas(baseline, environment_author=environment_author, bath_domain=bath_domain, outer_domain=outer_domain,
                                                 placement=pose, parent_domain=parent)
     def sha(data):
         return hashlib.sha256(data).hexdigest()
-    identity = dict(bath_domain=asdict(bath_domain), placement=poses[0], numerics=dict(numerics),
+    from msplatform.components.ion_processor.gas_regions import project_ip_baseline, project_ip_resolved_gas_view, resolve_ip_continuous_environment
+    gas_environment = resolve_ip_continuous_environment(environment_author, baseline, bath_domain=bath_domain,
+                                                        outer_domain=outer_domain).to_dict()
+    native_gas_view = project_ip_resolved_gas_view(gas_environment)
+    if native_gas_view != project_ip_baseline(environment_author, baseline)['gas']:
+        raise ValueError('IP native gas view differs from its resolved environment')
+    identity = dict(bath_domain=asdict(bath_domain), outer_domain=asdict(outer_domain), placement=poses[0], numerics=dict(numerics),
+                    environment_instance_id=ids[0], environment_author_sha256=environment_record['sha256'],
+                    gas_environment=gas_environment,
+                    native_gas_view=native_gas_view,
                     vendor={k: vendor[k] for k in ('bytes', 'sha256')},
                     vendor_adapted_sha256=sha(adapted.encode('utf-8')),
                     bath_runtime_sha256=sha(bath.encode('utf-8')),
@@ -349,7 +384,7 @@ def _prepare_ip_hs1(model: CompiledPreparedModel, request: Mapping[str, Any], *,
     if role in {'simion_ip_mr_complete_geometry', 'simion_neutral_world_collision_geometry'}:
         identity['common_world_domain'] = asdict(parent)
         identity['common_world_frame_id'] = common_world_frame_id
-    return dict(identity=identity, vendor_record=dict(vendor), vendor_original=original,
+    return dict(identity=identity, environment_bytes=environment_bytes, vendor_record=dict(vendor), vendor_original=original,
                 vendor_adapted=adapted, bath_runtime=bath, outer_runtime=outside,
                 query_frame_id=pose.to_frame_id)
 

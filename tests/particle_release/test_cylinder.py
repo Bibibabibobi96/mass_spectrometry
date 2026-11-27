@@ -1,0 +1,437 @@
+from __future__ import annotations
+
+import json
+import copy
+import math
+import tempfile
+import unittest
+from statistics import NormalDist
+from pathlib import Path
+
+from msplatform.contracts.particle_physics import AMU_KG, BOLTZMANN_CONSTANT_J_K, kinetic_energy_ev
+
+from msplatform.particle_release.cylinder import (
+    apply_controlled_slow_energy_pair,
+    GAUSSIAN_STRATEGY,
+    HALTON_STRATEGY,
+    THERMAL_TRANSVERSE_STRATEGY,
+    ROLE,
+    generate_center_axis_pair_halton_cylinder_phase_space,
+    generate_center_first_halton_cylinder_phase_space,
+    generate_halton_cylinder_phase_space,
+    generate_cylinder_release_states,
+    validate_cylinder_release_spec,
+)
+from msplatform.particle_release.release import (
+    generate_release_states,
+    materialize_release_from_file,
+    validate_materialized_release,
+    validate_release_spec,
+)
+
+
+def halton_spec(count: int) -> dict[str, object]:
+    return {
+        "schema_version": 2,
+        "role": ROLE,
+        "frame_id": "test.local.cartesian.v1",
+        "particle_count": count,
+        "mother_particle_count": 1000,
+        "common_time_of_birth_s": 0.0,
+        "geometry": {"shape": "cylinder", "center_mm": [1.0, 2.0, 3.0], "axis": "z", "radius_mm": 1.0, "height_mm": 1.0},
+        "species": {"species_kind": "ion", "mass_amu": 524.0, "charge_state": 1},
+        "sampling": {
+            "strategy": HALTON_STRATEGY,
+            "kinetic_energy": {"center_ev": 5.0, "full_width_ev": 0.2},
+            "nominal_direction": [0.0, 1.0, 0.0],
+            "angular_full_width_deg": 0.4,
+        },
+    }
+
+
+def gaussian_spec() -> dict[str, object]:
+    spec = halton_spec(100)
+    spec["geometry"] = {"shape": "cylinder", "center_mm": [3.0, -2.0, 7.0], "axis": "x", "radius_mm": 2.0, "height_mm": 4.0}
+    spec["sampling"] = {
+        "strategy": GAUSSIAN_STRATEGY,
+        "seed": 37,
+        "velocity_distribution": {"mean_m_s": [120.0, 0.0, 0.0], "sigma_m_s": [3.0, 2.0, 1.0], "minimum_axis_m_s": 100.0},
+    }
+    return spec
+
+
+def thermal_spec(count: int = 100) -> dict:
+    spec = halton_spec(count)
+    spec["sampling"] = {"strategy": THERMAL_TRANSVERSE_STRATEGY,
+        "axial_kinetic_energy": {"distribution": "positive_truncated_gaussian", "mean_ev": 5.0, "sigma_ev": 1.0},
+        "transverse_temperature_k": 300.0}
+    return spec
+
+
+class ThermalTransverseCylinderTests(unittest.TestCase):
+    def test_axial_energy_position_and_ids_are_preserved_without_total_energy_rescaling(self) -> None:
+        spec = thermal_spec()
+        reference = halton_spec(100)
+        reference["sampling"].update(kinetic_energy=spec["sampling"]["axial_kinetic_energy"],
+                                      nominal_direction=[0., 0., 1.], angular_full_width_deg=0.)
+        for index, (state, axial) in enumerate(zip(generate_release_states(spec), generate_release_states(reference))):
+            for key in ("particle_id", "birth_time_s", "x_mm", "y_mm", "z_mm", "mass_amu", "charge_state", "vz_m_s"):
+                self.assertEqual(state[key], axial[key])
+            e_axial = kinetic_energy_ev(524., 0., 0., state["vz_m_s"])
+            e_transverse = kinetic_energy_ev(524., state["vx_m_s"], state["vy_m_s"], 0.)
+            e_total = kinetic_energy_ev(524., state["vx_m_s"], state["vy_m_s"], state["vz_m_s"])
+            self.assertAlmostEqual(e_total, e_axial+e_transverse, places=13)
+            self.assertGreater(e_axial, 0.)
+            if index:
+                self.assertGreater(e_transverse, 0.)
+                self.assertGreater(e_total, e_axial)
+            else:
+                self.assertEqual((state["vx_m_s"], state["vy_m_s"]), (0., 0.))
+
+    def test_thermal_components_follow_distinct_halton_normal_quantiles(self) -> None:
+        states = generate_release_states(thermal_spec())
+        sigma = math.sqrt(BOLTZMANN_CONSTANT_J_K*300/(524*AMU_KG))
+        expected = {1:(1/11,1/13), 2:(2/11,2/13), 10:(10/11,10/13),
+                    11:(1/121,11/13), 13:(23/121,1/169), 99:(9/121,111/169)}
+        for offset, quantiles in expected.items():
+            for key, quantile in zip(("vx_m_s", "vy_m_s"), quantiles):
+                self.assertAlmostEqual(NormalDist().cdf(states[offset][key]/sigma), quantile, places=14)
+
+    def test_thermal_velocity_temperature_and_mass_scaling_uses_si_units(self) -> None:
+        spec = thermal_spec()
+        original = generate_release_states(spec)
+        spec["sampling"]["transverse_temperature_k"] = 1200.
+        hotter = generate_release_states(spec)
+        spec["sampling"]["transverse_temperature_k"] = 300.
+        spec["species"]["mass_amu"] *= 4
+        heavier = generate_release_states(spec)
+        for first, hot, heavy in zip(original, hotter, heavier):
+            for key in ("vx_m_s", "vy_m_s"):
+                self.assertEqual(hot[key], 2*first[key])
+                self.assertEqual(heavy[key], first[key]/2)
+            self.assertEqual(hot["vz_m_s"], first["vz_m_s"])
+            self.assertEqual(heavy["vz_m_s"], first["vz_m_s"]/2)
+
+    def test_axis_rotation_keeps_axial_and_cartesian_transverse_quantile_order(self) -> None:
+        reference = generate_release_states(thermal_spec())
+        for axis in "xyz":
+            spec = thermal_spec()
+            spec["geometry"]["axis"] = axis
+            actual = generate_release_states(spec)
+            transverse = [name for name in "xyz" if name != axis]
+            for state, original in zip(actual, reference):
+                self.assertEqual(state[f"v{axis}_m_s"], original["vz_m_s"])
+                for direction, initial in zip(transverse, "xy"):
+                    self.assertEqual(state[f"v{direction}_m_s"], original[f"v{initial}_m_s"])
+
+    def test_closed_schema_rejects_nonpositive_temperature_and_ambiguous_energy(self) -> None:
+        for temperature in (0., -1., True, float("nan"), float("inf")):
+            spec = thermal_spec()
+            spec["sampling"]["transverse_temperature_k"] = temperature
+            with self.subTest(temperature=temperature), self.assertRaises(ValueError):
+                validate_release_spec(spec)
+        spec = thermal_spec()
+        for change in ({"nominal_direction":[0.,0.,1.]}, {"angular_full_width_deg":1.},
+                       {"axial_kinetic_energy":{"center_ev":5.,"full_width_ev":1.}},
+                       {"axial_kinetic_energy":{"distribution":"gaussian","mean_ev":5.,"sigma_ev":1.}}):
+            candidate=copy.deepcopy(spec)
+            candidate["sampling"].update(change)
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                validate_release_spec(candidate)
+
+    def test_prefix_materialization_and_receipt_bind_temperature(self) -> None:
+        spec = thermal_spec()
+        states = generate_release_states(spec)
+        spec["particle_count"] = 10
+        self.assertEqual(generate_release_states(spec), states[:10])
+        spec["particle_count"] = 1000
+        self.assertEqual(generate_release_states(spec)[:100], states)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            request = root/"source.json"
+            request.write_text(json.dumps(spec), encoding="utf-8")
+            receipt = materialize_release_from_file(request, root/"source.csv", root/"receipt.json")
+            self.assertEqual(validate_materialized_release(root/"receipt.json"), receipt)
+            spec["sampling"]["transverse_temperature_k"] = 301.
+            request.write_text(json.dumps(spec), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "source specification identity changed"):
+                validate_materialized_release(root/"receipt.json")
+
+
+class CylinderReleaseTests(unittest.TestCase):
+    def test_canonical_positive_gaussian_energy_keeps_mother_prefix_and_position(self) -> None:
+        spec = halton_spec(100)
+        spec["sampling"]["kinetic_energy"] = {
+            "distribution": "positive_truncated_gaussian", "mean_ev": 5.0, "sigma_ev": 1.0,
+        }
+        spec["sampling"]["angular_full_width_deg"] = 0.0
+        states = generate_release_states(spec)
+        spec["particle_count"] = 10
+        self.assertEqual(generate_release_states(spec), states[:10])
+        spec["particle_count"] = spec["mother_particle_count"] = 1000
+        self.assertEqual(generate_release_states(spec)[:100], states)
+        uniform = halton_spec(100)
+        uniform["sampling"]["angular_full_width_deg"] = 0.0
+        unchanged = generate_release_states(uniform)
+        energies = []
+        for state, reference in zip(states, unchanged):
+            for key in ("particle_id", "birth_time_s", "x_mm", "y_mm", "z_mm", "mass_amu", "charge_state"):
+                self.assertEqual(state[key], reference[key])
+            self.assertEqual(state["vx_m_s"], 0.0)
+            self.assertEqual(state["vz_m_s"], 0.0)
+            self.assertGreater(state["vy_m_s"], 0.0)
+            energies.append(kinetic_energy_ev(524.0, state["vx_m_s"], state["vy_m_s"], state["vz_m_s"]))
+        self.assertAlmostEqual(energies[0], 5.0)
+        self.assertGreater(max(energies) - min(energies), 4.0)
+
+    def test_positive_gaussian_is_conditioned_not_clipped_or_rejected(self) -> None:
+        spec = halton_spec(100)
+        spec["sampling"]["kinetic_energy"] = {
+            "distribution": "positive_truncated_gaussian", "mean_ev": 0.01, "sigma_ev": 1.0,
+        }
+        states = generate_release_states(spec)
+        # The second centre-first particle has base-7 latent quantile 1/7.
+        normal = NormalDist()
+        lower = normal.cdf(-0.01)
+        expected = 0.01 + normal.inv_cdf(lower + (1.0 - lower) / 7.0)
+        actual = kinetic_energy_ev(524.0, states[1]["vx_m_s"], states[1]["vy_m_s"], states[1]["vz_m_s"])
+        self.assertAlmostEqual(actual, expected)
+        self.assertTrue(all(kinetic_energy_ev(524.0, s["vx_m_s"], s["vy_m_s"], s["vz_m_s"]) > 0 for s in states))
+        self.assertGreater(len({s["vy_m_s"] for s in states}), 90)
+
+    def test_positive_gaussian_schema_fails_closed_and_receipt_binds_parameters(self) -> None:
+        spec = halton_spec(100)
+        energy = {"distribution": "positive_truncated_gaussian", "mean_ev": 5.0, "sigma_ev": 1.0}
+        for invalid in (
+            {**energy, "sigma_ev": 0.0}, {**energy, "sigma_ev": -1.0},
+            {**energy, "sigma_ev": float("nan")}, {**energy, "mean_ev": False},
+            {**energy, "full_width_ev": 1.0}, {"distribution": "gaussian", "mean_ev": 5.0, "sigma_ev": 1.0},
+        ):
+            spec["sampling"]["kinetic_energy"] = invalid
+            with self.subTest(energy=invalid), self.assertRaises(ValueError):
+                validate_cylinder_release_spec(spec)
+        spec["sampling"]["kinetic_energy"] = energy
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            request = root / "source.json"
+            request.write_text(json.dumps(spec), encoding="utf-8")
+            receipt = materialize_release_from_file(request, root / "source.csv", root / "receipt.json")
+            self.assertEqual(validate_materialized_release(root / "receipt.json"), receipt)
+            spec["sampling"]["kinetic_energy"]["sigma_ev"] = 2.0
+            request.write_text(json.dumps(spec), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "source specification identity changed"):
+                validate_materialized_release(root / "receipt.json")
+
+    def test_gaussian_energy_preserves_latent_pairing_and_prefix(self) -> None:
+        args = dict(center_mm=[0., 0., 0.], transverse_axes=(0, 2), axis=1,
+                    radius_mm=0.5, height_mm=1., kinetic_energy_center_ev=5.,
+                    kinetic_energy_full_width_ev=0., nominal_direction=[0., 1., 0.],
+                    angular_full_width_deg=0., kinetic_energy_distribution="gaussian")
+        cohorts = [generate_halton_cylinder_phase_space(
+            particle_count=100, kinetic_energy_sigma_ev=sigma, **args,
+        ) for sigma in (0.1, 0.2, 0.3)]
+        large = generate_halton_cylinder_phase_space(
+            particle_count=1000, kinetic_energy_sigma_ev=0.2, **args,
+        )
+        self.assertEqual(cohorts[1], large[:100])
+        self.assertAlmostEqual(cohorts[1][0]["kinetic_energy_ev"],
+                               5. + 0.2 * NormalDist().inv_cdf(1. / 7.))
+        for rows in zip(*cohorts):
+            for row, sigma in zip(rows, (0.1, 0.2, 0.3)):
+                self.assertEqual(row["position_mm"], rows[0]["position_mm"])
+                self.assertEqual(row["direction"], rows[0]["direction"])
+                self.assertAlmostEqual((row["kinetic_energy_ev"] - 5.) / sigma,
+                                       (rows[0]["kinetic_energy_ev"] - 5.) / 0.1)
+        self.assertNotEqual(cohorts[0][0]["position_mm"], [0., 0., 0.])
+        with self.assertRaisesRegex(ValueError, "not a full width"):
+            generate_halton_cylinder_phase_space(
+                particle_count=100, kinetic_energy_sigma_ev=0.2,
+                **{**args, "kinetic_energy_full_width_ev": 0.1},
+            )
+        with self.assertRaisesRegex(ValueError, "unsupported"):
+            generate_halton_cylinder_phase_space(
+                particle_count=100, kinetic_energy_sigma_ev=0.2,
+                **{**args, "kinetic_energy_distribution": "normal_velocity"},
+            )
+        for sigma in (None, -0.1, float("nan"), float("inf"), 10.):
+            with self.subTest(sigma=sigma), self.assertRaises(ValueError):
+                generate_halton_cylinder_phase_space(
+                    particle_count=100, kinetic_energy_sigma_ev=sigma, **args,
+                )
+
+    def test_halton_full_volume_is_deterministic_and_prefix_stable(self) -> None:
+        small = generate_release_states(halton_spec(100))
+        large = generate_release_states(halton_spec(1000))
+        self.assertEqual(small, large[:100])
+        self.assertEqual(large[0]["x_mm"], 1.0)
+        self.assertEqual(large[0]["y_mm"], 2.0)
+        self.assertEqual(large[0]["z_mm"], 3.0)
+        self.assertGreater(large[0]["vy_m_s"], 0.0)
+        self.assertGreater(large[0]["vy_m_s"], 0.0)
+        for state in large:
+            self.assertLessEqual((state["x_mm"] - 1.0) ** 2 + (state["y_mm"] - 2.0) ** 2, 1.0 + 1e-12)
+            self.assertGreaterEqual(state["z_mm"], 2.5)
+            self.assertLessEqual(state["z_mm"], 3.5)
+
+    def test_phase_space_sampler_preserves_axis_order_and_prefix(self) -> None:
+        arguments = {
+            "center_mm": [1.0, 2.0, 3.0], "transverse_axes": (1, 0), "axis": 2,
+            "radius_mm": 1.0, "height_mm": 1.0,
+            "kinetic_energy_center_ev": 5.0, "kinetic_energy_full_width_ev": 0.2,
+            "nominal_direction": [0.0, 1.0, 0.0], "angular_full_width_deg": 0.4,
+        }
+        small = generate_center_first_halton_cylinder_phase_space(
+            particle_count=100, **arguments,
+        )
+        large = generate_center_first_halton_cylinder_phase_space(
+            particle_count=1000, **arguments,
+        )
+        self.assertEqual(small, large[:100])
+        self.assertEqual(small[0], {
+            "particle_id": 1, "position_mm": [1.0, 2.0, 3.0],
+            "kinetic_energy_ev": 5.0, "direction": [0.0, 1.0, 0.0],
+        })
+        self.assertNotEqual(small[1]["position_mm"][0], 1.0)
+        self.assertNotEqual(small[1]["position_mm"][1], 2.0)
+
+    def test_volume_halton_has_no_forced_center_and_keeps_prefix(self) -> None:
+        arguments = {
+            "center_mm": [1.0, 2.0, 3.0], "transverse_axes": (1, 0), "axis": 2,
+            "radius_mm": 1.0, "height_mm": 1.0,
+            "kinetic_energy_center_ev": 5.0, "kinetic_energy_full_width_ev": 0.2,
+            "nominal_direction": [0.0, 1.0, 0.0], "angular_full_width_deg": 0.4,
+        }
+        small = generate_halton_cylinder_phase_space(particle_count=100, **arguments)
+        large = generate_halton_cylinder_phase_space(particle_count=1000, **arguments)
+        center_first = generate_center_first_halton_cylinder_phase_space(
+            particle_count=101, **arguments,
+        )
+        self.assertEqual(small, large[:100])
+        self.assertEqual(small[0]["position_mm"], center_first[1]["position_mm"])
+        self.assertNotEqual(small[0]["position_mm"], [1.0, 2.0, 3.0])
+        self.assertEqual([row["particle_id"] for row in small], list(range(1, 101)))
+    def test_axis_pair_changes_only_one_coordinate_before_halton_tail(self) -> None:
+        arguments = {
+            "center_mm": [1.0, 2.0, 3.0], "transverse_axes": (0, 2), "axis": 1,
+            "controlled_axis": 2, "radius_mm": 0.5, "height_mm": 1.0,
+            "kinetic_energy_center_ev": 5.0, "kinetic_energy_full_width_ev": 0.2,
+            "nominal_direction": [0.0, 1.0, 0.0], "angular_full_width_deg": 0.4,
+        }
+        small = generate_center_axis_pair_halton_cylinder_phase_space(
+            particle_count=100, **arguments,
+        )
+        large = generate_center_axis_pair_halton_cylinder_phase_space(
+            particle_count=1000, **arguments,
+        )
+        self.assertEqual(small, large[:100])
+        self.assertEqual([row["position_mm"] for row in small[:3]], [
+            [1.0, 2.0, 3.0], [1.0, 2.0, 2.5], [1.0, 2.0, 3.5],
+        ])
+        for row in small[:3]:
+            self.assertEqual(row["kinetic_energy_ev"], 5.0)
+            self.assertEqual(row["direction"], [0.0, 1.0, 0.0])
+
+    def test_axis_pair_can_use_a_smaller_controlled_span_inside_the_volume(self) -> None:
+        samples = generate_center_axis_pair_halton_cylinder_phase_space(
+            particle_count=100,
+            center_mm=[1.0, 2.0, 3.0],
+            transverse_axes=(0, 2),
+            axis=1,
+            controlled_axis=2,
+            controlled_axis_half_span_mm=0.1,
+            radius_mm=0.5,
+            height_mm=1.0,
+            kinetic_energy_center_ev=5.0,
+            kinetic_energy_full_width_ev=0.2,
+            nominal_direction=[0.0, 1.0, 0.0],
+            angular_full_width_deg=0.4,
+        )
+        self.assertEqual(
+            [row["position_mm"] for row in samples[:3]],
+            [[1.0, 2.0, 3.0], [1.0, 2.0, 2.9], [1.0, 2.0, 3.1]],
+        )
+        with self.assertRaisesRegex(ValueError, "exceeds the cylinder envelope"):
+            generate_center_axis_pair_halton_cylinder_phase_space(
+                particle_count=100,
+                center_mm=[1.0, 2.0, 3.0],
+                transverse_axes=(0, 2),
+                axis=1,
+                controlled_axis=2,
+                controlled_axis_half_span_mm=0.6,
+                radius_mm=0.5,
+                height_mm=1.0,
+                kinetic_energy_center_ev=5.0,
+                kinetic_energy_full_width_ev=0.2,
+                nominal_direction=[0.0, 1.0, 0.0],
+                angular_full_width_deg=0.4,
+            )
+
+    def test_controlled_slow_energy_pair_changes_only_center_energy(self) -> None:
+        source = generate_center_first_halton_cylinder_phase_space(
+            particle_count=100,
+            center_mm=[1.0, 2.0, 3.0], transverse_axes=(0, 2), axis=1,
+            radius_mm=0.5, height_mm=1.0,
+            kinetic_energy_center_ev=5.0, kinetic_energy_full_width_ev=0.2,
+            nominal_direction=[0.0, 1.0, 0.0], angular_full_width_deg=0.4,
+        )
+
+        result = apply_controlled_slow_energy_pair(
+            source, charge_state=2, half_span_ev_per_charge=0.037,
+        )
+        self.assertEqual(result[0]["kinetic_energy_ev"], 5.0)
+        self.assertAlmostEqual(result[1]["kinetic_energy_ev"], 4.926)
+        self.assertAlmostEqual(result[2]["kinetic_energy_ev"], 5.074)
+        for row in result[:3]:
+            expected = dict(source[0])
+            expected["particle_id"] = row["particle_id"]
+            expected["kinetic_energy_ev"] = row["kinetic_energy_ev"]
+            self.assertEqual(row, expected)
+        self.assertEqual(result[3:], source[3:])
+        self.assertEqual(source[1]["particle_id"], 2)
+
+    def test_gaussian_strategy_obeys_axis_and_volume_bounds(self) -> None:
+        states = generate_cylinder_release_states(gaussian_spec())
+        self.assertEqual(states, generate_cylinder_release_states(gaussian_spec()))
+        for state in states:
+            self.assertGreaterEqual(state["vx_m_s"], 100.0)
+            self.assertLessEqual((state["y_mm"] + 2.0) ** 2 + (state["z_mm"] - 7.0) ** 2, 4.0 + 1e-12)
+            self.assertGreaterEqual(state["x_mm"], 1.0)
+            self.assertLessEqual(state["x_mm"], 5.0)
+
+    def test_receipt_rebuilds_and_rejects_table_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            spec_path = root / "source.json"
+            spec_path.write_text(json.dumps(halton_spec(100)), encoding="utf-8")
+            receipt = materialize_release_from_file(spec_path, root / "source.csv", root / "receipt.json")
+            self.assertEqual(validate_materialized_release(root / "receipt.json"), receipt)
+            table = root / "source.csv"
+            table.write_text(table.read_text(encoding="utf-8").replace(",1,", ",2,", 1), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "identity changed"):
+                validate_materialized_release(root / "receipt.json")
+
+    def test_receipt_binds_the_frozen_spec_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            spec_path = root / "source.json"
+            spec_path.write_text(json.dumps(halton_spec(100)), encoding="utf-8")
+            materialize_release_from_file(spec_path, root / "source.csv", root / "receipt.json")
+            spec_path.write_text(json.dumps(halton_spec(100), indent=2) + "\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "source specification identity changed"):
+                validate_materialized_release(root / "receipt.json")
+
+    def test_invalid_spec_fails_closed(self) -> None:
+        invalid = halton_spec(100)
+        invalid["geometry"] = {"shape": "cylinder", "center_mm": [0.0, 0.0, 0.0], "axis": "bad", "radius_mm": 1.0, "height_mm": 1.0}
+        with self.assertRaisesRegex(ValueError, "axis"):
+            validate_cylinder_release_spec(invalid)
+
+    def test_unregistered_shape_fails_closed(self) -> None:
+        invalid = halton_spec(100)
+        invalid["geometry"] = {"shape": "plane", "center_mm": [0.0, 0.0, 0.0], "axis": "z", "radius_mm": 1.0, "height_mm": 1.0}
+        with self.assertRaisesRegex(ValueError, "unsupported release shape"):
+            validate_release_spec(invalid)
+
+
+if __name__ == "__main__":
+    unittest.main()

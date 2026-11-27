@@ -65,7 +65,12 @@ def load_field_model(reference: Mapping | OpenedArtifact, *, field_representatio
     for domain, keys in bindings.items():
         fields = ({'raw_geometry', 'fractional_surface', 'surface_witnesses'} if independent_component else
                   {'raw_geometry', 'fractional_surface'} if domain in {'flight_tube', 'detector'} else {'raw_geometry'})
-        if (sampled or geometry.get('role') in {'simion_neutral_world_collision_geometry','simion_neutral_multi_domain_collision_geometry'}) and 'surface_state' in keys:
+        mirror_oa = (geometry.get('role') == 'simion_independent_oa_geometry' and
+                     geometry['numerical_domains'][domain].get('symmetry') == 'mirror_x' and
+                     geometry['numerical_domains'][domain].get('surface') == 'none')
+        if mirror_oa and set(keys) != (fields - {'fractional_surface'}) | {'surface_state'}:
+            raise ValueError('mirror OA requires empty-surface state without a fractional companion')
+        if (sampled or mirror_oa or geometry.get('role') in {'simion_neutral_world_collision_geometry','simion_neutral_multi_domain_collision_geometry'}) and 'surface_state' in keys:
             fields = (fields | {'surface_state'}) if 'fractional_surface' in keys else ((fields - {'fractional_surface'}) | {'surface_state'})
         if set(keys) != fields or any(key in consumed for key in keys.values()):
             raise ValueError('prepared model native closure is incomplete or ambiguous')
@@ -153,7 +158,7 @@ def load_reflectron_response_records(reference: Mapping | OpenedArtifact, *,
     metadata = source.metadata
     basis = metadata.get('reflectron_response_basis')
     fields = {'schema_version','model_identity_sha256','downstream_identity','grid','symmetry','responses'}
-    if not isinstance(basis, Mapping) or set(basis) != fields or type(basis['schema_version']) is not int or basis['schema_version'] != 1:
+    if not isinstance(basis, Mapping) or set(basis) != fields or type(basis['schema_version']) is not int or basis['schema_version'] != 2:
         raise ValueError('published reflectron response basis is missing or has an unknown schema')
     if (not isinstance(expected_model_identity_sha256, str)
             or basis['model_identity_sha256'] != expected_model_identity_sha256
@@ -178,7 +183,7 @@ def load_reflectron_response_records(reference: Mapping | OpenedArtifact, *,
             raise ValueError('reflectron response data keys are duplicated')
         keys.add(key)
         path = source.data_path(key)
-        if path.suffix.lower() != '.pa'+str(expected_id) or path in paths:
+        if path.name.lower() != 'reflectron_response_'+str(expected_id)+'.pa' or path in paths:
             raise ValueError('reflectron response filename or location is duplicated or inconsistent')
         paths.add(path)
         records.append(dict(data_record(source, key), response_id=expected_id))

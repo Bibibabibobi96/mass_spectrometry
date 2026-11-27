@@ -130,6 +130,14 @@ def attach_terminal_evidence(result: dict, log_paths: Sequence[str | Path],
             phases.get('other_actions_before'), phases.get('other_actions_after'))
         outcome = outcomes.get(pid)
         if outcome is not None:
+            if outcome['category'] == 'programmatic_focus_stop':
+                before,after=phases.get('other_actions_before'),phases.get('other_actions_after')
+                endpoint=outcome.get('focus_action_endpoint',{})
+                if (not isinstance(before,dict) or not isinstance(after,dict) or before['splat']!=0 or after['splat']!=1
+                        or after['instance']!=terminal['instance']
+                        or any(before[key]!=after[key] for key in ('instrument_time_us','instance',*COORDINATES))
+                        or any(after[key]!=endpoint.get(key) for key in ('instrument_time_us',*COORDINATES))):
+                    raise ValueError(f'particle {pid}: focus stop lacks matching native action and terminal endpoint')
             outcome['terminal_position_mm'] = {axis: terminal[axis + '_mm'] for axis in 'xyz'}
             outcome['terminal_velocity_mm_per_us'] = {
                 axis: terminal['v' + axis + '_mm_per_us'] for axis in 'xyz'}

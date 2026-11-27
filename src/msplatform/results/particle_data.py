@@ -20,10 +20,18 @@ from msplatform.analysis.particle_census import partition_cohort, subset_efficie
 
 def _data_version(metadata: Mapping[str, Any]) -> int:
     version = metadata.get("schema_version", 1)
-    if type(version) is not int or version not in (1, 2):
+    if type(version) is not int or version not in (1, 2, 3):
         raise ValueError("unsupported particle data version")
     if version == 2 and metadata.get("initial_state_basis") != "native_birth_verified":
         raise ValueError("version2 requires explicit verified native birth provenance")
+    if version == 3 or (version == 2 and "species" in metadata):
+        from msplatform.contracts.species import validate_species
+        species = metadata.get("species")
+        if not isinstance(species, list) or not species:
+            raise ValueError("version3 requires an explicit species registry")
+        validated = [validate_species(row) for row in species]
+        if len({row["species_id"] for row in validated}) != len(validated) or validated != species:
+            raise ValueError("invalid or duplicate resolved species")
     return version
 
 
@@ -51,6 +59,15 @@ def _schema(kind: str, metadata: Mapping[str, Any]) -> pa.Schema:
 def write_particle_data(directory: Path, result: Any, *, metadata: Mapping[str, Any]) -> None:
     """Write four distinct data products into an existing private work directory."""
     version = _data_version(metadata)
+    if version == 1:
+        raise ValueError("version1 particle data is historical read-only")
+    if version == 2 and "species" not in metadata:
+        raise ValueError("new native particle data requires an explicit species registry")
+    registry = {row["species_id"]: row for row in metadata["species"]}
+    for row in result.initial_states:
+        selected = registry.get(row["species_id"])
+        if selected is None or any(row[k] != selected[k] for k in ("mass_kg", "charge_state", "charge_c")):
+            raise ValueError("initial state disagrees with its species")
     from .detector_observation import validate_detector_observation
     validate_detector_observation(result.data_integrity.get("detector_observation"),
                                   [row["particle_id"] for row in result.initial_states])
@@ -93,6 +110,8 @@ def read_particle_data(directory: Path) -> dict[str, Any]:
         identity = {k: metadata[k] for k in ("frame_id", "clock")}
         if version == 2:
             identity["initial_state_basis"] = metadata["initial_state_basis"]
+        if version == 3 or (version == 2 and "species" in metadata):
+            identity["species"] = metadata["species"]
         if common is not None and common != identity:
             raise ValueError("particle products disagree on frame/clock")
         common = identity
@@ -112,6 +131,8 @@ def read_particle_data(directory: Path) -> dict[str, Any]:
     data.update(json.loads((directory / "execution.json").read_text(encoding="utf-8")))
     if data.get("schema_version") != version:
         raise ValueError("execution and scientific data versions disagree")
+    if "species" not in common:
+        common["species_status"] = "kind_unrecorded"
     data["metadata"] = common
     _validate_records(data)
     return data
@@ -119,8 +140,9 @@ def read_particle_data(directory: Path) -> dict[str, Any]:
 
 def _validate_records(data: Mapping[str, Any]) -> None:
     """Validate scientific values in addition to the file format's column types."""
-    if data.get("schema_version") not in (1, 2) or data["execution_status"] not in {"succeeded", "failed", "cancelled"}:
+    if data.get("schema_version") not in (1, 2, 3) or data["execution_status"] not in {"succeeded", "failed", "cancelled"}:
         raise ValueError("unsupported execution contract")
+    species = {row["species_id"]: row for row in data.get("metadata", {}).get("species", [])}
     for kind in ("initial_states", "terminal_states", "events"):
         seen = set()
         for row in data[kind]:
@@ -145,6 +167,10 @@ def _validate_records(data: Mapping[str, Any]) -> None:
                 expected_lineage = "primary_birth" if data["schema_version"] == 2 else "unavailable_initial_snapshot"
                 if row["parent_particle_id"] is not None or row["lineage_status"] != expected_lineage:
                     raise ValueError("initial-state lineage contradicts the versioned birth/snapshot contract")
+                if data["schema_version"] == 3 or species:
+                    selected = species.get(row["species_id"])
+                    if selected is None or any(row[k] != selected[k] for k in ("mass_kg", "charge_state", "charge_c")):
+                        raise ValueError("initial state disagrees with its species")
             elif row["physical_outcome"] not in {"detected", "surface_hit", "escaped", "unknown"} or row["stop_reason"] not in {
                     "normal", "time_limit", "cancelled", "numerical_failure"}:
                 raise ValueError("unsupported physical outcome/stop reason")

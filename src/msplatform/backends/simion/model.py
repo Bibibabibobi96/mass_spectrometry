@@ -12,6 +12,7 @@ import json
 import math
 from typing import Any, Mapping
 
+from msplatform.contracts.ip_schedule import resolve_ip_schedule_authorities
 from msplatform.contracts.clock import ClockIdentity
 from msplatform.components.single_reflection_oa_tof.accelerator_geometry import ResolvedAcceleratorGeometry
 from msplatform.components.single_reflection_oa_tof.electrode_topology import build_electrode_topology
@@ -54,7 +55,8 @@ def _authorities(compiled: CompiledSimionGeometry, components: Mapping[str, dict
             raise ValueError('model providers differ from selected independent OA scope')
         actual = compile_independent_accelerators(dict(composition_plan=plan,
             components_resolved=copy.deepcopy(dict(components))), numerics=dict(
-                component_domains={name: dict(cell_mm_xyz=domain['cell_mm_xyz'], pa_bounds_mm=domain['bounds_mm'])
+                component_domains={name: dict(cell_mm_xyz=domain['cell_mm_xyz'], pa_bounds_mm=domain['bounds_mm'],
+                    **({key: domain[key] for key in ('symmetry', 'surface')} if 'symmetry' in domain else {}))
                     for name, domain in geometry['numerical_domains'].items()},
                 electrode_group_native_ids=geometry['electrode_bindings']))
         if asdict(actual) != asdict(compiled):
@@ -304,8 +306,8 @@ def _compile_rf_ip_model(compiled: CompiledSimionGeometry, components: Mapping[s
         raise ValueError('joint model requires exact RF and IP providers')
     rf, ip = rf[0], ip[0]
     if not isinstance(physics, Mapping) or dict(physics) != RF_IP_PHYSICS or geometry.get('boundary') != 'grounded_pa_faces':
-        raise ValueError('RF–IP model requires its actual grounded-face BVP')
-    _exact(drive, {'groups', 'clock', 'ip_schedule'}, 'RF–IP drive')
+        raise ValueError('RF鈥揑P model requires its actual grounded-face BVP')
+    _exact(drive, {'groups', 'clock', 'ip_schedule'}, 'RF鈥揑P drive')
     _validate_timing(drive, requires_pulse=False)
     frozen = _validated_ip_schedule(drive['ip_schedule'], drive['clock'], compiled, components, selected, ip)
     expected = {rf: scientific_multipole_drive(components[rf], maps[rf])}
@@ -320,7 +322,7 @@ def _compile_rf_ip_model(compiled: CompiledSimionGeometry, components: Mapping[s
                   schedule_index=row['electrode_id'], native_targets=[dict(domain='parent', electrode_id=maps[ip][row['name']])])
              for row in electrodes]
     if len({row['native_targets'][0]['electrode_id'] for row in rows}) != len(rows):
-        raise ValueError('RF–IP model native labels are ambiguous')
+        raise ValueError('RF鈥揑P model native labels are ambiguous')
     full_drive = dict(groups=copy.deepcopy(drive['groups']), clock=copy.deepcopy(drive['clock']), ip_schedule=frozen)
     document = dict(schema_version=1, role='compiled_prepared_simion_model', field_status='not_solved',
                     source_status='not_requested', native_frame_id=plan['assembly_frame_id'],
@@ -364,27 +366,6 @@ def _validate_static_contacts(contacts, groups):
                   for side in (contact['first'], contact['second'])]
         if any(value['kind'] != 'static' for value in values) or values[0]['voltage_v'] != values[1]['voltage_v']:
             raise ValueError('contacting conductor groups require exactly equal static voltages')
-
-
-def resolve_ip_schedule_authorities(drive, scheduled):
-    """Resolve the declared schedule form against actual scheduled instances."""
-    single = 'ip_schedule' in drive
-    multiple = 'ip_schedules' in drive
-    if single and multiple:
-        raise ValueError('choose one IP schedule authority form')
-    if single:
-        if len(scheduled) != 1:
-            raise ValueError('one explicit canonical IP schedule authority required')
-        authorities = {next(iter(scheduled)): drive['ip_schedule']}
-    elif multiple:
-        if not isinstance(drive['ip_schedules'], Mapping) or set(drive['ip_schedules']) != scheduled or not scheduled:
-            raise ValueError('IP schedule authorities differ from scheduled instances')
-        authorities = drive['ip_schedules']
-    elif scheduled:
-        raise ValueError('explicit canonical IP schedule authority required')
-    else:
-        authorities = {}
-    return authorities
 
 
 def _finish_static_world_model(compiled, components, *, drive, physics):
@@ -666,11 +647,11 @@ def model_geometry(model: CompiledPreparedModel, *, downstream_drive: bool = Fal
     """Restore the typed geometry view from the verified portable JSON snapshot."""
     document = require_prepared_model(model)
     if downstream_drive and document['geometry']['frontend_geometry'].get('role') == 'simion_ip_mr_complete_geometry':
-        raise ValueError('IP–MR continuous tracking is not supported')
+        raise ValueError('IP鈥揗R continuous tracking is not supported')
     if downstream_drive and document['geometry']['frontend_geometry'].get('role') == 'simion_oa_mr_complete_geometry':
-        raise ValueError('OA–MR continuous tracking is not supported')
+        raise ValueError('OA鈥揗R continuous tracking is not supported')
     if downstream_drive and document['geometry']['frontend_geometry'].get('role') == 'simion_rf_ip_geometry':
-        raise ValueError('RF–IP continuous tracking is not supported')
+        raise ValueError('RF鈥揑P continuous tracking is not supported')
     if downstream_drive and document['geometry']['frontend_geometry'].get('role') == 'simion_independent_rf_geometry':
         raise ValueError('independent RF fields/tracking require a separately validated fractional field protocol')
     if downstream_drive and document['geometry']['frontend_geometry'].get('role') == 'simion_independent_oa_geometry':

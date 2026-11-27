@@ -51,7 +51,6 @@ namespaces = false
 "msplatform.components.dual_cone_tandem_quadrupole" = ["config/*.json", "config/modes/*.json"]
 "msplatform.components.ion_processor" = ["config/*.json", "config/modes/*.json"]
 "msplatform.components.transverse_helical_filament_wehnelt_electron_gun" = ["config/*.json", "config/modes/*.json"]
-"msplatform.workflows.multipole_ip" = ["*.json"]
 "msplatform.contracts" = ["schemas/*.schema.json", "particle_count_policy.json"]
 "msplatform.examples" = ["*.json", "*.toml"]
 "msplatform.backends.simion" = ["resources/*.gem", "resources/*.lua", "resources/*.iob", "resources/*.pa0", "resources/*.fly2", "resources/*.ps1", "resources/*.md", "resources/*.schema.json", "resources/reflectron_voltage_fit_authoring.json", "resources/iob_instance_seeds/*.pa0", "resources/iob_instance_seeds/*.md"]

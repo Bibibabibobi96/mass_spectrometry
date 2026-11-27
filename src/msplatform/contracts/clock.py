@@ -5,6 +5,8 @@ from dataclasses import dataclass
 import math
 import re
 
+from jsonschema import Draft202012Validator
+
 
 def _finite(value: float) -> float:
     if type(value) not in (int, float) or not math.isfinite(value):
@@ -31,6 +33,19 @@ def require_same_clock(source: ClockIdentity, target: ClockIdentity) -> None:
     if (source.clock_epoch_id != target.clock_epoch_id
             or source.authority_sha256.upper() != target.authority_sha256.upper()):
         raise ValueError("handoff clock epoch or authority differs")
+
+
+def validate_clock_authority_structure(contract: dict, schema: dict) -> None:
+    """Validate an explicitly supplied clock document against its supplied schema."""
+    Draft202012Validator(schema).validate(contract)
+
+
+def bind_clock_authority_identity(contract: dict, authority_sha256: str) -> dict:
+    """Bind validated epoch metadata to the caller's measured authority bytes."""
+    if authority_sha256 != contract['authority']['sha256']:
+        raise ValueError('clock authority SHA-256 differs from frozen bytes')
+    return dict(schema_version=1, role='canonical_clock_authority_validation', status='PASS',
+                clock_epoch_id=contract['clock_epoch_id'], authority_sha256=authority_sha256)
 
 
 def instrument_time_us(native_time_us: float, *, instrument_origin_us: float, native_origin_us: float) -> float:

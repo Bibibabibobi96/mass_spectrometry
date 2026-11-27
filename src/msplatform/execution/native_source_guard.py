@@ -55,6 +55,30 @@ class _HistoricalRun:
         return self._hold(matches[0])
 
 
+class _OaFailedHistoricalRun(_HistoricalRun):
+    def output(self, relative: str):
+        if Path(relative).suffix.lower() == '.mph':
+            if self.manifest.get('mode') != 'design_candidate':
+                raise ValueError('OA cold child cannot claim an original model')
+            context_record = super().output(relative + '.postprocess.json')
+            context = json.loads(Path(context_record['path']).read_text(encoding='utf-8-sig'))
+            if (context.get('schema_version') != 1 or context.get('role') != 'oatof_saved_particle_solution'):
+                raise ValueError('OA saved model context identity differs')
+            save_state = context.get('model_save_state')
+            if save_state is None:
+                report = super().output('logs/comsol_build.txt')
+                if ('STATUS=PASS' not in Path(report['path']).read_text(encoding='utf-8-sig').splitlines()
+                        or any(item['observation']['returncode'] != 0 for item in self.native_operations)):
+                    raise ValueError('OA saved model lacks successful final-save evidence')
+            elif save_state not in {'raw_complete', 'gui_update_complete'}:
+                raise ValueError('OA saved model final-save state is unknown')
+            record = super().output(relative)
+            if context.get('saved_model_bytes') != record['bytes']:
+                raise ValueError('OA saved model byte count differs from context')
+            return record
+        return super().output(relative)
+
+
 @contextmanager
 def guard_historical_run(manifest_record: Mapping[str, Any], *, expected_project: str, expected_mode: str):
     """Open one explicitly identified successful historical run without its old owner."""
@@ -84,6 +108,162 @@ def guard_historical_run(manifest_record: Mapping[str, Any], *, expected_project
                 or config.get("mode") != expected_mode):
             raise ValueError("historical run configuration identity differs")
         yield _HistoricalRun(root, manifest, config, stack)
+
+
+@contextmanager
+def _guard_historical_joint_writer(manifest_record: Mapping[str, Any], *, project: str, mode: str):
+    """Hold one stopped historical run, never its old ledger.
+
+    Every additional historical producer must be guarded independently; this
+    context never infers a stopped writer from age or from a terminal label.
+    """
+    from msplatform.execution.owner import validate_writer_completion
+    from msplatform.io.manifest_records import require_completed_terminal_publication
+    record = validate_file_record(manifest_record, 'historical measured flight manifest')
+    path = record_path(record)
+    if not path.is_absolute() or path.name != 'run_manifest.json':
+        raise ValueError('historical measured flight manifest identity differs')
+    root = path.parent.resolve(strict=True)
+    with ExitStack() as stack:
+        stack.enter_context(guarded_file_identity(path, expected_bytes=record['bytes'], expected_sha256=record['sha256']))
+        require_completed_terminal_publication(path)
+        manifest = json.loads(path.read_text(encoding='utf-8-sig'))
+        if (manifest.get('role') != 'simulation_run_manifest' or manifest.get('project') != project
+                or manifest.get('mode') != mode or manifest.get('run_id') != root.name
+                or manifest.get('status') not in {'success', 'failed'}):
+            raise ValueError('historical measured flight identity differs')
+        config_record = validate_file_record(manifest.get('run_config'), 'historical measured flight config')
+        if record_path(config_record, base_dir=root) != root/'run_config.json':
+            raise ValueError('historical measured flight config path differs')
+        stack.enter_context(guarded_file_identity(root/'run_config.json', expected_bytes=config_record['bytes'],
+                                                   expected_sha256=config_record['sha256']))
+        config = json.loads((root/'run_config.json').read_text(encoding='utf-8-sig'))
+        if (config.get('project') != project or config.get('mode') != mode
+                or config.get('run_id') != root.name):
+            raise ValueError('historical measured flight config differs')
+        source = _HistoricalRun(root, manifest, config, stack)
+        request_record = source.input('execution_request')
+        request = json.loads(Path(request_record['path']).read_text(encoding='utf-8-sig'))
+        package = request.get('package', {})
+        if (request.get('role') != 'run_artifact_workflow_request' or request.get('schema_version') != 1
+                or package.get('project') != project or package.get('mode') != mode
+                or package.get('run_id') != root.name):
+            raise ValueError('historical measured flight request differs')
+        completion_record = source.output('results/execution_completion.json')
+        completion = json.loads(Path(completion_record['path']).read_text(encoding='utf-8-sig'))
+        def same(left, right):
+            return all(left.get(key) == right.get(key) for key in ('path','exists','bytes','sha256'))
+        if (completion.get('role') != 'run_artifact_workflow_completion' or completion.get('schema_version') != 1
+                or completion.get('run_id') != root.name or completion.get('project') != project
+                or completion.get('status') != manifest['status']
+                or not same(completion.get('run_config', {}), config_record)
+                or not same(completion.get('execution_request', {}), request_record)):
+            raise ValueError('historical measured flight completion differs')
+        summary_record = source.output('summary.json')
+        summary = json.loads(Path(summary_record['path']).read_text(encoding='utf-8-sig'))
+        if summary.get('status') != manifest['status'] or summary.get('writers_stopped') is not True:
+            raise ValueError('historical measured flight writer stop is not confirmed')
+        writer = completion.get('writer_completion', {})
+        operations, releases = writer.get('operations'), writer.get('resource_releases')
+        if not isinstance(operations, list) or not operations or not isinstance(releases, list):
+            raise ValueError('historical measured flight writer evidence is unavailable')
+        validate_writer_completion(writers_stopped=True, expected_operation_ids=tuple(x['operation_id'] for x in operations),
+            operations=operations, resource_releases=releases, powershell_owner=True, require_process_identity=True)
+        yield source
+
+
+@contextmanager
+def guard_historical_measured_flight(manifest_record: Mapping[str, Any]):
+    """Protect a joint-flight source with its authenticated stopped writer."""
+    with _guard_historical_joint_writer(manifest_record, project="instrument_assembly", mode="prepared_joint") as source:
+        yield source
+
+
+@contextmanager
+def guard_historical_joint_component(manifest_record: Mapping[str, Any]):
+    """Protect the explicitly supported IP native-electrode component source."""
+    with _guard_historical_joint_writer(manifest_record, project="dual_pressure_rectilinear_ion_processor",
+                                        mode="native_electrode_functional") as source:
+        yield source
+
+
+@contextmanager
+def guard_oa_failed_historical_run(manifest_record: Mapping[str, Any]):
+    """Protect a stopped historical OA Candidate or its COMSOL cold child.
+
+    This is a read-only evidence guard, not a successful owner or scientific
+    qualification. Callers hold each actually consumed input/output until done.
+    """
+    from msplatform.execution.owner import validate_writer_completion
+    from msplatform.io.manifest_records import require_completed_terminal_publication
+    record = validate_file_record(manifest_record, 'OA historical manifest')
+    path = record_path(record)
+    if not path.is_absolute() or path.name != 'run_manifest.json':
+        raise ValueError('OA historical manifest identity differs')
+    root = path.parent.resolve(strict=True)
+    with ExitStack() as stack:
+        stack.enter_context(guarded_file_identity(path, expected_bytes=record['bytes'], expected_sha256=record['sha256']))
+        require_completed_terminal_publication(path)
+        manifest = json.loads(path.read_text(encoding='utf-8-sig'))
+        project = 'single_reflection_oa_tof_mass_analyzer'
+        mode = manifest.get('mode')
+        if (manifest.get('role') != 'simulation_run_manifest' or manifest.get('status') != 'failed'
+                or manifest.get('project') != project or mode not in {'design_candidate', 'candidate_comsol_postprocess'}
+                or manifest.get('run_id') != root.name):
+            raise ValueError('OA historical failed owner identity differs')
+        config_record = validate_file_record(manifest.get('run_config'), 'OA historical run config')
+        if record_path(config_record, base_dir=root) != root/'run_config.json':
+            raise ValueError('OA historical config path differs')
+        stack.enter_context(guarded_file_identity(root/'run_config.json', expected_bytes=config_record['bytes'],
+                                                   expected_sha256=config_record['sha256']))
+        config = json.loads((root/'run_config.json').read_text(encoding='utf-8-sig'))
+        if config.get('run_id') != root.name or config.get('project') != project or config.get('mode') != mode:
+            raise ValueError('OA historical run config identity differs')
+        source = _OaFailedHistoricalRun(root, manifest, config, stack)
+        request_record = source.input('execution_request')
+        request = json.loads(Path(request_record['path']).read_text(encoding='utf-8-sig'))
+        package = request.get('package', {})
+        if (request.get('schema_version') != 1 or request.get('role') != 'run_artifact_workflow_request'
+                or package.get('run_id') != root.name or package.get('project') != project or package.get('mode') != mode):
+            raise ValueError('OA historical execution request identity differs')
+        completion_record = source.output('results/execution_completion.json')
+        completion = json.loads(Path(completion_record['path']).read_text(encoding='utf-8-sig'))
+        def same(left, right):
+            return all(left.get(key) == right.get(key) for key in ('path', 'bytes', 'sha256', 'exists'))
+        if (completion.get('schema_version') != 1 or completion.get('role') != 'run_artifact_workflow_completion'
+                or completion.get('run_id') != root.name or completion.get('project') != project
+                or completion.get('status') != 'failed' or not same(completion.get('execution_request', {}), request_record)
+                or not same(completion.get('run_config', {}), config_record)):
+            raise ValueError('OA historical public completion differs')
+        writer = completion['writer_completion']
+        validate_writer_completion(writers_stopped=True, expected_operation_ids=tuple(x['operation_id'] for x in writer['operations']),
+            operations=writer['operations'], resource_releases=writer['resource_releases'],
+            powershell_owner=True, require_process_identity=False)
+        receipt_name = 'comsol_build_completion.json' if mode == 'design_candidate' else 'cold_postprocess_completion.json'
+        native_record = source.output('logs/'+receipt_name)
+        native = json.loads(Path(native_record['path']).read_text(encoding='utf-8-sig'))
+        if (native.get('schema_version') != 1 or native.get('role') != 'comsol_launcher_completion'
+                or native.get('run_id') != root.name or not isinstance(native.get('operations'), list)
+                or not native['operations']):
+            raise ValueError('OA historical native completion differs')
+        release_id = Path(receipt_name).stem
+        operations = [{'operation_id': release_id+'.'+item['operation_id'],
+            'observation': item['observation'], 'resource_release_id': release_id} for item in native['operations']]
+        releases = [{'release_id': release_id, 'completion_receipt': native}]
+        validate_writer_completion(writers_stopped=True, expected_operation_ids=tuple(x['operation_id'] for x in operations),
+            operations=operations, resource_releases=releases, powershell_owner=True, require_process_identity=True)
+        for item in operations:
+            matching = [entry for entry in writer['operations'] if entry['operation_id'] == item['operation_id']]
+            if (len(matching) != 1 or matching[0]['resource_release_id'] != release_id
+                    or any(matching[0]['observation'].get(key) != item['observation'].get(key)
+                           for key in ('exit_confirmed','returncode'))
+                    or any(key in matching[0]['observation'] and matching[0]['observation'][key] != item['observation'].get(key)
+                           for key in ('process_id','process_started_at_utc_ticks'))):
+                raise ValueError('OA historical native operation is not bound by public completion')
+        if releases[0] not in writer['resource_releases']:
+            raise ValueError('OA historical native host release is not bound by public completion')
+        source.native_operations = operations
+        yield source
 
 
 @contextmanager
@@ -285,6 +465,69 @@ def guard_failed_store_evidence(store, manifest_record: Mapping[str, Any], selec
 
 
 @contextmanager
+def guard_tracking_recovery(store, manifest_record: Mapping[str, Any], *, raw_root: Path,
+                            asset_ids: set[str] | None = None):
+    """Hold a complete trajectory or exact stopped-unit inputs for recovery."""
+    manifest = json.loads(Path(manifest_record['path']).read_text(encoding='utf-8-sig'))
+    with ExitStack() as stack:
+        if manifest.get('status') in {'failed', 'interrupted'}:
+            sealed, hold_records = stack.enter_context(guard_stopped_store_evidence(store, manifest_record))
+        else:
+            stack.enter_context(guard_native_source({'manifest': manifest_record, 'product_id': 'trajectory'},
+                expected_kind='trajectory_result', expected_artifact_root=raw_root,
+                artifact_store=store, asset_ids=asset_ids))
+            sealed = json.loads(Path(manifest_record['path']).read_text(encoding='utf-8-sig'))
+            run_root = Path(manifest_record['path']).resolve(strict=True).parent
+            bound = [*sealed.get('inputs', {}).values(), *sealed.get('outputs', [])]
+            held = set()
+            def hold_records(records):
+                if not isinstance(records, (list, tuple)) or not records:
+                    raise ValueError('explicit tracking records are required')
+                for record in records:
+                    input_count = sum(row == record for row in sealed.get('inputs', {}).values())
+                    output_count = sum(row == record for row in sealed.get('outputs', []))
+                    if (input_count, output_count) not in {(1, 0), (0, 1), (1, 1)}:
+                        raise ValueError('tracking record must be bound once or shared by one input and one output')
+                    value = validate_file_record(record, 'tracking predecessor evidence')
+                    path = record_path(value, base_dir=run_root).resolve(strict=True)
+                    if not path.is_relative_to(run_root):
+                        raise ValueError('tracking predecessor external input requires its own source guard')
+                    identity = (value['bytes'], value['sha256'].upper(), value.get('retention_role'))
+                    for candidate in bound:
+                        if not isinstance(candidate, Mapping) or not isinstance(candidate.get('path'), str):
+                            continue
+                        if record_path({'path': candidate['path']}, base_dir=run_root) != path:
+                            continue
+                        candidate = validate_file_record(candidate, 'tracking predecessor evidence')
+                        candidate_identity = (candidate['bytes'], candidate['sha256'].upper(),
+                                              candidate.get('retention_role'))
+                        if candidate_identity != identity:
+                            raise ValueError('tracking record path has conflicting file identity')
+                    if path not in held:
+                        stack.enter_context(guarded_file_identity(path, expected_bytes=value['bytes'],
+                                                                   expected_sha256=value['sha256']))
+                        held.add(path)
+        records = [*sealed.get('inputs', {}).values(), *sealed.get('outputs', [])]
+        indices = [row for row in records if isinstance(row, dict) and isinstance(row.get('path'), str)
+                   and Path(row['path']).name == 'tracking_units.json' and Path(row['path']).parent.name == 'logs']
+        if len(indices) != 1:
+            raise ValueError('stopped predecessor requires one manifest-bound tracking unit index')
+        hold_records(indices)
+        index = json.loads(Path(indices[0]['path']).read_text(encoding='utf-8-sig'))
+        immutable, units = index.get('immutable_inputs'), index.get('units')
+        if not isinstance(immutable, list) or not immutable or not isinstance(units, list):
+            raise ValueError('stopped predecessor lacks its explicit unit input closure')
+        needed = list(immutable)
+        for row in units:
+            if not isinstance(row, dict) or type(row.get('complete')) is not bool:
+                raise ValueError('stopped predecessor has invalid unit completion facts')
+            if row['complete']:
+                needed.extend([row['stdout_record'], row['process_record']])
+        hold_records(needed)
+        yield
+
+
+@contextmanager
 def guard_native_source(reference: Mapping[str, Any], *, expected_kind: str,
                         expected_artifact_root: Path, artifact_store=None,
                         asset_ids: set[str] | None = None, _retain: bool = True) -> Iterator[OpenedArtifact]:
@@ -327,6 +570,7 @@ def guard_native_source(reference: Mapping[str, Any], *, expected_kind: str,
             stationary_source = product.get('metadata', {}).get('stationary_source')
             failed_source = product.get('metadata', {}).get('failed_source')
             scalar_original = product.get('metadata', {}).get('original_samples_reference')
+            family_reference = product.get('metadata', {}).get('family_producer_reference')
             if (expected_kind == 'scalar_field_samples'
                     and product.get('metadata', {}).get('derivation') == 'offline_from_published_raw_samples'
                     and scalar_original is None):
@@ -340,6 +584,55 @@ def guard_native_source(reference: Mapping[str, Any], *, expected_kind: str,
                     and stationary_source is None):
                 raise ValueError('COMSOL Store field lacks its source reference')
             borrowed = {}
+            if family_reference is not None:
+                metadata = product.get('metadata', {})
+                if (expected_kind != 'field_bundle' or metadata.get('backend') != 'simion'
+                        or metadata.get('field_representation') not in {
+                            'producer_owned_rf_fractional_family', 'producer_owned_rf_ip_fractional_family',
+                            'producer_owned_oa_fractional_family', 'producer_owned_oa_mirror_empty_surface_family'}):
+                    raise ValueError('RF family producer identity differs')
+                family = stack.enter_context(guard_native_source(family_reference, expected_kind='field_bundle',
+                    expected_artifact_root=expected_artifact_root, artifact_store=store, asset_ids=collected, _retain=False))
+                original_meta = family.metadata
+                bindings = metadata.get('native_assets')
+                if ('family_producer_reference' in original_meta or not isinstance(bindings, dict)
+                        or not bindings or bindings != original_meta.get('native_assets')
+                        or original_meta.get('backend') != 'simion'
+                        or original_meta.get('field_status') != 'available'
+                        or metadata.get('field_status') != 'available'
+                        or metadata.get('field_representation') != original_meta.get('field_representation')
+                        or metadata.get('spatial_identity') != original_meta.get('spatial_identity')):
+                    raise ValueError('RF family producer closure differs')
+                keys = {'field_native_receipts'}
+                mirror = metadata.get('field_representation') == 'producer_owned_oa_mirror_empty_surface_family'
+                for row in bindings.values():
+                    if (not isinstance(row, dict) or set(row) != ({'carrier', 'family', 'surface_witnesses', 'surface_state'} if mirror else {'carrier', 'family', 'surface_witnesses'})
+                            or not isinstance(row['family'], list) or not row['family']
+                            or any(not isinstance(key, str) or not key for key in row['family'])
+                            or not isinstance(row['carrier'], str) or row['carrier'] not in row['family']
+                            or not isinstance(row['surface_witnesses'], str)
+                            or (mirror and (not isinstance(row['surface_state'], str) or not row['surface_state']))):
+                        raise ValueError('RF family member binding differs')
+                    keys.update(row['family'])
+                    keys.add(row['surface_witnesses'])
+                    if mirror:
+                        keys.add(row['surface_state'])
+                for key in keys:
+                    record = product.get('data', {}).get(key)
+                    original = family.data_records.get(key)
+                    if record != original:
+                        raise ValueError('RF borrowed family record differs from original producer')
+                    borrowed[Path(family.data_locations[key]).resolve()] = (record['bytes'], str(record['sha256']).upper())
+                receipts = json.loads(family.data_path('field_native_receipts').read_text(encoding='utf-8'))
+                expected = {'refine_' + name for name in bindings}
+                if (not isinstance(receipts, list) or len(receipts) != len(expected)
+                        or {row.get('operation_id') for row in receipts if isinstance(row, dict)} != expected
+                        or any(not isinstance(row, dict) or row.get('observation', {}).get('exit_confirmed') is not True
+                            or row['observation'].get('returncode') != 0
+                            or type(row['observation'].get('process_id')) is not int or row['observation']['process_id'] <= 0
+                            or type(row['observation'].get('process_started_at_utc_ticks')) is not int
+                            or row['observation']['process_started_at_utc_ticks'] <= 0 for row in receipts)):
+                    raise ValueError('RF original family lacks successful Refine receipts')
             if origin_reference is not None:
                 origin = stack.enter_context(guard_native_source(origin_reference, expected_kind="field_bundle",
                     expected_artifact_root=expected_artifact_root, artifact_store=store, asset_ids=collected, _retain=False))

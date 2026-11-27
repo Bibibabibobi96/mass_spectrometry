@@ -511,8 +511,8 @@
         "schema_version": 1,
         "role": "canonical_birth_source_request",
         "release_spec": {
-          "schema_version": 1,
-          "role": "repository_ion_release",
+          "schema_version": 2,
+          "role": "repository_particle_release",
           "frame_id": "sectioned_accelerator_cartesian",
           "particle_count": 3,
           "mother_particle_count": 1000,
@@ -532,7 +532,8 @@
           },
           "species": {
             "mass_amu": 100.0,
-            "charge_state": 1
+            "charge_state": 1,
+            "species_kind": "ion"
           },
           "sampling": {
             "strategy": "dotnet_gaussian_box_ion11_v1",
@@ -560,8 +561,8 @@
         "schema_version": 1,
         "role": "canonical_birth_source_request",
         "release_spec": {
-          "schema_version": 1,
-          "role": "repository_ion_release",
+          "schema_version": 2,
+          "role": "repository_particle_release",
           "frame_id": "sectioned_accelerator_cartesian",
           "particle_count": 2,
           "mother_particle_count": 1000,
@@ -581,7 +582,8 @@
           },
           "species": {
             "mass_amu": 100.0,
-            "charge_state": 2
+            "charge_state": 2,
+            "species_kind": "ion"
           },
           "sampling": {
             "strategy": "dotnet_gaussian_box_ion11_v1",

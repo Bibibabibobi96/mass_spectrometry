@@ -9,6 +9,7 @@ from .particle_physics import CONSTANTS
 
 FROZEN_PACKAGE_RESOURCES = (
     "physics/data/nitrogen.json", "physics/data/hs1_example_assumption.json", "physics/data/sds_model.json",
+    "physics/data/nitrogen_transport_300k.json",
 )
 
 
@@ -56,6 +57,19 @@ SDS_MODEL = MappingProxyType({
     "dataset_sha256": sha256(_sds_bytes).hexdigest(),
     "qualification": _sds["qualification"],
     "limitation": _sds["limitation"],
+})
+
+_transport_bytes = files("msplatform").joinpath("physics/data/nitrogen_transport_300k.json").read_bytes()
+_transport = json.loads(_transport_bytes)
+if _transport["schema_version"] != 1 or _transport["dataset_id"] != "nitrogen_constant_transport_reference_300k_v1":
+    raise ValueError("unsupported nitrogen transport dataset")
+NITROGEN_TRANSPORT = MappingProxyType({
+    "version": _transport["dataset_id"], "dataset_sha256": sha256(_transport_bytes).hexdigest(),
+    "species_id": _transport["species_id"], "reference_temperature_k": _transport["reference_temperature_k"],
+    "dynamic_viscosity_pa_s": float(_transport["dynamic_viscosity_pa_s"]),
+    "thermal_conductivity_w_per_m_k": float(_transport["thermal_conductivity_w_per_m_k"]),
+    "specific_heat_capacity_cp_j_per_kg_k": float(_transport["specific_heat_capacity_cp_j_per_kg_k"]),
+    "specific_heat_ratio": float(_transport["specific_heat_ratio"]), "limitation": _transport["limitation"],
 })
 
 

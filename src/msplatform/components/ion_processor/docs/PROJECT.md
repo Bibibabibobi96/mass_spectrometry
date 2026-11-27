@@ -431,18 +431,9 @@ Active batching callers now consume the sole installed
 plans, ID rebasing, emission ordering and project-owned scientific checks are
 unchanged. This migration provides no new native or scientific qualification.
 
-### P4 installed MP-to-IP preparation
+### Historical MP-to-IP preparation
 
-The canonical `msplatform.workflows.multipole_ip.prepare` consumes the original
-RF producer and receiver manifest records, complete mother census, actual exit
-bracket, immutable birth/absolute clock, weights and frozen parent assembly.
-`prepare` writes into an existing managed run; `prepare_managed` uses the existing
-execution owner with no native operation IDs. Neither operation performs IP Fly,
-changes HS1 collisions, invents SDS support, clips an entrance or qualifies fields.
-The thin repository launcher requires explicit machine environment, workspace,
-engineering profile and Python. FullJoint forwards these explicitly and rejects
-a different host ledger, Python or unsupported custom artifact root. Old assets
-remain consumed by their explicit records, without relocation or rewriting.
+The former MP-to-IP state-handoff producer and launcher are retired. Existing published records remain readable under their original identities; current cross-component tracking starts from explicitly authored original births through the public SimulationRecipe and a single GasEnvironment. This change does not add native transport or scientific qualification.
 
 The shared recorded-beam moments, crossing and focus methods now come directly from installed
 `msplatform.analysis`; IP preparation freezes those same modules and its original detached consumer
@@ -710,13 +701,13 @@ managed-owner/frozen-input and rendered-Lua checks with inert native substitutes
 This is not a native HS1 or field qualification. Ordinary-install acceptance for
 this successor is pending. Existing standalone diagnostics and their scientific
 acceptance remain available; their exact force-audit/sample file layout is not
-claimed by the joint consumer. The old segmented producer stays until the genuine
-continuous replacement and its applicable native checks pass. A thin PowerShell
-and JSON adapter now supplies original births, an explicit complete field and
-typed HS1 inputs to that same installed consumer. Eight focused parents passed
-with nineteen successful records, covering CLI forwarding, relative vendor
-identity, invalid composition and missing-vendor refusal. This adds no native
-field or flight claim and does not retire the segmented producer.
+claimed by the joint consumer. A thin PowerShell and JSON adapter supplied
+original births, an explicit complete field and typed HS1 inputs to that same
+installed consumer. Eight focused parents passed with nineteen successful records,
+covering CLI forwarding, relative vendor identity, invalid composition and
+missing-vendor refusal. The old segmented producer and that dedicated adapter have
+since been removed; current authoring uses the public SimulationRecipe. These
+historical fixture results add no native field or flight claim.
 
 The installed IP launcher now initializes the explicit research project root before
 resolving its registry, runtime profile and configuration directory. A production-source

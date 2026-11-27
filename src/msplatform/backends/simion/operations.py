@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from msplatform.assembly.handoff import HandoffResult
     from msplatform.results.artifacts import OpenedArtifact
     from msplatform.execution.context import ExecutionContext
-    from msplatform.ion_release.authoring import ReleaseRealization
+    from msplatform.particle_release.authoring import ReleaseRealization
 
 
 def _reject_legacy_composite_execution(geometry: Mapping[str, Any]) -> None:
@@ -31,10 +31,11 @@ def _reject_legacy_composite_execution(geometry: Mapping[str, Any]) -> None:
     interfaces = plan.get('components', {})
     if any(interfaces.get(name, {}).get('project_id') == 'single_reflection_oa_tof_mass_analyzer'
            for name in selected):
-        raise ContractError('legacy composite OA–TOF is historical read-only; use independent OA + single_reflection_tof')
+        raise ContractError('legacy composite OA鈥揟OF is historical read-only; use independent OA + single_reflection_tof')
 
 
-def build_geometry(compiled: CompiledSimionGeometry, *, context: ExecutionContext) -> OpenedArtifact:
+def build_geometry(compiled: CompiledSimionGeometry, *, context: ExecutionContext,
+                   artifact_store=None) -> OpenedArtifact:
     """Materialize actual unsolved geometry through the one public execution owner.
 
     Engineering limits and retention are explicit in context.stage_policy_path.
@@ -49,12 +50,14 @@ def build_geometry(compiled: CompiledSimionGeometry, *, context: ExecutionContex
     from msplatform.backends.simion.resources import structural_seed_path
     from msplatform.backends.simion import native_completion
     from msplatform.io.manifest_records import file_record
-    from msplatform.execution.owner import run_managed_stage
+    from msplatform.execution.owner import current_managed_native_store, run_managed_stage
     from msplatform.execution.stage_policy import read_stage_policy
 
     if not isinstance(compiled, CompiledSimionGeometry):
         raise ContractError("build_geometry requires compiled SIMION geometry")
     _reject_legacy_composite_execution(compiled.frontend_geometry)
+    if artifact_store is None and current_managed_native_store() is None:
+        raise ContractError("build_geometry requires an ArtifactStore or managed native Store scope")
     if context is None or "simion" not in context.tools or not context.tools["simion"].is_file():
         raise ContractError("build_geometry requires an explicit available SIMION executable")
     stage, authority = read_stage_policy(context, "build_geometry", required_roles=("solver_native_binary",))
@@ -85,7 +88,12 @@ def build_geometry(compiled: CompiledSimionGeometry, *, context: ExecutionContex
     ids = tuple(row["operation_id"] for row in plan.operations)
     source = file_record(Path(execute_geometry.__code__.co_filename).resolve(), "required_evidence")
     surface_validator = None
-    if snapshot.frontend_geometry.get("role") in {"simion_ip_mr_complete_geometry", "simion_neutral_world_collision_geometry", "simion_neutral_multi_domain_collision_geometry"}:
+    frontend = snapshot.frontend_geometry
+    mirror_oa = (frontend.get("role") == "simion_independent_oa_geometry"
+                 and any(row.get("symmetry") == "mirror_x" and row.get("surface") == "none"
+                         for row in frontend.get("numerical_domains", {}).values()))
+    if (frontend.get("role") in {"simion_ip_mr_complete_geometry", "simion_neutral_world_collision_geometry",
+                                  "simion_neutral_multi_domain_collision_geometry"} or mirror_oa):
         from . import native_surface_state
         surface_validator = file_record(Path(native_surface_state.__file__).resolve(), "required_evidence")
     result = run_managed_stage(context, descriptor=dict(project="instrument_assembly", mode="geometry_only", software=["SIMION"]),
@@ -99,7 +107,8 @@ def build_geometry(compiled: CompiledSimionGeometry, *, context: ExecutionContex
             allow_asynchronous_io=runtime.get("simion_allow_asynchronous_io"), surface_validator_record=surface_validator, provider_source_records=provider_sources),
         action_record=source,
         expected_relative_paths=[str(Path(path).relative_to(planning_root)) for path in (*plan.declared_outputs, *(row["optional_surface"] for row in plan.operations if "optional_surface" in row))],
-        use_short_execution_path=True, completion_api=lambda: native_completion)
+        use_short_execution_path=True, completion_api=lambda: native_completion,
+        **({"artifact_store": artifact_store} if artifact_store is not None else {}))
     return artifact_reader.open_artifact({"manifest": result["manifest"], "product_id": "geometry"}, expected_kind="geometry_artifact")
 
 
@@ -121,7 +130,7 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
     from msplatform.backends.simion.resources import structural_seed_path
     from msplatform.backends.simion import native_completion
     from msplatform.results.artifacts import OpenedArtifact
-    from msplatform.execution.clock_authority import validate_clock_authority
+    from msplatform.io.clock_authority import validate_clock_authority
     from msplatform.io.manifest_records import file_record, verify_record
     from msplatform.execution.owner import run_managed_stage
     from msplatform.execution.payload_inputs import materialize_payloads
@@ -254,7 +263,42 @@ def solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mapping
                  context: ExecutionContext,
                  reuse_fields: OpenedArtifact | Mapping[str, Any] | None = None,
                  scalar_field_basis: Mapping[str, Any] | None = None,
-                 reuse_collision_geometry: OpenedArtifact | Mapping[str, Any] | None = None) -> OpenedArtifact:
+                 reuse_collision_geometry: OpenedArtifact | Mapping[str, Any] | None = None,
+                 compensated_basis: Mapping[str, Any] | None = None) -> OpenedArtifact:
+    """Solve with explicitly guarded, authenticated optional response rebias."""
+    if compensated_basis is None:
+        return _solve_fields(model, numerics=numerics, context=context, reuse_fields=reuse_fields,
+                             scalar_field_basis=scalar_field_basis, reuse_collision_geometry=reuse_collision_geometry)
+    if (not isinstance(compensated_basis, Mapping) or set(compensated_basis) != {'reference', 'fit', 'regularization'}
+            or reuse_fields is not None or scalar_field_basis is not None or reuse_collision_geometry is not None):
+        raise ContractError('compensated basis requires an explicit reference, fit and regularization without other reuse')
+    from contextlib import ExitStack
+    from msplatform.execution.native_source_guard import guard_native_source
+    from msplatform.execution.owner import current_managed_native_store
+    from msplatform.results.artifacts import OpenedArtifact
+    scope = current_managed_native_store()
+    if scope is None:
+        raise ContractError('compensated fields require the managed native Store scope')
+    reference = model.reference if isinstance(model, OpenedArtifact) else model
+    original = compensated_basis['reference']
+    if isinstance(original, OpenedArtifact):
+        original = original.reference
+    basis = dict(compensated_basis, reference=copy.deepcopy(original))
+    root = context.workspace / 'artifacts'
+    with ExitStack() as stack:
+        protected_model = stack.enter_context(guard_native_source(reference, expected_kind='prepared_model',
+            expected_artifact_root=root, artifact_store=scope['store']))
+        stack.enter_context(guard_native_source(original, expected_kind='field_bundle',
+            expected_artifact_root=root, artifact_store=scope['store']))
+        return _solve_fields(protected_model, numerics=numerics, context=context, compensated_basis=basis)
+
+
+def _solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mapping[str, Any],
+                  context: ExecutionContext,
+                  reuse_fields: OpenedArtifact | Mapping[str, Any] | None = None,
+                  scalar_field_basis: Mapping[str, Any] | None = None,
+                  reuse_collision_geometry: OpenedArtifact | Mapping[str, Any] | None = None,
+                  compensated_basis: Mapping[str, Any] | None = None) -> OpenedArtifact:
     """Explicitly solve an unsolved model, without source sampling or flight.
 
     Optional reuse names one published field product, never a latest lookup.
@@ -443,22 +487,38 @@ def solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mapping
                                expected_kind="field_bundle")
         reuse_reference = reused.reference
         references.append({"manifest_record": reuse_reference["manifest"]})
+        if reused.metadata.get("field_representation") == "producer_owned_oa_mirror_empty_surface_family":
+            frontend = source.model.document['geometry']['frontend_geometry']
+            if (frontend.get('role') != 'simion_independent_oa_geometry'
+                    or not any(row.get('symmetry') == 'mirror_x' and row.get('surface') == 'none'
+                               for row in frontend.get('numerical_domains', {}).values())
+                    or reused.metadata.get('family_producer_reference') is not None):
+                raise ContractError('OA mirror field reuse requires its protected original producer and exact geometry')
+            references.append({"manifest_record": reuse_reference["manifest"]})
         if reused.metadata.get("field_representation") in {"producer_owned_rf_fractional_family", "producer_owned_oa_fractional_family", "producer_owned_static_world_fractional_family"}:
             original = reused.metadata.get("family_producer_reference", reused.reference)
             references.append({"manifest_record": original["manifest"]})
         if reused.metadata.get("field_representation") == "producer_owned_static_world_standalone_operating_pa":
             original = reused.metadata.get("operating_producer_reference", reused.reference)
             references.append({"manifest_record": original["manifest"]})
-    graph = plan_fields_execution(source.model, numerics=selected_numerics, reuse_fields_reference=reuse_reference)
+    if compensated_basis is not None:
+        references.append({"manifest_record": compensated_basis["reference"]["manifest"]})
+    graph = plan_fields_execution(source.model, numerics=selected_numerics, reuse_fields_reference=reuse_reference,
+                                  **({'compensated_basis': compensated_basis} if compensated_basis is not None else {}))
     surface_validator = None
-    if source.model.document['geometry']['frontend_geometry'].get('role') == 'simion_neutral_world_collision_geometry':
+    frontend = source.model.document['geometry']['frontend_geometry']
+    mirror_oa = (frontend.get('role') == 'simion_independent_oa_geometry'
+                 and any(row.get('symmetry') == 'mirror_x' and row.get('surface') == 'none'
+                         for row in frontend.get('numerical_domains', {}).values()))
+    if frontend.get('role') == 'simion_neutral_world_collision_geometry' or mirror_oa:
         from . import native_surface_state
         surface_validator = file_record(Path(native_surface_state.__file__).resolve(), 'required_evidence')
     result = run_managed_stage(context,
         descriptor=dict(project="instrument_assembly", mode="fields_only", software=["SIMION"]),
         run_id=datetime.now().strftime("%Y%m%d_%H%M%S") + "__sim__simion__fields-" + uuid4().hex[:12],
         payload=dict(action="solve_fields", model=source.artifact.reference, numerics=selected_numerics,
-                     reuse_fields=reuse_reference, stage_policy=stage),
+                     reuse_fields=reuse_reference, stage_policy=stage,
+                     **({'compensated_basis': compensated_basis} if compensated_basis is not None else {})),
         committed_new_bytes=stage["limits"]["transient_run_directory_bytes"],
         commitment_inputs=[policy_record, *([surface_validator] if surface_validator else [])], retention=stage["artifact_retention"],
         expected_operation_ids=tuple(graph["expected_operation_ids"]),
@@ -467,13 +527,67 @@ def solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mapping
             limits=stage["limits"], materialize_geometry=partial(materialize_payloads, limits=stage["limits"]),
             materializer_record=file_record(Path(materialize_payloads.__code__.co_filename).resolve(), "required_evidence"),
             allow_asynchronous_io=runtime.get("simion_allow_asynchronous_io"), reuse_fields_reference=reuse_reference,
-            surface_validator_record=surface_validator),
+            surface_validator_record=surface_validator,
+            **({'compensated_basis': compensated_basis} if compensated_basis is not None else {})),
         action_record=file_record(Path(execute_fields.__code__.co_filename).resolve(), "required_evidence"),
         source_references=references, use_short_execution_path=True, completion_api=lambda: native_completion)
     return artifact_reader.open_artifact({"manifest": result["manifest"], "product_id": "fields"}, expected_kind="field_bundle")
 
 
+def _guard_focus_tracking_authority(focus, document, scope):
+    """Independently authenticate both original author records for one focus flight."""
+    import json
+    from msplatform.io.file_identity import guarded_file_identity
+    from msplatform.io.manifest_records import validate_file_record
+    from .oa_focus_model_projection import validate_focus_authority
+
+    if scope is None or not isinstance(focus, Mapping):
+        raise ContractError('OA focus authority requires an existing managed native Store scope')
+    values, records = {}, []
+    for name in ('campaign', 'component_contract'):
+        record = validate_file_record(focus.get(name), 'OA focus ' + name)
+        path = Path(record['path'])
+        if not path.is_absolute():
+            raise ContractError('OA focus authority records must be absolute')
+        scope['lifetime'].enter_context(guarded_file_identity(path, expected_bytes=record['bytes'],
+                                                             expected_sha256=record['sha256']))
+        values[name] = json.loads(path.read_text(encoding='utf-8-sig'))
+        records.append(dict(record))
+    validate_focus_authority(focus, campaign=values['campaign'], component_contract=values['component_contract'],
+                             model_document=document)
+    return records
+
+
 def track(fields: OpenedArtifact | Mapping[str, Any],
+          particles: ReleaseRealization | HandoffResult | Mapping[str, Any], *,
+          propagation: Mapping[str, Any], observations: Mapping[str, Any],
+          numerics: Mapping[str, Any], context: ExecutionContext,
+          source_reference: OpenedArtifact | Mapping[str, Any] | None = None,
+          unit_size: int | None = None, recovery_reference: Mapping[str, Any] | None = None,
+          dispatch_profiles: Sequence[Mapping[str, Any]] = (),
+          birth_source_authority: Mapping[str, Any] | None = None, hs1_request: Mapping[str, Any] | None = None,
+          scalar_field_basis: Mapping[str, Any] | None = None) -> OpenedArtifact:
+    """Track a complete source while protecting any published discovery pilot."""
+    from contextlib import ExitStack
+    options = dict(propagation=propagation, observations=observations, numerics=numerics, context=context,
+        source_reference=source_reference, unit_size=unit_size, recovery_reference=recovery_reference,
+        dispatch_profiles=dispatch_profiles, birth_source_authority=birth_source_authority,
+        hs1_request=hs1_request, scalar_field_basis=scalar_field_basis)
+    discovery = observations.get('pulse_discovery') if isinstance(observations, Mapping) else None
+    if not isinstance(discovery, Mapping) or discovery.get('phase') != 'selected':
+        return _track(fields, particles, **options)
+    from msplatform.execution.native_source_guard import guard_native_source
+    from msplatform.execution.owner import current_managed_native_store
+    scope = current_managed_native_store()
+    if scope is None:
+        raise ContractError('selected discovery requires a managed native Store scope')
+    with ExitStack() as stack:
+        stack.enter_context(guard_native_source(discovery.get('pilot'), expected_kind='trajectory_result',
+            expected_artifact_root=context.workspace / 'artifacts', artifact_store=scope['store']))
+        return _track(fields, particles, **options)
+
+
+def _track(fields: OpenedArtifact | Mapping[str, Any],
           particles: ReleaseRealization | HandoffResult | Mapping[str, Any], *,
           propagation: Mapping[str, Any], observations: Mapping[str, Any],
           numerics: Mapping[str, Any], context: ExecutionContext,
@@ -512,7 +626,7 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
     from msplatform.io.manifest_records import file_record
     from msplatform.execution.owner import run_managed_stage
     from msplatform.execution.stage_policy import read_stage_policy
-    from msplatform.ion_release.authoring import ReleaseRealization
+    from msplatform.particle_release.authoring import ReleaseRealization
 
     source = fields if isinstance(fields, OpenedArtifact) else artifact_reader.open_artifact(fields, expected_kind="field_bundle")
     meta = source.metadata
@@ -521,6 +635,24 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
         raise ContractError("track requires a published source-independent SIMION FieldBundle")
     model = CompiledPreparedModel(source.data_path("compiled_model").read_text(encoding="utf-8-sig"))
     document = require_prepared_model(model)
+    focus = observations.get('oa_focus_authority') if isinstance(observations, Mapping) else None
+    focus_records = []
+    focus_testplane_record = None
+    if focus is not None:
+        from msplatform.execution.owner import current_managed_native_store
+        from msplatform.io.file_identity import guarded_file_identity
+        scope = current_managed_native_store()
+        focus_records = _guard_focus_tracking_authority(focus, document, scope)
+        executable = context.tools.get('simion')
+        if executable is None or not Path(executable).is_file():
+            raise ContractError('OA focus requires the explicit SIMION executable and its TestPlane library')
+        testplane = Path(executable).resolve().parent / 'examples/test_plane/testplanelib.lua'
+        if not testplane.is_file():
+            raise ContractError('OA focus requires the installed SIMION TestPlane library')
+        focus_testplane_record = file_record(testplane, 'required_evidence')
+        scope['lifetime'].enter_context(guarded_file_identity(Path(focus_testplane_record['path']),
+            expected_bytes=focus_testplane_record['bytes'], expected_sha256=focus_testplane_record['sha256']))
+        focus_records.append(focus_testplane_record)
     _reject_legacy_composite_execution(document['geometry']['frontend_geometry'])
     if meta.get("model_identity_sha256") != document["model_identity_sha256"] or meta.get("clock") != document["drive"]["clock"]:
         raise ContractError("tracking field model/clock identity differs")
@@ -533,7 +665,7 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
     if (tracking_geometry.get("role") == "simion_split_oa_tof_geometry" or legacy_oa_tof) and (
             isinstance(particles, HandoffResult) or
             (isinstance(propagation, Mapping) and propagation.get("scope") in {"segmented_upstream", "state_relaunch"})):
-        raise ContractError("OA–TOF requires original births and continuous_assembly; cross-component relaunch is retired")
+        raise ContractError("OA鈥揟OF requires original births and continuous_assembly; cross-component relaunch is retired")
     sampled_neutral = meta.get('field_representation') in {'neutral_sampled_basis_with_collision_geometry','neutral_multi_sampled_basis_with_collision_geometry'}
     neutral_admission = None
     if sampled_neutral:
@@ -571,14 +703,18 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
                     field_manifest_record=source.reference["manifest"],
                     **({'birth_source_authority': birth_authority} if birth_authority is not None else {}), hs1_request=hs1_request,
                     **({'ip_mr_field_reference': source.reference} if sampled_ip_mr else {}),
-                    **({'neutral_sampled_field_reference': source.reference} if sampled_neutral else {}))
+                    **({'neutral_sampled_field_reference': source.reference} if sampled_neutral else {}),
+                    **({'field_product_id': source.reference['product_id']} if 'pulse_discovery' in observations else {}),
+                    **({'focus_testplane_record': focus_testplane_record} if focus_testplane_record is not None else {}))
     graph = plan_tracking_execution(model, **planning)
     if scalar_field_basis is not None:
         if isinstance(packet, HandoffResult) or hs1_request is not None:
             raise ContractError('scalar basis requires an original-birth SFI flight')
         from msplatform.backends.simion.tracking_execution import _resolve_scalar_basis
         graph['scalar_field_basis'] = _resolve_scalar_basis(source, model, graph, scalar_field_basis)
-    planned_applicability = tracking_applicability(graph) if hs1_request is not None or scalar_field_basis is not None or sampled_neutral else None
+    planned_applicability = tracking_applicability(graph) if (hs1_request is not None or scalar_field_basis is not None
+        or sampled_neutral or observations.get('pulse_discovery') is not None
+        or observations.get('oa_focus_authority') is not None) else None
     if recovery is not None:
         inspected = inspect_tracking_recovery(graph, recovery)
         graph = plan_tracking_execution(model, **planning, reused_unit_keys=inspected["reused_unit_keys"])
@@ -586,6 +722,9 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
             graph['scalar_field_basis'] = _resolve_scalar_basis(source, model, graph, scalar_field_basis)
     predecessor = None
     references = [{"manifest_record": source.reference["manifest"]}]
+    discovery = observations.get('pulse_discovery')
+    if isinstance(discovery, Mapping) and discovery.get('phase') == 'selected':
+        references.append({'manifest_record': discovery['pilot']['manifest']})
     if ip_mr_admission is not None or neutral_admission is not None:
         selected_manifests = {}
         selected_admission = ip_mr_admission if ip_mr_admission is not None else neutral_admission
@@ -618,6 +757,13 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
                         continue
                     scalar_manifests[key] = identity
                     references.append({'manifest_record': manifest})
+    if meta.get('field_representation') == 'producer_owned_oa_mirror_empty_surface_family':
+        if (tracking_geometry.get('role') != 'simion_independent_oa_geometry'
+                or not any(row.get('symmetry') == 'mirror_x' and row.get('surface') == 'none'
+                           for row in tracking_geometry.get('numerical_domains', {}).values())
+                or meta.get('family_producer_reference') is not None):
+            raise ContractError('OA mirror tracking requires its protected original producer and exact geometry')
+        references.append({'manifest_record': source.reference['manifest']})
     if meta.get('field_representation') in {'producer_owned_rf_fractional_family','producer_owned_oa_fractional_family','producer_owned_rf_ip_fractional_family','producer_owned_static_world_fractional_family'}:
         original=meta.get('family_producer_reference',source.reference)
         references.append({'manifest_record':original['manifest']})
@@ -659,6 +805,13 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
     if (set(runtime) - {"simion_allow_asynchronous_io"}
             or ("simion_allow_asynchronous_io" in runtime and type(runtime["simion_allow_asynchronous_io"]) is not bool)):
         raise ContractError("SIMION tracking runtime only accepts explicit boolean simion_allow_asynchronous_io")
+    # Both authored environment and vendor script are real source authorities;
+    # the owner verifies their identities again before creating its run.
+    commitment_inputs = [policy_record, *focus_records]
+    if isinstance(discovery, Mapping) and discovery.get('phase') == 'selected':
+        commitment_inputs.append(dict(discovery['pilot']['manifest']))
+    if hs1_request is not None:
+        commitment_inputs.extend(dict(hs1_request[name]) for name in ('vendor_record', 'environment_record'))
     result = run_managed_stage(context,
         descriptor=dict(project="instrument_assembly", mode="tracking", software=["SIMION"]),
         run_id=datetime.now().strftime("%Y%m%d_%H%M%S") + "__sim__simion__track-" + uuid4().hex[:12],
@@ -669,10 +822,11 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
             unit_size=unit_size, recovery_reference=recovery, dispatch_profiles=copy.deepcopy(profiles),
             **({'scalar_field_basis': graph['scalar_field_basis']} if scalar_field_basis is not None else {}),
             **({'birth_source_authority': birth_authority} if birth_authority is not None else {}),
-            **({'hs1_identity': graph['hs1_identity'], 'hs1_vendor_record': dict(hs1_request['vendor_record'])} if hs1_request is not None else {}),
+            **({'hs1_identity': graph['hs1_identity'], 'hs1_vendor_record': dict(hs1_request['vendor_record']),
+                'hs1_environment_record': dict(hs1_request['environment_record'])} if hs1_request is not None else {}),
             stage_policy=stage),
         committed_new_bytes=stage["limits"]["transient_run_directory_bytes"],
-        commitment_inputs=[policy_record], retention=stage["artifact_retention"],
+        commitment_inputs=commitment_inputs, retention=stage["artifact_retention"],
         expected_operation_ids=tuple(graph["expected_operation_ids"]),
         operation_dependencies=graph["operation_dependencies"],
         action=partial(execute_tracking, fields_reference=source, particles=packet,
@@ -680,6 +834,7 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
             limits=stage["limits"], source_reference=predecessor.reference if predecessor else None,
             unit_size=unit_size, recovery_reference=recovery, dispatch_profiles=profiles,
             **({'birth_source_authority': birth_authority} if birth_authority is not None else {}),
+            **({'focus_testplane_record': focus_testplane_record} if focus_testplane_record is not None else {}),
             hs1_request=hs1_request, expected_tracking_applicability=planned_applicability,
             **({'scalar_field_basis': scalar_field_basis, 'expected_scalar_basis': graph['scalar_field_basis']} if scalar_field_basis is not None else {}),
             allow_asynchronous_io=runtime.get("simion_allow_asynchronous_io")),

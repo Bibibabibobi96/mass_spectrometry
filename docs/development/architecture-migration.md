@@ -174,9 +174,39 @@ RF-IP public partial replay另已PASS194.901s：实际失败index `[true,true,fa
 
 此前标量导出主题已普通push `0df3adaa5150b0b54694d153e261208492f5c92d`；规范CLOC2.10 `78144e45→0df3adaa` PASS：total618524→622059(+3535)、production303823→303841(+18)、tests314701→318218(+3517)、unclassified0，完整各语言用途/blank/comment/code及过滤见外部 `scalar-retention-cloc.log`。
 
+### fc6eb8bb 后工作区接续检查点（非最终验收）
+
+最后普通push代码为 `fc6eb8bb4d5c6ce9ab2910927133588c07c8ec18`，对应显式viewer Store迁移；后续工作区与原科研artifacts保留，无reset/force/主线合并。规范CLOC2.10 `78144e45→fc6eb8bb` PASS：total618524→622083(+3559)、production303823→303847(+24)、tests314701→318236(+3535)、unclassified0，完整各语言/用途/files/blank/comment/code/过滤在外部 `viewer-store-cloc.log`。C-r2 Goal持续active，仍CA01–CA19；已有26文件重读和manifest证据沿用，不另设任务。
+
+- Agent0：viewer主题已推；CLI strict engineering JSON/失败与interrupted返回非零仍在工作区（5项PASS0.473s；先前interrupted反例真实FAIL0.098s保留）。catalog正迁实际公共RF/IP测试与删除旧continuous后的完整owner回退；修正测试误读deleted路径，1 PASS6.288s，原NoneType ERROR2.177s保留，不改中央verifier。精确移除旧continuous registry/dependency条目，保其他旧prepare consumer直到合法能力接管；能力视图1 PASS1.328s。CAD export显式Store接口为既有WIP，尚未本主题独立整合。
+- Agent1：真实failed OA `215019→231000` 双guard与新报告已实际读原100行，73 detector_hit、7 freeze_without_approach_segment、20 freeze_extrapolation_outside_interval；27未确认探测不当物理损失。新run `b513ec359e714f5f91919359fe0ccf76` 保expected100/raw100/observed73/unobserved27与原source failed。原129857881B MPH唯一必要受锁SHA验证PASS0.460s，未打开COMSOL、未复制/改写。新 extraction 与报告分开记录原failed/新success，内层launcher退出/host release用公共内核，真实owner惰性两链2 PASS26.334s；历史0/1/2 hit发布null/unavailable、保原文，报告7 PASS7.213s。direct postprocess CLI/旧直接owner已实际删除，whole Candidate/phase/CAD/SIMION复用仍未退。新标准SI detector峰及final-run小plan/contract归档→GC删native stage→冷读分析由1/4接通惰性fixture；仅单batch，非商业资格。旧resolved→两组件物理投影及开启工作点校验3 PASS1.348s，明确不认证waveform/clock/release/numerics、不猜新Study。精确历史legacy_projection保留为只读物理转换，不是生产owner。
+- Agent2/4/6：focus镜像模式保原半域/none surface和原作者电压，真实GEM独立几何对照已有软件证据；TestPlane来自显式SIMION相邻官方example，原bytes/key/immutable冻结，实际Lua库定步1 PASS0.107s，不是Fly。同步stop candidate→真实terminate endpoint/bracket→collector→SI冷读、首action/同面/反向/回滚/篡改等软件合同通过，TestPlane/Fly多数为INERT；负ion可load/sample/planner，电子在load_recipe的native `_build` 拒绝，原文 `SIMION native electron tracing is not yet validated`，不是已执行preflight，也不影响reference电子。4的真实Store隔离整链首轮92.711s FAIL（worker重复planner拒自己派生面，已修并精确重入/伪面短例通过），次轮110.336s FAIL（测试harness未declare，被生产守卫正确拒），修fixture外置后待复验。readiness gate仍关，不宣称public/native通过。6的Store SI焦点分析已真实出版/冷读/强制发布中断恢复两次及packet/母群篡改负例通过，纯构造SI含1/100有两面事件；fast-adjust数学/残差实迁component，原13项PASS1.661s。旧flight/workflow/fast-adjust/contrast/MRreceipt仍需真实consumer替代后删除；单独历史receipt reader只读，不能将历史candidate状态变资格。
+- Agent3：MR历史数学/文件读取正实际拆职责：`analysis.mr_trajectory_diagnostics`、`analysis.mr_population`、`analysis.peak_metrics` 与 `results.historical_joint_source` / `mr_peak_output` 承接原母群/时钟/权重/KDE/峰与流式轨迹/图形，无第二实现。原measured/event 69项PASS5.979s、原diagnostics20项/1既有skip69.266s、loss8项PASS1.180s及后续精确小反例通过；各轮迁移错误与重复调用保留，不合并成未运行总矩阵。一次误切唯一文件后以5的损坏前snapshot4逐函数AST核保既有WIP：9个未迁函数一致，4个迁出计算经命名归一一致，reader只读record角色更严；21项PASS4.370s。严格历史writer guard有真实短GATE原PID/creation/host证明9.029s PASS；实际20261030跨run旧batch祖先缺完成证明，明确拒绝，不凭旧ledger/年龄认停止。尚无新完整historical joint Store API，旧PS与分析编排仍在，不称退役。
+- Agent5：RF-IP完整partial194.901s已PASS（INERT vendor叶），连续旧CLI/PS/schema/专属测试已真删，隐式test/probe caller迁现public操作，registry精确删除由0执行；旧segmented prepare仍在核真实非法handoff producer与合法history职责。neutral Store整链暴露真实旧source guard，field/generic tracking/IP-MR/RF入口逐个接完整product/manifest闭包；63 products/405 records的hash绑定不等于完整语义guard，补全COMSOL geometry→prepared→solution→sample及field guard短链PASS12.198s。完整尝试依次保留296.837s（1三组件preflight PASS、neutral无scope ERROR）、134.273s（旧production guard ERROR）、134.967s（fixture缺stationary source ERROR）、212.779s（fixture同Species混mass/charge FAIL）、255.536s（fixture clock basename ERROR），均未冒充tracking成功。原负离子200u/-2/ID91/weight4另建显式typed packet实际planner/collector1 PASS1.822s；新同种100u/+1 fixture不宣称原混排等价、不改原实验。现已对保留真实field执行完整纯admission/clock/packet/vacuum+HS1 planner短验证，不再百秒跑到下一个格式缺口；后续tracking复验未完成。全部用隔离快照，主树无全局冻结。
+
+恢复后先读本节并核最新HEAD/工作区与各owner消息：0整合成熟主题/公共C1大原子改名依赖；1whole Candidate职责逐链退、2/4focus真实Store与必要native、3historical joint真实Store及旧执行删除、5neutral/旧multipole prepare、6focus/MR原birth consumer。新包是执行合同，不复制为长期规范；C7普通wheel及sdist重建wheel、离源码公共链、必要Repository、最终CA逐条/总调用与唯一重复skip/wall全口径仍未完成。不把软件实现/未验native写为全部通过。
+
 ### CAD 导出显式 Store（独立索引主题）
 
 `exporters.export_cad`现把调用者选定的ArtifactStore交给既有managed-stage owner；无显式Store且没有受保护父scope时，在启动owner前拒绝。STEP作者、几何来源、命名/保留规则及原CLI不变；这是公共生命周期接线，不是真实CAD/GUI资格。代码提交`9dc8a87e`只含四个索引文件；索引与隔离快照`cad-store-index-check-69f21ce5`逐字节一致，34 tests／84回执PASS（13.514s），含Store转发与无owner拒绝。其他未暂存/未跟踪在途内容未混入。
+
+### RF–IP 连续接管后的测试与路由退役（WORKTREE）
+
+只读调用链复核确认：当前 RF–IP 从 `msplatform run` 经公共 Recipe、`native_tracing` 和 SIMION operations 执行，旧 `multipole_ip` continuous/prepare Python、PowerShell、schema 与专属 registry 路由已删除；独立 IP 的 `-InjectedSource` 只读消费历史 MP→IP 包，不是旧跨组件 producer。没有恢复 segmented 重释放，也没有新增转发壳。
+
+本单元把仍有真实验证对象的 `test_ip_compiler`、`test_selected_ip_provider` 原样迁到 `tests/assembly/rf_ip`，同步全部当前 imports、安装夹具和 owner 映射；删除 continuous/managed/prepare 三个已失去验证对象的测试文件。`pyproject.toml` 删除不存在包的 package-data；catalog 删除已删 prepare 测试及计时，IP preparation 改选真实 `test_upstream_admission`，RF event_table 改选直接 `test_rf_event_original_witness`。注册表移除 `multipole_ip_continuous`、`rf_ip_mr_continuous` 和旧 segmented `ip_mr_chain`；runtime dependencies 不再登记 multipole_ip 或其脚本。仅测试使用的 `multipole_ip_mr_y_minus55_plan.json` 原字节移到 `tests/contracts/fixtures/rf_ip_mr_y_minus55_plan.json`，不作为生产配置发行。现行 INTEGRATION/ROADMAP/IP PROJECT 的“segmented 尚须保留”表述已改成当前公共原出生链，历史日志与迁移时点记录不改写。
+
+首轮 36 个父测试共 60 条回执：57 success、1 failure、2 error；32 个迁移装配/上游准入父测试全部成功。失败为 event/axis 门禁仍期待已删 prepare/compensation 测试，修正到实际 RF witness 与当前补偿合同后，6 个受影响选择器父测试／12 条回执全部成功（50.658s）。新增公共 Recipe、场引用、Store、HS1 与恢复七模块共11个父测试／19条回执PASS（213.833s），迁为测试 fixture 的 RF–IP–MR 装配计划经真实冻结闭包1个父测试／7条回执PASS（18.196s）。Ruff、JSON、`git diff --check` 和文档 StructureOnly（321 files、0 errors）通过。此前 11 文件组合轮在 300s 工具预算中止，其中 Store fixture 的 3 个既有错误及 OA 路由失败不冒充本单元 PASS；本单元不是普通双安装、真实耦合场/HS1 Fly 或 CA14/CA19 最终验收。
+
+Agent 7 将几何和场两个原 Store 错误修到定向 PASS；组合用例随后暴露恢复 manifest 对同一记录 inputs+outputs 双登记的误拒。`guard_tracking_recovery` 现接受 `(1,1)` 的相同身份，同时拒绝重复登记及同路径 bytes/SHA/retention 冲突，原路径和防写保护不变。原 RF 恢复方法PASS（38.608s），guard 2父测试／7回执PASS（27.805s）；`test_platform_api` 的真实几何分派夹具补显式 Store 后27父测试／71回执PASS（10.407s）。这些都是 inert/软件生命周期证据，不是原生 Fly。两个完整选择器模块并行复验均在300s工具预算中止：实际已出25个成功父测试（选择器）和55成功／1失败（Changed合同），没有把它们记成完整通过；唯一失败为另一在途 SFI/paired 路由对账，留对应主题继续。
+
+候选索引快照 `C:/Users/Liao/msplatform-artifacts/architecture-c-20261127/rf-ip-index-check-20261128T012347` 完成同一72个父测试：160条记录为158 success／2个既有Lua环境skip，discovery 72/72、无漏回执，runner 318.029s／命令323.716s。此前多轮索引失败均保留为定位证据；本轮通过依赖闭包补齐，不删除失败断言。这是候选定向软件验收，不是最终Repository、双安装或真实native签收。
+
+### OA Formal 空包最终退出（WORKTREE）
+
+`oa_formal` 的科学派生核验、历史跨 solver reader、运行时物化和历史发布证据已分别归组件、results、SIMION runtime_materialization 与 execution owner；本单元只删除最后剩下的 `workflows/oa_formal/__init__.py` 空包说明及生成 `__pycache__`，不删除仍有真实消费者的 oa_candidate 或 focus 链。退休测试现直接断言父包不可导入，不再让缺失父包在子模块 `find_spec` 中变成异常；安装探针同时检查父包及两个旧子模块，并纠正先前误写成 backends.simion 的两条旧命名空间。
+
+`test_cross_solver_validation`、`test_geometry_derivation`、`test_stage_formal_simion_runtime` 共16个父测试／22条回执PASS（0.892s），保留几何冲突、未知历史版本、运行时缺件/篡改和仓外物化检查。首次删除仅移除 `__init__.py` 后两例因目录残留形成 namespace package 而FAIL，清除生成缓存并移除空目录后复验通过；没有商业求解或Candidate/Formal资格授予。
 
 ### C 活跃消费者对账（开工定位，未闭合）
 

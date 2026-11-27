@@ -13,7 +13,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from tests.workflows.multipole_ip import test_ip_compiler as ip_fixture
+from tests.assembly.rf_ip import test_ip_compiler as ip_fixture
 from msplatform.backends.simion import operations
 from msplatform.backends.simion.electrode_contract import scientific_multipole_drive
 from msplatform.backends.simion.model import RF_IP_PHYSICS, compile_prepared_model, require_prepared_model
@@ -113,53 +113,68 @@ class JointIpModelTests(unittest.TestCase):
         from tests.contracts.test_simion_rf_prepared_model import assets_at, clock_reference
         from tests.contracts.test_simion_rf_fields import InertFieldSession, execute
         from msplatform.backends.simion import field_closure
+        from msplatform.execution.owner import standalone_native_store
         from msplatform.execution.terminal_publication import publish_terminal_state
         from msplatform.io.manifest_records import file_record
+        from msplatform.storage import ArtifactStore
 
         model=compile_prepared_model(self.compiled,self.compiled.components_resolved,drive=self.drive,physics=RF_IP_PHYSICS)
         with tempfile.TemporaryDirectory() as directory:
-            root=Path(directory); source_root=root/'source'; assets=assets_at(source_root,self.compiled)
-            clock=clock_reference();records=dict(clock_authority=clock['contract'],instrument_epoch=clock['authority'])
+            root=Path(directory); source_root=root/'artifacts/source'; assets=assets_at(source_root,self.compiled)
+            original_clock=clock_reference();clock_dir=source_root/'clock';clock_dir.mkdir()
+            records={}
+            for name in ('contract','authority'):
+                original=original_clock[name];target=clock_dir/Path(original['path']).name
+                target.write_bytes(Path(original['path']).read_bytes())
+                records['clock_authority' if name=='contract' else 'instrument_epoch']=file_record(target,'required_evidence')
             model_file=source_root/'model.json';model_file.write_text(json.dumps(model.document),encoding='utf-8')
             records['compiled_model']=file_record(model_file,'required_evidence');bindings={}
             for name,row in assets.items():
                 bindings[name]={}
                 for label,record in (('raw_geometry',row['raw_record']),('fractional_surface',row['surface_records'][0]),('surface_witnesses',row['witness_record'])):
                     key=name+'_'+label;records[key]=record;bindings[name][label]=key
+            config=source_root/'run_config.json'
+            config.write_text(json.dumps(dict(schema_version=1,run_id='inert-joint-model',project='software_fixture',
+                mode='explicit_inert_joint_model',inputs={})),encoding='utf-8')
             manifest=dict(schema_version=2,role='simulation_run_manifest',run_id='inert-joint-model',project='software_fixture',
-                mode='explicit_inert_joint_model',status='success',inputs={},outputs=list(records.values()),
+                mode='explicit_inert_joint_model',status='success',inputs={},run_config=file_record(config,'required_evidence'),outputs=list(records.values()),
                 products=dict(model=dict(schema_version=1,kind='prepared_model',status='complete',data=records,
                     metadata=dict(backend='simion',drive_configured=True,geometry_materialized=True,field_status='not_solved',source_status='not_requested',native_assets=bindings))))
             publish_terminal_state(source_root,{'status':'success'},manifest)
             source=field_closure.load_field_model(dict(manifest=file_record(source_root/'run_manifest.json'),product_id='model'))
             graph=plan_rf_fields(model,numerics={'refine_policy':'vendor_default'})
-            for incomplete in (False,True):
-                session=InertFieldSession(root/('missing' if incomplete else 'success'),source.artifact.data_path('compiled_model').parent,graph)
-                session.labels={'parent':_domain_labels(model.document['geometry']['frontend_geometry'],'parent')};session.incomplete=incomplete
-                with patch('msplatform.backends.simion.model_execution.resolve_consumed_run_capacity_owner',return_value=dict(run_directory=str(source_root))), \
-                     patch('subprocess.Popen',side_effect=AssertionError('native process is forbidden')):
-                    if incomplete:
-                        with self.assertRaises((ValueError,FileNotFoundError)):execute(session,source,{'refine_policy':'vendor_default'})
-                    else:
-                        result=execute(session,source,{'refine_policy':'vendor_default'})
-                        metadata=result['manifest_extra_fields']['products']['fields']['metadata']
-                        self.assertEqual(metadata['field_representation'],'producer_owned_rf_ip_fractional_family')
-                        self.assertEqual(metadata['refine_calls'],1)
-                        self.assertEqual(metadata['fly_calls'],0)
-                        self.assertEqual([name for name,_ in session.requests],['materialize_geometry','refine_parent','audit_fields'])
-                        from msplatform.results.artifacts import open_artifact
-                        product=result['manifest_extra_fields']['products']['fields']
-                        fields_manifest=dict(schema_version=2,role='simulation_run_manifest',run_id='inert-joint-fields',
-                            project='software_fixture',mode='inert_joint_fields',status='success',inputs=dict(session.inputs),
-                            outputs=[row for row in product['data'].values() if Path(row['path']).is_relative_to(session.artifact_run_dir)],
-                            products=dict(fields=product))
-                        publish_terminal_state(session.run_dir,{'status':'success'},fields_manifest)
-                        reference=dict(manifest=file_record(session.run_dir/'run_manifest.json'),product_id='fields')
-                        opened=open_artifact(reference,expected_kind='field_bundle')
-                        target=opened.data_path(metadata['native_assets']['parent']['family'][2])
-                        original=target.read_bytes();target.write_bytes(bytes([original[0]^1])+original[1:])
-                        with self.assertRaisesRegex(AssertionError,'SHA-256 changed'):
-                            open_artifact(reference,expected_kind='field_bundle')
+            store=ArtifactStore(root/'store')
+            with standalone_native_store(store,task_key='rf-ip-inert-fields',budget=16*1024**2) as scope:
+                for incomplete in (False,True):
+                    session=InertFieldSession(root/('missing' if incomplete else 'success'),source.artifact.data_path('compiled_model').parent,graph)
+                    session.context.workspace=root
+                    session.labels={'parent':_domain_labels(model.document['geometry']['frontend_geometry'],'parent')};session.incomplete=incomplete
+                    with patch('msplatform.backends.simion.model_execution.resolve_consumed_run_capacity_owner',return_value=dict(run_directory=str(source_root))), \
+                         patch('subprocess.Popen',side_effect=AssertionError('native process is forbidden')):
+                        if incomplete:
+                            with self.assertRaises((ValueError,FileNotFoundError)):execute(session,source,{'refine_policy':'vendor_default'})
+                        else:
+                            result=execute(session,source,{'refine_policy':'vendor_default'})
+                            metadata=result['manifest_extra_fields']['products']['fields']['metadata']
+                            self.assertEqual(metadata['field_representation'],'producer_owned_rf_ip_fractional_family')
+                            self.assertEqual(metadata['refine_calls'],1)
+                            self.assertEqual(metadata['fly_calls'],0)
+                            self.assertEqual([name for name,_ in session.requests],['materialize_geometry','refine_parent','audit_fields'])
+                            from msplatform.results.artifacts import open_artifact
+                            product=result['manifest_extra_fields']['products']['fields']
+                            fields_manifest=dict(schema_version=2,role='simulation_run_manifest',run_id='inert-joint-fields',
+                                project='software_fixture',mode='inert_joint_fields',status='success',inputs=dict(session.inputs),
+                                outputs=[row for row in product['data'].values() if Path(row['path']).is_relative_to(session.artifact_run_dir)],
+                                products=dict(fields=product))
+                            publish_terminal_state(session.run_dir,{'status':'success'},fields_manifest)
+                            reference=dict(manifest=file_record(session.run_dir/'run_manifest.json'),product_id='fields')
+                            opened=open_artifact(reference,expected_kind='field_bundle')
+                            target=opened.data_path(metadata['native_assets']['parent']['family'][2])
+                            original=target.read_bytes();target.write_bytes(bytes([original[0]^1])+original[1:])
+                            with self.assertRaisesRegex(AssertionError,'SHA-256 changed'):
+                                open_artifact(reference,expected_kind='field_bundle')
+                work=store.root/store.run_status(scope['parent_run_id'])['work_path']
+                (work/'inert-field-execution.json').write_text('{"inert":true}',encoding='utf-8')
 
     def test_actual_model_iob_wrapper_uses_frozen_ip_law_with_inert_workbench(self):
         from tests.contracts.test_dual_cone_iob import HARNESS

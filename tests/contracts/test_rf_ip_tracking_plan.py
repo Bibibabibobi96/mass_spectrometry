@@ -2,7 +2,7 @@
 import tempfile
 import unittest
 from pathlib import Path
-from tests.workflows.multipole_ip import test_ip_compiler as ip_fixture
+from tests.assembly.rf_ip import test_ip_compiler as ip_fixture
 from tests.contracts import test_simion_tracking_execution as tracking_fixture
 from msplatform.backends.simion.ip_compiler import compile_ip_assembly_geometry
 from msplatform.backends.simion.rf_tracking_execution import plan_rf_tracking_workbench

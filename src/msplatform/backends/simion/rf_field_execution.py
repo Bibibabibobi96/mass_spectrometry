@@ -25,7 +25,28 @@ from .native_io import apply_native_io_mode
 from .resources import native_resource_path
 from .source import lua_value
 
+
+def _protect_field_source(session, artifact, *, required_paths):
+    """Hold the actual Store product or verify its historical owner lease."""
+    from msplatform.execution.owner import current_managed_native_store
+    scope = current_managed_native_store()
+    if scope is None:
+        return _protected_source(session, artifact.reference['manifest'], required_paths=required_paths)
+    from msplatform.execution.native_source_guard import guard_native_source
+    guarded = scope['lifetime'].enter_context(guard_native_source(artifact.reference,
+        expected_kind=artifact.kind, expected_artifact_root=session.context.workspace / 'artifacts',
+        artifact_store=scope['store']))
+    bound = {Path(path).resolve() for path in guarded.data_locations.values()}
+    if any(Path(path).resolve() not in bound for path in required_paths):
+        raise ValueError('RF field source member is not bound by its protected product')
+
 REPRESENTATION = 'producer_owned_rf_fractional_family'
+
+
+def _mirror_oa(geometry):
+    return (geometry.get('role') == 'simion_independent_oa_geometry' and
+            all(row.get('symmetry') == 'mirror_x' and row.get('surface') == 'none'
+                for row in geometry['numerical_domains'].values()))
 
 
 def _field_domains(geometry):
@@ -46,6 +67,8 @@ def _field_contract(geometry):
     if role == 'simion_independent_rf_geometry':
         return REPRESENTATION, 'simion_rf_fractional_spatial_identity'
     if role == 'simion_independent_oa_geometry':
+        if _mirror_oa(geometry):
+            return 'producer_owned_oa_mirror_empty_surface_family', 'simion_oa_mirror_empty_surface_spatial_identity'
         return 'producer_owned_oa_fractional_family', 'simion_oa_fractional_spatial_identity'
     raise ValueError('independent field families require actual RF or OA PreparedModel geometry')
 
@@ -130,7 +153,8 @@ def _family_assets(artifact, geometry) -> dict:
         raise ValueError('RF FieldBundle lacks exactly its actual numerical domains')
     assets, used = {}, set()
     for name, keys in bindings.items():
-        if set(keys) != {'carrier', 'family', 'surface_witnesses'} or not isinstance(keys['family'], list):
+        mirror = _mirror_oa(geometry)
+        if set(keys) != ({'carrier', 'family', 'surface_witnesses', 'surface_state'} if mirror else {'carrier', 'family', 'surface_witnesses'}) or not isinstance(keys['family'], list):
             raise ValueError('RF field family binding is incomplete')
         labels = _domain_labels(geometry, name)
         family = [data_record(artifact, key) for key in keys['family']]
@@ -141,11 +165,18 @@ def _family_assets(artifact, geometry) -> dict:
             raise ValueError('RF family carrier or member identity is ambiguous')
         used.update(paths)
         stem = Path(carrier['path']).with_suffix('')
-        expected = {str(stem)+suffix for suffix in ['.pa#', '.pa0', '.pa-surf', *('.pa'+str(eid) for eid in labels)]}
+        expected = {str(stem)+suffix for suffix in ['.pa#', '.pa0', *([] if mirror else ['.pa-surf']), *('.pa'+str(eid) for eid in labels)]}
         if {str(path) for path in paths} != expected:
             raise ValueError('RF family lacks its exact same-producer fractional closure')
         assets[name] = dict(carrier_record=carrier, family_records=family,
                             witness_record=data_record(artifact, keys['surface_witnesses']))
+        if mirror:
+            state = data_record(artifact, keys['surface_state'])
+            grid = _field_domains(geometry)[name]
+            native_grid = dict(grid['dimensions'], **{'d'+axis+'_mm': grid['cell_mm_xyz'][axis] for axis in 'xyz'})
+            if _static_surface_mode(state, None, native_grid) != 'empty':
+                raise ValueError('mirror OA requires verified empty surface')
+            assets[name]['state_record'] = state
     return assets
 
 
@@ -193,7 +224,16 @@ def execute_rf_fields(session, *, source, numerics, limits, materialize_geometry
             materialize_geometry=materialize_geometry, materializer_record=materializer_record,
             allow_asynchronous_io=allow_asynchronous_io, reuse_fields_reference=reuse_fields_reference,
             surface_validator_record=surface_validator_record)
-    if surface_validator_record is not None:
+    geometry = model_geometry(source.model).frontend_geometry
+    mirror = _mirror_oa(geometry)
+    if mirror:
+        from . import native_surface_state
+        from msplatform.io.manifest_records import verify_record
+        actual = file_record(Path(native_surface_state.__file__).resolve(), 'required_evidence')
+        if surface_validator_record is None or any(actual[k] != surface_validator_record[k] for k in ('path','bytes','sha256')):
+            raise ValueError('mirror OA surface validator source differs')
+        verify_record('mirror OA surface validator', dict(surface_validator_record))
+    elif surface_validator_record is not None:
         raise ValueError("unexpected static surface validator record")
     from .field_execution import _copy_records
     _require_materializer(materialize_geometry, materializer_record)
@@ -205,7 +245,7 @@ def execute_rf_fields(session, *, source, numerics, limits, materialize_geometry
         raise ValueError('RF fields require explicit reserved_run_payload_bytes')
     if allow_asynchronous_io is not None and type(allow_asynchronous_io) is not bool:
         raise TypeError('RF asynchronous I/O control must be boolean or None')
-    _protected_source(session, source.artifact.reference['manifest'], required_paths=[
+    _protect_field_source(session, source.artifact, required_paths=[
         record['path'] for row in source.native_assets.values()
         for record in [row['raw_record'], *row['surface_records'], row['witness_record'], *([row['state_record']] if 'state_record' in row else [])]])
     document = require_prepared_model(source.model)
@@ -229,6 +269,8 @@ def execute_rf_fields(session, *, source, numerics, limits, materialize_geometry
     auditor = small('rf_field_auditor', session.input_dir/'native_sources/audit_rf_field_family.lua',
                     source_path=native_resource_path('audit_rf_field_family.lua'))
     small('rf_field_action', session.input_dir/'rf_field_execution.py', source_path=Path(inspect.getsourcefile(execute_rf_fields)))
+    if mirror:
+        small('surface_validator_source', session.input_dir/'native_surface_state.py', source_path=surface_validator_record['path'])
     small('compiled_model', session.input_dir/'compiled_model.json', value=document)
     small('source_model_manifest', session.input_dir/'source_model_manifest.json', source_path=source.artifact.reference['manifest']['path'])
     small('field_numerics', session.input_dir/'field_numerics.json', value=numerics)
@@ -238,14 +280,15 @@ def execute_rf_fields(session, *, source, numerics, limits, materialize_geometry
     _clock_reference(document, dict(contract=records['clock_authority'], authority=records['instrument_epoch'], data_root=str(session.input_dir/'clock')))
     executable = session.context.tools['simion']
     tool = dict(release='SIMION 2020', executable_bytes=executable.stat().st_size, executable_sha256=file_sha256(executable))
-    identity = rf_spatial_identity(source, numerics=numerics, tool_identity=tool, auditor_identity={key:records[key]['sha256'] for key in ['rf_field_auditor','rf_field_refiner']})
+    audit_sources = ['rf_field_auditor', 'rf_field_refiner'] + (['surface_validator_source'] if mirror else [])
+    identity = rf_spatial_identity(source, numerics=numerics, tool_identity=tool, auditor_identity={key:records[key]['sha256'] for key in audit_sources})
     small('spatial_identity', session.input_dir/'spatial_identity.json', value=identity)
     assets, producer = {}, None
     if reuse_fields_reference is not None:
         selected, producer, assets = require_rf_reuse(reuse_fields_reference, identity=identity, geometry=geometry)
         for artifact in [selected, producer]:
-            _protected_source(session, artifact.reference['manifest'], required_paths=[
-                record['path'] for row in assets.values() for record in [*row['family_records'], row['witness_record']]])
+            _protect_field_source(session, artifact, required_paths=[
+                record['path'] for row in assets.values() for record in [*row['family_records'], row['witness_record'], *([row['state_record']] if 'state_record' in row else [])]])
         small('reuse_field_manifest', session.input_dir/'reuse_field_manifest.json', source_path=selected.reference['manifest']['path'])
         small('family_producer_manifest', session.input_dir/'family_producer_manifest.json', source_path=producer.reference['manifest']['path'])
     else:
@@ -253,16 +296,22 @@ def execute_rf_fields(session, *, source, numerics, limits, materialize_geometry
         for name, row in source.native_assets.items():
             target = session.run_dir/'simion/fields'/name/(name+'.pa#')
             for record, destination in [(row['raw_record'],target),
-                    (row['surface_records'][0],target.with_suffix('.pa-surf'))]:
+                    *([] if mirror else [(row['surface_records'][0],target.with_suffix('.pa-surf'))])]:
                 copies.append(dict(source_record=record, destination=str(destination)))
             small(name+'_surface_witnesses', session.run_dir/'results'/(name+'_surface.csv'), source_path=row['witness_record']['path'])
+            if mirror:
+                grid = _field_domains(geometry)[name]
+                native_grid = dict(grid['dimensions'], **{'d'+axis+'_mm': grid['cell_mm_xyz'][axis] for axis in 'xyz'})
+                if row['surface_records'] or _static_surface_mode(row.get('state_record'), None, native_grid) != 'empty':
+                    raise ValueError('mirror OA geometry surface must be verified empty')
+                small(name+'_surface_state', session.run_dir/'results'/(name+'_surface_state.json'), source_path=row['state_record']['path'])
         for copy in copies:
             Path(copy['destination']).parent.mkdir(parents=True, exist_ok=True)
         _copy_records(session, copies, callback=materialize_geometry, operation_id='materialize_geometry')
         for name in graph['numerical_domains']:
             raw = session.run_dir/'simion/fields'/name/(name+'.pa#')
             labels = _domain_labels(geometry, name)
-            paths = [raw.with_suffix(suffix) for suffix in ['.pa#','.pa0','.pa-surf', *('.pa'+str(eid) for eid in labels)]]
+            paths = [raw.with_suffix(suffix) for suffix in ['.pa#','.pa0', *([] if mirror else ['.pa-surf']), *('.pa'+str(eid) for eid in labels)]]
             if any(path.exists() for path in paths if path.suffix not in {'.pa#','.pa-surf'}):
                 raise FileExistsError('RF Refine refuses a preexisting response')
             for path in paths:
@@ -278,18 +327,22 @@ def execute_rf_fields(session, *, source, numerics, limits, materialize_geometry
             ordinal = session.expected_operation_ids.index('refine_'+name)+1
             if b'INDEPENDENT_RF_REFINE=PASS' not in (session.log_dir/f'operation_{ordinal:04d}.stdout.log').read_bytes():
                 raise ValueError('RF Refine completion marker is absent')
+            if mirror and raw.with_suffix('.pa-surf').exists():
+                raise ValueError('mirror OA Refine unexpectedly produced a fractional surface')
             family = [file_record(session.canonical_path(path), 'solver_native_binary') for path in paths]
             if any(not row['exists'] or row['bytes'] <= 0 for row in family):
                 raise ValueError('RF Refine did not produce its complete fractional family')
             assets[name] = dict(carrier_record=family[1], family_records=family,
                 witness_record=records[name+'_surface_witnesses'])
+            if mirror:
+                assets[name]['state_record'] = records[name+'_surface_state']
         receipt_rows = [row for row in session.operations if row['operation_id'].startswith('refine_')]
         small('field_native_receipts', session.input_dir/'field_native_receipts.json', value=receipt_rows)
     audit_path = session.declare_file(session.run_dir/'results/rf_field_audit.json', 'required_evidence')
     if audit_path.exists():
         raise FileExistsError('RF field audit already exists')
     audit_path.parent.mkdir(parents=True, exist_ok=True)
-    audits, guards = [], []
+    audits, guards = [], ([dict(surface_validator_record), records['surface_validator_source']] if mirror else [])
     native_assets = {}
     for name in graph['numerical_domains']:
         asset = assets[name]
@@ -304,11 +357,17 @@ def execute_rf_fields(session, *, source, numerics, limits, materialize_geometry
         carrier_key = next(key for key in keys if records[key] == asset['carrier_record'])
         native_assets[name] = dict(carrier=carrier_key, family=keys, surface_witnesses=witness_key)
         guards.extend([*asset['family_records'], asset['witness_record']])
+        if mirror:
+            state_key = name+'_surface_state'
+            records[state_key] = asset['state_record']
+            native_assets[name]['surface_state'] = state_key
+            guards.append(asset['state_record'])
         audits.append(dict(domain_id=name, carrier_path=asset['carrier_record']['path'],
             family_paths=[row['path'] for row in asset['family_records']],
             response_ids=_domain_labels(geometry, name),
             grid=dict(grid['dimensions'], **{'d'+axis+'_mm':grid['cell_mm_xyz'][axis] for axis in 'xyz'}),
-            physical_samples=(geometry['physical_samples'] if geometry.get('role') == 'simion_neutral_world_collision_geometry' else geometry['raw_physical_samples'][name]), surface_witnesses=asset['witness_record']['path']))
+            physical_samples=(geometry['physical_samples'] if geometry.get('role') == 'simion_neutral_world_collision_geometry' else geometry['raw_physical_samples'][name]), surface_witnesses=asset['witness_record']['path'],
+            **({'surface_mode':'empty', 'mirror_x':True} if mirror else {})))
     spec = small('field_audit_spec', session.input_dir/'rf_field_audit.lua', text='return '+lua_value(dict(assets=audits, output=str(audit_path)))+'\n')
     argv = apply_native_io_mode([str(executable),'--nogui','--noprompt','lua',str(auditor),str(spec)], allow_asynchronous_io=allow_asynchronous_io)
     session.run_process('audit_fields', executable=executable, arguments=argv[1:], role='SIMION', stage='inspect', limits=limits,
@@ -493,7 +552,7 @@ def _execute_static_world_fields_inner(session, *, source, numerics, limits, mat
         raise ValueError('static field requires explicit reserved_run_payload_bytes')
     if allow_asynchronous_io is not None and type(allow_asynchronous_io) is not bool:
         raise TypeError('SIMION asynchronous I/O control must be boolean or None')
-    _protected_source(session, source.artifact.reference['manifest'], required_paths=[
+    _protect_field_source(session, source.artifact, required_paths=[
         record['path'] for row in source.native_assets.values()
         for record in [row['raw_record'], *row['surface_records'], row['witness_record'], *([row['state_record']] if 'state_record' in row else [])]])
     document = require_prepared_model(source.model)
@@ -575,7 +634,7 @@ def _execute_static_world_fields_inner(session, *, source, numerics, limits, mat
                                                                  identity=identity, geometry=geometry)
         asset = assets['world']
         for artifact in (selected, producer):
-            _protected_source(session, artifact.reference['manifest'],
+            _protect_field_source(session, artifact,
                               required_paths=[row['path'] for row in asset.values()])
         small('reuse_field_manifest', session.input_dir/'reuse_field_manifest.json',
               source_path=selected.reference['manifest']['path'])

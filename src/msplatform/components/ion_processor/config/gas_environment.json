@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "environment_id": "ion_processor_prescribed_n2_v1",
+  "species_ref": {"species_id": "n2", "version": "nitrogen_effective_hard_sphere_v1"},
+  "collision_model_ref": {
+    "model_id": "simion_hs1_helium_example_uncalibrated_assumption",
+    "version": "simion_hs1_helium_example_uncalibrated_assumption_v1"
+  },
+  "temperature_k": 300,
+  "bulk_velocity_m_s": [0, 0, 0],
+  "regions": [
+    {"region_id": "hp", "start_ref": "guide_end", "end_ref": "hp_end", "pressure_pa": 1},
+    {"region_id": "lp", "start_ref": "hp_end", "end_ref": "query_domain_end", "pressure_pa": 0.2}
+  ],
+  "background": "prescribed_zero_pressure_collision_omission"
+}

@@ -12,7 +12,6 @@ from tests.contracts.test_simion_native_plans import LUA
 from tests.components.ion_processor.test_functional import HS1_SOURCE_FIXTURE
 from msplatform.assembly.factory import assemble
 from msplatform.backends.simion import operations
-from msplatform.workflows.multipole_ip import continuous
 from msplatform.backends.simion.model import compile_prepared_model, RF_IP_PHYSICS
 from msplatform.backends.simion.rf_tracking_execution import prepare_rf_ip_hs1
 from msplatform.backends.simion.rf_tracking_program import render_rf_controls
@@ -20,7 +19,8 @@ from msplatform.backends.simion.tracking_execution import plan_tracking_executio
 from msplatform.backends.simion.tracking_units import tracking_applicability
 from msplatform.backends.simion.resources import native_resource_path
 from msplatform.backends.simion.source import lua_value
-from msplatform.contracts.gas import BoxDomain, GasFieldSpec, GasSource, GasSpecies, GasState
+from msplatform.contracts.gas import BoxDomain
+from tests.contracts.test_support.ip_hs1_author import environment_record
 from msplatform.io.manifest_records import file_record
 
 
@@ -32,7 +32,7 @@ class ComposedRfIpHs1Tests(unittest.TestCase):
         recipe = copy.deepcopy(recipe)
         for item in recipe['instances']:
             item['transform']['translation_mm'][0] += 5
-        from tests.workflows.multipole_ip.test_ip_compiler import IpCompilerTests
+        from tests.assembly.rf_ip.test_ip_compiler import IpCompilerTests
         original = IpCompilerTests(methodName='runTest'); original.setUp()
         assembly = assemble(recipe, original.assembly.components)
         bounds = copy.deepcopy(original.numerics)
@@ -41,6 +41,13 @@ class ComposedRfIpHs1Tests(unittest.TestCase):
         compiled = operations.compile_geometry(assembly, numerics=bounds)
         model = compile_prepared_model(compiled, compiled.components_resolved, drive=fixture.drive, physics=RF_IP_PHYSICS)
         _, _, packet, clocks, propagation, numerics = rf_tracking_case()
+        first=packet['rows'][0]
+        packet['realization']['spec']['species']=dict(species_kind='ion',mass_amu=first['mass_amu'],charge_state=first['charge_state'])
+        from msplatform.contracts.particle_physics import kinetic_energy_ev
+        for row in packet['rows']:
+            row.update(species_id=first['species_id'], mass_amu=first['mass_amu'], charge_state=first['charge_state'])
+            row['kinetic_energy_eV']=kinetic_energy_ev(row['mass_amu'],*(row['velocity_'+axis+'_m_s'] for axis in 'xyz'))
+            packet['mother']['records'][row['particle_id']].update(species_id=first['species_id'], mass_amu=first['mass_amu'], charge_state=first['charge_state'], kinetic_energy_eV=row['kinetic_energy_eV'])
         frame = compiled.frontend_geometry['composition_plan']['components']['multipole']['local_frame_id']
         for row in packet['rows']:
             row['source_component_id'] = 'multipole'; row['target_component_id'] = 'multipole'; row['frame_id'] = frame
@@ -52,19 +59,27 @@ class ComposedRfIpHs1Tests(unittest.TestCase):
         clocks['instrument_epoch']['sha256'] = packet['clock']['authority_sha256']
         propagation['dynamics']['collisions'] = 'hs1'; numerics['grouped'] = 0
         box = lambda lo, hi: BoxDomain(lo, hi, (True,True,True), (True,True,True))
-        baseline = model.document['drive']['ip_schedule']['baseline']
         bath = box((0,-10,-10),(211,10,10))
-        outer = GasFieldSpec(field_id='explicit_outer',frame_id=baseline['clock']['frame_id'],representation='uniform',
-            composition_id='ion_processor_explicit_single_gas',composition=(GasSpecies('ion_processor_model_gas',baseline['gas']['mass_amu'],1),),
-            domain=box((-200,-40,-40),(300,40,40)),source=GasSource('prescribed','test_outer',()),
-            uniform_state=GasState('gas',4,baseline['gas']['temperature_k'],(1,2,3)))
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory).resolve(); vendor=root/'original.lua';vendor.write_text(HS1_SOURCE_FIXTURE,encoding='utf-8')
-            request=dict(bath_domain=bath,outer=outer,vendor_record=file_record(vendor),numerics=dict(seed=40,hs1_steps_per_mfp=20))
+            request=dict(bath_domain=bath,outer_domain=box((-200,-40,-40),(300,40,40)),vendor_record=file_record(vendor),numerics=dict(seed=40,hs1_steps_per_mfp=20),environment_record=environment_record(root,pressure_pa=4,temperature_k=300,bulk_velocity_m_s=[1,2,3]),environment_instance_id='ion_processor')
             prepared=prepare_rf_ip_hs1(model,request)
             plan=plan_tracking_execution(model,particles=packet,clock_records=clocks,propagation=propagation,
                 observations=dict(plane_observations=[]),numerics=numerics,hs1_request=request)
             self.assertEqual(plan['hs1_identity'],prepared['identity']); self.assertEqual(plan['flight']['tracking_kind'],'rf_ip')
+            public_propagation=dict(propagation,publication_contract='original_birth_si_v1')
+            public_plan=plan_tracking_execution(model,particles=packet,clock_records=clocks,propagation=public_propagation,
+                observations=dict(plane_observations=[],observation_times_us=[1.75]),numerics=numerics,hs1_request=request)
+            self.assertTrue(public_plan['flight']['original_birth_si'])
+            self.assertNotEqual(tracking_applicability(plan),tracking_applicability(public_plan))
+            self.assertEqual(public_plan['hs1_identity'],prepared['identity'])
+            with self.assertRaisesRegex(ValueError,'empty plane'):
+                plan_tracking_execution(model,particles=packet,clock_records=clocks,propagation=public_propagation,
+                    observations=dict(plane_observations=[{'observation_id':'unbound'}]),numerics=numerics,hs1_request=request)
+            with self.assertRaisesRegex(ValueError,'continuous original-birth'):
+                plan_tracking_execution(model,particles=packet,clock_records=clocks,
+                    propagation=dict(public_propagation,scope='state_relaunch'),
+                    observations=dict(plane_observations=[]),numerics=numerics,hs1_request=request)
             with self.assertRaisesRegex(ValueError,'sequential'):
                 plan_tracking_execution(model,particles=packet,clock_records=clocks,propagation=propagation,
                     observations=dict(plane_observations=[]),numerics={k:v for k,v in numerics.items() if k!='grouped'},hs1_request=request)
@@ -77,11 +92,13 @@ class ComposedRfIpHs1Tests(unittest.TestCase):
                 query_frame_id=prepared['query_frame_id'],numerics=request['numerics'])
             controls=render_rf_controls(model,plan,assets={},native_sources={})
             self.assertIn('joint_hs1.install',controls['program']);self.assertNotIn('upstream_exit_x_mm',controls['program'])
+            self.assertNotIn('local rf_committed_observations=true',controls['program'])
             # Exercise the actual emitted Program with a deliberately inert HS1
             # implementation. It observes the placed gas query, not collision physics.
             import re
-            expected=dict(gas_mass_amu=baseline['gas']['mass_amu'],temperature_k=baseline['gas']['temperature_k'],
-                pressure_pa=0,sigma_m2=baseline['gas']['cross_section_m2'],mean_free_path_mm=baseline['gas']['mean_free_path_mm'],
+            view=prepared['identity']['native_gas_view']
+            expected=dict(gas_mass_amu=view['mass_amu'],temperature_k=view['temperature_k'],
+                pressure_pa=0,sigma_m2=view['cross_section_m2'],mean_free_path_mm=view['mean_free_path_mm'],
                 steps_per_mfp=20,random_seed=41,mark_collisions=0,trace_level=0)
             stub='''
 local observed={};local hs={segment={}}
@@ -120,9 +137,55 @@ print('ACTUAL_PROGRAM_PLACED_GAS=PASS')
             with self.assertRaises(AssertionError): prepare_rf_ip_hs1(model,bad)
             with self.assertRaisesRegex(ValueError,'complete existing file record'):
                 prepare_rf_ip_hs1(model,dict(request,vendor_record=dict(request['vendor_record'],exists=False)))
-            with self.assertRaises(ValueError): prepare_rf_ip_hs1(model,dict(request,outer=None))
+            with self.assertRaises(ValueError): prepare_rf_ip_hs1(model,dict(request,outer_domain=None))
             self._g13_rendered_samples(root, model, packet, clocks, propagation, numerics, request, plan, stub, re)
+            public_plan['hs1']=copy.deepcopy(plan['hs1'])
+            self._public_rendered_si(root, model, public_plan, stub, re)
             self._actual_managed_consumer(root, model, compiled, packet, propagation, numerics, request)
+
+    def _public_rendered_si(self, root, model, plan, stub, re):
+        """Real emitted Program and callbacks with inert HS1; no vendor Fly."""
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from msplatform.backends.simion.terminal_evidence import append_terminal_recorder
+        from msplatform.backends.simion.tracking_collection import collect_tracking_logs
+        from msplatform.backends.simion.tracking_execution import _publish_split_particle_data
+        from msplatform.results.particle_data import read_particle_data
+        controls=render_rf_controls(model,plan,assets={},native_sources={})
+        self.assertIn('local rf_committed_observations=true',controls['program'])
+        body=re.sub(r'(?m)^(\s*)adjustable ',r'\1',controls['program'])
+        body=append_terminal_recorder(body,recorder_source=native_resource_path('native_terminal_recording.lua').read_text(encoding='utf-8'),native_run='public-fixture')
+        chunks=[stub,body,'\nion_run=1;ion_time_of_birth=0;ion_time_step=.1;sim_grouped=0;segment.initialize_run()\n']
+        for ion,row in enumerate(plan['rows'],1):
+            chunks.append('ion_number='+str(ion)+';ion_instance=1;ion_splat=0;ion_time_of_flight=0;ion_mass='+repr(row['mass_amu'])+';ion_charge='+str(row['charge_state'])+'\n')
+            for axis in 'xyz':
+                chunks.append('ion_p'+axis+'_mm='+repr(row['position_'+axis+'_mm'])+';ion_v'+axis+'_mm='+repr(row['velocity_'+axis+'_m_s']/1000)+'\n')
+            chunks.append('segment.initialize();ion_time_of_flight=.5;ion_px_mm=ion_px_mm+.5;segment.other_actions();ion_time_of_flight=1;ion_px_mm=ion_px_mm+.5;segment.other_actions();segment.terminate()\n')
+        chunks.append("print('status,Fly completed. 2 splats')\n")
+        script=root/'public_rf_ip.lua';script.write_text(''.join(chunks),encoding='utf-8')
+        child=subprocess.run([str(LUA),str(script)],cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30)
+        self.assertEqual(child.returncode,0,child.stdout+child.stderr)
+        log=root/'public_rf_ip.log';log.write_text(child.stdout,encoding='utf-8')
+        metadata=copy.deepcopy(controls['build_metadata']);metadata['terminal_evidence']=dict(schema_version=1,native_run='public-fixture')
+        batch=dict(source_row_range=[1,2],expected_particle_ids=[7,91],build_metadata=metadata)
+        collection=collect_tracking_logs([log],source_rows={row['particle_id']:row for row in plan['rows']},
+            source_provenance=plan['source_provenance'],flight=plan['flight'],batches=[batch])
+        self.assertTrue(collection['observation_complete'])
+        self.assertEqual([(row['particle_id'],row['instrument_time_us']) for row in collection['native_shared_states']],[(7,1.75),(91,1.75)])
+        binary=root/'public_fixture.exe';binary.write_bytes(b'INERT_NOT_SIMION')
+        binary_record=file_record(binary,'solver_native_binary');identity={key:binary_record[key] for key in ('bytes','sha256')}
+        output=root/'public_si';output.mkdir()
+        session=SimpleNamespace(result_dir=output,context=SimpleNamespace(tools={'simion':str(binary)}),
+            declare_file=lambda path,role:path,canonical_path=lambda path:path)
+        with patch('msplatform.backends.simion.tracking_execution.windows_binary_version',return_value='inert-fixture'):
+            _publish_split_particle_data(session,plan,collection,dict(native_frame_id=model.document['native_frame_id']),
+                model.document,identity,{})
+        data=read_particle_data(output/'particle_data')
+        self.assertEqual([row['particle_id'] for row in data['initial_states']],[7,91])
+        self.assertEqual(data['trajectories']['particle_id'].tolist(),[7,91])
+        self.assertEqual(data['trajectories']['time_s'].tolist(),[1.75e-6,1.75e-6])
+        self.assertEqual(data['metadata']['clock']['clock_epoch_id'],model.document['drive']['clock']['clock_epoch_id'])
+        self.assertTrue(all(row['physical_outcome']=='unknown' for row in data['terminal_states']))
 
     def _g13_rendered_samples(self, root, model, packet, clocks, propagation, numerics, request, base_plan, stub, re):
         from msplatform.backends.simion.tracking_units import partition_tracking_units, slice_tracking_plan
@@ -165,6 +228,21 @@ print('ACTUAL_PROGRAM_PLACED_GAS=PASS')
         self.assertEqual([(row['particle_id'],row['species_id'],row['particle_weight'],row['clock_epoch_id'],row['phase_reference_id'],row['phase_rad'])
                           for row in result['original_mother']['mother_records']],
                          [(row['particle_id'],row['species_id'],row['particle_weight'],row['clock_epoch_id'],row['phase_reference_id'],row['phase_rad']) for row in sampled['source_provenance']['mother_records']])
+        # Re-render each ordinal unit independently and observe the real HS1
+        # wrapper's seed calls; the HS1 implementation itself remains inert.
+        for part in reversed_units:
+            control=render_rf_controls(model,part,assets={},native_sources={})
+            unit_body=re.sub(r'(?m)^(\s*)adjustable ',r'\1',control['program'])
+            row=part['rows'][0];pid=row['particle_id']
+            unit=[traced,unit_body,'\nsegment.initialize_run()\n',
+                'ion_number=1;ion_instance=1;ion_splat=0;ion_time_of_flight=0;ion_mass='+repr(row['mass_amu'])+';ion_charge='+str(row['charge_state'])+'\n']
+            for axis in 'xyz':
+                unit.append('ion_p'+axis+'_mm='+repr(row['position_'+axis+'_mm'])+';ion_v'+axis+'_mm='+repr(row['velocity_'+axis+'_m_s']/1000)+'\n')
+            unit.append('segment.initialize();ion_time_of_flight=.5;segment.other_actions();segment.terminate()\n')
+            unit.append('assert(seeds[#seeds]=='+str(40+pid-1)+', tostring(seeds[#seeds]))\n')
+            unit_script=root/('partition_seed_'+str(pid)+'.lua');unit_script.write_text(''.join(unit),encoding='utf-8')
+            unit_run=subprocess.run([str(LUA),str(unit_script)],cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30)
+            self.assertEqual(unit_run.returncode,0,unit_run.stdout+unit_run.stderr)
     def _actual_managed_consumer(self, root, model, compiled, packet, propagation, numerics, request):
         """Real public owner and leases; only the native leaf is an inert Python child."""
         import os
@@ -172,39 +250,48 @@ print('ACTUAL_PROGRAM_PLACED_GAS=PASS')
         from msplatform.execution import run_session
 
         from tests.contracts.test_support.rf_ip_inert_field import prepare_inert_field
-        reference, originals, context = prepare_inert_field(root, model, compiled)
+        host_state=os.environ.get('MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH') or str(root/'host.sqlite3')
+        private=dict(MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN='',MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID='',
+            MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE='',MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=host_state)
+        with patch.dict(os.environ,private):
+            reference, originals, context, store = prepare_inert_field(root, model, compiled)
+        from msplatform.execution.owner import standalone_native_store
         actual_process=run_session.run_observed_process; observed=[]
         from tests.contracts.test_support.rf_ip_inert_leaf import inert_native_leaf
         inert_native = inert_native_leaf(actual_process, observed)
-        private=dict(MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN='',MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID='',MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE='')
         with patch.dict(os.environ,private),patch.object(run_session,'run_observed_process',side_effect=inert_native):
-            result=continuous.track_existing_fields(fields=reference,particles=packet,propagation=propagation,observations=dict(plane_observations=[]),
-                tracking_numerics=numerics,context=context,hs1_request=request)
-            reused=continuous.track_existing_fields(fields=reference,particles=packet,propagation=propagation,observations=dict(plane_observations=[]),
-                tracking_numerics=numerics,context=context,hs1_request=request,recovery_reference=result.reference['manifest'])
-            self.assertEqual(len(observed),3)
-            self.assertEqual(reused.metadata['reused_unit_count'],1)
-            wrong_seed=dict(request,numerics=dict(request['numerics'],seed=request['numerics']['seed']+1))
-            with self.assertRaisesRegex(ValueError,'scientific applicability or partition differs'):
-                continuous.track_existing_fields(fields=reference,particles=packet,propagation=propagation,observations=dict(plane_observations=[]),
-                    tracking_numerics=numerics,context=context,hs1_request=wrong_seed,recovery_reference=result.reference['manifest'])
-            self.assertEqual(len(observed),3)
+            with standalone_native_store(store, task_key='rf-ip-inert-tracking', budget=512*1024**2):
+                result=operations.track(reference,packet,propagation=propagation,observations=dict(plane_observations=[]),
+                    numerics=numerics,context=context,hs1_request=request)
+                reused=operations.track(reference,packet,propagation=propagation,observations=dict(plane_observations=[]),
+                    numerics=numerics,context=context,hs1_request=request,recovery_reference=result.reference['manifest'])
+                self.assertEqual(len(observed),3)
+                self.assertEqual(reused.metadata['reused_unit_count'],1)
+                wrong_seed=dict(request,numerics=dict(request['numerics'],seed=request['numerics']['seed']+1))
+                with self.assertRaisesRegex(ValueError,'scientific applicability or partition differs'):
+                    operations.track(reference,packet,propagation=propagation,observations=dict(plane_observations=[]),
+                        numerics=numerics,context=context,hs1_request=wrong_seed,recovery_reference=result.reference['manifest'])
+                self.assertEqual(len(observed),3)
             frozen_bath=result.manifest_location.parent/'inputs/hs1/bath.lua'
             original_bath=frozen_bath.read_bytes()
             try:
                 frozen_bath.write_bytes(bytes([original_bath[0]^1])+original_bath[1:])
-                with self.assertRaisesRegex((AssertionError,ValueError),'(SHA-256 changed|immutable input)'):
-                    continuous.track_existing_fields(fields=reference,particles=packet,propagation=propagation,observations=dict(plane_observations=[]),
-                        tracking_numerics=numerics,context=context,hs1_request=request,recovery_reference=result.reference['manifest'])
+                with standalone_native_store(store, task_key='rf-ip-inert-tracking-bath-tamper', budget=512*1024**2) as refused:
+                    with self.assertRaisesRegex((AssertionError,ValueError),'(SHA-256 changed|immutable input)'):
+                        operations.track(reference,packet,propagation=propagation,observations=dict(plane_observations=[]),
+                            numerics=numerics,context=context,hs1_request=request,recovery_reference=result.reference['manifest'])
+                    refused['reported_status']='failed'
             finally:
                 frozen_bath.write_bytes(original_bath)
             self.assertEqual(len(observed),3)
             vendor_path=Path(request['vendor_record']['path']);vendor_bytes=vendor_path.read_bytes()
             try:
                 vendor_path.write_bytes(bytes([vendor_bytes[0]^1])+vendor_bytes[1:])
-                with self.assertRaisesRegex(AssertionError,'SHA-256 changed'):
-                    continuous.track_existing_fields(fields=reference,particles=packet,propagation=propagation,observations=dict(plane_observations=[]),
-                        tracking_numerics=numerics,context=context,hs1_request=request)
+                with standalone_native_store(store, task_key='rf-ip-inert-tracking-vendor-tamper', budget=512*1024**2) as refused:
+                    with self.assertRaisesRegex(AssertionError,'SHA-256 changed'):
+                        operations.track(reference,packet,propagation=propagation,observations=dict(plane_observations=[]),
+                            numerics=numerics,context=context,hs1_request=request)
+                    refused['reported_status']='failed'
             finally:
                 vendor_path.write_bytes(vendor_bytes)
             # Keep the actual resolver but select a private resource package whose
@@ -221,10 +308,12 @@ print('ACTUAL_PROGRAM_PLACED_GAS=PASS')
             self.assertEqual((isolated_package/'resources/rf_ip_tracking_hs1.lua').read_bytes(),
                              (original_package/'resources/rf_ip_tracking_hs1.lua').read_bytes())
             before_missing = len(observed)
-            with patch.object(simion_resources, 'files', return_value=isolated_package):
-                with self.assertRaisesRegex(FileNotFoundError, 'installed SIMION native resource is missing: rf_ip_gas_selection.lua'):
-                    continuous.track_existing_fields(fields=reference,particles=packet,propagation=propagation,observations=dict(plane_observations=[]),
-                        tracking_numerics=numerics,context=context,hs1_request=request)
+            with standalone_native_store(store, task_key='rf-ip-inert-tracking-missing-resource', budget=512*1024**2) as refused:
+                with patch.object(simion_resources, 'files', return_value=isolated_package):
+                    with self.assertRaisesRegex(FileNotFoundError, 'installed SIMION native resource is missing: rf_ip_gas_selection.lua'):
+                        operations.track(reference,packet,propagation=propagation,observations=dict(plane_observations=[]),
+                            numerics=numerics,context=context,hs1_request=request)
+                refused['reported_status']='failed'
             self.assertEqual(len(observed), before_missing)
             self.assertTrue((original_package/'resources/rf_ip_gas_selection.lua').is_file())
         collection=json.loads(result.data_path('collection').read_text());self.assertEqual(collection['native_calls'],3)

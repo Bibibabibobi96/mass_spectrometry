@@ -979,7 +979,7 @@ class NormalOwnerTests(unittest.TestCase):
         from msplatform.execution import owner
         from msplatform.execution.capacity_protection import load_capacity_protection_leases, path_is_protected
         from msplatform.io.manifest_records import file_record
-        from msplatform.ion_release import load_recorded_release
+        from msplatform.particle_release import load_recorded_release
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -229,8 +229,41 @@ def render_rf_controls(model: Any, plan: Mapping[str, Any], *, assets: Mapping[s
     prefix+='local rf_trajectory_quality='+lua_value(plan['flight']['trajectory_quality'])+'\n'
     prefix+='local rf_grouped='+lua_value(plan['flight'].get('grouped'))+'\n'
     prefix+='local rf_static_operating='+lua_value(static_world or neutral_sampled)+'\n'
-    if ip_mr:prefix+='local rf_committed_observations=true\n'
+    focus = plan['flight'].get('oa_focus_runtime')
+    if focus is not None and not oa:
+        raise ValueError('focus runtime requires independent OA tracking')
+    if ip_mr or neutral_sampled or focus is not None or (joint and plan['flight'].get('original_birth_si') is True):
+        prefix+='local rf_committed_observations=true\n'
     program=prefix+resource('rf_tracking.lua')
+    focus_mode=plan['flight'].get('oa_focus_field_mode','native')
+    if focus_mode not in {'native','zone1_ideal','zone2_ideal','full_ideal'} or (focus_mode!='native' and focus is None):
+        raise ValueError('OA ideal field requires an authorized focus mode')
+    if focus_mode!='native':
+        authority=plan['observations']['oa_focus_authority']
+        instance_id=authority['component_id']
+        poses=[row['transform'] for row in geometry['composition_plan']['recipe']['instances'] if row['instance_id']==instance_id]
+        if len(poses)!=1 or poses[0]['rotation']!=[[1,0,0],[0,1,0],[0,0,1]]:
+            raise ValueError('OA ideal field requires the authored axis-aligned placement')
+        design=document['components_resolved'][instance_id]
+        groups=document['drive']['groups'][instance_id]
+        voltages=[groups[name]['voltage_v'] for name in ('repeller','intermediate_grid_1','exit_grid')]
+        z_exit=design['local_exit_z_mm'];z_grid=design['grid_supports'][0]['grid_z_mm'];z_repeller=design['local_repeller_z_mm']
+        if not z_exit<z_grid<z_repeller:
+            raise ValueError('OA ideal field requires ordered actual electrode planes')
+        spec=dict(mode=focus_mode,z_offset=poses[0]['translation_mm'][2],exit_z=z_exit,grid_z=z_grid,
+                  repeller_z=z_repeller,voltages=voltages)
+        program+='\nlocal oa_focus_ideal='+lua_value(spec)+'''\nfunction segment.efield_adjust()
+  if ion_instance~=1 then return end
+  local z=ion_pz_mm-oa_focus_ideal.z_offset
+  local a,b,za,zb
+  if (oa_focus_ideal.mode=='zone1_ideal' or oa_focus_ideal.mode=='full_ideal') and z>=oa_focus_ideal.grid_z and z<=oa_focus_ideal.repeller_z then
+    a,b,za,zb=oa_focus_ideal.voltages[1],oa_focus_ideal.voltages[2],oa_focus_ideal.repeller_z,oa_focus_ideal.grid_z
+  elseif (oa_focus_ideal.mode=='zone2_ideal' or oa_focus_ideal.mode=='full_ideal') and z>=oa_focus_ideal.exit_z and z<oa_focus_ideal.grid_z then
+    a,b,za,zb=oa_focus_ideal.voltages[2],oa_focus_ideal.voltages[3],oa_focus_ideal.grid_z,oa_focus_ideal.exit_z
+  else return end
+  local instance=assert(simion.wb.instances[ion_instance],'OA ideal field requires its actual instance')
+  ion_dvoltsx_gu,ion_dvoltsy_gu,ion_dvoltsz_gu=0,0,(b-a)/(zb-za)*instance.pa.dz_mm*instance.scale
+end\n'''
     if ip_mr:
         adapter=resource('scalar_field_adapter.lua')
         composer=resource('generic_scalar_field.lua')
@@ -288,7 +321,16 @@ def render_rf_controls(model: Any, plan: Mapping[str, Any], *, assets: Mapping[s
             raise ValueError('RF-IP gas frame differs from the selected IP placement')
         if plan['flight'].get('grouped') != 0:
             raise ValueError('RF-IP HS1 requires sequential particle processing')
-        config=dict(baseline=baseline,numerics=numerics,query_frame_id=options['query_frame_id'],schedule_edges_us=edges)
+        identity = plan.get('hs1_identity')
+        if (not isinstance(identity, dict) or identity.get('environment_instance_id') != ip_ids[0]
+                or identity.get('numerics') != numerics or 'gas' in baseline):
+            raise ValueError('HS1 requires the frozen environment identity and current gas-free baseline')
+        from msplatform.components.ion_processor.gas_regions import project_ip_resolved_gas_view
+        gas_view = project_ip_resolved_gas_view(identity.get('gas_environment'))
+        if identity.get('native_gas_view') != gas_view:
+            raise ValueError('HS1 native gas view differs from the frozen environment')
+        config=dict(baseline={**baseline, 'gas': gas_view},numerics=numerics,
+                    query_frame_id=options['query_frame_id'],schedule_edges_us=edges)
         # SIMION imports can overwrite existing segment callbacks. Preserve the
         # tracking callbacks before importing HS1, whose returned table retains
         # its own callbacks for the explicit lifecycle composition below.
@@ -307,7 +349,7 @@ def render_rf_controls(model: Any, plan: Mapping[str, Any], *, assets: Mapping[s
         program+='\nlocal oa_step_pulse=oa_pulse_hook.compile_physical{voltage_waveforms=oa_waveforms,pulse_mode=function() return 1 end,pulse_time_us='+lua_value(pulse['time_us'])+',pulse_width_us='+lua_value(pulse['width_us'])+'}\n'
         program+='local oa_original_tstep=segment.tstep_adjust\nfunction segment.tstep_adjust() oa_original_tstep();ion_time_step=oa_step_pulse.cap_timestep_at(single_flight_instrument_time_us(),ion_time_step) end\n'
     definitions=plan['observations']['plane_observations']
-    if definitions:
+    if definitions and focus is None:
         program=_instrument_plane_observations(program,definitions,geometry,
             consumed_plane_events=plan['propagation']['consumed_plane_events'],particle_ids=ids,
             start_times_us=[r['instrument_time_us'] for r in plan['rows']],propagation_stop=plan['propagation']['stop'])
@@ -316,6 +358,20 @@ def render_rf_controls(model: Any, plan: Mapping[str, Any], *, assets: Mapping[s
             if program.count(marker)!=1:raise ValueError('RF cut terminal hook differs')
             program=program.replace(marker,marker+"    rf_emit_current('terminal','accepted_cut')\n",1)
     if ip_mr and definitions:program=_stage_rf_plane_observations(program)
+    if focus is not None:
+        if (not isinstance(focus, dict) or set(focus) != {'planes', 'exit_id', 'focus_id', 'testplane_path'}
+                or not isinstance(focus['testplane_path'], str) or not Path(focus['testplane_path']).is_absolute()):
+            raise ValueError('focus runtime requires frozen TestPlane and derived planes')
+        observer_spec = {key: focus[key] for key in ('planes', 'exit_id', 'focus_id')}
+        program += '\nlocal oa_focus_module=(function()\n'+resource('oa_focus_observer.lua')+'\nend)()\n'
+        program += 'local oa_focus_testplane=simion.import('+lua_value(focus['testplane_path'])+')\n'
+        program += 'local oa_focus=oa_focus_module.new('+lua_value(observer_spec)+',oa_focus_testplane,single_flight_instrument_time_us,single_flight_canonical_particle_id,single_flight_write_trace)\n'
+        for callback in ('initialize','tstep_adjust','other_actions','terminate'):
+            program += 'local oa_focus_previous_'+callback+'=segment.'+callback+'\n'
+            if callback in ('initialize','tstep_adjust'):
+                program += 'function segment.'+callback+'() oa_focus_previous_'+callback+'();oa_focus.'+callback+'() end\n'
+            else:
+                program += 'function segment.'+callback+'() oa_focus.'+callback+'();oa_focus_previous_'+callback+'() end\n'
     if geometry.get('role') in {'simion_neutral_world_collision_geometry','simion_neutral_multi_domain_collision_geometry'}:
         if geometry.get('role')=='simion_neutral_multi_domain_collision_geometry':
             grid=scalar_bindings['grid'];domain=dict(minimum_mm=grid['origin_mm'],maximum_mm=[grid['origin_mm'][i]+(grid['dimensions'][i]-1)*grid['pitch_mm'][i] for i in range(3)])
@@ -343,4 +399,4 @@ def render_rf_controls(model: Any, plan: Mapping[str, Any], *, assets: Mapping[s
     if oa:metadata.update(component_kind='orthogonal_accelerator',field_domain_coupling='independent_component_domains',native_state_wire_format='legacy_shared_RF_NATIVE_STATE_V1')
     return dict(program=program,build_metadata=metadata,carriers=assets,response_fields=[],
         immutable_input_records=([] if neutral_sampled else [record for row in assets.values() for record in [row['carrier_record'],row['witness_record'], *([row['surface_record']] if 'surface_record' in row else []), *([row['state_record']] if 'state_record' in row else [])]]
-            if static_world else [record for row in assets.values() for record in [*row['family_records'],row['witness_record']]])+(scalar_records if ip_mr or neutral_sampled else []),flight=plan['flight'])
+            if static_world else [record for row in assets.values() for record in [*row['family_records'],row['witness_record'], *([row['state_record']] if 'state_record' in row else [])]])+(scalar_records if ip_mr or neutral_sampled else []),flight=plan['flight'])

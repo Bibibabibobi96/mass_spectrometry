@@ -614,7 +614,7 @@ def canonical_census(
     }
 
 
-def read_plane_observations(log_paths, ordered_particle_ids, batch_counts, definitions, *, consumed_plane_events=(), projected=False, plane_authority=None, native_frame_id=None):
+def read_plane_observations(log_paths, ordered_particle_ids, batch_counts, definitions, *, consumed_plane_events=(), projected=False, plane_authority=None, native_frame_id=None, allow_focus_boundary=False):
     """Read the explicit V1 observation wire without dropping recrossings.
 
     The caller verifies/freeze-binds the definitions and native producer logs.
@@ -725,7 +725,7 @@ def read_plane_observations(log_paths, ordered_particle_ids, batch_counts, defin
                     a, b = row["signed_distance_before_mm"], row["signed_distance_after_mm"]
                     if (not row["step_start_instrument_time_us"] <= row["instrument_time_us"] <= row["step_end_instrument_time_us"]
                             or row["step_start_instrument_time_us"] >= row["step_end_instrument_time_us"]
-                            or not ((a < 0 <= b) if fields["direction"] == "outward" else (a > 0 >= b))):
+                            or not (((a < 0 <= b) or (allow_focus_boundary and a == 0 < b)) if fields["direction"] == "outward" else (a > 0 >= b))):
                         raise ValueError("plane observation lacks a valid directed accepted-step bracket")
                     if projected:
                         authority=(plane_authority or {}).get(fields['observation_id'])
@@ -939,7 +939,7 @@ def _validate_states(rows: list[dict], source: dict, terminals: dict, locations:
 
 
 def _collect_tracking_logs(log_paths, *, source_rows: dict, source_provenance: dict,
-                          flight: dict, batches: Sequence[dict]) -> dict:
+                           flight: dict, batches: Sequence[dict], cohort_scope='complete') -> dict:
     """Collect verified native logs without a checkout, payload or solver.
 
     The caller binds log/control/source records and native natural-exit facts.
@@ -951,7 +951,7 @@ def _collect_tracking_logs(log_paths, *, source_rows: dict, source_provenance: d
     """
     if flight.get('tracking_kind') in {'independent_rf','independent_oa','rf_ip','ip_mr','static_world','neutral_sampled'}:
         from .rf_tracking_collection import collect_rf_tracking_logs
-        return collect_rf_tracking_logs(log_paths,source_rows=source_rows,source_provenance=source_provenance,flight=flight,batches=batches)
+        return collect_rf_tracking_logs(log_paths,source_rows=source_rows,source_provenance=source_provenance,flight=flight,batches=batches,cohort_scope=cohort_scope)
     source, provenance, cases = source_rows, source_provenance, list(batches)
     if not cases or len(log_paths) != len(cases):
         raise ValueError('tracking logs and batch declarations differ')
@@ -1148,9 +1148,9 @@ def _collect_tracking_logs(log_paths, *, source_rows: dict, source_provenance: d
 
 
 def collect_tracking_logs(log_paths, *, source_rows: dict, source_provenance: dict,
-                          flight: dict, batches: Sequence[dict]) -> dict:
+                          flight: dict, batches: Sequence[dict], cohort_scope='complete') -> dict:
     """Collect scientific observations and independent raw terminal evidence."""
     result = _collect_tracking_logs(log_paths, source_rows=source_rows,
-        source_provenance=source_provenance, flight=flight, batches=batches)
+        source_provenance=source_provenance, flight=flight, batches=batches,cohort_scope=cohort_scope)
     from .terminal_evidence import attach_terminal_evidence
     return attach_terminal_evidence(result, log_paths, batches)

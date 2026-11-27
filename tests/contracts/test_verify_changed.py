@@ -126,7 +126,7 @@ class ChangedGateContractTests(unittest.TestCase):
                    if row['name'].startswith('instrument_assembly')
                    for module in row['command']['parameters'].get('SelectedTestModules', [])]
         self.assertCountEqual(modules, [
-            'tests.workflows.multipole_ip.test_multipole_ip_prepare',
+            'tests.components.ion_processor.test_upstream_admission',
             'tests.assembly.accelerator_interface.test_accelerator_interface',
             'tests.execution.test_dependencies',
         ])
@@ -1435,8 +1435,7 @@ exit 0
         for name in ('prepare.py', 'downstream_fields.py', 'request_v11.schema.json'):
             selected = expected | ({'tests.workflows.single_reflection.test_single_reflection_recorded_birth_consumer'} if name == 'prepare.py' else set())
             cases.append((('-ChangedPath', 'src/msplatform/workflows/single_reflection_flight/' + name), selected))
-        for path in ('tests/workflows/multipole_ip/test_multipole_ip_prepare.py',
-                     'tests/assembly/oa_mr_execute/test_oa_mr_execute.py',
+        for path in ('tests/assembly/oa_mr_execute/test_oa_mr_execute.py',
                      'tests/workflows/paired_accelerator/test_paired_accelerator_static_field_execute.py'):
             cases.append((('-ChangedPath', source, path),
                           expected | {path[:-3].replace('/', '.')}))

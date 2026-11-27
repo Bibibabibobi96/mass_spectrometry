@@ -151,7 +151,7 @@ def _check_collision_manifest(document: dict) -> None:
     meta = product['metadata']
     if (meta.get('backend') != 'simion' or meta.get('source_status') != 'not_requested'
             or meta.get('field_status') != 'available'
-            or meta.get('field_representation') not in (None, 'native_domain_composition')):
+            or meta.get('field_representation') not in (None, 'native_domain_composition', 'assembly_sampled_basis_with_collision_geometry', 'neutral_sampled_basis_with_collision_geometry', 'producer_owned_rf_ip_fractional_family')):
         raise ValueError('collision source must be an original source-independent native SIMION field bundle')
     bound = [*document['inputs'].values(), *document['outputs']]
     for name, record in product['data'].items():

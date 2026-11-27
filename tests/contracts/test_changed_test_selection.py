@@ -1474,12 +1474,14 @@ $results|ConvertTo-Json -Depth 8 -Compress
                             for name, stage in stages.items():
                                 if name.startswith("instrument_assembly"):
                                     modules.update(stage["command"]["parameters"].get("SelectedTestModules", []))
-                            self.assertIn("tests.workflows.multipole_ip.test_multipole_ip_prepare", modules)
+                            self.assertIn("tests.components.rf_multipole_ion_optics.analysis.test_rf_event_original_witness", modules)
                     else:
-                        tof = stages["single_reflection_oa_tof_mass_analyzer_static"]["command"]["parameters"]
+                        tof_modules = [module for name, stage in stages.items()
+                            if name.startswith("single_reflection_oa_tof_mass_analyzer_static")
+                            for module in stage["command"].get("parameters", {}).get("SelectedTestModules", [])]
                         for name in ("test_reflectron_voltage_compensation", "test_compensation_powershell_adapter"):
                             self.assertIn(f"tests.components.single_reflection_oa_tof_mass_analyzer.analysis.{name}",
-                                          tof["SelectedTestModules"])
+                                          tof_modules)
 
     def test_canonical_file_identity_selects_frozen_project_consumers(self) -> None:
         with tempfile.TemporaryDirectory(prefix="file_identity_project_plan_") as directory:
@@ -2700,20 +2702,30 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
         } <= set(selected[2]['Modules']))
 
     def test_rf_ip_consumer_and_birth_admission_select_actual_consumers(self) -> None:
-        source = 'src/msplatform/workflows/multipole_ip/continuous.py'
+        source = 'src/msplatform/workflows/native_tracing.py'
         backend = 'src/msplatform/backends/simion/tracking_execution.py'
-        consumer = 'tests/workflows/multipole_ip/test_multipole_ip_continuous.py'
+        public = 'tests/contracts/test_public_rf_ip_recipe.py'
         selected = self.selections(REPO_ROOT, [
             dict(stage='machine_contracts', paths=[source]),
             dict(stage='machine_contracts', paths=[backend]),
-            dict(stage='instrument_assembly', paths=[consumer])])
-        for row in selected[:2]:
-            self.assertTrue({'tests/contracts/test_simion_birth_admission.py',
-                             'tests/contracts/test_rf_ip_composed.py',
-                               'tests/contracts/test_neutral_ip_schedule_managed.py',
-                             'tests/contracts/test_installed_scientific_core.py'} <= set(row['Modules']))
+            dict(stage='machine_contracts', paths=[public])])
+        self.assertTrue({'tests/contracts/test_simion_birth_admission.py',
+                         'tests/contracts/test_public_rf_ip_recipe.py',
+                         'tests/contracts/test_public_rf_ip_store.py',
+                         'tests/contracts/test_installed_scientific_core.py'} <= set(selected[0]['Modules']))
         self.assertIn('tests/contracts/test_simion_tracking_execution.py', selected[1]['Modules'])
-        self.assertEqual(selected[2]['Modules'], [consumer])
+        self.assertEqual(selected[2]['Modules'], [public])
+        with tempfile.TemporaryDirectory() as directory:
+            request = Path(directory) / 'plan.json'
+            write_planned_request(REPO_ROOT, request, ['src/msplatform/workflows/multipole_ip/continuous.py'])
+            stages = json.loads(request.read_text(encoding='utf-8-sig'))['stages']
+            shards = [row for row in stages if row['selected'] and row['name'].startswith('machine_contracts__tests_')]
+            self.assertTrue(shards)
+            modules = [argument for row in shards for argument in row['command']['arguments']
+                       if argument.startswith('tests.contracts.')]
+            expected = {path.relative_to(REPO_ROOT).with_suffix('').as_posix().replace('/', '.')
+                        for path in (REPO_ROOT / 'tests/contracts').rglob('test_*.py')}
+            self.assertCountEqual(modules, expected)
 
     def test_scalar_support_changes_select_actual_consumers(self) -> None:
         paths = ['src/msplatform/components/shape_query.py',
@@ -2809,7 +2821,7 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
         cases = [
             dict(stage=common, paths=["src/msplatform/backends/simion/operations.py"]),
             dict(stage=common, paths=["src/msplatform/backends/simion/resources/iob_core.lua"]),
-            dict(stage=common, paths=["tests/workflows/multipole_ip/test_ip_compiler.py"]),
+            dict(stage=common, paths=["tests/assembly/rf_ip/test_ip_compiler.py"]),
             dict(stage=common, paths=["tests/components/dual_cone_tandem_quadrupole/test_dual_cone_iob.py"]),
             dict(stage=integration, paths=["src/msplatform/backends/simion/ip_compiler.py"]),
             dict(stage=integration, paths=["src/msplatform/components/ion_processor/provider.py"]),
@@ -2825,9 +2837,8 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
         self.assertIn("tests/components/dual_cone_tandem_quadrupole/test_dual_cone_iob.py", selected[3]["Modules"])
         self.assertIn("tests/contracts/test_joint_geometry_iob.py", selected[3]["Modules"])
         for row in selected[4:6]:
-            self.assertIn("tests/workflows/multipole_ip/test_ip_compiler.py", row["Modules"])
-            self.assertIn("tests/workflows/multipole_ip/test_selected_ip_provider.py", row["Modules"])
-            self.assertIn("tests/workflows/multipole_ip/test_multipole_ip_prepare.py", row["Modules"])
+            self.assertIn("tests/assembly/rf_ip/test_ip_compiler.py", row["Modules"])
+            self.assertIn("tests/assembly/rf_ip/test_selected_ip_provider.py", row["Modules"])
         for row in selected[6:8]:
             self.assertIn(mr_test, row["Modules"])
         self.assertIn("tests/contracts/test_gas.py", selected[8]["Modules"])
@@ -2836,7 +2847,7 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
             dict(stage=common, paths=["src/msplatform/backends/simion/model.py"]),
             dict(stage=common, paths=["src/msplatform/backends/simion/rf_field_execution.py"]),
             dict(stage=common, paths=["src/msplatform/backends/simion/resources/model_drive.lua"]),
-            dict(stage=common, paths=["tests/workflows/multipole_ip/test_ip_compiler.py"]),
+            dict(stage=common, paths=["tests/assembly/rf_ip/test_ip_compiler.py"]),
             dict(stage=common, paths=["src/msplatform/components/orthogonal_accelerator/provider.py"]),
             dict(stage=common, paths=["src/msplatform/components/orthogonal_accelerator/two_zone_geometry.py"]),
             dict(stage=mr, paths=["src/msplatform/components/orthogonal_accelerator/provider.py"]),

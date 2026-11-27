@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "geometry": {
     "guide_length_mm": 30,
     "hp_length_mm": 100,
@@ -21,14 +21,6 @@
     "rf_quench_delay_cycles": 0.5,
     "rf_quench_alignment": "requested_time",
     "lift_v": 4000
-  },
-  "gas": {
-    "temperature_k": 300,
-    "mass_amu": 28,
-    "hp_pressure_pa": 1,
-    "lp_pressure_pa": 0.2,
-    "cross_section_m2": 2.27e-18,
-    "mean_free_path_mm": -1
   },
   "schedule": {
     "capture_end_us": 1500,

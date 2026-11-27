@@ -15,7 +15,7 @@ from typing import Any, Callable, Mapping
 
 from msplatform.results.artifacts import open_artifact
 from msplatform.contracts.clock import ClockIdentity, require_same_clock
-from msplatform.execution.clock_authority import validate_clock_authority
+from msplatform.io.clock_authority import validate_clock_authority
 from msplatform.execution.inputs import freeze_file
 from msplatform.io.manifest_records import file_record, verify_record
 from msplatform.execution.resources import resource_path
@@ -77,6 +77,21 @@ def _protected_source(session: RunSession, manifest: Mapping[str, Any], *, requi
         raise ValueError('model geometry member has no active owner protection')
 
 
+def _protect_model_geometry(session, geometry, *, required_paths=()):
+    """Bind a Store geometry product through the native stage lifetime."""
+    from msplatform.execution.owner import current_managed_native_store
+    scope = current_managed_native_store()
+    if scope is None:
+        return _protected_source(session, geometry.reference['manifest'], required_paths=required_paths)
+    from msplatform.execution.native_source_guard import guard_native_source
+    guarded = scope['lifetime'].enter_context(guard_native_source(geometry.reference,
+        expected_kind='geometry_artifact', expected_artifact_root=session.context.workspace / 'artifacts',
+        artifact_store=scope['store']))
+    bound = {Path(path).resolve() for path in guarded.data_locations.values()}
+    if any(Path(path).resolve() not in bound for path in required_paths):
+        raise ValueError('model geometry member is not bound by its protected product')
+
+
 def _require_materializer(materialize_geometry: Callable | None, materializer_record: Mapping[str, Any] | None) -> None:
     """Bind the same actual byte-copy callback for both model preparation callers."""
     if not callable(materialize_geometry) or materializer_record is None:
@@ -111,7 +126,7 @@ def execute_model(session: RunSession, *, model, geometry_reference: Mapping[str
             or metadata.get('field_status') != 'not_solved' or metadata.get('source_status') != 'not_requested'):
         raise ValueError('prepared model requires the published unsolved source-independent SIMION geometry profile')
     manifest_record = geometry.reference['manifest']
-    _protected_source(session, manifest_record)
+    _protect_model_geometry(session, geometry)
     compiled_path = geometry.data_path('compiled_geometry')
     if json.loads(compiled_path.read_text(encoding='utf-8-sig')) != document['geometry']:
         raise ValueError('model scientific geometry differs from the published native geometry')
@@ -124,7 +139,13 @@ def execute_model(session: RunSession, *, model, geometry_reference: Mapping[str
         expected = ({'raw_geometry', 'fractional_surface', 'surface_witnesses'} if independent_component else
                     {'raw_geometry', 'fractional_surface'} if domain in {'flight_tube', 'detector'} else {'raw_geometry'})
         ip_mr = document['geometry']['frontend_geometry'].get('role') == 'simion_ip_mr_complete_geometry'
-        if (ip_mr or document['geometry']['frontend_geometry'].get('role') in {'simion_neutral_world_collision_geometry','simion_neutral_multi_domain_collision_geometry'}) and 'surface_state' in names:
+        frontend = document['geometry']['frontend_geometry']
+        mirror_oa = (frontend.get('role') == 'simion_independent_oa_geometry' and
+                     frontend['numerical_domains'][domain].get('symmetry') == 'mirror_x' and
+                     frontend['numerical_domains'][domain].get('surface') == 'none')
+        if mirror_oa and set(names) != (expected - {'fractional_surface'}) | {'surface_state'}:
+            raise ValueError('mirror OA requires empty-surface state without a fractional companion')
+        if (ip_mr or mirror_oa or frontend.get('role') in {'simion_neutral_world_collision_geometry','simion_neutral_multi_domain_collision_geometry'}) and 'surface_state' in names:
             if set(names) not in (expected | {'surface_state'}, (expected - {'fractional_surface'}) | {'surface_state'}):
                 raise ValueError('published model geometry surface closure differs')
         elif set(names) != expected:
@@ -140,7 +161,7 @@ def execute_model(session: RunSession, *, model, geometry_reference: Mapping[str
         if independent_component:
             assets[domain]['witness_record'] = dict(geometry.data_records[names['surface_witnesses']],
                 path=str(geometry.data_path(names['surface_witnesses'])))
-    _protected_source(session, manifest_record, required_paths=[compiled_path,
+    _protect_model_geometry(session, geometry, required_paths=[compiled_path,
         *(row['raw_record']['path'] for row in assets.values()),
         *(record['path'] for row in assets.values() for record in row['surface_records']),
         *(row['witness_record']['path'] for row in assets.values() if 'witness_record' in row),

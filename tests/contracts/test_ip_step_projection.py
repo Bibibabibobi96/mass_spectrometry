@@ -2,7 +2,7 @@
 from msplatform.components.geometry_members import assembly_geometry_members
 import copy
 import unittest
-from tests.workflows.multipole_ip import test_ip_compiler as fixtures
+from tests.assembly.rf_ip import test_ip_compiler as fixtures
 from tests.components.ion_processor import test_electrode_contours as contours
 from msplatform.assembly.factory import assemble
 from msplatform.components.catalog import resolve_component

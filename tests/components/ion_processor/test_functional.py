@@ -32,7 +32,7 @@ from unittest.mock import patch
 from msplatform.backends.simion.collision_hs1 import adapt_hs1_for_repeat_fly
 from msplatform.contracts.particle_count_policy import POLICY_PATH
 from msplatform.execution.inputs import enumerate_python_sources, python_import_roots
-from msplatform.ion_release.release import generate_release_states
+from msplatform.particle_release.release import generate_release_states
 from msplatform.workflows.ion_processor import functional
 from msplatform.components.ion_processor.timing import derive_native_timing
 
@@ -68,7 +68,7 @@ return HS1
 def load_config() -> dict:
     """Load the same current scientific inputs as the public prepare boundary."""
     config = {name: functional.read_json(PROJECT / "config" / f"{name}.json")
-              for name in ("baseline", "numerics", "source", "acceptance", "native_operating_point")}
+              for name in ("baseline", "gas_environment", "numerics", "source", "acceptance", "native_operating_point")}
     config["source_profile"] = "functional"
     config["native_timing"] = derive_native_timing(config["baseline"])
     return config
@@ -156,11 +156,11 @@ class FunctionalContractTests(unittest.TestCase):
         raw = hs1_source.read_bytes()
         original_text = hs1_source.read_text(encoding="utf-8")
         project, vendor = self.make_prepare_fixture()
-        baseline_path = project / "config/baseline.json"
-        baseline = functional.read_json(baseline_path)
-        baseline["gas"]["hp_pressure_pa"] = 0
-        baseline["gas"]["lp_pressure_pa"] = 0
-        functional.write_json(baseline_path, baseline)
+        environment_path = project / "config/gas_environment.json"
+        environment = functional.read_json(environment_path)
+        environment["regions"][0]["pressure_pa"] = 0
+        environment["regions"][1]["pressure_pa"] = 0
+        functional.write_json(environment_path, environment)
         vendor_copy = vendor / "examples/collision_hs1/collision_hs1.lua"
         vendor_copy.write_bytes(raw)
         functional.prepare(self.run, project, vendor)
@@ -427,7 +427,7 @@ print('IP_ZERO_HS1_SOFTWARE_WITNESS=PASS')
             target = repo / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(PROJECT.parents[3] / relative, target)
-        for name in ("baseline", "numerics", "source", "acceptance", "native_operating_point"):
+        for name in ("baseline", "gas_environment", "numerics", "source", "acceptance", "native_operating_point"):
             value = self.config[name]
             functional.write_json(project / "config" / f"{name}.json", value)
         for name in ("diagnostics", "field_diagnostics"):
@@ -496,7 +496,7 @@ print('IP_ZERO_HS1_SOFTWARE_WITNESS=PASS')
         source_bytes = (candidate / 'source.json').read_bytes()
         functional.prepare(self.run, project, vendor, configuration_directory=candidate)
         resolved = functional.read_json(self.run / 'inputs/resolved_model.json')
-        self.assertEqual(resolved['baseline'], baseline)
+        self.assertEqual({k: v for k, v in resolved['baseline'].items() if k != 'gas'}, baseline)
         self.assertEqual(resolved['physical_design_selection']['selection'], choice)
         self.assertEqual(resolved['native_projection']['electrodes'], legacy['electrodes'])
         self.assertNotEqual(resolved['native_projection']['shape_gu'], legacy['shape_gu'])
@@ -510,7 +510,7 @@ print('IP_ZERO_HS1_SOFTWARE_WITNESS=PASS')
         config = copy.deepcopy(self.config)
         config['baseline']['physical_design_selection'] = {'native_grid_mm': .1, 'native_aux_segments': 60}
         authorities = {name: project / 'config' / (name + '.json') for name in
-                       ('baseline', 'numerics', 'source', 'acceptance', 'native_operating_point')}
+                       ('baseline', 'gas_environment', 'numerics', 'source', 'acceptance', 'native_operating_point')}
         output = Path(self.temporary.name) / 'mismatched_authority'
         output.mkdir()
         with self.assertRaisesRegex(ValueError, 'authority differs'):

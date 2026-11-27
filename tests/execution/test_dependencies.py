@@ -623,7 +623,7 @@ Copy-FrozenDependency -RepoRoot '{detached}' -InputDir '{destination}' -Dependen
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
             parent = output / "parent.json"
-            shutil.copyfile(REPO_ROOT / "src/msplatform/workflows/config/multipole_ip_mr_y_minus55_plan.json", parent)
+            shutil.copyfile(REPO_ROOT / "tests/contracts/fixtures/rf_ip_mr_y_minus55_plan.json", parent)
             freeze = f"""
 . '{DEPENDENCIES}'
 $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId prepared_joint

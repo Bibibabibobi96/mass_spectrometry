@@ -3,7 +3,7 @@ import copy
 import unittest
 
 from tests.contracts.test_ip_step_projection import snapshot
-from tests.workflows.multipole_ip import test_ip_compiler as fixtures
+from tests.assembly.rf_ip import test_ip_compiler as fixtures
 from tests.components.ion_processor import test_electrode_contours as contours
 from msplatform.assembly.factory import assemble
 from msplatform.components.catalog import resolve_component

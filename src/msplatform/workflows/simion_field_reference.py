@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import copy
 from collections.abc import Mapping
 from typing import Any
 
@@ -44,21 +43,23 @@ def admit_simion_field_reference(study: Mapping[str, Any], *, reference: Mapping
     meta = selected.metadata
     if (meta.get('backend') != 'simion' or meta.get('field_status') != 'available'
             or meta.get('source_status') != 'not_requested'
-            or meta.get('field_representation') not in (None, 'native_domain_composition')):
+            or meta.get('field_representation') not in (None, 'native_domain_composition', 'assembly_sampled_basis_with_collision_geometry', 'neutral_sampled_basis_with_collision_geometry', 'producer_owned_rf_ip_fractional_family')):
         raise ValueError('field reference must be a complete source-independent SIMION native field')
     providers = {name: components.resolve_component(request) for name, request in study['component_requests'].items()}
-    instrument = assembly.assemble(study['recipe'], providers)
+    instrument = assembly.assemble(study['recipe'], providers, local_scope=study.get('local_scope'))
     from msplatform.backends import simion
     compiled = simion.compile_geometry(instrument, numerics=study['numerics']['geometry'])
-    drive = copy.deepcopy(study['drive'])
+    from msplatform.contracts.pulse import field_reference_drive
+    drive = field_reference_drive(study['drive'])
     drive.pop('clock_authority')
     drive['clock'].update(clock_epoch_id=clock_authority['clock_epoch_id'], authority_sha256=clock_authority['authority']['sha256'])
     requested = compile_prepared_model(compiled, instrument.components_resolved, drive=drive, physics=study['physics'])
     expected = require_prepared_model(expected_model)
     if _json(expected) != _json(require_prepared_model(requested)):
         raise ValueError('expected model differs from the frozen recipe assembly, drive, geometry or physics')
-    if expected['geometry']['frontend_geometry'].get('role') != 'simion_split_oa_tof_geometry':
-        raise ValueError('explicit native field reference requires the supported split geometry')
+    geometry_role = expected['geometry']['frontend_geometry'].get('role')
+    if geometry_role not in {'simion_split_oa_tof_geometry', 'simion_ip_mr_complete_geometry', 'simion_neutral_world_collision_geometry', 'simion_rf_ip_geometry'}:
+        raise ValueError('explicit native field reference requires supported split or IP-MR geometry')
     actual = CompiledPreparedModel(selected.data_path('compiled_model').read_text(encoding='utf-8-sig'))
     document = require_prepared_model(actual)
     if (_json(document) != _json(expected) or meta.get('model_identity_sha256') != expected['model_identity_sha256']
@@ -66,6 +67,47 @@ def admit_simion_field_reference(study: Mapping[str, Any], *, reference: Mapping
         raise ValueError('field model, physical inputs, drive or clock differs from the requested model')
     if not isinstance(field_numerics, Mapping) or _json(field_numerics) != _json(study['numerics']['fields']):
         raise ValueError('field numerics argument differs from the frozen study')
+    if geometry_role == 'simion_rf_ip_geometry':
+        from msplatform.backends.simion.rf_field_execution import plan_rf_fields, require_rf_reuse
+        geometry = expected['geometry']['frontend_geometry']
+        plan_rf_fields(expected_model, numerics=field_numerics)
+        if meta.get('field_representation') != 'producer_owned_rf_ip_fractional_family':
+            raise ValueError('RF-IP requires its original fractional field-family representation')
+        if meta.get('family_producer_reference') is not None:
+            raise ValueError('RF-IP borrowed family requires authenticated producer protection')
+        spatial = meta.get('spatial_identity')
+        if (not isinstance(spatial, dict) or spatial.get('role') != 'simion_rf_ip_fractional_spatial_identity'
+                or spatial.get('identity_sha256') != canonical_json_sha256({k: v for k, v in spatial.items() if k != 'identity_sha256'})
+                or spatial.get('physics') != expected['physics'] or spatial.get('numerics') != dict(field_numerics)
+                or spatial.get('numerical_domains') != geometry['numerical_domains']
+                or spatial.get('electrode_bindings') != geometry['electrode_bindings']):
+            raise ValueError('RF-IP spatial operator differs from the requested model')
+        declared = json.loads(selected.data_path('field_numerics').read_text(encoding='utf-8-sig'))
+        if _json(declared) != _json(field_numerics):
+            raise ValueError('RF-IP field numerics differ from the frozen study')
+        require_rf_reuse(selected.reference, identity=spatial, geometry=geometry)
+        return selected
+    if geometry_role == 'simion_neutral_world_collision_geometry':
+        if (field_numerics != {'mode': 'frozen_sampled_field'}
+                or meta.get('field_representation') != 'neutral_sampled_basis_with_collision_geometry'):
+            raise ValueError('neutral world requires its explicit frozen sampled field')
+        from msplatform.backends.simion.rf_tracking_execution import admit_neutral_sampled_tracking_fields
+        admitted = admit_neutral_sampled_tracking_fields(selected.reference)
+        if _json(require_prepared_model(admitted['model'])) != _json(expected):
+            raise ValueError('admitted neutral field model differs from the frozen study')
+        return selected
+    if geometry_role == 'simion_ip_mr_complete_geometry':
+        if field_numerics != {'mode': 'frozen_sampled_field'}:
+            raise ValueError('IP-MR sampled fields require explicit frozen_sampled_field numerics')
+        if meta.get('field_representation') != 'assembly_sampled_basis_with_collision_geometry':
+            raise ValueError('IP-MR requires its explicit sampled-basis field representation')
+        from msplatform.backends.simion.ip_mr_tracking_admission import admit_ip_mr_tracking_fields
+        admitted = admit_ip_mr_tracking_fields(selected)
+        if _json(require_prepared_model(admitted['model'])) != _json(expected):
+            raise ValueError('admitted IP-MR field model differs from the frozen study')
+        return selected
+    if meta.get('field_representation') not in (None, 'native_domain_composition'):
+        raise ValueError('split TOF requires its native-domain field representation')
     read = lambda name: json.loads(selected.data_path(name).read_text(encoding='utf-8-sig'))
     if _json(read('field_numerics')) != _json(field_numerics):
         raise ValueError('field numerics differ from the requested study')

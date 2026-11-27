@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "dataset_id": "nitrogen_constant_transport_reference_300k_v1",
+  "species_id": "n2",
+  "reference_temperature_k": 300.0,
+  "dynamic_viscosity_pa_s": "0.0000176",
+  "thermal_conductivity_w_per_m_k": "0.02583",
+  "specific_heat_capacity_cp_j_per_kg_k": "1039.0",
+  "specific_heat_ratio": "1.4",
+  "source": "Original dual-cone gas_flow_science.json declared N2 reference values; no independent calibration asserted.",
+  "limitation": "The existing solver applies these constant approximations without temperature dependence. Values are referenced to 300 K; accuracy at other temperatures is unqualified and no temperature function is inferred."
+}

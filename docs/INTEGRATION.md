@@ -99,12 +99,12 @@ explicit scientific inputs, complete-instance scope and native protections are u
 
 On the `9d5b565a` candidate, the owner-separation regression's extracted `New-RunPackage` block now receives the same four-root `pathContext` shape as the real `Resolve-WorkspacePaths` initialization, and the test double validates that context. Production initialization is unchanged. The formerly failing method passed in 0.649 seconds and the complete OA–MR execute module passed 52 tests in 159.622 seconds. New-run/source-owner separation, argument forwarding, identity checks and foreign-source refusal remain covered; no native solver was launched.
 
-The FullJoint, RF–IP continuous and SFI recorded-birth thin PowerShell entries now
-select Python only through their explicit argument or `SIMULATION_PYTHON_EXE`;
-none falls back to a checkout `.venv`. Missing-selection refusal passed for all
-three real entries, and the RF–IP outside-cwd public-owner forwarding checks
-still pass. This changes execution-source selection only; it does not establish
-native flight or permit retirement of the segmented production path.
+The former FullJoint, RF–IP continuous and SFI recorded-birth thin PowerShell
+entries selected Python only through their explicit argument or
+`SIMULATION_PYTHON_EXE`; those historical checks did not establish native flight.
+The RF–IP segmented producer and its dedicated entries have since been retired.
+Current RF–IP execution starts from original births through the public
+SimulationRecipe and tracing owner, not through a successor PowerShell alias.
 
 The accelerator-interface preparation and IP–MR materialization implementations now
 belong to `msplatform.workflows.accelerator_interface`; the integration tree
@@ -637,50 +637,15 @@ three-slot build/readback role. Complete RF–OA geometry uses the canonical ful
 providers in one grounded parent; its supported poses are signed axis permutations,
 and finite member witnesses do not prove global collision freedom or field coupling.
 RF–OA remains geometry-only and OA–MR fields/track remain unsupported.
-Complete RF–IP now has a software continuous-track route through the same public
-owner. It requires an explicit finite IP bath, explicit uniform outer gas/vacuum
-coverage, original HS1 vendor record, seed/step controls and sequential scheduling.
-The selected IP pose maps queries and bulk velocity once. The Program retains
-original birth IDs/clock, one per-particle collision stream and no automatic rerun;
-interfaces do not restart particles or introduce IP-only acceptance stop planes.
-Frozen gas/vendor/resources participate in the existing replay identity and guards.
-Native construction, Refine, coupled fields, actual HS1 flight and retirement of
-the still-needed segmented MP–IP producer remain open.
-The [continuous RF–IP application consumer](../src/msplatform/workflows/multipole_ip/README.md)
-now calls those public stages from an explicit complete design, or directly tracks
-an explicitly selected complete RF–IP field. It validates the complete birth
-packet using the same source-only admission as the tracker before building or
-solving; no resampling is added. The named consumer requires continuous Assembly
-propagation with no interface cut stop. Existing fields never trigger a hidden
-rebuild. The existing managed artifact/replay/tamper test now exercises this
-consumer rather than duplicating its owner calls. The fixed affected batch passed
-41 parents and 69 subtests in 341.661 seconds, with source unchanged and no skips.
-Its native leaf is inert; the design-to-field call sequence is tested at the public
-stage boundaries. Real coupled fields and HS1 flight remain pending. The old segmented preparation
-entry remains until its actual continuous replacement is natively validated.
-For an existing complete field, `multipole_ip/continuous.ps1` now invokes that
-same installed consumer with explicit original birth, field, propagation,
-observations, numerics and HS1 documents. The packaged HS1 schema resolves the
-bath and uniform outer typed gas contracts and verifies the original vendor
-before tracking; optional recovery/dispatch inputs retain the public identity.
-Eight focused parents with nineteen successful records cover the original
-consumer and this CLI admission without a native claim. The segmented producer
-is not retired by this software-only adapter. The named FullJoint continuous
-branch accepts the same original-birth, complete RF–IP–MR field and execution
-inputs with the `Continuous` prefix, and delegates to this consumer rather than
-adding another runner. The direct entry declares `rf_ip`; top-level FullJoint
-requires the exact `rf_ip_mr` project set from the published FieldBundle's compiled
-model before calling the public tracker. An RF–IP-only bundle is therefore refused
-by FullJoint before solver launch but remains valid for direct RF–IP tracking. The
-retained segmented branch also forwards its resolved repository root to the public
-IP functional owner. Both PowerShell layers resolve caller-relative inputs,
-workspace, optional recovery/dispatch and explicit Python before entering the
-repository context. The real top-level external-cwd regression distinguishes
-same-named caller/checkout inputs, checks missing-input refusal and recovery
-forwarding, and returns the inert tracker's artifact reference. The two affected
-modules passed 35 parents and 99 records in 98.583 seconds, including exact-scope
-positive/refusal cases. These and the segmented-input rejection tests are software
-evidence only; native continuous acceptance and segmented retirement remain open.
+Continuous original-birth RF–IP and RF–IP–MR tracking uses the public
+SimulationRecipe, explicit complete field reference and one typed gas environment.
+The [public tracing contract](TRACING.md) preserves particle identity, birth and
+instrument clock without cross-component re-release; selected field and native
+capability checks remain fail-closed. The former `multipole_ip` package, its
+PowerShell consumer and dedicated registry routes are removed rather than retained
+as forwarding shells. Earlier consumer fixture counts are historical software
+evidence only. Real coupled-field construction, HS1 flight and native qualification
+remain outside those historical fixture results and are not implied here.
 
 The paired static-field, paired-pulse and prepared-joint PowerShell consumers now
 require explicit Python selection and use the installed execution HostContext and
@@ -2663,37 +2628,7 @@ RF的9³、N1 fresh＋reuse原生机制验收（66.228秒）只见[RF项目记�
 
 ## 真实多极杆→IP状态交接
 
-The installed owner is `msplatform.workflows.multipole_ip.prepare` and its adjacent
-`request.schema.json`; the repository Python bridge and old schema copy are retired.
-The PowerShell launcher requires `-Request -EnvironmentPath -Workspace
--EngineeringProfile -PythonExe` and optional `-RunId`. Its selected environment
-names the existing shared host ledger and capacity/stage policies. The package's
-explicitly selectable `engineering_16mib.json` retains the former 16 MiB transient
-commitment; its other limits are engineering settings, not scientific defaults.
-The environment profile must reference the chosen policy path; there is no implicit
-profile or checkout lookup. Python callers may use `prepare_managed(..., context=...)`
-or pure `prepare(request_path, existing_managed_run)`; the CLI uses respectively
-`--environment --workspace --profile` or `--run`.
-
-FullJoint additionally requires `-MultipoleIpEnvironmentPath -MultipoleIpWorkspace
--MultipoleIpEngineeringProfile` for a fresh MP/IP preparation. Its workspace/artifacts,
-selected Python and shared ledger must equal the enclosing workflow's actual context.
-A legacy independently configured artifact root is not supported by ExecutionContext;
-no root is silently redirected and no historical input is moved. Recovery of an
-already published preparation continues through its explicit existing record.
-
-
-Main integration validation passed 46 focused caller/owner tests and six frozen-provider/assembly
-checks. The five ordinary-install parents passed for wheel and sdist-rebuilt wheel; all 374
-package payloads match the reviewed source and both wheels byte-for-byte. The external
-consumer exercised sparse original identity, birth/weight and a fresh-process missing-schema
-rejection without author-source access. No IP Fly, GUI, performance or scientific
-qualification was run for this migration.
-
-
-[multipole_ip入口](../src/msplatform/workflows/resources/multipole_ip.ps1)只准备真实出口到接收方的状态交接，
-schema 2请求显式引用来源／接收manifest、冻结父plan与可选local。保留原6D、物种、出生／到达时钟及母群；
-接收方设计与驱动继续归IP，不以旧出口分布或冷却前端代替真实多极杆源。
+旧 MP→IP 出口接力 producer、请求 schema 和 PowerShell 入口已退役。既有迁移测试和已发布记录是历史证据；当前公共 SimulationRecipe 以明确原始出生源、统一 clock 与 GasEnvironment 运行连续装配，不从终态重建源。历史记录保持原身份，不赋予新的原生或科学资格。
 
 100 Da原工况213053：100终态完整，74进入HP、0捕获、0提取，接受检查未通过，无出口群所以未执行MR。
 不能把`solver_stop`或径向边界直接命名为实物撞壁，具体机制与联合边缘场仍未获物理资格。
@@ -2875,7 +2810,7 @@ PA 在 builder 前取得持续防写 guard；保护前可写、保护中拒写�
 并隔离请求、预算、run、故障注入与资源收尾。显式回放 True 的完整母群正例由 Fly 矩阵维护，
 normal 入口另验证省略回放及其预算；不重复执行相同参数的完整正例。此为测试夹具去重，不改变科学入口或验收条件。
 
-accelerator_interface 与 multipole_ip 的公开入口启动时解析一次公共工作区上下文；新设计、源、IP、场、绑定及飞行 run 均使用本次产物根，子 owner 临时继承同一产物／执行／主机调度根，调用后恢复环境。run package 冻结该上下文；显式父 run 不搬到新根，沿原 manifest 的 SourceReferences 保护其真实 owner。MP composition plan 仍是冻结输入，不伪装成 run authority。此项部署路径接线由无原生薄回归验证，不代表新的求解或科学资格。
+accelerator_interface 的准备入口与公共 tracing 入口分别解析一次公共工作区上下文；新设计、源、IP、场、绑定及飞行 run 均使用本次产物根，子 owner 临时继承同一产物／执行／主机调度根，调用后恢复环境。run package 冻结该上下文；显式父 run 不搬到新根，沿原 manifest 的 SourceReferences 保护其真实 owner。Assembly composition plan 仍是冻结输入，不伪装成 run authority。已退役的 multipole_ip 不再拥有公开入口或写入新运行。此项部署路径接线由无原生薄回归验证，不代表新的求解或科学资格。
 
 
 ### 2026-10-31 优先级与容量夹具去重
@@ -3302,3 +3237,17 @@ execution are authenticated IP–MR consumers retained for C. OA–MR interface
 preparation is not particle propagation. Shared handoff population/frame/clock
 validation remains needed by those consumers. This scoped retirement does not
 claim that all repository segmented execution is removed.
+
+## 当前 paired 静态场 Store 入口
+
+`msplatform.workflows.paired_accelerator_static_field.store_workflow.run_paired_static_comparison`
+接收显式 context、artifact_store、request_path、run_id 和 committed_new_bytes；可选
+`saved_model_manifest`、`saved_samples_manifest` 或 `prepared_model_manifest` 分别绑定已保存解、
+同边值问题同采样点的已完成样本、或有可信 writer/host 停止证据的 Store failed prepared 模型。
+`recover_paired_static_publication(context, artifact_store=..., stage_asset_id=..., store_run_id=...)`
+只恢复现有终态发布，不重新求解或提升失败状态。原静态场 PowerShell owner 已退役；有限脉冲路径单独保留。
+
+上述新解、已保存解、样本复用和 failed prepared 原位重开的验证均为受控惰性软件测试，
+不是商业 COMSOL/SIMION 求解证据。6.7 GB 历史失败 run 缺封存 writer completion，明确拒绝；
+严格平面成功历史借用链已通过受控软件测试：消费者与原成功来源均持权并核对 BVP/身份。
+未知或循环借用链、非成功原来源和中断状态须逐项提供来源与停止证据，不自动视为可恢复。

@@ -16,9 +16,11 @@ from msplatform.contracts.particle_count_policy import validate_standard_particl
 from msplatform.contracts.particle_physics import kinetic_energy_ev
 from msplatform.contracts.gas import BoxDomain
 from msplatform.gas.field import prepare_gas_field
-from msplatform.components.ion_processor.gas_regions import build_gas_field_spec
+from msplatform.components.ion_processor.gas_regions import (
+    project_ip_baseline, resolve_ip_environment,
+)
 from msplatform.backends.simion.gas_runtime import compile_gas_runtime
-from msplatform.ion_release.release import generate_release_states, materialize_release_from_file, validate_release_spec
+from msplatform.particle_release.release import generate_release_states, materialize_release_from_file, validate_release_spec
 from msplatform.components.ion_processor.native_geometry import native_projection, select_legacy_physical_design
 from msplatform.components.ion_processor.timing import derive_native_timing
 from msplatform.components.ion_processor.coordinates import transform_from_config, to_project_position, to_project_vector
@@ -29,7 +31,7 @@ from msplatform.backends.simion.collision_hs1 import adapt_hs1_for_repeat_fly
 from msplatform.backends.simion.resources import native_resource_path
 from msplatform.execution.resources import resource_path
 from msplatform.execution.inputs import freeze_file
-from msplatform.execution.clock_authority import validate_clock_authority
+from msplatform.io.clock_authority import validate_clock_authority
 from msplatform.io.file_identity import file_sha256
 from msplatform.io.manifest_records import file_record
 from msplatform.backends.simion.lua_serialization import lua_literal
@@ -50,6 +52,7 @@ def validate_source_profile(config: dict[str, Any]) -> str:
 
 def validate_configs(config: dict[str, Any]) -> dict[str, Any] | None:
     """Reject malformed scientific inputs before solver startup."""
+    config = dict(config, baseline=project_ip_baseline(config["gas_environment"], config["baseline"]))
     baseline, numerics, source, acceptance = (config[k] for k in ("baseline", "numerics", "source", "acceptance"))
     expected = {
         "geometry": "guide_length_mm hp_length_mm lp_length_mm r0_mm guide_r0_mm guide_order hp_center_mm lp_center_mm extraction_slit_length_mm extraction_slit_width_mm extraction_end_y_mm boundary_radius_mm",
@@ -58,7 +61,7 @@ def validate_configs(config: dict[str, Any]) -> dict[str, Any] | None:
         "schedule": "capture_end_us transfer_end_us lift_end_us extraction_start_us terminal_us",
         "clock": "epoch_us frame_id rf_phase_rad",
     }
-    if set(baseline) - {"electrode_contours", "physical_design_selection"} != {"schema_version", "native_geometry", *expected} or baseline["schema_version"] != 1:
+    if set(baseline) - {"electrode_contours", "physical_design_selection"} != {"schema_version", "native_geometry", *expected} or baseline["schema_version"] != 2:
         raise ValueError("unsupported baseline schema/fields")
     for section, fields in expected.items():
         if set(baseline[section]) != set(fields.split()):
@@ -308,6 +311,7 @@ def compile_source(config: dict[str, Any], *, admission: dict[str, Any] | None =
         if states and config["numerics"]["seed"] + max(config["injected_source"]["particle_ids"]) - 1 > 2**31 - 2:
             raise ValueError("original upstream particle ID exceeds IP per-particle seed envelope")
     selected = validate_configs(config)
+    config["baseline"] = project_ip_baseline(config["gas_environment"], config["baseline"])
     if admission is None:
         states = generate_release_states(config["source"])
     config["native_timing"] = derive_native_timing(config["baseline"])
@@ -354,12 +358,23 @@ def materialize_inputs(run: Path, config: dict[str, Any], *, configuration_files
                           ("field_diagnostics", validate_field_diagnostics_config)):
         if key in config:
             validate(config[key])
+    authorities = {name: Path(path) for name, path in configuration_files.items()}
+    if not {"baseline", "gas_environment"}.issubset(authorities):
+        raise ValueError("IP materialization requires baseline and gas environment authorities")
+    frozen_author_bytes = {name: authorities[name].read_bytes() for name in ("baseline", "gas_environment")}
+    config = dict(config)
+    for name, data in frozen_author_bytes.items():
+        document = json.loads(data.decode("utf-8-sig"))
+        if name in config and config[name] != document:
+            raise ValueError(f"IP research authority differs from supplied configuration: {name}")
+        config[name] = document
     supplied_config = config
     compiled = compile_source(config, admission=admission)
     config = compiled["config"]
     projection = config["native_projection"]
-    gas_spec = build_gas_field_spec(config["baseline"], domain=BoxDomain(
+    environment = resolve_ip_environment(supplied_config["gas_environment"], supplied_config["baseline"], domain=BoxDomain(
         projection["origin_mm"], projection["maximum_mm"], (True,)*3, (True,)*3))
+    gas_spec = environment.fields[0]
     gas_lua = compile_gas_runtime(prepare_gas_field(gas_spec), placement=transform_from_config(config))
     native = {name: native_resource_path("ip_" + name) for name in
               ("runtime.lua", "build_workbench.lua", "probe_native_field.lua", "extraction_force_audit.lua")}
@@ -370,8 +385,7 @@ def materialize_inputs(run: Path, config: dict[str, Any], *, configuration_files
                     ("collision_hs1_gas.lua", "collision_hs1_gas.lua"),
                     ("voltage_waveforms.lua", "voltage_waveforms.lua"))})
     native["native_run_path.lua"] = resource_path("native_run_path.lua")
-    authorities = {name: Path(path) for name, path in configuration_files.items()}
-    required_authorities = {"baseline", "numerics", "acceptance", "native_operating_point"}
+    required_authorities = {"baseline", "gas_environment", "numerics", "acceptance", "native_operating_point"}
     if admission is None:
         required_authorities.add("source")
     required_authorities.update(key for key in ("coordinate_transform", "diagnostics", "field_diagnostics") if key in config)
@@ -381,7 +395,8 @@ def materialize_inputs(run: Path, config: dict[str, Any], *, configuration_files
     if missing:
         raise ValueError("IP materialization required resource is missing: " + "; ".join(missing))
     for name, path in authorities.items():
-        if name in supplied_config and json.loads(path.read_text(encoding="utf-8-sig")) != supplied_config[name]:
+        data = frozen_author_bytes[name].decode("utf-8-sig") if name in frozen_author_bytes else path.read_text(encoding="utf-8-sig")
+        if name in supplied_config and json.loads(data) != supplied_config[name]:
             raise ValueError(f"IP research authority differs from supplied configuration: {name}")
     original = Path(hs1_source).read_text(encoding="utf-8")
     adapted = adapt_hs1_for_repeat_fly(original)
@@ -391,7 +406,12 @@ def materialize_inputs(run: Path, config: dict[str, Any], *, configuration_files
     for name, source in authorities.items():
         if name == "source" and admission is not None:
             continue
-        freeze_file(source, inputs / (name + ".json"))
+        destination = inputs / (name + ".json")
+        if name in frozen_author_bytes:
+            with destination.open("xb") as stream:
+                stream.write(frozen_author_bytes[name])
+        else:
+            freeze_file(source, destination)
     if admission is not None:
         freeze_injected_source(admission, run)
     else:
@@ -404,6 +424,7 @@ def materialize_inputs(run: Path, config: dict[str, Any], *, configuration_files
         path.write_text(json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8")
     write_json(inputs / "collision_adapter.json", dict(schema_version=1, role="hs1_repeat_fly_lifecycle_adapter", original_sha256=collision_original["sha256"], adapted_sha256=file_sha256(solver / "collision_hs1.lua"), algorithm_changed=False, adapter_hooks=["reset_run_state", "bound_parameters"], bound_parameters_read_only=True, reason="Run-local lifecycle reset plus read-only audit of module-bound adjustables; SIMION 2020 forbids callback-time workbench imports"))
     write_json(inputs / "native_timing.json", config["native_timing"])
+    write_json(inputs / "resolved_gas_environment.json", environment.to_dict())
     (solver / "processor.fly2").write_text(compiled["fly2"], encoding="utf-8")
     (solver / "source_states.lua").write_text(compiled["source_states"], encoding="utf-8")
     (solver / "processor.gem").write_text(render_gem(config["native_projection"]), encoding="utf-8")

@@ -71,7 +71,6 @@ from msplatform.contracts.particle_state import write_component_particle_state_c
 from msplatform.assembly.electrode_binding import validate_electrode_bindings, ElectrodeKey
 from msplatform.contracts import machine_contracts
 from msplatform import execution
-from msplatform.workflows.multipole_ip.prepare import prepare as prepare_multipole_ip, load_request as load_multipole_ip_request
 from msplatform.backends.simion import rf_observations
 
 root = pathlib.Path.cwd()
@@ -1233,7 +1232,7 @@ for name, module in tuple(sys.modules.items()):
         assert origin.is_relative_to(pathlib.Path(sys.prefix).resolve()), (name, origin)
         assert origin.is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve()), (name, origin)
         origins[name] = str(origin)
-assert {'msplatform.workflows.connection_inputs', 'msplatform.workflows.multipole_ip.prepare', 'msplatform.backends.simion.rf_observations',
+assert {'msplatform.workflows.connection_inputs', 'msplatform.backends.simion.rf_observations',
         'msplatform.ion_release.release', 'msplatform.assembly.resolve_assembly',
         'msplatform.analysis.peak_metrics', 'msplatform.contracts.machine_contracts',
         'msplatform.analysis.particle_census', 'msplatform.analysis.pulse_selection',
@@ -2679,33 +2678,9 @@ print('INSTALLED_RF_FINITE_EXTRACTION=PASS')
 # Exercise the real installed workflow with three explicit outside-tree input bundles.
 from msplatform.workflows.single_reflection_flight import prepare as sfi_prepare
 workflow_modes = []
-# Execute the actual installed handoff with explicit external producer data.
-mpip_request = pathlib.Path(fixture['multipole_ip_request'])
-mpip_run = root / ('multipole-ip-' + sys.argv[2])
-(mpip_run/'inputs').mkdir(parents=True)
-mpip_receipt = prepare_multipole_ip(mpip_request, mpip_run)
-assert (mpip_receipt['mother_count'], mpip_receipt['exit_count']) == (2, 1)
-assert mpip_receipt['execution_scope'] == 'prepare_only_no_solver'
-mpip_states = load_component_particle_state_csv(mpip_run/'results/multipole_ip/source_states.csv')
-assert len(mpip_states.rows) == 1 and mpip_states.rows[0]['particle_id'] == 2
-assert mpip_states.rows[0]['particle_birth_time_us'] == 2 * 1e-7 * 1e6
-assert mpip_states.rows[0]['particle_weight'] == 1.
+# Retired handoff producer is absent; the public original-birth track is covered below.
+assert installed_missing_module('msplatform.workflows.multipole_ip.prepare')
 assert rf_observations.event_table.PARTICLE_STATE_COLUMNS[0] == 'particle_id'
-import msplatform.workflows.multipole_ip.prepare as mpip_module
-assert pathlib.Path(mpip_module.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')))
-assert mpip_module.SCHEMA.is_file()
-mpip_schema_backup = mpip_module.SCHEMA.with_suffix('.missing')
-mpip_module.SCHEMA.rename(mpip_schema_backup)
-try:
-    # The canonical validator caches previously loaded schemas; a fresh process
-    # is the actual incomplete-installation boundary, before that cache exists.
-    import subprocess
-    missing = subprocess.run([sys.executable, '-I', '-c',
-        'from pathlib import Path;import sys;from msplatform.workflows.multipole_ip.prepare import load_request;'
-        'load_request(Path(sys.argv[1]))', str(mpip_request)], cwd=root, capture_output=True, timeout=30)
-    assert missing.returncode != 0 and b'request.schema.json' in missing.stderr, missing.stderr
-finally:
-    mpip_schema_backup.rename(mpip_module.SCHEMA)
 
 gas_reader_code = """
 import sys,json,pathlib,sysconfig
@@ -6557,14 +6532,6 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             outputs=[file_record(csv_path), file_record(metadata)])), encoding="utf-8")
         return dict(manifest=file_record(manifest), product_id="gas_field")
 
-    def multipole_ip_probe_fixture(self) -> str:
-        from tests.workflows.multipole_ip.test_multipole_ip_prepare import MultipoleIPPreparationTests, write_json
-        fixture = MultipoleIPPreparationTests()
-        fixture.setUp()
-        self.addCleanup(fixture.doCleanups)
-        write_json(fixture.request_path, fixture.request)
-        return str(fixture.request_path)
-
     def single_reflection_workflow_probe_fixture(self, root: Path) -> list[dict]:
         from msplatform.io.manifest_records import file_record
         from tests.workflows.single_reflection.test_single_reflection_preparation import (
@@ -7835,7 +7802,7 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
                                 'tests.contracts.test_simion_rf_prepared_model', 'tests.contracts.test_simion_rf_tracking',
                                 'tests.contracts.test_simion_geometry_compiler', 'tests.contracts.test_simion_model_execution',
                                 'tests.contracts.test_simion_prepared_model', 'tests.contracts.test_component_particle_state',
-                                'tests.workflows.multipole_ip.test_ip_compiler',
+                                'tests.assembly.rf_ip.test_ip_compiler',
                                 'tests.components.ion_processor.test_functional'):
                 module = importlib.import_module(module_name)
                 actual = Path(module.__file__).resolve()
@@ -7891,7 +7858,6 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
                                               paired_static=paired,
                                               paired_pulse_analysis=self.paired_pulse_analysis_probe_fixture(root),
                                               single_reflection_workflow=self.single_reflection_workflow_probe_fixture(root),
-                                              multipole_ip_request=self.multipole_ip_probe_fixture(),
                                               rf_ip_inert_fixtures=rf_ip_fixtures,
                                               ip_mr_installed_fixture=ip_mr_installed_fixture,
                                               gas_field_reference=self.gas_field_probe_fixture(root),
@@ -8104,7 +8070,7 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
                     'tests/contracts/test_simion_model_execution.py',
                     'tests/contracts/test_simion_prepared_model.py',
                     'tests/contracts/test_component_particle_state.py',
-                    'tests/workflows/multipole_ip/test_ip_compiler.py',
+                    'tests/assembly/rf_ip/test_ip_compiler.py',
                     'tests/components/ion_processor/test_functional.py',
                     'tests/contracts/test_simion_tracking_execution.py',
                     'tests/workflows/single_reflection/test_single_reflection_program.py',

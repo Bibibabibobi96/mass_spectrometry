@@ -13,7 +13,7 @@ import math
 from pathlib import Path
 import shutil
 
-from msplatform.execution.clock_authority import validate_clock_authority
+from msplatform.io.clock_authority import validate_clock_authority
 from msplatform.contracts.machine_contracts import validate_schema
 from msplatform.contracts.rigid_transform import RigidTransform, relative_transform
 from msplatform.io.manifest_records import record_path, verify_record as _verify_record
@@ -24,8 +24,8 @@ from msplatform.results.field_sources import _require_field_source_binding, _sou
 
 from msplatform.assembly.resolve_assembly import derive_assembly_scope
 from msplatform.components.rf_multipole.source_validation import load_validated_source
-from msplatform.ion_release.cylinder import CANONICAL_COLUMNS
-from msplatform.ion_release.release import materialize_release, validate_release_spec
+from msplatform.particle_release.cylinder import CANONICAL_COLUMNS
+from msplatform.particle_release.release import materialize_release, validate_release_spec
 from msplatform.backends.simion.source import GLOBAL_COLUMNS, transform_source_rows
 from msplatform.contracts.particle_state import binary64_serialization_close
 from msplatform.results.single_reflection_source import published_producer_input, require_producer_manifest_binding, select_timed_pre_pulse_states
@@ -42,6 +42,7 @@ SCHEMA = Path(__file__).with_name("request_v9.schema.json")
 SCHEMA_V10 = Path(__file__).with_name("request_v10.schema.json")
 SCHEMA_V11 = Path(__file__).with_name("request_v11.schema.json")
 SCHEMA_V12 = Path(__file__).with_name("request_v12.schema.json")
+SCHEMA_V13 = Path(__file__).with_name("request_v13.schema.json")
 ROLE = "instrument_assembly_single_reflection_preparation_request"
 FROZEN_NAMES = {
     "validation_contract": "functional_validation.json",
@@ -87,10 +88,10 @@ def validate_preparation_request(request: dict) -> int:
     if not isinstance(request, dict) or type(request.get("schema_version")) is not int:
         raise ValueError("preparation request requires an explicit integer schema_version")
     version = request["schema_version"]
-    if version not in (9, 10, 11, 12):
+    if version not in (9, 10, 11, 12, 13):
         raise ValueError("unsupported preparation request schema_version")
-    validate_schema(request, {9: SCHEMA, 10: SCHEMA_V10, 11: SCHEMA_V11, 12: SCHEMA_V12}[version])
-    if version == 12:
+    validate_schema(request, {9: SCHEMA, 10: SCHEMA_V10, 11: SCHEMA_V11, 12: SCHEMA_V12, 13: SCHEMA_V13}[version])
+    if version in (12, 13):
         origin = request['source']['instrument_origin_us']
         if type(origin) not in (int, float) or not math.isfinite(origin):
             raise ValueError('recorded birth instrument_origin_us must be finite')
@@ -101,16 +102,18 @@ def validate_preparation_request(request: dict) -> int:
     return version
 
 
-def _prepare_recorded_birth_v12(request, request_path: Path, run: Path, frozen_request: Path) -> dict:
+def _prepare_recorded_birth_v13(request, request_path: Path, run: Path, frozen_request: Path) -> dict:
     """Bind actual original birth evidence to one published split model."""
     from msplatform.backends.simion.artifacts import CompiledPreparedModel
     from msplatform.backends.simion.frontend import split_frontend_instances
     from msplatform.backends.simion.model import require_prepared_model
     from msplatform.backends.simion.tracking_execution import plan_tracking_execution
     from msplatform.contracts.clock import ClockIdentity
-    from msplatform.ion_release import load_recorded_release
+    from msplatform.particle_release import load_recorded_release
     from msplatform.results.artifacts import open_artifact
 
+    if request['source']['species_kind'] != 'ion':
+        raise ValueError('SIMION recorded-birth currently supports ion species only')
     reference = request['fields_reference']
     if not Path(reference['manifest']['path']).is_absolute():
         raise ValueError('recorded birth requires an absolute FieldBundle manifest reference')
@@ -125,7 +128,7 @@ def _prepare_recorded_birth_v12(request, request_path: Path, run: Path, frozen_r
         raise ValueError('recorded birth requires its published source-independent matching FieldBundle')
     geometry = document['geometry']['frontend_geometry']
     if geometry.get('role') != 'simion_split_oa_tof_geometry':
-        raise ValueError('version12 requires the actual split OA–TOF FieldBundle')
+        raise ValueError('version13 requires the actual split OA–TOF FieldBundle')
     rf, _, tof = split_frontend_instances(geometry['composition_plan'])
     source = request['source']
     if len(rf) != 1 or source['instance_id'] != rf[0]:
@@ -157,15 +160,17 @@ def _prepare_recorded_birth_v12(request, request_path: Path, run: Path, frozen_r
         raise ValueError('recorded birth IDs differ from the complete original source')
     clock = ClockIdentity(drive_clock['clock_epoch_id'], drive_clock['authority_sha256'])
     packet = load_recorded_release(frozen['particle_source'], clock=clock, frame_id=source['frame_id'],
-        source_component_id=source['instance_id'], species_id=source['species_id'], relative_weights=None,
+        source_component_id=source['instance_id'], species_id=source['species_id'],
+        species_kind=source['species_kind'], relative_weights=None,
         instrument_origin_us=source['instrument_origin_us'], expected_particle_ids=source['particle_ids'])
     observations = dict(plane_observations=[dict(schema_version=2, observation_id='detector', source_instance_id=tof,
         surface_id='detector_active_face', max_records=len(rows))])
     plan_tracking_execution(model, particles=packet, clock_records=dict(clock_authority=frozen['clock_authority'],
         instrument_epoch=frozen['instrument_epoch']), propagation=request['propagation'], observations=observations,
         numerics=request['numerics'])
-    provenance = dict(schema_version=2, role='split_recorded_birth_preparation', source_kind='recorded_birth',
+    provenance = dict(schema_version=3, role='split_recorded_birth_preparation', source_kind='recorded_birth',
         population_policy='complete_original_source_no_selection_no_resampling', particle_count=len(rows),
+        species_kind=source['species_kind'],
         clock_epoch_id=clock.clock_epoch_id, fields_reference=fields.reference,
         source_time_mapping=dict(instrument_origin_us=source['instrument_origin_us'], native_origin_us=0.,
                                  source_time_unit='s', instrument_time_unit='us'),
@@ -174,7 +179,7 @@ def _prepare_recorded_birth_v12(request, request_path: Path, run: Path, frozen_r
     if path.exists():
         raise ValueError('recorded birth provenance already exists')
     _write(path, provenance)
-    return dict(schema_version=2, role='split_recorded_birth_preparation', stage='birth_preparation_only',
+    return dict(schema_version=3, role='split_recorded_birth_preparation', stage='birth_preparation_only',
                 particle_count=len(rows), input_records=frozen, outputs=dict(source_provenance=file_record(path)))
 
 
@@ -283,7 +288,9 @@ def prepare(request_path: Path, run: Path) -> dict:
     request = _read(frozen_request)
     request_version = validate_preparation_request(request)
     if request_version == 12:
-        return _prepare_recorded_birth_v12(request, request_path, run, frozen_request)
+        raise ValueError('historical recorded-birth version12 lacks explicit species_kind and cannot start a new run')
+    if request_version == 13:
+        return _prepare_recorded_birth_v13(request, request_path, run, frozen_request)
     source = request["source"]
     source_keys = (
         ("particle_source", "metadata") if source["kind"] == "recorded_birth"

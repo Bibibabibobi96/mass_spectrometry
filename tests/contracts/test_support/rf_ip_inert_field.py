@@ -5,7 +5,6 @@ import os
 import shutil
 import sys
 from pathlib import Path
-from unittest.mock import patch
 
 
 def prepare_inert_field(root, model, compiled):
@@ -21,59 +20,77 @@ def prepare_inert_field(root, model, compiled):
         plan_rf_fields,
     )
     from msplatform.execution import owner, capacity_admission
+    from msplatform.storage.store import ArtifactStore
     from msplatform.execution.context import ExecutionContext
     from msplatform.execution.resources import resource_path
     from msplatform.execution.terminal_publication import publish_terminal_state
     from msplatform.io.manifest_records import file_record
     from msplatform.results.artifacts import open_artifact
 
-    source_root = root / "producer"
-    assets = assets_at(source_root, compiled)
-    clock = clock_reference()
-    records = dict(
-        clock_authority=clock["contract"], instrument_epoch=clock["authority"]
-    )
-    model_path = source_root / "model.json"
-    model_path.write_text(json.dumps(model.document), encoding="utf-8")
-    records["compiled_model"] = file_record(model_path, "required_evidence")
-    bindings = {}
-    for name, row in assets.items():
-        bindings[name] = {}
-        for label, record in (
-            ("raw_geometry", row["raw_record"]),
-            ("fractional_surface", row["surface_records"][0]),
-            ("surface_witnesses", row["witness_record"]),
-        ):
-            key = name + "_" + label
-            records[key] = record
-            bindings[name][label] = key
-    manifest = dict(
-        schema_version=2,
-        role="simulation_run_manifest",
-        run_id="inert-joint-model",
-        project="software_fixture",
-        mode="inert_joint_model",
-        status="success",
-        inputs={},
-        outputs=list(records.values()),
-        products=dict(
-            model=dict(
-                schema_version=1,
-                kind="prepared_model",
-                status="complete",
-                data=records,
-                metadata=dict(
-                    backend="simion",
-                    drive_configured=True,
-                    geometry_materialized=True,
-                    field_status="not_solved",
-                    source_status="not_requested",
-                    native_assets=bindings,
-                ),
-            )
-        ),
-    )
-    publish_terminal_state(source_root, {"status": "success"}, manifest)
+    store = ArtifactStore(root / "store")
+    with store.inplace_asset('native_stage', 'rf-ip-inert-model') as (source_id, source_root, _source_claim, seal_source):
+        source_root = source_root / 'runs' / '20261113_000000__test__python__inert-joint-model'
+        assets = assets_at(source_root, compiled)
+        original_clock = clock_reference()
+        clock_dir = source_root / 'clock'
+        clock_dir.mkdir()
+        clock = dict(original_clock)
+        for name in ('contract', 'authority'):
+            original = original_clock[name]
+            target = clock_dir / Path(original['path']).name
+            target.write_bytes(Path(original['path']).read_bytes())
+            clock[name] = file_record(target, 'required_evidence')
+        clock['data_root'] = str(clock_dir)
+        records = dict(
+            clock_authority=clock["contract"], instrument_epoch=clock["authority"]
+        )
+        model_path = source_root / "model.json"
+        model_path.write_text(json.dumps(model.document), encoding="utf-8")
+        records["compiled_model"] = file_record(model_path, "required_evidence")
+        bindings = {}
+        for name, row in assets.items():
+            bindings[name] = {}
+            for label, record in (
+                ("raw_geometry", row["raw_record"]),
+                ("fractional_surface", row["surface_records"][0]),
+                ("surface_witnesses", row["witness_record"]),
+            ):
+                key = name + "_" + label
+                records[key] = record
+                bindings[name][label] = key
+        config = source_root / 'run_config.json'
+        config.write_text(json.dumps(dict(schema_version=1,run_id=source_root.name,project='software_fixture',
+            mode='inert_joint_model',inputs={},capacity_ledger_lifecycle=dict(schema_version=1,enabled=False,
+            artifact_root=str(store.root),light_evidence_budget_bytes=1024))),encoding='utf-8')
+        manifest = dict(
+            schema_version=2,
+            role="simulation_run_manifest",
+            run_id=source_root.name,
+            project="software_fixture",
+            mode="inert_joint_model",
+            status="success",
+            inputs={},
+            run_config=file_record(config, "required_evidence"),
+            outputs=list(records.values()),
+            products=dict(
+                model=dict(
+                    schema_version=1,
+                    kind="prepared_model",
+                    status="complete",
+                    data=records,
+                    metadata=dict(
+                        backend="simion",
+                        drive_configured=True,
+                        geometry_materialized=True,
+                        field_status="not_solved",
+                        source_status="not_requested",
+                        native_assets=bindings,
+                    ),
+                )
+            ),
+        )
+        publish_terminal_state(source_root, {"status": "success"}, manifest)
+        seal_source()
     source = field_closure.load_field_model(
         dict(
             manifest=file_record(source_root / "run_manifest.json"), product_id="model"
@@ -86,11 +103,13 @@ def prepare_inert_field(root, model, compiled):
             model.document["geometry"]["frontend_geometry"], "parent"
         )
     }
-    with patch(
-        "msplatform.backends.simion.model_execution.resolve_consumed_run_capacity_owner",
-        return_value=dict(run_directory=str(source_root)),
-    ):
+    fields.context.workspace = root / 'study'
+    from msplatform.execution.owner import standalone_native_store
+    with standalone_native_store(store, task_key='rf-ip-inert-field-build', budget=16777216,
+                                 required_assets=(source_id,)) as scope:
         result = execute(fields, source, {"refine_policy": "vendor_default"})
+        work = store.root / store.run_status(scope['parent_run_id'])['work_path']
+        (work / 'inert-field-generation.json').write_text('{"inert":true}', encoding='utf-8')
     product = result["manifest_extra_fields"]["products"]["fields"]["metadata"]
     assert product["field_representation"] == "producer_owned_rf_ip_fractional_family"
     field_product = result["manifest_extra_fields"]["products"]["fields"]
@@ -172,7 +191,7 @@ def prepare_inert_field(root, model, compiled):
         )
 
     published = owner.run_managed_stage(
-        context,
+        context, artifact_store=store,
         descriptor=dict(
             project="instrument_assembly", mode="inert_joint_fields", software=[]
         ),
@@ -193,7 +212,7 @@ def prepare_inert_field(root, model, compiled):
         for key, r in artifact.data_records.items()
         if "_family_" in key
     }
-    return reference, originals, context
+    return reference, originals, context, store
 
 
 def make_installed_fixture(root):
@@ -232,18 +251,16 @@ def make_installed_fixture(root):
         }
         propagation["dynamics"]["collisions"] = "hs1"
         numerics["grouped"] = 0
-        baseline = model.document["drive"]["ip_schedule"]["baseline"]
         vendor = root / "original.lua"
         vendor.write_text(HS1_SOURCE_FIXTURE, encoding="utf-8")
-        reference, _, context = prepare_inert_field(root, model, compiled)
+        reference, _, context, store = prepare_inert_field(root, model, compiled)
         return dict(
             reference=reference,
+            artifact_root=str(store.root),
             packet=packet,
             propagation=propagation,
             numerics=numerics,
-            gas_mass=baseline["gas"]["mass_amu"],
-            gas_temperature=baseline["gas"]["temperature_k"],
-            gas_frame=baseline["clock"]["frame_id"],
+            gas_temperature=300,
             vendor_path=str(vendor),
             context=dict(
                 workspace=str(context.workspace),

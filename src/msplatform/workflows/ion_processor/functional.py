@@ -29,7 +29,7 @@ from msplatform.components.ion_processor.coordinates import (
 # Freeze their canonical source bytes; the legacy constant name does not denote aliases.
 FROZEN_SCIENTIFIC_BRIDGE_MODULES = (
     "src/msplatform/contracts/particle_physics.py",
-    "src/msplatform/ion_release/release.py",
+    "src/msplatform/particle_release/release.py",
 )
 # Actual runtime dependencies, independent of incidental imports in the author process.
 FROZEN_RUNTIME_MODULES = (
@@ -78,7 +78,7 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
     if source_profile not in {"functional", "exploration"}:
         raise ValueError("source_profile must be functional or exploration")
     config_files = {name: f"{name}.json" for name in
-                    ("baseline", "numerics", "source", "acceptance", "native_operating_point", "diagnostics", "field_diagnostics")}
+                    ("baseline", "gas_environment", "numerics", "source", "acceptance", "native_operating_point", "diagnostics", "field_diagnostics")}
     config_files["source"] = "source_exploration.json" if source_profile == "exploration" else "source.json"
     # Dynamic language inputs belong to the same runnable frozen package as Python.
     runtime_resources = [installed_resource("src/msplatform/backends/simion/resources/" + "ip_" + name) for name in
@@ -102,7 +102,8 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
     missing = [str(path) for path in required_resources if not path.is_file()]
     if missing:
         raise ValueError("IP prepare required resource is missing: " + "; ".join(missing))
-    config = {name: read_json(configuration / filename) for name, filename in config_files.items()}
+    config = {name: read_json(configuration / filename) for name, filename in config_files.items()
+              if name not in {"baseline", "gas_environment"}}
     if (configuration / "coordinate_transform.json").is_file():
         config_files["coordinate_transform"] = "coordinate_transform.json"
         config["coordinate_transform"] = read_json(configuration / "coordinate_transform.json")
@@ -164,10 +165,12 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
     # Freeze the loaded repository source closure after shared source generation.
     # Solver inputs remain independent of an editable working tree.
     source_paths = {path for path in core_sources if path.suffix == ".py"}
-    source_paths.update(installed_resource(relative) for relative in enumerate_python_sources(
+    bridge_paths = [installed_resource(relative) for relative in enumerate_python_sources(
         resource_root,
         module_paths=tuple(relative.removeprefix("src/")
-                           for relative in (*FROZEN_SCIENTIFIC_BRIDGE_MODULES, *FROZEN_RUNTIME_MODULES))))
+                           for relative in (*FROZEN_SCIENTIFIC_BRIDGE_MODULES, *FROZEN_RUNTIME_MODULES)))]
+    source_paths.update(path for path in bridge_paths if path.suffix == ".py")
+    runtime_resources = list(dict.fromkeys([*runtime_resources, *(path for path in bridge_paths if path.suffix != ".py")]))
 
     def frozen_relative(path: Path) -> Path:
         return Path("src") / path.relative_to(resource_root)
@@ -182,7 +185,8 @@ def prepare(run: Path, project: Path, simion_dir: Path, native_field_run: Path |
         freeze_file(source, target, retention_classifier=classify_file)
     # Preserve the selected author inputs at the package's normal project location.
     # An external candidate remains the authority; current repository defaults never fill it.
-    configuration_resources = [configuration / name for name in selected_config_files.values()]
+    configuration_resources = [(inputs / filename if name in {"baseline", "gas_environment"} else configuration / filename)
+                               for name, filename in selected_config_files.items()]
     configuration_resources.extend(configuration / (name + ".json") for name in
         ("geometry_sources", "source_parameter_sources", "component_matching_derivation")
         if (configuration / (name + ".json")).is_file())

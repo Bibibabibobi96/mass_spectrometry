@@ -52,7 +52,7 @@ def _state_row(pid: int, species: str, state: Mapping[str, Any], *, backend_vers
 def adapt_native_results(source_rows: Mapping[int, Mapping[str, Any]], collection: Mapping[str, Any], *,
                          backend_version: str, observation_bindings: Mapping[str, Mapping[str, Any]],
                          observation_times_us: Sequence[float], constants: Mapping[str, Any],
-                         detector_instance: int) -> TraceResult:
+                         detector_instance: int | None) -> TraceResult:
     """Adapt collector-verified primary births and actual native 6D records.
 
     Each plane ID is explicitly bound to component/surface/electrode and kind;
@@ -62,7 +62,10 @@ def adapt_native_results(source_rows: Mapping[int, Mapping[str, Any]], collectio
         raise ValueError('native backend version is required')
     if not isinstance(constants, Mapping) or dict(constants) != dict(CONSTANTS):
         raise ValueError('native conversion requires the explicitly frozen supported constant set')
-    if type(detector_instance) is not int or detector_instance <= 0:
+    detector_requested = any(isinstance(binding, Mapping) and binding.get('kind') == 'detector'
+                             for binding in observation_bindings.values())
+    if ((detector_requested and (type(detector_instance) is not int or detector_instance <= 0))
+            or (detector_instance is not None and (type(detector_instance) is not int or detector_instance <= 0))):
         raise ValueError('detector workbench instance must be explicitly bound')
     ids = list(source_rows)
     if not ids or any(type(pid) is not int or pid <= 0 for pid in ids):
@@ -86,7 +89,6 @@ def adapt_native_results(source_rows: Mapping[int, Mapping[str, Any]], collectio
     requested = list(observation_times_us)
     if any(type(t) not in (int, float) or not math.isfinite(t) for t in requested) or requested != sorted(set(requested)):
         raise ValueError('selected experiment times must be unique, finite and sorted')
-    detector_requested = any(binding['kind'] == 'detector' for binding in observation_bindings.values())
     detector_records_present = 'plane_observations' in collection and 'canonical_events' in collection
     planes = collection.get('plane_observations', {'status': 'complete', 'rows': []})
     if planes.get('status') != 'complete':
@@ -160,7 +162,9 @@ def adapt_native_results(source_rows: Mapping[int, Mapping[str, Any]], collectio
                           attribution_method='declared_plane_observation', attribution_status='known')
         terminal_rows.append(result)
         for index, (row, binding) in enumerate(crossings, start=1):
-            if not source['instrument_time_us'] <= row['instrument_time_us'] <= end_time:
+            if (row['instrument_time_us'] < source['instrument_time_us'] or
+                    (row['instrument_time_us'] > end_time and not
+                     (category == 'programmatic_focus_stop' and _close(row['instrument_time_us'],end_time)))):
                 raise ValueError('plane observation outside native lifetime')
             event = _state_row(pid, species, row, backend_version=backend_version)
             event.update(event_kind=binding['kind'], event_sequence=index,

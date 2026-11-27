@@ -144,7 +144,7 @@ class TrackingUnitPlanTests(unittest.TestCase):
         from msplatform.backends.simion.tracking_execution import _publish_split_particle_data
         identity={'bytes':123,'sha256':'A'*64}
         plan={'expected_operation_ids':[],'observations':{'plane_observations':[]},'rows':[],
-              'flight':{'detector_instance':4}}
+              'flight':{'detector_instance':4},'species':[]}
         geometry={'native_frame_id':'fixture'}
         document={'drive':{'clock':{'clock_epoch_id':'fixture','authority_sha256':'A'*64}}}
         class Session:
@@ -212,7 +212,7 @@ class TrackingUnitOwnerTests(unittest.TestCase):
     def test_original_owner_four_units_out_of_order_partial_replay_then_zero_calls(self):
         """Real owner/dispatcher/guards/children, controlled test-only role/CPU seams."""
         case=base_fixture.TrackingExecutionPlanTests();case.setUp()
-        case.packet=base_fixture.ion_release_api.sample_release(dict(case.case.release,relative_weights={pid:1.+i/100 for i,pid in enumerate(case.case.release['particle_ids'])})).to_dict()
+        case.packet=base_fixture.particle_release_api.sample_release(dict(case.case.release,relative_weights={pid:1.+i/100 for i,pid in enumerate(case.case.release['particle_ids'])})).to_dict()
         self.assertTrue(os.environ.get('MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH'),'shared GATE required')
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)

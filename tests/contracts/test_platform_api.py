@@ -12,7 +12,7 @@ from unittest.mock import patch
 from msplatform import applications as applications_api, assembly as assembly_api, components as component_api, examples as example_api
 from msplatform import execution as execution_api
 from msplatform import exporters as exporters_api
-from msplatform import ion_release as ion_release_api
+from msplatform import particle_release as particle_release_api
 from msplatform.backends import simion as simion_api
 from msplatform.contracts.machine_contracts import ContractError
 from msplatform.results.artifacts import open_artifact
@@ -87,7 +87,7 @@ class PlatformApiTests(unittest.TestCase):
     def test_recorded_sfi_births_reach_real_tracking_planner_without_sampling(self):
         import csv
         from msplatform.contracts.clock import ClockIdentity
-        from msplatform.ion_release.authoring import load_recorded_release
+        from msplatform.particle_release.authoring import load_recorded_release
         from msplatform.backends.simion.model import project_resolved_drive, compile_prepared_model
         from msplatform.backends.simion.tracking_execution import plan_tracking_execution
         from tests.workflows.single_reflection.test_single_reflection_preparation import scientific_preparation_fixture
@@ -103,9 +103,9 @@ class PlatformApiTests(unittest.TestCase):
             ids = [int(row['particle_id']) for row in original]
             clock = ClockIdentity('instrument_clock_epoch_v1', request['source']['instrument_epoch']['sha256'])
             clock_records = {name: prepared['input_records'][name] for name in ('clock_authority', 'instrument_epoch')}
-            with patch('msplatform.ion_release.authoring.generate_release_states', side_effect=AssertionError('resampled')):
+            with patch('msplatform.particle_release.authoring.generate_release_states', side_effect=AssertionError('resampled')):
                 packet = load_recorded_release(source_record, clock=clock, frame_id=request['source']['frame_id'],
-                    source_component_id=request['source']['instance_id'], species_id='explicit_fixture_species',
+                    source_component_id=request['source']['instance_id'], species_id='explicit_fixture_species', species_kind='ion',
                     relative_weights=None, instrument_origin_us=0., expected_particle_ids=ids)
                 selected = {name: compiled.components_resolved[name]
                             for name in compiled.frontend_geometry['composition_plan']['scope']['instance_ids']}
@@ -131,7 +131,7 @@ class PlatformApiTests(unittest.TestCase):
             self.assertEqual(plan['source_provenance']['recorded_birth_source']['record'], source_record)
             with self.assertRaisesRegex(ValueError, 'ordered mother IDs'):
                 load_recorded_release(source_record, clock=clock, frame_id=request['source']['frame_id'],
-                    source_component_id='multipole', species_id='explicit_fixture_species', relative_weights=None,
+                    source_component_id='multipole', species_id='explicit_fixture_species', species_kind='ion', relative_weights=None,
                     instrument_origin_us=0., expected_particle_ids=list(reversed(ids)))
             altered = copy.deepcopy(packet)
             altered['rows'][0]['particle_birth_time_us'] += 1
@@ -374,7 +374,7 @@ class PlatformApiTests(unittest.TestCase):
             request['particle_ids'] = list(range(1, 101))
             request["clock"] = dict(clock_epoch_id="software-tracking-fixture",
                                     authority_sha256=hashlib.sha256(epoch.read_bytes()).hexdigest())
-            release = ion_release_api.sample_release(request)
+            release = particle_release_api.sample_release(request)
             packet = release.to_dict()
             components = {key: compiled.components_resolved[key]
                           for key in compiled.frontend_geometry["composition_plan"]["scope"]["instance_ids"]}
@@ -533,7 +533,7 @@ class PlatformApiTests(unittest.TestCase):
         request = case.release
         before = copy.deepcopy(request)
         with patch("subprocess.Popen", side_effect=AssertionError("source sampling must not launch tools")):
-            release = ion_release_api.sample_release(request)
+            release = particle_release_api.sample_release(request)
         self.assertEqual(request, before)
         self.assertEqual(len(release.rows), 100)
         self.assertEqual([row["particle_id"] for row in release.rows], request["particle_ids"])
@@ -797,9 +797,11 @@ class PlatformApiTests(unittest.TestCase):
             context = expert_context(workspace=root/'workspace', tools=dict(python=Path(sys.executable),powershell=Path(sys.executable),simion=Path(sys.executable)),
                 policy=dict(host_state_path=root/'state.sqlite3',stage_policy_path=policy))
             sentinel=object()
+            store=object()
             with patch('msplatform.execution.owner.run_managed_stage',return_value={'manifest':{'fixture':True}}) as owner, patch('msplatform.results.artifacts.open_artifact',return_value=sentinel):
-                self.assertIs(simion_api.build_geometry(compiled,context=context),sentinel)
+                self.assertIs(simion_api.build_geometry(compiled,context=context,artifact_store=store),sentinel)
             call=owner.call_args.kwargs
+            self.assertIs(call['artifact_store'],store)
             self.assertEqual(call['committed_new_bytes'], limits['transient_run_directory_bytes'])
             self.assertEqual(call['action'].func,execute_geometry)
             self.assertEqual(call['payload']['stage_policy'],stage)
@@ -808,7 +810,7 @@ class PlatformApiTests(unittest.TestCase):
 
 
     def test_public_birth_authoring_keeps_sparse_source_and_full_mother_without_side_effects(self):
-        from tests.ion_release.test_mt19937_disk_cone_rf_phase import _spec
+        from tests.particle_release.test_mt19937_disk_cone_rf_phase import _spec
         request = dict(schema_version=1, role="canonical_birth_source_request", release_spec=_spec(3),
             clock=dict(clock_epoch_id="software_oracle",authority_sha256="a"*64),instrument_origin_us=12.5,
             species_id="test_ion",source_component_id="multipole",particle_ids=[11,101,1009],
@@ -817,7 +819,7 @@ class PlatformApiTests(unittest.TestCase):
         with patch("subprocess.Popen",side_effect=AssertionError("native source action")), \
              patch.object(Path,"mkdir",side_effect=AssertionError("source workspace")), \
              patch.object(Path,"write_text",side_effect=AssertionError("source file")):
-            source = ion_release_api.sample_release(request)
+            source = particle_release_api.sample_release(request)
         self.assertEqual(request,before)
         self.assertEqual([row["particle_id"] for row in source.rows],[11,101,1009])
         self.assertEqual([row["particle_weight"] for row in source.rows],[.5,2.,3.])
@@ -833,11 +835,11 @@ class PlatformApiTests(unittest.TestCase):
         invalid = copy.deepcopy(before)
         invalid["relative_weights"][11] = 1.
         with self.assertRaisesRegex(ContractError,"weight keys"):
-            ion_release_api.sample_release(invalid)
+            particle_release_api.sample_release(invalid)
         invalid = copy.deepcopy(before)
         invalid["schema_version"] = True
         with self.assertRaisesRegex(ContractError,"version-1"):
-            ion_release_api.sample_release(invalid)
+            particle_release_api.sample_release(invalid)
 
     def test_real_example_full_geometry_without_source_or_side_effects(self):
         with patch("subprocess.Popen", side_effect=AssertionError("native launch")), \

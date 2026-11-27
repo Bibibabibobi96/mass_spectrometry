@@ -75,11 +75,11 @@ def _mother_records(records):
 def validate_birth_source(packet: Mapping) -> tuple[list, HandoffMother, ClockIdentity]:
     """Validate the complete canonical birth cohort independently of geometry."""
     if isinstance(packet, Mapping) and packet.get('role') == 'canonical_recorded_birth_realization':
-        from msplatform.ion_release.authoring import load_recorded_release
+        from msplatform.particle_release.authoring import load_recorded_release
         source = packet['recorded_source']
         rebuilt = load_recorded_release(source['record'], clock=ClockIdentity(**packet['clock']),
             frame_id=source['frame_id'], source_component_id=source['source_component_id'],
-            species_id=source['species_id'], relative_weights=source['relative_weights'],
+            species_id=source['species_id'], species_kind=source['species_kind'], relative_weights=source['relative_weights'],
             instrument_origin_us=source['instrument_origin_us'], expected_particle_ids=source['expected_particle_ids'])
         if (set(packet) != set(rebuilt) or packet['schema_version'] != rebuilt['schema_version']
                 or packet['state_kind'] != rebuilt['state_kind'] or packet['rows'] != rebuilt['rows']
@@ -190,16 +190,16 @@ def _split_tracking_contract(geometry: Mapping, propagation: Mapping, observatio
     """Require continuous original-birth split tracking and its actual detector disk."""
     if (not isinstance(propagation, Mapping) or propagation.get('scope') != 'continuous_assembly'
             or propagation.get('stop') is not None or propagation.get('consumed_plane_events') != []):
-        raise ValueError('split OA–TOF requires one original-birth continuous flight without relaunch')
+        raise ValueError('split OA鈥揟OF requires one original-birth continuous flight without relaunch')
     face = geometry['detector_active_face']
     definitions = observations.get('plane_observations') if isinstance(observations, Mapping) else None
     selected = [item for item in definitions or [] if isinstance(item, Mapping) and item.get('schema_version') == 2
                 and item.get('source_instance_id') == face['instance_id'] and item.get('surface_id') == face['surface_id']]
     if len(selected) != 1 or len(definitions) != 1:
-        raise ValueError('split OA–TOF requires exactly one observation of its actual detector active face')
+        raise ValueError('split OA鈥揟OF requires exactly one observation of its actual detector active face')
     detector = [row for row in geometry['downstream_pa_instances'] if row.get('role') == 'detector']
     if len(detector) != 1 or type(detector[0].get('workbench_index')) is not int or detector[0]['workbench_index'] < 1:
-        raise ValueError('split OA–TOF requires one explicit detector native workbench instance')
+        raise ValueError('split OA鈥揟OF requires one explicit detector native workbench instance')
     return detector[0]['workbench_index']
 
 
@@ -224,12 +224,81 @@ def _guard_complete_tof_flight(geometry, particles, propagation):
         for instance in scope)
     if complete_tof and (isinstance(particles, HandoffResult) or not isinstance(propagation, Mapping)
                          or propagation.get('scope') != 'continuous_assembly'):
-        raise ValueError('complete OA–TOF requires original births and continuous assembly propagation')
+        raise ValueError('complete OA鈥揟OF requires original births and continuous assembly propagation')
+
+
+def resolve_discovery_selection(discovery, model, *, field_manifest_record=None, field_product_id=None, provenance=None):
+    """Recompute a pulse from a completed, manifest-bound original-birth pilot."""
+    import json
+    from msplatform.analysis.pulse_selection import select_discovery_pulse
+    from msplatform.results.artifacts import open_artifact
+    from .artifacts import CompiledPreparedModel
+    from .tracking_program import discovery_pilot_pulse
+
+    if not isinstance(discovery, Mapping) or set(discovery) != {'phase', 'author', 'pilot'} or discovery['phase'] != 'selected':
+        raise ValueError('selected discovery requires its author and published pilot')
+    author = discovery['author']
+    document = require_prepared_model(model)
+    pilot_author = {'phase': 'discovery', 'author': author}
+    discovery_pilot_pulse(pilot_author, document['drive']['pulse'])
+    pilot = open_artifact(discovery['pilot'], expected_kind='trajectory_result')
+    if pilot.metadata.get('backend') != 'simion':
+        raise ValueError('discovery pilot requires a SIMION tracking product')
+    def read(key):
+        return json.loads(pilot.data_path(key).read_text(encoding='utf-8-sig'))
+    collection, observations, source = read('collection'), read('observations'), read('source_provenance')
+    pilot_model = CompiledPreparedModel(pilot.data_path('compiled_model').read_text(encoding='utf-8-sig'))
+    if require_prepared_model(pilot_model) != document:
+        raise ValueError('discovery pilot model differs from the selected field model')
+    if (collection.get('role') != 'simion_tracking_collection' or collection.get('native_complete') is not True
+            or collection.get('observation_complete') is False or collection.get('pulse_discovery') != pilot_author
+            or observations.get('pulse_discovery') != pilot_author
+            or observations.get('observation_times_us') != author['candidate_times_us']
+            or collection.get('effective_flight', {}).get('pulse') != {'mode': 'held_off'}
+            or collection.get('clock_epoch_id') != document['drive']['clock']['clock_epoch_id']
+            or collection.get('model_identity_sha256') != document['model_identity_sha256']
+            or collection.get('source_provenance_record') != pilot.data_records['source_provenance']
+            or source.get('state_kind') != 'source_birth'):
+        raise ValueError('discovery pilot is incomplete or differs from the frozen author, model or clock')
+    if field_manifest_record is not None:
+        previous = collection.get('field_reference', {}).get('manifest', {})
+        if (any(k not in previous or k not in field_manifest_record for k in ('bytes', 'sha256'))
+                or any(str(previous[k]).lower() != str(field_manifest_record[k]).lower() for k in ('bytes', 'sha256'))):
+            raise ValueError('discovery pilot and selected tracking field identities differ')
+        if not isinstance(field_product_id, str) or collection['field_reference'].get('product_id') != field_product_id:
+            raise ValueError('discovery pilot and selected tracking field product IDs differ')
+    keys = ('mother_particle_ids', 'mother_records', 'mother_fates', 'clock_authority_sha256')
+    if provenance is not None and any(source.get(k) != provenance.get(k) for k in keys):
+        raise ValueError('discovery pilot and selected tracking original mother or clock differ')
+    birth_rows = [row for row in collection['canonical_events'] if row['event'] == 'source_release']
+    births = {row['particle_id']: row['instrument_time_us'] for row in birth_rows}
+    terminals = {row['particle_id']: row['instrument_time_us'] for row in collection['native_terminals']}
+    ids = source.get('mother_particle_ids')
+    if (not isinstance(ids, list) or len(ids) != len(set(ids)) or len(birth_rows) != len(ids)
+            or source.get('execution_particle_ids') != ids or len(collection['native_terminals']) != len(ids)
+            or set(births) != set(ids) or set(terminals) != set(ids)):
+        raise ValueError('discovery pilot birth and terminal evidence must cover the original mother')
+    from msplatform.contracts.particle_state import binary64_serialization_close
+    mother = source.get('mother_records', [])
+    if ([row.get('particle_id') for row in mother] != ids
+            or any(not binary64_serialization_close(births[row['particle_id']], row['particle_birth_time_us'])
+                   for row in mother)):
+        raise ValueError('discovery pilot native births differ from the frozen original mother')
+    decision = select_discovery_pulse(births_us=births, terminal_times_us=terminals,
+        snapshots=collection['native_shared_states'], candidate_times_us=author['candidate_times_us'],
+        frontend_geometry=model_geometry(model, downstream_drive=True).frontend_geometry,
+        pulse_width_us=author['width_us'], input_records={
+            'collection': pilot.data_records['collection'], 'request': pilot.data_records['observations'],
+            'frontend_geometry': pilot.data_records['compiled_model']})
+    if decision['status'] != 'success':
+        raise ValueError('discovery pilot has no supported eligible pulse candidate')
+    return dict(decision=decision, effective_pulse=dict(mode='timed',
+        time_us=decision['actual_pulse_time_us'], width_us=author['width_us']))
 
 
 def plan_tracking_execution(model, *, particles, clock_records: Mapping, propagation: Mapping,
                             observations: Mapping, numerics: Mapping, unit_size=None,
-                            reused_unit_keys=(), field_manifest_record=None, birth_source_authority=None, hs1_request=None, ip_mr_field_reference=None, neutral_sampled_field_reference=None) -> dict:
+                            reused_unit_keys=(), field_manifest_record=None, field_product_id=None, birth_source_authority=None, hs1_request=None, ip_mr_field_reference=None, neutral_sampled_field_reference=None, focus_testplane_record=None) -> dict:
     """Validate the complete cohort and an explicit ordinal unit partition.
 
     The shared dispatcher controls real concurrency; units fix replay boundaries. Handoff producer
@@ -241,6 +310,12 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
     source_rows = particles.rows if isinstance(particles, HandoffResult) else particles.get('rows', []) if isinstance(particles, Mapping) else []
     if any(type(row.get('particle_id')) is not int or not 0 < row['particle_id'] <= 2**31 - 1 for row in source_rows):
         raise ValueError('SIMION Lua numeric log ABI requires particle IDs in 1..2147483647')
+    species_registry = None
+    if source_rows and not isinstance(particles, HandoffResult):
+        from msplatform.particle_release.authoring import resolved_birth_species
+        species_registry = resolved_birth_species(particles)
+        if any(row['species_kind'] == 'electron' for row in species_registry):
+            raise ValueError('SIMION native electron tracing is not yet validated')
     split = raw_geometry.get('role') == 'simion_split_oa_tof_geometry'
     detector_instance = _split_tracking_contract(raw_geometry, propagation, observations) if split else None
     ip_mr = raw_geometry.get('role') == 'simion_ip_mr_complete_geometry'
@@ -260,21 +335,21 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
             raise ValueError('neutral sampled field manifest differs')
     if ip_mr:
         if ip_mr_field_reference is None:
-            raise ValueError('IP–MR tracking requires a published common-field binding')
+            raise ValueError('IP鈥揗R tracking requires a published common-field binding')
         from .ip_mr_tracking_admission import admit_ip_mr_tracking_fields
         admission = admit_ip_mr_tracking_fields(ip_mr_field_reference)
         if require_prepared_model(admission['model'])['model_identity_sha256'] != document['model_identity_sha256']:
-            raise ValueError('IP–MR field and tracking model identities differ')
+            raise ValueError('IP鈥揗R field and tracking model identities differ')
         if field_manifest_record is not None and any(
                 str(field_manifest_record[k]).lower() != str(admission['source'].reference['manifest'][k]).lower()
                 for k in ('bytes', 'sha256')):
-            raise ValueError('IP–MR tracking field manifest differs')
+            raise ValueError('IP鈥揗R tracking field manifest differs')
         field_manifest_record = admission['source'].reference['manifest']
         from .rf_tracking_execution import prepare_ip_mr_hs1
         hs1 = prepare_ip_mr_hs1(model, hs1_request, common_world_domain=admission['world_domain'],
                                  common_world_frame_id=admission['world_frame_id'])
     elif ip_mr_field_reference is not None:
-        raise ValueError('IP–MR field reference requires IP–MR geometry')
+        raise ValueError('IP鈥揗R field reference requires IP鈥揗R geometry')
     independent_component = raw_geometry.get('role') in {'simion_independent_rf_geometry','simion_independent_oa_geometry'} or joint_ip or ip_mr or static_world
     neutral_hs1 = neutral_sampled and hs1_request is not None
     if neutral_hs1 and raw_geometry.get('role') == 'simion_neutral_multi_domain_collision_geometry':
@@ -296,6 +371,16 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
             raise ValueError('static world tracking requires original births in one continuous assembly')
         geometry['composition_plan'] = copy.deepcopy(raw_geometry['source_snapshot']['composition_plan'])
     expected = {'schema_version','scope','end_policy','consumed_plane_events','stop'}
+    publication = propagation.get('publication_contract') if isinstance(propagation, Mapping) else None
+    focus_authority = observations.get('oa_focus_authority') if isinstance(observations, Mapping) else None
+    focus = focus_authority is not None
+    if publication is not None:
+        valid_publication = (publication == 'original_birth_si_v1' and joint_ip) or (publication == 'oa_focus_original_birth_si_v1' and focus and raw_geometry.get('role') == 'simion_independent_oa_geometry')
+        if (not valid_publication or isinstance(particles, HandoffResult)
+                or propagation.get('scope') != 'continuous_assembly' or propagation.get('stop') is not None
+                or propagation.get('consumed_plane_events') != []):
+            raise ValueError('RF–IP SI publication requires one continuous original-birth cohort')
+        expected.add('publication_contract')
     if independent_component:
         expected.add('dynamics')
         if not isinstance(propagation,Mapping) or propagation.get('dynamics') != dict(kinematics='nonrelativistic',collisions='hs1' if joint_ip or ip_mr or neutral_hs1 else 'none',space_charge='none'):
@@ -305,9 +390,57 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
             or propagation['scope'] not in {'continuous_assembly','segmented_upstream','state_relaunch'}):
         raise ValueError('explicit supported tracking propagation policy required')
     if (not isinstance(observations,Mapping) or 'plane_observations' not in observations
-            or set(observations)-{'plane_observations','observation_times_us','native_field_observation'} or not isinstance(observations['plane_observations'],list)):
+            or set(observations)-{'plane_observations','observation_times_us','native_field_observation','field_intervention','pulse_discovery','oa_focus_authority','oa_focus_field_mode'} or not isinstance(observations['plane_observations'],list)):
         raise ValueError('tracking observations require the explicit existing plane definitions')
+    if publication is not None and not focus and observations['plane_observations'] != []:
+        raise ValueError('RF–IP SI publication currently requires explicit empty plane observations')
+    if 'field_intervention' in observations:
+        from .field_intervention import _case
+        case = observations['field_intervention']
+        if not split or not isinstance(case, Mapping) or set(case) != {'id', 'selector'}:
+            raise ValueError('field intervention requires an explicit split OA–TOF case')
+        _case(case)
     definitions = copy.deepcopy(observations['plane_observations'])
+    focus_field_mode=observations.get('oa_focus_field_mode')
+    if focus_field_mode is not None and (not focus or not isinstance(focus_field_mode,str) or focus_field_mode not in {'native','zone1_ideal','zone2_ideal','full_ideal'}):
+        raise ValueError('OA focus field mode requires an authorized focus and one declared mode')
+    focus_runtime = None
+    if focus:
+        if publication != 'oa_focus_original_birth_si_v1' or not source_rows:
+            raise ValueError('OA focus requires explicit original births and internally derived planes')
+        from msplatform.io.file_identity import guarded_file_identity
+        from msplatform.io.manifest_records import verify_record
+        from .oa_focus_model_projection import validate_focus_authority
+        from contextlib import ExitStack
+        with ExitStack() as stack:
+            documents=[]
+            for key in ('campaign','component_contract'):
+                record=focus_authority[key]
+                verify_record('OA focus '+key,record)
+                stack.enter_context(guarded_file_identity(record['path'],expected_bytes=record['bytes'],expected_sha256=record['sha256']))
+                documents.append(json.loads(Path(record['path']).read_text(encoding='utf-8-sig')))
+            validate_focus_authority(focus_authority,campaign=documents[0],component_contract=documents[1],model_document=document)
+        if not isinstance(focus_testplane_record,Mapping):
+            raise ValueError('OA focus requires a frozen SIMION TestPlane record')
+        verify_record('OA focus TestPlane',dict(focus_testplane_record))
+        component=focus_authority['component_id']
+        recipe=geometry['composition_plan']['recipe']
+        poses=[row['transform'] for row in recipe['instances'] if row['instance_id']==component]
+        if len(poses)!=1 or any(row['source_component_id']!=component for row in source_rows):
+            raise ValueError('OA focus source and actual placement differ')
+        pose=poses[0];rotation=pose['rotation'];translation=pose['translation_mm']
+        normal=[-rotation[i][2] for i in range(3)]
+        planes=[]
+        for name,key in (('oa_focus_exit','exit_z_mm'),('oa_focus_plane','focus_z_mm')):
+            center=[translation[i]+rotation[i][2]*focus_authority[key] for i in range(3)]
+            planes.append(dict(observation_id=name,center_mm=center,normal=normal))
+        focus_runtime=dict(planes=planes,exit_id='oa_focus_exit',focus_id='oa_focus_plane')
+        derived=[dict(schema_version=1,observation_id=p['observation_id'],source_instance_id=component,port_id=p['observation_id'],max_records=1) for p in planes]
+        if definitions and definitions != derived:
+            raise ValueError('OA focus plane definitions differ from the frozen authority')
+        definitions=derived
+    elif focus_testplane_record is not None:
+        raise ValueError('TestPlane record requires OA focus authority')
     validate_propagation_stop(propagation['stop'], definitions)
     if (propagation['scope']=='segmented_upstream') != (propagation['stop'] is not None):
         raise ValueError('only explicit segmented upstream propagation may request a cut stop')
@@ -346,6 +479,13 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
         require_same_clock(source_clock,clock)
         native,provenance = project_source_states(rows,mother=mother,clock=clock,state_kind='source_birth',
             clock_records=clock_records,consumed_plane_events=consumed)
+        if publication is not None:
+            ids = [row['particle_id'] for row in rows]
+            if (not ids or provenance.get('mother_particle_ids') != ids
+                    or provenance.get('execution_particle_ids') != ids
+                    or [row.get('particle_id') for row in provenance.get('mother_records', [])] != ids
+                    or any(row['instrument_time_us'] != row['particle_birth_time_us'] for row in rows)):
+                raise ValueError('RF–IP SI publication requires the complete original-birth mother')
         if particles.get('role') == 'canonical_recorded_birth_realization':
             provenance['recorded_birth_source'] = copy.deepcopy(particles['recorded_source'])
         if birth_source_authority is not None:
@@ -375,6 +515,22 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
     flight_input = dict(numerics,maximum_flight_us=horizon)
     if not independent_component:
         flight_input['pulse'] = copy.deepcopy(document['drive']['pulse'])
+    discovery = observations.get('pulse_discovery')
+    discovery_resolution = None
+    if discovery is not None:
+        from .tracking_program import discovery_pilot_pulse
+        if not isinstance(discovery, Mapping) or not split:
+            raise ValueError('pulse discovery requires the split OA–TOF geometry')
+        if discovery.get('phase') == 'discovery':
+            flight_input['pulse'] = discovery_pilot_pulse(discovery, document['drive']['pulse'])
+            if observations.get('observation_times_us') != discovery['author']['candidate_times_us']:
+                raise ValueError('discovery pilot must observe each explicit candidate time')
+        else:
+            if field_manifest_record is None:
+                raise ValueError('selected discovery requires the bound field manifest identity')
+            discovery_resolution = resolve_discovery_selection(discovery, model,
+                field_manifest_record=field_manifest_record, field_product_id=field_product_id, provenance=provenance)
+            flight_input['pulse'] = discovery_resolution['effective_pulse']
     if 'observation_times_us' in observations:
         flight_input['observation_times_us'] = copy.deepcopy(observations['observation_times_us'])
     if independent_component:
@@ -385,6 +541,9 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
         if static_world and has_ip_schedule:flight['has_ip_schedule']=True
         if neutral_hs1:flight['has_hs1']=True
         if joint_ip: flight['tracking_kind']='rf_ip'
+        if publication is not None: flight['original_birth_si'] = True
+        if focus_runtime is not None: flight['oa_focus_runtime'] = focus_runtime
+        if focus_field_mode is not None: flight['oa_focus_field_mode'] = focus_field_mode
         if ip_mr: flight['tracking_kind']='ip_mr'
     else:
         flight = validate_native_flight(flight_input,requires_rf=rf)
@@ -412,8 +571,16 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
         absolute_deadlines_us_by_particle_id=deadlines,flight=flight,propagation=copy.deepcopy(dict(propagation)),
         observations=copy.deepcopy(dict(observations)),numerics=copy.deepcopy(dict(numerics)),
         native_requested=bool(rows))
+    if species_registry is not None:
+        result['species'] = species_registry
+    if focus_runtime is not None:
+        result['observations']['plane_observations'] = definitions
+        result['focus_testplane_identity'] = {key:focus_testplane_record[key] for key in ('bytes','sha256')}
+    if discovery_resolution is not None:
+        result['discovery_resolution'] = discovery_resolution
+        result['discovery_field_product_id'] = field_product_id
     if ip_mr and (isinstance(particles,HandoffResult) or propagation['scope'] != 'continuous_assembly'):
-        raise ValueError('IP–MR requires one continuous original-birth cohort')
+        raise ValueError('IP鈥揗R requires one continuous original-birth cohort')
     if neutral_sampled:
         result['scalar_field_basis'] = copy.deepcopy(neutral_admission['basis'])
         result['neutral_source_identity'] = {name: {key: record[key] for key in ('bytes', 'sha256')}
@@ -454,12 +621,12 @@ def plan_tracking_workbench(compiled, *, field_design, components_resolved, carr
         return plan_neutral_sampled_tracking_workbench(compiled, admission=neutral_admission, run_directory=run_directory, program=program, native_source_rows=native_source_rows, native_path_resource=native_path_resource)
     if compiled.frontend_geometry.get('role') == 'simion_ip_mr_complete_geometry':
         if ip_mr_admission is None:
-            raise ValueError('verified sampled IP–MR FieldBundle admission required')
+            raise ValueError('verified sampled IP鈥揗R FieldBundle admission required')
         from .rf_tracking_execution import plan_ip_mr_tracking_workbench
         return plan_ip_mr_tracking_workbench(compiled, admission=ip_mr_admission, run_directory=run_directory,
             program=program, program_metadata=program_metadata, native_source_rows=native_source_rows, native_path_resource=native_path_resource)
     if ip_mr_admission is not None:
-        raise ValueError('sampled IP–MR admission requires the matching geometry role')
+        raise ValueError('sampled IP鈥揗R admission requires the matching geometry role')
     if compiled.frontend_geometry.get('role') in {'simion_independent_rf_geometry','simion_independent_oa_geometry','simion_rf_ip_geometry','simion_neutral_world_collision_geometry'}:
         from .rf_tracking_execution import plan_rf_tracking_workbench
         return plan_rf_tracking_workbench(compiled,carriers=carriers,run_directory=run_directory,
@@ -630,7 +797,11 @@ def _render_tracking_controls(model, plan: dict, *, field_design: dict, stored_b
         standalone_dynamic_field_bank=bank,standalone_dynamic_field_paths=paths,downstream_static_fields=static,
         build_metadata=metadata,plane_observations=plan['observations']['plane_observations'] or None,
         consumed_plane_events=plan['propagation']['consumed_plane_events'],propagation_stop=plan['propagation']['stop'],
-        prepared_model=model,**({'field_observation':selected_observation} if selected_observation is not None else {}),
+        prepared_model=model,field_intervention=plan['observations'].get('field_intervention'),
+        pulse_discovery=plan['observations'].get('pulse_discovery'),
+        field_manifest_identity=plan.get('field_manifest_identity'),
+        field_product_id=plan.get('discovery_field_product_id'),
+        **({'field_observation':selected_observation} if selected_observation is not None else {}),
         **({'scalar_field_basis':scalar} if scalar is not None else {}),**native_sources)
     return dict(program=program,build_metadata=metadata,carriers=carriers,response_fields=responses,
                 immutable_input_records=list(guards),flight=plan['flight'])
@@ -789,6 +960,8 @@ def _execute_tracking_units(session, *, model, plan, design, stored_bank, fronte
                                 build_metadata=row['build_metadata']))
             continue
         subset = slice_tracking_plan(plan,unit)
+        if subset['flight'].get('oa_focus_runtime') is not None:
+            subset['flight']['oa_focus_runtime']['testplane_path'] = str(session.input_dir/'native_sources/testplanelib.lua')
         controls = _render_tracking_controls(model,subset,field_design=design,stored_bank=stored_bank,
             frontend_records=frontend,downstream_assets=downstream,downstream_receipt=None if plan['flight'].get('tracking_kind') in {'independent_rf','independent_oa','rf_ip','ip_mr','static_world','neutral_sampled'} else _artifact_record(source,'downstream_audit'),
             native_sources=sources)
@@ -928,7 +1101,7 @@ def _execute_tracking_units(session, *, model, plan, design, stored_bank, fronte
 def execute_tracking(session, *, fields_reference, particles, propagation, observations, numerics,
                      limits, source_reference=None, allow_asynchronous_io=None, unit_size=None,
                      recovery_reference=None, dispatch_profiles=(), birth_source_authority=None, hs1_request=None, expected_tracking_applicability=None,
-                     scalar_field_basis=None, expected_scalar_basis=None) -> dict:
+                     scalar_field_basis=None, expected_scalar_basis=None, focus_testplane_record=None) -> dict:
     """Execute one explicit fixed-field cohort through the existing run owner.
 
     No Refine/GEM2PA/cache transaction occurs. The public observed-process owner
@@ -965,9 +1138,9 @@ def execute_tracking(session, *, fields_reference, particles, propagation, obser
     sampled_ip_mr = meta.get('field_representation') == 'assembly_sampled_basis_with_collision_geometry'
     if sampled_ip_mr:
         if geometry_role != 'simion_ip_mr_complete_geometry':
-            raise ValueError('sampled IP–MR field requires matching complete geometry')
+            raise ValueError('sampled IP鈥揗R field requires matching complete geometry')
         if scalar_field_basis is not None or expected_scalar_basis is not None:
-            raise ValueError('sampled IP–MR field already owns its scalar basis')
+            raise ValueError('sampled IP鈥揗R field already owns its scalar basis')
         from .rf_tracking_execution import execute_ip_mr_tracking
         return execute_ip_mr_tracking(session,source=source,model=model,document=document,particles=particles,
             propagation=propagation,observations=observations,numerics=numerics,limits=limits,
@@ -975,7 +1148,7 @@ def execute_tracking(session, *, fields_reference, particles, propagation, obser
             recovery_reference=recovery_reference,dispatch_profiles=dispatch_profiles,birth_source_authority=birth_source_authority,
             hs1_request=hs1_request,expected_tracking_applicability=expected_tracking_applicability)
     if geometry_role == 'simion_ip_mr_complete_geometry':
-        raise ValueError('IP–MR tracking requires its published sampled FieldBundle')
+        raise ValueError('IP鈥揗R tracking requires its published sampled FieldBundle')
     if geometry_role in {'simion_independent_rf_geometry','simion_independent_oa_geometry','simion_rf_ip_geometry','simion_neutral_world_collision_geometry'}:
         if scalar_field_basis is not None:
             raise ValueError('scalar basis is supported only for SFI tracking')
@@ -983,12 +1156,12 @@ def execute_tracking(session, *, fields_reference, particles, propagation, obser
         return execute_rf_tracking(session,source=source,model=model,document=document,particles=particles,
             propagation=propagation,observations=observations,numerics=numerics,limits=limits,
             source_reference=source_reference,allow_asynchronous_io=allow_asynchronous_io,unit_size=unit_size,
-            recovery_reference=recovery_reference,dispatch_profiles=dispatch_profiles,birth_source_authority=birth_source_authority,hs1_request=hs1_request,expected_tracking_applicability=expected_tracking_applicability)
+            recovery_reference=recovery_reference,dispatch_profiles=dispatch_profiles,birth_source_authority=birth_source_authority,hs1_request=hs1_request,expected_tracking_applicability=expected_tracking_applicability,focus_testplane_record=focus_testplane_record)
     compiled = model_geometry(model,downstream_drive=True)
     geometry = compiled.frontend_geometry
     _,downstream = require_downstream_reuse(source,meta['downstream_identity'])
     if meta.get('ground_representation') != 'analytic_zero_on_native_geometry':
-        raise ValueError('OA–TOF tracking requires a derived analytic ground FieldBundle; published PA families cannot be reopened')
+        raise ValueError('OA鈥揟OF tracking requires a derived analytic ground FieldBundle; published PA families cannot be reopened')
     design = json.loads(source.data_path('field_design').read_text(encoding='utf-8-sig'))
     stored_bank = json.loads(source.data_path('field_bank').read_text(encoding='utf-8-sig'))
     expected = {row['domain_id'] for row in design['domains']}
@@ -1056,13 +1229,15 @@ def _publish_split_particle_data(session, plan, collection, geometry, document, 
                 or not candidate.strip() or candidate.strip().lower() == 'unavailable'):
             raise ValueError('complete tracking reuse requires authenticated predecessor SIMION version and binary identity')
         version = candidate
-    definitions = plan['observations']['plane_observations']
+    definitions = plan['observations'].get('plane_observations', [])
+    focus = plan['flight'].get('oa_focus_runtime') is not None
     bindings = {row['observation_id']: dict(component_id=row['source_instance_id'],
-                surface_id=row['surface_id'], electrode_id=None, kind='detector') for row in definitions}
+                surface_id=row['observation_id'] if focus else row['surface_id'], electrode_id=None,
+                kind='observation' if focus else 'detector') for row in definitions}
     result = adapt_native_results({row['particle_id']: row for row in plan['rows']}, collection,
         backend_version=version, observation_bindings=bindings,
         observation_times_us=plan['observations'].get('observation_times_us', []), constants=CONSTANTS,
-        detector_instance=plan['flight']['detector_instance'])
+        detector_instance=plan['flight'].get('detector_instance'))
     directory = session.result_dir/'particle_data'
     directory.mkdir(parents=True, exist_ok=True)
     names = ('initial_states.parquet', 'terminal_states.parquet', 'events.parquet', 'trajectories.h5', 'execution.json')
@@ -1071,7 +1246,7 @@ def _publish_split_particle_data(session, plan, collection, geometry, document, 
     scientific_clock = dict(basis='experiment_relative', unit='s', clock_epoch_id=drive_clock['clock_epoch_id'],
                             authority_sha256=drive_clock['authority_sha256'])
     write_particle_data(directory, result, metadata=dict(schema_version=2, initial_state_basis='native_birth_verified',
-                        frame_id=geometry['native_frame_id'], clock=scientific_clock))
+                        frame_id=geometry['native_frame_id'], clock=scientific_clock, species=plan['species']))
     read_particle_data(directory)
     for name, path in declared.items():
         records['particle_data_'+name.replace('.', '_')] = file_record(session.canonical_path(path), 'required_evidence')
@@ -1081,7 +1256,7 @@ def _publish_split_particle_data(session, plan, collection, geometry, document, 
 def _execute_tracking_bound_source(session,*,source,model,document,compiled,geometry,design,stored_bank,
         frontend,downstream,field_workbench,borrowed,original_clock,relative_epoch,particles,propagation,observations,
         numerics,limits,source_reference,allow_asynchronous_io,unit_size,recovery_reference,dispatch_profiles,birth_source_authority=None,hs1_request=None,expected_tracking_applicability=None,
-        scalar_field_basis=None,expected_scalar_basis=None,ip_mr_admission=None,neutral_admission=None):
+        scalar_field_basis=None,expected_scalar_basis=None,ip_mr_admission=None,neutral_admission=None,focus_testplane_record=None):
     """The same unit runner and result publisher for verified TOF/RF source bindings."""
     import json
     from dataclasses import asdict
@@ -1092,11 +1267,15 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
     from .resources import native_resource_path
     records = {}
 
-    def small(name, target, *, value=None, source_path=None, text=None, retention_role='required_evidence'):
+    def small(name, target, *, value=None, source_path=None, text=None, content=None, retention_role='required_evidence'):
         target = session.declare_file(target,retention_role)
         target.parent.mkdir(parents=True,exist_ok=True)
         if source_path is not None:
             record = freeze_file(Path(source_path),target,retention_role=retention_role)
+        elif content is not None:
+            with target.open('xb') as stream:
+                stream.write(content)
+            record = file_record(session.canonical_path(target),retention_role)
         else:
             payload = text if text is not None else json.dumps(value,ensure_ascii=False,allow_nan=False,indent=2)+'\n'
             with target.open('x',encoding='utf-8',newline='\n') as stream: stream.write(payload)
@@ -1130,16 +1309,60 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
     clocks = dict(clock_authority=small('clock_authority',session.input_dir/'clock/clock_authority.json',source_path=original_clock['contract']['path']),
         instrument_epoch=small('instrument_epoch',session.input_dir/'clock'/relative_epoch,source_path=original_clock['authority']['path']))
     _clock_reference(document,dict(contract=clocks['clock_authority'],authority=clocks['instrument_epoch'],data_root=str(session.input_dir/'clock')))
+    if observations.get('oa_focus_authority') is not None:
+        from msplatform.io.manifest_records import verify_record
+        executable = Path(session.context.tools['simion']).resolve(strict=True)
+        expected_library = (executable.parent/'examples/test_plane/testplanelib.lua').resolve(strict=True)
+        if not isinstance(focus_testplane_record, Mapping) or Path(focus_testplane_record['path']).resolve(strict=True) != expected_library:
+            raise ValueError('OA focus TestPlane must come from the selected SIMION installation')
+        verify_record('OA focus TestPlane',dict(focus_testplane_record))
+        for name,record in [('testplanelib',focus_testplane_record),
+                            ('focus_campaign',observations['oa_focus_authority']['campaign']),
+                            ('focus_component_contract',observations['oa_focus_authority']['component_contract'])]:
+            copied=small('focus_'+name,session.input_dir/'native_sources'/(name+('.lua' if name=='testplanelib' else '.json')),source_path=record['path'])
+            if any(copied[k]!=record[k] for k in ('bytes','sha256')):
+                raise ValueError('OA focus frozen authority differs: '+name)
+            verify_record('OA focus source after freezing',dict(record))
+            borrowed.extend([dict(record),copied])
+        for name in ('oa_focus_model_projection.py','oa_focus_plan.py'):
+            original=file_record(Path(__file__).with_name(name).resolve(strict=True),'required_evidence')
+            copied=small('focus_code_'+name,session.input_dir/'native_sources'/name,source_path=original['path'])
+            if any(original[k]!=copied[k] for k in ('bytes','sha256')):
+                raise ValueError('OA focus validation code changed while freezing')
+            verify_record('OA focus validation code',original)
+            borrowed.extend([original,copied])
     plan = plan_tracking_execution(model,particles=particles,clock_records=clocks,propagation=propagation,observations=observations,
         numerics=numerics,unit_size=unit_size,field_manifest_record=source.reference['manifest'],
-        birth_source_authority=birth_source_authority,hs1_request=hs1_request,
+        field_product_id=source.reference['product_id'],
+        birth_source_authority=birth_source_authority,hs1_request=hs1_request,focus_testplane_record=focus_testplane_record,
         **({'ip_mr_field_reference':source.reference} if ip_mr_admission is not None else {}),
         **({'neutral_sampled_field_reference':source.reference} if neutral_admission is not None else {}))
+    if plan['observations'].get('pulse_discovery') is not None:
+        from msplatform.io.manifest_records import verify_record
+        selector_path = Path(__file__).resolve().parents[2] / 'analysis' / 'pulse_selection.py'
+        selector_original = file_record(selector_path, 'required_evidence')
+        selector_copy = small('discovery_selector', session.input_dir/'native_sources'/'pulse_selection.py',
+                              source_path=selector_path)
+        verify_record('discovery selector source after freezing', selector_original)
+        if any(selector_original[k] != selector_copy[k] for k in ('bytes', 'sha256')):
+            raise ValueError('discovery selector source changed while freezing')
+        borrowed = [*borrowed, selector_original, selector_copy]
+    if plan.get('discovery_resolution') is not None:
+        from msplatform.results.artifacts import open_artifact
+        from .model_execution import _protected_source
+        pilot = open_artifact(plan['observations']['pulse_discovery']['pilot'], expected_kind='trajectory_result')
+        _protected_source(session, pilot.reference['manifest'], required_paths=[
+            str(pilot.data_path(key)) for key in ('collection', 'observations', 'compiled_model', 'source_provenance')])
+        checked = resolve_discovery_selection(plan['observations']['pulse_discovery'], model,
+            field_manifest_record=source.reference['manifest'], field_product_id=source.reference['product_id'],
+            provenance=plan['source_provenance'])
+        if checked != plan['discovery_resolution']:
+            raise ValueError('discovery pilot changed during tracking admission')
     if neutral_admission is not None and plan['scalar_field_basis'] != neutral_admission['basis']:
         raise ValueError('neutral sampled field admission changed after planning')
     if ip_mr_admission is not None:
         if plan['scalar_field_basis'] != ip_mr_admission['basis'] or plan['collision_priority'] != ip_mr_admission['priority']:
-            raise ValueError('sampled IP–MR admission changed after planning')
+            raise ValueError('sampled IP鈥揗R admission changed after planning')
         from .ip_mr_tracking_admission import protect_ip_mr_tracking_fields
         protect_ip_mr_tracking_fields(session,ip_mr_admission)
     if scalar_field_basis is not None:
@@ -1149,13 +1372,28 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
         if admitted != expected_scalar_basis:
             raise ValueError('selected scalar basis changed after planning')
         plan['scalar_field_basis'] = admitted
-        _protected_source(session, admitted['geometry_reference']['manifest'],
-                          required_paths=[admitted['geometry_execution_request']['path']])
+        from .neutral_sampled_field import protect_neutral_records
+        references = [admitted['geometry_reference']]
+        protected = [admitted['geometry_execution_request']]
+        for item in admitted['bases'].values():
+            for level in [item, *item.get('refinement_windows', [])]:
+                references.extend((level['reference'], level['field_solution_reference']))
+                if level.get('original_samples_reference') is not None:
+                    references.append(level['original_samples_reference'])
+                protected.extend(level['records'].values())
+        from msplatform.execution.owner import current_managed_native_store
+        if current_managed_native_store() is None:
+            _protected_source(session, admitted['geometry_reference']['manifest'],
+                              required_paths=[admitted['geometry_execution_request']['path']])
+            for item in admitted['bases'].values():
+                for level in [item, *item.get('refinement_windows', [])]:
+                    _protected_source(session, level['reference']['manifest'],
+                                      required_paths=[record['path'] for record in level['records'].values()])
+                    _protected_source(session, level['field_solution_reference']['manifest'])
+        else:
+            protect_neutral_records(session, references, protected)
         for name, item in admitted['bases'].items():
             for index, level in enumerate([item, *item.get('refinement_windows', [])]):
-                _protected_source(session, level['reference']['manifest'],
-                                  required_paths=[record['path'] for record in level['records'].values()])
-                _protected_source(session, level['field_solution_reference']['manifest'])
                 for key, record in level['records'].items():
                     verify_record('selected scalar ' + name + ' ' + key, record)
                     session.add_input('scalar_' + name + ('_window_' + str(index) if index else '') + '_' + key, record)
@@ -1188,7 +1426,7 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
         from msplatform.io.manifest_records import verify_record
         if plan['flight']['tracking_kind'] == 'ip_mr':
             if ip_mr_admission is None:
-                raise ValueError('verified sampled IP–MR admission required')
+                raise ValueError('verified sampled IP鈥揗R admission required')
             selected_hs1 = prepare_ip_mr_hs1(model, hs1_request, common_world_domain=ip_mr_admission['world_domain'],
                 common_world_frame_id=ip_mr_admission['world_frame_id'])
         elif plan['flight'].get('has_hs1'):
@@ -1197,6 +1435,18 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
             selected_hs1 = prepare_rf_ip_hs1(model, hs1_request)
         if selected_hs1['identity'] != plan['hs1_identity']:
             raise ValueError('RF-IP HS1 inputs changed after planning')
+        environment_bytes = selected_hs1['environment_bytes']
+        if not isinstance(environment_bytes, bytes):
+            raise ValueError('HS1 gas environment must preserve its author bytes')
+        import hashlib
+        environment_sha = hashlib.sha256(environment_bytes).hexdigest()
+        if environment_sha.lower() != plan['hs1_identity']['environment_author_sha256'].lower():
+            raise ValueError('HS1 gas environment bytes differ from planned identity')
+        frozen_environment = small('hs1_gas_environment', session.input_dir/'hs1/gas_environment.json',
+                                   content=environment_bytes)
+        if frozen_environment['sha256'].lower() != environment_sha.lower():
+            raise ValueError('frozen HS1 gas environment differs from its author bytes')
+        hs1_frozen['gas_environment'] = frozen_environment
         vendor = selected_hs1['vendor_record']
         verify_record('selected original HS1 before freeze', vendor)
         original = small('hs1_vendor_original', session.input_dir/'hs1/original.lua', source_path=vendor['path'])
@@ -1218,9 +1468,16 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
     recovery = None
     if recovery_reference is not None:
         from .tracking_units import prepare_tracking_recovery,partition_tracking_units
+        from msplatform.execution.owner import current_managed_native_store
+        scope = current_managed_native_store()
+        if scope is not None:
+            from msplatform.execution.native_source_guard import guard_tracking_recovery
+            scope['lifetime'].enter_context(guard_tracking_recovery(scope['store'], recovery_reference,
+                raw_root=session.context.workspace/'artifacts'))
         recovery,replay = prepare_tracking_recovery(plan,recovery_reference,output_dir=session.result_dir/'recovery')
-        _protected_source(session,recovery_reference,required_paths=[recovery['index_path'],
-            *[row[name]['path'] for row in recovery['index']['units'] if row['complete'] for name in ('stdout_record','process_record')]])
+        if scope is None:
+            _protected_source(session,recovery_reference,required_paths=[recovery['index_path'],
+                *[row[name]['path'] for row in recovery['index']['units'] if row['complete'] for name in ('stdout_record','process_record')]])
         replay_path = session.declare_file(session.result_dir/'recovery/simion_whole_unit_replay_plan.json','required_evidence')
         records['recovery_plan'] = file_record(session.canonical_path(replay_path),'required_evidence')
         session.add_input('recovery_plan',records['recovery_plan'])
@@ -1274,6 +1531,8 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
             scalar_composer = ('split_scalar_field.lua' if plan['scalar_field_basis'].get('role') == 'split_off_on_scalar_binding'
                 else 'generic_scalar_field.lua' if plan['flight'].get('tracking_kind') in {'ip_mr', 'neutral_sampled'} else 'sfi_scalar_field.lua')
             resource_names += ('scalar_field_adapter.lua', scalar_composer)
+        if plan['flight'].get('oa_focus_runtime') is not None:
+            resource_names += ('oa_focus_observer.lua',)
         resource_names += ('native_terminal_recording.lua',)
         frozen = {}
         for name in resource_names:
@@ -1312,7 +1571,25 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
             verification='actual_native_stdout_readback_only_not_inferred_from_request',
             phase='before_fly_command_not_after_iob_load',
             stdout_data_keys=[key for key in records if key=='native_stdout' or key.startswith('native_stdout__')]))
-    if plan['flight'].get('tracking_kind') == 'split_oa_tof':
+    if plan['observations'].get('pulse_discovery') is not None:
+        collection['pulse_discovery'] = copy.deepcopy(plan['observations']['pulse_discovery'])
+        collection['effective_flight'] = copy.deepcopy(plan['flight'])
+        if plan.get('discovery_resolution') is not None:
+            collection['discovery_resolution'] = copy.deepcopy(plan['discovery_resolution'])
+    publish_rf_ip = (plan['flight'].get('tracking_kind') == 'rf_ip'
+                     and plan['flight'].get('original_birth_si') is True)
+    publish_focus = plan['flight'].get('oa_focus_runtime') is not None
+    if plan['flight'].get('tracking_kind') in {'split_oa_tof', 'neutral_sampled'} or publish_rf_ip or publish_focus:
+        if plan['flight']['tracking_kind'] == 'neutral_sampled' or publish_rf_ip or publish_focus:
+            if not publish_focus and plan['observations'].get('plane_observations'):
+                raise ValueError('this SI publication currently requires no plane observations')
+            provenance = plan['source_provenance']
+            ids = [row['particle_id'] for row in plan['rows']]
+            if (provenance.get('state_kind') != 'source_birth'
+                    or provenance.get('mother_particle_ids') != ids
+                    or provenance.get('execution_particle_ids') != ids
+                    or [row.get('particle_id') for row in provenance.get('mother_records', [])] != ids):
+                raise ValueError('SI publication requires the complete original birth cohort')
         result, version = _publish_split_particle_data(session, plan, collection, geometry, document, executable_identity, records, recovery=recovery)
     if collection.get('terminal_evidence',{}).get('status') == 'recorded_v1':
         from .terminal_evidence import render_terminal_6d_rec
@@ -1331,10 +1608,12 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
         native_calls=collection['native_calls'],refine_calls=0,field_recomputed=False,scientific_qualification='not_granted',
         shared_dispatcher_migration='installed',unit_count=len(plan['units']),unit_size=unit_size,
         reused_unit_count=len(recovery['reused_unit_keys']) if recovery else 0)
-    if plan['flight'].get('tracking_kind') == 'split_oa_tof':
+    if plan['flight'].get('tracking_kind') in {'split_oa_tof', 'neutral_sampled'} or publish_rf_ip or publish_focus:
         metadata.update(particle_data_schema_version=2, particle_data_integrity=result.data_integrity,
                         backend_version=version, backend_version_evidence='producer_verified',
                         frame_id=geometry['native_frame_id'])
+    if plan['flight'].get('tracking_kind') == 'neutral_sampled':
+        metadata.update(tracking_kind='neutral_sampled', field_domain_coupling='external_sampled_field')
     if plan['flight'].get('tracking_kind')=='independent_oa':
         metadata.update(component_kind='orthogonal_accelerator',tracking_kind='independent_oa',field_domain_coupling='independent_component_domains',native_state_wire_format='legacy_shared_RF_NATIVE_STATE_V1')
     if plan['flight'].get('tracking_kind')=='rf_ip':
