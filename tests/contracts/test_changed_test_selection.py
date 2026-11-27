@@ -823,7 +823,8 @@ foreach($scope in @('Owner','Repository')){
         paths = ["recipes/reference/uniform_e.toml", "src/msplatform/contracts/particle_physics.py",
                  "src/msplatform/recipes/reference.py", "src/msplatform/fields/__init__.py",
                  "src/msplatform/tracing/__init__.py", "src/msplatform/storage/store.py",
-                 "src/msplatform/results/particle_data.py", "src/msplatform/workflows/reference_tracing.py",
+                 "src/msplatform/results/particle_data.py", "src/msplatform/results/model.py",
+                 "src/msplatform/workflows/tracing.py", "src/msplatform/workflows/reference_tracing.py",
                  "src/msplatform/cli.py", "src/msplatform/__main__.py"]
         expected = {f"tests/contracts/test_{name}.py" for name in
                     ("reference_recipe", "reference_tracing", "artifact_store", "reference_workflow")}
@@ -832,6 +833,26 @@ foreach($scope in @('Owner','Repository')){
             with self.subTest(path=path):
                 self.assertIsNotNone(result)
                 self.assertTrue(expected <= set(result["Modules"]))
+
+    def test_store_owner_and_public_dispatch_select_their_actual_contracts(self) -> None:
+        store_tests = {f"tests/contracts/test_{name}.py" for name in (
+            "artifact_store", "store_run_identity", "store_accounting_boundaries", "release_evidence")}
+        paths = ["src/msplatform/storage/store.py", "src/msplatform/execution/owner.py",
+                 "src/msplatform/execution/run_session.py", "src/msplatform/execution/processes.py",
+                 "src/msplatform/execution/native_source_guard.py", "src/msplatform/cli.py",
+                 "src/msplatform/workflows/tracing.py", "src/msplatform/recipes/__init__.py",
+                 "src/msplatform/analysis/peak_metrics.py"]
+        selected = self.selections(REPO_ROOT, [dict(stage="machine_contracts", paths=[path])
+                                               for path in paths])
+        for path, row in zip(paths[:5], selected[:5], strict=True):
+            with self.subTest(path=path):
+                self.assertTrue(store_tests <= set(row["Modules"]))
+                self.assertEqual(len(row["Modules"]), len(set(row["Modules"])))
+        public_tests = {"tests/contracts/test_cli_validation.py",
+                        "tests/contracts/test_public_recipe_entry.py"}
+        for row in selected[5:8]:
+            self.assertTrue(public_tests <= set(row["Modules"]))
+        self.assertFalse((store_tests | public_tests) & set(selected[-1]["Modules"]))
 
     def test_sampled_ip_mr_field_changes_select_actual_consumers(self) -> None:
         paths = [
@@ -880,13 +901,16 @@ foreach($scope in @('Owner','Repository')){
             self.assertIn(expected_root + module + '.py', result['Modules'])
         self.assertEqual(result['Reason'], 'declared_owner_module_dependencies')
 
-    def test_sfi_normal_entry_selects_public_consumer_and_planner(self) -> None:
+    def test_sfi_retired_entries_and_current_configs_have_distinct_selection(self) -> None:
         paths = ['src/msplatform/workflows/single_reflection_flight/recorded_birth.py',
                  'src/msplatform/workflows/resources/single_reflection_flight.ps1',
                  'src/msplatform/workflows/config/assembly_registry.json', 'src/msplatform/workflows/config/runtime_dependencies.json']
         results = self.selections(REPO_ROOT, [dict(stage='machine_contracts', paths=[path]) for path in paths])
         for path, result in zip(paths, results, strict=True):
             with self.subTest(path=path):
+                if not (REPO_ROOT / path).is_file():
+                    self.assertIsNone(result)
+                    continue
                 self.assertIn('tests/contracts/test_sfi_recorded_birth_entry.py', result['Modules'])
                 self.assertIn('tests/contracts/test_execution_compiler.py', result['Modules'])
                 self.assertEqual(result['Reason'], 'declared_owner_module_dependencies')
@@ -1476,12 +1500,9 @@ $results|ConvertTo-Json -Depth 8 -Compress
                                     modules.update(stage["command"]["parameters"].get("SelectedTestModules", []))
                             self.assertIn("tests.components.rf_multipole_ion_optics.analysis.test_rf_event_original_witness", modules)
                     else:
-                        tof_modules = [module for name, stage in stages.items()
-                            if name.startswith("single_reflection_oa_tof_mass_analyzer_static")
-                            for module in stage["command"].get("parameters", {}).get("SelectedTestModules", [])]
-                        for name in ("test_reflectron_voltage_compensation", "test_compensation_powershell_adapter"):
-                            self.assertIn(f"tests.components.single_reflection_oa_tof_mass_analyzer.analysis.{name}",
-                                          tof_modules)
+                        for name in ("test_reflectron_response_binding", "test_reflectron_compensation_analysis",
+                                     "test_compensation_recipe_guard"):
+                            self.assertIn(f"tests/contracts/{name}.py", common)
 
     def test_canonical_file_identity_selects_frozen_project_consumers(self) -> None:
         with tempfile.TemporaryDirectory(prefix="file_identity_project_plan_") as directory:
@@ -1534,8 +1555,7 @@ $results|ConvertTo-Json -Depth 8 -Compress
 
     def test_measured_source_dependencies_select_their_real_consumers(self) -> None:
         paths = (
-            "src/msplatform/workflows/prepared_joint/source.py",
-            "src/msplatform/workflows/prepared_joint/ip_mr_connection.py",
+            "src/msplatform/assembly/ip_mr_connection.py",
             "src/msplatform/backends/simion/resources/mrtof_measured_source_runtime.lua",
             "src/msplatform/io/strict_json.py",
             "src/msplatform/execution/resources/frozen_python_package.ps1",
@@ -1564,7 +1584,7 @@ $results|ConvertTo-Json -Depth 8 -Compress
                     if not path.endswith("frozen_python_package.ps1"):
                         self.assertIn(
                             "tests.components.multi_reflection_tof.analysis.test_measured_component_source",
-                            mr["ChangedTestModules"])
+                            mr)
                         self.assertIn("tests.assembly.accelerator_interface.test_accelerator_interface", integration)
 
     def test_installed_ip_reader_selects_its_actual_project_and_installation(self) -> None:
@@ -1585,7 +1605,7 @@ $results|ConvertTo-Json -Depth 8 -Compress
     def test_candidate_split_keeps_all_prior_mapped_tests_in_real_plans(self) -> None:
         paths = (
             'src/msplatform/execution/resources/frozen_python_package.ps1',
-            'src/msplatform/workflows/single_reflection_mass_spectrum.py',
+            'src/msplatform/analysis/mass_spectrum.py',
             'tests/contracts/test_support/run_artifact_workflow.py',
             'src/msplatform/backends/comsol/matlab/add_comsol_size_feature.m',
         )
@@ -1632,7 +1652,7 @@ $results|ConvertTo-Json -Depth 8 -Compress
     def test_migrated_ip_tof_paths_select_real_consumers(self) -> None:
         project = "tests.components.single_reflection_oa_tof_mass_analyzer.analysis."
         consumer_paths = (
-            "src/msplatform/workflows/single_reflection_mass_spectrum.py",
+            "src/msplatform/analysis/mass_spectrum.py",
             "src/msplatform/results/single_reflection_particle_table.py",
             "src/msplatform/execution/resources/frozen_python_package.ps1",
         )
@@ -1662,12 +1682,12 @@ $results|ConvertTo-Json -Depth 8 -Compress
 
     def test_installed_reflectron_fit_selects_its_workflow_and_installation_consumers(self) -> None:
         project = "tests/components/single_reflection_oa_tof_mass_analyzer"
-        expected = [f"{project}.analysis.{name}".replace("/", ".") for name in (
-            "test_reflectron_voltage_fit", "test_reflectron_voltage_compensation",
-            "test_compensation_powershell_adapter")]
+        expected = [f"{project}.analysis.test_reflectron_voltage_fit".replace("/", ".")]
         paths = (
             "src/msplatform/backends/simion/optimize_reflectron_ring_voltages.py",
             "src/msplatform/backends/simion/resources/reflectron_voltage_fit_authoring.json",
+            "src/msplatform/analysis/reflectron_voltage_fit.py",
+            "src/msplatform/analysis/reflectron_compensation.py",
         )
         with tempfile.TemporaryDirectory(prefix="installed_reflectron_consumer_plans_") as directory:
             for index, path in enumerate(paths):
@@ -1676,8 +1696,17 @@ $results|ConvertTo-Json -Depth 8 -Compress
                     write_planned_request(REPO_ROOT, request, [path])
                     stages = {row["name"]: row for row in json.loads(
                         request.read_text(encoding="utf-8-sig"))["stages"] if row["selected"]}
-                    parameters = stages["single_reflection_oa_tof_mass_analyzer_static"]["command"]["parameters"]
-                    self.assertCountEqual(parameters["SelectedTestModules"], expected)
+                    owner_rows = [row for name, row in stages.items()
+                                  if name.startswith("single_reflection_oa_tof_mass_analyzer_static")]
+                    self.assertTrue(owner_rows)
+                    modules = [module for row in owner_rows
+                               for module in row["command"].get("parameters", {}).get("SelectedTestModules", [])]
+                    if path.endswith("optimize_reflectron_ring_voltages.py"):
+                        actual_owner = {path.relative_to(REPO_ROOT).with_suffix("").as_posix().replace("/", ".")
+                                        for path in (REPO_ROOT / project).rglob("test_*.py")}
+                        self.assertCountEqual(modules, actual_owner)
+                    else:
+                        self.assertCountEqual(modules, expected)
                     common = common_stage(stages)["command"]["arguments"]
                     self.assertIn("tests/contracts/test_installed_scientific_core.py", common)
                     self.assertIn("tests/contracts/test_scientific_core_boundaries.py", common)

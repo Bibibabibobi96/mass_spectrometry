@@ -220,7 +220,9 @@ OA代码提交为 `3cafdf7db7b9b0267d3a3382807aa6ed1e3948cb`；精确索引快�
 
 完整 Changed 合同复验实际得到108个成功父测试、1个路由失败，无 error。`build_and_export_paired_accelerator_field.m`、`oatof_build_accelerator_geometry.m`、`oatof_build_grid_geometry.m` 在 paired-static 退役后只选择实际 TOF owner，不再错误要求 Assembly；其余七个登记路径仍必须选择 Assembly。定向1父测试／12条回执PASS（25.085s）。该结果不替代后续同一SHA完整门禁。
 
-C5 删除选择根因已修：`Get-GateChangedTests` 不再先按文件缺席跳过有效消费者映射；删除源可运行现存测试，未映射的未知/重命名保留完整 owner 回退。MR 分片断言现汇总全部实际分片，TOF 路由移除已删 mass-spectrum admission 测试并覆盖现存 Candidate/peak 消费者。相关定向2父测试／11回执PASS（27.631s），映射正反例2父测试／7回执PASS（20.670s），SFI 正常入口1父测试／5回执PASS（1.522s）。完整选择器轮实际75成功、2 failure、2 error；其中 Prepared 语法错误由其在途 owner 修复，其余已逐项复验，不把该轮写成通过。
+C5 对账中曾试改“删除源仍沿用映射”，但既有真实负例证明这会复用失效叶；该过宽改动已撤回，继续保留删除权限的完整 owner 回退。实际修复是移除已删 `prepared_joint/source.py` 的活动消费者断言、按全部 MR/TOF 分片对账，并移除已删 mass-spectrum admission 测试；现存 Candidate/peak 消费者保持。相关定向2父测试／11回执PASS（27.631s），SFI 正常入口1父测试／5回执PASS（1.522s），反射拟合的现存直接消费者与删除旧 optimizer 的完整 owner 回退分别核对。完整选择器轮实际75成功、2 failure、2 error；其中 Prepared 语法错误由其在途 owner 修复，其余逐项定位，不把该轮写成通过。
+
+修正后完整 Changed 合同109父测试／460条记录全部成功（687.375s），完整选择器67父测试／322条记录全部成功（536.488s），均无 skip、无漏回执。公开 `8a12f424` Changed（run 46048308486）也已成功。上述是不同的中间代码身份和软件范围，不拼接为最终同一 SHA 验收。
 
 ### Prepared 旧飞行与重释放链退出（WORKTREE）
 

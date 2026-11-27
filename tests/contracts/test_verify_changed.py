@@ -202,7 +202,7 @@ class ChangedGateContractTests(unittest.TestCase):
                 self.assertIn('tests.contracts.test_installed_scientific_core', common)
 
     def test_recorded_birth_selects_the_actual_receivers(self):
-        request, _ = self.plan('-ChangedPath', 'src/msplatform/ion_release/authoring.py')
+        request, _ = self.plan('-ChangedPath', 'src/msplatform/particle_release/authoring.py')
         modules = {value.removesuffix('.py').replace('/', '.')
                    for row in request['stages'] if row['selected']
                    and row['name'].startswith('machine_contracts')
@@ -302,7 +302,7 @@ class ChangedGateContractTests(unittest.TestCase):
         modules = {value for row in request["stages"]
                    if row["name"].startswith("single_reflection_oa_tof_mass_analyzer_static")
                    for value in row["command"].get("parameters", {}).get("SelectedTestModules", [])}
-        self.assertEqual(modules, {'tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_solver_diagnostics', 'tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_radial_compaction_campaign', 'tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_reflectron_voltage_compensation', 'tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_compensation_powershell_adapter', 'tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_candidate_workflow', 'tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_candidate_causal_workflow', 'tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_candidate_postprocess_workflow'})
+        self.assertEqual(modules, {'tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_solver_diagnostics', 'tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_radial_compaction_campaign', 'tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_candidate_workflow', 'tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_candidate_causal_workflow', 'tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_candidate_postprocess_workflow'})
 
     def test_installed_particle_comparison_selects_both_real_analyzers(self):
         request, _ = self.plan(
@@ -632,7 +632,7 @@ foreach($case in $cases){{
             "src/msplatform/execution/resources/__init__.py",
             "src/msplatform/execution/resources/frozen_python_package.ps1",
             "src/msplatform/io/strict_json.py",
-            "src/msplatform/ion_release/paired_mass_scan.py",
+            "src/msplatform/particle_release/paired_mass_scan.py",
             "src/msplatform/workflows/rf_batch_continuation.py",
             "src/msplatform/workflows/rf_design_profiles.py",
             "src/msplatform/workflows/rf_resource_budget.py",
@@ -909,8 +909,8 @@ ConvertTo-Json -Compress -InputObject $paths
                  ("tools/repository/verify.ps1", "tests.contracts.test_verify_changed"),
                  ("pyproject.toml", "tests.contracts.test_python_dependency_contract"),
                  ("pyproject.toml", "tests.contracts.test_installed_scientific_core"),
-                 ("src/msplatform/ion_release/release.py", "tests.contracts.test_installed_scientific_core"),
-                 ("src/msplatform/ion_release/__init__.py", "tests.contracts.test_installed_scientific_core"),
+                 ("src/msplatform/particle_release/release.py", "tests.contracts.test_installed_scientific_core"),
+                 ("src/msplatform/particle_release/__init__.py", "tests.contracts.test_installed_scientific_core"),
                  ("src/msplatform/assembly/resolve_assembly.py", "tests.contracts.test_installed_scientific_core"),
                  ("src/msplatform/assembly/__init__.py", "tests.contracts.test_installed_scientific_core"),
                  ("src/msplatform/analysis/peak_metrics.py", "tests.contracts.test_installed_scientific_core"),
@@ -1496,7 +1496,7 @@ $parameters=@{{Route=$route;KnownTestRoots=@('tests/assembly/','tests/workflows/
 $result=@{{known=@((Get-GateChangedTests @parameters -ChangedPaths @($source)).Modules)}}
 $result.unknown=$null-eq(Get-GateChangedTests @parameters -ChangedPaths @('src/msplatform/workflows/single_reflection_flight/future.py'))
 Remove-Item -LiteralPath (Join-Path $root $source)
-$result.deleted=@((Get-GateChangedTests @parameters -ChangedPaths @($source)).Modules)
+$result.deleted=$null-eq(Get-GateChangedTests @parameters -ChangedPaths @($source))
 $result.renamed=$null-eq(Get-GateChangedTests @parameters -ChangedPaths @($source,'src/msplatform/workflows/single_reflection_flight/renamed.py'))
 $result.full=@((Get-GateChangedTests @parameters -ChangedPaths @($source) -FullScope).Modules)
 $result|ConvertTo-Json -Compress
@@ -1506,10 +1506,9 @@ $result|ConvertTo-Json -Compress
             self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
             result = json.loads(process.stdout)
             self.assertEqual(set(result['known']), expected)
-            # Deleted sources retain their live consumer mapping; unknown or
-            # renamed sources without a mapping keep the complete-owner fallback.
-            self.assertEqual(set(result['deleted']), expected)
-            for name in ('unknown', 'renamed'):
+            # Outside test roots an unknown/deleted authority returns no narrow
+            # selection; the normal planner then retains the complete owner.
+            for name in ('unknown', 'deleted', 'renamed'):
                 self.assertTrue(result[name])
             self.assertEqual(set(result['full']), paths)
 
@@ -2117,8 +2116,7 @@ exit ([int]$env:CI_FIXTURE_EXIT)
             "rf_multipole_quadrupole_static": [rf + name for name in (
                 "test_comsol_owner_finalization", "test_owner_finalization_recovery", "test_simion_powershell_owner")],
             "single_reflection_oa_tof_mass_analyzer_static": [single + name for name in (
-                "test_candidate_workflow", "test_candidate_causal_workflow", "test_candidate_postprocess_workflow",
-                "test_compensation_powershell_adapter")],
+                "test_candidate_workflow", "test_candidate_causal_workflow", "test_candidate_postprocess_workflow")],
         }
 
         def selected_modules(request, owner):
