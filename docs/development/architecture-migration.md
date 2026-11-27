@@ -282,13 +282,15 @@ IP fixture 现从唯一 `gas_environment` 和 baseline 生成规范原生视图�
 
 代码与本记录候选已提交并普通 push `6c0d0be7432ad1361c1fa1c76874cbe1870bcc9e`。规范 CLOC 2.10 `3b0b3484→6c0d0be7` PASS：total code +4、production +0、tests +4，unclassified=0；完整逐语言及过滤证据在外部 `regression-fixtures-6c0d0be7-cloc.log`。仍未关闭 CA19 或整批验收。
 
-### C2 记录型 Joint 分析职责迁移（WORKTREE）
+### C2 记录型 Joint 分析职责迁移（候选）
 
 旧职责→新入口：`prepared_joint.analysis_contract` 的后验科学合同校验迁至 `analysis.joint_analysis_contract`；`prepared_joint.diagnostics` 的临时 CLI 删除，实际分析统一由 `workflows.historical_joint_analysis` 的 `analyze_recorded_joint_flight`、`main` 和既有 Store `publish_joint_analysis` 承接。旧 `analysis_inputs` 与 PowerShell 分析 owner 仍是下一条退役边界，本单元不声称整个 `prepared_joint` 包已消失。冻结证据中的 `prepared_joint_trial.json`、历史 role/mode 与原始字节不改写。
 
 测试定位同步为 `test_recorded_joint_diagnostics.py`／`RecordedJointDiagnosticsTests`；这是有界旧→新路径映射，不继承原 PASS。迁移后20父测试实跑64.346s，19通过、1个既有显式 native-97 复验 skip；实际 CLI 两次输出 `RECORDED_JOINT_ANALYSIS=PASS`。准备侧合同消费者8父测试全PASS（27.646s），Changed 路由定向1父测试PASS。Ruff 与 diff-check 通过。外部日志为 `recorded-joint-diagnostics.log`、`recorded-joint-preparation-consumer.log`、`recorded-joint-selection.log`。
 
 补充 `test_execution_compiler` 45父测试发现2 FAIL／1 ERROR（39.635s）：`single_reflection_flight` 旧注册已删而测试仍编译它、OA 设计 blocker 预期失效、普通 profile 数11≠12；这些对象不在本单元 diff，保留为后续对账，不记为当前迁移回归通过。Prepared PowerShell 全场景首轮因临时 installed 夹具仍写旧 diagnostics 路径而无效，已停止重复失败并修正为真实新模块；修正后真实公共入口1父测试／10场景全PASS（376.781s），覆盖原合同修改/删除、冻结 admission/诊断缺件、分析失败、错误 owner、不完整 native、容量与 seal 失败，原源字节不变且无原生飞行；其余8个 admission/恢复/历史身份父测试亦全PASS（26.034s）。日志为 `recorded-joint-prepared-consumer-r2.log` 和 `recorded-joint-prepared-remainder.log`。文档 StructureOnly PASS；未执行商业 native、完整门禁或双安装。
+
+本单元已提交并普通 push `2db14205f51713effde159ac2f50ed9a703fea0a`。CLOC 2.10 `dda2ad61→2db14205` PASS：total code -5、production -2、tests -3，unclassified=0；完整逐语言和过滤口径在外部 `recorded-joint-2db14205-cloc.log`。
 
 ### C 活跃消费者对账（开工定位，未闭合）
 
