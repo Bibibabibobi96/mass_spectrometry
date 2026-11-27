@@ -268,6 +268,89 @@ class NativeArtifactControlsTests(unittest.TestCase):
                 process.join(20)
             native_release.set()
 
+    def test_pre_handshake_owner_failure_retains_untrusted_diagnostics(self) -> None:
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from msplatform.execution.processes import _invoke_native_artifact_owner, _interpret_process_result, ProcessExecutionError
+        class FailedOwner:
+            returncode = 7
+            def communicate(self, _request):
+                return b'owner stdout', b'host acquire failed'
+        context = SimpleNamespace(powershell_executable=Path(sys.executable), host_state_path=self.host,
+                                  python_executable=Path(sys.executable))
+        with patch('msplatform.execution.processes.subprocess.Popen', return_value=FailedOwner()):
+            with self.assertRaisesRegex(ValueError, 'host acquire failed') as caught:
+                _invoke_native_artifact_owner(context, {}, {'work_directory': self.root},
+                                              _interpret_process_result, 'process_owner.ps1')
+        error = caught.exception
+        self.assertIsInstance(error.__cause__, ProcessExecutionError)
+        self.assertTrue(error.execution_bridge_started)
+        self.assertEqual(error.owner_stdout, b'owner stdout')
+        self.assertEqual(error.owner_stderr, b'host acquire failed')
+        self.assertEqual(error.owner_returncode, 7)
+        self.assertEqual(error.unverified_owner_receipt, {})
+
+    def test_standalone_store_stage_publishes_and_preserves_failure(self) -> None:
+        from unittest.mock import patch
+        from msplatform.backends.simion import native_completion
+        from msplatform.execution.context import ExecutionContext
+        from msplatform.execution.owner import run_managed_stage
+        from msplatform.execution.resources import resource_path
+        from msplatform.io.manifest_records import file_record
+        budget = self.root / 'budget.json'
+        budget.write_text('{"bytes":1000000}', encoding='utf-8')
+        context = ExecutionContext(workspace=self.root / 'standalone', python_executable=Path(sys.executable),
+            powershell_executable=Path(shutil.which('pwsh') or sys.executable), tools={},
+            host_state_path=self.host, policy_path=resource_path('host_resource_policy.json'))
+        def action(session):
+            output = session.declare_file(session.result_dir / 'output.bin', 'solver_native_binary')
+            output.write_bytes(b'standalone')
+            return dict(status='success', summary={}, output_paths=[str(output)],
+                        required_output_paths=[str(output)], retention_preserve_paths=[], manifest_extra_fields={})
+        arguments = dict(descriptor=dict(project='instrument_assembly', mode='test', software=[]),
+            run_id='20261127_000000__test__python__standalone', payload={}, committed_new_bytes=1000000,
+            commitment_inputs=[file_record(budget, 'required_evidence')],
+            retention={'policy_version': 1, 'class': 'solver_review', 'reason': 'test'},
+            expected_operation_ids=[], operation_dependencies={}, action=action,
+            action_record=file_record(Path(__file__), 'required_evidence'), completion_api=lambda: native_completion,
+            artifact_store=self.store)
+        with patch('msplatform.execution.owner.path_capacity', return_value={'legacy_windows_compatible': True}):
+            result = run_managed_stage(context, **arguments)
+        self.assertEqual(result['status'], 'success')
+        self.assertTrue(Path(result['manifest']['path']).is_file())
+        self.assertEqual(self.store.run_status(result['store_run_id'])['execution_status'], 'succeeded')
+        self.assertFalse((context.workspace / 'artifacts').exists())
+        self.store.collect(1000000)
+        self.assertTrue(Path(result['manifest']['path']).is_file())
+        def failed(_session):
+            raise RuntimeError('real action failure')
+        arguments.update(run_id='20261127_000001__test__python__standalone', action=failed)
+        with patch('msplatform.execution.owner.path_capacity', return_value={'legacy_windows_compatible': True}):
+            with self.assertRaisesRegex(RuntimeError, 'real action failure') as caught:
+                run_managed_stage(context, **arguments)
+        failed_run = next(note.removeprefix('Store run_id: ') for note in caught.exception.__notes__
+                          if note.startswith('Store run_id: '))
+        self.assertEqual(self.store.run_status(failed_run)['execution_status'], 'failed')
+        self.assertEqual(self.store.run_status(failed_run)['publication_status'], 'unpublished')
+        def reported_failure(_session):
+            return dict(status='failed', summary={}, output_paths=[], required_output_paths=[],
+                        retention_preserve_paths=[], manifest_extra_fields={})
+        arguments.update(run_id='20261127_000002__test__python__standalone', action=reported_failure)
+        with patch('msplatform.execution.owner.path_capacity', return_value={'legacy_windows_compatible': True}):
+            result = run_managed_stage(context, **arguments)
+        self.assertEqual(result['status'], 'failed')
+        self.assertEqual(self.store.run_status(result['store_run_id'])['execution_status'], 'failed')
+        self.assertIsNone(result['store_run_path'])
+        def reported_interruption(_session):
+            return dict(status='interrupted', summary={}, output_paths=[], required_output_paths=[],
+                        retention_preserve_paths=[], manifest_extra_fields={})
+        arguments.update(run_id='20261127_000003__test__python__standalone', action=reported_interruption)
+        with patch('msplatform.execution.owner.path_capacity', return_value={'legacy_windows_compatible': True}):
+            result = run_managed_stage(context, **arguments)
+        self.assertEqual(result['status'], 'interrupted')
+        self.assertEqual(self.store.run_status(result['store_run_id'])['execution_status'], 'failed')
+        self.assertIsNone(result['store_run_path'])
+
     def test_managed_store_stage_publishes_at_stable_path_without_old_ledger(self) -> None:
         from contextlib import ExitStack
         from unittest.mock import patch

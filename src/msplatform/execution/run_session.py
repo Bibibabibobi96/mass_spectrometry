@@ -5,6 +5,7 @@ from contextlib import ExitStack
 import copy
 import json
 import os
+import sys
 from pathlib import Path
 from threading import RLock
 from typing import Any, Iterable, Mapping, Sequence
@@ -381,14 +382,17 @@ class RunSession:
                 receipt = failure.receipt
             raise
         finally:
-            if receipt is not None:
-                try:
-                    self._record_process(operation_id, receipt)
-                    write_json_atomic(record_path, receipt)
-                except BaseException as secondary:
-                    if primary is None:
-                        raise
-                    primary.add_note(f"Process receipt preservation failed: {secondary!r}")
+            try:
+                if receipt is not None:
+                    try:
+                        self._record_process(operation_id, receipt)
+                        write_json_atomic(record_path, receipt)
+                    except BaseException as secondary:
+                        if primary is None:
+                            raise
+                        primary.add_note(f"Process receipt preservation failed: {secondary!r}")
+            finally:
+                self._account_store_growth(primary if primary is not None else sys.exception())
 
 
     def run_process_group(self, specifications: Sequence[Mapping[str, Any]], *, dispatch_plan: Mapping[str, Any],
@@ -464,21 +468,35 @@ class RunSession:
                     self._active.difference_update(ids)
             raise
         finally:
-            if receipt is not None:
-                try:
-                    write_json_atomic(group_path,receipt)
-                    for name,observation in receipt.get('observations',{}).items():
-                        if name not in ids:
-                            raise ValueError('Batch owner returned an undeclared operation')
-                        child = dict(observation=observation,error=receipt.get('error'),host_release=receipt.get('host_release'))
-                        self._record_process(name,child)
-                        write_json_atomic(receipt_paths[name],child)
-                    not_started = receipt.get('not_started',[])
-                    if any(name not in ids or name in receipt.get('observations',{}) for name in not_started):
-                        raise ValueError('Batch not-started facts conflict with actual observations')
-                    with self._lock:
-                        self._active.difference_update(not_started)
-                except BaseException as secondary:
-                    if primary is None:
-                        raise
-                    primary.add_note(f'Batch receipt preservation failed: {secondary!r}')
+            try:
+                if receipt is not None:
+                    try:
+                        write_json_atomic(group_path,receipt)
+                        for name,observation in receipt.get('observations',{}).items():
+                            if name not in ids:
+                                raise ValueError('Batch owner returned an undeclared operation')
+                            child = dict(observation=observation,error=receipt.get('error'),host_release=receipt.get('host_release'))
+                            self._record_process(name,child)
+                            write_json_atomic(receipt_paths[name],child)
+                        not_started = receipt.get('not_started',[])
+                        if any(name not in ids or name in receipt.get('observations',{}) for name in not_started):
+                            raise ValueError('Batch not-started facts conflict with actual observations')
+                        with self._lock:
+                            self._active.difference_update(not_started)
+                    except BaseException as secondary:
+                        if primary is None:
+                            raise
+                        primary.add_note(f'Batch receipt preservation failed: {secondary!r}')
+            finally:
+                self._account_store_growth(primary if primary is not None else sys.exception())
+
+    def _account_store_growth(self, primary: BaseException | None) -> None:
+        """Charge observed private-stage bytes at a process boundary."""
+        if not getattr(self, '_store_managed', False):
+            return
+        try:
+            self._store_account(self._store_stage_directory)
+        except BaseException as failure:
+            if primary is None:
+                raise
+            primary.add_note(f'Store process-boundary accounting failed: {failure!r}')

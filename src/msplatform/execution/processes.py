@@ -337,7 +337,14 @@ def _invoke_native_artifact_owner(context, request, scope, interpret, resource_n
         interpretation_failure = error
         receipt = error.receipt
     if binding_id is None:
-        raise ValueError("native owner did not complete the protected handshake")
+        detail = ': ' + str(interpretation_failure) if interpretation_failure is not None else ''
+        failure = ValueError("native owner did not complete the protected handshake" + detail)
+        failure.execution_bridge_started = True
+        failure.owner_stdout = output
+        failure.owner_stderr = errors
+        failure.owner_returncode = process.returncode
+        failure.unverified_owner_receipt = receipt
+        raise failure from interpretation_failure
     durable = json.loads(Path(paths["receipt"]).read_text(encoding="utf-8"))
     if durable.get("nonce") != nonce or durable.get("binding_id") != binding_id or durable.get("receipt") != receipt:
         raise ValueError("native durable receipt does not match the owner response")

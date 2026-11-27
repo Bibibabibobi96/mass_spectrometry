@@ -5,7 +5,7 @@ and deletion decisions; payload I/O happens outside its short transactions.
 """
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager, nullcontext
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -228,29 +228,92 @@ class ArtifactStore:
                 self._active_control_ids.discard(claim_id)
                 self._release_claim(claim_id)
 
+    def _enable_native_run_protocol(self, db: sqlite3.Connection) -> None:
+        """Install the single-writer protocol and backfill registered stages once."""
+        if db.execute("SELECT 1 FROM sqlite_master WHERE type='trigger' AND name='native_run_id_required'").fetchone():
+            return
+        with ExitStack() as locks:
+            rows = db.execute("SELECT id,path,state,work FROM assets WHERE path LIKE 'assets/native_stage/%'").fetchall()
+            for identity, relative, state, work in rows:
+                if work.startswith('inplace:'):
+                    token = work[len('inplace:'):]
+                    if not (self.root / 'control' / (token + '.lock')).is_file():
+                        raise ValueError('native stage writer lock evidence is unavailable: ' + identity)
+                    locks.enter_context(self._control_lock(token))
+                    if db.execute('''SELECT 1 FROM native_binding_controls c JOIN native_bindings b
+                            ON b.id=c.binding_id WHERE c.control_id=? AND b.state='active' ''', (token,)).fetchone():
+                        raise ValueError('active native worker prevents run identity upgrade: ' + identity)
+                elif state == 'publishing':
+                    raise ValueError('unowned publishing stage prevents run identity upgrade: ' + identity)
+            db.execute('CREATE TABLE IF NOT EXISTS native_run_ids(run_id TEXT PRIMARY KEY, asset_id TEXT NOT NULL UNIQUE)')
+            for identity, relative, state, _work in rows:
+                asset = self.root / relative
+                if not asset.exists() and state == 'delete_pending':
+                    raise ValueError('deleted pending stage lacks recoverable run identity: ' + identity)
+                _check_entry(asset)
+                runs = asset / 'runs'
+                if not runs.is_dir():
+                    raise ValueError('native stage lacks its registered run directory: ' + identity)
+                _check_entry(runs)
+                children = list(runs.iterdir())
+                if len(children) != 1 or not stat.S_ISDIR(_check_entry(children[0]).st_mode):
+                    raise ValueError('native stage has no unique run identity: ' + identity)
+                existing = db.execute('SELECT asset_id FROM native_run_ids WHERE run_id=?', (children[0].name,)).fetchone()
+                if existing is not None and existing[0] != identity:
+                    raise ValueError('native run identity conflict: ' + children[0].name + ' assets ' + existing[0] + ' and ' + identity)
+                if existing is None:
+                    db.execute('INSERT INTO native_run_ids VALUES(?,?)', (children[0].name, identity))
+            db.execute('''CREATE TRIGGER native_run_id_required BEFORE INSERT ON assets
+                WHEN NEW.path LIKE 'assets/native_stage/%' AND NOT EXISTS
+                    (SELECT 1 FROM native_run_ids WHERE asset_id=NEW.id)
+                BEGIN SELECT RAISE(ABORT, 'native stage requires registered run identity'); END''')
+
     @contextmanager
-    def inplace_asset(self, kind: str, key: str, *, retention: str = "cache"):
+    def inplace_asset(self, kind: str, key: str, *, retention: str = "cache", run_id: str | None = None):
         """Write at a stable Store-owned asset path, then seal under the same claim.
 
         A failed or interrupted writer remains publishing and cannot be reused or
         collected. The caller must establish worker termination before sealing;
         scope exit never infers completion from a dead parent or elapsed time.
+        Explicit native run IDs are unique across this Store even after collection;
+        after protocol activation, unregistered legacy native-stage writers fail.
         """
         _token(kind)
         if not isinstance(key, str) or not key or retention not in {"cache", "preserve"}:
             raise ValueError("explicit key and supported retention are required")
+        if run_id is not None and (not isinstance(run_id, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', run_id)):
+            raise ValueError('native run identity must be an explicit path-safe identifier')
+        if run_id is not None and kind != 'native_stage':
+            raise ValueError('native run identity is only valid for a native stage')
         identity, claim_id = uuid4().hex, uuid4().hex
         relative = Path("assets") / kind / hashlib.sha256(key.encode("utf-8")).hexdigest()[:2] / identity
         destination = self.root / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         with self._control_lock(claim_id):
             destination.mkdir()
-            with self._transaction() as db:
-                db.execute("INSERT INTO assets VALUES(?,?,?,?,?,?,?,?,?,NULL,?)",
-                    (identity, key, relative.as_posix(), "publishing", retention, "{}", 0, 0,
-                     datetime.now(timezone.utc).isoformat(), "inplace:" + claim_id))
-                db.execute("INSERT INTO claims VALUES(?,?)", (claim_id, identity))
-                db.execute("INSERT INTO controls VALUES(?,?,?)", (claim_id, "claim", os.getpid()))
+            try:
+                with self._db() as db:
+                    upgrading = run_id is not None and not db.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='trigger' AND name='native_run_id_required'").fetchone()
+                guard = process_file_lock(self.root / '.gc.lock', timeout_seconds=30) if upgrading else nullcontext()
+                with guard, self._transaction() as db:
+                    if run_id is not None:
+                        self._enable_native_run_protocol(db)
+                        try:
+                            db.execute('INSERT INTO native_run_ids VALUES(?,?)', (run_id, identity))
+                        except sqlite3.IntegrityError as error:
+                            raise FileExistsError('native run identity already exists: ' + run_id) from error
+                    db.execute("INSERT INTO assets VALUES(?,?,?,?,?,?,?,?,?,NULL,?)",
+                        (identity, key, relative.as_posix(), "publishing", retention, "{}", 0, 0,
+                         datetime.now(timezone.utc).isoformat(), "inplace:" + claim_id))
+                    db.execute("INSERT INTO claims VALUES(?,?)", (claim_id, identity))
+                    db.execute("INSERT INTO controls VALUES(?,?,?)", (claim_id, "claim", os.getpid()))
+            except BaseException as failure:
+                try:
+                    destination.rmdir()
+                except OSError as cleanup:
+                    failure.add_note(f'Empty native stage cleanup failed: {cleanup!r}')
+                raise
             self._active_control_ids.add(claim_id)
             sealed = False
             def seal(*, failure_reason=None):
@@ -342,6 +405,14 @@ class ArtifactStore:
                 manager.__exit__(None, None, None)
             return
         yield None
+
+    def asset_status(self, asset_id: str) -> dict[str, object]:
+        """Read a catalog identity and state; callers still acquire a claim or guard."""
+        with self._db() as db:
+            row = db.execute('SELECT path,state FROM assets WHERE id=?', (asset_id,)).fetchone()
+        if row is None:
+            raise KeyError(asset_id)
+        return {'asset_id': asset_id, 'state': row[1], 'path': self.root / row[0]}
 
     @contextmanager
     def claim_verified(self, asset_id: str):

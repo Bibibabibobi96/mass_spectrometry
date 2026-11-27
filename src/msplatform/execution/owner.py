@@ -45,7 +45,7 @@ def managed_native_store(store, *, task_key: str, lifetime, account):
     """
     if not isinstance(task_key, str) or not task_key or not callable(account):
         raise ValueError("native Store stage requires its actual task key and accounting callback")
-    token = _STORE_STAGE.set(dict(store=store, task_key=task_key, lifetime=lifetime, account=account))
+    token = _STORE_STAGE.set(dict(store=store, task_key=task_key, lifetime=lifetime, account=account, produced=[]))
     try:
         yield
     finally:
@@ -54,6 +54,89 @@ def managed_native_store(store, *, task_key: str, lifetime, account):
 
 def current_managed_native_store():
     return _STORE_STAGE.get()
+
+
+def store_growth_accountant(store, reservation: str, budget: int, work: Path):
+    """Account observed growth of this run only against its existing reservation."""
+    if type(budget) is not int or budget < 0:
+        raise ValueError("Store budget must be a nonnegative integer")
+    seen = {path.resolve(strict=True): path.stat().st_size for path in Path(work).rglob('*') if path.is_file()}
+    written = 0
+
+    def account(directory):
+        nonlocal written
+        for path in Path(directory).rglob('*'):
+            if path.is_file():
+                size = path.stat().st_size
+                identity = path.resolve(strict=True)
+                previous = seen.get(identity, 0)
+                written += max(0, size - previous)
+                seen[identity] = max(previous, size)
+        if written > budget:
+            raise ValueError("observed native Store growth exceeds reserved budget")
+        store.reservation_written(reservation, budget - written)
+    return account
+
+
+@contextmanager
+def standalone_native_store(store, *, task_key: str, budget: int, required_assets: tuple[str, ...] = ()):
+    """Own one independent native task using the existing Store and host controls.
+
+    Callers hold authenticated source guards outside this context through its
+    exit. Explicit required assets protect sources needed to reread the result.
+    """
+    from contextlib import ExitStack
+    from msplatform.execution.native_artifact_controls import protect_native_controls
+    parent_id, work = store.begin_run()
+    primary = None
+    try:
+        with store.run_writer(parent_id), ExitStack() as stack:
+            try:
+                reservation = stack.enter_context(store.reserve(budget))
+            except OSError as failure:
+                primary = failure
+                try:
+                    store.set_queued_reason(parent_id, str(failure))
+                except BaseException as secondary:
+                    failure.add_note(f'Store queued status preservation failed: {secondary!r}')
+                failure.add_note('Store run_id: ' + parent_id)
+                raise
+            store.mark_running(parent_id)
+            account = store_growth_accountant(store, reservation, budget, work)
+            try:
+                with protect_native_controls(store, run_id=parent_id, claim_ids=(),
+                        reservation_ids=(reservation,), work_directory=work):
+                    with managed_native_store(store, task_key=task_key, lifetime=stack, account=account):
+                        scope = _STORE_STAGE.get()
+                        scope.update(parent_run_id=parent_id, published_path=None, reported_status='success')
+                        yield scope
+                        account(work)
+                        status = scope['reported_status']
+                        if status == 'success':
+                            _, published = store.publish_run(work,
+                                required_assets=tuple(dict.fromkeys((*required_assets, *scope['produced']))), run_id=parent_id)
+                            scope['published_path'] = published
+                        elif status in {'failed', 'cancelled', 'interrupted'}:
+                            store.finish_run(parent_id, 'failed' if status == 'interrupted' else status,
+                                             reason='native stage reported ' + status)
+                        else:
+                            raise ValueError('unsupported native stage terminal status')
+            except BaseException as failure:
+                primary = failure
+                try:
+                    with store._db() as db:
+                        active = db.execute("SELECT 1 FROM native_bindings WHERE run_id=? AND state='active'", (parent_id,)).fetchone()
+                    if not active and store.run_status(parent_id)['execution_status'] == 'running':
+                        store.finish_run(parent_id, 'failed', reason=str(failure))
+                except BaseException as secondary:
+                    failure.add_note(f'Store failure status preservation failed: {secondary!r}')
+                failure.add_note('Store run_id: ' + parent_id)
+                raise
+    except BaseException as failure:
+        if primary is not None and failure is not primary:
+            primary.add_note(f'Store control release failed: {failure!r}')
+            raise primary
+        raise
 
 
 def recover_managed_native_store_stage(store, asset_id: str, *, context: ExecutionContext) -> bool:
@@ -119,6 +202,75 @@ def recover_managed_native_store_stage(store, asset_id: str, *, context: Executi
         return "failed", json.dumps(completion.get("exception") or {"status": terminal_status}, sort_keys=True)
 
     return store._recover_inplace_asset(asset_id, verify=verify)
+
+
+def publish_historical_release_evidence(store, *, manifest_record: Mapping[str, Any], project_id: str,
+                                        artifact_project_root: Path, asset_roles: tuple[str, ...],
+                                        reserve_bytes: int) -> dict[str, Any]:
+    """Publish neutral references to a guarded historical v1 release, not its grade."""
+    import hashlib
+    from contextlib import ExitStack
+    from msplatform.execution.native_source_guard import guard_formal_v1
+    from msplatform.results.release_evidence import decode_historical_release
+    if type(reserve_bytes) is not int or reserve_bytes <= 0:
+        raise ValueError("an explicit positive Store reservation is required")
+    with guard_formal_v1(manifest_record, project_id=project_id,
+                         artifact_project_root=artifact_project_root, asset_roles=asset_roles) as (manifest, paths):
+        evidence = decode_historical_release(manifest, manifest_record, paths)
+        payload = (json.dumps(evidence, sort_keys=True, ensure_ascii=False, allow_nan=False, indent=2) + "\n").encode("utf-8")
+        key = "historical-release:" + hashlib.sha256(payload).hexdigest()
+        run_id, work = store.begin_run()
+        with store.run_writer(run_id):
+            try:
+                with store.reserve(reserve_bytes) as reservation, ExitStack() as claims:
+                    store.mark_running(run_id)
+                    cached = claims.enter_context(store.claim_key(key))
+                    required_bytes = len(payload) * (2 if cached is None else 1)
+                    if required_bytes > reserve_bytes:
+                        raise ValueError("historical evidence exceeds its Store reservation")
+                    written = 0
+                    if cached is None:
+                        cache_work = store.new_work()
+                        (cache_work / "reference.json").write_bytes(payload)
+                        written += len(payload)
+                        asset_id, _ = claims.enter_context(store.put_asset_claimed(
+                            "historical_evidence", key, cache_work, retention="cache"))
+                        reused = False
+                    else:
+                        asset_id, asset_path = cached
+                        if (asset_path / "reference.json").read_bytes() != payload:
+                            raise ValueError("historical release reference differs")
+                        reused = True
+                    (work / "evidence.json").write_bytes(payload)
+                    written += len(payload)
+                    if written > reserve_bytes:
+                        raise ValueError("historical evidence exceeds its Store reservation")
+                    store.reservation_written(reservation, reserve_bytes - written)
+                    _, published = store.publish_run(work, run_id=run_id, provenance_assets=(asset_id,))
+            except BaseException as error:
+                status = store.run_status(run_id)["execution_status"]
+                if status == "queued":
+                    store.set_queued_reason(run_id, str(error))
+                elif status == "running":
+                    store.finish_run(run_id, "cancelled" if isinstance(error, KeyboardInterrupt) else "failed", reason=str(error))
+                raise
+    return {"run_id": run_id, "run_path": str(published), "reference_asset": asset_id,
+            "reference_reused": reused, "source_scope": "historical_evidence_only"}
+
+
+@contextmanager
+def read_historical_release_evidence(store, run_id: str):
+    """Hold the exact external source identities throughout caller consumption."""
+    from msplatform.execution.native_source_guard import guard_formal_v1
+    from msplatform.results.release_evidence import decode_historical_release
+    evidence = _json(store.inspect_run(run_id) / "evidence.json")
+    record = evidence["source_manifest"]
+    project_root = Path(record["path"]).resolve().parent.parent
+    with guard_formal_v1(record, project_id=evidence["project_id"],
+                         artifact_project_root=project_root, asset_roles=tuple(evidence["selected_roles"])) as (manifest, paths):
+        if decode_historical_release(manifest, record, paths) != evidence:
+            raise ValueError("historical release evidence no longer matches its source")
+        yield evidence
 
 
 def _json(path: Path) -> dict[str, Any]:
@@ -319,7 +471,7 @@ def run_managed_stage(context: ExecutionContext, *, descriptor: Mapping[str, Any
         source_references: Sequence[Mapping[str, Any]] = (),
         expected_relative_paths: Sequence[str] = (), use_short_execution_path: bool = False,
         pressure_maintenance: Callable[[dict[str, Any]], Any] | None = None,
-        completion_api: Callable[[], Any] | None = None) -> dict[str, Any]:
+        completion_api: Callable[[], Any] | None = None, artifact_store=None) -> dict[str, Any]:
     """Create one package, run one bound action, then finalize with the sole journal.
 
     The action returns status, summary, output_paths, required_output_paths,
@@ -329,6 +481,25 @@ def run_managed_stage(context: ExecutionContext, *, descriptor: Mapping[str, Any
     declared files inside this run are published after writer closure is proven.
     """
     validate_run_id(run_id)
+    if artifact_store is not None:
+        scope = _STORE_STAGE.get()
+        if scope is not None:
+            if scope['store'] is not artifact_store:
+                raise ValueError('nested native stage must use the parent Store')
+        else:
+            if protected_paths or protected_cache_keys or source_references:
+                raise ValueError('standalone Store stage requires an explicit protected source scope')
+            arguments = dict(locals())
+            arguments.pop('context')
+            arguments.pop('scope')
+            arguments.pop('artifact_store')
+            with standalone_native_store(artifact_store, task_key='standalone:' + run_id,
+                                         budget=committed_new_bytes) as active_scope:
+                result = run_managed_stage(context, **arguments)
+                active_scope['reported_status'] = result['status']
+            published = active_scope['published_path']
+            return dict(result, store_run_id=active_scope['parent_run_id'],
+                        store_run_path=str(published) if published is not None else None)
     environment = context.environment
     if environment is not None:
         if "execution_environment" in payload:
@@ -367,7 +538,8 @@ def run_managed_stage(context: ExecutionContext, *, descriptor: Mapping[str, Any
             raise ValueError("Store native stage requires the existing protected parent scope")
         store = store_scope["store"]
         _asset, stage_directory, stage_claim, stage_seal = store_scope["lifetime"].enter_context(
-            store.inplace_asset("native_stage", store_scope["task_key"] + ":" + run_id))
+            store.inplace_asset("native_stage", store_scope["task_key"] + ":" + run_id, run_id=run_id))
+        store_scope['produced'].append(_asset)
         run_root = stage_directory / "runs" / run_id
         root = store.root
         result_path = parent_scope["work_directory"] / ("native-result-" + run_id + ".json")

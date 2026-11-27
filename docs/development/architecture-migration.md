@@ -87,6 +87,16 @@ C3基础已提交并普通push`00c6d23c`（后续OA reader退出`a7c1e018`、唯
 
 后续优先：Store前端PA缓存与COMSOL恢复/剩余caller→单MR真实原出生与旧重释控制删除→双锥公共数据/结果/owner→多case真实native与normal PS退出→补偿新FieldBundle实际生产与旧controller退出。新公共安装probe已把历史mass/sweep、三类粒子、旧模块缺席与资源边界纳同一wheel/sdist两臂；目前只语法/共享import/摘取软件段通过，尚未重建发行。所有代码/fixture在测试开始前冻结，执行中源码有变的长测只作定位，不重复无关全矩阵。最终CA01–CA19、真实总调用/重复/skip/wall及完整CLOC仍待同码验收；当前任何一项未完不标Goal complete。
 
+### C3 Store 身份、剩余预算与历史发布单元
+
+在`e61322dd`之后完成本单元，未夹带各链在途科学/schema改动。`execution.owner.standalone_native_store`统一父run/writer/reservation/发布，`run_managed_stage`复用同一协议；`store_growth_accountant`按实际解析路径高水位去重，RunSession在进程完成/失败及回执落盘边界扣减remaining。未知未来预算不归零，不新增实时扫描平台；原异常优先于清理/记账二次异常。Store的`asset_status`提供只读状态，native stage原run ID跨并发、失败和GC仍不可重用。旧数据库只在首次新native写入时持既有GC/原writer锁升级，冲突回滚并保留原证据；未留下证据的旧已删身份不能凭空恢复。
+
+`guard_formal_v1`仅精确读取既有v1角色/bytes/SHA并持OS只读句柄；`guard_failed_store_evidence`核failed状态、原完成/进程/host释放证据，不提升为ready。`publish_historical_release_evidence`/`read_historical_release_evidence`由唯一execution owner发布小引用并在冷读时重新取得源保护，格式decoder归`results.release_evidence`。递归来源的真实Store资产闭包进入required refs；未被选择的历史大载荷不全量复制或重新读取。这里不新增全仓等级，也不恢复旧producer。
+
+Agent0从暂存树`cbd0bb74ee48e11beb9af0939bc1863efa7ce432`导出离仓源码快照，运行`python -m unittest tests.contracts.test_artifact_store tests.contracts.test_store_run_identity tests.contracts.test_release_evidence tests.execution.test_native_source_guard -q`：39 PASS、0 skip、9.997s；本单元全部Python Ruff PASS。这是源码/真实OS文件锁合同，不是普通wheel安装或商业求解。Agent3另有短Python子进程的别名去重、两个worker完成/失败、其他reservation不变、父run失败和standalone成功/失败/中断证据，见外部逐命令记录；不把这些重复覆盖再计作独立完整矩阵。
+
+尚未退休的默认旧capacity/retention/cache分支及其调用仍为C3/CA19欠项；Agent6正迁operating/paired/OA缓存，Agent3继续合法COMSOL源消费者，Agent1/4闭合新补偿公开链。新补偿field是可回收缓存，GC后只要求原required源与最终自含SI/summary仍可读；不能以测试要求永久pin所有中间场。最终同码双发行、Repository、native和CLOC总对账仍待收敛。
+
 ### C 活跃消费者对账（开工定位，未闭合）
 
 | 实际入口 → workflow/API | component/schema与科学输入 | 资产/进程owner与结果消费者 | C新路径/当前状态 |
