@@ -1612,10 +1612,16 @@ $result|ConvertTo-Json -Compress
             with self.subTest(path=path):
                 result = self._runtime_dependency_plan(REPO_ROOT, path)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                self.assertIn("instrument_assembly", result.stdout)
                 selected = re.search(r"SELECTED_STAGES=([^\s]+)", result.stdout)
                 self.assertIsNotNone(selected, result.stdout)
-                self.assertTrue(any(name == "instrument_assembly" or name.startswith("instrument_assembly__tests_") for name in selected[1].split(",")), selected[1])
+                selected_stages = selected[1].split(",")
+                if path.rsplit("/", 1)[-1] in {"build_and_export_paired_accelerator_field.m",
+                        "oatof_build_accelerator_geometry.m", "oatof_build_grid_geometry.m"}:
+                    self.assertFalse(any(name == "instrument_assembly" or name.startswith("instrument_assembly__tests_") for name in selected_stages), selected[1])
+                    self.assertIn("single_reflection_oa_tof_mass_analyzer_static", selected_stages)
+                    continue
+                self.assertIn("instrument_assembly", result.stdout)
+                self.assertTrue(any(name == "instrument_assembly" or name.startswith("instrument_assembly__tests_") for name in selected_stages), selected[1])
 
     @staticmethod
     def _runtime_dependency_plan(repo: Path, changed_path: str) -> subprocess.CompletedProcess[str]:
