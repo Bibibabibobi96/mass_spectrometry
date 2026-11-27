@@ -2956,9 +2956,9 @@ or full-Repository/performance acceptance follows from these measurements.
 Official CLOC 2.10, 715a6483 to this slice: total +71, production +2, tests +69,
 zero unclassified; full language counts/filter remain in task evidence.
 
-### Installed prepared-joint diagnostics
+### Installed recorded-joint diagnostics
 
-`msplatform.workflows.prepared_joint.diagnostics` owns the existing recorded
+`msplatform.workflows.historical_joint_analysis` owns the existing recorded
 analysis, using canonical measured-population/loss policy and
 `analysis.mr_observations` event/trajectory adapters. Neutral scientific
 CSV and figure export each have one installed owner. All five replaced root

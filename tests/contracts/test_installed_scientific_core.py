@@ -3028,17 +3028,17 @@ def offline_only(event,args):
         target=pathlib.Path(args[0]).resolve()
         if any(target.is_relative_to(path) for path in blocked):raise AssertionError('author source read: '+str(target))
 sys.addaudithook(offline_only)
-spec=importlib.util.find_spec('msplatform.workflows.prepared_joint.diagnostics')
+spec=importlib.util.find_spec('msplatform.workflows.historical_joint_analysis')
 assert pathlib.Path(spec.origin).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
 sys.argv=['diagnostics',*sys.argv[1:]]
-try:runpy.run_module('msplatform.workflows.prepared_joint.diagnostics',run_name='__main__')
+try:runpy.run_module('msplatform.workflows.historical_joint_analysis',run_name='__main__')
 except SystemExit as error:
     if error.code not in (0,None):raise
 assert all(pathlib.Path(module.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
     for name,module in sys.modules.items() if name.startswith('msplatform.') and getattr(module,'__file__',None))
 print('INSTALLED_MR_ANALYSIS=PASS')
 """
-for case in fixture['prepared_joint_diagnostics']:
+for case in fixture['recorded_joint_diagnostics']:
     output = root / ('installed-mr-' + case['kind'] + '-' + sys.argv[2])
     arguments = [sys.executable,'-I','-c',mr_child,json.dumps([str(value) for value in blocked_source_roots]),
         'analyze-joint','--preparation',case['preparation'],'--log',case['log'],'--output',str(output)]
@@ -6485,12 +6485,12 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             cases.append(dict(preparation=case.preparation,workbench=current,run=str(case.run),expected=expected))
         return cases
 
-    def prepared_joint_diagnostics_probe_fixture(self) -> list[dict]:
-        from tests.components.multi_reflection_tof.analysis.test_prepared_joint_diagnostics import PreparedJointDiagnosticsTests
+    def recorded_joint_diagnostics_probe_fixture(self) -> list[dict]:
+        from tests.components.multi_reflection_tof.analysis.test_recorded_joint_diagnostics import RecordedJointDiagnosticsTests
         from msplatform.backends.simion.mrtof_batch_flight import merge_measured_event_logs
         result = []
         for structured in (False, True):
-            case = PreparedJointDiagnosticsTests()
+            case = RecordedJointDiagnosticsTests()
             case.setUp()
             self.addCleanup(case.doCleanups)
             fields, binding = case._prepare_sealed_native_binding()
@@ -7927,7 +7927,7 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
                                               prepared_joint_admission=self.prepared_joint_admission_probe_fixture(root),
                                               single_reflection_collection=self.single_reflection_collection_probe_fixture(),
                                               single_reflection_continuation=self.single_reflection_continuation_probe_fixture(),
-                                              prepared_joint_diagnostics=self.prepared_joint_diagnostics_probe_fixture(),
+                                              recorded_joint_diagnostics=self.recorded_joint_diagnostics_probe_fixture(),
                                               comparison=self.comparison_probe_fixture(),
                                               oa_focus_analysis=self.oa_focus_analysis_probe_fixture(),
                                               collision_overlay_probe=self.collision_overlay_probe_fixture(root / 'collision-overlay'),

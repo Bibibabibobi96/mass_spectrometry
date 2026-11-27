@@ -18,10 +18,7 @@ from msplatform.execution.retention import file_record
 from msplatform.contracts.particle_state import load_component_particle_state_csv
 from tests.contracts.test_support.historical_measured_fixture import captured_measured_fixture
 from msplatform.backends.simion.mrtof_batch_flight import merge_measured_event_logs
-from msplatform.workflows.prepared_joint.diagnostics import main
-from msplatform.workflows.prepared_joint.diagnostics import (
-    analyze_prepared_joint_flight,
-)
+from msplatform.workflows.historical_joint_analysis import main, analyze_recorded_joint_flight
 from functools import partial
 from msplatform.results.mr_joint_output import save_figure
 _save_figure = partial(save_figure, record_file=file_record)
@@ -31,7 +28,7 @@ from msplatform.execution.retention import verify_record
 _design_reference = partial(read_design_reference, verify=verify_record)
 
 
-class PreparedJointDiagnosticsTests(unittest.TestCase):
+class RecordedJointDiagnosticsTests(unittest.TestCase):
     def test_figure_export_preserves_names_dpi_records_and_closes(self) -> None:
         from matplotlib import pyplot as plt
         from PIL import Image
@@ -208,7 +205,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
         prior = json.loads((retained / "results/diagnostics/diagnostics_receipt.json").read_text())
         output = self.root / "retained_97_analysis_without_fields"
         with patch.object(Path, "stat", unavailable_stat), patch.object(Path, "open", readonly_inputs):
-            result = analyze_prepared_joint_flight(preparation, retained / "logs/native_two_prism_flight.log", output)
+            result = analyze_recorded_joint_flight(preparation, retained / "logs/native_two_prism_flight.log", output)
             with self.assertRaises((ValueError, AssertionError, FileNotFoundError)):
                 verify_joint_asset_records(binding)
         self.assertEqual(result["counts"], prior["counts"])
@@ -268,7 +265,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
         metadata = load_binding(binding_path)
         verify_joint_asset_records(metadata)
         before = self.log.read_bytes()
-        expected = analyze_prepared_joint_flight(self.preparation, self.log, self.output)
+        expected = analyze_recorded_joint_flight(self.preparation, self.log, self.output)
         scientific = {name: (self.output / name).read_bytes() for name in ("prism_phase_space.csv", "timed_spatial_clouds.csv")}
         payloads = [path for path in fields.rglob("*") if path.is_file() and path.name.endswith((".pa", ".pa-surf"))]
         for path in payloads:
@@ -276,7 +273,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
         metadata_after = load_binding(binding_path)
         self.assertEqual(metadata_after, metadata)
         actual_dir = self.root / "analysis_without_fields"
-        actual = analyze_prepared_joint_flight(self.preparation, self.log, actual_dir)
+        actual = analyze_recorded_joint_flight(self.preparation, self.log, actual_dir)
         self.assertEqual(actual["counts"], expected["counts"])
         for name, content in scientific.items():
             self.assertEqual((actual_dir / name).read_bytes(), content)
@@ -286,7 +283,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
 
     def test_full_pipeline_preserves_mother_raw_branches_losses_and_figures(self) -> None:
         before = self.log.read_bytes()
-        result = analyze_prepared_joint_flight(self.preparation, self.log, self.output)
+        result = analyze_recorded_joint_flight(self.preparation, self.log, self.output)
         self.assertEqual(result["counts"]["mother_source"], 3)
         self.assertEqual(result["counts"]["detected"], 1)
         self.assertEqual(result["counts"]["downstream_loss"], 1)
@@ -334,7 +331,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
                 self.preparation.write_text(json.dumps(value))
                 output = self.root / ("rejected_binding_"+mode)
                 with self.assertRaises((KeyError, ValueError, AssertionError)):
-                    analyze_prepared_joint_flight(self.preparation, self.log, output)
+                    analyze_recorded_joint_flight(self.preparation, self.log, output)
                 self.assertFalse(output.exists())
 
     def test_posthoc_contract_changes_only_peak_and_keeps_native_inputs(self) -> None:
@@ -352,7 +349,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
         self.preparation.write_text(json.dumps(self.prepared))
         before = {p: p.read_bytes() for p in (self.log, self.preparation, contract_path)}
         with self.assertRaisesRegex(ValueError, "Unsupported measured detector peak"):
-            analyze_prepared_joint_flight(self.preparation, self.log, self.output)
+            analyze_recorded_joint_flight(self.preparation, self.log, self.output)
         self.assertFalse(self.output.exists())
         source = json.loads((self.source / "source_receipt.json").read_text())
         timing = self.root / "native_timing.json"
@@ -373,12 +370,12 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
                 changed["peak_analysis"]["common_time_reference"]["timing"]["sha256"] = "0" * 64
             authored.write_text(json.dumps(changed))
             with self.subTest(mode=mode), self.assertRaises((ValueError, AssertionError)):
-                analyze_prepared_joint_flight(self.preparation, self.log, self.output, analysis_contract=authored)
+                analyze_recorded_joint_flight(self.preparation, self.log, self.output, analysis_contract=authored)
             self.assertFalse(self.output.exists())
         authored.write_text(json.dumps(replacement))
         # Offline analysis uses explicit producer/input records, with no process.
         with patch("subprocess.run", side_effect=AssertionError("Offline analysis must not spawn processes")):
-            result = analyze_prepared_joint_flight(self.preparation, self.log, self.output, analysis_contract=authored)
+            result = analyze_recorded_joint_flight(self.preparation, self.log, self.output, analysis_contract=authored)
         self.assertEqual(result["counts"]["mother_source"], 3)
         self.assertEqual(result["analysis_contract_provenance"]["contract"], file_record(authored))
         self.assertEqual(result["analysis_contract_provenance"]["original_trajectory_contract"], self.prepared["trajectory_contract"])
@@ -388,7 +385,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
         # independently of the process working directory.
         replacement["peak_analysis"]["common_time_reference"]["timing"]["path"] = timing.name
         authored.write_text(json.dumps(replacement))
-        relative = analyze_prepared_joint_flight(self.preparation, self.log,
+        relative = analyze_recorded_joint_flight(self.preparation, self.log,
             self.root / "relative_timing_analysis", analysis_contract=authored)
         self.assertEqual(relative["counts"], result["counts"])
         self.assertEqual(relative["detector_peak"]["common_time_reference"]["resolved_pulse_start_us"], 7500)
@@ -399,7 +396,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
         output = self.root / "output"
         with patch.object(sys, "argv", ["mrtof_batch_flight", "analyze-joint", "--preparation", str(self.preparation),
                  "--log", str(self.log), "--output", str(output), "--analysis-contract", str(override)]), \
-             patch("msplatform.workflows.prepared_joint.diagnostics.analyze_prepared_joint_flight") as analyze:
+             patch("msplatform.workflows.historical_joint_analysis.analyze_recorded_joint_flight") as analyze:
             self.assertEqual(main(), 0)
         analyze.assert_called_once_with(self.preparation, self.log, output,
             merge_receipt=self.preparation.parent / "batch_log_merge_receipt.json", analysis_contract=override)
@@ -418,7 +415,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
         contract_path.write_text(json.dumps(contract))
         self.prepared["trajectory_contract"] = file_record(contract_path)
         self.preparation.write_text(json.dumps(self.prepared))
-        result = analyze_prepared_joint_flight(self.preparation, self.log, self.output)
+        result = analyze_recorded_joint_flight(self.preparation, self.log, self.output)
         self.assertEqual(result["detector_peak"]["status"], "unavailable_fewer_than_three_hits")
         self.assertEqual(result["detector_peak"]["common_time_reference"]["resolved_pulse_start_us"], 7500)
         self.assertTrue((self.output / "population/detector_peak.png").is_file())
@@ -513,7 +510,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
                     value["preparation"] = file_record(self.preparation)
                 merge_path.write_text(json.dumps(value))
                 with self.assertRaises((ValueError, AssertionError, KeyError)):
-                    analyze_prepared_joint_flight(self.preparation, self.log, self.root / f"reject_{name}",
+                    analyze_recorded_joint_flight(self.preparation, self.log, self.root / f"reject_{name}",
                                                  merge_receipt=merge_path)
 
     def test_signed_angle_uses_full_quadrant_and_preserves_raw_repeats(self) -> None:
@@ -564,7 +561,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
         value = dict(self.prepared, expected_particle_ids=[1, 99])
         self.fixture.fixture._write(self.preparation, value)
         with self.assertRaisesRegex(ValueError, "ID/clock/mother"):
-            analyze_prepared_joint_flight(self.preparation, self.log, self.output)
+            analyze_recorded_joint_flight(self.preparation, self.log, self.output)
         self.assertFalse(self.output.exists())
 
     def test_trajectory_terminal_must_match_actual_terminal_event(self) -> None:
@@ -586,7 +583,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
             lines.append(line)
         self.log.write_text("\n".join(lines)+"\n", encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "actual launched batch FLY2"):
-            analyze_prepared_joint_flight(self.preparation, self.log, self.root / "rejected_without_launch_evidence")
+            analyze_recorded_joint_flight(self.preparation, self.log, self.root / "rejected_without_launch_evidence")
         batch_receipt = self.root / "actual_batch_receipt.json"
         self.fixture.fixture._write(batch_receipt, dict(schema_version=1, role="mrtof_measured_source_batch",
             original_particle_ids=[1, 7], count=2, solver_epoch_instrument_time_us=epoch,
@@ -594,7 +591,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
         self.prepared["completed_source_batches"] = [dict(batch_receipt=file_record(batch_receipt),
             fly2=file_record(self.source / "source.fly2"), log=file_record(self.log))]
         self.fixture.fixture._write(self.preparation, self.prepared)
-        result = analyze_prepared_joint_flight(self.preparation, self.log, self.output)
+        result = analyze_recorded_joint_flight(self.preparation, self.log, self.output)
         self.assertEqual(result["birth_clock_projection"]["projected_particle_ids"], [7])
         self.assertFalse(result["birth_clock_projection"]["raw_trajectory_csv_modified"])
         with (self.output / "trajectory_samples.csv").open(newline="") as handle:
@@ -654,7 +651,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
         for record, (log, _) in zip(merged["batches"], pairs, strict=True):
             self.assertEqual(record["log"]["bytes"], log.stat().st_size)
             self.assertEqual(record["log"]["sha256"].upper(), file_record(log)["sha256"])
-        result = analyze_prepared_joint_flight(self.preparation, self.log, self.output, merge_receipt=merge_path)
+        result = analyze_recorded_joint_flight(self.preparation, self.log, self.output, merge_receipt=merge_path)
         self.assertEqual(result["counts"]["mother_source"], 3)
         self.assertEqual(result["counts"]["detected"], 1)
         self.assertEqual(result["counts"]["downstream_loss"], 1)

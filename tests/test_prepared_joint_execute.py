@@ -273,8 +273,8 @@ if __name__=='__main__': main()
                 workflow_owner = repo / "src/msplatform/workflows/resources/run_artifact_workflow.ps1"
                 workflow_owner.write_text(workflow_owner.read_text() + owner_fixture)
                 shutil.copyfile(workflow_owner, installed / "workflows/resources/run_artifact_workflow.ps1")
-                (repo / "src/msplatform/workflows/prepared_joint/diagnostics.py").write_text(analyzer_fixture)
-                (installed / "workflows/prepared_joint/diagnostics.py").write_text(analyzer_fixture)
+                (repo / "src/msplatform/workflows/historical_joint_analysis.py").write_text(analyzer_fixture)
+                (installed / "workflows/historical_joint_analysis.py").write_text(analyzer_fixture)
                 (repo / "src/msplatform/execution/run_capacity_lifecycle.py").write_text(seal_fixture)
                 (installed / "execution/run_capacity_lifecycle.py").write_text(seal_fixture)
                 source, contract = analysis_source_fixture(workspace,
@@ -355,7 +355,7 @@ try { & $entry @forwardParameters } finally { Write-AnalysisFixtureEvent 'actual
                 if scenario == "missing_frozen_diagnostics":
                     token = "$stage='joint_diagnostics'"
                     self.assertEqual(analysis.count(token), 1)
-                    action = "  Remove-Item -LiteralPath (Join-Path $inputDir 'runtime_snapshot/src/msplatform/workflows/prepared_joint/diagnostics.py')"
+                    action = "  Remove-Item -LiteralPath (Join-Path $inputDir 'runtime_snapshot/src/msplatform/workflows/historical_joint_analysis.py')"
                     analysis = analysis.replace(token, token + "\n" + action, 1)
                 entry.write_text(prefix + analysis, encoding="utf-8")
                 environment = {**os.environ, "PYTHONPATH": str(repo / "src") + os.pathsep + str(repo), "PYTHONNOUSERSITE": "1",
@@ -425,7 +425,7 @@ try { & $entry @forwardParameters } finally { Write-AnalysisFixtureEvent 'actual
                     self.assertEqual(summary["failure_stage"], "admit_completed_native_source")
                     self.assertFalse((run / "results/diagnostics").exists())
                 if scenario in {"missing_frozen_admission", "missing_frozen_diagnostics"}:
-                    expected_module = "analysis_inputs" if scenario == "missing_frozen_admission" else "diagnostics"
+                    expected_module = "analysis_inputs" if scenario == "missing_frozen_admission" else "historical_joint_analysis"
                     self.assertIn(expected_module, summary["reason"])
                 if scenario == "missing_frozen_diagnostics":
                     self.assertEqual(summary["failure_stage"], "joint_diagnostics")

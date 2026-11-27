@@ -4382,13 +4382,13 @@
           "test_native_static_geometry": 0.004547,
           "test_native_system_runtime": 2.533654,
           "test_prepare_accelerator_interface": 1.099021,
-          "test_prepared_joint_diagnostics": 53.779094,
           "test_prepared_joint_trial": 10.104926,
           "test_prism_analytic": 0.003441,
           "test_prism_l0": 0.027882,
           "test_prism_mirror_transport": 0.893439,
           "test_prism_runner_contract_matrix": 0.008995,
           "test_prism_shield_exit_extension": 71.991556,
+          "test_recorded_joint_diagnostics": 53.779094,
           "test_resolved_cad_export": 1.303717,
           "test_scientific_event_io": 12.745246,
           "test_simion_candidate_reference": 208.008099,
@@ -4514,7 +4514,7 @@
             "modules": [
               "tests/components/multi_reflection_tof/analysis/test_measured_component_source.py",
               "tests/components/multi_reflection_tof/analysis/test_measured_component_analysis.py",
-              "tests/components/multi_reflection_tof/analysis/test_prepared_joint_diagnostics.py",
+              "tests/components/multi_reflection_tof/analysis/test_recorded_joint_diagnostics.py",
               "tests/components/multi_reflection_tof/analysis/test_prepared_joint_trial.py",
               "tests/components/multi_reflection_tof/analysis/test_ion_processor_handoff.py",
               "tests/assembly/multi_reflection_tof/analysis/test_ion_processor_assembly.py",
@@ -5012,7 +5012,7 @@
               "tests/components/multi_reflection_tof/analysis/test_native_corridor_plan.py",
               "tests/components/multi_reflection_tof/analysis/test_native_gem_slots.py",
               "tests/components/multi_reflection_tof/analysis/test_native_static_field_provider.py",
-              "tests/components/multi_reflection_tof/analysis/test_prepared_joint_diagnostics.py",
+              "tests/components/multi_reflection_tof/analysis/test_recorded_joint_diagnostics.py",
               "tests/components/multi_reflection_tof/analysis/test_prism_shield_exit_extension.py",
               "tests/components/multi_reflection_tof/analysis/test_two_prism_segmented_coverage.py",
               "tests/components/multi_reflection_tof/analysis/test_two_prism_segmented_transport.py",
@@ -5031,7 +5031,7 @@
               "tests/components/multi_reflection_tof/analysis/test_mr_compiler.py",
               "tests/components/multi_reflection_tof/analysis/test_two_prism_simion_trial.py",
               "tests/components/multi_reflection_tof/analysis/test_loss_acceptance_diagnostics.py",
-              "tests/components/multi_reflection_tof/analysis/test_prepared_joint_diagnostics.py"
+              "tests/components/multi_reflection_tof/analysis/test_recorded_joint_diagnostics.py"
             ],
             "dependency_profile": "locked"
           }

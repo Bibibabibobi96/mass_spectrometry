@@ -2817,7 +2817,7 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
             MR + '/analysis/test_mr_compiler.py',
             MR + '/analysis/test_two_prism_simion_trial.py',
             MR + '/analysis/test_loss_acceptance_diagnostics.py',
-            MR + '/analysis/test_prepared_joint_diagnostics.py',
+            MR + '/analysis/test_recorded_joint_diagnostics.py',
         ])
         script = (
             '. ' + powershell_literal(REPO_ROOT / 'tools/repository/gate_catalog_support.ps1') + '; '

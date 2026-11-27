@@ -54,7 +54,7 @@ def validate_execution_contract(reference: dict[str, Any], contract: dict[str, A
     scientific = json.loads(json.dumps(contract))
     expected["simion"].pop("trajectory_recording", None)
     scientific["simion"].pop("trajectory_recording", None)
-    from msplatform.workflows.prepared_joint.analysis_contract import reference_changes
+    from msplatform.analysis.joint_analysis_contract import reference_changes
     changes = reference_changes(expected, scientific, contract_base=Path.cwd())
     budget = None
     if scientific != expected:

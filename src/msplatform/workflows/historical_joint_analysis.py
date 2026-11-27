@@ -144,7 +144,7 @@ def _bound(record: dict, base: Path) -> Path:
     return record_path(record, base_dir=base)
 
 
-def analyze_prepared_joint_flight(preparation_receipt: Path, merged_log: Path, output_directory: Path,
+def analyze_recorded_joint_flight(preparation_receipt: Path, merged_log: Path, output_directory: Path,
                                   *, merge_receipt: Path | None = None,
                                   analysis_contract: Path | None = None) -> dict[str, Any]:
     """Automatically publish full-census Prism, time-cloud and loss diagnostics.
@@ -160,7 +160,7 @@ def analyze_prepared_joint_flight(preparation_receipt: Path, merged_log: Path, o
     analysis_provenance = None
     if analysis_contract is not None:
         replacement = _read(analysis_contract)
-        from msplatform.workflows.prepared_joint.analysis_contract import validate_posthoc_analysis_contract
+        from msplatform.analysis.joint_analysis_contract import validate_posthoc_analysis_contract
         execution = validate_posthoc_analysis_contract(contract, replacement, contract_base=analysis_contract.parent)
         analysis_provenance = dict(contract=file_record(analysis_contract),
             original_trajectory_contract=prepared["trajectory_contract"],
@@ -440,7 +440,7 @@ def _guard_joint_sources(source_manifest: Path, ancestor_manifests: tuple[Path, 
 def _joint_analysis_action(session, *, inputs):
     output = session.result_dir / "recorded_diagnostics"
     try:
-        report = analyze_prepared_joint_flight(inputs["preparation"], inputs["merged_log"], output,
+        report = analyze_recorded_joint_flight(inputs["preparation"], inputs["merged_log"], output,
             merge_receipt=inputs["merge"], analysis_contract=inputs["contract"])
         provenance = session.declare_file(session.result_dir / "historical_source.json", "required_evidence")
         _write(provenance, dict(schema_version=1, role="historical_joint_analysis_source",
@@ -503,3 +503,24 @@ def publish_joint_analysis(context, *, source_manifest: Path, ancestor_manifests
                 raise ValueError("published historical source status differs")
         return dict(result, store_run_id=scope["parent_run_id"], store_run_path=str(scope["published_path"]),
                     diagnostics=receipt)
+
+
+def main() -> int:
+    """Run recorded-joint diagnostics without starting a solver or new flight."""
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest="command", required=True)
+    analyze = commands.add_parser("analyze-joint")
+    analyze.add_argument("--preparation", required=True, type=Path)
+    analyze.add_argument("--log", required=True, type=Path)
+    analyze.add_argument("--output", required=True, type=Path)
+    analyze.add_argument("--analysis-contract", type=Path)
+    args = parser.parse_args()
+    analyze_recorded_joint_flight(args.preparation, args.log, args.output,
+        merge_receipt=args.preparation.parent / "batch_log_merge_receipt.json", analysis_contract=args.analysis_contract)
+    print("RECORDED_JOINT_ANALYSIS=PASS")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

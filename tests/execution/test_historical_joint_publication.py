@@ -14,7 +14,7 @@ from msplatform.io.manifest_records import file_record
 from msplatform.storage.store import ArtifactStore
 from msplatform.workflows.historical_joint_analysis import publish_joint_analysis
 from tests.contracts import test_execution_runtime
-from tests.components.multi_reflection_tof.analysis import test_prepared_joint_diagnostics
+from tests.components.multi_reflection_tof.analysis import test_recorded_joint_diagnostics
 
 
 def _gate(session):
@@ -82,7 +82,7 @@ class HistoricalJointPublicationTests(unittest.TestCase):
             context=replace(helper._context(root),capacity_policy_path=policy,
                 host_state_path=Path(os.environ["MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH"]))
             context.workspace.mkdir(parents=True)
-            fixture=test_prepared_joint_diagnostics.PreparedJointDiagnosticsTests(
+            fixture=test_recorded_joint_diagnostics.RecordedJointDiagnosticsTests(
                 methodName="test_full_pipeline_preserves_mother_raw_branches_losses_and_figures")
             fixture.setUp();self.addCleanup(fixture.doCleanups)
             store=ArtifactStore(root/"store")

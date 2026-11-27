@@ -799,7 +799,7 @@ OA→MR 和 prepared joint 共用 MR `Protect-MrtofContinuationEvidence`：沿�
 
 ## Installed prepared-joint recorded analysis
 
-`msplatform.workflows.prepared_joint.diagnostics analyze-joint` owns the complete recorded-data
+`msplatform.workflows.historical_joint_analysis analyze-joint` owns the complete recorded-data
 analysis CLI. `measured_population` closes the original source census and `loss_acceptance` supplies
 the existing diagnostics; the sole SIMION recorded-event/trajectory implementation is
 `msplatform.analysis.mr_observations`. The old backend path only reexports the five symbols still consumed by
