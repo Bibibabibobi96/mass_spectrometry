@@ -174,6 +174,10 @@ RF-IP public partial replay另已PASS194.901s：实际失败index `[true,true,fa
 
 此前标量导出主题已普通push `0df3adaa5150b0b54694d153e261208492f5c92d`；规范CLOC2.10 `78144e45→0df3adaa` PASS：total618524→622059(+3535)、production303823→303841(+18)、tests314701→318218(+3517)、unclassified0，完整各语言用途/blank/comment/code及过滤见外部 `scalar-retention-cloc.log`。
 
+### CAD 导出显式 Store（独立索引主题）
+
+`exporters.export_cad`现把调用者选定的ArtifactStore交给既有managed-stage owner；无显式Store且没有受保护父scope时，在启动owner前拒绝。STEP作者、几何来源、命名/保留规则及原CLI不变；这是公共生命周期接线，不是真实CAD/GUI资格。代码提交`9dc8a87e`只含四个索引文件；索引与隔离快照`cad-store-index-check-69f21ce5`逐字节一致，34 tests／84回执PASS（13.514s），含Store转发与无owner拒绝。其他未暂存/未跟踪在途内容未混入。
+
 ### C 活跃消费者对账（开工定位，未闭合）
 
 | 实际入口 → workflow/API | component/schema与科学输入 | 资产/进程owner与结果消费者 | C新路径/当前状态 |
